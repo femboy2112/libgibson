@@ -1,5 +1,5 @@
 use crossterm::{
-    cursor::{Hide, Show},
+    cursor::{Show},
     event::{DisableBracketedPaste, EnableBracketedPaste},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -46,7 +46,7 @@ impl TerminalSession {
                 let _ = disable_raw_mode();
                 let mut out = stdout();
                 let _ = execute!(out, Show, LeaveAlternateScreen, DisableBracketedPaste);
-                let _ = out.write_all(b"\x1b[0m\x1b[?2026l\r\n");
+                let _ = out.write_all(b"\x1b[0m\x1b[?2026l\x1b[?7h\x1b[?25h\r\n");
                 let _ = out.flush();
 
                 default_hook(info);
@@ -99,27 +99,21 @@ impl TerminalSession {
     }
 
     /// Hides the hardware cursor.
-    pub fn hide_cursor(&mut self) -> io::Result<()> {
+    pub fn hide_cursor(&mut self) -> Option<&'static [u8]> {
         if !self.is_tty || self.cursor_hidden {
-            return Ok(());
+            return None;
         }
-
-        let mut out = stdout();
-        execute!(out, Hide)?;
         self.cursor_hidden = true;
-        Ok(())
+        Some(b"\x1b[?25l")
     }
 
     /// Shows the hardware cursor.
-    pub fn show_cursor(&mut self) -> io::Result<()> {
+    pub fn show_cursor(&mut self) -> Option<&'static [u8]> {
         if !self.is_tty || !self.cursor_hidden {
-            return Ok(());
+            return None;
         }
-
-        let mut out = stdout();
-        execute!(out, Show)?;
         self.cursor_hidden = false;
-        Ok(())
+        Some(b"\x1b[?25h")
     }
 
     /// Sets whether synchronized-update mode (CSI ? 2026) is used.
@@ -154,8 +148,8 @@ impl TerminalSession {
             self.alt_screen_active = false;
         }
 
-        // Reset styling and synchronized update state
-        let _ = out.write_all(b"\x1b[0m\x1b[?2026l");
+        // Reset styling, synchronized update state, enable autowrap, show cursor
+        let _ = out.write_all(b"\x1b[0m\x1b[?2026l\x1b[?7h\x1b[?25h");
         let _ = out.flush();
 
         if self.raw_mode_enabled {

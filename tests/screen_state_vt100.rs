@@ -11,7 +11,7 @@ fn test_vt100_screen_state_diff_and_cursor() {
     let mut s1 = Surface::new(80, 5);
     s1.print_str(0, 0, "Initial Line", Style::default(), None);
 
-    let mut compiler = AnsiCompiler::new(false);
+    let mut compiler = AnsiCompiler::new();
     let diff1 = compute_diff(None, &s1);
     let bytes1 = compiler.compile(&diff1);
 
@@ -36,7 +36,7 @@ fn test_vt100_screen_state_diff_and_cursor() {
 #[test]
 fn test_vt100_autowrap_protection_at_right_margin() {
     let mut parser = vt100::Parser::new(24, 80, 0);
-    let mut compiler = AnsiCompiler::new(false);
+    let mut compiler = AnsiCompiler::new();
 
     // Create a surface of width 80 (exact terminal width)
     let mut s = Surface::new(80, 2);
@@ -62,7 +62,7 @@ fn test_vt100_autowrap_protection_at_right_margin() {
 #[test]
 fn test_vt100_cjk_emoji_placement() {
     let mut parser = vt100::Parser::new(24, 80, 0);
-    let mut compiler = AnsiCompiler::new(false);
+    let mut compiler = AnsiCompiler::new();
 
     let mut s = Surface::new(80, 2);
     s.print_str(

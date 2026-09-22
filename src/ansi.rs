@@ -7,17 +7,15 @@ pub struct AnsiCompiler {
     pub cursor_x: u16,
     pub cursor_y: u16,
     pub current_style: Style,
-    pub sync_updates: bool,
-}
+    }
 
 impl AnsiCompiler {
-    pub fn new(sync_updates: bool) -> Self {
+    pub fn new() -> Self {
         Self {
             cursor_x: 0,
             cursor_y: 0,
             current_style: Style::default(),
-            sync_updates,
-        }
+                    }
     }
 
     pub fn reset_cursor(&mut self, x: u16, y: u16) {
@@ -32,10 +30,6 @@ impl AnsiCompiler {
             return out;
         }
 
-        if self.sync_updates {
-            // Begin synchronized update (CSI ? 2026 h)
-            out.extend_from_slice(b"\x1b[?2026h");
-        }
 
         // Disable auto-wrap mode (DECAWM) to protect against right-margin wrap glitch
         out.extend_from_slice(b"\x1b[?7l");
@@ -62,10 +56,6 @@ impl AnsiCompiler {
         // Re-enable auto-wrap mode (DECAWM)
         out.extend_from_slice(b"\x1b[?7h");
 
-        if self.sync_updates {
-            // End synchronized update (CSI ? 2026 l)
-            out.extend_from_slice(b"\x1b[?2026l");
-        }
 
         out
     }
@@ -253,7 +243,7 @@ mod tests {
 
     #[test]
     fn test_compiler_empty_diff_emits_zero_bytes() {
-        let mut compiler = AnsiCompiler::new(false);
+        let mut compiler = AnsiCompiler::new();
         let diff = SurfaceDiff::default();
         let bytes = compiler.compile(&diff);
         assert_eq!(bytes.len(), 0);
@@ -266,25 +256,12 @@ mod tests {
         s2.print_str(0, 0, "hi", Style::default(), None);
 
         let diff = compute_diff(Some(&s1), &s2);
-        let mut compiler = AnsiCompiler::new(false);
+        let mut compiler = AnsiCompiler::new();
         let bytes = compiler.compile(&diff);
         let s = String::from_utf8_lossy(&bytes);
         assert!(s.contains("hi"));
     }
 
-    #[test]
-    fn test_compiler_synchronized_update_wrap() {
-        let s1 = Surface::new(10, 1);
-        let mut s2 = Surface::new(10, 1);
-        s2.print_str(0, 0, "a", Style::default(), None);
-
-        let diff = compute_diff(Some(&s1), &s2);
-        let mut compiler = AnsiCompiler::new(true);
-        let bytes = compiler.compile(&diff);
-        let s = String::from_utf8_lossy(&bytes);
-        assert!(s.starts_with("\x1b[?2026h"));
-        assert!(s.ends_with("\x1b[?2026l"));
-    }
 
     #[test]
     fn test_compiler_erase_to_eol() {
@@ -295,7 +272,7 @@ mod tests {
         s2.print_str(0, 0, "abc", Style::default(), None);
 
         let diff = compute_diff(Some(&s1), &s2);
-        let mut compiler = AnsiCompiler::new(false);
+        let mut compiler = AnsiCompiler::new();
         let bytes = compiler.compile(&diff);
         let s = String::from_utf8_lossy(&bytes);
         assert!(s.contains("\x1b[K")); // Contains CSI K
@@ -308,7 +285,7 @@ mod tests {
         s2.print_str(0, 0, "test", Style::default(), None);
 
         let diff = compute_diff(Some(&s1), &s2);
-        let mut compiler = AnsiCompiler::new(false);
+        let mut compiler = AnsiCompiler::new();
         let bytes = compiler.compile(&diff);
         let s = String::from_utf8_lossy(&bytes);
         assert!(s.contains("\x1b[?7l")); // Disables autowrap

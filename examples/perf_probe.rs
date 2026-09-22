@@ -31,7 +31,7 @@ fn main() {
     let mut full_frame_bytes = 0usize;
     let mut diff_bytes = 0usize;
 
-    let mut compiler = AnsiCompiler::new(false);
+    let mut compiler = AnsiCompiler::new();
 
     let spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -124,7 +124,7 @@ fn simulate_live_region_ticks(
 
     let mut prev_live: Option<Surface> = None;
     let mut total_bytes = 0usize;
-    let mut compiler = AnsiCompiler::new(false);
+    let mut compiler = AnsiCompiler::new();
 
     let start = Instant::now();
 

@@ -186,7 +186,7 @@ fn convert_dimension(dim: Dimension) -> TaffyDimension {
     match dim {
         Dimension::Auto => TaffyDimension::auto(),
         Dimension::Length(l) => TaffyDimension::length(l),
-        Dimension::Percent(p) => TaffyDimension::percent(p),
+        Dimension::Percent(p) => TaffyDimension::percent(p / 100.0),
     }
 }
 
@@ -194,7 +194,7 @@ fn convert_length_percentage_auto(dim: Dimension) -> LengthPercentageAuto {
     match dim {
         Dimension::Auto => LengthPercentageAuto::auto(),
         Dimension::Length(l) => LengthPercentageAuto::length(l),
-        Dimension::Percent(p) => LengthPercentageAuto::percent(p),
+        Dimension::Percent(p) => LengthPercentageAuto::percent(p / 100.0),
     }
 }
 
@@ -507,5 +507,40 @@ mod tests {
         assert_eq!(col.children[0].computed_rect.height, 1);
         // Line 1 height is 1, gap is 1 -> Line 2 starts at y = 2
         assert_eq!(col.children[1].computed_rect.y, 2);
+    }
+}
+
+#[cfg(test)]
+mod additional_tests {
+    use super::*;
+    use crate::node::{Node, NodeKind, Dimension};
+
+    #[test]
+    fn test_percentage_semantics() {
+        let mut n1 = Node::col();
+        n1.layout_style.width = Dimension::Length(80.0);
+        n1.layout_style.height = Dimension::Length(100.0);
+
+        let mut child1 = Node::col();
+        child1.layout_style.width = Dimension::Percent(50.0);
+        child1.layout_style.height = Dimension::Percent(100.0);
+        child1.layout_style.flex_shrink = 0.0;
+        n1.add_child(child1.clone());
+
+        let mut child2 = Node::col();
+        child2.layout_style.width = Dimension::Percent(25.0);
+        child2.layout_style.height = Dimension::Percent(50.0);
+        child2.layout_style.flex_shrink = 0.0;
+        n1.add_child(child2.clone());
+
+        let _ = compute_layout(&mut n1, 80, 100);
+        
+        let c1_rect = n1.children[0].computed_rect;
+        assert_eq!(c1_rect.width, 40);
+        assert_eq!(c1_rect.height, 100);
+
+        let c2_rect = n1.children[1].computed_rect;
+        assert_eq!(c2_rect.width, 20);
+        assert_eq!(c2_rect.height, 50);
     }
 }

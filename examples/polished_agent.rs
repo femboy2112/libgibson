@@ -333,7 +333,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         loop {
             let prompt_node = build_prompt_ui(&theme, &input_state);
             ctx.set_root(prompt_node);
-            ctx.render()?;
+            let paint_ctx = ctx.render()?;
+            if let Some(offset) = paint_ctx.text_scroll_offset {
+                input_state.scroll_offset = offset;
+            }
 
             if let Some(event) = ctx.poll_event(Duration::from_millis(50))? {
                 match event {
@@ -527,6 +530,7 @@ fn build_prompt_ui(theme: &Theme, input: &TextInputState) -> Node {
                         Some("Type instruction (Esc to exit)..."),
                         Style::new().fg(Color::White),
                     )
+                    .scroll_offset(input.scroll_offset)
                     .percent_width(95.0),
                 ),
         )

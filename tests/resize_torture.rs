@@ -12,7 +12,7 @@ fn test_resize_torture_cycle_dimensions() {
     let dimensions: &[(u16, u16)] = &[(120, 40), (80, 24), (40, 15), (100, 30), (35, 10), (80, 24)];
 
     let mut prev_surface: Option<Surface> = None;
-    let mut compiler = AnsiCompiler::new(false);
+    let mut compiler = AnsiCompiler::new();
 
     for &(cols, rows) in dimensions {
         let max_inline_height = rows.saturating_sub(1).max(1);

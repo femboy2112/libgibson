@@ -21,11 +21,10 @@ impl Context {
         if mode == RenderMode::Fullscreen {
             session.enter_alternate_screen()?;
         }
-        let sync = session.sync_updates();
-
+        
         Ok(Self {
             session,
-            renderer: Renderer::new(mode, sync),
+            renderer: Renderer::new(mode),
             scheduler: FrameScheduler::new(60),
             root: None,
         })
@@ -41,7 +40,7 @@ impl Context {
 
     pub fn set_sync_updates(&mut self, enabled: bool) {
         self.session.set_sync_updates(enabled);
-        self.renderer.set_sync_updates(self.session.sync_updates());
+        
     }
 
     pub fn set_max_fps(&mut self, fps: u32) {
@@ -78,32 +77,32 @@ impl Context {
     }
 
     /// Forces immediate rendering regardless of frame budget.
-    pub fn render_now(&mut self) -> io::Result<()> {
+    pub fn render_now(&mut self) -> io::Result<crate::painter::PaintContext> {
         self.render_internal()
     }
 
     /// Standard render entry point (forces immediate frame update).
-    pub fn render(&mut self) -> io::Result<()> {
+    pub fn render(&mut self) -> io::Result<crate::painter::PaintContext> {
         self.render_now()
     }
 
-    fn render_internal(&mut self) -> io::Result<()> {
+    fn render_internal(&mut self) -> io::Result<crate::painter::PaintContext> {
         let mut root = match self.root.take() {
             Some(r) => r,
-            None => return Ok(()),
+            None => return Ok(crate::painter::PaintContext::default()),
         };
 
         let start = Instant::now();
-        let result = self.renderer.render(&mut root, &mut self.session);
+        let result = self.renderer.render(&mut root, &mut self.session, &mut std::io::stdout());
         let duration = start.elapsed();
 
         self.root = Some(root);
 
         match result {
-            Ok((dirty, total, bytes, full)) => {
+            Ok((dirty, total, bytes, full, paint_ctx)) => {
                 self.scheduler
                     .record_frame(dirty, total, bytes, full, duration);
-                Ok(())
+                Ok(paint_ctx)
             }
             Err(e) => Err(e),
         }
@@ -111,12 +110,12 @@ impl Context {
 
     /// Commits text to immutable scrollback, discarding it from the live framebuffer.
     pub fn commit(&mut self, text: &str) -> io::Result<()> {
-        self.renderer.commit(text, &mut self.session)
+        self.renderer.commit(text, &mut self.session, &mut std::io::stdout())
     }
 
     /// Commits a laid-out UI node directly to immutable scrollback.
     pub fn commit_node(&mut self, node: &mut Node) -> io::Result<()> {
-        self.renderer.commit_node(node, &mut self.session)
+        self.renderer.commit_node(node, &mut self.session, &mut std::io::stdout())
     }
 
     /// Commits rich text to immutable scrollback.
@@ -138,13 +137,20 @@ impl Context {
     /// Inserts committed lines into scrollback ABOVE the active live region,
     /// preserving the active live region's content, geometry, cursor, and diff state.
     pub fn insert_before_live(&mut self, lines: &[&str]) -> io::Result<()> {
-        self.renderer.insert_before_live(lines, &mut self.session)
+        let (bytes, used_fallback) = self.renderer.insert_before_live(lines, &mut self.session, &mut std::io::stdout())?;
+        if used_fallback { self.scheduler.stats.insertion_repaints += 1; }
+        self.scheduler.stats.history_insertions += 1;
+        self.scheduler.stats.insertion_bytes += bytes as u64;
+        Ok(())
     }
 
     /// Inserts a laid-out UI node into scrollback ABOVE the active live region.
     pub fn insert_node_before_live(&mut self, node: &mut Node) -> io::Result<()> {
-        self.renderer
-            .insert_node_before_live(node, &mut self.session)
+        let (bytes, used_fallback) = self.renderer.insert_node_before_live(node, &mut self.session, &mut std::io::stdout())?;
+        if used_fallback { self.scheduler.stats.insertion_repaints += 1; }
+        self.scheduler.stats.history_insertions += 1;
+        self.scheduler.stats.insertion_bytes += bytes as u64;
+        Ok(())
     }
 
     /// Inserts rich text into scrollback ABOVE the active live region.
@@ -160,7 +166,7 @@ impl Context {
 
     /// Clears the live region from the terminal without leaving artifacts.
     pub fn clear_live_region(&mut self) -> io::Result<()> {
-        self.renderer.clear_live_region(&mut self.session)
+        self.renderer.clear_live_region(&mut self.session, &mut std::io::stdout())
     }
 
     /// Polls for structured input events.

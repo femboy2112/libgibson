@@ -10,6 +10,8 @@ use unicode_width::UnicodeWidthStr;
 pub struct PaintContext {
     /// If a widget requested focused cursor visibility, its (x, y) coordinates.
     pub cursor_position: Option<(u16, u16)>,
+
+    pub text_scroll_offset: Option<usize>,
 }
 
 /// Paints a laid-out UI node tree onto the target surface.
@@ -250,6 +252,7 @@ fn paint_text_input(
     } else if cursor_col >= scroll_col + visible_cols {
         scroll_col = cursor_col.saturating_sub(visible_cols) + 1;
     }
+    ctx.text_scroll_offset = Some(scroll_col);
 
     let max_x = rect.x + rect.width;
 

@@ -11,6 +11,7 @@ pub mod renderer;
 pub mod scheduler;
 pub mod session;
 pub mod surface;
+pub mod transaction;
 
 pub use ansi::AnsiCompiler;
 pub use cell::{Cell, Color, Glyph, Line, RichText, Span, Style, TextAlign, Theme};

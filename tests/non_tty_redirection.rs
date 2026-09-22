@@ -9,12 +9,12 @@ fn test_non_tty_suppresses_interactive_ansi() {
     // Explicitly simulate non-interactive / redirected environment
     session.is_tty = false;
 
-    let mut renderer = Renderer::new(gibson::RenderMode::Inline, false);
+    let mut renderer = Renderer::new(gibson::RenderMode::Inline);
 
     let mut root = Node::col().child(Node::text("Active Live Frame", Style::default()));
 
     // In non-TTY mode, live interactive frames return 0 emitted bytes
-    let (_dirty, _total, bytes, _full) = renderer.render(&mut root, &mut session).unwrap();
+    let (_dirty, _total, bytes, _full, _paint_ctx) = renderer.render(&mut root, &mut session, &mut std::io::stdout()).unwrap();
     assert_eq!(
         bytes, 0,
         "Non-interactive stdout must not emit live ANSI frames"

@@ -11,6 +11,11 @@ pub struct RenderStats {
     pub bytes_emitted: u64,
     pub full_repaints: u64,
     pub last_render_duration_micros: u64,
+
+    pub history_insertions: u64,
+    pub insertion_repaints: u64,
+    pub insertion_bytes: u64,
+    pub anchor_resyncs: u64,
 }
 
 /// Throttles and coalesces rendering updates to a target frame rate.

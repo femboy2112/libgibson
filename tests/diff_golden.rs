@@ -12,7 +12,7 @@ fn test_diff_identical_frames_zero_bytes() {
     let diff = compute_diff(Some(&s1), &s2);
     assert!(diff.is_empty(), "Diff of identical surfaces must be empty");
 
-    let mut compiler = AnsiCompiler::new(false);
+    let mut compiler = AnsiCompiler::new();
     let bytes = compiler.compile(&diff);
     assert_eq!(bytes.len(), 0, "Identical frames must emit 0 ANSI bytes");
 }
@@ -32,7 +32,7 @@ fn test_diff_single_cell_bounded_patch() {
     assert_eq!(diff.patches[0].runs[0].x, 15);
     assert_eq!(diff.patches[0].runs[0].cells.len(), 4);
 
-    let mut compiler = AnsiCompiler::new(false);
+    let mut compiler = AnsiCompiler::new();
     let bytes = compiler.compile(&diff);
     let ansi_str = String::from_utf8_lossy(&bytes);
 
@@ -57,7 +57,7 @@ fn test_diff_style_only_change() {
     let diff = compute_diff(Some(&s1), &s2);
     assert_eq!(diff.total_dirty_cells(), 5);
 
-    let mut compiler = AnsiCompiler::new(false);
+    let mut compiler = AnsiCompiler::new();
     let bytes = compiler.compile(&diff);
     let ansi_str = String::from_utf8_lossy(&bytes);
 
@@ -84,7 +84,7 @@ fn test_diff_line_shrinks_emits_erase_to_eol() {
     assert_eq!(diff.patches.len(), 1);
     assert_eq!(diff.patches[0].erase_eol_from, Some(5));
 
-    let mut compiler = AnsiCompiler::new(false);
+    let mut compiler = AnsiCompiler::new();
     let bytes = compiler.compile(&diff);
     let ansi_str = String::from_utf8_lossy(&bytes);
 
@@ -111,7 +111,7 @@ fn test_diff_wide_character_overwrite() {
     assert!(!s2.get(3, 0).unwrap().is_continuation);
 
     let diff = compute_diff(Some(&s1), &s2);
-    let mut compiler = AnsiCompiler::new(false);
+    let mut compiler = AnsiCompiler::new();
     let bytes = compiler.compile(&diff);
     let ansi_str = String::from_utf8_lossy(&bytes);
 
@@ -127,7 +127,7 @@ fn test_diff_previous_larger_than_next_clears_rows() {
     let diff = compute_diff(Some(&s1), &s2);
     assert_eq!(diff.rows_to_clear, 3);
 
-    let mut compiler = AnsiCompiler::new(false);
+    let mut compiler = AnsiCompiler::new();
     let bytes = compiler.compile(&diff);
     let ansi_str = String::from_utf8_lossy(&bytes);
 

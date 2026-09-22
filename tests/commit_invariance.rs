@@ -7,17 +7,17 @@ use gibson::session::TerminalSession;
 #[test]
 fn test_commit_discards_from_live_surface() {
     let mut session = TerminalSession::new().unwrap();
-    let mut renderer = Renderer::new(gibson::RenderMode::Inline, false);
+    let mut renderer = Renderer::new(gibson::RenderMode::Inline);
 
     // Initial live render
     let mut root = Node::col().child(Node::text("Active Live Region", Style::default()));
-    let _ = renderer.render(&mut root, &mut session).unwrap();
+    let _ = renderer.render(&mut root, &mut session, &mut std::io::stdout()).unwrap();
 
     assert!(renderer.live_region_height > 0);
 
     // Commit content to scrollback
     renderer
-        .commit("Committed Immutable Response 1", &mut session)
+        .commit("Committed Immutable Response 1", &mut session, &mut std::io::stdout())
         .unwrap();
 
     // After commit, live region MUST be completely reset!
@@ -26,7 +26,7 @@ fn test_commit_discards_from_live_surface() {
 
     // Subsequent live render should start fresh
     let mut next_root = Node::col().child(Node::text("New Prompt Below", Style::default()));
-    let (dirty, _total, _bytes, is_full) = renderer.render(&mut next_root, &mut session).unwrap();
+    let (dirty, _total, _bytes, is_full, _) = renderer.render(&mut next_root, &mut session, &mut std::io::stdout()).unwrap();
 
     // Since previous surface was reset on commit, this is a clean first frame of the new live region
     assert!(is_full);
@@ -68,11 +68,11 @@ fn test_scrollback_invariance_diff_cost() {
 #[test]
 fn test_insert_before_live_preserves_live_surface() {
     let mut session = TerminalSession::new().unwrap();
-    let mut renderer = Renderer::new(gibson::RenderMode::Inline, false);
+    let mut renderer = Renderer::new(gibson::RenderMode::Inline);
 
     // Initial live render: prompt with input
     let mut root = Node::col().child(Node::text("Active Live Input Prompt", Style::default()));
-    let (dirty1, _total, _bytes, is_full1) = renderer.render(&mut root, &mut session).unwrap();
+    let (dirty1, _total, _bytes, is_full1, _) = renderer.render(&mut root, &mut session, &mut std::io::stdout()).unwrap();
     assert!(is_full1);
     assert!(dirty1 > 0);
     let original_height = renderer.live_region_height;
@@ -80,7 +80,7 @@ fn test_insert_before_live_preserves_live_surface() {
 
     // Now insert a committed log ABOVE the active live region
     renderer
-        .insert_before_live(&["[background] Task completed successfully"], &mut session)
+        .insert_before_live(&["[background] Task completed successfully"], &mut session, &mut std::io::stdout())
         .unwrap();
 
     // After insert_before_live, live_region_height MUST be preserved!
@@ -91,7 +91,7 @@ fn test_insert_before_live_preserves_live_surface() {
 
     // Next render of the same root should emit 0 dirty cells because previous_surface was preserved!
     let mut next_root = Node::col().child(Node::text("Active Live Input Prompt", Style::default()));
-    let (dirty2, _total, bytes2, is_full2) = renderer.render(&mut next_root, &mut session).unwrap();
+    let (dirty2, _total, bytes2, is_full2, _) = renderer.render(&mut next_root, &mut session, &mut std::io::stdout()).unwrap();
     assert!(
         !is_full2,
         "Should NOT be a full repaint; surface was preserved!"

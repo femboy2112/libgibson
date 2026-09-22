@@ -237,6 +237,13 @@ impl Node {
     }
 
     /// Creates a rich text node.
+    pub fn scroll_offset(mut self, offset: usize) -> Self {
+        if let NodeKind::TextInput { scroll_offset, .. } = &mut self.kind {
+            *scroll_offset = offset;
+        }
+        self
+    }
+
     pub fn rich_text(text: impl Into<RichText>) -> Self {
         Self::new(NodeKind::RichText {
             text: text.into(),

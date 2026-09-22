@@ -302,7 +302,7 @@ pub unsafe extern "C" fn gibson_render(ctx: *mut GibsonContextOpaque) -> GibsonS
             return GibsonStatus::ErrInvalidParam;
         }
         match (*ctx).inner.render() {
-            Ok(()) => GibsonStatus::Ok,
+            Ok(_) => GibsonStatus::Ok,
             Err(e) => {
                 set_last_error(e.to_string());
                 GibsonStatus::ErrIo
@@ -330,7 +330,7 @@ pub unsafe extern "C" fn gibson_commit(
         };
 
         match (*ctx).inner.commit(c_str) {
-            Ok(()) => GibsonStatus::Ok,
+            Ok(_) => GibsonStatus::Ok,
             Err(e) => {
                 set_last_error(e.to_string());
                 GibsonStatus::ErrIo
@@ -396,7 +396,7 @@ pub unsafe extern "C" fn gibson_insert_before_live(
 
         let lines: Vec<&str> = c_str.lines().collect();
         match (*ctx).inner.insert_before_live(&lines) {
-            Ok(()) => GibsonStatus::Ok,
+            Ok(_) => GibsonStatus::Ok,
             Err(e) => {
                 set_last_error(e.to_string());
                 GibsonStatus::ErrIo
@@ -417,7 +417,7 @@ pub unsafe extern "C" fn gibson_commit_node(
         }
         let mut boxed = Box::from_raw(node);
         match (*ctx).inner.commit_node(&mut boxed.inner) {
-            Ok(()) => GibsonStatus::Ok,
+            Ok(_) => GibsonStatus::Ok,
             Err(e) => {
                 set_last_error(e.to_string());
                 GibsonStatus::ErrIo
@@ -438,7 +438,7 @@ pub unsafe extern "C" fn gibson_insert_node_before_live(
         }
         let mut boxed = Box::from_raw(node);
         match (*ctx).inner.insert_node_before_live(&mut boxed.inner) {
-            Ok(()) => GibsonStatus::Ok,
+            Ok(_) => GibsonStatus::Ok,
             Err(e) => {
                 set_last_error(e.to_string());
                 GibsonStatus::ErrIo
@@ -455,7 +455,7 @@ pub unsafe extern "C" fn gibson_clear_live_region(ctx: *mut GibsonContextOpaque)
             return GibsonStatus::ErrInvalidParam;
         }
         match (*ctx).inner.clear_live_region() {
-            Ok(()) => GibsonStatus::Ok,
+            Ok(_) => GibsonStatus::Ok,
             Err(e) => {
                 set_last_error(e.to_string());
                 GibsonStatus::ErrIo

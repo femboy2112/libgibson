@@ -7,6 +7,7 @@ use crate::painter::paint;
 use crate::session::TerminalSession;
 use crate::surface::Surface;
 use std::io::{self, stdout, Write};
+use crate::transaction::TerminalTransaction;
 
 /// Operating mode of the renderer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -29,20 +30,17 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(mode: RenderMode, sync_updates: bool) -> Self {
+    pub fn new(mode: RenderMode) -> Self {
         Self {
             mode,
             previous_surface: None,
-            compiler: AnsiCompiler::new(sync_updates),
+            compiler: AnsiCompiler::new(),
             live_region_height: 0,
             last_cursor_y: 0,
             last_cursor_x: 0,
         }
     }
 
-    pub fn set_sync_updates(&mut self, enabled: bool) {
-        self.compiler.sync_updates = enabled;
-    }
 
     /// Renders a UI node tree onto the terminal.
     /// Returns (dirty_cells_count, total_cells_count, bytes_emitted, is_full_repaint).
@@ -50,10 +48,11 @@ impl Renderer {
         &mut self,
         root: &mut Node,
         session: &mut TerminalSession,
-    ) -> io::Result<(usize, usize, usize, bool)> {
+        writer: &mut dyn Write,
+    ) -> io::Result<(usize, usize, usize, bool, crate::painter::PaintContext)> {
         if !session.is_tty {
             // Non-TTY / CI mode: suppress live interactive frames
-            return Ok((0, 0, 0, false));
+            return Ok((0, 0, 0, false, crate::painter::PaintContext::default()));
         }
 
         let (term_cols, term_rows) = session.terminal_size();
@@ -86,23 +85,24 @@ impl Renderer {
 
         // If frames are identical and dimensions didn't change, emit nothing
         if diff.is_empty() && !is_full_repaint {
-            return Ok((0, total_cells, 0, false));
+            return Ok((0, total_cells, 0, false, paint_ctx));
         }
 
         // 4. ANSI compilation and execution
-        let mut out = Vec::new();
+        let mut tx = TerminalTransaction::new(writer, session.sync_updates());
+        tx.begin();
 
         match self.mode {
             RenderMode::Fullscreen => {
                 self.compiler.reset_cursor(0, 0);
                 let bytes = self.compiler.compile(&diff);
-                out.extend_from_slice(&bytes);
+                tx.push(&bytes);
 
                 if let Some((cx, cy)) = paint_ctx.cursor_position {
-                    self.compiler.move_to(cx, cy, &mut out);
-                    let _ = session.show_cursor();
+                    self.compiler.move_to(cx, cy, &mut tx.buffer);
+                    if let Some(cmd) = session.show_cursor() { tx.push(cmd); }
                 } else {
-                    let _ = session.hide_cursor();
+                    if let Some(cmd) = session.hide_cursor() { tx.push(cmd); }
                 }
             }
             RenderMode::Inline => {
@@ -112,12 +112,12 @@ impl Renderer {
                     // then rewind to the top of the newly allocated region.
                     if surface_height > 1 {
                         for _ in 0..(surface_height - 1) {
-                            out.extend_from_slice(b"\r\n");
+                            tx.push(b"\r\n");
                         }
                         use std::io::Write as _;
-                        write!(out, "\x1b[{}A\r", surface_height - 1).ok();
+                        write!(tx.buffer, "\x1b[{}A\r", surface_height - 1).ok();
                     } else {
-                        out.push(b'\r');
+                        tx.push(b"\r");
                     }
                     self.compiler.reset_cursor(0, 0);
                     self.last_cursor_y = 0;
@@ -126,9 +126,9 @@ impl Renderer {
                     // Rewind cursor from last position back to row 0 of live region
                     if self.last_cursor_y > 0 {
                         use std::io::Write as _;
-                        write!(out, "\x1b[{}A\r", self.last_cursor_y).ok();
+                        write!(tx.buffer, "\x1b[{}A\r", self.last_cursor_y).ok();
                     } else {
-                        out.push(b'\r');
+                        tx.push(b"\r");
                     }
                     self.compiler.reset_cursor(0, 0);
 
@@ -136,48 +136,46 @@ impl Renderer {
                     if surface_height > self.live_region_height {
                         let extra = surface_height - self.live_region_height;
                         use std::io::Write as _;
-                        write!(out, "\x1b[{}B", self.live_region_height - 1).ok();
+                        write!(tx.buffer, "\x1b[{}B", self.live_region_height - 1).ok();
                         for _ in 0..extra {
-                            out.extend_from_slice(b"\r\n");
+                            tx.push(b"\r\n");
                         }
-                        write!(out, "\x1b[{}A\r", surface_height - 1).ok();
+                        write!(tx.buffer, "\x1b[{}A\r", surface_height - 1).ok();
                         self.compiler.reset_cursor(0, 0);
                     }
                 }
 
                 // Compile diff
                 let bytes = self.compiler.compile(&diff);
-                out.extend_from_slice(&bytes);
+                tx.push(&bytes);
 
                 // Position cursor at widget request or at bottom of live region
                 if let Some((cx, cy)) = paint_ctx.cursor_position {
-                    self.compiler.move_to(cx, cy, &mut out);
+                    self.compiler.move_to(cx, cy, &mut tx.buffer);
                     self.last_cursor_x = cx;
                     self.last_cursor_y = cy;
-                    let _ = session.show_cursor();
+                    if let Some(cmd) = session.show_cursor() { tx.push(cmd); }
                 } else {
                     // Park cursor at bottom row
                     let bottom_y = surface_height.saturating_sub(1);
-                    self.compiler.move_to(0, bottom_y, &mut out);
+                    self.compiler.move_to(0, bottom_y, &mut tx.buffer);
                     self.last_cursor_x = 0;
                     self.last_cursor_y = bottom_y;
-                    let _ = session.hide_cursor();
+                    if let Some(cmd) = session.hide_cursor() { tx.push(cmd); }
                 }
 
                 self.live_region_height = surface_height;
             }
         }
 
-        let bytes_emitted = out.len();
+        let bytes_emitted = tx.buffer.len();
         if bytes_emitted > 0 {
-            let mut stdout_handle = stdout();
-            stdout_handle.write_all(&out)?;
-            stdout_handle.flush()?;
+            tx.commit()?;
         }
 
         self.previous_surface = Some(next_surface);
 
-        Ok((dirty_cells, total_cells, bytes_emitted, is_full_repaint))
+        Ok((dirty_cells, total_cells, bytes_emitted, is_full_repaint, paint_ctx))
     }
 
     /// Commits text to the immutable terminal scrollback.
@@ -187,7 +185,7 @@ impl Renderer {
     /// - Committed text is printed into native terminal scrollback.
     /// - Committed text is completely removed from mutable framebuffer state.
     /// - Subsequent renders start afresh below the committed text.
-    pub fn commit(&mut self, text: &str, session: &mut TerminalSession) -> io::Result<()> {
+    pub fn commit(&mut self, text: &str, session: &mut TerminalSession, writer: &mut dyn Write) -> io::Result<()> {
         let mut stdout_handle = stdout();
 
         if !session.is_tty {
@@ -200,36 +198,37 @@ impl Renderer {
             return Ok(());
         }
 
-        let mut out = Vec::new();
+        let mut tx = TerminalTransaction::new(writer, session.sync_updates());
+        tx.begin();
 
         if self.live_region_height > 0 {
             // Rewind to top of live region
             if self.last_cursor_y > 0 {
-                write!(out, "\x1b[{}A\r", self.last_cursor_y).ok();
+                write!(tx.buffer, "\x1b[{}A\r", self.last_cursor_y).ok();
             } else {
-                out.push(b'\r');
+                tx.push(b"\r");
             }
 
             // Clear each row of the live region
             for i in 0..self.live_region_height {
-                out.extend_from_slice(b"\x1b[K"); // Clear line
+                tx.push(b"\x1b[K"); // Clear line
                 if i + 1 < self.live_region_height {
-                    out.extend_from_slice(b"\r\n");
+                    tx.push(b"\r\n");
                 }
             }
 
             // Rewind back to top of that area
             if self.live_region_height > 1 {
-                write!(out, "\x1b[{}A\r", self.live_region_height - 1).ok();
+                write!(tx.buffer, "\x1b[{}A\r", self.live_region_height - 1).ok();
             } else {
-                out.push(b'\r');
+                tx.push(b"\r");
             }
         }
 
         // Print committed lines followed by newline
         for line in text.lines() {
-            out.extend_from_slice(line.as_bytes());
-            out.extend_from_slice(b"\r\n");
+            tx.push(line.as_bytes());
+            tx.push(b"\r\n");
         }
 
         // Reset live region state
@@ -238,8 +237,7 @@ impl Renderer {
         self.last_cursor_y = 0;
         self.last_cursor_x = 0;
 
-        stdout_handle.write_all(&out)?;
-        stdout_handle.flush()?;
+        tx.commit()?;
 
         Ok(())
     }
@@ -250,79 +248,94 @@ impl Renderer {
         &mut self,
         lines: &[&str],
         session: &mut TerminalSession,
-    ) -> io::Result<()> {
-        let mut stdout_handle = stdout();
+        writer: &mut dyn Write,
+    ) -> io::Result<(usize, bool)> {
         if !session.is_tty {
             for line in lines {
-                let clean = strip_ansi_escapes(line);
-                writeln!(stdout_handle, "{}", clean)?;
+                writeln!(writer, "{}", strip_ansi_escapes(line))?;
             }
-            stdout_handle.flush()?;
-            return Ok(());
+            writer.flush()?;
+            return Ok((0, false));
         }
 
         if lines.is_empty() {
-            return Ok(());
+            return Ok((0, false));
         }
 
-        let mut out = Vec::new();
+        let m = lines.len() as u16;
+        let (_, term_rows) = session.terminal_size();
+        let combined_height = m.saturating_add(self.live_region_height);
 
-        if self.live_region_height > 0 {
-            // 1. Rewind from last cursor position to row 0 of live region
-            if self.last_cursor_y > 0 {
-                write!(out, "\x1b[{}A\r", self.last_cursor_y).ok();
-            } else {
-                out.push(b'\r');
+        let mut tx = TerminalTransaction::new(writer, session.sync_updates());
+        tx.begin();
+
+        if self.live_region_height == 0 || combined_height <= term_rows {
+            // == ScrollingRegionInsertion Strategy ==
+            if self.live_region_height > 0 {
+                if self.last_cursor_y < self.live_region_height - 1 {
+                    write!(tx.buffer, "\x1b[{}B", self.live_region_height - 1 - self.last_cursor_y).ok();
+                }
+
+                for _ in 0..m {
+                    tx.push(b"\r\n");
+                }
+
+                write!(tx.buffer, "\x1b[{}A\r", m + self.live_region_height - 1).ok();
+                write!(tx.buffer, "\x1b[{}L", m).ok();
             }
 
-            // 2. Erase each row of the live region
-            for i in 0..self.live_region_height {
-                out.extend_from_slice(b"\x1b[K");
-                if i + 1 < self.live_region_height {
-                    out.extend_from_slice(b"\r\n");
+            for line in lines {
+                tx.push(line.as_bytes());
+                tx.push(b"\r\n");
+            }
+
+            if self.live_region_height > 0 {
+                if self.last_cursor_y > 0 {
+                    write!(tx.buffer, "\x1b[{}B", self.last_cursor_y).ok();
+                }
+                if self.last_cursor_x > 0 {
+                    write!(tx.buffer, "\x1b[{}C", self.last_cursor_x).ok();
                 }
             }
-
-            // 3. Rewind back up to row 0 of that area
+        } else {
+            // == RepaintFallback Strategy ==
             if self.live_region_height > 1 {
-                write!(out, "\x1b[{}A\r", self.live_region_height - 1).ok();
-            } else {
-                out.push(b'\r');
+                if self.last_cursor_y > 0 {
+                    write!(tx.buffer, "\x1b[{}A", self.last_cursor_y).ok();
+                }
+                tx.push(b"\r\x1b[J");
+            } else if self.live_region_height == 1 {
+                tx.push(b"\r\x1b[K");
+            }
+
+            for line in lines {
+                tx.push(line.as_bytes());
+                tx.push(b"\r\n");
+            }
+
+            if self.live_region_height > 1 {
+                for _ in 0..(self.live_region_height - 1) {
+                    tx.push(b"\r\n");
+                }
+                write!(tx.buffer, "\x1b[{}A\r", self.live_region_height - 1).ok();
+            } else if self.live_region_height == 1 {
+                tx.push(b"\r");
+            }
+
+            if let Some(ref prev) = self.previous_surface {
+                self.compiler.reset_cursor(0, 0);
+                let diff = crate::diff::compute_diff(None, prev);
+                let bytes = self.compiler.compile(&diff);
+                tx.push(&bytes);
+                self.last_cursor_y = prev.height.saturating_sub(1);
+                // cursor_x is handled by paint next frame anyway, but we should roughly place it
             }
         }
 
-        // 4. Print committed lines into native terminal scrollback
-        for line in lines {
-            out.extend_from_slice(line.as_bytes());
-            out.extend_from_slice(b"\r\n");
-        }
-
-        // 5. Re-allocate rows for the live region if height > 1
-        if self.live_region_height > 1 {
-            for _ in 0..(self.live_region_height - 1) {
-                out.extend_from_slice(b"\r\n");
-            }
-            write!(out, "\x1b[{}A\r", self.live_region_height - 1).ok();
-        } else if self.live_region_height == 1 {
-            out.push(b'\r');
-        }
-
-        // 6. Re-paint the previous surface onto the newly positioned live region
-        if let Some(ref prev) = self.previous_surface {
-            self.compiler.reset_cursor(0, 0);
-            let diff = compute_diff(None, prev);
-            let bytes = self.compiler.compile(&diff);
-            out.extend_from_slice(&bytes);
-
-            // Restore cursor
-            self.compiler
-                .move_to(self.last_cursor_x, self.last_cursor_y, &mut out);
-        }
-
-        stdout_handle.write_all(&out)?;
-        stdout_handle.flush()?;
-
-        Ok(())
+        let bytes = tx.buffer.len();
+        tx.commit()?;
+        let used_fallback = combined_height > term_rows;
+        Ok((bytes, used_fallback))
     }
 
     /// Commits a laid-out UI node tree directly to immutable scrollback.
@@ -331,11 +344,12 @@ impl Renderer {
         &mut self,
         node: &mut Node,
         session: &mut TerminalSession,
+        writer: &mut dyn Write,
     ) -> io::Result<()> {
         let (term_cols, _) = session.terminal_size();
         let lines = render_node_to_lines(node, session.is_tty, term_cols)?;
         let joined = lines.join("\n");
-        self.commit(&joined, session)
+        self.commit(&joined, session, writer)
     }
 
     /// Inserts a laid-out UI node tree into immutable scrollback ABOVE the active live region.
@@ -343,37 +357,39 @@ impl Renderer {
         &mut self,
         node: &mut Node,
         session: &mut TerminalSession,
-    ) -> io::Result<()> {
+        writer: &mut dyn Write,
+    ) -> io::Result<(usize, bool)> {
         let (term_cols, _) = session.terminal_size();
         let lines = render_node_to_lines(node, session.is_tty, term_cols)?;
         let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
-        self.insert_before_live(&line_refs, session)
+        self.insert_before_live(&line_refs, session, writer)
     }
 
     /// Clears the live region from the terminal without leaving artifacts.
-    pub fn clear_live_region(&mut self, session: &mut TerminalSession) -> io::Result<()> {
+    pub fn clear_live_region(&mut self, session: &mut TerminalSession, writer: &mut dyn Write) -> io::Result<()> {
         if !session.is_tty || self.live_region_height == 0 {
             return Ok(());
         }
 
-        let mut out = Vec::new();
+        let mut tx = TerminalTransaction::new(writer, session.sync_updates());
+        tx.begin();
         if self.last_cursor_y > 0 {
-            write!(out, "\x1b[{}A\r", self.last_cursor_y).ok();
+            write!(tx.buffer, "\x1b[{}A\r", self.last_cursor_y).ok();
         } else {
-            out.push(b'\r');
+            tx.push(b"\r");
         }
 
         for i in 0..self.live_region_height {
-            out.extend_from_slice(b"\x1b[K");
+            tx.push(b"\x1b[K");
             if i + 1 < self.live_region_height {
-                out.extend_from_slice(b"\r\n");
+                tx.push(b"\r\n");
             }
         }
 
         if self.live_region_height > 1 {
-            write!(out, "\x1b[{}A\r", self.live_region_height - 1).ok();
+            write!(tx.buffer, "\x1b[{}A\r", self.live_region_height - 1).ok();
         } else {
-            out.push(b'\r');
+            tx.push(b"\r");
         }
 
         self.previous_surface = None;
@@ -381,9 +397,7 @@ impl Renderer {
         self.last_cursor_y = 0;
         self.last_cursor_x = 0;
 
-        let mut stdout_handle = stdout();
-        stdout_handle.write_all(&out)?;
-        stdout_handle.flush()?;
+        tx.commit()?;
 
         Ok(())
     }
