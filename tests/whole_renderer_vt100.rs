@@ -319,6 +319,38 @@ fn insert_strategy_is_reported() {
     assert_eq!(h.renderer.fast_insertions, 1);
 }
 
+#[test]
+fn repaint_fallback_restores_exact_cursor() {
+    // Tiny terminal forces the fallback; the live region carries a visible cursor.
+    let mut h = Harness::new(40, 6);
+    let mut root = Node::col()
+        .child(Node::text("LIVE-TOP", Style::default()))
+        .child(Node::text_input("ab", 1, None, Style::default()))
+        .child(Node::text("LIVE-BOT", Style::default()));
+    h.render(&mut root);
+    let before = h.cursor();
+    assert!(
+        !h.hide_cursor(),
+        "cursor should be visible in the live input"
+    );
+
+    let (_, strategy) = h.insert(&["A", "B", "C", "D", "E"]);
+    assert_eq!(strategy, InsertStrategy::RepaintFallback);
+
+    // Cursor x/column is unchanged; y shifts down by the number of inserted rows
+    // that fit above the live region.
+    let after = h.cursor();
+    assert_eq!(after.1, before.1, "cursor column must be restored exactly");
+    assert!(
+        after.0 >= before.0,
+        "cursor row should not move above its old position"
+    );
+    assert!(
+        !h.hide_cursor(),
+        "cursor must remain visible after fallback"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Resize resynchronization: anchor invalidation + re-establishment
 // ---------------------------------------------------------------------------

@@ -78,7 +78,7 @@ ctx.commit_text("Finalized output text")?; // ctx.commit(...) is an alias
 
 ## Verification Status
 
-Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **107 tests**: 51 library unit tests and 56 integration tests (across `commit_invariance`, `diff_golden`, `ffi_lifecycle`, `non_tty_redirection`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `screen_state_vt100`, `structured_output`, and `whole_renderer_vt100`).
+Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **108 tests**: 51 library unit tests and 57 integration tests (across `commit_invariance`, `diff_golden`, `ffi_lifecycle`, `non_tty_redirection`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `screen_state_vt100`, `structured_output`, and `whole_renderer_vt100`).
 
 `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings are UNVERIFIED** — no Go toolchain was available, so they were never compiled. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
 
@@ -249,7 +249,7 @@ cargo run --example resize_test_app
 # Build library and release artifacts (.so, .a)
 cargo build --release
 
-# Run the full test suite (107 tests: 51 unit + 56 integration)
+# Run the full test suite (108 tests: 51 unit + 57 integration)
 cargo test
 
 # Static analysis and formatting checks
