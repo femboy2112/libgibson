@@ -2,9 +2,10 @@
 
 ## 1. Overview and Core Philosophy
 
-LibGibson was designed to solve a fundamental deficiency in modern CLI applications: the friction between **terminal scrollback history** and **interactive mutable user interfaces**.
+LibGibson solves a fundamental deficiency in modern CLI applications: the friction between **terminal scrollback history** and **interactive mutable user interfaces**.
 
 In standard terminal programming, developers either:
+
 1. Use an alternate screen buffer (`CSI ? 1049 h`), seizing total control of the screen but discarding the user's scrollback and terminal context.
 2. Use raw escape codes and `\r\x1b[K` macros, which break down as soon as terminal width changes, text wraps, or multiline widgets update.
 
@@ -17,19 +18,32 @@ LibGibson treats the terminal as a **2D character-cell framebuffer** with an exp
     │ commit() transitions finalized state permanently
     ▼
     [Live Viewport]
-    Mutable frame-buffered region (diff-rendered, cursor-rewound)
+    Mutable frame-buffered region (diff-rendered, anchor-tracked)
 ```
+
+### Verification labels used in this document
+
+Because earlier revisions of this document overstated completion, architectural claims below carry an explicit status:
+
+| Label | Meaning |
+| --- | --- |
+| **IMPLEMENTED** | The described code path exists and is reached in normal operation. |
+| **TESTED** | Covered by an automated test in this repository (`cargo test`, 107 tests) that exercises the behavior described. |
+| **PARTIALLY TESTED** | Implemented, and some behavior is covered, but at least one named facet is not automatically verified. The gap is stated explicitly. |
+| **UNVERIFIED** | Written down because it exists in source or is a documented assumption, but has not been compiled or executed in any environment we can attest to. |
+
+The overall state of the core engine is **IMPLEMENTED + TESTED on Linux x86_64 only**. See §15 for the honest limitation list.
 
 ---
 
 ## 2. The Rendering Pipeline
 
-The rendering lifecycle follows a strictly decoupled vertical pipeline:
+The rendering lifecycle follows a decoupled vertical pipeline. Every stage is **IMPLEMENTED**; the end-to-end byte stream is **TESTED** through a virtual terminal in `tests/whole_renderer_vt100.rs`.
 
 ```
 ┌─────────────────────────┐
-│     Declarative Tree    │  Node hierarchy (Box, Row, Col, Text, Spinner, TextInput)
-└───────────┬─────────────┘
+│     Declarative Tree    │  Node hierarchy (Box, Row, Col, Text, RichText,
+└───────────┬─────────────┘  Rule, Rail, Border, Spinner, TextInput)
             │
             ▼
 ┌─────────────────────────┐
@@ -39,7 +53,7 @@ The rendering lifecycle follows a strictly decoupled vertical pipeline:
             ▼
 ┌─────────────────────────┐
 │       Cell Painter      │  Paints laid-out nodes into next Surface framebuffer
-└───────────┬─────────────┘
+└───────────┬─────────────┘  (returns a PaintContext: cursor position request)
             │
             ▼
 ┌─────────────────────────┐
@@ -48,46 +62,64 @@ The rendering lifecycle follows a strictly decoupled vertical pipeline:
             │
             ▼
 ┌─────────────────────────┐
-│      ANSI Compiler      │  Emits stateful minimal cursor & SGR update byte stream
-└───────────┬─────────────┘
+│      ANSI Compiler      │  Emits stateful minimal cursor & SGR byte stream
+└───────────┬─────────────┘  (AnsiCompiler does NOT own sync-update state)
             │
             ▼
 ┌─────────────────────────┐
-│     Terminal Output     │  Synchronized flush (CSI ? 2026 h/l) to stdout
+│  TerminalTransaction    │  Batches sync-update begin/end, private modes,
+└───────────┬─────────────┘  cursor motion, diff bytes, cursor placement and
+            │                visibility into ONE write_all + flush
+            ▼
+┌─────────────────────────┐
+│     Terminal Output     │  stdout
 └─────────────────────────┘
 ```
+
+The pipeline is driven by `Renderer::render` (`src/renderer.rs`). The renderer also owns the explicit **physical anchor** (§6), which is why an empty cell diff does not automatically mean "emit nothing".
 
 ---
 
 ## 3. Cell and Glyph Model
 
+**IMPLEMENTED + TESTED** (`src/cell.rs`, `src/surface.rs`, unit tests plus `whole_renderer_vt100`).
+
 Terminal cells cannot be represented as simple `char` or ASCII byte arrays. Unicode requires handling:
+
 - Multi-byte UTF-8 sequences.
-- Extended grapheme clusters (e.g., base characters with combining accents: `e` + `\u{0301}` -> `é`).
+- Extended grapheme clusters (e.g., base characters with combining accents: `e` + `U+0301` → `é`).
 - Wide full-width CJK characters (`display_width == 2`).
-- Emoji sequences with Zero-Width Joiners (ZWJ) and skin tone modifiers (`display_width == 2`).
+- Emoji sequences with Zero-Width Joiners (ZWJ) and skin-tone modifiers (`display_width == 2`).
 - Zero-width codepoints.
 
 ### Memory Optimization: `CompactString`
 
 A naive implementation using `String` per cell allocates on every cell mutation. LibGibson uses `CompactString` (from the `compact_str` crate) inside `Glyph`:
+
 - 24 bytes total on 64-bit platforms.
-- Completely stack-allocated for all strings up to 24 UTF-8 bytes (covering >99.9% of all Unicode grapheme clusters and emojis).
-- Zero heap allocations during cell construction and updates.
+- Stack-allocated for all strings up to 24 UTF-8 bytes (which covers the overwhelming majority of Unicode grapheme clusters and emoji).
+- No heap allocation during cell construction and updates for that common case.
 
 ### Wide Glyph Overwrite Safety
 
 A double-width character occupies two consecutive terminal columns: `(x, y)` as the lead glyph, and `(x+1, y)` as a continuation marker. If software overwrites half of a wide character, terminals can render corrupt text.
 
-LibGibson enforces four strict invariants in `Surface::set_cell`:
+LibGibson enforces strict invariants in `Surface::set_cell`:
+
 1. **Overwriting a continuation cell**: If cell `(x, y)` is a continuation, the lead character at `(x-1, y)` is automatically cleared to a blank space.
 2. **Overwriting a wide lead**: If cell `(x, y)` is a wide lead and is overwritten with a single-width character, the continuation cell at `(x+1, y)` is automatically cleared.
 3. **Inserting a wide character**: If a wide character is placed at `(x, y)`, and `(x+1, y)` was previously the lead of another wide glyph, `(x+2, y)` is cleared so no orphaned continuation remains.
 4. **Right-edge clipping**: If a wide character is placed at the rightmost boundary (`x + 1 >= width`), it cannot fit and is safely clipped rather than corrupting line wraps.
 
+### Control-Character Neutralization
+
+`Surface::print_str` **skips any grapheme containing a control character** (`char::is_control`). This happens at the cell model boundary, so text passed to structured output paths (`commit_text`, `commit_rich_text`, `Node::text`, `RichText`) can never inject `ESC` / `OSC` / `CSI` into the terminal. The explicit raw-ANSI escape hatch intentionally bypasses this (§10). **IMPLEMENTED + TESTED** (`tests/commit_invariance.rs::test_commit_does_not_interpret_control_characters`).
+
 ---
 
 ## 4. Layout Engine
+
+**IMPLEMENTED + TESTED** (`src/layout.rs`, unit tests plus `whole_renderer_vt100` responsive cases).
 
 LibGibson integrates the `taffy` crate (v0.14) without exposing Taffy types across the public API.
 
@@ -97,142 +129,302 @@ LibGibson integrates the `taffy` crate (v0.14) without exposing Taffy types acro
   - `WrapMode::WordWrap`: Wraps on word and whitespace boundaries; falls back to grapheme breaks when a single word exceeds container width.
   - `WrapMode::CharWrap`: Wraps strictly at grapheme cluster boundaries.
 
+The layout engine is also reused for **static committed output** (§10), so `commit_text`, `commit_rich_text`, and `commit_node` wrap and align identically to live nodes. No wrapping logic is duplicated outside Rust.
+
 ---
 
-## 5. Differential Diff & ANSI Compiler
+## 5. Differential Diff
 
-LibGibson never repaints unchanged cells and never clears the entire screen on every frame.
+**IMPLEMENTED + TESTED** (`src/diff.rs`, `tests/diff_golden.rs`).
 
-### Diff Algorithm (`diff.rs`)
+LibGibson does not repaint unchanged cells and does not clear the entire screen on every frame.
 
 1. For each row `y`:
    - Compare `prev_cells[x]` with `next_cells[x]`.
    - Skip rows where all cells are identical.
    - For rows with changes, group contiguous dirty cells into `CellRun { x, cells }`.
 2. **Erase to End of Line Optimization**: If a line shrinks in width (e.g. status changes from `"Processing query 12345"` to `"Done"`), the diff detects that trailing cells became blank and emits `erase_eol_from: Some(x)`, compiling to `\x1b[K` (`CSI K`) instead of emitting dozens of space characters.
-3. **Orphaned Row Clearing**: If the live region shrinks in height from $H_1$ to $H_2$, the diff identifies `rows_to_clear = H1 - H2` and erases the leftover rows below with `\x1b[K`.
-
-### Stateful ANSI Compiler (`ansi.rs`)
-
-The `AnsiCompiler` maintains active terminal state:
-- `cursor_x`, `cursor_y`
-- Current `Style` (foreground, background, bold, dim, italic, underline, reverse)
-- `sync_updates` flag
-
-Key optimizations:
-- **Cursor Motion**: Compares relative forward/backward jumps (`\x1b[C`, `\x1b[D`), absolute column positioning (`\x1b[<col>G`), and carriage returns (`\r`), selecting the minimal byte sequence.
-- **SGR Minimization**: Emits style change codes only when attributes differ from current terminal state. Attributes are not reset between characters.
-- **Continuation Cells**: Continuation cells in double-width glyphs are omitted from the ANSI stream because standard terminals advance hardware cursors by 2 columns automatically.
-- **Synchronized Updates**: Wraps frame output in `\x1b[?2026h` and `\x1b[?2026l` for flicker-free atomic updates on supported terminals.
+3. **Orphaned Row Clearing**: If the live region shrinks in height from `H1` to `H2`, the diff identifies `rows_to_clear = H1 - H2` and erases the leftover rows below with `\x1b[K`.
 
 ---
 
-## 6. Inline Mode vs Fullscreen Mode
+## 6. Explicit Physical Anchor Model
 
-### Inline Mode (Flagship)
+**IMPLEMENTED + TESTED** (`src/renderer.rs`; `tests/whole_renderer_vt100.rs`, `tests/pty_resize_torture.rs`, `tests/resize_torture.rs`).
+
+The renderer tracks more physical state than the cell framebuffer:
+
+- `AnchorState::{ Invalid, Stable { cols, rows, live_height } }` — the renderer's belief about where the live region actually sits on the terminal.
+- The last committed hardware cursor position (`last_cursor_x`, `last_cursor_y`).
+- The last committed cursor visibility (`last_cursor_visible`).
+
+**Surface equality alone is not physical truth.** If the cell diff is empty but the requested cursor position or visibility changed, the renderer still emits a transaction. This is asserted directly in `whole_renderer_vt100::whole_renderer_cursor_visibility_is_physical_truth`.
+
+On terminal geometry change (`observe_geometry`):
+
+1. The anchor is set to `AnchorState::Invalid`.
+2. The diff baseline (`previous_surface`) is discarded.
+3. `anchor_resyncs` is incremented.
+4. The next frame performs a **re-anchor**: it erases from the current cursor row downward (`\r\x1b[J`) and rebuilds the live region from scratch, then allocates `H - 1` rows and rewinds to the region top (inline mode).
+
+Re-anchoring is **PARTIALLY TESTED**. The relative erase-from-cursor-down reanchor is exercised in the whole-renderer and PTY tests. An **absolute cursor query (DSR) is not implemented**, so the engine cannot learn its absolute row from the terminal; it re-establishes the region by best-effort relative motion. This is a stated limitation, not a claim of exact recovery.
+
+---
+
+## 7. Stateful ANSI Compiler
+
+**IMPLEMENTED + TESTED** (`src/ansi.rs`, unit tests plus `screen_state_vt100` / `whole_renderer_vt100`).
+
+`AnsiCompiler` converts surface diffs into compact byte streams and maintains:
+
+- `cursor_x`, `cursor_y`
+- Current `Style` (foreground, background, bold, dim, italic, underline, reverse)
+
+It does **not** maintain a `sync_updates` flag. Synchronized-update ownership lives in `TerminalTransaction` (§8).
+
+Key optimizations:
+
+- **Cursor Motion**: Compares relative forward/backward jumps (`\x1b[C`, `\x1b[D`), absolute column positioning (`\x1b[<col>G`), and carriage returns (`\r`), selecting the minimal byte sequence.
+- **SGR Minimization**: Emits style change codes only when attributes differ from current compiler state. Attributes are not reset between characters unnecessarily.
+- **Erase to End of Line / orphaned rows**: Emits `CSI K` when a line shrinks or rows are removed.
+- **Continuation Cells**: Continuation cells in double-width glyphs are omitted from the ANSI stream because standard terminals advance the hardware cursor by 2 columns automatically.
+- **Autowrap Protection**: Wraps diff emission in `\x1b[?7l` (disable DECAWM) and `\x1b[?7h` (re-enable) so right-margin output cannot trigger autowrap.
+
+---
+
+## 8. TerminalTransaction
+
+**IMPLEMENTED + TESTED** (`src/transaction.rs`; exercised by every whole-renderer test).
+
+`TerminalTransaction` represents a single atomic write to the terminal. Its buffer accumulates:
+
+1. Synchronized-update begin `\x1b[?2026h` (when enabled).
+2. Cursor motion / temporary private modes emitted by the renderer or compiler.
+3. Framebuffer diff bytes.
+4. Final cursor placement.
+5. Cursor visibility (`\x1b[?25h` / `\x1b[?25l`).
+6. Synchronized-update end `\x1b[?2026l`.
+
+`TerminalTransaction::commit` performs **one `write_all` followed by one `flush`**. This is what makes a frame atomic from the terminal's perspective and is the reason sync-update ownership was moved out of `AnsiCompiler`: the transaction, not the compiler, decides whether a given operation is wrapped. The compiler may legitimately be used to produce a patch that is embedded inside a larger transaction.
+
+---
+
+## 9. Inline Mode vs Fullscreen Mode
+
+**IMPLEMENTED + TESTED** (`whole_renderer_vt100`, `pty_integration`).
+
+### Inline Mode (flagship)
+
 - Coexists with normal shell history.
-- The live region has height $H$.
-- On frame 0, $H - 1$ newlines are emitted to allocate terminal lines without overwriting scrollback, followed by cursor rewind `\x1b[{H-1}A\r`.
-- Subsequent frame diffs rewind the cursor strictly within the live region (`\x1b[{y}A\r`).
-- Cursor rewind is strictly bounded by live region height.
+- The live region has height `H`.
+- On the first frame of a live region, `H - 1` newlines are emitted to allocate terminal lines without overwriting scrollback, followed by a cursor rewind `\x1b[{H-1}A\r`.
+- Subsequent frame diffs rewind the cursor relative to `last_cursor_y` and render within the live region.
+- If the live region grows, extra rows are allocated at the bottom before re-rendering.
+- After a geometry change the region is re-anchored (§6), which begins with an erase from the cursor down.
 
 ### Fullscreen Mode
-- Enters alternate screen buffer (`\x1b[?1049h`).
+
+- Enters the alternate screen buffer (`\x1b[?1049h`).
 - Dimensions match terminal rows and columns.
 - Reuses the identical Surface, Layout, Painter, Diff, and ANSI compiler pipelines.
 
 ---
 
-## 7. Commit Semantics ($O(1)$ Scrollback Invariance)
+## 10. Commit Semantics and Static Output
 
-When `ctx.commit(text)` is called:
-1. The terminal cursor is rewound to row 0 of the active live region.
+**IMPLEMENTED + TESTED** (`tests/commit_invariance.rs`, `tests/whole_renderer_vt100.rs`, `tests/non_tty_redirection.rs`).
+
+### Structured commit paths
+
+- `Context::commit_text(&str)` — width-aware wrapped plain text. Control characters are neutralized at the cell model boundary.
+- `Context::commit_rich_text(&RichText)` — styled spans/lines, wrapped and aligned by the same engine as live nodes.
+- `Context::commit_node(&mut Node)` — a laid-out node tree serialized directly to scrollback.
+- `Context::commit` — backwards-compatible alias for `commit_text`.
+
+All three structured paths route through the same width-aware layout/wrapping engine. When `ctx.commit(...)` is called (TTY path):
+
+1. The terminal cursor is rewound relative to the live region.
 2. The live region rows are cleared with `\x1b[K`.
-3. The committed text lines are emitted directly to stdout, followed by newlines.
+3. The committed text lines are emitted directly to stdout, followed by `\r\n`.
 4. The committed text is now in the native terminal scrollback buffer.
-5. The mutable live framebuffer is completely purged (`previous_surface = None`, `live_region_height = 0`).
-6. The subsequent live frame begins on the line below the committed text.
+5. Live state is invalidated (`invalidate_anchor(false)`): the next live frame starts fresh.
+6. Because committed text is never retained in the mutable framebuffer, **the rendering cost of a live prompt or spinner is independent of the length of the transcript history**.
 
-Because committed text is never retained in the mutable framebuffer, **the rendering cost of a live prompt or spinner is completely independent of the length of the transcript history**.
+### Raw escape hatch
 
----
+`Context::commit_raw_ansi_unchecked(&str)` writes the payload verbatim. The caller is responsible for its safety. Arbitrary `OSC` / `DCS` / `CSI` input is **not sanitized**. Use the structured paths for untrusted text.
 
-## 8. Input and TextInput Component
+### Non-TTY redirection
 
-The `TextInputState` component handles keyboard interactions using grapheme cluster semantics:
-- Cursor position is measured in grapheme indices, not byte offsets.
-- Deleting backwards over a combining mark (`é`) or multi-codepoint emoji deletes the entire grapheme cluster.
-- Supports printable Unicode insertion, Left, Right, Home, End, Ctrl-A, Ctrl-E, Backspace, Delete, and bracketed paste blocks.
-- Computes horizontal scroll offsets so the cursor remains visible inside constrained bounding boxes.
-
----
-
-## 9. C ABI Boundary and Foreign Language Safety
-
-The C ABI is designed around strict safety invariants:
-1. **Opaque Pointers**: `gibson_context_t` and `gibson_node_t` hide internal Rust layouts.
-2. **Explicit Data Widths**: All integers use `int32_t`, `uint32_t`, `uint64_t`, or `float`.
-3. **No Panics Across FFI**: Every public `extern "C"` function is wrapped in `std::panic::catch_unwind`. If an internal panic occurs, it is captured, a thread-local error message is recorded, and `GIBSON_ERR_PANIC` is returned.
-4. **Memory Ownership**: Explicit free functions (`gibson_node_free`, `gibson_destroy_context`) ensure no cross-allocator mismatches.
-
----
-
-## 10. Visual Doctrine & Clean-Room Design Philosophy
-
-Modern developer tools and agent CLIs (such as Claude Code) succeed through **restraint, typographic clarity, and native terminal immersion**. LibGibson codifies these principles into its core visual doctrine:
-
-1. **Native Background Respect**:
-   - The default terminal background must remain transparent or default.
-   - Never draw solid dark or colored rectangular canvas backgrounds over the entire viewport; terminal users select customized color themes, transparencies, and background blurs.
-   - Background colors are strictly reserved for subtle highlights (e.g. text input cursor focus or active option selection).
-
-2. **The Rail Callout Doctrine (`Node::rail`)**:
-   - Heavy ASCII boxes (`╭───╮`, `│   │`, `╰───╯`) consume 2 vertical lines and 2 horizontal columns of screen real estate per box. In long terminal sessions, stacked boxes clutter the scrollback.
-   - LibGibson introduces the **Rail** primitive (`│` left-border callout):
-     ```
-     ─── Tool Execution: AST Code Search ──────────────────────────────
-     │ ● Query: sync_update in src/ansi.rs
-     │ ● Result: Found DECSM 2026 atomic batching; 0 tear frames.
-     ```
-   - Rails provide clean visual containment with 0 wasted top/bottom rows and minimal visual weight.
-
-3. **Structured Text Layout (`RichText`, `Line`, `Span`, `Theme`)**:
-   - No hardcoded ANSI string literals (`\x1b[31m`) in user interfaces.
-   - Components compose semantic styles via `Theme` tokens (`theme.accent`, `theme.text_muted`, `theme.rail`, `theme.success`, `theme.warning`, `theme.error`).
-   - Enables instant theme switching and guaranteed zero-escape plain-text rendering for pipes and non-TTY outputs.
-
-4. **Zero-Escape Non-TTY Redirection**:
-   - When stdout is piped to a file or CI runner (`app > out.txt` or `app | cat`), interactive escape sequences (cursor movement, clear line, SGR colors) create unreadable log garbage.
-   - In non-TTY mode, LibGibson automatically suppresses live interactive frames and converts all committed structured nodes and rich text to clean, plain UTF-8 text with zero ANSI escapes.
+When stdout is not a TTY, live interactive frames are suppressed. Structured commits emit clean plain UTF-8 with zero escape sequences (`tests/non_tty_redirection.rs`). A homemade ANSI stripper (`strip_ansi_escapes`) is used **only** to render already-engine-generated escape sequences back to readable text for non-TTY logs. It is documented as **not a sanitizer** for untrusted input.
 
 ---
 
 ## 11. Asynchronous Scrollback Insertion (`insert_before_live`)
 
-In real-world agent CLIs, asynchronous background events occur while the user is actively typing or while a live spinner is spinning (e.g., git filesystem change notifications, LSP diagnostics, streaming log messages).
+**IMPLEMENTED + TESTED** (`src/renderer.rs`; `whole_renderer_vt100` tests both strategies directly).
 
-Naive terminal applications either:
-1. Print directly, which corrupts the live region and leaves orphaned lines.
-2. Buffer until the user finishes typing, delaying critical notifications.
+In real agent CLIs, asynchronous events occur while the user is typing or a spinner is running (git filesystem notifications, LSP diagnostics, streaming logs). `insert_before_live` inserts already-safe lines into native scrollback **above** the live region. There are **two named strategies**, exposed via `InsertStrategy` and counted in metrics:
 
-LibGibson's `insert_before_live` solves this with differential surgical precision:
-1. Temporarily rewinds the hardware cursor to row 0 of the active live region.
-2. Clears the live region rows using `CSI K`.
-3. Emits the inserted lines directly into native terminal scrollback, followed by `\r\n`.
-4. Advances the active line position downward by the number of inserted lines.
-5. Re-renders the live surface without invalidating `previous_surface`.
-6. Compiles a minimal differential patch that repaints the live region at its new row offset and restores the hardware cursor.
-7. Subsequent frames diff against the preserved surface with zero dirty cells.
+### `InsertLineFastPath`
+
+Uses `CSI L` (Insert Lines) at the region top so the existing live framebuffer is **not repainted**. The renderer moves to the region bottom, scrolls to make room, returns to the top, inserts `M` lines, prints the history, and restores the cursor's relative position within the region. The fast path is selected only when:
+
+- the live region is non-empty,
+- the anchor is `AnchorState::Stable`,
+- combined history + live height fits within the terminal rows,
+- a preserved `previous_surface` exists.
+
+This path is proven **without any live repaint** in `whole_renderer_vt100::insert_line_fast_path_inserts_history_without_repainting_live` and the multi-row/cursor-restore variant.
+
+### `RepaintFallback`
+
+Always correct, used when the fast path's preconditions are not met. It erases from the region top down (`\x1b[J`), prints the history rows, repaints the preserved live framebuffer, and restores the exact cursor x/y and visibility. `previous_surface` is preserved, so the next ordinary diff render can emit zero bytes. Tested in `whole_renderer_vt100::repaint_fallback_used_when_no_room_and_restores_live_and_cursor`.
+
+> **Do not claim universal zero-repaint.** When the fast path is unavailable or the anchor is untrustworthy, the engine repaints the live region. `insertion_repaints` vs `fast_insertions` in metrics report which happened.
+
+Non-TTY insertion prints stripped plain lines; the engine does not perform terminal surgery there.
 
 ---
 
-## 12. Terminal Autowrap and Right-Margin Safety
+## 12. Unicode Input Invariant
 
-When text or background cells reach column `width - 1` (the rightmost column of the terminal window), standard VT100/ANSI terminal emulators trigger autowrap (DECAWM): the hardware cursor advances to column 0 of the *next* row, scrolling the terminal window up if already at the bottom.
+**IMPLEMENTED + TESTED** (`src/input.rs`; unit tests including deterministic randomized edit fuzzing, plus `whole_renderer_vt100` long-input scrolling).
 
-In differential rendering, this creates disastrous screen tearing and vertical drift.
+`TextInputState` is a grapheme-aware single-line editor. After **every** public mutation:
 
-LibGibson protects against right-margin autowrap through two interlocking mechanisms:
-1. **DECAWM Autowrap Disabling**: Diff byte compilation wraps all rendering in `\x1b[?7l` (disable autowrap) before emitting cell runs, and `\x1b[?7h` (re-enable autowrap) after restoring cursor position.
-2. **Surface Right-Edge Clipping**: Wide CJK characters and emojis occupying 2 columns are clipped if `x + 1 >= width`, preventing double-width glyphs from crossing the terminal boundary.
+```text
+cursor_grapheme <= text.graphemes(true).count()
+```
 
+Mutations are expressed as **byte-range edits**, and the cursor index is then **re-derived from the segmentation of the complete resulting string**. This matters because grapheme boundaries can merge across an insertion boundary: inserting `U+0301 COMBINING ACUTE ACCENT` after `e` produces a single `é` cluster. The naive "insert then add the inserted grapheme count" approach leaves the cursor past the end of the buffer and can panic on the next backspace.
+
+The test suite covers boundary-merging insertions for combining accents, ZWJ emoji, skin-tone (Fitzpatrick) modifiers, and regional-indicator flags, then a 4000-step deterministic randomized edit fuzz asserting the invariant.
+
+**Single-line paste policy**: all line breaks (`\r\n`, `\r`, `\n`) are normalized to a single space before insertion, so multiline content is flattened rather than rejected.
+
+---
+
+## 13. Language-Neutral Rich Text ABI
+
+**IMPLEMENTED + TESTED for C, C++, Python. UNVERIFIED for Go.**
+
+The C ABI exposes opaque `gibson_line_t` and `gibson_rich_text_t` handles with span/align builders:
+
+- `gibson_line_new`, `gibson_line_add_span`, `gibson_line_set_align`, `gibson_line_free`
+- `gibson_rich_text_new`, `gibson_rich_text_add_line`, `gibson_rich_text_free`
+- `gibson_node_rich_text`, `gibson_commit_rich_text`, `gibson_insert_rich_text_before_live`
+
+Foreign callers build structured rich text without duplicating any wrapping logic; the Rust layout engine handles width, wrapping, and alignment. Covered by `tests/ffi_lifecycle.rs::test_ffi_rich_text_abi` and `test_ffi_bad_align_rejected`, and the C / C++ / Python examples.
+
+The Go bindings exist in source form and were updated during this hardening round, but **no Go compiler was available**, so they are **UNVERIFIED** (never compiled or executed).
+
+---
+
+## 14. Metrics and Byte Accounting
+
+**IMPLEMENTED + TESTED** (`src/scheduler.rs`, unit tests; `tests/ffi_lifecycle.rs` for the C struct).
+
+`RenderStats` exposes:
+
+| Field | Meaning |
+| --- | --- |
+| `frames`, `skipped_frames` | Frame accounting. |
+| `dirty_cells`, `total_cells` | Diff volume. |
+| `frame_bytes` | Wire bytes for live differential frames (control sequences included). |
+| `full_repaints` | Frames that rebuilt the region from scratch. |
+| `last_render_duration_micros` | Duration of the last frame. |
+| `history_insertions` | Total `insert_before_live` operations. |
+| `insertion_repaints` | Insertions that used `RepaintFallback`. |
+| `fast_insertions` | Insertions that used `InsertLineFastPath`. |
+| `insertion_bytes` | Wire bytes for insertion operations. |
+| `anchor_resyncs` | Physical anchor invalidations / re-establishments. |
+| `commit_bytes` | Wire bytes for commits to scrollback. |
+| `control_bytes` | Wire bytes for standalone control operations (e.g. `clear_live_region`). |
+
+`total_terminal_bytes()` is the sum of `frame_bytes + commit_bytes + insertion_bytes + control_bytes`. Byte counters measure **wire bytes for each operation**, including engine-emitted control sequences, grouped by operation rather than by character class. `RenderStats::bytes_emitted()` is a **deprecated** alias for `frame_bytes`; the old name misleadingly implied total wire output.
+
+---
+
+## 15. Scheduler and Runtime Model
+
+**IMPLEMENTED + TESTED** (`src/scheduler.rs`, `src/context.rs`).
+
+- `DEFAULT_ANIMATION_INTERVAL = 80ms`. **60 FPS is a ceiling for input latency, not a spinner target.** A 12.5 Hz spinner is visually smooth and far cheaper.
+- `Context::run_once(max_wait)` is the minimal runtime step. It waits up to `min(max_wait, next frame deadline)`, polls input (**input has priority** over decorative animation), then renders if the scheduler permits. It returns the input event, if any.
+- `Context::render_if_due`, `Context::request_render`, `Context::animation_interval`, and `Context::frame_budget` round out the loop.
+- The showcase demos (`polished_agent`, `hack_the_gibson`, `resize_test_app`) drive their loops through `run_once` rather than `render() + sleep()`.
+
+`DEFAULT_ANIMATION_INTERVAL` and the scheduler are **IMPLEMENTED + TESTED** as a module. The end-to-end interactive cadence of the demos is **PARTIALLY TESTED**: the deterministic `--auto` modes run in CI/PTY tests, but subjective smoothness and real input latency are not automatically measured.
+
+---
+
+## 16. Theme and Semantic Styles
+
+**IMPLEMENTED + TESTED** (`src/cell.rs`, unit tests; demos exercise all modes).
+
+`Theme::styles()` returns a `ThemeStyles` struct of semantic `Style` roles:
+
+`text`, `muted`, `faint`, `accent`, `success`, `warning`, `error`, `border`, `rail`, `code`, `link`, `selection`.
+
+Design rules:
+
+- `muted` is deliberately **default foreground + dim**, not a hardcoded `BrightBlack`, which is unreadable on some light terminals.
+- `Theme::no_color()` emits no color attributes.
+- Demos support `--light` / `--dark` / `--no-color` and never paint a background canvas — the native terminal background is respected.
+
+`Theme` also carries a base palette (`text`, `text_muted`, `accent`, …, `bg`); the semantic `ThemeStyles` roles are the preferred surface for components.
+
+---
+
+## 17. C ABI Boundary and Foreign Language Safety
+
+**IMPLEMENTED + TESTED** (`src/ffi.rs`; `tests/ffi_lifecycle.rs`, 16 tests).
+
+The C ABI is designed around strict safety invariants:
+
+1. **ABI versioning**: `GIBSON_ABI_VERSION = 1`. `gibson_abi_version()` reports it, and `gibson_stats_init()` initializes a stats header.
+2. **Dedicated versioned stats struct**: `gibson_stats_t` is its own `#[repr(C)]` struct — **not** `RenderStats`. It begins with `struct_size` (u32) + `abi_version` (u32), followed by 14 `u64` fields. `gibson_get_stats` validates `abi_version` and **refuses an undersized buffer instead of overflowing it**. This fixed a real 32-byte overflow and is covered by `test_ffi_stats_overflow_is_prevented` and `test_ffi_stats_rejects_wrong_abi_version`.
+3. **Enum-like inputs cross as raw `int32`**: render mode, border type, color type, wrap mode, align, and event type are all transported as raw `int32` and validated. Invalid values return `GIBSON_ERR_INVALID_PARAM`. `GibsonColor.color_type` is `int32`.
+4. **Opaque pointers**: `gibson_context_t`, `gibson_node_t`, `gibson_line_t`, `gibson_rich_text_t` hide internal Rust layouts.
+5. **No panics across FFI**: every public `extern "C"` function is wrapped in `std::panic::catch_unwind`. A caught panic records a thread-local message and returns `GIBSON_ERR_PANIC`.
+6. **Explicit memory ownership**: dedicated free functions (`gibson_node_free`, `gibson_line_free`, `gibson_rich_text_free`, `gibson_destroy_context`).
+
+Hostile-input tests cover invalid mode / border / color / wrap values, null pointers, malformed UTF-8, wrong ABI version, undersized stats buffer, and non-finite layout floats.
+
+---
+
+## 18. Visual Doctrine & Clean-Room Design Philosophy
+
+**IMPLEMENTED** in the primitives and **PARTIALLY TESTED** through the deterministic demo modes.
+
+1. **Native Background Respect**: the default terminal background must remain transparent or default. Never draw solid dark/colored rectangular canvases over the viewport. Background colors are reserved for subtle highlights.
+2. **The Rail Callout Doctrine (`Node::rail`)**: heavy box chrome consumes screen real estate; a left-border rail provides containment with minimal visual weight.
+3. **Structured Text Layout (`RichText`, `Line`, `Span`, `Theme`)**: no hardcoded ANSI string literals in components; semantic theme tokens compose styles; instant theme switching and plain-text rendering for pipes.
+4. **Zero-Escape Non-TTY Redirection**: piped output suppresses interactive escapes and emits clean plain UTF-8.
+
+---
+
+## 19. Terminal Autowrap and Right-Margin Safety
+
+**IMPLEMENTED + TESTED** (`tests/screen_state_vt100.rs::test_vt100_autowrap_protection_at_right_margin`).
+
+When text or background cells reach column `width - 1`, standard VT100/ANSI terminals trigger autowrap (DECAWM), which can cause tearing and vertical drift during differential rendering. LibGibson protects against this with:
+
+1. **DECAWM Autowrap Disabling**: the ANSI compiler wraps diff emission in `\x1b[?7l` before cell runs and `\x1b[?7h` afterward.
+2. **Surface Right-Edge Clipping**: wide glyphs occupying 2 columns are clipped if `x + 1 >= width`.
+
+---
+
+## 20. Known Limitations
+
+The following are **not** implemented or **not** verified. Do not describe them as complete:
+
+- **Go bindings are UNVERIFIED** — source exists and was updated, but no Go compiler was available.
+- **Windows / ConPTY is UNVERIFIED** — only Linux x86_64 (Ubuntu 24.04) was exercised.
+- **tmux / screen / SSH matrix is UNVERIFIED.**
+- **Terminal capability negotiation is NOT implemented.** The fast insertion path assumes the terminal supports `CSI L`; this assumption is not probed at runtime. `primary`/`secondary` device attribute queries and truecolor/graphics negotiation are future work.
+- **Absolute cursor query (DSR) is NOT implemented.** Re-anchoring on resize is best-effort relative erase-from-cursor-down, not exact absolute recovery.
+- **Hard `SIGKILL` cannot be intercepted** by any userland process.
+- **Ctrl-C handling** in the interactive demos is implemented as raw-mode key events; the engine relies on RAII / panic-hook restoration for terminal state. Signal handling is not a general engine guarantee.
+- **Fuzzing**: `TextInputState` has deterministic randomized edit fuzzing, but there is no `cargo-fuzz` / AFL target for arbitrary byte streams or resize storms.

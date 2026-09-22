@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust (fmt, clippy, test, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test
+
+      - name: Build release
+        run: cargo build --release
+
+  bindings:
+    name: Bindings (C, C++, Python)
+    runs-on: ubuntu-latest
+    needs: rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: C example
+        run: |
+          gcc -Iinclude bindings/c/example.c -Ltarget/release -lgibson -Wl,-rpath,'$PWD/target/release' -o /tmp/example_c
+          /tmp/example_c
+
+      - name: C++ example
+        run: |
+          g++ -std=c++17 -Iinclude bindings/cpp/example.cpp -Ltarget/release -lgibson -Wl,-rpath,'$PWD/target/release' -o /tmp/example_cpp
+          /tmp/example_cpp
+
+      - name: Python ctypes example
+        env:
+          PYTHONPATH: bindings/python
+        run: python3 bindings/python/example.py
+
+  asan:
+    name: AddressSanitizer (C, C++)
+    runs-on: ubuntu-latest
+    needs: rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: C example (ASan + UBSan)
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: |
+          gcc -Iinclude bindings/c/example.c \
+            -fsanitize=address,undefined \
+            -Ltarget/release -lgibson -Wl,-rpath,'$PWD/target/release' \
+            -o /tmp/example_c_asan
+          /tmp/example_c_asan
+
+      - name: C++ example (ASan + UBSan)
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: |
+          g++ -std=c++17 -Iinclude bindings/cpp/example.cpp \
+            -fsanitize=address,undefined \
+            -Ltarget/release -lgibson -Wl,-rpath,'$PWD/target/release' \
+            -o /tmp/example_cpp_asan
+          /tmp/example_cpp_asan
+
+  go:
+    name: Go bindings (best effort)
+    runs-on: ubuntu-latest
+    needs: rust
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Vet
+        working-directory: bindings/go
+        run: go vet ./...
+
+      - name: Build
+        working-directory: bindings/go
+        run: go build ./...
+
+  pty:
+    name: PTY integration tests
+    runs-on: ubuntu-latest
+    needs: rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: PTY tests
+        run: cargo test --test pty_integration --test pty_resize_torture -- --test-threads=1

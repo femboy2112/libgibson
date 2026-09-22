@@ -1,79 +1,118 @@
 # LibGibson Architectural Roadmap
 
-This document outlines the planned future milestones and next architectural frontiers for LibGibson.
+This document outlines completed work and the planned future milestones for LibGibson.
+
+## Verification labels
+
+- **IMPLEMENTED + TESTED** — the code exists and is covered by automated tests in `cargo test`.
+- **PARTIALLY TESTED** — implemented, with a named facet that is not automatically verified.
+- **UNVERIFIED** — present in source or assumed, but never compiled/executed in an attested environment.
+- **PLANNED** — not implemented.
+
+> Historical note: earlier revisions of this roadmap marked phases "Completed" and listed Go bindings as verified. Go is **UNVERIFIED** (no Go toolchain), and the hardening round below re-states what is actually proven.
 
 ---
 
-## Phase 1: Core Engine & Minimal Vertical Slice (Completed)
+## Phase 1: Core Engine & Minimal Vertical Slice — IMPLEMENTED + TESTED
 
 - [x] Clean-room cell framebuffer architecture
 - [x] Compact, stack-allocated grapheme cluster model (`CompactString`)
 - [x] Unicode width measurement and wide glyph overwrite protection
 - [x] Taffy Flexbox integration with custom text measurement
-- [x] Declarative UI node tree (Box, Row, Column, Text, Border, Spinner, TextInput)
+- [x] Declarative UI node tree (Box, Row, Column, Text, RichText, Border, Spinner, TextInput)
 - [x] Differential diff engine with run coalescing and erase-to-end-of-line (`CSI K`)
 - [x] Stateful minimal ANSI escape sequence compiler
-- [x] Flagship Inline Mode with $O(1)$ immutable scrollback commit semantics
+- [x] Flagship Inline Mode with immutable-scrollback commit semantics
 - [x] Fullscreen alternate-buffer mode reusing the same rendering pipeline
-- [x] Frame scheduler with coalescing, FPS budget throttling, and telemetry metrics
+- [x] Frame scheduler with frame-budget throttling and telemetry metrics
 - [x] Grapheme-aware text input component with navigation and bracketed paste
 - [x] RAII terminal lifecycle guard and global panic hook restoration
 - [x] Non-interactive / CI redirection detection and plain text degradation
 - [x] Stable `extern "C"` ABI with opaque handles and panic containment
-- [x] Native bindings and verified examples for C, C++, Python, and Go
-- [x] Real PTY integration testing with `portable-pty`
+- [x] Real PTY integration testing with `portable-pty` (`pty_integration`, `pty_resize_torture`)
 
 ---
 
-## Phase 1.5: Agent-Class Typography & Interactive Primitives (Completed)
+## Phase 1.5: Agent-Class Typography & Interactive Primitives — IMPLEMENTED + TESTED
 
 - [x] **Chrome Primitives**: `Node::rule` (horizontal divider with optional title) and `Node::rail` (left-border callout).
-- [x] **Typography & Hierarchy System**: `Span`, `Line`, `RichText`, and semantic `Theme` tokens with zero raw SGR escape codes.
-- [x] **Asynchronous Scrollback Insertion (`insert_before_live`)**: Insert events into native scrollback above active live prompts without dropping frames or triggering full repaints.
-- [x] **Display-Width-Aware TextInput**: Proper horizontal scrolling, wide CJK, and emoji display-width calculations.
+- [x] **Typography & Hierarchy System**: `Span`, `Line`, `RichText`, and semantic `Theme::styles()` roles with zero raw SGR escape codes in components.
+- [x] **Asynchronous Scrollback Insertion (`insert_before_live`)**: two named strategies — `InsertLineFastPath` (uses `CSI L`; no live repaint) and `RepaintFallback` (always correct; repaints and restores cursor). Proven directly in `whole_renderer_vt100`.
+- [x] **Display-Width-Aware TextInput**: horizontal scrolling, wide CJK, and emoji display-width calculations.
 - [x] **Right-Margin Autowrap Protection**: DECAWM `\x1b[?7l` disabling and right-boundary wide glyph clipping.
-- [x] **Responsive Layout Sizing**: Percentage width (`percent_width`), min/max dimensions, and per-side padding.
-- [x] **Virtual Terminal Screen State Verification**: `vt100` parser automated tests verifying exact screen character grids and cursor positions.
-- [x] **Rapid Resize & Narrow Terminal Torture Tests**: Zero panics, bounded inline heights, and valid cursor coordinates across cyclic resizing down to 10 columns.
-- [x] **Flagship Polished Agent CLI Demo**: Restrained, typography-driven agent interface with rule header, rail callouts, live spinner, permission selector, and zero-escape non-TTY redirection.
+- [x] **Responsive Layout Sizing**: percentage width (`percent_width`), min/max dimensions, and per-side padding.
+- [x] **Virtual Terminal Screen State Verification**: `vt100` parser automated tests verifying exact screen grids and cursor positions (`screen_state_vt100`, `whole_renderer_vt100`).
+- [x] **Rapid Resize & Narrow Terminal Torture Tests**: bounded inline heights and valid cursor coordinates across cyclic resizing down to narrow widths. The **re-anchor path is PARTIALLY TESTED** — erase-from-cursor-down recovery is exercised, but exact absolute recovery is not (DSR unimplemented).
+- [x] **Flagship `polished_agent` CLI Demo**: restrained, typography-driven agent interface with rule header, rail callouts, stable-height live plan, permission selector, persistent Unicode input, and zero-escape non-TTY redirection. `hack_the_gibson` is the maximalist twin with zero raw ANSI literals.
 
 ---
 
-## Phase 2: Input Protocols & Interaction Enhancements
+## Phase 1.75: Documentation Truth & Engine Hardening Round — IMPLEMENTED + TESTED
 
-- [ ] **Kitty Keyboard Protocol**: Support progressive enhancement for disambiguated escape keys, key release events, and modifier combinations.
-- [ ] **Focus Management Tree**: Hierarchical focus tree with Tab / Shift-Tab cycling and focus restoration.
-- [ ] **Event Bubbling and Capture**: Structured event dispatch pipeline allowing parent containers to intercept or bubble user events.
-- [ ] **Mouse Tracking**: Optional SGR mouse reporting (`CSI ? 1006 h`) for click-to-focus, scroll wheel handling, and selection.
-- [ ] **OSC 8 Terminal Hyperlinks**: Embedded clickable URLs in Text nodes with fallback plain-text formatting.
+This round converted earlier over-strong claims into verified behavior and explicit gaps.
+
+- [x] **Atomic `TerminalTransaction`**: one `write_all` + `flush` batching synchronized-update begin/end (`CSI ?2026 h/l`), private modes, cursor motion, diff bytes, final cursor placement, and visibility. Sync-update ownership removed from `AnsiCompiler`.
+- [x] **Explicit Physical Anchor**: `AnchorState::{Invalid, Stable{cols,rows,live_height}}` plus last cursor position/visibility. Empty cell diffs still emit when cursor state changes. Geometry changes invalidate the anchor, discard the diff baseline, re-anchor, and increment `anchor_resyncs`. Tested in `whole_renderer_vt100` and the PTY resize probe.
+- [x] **Two Insertion Strategies**: `InsertLineFastPath` and `RepaintFallback`, reported through `fast_insertions` / `insertion_repaints`. Universal zero-repaint is explicitly **not** claimed.
+- [x] **Unicode Mutation Invariant**: `TextInputState` uses byte-range edits and re-derives the cursor grapheme from the complete resulting string. `cursor_grapheme <= grapheme_count` holds across combining accents, ZWJ emoji, skin-tone modifiers, and flags. Deterministic randomized edit fuzzing included. Single-line paste normalizes `\r\n`, `\r`, `\n` to a space.
+- [x] **Structured Static Output**: `commit_text` / `commit_rich_text` / `commit_node` share the width-aware layout engine; control characters are neutralized at the cell model boundary; `commit_raw_ansi_unchecked` is the escape hatch; the ANSI stripper is documented as **not** a sanitizer.
+- [x] **Language-Neutral Rich Text ABI**: opaque `gibson_line_t` / `gibson_rich_text_t` with span/align builders. **C, C++, Python: IMPLEMENTED + TESTED. Go: UNVERIFIED.**
+- [x] **Metrics / Byte Accounting**: `frame_bytes`, `commit_bytes`, `insertion_bytes`, `control_bytes`, `total_terminal_bytes()`, plus `fast_insertions` / `insertion_repaints` / `anchor_resyncs`. `bytes_emitted()` deprecated in favor of `frame_bytes`.
+- [x] **Scheduler / Runtime Model**: `DEFAULT_ANIMATION_INTERVAL = 80ms` and `Context::run_once(max_wait)` with input priority. Demos use `run_once` instead of `render() + sleep()`.
+- [x] **Versioned C ABI**: `GIBSON_ABI_VERSION = 1`, `gibson_abi_version()`, `gibson_stats_init()`, dedicated `#[repr(C)]` `gibson_stats_t` with `struct_size` + `abi_version` + 14 `u64` fields. `gibson_get_stats` validates the version and refuses an undersized buffer (fixing a real 32-byte overflow). Enum-like inputs cross as validated raw `int32`.
+- [x] **Hostile-Input Test Coverage**: invalid mode/border/color/wrap, null pointers, malformed UTF-8, wrong ABI version, undersized stats buffer, and non-finite layout floats.
+- [x] **Verification Toolchain**: 100 tests (49 unit + 51 integration), clean `clippy -D warnings`, clean `fmt --check`, successful release build, and C/C++ examples clean under ASan + UBSan (LeakSanitizer disabled). Python `ctypes` example runs.
+
+### Known gaps carried out of this round
+
+- Go bindings **UNVERIFIED** (no toolchain).
+- Windows / ConPTY **UNVERIFIED**; only Linux x86_64 exercised.
+- tmux / screen / SSH matrix **UNVERIFIED**.
+- Terminal capability negotiation **NOT implemented**; the `CSI L` fast-insertion assumption is not probed.
+- Absolute cursor query (DSR) **NOT implemented**.
+- Hard `SIGKILL` cannot be intercepted.
+- Ctrl-C is a raw-mode key event in demos; no general signal-handling guarantee.
+- No `cargo-fuzz` / AFL target yet.
 
 ---
 
-## Phase 3: Advanced Layout & Rich Components
+## Phase 2: Input Protocols & Interaction Enhancements — PLANNED
 
-- [ ] **Incremental Layout Caching**: Cache Taffy layout subtrees across frames when node contents are unmodified.
-- [ ] **Scrollable Viewport Widgets**: Scrollable virtual boxes with vertical and horizontal scrollbars.
-- [ ] **Virtualization Engine**: Virtual list and table rendering supporting datasets with millions of rows without memory pressure.
+- [ ] **Kitty Keyboard Protocol**: progressive enhancement for disambiguated escape keys, key release events, and modifier combinations.
+- [ ] **Focus Management Tree**: hierarchical focus tree with Tab / Shift-Tab cycling and focus restoration.
+- [ ] **Event Bubbling and Capture**: structured event dispatch pipeline allowing parent containers to intercept or bubble user events.
+- [ ] **Mouse Tracking**: optional SGR mouse reporting (`CSI ? 1006 h`) for click-to-focus, scroll wheel handling, and selection.
+- [ ] **OSC 8 Terminal Hyperlinks**: embedded clickable URLs in Text nodes with fallback plain-text formatting.
+
+---
+
+## Phase 3: Advanced Layout & Rich Components — PLANNED
+
+- [ ] **Incremental Layout Caching**: cache Taffy layout subtrees across frames when node contents are unmodified.
+- [ ] **Scrollable Viewport Widgets**: scrollable virtual boxes with vertical and horizontal scrollbars.
+- [ ] **Virtualization Engine**: virtual list and table rendering supporting very large datasets without memory pressure.
 - [ ] **Rich Component Library**:
   - Tables with auto-sizing columns and alignment.
   - Progress bars with smooth Unicode fraction characters (`▏▎▍▌▋▊▉█`).
   - Tree views with expandable/collapsible nodes.
   - Tab headers and segmented controls.
-- [ ] **Markdown and Syntax Highlighting**: Streaming Markdown parser with Syntect or Tree-sitter token colorization.
+- [ ] **Markdown and Syntax Highlighting**: streaming Markdown parser with Syntect or Tree-sitter token colorization.
 
 ---
 
-## Phase 4: Styling, Themes, and Accessibility
+## Phase 4: Styling, Themes, and Accessibility — PLANNED
 
-- [ ] **24-bit Truecolor Palettes and Themes**: Support CSS-like theme definitions with automatic fallback to ANSI-256 or 16-color ANSI.
-- [ ] **Terminal Capability Negotiation**: Automatic detection via Primary and Secondary Device Attributes (`CSI c`, `CSI > c`) for synchronized output, color depth, and graphics protocols.
-- [ ] **Accessibility (A11y)**: Screen reader annotations, semantic headings, and ARIA-like terminal roles for assistive technology.
+- [ ] **24-bit Truecolor Palettes and Themes**: CSS-like theme definitions with automatic fallback to ANSI-256 or 16-color ANSI.
+- [ ] **Terminal Capability Negotiation**: automatic detection via Primary and Secondary Device Attributes (`CSI c`, `CSI > c`) for synchronized output, color depth, and graphics protocols. This also lets the engine choose the insertion strategy from measured capability rather than assumption.
+- [ ] **DSR Absolute Anchoring**: query the cursor position (`CSI 6 n`) to re-anchor exactly after resize/reflow instead of the current best-effort relative rebuild.
+- [ ] **Accessibility (A11y)**: screen reader annotations, semantic headings, and ARIA-like terminal roles for assistive technology.
 
 ---
 
-## Phase 5: Protocol Extensions & Hardening
+## Phase 5: Protocol Extensions & Hardening — PLANNED
 
-- [ ] **Terminal Graphics Protocols**: Support inline image rendering via Kitty graphics protocol, iTerm2 inline images, and Sixel graphics.
-- [ ] **Windows ConPTY Torture Testing**: Extended automated testing under Windows Console API and ConPTY.
-- [ ] **Multiplexer & Remote Shell Hardening**: Specialized test matrix for tmux, screen, and SSH connections over high-latency networks.
-- [ ] **Property & Fuzz Testing**: AFL / `cargo-fuzz` test suite exercising arbitrary Unicode sequences, invalid ANSI input, and rapid terminal resizes.
+- [ ] **Terminal Graphics Protocols**: inline image rendering via Kitty graphics protocol, iTerm2 inline images, and Sixel graphics.
+- [ ] **Windows ConPTY Torture Testing**: extended automated testing under the Windows Console API and ConPTY.
+- [ ] **Multiplexer & Remote Shell Hardening**: specialized test matrix for tmux, screen, and SSH connections over high-latency networks.
+- [ ] **Property & Fuzz Testing**: `cargo-fuzz` / AFL suite exercising arbitrary Unicode sequences, arbitrary terminal byte streams, invalid ANSI input, and rapid terminal resizes.
+- [ ] **Go / Foreign Binding CI**: compile and run the Go bindings once a Go toolchain is available; add binding smoke tests to CI.
