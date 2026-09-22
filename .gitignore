@@ -1,0 +1,7 @@
+/target
+**/*.rs.bk
+*.orig
+bindings/c/example_c
+bindings/cpp/example_cpp
+.DS_Store
+__pycache__/
