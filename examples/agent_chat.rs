@@ -17,9 +17,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // =========================================================================
     // STEP 1: Print already committed immutable transcript
     // =========================================================================
-    ctx.commit("\x1b[1;34m● LibGibson Engine\x1b[0m session started.")?;
-    ctx.commit("\x1b[90m[system] Initialized live-region cell framebuffer with Taffy flexbox layout.\x1b[0m")?;
-    ctx.commit("\x1b[1;37mUser:\x1b[0m Run test suite and check code quality.")?;
+    ctx.commit_raw_ansi_unchecked("\x1b[1;34m● LibGibson Engine\x1b[0m session started.")?;
+    ctx.commit_raw_ansi_unchecked(
+        "\x1b[90m[system] Initialized live-region cell framebuffer with Taffy flexbox layout.\x1b[0m",
+    )?;
+    ctx.commit_raw_ansi_unchecked("\x1b[1;37mUser:\x1b[0m Run test suite and check code quality.")?;
 
     if !auto_mode {
         sleep(Duration::from_millis(500));
@@ -88,7 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // STEP 5: Commit the completed assistant response into immutable scrollback
     // =========================================================================
     let committed_response = format!("\x1b[1;32mAssistant:\x1b[0m\n{}", accumulated_text);
-    ctx.commit(&committed_response)?;
+    ctx.commit_raw_ansi_unchecked(&committed_response)?;
 
     // =========================================================================
     // STEP 6 & 7: Permission selector in live region
@@ -132,7 +134,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "\x1b[90mPermission granted: {}\x1b[0m",
         options[selected_idx]
     );
-    ctx.commit(&decision_text)?;
+    ctx.commit_raw_ansi_unchecked(&decision_text)?;
 
     // =========================================================================
     // STEP 10: Multiline / interactive prompt with TextInput
@@ -174,15 +176,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Final commit of input
     let final_text = format!("\x1b[1;34m❯\x1b[0m {}", input_state.text);
-    ctx.commit(&final_text)?;
+    ctx.commit_raw_ansi_unchecked(&final_text)?;
 
     // Report renderer statistics
     let stats = ctx.stats();
     let stats_line = format!(
-        "\x1b[90m[metrics] frames: {}, dirty_cells: {}, total_bytes_emitted: {}, repaints: {}\x1b[0m",
-        stats.frames, stats.dirty_cells, stats.bytes_emitted, stats.full_repaints
+        "\x1b[90m[metrics] frames: {}, dirty_cells: {}, total_frame_bytes: {}, repaints: {}\x1b[0m",
+        stats.frames, stats.dirty_cells, stats.frame_bytes, stats.full_repaints
     );
-    ctx.commit(&stats_line)?;
+    ctx.commit_raw_ansi_unchecked(&stats_line)?;
 
     ctx.restore()?;
     Ok(())
