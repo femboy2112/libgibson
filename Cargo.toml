@@ -33,6 +33,10 @@ path = "examples/agent_chat.rs"
 name = "perf_probe"
 path = "examples/perf_probe.rs"
 
+[[example]]
+name = "hack_the_gibson"
+path = "examples/hack_the_gibson.rs"
+
 [profile.release]
 opt-level = 3
 lto = true
