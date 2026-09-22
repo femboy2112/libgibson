@@ -78,7 +78,7 @@ ctx.commit_text("Finalized output text")?; // ctx.commit(...) is an alias
 
 ## Verification Status
 
-Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **108 tests**: 51 library unit tests and 57 integration tests (across `commit_invariance`, `diff_golden`, `ffi_lifecycle`, `non_tty_redirection`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `screen_state_vt100`, `structured_output`, and `whole_renderer_vt100`).
+Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **121 tests**: 59 library unit tests and 62 integration tests (across `commit_invariance`, `demo_render`, `diff_golden`, `ffi_lifecycle`, `non_tty_redirection`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `screen_state_vt100`, `structured_output`, and `whole_renderer_vt100`).
 
 `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings are UNVERIFIED** — no Go toolchain was available, so they were never compiled. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
 
@@ -90,6 +90,7 @@ Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repos
 - **Wide Glyph Overwrite Protection** (TESTED): Writing into a cell occupied by or adjacent to a wide character safely clears orphaned continuation cells.
 - **Explicit Physical Anchor** (TESTED): The renderer tracks `AnchorState` plus last cursor position/visibility; empty cell diffs still emit when cursor state changes. Geometry changes invalidate the anchor and trigger a re-anchor.
 - **Structured `RichText` / `Line` / `Span` + Semantic `Theme::styles()`** (TESTED): Style roles (`text`, `muted`, `faint`, `accent`, `success`, `warning`, `error`, `border`, `rail`, `code`, `link`, `selection`) instead of hardcoded ANSI. `muted` is default foreground + dim, readable on light and dark terminals. `Theme::no_color()` is available.
+- **Visual composition helpers** (TESTED): `gibson::show` provides gradient spans, sub-cell progress meters (`▏▎▍▌▋▊▉█`), sparklines (`▁▂▃▄▅▆▇█`) and deterministic hex dumps as plain `Span`s/`Line`s — no widgets and no new layout semantics. `Node::panel` adds titled bordered containers and `Color::lerp` enables gradients. All degrade to zero color under `--no-color`.
 - **Static structured output** (TESTED): `commit_text`, `commit_rich_text`, and `commit_node` route through the same width-aware layout/wrapping engine as live nodes. Control characters in text are neutralized at the cell model boundary, so they cannot inject `ESC`/`OSC`/`CSI`. `commit_raw_ansi_unchecked` is the explicit escape hatch.
 - **Taffy-Powered Flexbox Layout** (TESTED): Flex containers (`Row`, `Column`), percentage width, min/max constraints, padding, gap, alignment, justification, and intrinsic text measurement with word wrapping.
 - **Stateful Differential ANSI Compiler** (TESTED): Groups dirty cells into contiguous runs, computes minimum-distance cursor repositioning, uses `CSI K` when content shrinks, and wraps diff emission in autowrap disabling (`CSI ? 7 l/h`). Synchronized-update (`CSI ? 2026 h/l`) ownership lives in `TerminalTransaction`, not the compiler.
@@ -239,7 +240,7 @@ cargo run --example polished_agent -- --no-color
 cargo run --example resize_test_app
 ```
 
-`polished_agent` demonstrates responsive layout (40/60/80/120/160 columns), a stable-height live plan, streaming `RichText`, tool operations with queued/running/success/warning/error states, an async event inserted above the live region, a permission selector with wraparound + number keys, persistent Unicode input, background events while typing, and measured telemetry. `hack_the_gibson` uses zero raw ANSI literals and exercises `insert_before_live` and scheduler-driven animation.
+`polished_agent` and `hack_the_gibson` are now **full-screen dashboards**: they own the character-cell framebuffer and render persistent multi-panel UIs with gradient/shimmer banners, sub-cell progress meters, live sparklines, hex dumps, scan sweeps, an event feed and a prompt/selector footer. `polished_agent` demonstrates responsive layout (40/60/80/120/160 columns), a stable-height task plan, streaming `RichText`, tool operations with queued/running/success/warning/error states, an async background event, a permission selector with wraparound + number keys, persistent Unicode input, background events while typing, Ctrl-C cancel, and measured telemetry. `hack_the_gibson` uses zero raw ANSI literals and adds a tactical payload selector and a root shell. Both support `--inline` to exercise the scrollback `insert_before_live` path and `--auto`/`--scripted` for deterministic runs; theme proofs are `--light`, `--dark`, `--no-color` (which emits no color at all).
 
 ---
 
@@ -249,7 +250,7 @@ cargo run --example resize_test_app
 # Build library and release artifacts (.so, .a)
 cargo build --release
 
-# Run the full test suite (108 tests: 51 unit + 57 integration)
+# Run the full test suite (121 tests: 59 unit + 62 integration)
 cargo test
 
 # Static analysis and formatting checks
@@ -334,6 +335,7 @@ The Go bindings in `bindings/go/` are source-only and **UNVERIFIED** because no 
     ├── pty_resize_torture.rs   # PTY resize storm with assertions
     ├── diff_golden.rs          # Minimal ANSI patch & diff tests
     ├── commit_invariance.rs    # Scrollback separation & O(1) diff tests
+    ├── demo_render.rs         # Full-screen demo PTY -> vt100 structure checks
     ├── ffi_lifecycle.rs        # C ABI lifecycle, validation, hostile-input tests
     ├── non_tty_redirection.rs  # Plain-text degradation tests (zero escapes)
     ├── structured_output.rs    # commit_text/rich/node layout parity + control safety

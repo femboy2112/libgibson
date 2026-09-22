@@ -481,3 +481,69 @@ fn whole_renderer_long_input_survives_resize() {
     assert!(cy < 8, "cursor y {cy} escaped height after resize");
     assert_eq!(h.renderer.anchor_resyncs, 1);
 }
+
+#[test]
+fn whole_renderer_fullscreen_owns_the_canvas() {
+    use gibson::renderer::RenderMode;
+    let cols = 40u16;
+    let rows = 12u16;
+    let mut session = TerminalSession::headless(cols, rows);
+    let mut renderer = Renderer::new(RenderMode::Fullscreen);
+    let mut parser = vt100::Parser::new(rows, cols, 0);
+    let mut out = Vec::new();
+
+    let mut root = Node::col()
+        .percent_width(100.0)
+        .percent_height(100.0)
+        .child(
+            Node::panel("CONSOLE", gibson::BorderType::Rounded, Style::default())
+                .percent_width(100.0)
+                .percent_height(100.0)
+                .child(Node::text("hello fullscreen", Style::default())),
+        );
+    let (_d, _t, bytes, full, _p) = renderer.render(&mut root, &mut session, &mut out).unwrap();
+    assert!(full);
+    assert!(bytes > 0);
+    parser.process(&out);
+    let screen = parser.screen().contents();
+    assert!(screen.contains("CONSOLE"), "screen: {screen:?}");
+    assert!(screen.contains("hello fullscreen"));
+    assert!(screen.contains('╭'), "screen: {screen:?}");
+    assert!(screen.contains('╯'));
+
+    // A *changed* second frame must not drift or scroll the alt screen.
+    let mut root2 = Node::col()
+        .percent_width(100.0)
+        .percent_height(100.0)
+        .child(
+            Node::panel("CONSOLE", gibson::BorderType::Rounded, Style::default())
+                .percent_width(100.0)
+                .percent_height(100.0)
+                .child(Node::text("changed fullscreen", Style::default())),
+        );
+    let mut out2 = Vec::new();
+    let (_d2, _t2, bytes2, _full2, _p2) = renderer
+        .render(&mut root2, &mut session, &mut out2)
+        .unwrap();
+    assert!(bytes2 > 0);
+    parser.process(&out2);
+    let screen2 = parser.screen().contents();
+    assert!(screen2.contains("changed fullscreen"));
+    assert_eq!(
+        screen2.matches("CONSOLE").count(),
+        1,
+        "dashboard duplicated/scrolled: {screen2:?}"
+    );
+    assert!(
+        screen2.lines().next().unwrap_or("").contains('╭'),
+        "top border moved: {screen2:?}"
+    );
+
+    // Identical third frame emits nothing.
+    let mut out3 = Vec::new();
+    let (_d3, _t3, bytes3, full3, _p3) = renderer
+        .render(&mut root2, &mut session, &mut out3)
+        .unwrap();
+    assert!(!full3);
+    assert_eq!(bytes3, 0);
+}

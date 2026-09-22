@@ -194,6 +194,11 @@ impl Renderer {
 
         match self.mode {
             RenderMode::Fullscreen => {
+                // Home the *physical* cursor before compiling: the compiler's
+                // relative motion is meaningless unless the real cursor is where
+                // the compiler thinks it is. Without this, each frame drifts by
+                // the previous frame's final cursor and eventually scrolls.
+                tx.push(b"\x1b[H");
                 self.compiler.reset_cursor(0, 0);
                 let bytes = self.compiler.compile(&diff);
                 tx.push(&bytes);

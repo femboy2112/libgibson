@@ -43,6 +43,19 @@ impl Rect {
             Rect::new(0, 0, 0, 0)
         }
     }
+
+    /// Shrinks this rectangle inward on every side by `amount` (saturating).
+    pub fn shrink(&self, amount: u16) -> Rect {
+        if self.width <= amount * 2 || self.height <= amount * 2 {
+            return Rect::new(self.x, self.y, 0, 0);
+        }
+        Rect::new(
+            self.x + amount,
+            self.y + amount,
+            self.width - amount * 2,
+            self.height - amount * 2,
+        )
+    }
 }
 
 /// Border styling variants.

@@ -34,6 +34,90 @@ impl Color {
     pub const fn ansi(n: u8) -> Self {
         Color::Ansi256(n)
     }
+
+    /// Approximate RGB triple for this color. 16-color and 256-color values are
+    /// mapped onto the xterm palette so gradients work across color depths.
+    pub fn to_rgb(self) -> (u8, u8, u8) {
+        match self {
+            Color::Reset => (204, 204, 204),
+            Color::Black => (0, 0, 0),
+            Color::Red => (205, 49, 49),
+            Color::Green => (13, 188, 121),
+            Color::Yellow => (229, 229, 16),
+            Color::Blue => (36, 114, 200),
+            Color::Magenta => (188, 63, 188),
+            Color::Cyan => (17, 168, 205),
+            Color::White => (229, 229, 229),
+            Color::BrightBlack => (102, 102, 102),
+            Color::BrightRed => (241, 76, 76),
+            Color::BrightGreen => (35, 209, 139),
+            Color::BrightYellow => (245, 245, 67),
+            Color::BrightBlue => (59, 142, 234),
+            Color::BrightMagenta => (214, 112, 214),
+            Color::BrightCyan => (41, 184, 219),
+            Color::BrightWhite => (255, 255, 255),
+            Color::Ansi256(n) => xterm_rgb(n),
+            Color::Rgb(r, g, b) => (r, g, b),
+        }
+    }
+
+    /// Linear interpolation toward `other` by `t` in `[0, 1]`, returning truecolor.
+    ///
+    /// Useful for gradients, heat maps and animated color sweeps.
+    pub fn lerp(self, other: Color, t: f32) -> Color {
+        let t = t.clamp(0.0, 1.0);
+        let (r1, g1, b1) = self.to_rgb();
+        let (r2, g2, b2) = other.to_rgb();
+        let mix = |a: u8, b: u8| ((a as f32) + (b as f32 - a as f32) * t).round() as u8;
+        Color::Rgb(mix(r1, r2), mix(g1, g2), mix(b1, b2))
+    }
+}
+
+/// Maps an xterm-256 index to an approximate RGB triple.
+fn xterm_rgb(n: u8) -> (u8, u8, u8) {
+    match n {
+        0..=15 => {
+            // Reuse the 16 base colors.
+            let base = [
+                Color::Black,
+                Color::Red,
+                Color::Green,
+                Color::Yellow,
+                Color::Blue,
+                Color::Magenta,
+                Color::Cyan,
+                Color::White,
+                Color::BrightBlack,
+                Color::BrightRed,
+                Color::BrightGreen,
+                Color::BrightYellow,
+                Color::BrightBlue,
+                Color::BrightMagenta,
+                Color::BrightCyan,
+                Color::BrightWhite,
+            ];
+            // Avoid infinite recursion: map base colors directly.
+            match base[(n & 0x0f) as usize] {
+                Color::Ansi256(_) => (204, 204, 204),
+                c => {
+                    let (r, g, b) = c.to_rgb();
+                    (r, g, b)
+                }
+            }
+        }
+        16..=231 => {
+            let n = n - 16;
+            let r = n / 36;
+            let g = (n % 36) / 6;
+            let b = n % 6;
+            let axis = |v: u8| if v == 0 { 0 } else { 55 + 40 * v };
+            (axis(r), axis(g), axis(b))
+        }
+        _ => {
+            let v = 8 + 10 * (n - 232);
+            (v, v, v)
+        }
+    }
 }
 
 /// Design tokens defining an application-wide or component-level visual palette.
@@ -683,6 +767,26 @@ mod tests {
         let g = Glyph::new("e\u{0301}");
         assert_eq!(g.display_width, 1);
         assert_eq!(g.grapheme.as_str(), "é");
+    }
+
+    #[test]
+    fn test_color_lerp_and_xterm_mapping() {
+        assert_eq!(
+            Color::Rgb(0, 0, 0).lerp(Color::Rgb(100, 200, 50), 0.0),
+            Color::Rgb(0, 0, 0)
+        );
+        assert_eq!(
+            Color::Rgb(0, 0, 0).lerp(Color::Rgb(100, 200, 50), 1.0),
+            Color::Rgb(100, 200, 50)
+        );
+        assert_eq!(
+            Color::Rgb(0, 0, 0).lerp(Color::Rgb(100, 200, 50), 0.5),
+            Color::Rgb(50, 100, 25)
+        );
+        // 256-color indices resolve to concrete RGB (cube + grayscale).
+        assert_eq!(Color::Ansi256(16).to_rgb(), (0, 0, 0));
+        assert_eq!(Color::Ansi256(231).to_rgb(), (255, 255, 255));
+        assert_eq!(Color::Ansi256(232).to_rgb(), (8, 8, 8));
     }
 
     #[test]

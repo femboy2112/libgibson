@@ -1,44 +1,158 @@
-//! HACK THE GIBSON — maximalist LibGibson showcase.
+//! HACK THE GIBSON — maximalist full-screen Gibson terminal.
 //!
-//! The loud twin of `polished_agent`. Where that demo shows restraint, this one
-//! pushes the engine hard while staying architecturally clean:
+//! Owns the framebuffer and renders a live dashboard: a gradient/shimmer banner,
+//! mainframe gauges, an animated `garbage.bin` hex dump, a sweeping Da Vinci
+//! scan, a network route animation, a scrolling trace feed, a big gradient
+//! transfer meter with a throughput sparkline, a tactical payload selector and a
+//! root shell. Zero raw ANSI literals — everything is RichText/Span/Theme.
 //!
-//! * structured `RichText`/`Span`/`Line` and semantic `Theme` roles (no raw ANSI)
-//! * responsive layout at 40 / 60 / 80 / 120 / 160 columns (no fixed width)
-//! * differential live animation driven by the frame scheduler
-//! * `insert_before_live` async events above a stable live viewport
-//! * a persistent grapheme-aware shell `TextInput`
-//! * deterministic `--auto` mode for CI and snapshotting
-//!
-//! `--light`, `--dark`, `--no-color` select the palette.
+//! `--auto` is deterministic; `--inline` uses the scrollback path; `--light`,
+//! `--dark`, `--no-color` are theme proofs.
 
 use gibson::cell::{Color, Line, RichText, Span, Style, Theme};
 use gibson::context::Context;
-use gibson::input::{Event, KeyCode, TextInputState};
-use gibson::node::Node;
+use gibson::input::{Event, KeyCode, KeyModifiers, TextInputState};
+use gibson::node::{Node, WrapMode};
+use gibson::show;
+use gibson::{BorderType, ThemeStyles};
 use std::env;
 use std::time::{Duration, Instant};
 
-fn hacker_theme(light: bool, no_color: bool) -> Theme {
-    if no_color {
-        return Theme::no_color();
-    }
-    if light {
-        Theme {
-            text: Color::Black,
-            text_muted: Color::Black,
-            accent: Color::Green,
-            success: Color::Green,
-            warning: Color::Magenta,
-            error: Color::Red,
-            border: Color::BrightBlack,
-            rail: Color::Green,
-            code: Color::Magenta,
-            ..Theme::default()
+// ---------------------------------------------------------------------------
+// Neon effects
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy)]
+struct Fx {
+    color: bool,
+    green: Color,
+    cyan: Color,
+    magenta: Color,
+    amber: Color,
+    red: Color,
+    dim: Color,
+    st: ThemeStyles,
+}
+
+impl Fx {
+    fn new(theme: Theme, color: bool) -> Self {
+        let st = theme.styles();
+        let c = |t: (u8, u8, u8)| {
+            if color {
+                Color::Rgb(t.0, t.1, t.2)
+            } else {
+                Color::Reset
+            }
+        };
+        Self {
+            color,
+            green: c((60, 255, 140)),
+            cyan: c((70, 220, 255)),
+            magenta: c((255, 90, 220)),
+            amber: c((255, 200, 70)),
+            red: c((255, 70, 90)),
+            dim: c((60, 90, 80)),
+            st,
         }
+    }
+
+    fn bar(&self, f: f32, w: usize, a: Color, b: Color) -> Line {
+        if self.color {
+            show::progress(f, w, a, b, self.dim)
+        } else {
+            let filled = ((f.clamp(0.0, 1.0)) * w as f32).round() as usize;
+            Line::raw(format!(
+                "{}{}",
+                "█".repeat(filled.min(w)),
+                "─".repeat(w.saturating_sub(filled))
+            ))
+        }
+    }
+
+    fn spark(&self, v: &[f32], w: usize) -> Line {
+        if self.color {
+            show::sparkline(v, w, self.green, self.cyan)
+        } else {
+            Line::raw("─".repeat(w))
+        }
+    }
+}
+
+fn tpanel(title: &str, style: Style) -> Node {
+    let mut p = Node::panel(title.to_string(), BorderType::Rounded, style);
+    p.layout_style.padding_top = 1.0;
+    p.layout_style.padding_bottom = 0.0;
+    p
+}
+
+fn truncate(s: &str, w: usize) -> String {
+    use unicode_segmentation::UnicodeSegmentation as _;
+    if unicode_width::UnicodeWidthStr::width(s) <= w {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    let mut used = 0usize;
+    for g in s.graphemes(true) {
+        let gw = unicode_width::UnicodeWidthStr::width(g);
+        if used + gw > w.saturating_sub(1) {
+            break;
+        }
+        out.push_str(g);
+        used += gw;
+    }
+    out.push('…');
+    out
+}
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Phase {
+    Handshake,
+    Breach,
+    Transfer,
+    Tactical,
+    Shell,
+    Done,
+}
+
+const TACTICAL: &[&str] = &[
+    "🌊 Override the Olympic-sized pool on the roof",
+    "🐛 Neutralize the Da Vinci virus",
+    "🛹 Summon Acid Burn, Cereal Killer & Lord Nikon",
+    "🕶  Rollerblade away before Agent Gill arrives",
+];
+
+struct App {
+    started: Instant,
+    fx: Fx,
+    phase: Phase,
+    breach: f32,
+    transfer: f32,
+    scan: f32,
+    hex_seed: u64,
+    events: Vec<Line>,
+    throughput: Vec<f32>,
+    selected: usize,
+    input: TextInputState,
+    shell_log: Vec<Line>,
+    frames: u64,
+    last_total: u64,
+    done: bool,
+    seen: [bool; 8],
+}
+
+fn select_theme(light: bool, dark: bool, no_color: bool) -> Theme {
+    if no_color {
+        Theme::no_color()
+    } else if light {
+        Theme::light()
+    } else if dark {
+        Theme::dark()
     } else {
         Theme {
-            text: Color::Reset,
             accent: Color::BrightGreen,
             success: Color::BrightGreen,
             warning: Color::BrightMagenta,
@@ -51,722 +165,670 @@ fn hacker_theme(light: bool, no_color: bool) -> Theme {
     }
 }
 
-fn meter(progress: usize, width: usize) -> String {
-    let width = width.max(6);
-    let filled = (progress.min(100) * width) / 100;
-    let empty = width.saturating_sub(filled);
-    format!(
-        "{}{} {:>3}%",
-        "█".repeat(filled),
-        "░".repeat(empty),
-        progress.min(100)
-    )
+impl App {
+    fn new(fx: Fx) -> Self {
+        Self {
+            started: Instant::now(),
+            fx,
+            phase: Phase::Handshake,
+            breach: 0.0,
+            transfer: 0.0,
+            scan: 0.0,
+            hex_seed: 1,
+            events: Vec::new(),
+            throughput: vec![0.0; 48],
+            selected: 0,
+            input: TextInputState::new(),
+            shell_log: Vec::new(),
+            frames: 0,
+            last_total: 0,
+            done: false,
+            seen: [false; 8],
+        }
+    }
+
+    fn elapsed(&self) -> f32 {
+        self.started.elapsed().as_secs_f32()
+    }
+
+    fn sample(&mut self, ctx: &mut Context) {
+        self.frames += 1;
+        let total = ctx.stats().frame_bytes;
+        let delta = total.saturating_sub(self.last_total) as f32;
+        self.last_total = total;
+        self.throughput.push(delta);
+        if self.throughput.len() > 48 {
+            self.throughput.remove(0);
+        }
+    }
+
+    fn add_event(&mut self, text: &str, color: Color) {
+        let stamp = format!("{:04}", self.frames);
+        let style = if self.fx.color && color != Color::Reset {
+            Style::new().fg(color)
+        } else {
+            self.fx.st.muted
+        };
+        self.events.push(
+            Line::new()
+                .span(Span::styled(format!("{stamp} "), self.fx.st.faint))
+                .span(Span::styled(text, style)),
+        );
+        if self.events.len() > 60 {
+            self.events.remove(0);
+        }
+    }
+
+    fn once(&mut self, idx: usize, text: &str, color: Color) {
+        if !self.seen[idx] {
+            self.seen[idx] = true;
+            self.add_event(text, color);
+        }
+    }
+
+    fn animate(&mut self) {
+        match self.phase {
+            Phase::Handshake => {
+                self.once(0, "[modem] 28.8k acoustic coupler locked", self.fx.cyan);
+                if self.elapsed() > 0.8 {
+                    self.once(1, "✔ connected to Gibson Supercomputer", self.fx.green);
+                    self.phase = Phase::Breach;
+                }
+            }
+            Phase::Breach => {
+                self.breach = (self.breach + 0.02).min(1.0);
+                self.scan = (self.scan + 0.10) % 100.0;
+                self.hex_seed = self.hex_seed.wrapping_add(1);
+                let p = self.breach;
+                if p > 0.2 {
+                    self.once(2, "[trace] routed through node 0xA0", self.fx.cyan);
+                }
+                if p > 0.5 {
+                    self.once(
+                        3,
+                        "[trace] Zero Cool & Acid Burn signatures matched",
+                        self.fx.magenta,
+                    );
+                }
+                if p > 0.8 {
+                    self.once(4, "[quarantine] Da Vinci worm isolated", self.fx.amber);
+                }
+                if self.breach >= 1.0 {
+                    self.phase = Phase::Transfer;
+                }
+            }
+            Phase::Transfer => {
+                self.transfer = (self.transfer + 0.02).min(1.0);
+                self.hex_seed = self.hex_seed.wrapping_add(1);
+                if self.transfer > 0.5 {
+                    self.once(5, "[net] reroute through cut fiber, 3ms", self.fx.amber);
+                }
+                if self.transfer >= 1.0 {
+                    self.once(6, "✔ garbage.bin checksum verified", self.fx.green);
+                    self.phase = Phase::Tactical;
+                }
+            }
+            Phase::Tactical => {}
+            Phase::Shell => {}
+            Phase::Done => {}
+        }
+    }
+
+    fn auto_step(&mut self) {
+        match self.phase {
+            Phase::Tactical => {
+                self.selected = 3;
+                self.commit_tactical();
+            }
+            Phase::Shell => {
+                for cmd in ["status", "trace", "pool", "da-vinci", "metrics", "exit"] {
+                    self.input = TextInputState::with_text(cmd);
+                    self.run_command(cmd);
+                    self.input = TextInputState::new();
+                }
+                self.phase = Phase::Done;
+                self.done = true;
+            }
+            Phase::Done => self.done = true,
+            _ => {}
+        }
+    }
+
+    fn commit_tactical(&mut self) {
+        let choice = TACTICAL[self.selected.min(TACTICAL.len() - 1)];
+        let line = Line::new()
+            .span(Span::styled("[DIRECTIVE] ", self.fx.st.warning))
+            .span(Span::styled(choice, self.fx.st.text));
+        self.shell_log.push(line);
+        self.once(7, "\"HACK THE PLANET! HACK THE PLANET!\"", self.fx.magenta);
+        self.phase = Phase::Shell;
+    }
+
+    fn run_command(&mut self, cmd: &str) {
+        let out = match cmd {
+            "help" => vec![(
+                "commands: help status pool garbage da-vinci trace metrics exit",
+                self.fx.st.muted,
+            )],
+            "status" => vec![(
+                "banks 04/07 ONLINE · route 7 hops · da-vinci SCANNING",
+                self.fx.st.code,
+            )],
+            "pool" => vec![
+                (
+                    "There is no pool on the roof of Ellingson Mineral!",
+                    self.fx.st.accent,
+                ),
+                (
+                    "…sprinkler override initiated. Water pressure critical.",
+                    self.fx.st.warning,
+                ),
+            ],
+            "garbage" => vec![(
+                "garbage.bin located at /usr/spool/garbage (256 MB)",
+                self.fx.st.text,
+            )],
+            "da-vinci" => vec![(
+                "da-vinci worm neutralized; $25,000,000 siphon halted",
+                self.fx.st.text,
+            )],
+            "trace" => vec![("route 66 → gibson-core → zero-cool", self.fx.st.code)],
+            "metrics" => vec![(
+                "metrics available after exit (see stdout summary)",
+                self.fx.st.muted,
+            )],
+            "exit" | "quit" => vec![(
+                "connection severed by foreign host. Skate fast.",
+                self.fx.st.error,
+            )],
+            "" => vec![],
+            other => vec![
+                (
+                    "bash: command not found in /usr/local/bin",
+                    self.fx.st.error,
+                ),
+                (other, self.fx.st.muted),
+            ],
+        };
+        for (text, style) in out {
+            self.shell_log.push(
+                Line::new()
+                    .span(Span::styled("  ", self.fx.st.faint))
+                    .span(Span::styled(text, style)),
+            );
+        }
+        if self.shell_log.len() > 200 {
+            self.shell_log.remove(0);
+        }
+    }
+
+    fn handle(&mut self, event: &Event) -> bool {
+        if is_cancel(event) {
+            self.done = true;
+            return true;
+        }
+        if let Event::Key(k) = event {
+            match self.phase {
+                Phase::Tactical => match k.code {
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.selected = if self.selected == 0 {
+                            TACTICAL.len() - 1
+                        } else {
+                            self.selected - 1
+                        };
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        self.selected = (self.selected + 1) % TACTICAL.len()
+                    }
+                    KeyCode::Char(c @ '1'..='4') => self.selected = (c as usize) - ('1' as usize),
+                    KeyCode::Enter => self.commit_tactical(),
+                    KeyCode::Esc => self.done = true,
+                    _ => {}
+                },
+                Phase::Shell => match k.code {
+                    KeyCode::Enter => {
+                        let cmd = self.input.text.trim().to_lowercase();
+                        self.shell_log.push(
+                            Line::new()
+                                .span(Span::styled("root@gibson:~# ", self.fx.st.success))
+                                .span(Span::styled(self.input.text.clone(), self.fx.st.text)),
+                        );
+                        self.run_command(&cmd);
+                        self.input = TextInputState::new();
+                        if cmd == "exit" || cmd == "quit" {
+                            self.done = true;
+                        }
+                    }
+                    KeyCode::Esc => self.done = true,
+                    _ => return self.input.handle_event(event),
+                },
+                _ => {}
+            }
+        } else if let Event::Paste(_) = event {
+            if self.phase == Phase::Shell {
+                return self.input.handle_event(event);
+            }
+        }
+        false
+    }
 }
 
-struct Act {
-    title: &'static str,
-    message: &'static str,
-    progress: usize,
+fn is_cancel(event: &Event) -> bool {
+    matches!(event, Event::Key(k) if k.code == KeyCode::Char('c') && k.modifiers.contains(KeyModifiers::CONTROL))
 }
 
-const BREACH_ACTS: &[Act] = &[
-    Act {
-        title: "ROUTING",
-        message: "Bypassing Eugene 'The Plague' Belford's firewall...",
-        progress: 18,
-    },
-    Act {
-        title: "SCANNING",
-        message: "Searching memory banks for the Olympic pool on the roof...",
-        progress: 41,
-    },
-    Act {
-        title: "TRACING",
-        message: "Zero Cool & Acid Burn signatures detected in kernel space...",
-        progress: 67,
-    },
-    Act {
-        title: "QUARANTINE",
-        message: "Isolating the Da Vinci virus financial worm in /usr/spool/garbage...",
-        progress: 88,
-    },
-    Act {
-        title: "EXFIL",
-        message: "Downloading the garbage file to a 3.5\" neon floppy...",
-        progress: 100,
-    },
-];
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
 
-const TACTICAL_OPTIONS: &[&str] = &[
-    "🌊 Override the Olympic-sized swimming pool on the roof",
-    "🐛 Neutralize the Da Vinci virus before the tanker fleet capsizes",
-    "🛹 Summon Acid Burn, Cereal Killer & Lord Nikon",
-    "🕶  Rollerblade away before Agent Richard Gill arrives",
-];
+fn build_root(app: &App, ctx: &Context) -> Node {
+    let (cols, rows) = ctx.session.terminal_size();
+    let compact = cols < 72;
+    let wide = cols >= 118;
+
+    let mut root = Node::col()
+        .percent_width(100.0)
+        .percent_height(100.0)
+        .gap(0.0)
+        .child(banner(app, cols, wide));
+
+    if compact {
+        root = root.child(panel_mainframe(app, cols).flex_grow(2.0).min_width(0.0));
+        root = root.child(panel_garbage(app, cols).flex_grow(2.0).min_width(0.0));
+        if rows >= 26 {
+            root = root.child(panel_davinci(app, cols).flex_grow(2.0).min_width(0.0));
+        }
+    } else {
+        let right_w: u16 = if wide { 46 } else { 38 };
+        let left_w = cols.saturating_sub(right_w + 1);
+
+        let left = Node::col()
+            .flex_grow(2.0)
+            .min_width(0.0)
+            .gap(0.0)
+            .child(panel_mainframe(app, left_w).flex_grow(1.0).min_width(0.0))
+            .child(panel_garbage(app, left_w).flex_grow(2.0).min_width(0.0));
+
+        let right = Node::col()
+            .width(right_w as f32)
+            .flex_shrink(0.0)
+            .min_width(0.0)
+            .gap(0.0)
+            .child(panel_davinci(app, right_w).flex_grow(1.0).min_width(0.0))
+            .child(panel_trace(app, right_w).flex_grow(2.0).min_width(0.0));
+
+        root = root.child(
+            Node::row()
+                .percent_width(100.0)
+                .gap(1.0)
+                .flex_grow(2.0)
+                .child(left)
+                .child(right),
+        );
+    }
+
+    root = root.child(panel_transfer(app, cols));
+    root = root.child(bottom_panel(app, cols));
+    root
+}
+
+fn banner(app: &App, cols: u16, wide: bool) -> Node {
+    let fx = &app.fx;
+    let mut line = shimmer(
+        "▚▚▚ GIBSON MAINFRAME ▞▞▞",
+        fx,
+        (app.elapsed() * 26.0) as usize,
+    );
+    line = line.span(Span::styled("   ", fx.st.text));
+    line = line.span(Span::styled(" DEFCON 1 ", Style::new().fg(fx.red).bold()));
+    line = line.span(Span::styled("  ● LINK ", fx.st.success));
+    if wide {
+        line = line
+            .span(Span::styled("  baud ", fx.st.muted))
+            .span(Span::styled("28.8k", fx.st.code))
+            .span(Span::styled("  ·  route ", fx.st.muted))
+            .span(Span::styled("7 hops / 42ms", fx.st.text))
+            .span(Span::styled("  ·  da-vinci ", fx.st.muted))
+            .span(Span::styled("SCANNING", fx.st.warning));
+    } else if cols > 50 {
+        line = line.span(Span::styled("  28.8k · 7 hops", fx.st.muted));
+    }
+    Node::line(line).height(1.0)
+}
+
+fn shimmer(text: &str, fx: &Fx, offset: usize) -> Line {
+    if !fx.color {
+        return Line::styled(text, Style::new().bold());
+    }
+    use unicode_segmentation::UnicodeSegmentation as _;
+    let gs: Vec<&str> = text.graphemes(true).collect();
+    let n = gs.len().max(1);
+    let mut spans = Vec::with_capacity(n);
+    for (i, g) in gs.iter().enumerate() {
+        let t = i as f32 / (n - 1).max(1) as f32;
+        let base = fx.green.lerp(fx.cyan, t);
+        let d = ((i + offset) % 20) as f32;
+        let boost = (1.0 - (d.min(20.0 - d) / 10.0)).clamp(0.0, 1.0) * 0.6;
+        spans.push(Span::styled(
+            *g,
+            Style::new()
+                .fg(base.lerp(Color::Rgb(255, 255, 255), boost))
+                .bold(),
+        ));
+    }
+    Line::from_spans(spans)
+}
+
+fn panel_mainframe(app: &App, width: u16) -> Node {
+    let fx = &app.fx;
+    let inner = width.saturating_sub(4) as usize;
+    let bar_w = inner.saturating_sub(12).clamp(8, 26);
+    let pulse = (app.elapsed() * 2.0).sin() * 0.5 + 0.5;
+    let cpu = (0.55 + 0.35 * pulse).clamp(0.0, 1.0);
+    let mem = (0.42 + 0.30 * ((app.elapsed() * 1.3).sin() * 0.5 + 0.5)).clamp(0.0, 1.0);
+
+    let mut rt = RichText::new();
+    for (label, value) in [("CPU", cpu), ("MEM", mem)] {
+        let mut line = Line::new().span(Span::styled(format!("{label} "), fx.st.muted));
+        for s in fx.bar(value, bar_w, fx.green, fx.cyan).spans {
+            line = line.span(s);
+        }
+        line = line.span(Span::styled(
+            format!(" {:>3}%", (value * 100.0) as usize),
+            fx.st.text,
+        ));
+        rt = rt.line(line);
+    }
+    rt = rt.line(
+        Line::new()
+            .span(Span::styled("BANKS ", fx.st.muted))
+            .span(Span::styled("04/07 ONLINE", fx.st.success))
+            .span(Span::styled("   ENTROPY ", fx.st.muted))
+            .span(Span::styled(
+                format!("{:.3}", 0.99 + 0.009 * pulse),
+                fx.st.code,
+            )),
+    );
+    rt = rt.line(
+        Line::new()
+            .span(Span::styled("BREACH ", fx.st.muted))
+            .span(Span::styled(
+                gibson::node::SPINNER_BRAILLE
+                    [(app.elapsed() * 12.0) as usize % gibson::node::SPINNER_BRAILLE.len()],
+                fx.st.accent,
+            ))
+            .span(Span::styled(
+                format!(" {:>3}%", (app.breach * 100.0) as usize),
+                fx.st.warning,
+            )),
+    );
+    tpanel("MAINFRAME", fx.st.border)
+        .percent_width(100.0)
+        .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
+}
+
+fn panel_garbage(app: &App, width: u16) -> Node {
+    let fx = &app.fx;
+    let inner = width.saturating_sub(4) as usize;
+    let cols_hex = (inner / 3).clamp(4, 18);
+    let mut rt = RichText::new();
+    let rows = 8u64;
+    for i in 0..rows {
+        rt = rt.line(show::hex_dump_line(
+            app.hex_seed.wrapping_add(i * 2_654_435_761),
+            cols_hex,
+            fx.dim,
+            fx.green,
+        ));
+    }
+    tpanel("garbage.bin", fx.st.border)
+        .percent_width(100.0)
+        .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
+}
+
+fn panel_davinci(app: &App, width: u16) -> Node {
+    let fx = &app.fx;
+    let inner = width.saturating_sub(4) as usize;
+    let scan_cols = inner.clamp(6, 20);
+    let glyphs = ["·", "░", "▒", "▓", "█"];
+    let mut rt = RichText::new().line(
+        Line::new()
+            .span(Span::styled("SCAN ", fx.st.muted))
+            .span(Span::styled(
+                gibson::node::SPINNER_BRAILLE
+                    [(app.scan as usize) % gibson::node::SPINNER_BRAILLE.len()],
+                fx.st.warning,
+            ))
+            .span(Span::styled("  sweep ", fx.st.muted))
+            .span(Span::styled(format!("{:>3.0}%", app.scan), fx.st.text)),
+    );
+    for r in 0..3usize {
+        let mut line = Line::new();
+        for c in 0..scan_cols {
+            let phase = ((c as f32 * 12.0 + r as f32 * 30.0 + app.scan * 3.0) % 100.0) / 100.0;
+            let idx = (phase * 4.0).round() as usize;
+            let style = if fx.color {
+                let color = fx
+                    .green
+                    .lerp(fx.magenta, (r as f32 / 3.0).clamp(0.0, 1.0))
+                    .lerp(Color::Rgb(255, 255, 255), (phase * 0.4).clamp(0.0, 1.0));
+                Style::new().fg(color)
+            } else {
+                Style::default()
+            };
+            line = line.span(Span::styled(glyphs[idx.min(4)], style));
+        }
+        rt = rt.line(line);
+    }
+    rt = rt.line(
+        Line::new()
+            .span(Span::styled("SIG ", fx.st.muted))
+            .span(Span::styled("da-vinci", fx.st.warning))
+            .span(Span::styled("  financial worm ", fx.st.muted))
+            .span(Span::styled("QUARANTINED", fx.st.success)),
+    );
+    tpanel("DA VINCI SCAN", fx.st.border)
+        .percent_width(100.0)
+        .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
+}
+
+fn panel_trace(app: &App, width: u16) -> Node {
+    let fx = &app.fx;
+    let inner = width.saturating_sub(4) as usize;
+    let mut rt = RichText::new();
+    if app.events.is_empty() {
+        rt = rt.line(Line::new().span(Span::styled("no trace yet…", fx.st.faint)));
+    } else {
+        for e in app.events.iter().rev().take(10).rev() {
+            let mut line = Line::new();
+            for s in &e.spans {
+                line = line.span(Span::styled(truncate(s.text.as_str(), inner), s.style));
+            }
+            rt = rt.line(line);
+        }
+    }
+    tpanel("EVENT TRACE", fx.st.border)
+        .percent_width(100.0)
+        .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
+}
+
+fn panel_transfer(app: &App, width: u16) -> Node {
+    let fx = &app.fx;
+    let inner = width.saturating_sub(4) as usize;
+    let bar_w = inner.saturating_sub(20).clamp(10, 48);
+    let pct = app.transfer.clamp(0.0, 1.0);
+    let mb = (pct * 256.0) as usize;
+    let mut line = Line::new().span(Span::styled("garbage.bin ", fx.st.code));
+    for s in fx.bar(pct, bar_w, fx.green, fx.magenta).spans {
+        line = line.span(s);
+    }
+    line = line.span(Span::styled(
+        format!(" {:>3}%  {} / 256 MB", (pct * 100.0) as usize, mb),
+        fx.st.text,
+    ));
+    let rt = RichText::new()
+        .line(line)
+        .line(
+            Line::new()
+                .span(Span::styled("throughput ", fx.st.muted))
+                .span(Span::styled(
+                    format!("{:.1} MB/s", 18.0 + 22.0 * pct),
+                    fx.st.success,
+                ))
+                .span(Span::styled("  │  checksum ", fx.st.muted))
+                .span(Span::styled("sha256:e3b0…b855", fx.st.code)),
+        )
+        .line(fx.spark(&app.throughput, bar_w.min(40)));
+    tpanel("TRANSFER", fx.st.border)
+        .percent_width(100.0)
+        .height(6.0)
+        .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
+}
+
+fn bottom_panel(app: &App, width: u16) -> Node {
+    let fx = &app.fx;
+    let inner = width.saturating_sub(4) as usize;
+    match app.phase {
+        Phase::Tactical => {
+            let mut rt = RichText::new().line(
+                Line::new()
+                    .span(Span::styled("SELECT PAYLOAD ", fx.st.accent))
+                    .span(Span::styled(
+                        "↑/↓ or j/k · Enter to fire · 1-4",
+                        fx.st.muted,
+                    )),
+            );
+            for (i, opt) in TACTICAL.iter().enumerate() {
+                let sel = i == app.selected;
+                rt = rt.line(
+                    Line::new()
+                        .span(Span::styled(
+                            if sel { "▶ " } else { "  " },
+                            if sel { fx.st.warning } else { fx.st.faint },
+                        ))
+                        .span(Span::styled(format!("[{}] ", i + 1), fx.st.muted))
+                        .span(Span::styled(
+                            truncate(opt, inner.saturating_sub(8)),
+                            if sel { Style::new().bold() } else { fx.st.text },
+                        )),
+                );
+            }
+            tpanel("TACTICAL PAYLOAD", fx.st.warning)
+                .percent_width(100.0)
+                .height(7.0)
+                .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
+        }
+        Phase::Shell | Phase::Done => {
+            let mut rt = RichText::new();
+            for line in app.shell_log.iter().rev().take(4).rev() {
+                rt = rt.line(line.clone());
+            }
+            let caret = if ((app.elapsed() * 2.0) as usize).is_multiple_of(2) {
+                "▌"
+            } else {
+                " "
+            };
+            rt = rt.line(
+                Line::new()
+                    .span(Span::styled("root@gibson:~# ", fx.st.success))
+                    .span(Span::styled(app.input.text.clone(), fx.st.text))
+                    .span(Span::styled(caret, fx.st.accent)),
+            );
+            tpanel("ROOT SHELL", fx.st.success)
+                .percent_width(100.0)
+                .height(7.0)
+                .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
+        }
+        _ => {
+            let mut rt = RichText::new().line(
+                Line::new()
+                    .span(Span::styled("breaching Gibson ", fx.st.accent))
+                    .span(Span::styled(
+                        gibson::node::SPINNER_BRAILLE
+                            [(app.elapsed() * 12.0) as usize % gibson::node::SPINNER_BRAILLE.len()],
+                        fx.st.warning,
+                    ))
+                    .span(Span::styled("  hold tight…", fx.st.muted)),
+            );
+            rt = rt.line(Line::new().span(Span::styled(
+                truncate(
+                    &format!(
+                        "phase {:?}  ·  breach {:>3}%  ·  transfer {:>3}%",
+                        app.phase,
+                        (app.breach * 100.0) as usize,
+                        (app.transfer * 100.0) as usize
+                    ),
+                    inner,
+                ),
+                fx.st.text,
+            )));
+            tpanel("STATUS", fx.st.border)
+                .percent_width(100.0)
+                .height(4.0)
+                .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// main
+// ---------------------------------------------------------------------------
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     let auto = args
         .iter()
         .any(|a| a == "--auto" || a == "--scripted" || a == "--headless");
+    let inline = args.iter().any(|a| a == "--inline");
     let light = args.iter().any(|a| a == "--light");
+    let dark = args.iter().any(|a| a == "--dark");
     let no_color = args.iter().any(|a| a == "--no-color");
 
-    let theme = hacker_theme(light, no_color);
-    let st = theme.styles();
-
-    let mut ctx = Context::inline()?;
+    let fx = Fx::new(select_theme(light, dark, no_color), !no_color);
+    let mut ctx = if inline {
+        Context::inline()?
+    } else {
+        Context::fullscreen()?
+    };
     ctx.set_max_fps(if auto { 240 } else { 60 });
-    ctx.set_animation_interval(Duration::from_millis(if auto { 8 } else { 80 }));
+    ctx.set_animation_interval(Duration::from_millis(if auto { 8 } else { 45 }));
 
-    let started = Instant::now();
+    let mut app = App::new(fx);
 
-    act_i_handshake(&mut ctx, &theme, &st, auto, started)?;
-    act_ii_breach(&mut ctx, &theme, &st, auto, started)?;
-    act_iii_transfer(&mut ctx, &theme, &st, auto, started)?;
-    act_iv_payload(&mut ctx, &theme, &st, auto)?;
-    act_v_shell(&mut ctx, &theme, &st, auto)?;
-    act_vi_telemetry(&mut ctx, &theme, &st)?;
+    let mut iterations = 0usize;
+    let cap = if auto { 8000 } else { usize::MAX };
+    while !app.done && iterations < cap {
+        iterations += 1;
+        app.sample(&mut ctx);
+        if auto {
+            app.animate();
+            app.auto_step();
+        } else {
+            app.animate();
+        }
 
+        ctx.set_root(build_root(&app, &ctx));
+
+        if auto {
+            ctx.request_render();
+            ctx.run_once(ctx.animation_interval())?;
+        } else if let Some(event) = ctx.run_once(Duration::from_millis(50))? {
+            if app.handle(&event) {
+                ctx.request_render();
+            }
+        }
+    }
+
+    // Flush one final frame so terminal/exit state is visible before leaving
+    // the alternate screen.
+    ctx.request_render();
+    let _ = ctx.run_once(ctx.animation_interval());
     ctx.restore()?;
+
+    let stats = ctx.stats();
     println!(
-        "{}",
-        if no_color {
-            "Gibson connection closed. Terminal restored."
-        } else {
-            "\u{1b}[1;32m✔ Gibson connection closed. Terminal restored.\u{1b}[0m"
-        }
+        "✔ Gibson connection closed. {} frames · {} B frames · {} B inserts · {} anchor resyncs",
+        stats.frames, stats.frame_bytes, stats.insertion_bytes, stats.anchor_resyncs
     );
     Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// ACT I — MODEM / HANDSHAKE
-// ---------------------------------------------------------------------------
-
-fn act_i_handshake(
-    ctx: &mut Context,
-    theme: &Theme,
-    st: &gibson::ThemeStyles,
-    auto: bool,
-    _started: Instant,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let (cols, _) = ctx.session.terminal_size();
-    let wide = cols >= 100;
-
-    let mut handshake = RichText::new()
-        .line(
-            Line::new()
-                .span(Span::styled("◤ LIBGIBSON ", st.accent))
-                .span(Span::styled(
-                    "// ELLINGSon MINERAL CORP // GIBSON MAINFRAME",
-                    st.muted,
-                )),
-        )
-        .line(
-            Line::new()
-                .span(Span::styled("[modem] ", st.muted))
-                .span(Span::styled(
-                    "28.8k acoustic coupler locked on (212) 555-0199",
-                    st.text,
-                )),
-        );
-
-    if wide {
-        handshake = handshake.line(
-            Line::new()
-                .span(Span::styled("carrier ", st.muted))
-                .span(Span::styled("detected", st.success))
-                .span(Span::styled(" │ protocol ", st.muted))
-                .span(Span::styled("VT100+ / DEC-2026", st.code)),
-        );
-    }
-
-    ctx.commit_rich_text(&handshake)?;
-
-    // Typewriter handshake in the live region.
-    let quote = "Mess with the best, die like the rest.";
-    let frames = if auto { quote.len().min(6) } else { 14 };
-    for i in 0..frames.saturating_add(1) {
-        let shown: String = quote.chars().take(i * 4).collect();
-        let root = Node::col().percent_width(100.0).child(Node::rich_text(
-            RichText::new().line(
-                Line::new()
-                    .span(Span::styled("\"", st.warning))
-                    .span(Span::styled(shown, st.warning))
-                    .span(Span::styled("\" — Zero Cool", st.muted)),
-            ),
-        ));
-        ctx.set_root(root);
-        tick(ctx, 1)?;
-    }
-    ctx.clear_live_region()?;
-
-    ctx.commit_rich_text(
-        &RichText::new().line(
-            Line::new()
-                .span(Span::styled("✔ ", st.success))
-                .span(Span::styled(
-                    "Connected to Gibson Supercomputer (OS: UNIX System V / LibGibson)",
-                    st.text,
-                )),
-        ),
-    )?;
-    let _ = theme;
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// ACT II — GIBSON BREACH
-// ---------------------------------------------------------------------------
-
-fn act_ii_breach(
-    ctx: &mut Context,
-    _theme: &Theme,
-    st: &gibson::ThemeStyles,
-    auto: bool,
-    started: Instant,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let iterations = if auto { 3 } else { 10 };
-    for (idx, act) in BREACH_ACTS.iter().enumerate() {
-        for _ in 0..iterations {
-            let frame = animation_frame(started, ctx.animation_interval());
-            let root = build_breach_dashboard(ctx, frame, act, st);
-            ctx.set_root(root);
-            tick(ctx, 1)?;
-        }
-        // Fire an asynchronous trace event above the live viewport.
-        let mut notice =
-            RichText::new().line(Line::new().span(Span::styled("[trace] ", st.muted)).span(
-                Span::styled(
-                    format!(
-                        "packet vector {} resolved through node 0x{:02X}",
-                        idx + 1,
-                        0xA0 + idx
-                    ),
-                    st.code,
-                ),
-            ));
-        ctx.insert_rich_text_before_live(&notice)?;
-        notice = RichText::new();
-    }
-
-    ctx.clear_live_region()?;
-    ctx.commit_rich_text(
-        &RichText::new().line(
-            Line::new()
-                .span(Span::styled("★ ", st.success))
-                .span(Span::styled(
-                    "ACCESS GRANTED: root privileges obtained on the Gibson mainframe!",
-                    st.text,
-                )),
-        ),
-    )?;
-    Ok(())
-}
-
-fn build_breach_dashboard(
-    ctx: &Context,
-    frame: usize,
-    act: &Act,
-    st: &gibson::ThemeStyles,
-) -> Node {
-    let (cols, _) = ctx.session.terminal_size();
-    let narrow = cols < 60;
-    let wide = cols >= 100;
-
-    let header = if narrow {
-        Node::row()
-            .gap(1.0)
-            .child(Node::spinner(frame, st.accent, Some(act.title)).flex_grow(1.0))
-    } else {
-        Node::row()
-            .gap(1.0)
-            .child(Node::spinner(frame, st.accent, Some(act.title)).flex_grow(1.0))
-            .child(Node::text("DEFCON 1", st.error))
-            .child(Node::text("│", st.border))
-            .child(Node::text(format!("{}%", act.progress), st.warning))
-    };
-
-    let meter_width = if cols < 40 {
-        12
-    } else {
-        (cols as usize).saturating_sub(12).min(40)
-    };
-    let progress_line = Line::new()
-        .span(Span::styled("breach ", st.muted))
-        .span(Span::styled(meter(act.progress, meter_width), st.success));
-
-    let mut body = RichText::new()
-        .line(Line::new().span(Span::styled(act.message, st.text)))
-        .line(progress_line);
-
-    if wide {
-        body = body
-            .line(
-                Line::new()
-                    .span(Span::styled("banks ", st.muted))
-                    .span(Span::styled("04/07 ONLINE", st.success))
-                    .span(Span::styled(" │ route ", st.muted))
-                    .span(Span::styled("7 hops / 42ms", st.code))
-                    .span(Span::styled(" │ da-vinci ", st.muted))
-                    .span(Span::styled("SCANNING", st.warning)),
-            )
-            .line(
-                Line::new()
-                    .span(Span::styled("entropy ", st.muted))
-                    .span(Span::styled("0.998", st.text))
-                    .span(Span::styled(" │ rollback ", st.muted))
-                    .span(Span::styled("armed", st.error)),
-            );
-    } else if !narrow {
-        body = body.line(
-            Line::new()
-                .span(Span::styled("banks ", st.muted))
-                .span(Span::styled("04/07 ONLINE", st.success))
-                .span(Span::styled(" │ da-vinci ", st.muted))
-                .span(Span::styled("SCANNING", st.warning)),
-        );
-    }
-
-    Node::col()
-        .percent_width(100.0)
-        .child(header)
-        .child(Node::rail(st.rail).child(Node::rich_text(body)))
-}
-
-// ---------------------------------------------------------------------------
-// ACT III — FILE TRANSFER
-// ---------------------------------------------------------------------------
-
-fn act_iii_transfer(
-    ctx: &mut Context,
-    _theme: &Theme,
-    st: &gibson::ThemeStyles,
-    auto: bool,
-    started: Instant,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let total_mb = 256usize;
-    let steps = if auto { 5 } else { 20 };
-    for i in 0..=steps {
-        let pct = (i * 100) / steps;
-        let mb = (pct * total_mb) / 100;
-        let throughput = 28.8 + (i as f64) * 0.37;
-        let frame = animation_frame(started, ctx.animation_interval());
-        let (cols, _) = ctx.session.terminal_size();
-        let meter_width = (cols as usize).saturating_sub(14).clamp(8, 48);
-
-        let root = Node::col().percent_width(100.0).child(
-            Node::rail(st.rail).child(Node::rich_text(
-                RichText::new()
-                    .line(
-                        Line::new()
-                            .span(Span::styled("garbage.bin ", st.code))
-                            .span(Span::styled(format!("{} / {} MB", mb, total_mb), st.text))
-                            .span(Span::styled("  ", st.text))
-                            .span(Span::styled(meter(pct, meter_width), st.accent)),
-                    )
-                    .line(
-                        Line::new()
-                            .span(Span::styled("throughput ", st.muted))
-                            .span(Span::styled(format!("{:.1} MB/s", throughput), st.success))
-                            .span(Span::styled(" │ checksum ", st.muted))
-                            .span(Span::styled("sha256:e3b0…b855", st.code)),
-                    ),
-            )),
-        );
-        ctx.set_root(root);
-        let _ = frame;
-        tick(ctx, 1)?;
-
-        if i == steps / 2 {
-            ctx.insert_rich_text_before_live(
-                &RichText::new().line(Line::new().span(Span::styled("[net] ", st.muted)).span(
-                    Span::styled("rerouting through a cut fiber, 3ms latency", st.warning),
-                )),
-            )?;
-        }
-    }
-
-    ctx.clear_live_region()?;
-    ctx.commit_rich_text(
-        &RichText::new().line(
-            Line::new()
-                .span(Span::styled("✔ ", st.success))
-                .span(Span::styled(
-                    "garbage file secured — 256 MB, checksum verified",
-                    st.text,
-                )),
-        ),
-    )?;
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// ACT IV — TACTICAL PAYLOAD SELECTOR
-// ---------------------------------------------------------------------------
-
-fn act_iv_payload(
-    ctx: &mut Context,
-    _theme: &Theme,
-    st: &gibson::ThemeStyles,
-    auto: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut selected = 0usize;
-
-    if auto {
-        selected = 3;
-        let root = build_selector(selected, st);
-        ctx.set_root(root);
-        tick(ctx, 1)?;
-    } else {
-        loop {
-            let root = build_selector(selected, st);
-            ctx.set_root(root);
-            if let Some(Event::Key(k)) = ctx.run_once(Duration::from_millis(100))? {
-                match k.code {
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        selected = selected.saturating_sub(1);
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        selected = (selected + 1).min(TACTICAL_OPTIONS.len() - 1);
-                    }
-                    KeyCode::Enter => break,
-                    KeyCode::Esc | KeyCode::Char('q') => break,
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    ctx.clear_live_region()?;
-    ctx.commit_rich_text(
-        &RichText::new()
-            .line(
-                Line::new()
-                    .span(Span::styled("[TACTICAL DIRECTIVE] ", st.warning))
-                    .span(Span::styled(TACTICAL_OPTIONS[selected], st.text)),
-            )
-            .line(Line::new().span(Span::styled(
-                "\"HACK THE PLANET! HACK THE PLANET!\"",
-                st.accent,
-            ))),
-    )?;
-    Ok(())
-}
-
-fn build_selector(selected: usize, st: &gibson::ThemeStyles) -> Node {
-    let mut body = RichText::new().line(
-        Line::new()
-            .span(Span::styled("SELECT PAYLOAD ", st.accent))
-            .span(Span::styled(
-                "(↑/↓ or j/k, Enter to fire, q to abort)",
-                st.muted,
-            )),
-    );
-
-    for (i, opt) in TACTICAL_OPTIONS.iter().enumerate() {
-        let (cursor, style) = if i == selected {
-            ("▶ ", st.warning)
-        } else {
-            ("  ", st.muted)
-        };
-        body = body.line(
-            Line::new()
-                .span(Span::styled(cursor, st.accent))
-                .span(Span::styled(format!("[{:02}] ", i + 1), st.muted))
-                .span(Span::styled(*opt, style)),
-        );
-    }
-
-    Node::col()
-        .percent_width(100.0)
-        .child(Node::rule(Some("TACTICAL PAYLOAD".to_string()), Style::new()).percent_width(100.0))
-        .child(Node::rail(st.rail).child(Node::rich_text(body)))
-}
-
-// ---------------------------------------------------------------------------
-// ACT V — ROOT@GIBSON SHELL
-// ---------------------------------------------------------------------------
-
-fn act_v_shell(
-    ctx: &mut Context,
-    _theme: &Theme,
-    st: &gibson::ThemeStyles,
-    auto: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    ctx.commit_rich_text(&RichText::new().line(
-        Line::new()
-            .span(Span::styled("root@gibson", st.success))
-            .span(Span::styled(":~# ", st.muted))
-            .span(Span::styled(
-                "shell online — try help, status, pool, garbage, da-vinci, trace, metrics, exit",
-                st.muted,
-            )),
-    ))?;
-
-    let mut input = TextInputState::new();
-
-    if auto {
-        for cmd in ["status", "trace", "pool", "da-vinci", "metrics", "exit"] {
-            input = TextInputState::with_text(cmd);
-            let root = build_shell(ctx, &input, st);
-            ctx.set_root(root);
-            tick(ctx, 1)?;
-            run_command(ctx, cmd, &input, st)?;
-        }
-        return Ok(());
-    }
-
-    loop {
-        let root = build_shell(ctx, &input, st);
-        ctx.set_root(root);
-        if let Some(event) = ctx.run_once(Duration::from_millis(60))? {
-            match event {
-                Event::Key(k) => match k.code {
-                    KeyCode::Enter => {
-                        let cmd = input.text.trim().to_lowercase();
-                        ctx.commit_rich_text(
-                            &RichText::new().line(
-                                Line::new()
-                                    .span(Span::styled("root@gibson", st.success))
-                                    .span(Span::styled(":~# ", st.muted))
-                                    .span(Span::styled(input.text.clone(), st.text)),
-                            ),
-                        )?;
-                        if cmd == "exit" || cmd == "quit" {
-                            break;
-                        }
-                        run_command(ctx, &cmd, &input, st)?;
-                        input = TextInputState::new();
-                    }
-                    KeyCode::Esc => break,
-                    _ => {
-                        if input.handle_event(&event) {
-                            ctx.request_render();
-                        }
-                    }
-                },
-                Event::Paste(_) => {
-                    if input.handle_event(&event) {
-                        ctx.request_render();
-                    }
-                }
-                Event::Resize(_, _) => ctx.request_render(),
-                Event::Tick => {}
-            }
-        }
-    }
-    Ok(())
-}
-
-fn build_shell(ctx: &Context, input: &TextInputState, st: &gibson::ThemeStyles) -> Node {
-    let (cols, _) = ctx.session.terminal_size();
-    let prompt = if cols < 30 { "❯" } else { "root@gibson:~#" };
-    Node::col().percent_width(100.0).child(
-        Node::row()
-            .gap(1.0)
-            .child(Node::text(prompt, st.accent))
-            .child(
-                Node::text_input(
-                    &input.text,
-                    input.cursor_grapheme,
-                    Some("type a directive…"),
-                    st.text,
-                )
-                .scroll_offset(input.scroll_offset)
-                .flex_grow(1.0),
-            ),
-    )
-}
-
-fn run_command(
-    ctx: &mut Context,
-    cmd: &str,
-    input: &TextInputState,
-    st: &gibson::ThemeStyles,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let _ = input;
-    match cmd {
-        "" => {}
-        "exit" | "quit" => {
-            ctx.commit_rich_text(&RichText::new().line(Line::new().span(Span::styled(
-                "Connection severed by foreign host. Skate fast.",
-                st.error,
-            ))))?;
-        }
-        "help" => {
-            ctx.commit_rich_text(&RichText::new().line(Line::new().span(Span::styled(
-                "commands: help status pool garbage da-vinci trace metrics exit",
-                st.muted,
-            ))))?;
-        }
-        "pool" => {
-            ctx.commit_rich_text(
-                &RichText::new()
-                    .line(Line::new().span(Span::styled(
-                        "There is no pool on the roof of Ellingson Mineral!",
-                        st.accent,
-                    )))
-                    .line(Line::new().span(Span::styled(
-                        "…sprinkler override initiated. Water pressure critical.",
-                        st.warning,
-                    ))),
-            )?;
-        }
-        "garbage" => {
-            ctx.commit_rich_text(
-                &RichText::new().line(
-                    Line::new()
-                        .span(Span::styled("garbage.bin ", st.code))
-                        .span(Span::styled(
-                            "located at /usr/spool/garbage (256 MB)",
-                            st.text,
-                        )),
-                ),
-            )?;
-        }
-        "da-vinci" => {
-            ctx.commit_rich_text(
-                &RichText::new().line(
-                    Line::new()
-                        .span(Span::styled("da-vinci ", st.warning))
-                        .span(Span::styled(
-                            "worm neutralized; $25,000,000 siphon halted",
-                            st.text,
-                        )),
-                ),
-            )?;
-        }
-        "trace" => {
-            ctx.insert_rich_text_before_live(
-                &RichText::new().line(
-                    Line::new()
-                        .span(Span::styled("[trace] ", st.muted))
-                        .span(Span::styled("route 66 → gibson-core → zero-cool", st.code)),
-                ),
-            )?;
-        }
-        "status" => {
-            let s = ctx.stats();
-            ctx.commit_rich_text(
-                &RichText::new()
-                    .line(
-                        Line::new()
-                            .span(Span::styled("status ", st.accent))
-                            .span(Span::styled("frames ", st.muted))
-                            .span(Span::styled(s.frames.to_string(), st.text))
-                            .span(Span::styled(" │ dirty ", st.muted))
-                            .span(Span::styled(s.dirty_cells.to_string(), st.text))
-                            .span(Span::styled(" │ anchor resyncs ", st.muted))
-                            .span(Span::styled(s.anchor_resyncs.to_string(), st.text)),
-                    )
-                    .line(
-                        Line::new()
-                            .span(Span::styled("history insertions ", st.muted))
-                            .span(Span::styled(s.history_insertions.to_string(), st.text))
-                            .span(Span::styled(" (fast ", st.muted))
-                            .span(Span::styled(s.fast_insertions.to_string(), st.success))
-                            .span(Span::styled(" / fallback ", st.muted))
-                            .span(Span::styled(s.insertion_repaints.to_string(), st.warning))
-                            .span(Span::styled(")", st.muted)),
-                    ),
-            )?;
-        }
-        "metrics" => {
-            let s = ctx.stats();
-            ctx.commit_rich_text(
-                &RichText::new()
-                    .line(
-                        Line::new()
-                            .span(Span::styled("frame_bytes ", st.muted))
-                            .span(Span::styled(s.frame_bytes.to_string(), st.text))
-                            .span(Span::styled(" │ commit_bytes ", st.muted))
-                            .span(Span::styled(s.commit_bytes.to_string(), st.text))
-                            .span(Span::styled(" │ insertion_bytes ", st.muted))
-                            .span(Span::styled(s.insertion_bytes.to_string(), st.text)),
-                    )
-                    .line(Line::new().span(Span::styled(
-                        format!("total_terminal_bytes {}", s.total_terminal_bytes()),
-                        st.accent,
-                    ))),
-            )?;
-        }
-        other => {
-            ctx.commit_rich_text(&RichText::new().line(Line::new().span(Span::styled(
-                format!("bash: {}: command not found in /usr/local/bin", other),
-                st.error,
-            ))))?;
-        }
-    }
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// ACT VI — EXIT / TELEMETRY
-// ---------------------------------------------------------------------------
-
-fn act_vi_telemetry(
-    ctx: &mut Context,
-    _theme: &Theme,
-    st: &gibson::ThemeStyles,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let s = ctx.stats();
-    ctx.commit_rich_text(
-        &RichText::new()
-            .line(
-                Line::new()
-                    .span(Span::styled("╰─ ", st.muted))
-                    .span(Span::styled("engine telemetry ", st.accent))
-                    .span(Span::styled("(measured, not scripted)", st.muted)),
-            )
-            .line(
-                Line::new()
-                    .span(Span::styled("frames ", st.muted))
-                    .span(Span::styled(s.frames.to_string(), st.text))
-                    .span(Span::styled(" │ full repaints ", st.muted))
-                    .span(Span::styled(s.full_repaints.to_string(), st.text))
-                    .span(Span::styled(" │ anchor resyncs ", st.muted))
-                    .span(Span::styled(s.anchor_resyncs.to_string(), st.text))
-                    .span(Span::styled(" │ skipped ", st.muted))
-                    .span(Span::styled(s.skipped_frames.to_string(), st.text)),
-            )
-            .line(
-                Line::new()
-                    .span(Span::styled("frame ", st.muted))
-                    .span(Span::styled(format!("{} B", s.frame_bytes), st.text))
-                    .span(Span::styled(" │ commit ", st.muted))
-                    .span(Span::styled(format!("{} B", s.commit_bytes), st.text))
-                    .span(Span::styled(" │ insertion ", st.muted))
-                    .span(Span::styled(format!("{} B", s.insertion_bytes), st.text))
-                    .span(Span::styled(" │ total ", st.muted))
-                    .span(Span::styled(
-                        format!("{} B", s.total_terminal_bytes()),
-                        st.accent,
-                    )),
-            ),
-    )?;
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// helpers
-// ---------------------------------------------------------------------------
-
-/// Drives `frames` scheduler-bounded animation steps.
-///
-/// Input always has priority: `run_once` waits at most until the frame deadline
-/// and returns immediately when an event arrives.
-fn tick(ctx: &mut Context, frames: usize) -> Result<(), Box<dyn std::error::Error>> {
-    for _ in 0..frames {
-        ctx.request_render();
-        let interval = ctx.animation_interval();
-        ctx.run_once(interval)?;
-    }
-    Ok(())
-}
-
-fn animation_frame(started: Instant, interval: Duration) -> usize {
-    let ms = interval.as_millis().max(1);
-    (started.elapsed().as_millis() / ms) as usize
 }

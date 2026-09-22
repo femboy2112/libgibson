@@ -186,9 +186,18 @@ fn paint_node(node: &Node, surface: &mut Surface, clip: Rect, ctx: &mut PaintCon
         }
     }
 
-    // Paint children
+    // Paint children. Bordered containers clip children to the *inside* of the
+    // border so content can never overwrite the frame, regardless of how the
+    // flex layout sizes the panel.
+    let child_clip = match &node.kind {
+        NodeKind::Box {
+            border: Some(_), ..
+        } => rect.shrink(1),
+        NodeKind::Border { .. } => rect.shrink(1),
+        _ => rect,
+    };
     for child in &node.children {
-        paint_node(child, surface, rect, ctx);
+        paint_node(child, surface, child_clip, ctx);
     }
 }
 
@@ -414,5 +423,33 @@ mod tests {
         assert_eq!(surface.get(0, 0).unwrap().glyph.grapheme.as_str(), "🦀");
         assert_eq!(surface.get(2, 0).unwrap().glyph.grapheme.as_str(), "你");
         assert_eq!(surface.get(4, 0).unwrap().glyph.grapheme.as_str(), "好");
+    }
+}
+
+#[cfg(test)]
+mod border_clip_tests {
+    use super::*;
+    use crate::cell::{RichText, Style};
+    use crate::layout::compute_layout;
+    use crate::node::{Node, WrapMode};
+    use crate::surface::{BorderType, Surface};
+
+    #[test]
+    fn panel_children_never_overwrite_the_border() {
+        // Panel is only 3 rows tall but has 5 lines of content; the extra lines
+        // must be clipped, not painted over the frame.
+        let mut root = Node::panel("T", BorderType::Rounded, Style::default())
+            .width(12.0)
+            .height(3.0)
+            .child(Node::rich_text_wrapped(
+                RichText::raw("a\nb\nc\nd\ne"),
+                WrapMode::NoWrap,
+            ));
+        compute_layout(&mut root, 12, 3).unwrap();
+        let mut s = Surface::new(12, 3);
+        paint(&root, &mut s);
+        assert_eq!(s.get(0, 0).unwrap().glyph.grapheme.as_str(), "╭");
+        assert_eq!(s.get(0, 2).unwrap().glyph.grapheme.as_str(), "╰");
+        assert_eq!(s.get(11, 2).unwrap().glyph.grapheme.as_str(), "╯");
     }
 }

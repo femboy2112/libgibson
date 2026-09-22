@@ -28,7 +28,7 @@ Because earlier revisions of this document overstated completion, architectural 
 | Label | Meaning |
 | --- | --- |
 | **IMPLEMENTED** | The described code path exists and is reached in normal operation. |
-| **TESTED** | Covered by an automated test in this repository (`cargo test`, 108 tests) that exercises the behavior described. |
+| **TESTED** | Covered by an automated test in this repository (`cargo test`, 121 tests) that exercises the behavior described. |
 | **PARTIALLY TESTED** | Implemented, and some behavior is covered, but at least one named facet is not automatically verified. The gap is stated explicitly. |
 | **UNVERIFIED** | Written down because it exists in source or is a documented assumption, but has not been compiled or executed in any environment we can attest to. |
 
@@ -227,6 +227,11 @@ Key optimizations:
 - Enters the alternate screen buffer (`\x1b[?1049h`).
 - Dimensions match terminal rows and columns.
 - Reuses the identical Surface, Layout, Painter, Diff, and ANSI compiler pipelines.
+- Each frame emits an absolute cursor home (`\x1b[H`) before compiling the diff. This is required: the compiler performs relative cursor motion, so resetting only its bookkeeping (without homing the *physical* cursor) made every frame drift by the previous frame's final cursor and eventually scroll the alternate screen. Covered by `whole_renderer_vt100::whole_renderer_fullscreen_owns_the_canvas`.
+
+### Border integrity
+
+Bordered containers (`Node::box`/`Node::border_box`, `Node::panel`) clip their children to the inside of the frame, so a panel that the flex layout shrinks below its content height clips the content instead of painting over the border. Covered by `painter::border_clip_tests::panel_children_never_overwrite_the_border`.
 
 ---
 

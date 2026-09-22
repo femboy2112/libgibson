@@ -10,6 +10,7 @@ pub mod painter;
 pub mod renderer;
 pub mod scheduler;
 pub mod session;
+pub mod show;
 pub mod surface;
 pub mod transaction;
 

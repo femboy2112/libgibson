@@ -297,6 +297,24 @@ impl Node {
         n
     }
 
+    /// Creates a titled bordered panel — the primary container for dashboards.
+    ///
+    /// Unlike [`Node::border_box`], the title is drawn into the top border with a
+    /// bold emphasis, and children are inset by one cell of padding.
+    pub fn panel(title: impl Into<String>, border_type: BorderType, style: Style) -> Self {
+        let mut n = Self::new(NodeKind::Border {
+            border_type,
+            style,
+            title: Some(title.into()),
+            title_style: style.bold(),
+        });
+        n.layout_style.padding_top = 1.0;
+        n.layout_style.padding_bottom = 1.0;
+        n.layout_style.padding_left = 1.0;
+        n.layout_style.padding_right = 1.0;
+        n
+    }
+
     // Builder chaining methods
 
     pub fn width(mut self, width: f32) -> Self {
