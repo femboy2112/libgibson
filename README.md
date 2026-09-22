@@ -74,16 +74,21 @@ ctx.commit("Finalized output text")?;
 
 - **Grapheme-Aware Cell Model**: Robust support for Unicode grapheme clusters (`unicode-segmentation`), CJK full-width characters (`display_width == 2`), zero-width combining marks, and emojis.
 - **Wide Glyph Overwrite Protection**: Writing into a cell occupied by or adjacent to a wide character safely clears orphaned continuation cells, preventing screen corruption.
-- **Taffy-Powered Flexbox Layout**: Flex containers (`Row`, `Column`), dimensions, padding, gap, alignment, justification, and intrinsic text measurement with word wrapping.
+- **Chrome Primitives**:
+  - `Node::rule`: Horizontal dividers with optional titles and styled margins.
+  - `Node::rail`: Typography-first left-border (`│`) callout containers for calm, uncluttered transcripts.
+- **Structured Text Hierarchy**: `RichText`, `Line`, `Span`, and semantic `Theme` tokens (`theme.accent`, `theme.text_muted`, `theme.rail`, `theme.success`, `theme.warning`, `theme.error`).
+- **Taffy-Powered Flexbox Layout**: Flex containers (`Row`, `Column`), percentage width (`percent_width`), min/max constraints, padding, gap, alignment, justification, and intrinsic text measurement with word wrapping.
 - **Stateful Differential ANSI Compiler**:
   - Emits zero bytes when frames are identical.
   - Groups dirty cells into contiguous runs.
   - Calculates minimum-distance cursor repositioning (relative vs absolute horizontal jumps).
   - Uses `CSI K` (erase to end of line) when content shrinks.
-  - Wraps frames in synchronized updates (`CSI ? 2026 h/l`) for flicker-free rendering.
-- **Grapheme-Based TextInput**: Single-line text input with grapheme-cluster navigation (Left, Right, Home, End, Ctrl-A, Ctrl-E, Backspace, Delete), horizontal scrolling, and bracketed paste.
+  - Wraps frames in synchronized updates (`CSI ? 2026 h/l`) and autowrap disabling (`CSI ? 7 l/h`) for flicker-free rendering.
+- **Asynchronous Scrollback Insertion (`insert_before_live`)**: Surgically insert events (e.g., git monitors, LSP diagnostics) into native scrollback above active live prompts without dropping frames or triggering full repaints.
+- **Grapheme-Based TextInput**: Single-line text input with display-width aware navigation (Left, Right, Home, End, Backspace, Delete), horizontal scrolling, and bracketed paste.
 - **Safe Terminal Lifecycle**: RAII guard restores raw mode, cursor visibility, alternate buffer, and bracketed paste on normal exit, error, Ctrl-C, or Rust panic.
-- **Clean Plain-Text Degradation**: Automatically detects redirected output (`stdout | cat`, CI logs) and suppresses interactive escape sequences while emitting clean plain text.
+- **Clean Plain-Text Degradation**: Automatically detects redirected output (`stdout | cat`, CI logs) and suppresses interactive escape sequences while emitting clean plain text with 0 escape sequences.
 - **Stable Language-Neutral C ABI**: Opaque handles, `#[repr(C)]` types, explicit integer widths, thread-local error messages, and `catch_unwind` safety. Call easily from C, C++, Python, Go, and any FFI-capable language.
 
 ---
@@ -272,14 +277,18 @@ PYTHONPATH=bindings/python python3 bindings/python/example.py
 │   ├── python/              # Python ctypes wrapper and example
 │   └── go/                  # Go cgo wrapper and example
 ├── examples/
-│   ├── agent_chat.rs        # Flagship interactive agent CLI demo
+│   ├── polished_agent.rs    # Flagship modern agent CLI (typography, rules, rails, selector)
+│   ├── agent_chat.rs        # Interactive agent chat with live spinner
+│   ├── hack_the_gibson.rs   # Cyberpunk interactive terminal demo
 │   └── perf_probe.rs        # Benchmark and asymptotic invariance probe
 └── tests/
     ├── pty_integration.rs   # Real PTY terminal session lifecycle tests
     ├── diff_golden.rs       # Minimal ANSI patch & diff unit tests
     ├── commit_invariance.rs # Scrollback separation & O(1) diff tests
     ├── ffi_lifecycle.rs     # C ABI repeated creation and safety tests
-    └── non_tty_redirection.rs # Plain-text degradation tests
+    ├── non_tty_redirection.rs # Plain-text degradation tests (zero escapes)
+    ├── resize_torture.rs    # Rapid terminal resize and dimension torture tests
+    └── screen_state_vt100.rs # Virtual terminal screen-state & CJK cursor tests
 ```
 
 ---

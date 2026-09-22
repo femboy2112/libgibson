@@ -17,24 +17,41 @@ int main(void) {
     // 1. Commit initial scrollback line
     gibson_commit(ctx, "[C FFI] LibGibson context initialized successfully.");
 
-    // 2. Build declarative UI tree
+    // 2. Build declarative UI tree using chrome primitives (rule, rail)
     gibson_node_t *root = NULL;
     gibson_node_box_col(&root);
-    gibson_node_set_width(root, 60.0f);
+    gibson_node_set_percent_width(root, 100.0f);
+    gibson_node_set_max_width(root, 72.0f);
     gibson_node_set_gap(root, 1.0f);
 
-    // Styled text child
+    // Rule header with title
+    gibson_style_t rule_style = {0};
+    rule_style.fg.color_type = GIBSON_COLOR_BRIGHT_BLUE;
+    rule_style.bold = 1;
+
+    gibson_node_t *rule_node = NULL;
+    gibson_node_rule("LibGibson Native C ABI Demo", &rule_style, &rule_node);
+    gibson_node_add_child(root, rule_node);
+
+    // Rail callout with structured text
+    gibson_style_t rail_style = {0};
+    rail_style.fg.color_type = GIBSON_COLOR_CYAN;
+
+    gibson_node_t *rail_node = NULL;
+    gibson_node_rail(&rail_style, &rail_node);
+
     gibson_style_t text_style = {0};
     text_style.fg.color_type = GIBSON_COLOR_BRIGHT_GREEN;
-    text_style.bold = 1;
 
     gibson_node_t *text_node = NULL;
-    gibson_node_text("Hello from Native C via LibGibson ABI!", &text_style, GIBSON_WRAP_WORD, &text_node);
-    gibson_node_add_child(root, text_node);
+    gibson_node_text("Zero-flicker native terminal rendering with C ABI bindings.", &text_style, GIBSON_WRAP_WORD, &text_node);
+    gibson_node_add_child(rail_node, text_node);
+
+    gibson_node_add_child(root, rail_node);
 
     // Border box child
     gibson_style_t border_style = {0};
-    border_style.fg.color_type = GIBSON_COLOR_CYAN;
+    border_style.fg.color_type = GIBSON_COLOR_BRIGHT_YELLOW;
 
     gibson_node_t *box = NULL;
     gibson_node_border_box(GIBSON_BORDER_ROUNDED, &border_style, &box);
@@ -56,17 +73,20 @@ int main(void) {
         fprintf(stderr, "Render failed with status: %d\n", status);
     }
 
-    // 4. Commit a completion line
+    // 4. Test insert_before_live: insert asynchronous notice into scrollback above active region
+    gibson_insert_before_live(ctx, "[C FFI] Notice: Live background event inserted above active region.");
+
+    // 5. Commit completion line to finalize
     gibson_commit(ctx, "[C FFI] Render executed and output committed to scrollback.");
 
-    // 5. Query stats
+    // 6. Query stats
     gibson_stats_t stats = {0};
     gibson_get_stats(ctx, &stats);
     printf("[C FFI] Stats: frames rendered = %llu, total bytes emitted = %llu\n",
            (unsigned long long)stats.frames,
            (unsigned long long)stats.bytes_emitted);
 
-    // 6. Cleanup
+    // 7. Cleanup
     gibson_destroy_context(ctx);
     printf("[C FFI] Test completed successfully.\n");
     return 0;

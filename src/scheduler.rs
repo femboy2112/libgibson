@@ -35,8 +35,29 @@ impl FrameScheduler {
         self.is_dirty = true;
     }
 
+    /// Explicit request to schedule a frame render pass.
+    pub fn request_render(&mut self) {
+        self.is_dirty = true;
+    }
+
     pub fn frame_budget(&self) -> Duration {
         Duration::from_nanos((1_000_000_000u64) / (self.max_fps as u64))
+    }
+
+    /// Time remaining until the next frame can be rendered under the FPS budget.
+    pub fn time_until_next_frame(&self) -> Duration {
+        match self.last_frame_instant {
+            None => Duration::ZERO,
+            Some(last) => {
+                let budget = self.frame_budget();
+                let elapsed = last.elapsed();
+                if elapsed >= budget {
+                    Duration::ZERO
+                } else {
+                    budget - elapsed
+                }
+            }
+        }
     }
 
     /// Checks if a frame should be rendered now, respecting the frame rate budget.
@@ -78,5 +99,29 @@ impl FrameScheduler {
             self.stats.full_repaints += 1;
         }
         self.stats.last_render_duration_micros = duration.as_micros() as u64;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scheduler_budget_and_throttling() {
+        let mut scheduler = FrameScheduler::new(30);
+        assert!(!scheduler.should_render());
+
+        scheduler.request_render();
+        assert!(scheduler.should_render());
+
+        // Record a frame
+        scheduler.record_frame(10, 100, 50, false, Duration::from_micros(200));
+        assert_eq!(scheduler.stats.frames, 1);
+        assert!(!scheduler.is_dirty);
+
+        // Mark dirty immediately; frame budget has not elapsed
+        scheduler.request_render();
+        assert!(!scheduler.should_render());
+        assert_eq!(scheduler.stats.skipped_frames, 1);
     }
 }

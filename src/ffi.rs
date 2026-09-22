@@ -341,6 +341,131 @@ pub unsafe extern "C" fn gibson_commit(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn gibson_render_if_due(
+    ctx: *mut GibsonContextOpaque,
+    out_rendered: *mut i32,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        match (*ctx).inner.render_if_due() {
+            Ok(rendered) => {
+                if !out_rendered.is_null() {
+                    *out_rendered = if rendered { 1 } else { 0 };
+                }
+                GibsonStatus::Ok
+            }
+            Err(e) => {
+                set_last_error(e.to_string());
+                GibsonStatus::ErrIo
+            }
+        }
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gibson_request_render(ctx: *mut GibsonContextOpaque) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        (*ctx).inner.request_render();
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gibson_insert_before_live(
+    ctx: *mut GibsonContextOpaque,
+    utf8_text: *const c_char,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || utf8_text.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let c_str = match CStr::from_ptr(utf8_text).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                set_last_error("Invalid UTF-8 string".into());
+                return GibsonStatus::ErrInvalidParam;
+            }
+        };
+
+        let lines: Vec<&str> = c_str.lines().collect();
+        match (*ctx).inner.insert_before_live(&lines) {
+            Ok(()) => GibsonStatus::Ok,
+            Err(e) => {
+                set_last_error(e.to_string());
+                GibsonStatus::ErrIo
+            }
+        }
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gibson_commit_node(
+    ctx: *mut GibsonContextOpaque,
+    node: *mut GibsonNodeOpaque,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || node.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let mut boxed = Box::from_raw(node);
+        match (*ctx).inner.commit_node(&mut boxed.inner) {
+            Ok(()) => GibsonStatus::Ok,
+            Err(e) => {
+                set_last_error(e.to_string());
+                GibsonStatus::ErrIo
+            }
+        }
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gibson_insert_node_before_live(
+    ctx: *mut GibsonContextOpaque,
+    node: *mut GibsonNodeOpaque,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || node.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let mut boxed = Box::from_raw(node);
+        match (*ctx).inner.insert_node_before_live(&mut boxed.inner) {
+            Ok(()) => GibsonStatus::Ok,
+            Err(e) => {
+                set_last_error(e.to_string());
+                GibsonStatus::ErrIo
+            }
+        }
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gibson_clear_live_region(ctx: *mut GibsonContextOpaque) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        match (*ctx).inner.clear_live_region() {
+            Ok(()) => GibsonStatus::Ok,
+            Err(e) => {
+                set_last_error(e.to_string());
+                GibsonStatus::ErrIo
+            }
+        }
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn gibson_poll_event(
     ctx: *mut GibsonContextOpaque,
     timeout_ms: u32,
@@ -570,6 +695,54 @@ pub unsafe extern "C" fn gibson_node_border_box(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn gibson_node_rule(
+    title: *const c_char,
+    style: *const GibsonStyle,
+    out: *mut *mut GibsonNodeOpaque,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if out.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let t_str = if title.is_null() {
+            None
+        } else {
+            CStr::from_ptr(title).to_str().ok()
+        };
+        let st = if style.is_null() {
+            Style::default()
+        } else {
+            (*style).into()
+        };
+        let node = Node::rule(t_str, st);
+        *out = Box::into_raw(Box::new(GibsonNodeOpaque { inner: node }));
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gibson_node_rail(
+    style: *const GibsonStyle,
+    out: *mut *mut GibsonNodeOpaque,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if out.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let st = if style.is_null() {
+            Style::default()
+        } else {
+            (*style).into()
+        };
+        let node = Node::rail(st);
+        *out = Box::into_raw(Box::new(GibsonNodeOpaque { inner: node }));
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn gibson_node_add_child(
     parent: *mut GibsonNodeOpaque,
     child: *mut GibsonNodeOpaque,
@@ -659,6 +832,72 @@ pub unsafe extern "C" fn gibson_node_set_padding(
         (*node).inner.layout_style.padding_bottom = padding;
         (*node).inner.layout_style.padding_left = padding;
         (*node).inner.layout_style.padding_right = padding;
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gibson_node_set_percent_width(
+    node: *mut GibsonNodeOpaque,
+    percent: f32,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if node.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        (*node).inner.layout_style.width = crate::node::Dimension::Percent(percent);
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gibson_node_set_min_width(
+    node: *mut GibsonNodeOpaque,
+    width: f32,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if node.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        (*node).inner.layout_style.min_width = crate::node::Dimension::Length(width);
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gibson_node_set_max_width(
+    node: *mut GibsonNodeOpaque,
+    width: f32,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if node.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        (*node).inner.layout_style.max_width = crate::node::Dimension::Length(width);
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gibson_node_set_padding_sides(
+    node: *mut GibsonNodeOpaque,
+    left: f32,
+    right: f32,
+    top: f32,
+    bottom: f32,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if node.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        (*node).inner.layout_style.padding_left = left;
+        (*node).inner.layout_style.padding_right = right;
+        (*node).inner.layout_style.padding_top = top;
+        (*node).inner.layout_style.padding_bottom = bottom;
         GibsonStatus::Ok
     }));
     res.unwrap_or(GibsonStatus::ErrPanic)

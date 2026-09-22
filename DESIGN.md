@@ -174,3 +174,65 @@ The C ABI is designed around strict safety invariants:
 2. **Explicit Data Widths**: All integers use `int32_t`, `uint32_t`, `uint64_t`, or `float`.
 3. **No Panics Across FFI**: Every public `extern "C"` function is wrapped in `std::panic::catch_unwind`. If an internal panic occurs, it is captured, a thread-local error message is recorded, and `GIBSON_ERR_PANIC` is returned.
 4. **Memory Ownership**: Explicit free functions (`gibson_node_free`, `gibson_destroy_context`) ensure no cross-allocator mismatches.
+
+---
+
+## 10. Visual Doctrine & Clean-Room Design Philosophy
+
+Modern developer tools and agent CLIs (such as Claude Code) succeed through **restraint, typographic clarity, and native terminal immersion**. LibGibson codifies these principles into its core visual doctrine:
+
+1. **Native Background Respect**:
+   - The default terminal background must remain transparent or default.
+   - Never draw solid dark or colored rectangular canvas backgrounds over the entire viewport; terminal users select customized color themes, transparencies, and background blurs.
+   - Background colors are strictly reserved for subtle highlights (e.g. text input cursor focus or active option selection).
+
+2. **The Rail Callout Doctrine (`Node::rail`)**:
+   - Heavy ASCII boxes (`╭───╮`, `│   │`, `╰───╯`) consume 2 vertical lines and 2 horizontal columns of screen real estate per box. In long terminal sessions, stacked boxes clutter the scrollback.
+   - LibGibson introduces the **Rail** primitive (`│` left-border callout):
+     ```
+     ─── Tool Execution: AST Code Search ──────────────────────────────
+     │ ● Query: sync_update in src/ansi.rs
+     │ ● Result: Found DECSM 2026 atomic batching; 0 tear frames.
+     ```
+   - Rails provide clean visual containment with 0 wasted top/bottom rows and minimal visual weight.
+
+3. **Structured Text Layout (`RichText`, `Line`, `Span`, `Theme`)**:
+   - No hardcoded ANSI string literals (`\x1b[31m`) in user interfaces.
+   - Components compose semantic styles via `Theme` tokens (`theme.accent`, `theme.text_muted`, `theme.rail`, `theme.success`, `theme.warning`, `theme.error`).
+   - Enables instant theme switching and guaranteed zero-escape plain-text rendering for pipes and non-TTY outputs.
+
+4. **Zero-Escape Non-TTY Redirection**:
+   - When stdout is piped to a file or CI runner (`app > out.txt` or `app | cat`), interactive escape sequences (cursor movement, clear line, SGR colors) create unreadable log garbage.
+   - In non-TTY mode, LibGibson automatically suppresses live interactive frames and converts all committed structured nodes and rich text to clean, plain UTF-8 text with zero ANSI escapes.
+
+---
+
+## 11. Asynchronous Scrollback Insertion (`insert_before_live`)
+
+In real-world agent CLIs, asynchronous background events occur while the user is actively typing or while a live spinner is spinning (e.g., git filesystem change notifications, LSP diagnostics, streaming log messages).
+
+Naive terminal applications either:
+1. Print directly, which corrupts the live region and leaves orphaned lines.
+2. Buffer until the user finishes typing, delaying critical notifications.
+
+LibGibson's `insert_before_live` solves this with differential surgical precision:
+1. Temporarily rewinds the hardware cursor to row 0 of the active live region.
+2. Clears the live region rows using `CSI K`.
+3. Emits the inserted lines directly into native terminal scrollback, followed by `\r\n`.
+4. Advances the active line position downward by the number of inserted lines.
+5. Re-renders the live surface without invalidating `previous_surface`.
+6. Compiles a minimal differential patch that repaints the live region at its new row offset and restores the hardware cursor.
+7. Subsequent frames diff against the preserved surface with zero dirty cells.
+
+---
+
+## 12. Terminal Autowrap and Right-Margin Safety
+
+When text or background cells reach column `width - 1` (the rightmost column of the terminal window), standard VT100/ANSI terminal emulators trigger autowrap (DECAWM): the hardware cursor advances to column 0 of the *next* row, scrolling the terminal window up if already at the bottom.
+
+In differential rendering, this creates disastrous screen tearing and vertical drift.
+
+LibGibson protects against right-margin autowrap through two interlocking mechanisms:
+1. **DECAWM Autowrap Disabling**: Diff byte compilation wraps all rendering in `\x1b[?7l` (disable autowrap) before emitting cell runs, and `\x1b[?7h` (re-enable autowrap) after restoring cursor position.
+2. **Surface Right-Edge Clipping**: Wide CJK characters and emojis occupying 2 columns are clipped if `x + 1 >= width`, preventing double-width glyphs from crossing the terminal boundary.
+

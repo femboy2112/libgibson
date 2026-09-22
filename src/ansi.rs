@@ -37,6 +37,9 @@ impl AnsiCompiler {
             out.extend_from_slice(b"\x1b[?2026h");
         }
 
+        // Disable auto-wrap mode (DECAWM) to protect against right-margin wrap glitch
+        out.extend_from_slice(b"\x1b[?7l");
+
         for patch in &diff.patches {
             self.compile_row_patch(patch, &mut out);
         }
@@ -55,6 +58,9 @@ impl AnsiCompiler {
             out.extend_from_slice(b"\x1b[0m");
             self.current_style = Style::default();
         }
+
+        // Re-enable auto-wrap mode (DECAWM)
+        out.extend_from_slice(b"\x1b[?7h");
 
         if self.sync_updates {
             // End synchronized update (CSI ? 2026 l)
@@ -293,5 +299,19 @@ mod tests {
         let bytes = compiler.compile(&diff);
         let s = String::from_utf8_lossy(&bytes);
         assert!(s.contains("\x1b[K")); // Contains CSI K
+    }
+
+    #[test]
+    fn test_compiler_autowrap_protection() {
+        let s1 = Surface::new(10, 1);
+        let mut s2 = Surface::new(10, 1);
+        s2.print_str(0, 0, "test", Style::default(), None);
+
+        let diff = compute_diff(Some(&s1), &s2);
+        let mut compiler = AnsiCompiler::new(false);
+        let bytes = compiler.compile(&diff);
+        let s = String::from_utf8_lossy(&bytes);
+        assert!(s.contains("\x1b[?7l")); // Disables autowrap
+        assert!(s.contains("\x1b[?7h")); // Re-enables autowrap
     }
 }

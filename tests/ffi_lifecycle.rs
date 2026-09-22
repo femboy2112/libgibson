@@ -75,6 +75,53 @@ fn test_ffi_render_and_commit() {
         let mut stats = gibson::scheduler::RenderStats::default();
         assert_eq!(gibson_get_stats(ctx, &mut stats), GibsonStatus::Ok);
 
+        // Test insert_before_live
+        let insert_msg = CString::new("Inserted above live via C ABI").unwrap();
+        assert_eq!(
+            gibson_insert_before_live(ctx, insert_msg.as_ptr()),
+            GibsonStatus::Ok
+        );
+
         gibson_destroy_context(ctx);
+    }
+}
+
+#[test]
+fn test_ffi_rule_rail_and_styling() {
+    unsafe {
+        // Test Rule
+        let rule_title = CString::new("Options").unwrap();
+        let mut rule_node = ptr::null_mut();
+        assert_eq!(
+            gibson_node_rule(rule_title.as_ptr(), ptr::null(), &mut rule_node),
+            GibsonStatus::Ok
+        );
+        assert!(!rule_node.is_null());
+        gibson_node_free(rule_node);
+
+        // Test Rail
+        let mut rail_node = ptr::null_mut();
+        assert_eq!(
+            gibson_node_rail(ptr::null(), &mut rail_node),
+            GibsonStatus::Ok
+        );
+        assert!(!rail_node.is_null());
+
+        // Test styling methods
+        assert_eq!(
+            gibson_node_set_percent_width(rail_node, 100.0),
+            GibsonStatus::Ok
+        );
+        assert_eq!(gibson_node_set_min_width(rail_node, 20.0), GibsonStatus::Ok);
+        assert_eq!(
+            gibson_node_set_max_width(rail_node, 120.0),
+            GibsonStatus::Ok
+        );
+        assert_eq!(
+            gibson_node_set_padding_sides(rail_node, 2.0, 1.0, 0.0, 0.0),
+            GibsonStatus::Ok
+        );
+
+        gibson_node_free(rail_node);
     }
 }

@@ -120,14 +120,38 @@ _lib.gibson_create_context.restype = ctypes.c_int32
 _lib.gibson_destroy_context.argtypes = [ctypes.c_void_p]
 _lib.gibson_destroy_context.restype = None
 
+_lib.gibson_set_sync_updates.argtypes = [ctypes.c_void_p, ctypes.c_int32]
+_lib.gibson_set_sync_updates.restype = ctypes.c_int32
+
+_lib.gibson_set_max_fps.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+_lib.gibson_set_max_fps.restype = ctypes.c_int32
+
 _lib.gibson_set_root_node.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
 _lib.gibson_set_root_node.restype = ctypes.c_int32
 
 _lib.gibson_render.argtypes = [ctypes.c_void_p]
 _lib.gibson_render.restype = ctypes.c_int32
 
+_lib.gibson_render_if_due.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int32)]
+_lib.gibson_render_if_due.restype = ctypes.c_int32
+
+_lib.gibson_request_render.argtypes = [ctypes.c_void_p]
+_lib.gibson_request_render.restype = ctypes.c_int32
+
 _lib.gibson_commit.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 _lib.gibson_commit.restype = ctypes.c_int32
+
+_lib.gibson_insert_before_live.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+_lib.gibson_insert_before_live.restype = ctypes.c_int32
+
+_lib.gibson_commit_node.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+_lib.gibson_commit_node.restype = ctypes.c_int32
+
+_lib.gibson_insert_node_before_live.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+_lib.gibson_insert_node_before_live.restype = ctypes.c_int32
+
+_lib.gibson_clear_live_region.argtypes = [ctypes.c_void_p]
+_lib.gibson_clear_live_region.restype = ctypes.c_int32
 
 _lib.gibson_get_stats.argtypes = [ctypes.c_void_p, ctypes.POINTER(GibsonStats)]
 _lib.gibson_get_stats.restype = ctypes.c_int32
@@ -144,8 +168,17 @@ _lib.gibson_node_text.restype = ctypes.c_int32
 _lib.gibson_node_spinner.argtypes = [ctypes.c_uint32, ctypes.POINTER(GibsonStyle), ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
 _lib.gibson_node_spinner.restype = ctypes.c_int32
 
+_lib.gibson_node_text_input.argtypes = [ctypes.c_char_p, ctypes.c_uint32, ctypes.c_char_p, ctypes.POINTER(GibsonStyle), ctypes.POINTER(ctypes.c_void_p)]
+_lib.gibson_node_text_input.restype = ctypes.c_int32
+
 _lib.gibson_node_border_box.argtypes = [ctypes.c_int32, ctypes.POINTER(GibsonStyle), ctypes.POINTER(ctypes.c_void_p)]
 _lib.gibson_node_border_box.restype = ctypes.c_int32
+
+_lib.gibson_node_rule.argtypes = [ctypes.c_char_p, ctypes.POINTER(GibsonStyle), ctypes.POINTER(ctypes.c_void_p)]
+_lib.gibson_node_rule.restype = ctypes.c_int32
+
+_lib.gibson_node_rail.argtypes = [ctypes.POINTER(GibsonStyle), ctypes.POINTER(ctypes.c_void_p)]
+_lib.gibson_node_rail.restype = ctypes.c_int32
 
 _lib.gibson_node_add_child.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
 _lib.gibson_node_add_child.restype = ctypes.c_int32
@@ -156,11 +189,26 @@ _lib.gibson_node_set_width.restype = ctypes.c_int32
 _lib.gibson_node_set_height.argtypes = [ctypes.c_void_p, ctypes.c_float]
 _lib.gibson_node_set_height.restype = ctypes.c_int32
 
+_lib.gibson_node_set_percent_width.argtypes = [ctypes.c_void_p, ctypes.c_float]
+_lib.gibson_node_set_percent_width.restype = ctypes.c_int32
+
+_lib.gibson_node_set_min_width.argtypes = [ctypes.c_void_p, ctypes.c_float]
+_lib.gibson_node_set_min_width.restype = ctypes.c_int32
+
+_lib.gibson_node_set_max_width.argtypes = [ctypes.c_void_p, ctypes.c_float]
+_lib.gibson_node_set_max_width.restype = ctypes.c_int32
+
+_lib.gibson_node_set_flex_grow.argtypes = [ctypes.c_void_p, ctypes.c_float]
+_lib.gibson_node_set_flex_grow.restype = ctypes.c_int32
+
 _lib.gibson_node_set_gap.argtypes = [ctypes.c_void_p, ctypes.c_float]
 _lib.gibson_node_set_gap.restype = ctypes.c_int32
 
 _lib.gibson_node_set_padding.argtypes = [ctypes.c_void_p, ctypes.c_float]
 _lib.gibson_node_set_padding.restype = ctypes.c_int32
+
+_lib.gibson_node_set_padding_sides.argtypes = [ctypes.c_void_p, ctypes.c_float, ctypes.c_float, ctypes.c_float, ctypes.c_float]
+_lib.gibson_node_set_padding_sides.restype = ctypes.c_int32
 
 _lib.gibson_node_free.argtypes = [ctypes.c_void_p]
 _lib.gibson_node_free.restype = None
@@ -209,6 +257,37 @@ class Node:
         _lib.gibson_node_border_box(border_type, style_ref, ctypes.byref(h))
         return cls(h)
 
+    @classmethod
+    def rule(cls, title=None, style=None):
+        h = ctypes.c_void_p()
+        title_bytes = title.encode("utf-8") if title else None
+        style_ref = ctypes.byref(style) if style is not None else None
+        _lib.gibson_node_rule(title_bytes, style_ref, ctypes.byref(h))
+        return cls(h)
+
+    @classmethod
+    def rail(cls, style=None):
+        h = ctypes.c_void_p()
+        style_ref = ctypes.byref(style) if style is not None else None
+        _lib.gibson_node_rail(style_ref, ctypes.byref(h))
+        return cls(h)
+
+    @classmethod
+    def spinner(cls, frame_index=0, label=None, style=None):
+        h = ctypes.c_void_p()
+        label_bytes = label.encode("utf-8") if label else None
+        style_ref = ctypes.byref(style) if style is not None else None
+        _lib.gibson_node_spinner(frame_index, style_ref, label_bytes, ctypes.byref(h))
+        return cls(h)
+
+    @classmethod
+    def text_input(cls, value, cursor_grapheme=0, placeholder=None, style=None):
+        h = ctypes.c_void_p()
+        placeholder_bytes = placeholder.encode("utf-8") if placeholder else None
+        style_ref = ctypes.byref(style) if style is not None else None
+        _lib.gibson_node_text_input(value.encode("utf-8"), cursor_grapheme, placeholder_bytes, style_ref, ctypes.byref(h))
+        return cls(h)
+
     def width(self, w):
         if self.handle:
             _lib.gibson_node_set_width(self.handle, float(w))
@@ -219,6 +298,26 @@ class Node:
             _lib.gibson_node_set_height(self.handle, float(h))
         return self
 
+    def percent_width(self, pw):
+        if self.handle:
+            _lib.gibson_node_set_percent_width(self.handle, float(pw))
+        return self
+
+    def min_width(self, mw):
+        if self.handle:
+            _lib.gibson_node_set_min_width(self.handle, float(mw))
+        return self
+
+    def max_width(self, mw):
+        if self.handle:
+            _lib.gibson_node_set_max_width(self.handle, float(mw))
+        return self
+
+    def flex_grow(self, grow):
+        if self.handle:
+            _lib.gibson_node_set_flex_grow(self.handle, float(grow))
+        return self
+
     def gap(self, g):
         if self.handle:
             _lib.gibson_node_set_gap(self.handle, float(g))
@@ -227,6 +326,11 @@ class Node:
     def padding(self, p):
         if self.handle:
             _lib.gibson_node_set_padding(self.handle, float(p))
+        return self
+
+    def padding_sides(self, left, right, top, bottom):
+        if self.handle:
+            _lib.gibson_node_set_padding_sides(self.handle, float(left), float(right), float(top), float(bottom))
         return self
 
     def add_child(self, child):
@@ -255,6 +359,12 @@ class Context:
             _lib.gibson_destroy_context(self.handle)
             self.handle = None
 
+    def set_sync_updates(self, enabled: bool):
+        _lib.gibson_set_sync_updates(self.handle, 1 if enabled else 0)
+
+    def set_max_fps(self, fps: int):
+        _lib.gibson_set_max_fps(self.handle, fps)
+
     def set_root(self, root_node):
         status = _lib.gibson_set_root_node(self.handle, root_node.release())
         if status != 0:
@@ -265,10 +375,42 @@ class Context:
         if status != 0:
             raise RuntimeError(f"Render failed: status {status}")
 
-    def commit(self, text):
+    def render_if_due(self) -> bool:
+        rendered = ctypes.c_int32(0)
+        status = _lib.gibson_render_if_due(self.handle, ctypes.byref(rendered))
+        if status != 0:
+            raise RuntimeError(f"Render if due failed: status {status}")
+        return rendered.value != 0
+
+    def request_render(self):
+        status = _lib.gibson_request_render(self.handle)
+        if status != 0:
+            raise RuntimeError(f"Request render failed: status {status}")
+
+    def commit(self, text: str):
         status = _lib.gibson_commit(self.handle, text.encode("utf-8"))
         if status != 0:
             raise RuntimeError(f"Commit failed: status {status}")
+
+    def insert_before_live(self, text: str):
+        status = _lib.gibson_insert_before_live(self.handle, text.encode("utf-8"))
+        if status != 0:
+            raise RuntimeError(f"Insert before live failed: status {status}")
+
+    def commit_node(self, node: Node):
+        status = _lib.gibson_commit_node(self.handle, node.release())
+        if status != 0:
+            raise RuntimeError(f"Commit node failed: status {status}")
+
+    def insert_node_before_live(self, node: Node):
+        status = _lib.gibson_insert_node_before_live(self.handle, node.release())
+        if status != 0:
+            raise RuntimeError(f"Insert node before live failed: status {status}")
+
+    def clear_live_region(self):
+        status = _lib.gibson_clear_live_region(self.handle)
+        if status != 0:
+            raise RuntimeError(f"Clear live region failed: status {status}")
 
     def stats(self):
         s = GibsonStats()

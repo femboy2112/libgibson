@@ -1,4 +1,5 @@
 use crate::ansi::AnsiCompiler;
+use crate::cell::Style;
 use crate::diff::compute_diff;
 use crate::layout::compute_layout;
 use crate::node::Node;
@@ -56,10 +57,11 @@ impl Renderer {
         }
 
         let (term_cols, term_rows) = session.terminal_size();
+        let max_inline_rows = term_rows.saturating_sub(1).max(1);
 
         let available_height = match self.mode {
             RenderMode::Fullscreen => term_rows,
-            RenderMode::Inline => 0, // Unconstrained height: layout determines intrinsic height
+            RenderMode::Inline => max_inline_rows,
         };
 
         // 1. Layout pass
@@ -68,7 +70,7 @@ impl Renderer {
         let surface_width = term_cols;
         let surface_height = match self.mode {
             RenderMode::Fullscreen => term_rows,
-            RenderMode::Inline => rect.height.max(1),
+            RenderMode::Inline => rect.height.max(1).min(max_inline_rows),
         };
 
         // 2. Paint pass into next surface
@@ -189,9 +191,10 @@ impl Renderer {
         let mut stdout_handle = stdout();
 
         if !session.is_tty {
-            // In non-TTY mode, simply write the plain lines
+            // In non-TTY mode, strip any ANSI escapes to ensure clean plain text
             for line in text.lines() {
-                writeln!(stdout_handle, "{}", line)?;
+                let clean = strip_ansi_escapes(line);
+                writeln!(stdout_handle, "{}", clean)?;
             }
             stdout_handle.flush()?;
             return Ok(());
@@ -241,6 +244,112 @@ impl Renderer {
         Ok(())
     }
 
+    /// Inserts committed lines into native terminal scrollback ABOVE the active live region,
+    /// preserving the active live region's content, geometry, cursor, and diff state.
+    pub fn insert_before_live(
+        &mut self,
+        lines: &[&str],
+        session: &mut TerminalSession,
+    ) -> io::Result<()> {
+        let mut stdout_handle = stdout();
+        if !session.is_tty {
+            for line in lines {
+                let clean = strip_ansi_escapes(line);
+                writeln!(stdout_handle, "{}", clean)?;
+            }
+            stdout_handle.flush()?;
+            return Ok(());
+        }
+
+        if lines.is_empty() {
+            return Ok(());
+        }
+
+        let mut out = Vec::new();
+
+        if self.live_region_height > 0 {
+            // 1. Rewind from last cursor position to row 0 of live region
+            if self.last_cursor_y > 0 {
+                write!(out, "\x1b[{}A\r", self.last_cursor_y).ok();
+            } else {
+                out.push(b'\r');
+            }
+
+            // 2. Erase each row of the live region
+            for i in 0..self.live_region_height {
+                out.extend_from_slice(b"\x1b[K");
+                if i + 1 < self.live_region_height {
+                    out.extend_from_slice(b"\r\n");
+                }
+            }
+
+            // 3. Rewind back up to row 0 of that area
+            if self.live_region_height > 1 {
+                write!(out, "\x1b[{}A\r", self.live_region_height - 1).ok();
+            } else {
+                out.push(b'\r');
+            }
+        }
+
+        // 4. Print committed lines into native terminal scrollback
+        for line in lines {
+            out.extend_from_slice(line.as_bytes());
+            out.extend_from_slice(b"\r\n");
+        }
+
+        // 5. Re-allocate rows for the live region if height > 1
+        if self.live_region_height > 1 {
+            for _ in 0..(self.live_region_height - 1) {
+                out.extend_from_slice(b"\r\n");
+            }
+            write!(out, "\x1b[{}A\r", self.live_region_height - 1).ok();
+        } else if self.live_region_height == 1 {
+            out.push(b'\r');
+        }
+
+        // 6. Re-paint the previous surface onto the newly positioned live region
+        if let Some(ref prev) = self.previous_surface {
+            self.compiler.reset_cursor(0, 0);
+            let diff = compute_diff(None, prev);
+            let bytes = self.compiler.compile(&diff);
+            out.extend_from_slice(&bytes);
+
+            // Restore cursor
+            self.compiler
+                .move_to(self.last_cursor_x, self.last_cursor_y, &mut out);
+        }
+
+        stdout_handle.write_all(&out)?;
+        stdout_handle.flush()?;
+
+        Ok(())
+    }
+
+    /// Commits a laid-out UI node tree directly to immutable scrollback.
+    /// Serializes to styled ANSI for TTY or clean plain text with 0 escapes for non-TTY.
+    pub fn commit_node(
+        &mut self,
+        node: &mut Node,
+        session: &mut TerminalSession,
+    ) -> io::Result<()> {
+        let (term_cols, _) = session.terminal_size();
+        let lines = render_node_to_lines(node, session.is_tty, term_cols)?;
+        let joined = lines.join("\n");
+        self.commit(&joined, session)
+    }
+
+    /// Inserts a laid-out UI node tree into immutable scrollback ABOVE the active live region.
+    pub fn insert_node_before_live(
+        &mut self,
+        node: &mut Node,
+        session: &mut TerminalSession,
+    ) -> io::Result<()> {
+        let (term_cols, _) = session.terminal_size();
+        let lines = render_node_to_lines(node, session.is_tty, term_cols)?;
+        let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+        self.insert_before_live(&line_refs, session)
+    }
+
     /// Clears the live region from the terminal without leaving artifacts.
     pub fn clear_live_region(&mut self, session: &mut TerminalSession) -> io::Result<()> {
         if !session.is_tty || self.live_region_height == 0 {
@@ -278,4 +387,110 @@ impl Renderer {
 
         Ok(())
     }
+}
+
+/// Strips ANSI CSI / SGR escape sequences from a string to yield clean plain text.
+pub fn strip_ansi_escapes(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_escape = false;
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            in_escape = true;
+            if chars.peek() == Some(&'[') {
+                chars.next();
+            }
+            continue;
+        }
+        if in_escape {
+            // SGR and CSI codes terminate on letters ('a'..='z', 'A'..='Z', '@', '~', etc.)
+            if c.is_ascii_alphabetic() || c == '~' || c == '@' {
+                in_escape = false;
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Renders a UI node to lines of text.
+/// If `is_tty` is true, renders styled ANSI lines.
+/// If `is_tty` is false, renders plain UTF-8 text with ZERO escape codes.
+pub fn render_node_to_lines(node: &mut Node, is_tty: bool, width: u16) -> io::Result<Vec<String>> {
+    let rect = compute_layout(node, width, 0).map_err(io::Error::other)?;
+    let height = rect.height.max(1);
+    let mut surface = Surface::new(width, height);
+    paint(node, &mut surface);
+
+    let mut lines = Vec::with_capacity(height as usize);
+
+    for y in 0..height {
+        if is_tty {
+            let mut line_str = String::new();
+            let mut cur_style = Style::default();
+            let mut last_col = 0;
+            for x in 0..width {
+                if let Some(c) = surface.get(x, y) {
+                    if (!c.glyph.is_empty() && c.glyph.grapheme.as_str() != " ")
+                        || !c.style.is_default()
+                    {
+                        last_col = x + 1;
+                    }
+                }
+            }
+
+            for x in 0..last_col {
+                if let Some(cell) = surface.get(x, y) {
+                    if cell.is_continuation {
+                        continue;
+                    }
+                    if cell.style != cur_style {
+                        if !cur_style.is_default() {
+                            line_str.push_str("\x1b[0m");
+                        }
+                        if !cell.style.is_default() {
+                            cell.style.write_sgr(&mut line_str);
+                        }
+                        cur_style = cell.style;
+                    }
+                    if cell.glyph.is_empty() {
+                        line_str.push(' ');
+                    } else {
+                        line_str.push_str(cell.glyph.grapheme.as_str());
+                    }
+                }
+            }
+            if !cur_style.is_default() {
+                line_str.push_str("\x1b[0m");
+            }
+            lines.push(line_str);
+        } else {
+            let mut line_str = String::new();
+            let mut last_col = 0;
+            for x in 0..width {
+                if let Some(c) = surface.get(x, y) {
+                    if !c.glyph.is_empty() && c.glyph.grapheme.as_str() != " " {
+                        last_col = x + 1;
+                    }
+                }
+            }
+            for x in 0..last_col {
+                if let Some(cell) = surface.get(x, y) {
+                    if cell.is_continuation {
+                        continue;
+                    }
+                    if cell.glyph.is_empty() {
+                        line_str.push(' ');
+                    } else {
+                        line_str.push_str(cell.glyph.grapheme.as_str());
+                    }
+                }
+            }
+            lines.push(line_str);
+        }
+    }
+
+    Ok(lines)
 }

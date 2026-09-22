@@ -1,3 +1,4 @@
+use crate::cell::{Line, RichText, Span};
 use crate::node::{
     AlignItems, Dimension, FlexDirection, JustifyContent, LayoutStyle, Node, NodeKind, WrapMode,
 };
@@ -90,6 +91,95 @@ pub fn wrap_text(text: &str, wrap: WrapMode, max_width: u16) -> Vec<String> {
     }
 
     lines
+}
+
+/// Wraps rich text into lines according to the specified wrap mode and maximum width,
+/// preserving span styles across word wraps.
+pub fn wrap_rich_text(rich: &RichText, wrap: WrapMode, max_width: u16) -> Vec<Line> {
+    if rich.lines.is_empty() {
+        return vec![Line::new()];
+    }
+
+    let mut result = Vec::new();
+
+    for line in &rich.lines {
+        if line.spans.is_empty() {
+            result.push(Line::new().align(line.align));
+            continue;
+        }
+
+        match wrap {
+            WrapMode::NoWrap => {
+                result.push(line.clone());
+            }
+            WrapMode::CharWrap => {
+                let mut current = Line::new().align(line.align);
+                let mut current_w: u16 = 0;
+
+                for span in &line.spans {
+                    for g in span.text.graphemes(true) {
+                        let gw = UnicodeWidthStr::width(g) as u16;
+                        if current_w + gw > max_width && current_w > 0 {
+                            result.push(current);
+                            current = Line::new().align(line.align);
+                            current_w = 0;
+                        }
+                        current.push(Span::styled(g, span.style));
+                        current_w += gw;
+                    }
+                }
+                if !current.spans.is_empty() || result.is_empty() {
+                    result.push(current);
+                }
+            }
+            WrapMode::WordWrap => {
+                let mut current = Line::new().align(line.align);
+                let mut current_w: u16 = 0;
+
+                for span in &line.spans {
+                    let words = span.text.split_inclusive(' ');
+                    for word in words {
+                        let word_w = UnicodeWidthStr::width(word) as u16;
+
+                        if current_w + word_w > max_width && current_w > 0 {
+                            result.push(current);
+                            current = Line::new().align(line.align);
+                            current_w = 0;
+                        }
+
+                        if word == " " && current_w == 0 {
+                            continue;
+                        }
+
+                        if word_w > max_width {
+                            for g in word.graphemes(true) {
+                                let gw = UnicodeWidthStr::width(g) as u16;
+                                if current_w + gw > max_width && current_w > 0 {
+                                    result.push(current);
+                                    current = Line::new().align(line.align);
+                                    current_w = 0;
+                                }
+                                current.push(Span::styled(g, span.style));
+                                current_w += gw;
+                            }
+                        } else {
+                            current.push(Span::styled(word, span.style));
+                            current_w += word_w;
+                        }
+                    }
+                }
+                if !current.spans.is_empty() {
+                    result.push(current);
+                }
+            }
+        }
+    }
+
+    if result.is_empty() {
+        result.push(Line::new());
+    }
+
+    result
 }
 
 fn convert_dimension(dim: Dimension) -> TaffyDimension {
@@ -196,6 +286,41 @@ fn measure_leaf(
                 height: known_dimensions.height.unwrap_or(height),
             }
         }
+        NodeKind::RichText { text, wrap } => {
+            let max_w = match available_space.width {
+                AvailableSpace::Definite(w) => w.max(1.0) as u16,
+                _ => 1000,
+            };
+
+            let lines = wrap_rich_text(text, *wrap, max_w);
+            let mut width: f32 = 0.0;
+            for line in &lines {
+                let w = line.display_width() as f32;
+                if w > width {
+                    width = w;
+                }
+            }
+            let height = lines.len() as f32;
+
+            Size {
+                width: known_dimensions.width.unwrap_or(width),
+                height: known_dimensions.height.unwrap_or(height),
+            }
+        }
+        NodeKind::Rule { title, .. } => {
+            let title_w = title
+                .as_ref()
+                .map(|t| UnicodeWidthStr::width(t.as_str()) as f32 + 6.0)
+                .unwrap_or(4.0);
+            Size {
+                width: known_dimensions.width.unwrap_or(title_w),
+                height: known_dimensions.height.unwrap_or(1.0),
+            }
+        }
+        NodeKind::Rail { .. } => Size {
+            width: known_dimensions.width.unwrap_or(2.0),
+            height: known_dimensions.height.unwrap_or(1.0),
+        },
         NodeKind::Spinner {
             frames,
             frame_index,

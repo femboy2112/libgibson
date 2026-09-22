@@ -25,6 +25,20 @@ This document outlines the planned future milestones and next architectural fron
 
 ---
 
+## Phase 1.5: Agent-Class Typography & Interactive Primitives (Completed)
+
+- [x] **Chrome Primitives**: `Node::rule` (horizontal divider with optional title) and `Node::rail` (left-border callout).
+- [x] **Typography & Hierarchy System**: `Span`, `Line`, `RichText`, and semantic `Theme` tokens with zero raw SGR escape codes.
+- [x] **Asynchronous Scrollback Insertion (`insert_before_live`)**: Insert events into native scrollback above active live prompts without dropping frames or triggering full repaints.
+- [x] **Display-Width-Aware TextInput**: Proper horizontal scrolling, wide CJK, and emoji display-width calculations.
+- [x] **Right-Margin Autowrap Protection**: DECAWM `\x1b[?7l` disabling and right-boundary wide glyph clipping.
+- [x] **Responsive Layout Sizing**: Percentage width (`percent_width`), min/max dimensions, and per-side padding.
+- [x] **Virtual Terminal Screen State Verification**: `vt100` parser automated tests verifying exact screen character grids and cursor positions.
+- [x] **Rapid Resize & Narrow Terminal Torture Tests**: Zero panics, bounded inline heights, and valid cursor coordinates across cyclic resizing down to 10 columns.
+- [x] **Flagship Polished Agent CLI Demo**: Restrained, typography-driven agent interface with rule header, rail callouts, live spinner, permission selector, and zero-escape non-TTY redirection.
+
+---
+
 ## Phase 2: Input Protocols & Interaction Enhancements
 
 - [ ] **Kitty Keyboard Protocol**: Support progressive enhancement for disambiguated escape keys, key release events, and modifier combinations.

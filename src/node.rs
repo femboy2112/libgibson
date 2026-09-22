@@ -1,4 +1,4 @@
-use crate::cell::{Color, Style};
+use crate::cell::{Color, Line, RichText, Style};
 use crate::surface::{BorderType, Rect};
 
 /// Flex direction for layout containers.
@@ -109,6 +109,18 @@ pub enum NodeKind {
         text: String,
         style: Style,
         wrap: WrapMode,
+    },
+    RichText {
+        text: RichText,
+        wrap: WrapMode,
+    },
+    Rule {
+        title: Option<String>,
+        style: Style,
+        title_style: Style,
+    },
+    Rail {
+        style: Style,
     },
     Border {
         border_type: BorderType,
@@ -224,6 +236,46 @@ impl Node {
         })
     }
 
+    /// Creates a rich text node.
+    pub fn rich_text(text: impl Into<RichText>) -> Self {
+        Self::new(NodeKind::RichText {
+            text: text.into(),
+            wrap: WrapMode::WordWrap,
+        })
+    }
+
+    /// Creates a rich text node with explicit wrap mode.
+    pub fn rich_text_wrapped(text: impl Into<RichText>, wrap: WrapMode) -> Self {
+        Self::new(NodeKind::RichText {
+            text: text.into(),
+            wrap,
+        })
+    }
+
+    /// Creates a single-line rich text node.
+    pub fn line(line: impl Into<Line>) -> Self {
+        Self::rich_text(RichText::from(line.into()))
+    }
+
+    /// Creates a horizontal rule separator.
+    pub fn rule(title: Option<impl Into<String>>, style: Style) -> Self {
+        let mut n = Self::new(NodeKind::Rule {
+            title: title.map(|t| t.into()),
+            style,
+            title_style: style.bold(),
+        });
+        n.layout_style.height = Dimension::Length(1.0);
+        n
+    }
+
+    /// Creates a callout rail with a vertical line on the left margin.
+    pub fn rail(style: Style) -> Self {
+        let mut n = Self::new(NodeKind::Rail { style });
+        n.layout_style.direction = FlexDirection::Column;
+        n.layout_style.padding_left = 2.0; // 1 col for '│' + 1 col space
+        n
+    }
+
     /// Creates a bordered container node.
     pub fn border_box(border_type: BorderType, style: Style) -> Self {
         let mut n = Self::new(NodeKind::Box {
@@ -245,8 +297,38 @@ impl Node {
         self
     }
 
+    pub fn percent_width(mut self, percent: f32) -> Self {
+        self.layout_style.width = Dimension::Percent(percent);
+        self
+    }
+
     pub fn height(mut self, height: f32) -> Self {
         self.layout_style.height = Dimension::Length(height);
+        self
+    }
+
+    pub fn percent_height(mut self, percent: f32) -> Self {
+        self.layout_style.height = Dimension::Percent(percent);
+        self
+    }
+
+    pub fn min_width(mut self, width: f32) -> Self {
+        self.layout_style.min_width = Dimension::Length(width);
+        self
+    }
+
+    pub fn max_width(mut self, width: f32) -> Self {
+        self.layout_style.max_width = Dimension::Length(width);
+        self
+    }
+
+    pub fn min_height(mut self, height: f32) -> Self {
+        self.layout_style.min_height = Dimension::Length(height);
+        self
+    }
+
+    pub fn max_height(mut self, height: f32) -> Self {
+        self.layout_style.max_height = Dimension::Length(height);
         self
     }
 
@@ -271,6 +353,26 @@ impl Node {
         self.layout_style.padding_bottom = p;
         self.layout_style.padding_left = p;
         self.layout_style.padding_right = p;
+        self
+    }
+
+    pub fn padding_left(mut self, p: f32) -> Self {
+        self.layout_style.padding_left = p;
+        self
+    }
+
+    pub fn padding_right(mut self, p: f32) -> Self {
+        self.layout_style.padding_right = p;
+        self
+    }
+
+    pub fn padding_top(mut self, p: f32) -> Self {
+        self.layout_style.padding_top = p;
+        self
+    }
+
+    pub fn padding_bottom(mut self, p: f32) -> Self {
+        self.layout_style.padding_bottom = p;
         self
     }
 

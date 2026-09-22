@@ -64,3 +64,38 @@ fn test_scrollback_invariance_diff_cost() {
         "Only 1 dirty cell should be patched regardless of transcript size!"
     );
 }
+
+#[test]
+fn test_insert_before_live_preserves_live_surface() {
+    let mut session = TerminalSession::new().unwrap();
+    let mut renderer = Renderer::new(gibson::RenderMode::Inline, false);
+
+    // Initial live render: prompt with input
+    let mut root = Node::col().child(Node::text("Active Live Input Prompt", Style::default()));
+    let (dirty1, _total, _bytes, is_full1) = renderer.render(&mut root, &mut session).unwrap();
+    assert!(is_full1);
+    assert!(dirty1 > 0);
+    let original_height = renderer.live_region_height;
+    assert!(original_height > 0);
+
+    // Now insert a committed log ABOVE the active live region
+    renderer
+        .insert_before_live(&["[background] Task completed successfully"], &mut session)
+        .unwrap();
+
+    // After insert_before_live, live_region_height MUST be preserved!
+    assert_eq!(
+        renderer.live_region_height, original_height,
+        "Live region height must be preserved after insert_before_live!"
+    );
+
+    // Next render of the same root should emit 0 dirty cells because previous_surface was preserved!
+    let mut next_root = Node::col().child(Node::text("Active Live Input Prompt", Style::default()));
+    let (dirty2, _total, bytes2, is_full2) = renderer.render(&mut next_root, &mut session).unwrap();
+    assert!(
+        !is_full2,
+        "Should NOT be a full repaint; surface was preserved!"
+    );
+    assert_eq!(dirty2, 0, "Zero dirty cells since prompt didn't change!");
+    assert_eq!(bytes2, 0, "Zero bytes emitted when content is identical!");
+}

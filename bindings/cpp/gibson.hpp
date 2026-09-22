@@ -61,6 +61,33 @@ public:
         return Node(n);
     }
 
+    static Node rule(const std::string& title = "", const gibson_style_t* style = nullptr) {
+        gibson_node_t* n = nullptr;
+        const char* title_ptr = title.empty() ? nullptr : title.c_str();
+        gibson_node_rule(title_ptr, style, &n);
+        return Node(n);
+    }
+
+    static Node rail(const gibson_style_t* style = nullptr) {
+        gibson_node_t* n = nullptr;
+        gibson_node_rail(style, &n);
+        return Node(n);
+    }
+
+    static Node spinner(uint32_t frame_index = 0, const gibson_style_t* style = nullptr, const std::string& label = "") {
+        gibson_node_t* n = nullptr;
+        const char* label_ptr = label.empty() ? nullptr : label.c_str();
+        gibson_node_spinner(frame_index, style, label_ptr, &n);
+        return Node(n);
+    }
+
+    static Node text_input(const std::string& value, uint32_t cursor_grapheme = 0, const std::string& placeholder = "", const gibson_style_t* style = nullptr) {
+        gibson_node_t* n = nullptr;
+        const char* placeholder_ptr = placeholder.empty() ? nullptr : placeholder.c_str();
+        gibson_node_text_input(value.c_str(), cursor_grapheme, placeholder_ptr, style, &n);
+        return Node(n);
+    }
+
     Node& width(float w) {
         if (raw_) gibson_node_set_width(raw_, w);
         return *this;
@@ -68,6 +95,21 @@ public:
 
     Node& height(float h) {
         if (raw_) gibson_node_set_height(raw_, h);
+        return *this;
+    }
+
+    Node& percent_width(float pw) {
+        if (raw_) gibson_node_set_percent_width(raw_, pw);
+        return *this;
+    }
+
+    Node& min_width(float mw) {
+        if (raw_) gibson_node_set_min_width(raw_, mw);
+        return *this;
+    }
+
+    Node& max_width(float mw) {
+        if (raw_) gibson_node_set_max_width(raw_, mw);
         return *this;
     }
 
@@ -83,6 +125,11 @@ public:
 
     Node& padding(float p) {
         if (raw_) gibson_node_set_padding(raw_, p);
+        return *this;
+    }
+
+    Node& padding_sides(float left, float right, float top, float bottom) {
+        if (raw_) gibson_node_set_padding_sides(raw_, left, right, top, bottom);
         return *this;
     }
 
@@ -139,8 +186,25 @@ public:
         return *this;
     }
 
+    void set_sync_updates(bool enabled) {
+        gibson_status_t st = gibson_set_sync_updates(ctx_, enabled ? 1 : 0);
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson set_sync_updates failed");
+        }
+    }
+
+    void set_max_fps(uint32_t fps) {
+        gibson_status_t st = gibson_set_max_fps(ctx_, fps);
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson set_max_fps failed");
+        }
+    }
+
     void set_root(Node root) {
-        gibson_set_root_node(ctx_, root.release());
+        gibson_status_t st = gibson_set_root_node(ctx_, root.release());
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson set_root failed");
+        }
     }
 
     void render() {
@@ -150,11 +214,63 @@ public:
         }
     }
 
+    bool render_if_due() {
+        int32_t rendered = 0;
+        gibson_status_t st = gibson_render_if_due(ctx_, &rendered);
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson render_if_due failed");
+        }
+        return rendered != 0;
+    }
+
+    void request_render() {
+        gibson_status_t st = gibson_request_render(ctx_);
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson request_render failed");
+        }
+    }
+
     void commit(const std::string& text) {
         gibson_status_t st = gibson_commit(ctx_, text.c_str());
         if (st != GIBSON_OK) {
             throw std::runtime_error("Gibson commit failed");
         }
+    }
+
+    void insert_before_live(const std::string& text) {
+        gibson_status_t st = gibson_insert_before_live(ctx_, text.c_str());
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson insert_before_live failed");
+        }
+    }
+
+    void commit_node(Node node) {
+        gibson_status_t st = gibson_commit_node(ctx_, node.release());
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson commit_node failed");
+        }
+    }
+
+    void insert_node_before_live(Node node) {
+        gibson_status_t st = gibson_insert_node_before_live(ctx_, node.release());
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson insert_node_before_live failed");
+        }
+    }
+
+    void clear_live_region() {
+        gibson_status_t st = gibson_clear_live_region(ctx_);
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson clear_live_region failed");
+        }
+    }
+
+    bool poll_event(uint32_t timeout_ms, gibson_event_t& out_event) {
+        gibson_status_t st = gibson_poll_event(ctx_, timeout_ms, &out_event);
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson poll_event failed");
+        }
+        return out_event.event_type != GIBSON_EVENT_NONE;
     }
 
     gibson_stats_t stats() const {

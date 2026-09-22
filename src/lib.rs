@@ -13,11 +13,11 @@ pub mod session;
 pub mod surface;
 
 pub use ansi::AnsiCompiler;
-pub use cell::{Cell, Color, Glyph, Style};
+pub use cell::{Cell, Color, Glyph, Line, RichText, Span, Style, TextAlign, Theme};
 pub use context::Context;
 pub use diff::{compute_diff, CellRun, RowPatch, SurfaceDiff};
 pub use input::{poll_event, Event, KeyCode, KeyEvent, KeyModifiers, TextInputState};
-pub use layout::{compute_layout, wrap_text};
+pub use layout::{compute_layout, wrap_rich_text, wrap_text};
 pub use node::{
     AlignItems, Dimension, FlexDirection, JustifyContent, LayoutStyle, Node, NodeKind, WrapMode,
 };

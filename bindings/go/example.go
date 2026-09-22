@@ -1,3 +1,4 @@
+// UNVERIFIED: Go compiler not available in current test environment
 //go:build ignore
 package main
 
@@ -20,11 +21,15 @@ func main() {
 
 	ctx.Commit("[Go cgo] Context initialized.")
 
-	root := gibson.NewColNode().SetWidth(70.0).SetGap(1.0)
-	root.AddChild(gibson.NewTextNode("Go cgo Native Interface"))
+	root := gibson.NewColNode().SetPercentWidth(100.0).SetMaxWidth(72.0).SetGap(1.0)
+	root.AddChild(gibson.NewRuleNode("LibGibson Go cgo Demo"))
+
+	rail := gibson.NewRailNode()
+	rail.AddChild(gibson.NewTextNode("Clean Go cgo bindings over stable extern C ABI."))
+	root.AddChild(rail)
 
 	box := gibson.NewBorderBoxNode(gibson.BorderRounded).SetWidth(60.0).SetHeight(3.0)
-	box.AddChild(gibson.NewTextNode("Clean Go bindings over stable extern C ABI"))
+	box.AddChild(gibson.NewTextNode("Type-safe Go wrapper around high-performance Rust core"))
 	root.AddChild(box)
 
 	ctx.SetRoot(root)
@@ -33,6 +38,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx.InsertBeforeLive("[Go cgo] Live asynchronous notice inserted before active region.")
 	ctx.Commit("[Go cgo] Output rendered and committed.")
 	fmt.Println("[Go cgo] Example finished successfully.")
 }

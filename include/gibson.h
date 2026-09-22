@@ -149,7 +149,13 @@ gibson_status_t gibson_set_max_fps(gibson_context_t *ctx, uint32_t fps);
 /* UI & Rendering */
 gibson_status_t gibson_set_root_node(gibson_context_t *ctx, gibson_node_t *node);
 gibson_status_t gibson_render(gibson_context_t *ctx);
+gibson_status_t gibson_render_if_due(gibson_context_t *ctx, int32_t *out_rendered);
+gibson_status_t gibson_request_render(gibson_context_t *ctx);
 gibson_status_t gibson_commit(gibson_context_t *ctx, const char *utf8_text);
+gibson_status_t gibson_insert_before_live(gibson_context_t *ctx, const char *utf8_text);
+gibson_status_t gibson_commit_node(gibson_context_t *ctx, gibson_node_t *node);
+gibson_status_t gibson_insert_node_before_live(gibson_context_t *ctx, gibson_node_t *node);
+gibson_status_t gibson_clear_live_region(gibson_context_t *ctx);
 
 /* Input */
 gibson_status_t gibson_poll_event(gibson_context_t *ctx, uint32_t timeout_ms, gibson_event_t *out_event);
@@ -165,14 +171,20 @@ gibson_status_t gibson_node_text(const char *utf8_text, const gibson_style_t *st
 gibson_status_t gibson_node_spinner(uint32_t frame_index, const gibson_style_t *style, const char *label, gibson_node_t **out);
 gibson_status_t gibson_node_text_input(const char *value, uint32_t cursor_grapheme, const char *placeholder, const gibson_style_t *style, gibson_node_t **out);
 gibson_status_t gibson_node_border_box(int32_t border_type, const gibson_style_t *style, gibson_node_t **out);
+gibson_status_t gibson_node_rule(const char *title, const gibson_style_t *style, gibson_node_t **out);
+gibson_status_t gibson_node_rail(const gibson_style_t *style, gibson_node_t **out);
 gibson_status_t gibson_node_add_child(gibson_node_t *parent, gibson_node_t *child);
 
 /* Node Layout Styling */
 gibson_status_t gibson_node_set_width(gibson_node_t *node, float width);
 gibson_status_t gibson_node_set_height(gibson_node_t *node, float height);
+gibson_status_t gibson_node_set_percent_width(gibson_node_t *node, float percent);
+gibson_status_t gibson_node_set_min_width(gibson_node_t *node, float width);
+gibson_status_t gibson_node_set_max_width(gibson_node_t *node, float width);
 gibson_status_t gibson_node_set_flex_grow(gibson_node_t *node, float grow);
 gibson_status_t gibson_node_set_gap(gibson_node_t *node, float gap);
 gibson_status_t gibson_node_set_padding(gibson_node_t *node, float padding);
+gibson_status_t gibson_node_set_padding_sides(gibson_node_t *node, float left, float right, float top, float bottom);
 void            gibson_node_free(gibson_node_t *node);
 
 #ifdef __cplusplus

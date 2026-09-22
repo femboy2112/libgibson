@@ -4,6 +4,7 @@ use crossterm::event::{
 use std::io;
 use std::time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -288,17 +289,37 @@ impl TextInputState {
         }
     }
 
-    /// Adjusts viewport scroll offset so the cursor is visible within `visible_width`.
+    /// Adjusts viewport scroll offset (in display columns) so the cursor is visible within `visible_width`.
     pub fn update_scroll(&mut self, visible_width: usize) {
         if visible_width == 0 {
             return;
         }
 
-        if self.cursor_grapheme < self.scroll_offset {
-            self.scroll_offset = self.cursor_grapheme;
-        } else if self.cursor_grapheme >= self.scroll_offset + visible_width {
-            self.scroll_offset = self.cursor_grapheme - visible_width + 1;
+        let cursor_col = self.cursor_display_column();
+
+        if cursor_col < self.scroll_offset {
+            self.scroll_offset = cursor_col;
+        } else if cursor_col >= self.scroll_offset + visible_width {
+            self.scroll_offset = cursor_col.saturating_sub(visible_width) + 1;
         }
+    }
+
+    /// Returns the cursor position in monospace terminal display columns.
+    pub fn cursor_display_column(&self) -> usize {
+        let graphemes: Vec<&str> = self.text.graphemes(true).collect();
+        let mut col = 0;
+        for (i, &g) in graphemes.iter().enumerate() {
+            if i >= self.cursor_grapheme {
+                break;
+            }
+            col += UnicodeWidthStr::width(g).max(1);
+        }
+        col
+    }
+
+    /// Returns the total display width of the buffer in terminal columns.
+    pub fn total_display_width(&self) -> usize {
+        UnicodeWidthStr::width(self.text.as_str())
     }
 }
 
@@ -361,5 +382,25 @@ mod tests {
         input.insert_str("-end");
 
         assert_eq!(input.text, "start-pasted content-end");
+    }
+
+    #[test]
+    fn test_text_input_mixed_display_width_scrolling() {
+        let mut input = TextInputState::new();
+        // 🦀 = 2 cols, A = 1 col, 你 = 2 cols -> 5 cols total
+        input.insert_str("🦀A你");
+        assert_eq!(input.cursor_grapheme, 3);
+        assert_eq!(input.cursor_display_column(), 5);
+
+        // Visible width of 3 columns
+        input.update_scroll(3);
+        // cursor is at col 5, visible window must contain 5, so scroll_offset = 5 - 3 + 1 = 3
+        assert_eq!(input.scroll_offset, 3);
+
+        // Move cursor back to beginning
+        input.move_to_start();
+        assert_eq!(input.cursor_display_column(), 0);
+        input.update_scroll(3);
+        assert_eq!(input.scroll_offset, 0);
     }
 }

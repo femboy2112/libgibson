@@ -24,6 +24,7 @@ libc = "0.2"
 
 [dev-dependencies]
 portable-pty = "0.9"
+vt100 = "0.15"
 
 [[example]]
 name = "agent_chat"
@@ -36,6 +37,10 @@ path = "examples/perf_probe.rs"
 [[example]]
 name = "hack_the_gibson"
 path = "examples/hack_the_gibson.rs"
+
+[[example]]
+name = "polished_agent"
+path = "examples/polished_agent.rs"
 
 [profile.release]
 opt-level = 3
