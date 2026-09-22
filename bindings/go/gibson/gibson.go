@@ -32,15 +32,29 @@ const (
 	BorderAscii   BorderType = C.GIBSON_BORDER_ASCII
 )
 
-// Stats holds render performance metrics.
+// Stats holds render performance metrics (mirrors the versioned C struct).
 type Stats struct {
+	StructSize               uint32
+	AbiVersion               uint32
 	Frames                   uint64
 	SkippedFrames            uint64
 	DirtyCells               uint64
 	TotalCells               uint64
-	BytesEmitted             uint64
+	FrameBytes               uint64
 	FullRepaints             uint64
 	LastRenderDurationMicros uint64
+	HistoryInsertions        uint64
+	InsertionRepaints        uint64
+	FastInsertions           uint64
+	InsertionBytes           uint64
+	AnchorResyncs            uint64
+	CommitBytes              uint64
+	ControlBytes             uint64
+}
+
+// AbiVersion returns the runtime ABI version of the linked library.
+func AbiVersion() uint32 {
+	return uint32(C.gibson_abi_version())
 }
 
 // Context wraps a LibGibson native terminal context.
@@ -190,18 +204,28 @@ func (c *Context) SetRoot(n *Node) {
 // GetStats returns current frame and rendering metrics.
 func (c *Context) GetStats() (*Stats, error) {
 	var s C.gibson_stats_t
+	C.gibson_stats_init(&s)
 	status := C.gibson_get_stats(c.ptr, &s)
 	if status != C.GIBSON_OK {
 		return nil, errors.New("failed to get stats")
 	}
 	return &Stats{
+		StructSize:               uint32(s.struct_size),
+		AbiVersion:               uint32(s.abi_version),
 		Frames:                   uint64(s.frames),
 		SkippedFrames:            uint64(s.skipped_frames),
 		DirtyCells:               uint64(s.dirty_cells),
 		TotalCells:               uint64(s.total_cells),
-		BytesEmitted:             uint64(s.bytes_emitted),
+		FrameBytes:               uint64(s.frame_bytes),
 		FullRepaints:             uint64(s.full_repaints),
 		LastRenderDurationMicros: uint64(s.last_render_duration_micros),
+		HistoryInsertions:        uint64(s.history_insertions),
+		InsertionRepaints:        uint64(s.insertion_repaints),
+		FastInsertions:           uint64(s.fast_insertions),
+		InsertionBytes:           uint64(s.insertion_bytes),
+		AnchorResyncs:            uint64(s.anchor_resyncs),
+		CommitBytes:              uint64(s.commit_bytes),
+		ControlBytes:             uint64(s.control_bytes),
 	}, nil
 }
 
@@ -373,5 +397,121 @@ func (n *Node) Free() {
 	if n.ptr != nil {
 		C.gibson_node_free(n.ptr)
 		n.ptr = nil
+	}
+}
+
+// CommitText writes structured plain text to scrollback (control chars neutralized).
+func (c *Context) CommitText(text string) error {
+	cStr := C.CString(text)
+	defer C.free(unsafe.Pointer(cStr))
+	if C.gibson_commit_text(c.ptr, cStr) != C.GIBSON_OK {
+		return errors.New("failed to commit text")
+	}
+	return nil
+}
+
+// CommitRawAnsiUnchecked is the raw escape hatch; the payload is written verbatim.
+func (c *Context) CommitRawAnsiUnchecked(text string) error {
+	cStr := C.CString(text)
+	defer C.free(unsafe.Pointer(cStr))
+	if C.gibson_commit_raw_ansi_unchecked(c.ptr, cStr) != C.GIBSON_OK {
+		return errors.New("failed to commit raw ansi")
+	}
+	return nil
+}
+
+// CommitRichText commits structured rich text (borrows rich).
+func (c *Context) CommitRichText(rich *RichText) error {
+	if rich == nil || rich.ptr == nil {
+		return errors.New("invalid rich text")
+	}
+	if C.gibson_commit_rich_text(c.ptr, rich.ptr) != C.GIBSON_OK {
+		return errors.New("failed to commit rich text")
+	}
+	return nil
+}
+
+// InsertRichTextBeforeLive inserts structured rich text above the live region.
+func (c *Context) InsertRichTextBeforeLive(rich *RichText) error {
+	if rich == nil || rich.ptr == nil {
+		return errors.New("invalid rich text")
+	}
+	if C.gibson_insert_rich_text_before_live(c.ptr, rich.ptr) != C.GIBSON_OK {
+		return errors.New("failed to insert rich text")
+	}
+	return nil
+}
+
+// Line is a language-neutral line of styled spans.
+type Line struct {
+	ptr *C.gibson_line_t
+}
+
+// NewLine creates an empty line.
+func NewLine() *Line {
+	var ptr *C.gibson_line_t
+	C.gibson_line_new(&ptr)
+	return &Line{ptr: ptr}
+}
+
+// AddSpan appends a styled span. style may be nil.
+func (l *Line) AddSpan(text string, style *C.gibson_style_t) *Line {
+	if l.ptr == nil {
+		return l
+	}
+	cStr := C.CString(text)
+	defer C.free(unsafe.Pointer(cStr))
+	C.gibson_line_add_span(l.ptr, cStr, style)
+	return l
+}
+
+// SetAlign sets line alignment (0 left, 1 center, 2 right).
+func (l *Line) SetAlign(align int32) *Line {
+	if l.ptr != nil {
+		C.gibson_line_set_align(l.ptr, C.int32_t(align))
+	}
+	return l
+}
+
+// Free releases the line.
+func (l *Line) Free() {
+	if l.ptr != nil {
+		C.gibson_line_free(l.ptr)
+		l.ptr = nil
+	}
+}
+
+// RichText is a structured multi-line rich text block.
+type RichText struct {
+	ptr *C.gibson_rich_text_t
+}
+
+// NewRichText creates an empty rich text block.
+func NewRichText() *RichText {
+	var ptr *C.gibson_rich_text_t
+	C.gibson_rich_text_new(&ptr)
+	return &RichText{ptr: ptr}
+}
+
+// AddLine copies line into the rich text block.
+func (r *RichText) AddLine(line *Line) *RichText {
+	if r.ptr != nil && line != nil && line.ptr != nil {
+		C.gibson_rich_text_add_line(r.ptr, line.ptr)
+	}
+	return r
+}
+
+// ToNode builds a UI node from the rich text (borrows rich).
+func (r *RichText) ToNode(wrap int32) *Node {
+	var ptr *C.gibson_node_t
+	C.gibson_node_rich_text(r.ptr, C.int32_t(wrap), &ptr)
+	return &Node{ptr: ptr}
+}
+
+// Free releases the rich text.
+func (r *RichText) Free() {
+	if r.ptr != nil {
+		C.gibson_rich_text_free(r.ptr)
+		r.ptr = nil
 	}
 }

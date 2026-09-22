@@ -104,14 +104,28 @@ class GibsonStyle(ctypes.Structure):
 
 class GibsonStats(ctypes.Structure):
     _fields_ = [
+        ("struct_size", ctypes.c_uint32),
+        ("abi_version", ctypes.c_uint32),
         ("frames", ctypes.c_uint64),
         ("skipped_frames", ctypes.c_uint64),
         ("dirty_cells", ctypes.c_uint64),
         ("total_cells", ctypes.c_uint64),
-        ("bytes_emitted", ctypes.c_uint64),
+        ("frame_bytes", ctypes.c_uint64),
         ("full_repaints", ctypes.c_uint64),
         ("last_render_duration_micros", ctypes.c_uint64),
+        ("history_insertions", ctypes.c_uint64),
+        ("insertion_repaints", ctypes.c_uint64),
+        ("fast_insertions", ctypes.c_uint64),
+        ("insertion_bytes", ctypes.c_uint64),
+        ("anchor_resyncs", ctypes.c_uint64),
+        ("commit_bytes", ctypes.c_uint64),
+        ("control_bytes", ctypes.c_uint64),
     ]
+
+    def __init__(self):
+        super().__init__()
+        self.struct_size = ctypes.sizeof(GibsonStats)
+        self.abi_version = _lib.gibson_abi_version()
 
 # Setup ctypes signatures
 _lib.gibson_create_context.argtypes = [ctypes.c_int32, ctypes.POINTER(ctypes.c_void_p)]
@@ -215,6 +229,115 @@ _lib.gibson_node_free.restype = None
 
 _lib.gibson_last_error_message.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
 _lib.gibson_last_error_message.restype = ctypes.c_int32
+
+# Versioning / stats init
+_lib.gibson_abi_version.argtypes = []
+_lib.gibson_abi_version.restype = ctypes.c_uint32
+
+_lib.gibson_stats_init.argtypes = [ctypes.POINTER(GibsonStats)]
+_lib.gibson_stats_init.restype = None
+
+# Structured commits / rich text
+_lib.gibson_commit_text.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+_lib.gibson_commit_text.restype = ctypes.c_int32
+
+_lib.gibson_commit_raw_ansi_unchecked.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+_lib.gibson_commit_raw_ansi_unchecked.restype = ctypes.c_int32
+
+_lib.gibson_commit_rich_text.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+_lib.gibson_commit_rich_text.restype = ctypes.c_int32
+
+_lib.gibson_insert_rich_text_before_live.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+_lib.gibson_insert_rich_text_before_live.restype = ctypes.c_int32
+
+_lib.gibson_node_rich_text.argtypes = [ctypes.c_void_p, ctypes.c_int32, ctypes.POINTER(ctypes.c_void_p)]
+_lib.gibson_node_rich_text.restype = ctypes.c_int32
+
+_lib.gibson_line_new.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+_lib.gibson_line_new.restype = ctypes.c_int32
+
+_lib.gibson_line_add_span.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(GibsonStyle)]
+_lib.gibson_line_add_span.restype = ctypes.c_int32
+
+_lib.gibson_line_set_align.argtypes = [ctypes.c_void_p, ctypes.c_int32]
+_lib.gibson_line_set_align.restype = ctypes.c_int32
+
+_lib.gibson_line_free.argtypes = [ctypes.c_void_p]
+_lib.gibson_line_free.restype = None
+
+_lib.gibson_rich_text_new.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+_lib.gibson_rich_text_new.restype = ctypes.c_int32
+
+_lib.gibson_rich_text_add_line.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+_lib.gibson_rich_text_add_line.restype = ctypes.c_int32
+
+_lib.gibson_rich_text_free.argtypes = [ctypes.c_void_p]
+_lib.gibson_rich_text_free.restype = None
+
+
+class Line:
+    """A single line composed of independently styled spans."""
+
+    def __init__(self):
+        self.handle = ctypes.c_void_p()
+        if _lib.gibson_line_new(ctypes.byref(self.handle)) != 0:
+            raise RuntimeError("Failed to create Line")
+
+    def add_span(self, text, style=None):
+        style_ref = ctypes.byref(style) if style is not None else None
+        status = _lib.gibson_line_add_span(self.handle, text.encode("utf-8"), style_ref)
+        if status != 0:
+            raise RuntimeError(f"add_span failed: {status}")
+        return self
+
+    def align(self, mode):
+        status = _lib.gibson_line_set_align(self.handle, int(mode))
+        if status != 0:
+            raise RuntimeError(f"set_align failed: {status}")
+        return self
+
+    def release(self):
+        h = self.handle
+        self.handle = None
+        return h
+
+    def __del__(self):
+        if getattr(self, "handle", None):
+            _lib.gibson_line_free(self.handle)
+            self.handle = None
+
+
+class RichText:
+    """A language-neutral structured multi-line rich text block."""
+
+    def __init__(self):
+        self.handle = ctypes.c_void_p()
+        if _lib.gibson_rich_text_new(ctypes.byref(self.handle)) != 0:
+            raise RuntimeError("Failed to create RichText")
+
+    def add_line(self, line):
+        status = _lib.gibson_rich_text_add_line(self.handle, line.handle)
+        if status != 0:
+            raise RuntimeError(f"add_line failed: {status}")
+        return self
+
+    def to_node(self, wrap=WrapMode.WORD):
+        h = ctypes.c_void_p()
+        status = _lib.gibson_node_rich_text(self.handle, wrap, ctypes.byref(h))
+        if status != 0:
+            raise RuntimeError(f"node_rich_text failed: {status}")
+        return Node(h)
+
+    def release(self):
+        h = self.handle
+        self.handle = None
+        return h
+
+    def __del__(self):
+        if getattr(self, "handle", None):
+            _lib.gibson_rich_text_free(self.handle)
+            self.handle = None
+
 
 
 class Node:
@@ -388,9 +511,27 @@ class Context:
             raise RuntimeError(f"Request render failed: status {status}")
 
     def commit(self, text: str):
-        status = _lib.gibson_commit(self.handle, text.encode("utf-8"))
+        status = _lib.gibson_commit_text(self.handle, text.encode("utf-8"))
         if status != 0:
             raise RuntimeError(f"Commit failed: status {status}")
+
+    def commit_text(self, text: str):
+        self.commit(text)
+
+    def commit_raw_ansi_unchecked(self, text: str):
+        status = _lib.gibson_commit_raw_ansi_unchecked(self.handle, text.encode("utf-8"))
+        if status != 0:
+            raise RuntimeError(f"Commit raw failed: status {status}")
+
+    def commit_rich_text(self, rich: "RichText"):
+        status = _lib.gibson_commit_rich_text(self.handle, rich.handle)
+        if status != 0:
+            raise RuntimeError(f"Commit rich text failed: status {status}")
+
+    def insert_rich_text_before_live(self, rich: "RichText"):
+        status = _lib.gibson_insert_rich_text_before_live(self.handle, rich.handle)
+        if status != 0:
+            raise RuntimeError(f"Insert rich text failed: status {status}")
 
     def insert_before_live(self, text: str):
         status = _lib.gibson_insert_before_live(self.handle, text.encode("utf-8"))
@@ -414,5 +555,8 @@ class Context:
 
     def stats(self):
         s = GibsonStats()
-        _lib.gibson_get_stats(self.handle, ctypes.byref(s))
+        _lib.gibson_stats_init(ctypes.byref(s))
+        status = _lib.gibson_get_stats(self.handle, ctypes.byref(s))
+        if status != 0:
+            raise RuntimeError(f"get_stats failed: status {status}")
         return s

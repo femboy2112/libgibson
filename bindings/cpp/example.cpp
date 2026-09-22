@@ -46,16 +46,37 @@ int main() {
         ctx.set_root(std::move(root));
         ctx.render();
 
-        // 4. Test insert_before_live
+        // 4. Language-neutral structured rich text
+        {
+            gibson_style_t label{};
+            label.fg.color_type = GIBSON_COLOR_BRIGHT_YELLOW;
+            label.dim = 1;
+            gibson_style_t value{};
+            value.fg.color_type = GIBSON_COLOR_WHITE;
+            value.bold = 1;
+
+            auto line = gibson::Line::create();
+            line.add_span("RichText: ", &label);
+            line.add_span("one line, many styles", &value);
+
+            auto rich = gibson::RichText::create();
+            rich.add_line(line);
+            ctx.insert_rich_text_before_live(rich);
+            ctx.commit_rich_text(rich);
+        }
+
+        // 5. Test insert_before_live
         ctx.insert_before_live("[C++ RAII] Async notice inserted before active live region.");
 
-        // 5. Commit output
+        // 6. Commit output
         ctx.commit("[C++ RAII] Tree rendered and committed successfully.");
 
-        // 6. Query stats
+        // 7. Query stats (versioned struct)
         auto stats = ctx.stats();
-        std::cout << "[C++ RAII] Stats: frames = " << stats.frames
-                  << ", bytes emitted = " << stats.bytes_emitted << std::endl;
+        std::cout << "[C++ RAII] ABI v" << gibson::Context::abi_version()
+                  << ", frames = " << stats.frames
+                  << ", frame_bytes = " << stats.frame_bytes
+                  << ", anchor_resyncs = " << stats.anchor_resyncs << std::endl;
 
         std::cout << "[C++ RAII] Test completed successfully." << std::endl;
     } catch (const std::exception& ex) {

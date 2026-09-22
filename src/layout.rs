@@ -513,7 +513,7 @@ mod tests {
 #[cfg(test)]
 mod additional_tests {
     use super::*;
-    use crate::node::{Node, NodeKind, Dimension};
+    use crate::node::{Dimension, Node};
 
     #[test]
     fn test_percentage_semantics() {
@@ -534,7 +534,7 @@ mod additional_tests {
         n1.add_child(child2.clone());
 
         let _ = compute_layout(&mut n1, 80, 100);
-        
+
         let c1_rect = n1.children[0].computed_rect;
         assert_eq!(c1_rect.width, 40);
         assert_eq!(c1_rect.height, 100);

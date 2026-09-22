@@ -41,15 +41,25 @@ def main():
         ctx.set_root(root)
         ctx.render()
 
-        # 4. Insert before live
+        # 4. Language-neutral structured rich text
+        from gibson import Line, RichText, ColorType as CT
+        label = GibsonStyle.make(fg=GibsonColor.named(CT.BRIGHT_YELLOW), dim=True)
+        value = GibsonStyle.make(fg=GibsonColor.named(CT.WHITE), bold=True)
+        line = Line().add_span("RichText: ", label).add_span("one line, many styles", value)
+        rich = RichText().add_line(line)
+        ctx.insert_rich_text_before_live(rich)
+        ctx.commit_rich_text(rich)
+
+        # 5. Insert before live
         ctx.insert_before_live("[Python ctypes] Async background update inserted above active prompt.")
 
-        # 5. Commit output
+        # 6. Commit output
         ctx.commit("[Python ctypes] Frame rendered and committed successfully.")
 
-        # 6. Query stats
+        # 7. Query stats (versioned struct)
         stats = ctx.stats()
-        print(f"[Python ctypes] Stats: frames = {stats.frames}, bytes emitted = {stats.bytes_emitted}")
+        print(f"[Python ctypes] ABI v{stats.abi_version}: frames = {stats.frames}, "
+              f"frame_bytes = {stats.frame_bytes}, anchor_resyncs = {stats.anchor_resyncs}")
 
     print("[Python ctypes] Test completed successfully.")
 

@@ -152,6 +152,71 @@ private:
     gibson_node_t* raw_{nullptr};
 };
 
+// Language-neutral structured rich text RAII wrappers.
+class Line {
+public:
+    explicit Line(gibson_line_t* raw) : raw_(raw) {}
+    ~Line() { if (raw_) { gibson_line_free(raw_); raw_ = nullptr; } }
+    Line(const Line&) = delete;
+    Line& operator=(const Line&) = delete;
+    Line(Line&& other) noexcept : raw_(other.raw_) { other.raw_ = nullptr; }
+    Line& operator=(Line&& other) noexcept {
+        if (this != &other) { if (raw_) gibson_line_free(raw_); raw_ = other.raw_; other.raw_ = nullptr; }
+        return *this;
+    }
+
+    static Line create() {
+        gibson_line_t* l = nullptr;
+        gibson_line_new(&l);
+        return Line(l);
+    }
+
+    Line& add_span(const std::string& text, const gibson_style_t* style = nullptr) {
+        if (raw_) gibson_line_add_span(raw_, text.c_str(), style);
+        return *this;
+    }
+
+    Line& align(gibson_align_t a) {
+        if (raw_) gibson_line_set_align(raw_, a);
+        return *this;
+    }
+
+    gibson_line_t* raw() const { return raw_; }
+
+private:
+    gibson_line_t* raw_{nullptr};
+};
+
+class RichText {
+public:
+    explicit RichText(gibson_rich_text_t* raw) : raw_(raw) {}
+    ~RichText() { if (raw_) { gibson_rich_text_free(raw_); raw_ = nullptr; } }
+    RichText(const RichText&) = delete;
+    RichText& operator=(const RichText&) = delete;
+    RichText(RichText&& other) noexcept : raw_(other.raw_) { other.raw_ = nullptr; }
+    RichText& operator=(RichText&& other) noexcept {
+        if (this != &other) { if (raw_) gibson_rich_text_free(raw_); raw_ = other.raw_; other.raw_ = nullptr; }
+        return *this;
+    }
+
+    static RichText create() {
+        gibson_rich_text_t* r = nullptr;
+        gibson_rich_text_new(&r);
+        return RichText(r);
+    }
+
+    // Borrows `line`; the caller retains ownership of it.
+    RichText& add_line(const Line& line) {
+        if (raw_ && line.raw()) gibson_rich_text_add_line(raw_, line.raw());
+        return *this;
+    }
+
+    gibson_rich_text_t* raw() const { return raw_; }
+
+private:
+    gibson_rich_text_t* raw_{nullptr};
+};
+
 class Context {
 public:
     explicit Context(gibson_render_mode_t mode = GIBSON_MODE_INLINE) {
@@ -231,9 +296,37 @@ public:
     }
 
     void commit(const std::string& text) {
-        gibson_status_t st = gibson_commit(ctx_, text.c_str());
+        gibson_status_t st = gibson_commit_text(ctx_, text.c_str());
         if (st != GIBSON_OK) {
             throw std::runtime_error("Gibson commit failed");
+        }
+    }
+
+    void commit_text(const std::string& text) {
+        gibson_status_t st = gibson_commit_text(ctx_, text.c_str());
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson commit_text failed");
+        }
+    }
+
+    void commit_raw_ansi_unchecked(const std::string& text) {
+        gibson_status_t st = gibson_commit_raw_ansi_unchecked(ctx_, text.c_str());
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson commit_raw_ansi_unchecked failed");
+        }
+    }
+
+    void commit_rich_text(const RichText& rich) {
+        gibson_status_t st = gibson_commit_rich_text(ctx_, rich.raw());
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson commit_rich_text failed");
+        }
+    }
+
+    void insert_rich_text_before_live(const RichText& rich) {
+        gibson_status_t st = gibson_insert_rich_text_before_live(ctx_, rich.raw());
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson insert_rich_text_before_live failed");
         }
     }
 
@@ -275,9 +368,15 @@ public:
 
     gibson_stats_t stats() const {
         gibson_stats_t s{};
-        gibson_get_stats(ctx_, &s);
+        gibson_stats_init(&s);
+        gibson_status_t st = gibson_get_stats(ctx_, &s);
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson get_stats failed");
+        }
         return s;
     }
+
+    static uint32_t abi_version() { return gibson_abi_version(); }
 
 private:
     gibson_context_t* ctx_{nullptr};

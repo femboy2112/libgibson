@@ -7,7 +7,7 @@ pub struct AnsiCompiler {
     pub cursor_x: u16,
     pub cursor_y: u16,
     pub current_style: Style,
-    }
+}
 
 impl AnsiCompiler {
     pub fn new() -> Self {
@@ -15,9 +15,8 @@ impl AnsiCompiler {
             cursor_x: 0,
             cursor_y: 0,
             current_style: Style::default(),
-                    }
+        }
     }
-
     pub fn reset_cursor(&mut self, x: u16, y: u16) {
         self.cursor_x = x;
         self.cursor_y = y;
@@ -29,7 +28,6 @@ impl AnsiCompiler {
         if diff.is_empty() {
             return out;
         }
-
 
         // Disable auto-wrap mode (DECAWM) to protect against right-margin wrap glitch
         out.extend_from_slice(b"\x1b[?7l");
@@ -55,7 +53,6 @@ impl AnsiCompiler {
 
         // Re-enable auto-wrap mode (DECAWM)
         out.extend_from_slice(b"\x1b[?7h");
-
 
         out
     }
@@ -235,6 +232,12 @@ impl AnsiCompiler {
     }
 }
 
+impl Default for AnsiCompiler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,7 +264,6 @@ mod tests {
         let s = String::from_utf8_lossy(&bytes);
         assert!(s.contains("hi"));
     }
-
 
     #[test]
     fn test_compiler_erase_to_eol() {

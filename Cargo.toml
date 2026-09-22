@@ -6,7 +6,7 @@ authors = ["LibGibson Contributors"]
 description = "A language-neutral terminal UI engine with a real cell framebuffer, differential renderer, and immutable-scrollback / mutable-live-region semantics."
 license = "MIT OR Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/libgibson/libgibson"
+repository = "https://github.com/femboy2112/libgibson"
 
 [lib]
 name = "gibson"

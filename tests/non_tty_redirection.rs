@@ -14,7 +14,9 @@ fn test_non_tty_suppresses_interactive_ansi() {
     let mut root = Node::col().child(Node::text("Active Live Frame", Style::default()));
 
     // In non-TTY mode, live interactive frames return 0 emitted bytes
-    let (_dirty, _total, bytes, _full, _paint_ctx) = renderer.render(&mut root, &mut session, &mut std::io::stdout()).unwrap();
+    let (_dirty, _total, bytes, _full, _paint_ctx) = renderer
+        .render(&mut root, &mut session, &mut std::io::stdout())
+        .unwrap();
     assert_eq!(
         bytes, 0,
         "Non-interactive stdout must not emit live ANSI frames"

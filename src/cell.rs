@@ -100,6 +100,75 @@ impl Theme {
             bg: Color::Reset,
         }
     }
+
+    /// A theme that emits no color attributes at all, only structural/default
+    /// foreground. Use for `--no-color` and log capture.
+    pub const fn no_color() -> Self {
+        Self {
+            text: Color::Reset,
+            text_muted: Color::Reset,
+            accent: Color::Reset,
+            success: Color::Reset,
+            warning: Color::Reset,
+            error: Color::Reset,
+            border: Color::Reset,
+            rail: Color::Reset,
+            code: Color::Reset,
+            bg: Color::Reset,
+        }
+    }
+
+    /// Resolves the palette into complete semantic [`Style`] values.
+    ///
+    /// This is the preferred surface for demos and components: callers should
+    /// use *roles* (`accent`, `muted`, `success`, ...) rather than assuming a
+    /// specific ANSI color is readable on every terminal theme.
+    pub fn styles(&self) -> ThemeStyles {
+        // `Color::Reset` means "inherit the terminal's default", which is
+        // represented as *no* foreground so no SGR code is emitted at all.
+        fn fg(c: Color) -> Style {
+            if c == Color::Reset {
+                Style::new()
+            } else {
+                Style::new().fg(c)
+            }
+        }
+        ThemeStyles {
+            text: fg(self.text),
+            // `muted` deliberately means "default foreground + dim" rather than a
+            // hardcoded BrightBlack, which is unreadable on some light terminals.
+            muted: Style::new().dim(),
+            faint: Style::new().dim(),
+            accent: fg(self.accent).bold(),
+            success: fg(self.success),
+            warning: fg(self.warning),
+            error: fg(self.error),
+            border: fg(self.border),
+            rail: fg(self.rail),
+            code: fg(self.code),
+            link: fg(self.accent).underline(),
+            selection: Style::new().reverse(),
+        }
+    }
+}
+
+/// Complete semantic [`Style`] roles resolved from a [`Theme`].
+///
+/// See [`Theme::styles`]. Components should prefer these over raw colors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ThemeStyles {
+    pub text: Style,
+    pub muted: Style,
+    pub faint: Style,
+    pub accent: Style,
+    pub success: Style,
+    pub warning: Style,
+    pub error: Style,
+    pub border: Style,
+    pub rail: Style,
+    pub code: Style,
+    pub link: Style,
+    pub selection: Style,
 }
 
 /// Text styling attributes.
@@ -636,6 +705,38 @@ mod tests {
         assert_eq!(theme.text, Color::Reset);
         assert_eq!(theme.bg, Color::Reset);
         assert_eq!(theme.accent, Color::BrightCyan);
+    }
+
+    #[test]
+    fn test_theme_styles_are_semantic_roles() {
+        let styles = Theme::default().styles();
+        // `muted` must be "default foreground + dim", not a hardcoded BrightBlack.
+        assert!(styles.muted.dim);
+        assert_eq!(styles.muted.fg, None);
+        // accent carries emphasis.
+        assert!(styles.accent.bold);
+        // No style should paint a background by default (native canvas preserved).
+        assert_eq!(styles.text.bg, None);
+        assert_eq!(styles.accent.bg, None);
+    }
+
+    #[test]
+    fn test_no_color_theme_adds_no_color() {
+        let styles = Theme::no_color().styles();
+        // No role may introduce a foreground or background color.
+        for (name, s) in [
+            ("text", styles.text),
+            ("accent", styles.accent),
+            ("success", styles.success),
+            ("warning", styles.warning),
+            ("error", styles.error),
+            ("border", styles.border),
+            ("rail", styles.rail),
+            ("code", styles.code),
+        ] {
+            assert_eq!(s.fg, None, "{name} leaked a foreground in no-color mode");
+            assert_eq!(s.bg, None, "{name} leaked a background in no-color mode");
+        }
     }
 
     #[test]

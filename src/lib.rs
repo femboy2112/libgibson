@@ -14,7 +14,7 @@ pub mod surface;
 pub mod transaction;
 
 pub use ansi::AnsiCompiler;
-pub use cell::{Cell, Color, Glyph, Line, RichText, Span, Style, TextAlign, Theme};
+pub use cell::{Cell, Color, Glyph, Line, RichText, Span, Style, TextAlign, Theme, ThemeStyles};
 pub use context::Context;
 pub use diff::{compute_diff, CellRun, RowPatch, SurfaceDiff};
 pub use input::{poll_event, Event, KeyCode, KeyEvent, KeyModifiers, TextInputState};
@@ -23,7 +23,7 @@ pub use node::{
     AlignItems, Dimension, FlexDirection, JustifyContent, LayoutStyle, Node, NodeKind, WrapMode,
 };
 pub use painter::{paint, PaintContext};
-pub use renderer::{RenderMode, Renderer};
-pub use scheduler::{FrameScheduler, RenderStats};
+pub use renderer::{AnchorState, InsertStrategy, RenderMode, Renderer};
+pub use scheduler::{FrameScheduler, RenderStats, DEFAULT_ANIMATION_INTERVAL};
 pub use session::TerminalSession;
 pub use surface::{BorderType, Rect, Surface};

@@ -1,5 +1,5 @@
 use crossterm::{
-    cursor::{Show},
+    cursor::Show,
     event::{DisableBracketedPaste, EnableBracketedPaste},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -12,6 +12,11 @@ static PANIC_HOOK_SET: AtomicBool = AtomicBool::new(false);
 /// Manages the terminal lifecycle, raw mode, alternate screen, and restoration guards.
 pub struct TerminalSession {
     pub is_tty: bool,
+    /// When true, all direct OS terminal manipulation is suppressed while the
+    /// session still behaves like a TTY for the renderer. This enables
+    /// byte-stream tests against a virtual terminal (e.g. `vt100`).
+    headless: bool,
+    headless_size: (u16, u16),
     raw_mode_enabled: bool,
     alt_screen_active: bool,
     cursor_hidden: bool,
@@ -25,6 +30,8 @@ impl TerminalSession {
         let is_tty = stdout().is_terminal();
         let session = Self {
             is_tty,
+            headless: false,
+            headless_size: (80, 24),
             raw_mode_enabled: false,
             alt_screen_active: false,
             cursor_hidden: false,
@@ -35,6 +42,36 @@ impl TerminalSession {
         Self::ensure_panic_hook();
 
         Ok(session)
+    }
+
+    /// Creates a deterministic, non-destructive session that reports itself as a
+    /// TTY of the requested geometry but never touches the real terminal.
+    ///
+    /// This is the controlled geometry abstraction used to drive the *whole*
+    /// renderer pipeline (`Renderer -> TerminalTransaction -> bytes`) through a
+    /// virtual terminal in tests.
+    pub fn headless(cols: u16, rows: u16) -> Self {
+        Self {
+            is_tty: true,
+            headless: true,
+            headless_size: (cols, rows),
+            raw_mode_enabled: false,
+            alt_screen_active: false,
+            cursor_hidden: false,
+            bracketed_paste_enabled: false,
+            sync_updates_enabled: true,
+        }
+    }
+
+    /// Updates the geometry reported by a headless session. Used to simulate
+    /// terminal resize without a real PTY.
+    pub fn set_terminal_size(&mut self, cols: u16, rows: u16) {
+        self.headless_size = (cols, rows);
+    }
+
+    /// True when this session must not perform direct OS terminal manipulation.
+    pub fn is_headless(&self) -> bool {
+        self.headless
     }
 
     /// Sets up a global panic hook to restore the terminal safely if a panic occurs.
@@ -56,7 +93,7 @@ impl TerminalSession {
 
     /// Enables raw mode and bracketed paste for interactive operation.
     pub fn enter_interactive(&mut self) -> io::Result<()> {
-        if !self.is_tty {
+        if !self.is_tty || self.headless {
             return Ok(());
         }
 
@@ -76,7 +113,7 @@ impl TerminalSession {
 
     /// Enters alternate screen mode (fullscreen).
     pub fn enter_alternate_screen(&mut self) -> io::Result<()> {
-        if !self.is_tty || self.alt_screen_active {
+        if !self.is_tty || self.headless || self.alt_screen_active {
             return Ok(());
         }
 
@@ -127,7 +164,7 @@ impl TerminalSession {
 
     /// Restores all modified terminal settings back to normal.
     pub fn restore(&mut self) -> io::Result<()> {
-        if !self.is_tty {
+        if !self.is_tty || self.headless {
             return Ok(());
         }
 
@@ -162,7 +199,9 @@ impl TerminalSession {
 
     /// Returns current terminal dimensions (columns, rows).
     pub fn terminal_size(&self) -> (u16, u16) {
-        if self.is_tty {
+        if self.headless {
+            self.headless_size
+        } else if self.is_tty {
             crossterm::terminal::size().unwrap_or((80, 24))
         } else {
             (80, 24)

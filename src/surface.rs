@@ -197,6 +197,11 @@ impl Surface {
             if grapheme == "\r" || grapheme == "\n" {
                 break;
             }
+            // Never allow terminal control characters to reach the cell model:
+            // untrusted text must not be able to inject ESC/OSC/CSI sequences.
+            if grapheme.chars().any(|c| c.is_control()) {
+                continue;
+            }
 
             let glyph = Glyph::new(grapheme);
             let w = glyph.display_width as u16;
