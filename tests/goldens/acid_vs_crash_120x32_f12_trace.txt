@@ -2,23 +2,23 @@ C R A S H   O V E R R I D E  //  LOCAL NODE
 LOCAL FABRIC / TRACE 70% / integrity 97% / CONTEST IN PROGRESS
 ─── COUNTERPLAY / every door has a price ───────────────────────────────────────────────────────────────────────────────
 ┌─  LOCAL FABRIC / live topology  ─────────────────────────────────────┐┌─  SESSIO@ / PROCESS VIE^  ───────────────────┐
-│ TRACE 70% ↗                                                          ││REMOTE= ACID BURN                             │
-│                               ◀ MODEM                                ││HERE AUTH → DISPLAY    ?  ?                   │
-│                                ▰▰▰▰⠺⠂                                ││TRACE  70% / reserve\100%                     │
-│                                  ⠑⠒⠁ ⠑⢄                              ││SYSTEM    HOLD       INTEGRITY                │
-│                                  ⢀⣀   ⠈⠢⡀                            ││MODEM   > Acid      100%                      │
-│                                  ⠘⠚     ⠈⠢⡀                          ││ROUTE     Acid     #100%                      │
-│                               ◀ ROUTE     ⠈⠢⡀                        ││AUTH      Acid    %  87%     >                │
-│                          ⢀⠤⢄⣀⠤ ▰▰▰▰ ⠉⠒⠤⣀    ⠈⠢⡀                      ││SHELL     Crash     100%                      │
-│                       ⢠⢤⡠⠘⠤⠜            ⠉⠒⠠⡦⡀ ⠈⢆                     ││FILES     Crash     100%                      │
-│                   ⢀⣀⠤ ⠈⠉                    ⠈⠑⠢⢄⠑⢄                   ││DISPLAY   Crash     100%                      │
-│             ◀ AUTH⡀                            ■ SHELL               ││FILES / 0 altered en<ries                     │
-│              ▰▰▰▰ ⠈⠁⢠⠒⢢       ◀ AB           ⢀⡠⠔⠊⠁                   ││                        *                     │
-│                     ⠈⠒⠊⠉ ⠤⣀⢀⣀            ⣀⠤⠔⠊⠁                       ││                                              │
-│                            ⠘⠚⠠⢄⣀    ⢀⣄⠤⠒⠉                            ││                                              │
-│                               ■ FILES⠁                               │└──────────────────────────────────────────────┘
-│                                  ⠈⠉                                  │┌─  REMOTE / read only  ───────────────────────┐
-│                               ■ DISPLAY                              ││hello cr                                      │
+│ TRACE 70% ↗                                                          ││REMOTE =ACID BURN                             │
+│                               ‹ MODEM                                ││HERE AUTH → DISPLAY      ?  ?                 │
+│                                ⠉⠉⠉⠉⠁⢄                                ││TRACE  70% / reserve 10\%                     │
+│                                   ⠇  ⠑⢄                              ││SYSTEM    HOLD       INTEGRITY                │
+│                                   ⡇   ⠈⠢⡀                            ││MODEM     Aci>      100%                      │
+│                                   ⠆     ⠈⠢⡀                          ││ROUTE     Acid      100% #                    │
+│                               ‹ ROUTE     ⠈⠢⡀                        ││AUTH      Acid       87% %                    │
+│                            ⣀⡀⠤ ⠉⠉⠉⠉⠁⠉⠒⠤⣀    ⠈⠢⡀                      ││>HELL     Crash     100%                      │
+│                        ⣀⡠⠄⠈⠁            ⠉⠐⠂⢄⡀ ⠈⢆                     ││FILES     Crash     100%                      │
+│                   ⢀⣀⠤⠐⠁                     ⠈⠑⠢⢄⠑⢄                   ││DISPLAY   Crash     100%                      │
+│             ‹ AUTH⡀      ◀ AB                  ● SHELL               ││FILES / 0 altered entries      <              │
+│              ⠉⠉⠉⠉⠁⠈⠁⠠⢄⣀⡀                     ⢀⡠⠔⠊⠁                   ││                                              │
+│                        ⠉ ⠤⡀⡀             ⣀⠤⠔⠊⠁                       ││*                                             │
+│                            ⠁⠁⠠⢄⣀     ⣀⠔⠒⠉                            ││                                              │
+│                               ● FILES                                │└──────────────────────────────────────────────┘
+│                                   ⡇                                  │┌─  REMOTE / read only  ───────────────────────┐
+│                               ● DISPLAY                              ││hell                                          │
 │                                                                      ││                                              │
 └──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
 ┌─  RECEIPTS / the machine remembers  ─────────────────────────────────┐┌─  CRASH / LOCAL CONTROL  ────────────────────┐

@@ -78,7 +78,7 @@ ctx.commit_text("Finalized output text")?; // ctx.commit(...) is an alias
 
 ## Verification Status
 
-Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **464 tests**: 226 library unit tests and 238 integration tests (across `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
+Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **469 tests**: 226 library unit tests and 243 integration tests (across `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
 
 `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings are UNVERIFIED** — no Go toolchain was available, so they were never compiled. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
 
@@ -238,8 +238,9 @@ with Context() as ctx:
 
 ```bash
 # Cinematic Scene Algebra flagship: Crash's UI becomes contested territory
-cargo run --example acid_vs_crash
-cargo run --example acid_vs_crash -- --auto
+cargo run --example acid_vs_crash                     # watch Crash work and fight
+cargo run --example acid_vs_crash -- --manual          # play Crash yourself
+cargo run --example acid_vs_crash -- --auto            # watch, then exit after resolution
 cargo run --example acid_vs_crash -- --deterministic --stage=display-intrusion
 cargo run --example acid_vs_crash -- --stage=climax --color=mono
 
@@ -262,22 +263,28 @@ cargo run --example resize_test_app
 
 `acid_vs_crash` is an offline fictional terminal short film viewed from Crash
 Override's machine. Acid Burn gradually occupies the same ordinary map, session,
-and event panels through Scene-mounted SurfaceFx. Type `trace`, `isolate`,
-`isolate auth`, `decoy`, `kill`, or `hard isolate`; the story keeps moving while
+and event panels through Scene-mounted SurfaceFx. Crash works and fights back
+automatically by default: this is a window into his machine. You can intervene
+at any time, or use `--manual` to make every defensive choice yourself. Type
+`trace`, `isolate`, `isolate auth`, `decoy`, `kill`, or `hard isolate`; the story keeps moving while
 you type. Final moves are `cut link`, `turn trace`, `spring decoy`, and
 `let her in`. The bottom command island remains usable during display takeover.
 After resolution, `replay`, `facts`, `trace`, `damage`, `scene`, `acid`, `crash`,
 `reset`, and `exit` inspect the encounter. These are simulated semantic commands;
 there is no networking, exploitation, or host shell execution.
 
-`--auto` runs a state-based defender against Acid's deterministic planner on the
-same live topology. Influence changes gradually; isolation severs real paths,
-trace consumes reserves and provokes evasion, and a familiar decoy can draw a
+The default view runs a state-based defender against Acid's deterministic planner
+on the same live topology and stays open in the aftermath. `--auto` uses the same
+defender and exits after resolution. Influence changes gradually; isolation
+severs real paths, trace consumes reserves and provokes evasion, and a familiar decoy can draw a
 feint. The action surface shows prerequisites, cooldowns and costs. StoryDirector
 sets the dramatic pace while the graph decides what actually happens.
 
-`--deterministic` fixes time without replacing the human player. Add
-`--debug-battle` (or `--debug-ai`) to inspect goals, candidate scores, routes and
+Thin Braille routes, sub-cell packet motion, restrained panel borders, and a
+60 FPS presentation ceiling give the battlefield a finer visual texture.
+
+`--deterministic` fixes time while preserving the selected automatic or manual
+mode. Add `--debug-battle` (or `--debug-ai`) to inspect goals, candidate scores, routes and
 influence. Inspection hooks include
 `--stage=quiet|signature|route-contested|first-breach|display-intrusion|decoy|trace|trap|climax|takeover|crash-win|acid-win|stalemate`,
 `--freeze-at=N`, `--seconds=N`, `--speed=N`, and
@@ -301,7 +308,7 @@ removes an effect through an in-beat reaction.
 # Build library and release artifacts (.so, .a)
 cargo build --release
 
-# Run the full test suite (464 tests: 226 unit + 238 integration)
+# Run the full test suite (469 tests: 226 unit + 243 integration)
 cargo test
 
 # Static analysis and formatting checks

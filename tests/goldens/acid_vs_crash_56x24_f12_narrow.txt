@@ -1,20 +1,20 @@
 C R A S H   O V E R R I D E  //  LOCAL NODE
 LOCAL FABRIC / TRACE 0% / integrity 97% / CONTEST IN PRO
 ─── ESCALATION / she noticed ───────────────────────────
-
 ┌─  LOCAL FABRIC / live topology  ─────────────────────┐
 │                                                      │
-│                       ◀ MODEM                        │
-│                         ▰▰▰▰⠉⠢⣀                      │
-│                       ◀ ROUTE ⠑⠤⡀                    │
-│                     ⣀⠤⠈▰▰▰▰ ⠉⠠⡦⣀⠈⠢⢄                  │
-│               ⡤⡄⠠⠔⠊⠁            ⠉⠑⠢⠑⠢⣠⡀              │
-│         ◀ AUTH⠄⢀⣀⣀⢀⣀          ◀ AB⢀■ SHELL           │
-│          ▰▰▰▰     ⠘⠚⠉⠁◀ FILES⠒⠙⠁⠉⠉⠁                  │
-│                       ◀ DISPLAY                      │
-│                        ▰▰▰▰                          │
+│                       ‹ MODEM                        │
+│                         ⠉⠉⠉⠉⠁⠢⣀                      │
+│                       ‹ ROUTE ⠑⠤⡀                    │
+│                     ⣀⠤⠒⠉⠉⠉⠉⠁⠉⠒⠤⣀⠈⠢⢄                  │
+│                ⣀⠠⠔⠊⠁            ⠉⠑⠢⠑⠤⡀               │
+│         ‹ AUTH⠄⢀⣀⣀                ⢀● SHELL           │
+│          ⠉⠉⠉⠉      ⠉⠉⠁‹ FILES⠒◀ AB⠁                  │
+│                       ≋ DISPLAY                      │
+│                        ⠉⠉⠉⠁                          │
 └──────────────────────────────────────────────────────┘
-ACID BURN > hello cr▍
+ACID BURN > hell
+DISPLAY Contested / TRACE 0% / LINK OPEN
 ┌─  CRASH / LOCAL CONTROL  ────────────────────────────┐
 │TRACE ✓ / ISOLATE ✓                                   │
 │DECOY ✓ / HARD ISOLATE ✓                              │

@@ -4,18 +4,18 @@ LOCAL FABRIC / TRACE 0% / integrity 97% / mutual route hold
 ┌─  LOCAL FABRIC / live topology  ─────────────────────────────────────┐┌─  SESSION / PROCESS VIEW  ───────────────────┐
 │                                                                      ││REMOTE  DISCONNECTED                          │
 │                               ≋ MODEM                                ││lease closed / history retained               │
-│                                  ⠠⡦⠑⢄                                ││TRACE   0% / reserve 100%                     │
+│                                   ⠆⠑⢄                                ││TRACE   0% / reserve 100%                     │
 │                                   ⠇  ⠑⢄                              ││SYSTEM    HOLD       INTEGRITY                │
 │                                   ⡇   ⠈⠢⡀                            ││MODEM     Contested 100%                      │
 │                                   ⡆     ⠈⠢⡀                          ││ROUTE     Contested 100%                      │
 │                               ≋ ROUTE     ⠈⠢⡀                        ││AUTH      Contested  87%                      │
-│                            ⣠⡀⠤ ⠉    ⠉⠒⠤⣀    ⠈⠢⡀                      ││SHELL     Crash     100%                      │
-│                        ⣀⡠⠄⠈⠈            ⠉⠐⠗⢄⡀ ⠈⢆                     ││FILES     Contested 100%                      │
+│                            ⢀⡠⠤ ⠉    ⠉⠒⠤⣀    ⠈⠢⡀                      ││SHELL     Crash     100%                      │
+│                        ⣀⡠⠄⠈⠁            ⠉⠒⠂⢄⡀ ⠈⢆                     ││FILES     Contested 100%                      │
 │                   ⢀⣀⠤ ⠉                     ⠈⠑⠢⢄⠑⢄                   ││DISPLAY   Contested 100%                      │
-│             ≋ AUTH⡀                            ■ SHELL               ││FILES / 3 altered entries                     │
+│             ≋ AUTH⡀                            ● SHELL               ││FILES / 3 altered entries                     │
 │                   ⠈⠁⠠⢄⣀                      ⢀⡠⠔⠊⠁                   ││                                              │
-│                        ⠉ ⠤⣠⡀             ⣀⠤⠔⠊⠁                       ││                                              │
-│                           ⠈⠈⠁⠠⢄⣀     ⠐⠗⠒⠉                            ││                                              │
+│                        ⠉ ⠤⣀⡀             ⣀⠤⠔⠊⠁                       ││                                              │
+│                            ⠈⠁⠠⢄⣀     ⣀⠒⠒⠉                            ││                                              │
 │                               ≋ FILES                                │└──────────────────────────────────────────────┘
 │                                   ⡇                                  │┌─  REMOTE / read only  ───────────────────────┐
 │                               ≋ DISPLAY                              ││same time, different route.                   │

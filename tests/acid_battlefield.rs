@@ -130,3 +130,52 @@ fn auto_and_passive_runs_replay_complete_state_at_resolution() {
         same_complete_world(&encounter);
     }
 }
+
+#[test]
+fn watching_preserves_operator_pacing_intervention_and_replay() {
+    let mut encounter = Encounter::new("first-breach", false);
+    encounter.set_watching(true);
+    encounter.tick(Duration::from_millis(16), true);
+    let commands = |e: &Encounter| {
+        e.encounter_trace()
+            .steps
+            .iter()
+            .flat_map(|s| &s.events)
+            .filter(|e| matches!(e, StoryEvent::Command(_)))
+            .count()
+    };
+    assert_eq!(commands(&encounter), 1);
+    for _ in 0..60 {
+        encounter.tick(Duration::from_millis(16), true);
+    }
+    assert_eq!(
+        commands(&encounter),
+        1,
+        "Crash must let each defense read on screen"
+    );
+    encounter.command("trace");
+    assert_eq!(
+        commands(&encounter),
+        2,
+        "human intervention stays available"
+    );
+    for _ in 0..60 {
+        encounter.tick(Duration::from_millis(16), true);
+    }
+    assert_eq!(
+        commands(&encounter),
+        2,
+        "Crash observes the human intervention"
+    );
+    encounter.tick(Duration::from_millis(300), true);
+    encounter.tick(Duration::from_millis(16), true);
+    assert!(commands(&encounter) > 2, "autonomous work resumes");
+    same_complete_world(&encounter);
+    encounter.command("reset");
+    let frame = painted(encounter.frame(120, 32), 120, 32);
+    let text: String = (0..32)
+        .flat_map(|y| (0..120).map(move |x| (x, y)))
+        .map(|(x, y)| frame.get(x, y).unwrap().glyph.grapheme.as_str())
+        .collect();
+    assert!(text.contains("CRASH WORKING"));
+}

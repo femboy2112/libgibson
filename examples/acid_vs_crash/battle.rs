@@ -502,6 +502,7 @@ pub struct EncounterModel {
     pub takeover: u16,
     pub remote_active: bool,
     resolution_ms: u64,
+    defender_ready_ms: u64,
     remainder_ns: u128,
     planning_ms: u64,
     decoy_dwell_ms: u64,
@@ -542,6 +543,7 @@ impl EncounterModel {
             takeover: 0,
             remote_active: true,
             resolution_ms: 0,
+            defender_ready_ms: 0,
             remainder_ns: 0,
             planning_ms: 0,
             decoy_dwell_ms: 0,
@@ -713,6 +715,9 @@ impl EncounterModel {
             ));
             return;
         }
+        // Leave a readable operator beat after an accepted defense. Human
+        // interventions also give the autonomous operator time to observe.
+        self.defender_ready_ms = self.elapsed_ms.saturating_add(1200);
         self.quality
             .first_response_ms
             .get_or_insert(self.elapsed_ms);
@@ -943,6 +948,11 @@ impl EncounterModel {
         });
         self.receipt(format!("RESOLVED / {}", self.outcome_quality));
     }
+    /// Recorded presentation time, including the unconsumed simulation quantum.
+    /// Motion can advance between 50ms reducer steps without inventing world state.
+    pub fn visual_time(&self) -> Duration {
+        Duration::from_millis(self.elapsed_ms) + Duration::from_nanos(self.remainder_ns as u64)
+    }
     /// Commands execute once at the update boundary. Time advances in exact 50ms
     /// quanta with remainder retained. The encounter has a finite 90s horizon,
     /// so even Duration::MAX requires at most 1800 reducer iterations.
@@ -1161,7 +1171,10 @@ impl EncounterModel {
         }
     }
     pub fn defender_command(&self) -> Option<String> {
-        if self.outcome.is_some() || self.elapsed_ms < 11000 {
+        if self.outcome.is_some()
+            || self.elapsed_ms < 11000
+            || self.elapsed_ms < self.defender_ready_ms
+        {
             return None;
         }
         let command = if self.elapsed_ms >= 58000 {

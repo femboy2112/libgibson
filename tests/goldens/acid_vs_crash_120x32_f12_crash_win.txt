@@ -3,22 +3,22 @@ LOCAL FABRIC / TRACE 0% / integrity 97% / clean contain
 ─── CRASH CONTAINS / keep the scars ────────────────────────────────────────────────────────────────────────────────────
 ┌─  LOCAL FABRIC / live topology  ─────────────────────────────────────┐┌─  SESSION / PROCESS VIEW  ───────────────────┐
 │                                                                      ││REMOTE  DISCONNECTED                          │
-│                               ■ MODEM                                ││lease closed / history retained               │
+│                               ● MODEM                                ││lease closed / history retained               │
 │                                   ⡇⠑⢄                                ││TRACE   0% / reserve 100%                     │
 │                                   ⠃  ⠣⡀                              ││SYSTEM    HOLD       INTEGRITY                │
 │                                   ⡀   ⠈⠢                             ││MODEM     Crash     100%                      │
 │                                   ⡇                                  ││ROUTE     Crash     100%                      │
-│                               ■ ROUTE     ×                          ││AUTH      Crash      87%                      │
+│                               ● ROUTE     ×                          ││AUTH      Crash      87%                      │
 │                            ⢀⡠⠔⠒⠉⠁   ⠉⠒⠤⣀     ⠢⡀                      ││SHELL     Crash     100%                      │
 │                          ×                ×   ⠈⠢⡀                    ││FILES     Crash     100%                      │
 │                    ⣀⠤⠒⠁                      ⠑⠢⢄⠑⢄                   ││DISPLAY   Crash     100%                      │
-│             ■ AUTH⠉                            ■ SHELL               ││FILES / 3 altered entries                     │
+│             ● AUTH⠉                            ● SHELL               ││FILES / 3 altered entries                     │
 │                   ⠉⠒⠢⢄⡀                      ⣀⠤⠒⠊⠁                   ││                                              │
 │                          ×                ×                          ││                                              │
 │                            ⠈⠑⠢⢄⡀    ⢀⡠⠔⠊                             ││                                              │
-│                               ■ FILES                                │└──────────────────────────────────────────────┘
+│                               ● FILES                                │└──────────────────────────────────────────────┘
 │                                   ⡁                                  │┌─  REMOTE / read only  ───────────────────────┐
-│                               ■ DISPLAY                              ││you kept the machine. keep the receipt.       │
+│                               ● DISPLAY                              ││you kept the machine. keep the receipt.       │
 │                                                                      ││                                              │
 └──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
 ┌─  RECEIPTS / the machine remembers  ─────────────────────────────────┐┌─  CRASH / LOCAL CONTROL  ────────────────────┐

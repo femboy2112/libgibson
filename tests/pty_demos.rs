@@ -451,6 +451,7 @@ fn acid_trace_changes_visible_world_and_planner_during_first_contest() {
     let mut s = Session::spawn(
         "acid_vs_crash",
         &[
+            "--manual",
             "--stage=route-contested",
             "--deterministic",
             "--freeze-at=0",
@@ -483,6 +484,7 @@ fn acid_isolation_disconnects_route_and_causes_valid_pivot() {
     let mut s = Session::spawn(
         "acid_vs_crash",
         &[
+            "--manual",
             "--stage=first-breach",
             "--deterministic",
             "--speed=3",
@@ -518,6 +520,7 @@ fn acid_decoy_draws_remote_lease_then_opponent_recognizes_mirror() {
     let mut s = Session::spawn(
         "acid_vs_crash",
         &[
+            "--manual",
             "--stage=first-breach",
             "--deterministic",
             "--speed=4",
@@ -555,6 +558,7 @@ fn acid_hard_isolation_costs_visible_telemetry_and_available_actions() {
     let mut s = Session::spawn(
         "acid_vs_crash",
         &[
+            "--manual",
             "--stage=display-intrusion",
             "--deterministic",
             "--freeze-at=0",
@@ -586,7 +590,12 @@ fn acid_hard_isolation_costs_visible_telemetry_and_available_actions() {
 fn acid_final_cut_link_resolves_and_replays_before_restoring_terminal() {
     let mut s = Session::spawn(
         "acid_vs_crash",
-        &["--stage=climax", "--deterministic", "--freeze-at=0"],
+        &[
+            "--manual",
+            "--stage=climax",
+            "--deterministic",
+            "--freeze-at=0",
+        ],
         120,
         32,
     );
@@ -613,6 +622,68 @@ fn acid_final_cut_link_resolves_and_replays_before_restoring_terminal() {
 }
 
 #[test]
+fn acid_default_crash_fights_without_input_and_accepts_intervention() {
+    let mut s = Session::spawn(
+        "acid_vs_crash",
+        &["--stage=route-contested", "--deterministic", "--speed=2"],
+        120,
+        32,
+    );
+    // No --auto and no keystrokes: the default view must show Crash actually
+    // spending bandwidth on a defense, with Acid reacting to that world change.
+    let defended = s.wait_until(Duration::from_secs(3), |sc| {
+        sc.contains("CRASH WORKING") && sc.contains("TRACE 28%") && sc.contains("awareness rises")
+    });
+    assert!(
+        defended.contains("CRASH WORKING"),
+        "Crash not working: {defended}"
+    );
+    assert!(
+        defended.contains("TRACE 28%"),
+        "no autonomous defense: {defended}"
+    );
+    assert!(
+        defended.contains("awareness rises"),
+        "defense cost not visible: {defended}"
+    );
+    assert!(
+        defended.contains("crash > trace"),
+        "Crash command not shown in intervention island: {defended}"
+    );
+    s.type_str("exit\r");
+    s.assert_clean_exit(Duration::from_secs(2));
+}
+
+#[test]
+fn acid_default_stays_for_aftermath_and_world_replay() {
+    let mut s = Session::spawn(
+        "acid_vs_crash",
+        &["--stage=climax", "--deterministic", "--speed=20"],
+        120,
+        32,
+    );
+    let ending = s.wait_until(Duration::from_secs(3), |sc| sc.contains("CRASH CONTAINS"));
+    assert!(
+        ending.contains("CRASH CONTAINS"),
+        "default operator did not finish: {ending}"
+    );
+    // Beyond --auto's ending hold: default viewing must retain the machine.
+    std::thread::sleep(Duration::from_millis(900));
+    assert!(
+        !s.exited(),
+        "default view exited instead of retaining aftermath"
+    );
+    s.type_str("replay\r");
+    let replay = s.wait_until(Duration::from_secs(2), |sc| sc.contains("REPLAY VERIFIED"));
+    assert!(
+        replay.contains("REPLAY VERIFIED"),
+        "autonomous world failed replay: {replay}"
+    );
+    s.type_str("exit\r");
+    s.assert_clean_exit(Duration::from_secs(2));
+}
+
+#[test]
 fn acid_auto_completes_entire_story_without_input() {
     let mut s = Session::spawn(
         "acid_vs_crash",
@@ -632,7 +703,12 @@ fn acid_auto_completes_entire_story_without_input() {
 fn acid_ctrl_c_restores_terminal_during_display_takeover() {
     let mut s = Session::spawn(
         "acid_vs_crash",
-        &["--stage=takeover", "--deterministic", "--freeze-at=1"],
+        &[
+            "--manual",
+            "--stage=takeover",
+            "--deterministic",
+            "--freeze-at=1",
+        ],
         80,
         24,
     );
@@ -655,6 +731,7 @@ fn acid_responsive_compositions_survive_all_color_capabilities() {
         let mut s = Session::spawn(
             "acid_vs_crash",
             &[
+                "--manual",
                 "--stage=route-contested",
                 "--deterministic",
                 "--freeze-at=0",

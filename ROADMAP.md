@@ -13,6 +13,21 @@ This document outlines completed work and the planned future milestones for LibG
 
 ---
 
+## Window into Crash's machine — IMPLEMENTED + TESTED
+
+- [x] Crash fights by default; typed interventions remain available. `--manual`
+  selects human defense; `--auto` retains automatic exit after resolution.
+- [x] Deterministic 1.2s operator pauses after accepted actions, visible command
+  receipts, persistent aftermath and exact replay of autonomous counterplay.
+- [x] Foreground-only route strokes, thin Braille influence fronts and packet
+  trails; presentation advances between 50ms world steps at a 60 FPS ceiling.
+  Whole-panel jitter is reserved for near-complete display possession.
+- [x] Five additional tests: default operator PTYs, aftermath replay, operator
+  pacing/intervention, sub-quantum motion/replay, foreground route rendering.
+  Current total: **469 tests** (226 unit + 243 integration).
+
+See [spectator refinement evidence](docs/acid-vs-crash-spectator-validation.md).
+
 ## Living battlefield round — IMPLEMENTED + TESTED, EXPERIMENTAL Rust-only
 
 - [x] Scoped SurfaceFx: rect, normalized wipes/radial/band, seeded noise; wide

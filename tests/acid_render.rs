@@ -241,3 +241,50 @@ fn instant_final_counter_does_not_freeze_a_recoil_offscreen() {
     assert!(!e.director().mounted().any(|name| name == "route-isolation"));
     assert!(e.replay_matches());
 }
+
+#[test]
+fn packets_advance_between_world_quanta_and_replay_exactly() {
+    let mut e = Encounter::new("quiet", false);
+    let graph = e.battle().graph.clone();
+    let before = e.frame(160, 40);
+    e.update(Duration::from_millis(33), &[]);
+    assert_eq!(e.battle().elapsed_ms, 0, "no simulation quantum consumed");
+    assert_eq!(
+        e.battle().graph,
+        graph,
+        "presentation cannot advance influence"
+    );
+    let after = e.frame(160, 40);
+    let (exact, affected, bytes) = measure("sub-quantum route motion", before, after, 160, 40);
+    assert!(exact > 0 && exact < 100);
+    assert!(affected < 100 && bytes < 3000);
+    assert_eq!(
+        surface(e.frame(160, 40), 160, 40),
+        surface(e.replay().frame(160, 40), 160, 40)
+    );
+}
+
+#[test]
+fn acid_route_strokes_do_not_fill_terminal_cell_backgrounds() {
+    let e = Encounter::new("route-contested", false);
+    let s = surface(e.frame(120, 32), 120, 32);
+    let mut acid_dots = 0;
+    for y in 0..s.height {
+        for x in 0..s.width {
+            let cell = s.get(x, y).unwrap();
+            if cell
+                .glyph
+                .grapheme
+                .chars()
+                .any(|c| ('\u{2801}'..='\u{28ff}').contains(&c))
+                && cell.style.fg == Some(Color::Rgb(255, 79, 192))
+            {
+                acid_dots += 1;
+                assert!(!cell.style.reverse, "route became a rectangle at {x},{y}");
+                assert!(cell.style.bg.is_none() || cell.style.bg == Some(Color::Reset));
+            }
+            assert!(!cell.glyph.grapheme.contains('▰'), "solid pressure bar");
+        }
+    }
+    assert!(acid_dots > 0, "the test must actually see Acid's carrier");
+}

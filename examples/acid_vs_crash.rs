@@ -2,7 +2,8 @@
 //! BattleGraph owns tactical truth; StoryDirector owns the dramatic acts.
 //! No sockets, host commands, credentials or real intrusion exist here.
 //!
-//! `--auto --deterministic`, `--stage=climax`, `--debug-battle`, `--color=mono`.
+//! Crash fights by default; `--manual` gives the operator control.
+//! `--auto` exits after the ending; `--deterministic`, `--debug-battle`, `--color=mono`.
 
 #[path = "acid_vs_crash/battle.rs"]
 pub mod battle;
@@ -71,7 +72,7 @@ impl Palette {
         };
         Self {
             crash: Style::new().fg(rgb(76, 218, 255)).bold(),
-            acid: Style::new().fg(rgb(255, 79, 192)).bold().reverse(),
+            acid: Style::new().fg(rgb(255, 79, 192)).bold(),
             infection: if mono {
                 Style::new().bold().reverse()
             } else {
@@ -486,6 +487,7 @@ pub struct Encounter {
     inspector: String,
     mono: bool,
     debug_battle: bool,
+    watching: bool,
 }
 impl Encounter {
     pub fn new(stage: &str, mono: bool) -> Self {
@@ -514,6 +516,7 @@ impl Encounter {
             inspector: String::new(),
             mono,
             debug_battle: false,
+            watching: false,
         }
     }
     pub fn director(&self) -> &StoryDirector {
@@ -536,6 +539,9 @@ impl Encounter {
     }
     pub fn set_debug_battle(&mut self, enabled: bool) {
         self.debug_battle = enabled;
+    }
+    pub fn set_watching(&mut self, enabled: bool) {
+        self.watching = enabled;
     }
     pub fn update(&mut self, dt: Duration, events: &[StoryEvent]) {
         self.trace.steps.push(EncounterStep {
@@ -606,7 +612,10 @@ impl Encounter {
         self.update(dt, &events);
     }
     pub fn replay(&self) -> Self {
-        Self::replay_trace(&self.trace, self.mono)
+        let mut replay = Self::replay_trace(&self.trace, self.mono);
+        replay.watching = self.watching;
+        replay.debug_battle = self.debug_battle;
+        replay
     }
     pub fn replay_trace(trace: &EncounterTrace, mono: bool) -> Self {
         // The seed is versioned with this demo trace, not a general disk format.
@@ -635,8 +644,10 @@ impl Encounter {
         match command.as_str() {
             "exit" | "quit" => return false,
             "reset" => {
+                let watching = self.watching;
                 let debug = self.debug_battle;
                 *self = Self::new("quiet", self.mono);
+                self.watching = watching;
                 self.debug_battle = debug;
             }
             "replay" => {
@@ -702,7 +713,7 @@ impl Encounter {
         let p = self.palette;
         let world = &self.world;
         let positions = Self::positions(width, height);
-        let t = world.elapsed_ms as f32 / 1000.0;
+        let t = world.visual_time().as_secs_f32();
         for (index, edge) in world.graph.edges.iter().enumerate() {
             if (edge.from == NodeId::Decoy || edge.to == NodeId::Decoy)
                 && !world.graph.nodes[NodeId::Decoy.index()].visible
@@ -773,7 +784,8 @@ impl Encounter {
                 let q = (t * 0.28 + index as f32 * 0.137).fract();
                 let a = point(q);
                 let mut packet = BrailleCanvas::new(w, h);
-                packet.filled_circle(a.0 as i32, a.1 as i32, 1);
+                let tail = point((q - 0.035).max(0.0));
+                packet.line(tail.0 as i32, tail.1 as i32, a.0 as i32, a.1 as i32);
                 packet.paint_into(&mut surface, (0, 0), p.crash);
                 if active {
                     let direction = world
@@ -783,12 +795,18 @@ impl Encounter {
                         .any(|pair| pair[0] == edge.from && pair[1] == edge.to);
                     let a = point(if direction { q } else { 1.0 - q });
                     let mut packet = BrailleCanvas::new(w, h);
-                    packet.rect(a.0 as i32 - 1, a.1 as i32 - 1, 3, 3);
+                    packet.set(a.0 as i32, a.1 as i32);
+                    let tail = point(if direction {
+                        (q - 0.045).max(0.0)
+                    } else {
+                        (1.0 - q + 0.045).min(1.0)
+                    });
+                    packet.set(tail.0 as i32, tail.1 as i32);
                     packet.paint_into(&mut surface, (0, 0), p.acid);
                     if world.trace_confidence > 40 {
                         let a = point(if direction { 1.0 - q } else { q });
                         let mut pulse = BrailleCanvas::new(w, h);
-                        pulse.circle(a.0 as i32, a.1 as i32, 2);
+                        pulse.line(a.0 as i32 - 1, a.1 as i32, a.0 as i32 + 1, a.1 as i32);
                         pulse.paint_into(&mut surface, (0, 0), p.crash);
                     }
                 }
@@ -808,9 +826,9 @@ impl Encounter {
                 "◇◇"
             } else {
                 match node.owner() {
-                    Control::Crash => "■",
+                    Control::Crash => "●",
                     Control::Contested => "≋",
-                    Control::Acid => "◀",
+                    Control::Acid => "‹",
                 }
             };
             let label = format!("{marker} {}", node.id.name().to_ascii_uppercase());
@@ -828,14 +846,11 @@ impl Encounter {
             // A cell frontier inhabits the node itself; integrity stays independent.
             if y + 1 < i32::from(h) && world.remote_active && node.influence < 900 && !node.isolated
             {
-                let n = ((1000 - i32::from(node.influence)) * 6 / 2000).clamp(1, 6) as usize;
-                surface.print_str(
-                    (x - 3).max(0) as u16,
-                    (y + 1) as u16,
-                    &"▰".repeat(n),
-                    p.acid,
-                    Some(w),
-                );
+                let dots = ((1000 - i32::from(node.influence)) * 12 / 2000).clamp(1, 12);
+                let mut frontier = BrailleCanvas::new(w, h);
+                let start = (x - 3).max(0) * 2;
+                frontier.line(start, (y + 1) * 4, start + dots - 1, (y + 1) * 4);
+                frontier.paint_into(&mut surface, (0, 0), p.acid);
             }
         }
         if world.trace_confidence > 40 {
@@ -1104,7 +1119,16 @@ impl Encounter {
             }
         };
         lines.push(Line::styled(&self.world.last_action, p.warning));
-        self.panel(" CRASH / LOCAL CONTROL ", width, height, self.lines(lines))
+        self.panel(
+            if self.watching {
+                " CRASH WORKING / LOCAL CONTROL "
+            } else {
+                " CRASH / LOCAL CONTROL "
+            },
+            width,
+            height,
+            self.lines(lines),
+        )
     }
     /// Pure model→Scene projection. Scope and ghost trajectory are deterministic
     /// presentation inputs; ordinary widgets have no post-processing knowledge.
@@ -1134,7 +1158,7 @@ impl Encounter {
                     }
                     .scoped(FxMask::HorizontalWipe { fraction }),
                     SurfaceFx::Scanline {
-                        position: (self.world.elapsed_ms % 2200) as f32 / 2200.0,
+                        position: (self.world.visual_time().as_secs_f32() / 2.2).fract(),
                         style: p.acid,
                     }
                     .scoped(FxMask::HorizontalWipe { fraction }),
@@ -1182,9 +1206,12 @@ impl Encounter {
                     .scoped(mask),
                 )
                 .eval(elapsed, scene, &mut presentation);
-                Effect::jitter(target, fraction, seconds(0.21), seconds(1.0))
-                    .looping()
-                    .eval(elapsed, scene, &mut presentation);
+                // Cell-sized motion is a climax accent, not constant camera noise.
+                if fraction > 0.85 && self.world.remote_active {
+                    Effect::jitter(target, fraction, seconds(0.7), seconds(1.0))
+                        .looping()
+                        .eval(elapsed, scene, &mut presentation);
+                }
             }
         }
         presentation
@@ -1431,6 +1458,21 @@ impl Encounter {
             header_h + (ghost.1.max(0.0) as u16).min(upper_h.saturating_sub(1)),
             false,
         );
+        let last_command = self
+            .trace
+            .steps
+            .iter()
+            .rev()
+            .flat_map(|step| step.events.iter().rev())
+            .find_map(|event| match event {
+                StoryEvent::Command(command) => Some(command.as_str()),
+                _ => None,
+            });
+        let placeholder = if self.watching {
+            last_command.unwrap_or("observing local fabric")
+        } else {
+            "simulated action · Enter"
+        };
         let input = Node::row()
             .width(width as f32)
             .height(1.0)
@@ -1439,7 +1481,7 @@ impl Encounter {
                 Node::text_input(
                     &self.input.text,
                     self.input.cursor_grapheme,
-                    Some("simulated action · Enter"),
+                    Some(placeholder),
                     p.white,
                 )
                 .flex_grow(1.0),
@@ -1457,6 +1499,8 @@ impl Encounter {
                     w.cooldowns[2] as f32 / 1000.0,
                     self.director.current_beat()
                 )
+            } else if self.watching {
+                "CRASH WORKING / type to intervene · Enter · Esc / Ctrl-C exit".to_string()
             } else {
                 "FICTIONAL / LOCAL SIMULATION     Enter · Esc / Ctrl-C exit".to_string()
             }
@@ -1517,7 +1561,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let has = |flag: &str| args.iter().any(|s| s == flag);
     let value = |prefix: &str| args.iter().find_map(|s| s.strip_prefix(prefix));
-    let auto = has("--auto");
+    let auto = !has("--manual");
+    let exit_after = has("--auto") && auto;
     let deterministic = has("--deterministic");
     let depth = match value("--color=") {
         Some("mono") => Some(ColorDepth::Mono),
@@ -1537,19 +1582,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|s| s.is_finite())
         .unwrap_or(1.0)
         .clamp(0.1, 100.0);
-    let step = seconds(speed / 30.0);
+    let step = seconds(speed / 60.0);
     let clock = FixedStepClock::new(step);
     let mut encounter = Encounter::new(
         value("--stage=").unwrap_or("quiet"),
         depth == Some(ColorDepth::Mono),
     );
+    encounter.set_watching(auto);
     encounter.set_debug_battle(has("--debug-battle") || has("--debug-ai"));
     let mut ctx = Context::fullscreen()?;
     if let Some(depth) = depth {
         ctx.set_color_depth(depth);
     }
-    ctx.set_max_fps(30);
-    ctx.set_animation_interval(Duration::from_millis(33));
+    let cadence = seconds(1.0 / 60.0);
+    ctx.set_max_fps(60);
+    ctx.set_animation_interval(cadence);
     let began = std::time::Instant::now();
     let mut last = began;
     let mut frames = 0u64;
@@ -1571,7 +1618,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let (width, height) = ctx.session.terminal_size();
         ctx.set_root(encounter.frame(width, height));
-        if let Some(event) = ctx.run_once(Duration::from_millis(33))? {
+        if let Some(event) = ctx.run_once(cadence)? {
             if !encounter.handle(&event) {
                 break;
             }
@@ -1579,9 +1626,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if limit.is_some_and(|n| began.elapsed().as_secs_f32() >= n) {
             break;
         }
-        if auto && encounter.director.is_finished() && !frozen {
+        if exit_after && encounter.director.is_finished() && !frozen {
             end_frames += 1;
-            if end_frames >= 20 {
+            if end_frames >= 40 {
                 break;
             }
         }
