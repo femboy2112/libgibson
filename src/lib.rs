@@ -16,9 +16,11 @@ pub mod node;
 pub mod painter;
 pub mod particles;
 pub mod renderer;
+pub mod scene;
 pub mod scheduler;
 pub mod session;
 pub mod show;
+pub mod story;
 pub mod surface;
 pub mod transaction;
 pub mod transition;
@@ -49,8 +51,16 @@ pub use node::{
 pub use painter::{paint, PaintContext};
 pub use particles::{Particle, ParticleSystem, Rng};
 pub use renderer::{AnchorState, InsertStrategy, RenderMode, Renderer};
+pub use scene::{
+    Channel, Easing, Effect, EffectBundle, Presentation, ResolvedEntity, Scene, SceneEntity,
+    SceneId, SceneTarget, TagId,
+};
 pub use scheduler::{FrameScheduler, RenderStats, DEFAULT_ANIMATION_INTERVAL};
 pub use session::TerminalSession;
+pub use story::{
+    Beat, Condition, FactValue, Facts, Story, StoryAction, StoryDirector, StoryEvent, StoryTrace,
+    Transition,
+};
 pub use surface::{BorderType, Rect, Surface};
 pub use transition::{dissolve, scramble, scramble_line, type_on, SCRAMBLE_GLYPHS};
 pub use viewport::ViewportState;

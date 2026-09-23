@@ -15,6 +15,83 @@ use crate::cell::{Color, Glyph, Line, RichText, Span, Style};
 use crate::surface::{Rect, Surface};
 
 // ---------------------------------------------------------------------------
+// 2D segment clipping
+// ---------------------------------------------------------------------------
+
+/// Clips the segment `(x0,y0)-(x1,y1)` to the inclusive integer bounds
+/// `[0, max_x] x [0, max_y]` using Liang–Barsky.
+///
+/// Returns the clipped endpoints, or `None` when the segment does not intersect
+/// the rectangle at all (or the rectangle is empty). The returned coordinates
+/// are guaranteed to lie inside the bounds.
+///
+/// This exists so **Bresenham walks are bounded by the canvas, not by the
+/// coordinate magnitude**. A perspective point near the camera can produce
+/// perfectly finite coordinates in the tens of millions; clipping first turns a
+/// 20-million-step invisible walk into a ≤`max_x + max_y` step visible one. The
+/// clip math is done in `f64`, which represents every `i32` exactly and cannot
+/// overflow, so `i32::MIN..i32::MAX` endpoints are safe.
+///
+/// Pipeline: 3D near-plane clip → perspective projection → **this** → bounded
+/// Bresenham.
+pub fn clip_line_to_bounds(
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    max_x: i32,
+    max_y: i32,
+) -> Option<((i32, i32), (i32, i32))> {
+    if max_x < 0 || max_y < 0 {
+        return None;
+    }
+    let (fx0, fy0) = (x0 as f64, y0 as f64);
+    let (fx1, fy1) = (x1 as f64, y1 as f64);
+    let dx = fx1 - fx0;
+    let dy = fy1 - fy0;
+
+    // p[i] * t <= q[i] for the four half-planes x>=0, x<=max_x, y>=0, y<=max_y.
+    let p = [-dx, dx, -dy, dy];
+    let q = [fx0, max_x as f64 - fx0, fy0, max_y as f64 - fy0];
+
+    let (mut t0, mut t1) = (0.0f64, 1.0f64);
+    for i in 0..4 {
+        if p[i] == 0.0 {
+            // Parallel to this boundary: keep the segment only if it is inside.
+            if q[i] < 0.0 {
+                return None;
+            }
+        } else {
+            let r = q[i] / p[i];
+            if p[i] < 0.0 {
+                if r > t1 {
+                    return None;
+                }
+                if r > t0 {
+                    t0 = r;
+                }
+            } else {
+                if r < t0 {
+                    return None;
+                }
+                if r < t1 {
+                    t1 = r;
+                }
+            }
+        }
+    }
+
+    let cx0 = (fx0 + t0 * dx).round() as i32;
+    let cy0 = (fy0 + t0 * dy).round() as i32;
+    let cx1 = (fx0 + t1 * dx).round() as i32;
+    let cy1 = (fy0 + t1 * dy).round() as i32;
+    Some((
+        (cx0.clamp(0, max_x), cy0.clamp(0, max_y)),
+        (cx1.clamp(0, max_x), cy1.clamp(0, max_y)),
+    ))
+}
+
+// ---------------------------------------------------------------------------
 // Braille
 // ---------------------------------------------------------------------------
 
@@ -123,8 +200,22 @@ impl BrailleCanvas {
         }
     }
 
-    /// Bresenham line between two dot coordinates.
+    /// Bresenham line between two dot coordinates, clipped to the canvas first.
+    ///
+    /// The segment is clipped to the canvas bounds before the walk, so the
+    /// number of iterations is bounded by the clipped length even for enormous
+    /// finite coordinates. See [`clip_line_to_bounds`].
     pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
+        let max_x = self.pixel_width() as i32 - 1;
+        let max_y = self.pixel_height() as i32 - 1;
+        let Some(((x0, y0), (x1, y1))) = clip_line_to_bounds(x0, y0, x1, y1, max_x, max_y) else {
+            return;
+        };
+        self.bresenham(x0, y0, x1, y1);
+    }
+
+    /// Unclipped Bresenham walk. Callers must pass in-bounds endpoints.
+    fn bresenham(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
         let (mut x0, mut y0) = (x0, y0);
         let dx = (x1 - x0).abs();
         let sx = if x0 < x1 { 1 } else { -1 };
@@ -170,10 +261,11 @@ impl BrailleCanvas {
         if w <= 0 || h <= 0 {
             return;
         }
-        self.line(x, y, x + w - 1, y);
-        self.line(x, y + h - 1, x + w - 1, y + h - 1);
-        self.line(x, y, x, y + h - 1);
-        self.line(x + w - 1, y, x + w - 1, y + h - 1);
+        let (x1, y1) = (x.saturating_add(w - 1), y.saturating_add(h - 1));
+        self.line(x, y, x1, y);
+        self.line(x, y1, x1, y1);
+        self.line(x, y, x, y1);
+        self.line(x1, y, x1, y1);
     }
 
     /// Filled rectangle.
@@ -222,8 +314,12 @@ impl BrailleCanvas {
             return;
         }
         for dy in -r..=r {
-            let dx = ((r * r - dy * dy) as f32).sqrt().round() as i32;
-            self.line(cx - dx, cy + dy, cx + dx, cy + dy);
+            // `r * r` can overflow `i32` for large radii; do the math in `f64`.
+            let rr = (r as f64) * (r as f64);
+            let dd = (dy as f64) * (dy as f64);
+            let dx = (rr - dd).max(0.0).sqrt().round() as i32;
+            let (x0, x1) = (cx.saturating_sub(dx), cx.saturating_add(dx));
+            self.line(x0, cy.saturating_add(dy), x1, cy.saturating_add(dy));
         }
     }
 
@@ -370,8 +466,13 @@ impl HalfBlockCanvas {
         self.index(x, y).and_then(|i| self.pixels[i])
     }
 
-    /// Bresenham line with a solid color.
+    /// Bresenham line with a solid color, clipped to the canvas first.
     pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, rgb: (u8, u8, u8)) {
+        let max_x = self.pixel_width() as i32 - 1;
+        let max_y = self.pixel_height() as i32 - 1;
+        let Some(((x0, y0), (x1, y1))) = clip_line_to_bounds(x0, y0, x1, y1, max_x, max_y) else {
+            return;
+        };
         let (mut x0, mut y0) = (x0, y0);
         let dx = (x1 - x0).abs();
         let sx = if x0 < x1 { 1 } else { -1 };
@@ -405,10 +506,11 @@ impl HalfBlockCanvas {
         if w <= 0 || h <= 0 {
             return;
         }
-        self.line(x, y, x + w - 1, y, rgb);
-        self.line(x, y + h - 1, x + w - 1, y + h - 1, rgb);
-        self.line(x, y, x, y + h - 1, rgb);
-        self.line(x + w - 1, y, x + w - 1, y + h - 1, rgb);
+        let (x1, y1) = (x.saturating_add(w - 1), y.saturating_add(h - 1));
+        self.line(x, y, x1, y, rgb);
+        self.line(x, y1, x1, y1, rgb);
+        self.line(x, y, x, y1, rgb);
+        self.line(x1, y, x1, y1, rgb);
     }
 
     /// Converts to a surface. Cells with no pixels are explicitly transparent so
@@ -744,5 +846,135 @@ mod tests {
         assert!(c.is_empty());
         c.set_pixel(0, 0, (1, 2, 3));
         assert!(!c.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // 2D segment clipping (hostile coordinates).
+    //
+    // Regression: `line` used to run Bresenham directly over arbitrary i32
+    // endpoints, so a finite near-camera projection like (-10_000_000, 5) →
+    // (10_000_000, 5) performed ~20 million iterations to draw one visible row,
+    // and `x1 - x0` could overflow i32 in debug builds.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn clip_rejects_empty_and_accepts_inside() {
+        assert!(clip_line_to_bounds(0, 0, 5, 5, -1, 3).is_none());
+        assert!(clip_line_to_bounds(0, 0, 5, 5, 3, -1).is_none());
+        let (a, b) = clip_line_to_bounds(1, 1, 3, 2, 5, 5).unwrap();
+        assert_eq!((a, b), ((1, 1), (3, 2)));
+    }
+
+    #[test]
+    fn clip_truncates_huge_horizontal_line() {
+        let (a, b) = clip_line_to_bounds(-10_000_000, 5, 10_000_000, 5, 79, 23).unwrap();
+        assert_eq!(a, (0, 5));
+        assert_eq!(b, (79, 5));
+    }
+
+    #[test]
+    fn clip_truncates_huge_vertical_line() {
+        let (a, b) = clip_line_to_bounds(5, -10_000_000, 5, 10_000_000, 79, 23).unwrap();
+        assert_eq!(a, (5, 0));
+        assert_eq!(b, (5, 23));
+    }
+
+    #[test]
+    fn clip_truncates_huge_diagonal_line() {
+        let (a, b) =
+            clip_line_to_bounds(-9_000_000, -9_000_000, 9_000_000, 9_000_000, 79, 23).unwrap();
+        // The diagonal crosses (0,0) and exits at the first bound it hits.
+        assert_eq!(a, (0, 0));
+        assert_eq!(b, (23, 23));
+    }
+
+    #[test]
+    fn clip_drops_fully_outside_line() {
+        assert!(clip_line_to_bounds(-5, 100, 200, 100, 79, 23).is_none());
+        assert!(clip_line_to_bounds(100, 0, 100, 50, 79, 23).is_none());
+        assert!(clip_line_to_bounds(-10, -10, -1, -1, 79, 23).is_none());
+    }
+
+    #[test]
+    fn clip_handles_near_i32_extreme_coordinates() {
+        // Differences near 2^32 are exact in f64; no overflow is possible.
+        let (a, b) = clip_line_to_bounds(i32::MIN, 5, i32::MAX, 5, 79, 23).unwrap();
+        assert_eq!((a, b), ((0, 5), (79, 5)));
+        let (a, b) = clip_line_to_bounds(i32::MIN, i32::MIN, i32::MAX, i32::MAX, 79, 23).unwrap();
+        assert_eq!(a, (0, 0));
+        assert_eq!(b, (23, 23));
+        // A degenerate point outside the canvas is rejected, inside is kept.
+        assert!(clip_line_to_bounds(i32::MIN, i32::MIN, i32::MIN, i32::MIN, 79, 23).is_none());
+        assert_eq!(
+            clip_line_to_bounds(3, 4, 3, 4, 79, 23).unwrap(),
+            ((3, 4), (3, 4))
+        );
+    }
+
+    #[test]
+    fn huge_lines_are_clipped_by_the_canvas_and_do_not_panic() {
+        // Braille canvas: 4x2 cells = 8x8 dots. A line spanning tens of millions
+        // of dots must draw only the visible diagonal and return promptly.
+        let mut c = BrailleCanvas::new(4, 2);
+        c.line(-10_000_000, 5, 10_000_000, 5);
+        assert!(c.get(0, 5) && c.get(7, 5));
+        assert!(!c.get(0, 4) && !c.get(0, 6));
+
+        // Vertical and diagonal crossings.
+        let mut v = BrailleCanvas::new(4, 2);
+        v.line(3, -10_000_000, 3, 10_000_000);
+        assert!(v.get(3, 0) && v.get(3, 7));
+
+        let mut d = BrailleCanvas::new(4, 2);
+        d.line(-10_000_000, -10_000_000, 10_000_000, 10_000_000);
+        assert!(d.get(0, 0) && d.get(7, 7));
+
+        // Fully outside: no dots, no panic.
+        let mut o = BrailleCanvas::new(4, 2);
+        o.line(-5, 100, 200, 100);
+        assert!(o.is_empty());
+
+        // Near-i32 extremes.
+        let mut x = BrailleCanvas::new(4, 2);
+        x.line(i32::MIN, 5, i32::MAX, 5);
+        assert!(x.get(0, 5) && x.get(7, 5));
+
+        // Half-block: 3 cells = 3 columns x 6 pixel rows.
+        let mut hb = HalfBlockCanvas::new(3, 3);
+        hb.line(-10_000_000, 2, 10_000_000, 2, (1, 2, 3));
+        assert!(hb.get_pixel(0, 2).is_some() && hb.get_pixel(2, 2).is_some());
+        hb.line(1, i32::MIN, 1, i32::MAX, (9, 9, 9));
+        assert!(hb.get_pixel(1, 0).is_some() && hb.get_pixel(1, 5).is_some());
+    }
+
+    #[test]
+    fn zero_and_single_pixel_canvases_are_safe() {
+        let mut zero = BrailleCanvas::new(0, 0);
+        zero.line(0, 0, 100, 100); // must not panic or hang
+        assert!(zero.is_empty());
+
+        let mut one = BrailleCanvas::new(1, 1); // 2x4 dots
+        one.line(-10_000_000, -10_000_000, 10_000_000, 10_000_000);
+        assert!(!one.is_empty());
+
+        let mut zero_hb = HalfBlockCanvas::new(0, 0);
+        zero_hb.line(0, 0, 100, 100, (1, 2, 3));
+        assert!(zero_hb.is_empty());
+
+        let mut one_hb = HalfBlockCanvas::new(1, 1); // 1x2 pixels
+        one_hb.line(-10_000_000, 0, 10_000_000, 1, (4, 5, 6));
+        assert!(!one_hb.is_empty());
+    }
+
+    #[test]
+    fn clipping_is_idempotent_for_inside_lines() {
+        // An already-in-bounds segment must be unchanged by the clip.
+        let mut a = BrailleCanvas::new(8, 4);
+        let mut b = BrailleCanvas::new(8, 4);
+        a.line(1, 2, 14, 9);
+        // Raw Bresenham equivalent (all coordinates in bounds for a 16x16 grid).
+        let ((x0, y0), (x1, y1)) = clip_line_to_bounds(1, 2, 14, 9, 15, 15).unwrap();
+        b.line(x0, y0, x1, y1);
+        assert_eq!(a, b);
     }
 }

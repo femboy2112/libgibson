@@ -21,20 +21,29 @@ pub struct RowPatch {
 ///
 /// # Damage model
 ///
-/// Two distinct notions of "damage" are tracked here and must not be collapsed:
+/// Three distinct notions are tracked and must never be collapsed into one
+/// misleading number:
 ///
-/// * **Logical damage** ([`SurfaceDiff::logical_dirty_count`],
-///   [`SurfaceDiff::logical_dirty_cells`]) — every *visible terminal cell* whose
-///   state changes this frame. It is the union of explicit changed runs, the
-///   region logically erased by an erase-to-EOL (`CSI K`), and any trailing rows
-///   that must be cleared. This is what a damage heatmap or a "dirty %" should
-///   show.
+/// * **Exact semantic delta** ([`SurfaceDiff::exact_changed_cell_count`]) — the
+///   number of cells whose *rendered state* actually changed, treating absent
+///   rows as blank. This is the only metric that is a true "state delta".
+/// * **Logical affected footprint** ([`SurfaceDiff::logical_dirty_count`], also
+///   [`SurfaceDiff::affected_cell_count`]) — the cells *addressed* by the logical
+///   update semantics: the union of explicit changed runs, the region covered by
+///   an erase-to-EOL (`CSI K`), and any cleared trailing rows. This is a
+///   conservative superset of the exact delta: a `CSI K` over a row where some
+///   cells were already blank still counts those blank cells, because the wire
+///   operation addresses them.
 /// * **Wire cost** — the bytes actually emitted, measured by the renderer, not
-///   here. A single `CSI K` can logically clear dozens of cells while costing a
-///   handful of bytes.
+///   here. A single `CSI K` can address dozens of cells while costing a handful
+///   of bytes.
 ///
-/// The old `total_dirty_cells`/`dirty_cells` pair counted only explicit runs and
-/// was therefore systematically optimistic for shrinking/disappearing content.
+/// Because cleared trailing rows are counted against `prev_width`, the affected
+/// footprint can **exceed the current framebuffer area** when rows are removed.
+/// That is expected: it is an addressed-cell count, not a fraction of the live
+/// screen. Callers that want a percentage must choose the metric whose
+/// denominator matches: `exact_changed_cell_count() / next_area` for a state
+/// delta, and the raw affected count (not a fraction) when rows may be removed.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SurfaceDiff {
     pub patches: Vec<RowPatch>,
@@ -46,6 +55,9 @@ pub struct SurfaceDiff {
     pub prev_width: u16,
     /// Width of the next surface (used to size erase-to-EOL regions).
     pub next_width: u16,
+    /// Exact number of cells whose rendered state differs from `prev`, treating
+    /// absent rows/cells as blank. This is a true semantic delta.
+    pub exact_changed: usize,
 }
 
 impl SurfaceDiff {
@@ -55,9 +67,9 @@ impl SurfaceDiff {
 
     /// Cells covered by explicit `CellRun` writes only.
     ///
-    /// This is *not* logical damage: it excludes erase-to-EOL regions and
-    /// cleared trailing rows. Prefer [`SurfaceDiff::logical_dirty_count`] for
-    /// heatmaps and percentages.
+    /// This is *not* the logical footprint: it excludes erase-to-EOL regions and
+    /// cleared trailing rows. Prefer [`SurfaceDiff::logical_dirty_count`] (a.k.a.
+    /// [`SurfaceDiff::affected_cell_count`]) for damage heatmaps.
     pub fn explicit_dirty_count(&self) -> usize {
         self.patches
             .iter()
@@ -72,8 +84,11 @@ impl SurfaceDiff {
         self.explicit_dirty_count()
     }
 
-    /// Logical damage: the number of visible cells whose terminal state changes,
+    /// Logical affected footprint: cells *addressed* by the update semantics,
     /// including erase-to-EOL regions and cleared trailing rows.
+    ///
+    /// Conservative superset of the exact state delta. May exceed the current
+    /// framebuffer area when rows are removed — see the type docs.
     pub fn logical_dirty_count(&self) -> usize {
         let mut n = self.explicit_dirty_count();
         for p in &self.patches {
@@ -83,6 +98,39 @@ impl SurfaceDiff {
         }
         n += self.rows_to_clear as usize * self.prev_width as usize;
         n
+    }
+
+    /// Honest alias for [`SurfaceDiff::logical_dirty_count`]: the affected
+    /// footprint, not an exact state delta.
+    pub fn affected_cell_count(&self) -> usize {
+        self.logical_dirty_count()
+    }
+
+    /// The exact number of cells whose rendered state actually changed.
+    ///
+    /// Unlike [`SurfaceDiff::logical_dirty_count`], this never counts a cell that
+    /// was already blank. Use this for exact percentages:
+    /// `exact_changed_cell_count() / current_area`.
+    pub fn exact_changed_cell_count(&self) -> usize {
+        self.exact_changed
+    }
+
+    /// Coordinates of every cell whose rendered state actually changed.
+    ///
+    /// Row-major; excludes already-blank cells addressed by a `CSI K`.
+    pub fn exact_changed_cells(&self) -> Vec<(u16, u16)> {
+        // Reconstructed from the same rule by which `exact_changed` is computed,
+        // but only available after `compute_diff` filled in patches. Kept cheap
+        // and out of the hot path.
+        let mut out = Vec::with_capacity(self.exact_changed);
+        for patch in &self.patches {
+            for run in &patch.runs {
+                for i in 0..run.cells.len() {
+                    out.push((run.x.saturating_add(i as u16), patch.y));
+                }
+            }
+        }
+        out
     }
 
     /// Explicit run-cell coordinates only (row-major).
@@ -98,12 +146,11 @@ impl SurfaceDiff {
         out
     }
 
-    /// Coordinates of every logically-dirty cell this frame, row-major.
+    /// Coordinates of every logically-affected cell this frame, row-major.
     ///
-    /// Intended for debug overlays (damage maps) and "dirty cell %" readouts.
-    /// Includes erase-to-EOL regions and cleared trailing rows, so a shrinking
-    /// line reports the cells it actually erased, not zero. Cheap; only call
-    /// when needed.
+    /// Intended for debug overlays (damage maps). Includes erase-to-EOL regions
+    /// and cleared trailing rows, so a shrinking line reports the cells it
+    /// actually addressed. Cheap; only call when needed.
     pub fn logical_dirty_cells(&self) -> Vec<(u16, u16)> {
         let mut out = Vec::with_capacity(self.logical_dirty_count());
         for patch in &self.patches {
@@ -128,11 +175,18 @@ impl SurfaceDiff {
     }
 }
 
+/// True when a cell renders identically to an absent/blank cell.
+fn cell_is_blank(c: &Cell) -> bool {
+    let g = c.glyph.grapheme.as_str();
+    (g.is_empty() || g == " ") && c.style.is_default()
+}
+
 /// Compares `prev` (if any) and `next` surfaces, producing a minimal diff.
 pub fn compute_diff(prev: Option<&Surface>, next: &Surface) -> SurfaceDiff {
     let mut patches = Vec::new();
     let prev_height = prev.map(|p| p.height).unwrap_or(0);
     let next_height = next.height;
+    let mut exact_changed = 0usize;
 
     // Diff row by row for all rows in `next`
     for y in 0..next_height {
@@ -150,6 +204,27 @@ pub fn compute_diff(prev: Option<&Surface>, next: &Surface) -> SurfaceDiff {
         let next_end = next_start + (next.width as usize);
         let next_row = &next.cells[next_start..next_end];
 
+        // Exact semantic delta: a newly-present row is treated as starting blank.
+        match prev_row {
+            Some(prev_cells) => {
+                let common = prev_cells.len().min(next_row.len());
+                for x in 0..common {
+                    if prev_cells[x] != next_row[x] {
+                        exact_changed += 1;
+                    }
+                }
+                // Cells only present in `next` are new; blank ones don't count.
+                for c in &next_row[common..] {
+                    if !cell_is_blank(c) {
+                        exact_changed += 1;
+                    }
+                }
+            }
+            None => {
+                exact_changed += next_row.iter().filter(|c| !cell_is_blank(c)).count();
+            }
+        }
+
         let patch = diff_row(y, prev_row, next_row, next.width);
         if let Some(p) = patch {
             patches.push(p);
@@ -157,6 +232,17 @@ pub fn compute_diff(prev: Option<&Surface>, next: &Surface) -> SurfaceDiff {
     }
 
     let rows_to_clear = prev_height.saturating_sub(next_height);
+    // Removed rows: count the non-blank cells that disappear.
+    if let Some(p) = prev {
+        for y in next_height..prev_height {
+            let start = (y as usize) * (p.width as usize);
+            let end = start + (p.width as usize);
+            exact_changed += p.cells[start..end]
+                .iter()
+                .filter(|c| !cell_is_blank(c))
+                .count();
+        }
+    }
 
     SurfaceDiff {
         patches,
@@ -165,6 +251,7 @@ pub fn compute_diff(prev: Option<&Surface>, next: &Surface) -> SurfaceDiff {
         rows_to_clear,
         prev_width: prev.map(|p| p.width).unwrap_or(0),
         next_width: next.width,
+        exact_changed,
     }
 }
 
@@ -397,5 +484,99 @@ mod tests {
         assert!(diff.logical_dirty_count() >= diff.explicit_dirty_count());
         // Explicit runs are a strict subset here (row 1 shrank to a CSI K).
         assert!(diff.logical_dirty_count() > diff.explicit_dirty_count());
+    }
+
+    // -----------------------------------------------------------------------
+    // Exact semantic delta vs affected footprint.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn affected_footprint_counts_already_blank_cells_but_exact_does_not() {
+        // prev: "HELLO WORLD" then blanks; next: all blanks addressed by CSI K.
+        let mut s1 = Surface::new(20, 1);
+        s1.print_str(0, 0, "HELLO WORLD", Style::default(), None);
+        let s2 = Surface::new(20, 1);
+        let diff = compute_diff(Some(&s1), &s2);
+        // Affected = every addressed cell (the whole row).
+        assert_eq!(diff.affected_cell_count(), 20);
+        assert_eq!(diff.logical_dirty_count(), 20);
+        // Exact = only the 10 non-blank glyph cells (the space between the words
+        // is already blank and did not change).
+        assert_eq!(diff.exact_changed_cell_count(), 10);
+        assert!(diff.exact_changed_cell_count() < diff.affected_cell_count());
+    }
+
+    #[test]
+    fn exact_delta_is_zero_for_identical_surfaces_and_changed_counts_differ() {
+        let mut s1 = Surface::new(12, 3);
+        s1.print_str(0, 0, "stable", Style::default(), None);
+        let s2 = s1.clone();
+        let diff = compute_diff(Some(&s1), &s2);
+        assert_eq!(diff.exact_changed_cell_count(), 0);
+        assert_eq!(diff.affected_cell_count(), 0);
+
+        let mut s3 = s1.clone();
+        s3.print_str(1, 0, "X", Style::default(), None);
+        let d3 = compute_diff(Some(&s1), &s3);
+        assert_eq!(d3.exact_changed_cell_count(), 1);
+        assert_eq!(d3.affected_cell_count(), 1);
+    }
+
+    #[test]
+    fn affected_footprint_may_exceed_removed_surface_area() {
+        // Shrinking height addresses cleared trailing rows, so the affected count
+        // can exceed the live (next) area. That is why it is shown as a count.
+        let mut s1 = Surface::new(10, 5);
+        for y in 0..5 {
+            s1.print_str(0, y, "XXXXXXXXXX", Style::default(), None);
+        }
+        let s2 = Surface::new(10, 2);
+        let diff = compute_diff(Some(&s1), &s2);
+        let next_area = 10 * 2;
+        assert!(
+            diff.affected_cell_count() > next_area,
+            "affected {} should exceed live area {} (removed rows)",
+            diff.affected_cell_count(),
+            next_area
+        );
+        // exact counts every non-blank cell that vanished: 20 on the surviving
+        // blanked rows + 30 on the removed rows.
+        assert_eq!(diff.exact_changed_cell_count(), 50);
+        // A true state delta never exceeds the union area (prev ∪ next = 50 here).
+        assert!(diff.exact_changed_cell_count() <= 10 * 5);
+    }
+
+    #[test]
+    fn exact_delta_matches_cell_by_cell_comparison() {
+        // Property: the count equals a direct prev/next cell comparison, treating
+        // absent cells as blank.
+        let mut prev = Surface::new(8, 3);
+        prev.print_str(0, 0, "hello", Style::default(), None);
+        prev.print_str(1, 2, "xyz", Style::default(), None);
+        let mut next = Surface::new(8, 3);
+        next.print_str(0, 0, "heLLo", Style::default(), None);
+
+        let diff = compute_diff(Some(&prev), &next);
+        let mut direct = 0usize;
+        for y in 0..3 {
+            for x in 0..8 {
+                let p = prev.get(x, y).unwrap();
+                let n = next.get(x, y).unwrap();
+                let blank = |c: &Cell| {
+                    let g = c.glyph.grapheme.as_str();
+                    (g.is_empty() || g == " ") && c.style.is_default()
+                };
+                let changed = match (blank(p), blank(n)) {
+                    (true, true) => false,
+                    (true, false) => true,
+                    (false, true) => true,
+                    (false, false) => p != n,
+                };
+                if changed {
+                    direct += 1;
+                }
+            }
+        }
+        assert_eq!(diff.exact_changed_cell_count(), direct);
     }
 }

@@ -186,8 +186,10 @@ fn particle_field_motion_is_bounded() {
         .render(&mut build(1), &mut session, &mut out)
         .unwrap();
     assert!(total > 0);
-    // A sparse field advancing one 1/60s step must not repaint the whole screen.
-    // The bound is generous but catches an accidental whole-screen regression.
+    // A sparse field advancing a 0.1s step must not repaint the whole screen.
+    // (A deliberately visible step: sub-dot motion can legitimately round back to
+    // the same cell.) The bound is generous but catches an accidental
+    // whole-screen regression.
     assert!(
         dirty * 2 <= total,
         "sparse particle motion dirtied the whole field: {dirty}/{total}"

@@ -324,6 +324,34 @@ impl Default for Projector {
 const CLIP_INSET_ULPS: f32 = 8.0;
 
 impl Projector {
+    /// Constructs a projector with validated parameters.
+    ///
+    /// Returns `None` for pathological combinations (`near <= 0`, non-finite
+    /// `camera_z`/`near`, or a near plane behind the camera). Use [`Projector`]
+    /// struct literals only if you have already validated the values; every
+    /// projection call re-checks [`Projector::is_valid`] and degrades to `None`,
+    /// so no NaN can reach raster math either way.
+    pub fn new(camera_z: f32, near: f32) -> Option<Self> {
+        let p = Self { camera_z, near };
+        if p.is_valid() {
+            Some(p)
+        } else {
+            None
+        }
+    }
+
+    /// True when the parameters cannot produce non-finite projection math.
+    ///
+    /// Requires finite `camera_z`/`near`, a strictly positive near distance, and
+    /// `camera_z >= near` so the origin plane is not behind the near plane.
+    #[inline]
+    pub fn is_valid(&self) -> bool {
+        self.camera_z.is_finite()
+            && self.near.is_finite()
+            && self.near > 0.0
+            && self.camera_z >= self.near
+    }
+
     /// Depth of a point: its distance in front of the camera.
     ///
     /// The near plane is at `depth == near`; the visible half-space is
@@ -349,11 +377,14 @@ impl Projector {
     /// or produces a non-finite coordinate. A point exactly on the near plane is
     /// visible; this matches [`Projector::is_visible`] and [`Projector::clip_near`].
     pub fn project(&self, p: Vec3, cx: f32, cy: f32, focal: f32) -> Option<(i32, i32)> {
-        if !p.is_finite() {
+        if !self.is_valid() || !p.is_finite() {
             return None;
         }
         let z = self.depth(p);
-        if z < self.near {
+        if !z.is_finite() || z < self.near {
+            return None;
+        }
+        if !cx.is_finite() || !cy.is_finite() || !focal.is_finite() {
             return None;
         }
         let x = cx + p.x * focal / z;
@@ -374,7 +405,7 @@ impl Projector {
     /// rounds one ULP below `near`. The nudge is ~1e-6 of the near distance and
     /// has no visible geometric effect.
     pub fn clip_near(&self, a: Vec3, b: Vec3) -> Option<(Vec3, Vec3)> {
-        if !a.is_finite() || !b.is_finite() {
+        if !self.is_valid() || !a.is_finite() || !b.is_finite() {
             return None;
         }
         let a_in = self.is_visible(a);
@@ -418,6 +449,9 @@ impl Projector {
         ph: f32,
         zoom: f32,
     ) -> Vec<ProjectedEdge> {
+        if !self.is_valid() || !pw.is_finite() || !ph.is_finite() || !zoom.is_finite() {
+            return Vec::new();
+        }
         let cx = (pw - 1.0) * 0.5;
         let cy = (ph - 1.0) * 0.5;
         let focal = pw.min(ph) * 0.5 * zoom;
@@ -739,5 +773,115 @@ mod tests {
         assert!(p
             .project(Vec3::new(f32::NAN, 0.0, 0.0), 0.0, 0.0, 1.0)
             .is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Pathological parameter rejection.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn validating_constructor_rejects_pathological_parameters() {
+        assert!(Projector::new(3.0, 0.2).is_some());
+        assert!(
+            Projector::new(0.5, 0.5).is_some(),
+            "near == camera_z is valid"
+        );
+        assert!(Projector::new(3.0, 0.0).is_none(), "near must be positive");
+        assert!(Projector::new(3.0, -1.0).is_none());
+        assert!(Projector::new(0.1, 1.0).is_none(), "near behind camera");
+        assert!(Projector::new(f32::NAN, 0.2).is_none());
+        assert!(Projector::new(3.0, f32::NAN).is_none());
+        assert!(Projector::new(f32::INFINITY, 0.2).is_none());
+        assert!(Projector::default().is_valid());
+    }
+
+    #[test]
+    fn invalid_projector_degrades_to_none_instead_of_nan() {
+        let bad = [
+            Projector {
+                camera_z: f32::NAN,
+                near: 0.2,
+            },
+            Projector {
+                camera_z: 3.0,
+                near: 0.0,
+            },
+            Projector {
+                camera_z: 3.0,
+                near: -1.0,
+            },
+            Projector {
+                camera_z: f32::INFINITY,
+                near: 0.2,
+            },
+        ];
+        for p in bad {
+            assert!(!p.is_valid());
+            assert!(p.project(Vec3::default(), 0.0, 0.0, 8.0).is_none());
+            assert!(p
+                .clip_near(Vec3::default(), Vec3::new(1.0, 1.0, 1.0))
+                .is_none());
+            let edges = p.project_mesh(&Mesh::cube(1.0), &Transform3::identity(), 80.0, 40.0, 1.0);
+            assert!(edges.is_empty());
+        }
+    }
+
+    #[test]
+    fn hostile_projection_inputs_never_reach_a_canvas() {
+        // Enormous focal/zoom/centre values must be rejected, not rounded to i32.
+        let p = Projector::default();
+        assert!(p.project(Vec3::default(), f32::NAN, 0.0, 1.0).is_none());
+        assert!(p
+            .project(Vec3::default(), 0.0, 0.0, f32::INFINITY)
+            .is_none());
+        let edges = p.project_mesh(
+            &Mesh::cube(1.0),
+            &Transform3::identity(),
+            f32::NAN,
+            40.0,
+            1.0,
+        );
+        assert!(edges.is_empty());
+        let edges = p.project_mesh(
+            &Mesh::cube(1.0),
+            &Transform3::identity(),
+            80.0,
+            40.0,
+            f32::INFINITY,
+        );
+        assert!(edges.is_empty());
+
+        // A mesh transformed by non-finite values is dropped edge-by-edge.
+        let mut c = BrailleCanvas::new(20, 10);
+        let t = Transform3 {
+            rx: 0.0,
+            ry: 0.0,
+            rz: 0.0,
+            scale: f32::NAN,
+            offset: Vec3::default(),
+        };
+        p.draw(&Mesh::cube(1.0), &t, &mut c, 1.0);
+        assert!(c.is_empty(), "non-finite transform must render nothing");
+    }
+
+    #[test]
+    fn near_camera_projection_is_clipped_to_canvas_efficiently() {
+        // A perspective point very close to the camera produces coordinates in
+        // the tens of millions. The braille canvas must bound the walk (this
+        // returns promptly rather than iterating for millions of steps) and still
+        // render the visible crossing.
+        let p = Projector {
+            camera_z: 3.0,
+            near: 0.001,
+        };
+        let mesh = Mesh::new(
+            vec![Vec3::new(1e6, 0.0, 2.999), Vec3::new(-1e6, 0.0, 2.999)],
+            vec![(0, 1)],
+        );
+        let mut c = BrailleCanvas::new(40, 20);
+        p.draw(&mesh, &Transform3::identity(), &mut c, 1.0);
+        // Not asserting pixels (the crossing may be far off-canvas), only that it
+        // completes without panicking or hanging.
+        let _ = c.to_lines();
     }
 }

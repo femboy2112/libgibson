@@ -124,8 +124,9 @@ impl ParticleSystem {
     /// Directional burst: particles are emitted around `heading` radians with a
     /// total angular spread of `angular_spread` radians.
     ///
-    /// `heading == 0` points along `+x`; headings increase counter-clockwise in
-    /// screen coordinates (where `+y` is down, so `heading = TAU/4` points down).
+    /// `heading == 0` points along `+x`. Screen coordinates have `+y` **downward**,
+    /// so increasing `heading` rotates *clockwise on screen*:
+    /// `TAU/4` points down, `TAU/2` points left, `3*TAU/4` points up.
     /// `angular_spread` is clamped to `[0, TAU]`.
     #[allow(clippy::too_many_arguments)]
     pub fn burst_directional(
