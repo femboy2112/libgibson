@@ -630,24 +630,32 @@ the transport remains owned by the ANSI compiler and `TerminalTransaction`.
 
 **IMPLEMENTED + TESTED**.
 
-Two distinct damage concepts are tracked and must not be collapsed:
+Three distinct measurements must not be collapsed:
 
-* **Logical damage** — every visible cell whose terminal state changes:
-  explicit changed runs **∪** the region erased by a `CSI K`
-  (`erase_eol_from`) **∪** cleared trailing rows. Exposed as
-  `SurfaceDiff::logical_dirty_count()` / `logical_dirty_cells()`.
-* **Explicit run cells** — only cells covered by `CellRun` writes
-  (`explicit_dirty_count()`/`explicit_dirty_cells()`), kept for callers that
-  mean exactly that.
-* **Wire cost** — bytes actually emitted, returned by `Renderer::render` and
-  tracked by the scheduler. A single `CSI K` can logically clear dozens of cells
-  while costing a handful of bytes.
+* **Exact semantic delta** — cells whose realized state actually differs,
+  including changed cells in removed previous rows. Exposed as
+  `SurfaceDiff::exact_changed_cell_count()` / `exact_changed_cells()`.
+* **Affected footprint** — cells addressed by update semantics: explicit runs
+  **∪** the region erased by `CSI K` (`erase_eol_from`) **∪** cleared trailing
+  rows. This may include already-blank cells. Exposed as
+  `affected_cell_count()` and the existing `logical_dirty_count()` /
+  `logical_dirty_cells()` APIs. The legacy names remain supported.
+* **Wire cost** — actual bytes emitted, returned by `Renderer::render` and
+  tracked by the scheduler. A short erase command can address many cells.
 
-`Renderer` reports *logical* damage and, with `capture_damage`, records logical
-coordinates; `Context::last_dirty_cells()` exposes them. This powers the demos'
-damage maps and `fx_lab`'s heatmap, and makes `dirty %` truthful for shrinking
-content. Damage capture is opt-in (it allocates). `fx_lab`'s "logical damage vs
-wire cost" scene and `--debug-damage` demonstrate the contrast directly.
+`explicit_dirty_count()` / `explicit_dirty_cells()` count only `CellRun`
+writes; they are neither the complete affected footprint nor a general exact
+state-delta measure.
+
+`Renderer` reports the affected footprint and, with `capture_damage`, records
+its coordinates; `Context::last_dirty_cells()` exposes them. Fullscreen resize
+re-anchoring also accounts for its canvas clear. Damage maps and `fx_lab`'s
+heatmap therefore show where update operations act, not exclusively where
+cell state changed. An affected-footprint percentage can exceed the new frame
+area when old rows are removed; it must not be described as an exact “dirty
+percentage.” Label the numerator and denominator. Damage capture is opt-in
+(it allocates). The `fx_lab` damage scene and `--debug-damage` show the
+footprint/wire contrast.
 
 ## 34. Capability Degradation for Effects
 
