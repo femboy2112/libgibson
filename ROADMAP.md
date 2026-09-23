@@ -88,6 +88,21 @@ This round converted earlier over-strong claims into verified behavior and expli
 - **Demos**: `polished_agent` gains a floating permission modal, dim veil, toast overlay and a Braille telemetry scope; `hack_the_gibson` gains a Braille virus-scan instrument and a CRT scanline overlay.
 - **CI status**: the workflow now also runs the visual goldens and capability tests. Remote GitHub Actions is currently **blocked by account billing** (the job is refused before any step runs: "recent account payments have failed or your spending limit needs to be increased"). This is environmental, not a code failure; local verification is green.
 
+## Phase 1.9: Scene/Effects Substrate — IMPLEMENTED + TESTED
+
+- **Positioned layers** (`Node::offset`) with clip-aware leading-edge rendering. (`tests/scene.rs`)
+- **Camera viewports** (`Node::viewport`, `ViewportState`). (`tests/scene.rs`)
+- **Raster embedding** (`Node::raster`/`Node::surface`, `blit_transparent_clipped`). (Rust-only, no C ABI yet.)
+- **Vector primitives** on `BrailleCanvas` (rect/circle/ellipse/polygon).
+- **3D wireframe projector** (`geom`: Vec3/Transform3/Mesh/Projector, near-plane clip). (`src/geom.rs`)
+- **Particles** (seeded deterministic system). (`src/particles.rs`)
+- **Procedural fields** (plasma/interference/heat). (`src/field.rs`)
+- **Text transitions + safe glitch** (grapheme-safe; content-only). (`src/transition.rs`, `src/glitch.rs`)
+- **Damage inspection** (`SurfaceDiff::dirty_cells`, `Context::last_dirty_cells`) powering live damage maps.
+- **Demos**: `hack_the_gibson` rotating wireframe/plasma/particles/glitch/damage map; `polished_agent` modal shadow + transcript camera; **new `examples/fx_lab.rs`** gallery.
+- **Tests**: bounded effect damage, resize-during-wireframe, deterministic goldens incl. `fx_lab`. 233 tests total.
+- **Remote CI remains BLOCKED / ENVIRONMENTAL** (GitHub account billing); local verification green.
+
 ## Phase 2: Input Protocols & Interaction Enhancements — PLANNED
 
 - [ ] **Kitty Keyboard Protocol**: progressive enhancement for disambiguated escape keys, key release events, and modifier combinations.

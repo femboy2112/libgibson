@@ -28,7 +28,7 @@ Because earlier revisions of this document overstated completion, architectural 
 | Label | Meaning |
 | --- | --- |
 | **IMPLEMENTED** | The described code path exists and is reached in normal operation. |
-| **TESTED** | Covered by an automated test in this repository (`cargo test`, 177 tests) that exercises the behavior described. |
+| **TESTED** | Covered by an automated test in this repository (`cargo test`, 233 tests) that exercises the behavior described. |
 | **PARTIALLY TESTED** | Implemented, and some behavior is covered, but at least one named facet is not automatically verified. The gap is stated explicitly. |
 | **UNVERIFIED** | Written down because it exists in source or is a documented assumption, but has not been compiled or executed in any environment we can attest to. |
 
@@ -513,8 +513,121 @@ Goldens are never updated implicitly: use
 keeps the cheaper structural smoke checks (panel presence, width fit,
 no-truecolor under `--no-color`).
 
-## 25. Known Limitations
+## 25. Positioned Layers and Scene Composition
 
+**IMPLEMENTED + TESTED** (`tests/scene.rs`).
+
+`Node::offset(x, y)` marks a node as absolutely positioned inside its parent; it
+leaves flex flow, so moving a sprite never reflows its siblings. Offsets are
+signed, so a layer may sit partly or fully off-screen. Painting accumulates the
+offset down the subtree and clips to the parent.
+
+The subtlety is **left/top clipping**: a node clipped on its leading edge cannot
+be drawn in place (surface primitives would start at the *visible* origin and
+lose the off-screen part). Such a node is rendered into a translated scratch of
+its natural extent and blitted clipped, which also keeps wide-glyph invariants
+intact at the boundary.
+
+## 26. Camera Viewports
+
+**IMPLEMENTED + TESTED** (`tests/scene.rs`).
+
+`Node::viewport(cam_x, cam_y)` wraps a potentially oversized world, translating
+it by the negative camera offset and clipping to the viewport rectangle. The
+world does not shrink (its flex-shrink is pinned to 0). `ViewportState` owns the
+camera (`scroll_by`, `page`, `home`, `end`, `clamp`) and is deliberately integer
+and small; camera motion produces ordinary Surface diffs (no cursor tricks).
+
+## 27. Raster Embedding
+
+**IMPLEMENTED + TESTED**.
+
+`Node::raster(Surface)` / `Node::surface(Arc<Surface>)` embeds an already-rendered
+surface as a scene node. The buffer is shared behind an `Arc`, so cloning a node
+never duplicates it. `Surface::blit_transparent_clipped` composites with signed
+origin and explicit clipping. This is the efficient path for canvases, glitch
+output and damage overlays — no forced round-trip through `RichText`.
+
+> This primitive is Rust-only for now; it is **not** claimed in the C ABI.
+
+## 28. Vector and Sub-cell Geometry
+
+**IMPLEMENTED + TESTED** (`src/canvas.rs`).
+
+`BrailleCanvas` gains rectangle/filled-rectangle, circle/filled-circle, ellipse
+and polygon primitives on top of Bresenham lines. These are the drawing basis
+for the 3D projector, fields and particle rendering.
+
+## 29. 3D Wireframe Projection
+
+**IMPLEMENTED + TESTED** (`src/geom.rs`).
+
+`Vec3`/`Transform3`/`Mesh`/`Projector` provide just enough 3D: rotate, clip
+against the near plane, perspective-project, and draw edges as Braille lines.
+Shape generators cover cube, octahedron and torus. Projection rejects non-finite
+coordinates, so NaNs never reach the canvas; wireframe frames are deterministic
+under `FixedStepClock`. The demos rotate real geometry — no ASCII-art frames.
+
+## 30. Particles
+
+**IMPLEMENTED + TESTED** (`src/particles.rs`).
+
+A tiny deterministic particle system: a seeded xorshift64* PRNG, burst emission,
+linear integration and expiry. It renders to Braille dots or cell sprites. No
+thread RNG, no ECS, no physics engine; `--deterministic` reproduces exactly.
+
+## 31. Procedural Fields
+
+**IMPLEMENTED + TESTED** (`src/field.rs`).
+
+Deterministic scalar fields (plasma, interference, radial pulse) plus an
+intensity colour ramp rendered through `HalfBlockCanvas`. Under Mono the RGB is
+stripped centrally and a Braille density fallback preserves shape. A full-field
+plasma legitimately dirties most cells; locally-moving effects stay bounded.
+
+## 32. Text Transitions and Safe Glitch
+
+**IMPLEMENTED + TESTED** (`src/transition.rs`, `src/glitch.rs`).
+
+Transitions are pure `(text, t, seed)` functions over **grapheme clusters**
+(type-on, dissolve, seeded scramble), exact at `t >= 1`. Glitch effects mutate
+cell content only — row shift, tearing, inversion, seeded substitution — and
+re-sanitize wide-glyph invariants afterwards. Glitch never emits malformed ANSI:
+the transport remains owned by the ANSI compiler and `TerminalTransaction`.
+
+## 33. Damage / Debug Model
+
+**PARTIALLY TESTED**.
+
+`SurfaceDiff::dirty_cells()` returns explicit coordinates; `Renderer::capture_damage`
+records them per frame and `Context::last_dirty_cells()` exposes them. This powers
+the demos' live damage maps and `fx_lab`'s heatmap. Damage capture is opt-in (it
+allocates). A full general damage-map API is not yet public beyond this.
+
+## 34. Capability Degradation for Effects
+
+**IMPLEMENTED + TESTED**.
+
+Every new effect degrades through the central color ladder: `--truecolor` RGB
+plasma, `--ansi256` quantized, `--ansi16` coarse bands, `--mono` intensity/shape
+only. Demos and `fx_lab` accept `--mono/--ansi16/--ansi256/--truecolor`,
+`--no-sync` and `--no-insert-line` to prove fallbacks without a real terminal.
+Geometry (wireframe) and motion (particles) survive with colour removed.
+
+## 35. Deterministic Goldens for Effects
+
+**IMPLEMENTED + TESTED**. Extends the methodology in section 24: the golden set
+now includes `fx_lab` scenes and the FX-enabled demo frames. Goldens are
+reproducible because effect time is deterministic and headers hide
+non-deterministic counters (`--debug-renderer` reveals them in `fx_lab`).
+
+## 36. Known Limitations
+
+- **Raster/`Node::raster`, positioned layers and viewports are Rust-only** for now: no C ABI representation yet, and language-neutral support is not claimed.
+- **Damage map API is partial**: dirty coordinates are exposed for debug overlays, not as a general public `DamageMap`.
+- **Focus/event routing is NOT implemented this round**: the permission modal does not yet capture/restore focus; mouse remains deferred.
+- **Structured Markdown streaming is NOT implemented**: `polished_agent` streams plain/styled text and a semantic diff, not a Markdown renderer.
+- **The 3D projector is not a 3D engine**: no depth buffer, no shading, no occlusion — line geometry only.
 The following are **not** implemented or **not** verified. Do not describe them as complete:
 
 - **Go bindings are UNVERIFIED** — source exists and was updated (including `NewStackNode`/`NewDimNode`), but no Go compiler was available.
