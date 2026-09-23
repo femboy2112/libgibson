@@ -10,7 +10,7 @@
 //! Both produce a [`Surface`] (or styled text), so they flow through the normal
 //! diff/ANSI pipeline and composite like any other node.
 
-use crate::cell::{Color, Glyph, Line, RichText, Style};
+use crate::cell::{Color, Glyph, Line, RichText, Span, Style};
 use crate::surface::{Rect, Surface};
 
 // ---------------------------------------------------------------------------
@@ -329,6 +329,44 @@ impl HalfBlockCanvas {
     pub fn paint_into(&self, surface: &mut Surface, origin: (u16, u16)) {
         let layer = self.to_surface();
         surface.blit_transparent_at(&layer, origin.0, origin.1);
+    }
+
+    /// Builds a [`RichText`] view: each cell is a `▀` span with foreground = top
+    /// pixel and background = bottom pixel. Cells with no pixels become spaces.
+    pub fn to_rich_text(&self) -> RichText {
+        let mut rt = RichText::new();
+        for cy in 0..self.height {
+            let mut line = Line::new();
+            for cx in 0..self.width {
+                let top = self.get_pixel(cx as i32 * 2, cy as i32 * 2);
+                let bottom = self.get_pixel(cx as i32 * 2, cy as i32 * 2 + 1);
+                match (top, bottom) {
+                    (None, None) => line = line.span(Span::raw(" ")),
+                    (Some(t), None) => {
+                        line = line.span(Span::styled(
+                            "▀",
+                            Style::new().fg(Color::Rgb(t.0, t.1, t.2)),
+                        ))
+                    }
+                    (None, Some(b)) => {
+                        line = line.span(Span::styled(
+                            "▄",
+                            Style::new().fg(Color::Rgb(b.0, b.1, b.2)),
+                        ))
+                    }
+                    (Some(t), Some(b)) => {
+                        line = line.span(Span::styled(
+                            "▀",
+                            Style::new()
+                                .fg(Color::Rgb(t.0, t.1, t.2))
+                                .bg(Color::Rgb(b.0, b.1, b.2)),
+                        ))
+                    }
+                }
+            }
+            rt = rt.line(line);
+        }
+        rt
     }
 }
 

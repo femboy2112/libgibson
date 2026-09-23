@@ -725,7 +725,7 @@ fn panel_transfer(app: &App, width: u16) -> Node {
         format!(" {:>3}%  {} / 256 MB", (pct * 100.0) as usize, mb),
         fx.st.text,
     ));
-    let rt = RichText::new()
+    let mut rt = RichText::new()
         .line(line)
         .line(
             Line::new()
@@ -738,9 +738,39 @@ fn panel_transfer(app: &App, width: u16) -> Node {
                 .span(Span::styled("sha256:e3b0…b855", fx.st.code)),
         )
         .line(fx.spark(&app.throughput, bar_w.min(40)));
+
+    // Half-block RGB spectrum: two vertical samples per cell, no graphics
+    // protocol. Under mono the color quantizer strips the RGB and the block
+    // shapes remain as a density fallback.
+    {
+        let spec_w = bar_w.clamp(8, 40) as u16;
+        let mut canvas = gibson::HalfBlockCanvas::new(spec_w, 2);
+        let pw = canvas.pixel_width() as f32;
+        let ph = canvas.pixel_height() as f32;
+        for x in 0..canvas.pixel_width() as i32 {
+            let t = x as f32 / pw;
+            let energy = (t * 18.0 + app.elapsed() * 3.0).sin() * 0.5 + 0.5;
+            let bars = (energy * (ph - 1.0)).round() as i32;
+            for y in 0..=bars {
+                let yy = ph as i32 - 1 - y;
+                let g = (180.0 + 75.0 * (y as f32 / ph)).min(255.0) as u8;
+                let c = fx.green.lerp(fx.cyan, y as f32 / ph);
+                let (r, gg, b) = match c {
+                    Color::Rgb(r, gg, b) => (r, gg, b),
+                    _ => (g, g, g),
+                };
+                canvas.set_pixel(x, yy, (r, gg, b));
+            }
+        }
+        rt = rt.line(Line::raw(""));
+        for l in canvas.to_rich_text().lines {
+            rt = rt.line(l);
+        }
+    }
+
     tpanel("TRANSFER", fx.st.border)
         .percent_width(100.0)
-        .height(6.0)
+        .height(8.0)
         .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
 }
 
@@ -854,6 +884,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         Context::fullscreen()?
     };
+    if no_color {
+        // Central color ladder: Mono strips every color attribute, even those
+        // produced by sub-cell canvases.
+        ctx.set_color_depth(gibson::ColorDepth::Mono);
+    }
     ctx.set_max_fps(if auto { 240 } else { 60 });
     ctx.set_animation_interval(Duration::from_millis(if auto { 8 } else { 45 }));
 

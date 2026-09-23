@@ -388,6 +388,33 @@ impl App {
                 .span(Span::styled(glyph, style))
                 .span(Span::styled(msg, self.fx.st.text)),
         );
+        if self.approved {
+            // Real diff presentation with semantic roles.
+            let diff: &[(&str, Option<&str>, Option<&str>)] = &[
+                ("214", Some("self.previous_surface = None;"), None),
+                ("214", None, Some("self.preserve_live_surface();")),
+                ("215", Some("self.compiler.reset_cursor(0, 0);"), None),
+                ("215", None, Some("self.compiler.home_cursor();")),
+            ];
+            for (lineno, del, add) in diff {
+                if let Some(d) = del {
+                    self.transcript.push(
+                        Line::new()
+                            .span(Span::styled(format!("{lineno:>4} │ "), self.fx.st.muted))
+                            .span(Span::styled("− ", self.fx.st.error))
+                            .span(Span::styled(*d, self.fx.st.error)),
+                    );
+                }
+                if let Some(a) = add {
+                    self.transcript.push(
+                        Line::new()
+                            .span(Span::styled(format!("{lineno:>4} │ "), self.fx.st.muted))
+                            .span(Span::styled("+ ", self.fx.st.success))
+                            .span(Span::styled(*a, self.fx.st.success)),
+                    );
+                }
+            }
+        }
         self.phase = Phase::Prompt;
     }
 }
@@ -855,6 +882,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         Context::fullscreen()?
     };
+    if no_color {
+        // Central color ladder: Mono strips every color attribute, even those
+        // produced by sub-cell canvases.
+        ctx.set_color_depth(gibson::ColorDepth::Mono);
+    }
     ctx.set_max_fps(if auto { 240 } else { 60 });
     ctx.set_animation_interval(Duration::from_millis(if auto { 8 } else { 66 }));
 
