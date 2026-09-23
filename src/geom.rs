@@ -221,9 +221,84 @@ impl Mesh {
         Self::new(vertices, edges)
     }
 
+    /// Transforms every vertex by `t` (leaves edges unchanged).
     pub fn transformed(&self, t: &Transform3) -> Vec<Vec3> {
         self.vertices.iter().map(|v| t.apply(*v)).collect()
     }
+
+    /// Wireframe rectangular box of the given full extents, centred on the
+    /// origin. `box_xyz(w, h, d)` is the generalisation of [`Mesh::cube`].
+    pub fn box_xyz(w: f32, h: f32, d: f32) -> Self {
+        // `cube(1.0)` has full extent 1.0 on every axis, so per-axis scaling by
+        // (w, h, d) yields exactly the requested full extents.
+        Mesh::cube(1.0).scale_axes(w, h, d)
+    }
+
+    /// Returns a copy with every vertex scaled per-axis.
+    pub fn scale_axes(&self, sx: f32, sy: f32, sz: f32) -> Self {
+        let vertices = self
+            .vertices
+            .iter()
+            .map(|v| Vec3::new(v.x * sx, v.y * sy, v.z * sz))
+            .collect();
+        Self::new(vertices, self.edges.clone())
+    }
+
+    /// Returns a copy translated by `offset`.
+    pub fn translated(&self, offset: Vec3) -> Self {
+        let vertices = self.vertices.iter().map(|v| v.plus(offset)).collect();
+        Self::new(vertices, self.edges.clone())
+    }
+
+    /// Appends `other`'s vertices/edges (re-indexed) to this mesh.
+    pub fn append(&mut self, other: &Mesh) {
+        let base = self.vertices.len();
+        self.vertices.extend_from_slice(&other.vertices);
+        self.edges
+            .extend(other.edges.iter().map(|(a, b)| (a + base, b + base)));
+    }
+
+    /// A flat rectangular grid in the XZ plane (a "circuit plane"), centred on
+    /// the origin. Useful as a perspective ground plane for the data city.
+    pub fn grid_xz(x_half: f32, z_half: f32, divs: usize) -> Self {
+        let divs = divs.max(1);
+        let mut vertices = Vec::new();
+        let mut edges = Vec::new();
+        for i in 0..=divs {
+            let f = i as f32 / divs as f32;
+            let x = -x_half + 2.0 * x_half * f;
+            let z = -z_half + 2.0 * z_half * f;
+            // Line parallel to Z at this X.
+            vertices.push(Vec3::new(x, 0.0, -z_half));
+            vertices.push(Vec3::new(x, 0.0, z_half));
+            edges.push((vertices.len() - 2, vertices.len() - 1));
+            // Line parallel to X at this Z.
+            vertices.push(Vec3::new(-x_half, 0.0, z));
+            vertices.push(Vec3::new(x_half, 0.0, z));
+            edges.push((vertices.len() - 2, vertices.len() - 1));
+        }
+        Self::new(vertices, edges)
+    }
+
+    /// A vertical "data tower": a box of `w × h × d` whose base sits at the
+    /// origin plane and which is centred at `(cx, 0, cz)` in XZ.
+    pub fn data_tower(cx: f32, cz: f32, w: f32, h: f32, d: f32) -> Self {
+        Self::box_xyz(w, h, d).translated(Vec3::new(cx, h * 0.5, cz))
+    }
+}
+
+/// A projected edge plus the mean depth (camera distance) of its visible part.
+///
+/// Depth is exposed so callers can cheaply fake near/far styling without any
+/// z-buffer: bright/near edges and dim/far edges can be drawn into separate
+/// canvases and composited as ordinary layers. The projector itself remains
+/// geometry-only; it makes no claim about occlusion.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ProjectedEdge {
+    pub a: (i32, i32),
+    pub b: (i32, i32),
+    /// Mean camera depth of the visible endpoints; larger is farther.
+    pub depth: f32,
 }
 
 /// Perspective projector with near-plane clipping.
@@ -244,15 +319,41 @@ impl Default for Projector {
     }
 }
 
+/// Epsilon (in ULPs of the near-plane limit) used to nudge a clipped crossing
+/// strictly inside the visible half-space. See [`Projector::clip_near`].
+const CLIP_INSET_ULPS: f32 = 8.0;
+
 impl Projector {
-    /// Projects a point to canvas pixel coordinates. Returns `None` when the
-    /// point is at/behind the near plane or produces a non-finite coordinate.
+    /// Depth of a point: its distance in front of the camera.
+    ///
+    /// The near plane is at `depth == near`; the visible half-space is
+    /// `depth >= near`.
+    #[inline]
+    pub fn depth(&self, p: Vec3) -> f32 {
+        self.camera_z - p.z
+    }
+
+    /// The single visibility predicate shared by projection and clipping.
+    ///
+    /// A point is visible when it is finite and its depth is `>= self.near`.
+    /// The near plane itself is **inclusive**, which is the convention that
+    /// keeps [`Projector::clip_near`] and [`Projector::project`] consistent.
+    #[inline]
+    pub fn is_visible(&self, p: Vec3) -> bool {
+        p.is_finite() && self.depth(p) >= self.near
+    }
+
+    /// Projects a point to canvas pixel coordinates.
+    ///
+    /// Returns `None` when the point is behind the near plane (`depth < near`)
+    /// or produces a non-finite coordinate. A point exactly on the near plane is
+    /// visible; this matches [`Projector::is_visible`] and [`Projector::clip_near`].
     pub fn project(&self, p: Vec3, cx: f32, cy: f32, focal: f32) -> Option<(i32, i32)> {
         if !p.is_finite() {
             return None;
         }
-        let z = self.camera_z - p.z;
-        if z <= self.near {
+        let z = self.depth(p);
+        if z < self.near {
             return None;
         }
         let x = cx + p.x * focal / z;
@@ -264,20 +365,37 @@ impl Projector {
     }
 
     /// Clips a segment against the near plane, returning the visible portion.
+    ///
+    /// Uses the same inclusive half-space as [`Projector::is_visible`] and
+    /// [`Projector::project`]: a segment with one endpoint behind the plane is
+    /// truncated and the crossing point is placed on the visible side. The
+    /// crossing is nudged by a few ULPs *inside* the half-space so that the
+    /// subsequent `project` call cannot re-reject it when `camera_z - limit`
+    /// rounds one ULP below `near`. The nudge is ~1e-6 of the near distance and
+    /// has no visible geometric effect.
     pub fn clip_near(&self, a: Vec3, b: Vec3) -> Option<(Vec3, Vec3)> {
-        let limit = self.camera_z - self.near;
-        let a_in = a.z < limit;
-        let b_in = b.z < limit;
+        if !a.is_finite() || !b.is_finite() {
+            return None;
+        }
+        let a_in = self.is_visible(a);
+        let b_in = self.is_visible(b);
         match (a_in, b_in) {
             (true, true) => Some((a, b)),
             (false, false) => None,
             _ => {
                 let denom = b.z - a.z;
-                if denom.abs() < 1e-6 {
+                if denom == 0.0 || !denom.is_finite() {
                     return None;
                 }
-                let t = (limit - a.z) / denom;
-                let mid = Vec3::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, limit);
+                // Inclusive near plane, nudged a hair inside for float safety.
+                let limit = self.camera_z - self.near;
+                let z_limit = if limit > 0.0 {
+                    limit - limit.abs() * CLIP_INSET_ULPS * f32::EPSILON
+                } else {
+                    limit
+                };
+                let t = ((limit - a.z) / denom).clamp(0.0, 1.0);
+                let mid = Vec3::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, z_limit);
                 if a_in {
                     Some((a, mid))
                 } else {
@@ -287,17 +405,24 @@ impl Projector {
         }
     }
 
-    /// Draws `mesh` transformed by `t` into a Braille canvas.
+    /// Projects a transformed mesh to screen edges with depth information.
     ///
-    /// `zoom` scales the projected result (1.0 fits the mesh to the canvas).
-    pub fn draw(&self, mesh: &Mesh, t: &Transform3, canvas: &mut BrailleCanvas, zoom: f32) {
-        let pw = canvas.pixel_width() as f32;
-        let ph = canvas.pixel_height() as f32;
+    /// Edges that are fully behind the near plane are dropped; crossing edges are
+    /// clipped (see [`Projector::clip_near`]). `pw`/`ph` are the target pixel
+    /// dimensions and `zoom` scales the fit (1.0 fits the mesh to the canvas).
+    pub fn project_mesh(
+        &self,
+        mesh: &Mesh,
+        t: &Transform3,
+        pw: f32,
+        ph: f32,
+        zoom: f32,
+    ) -> Vec<ProjectedEdge> {
         let cx = (pw - 1.0) * 0.5;
         let cy = (ph - 1.0) * 0.5;
         let focal = pw.min(ph) * 0.5 * zoom;
-
         let transformed = mesh.transformed(t);
+        let mut out = Vec::with_capacity(mesh.edges.len());
         for (a, b) in &mesh.edges {
             if *a >= transformed.len() || *b >= transformed.len() {
                 continue;
@@ -308,8 +433,24 @@ impl Projector {
             let pa = self.project(sa, cx, cy, focal);
             let pb = self.project(sb, cx, cy, focal);
             if let (Some(pa), Some(pb)) = (pa, pb) {
-                canvas.line(pa.0, pa.1, pb.0, pb.1);
+                out.push(ProjectedEdge {
+                    a: pa,
+                    b: pb,
+                    depth: (self.depth(sa) + self.depth(sb)) * 0.5,
+                });
             }
+        }
+        out
+    }
+
+    /// Draws `mesh` transformed by `t` into a Braille canvas.
+    ///
+    /// `zoom` scales the projected result (1.0 fits the mesh to the canvas).
+    pub fn draw(&self, mesh: &Mesh, t: &Transform3, canvas: &mut BrailleCanvas, zoom: f32) {
+        let pw = canvas.pixel_width() as f32;
+        let ph = canvas.pixel_height() as f32;
+        for e in self.project_mesh(mesh, t, pw, ph, zoom) {
+            canvas.line(e.a.0, e.a.1, e.b.0, e.b.1);
         }
     }
 }
@@ -351,6 +492,155 @@ mod tests {
         assert!(p.project(Vec3::new(0.0, 0.0, 3.0), 0.0, 0.0, 1.0).is_none());
     }
 
+    // -----------------------------------------------------------------------
+    // Near-plane clipping consistency.
+    //
+    // Regression: `clip_near` used to place the crossing exactly on the plane
+    // while `project` used a strict `depth > near` test, so a clipped edge was
+    // handed to `project`, rejected, and the whole edge vanished.
+    // -----------------------------------------------------------------------
+
+    fn near_limit(p: Projector) -> f32 {
+        p.camera_z - p.near
+    }
+
+    #[test]
+    fn visible_visible_segment_is_returned_unchanged() {
+        let p = Projector::default();
+        let a = Vec3::new(0.0, 0.0, 0.0);
+        let b = Vec3::new(1.0, 1.0, 0.5);
+        let (sa, sb) = p.clip_near(a, b).expect("both visible");
+        assert_eq!(sa, a);
+        assert_eq!(sb, b);
+    }
+
+    #[test]
+    fn invisible_invisible_segment_is_dropped() {
+        let p = Projector::default();
+        let limit = near_limit(p);
+        let a = Vec3::new(0.0, 0.0, limit + 1.0);
+        let b = Vec3::new(1.0, 1.0, limit + 2.0);
+        assert!(p.clip_near(a, b).is_none());
+    }
+
+    #[test]
+    fn endpoint_exactly_on_near_plane_is_visible() {
+        let p = Projector::default();
+        let limit = near_limit(p);
+        let on_plane = Vec3::new(0.3, -0.2, limit);
+        assert!(p.is_visible(on_plane), "near plane is inclusive");
+        assert!(
+            p.project(on_plane, 0.0, 0.0, 1.0).is_some(),
+            "a point exactly on the near plane must project"
+        );
+    }
+
+    #[test]
+    fn visible_to_behind_crossing_keeps_visible_portion() {
+        let p = Projector::default();
+        let limit = near_limit(p);
+        let a = Vec3::new(0.0, 0.0, 0.0); // visible
+        let b = Vec3::new(0.0, 0.0, limit + 1.0); // behind
+        let (sa, sb) = p.clip_near(a, b).expect("crossing must clip, not vanish");
+        assert_eq!(sa, a);
+        assert!(!p.is_visible(b));
+        // The crossing is on the visible side and must itself project.
+        assert!(
+            p.is_visible(sb),
+            "crossing must be inside the visible half-space"
+        );
+        assert!(p.project(sa, 0.0, 0.0, 1.0).is_some());
+        assert!(
+            p.project(sb, 0.0, 0.0, 1.0).is_some(),
+            "clipped crossing must survive projection (no edge popping)"
+        );
+    }
+
+    #[test]
+    fn behind_to_visible_crossing_keeps_visible_portion() {
+        let p = Projector::default();
+        let limit = near_limit(p);
+        let a = Vec3::new(0.0, 0.0, limit + 1.0); // behind
+        let b = Vec3::new(0.4, 0.1, -0.5); // visible
+        let (sa, sb) = p.clip_near(a, b).expect("crossing must clip, not vanish");
+        assert!(!p.is_visible(a));
+        assert_eq!(sb, b);
+        assert!(p.is_visible(sa));
+        assert!(p.project(sa, 0.0, 0.0, 8.0).is_some());
+        assert!(p.project(sb, 0.0, 0.0, 8.0).is_some());
+    }
+
+    #[test]
+    fn very_shallow_crossing_is_not_dropped() {
+        let p = Projector::default();
+        let limit = near_limit(p);
+        let a = Vec3::new(0.1, 0.1, limit - 1e-7); // just inside
+        let b = Vec3::new(0.2, 0.2, limit + 1e-7); // just outside
+        let (sa, sb) = p.clip_near(a, b).expect("shallow crossing must survive");
+        assert!(p.is_visible(sa) && p.is_visible(sb));
+        assert!(p.project(sa, 10.0, 10.0, 8.0).is_some());
+        assert!(p.project(sb, 10.0, 10.0, 8.0).is_some());
+    }
+
+    #[test]
+    fn nan_and_infinite_endpoints_are_rejected() {
+        let p = Projector::default();
+        let finite = Vec3::new(0.0, 0.0, 0.0);
+        let nan = Vec3::new(f32::NAN, 0.0, 0.0);
+        let inf = Vec3::new(0.0, 0.0, f32::INFINITY);
+        assert!(p.clip_near(nan, finite).is_none());
+        assert!(p.clip_near(finite, nan).is_none());
+        assert!(p.clip_near(inf, finite).is_none());
+        assert!(p.clip_near(finite, inf).is_none());
+        assert!(p.clip_near(nan, inf).is_none());
+    }
+
+    #[test]
+    fn crossing_segment_draws_a_truncated_edge_not_nothing() {
+        // A segment from in front of the camera to well behind it crosses the
+        // near plane. Both endpoints project, so the line must be drawn.
+        let p = Projector {
+            camera_z: 4.0,
+            near: 1.0,
+        };
+        let limit = near_limit(p);
+        let mesh = Mesh::new(
+            vec![
+                Vec3::new(-1.5, 0.0, 0.0),         // visible
+                Vec3::new(-1.5, 0.0, limit + 2.0), // behind
+            ],
+            vec![(0, 1)],
+        );
+        let mut canvas = BrailleCanvas::new(40, 20);
+        p.draw(&mesh, &Transform3::identity(), &mut canvas, 1.0);
+        assert!(
+            !canvas.is_empty(),
+            "a near-plane-crossing edge must render its visible part, not disappear"
+        );
+    }
+
+    #[test]
+    fn fully_visible_edge_renders_at_least_as_much_as_crossing_edge() {
+        let p = Projector {
+            camera_z: 4.0,
+            near: 1.0,
+        };
+        let limit = near_limit(p);
+        let crossing = Mesh::new(
+            vec![Vec3::new(-1.5, 0.0, 0.0), Vec3::new(-1.5, 0.0, limit + 2.0)],
+            vec![(0, 1)],
+        );
+        let visible = Mesh::new(
+            vec![Vec3::new(-1.5, 0.0, 0.0), Vec3::new(-1.5, 0.0, -1.0)],
+            vec![(0, 1)],
+        );
+        let mut c1 = BrailleCanvas::new(40, 20);
+        let mut c2 = BrailleCanvas::new(40, 20);
+        p.draw(&crossing, &Transform3::identity(), &mut c1, 1.0);
+        p.draw(&visible, &Transform3::identity(), &mut c2, 1.0);
+        assert!(!c1.is_empty() && !c2.is_empty());
+    }
+
     #[test]
     fn projection_is_deterministic_and_finite_across_rotations() {
         let mesh = Mesh::cube(1.5);
@@ -365,6 +655,70 @@ mod tests {
                 assert!(v.is_finite());
             }
         }
+    }
+
+    #[test]
+    fn box_xyz_has_requested_extents() {
+        let m = Mesh::box_xyz(4.0, 2.0, 6.0);
+        assert_eq!(m.vertices.len(), 8);
+        assert_eq!(m.edges.len(), 12);
+        let xs: Vec<f32> = m.vertices.iter().map(|v| v.x).collect();
+        let ys: Vec<f32> = m.vertices.iter().map(|v| v.y).collect();
+        let zs: Vec<f32> = m.vertices.iter().map(|v| v.z).collect();
+        assert!((xs.iter().cloned().fold(f32::MIN, f32::max) - 2.0).abs() < 1e-5);
+        assert!((ys.iter().cloned().fold(f32::MIN, f32::max) - 1.0).abs() < 1e-5);
+        assert!((zs.iter().cloned().fold(f32::MIN, f32::max) - 3.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn grid_xz_is_consistent_and_composable() {
+        let g = Mesh::grid_xz(5.0, 5.0, 4);
+        assert_eq!(g.vertices.len(), 5 * 4);
+        assert_eq!(g.edges.len(), 5 * 2);
+        let mut city = Mesh::default();
+        city.append(&g);
+        city.append(&Mesh::data_tower(0.0, 0.0, 1.0, 3.0, 1.0));
+        assert_eq!(city.vertices.len(), g.vertices.len() + 8);
+        for (a, b) in &city.edges {
+            assert!(*a < city.vertices.len() && *b < city.vertices.len());
+        }
+    }
+
+    #[test]
+    fn data_tower_sits_on_the_ground_plane() {
+        let t = Mesh::data_tower(3.0, -2.0, 1.0, 4.0, 1.0);
+        let min_y = t.vertices.iter().map(|v| v.y).fold(f32::MAX, f32::min);
+        assert!(min_y.abs() < 1e-5, "tower base should sit at y=0");
+        let cx: f32 = t.vertices.iter().map(|v| v.x).sum::<f32>() / 8.0;
+        assert!((cx - 3.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn project_mesh_reports_finite_depth_for_all_edges() {
+        let mut city = Mesh::grid_xz(4.0, 4.0, 3);
+        city.append(&Mesh::data_tower(0.0, 0.0, 1.0, 2.0, 1.0));
+        let t = Transform3::rotation(-0.9, 0.4, 0.0);
+        let edges = Projector::default().project_mesh(&city, &t, 80.0, 48.0, 1.0);
+        assert!(!edges.is_empty());
+        assert!(edges.iter().all(|e| e.depth.is_finite() && e.depth > 0.0));
+    }
+
+    #[test]
+    fn near_edges_have_smaller_depth_than_far_edges() {
+        // depth = camera_z - p.z, so larger z is *nearer* the camera.
+        let near = Mesh::data_tower(0.5, 1.5, 0.6, 1.0, 0.6);
+        let far = Mesh::data_tower(-0.5, -1.5, 0.6, 1.0, 0.6);
+        let p = Projector::default();
+        let t = Transform3::identity();
+        let n = p.project_mesh(&near, &t, 60.0, 40.0, 1.0);
+        let f = p.project_mesh(&far, &t, 60.0, 40.0, 1.0);
+        assert!(!n.is_empty() && !f.is_empty());
+        let n_depth = n.iter().map(|e| e.depth).sum::<f32>() / n.len() as f32;
+        let f_depth = f.iter().map(|e| e.depth).sum::<f32>() / f.len() as f32;
+        assert!(
+            n_depth < f_depth,
+            "near tower should have smaller camera depth ({n_depth} vs {f_depth})"
+        );
     }
 
     #[test]

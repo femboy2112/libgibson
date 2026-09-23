@@ -134,7 +134,12 @@ impl Surface {
     ///
     /// This is the clipping-aware form used by the raster and camera nodes: a
     /// source may be partly (or fully) off the clip rectangle, including negative
-    /// origins, and wide-glyph invariants are preserved by `set_cell`.
+    /// origins. **Clipping wins over glyph shape:** a width-2 glyph is placed
+    /// only when *both* its lead and its continuation cell lie inside the
+    /// effective clip rectangle. If either would fall outside, the glyph is
+    /// suppressed entirely, so a wide glyph can never leak a continuation cell
+    /// beyond a viewport/layer boundary. Continuation cells are never blitted
+    /// directly; the lead's [`Surface::set_cell`] creates them.
     pub fn blit_transparent_clipped(&mut self, src: &Surface, dx: i32, dy: i32, clip: Rect) {
         let clip = self.area().intersection(&clip);
         if clip.is_empty() {
@@ -144,6 +149,11 @@ impl Surface {
             for x in 0..src.width {
                 let Some(c) = src.get(x, y) else { continue };
                 if c.transparent {
+                    continue;
+                }
+                // Continuations are owned by their lead; blitting them directly
+                // could create a dangling half-glyph at a clip boundary.
+                if c.is_continuation {
                     continue;
                 }
                 let tx = dx + x as i32;
@@ -159,12 +169,28 @@ impl Surface {
                     if let Some(dst) = self.get_mut(tx, ty) {
                         dst.style = dst.style.overlay(c.style);
                     }
-                } else {
-                    let cell = c.clone();
-                    self.set_cell(tx, ty, cell);
+                    continue;
                 }
+                if c.glyph.display_width == 2 {
+                    // Both halves must fit inside the clip; otherwise suppress.
+                    let cont_x = tx.saturating_add(1);
+                    let fits = tx.checked_add(1).is_some()
+                        && clip.contains(cont_x, ty)
+                        && self.contains_for_wide(cont_x, ty);
+                    if fits {
+                        self.set_cell(tx, ty, c.clone());
+                    }
+                    continue;
+                }
+                self.set_cell(tx, ty, c.clone());
             }
         }
+    }
+
+    /// True when `(x, y)` is inside the surface and can host a wide continuation.
+    #[inline]
+    fn contains_for_wide(&self, x: u16, y: u16) -> bool {
+        x < self.width && y < self.height
     }
 
     /// Composites `src` onto this surface at the origin.
@@ -495,6 +521,61 @@ mod tests {
         assert_eq!(adv, 0);
         // Cell 2 should remain space
         assert_eq!(surface.get(2, 0).unwrap().glyph.grapheme.as_str(), " ");
+    }
+
+    // -----------------------------------------------------------------------
+    // Wide-glyph clip containment (clipping wins over glyph shape).
+    // -----------------------------------------------------------------------
+
+    fn wide_at(x: u16) -> Surface {
+        let mut s = Surface::new_transparent(8, 1);
+        s.print_str(x, 0, "你", Style::default(), None);
+        s
+    }
+
+    #[test]
+    fn wide_glyph_fully_inside_clip_is_placed() {
+        let mut dst = Surface::new(8, 1);
+        dst.blit_transparent_clipped(&wide_at(2), 0, 0, Rect::new(0, 0, 8, 1));
+        assert_eq!(dst.get(2, 0).unwrap().glyph.grapheme.as_str(), "你");
+        assert!(dst.get(3, 0).unwrap().is_continuation);
+    }
+
+    #[test]
+    fn wide_glyph_lead_on_final_clip_column_does_not_leak_continuation() {
+        let mut dst = Surface::new(8, 1);
+        dst.print_str(0, 0, "abcdefgh", Style::default(), None);
+        // Clip is columns 0..=3, so column 3 is the final visible column. A wide
+        // glyph whose lead lands on column 3 cannot be placed.
+        dst.blit_transparent_clipped(&wide_at(3), 0, 0, Rect::new(0, 0, 4, 1));
+        // Nothing leaked to column 4 (outside the clip) ...
+        assert_eq!(dst.get(4, 0).unwrap().glyph.grapheme.as_str(), "e");
+        assert!(!dst.get(4, 0).unwrap().is_continuation);
+        // ... and the base inside the clip is untouched (glyph suppressed).
+        assert_eq!(dst.get(3, 0).unwrap().glyph.grapheme.as_str(), "d");
+        assert!(!dst.get(3, 0).unwrap().is_continuation);
+    }
+
+    #[test]
+    fn wide_glyph_left_clipped_does_not_leave_half_glyph() {
+        let mut dst = Surface::new(8, 1);
+        dst.print_str(0, 0, "abcdefgh", Style::default(), None);
+        // The lead (column 1) is outside the clip (clip starts at 2); only the
+        // continuation would have been inside. It must not be written.
+        dst.blit_transparent_clipped(&wide_at(1), 0, 0, Rect::new(2, 0, 4, 1));
+        assert!(!dst.get(2, 0).unwrap().is_continuation);
+        assert_eq!(dst.get(2, 0).unwrap().glyph.grapheme.as_str(), "c");
+        assert_eq!(dst.get(1, 0).unwrap().glyph.grapheme.as_str(), "b");
+    }
+
+    #[test]
+    fn wide_glyph_cannot_escape_the_surface_right_edge() {
+        let mut dst = Surface::new(4, 1);
+        dst.print_str(0, 0, "abcd", Style::default(), None);
+        // Lead at the surface's final column: no room for a continuation.
+        dst.blit_transparent_clipped(&wide_at(3), 0, 0, Rect::new(0, 0, 4, 1));
+        assert_eq!(dst.get(3, 0).unwrap().glyph.grapheme.as_str(), "d");
+        assert!(!dst.get(3, 0).unwrap().is_continuation);
     }
 
     #[test]

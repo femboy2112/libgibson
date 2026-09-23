@@ -163,6 +163,72 @@ fn wide_glyph_at_layer_boundary_never_dangles() {
 }
 
 #[test]
+fn positioned_layer_wide_glyph_left_clipped_leaves_no_half_glyph() {
+    // Negative origin forces the scratch + clipped-blit path. The wide glyph's
+    // lead scrolls off the left edge, so the whole glyph must be suppressed and
+    // the base beneath must survive untouched.
+    let mut root = Node::stack()
+        .width(6.0)
+        .height(1.0)
+        .child(Node::text("abcdef", Style::default()))
+        .child(
+            Node::text("你AB", Style::default())
+                .width(3.0)
+                .height(1.0)
+                .offset(-1.0, 0.0),
+        );
+    let s = layout_paint(&mut root, 6, 1);
+    assert_no_dangling_wide(&s);
+    // Column 0 was the continuation of 你 in the layer; it must not appear.
+    assert_eq!(s.get(0, 0).unwrap().glyph.grapheme.as_str(), "a");
+    assert!(!s.get(0, 0).unwrap().is_continuation);
+    // 'A' from the layer lands on column 1.
+    assert_eq!(s.get(1, 0).unwrap().glyph.grapheme.as_str(), "A");
+}
+
+#[test]
+fn raster_node_wide_glyph_cannot_leak_past_its_rectangle() {
+    // Raster surface is 6 wide but the node is only 5 wide. A wide glyph whose
+    // lead lands on the node's final column (4) must be suppressed so its
+    // continuation (column 5) never escapes the node rectangle.
+    let mut raster = Surface::new_transparent(6, 1);
+    raster.print_str(4, 0, "你", Style::default(), None);
+    let mut root = Node::stack()
+        .width(8.0)
+        .height(1.0)
+        .child(Node::text("abcdefgh", Style::default()))
+        .child(Node::raster(raster).width(5.0).height(1.0).offset(0.0, 0.0));
+    let s = layout_paint(&mut root, 8, 1);
+    assert_no_dangling_wide(&s);
+    assert_eq!(s.get(4, 0).unwrap().glyph.grapheme.as_str(), "e");
+    assert_eq!(s.get(5, 0).unwrap().glyph.grapheme.as_str(), "f");
+    assert!(!s.get(5, 0).unwrap().is_continuation);
+}
+
+#[test]
+fn viewport_wide_glyph_scrolled_off_left_is_suppressed() {
+    // Camera pans one column right; the world's leading wide glyph scrolls off
+    // the left. It must vanish whole, never leaving a dangling continuation.
+    let mut root = Node::stack()
+        .width(6.0)
+        .height(1.0)
+        .child(Node::text("abcdef", Style::default()))
+        .child(
+            Node::viewport(1, 0)
+                .width(4.0)
+                .height(1.0)
+                .child(Node::text("你XY", Style::default()).width(4.0).height(1.0)),
+        );
+    let s = layout_paint(&mut root, 6, 1);
+    assert_no_dangling_wide(&s);
+    // Visible world after panning one column: X at viewport col 1.
+    assert_eq!(s.get(1, 0).unwrap().glyph.grapheme.as_str(), "X");
+    assert_eq!(s.get(2, 0).unwrap().glyph.grapheme.as_str(), "Y");
+    // Base content outside the viewport must be unchanged.
+    assert_eq!(s.get(4, 0).unwrap().glyph.grapheme.as_str(), "e");
+}
+
+#[test]
 fn viewport_pans_horizontally_and_clips() {
     let world = Node::text("0123456789ABCDEFGHIJ", Style::default())
         .width(20.0)
