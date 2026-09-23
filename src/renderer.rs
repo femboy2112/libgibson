@@ -199,9 +199,22 @@ impl Renderer {
         // Report *logical* damage (runs + erase-to-EOL + cleared rows), not just
         // explicit run cells: a shrinking line erases real cells even when its
         // wire cost is one CSI K. Wire cost is returned separately as bytes.
-        let dirty_cells = diff.logical_dirty_count();
+        // A fullscreen resize invalidates the whole physical canvas, including
+        // blank cells omitted by a fresh diff. Its clear addresses every cell.
+        let clears_canvas = self.mode == RenderMode::Fullscreen && reanchor;
+        let dirty_cells = if clears_canvas {
+            total_cells
+        } else {
+            diff.logical_dirty_count()
+        };
         if self.capture_damage {
-            self.last_dirty_cells = diff.logical_dirty_cells();
+            self.last_dirty_cells = if clears_canvas {
+                (0..surface_height)
+                    .flat_map(|y| (0..surface_width).map(move |x| (x, y)))
+                    .collect()
+            } else {
+                diff.logical_dirty_cells()
+            };
         } else {
             self.last_dirty_cells.clear();
         }
@@ -227,6 +240,13 @@ impl Renderer {
                 // the compiler thinks it is. Without this, each frame drifts by
                 // the previous frame's final cursor and eventually scrolls.
                 tx.push(b"\x1b[H");
+                if clears_canvas {
+                    // Fresh diffs elide default blanks. After a resize those
+                    // blanks can contain reflowed old content; establish the
+                    // blank baseline inside this same atomic transaction.
+                    tx.push(b"\x1b[0m\x1b[2J");
+                    self.compiler.current_style = Style::default();
+                }
                 self.compiler.reset_cursor(0, 0);
                 let bytes = self.compiler.compile(&diff);
                 tx.push(&bytes);
