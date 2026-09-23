@@ -167,10 +167,10 @@ fn particle_field_motion_is_bounded() {
 
     let build = |step: usize| {
         let mut ps = gibson::ParticleSystem::new(0x1234);
-        ps.burst(60, cols as f32, rows as f32 * 0.5, 8.0, 2.0, 1.0);
-        for _ in 0..step {
-            ps.update(1.0 / 60.0);
-        }
+        // Sparse: 60 dots on a 40x10 cell grid. Advance in a visible step
+        // (sub-dot motion would legitimately round back to the same cell).
+        ps.burst(60, cols as f32, rows as f32 * 0.5, 8.0, 2.0);
+        ps.update(step as f32 * 0.1);
         let mut canvas = gibson::BrailleCanvas::new(cols, rows);
         ps.render_braille(&mut canvas);
         Node::raster(canvas.to_surface(gibson::Style::default()))
@@ -186,8 +186,138 @@ fn particle_field_motion_is_bounded() {
         .render(&mut build(1), &mut session, &mut out)
         .unwrap();
     assert!(total > 0);
-    // Even a broad particle field should not necessarily dirty everything.
-    assert!(dirty <= total);
+    // A sparse field advancing one 1/60s step must not repaint the whole screen.
+    // The bound is generous but catches an accidental whole-screen regression.
+    assert!(
+        dirty * 2 <= total,
+        "sparse particle motion dirtied the whole field: {dirty}/{total}"
+    );
+    assert!(dirty > 0, "particles did move; damage must not be zero");
+}
+
+#[test]
+fn frozen_particle_state_is_zero_damage_and_zero_bytes() {
+    let cols = 40u16;
+    let rows = 10u16;
+    let mut renderer = Renderer::new(RenderMode::Fullscreen);
+    let mut session = TerminalSession::headless(cols, rows);
+    let mut out = Vec::new();
+
+    let build = || {
+        let mut ps = gibson::ParticleSystem::new(0xABCD);
+        ps.burst(80, cols as f32, rows as f32 * 0.5, 6.0, 2.0);
+        for _ in 0..3 {
+            ps.update(1.0 / 60.0);
+        }
+        let mut canvas = gibson::BrailleCanvas::new(cols, rows);
+        ps.render_braille(&mut canvas);
+        Node::raster(canvas.to_surface(gibson::Style::default()))
+            .width(cols as f32)
+            .height(rows as f32)
+    };
+
+    renderer
+        .render(&mut build(), &mut session, &mut out)
+        .unwrap();
+    out.clear();
+    let (dirty, _total, bytes, _, _) = renderer
+        .render(&mut build(), &mut session, &mut out)
+        .unwrap();
+    assert_eq!(dirty, 0, "a frozen particle field has zero logical damage");
+    assert_eq!(bytes, 0, "a frozen particle field emits zero frame bytes");
+}
+
+/// A line that shrinks to nothing is erased by a single `CSI K`, but it
+/// logically clears many cells. Logical damage and wire cost must not be
+/// collapsed into one number.
+#[test]
+fn erase_to_eol_has_large_logical_damage_but_tiny_wire_cost() {
+    let cols = 120u16;
+    let rows = 4u16;
+    let mut renderer = Renderer::new(RenderMode::Fullscreen);
+    let mut session = TerminalSession::headless(cols, rows);
+    let mut out = Vec::new();
+
+    let full = "X".repeat(cols as usize);
+    let mut long = Node::text(full.clone(), gibson::Style::new())
+        .width(cols as f32)
+        .height(1.0);
+    renderer.render(&mut long, &mut session, &mut out).unwrap();
+    out.clear();
+
+    // Next frame: the same row is blank. The whole row is logically erased.
+    let mut blank = Node::text(" ", gibson::Style::new()).width(1.0).height(1.0);
+    let (dirty, total, bytes, _, _) = renderer.render(&mut blank, &mut session, &mut out).unwrap();
+
+    // Logical damage should be a large fraction of the row ...
+    assert!(
+        dirty >= (cols as usize) - 2,
+        "erase must report the erased cells as logical damage: {dirty}"
+    );
+    let _ = total;
+    // ... while the wire cost is a handful of bytes (one CSI K plus cursor move
+    // and the synchronized-update terminator), far below the 120 erased cells.
+    assert!(
+        bytes < 48,
+        "CSI-K erase should cost few bytes, emitted {bytes}"
+    );
+}
+
+/// A one-cell sprite move must dirty roughly the union of its old and new
+/// footprints, not the whole framebuffer.
+#[test]
+fn one_cell_sprite_move_is_bounded_to_old_plus_new_footprint() {
+    let cols = 60u16;
+    let rows = 12u16;
+    let mut renderer = Renderer::new(RenderMode::Fullscreen);
+    let mut session = TerminalSession::headless(cols, rows);
+    let mut out = Vec::new();
+
+    let sprite = |x: f32| {
+        Node::stack()
+            .percent_width(100.0)
+            .percent_height(100.0)
+            .child(Node::text("BACKGROUND", gibson::Style::new()))
+            .child(
+                Node::text("X", gibson::Style::new())
+                    .width(1.0)
+                    .height(1.0)
+                    .offset(x, 6.0),
+            )
+    };
+
+    renderer
+        .render(&mut sprite(20.0), &mut session, &mut out)
+        .unwrap();
+    out.clear();
+    let (dirty, total, _bytes, _, _) = renderer
+        .render(&mut sprite(21.0), &mut session, &mut out)
+        .unwrap();
+    // Old + new cell + a small allowance for any control/cursor cell.
+    assert!(
+        dirty <= 4,
+        "1-cell sprite move dirtied {dirty} cells (total {total}); expected a tiny footprint"
+    );
+}
+
+#[test]
+fn identical_frame_reports_zero_logical_damage() {
+    let cols = 50u16;
+    let rows = 8u16;
+    let mut renderer = Renderer::new(RenderMode::Fullscreen);
+    let mut session = TerminalSession::headless(cols, rows);
+    let mut out = Vec::new();
+    let mut root = Node::rich_text_wrapped(
+        gibson::RichText::raw("static dashboard\nno animation here"),
+        WrapMode::NoWrap,
+    )
+    .width(cols as f32)
+    .height(rows as f32);
+    renderer.render(&mut root, &mut session, &mut out).unwrap();
+    out.clear();
+    let (dirty, _total, bytes, _, _) = renderer.render(&mut root, &mut session, &mut out).unwrap();
+    assert_eq!(dirty, 0);
+    assert_eq!(bytes, 0);
 }
 
 #[test]

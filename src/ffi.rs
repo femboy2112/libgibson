@@ -217,6 +217,8 @@ pub const GIBSON_KEY_BACKSPACE: u32 = 0x1008;
 pub const GIBSON_KEY_DELETE: u32 = 0x1009;
 pub const GIBSON_KEY_ESC: u32 = 0x100A;
 pub const GIBSON_KEY_TAB: u32 = 0x100B;
+pub const GIBSON_KEY_PAGE_UP: u32 = 0x100C;
+pub const GIBSON_KEY_PAGE_DOWN: u32 = 0x100D;
 
 /// FFI-safe, versioned statistics snapshot.
 ///
@@ -727,6 +729,8 @@ pub unsafe extern "C" fn gibson_poll_event(
                             KeyCode::Esc => GIBSON_KEY_ESC,
                             KeyCode::Tab => GIBSON_KEY_TAB,
                             KeyCode::BackTab => GIBSON_KEY_TAB,
+                            KeyCode::PageUp => GIBSON_KEY_PAGE_UP,
+                            KeyCode::PageDown => GIBSON_KEY_PAGE_DOWN,
                         };
                     }
                     Event::Paste(s) => {

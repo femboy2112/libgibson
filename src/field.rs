@@ -85,6 +85,51 @@ pub fn render_field_braille(
     }
 }
 
+/// The classic 4×4 Bayer ordered-dither matrix, normalized to `[0, 1)`.
+///
+/// Deterministic and position-dependent: the local threshold makes a scalar
+/// field degrade into a stable dot *density* rather than collapsing into large
+/// solid blocks when only one attribute (on/off) is available.
+pub const BAYER4: [[f32; 4]; 4] = [
+    [0.0, 8.0, 2.0, 10.0],
+    [12.0, 4.0, 14.0, 6.0],
+    [3.0, 11.0, 1.0, 9.0],
+    [15.0, 7.0, 13.0, 5.0],
+];
+
+/// Local ordered-dither threshold in `[0, 1)` for a sub-cell dot coordinate.
+#[inline]
+pub fn bayer4_threshold(x: usize, y: usize) -> f32 {
+    (BAYER4[y & 3][x & 3] + 0.5) / 16.0
+}
+
+/// Renders a combined interference/plasma field as Braille dots using 4×4
+/// ordered dithering.
+///
+/// `intensity` scales the field before dithering. Every dot is lit when its
+/// local field value exceeds the Bayer threshold, so brighter regions become
+/// denser while dark regions stay sparse — preserving field structure in mono.
+pub fn render_field_braille_dithered(
+    canvas: &mut BrailleCanvas,
+    t: f32,
+    seed: f32,
+    freq: f32,
+    intensity: f32,
+) {
+    let pw = canvas.pixel_width() as f32;
+    let ph = canvas.pixel_height() as f32;
+    for y in 0..canvas.pixel_height() as i32 {
+        for x in 0..canvas.pixel_width() as i32 {
+            let v = interference(x as f32 / pw * freq, y as f32 / ph * freq, t, 1.0)
+                + plasma(x as f32 / pw * 3.0, y as f32 / ph * 3.0, t, seed);
+            let v = (v * 0.5 * intensity).clamp(0.0, 1.0);
+            if v > bayer4_threshold(x as usize, y as usize) {
+                canvas.set(x, y);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,5 +170,72 @@ mod tests {
         render_field_braille(&mut b, 0.7, 0.3, 0.5, 4.0);
         assert_eq!(a, b);
         assert!(!a.is_empty());
+    }
+
+    #[test]
+    fn bayer_threshold_is_bounded_and_deterministic() {
+        for y in 0..8 {
+            for x in 0..8 {
+                let t = bayer4_threshold(x, y);
+                assert!((0.0..1.0).contains(&t));
+                assert_eq!(t, bayer4_threshold(x, y));
+                // Periodic with period 4.
+                assert_eq!(t, bayer4_threshold(x + 4, y + 4));
+            }
+        }
+    }
+
+    fn lit_fraction(canvas: &BrailleCanvas) -> f32 {
+        let total = (canvas.pixel_width() * canvas.pixel_height()) as f32;
+        let mut lit = 0;
+        for y in 0..canvas.pixel_height() as i32 {
+            for x in 0..canvas.pixel_width() as i32 {
+                if canvas.get(x, y) {
+                    lit += 1;
+                }
+            }
+        }
+        lit as f32 / total
+    }
+
+    #[test]
+    fn dithered_field_does_not_collapse_to_solid_or_empty() {
+        let mut c = BrailleCanvas::new(40, 12); // 80x48 dots
+        render_field_braille_dithered(&mut c, 0.9, 0.3, 4.0, 1.0);
+        let f = lit_fraction(&c);
+        assert!(
+            f > 0.05 && f < 0.95,
+            "dithered field collapsed to a uniform block: lit fraction {f}"
+        );
+    }
+
+    #[test]
+    fn dither_density_increases_with_intensity() {
+        let dots = |intensity: f32| {
+            let mut c = BrailleCanvas::new(40, 12);
+            render_field_braille_dithered(&mut c, 0.9, 0.3, 4.0, intensity);
+            let mut n = 0;
+            for y in 0..c.pixel_height() as i32 {
+                for x in 0..c.pixel_width() as i32 {
+                    if c.get(x, y) {
+                        n += 1;
+                    }
+                }
+            }
+            n
+        };
+        assert!(
+            dots(0.6) < dots(1.4),
+            "higher intensity must produce strictly more dots"
+        );
+    }
+
+    #[test]
+    fn dithered_field_is_deterministic() {
+        let mut a = BrailleCanvas::new(20, 6);
+        render_field_braille_dithered(&mut a, 0.42, 0.1, 5.0, 1.0);
+        let mut b = BrailleCanvas::new(20, 6);
+        render_field_braille_dithered(&mut b, 0.42, 0.1, 5.0, 1.0);
+        assert_eq!(a, b);
     }
 }

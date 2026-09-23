@@ -7,6 +7,7 @@ pub mod context;
 pub mod diff;
 pub mod ffi;
 pub mod field;
+pub mod focus;
 pub mod geom;
 pub mod glitch;
 pub mod input;
@@ -33,7 +34,11 @@ pub use clock::{
 };
 pub use context::Context;
 pub use diff::{compute_diff, CellRun, RowPatch, SurfaceDiff};
-pub use field::{heat_rgb, plasma, render_field_braille, render_plasma_halfblock};
+pub use field::{
+    bayer4_threshold, heat_rgb, plasma, render_field_braille, render_field_braille_dithered,
+    render_plasma_halfblock, BAYER4,
+};
+pub use focus::{FocusId, FocusRing};
 pub use geom::{Mesh, Projector, Transform3, Vec3};
 pub use glitch::{invert_rect, row_shift, sanitize_wide, scramble_rect, tear};
 pub use input::{poll_event, Event, KeyCode, KeyEvent, KeyModifiers, TextInputState};

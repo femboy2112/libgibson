@@ -94,12 +94,73 @@ impl ParticleSystem {
         self.particles.len() - 1
     }
 
-    /// Emits `n` particles from `(x, y)` with deterministic randomness.
-    pub fn burst(&mut self, n: usize, x: f32, y: f32, speed: f32, life: f32, spread: f32) {
+    /// Emits `n` particles from `(x, y)` in all directions.
+    ///
+    /// Each particle gets a uniformly random heading and a speed drawn from
+    /// `[0.35, 1.0] * speed`; lifetime varies from `0.5 * life` to `life`.
+    /// This is the plain radial burst — there is no hidden "spread" parameter.
+    pub fn burst(&mut self, n: usize, x: f32, y: f32, speed: f32, life: f32) {
+        self.emit(n, x, y, speed, life, 1.0, None);
+    }
+
+    /// Radial burst with an explicit lifetime multiplier.
+    ///
+    /// `life_variance` scales the lifetime (clamped to at least `0.01`). It does
+    /// **not** affect angular spread; use [`ParticleSystem::burst_directional`]
+    /// for that. (The old `burst(..., spread)` parameter was misnamed: it scaled
+    /// lifetime, not angle.)
+    pub fn burst_with_life_variance(
+        &mut self,
+        n: usize,
+        x: f32,
+        y: f32,
+        speed: f32,
+        life: f32,
+        life_variance: f32,
+    ) {
+        self.emit(n, x, y, speed, life, life_variance, None);
+    }
+
+    /// Directional burst: particles are emitted around `heading` radians with a
+    /// total angular spread of `angular_spread` radians.
+    ///
+    /// `heading == 0` points along `+x`; headings increase counter-clockwise in
+    /// screen coordinates (where `+y` is down, so `heading = TAU/4` points down).
+    /// `angular_spread` is clamped to `[0, TAU]`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn burst_directional(
+        &mut self,
+        n: usize,
+        x: f32,
+        y: f32,
+        speed: f32,
+        life: f32,
+        heading: f32,
+        angular_spread: f32,
+    ) {
+        let spread = angular_spread.clamp(0.0, std::f32::consts::TAU);
+        self.emit(n, x, y, speed, life, 1.0, Some((heading, spread)));
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn emit(
+        &mut self,
+        n: usize,
+        x: f32,
+        y: f32,
+        speed: f32,
+        life: f32,
+        life_variance: f32,
+        direction: Option<(f32, f32)>,
+    ) {
+        let life_variance = life_variance.max(0.01);
         for _ in 0..n {
-            let angle = self.rng.range(0.0, std::f32::consts::TAU);
+            let angle = match direction {
+                None => self.rng.range(0.0, std::f32::consts::TAU),
+                Some((heading, spread)) => heading + self.rng.range(-0.5 * spread, 0.5 * spread),
+            };
             let v = speed * self.rng.range(0.35, 1.0);
-            let life = life * self.rng.range(0.5, 1.0) * spread.max(0.01);
+            let life = life * self.rng.range(0.5, 1.0) * life_variance;
             self.particles.push(Particle {
                 x,
                 y,
@@ -179,9 +240,9 @@ mod tests {
     #[test]
     fn burst_is_reproducible_and_expires() {
         let mut a = ParticleSystem::new(123);
-        a.burst(50, 10.0, 10.0, 4.0, 1.0, 1.0);
+        a.burst(50, 10.0, 10.0, 4.0, 1.0);
         let mut b = ParticleSystem::new(123);
-        b.burst(50, 10.0, 10.0, 4.0, 1.0, 1.0);
+        b.burst(50, 10.0, 10.0, 4.0, 1.0);
         assert_eq!(a.particles, b.particles);
         assert_eq!(a.len(), 50);
 
@@ -192,9 +253,57 @@ mod tests {
     }
 
     #[test]
+    fn radial_burst_actually_spreads_in_all_quadrants() {
+        let mut ps = ParticleSystem::new(7);
+        ps.burst(400, 0.0, 0.0, 5.0, 1.0);
+        let right = ps.particles.iter().filter(|p| p.vx > 0.0).count();
+        let left = ps.particles.iter().filter(|p| p.vx < 0.0).count();
+        let down = ps.particles.iter().filter(|p| p.vy > 0.0).count();
+        let up = ps.particles.iter().filter(|p| p.vy < 0.0).count();
+        for (name, n) in [("right", right), ("left", left), ("down", down), ("up", up)] {
+            assert!(n > 50, "radial burst should emit {name}ward, got {n}");
+        }
+    }
+
+    #[test]
+    fn life_variance_scales_lifetime_not_angle() {
+        // Same seed, same count: changing life_variance must change lifetimes and
+        // must NOT change the velocity directions.
+        let mut base = ParticleSystem::new(42);
+        base.burst_with_life_variance(64, 0.0, 0.0, 5.0, 2.0, 1.0);
+        let mut short = ParticleSystem::new(42);
+        short.burst_with_life_variance(64, 0.0, 0.0, 5.0, 2.0, 0.25);
+
+        for (a, b) in base.particles.iter().zip(short.particles.iter()) {
+            assert_eq!((a.vx, a.vy), (b.vx, b.vy), "angles must be unchanged");
+            assert!(
+                b.life < a.life,
+                "life_variance must shorten lifetimes ({} vs {})",
+                b.life,
+                a.life
+            );
+        }
+    }
+
+    #[test]
+    fn directional_burst_follows_the_heading() {
+        let mut ps = ParticleSystem::new(9);
+        // Heading +x, tight spread: every velocity must point rightward.
+        ps.burst_directional(200, 0.0, 0.0, 5.0, 1.0, 0.0, std::f32::consts::TAU / 6.0);
+        assert!(
+            ps.particles.iter().all(|p| p.vx > 0.0),
+            "directional burst leaked backward particles"
+        );
+        // Mean heading is close to the requested one.
+        let mean: f32 =
+            ps.particles.iter().map(|p| p.vy.atan2(p.vx)).sum::<f32>() / ps.particles.len() as f32;
+        assert!(mean.abs() < 0.2, "mean heading off: {mean}");
+    }
+
+    #[test]
     fn particle_render_is_bounded_by_canvas() {
         let mut ps = ParticleSystem::new(1);
-        ps.burst(200, 0.0, 0.0, 30.0, 5.0, 1.0);
+        ps.burst(200, 0.0, 0.0, 30.0, 5.0);
         ps.update(0.5);
         let mut canvas = BrailleCanvas::new(10, 5); // 10 x 20 dots
         ps.render_braille(&mut canvas); // must not panic

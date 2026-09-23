@@ -192,9 +192,12 @@ impl Renderer {
         let diff = compute_diff(self.previous_surface.as_ref(), &next_surface);
 
         let total_cells = (surface_width as usize) * (surface_height as usize);
-        let dirty_cells = diff.total_dirty_cells();
+        // Report *logical* damage (runs + erase-to-EOL + cleared rows), not just
+        // explicit run cells: a shrinking line erases real cells even when its
+        // wire cost is one CSI K. Wire cost is returned separately as bytes.
+        let dirty_cells = diff.logical_dirty_count();
         if self.capture_damage {
-            self.last_dirty_cells = diff.dirty_cells();
+            self.last_dirty_cells = diff.logical_dirty_cells();
         } else {
             self.last_dirty_cells.clear();
         }

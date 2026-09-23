@@ -98,13 +98,56 @@ mod tests {
     #[test]
     fn type_on_never_splits_graphemes() {
         let s = "🇺🇸👨‍👩‍👧 e\u{0301} 你好";
-        let full = s.graphemes(true).count();
-        for i in 0..=full {
-            let t = i as f32 / full as f32;
-            let out = type_on(s, t, 1e9);
-            // Every prefix must be a valid grapheme prefix.
-            assert!(s.starts_with(&out));
+        let clusters: Vec<&str> = s.graphemes(true).collect();
+        let full = clusters.len();
+        for k in 0..=full {
+            // Drive `revealed_count` to exactly k for two different rates so the
+            // mapping is exercised, not just `take(n)`. A huge rate (the old
+            // test used 1e9) would reveal the entire string on the first step.
+            for (t, cps) in [(k as f32, 1.0_f32), (k as f32 / 10.0, 10.0)] {
+                let out = type_on(s, t, cps);
+                let expected: String = clusters[..k].concat();
+                assert_eq!(
+                    out, expected,
+                    "type_on split a cluster at k={k} for {s:?} (t={t}, cps={cps})"
+                );
+                assert!(s.starts_with(&out));
+            }
         }
+    }
+
+    #[test]
+    fn type_on_covers_hostile_cluster_boundaries() {
+        // Combining marks, a ZWJ family, flags, CJK and an emoji modifier.
+        let cases = [
+            "e\u{0301}\u{0327}",
+            "a\u{0308}\u{0301}xyz",
+            "👨\u{200D}👩\u{200D}👧\u{200D}👦",
+            "🇺🇸🇯🇵",
+            "你好世界",
+            "👍🏽🦀",
+        ];
+        for s in cases {
+            let clusters: Vec<&str> = s.graphemes(true).collect();
+            for k in 0..=clusters.len() {
+                let out = type_on(s, k as f32, 1.0);
+                assert_eq!(out, clusters[..k].concat(), "k={k} for {s:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn revealed_count_is_monotonic_and_capped() {
+        let s = "👨\u{200D}👩\u{200D}👧\u{200D}👦🇺🇸你好";
+        let total = s.graphemes(true).count();
+        let mut last = 0;
+        for step in 0..=40 {
+            let n = revealed_count(s, step as f32 * 0.1, 7.0);
+            assert!(n >= last, "revealed_count must be monotonic");
+            assert!(n <= total, "revealed_count must not exceed the buffer");
+            last = n;
+        }
+        assert_eq!(revealed_count(s, 100.0, 7.0), total);
     }
 
     #[test]

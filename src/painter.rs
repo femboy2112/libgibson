@@ -346,19 +346,25 @@ fn paint_text_input(
     let graphemes: Vec<&str> = value.graphemes(true).collect();
     let total_graphemes = graphemes.len();
 
+    // Cursor policy (single source of truth):
+    //
+    // * The hardware cursor always marks the insertion point via
+    //   `ctx.cursor_position`.
+    // * The software cursor is only ever a *highlight applied to the glyph that
+    //   already occupies the cursor cell*. It never replaces a glyph with a
+    //   blank, so the placeholder stays fully intact.
+    // * When there is no glyph at the insertion point (empty buffer, cursor past
+    //   the last grapheme) nothing is fabricated; the hardware cursor alone marks
+    //   the point. There is no second reverse-video "cursor block" to conflict.
     if total_graphemes == 0 {
         if let Some(ph) = placeholder {
             surface.print_str(rect.x, y, ph, placeholder_style, Some(rect.width));
-
-            // Cursor at first cell
-            let cursor_x = rect.x;
-            surface.set_cell(cursor_x, y, Cell::space(cursor_style));
-            ctx.cursor_position = Some((cursor_x, y));
+            // Highlight the first placeholder grapheme in place; never blank it.
+            highlight_cursor(&mut *surface, rect.x, y, cursor_style);
+            ctx.cursor_position = Some((rect.x, y));
             return;
         } else {
-            let cursor_x = rect.x;
-            surface.set_cell(cursor_x, y, Cell::space(cursor_style));
-            ctx.cursor_position = Some((cursor_x, y));
+            ctx.cursor_position = Some((rect.x, y));
             return;
         }
     }
@@ -416,7 +422,7 @@ fn paint_text_input(
         let is_cursor = idx == cursor_idx;
         let cell_style = if is_cursor {
             ctx.cursor_position = Some((cell_x, y));
-            cursor_style
+            style.overlay(cursor_style)
         } else {
             style
         };
@@ -425,15 +431,43 @@ fn paint_text_input(
         surface.set_cell(cell_x, y, Cell::new(glyph, cell_style));
     }
 
-    // If cursor is at the end of the input (after last grapheme)
+    // Cursor at the end of the input (after the last grapheme): the hardware
+    // cursor marks the insertion point and no glyph is fabricated.
     if cursor_idx >= total_graphemes
         && cursor_col >= scroll_col
         && cursor_col < scroll_col + visible_cols
     {
         let end_cursor_x = rect.x + (cursor_col - scroll_col) as u16;
         if end_cursor_x < max_x {
-            surface.set_cell(end_cursor_x, y, Cell::space(cursor_style));
             ctx.cursor_position = Some((end_cursor_x, y));
+        }
+    }
+}
+
+/// Applies `cursor` as an overlay style to the glyph already at `(x, y)`.
+///
+/// Used by the text input's software cursor: it *decorates* an existing glyph
+/// (and its wide-glyph continuation) rather than replacing anything, so a
+/// placeholder can never lose its first character to the cursor.
+fn highlight_cursor(surface: &mut Surface, x: u16, y: u16, cursor: Style) {
+    let (is_wide_lead, transparent) = match surface.get(x, y) {
+        Some(c) => (
+            c.glyph.display_width == 2 && !c.is_continuation,
+            c.transparent,
+        ),
+        None => return,
+    };
+    if transparent {
+        return;
+    }
+    if let Some(c) = surface.get_mut(x, y) {
+        c.style = c.style.overlay(cursor);
+    }
+    if is_wide_lead {
+        if let Some(cont) = surface.get_mut(x.saturating_add(1), y) {
+            if cont.is_continuation {
+                cont.style = cont.style.overlay(cursor);
+            }
         }
     }
 }
@@ -547,6 +581,119 @@ mod tests {
         assert_eq!(surface.get(0, 0).unwrap().glyph.grapheme.as_str(), "🦀");
         assert_eq!(surface.get(2, 0).unwrap().glyph.grapheme.as_str(), "你");
         assert_eq!(surface.get(4, 0).unwrap().glyph.grapheme.as_str(), "好");
+    }
+
+    // -----------------------------------------------------------------------
+    // Cursor / placeholder semantics.
+    //
+    // Regression: the empty-input placeholder used to be painted and then its
+    // first cell overwritten by a reverse-styled space, showing "ype a…".
+    // -----------------------------------------------------------------------
+
+    fn paint_input(
+        value: &str,
+        cursor: usize,
+        placeholder: Option<&str>,
+    ) -> (Surface, PaintContext) {
+        let mut node = Node::text_input(value, cursor, placeholder, Style::new())
+            .width(20.0)
+            .height(1.0);
+        compute_layout(&mut node, 20, 1).unwrap();
+        let mut surface = Surface::new(20, 1);
+        let ctx = paint(&node, &mut surface);
+        (surface, ctx)
+    }
+
+    fn line_text(s: &Surface) -> String {
+        (0..s.width)
+            .map(|x| s.get(x, 0).unwrap().glyph.grapheme.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn placeholder_is_fully_intact_with_cursor() {
+        let (surface, ctx) = paint_input("", 0, Some("type a follow-up…"));
+        assert_eq!(surface.get(0, 0).unwrap().glyph.grapheme.as_str(), "t");
+        assert!(
+            line_text(&surface).starts_with("type a follow-up"),
+            "placeholder lost a character: {:?}",
+            line_text(&surface)
+        );
+        assert_eq!(ctx.cursor_position, Some((0, 0)));
+        // The cursor decorates the existing glyph, it does not fabricate a blank.
+        assert!(surface.get(0, 0).unwrap().style.reverse);
+        assert!(!surface.get(1, 0).unwrap().style.reverse);
+    }
+
+    #[test]
+    fn empty_input_without_placeholder_cursor_only() {
+        let (surface, ctx) = paint_input("", 0, None);
+        assert_eq!(ctx.cursor_position, Some((0, 0)));
+        // Nothing fabricated: the cell is an ordinary space.
+        assert_eq!(surface.get(0, 0).unwrap().glyph.grapheme.as_str(), " ");
+        assert!(!surface.get(0, 0).unwrap().style.reverse);
+    }
+
+    #[test]
+    fn cursor_at_start_highlights_first_glyph() {
+        let (surface, ctx) = paint_input("hello", 0, None);
+        assert_eq!(ctx.cursor_position, Some((0, 0)));
+        assert_eq!(surface.get(0, 0).unwrap().glyph.grapheme.as_str(), "h");
+        assert!(surface.get(0, 0).unwrap().style.reverse);
+        assert_eq!(surface.get(4, 0).unwrap().glyph.grapheme.as_str(), "o");
+    }
+
+    #[test]
+    fn cursor_in_the_middle_highlights_existing_glyph() {
+        let (surface, ctx) = paint_input("hello", 2, None);
+        assert_eq!(ctx.cursor_position, Some((2, 0)));
+        assert_eq!(surface.get(2, 0).unwrap().glyph.grapheme.as_str(), "l");
+        assert!(surface.get(2, 0).unwrap().style.reverse);
+        assert_eq!(surface.get(1, 0).unwrap().glyph.grapheme.as_str(), "e");
+    }
+
+    #[test]
+    fn cursor_at_end_does_not_fabricate_a_glyph() {
+        let (surface, ctx) = paint_input("hello", 5, None);
+        assert_eq!(ctx.cursor_position, Some((5, 0)));
+        assert_eq!(surface.get(5, 0).unwrap().glyph.grapheme.as_str(), " ");
+        assert!(!surface.get(5, 0).unwrap().style.reverse);
+        assert_eq!(surface.get(4, 0).unwrap().glyph.grapheme.as_str(), "o");
+    }
+
+    #[test]
+    fn wide_glyph_cursor_highlights_both_halves_without_splitting() {
+        let (surface, ctx) = paint_input("你好", 1, None);
+        // Cursor after 你 (2 cols) is at column 2, on 好.
+        assert_eq!(ctx.cursor_position, Some((2, 0)));
+        assert_eq!(surface.get(2, 0).unwrap().glyph.grapheme.as_str(), "好");
+        assert!(surface.get(2, 0).unwrap().style.reverse);
+        assert!(surface.get(3, 0).unwrap().is_continuation);
+        assert!(surface.get(3, 0).unwrap().style.reverse);
+    }
+
+    #[test]
+    fn combining_and_emoji_cursor_positions_are_cluster_aligned() {
+        // e + combining acute (1 cluster, 1 col), then a crab (2 cols).
+        let value = "e\u{0301}🦀";
+        let (surface, ctx) = paint_input(value, 1, None);
+        // Cursor after the combined cluster is at column 1, on the crab lead.
+        assert_eq!(ctx.cursor_position, Some((1, 0)));
+        assert_eq!(
+            surface.get(0, 0).unwrap().glyph.grapheme.as_str(),
+            "e\u{0301}"
+        );
+        assert_eq!(surface.get(1, 0).unwrap().glyph.grapheme.as_str(), "🦀");
+    }
+
+    #[test]
+    fn horizontal_scroll_keeps_cursor_visible_and_placeholder_intact() {
+        let long = "the quick brown fox jumps over the lazy dog";
+        let (surface, ctx) = paint_input(long, long.chars().count(), None);
+        let (cx, _cy) = ctx.cursor_position.expect("cursor visible");
+        assert!(cx < 20, "cursor must stay inside the field, got {cx}");
+        // No fabricated glyph at the cursor cell.
+        assert_eq!(surface.get(cx, 0).unwrap().glyph.grapheme.as_str(), " ");
     }
 }
 

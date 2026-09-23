@@ -18,6 +18,23 @@ pub struct RowPatch {
 }
 
 /// A diff between two surfaces.
+///
+/// # Damage model
+///
+/// Two distinct notions of "damage" are tracked here and must not be collapsed:
+///
+/// * **Logical damage** ([`SurfaceDiff::logical_dirty_count`],
+///   [`SurfaceDiff::logical_dirty_cells`]) — every *visible terminal cell* whose
+///   state changes this frame. It is the union of explicit changed runs, the
+///   region logically erased by an erase-to-EOL (`CSI K`), and any trailing rows
+///   that must be cleared. This is what a damage heatmap or a "dirty %" should
+///   show.
+/// * **Wire cost** — the bytes actually emitted, measured by the renderer, not
+///   here. A single `CSI K` can logically clear dozens of cells while costing a
+///   handful of bytes.
+///
+/// The old `total_dirty_cells`/`dirty_cells` pair counted only explicit runs and
+/// was therefore systematically optimistic for shrinking/disappearing content.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SurfaceDiff {
     pub patches: Vec<RowPatch>,
@@ -25,6 +42,10 @@ pub struct SurfaceDiff {
     pub next_height: u16,
     /// Number of rows below next_height that existed in previous surface and must be cleared.
     pub rows_to_clear: u16,
+    /// Width of the previous surface (used to size cleared trailing rows).
+    pub prev_width: u16,
+    /// Width of the next surface (used to size erase-to-EOL regions).
+    pub next_width: u16,
 }
 
 impl SurfaceDiff {
@@ -32,23 +53,75 @@ impl SurfaceDiff {
         self.patches.is_empty() && self.rows_to_clear == 0
     }
 
-    pub fn total_dirty_cells(&self) -> usize {
+    /// Cells covered by explicit `CellRun` writes only.
+    ///
+    /// This is *not* logical damage: it excludes erase-to-EOL regions and
+    /// cleared trailing rows. Prefer [`SurfaceDiff::logical_dirty_count`] for
+    /// heatmaps and percentages.
+    pub fn explicit_dirty_count(&self) -> usize {
         self.patches
             .iter()
             .map(|p| p.runs.iter().map(|r| r.cells.len()).sum::<usize>())
             .sum()
     }
 
-    /// Explicit coordinates of every dirty cell this frame, row-major.
+    /// Backwards-compatible alias for [`SurfaceDiff::explicit_dirty_count`].
     ///
-    /// Intended for debug overlays (damage maps). Cheap; only call when needed.
-    pub fn dirty_cells(&self) -> Vec<(u16, u16)> {
-        let mut out = Vec::with_capacity(self.total_dirty_cells());
+    /// Kept so callers that genuinely mean "explicit run cells" keep working.
+    pub fn total_dirty_cells(&self) -> usize {
+        self.explicit_dirty_count()
+    }
+
+    /// Logical damage: the number of visible cells whose terminal state changes,
+    /// including erase-to-EOL regions and cleared trailing rows.
+    pub fn logical_dirty_count(&self) -> usize {
+        let mut n = self.explicit_dirty_count();
+        for p in &self.patches {
+            if let Some(x) = p.erase_eol_from {
+                n += self.next_width.saturating_sub(x) as usize;
+            }
+        }
+        n += self.rows_to_clear as usize * self.prev_width as usize;
+        n
+    }
+
+    /// Explicit run-cell coordinates only (row-major).
+    pub fn explicit_dirty_cells(&self) -> Vec<(u16, u16)> {
+        let mut out = Vec::with_capacity(self.explicit_dirty_count());
         for patch in &self.patches {
             for run in &patch.runs {
                 for i in 0..run.cells.len() {
                     out.push((run.x.saturating_add(i as u16), patch.y));
                 }
+            }
+        }
+        out
+    }
+
+    /// Coordinates of every logically-dirty cell this frame, row-major.
+    ///
+    /// Intended for debug overlays (damage maps) and "dirty cell %" readouts.
+    /// Includes erase-to-EOL regions and cleared trailing rows, so a shrinking
+    /// line reports the cells it actually erased, not zero. Cheap; only call
+    /// when needed.
+    pub fn logical_dirty_cells(&self) -> Vec<(u16, u16)> {
+        let mut out = Vec::with_capacity(self.logical_dirty_count());
+        for patch in &self.patches {
+            for run in &patch.runs {
+                for i in 0..run.cells.len() {
+                    out.push((run.x.saturating_add(i as u16), patch.y));
+                }
+            }
+            if let Some(x) = patch.erase_eol_from {
+                for cx in x..self.next_width {
+                    out.push((cx, patch.y));
+                }
+            }
+        }
+        for ry in 0..self.rows_to_clear {
+            let y = self.next_height.saturating_add(ry);
+            for cx in 0..self.prev_width {
+                out.push((cx, y));
             }
         }
         out
@@ -90,6 +163,8 @@ pub fn compute_diff(prev: Option<&Surface>, next: &Surface) -> SurfaceDiff {
         prev_height,
         next_height,
         rows_to_clear,
+        prev_width: prev.map(|p| p.width).unwrap_or(0),
+        next_width: next.width,
     }
 }
 
@@ -249,5 +324,78 @@ mod tests {
 
         let diff = compute_diff(Some(&s1), &s2);
         assert_eq!(diff.rows_to_clear, 3);
+    }
+
+    // -----------------------------------------------------------------------
+    // Logical damage accounting (erase-to-EOL + cleared rows).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn logical_damage_counts_erase_to_eol_cells() {
+        let mut s1 = Surface::new(20, 1);
+        s1.print_str(0, 0, "HELLO WORLD", Style::default(), None);
+        let s2 = Surface::new(20, 1);
+
+        let diff = compute_diff(Some(&s1), &s2);
+        // The erased region is columns 0..20 (the whole row).
+        assert_eq!(diff.patches[0].erase_eol_from, Some(0));
+        // Explicit runs may be empty; the logical count must still see the erase.
+        assert_eq!(diff.explicit_dirty_count(), 0);
+        assert_eq!(diff.logical_dirty_count(), 20);
+        assert_eq!(diff.logical_dirty_cells().len(), 20);
+    }
+
+    #[test]
+    fn logical_damage_counts_shrinking_line_region() {
+        let mut s1 = Surface::new(20, 1);
+        s1.print_str(0, 0, "hello world 12345", Style::default(), None);
+        let mut s2 = Surface::new(20, 1);
+        s2.print_str(0, 0, "hello", Style::default(), None);
+
+        let diff = compute_diff(Some(&s1), &s2);
+        assert_eq!(diff.patches[0].erase_eol_from, Some(5));
+        // Cells 5..20 are logically erased.
+        assert_eq!(diff.logical_dirty_count(), 15);
+        let cells = diff.logical_dirty_cells();
+        assert!(cells.iter().all(|(_, y)| *y == 0));
+        assert!(cells.iter().any(|(x, _)| *x == 5));
+        assert!(cells.iter().any(|(x, _)| *x == 19));
+        assert!(!cells.iter().any(|(x, _)| *x == 4));
+    }
+
+    #[test]
+    fn logical_damage_counts_cleared_trailing_rows() {
+        let s1 = Surface::new(10, 5);
+        let s2 = Surface::new(10, 2);
+        let diff = compute_diff(Some(&s1), &s2);
+        // Rows 2, 3, 4 cleared, each 10 columns wide.
+        assert_eq!(diff.logical_dirty_count(), 30);
+        let cells = diff.logical_dirty_cells();
+        assert!(cells.iter().any(|(x, y)| *x == 9 && *y == 4));
+        assert!(cells.iter().all(|(_, y)| *y >= 2));
+    }
+
+    #[test]
+    fn logical_damage_is_zero_for_identical_surfaces() {
+        let mut s1 = Surface::new(12, 3);
+        s1.print_str(0, 0, "stable", Style::default(), None);
+        let s2 = s1.clone();
+        let diff = compute_diff(Some(&s1), &s2);
+        assert_eq!(diff.logical_dirty_count(), 0);
+        assert!(diff.logical_dirty_cells().is_empty());
+    }
+
+    #[test]
+    fn logical_damage_superset_of_explicit_runs() {
+        let mut s1 = Surface::new(30, 2);
+        s1.print_str(0, 0, "AAAA", Style::default(), None);
+        s1.print_str(0, 1, "long second row of text", Style::default(), None);
+        let mut s2 = Surface::new(30, 2);
+        s2.print_str(0, 0, "ABBB", Style::default(), None);
+        s2.print_str(0, 1, "short", Style::default(), None);
+        let diff = compute_diff(Some(&s1), &s2);
+        assert!(diff.logical_dirty_count() >= diff.explicit_dirty_count());
+        // Explicit runs are a strict subset here (row 1 shrank to a CSI K).
+        assert!(diff.logical_dirty_count() > diff.explicit_dirty_count());
     }
 }

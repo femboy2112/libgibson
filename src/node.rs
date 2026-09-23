@@ -243,8 +243,16 @@ impl Node {
     }
 
     /// Creates a raster node from a shared surface (cheap to clone).
+    ///
+    /// The node defaults to the surface's own cell dimensions so a raster is
+    /// visible without the caller having to repeat its size; callers may still
+    /// override width/height for scaling or clipping.
     pub fn surface(surface: Arc<Surface>) -> Self {
-        Self::new(NodeKind::Raster { surface })
+        let (w, h) = (surface.width as f32, surface.height as f32);
+        let mut node = Self::new(NodeKind::Raster { surface });
+        node.layout_style.width = Dimension::Length(w);
+        node.layout_style.height = Dimension::Length(h);
+        node
     }
 
     /// Creates a raster node owning a surface.

@@ -119,6 +119,8 @@ typedef enum {
 #define GIBSON_KEY_DELETE    0x1009
 #define GIBSON_KEY_ESC       0x100A
 #define GIBSON_KEY_TAB       0x100B
+#define GIBSON_KEY_PAGE_UP   0x100C
+#define GIBSON_KEY_PAGE_DOWN 0x100D
 
 /* Key Modifiers */
 #define GIBSON_MOD_SHIFT   0x01
