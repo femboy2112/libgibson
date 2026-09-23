@@ -16,8 +16,8 @@ use gibson::ansi::AnsiCompiler;
 use gibson::cell::{Color, Line, RichText, Span, Style, Theme, ThemeStyles};
 use gibson::diff::compute_diff;
 use gibson::node::{Node, WrapMode};
-use gibson::scene::{Effect, Presentation, Scene, SceneEntity, SceneTarget};
-use gibson::story::{Beat, Condition, Story, StoryAction, StoryEvent};
+use gibson::scene::{Effect, EffectBundle, Presentation, Scene, SceneEntity, SceneTarget};
+use gibson::story::{Beat, Condition, Story, StoryAction, StoryDirector, StoryEvent};
 use gibson::surface::{BorderType, Rect, Surface};
 use gibson::{
     BrailleCanvas, Context, Mesh, Projector, TimeSource, Transform3, Vec3, ViewportState,
@@ -43,6 +43,7 @@ const SCENES: &[&str] = &[
     "Water particles",
     "Scene algebra: sequence vs parallel",
     "Story graph: branch & rejoin",
+    "Entity cinema: reaction & post-process",
 ];
 
 struct Fx {
@@ -70,10 +71,12 @@ struct Lab {
     last_total_bytes: u64,
     frame_bytes: Vec<f32>,
     debug: bool,
+    cinematic: CinematicProbe,
 }
 
 impl Lab {
     fn new(fx: Fx, debug: bool) -> Self {
+        let cinematic = CinematicProbe::new(&fx);
         Self {
             scene: 0,
             fx,
@@ -85,11 +88,15 @@ impl Lab {
             last_total_bytes: 0,
             frame_bytes: Vec::new(),
             debug,
+            cinematic,
         }
     }
 
     fn tick(&mut self, ctx: &mut Context) {
         self.t += 1.0 / 60.0;
+        if self.scene == 19 {
+            self.cinematic.tick();
+        }
         // Deterministic starfield: reseed emission when empty.
         if self.particles.len() < 140 {
             for i in 0..12 {
@@ -359,7 +366,8 @@ impl Lab {
             15 => packet_routes_scene(fx, inner_w, content_rows, self.t),
             16 => water_particles_scene(fx, inner_w, content_rows, self.t),
             17 => scene_algebra_scene(fx, inner_w, content_rows, self.t),
-            _ => story_graph_scene(fx, inner_w, content_rows, self.t),
+            18 => story_graph_scene(fx, inner_w, content_rows, self.t),
+            _ => self.cinematic.body(fx, inner_w, content_rows),
         }
     }
 
@@ -706,6 +714,131 @@ fn scene_algebra_scene(fx: &Fx, inner_w: u16, rows: u16, t: f32) -> Node {
         .child(overlay)
 }
 
+/// A single ordinary panel, a single beat, and reactions which mount/unmount
+/// presentation. The source panel never knows whether processing is active.
+struct CinematicProbe {
+    scene: Scene,
+    panel: gibson::SceneId,
+    director: StoryDirector,
+}
+
+impl CinematicProbe {
+    fn new(fx: &Fx) -> Self {
+        let mut scene = Scene::new();
+        let panel = scene.add(SceneEntity::new("ordinary-panel", Node::col()).tag("subject"));
+        let target = SceneTarget::Tag(scene.tag("subject"));
+        let leg = Effect::translate(target, (2.0, 2.0), (8.0, 2.0), Duration::from_secs(2));
+        let tint = if fx.color {
+            Style::new().fg(Color::Rgb(230, 80, 240)).bold()
+        } else {
+            Style::new().reverse().bold()
+        };
+        let story = Story::new("same-beat")
+            .bundle(
+                EffectBundle::new("surface-presence").effects([
+                    Effect::post_process(target, gibson::SurfaceFx::StyleOverlay(tint)),
+                    Effect::post_process(
+                        target,
+                        gibson::SurfaceFx::Tear {
+                            row: 2,
+                            height: 1,
+                            amount: 2,
+                        },
+                    ),
+                    Effect::scanline(target, Style::new().reverse(), Duration::from_millis(1800))
+                        .looping(),
+                    Effect::dissolve(target, 0.3, 1.0, 91, Duration::from_millis(500)),
+                    Effect::jitter(
+                        target,
+                        1.0,
+                        Duration::from_millis(320),
+                        Duration::from_millis(320),
+                    )
+                    .looping(),
+                    Effect::displace(target, (-1.0, 0.0), (-1.0, 0.0), Duration::ZERO),
+                ]),
+            )
+            .beat(
+                Beat::new("same-beat")
+                    .effect(leg.clone().then(Effect::Reverse(Box::new(leg))).looping())
+                    .reaction(
+                        Condition::command("attach"),
+                        [
+                            StoryAction::set_bool("processed", true),
+                            StoryAction::mount("surface-presence"),
+                        ],
+                    )
+                    .reaction(
+                        Condition::command("release"),
+                        [
+                            StoryAction::set_bool("processed", false),
+                            StoryAction::unmount("surface-presence"),
+                        ],
+                    ),
+            );
+        Self {
+            scene,
+            panel,
+            director: story.start(),
+        }
+    }
+
+    fn tick(&mut self) {
+        let dt = Duration::from_millis(16);
+        let before = self.director.elapsed().as_millis() / 2000;
+        let after = (self.director.elapsed() + dt).as_millis() / 2000;
+        let events = if before != after {
+            vec![StoryEvent::command(if after % 2 == 1 {
+                "attach"
+            } else {
+                "release"
+            })]
+        } else {
+            Vec::new()
+        };
+        self.director.update(dt, &events);
+    }
+
+    fn toggle(&mut self) {
+        let command = if self.director.facts().bool("processed") {
+            "release"
+        } else {
+            "attach"
+        };
+        self.director
+            .update(Duration::ZERO, &[StoryEvent::command(command)]);
+    }
+
+    fn body(&self, fx: &Fx, width: u16, rows: u16) -> Node {
+        let mut scene = self.scene.clone();
+        scene.set_node(
+            self.panel,
+            Node::panel("ORDINARY PANEL", BorderType::Rounded, fx.st.border)
+                .width(width.saturating_sub(12).clamp(14, 46) as f32)
+                .height(rows.saturating_sub(5).clamp(4, 8) as f32)
+                .child(Node::text("The widget stays unchanged.", fx.st.text))
+                .child(Node::text("placement + jitter + recoil", fx.st.muted))
+                .child(Node::text("remove bundle = clean source", fx.st.text)),
+        );
+        let p = self.director.presentation(&scene);
+        let processed = self.director.facts().bool("processed");
+        Node::col()
+            .child(Node::text(
+                format!(
+                    "beat: {} | processed: {processed} | arrows: {}",
+                    self.director.current_beat(),
+                    self.director.trace().beats.len().saturating_sub(1)
+                ),
+                fx.st.accent,
+            ))
+            .child(Node::text(
+                "r: attach/release | automatic reaction every 2s",
+                fx.st.muted,
+            ))
+            .child(scene.to_node(&p, width as f32, rows.saturating_sub(2) as f32))
+    }
+}
+
 /// A small tactical StoryGraph used by the story-graph lab scene.
 fn lab_tactical_story() -> Story {
     Story::new("grand-central")
@@ -897,6 +1030,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     KeyCode::Left | KeyCode::Char('p') | KeyCode::Char('[') => {
                         lab.scene = (lab.scene + SCENES.len() - 1) % SCENES.len();
                     }
+                    KeyCode::Char('r') if lab.scene == 19 => lab.cinematic.toggle(),
                     KeyCode::Char('q') | KeyCode::Esc => break,
                     _ => {}
                 }
