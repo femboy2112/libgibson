@@ -28,7 +28,7 @@ Because earlier revisions of this document overstated completion, architectural 
 | Label | Meaning |
 | --- | --- |
 | **IMPLEMENTED** | The described code path exists and is reached in normal operation. |
-| **TESTED** | Covered by an automated test in this repository (`cargo test`, 469 tests) that exercises the behavior described. |
+| **TESTED** | Covered by an automated test in this repository (`cargo test`, 515 tests) that exercises the behavior described. |
 | **PARTIALLY TESTED** | Implemented, and some behavior is covered, but at least one named facet is not automatically verified. The gap is stated explicitly. |
 | **UNVERIFIED** | Written down because it exists in source or is a documented assumption, but has not been compiled or executed in any environment we can attest to. |
 
@@ -959,3 +959,91 @@ panels. Renderer affected-footprint accounting includes the entire clear, while
 SurfaceDiff's exact semantic delta remains its separate framebuffer comparison.
 A following identical frame still emits zero bytes. Flow-widget clipping and
 all preexisting visual snapshots are preserved.
+
+## 43. RGB subcell graphics and filled depth
+
+**IMPLEMENTED + TESTED, EXPERIMENTAL, Rust-only** (`raster`, `raster3d`,
+`raster_fx`). These generators end at an ordinary `Surface`; they do not own
+terminal transport, story state, or a second cell compositor.
+
+`RgbRaster` stores opaque RGB pixel samples. A terminal region of W×H cells
+normally uses W×2H pixels: each `▀` uses foreground for the upper sample and
+background for the lower sample. Software RGB interpolation happens before
+cell realization, so this introduces no terminal alpha. Pixel dimensions are
+explicit and capped at 2048 per axis. Out-of-bounds pixel writes are ignored;
+line/disc work is bounded by the raster. Odd final rows use black for the
+missing lower pixel. `write_ppm` is an optional dependency-free inspection path.
+
+`TriangleMesh` supplies indexed faces, with box/cube/octahedron constructors.
+`Rasterizer` uses the existing Vec3/Transform3 vocabulary. A look-at camera
+transforms into positive-forward camera depth; six frustum planes clip before
+projection. Pixel-center barycentric interpolation operates on reciprocal Z,
+then reconstructs camera depth for the actual depth buffer. The buffer is
+cleared with color and metrics. Exact coplanar ties have a stable color tie-break.
+Degenerate/nonfinite geometry and invalid cameras are rejected; finite hostile
+coordinates cannot produce coordinate-sized raster walks. Depth-tested lines
+share the same buffer. Optional backface culling is independent of correctness.
+
+Flat face lighting is ambient + diffuse·max(0,n·l) + emissive, with RGB
+saturation and linear camera-depth fog. This is intentionally small software
+rendering, not a material system. Metrics expose submitted/drawn triangles and
+Z tests. Drawn counts depend on whether a submitted face writes pixels; they
+are work counters, not a canonical count of final visible faces.
+
+`RasterFx` are ordered endomorphisms on an RGB raster: empty is identity;
+concatenation applies A then B and generally does not commute. Glow, chromatic
+split, sine warp, vignette and scanlines operate before cell realization.
+`RasterFxWorkspace` retains one source scratch shared across the chain. Glow is
+bounded to radius three. Finite-safe radial/metaball/vortex/ring functions and
+a palette interpolator provide fields without introducing a shader language.
+`SurfaceFx` remains the separate layer of grapheme/cell transformations.
+
+`FeedbackBuffer` is explicit state, not a pure Scene effect. Each update decays
+floating RGB history by an explicit half-life and adds the supplied emission;
+conversion saturates to RGB bytes. Zero dt is identity. Reset and resize clear
+history. Exact replay means the same ordered dt/emission inputs; arbitrary
+repartitioning of emission updates is not claimed equivalent. Black input
+predictably decays, including sub-byte energy; NaNs never enter the buffer.
+
+TrueColor preserves RGB; ANSI256/ANSI16 quantize in the existing ANSI compiler.
+Mono has a separate luminance-to-Braille ordered-dither realization rather than
+solid white half blocks. Color is not the only ownership signal: Acid, contest,
+and isolated labels retain distinct glyph grammar. Full animated rasters can
+legitimately change broad regions. Exact delta, affected footprint and wire
+cost remain distinct (§33); identical frozen graphics still emit zero bytes.
+
+## 44. Two visual realizations of the battlefield
+
+The unchanged BattleGraph has two demo-local projections: the ordinary machine
+UI and `examples/acid_vs_crash/cyber.rs`. Integrity controls tower height;
+signed influence controls material mixture and the spatial light field;
+connected edges determine luminous paths; isolation moves structures into
+separate islands and opens physical gaps. Decoys add a mirrored structure.
+Trace pulses run backward on Acid's legal path. DISPLAY possession grows a
+lattice, field contours and intermittent raster distortion. Existing session
+content and its entity SurfaceFx can reappear as a small UI fragment. The
+command island is composed afterward and stays ordinary text/input.
+
+A genuine foothold starts the automatic dive. A recorded entry time makes the
+transition continuous across broad beats; a stable cell dissolve lets the flat
+view give way to RGB depth. `--visual=flat` and `--visual=cyber` select a projection
+without mutating world or story. In a category-theoretic view these are two
+realizations of the same semantic object, not two copies of narrative truth.
+The transition is choreographed, not a general widget-to-mesh morph.
+
+VisualHistory records at most 48 world-space light samples at update boundaries.
+Painting reconstructs a local feedback raster from those samples with the
+current camera and dimensions. Resize reprojects history; repeated paint does
+not add emissions. This trades bounded reconstruction work for a pure frame
+interface. Explicit recorded aftermath time continues reassembly after a
+terminal story beat while the final semantic world stays fixed. Full encounter
+replay checks this visual state as well as the graph, planner, facts, beats and
+bundles. View configuration is copied by `Encounter::replay`; it is not world
+state stored in the semantic trace.
+
+The Acid victory formation is demo-local 5×7 RGB fragments assembling over the
+existing world, not a font engine or mesh-text framework. The battlefield
+raster is capped at 320×240 samples; normal requested dimensions are native
+one-by-two samples per cell. Small terminals use a focal graphic and a minimal
+HUD with two action rows. A nominal 60 FPS ceiling is scheduling policy, not a
+measured throughput guarantee for every terminal or machine.

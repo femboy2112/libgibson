@@ -13,6 +13,28 @@ This document outlines completed work and the planned future milestones for LibG
 
 ---
 
+## Terminal software graphics — IMPLEMENTED + TESTED, EXPERIMENTAL Rust-only
+
+- [x] Opaque RGB raster, software blending, half-block realization, Mono density,
+  bounded shapes and dependency-free PPM inspection.
+- [x] Filled triangle meshes, camera/frustum clipping, reciprocal-depth Z buffer,
+  Lambert shading, fog, emissive terms and depth-tested paths.
+- [x] Ordered bounded RasterFx, explicit feedback history and procedural fields.
+- [x] Seven borderless FX Lab scenes, deterministic input/resize/freeze checks.
+- [x] BattleGraph → shaded topology + influence field + trails; automatic dive,
+  DISPLAY lattice, existing UI fragment, stable controls and ending reassembly.
+- [x] Full semantic/visual replay; RGB counterfactuals; frozen 0/0/0 law;
+  graphical counterplay and resize in real PTYs. Original flat goldens retained.
+- [x] **515 tests** (226 unit + 289 integration), plus three explicit FX Lab
+  generator tests. All required local gates and native binding smokes pass.
+- [ ] Subjective “mistaken for an image protocol” acceptance is **UNVERIFIED**;
+  visual quality has direct screenshot inspection, not an independent human panel.
+- [ ] Sustained performance across terminal emulators, SSH and multiplexers is
+  **PARTIALLY TESTED**. Optional SDF raymarching and general mesh/font loaders
+  are not implemented; the triangle path is the hero renderer.
+
+See [graphics evidence and exact commands](docs/acid-vs-crash-rgb-validation.md).
+
 ## Window into Crash's machine — IMPLEMENTED + TESTED
 
 - [x] Crash fights by default; typed interventions remain available. `--manual`
@@ -24,7 +46,7 @@ This document outlines completed work and the planned future milestones for LibG
   Whole-panel jitter is reserved for near-complete display possession.
 - [x] Five additional tests: default operator PTYs, aftermath replay, operator
   pacing/intervention, sub-quantum motion/replay, foreground route rendering.
-  Current total: **469 tests** (226 unit + 243 integration).
+  At that checkpoint: **469 tests** (226 unit + 243 integration).
 
 See [spectator refinement evidence](docs/acid-vs-crash-spectator-validation.md).
 

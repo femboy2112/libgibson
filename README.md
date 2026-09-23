@@ -78,7 +78,7 @@ ctx.commit_text("Finalized output text")?; // ctx.commit(...) is an alias
 
 ## Verification Status
 
-Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **469 tests**: 226 library unit tests and 243 integration tests (across `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
+Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **515 tests**: 226 library unit tests and 289 integration tests (across `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
 
 `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings are UNVERIFIED** — no Go toolchain was available, so they were never compiled. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
 
@@ -237,12 +237,15 @@ with Context() as ctx:
 ## Running the Demos
 
 ```bash
-# Cinematic Scene Algebra flagship: Crash's UI becomes contested territory
-cargo run --example acid_vs_crash                     # watch Crash work and fight
-cargo run --example acid_vs_crash -- --manual          # play Crash yourself
-cargo run --example acid_vs_crash -- --auto            # watch, then exit after resolution
-cargo run --example acid_vs_crash -- --deterministic --stage=display-intrusion
-cargo run --example acid_vs_crash -- --stage=climax --color=mono
+# Cinematic flagship: the machine UI opens into filled RGB cyberspace
+cargo run --release --example acid_vs_crash                     # watch Crash work and fight
+cargo run --release --example acid_vs_crash -- --manual          # play Crash yourself
+cargo run --release --example acid_vs_crash -- --auto            # watch, then exit after resolution
+cargo run --release --example acid_vs_crash -- --deterministic --stage=display-intrusion
+cargo run --release --example acid_vs_crash -- --stage=climax --color=mono
+cargo run --release --example acid_vs_crash -- --stage=takeover --visual=cyber --color=truecolor
+cargo run --release --example fx_lab -- --scene=filled-3d --truecolor
+cargo run --release --example fx_lab -- --scene=feedback --truecolor
 
 # Restrained flagship product demo (recommended starting point):
 cargo run --example polished_agent
@@ -280,8 +283,18 @@ severs real paths, trace consumes reserves and provokes evasion, and a familiar 
 feint. The action surface shows prerequisites, cooldowns and costs. StoryDirector
 sets the dramatic pace while the graph decides what actually happens.
 
-Thin Braille routes, sub-cell packet motion, restrained panel borders, and a
-60 FPS presentation ceiling give the battlefield a finer visual texture.
+Use a release build for the RGB spectacle. The default `--visual=auto` begins in the machine UI, then dissolves into a
+filled 3D topology when Acid wins a foothold. Shaded subsystem towers, cyan and
+magenta light fields, depth-tested routes, feedback trails and a DISPLAY lattice
+all derive from the same graph. The UI reconstructs after resolution. These
+are Unicode half blocks and Braille with ordinary foreground/background colors:
+no Kitty, Sixel, images or video. TrueColor is the hero mode; ANSI256/ANSI16 use
+central quantization and Mono uses Braille density plus ownership grammar.
+
+Use `--visual=flat` for the original machine view or `--visual=cyber` to inspect
+the graphical realization directly. `--debug-raster` shows pixels, triangles,
+Z tests, field samples and feedback passes. A 60 FPS ceiling does not promise
+60 FPS on every terminal. Large raster changes naturally cost more wire bytes.
 
 `--deterministic` fixes time while preserving the selected automatic or manual
 mode. Add `--debug-battle` (or `--debug-ai`) to inspect goals, candidate scores, routes and
@@ -292,11 +305,17 @@ influence. Inspection hooks include
 `--auto --speed=20`. Stage aliases preserve inspection entry points; several
 now start within the same broad act. After the battle, `replay` checks the full
 graph, planner memory, world state and story against exact recorded inputs.
-Scene/Story/SurfaceFx remain **EXPERIMENTAL, Rust-only**.
+Scene/Story/SurfaceFx and the RGB raster APIs remain **EXPERIMENTAL, Rust-only**.
+See the [RGB graphics validation record](docs/acid-vs-crash-rgb-validation.md)
+for replay, depth, visual inspection, PTY and performance evidence.
 See the [round II evidence record](docs/acid-vs-crash-round2-validation.md) and
 [round I record](docs/acid-vs-crash-validation.md) for measured coverage and
 limitations. FX Lab scene 20 isolates the generic substrate; `r` attaches or
-removes an effect through an in-beat reaction.
+removes an effect through an in-beat reaction. Scenes 21–27 are borderless
+`filled-3d`, `depth`, `feedback`, `field`, `metaballs`, `warp`, and `hybrid` probes;
+`--list-scenes` lists them. Three additional generator tests run explicitly with
+`cargo test --example fx_lab`. Optional internal raster dumps require no image
+library: `DUMP_ACID_RGB=/tmp/acid-rgb cargo test --test acid_graphics`.
 
 `polished_agent` is **inline by default** (`--fullscreen` opts into the alternate screen): the session header and the typed user request are committed to *real terminal scrollback*, while a mutable live foreground shows a task plan (queued/running/done/warn/failed/skipped), streaming `RichText`, a scrollable code/diff viewport (`Tab` focuses it; arrows/PageUp/PageDown/Home/End scroll), an event feed, an interactive permission modal that captures and restores focus, persistent Unicode input and a completion summary — including a real failure/recovery loop. `hack_the_gibson` remains fullscreen and is an act-based *Hackers* (1995) homage: a projected Gibson data city with near/far depth cues, the Plague, the Da Vinci worm, a pirate broadcast, a Grand Central-style coordinated attack with packet particles, Joey's garbage-file download, a safe geometry-collapse crash, a rooftop-pool particle payoff and a CRASH AND BURN curtain — followed by a real root shell whose commands trigger reusable effects. It uses zero raw ANSI literals and never glitches the wire protocol (effects mutate Surface state only). Overlays composite through the `Stack`/raster layer engine without reflowing the dashboard beneath. `examples/fx_lab.rs` is a developer gallery (`n`/`p` or `[`/`]` cycle scenes, `1`-`9`/`0` jump) that now includes near-plane clipping, wide-glyph clip containment, logical-damage-vs-wire-cost (`--debug-damage`), mono dithering, data city, packet routes and water particles. Demos support `--auto`/`--scripted`/`--deterministic --freeze-at=<frame>`, hack's `--act=<name>` for deterministic beats, capability overrides (`--mono`/`--ansi16`/`--ansi256`/`--truecolor`, `--no-sync`, `--no-insert-line`) and theme proofs `--light`, `--dark`, `--no-color`.
 
@@ -308,7 +327,7 @@ removes an effect through an in-beat reaction.
 # Build library and release artifacts (.so, .a)
 cargo build --release
 
-# Run the full test suite (469 tests: 226 unit + 243 integration)
+# Run the full test suite (515 tests: 226 unit + 289 integration)
 cargo test
 
 # Static analysis and formatting checks
