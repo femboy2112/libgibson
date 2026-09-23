@@ -10,9 +10,21 @@
 //!    produced by foreign code is transported as a raw `i32` and validated
 //!    explicitly. Constructing an invalid Rust enum discriminant from foreign
 //!    memory is UB that `catch_unwind` cannot repair.
-//! 3. **Versioned, extensible structs.** `gibson_stats_t` begins with
-//!    `struct_size` and `abi_version`; the callee writes at most `struct_size`
-//!    bytes, so future fields are forward-compatible.
+//! 3. **Versioned structs with an exact-version contract.** `gibson_stats_t`
+//!    begins with `struct_size` and `abi_version`.
+//!
+//!    The contract is deliberately **one** of the two possible strategies, not
+//!    both: [`GIBSON_ABI_VERSION`] is bumped whenever the struct layout changes,
+//!    and callers must pass a buffer at least as large as
+//!    `sizeof(gibson_stats_t)`. The engine checks `abi_version` for equality and
+//!    `struct_size >= sizeof(gibson_stats_t)` before writing, then writes exactly
+//!    `min(struct_size, sizeof(gibson_stats_t))` bytes. A caller with a larger
+//!    buffer is therefore safe and its trailing bytes are left untouched; a
+//!    caller built against an *older, smaller* struct is rejected with
+//!    `GIBSON_ERR_INVALID_PARAM` rather than silently truncated.
+//!
+//!    (True append-compatibility — accepting smaller callers and writing a
+//!    prefix — is intentionally *not* claimed.)
 
 use crate::cell::{Color, Line, RichText, Span, Style, TextAlign};
 use crate::context::Context;
@@ -559,8 +571,13 @@ pub unsafe extern "C" fn gibson_request_render(ctx: *mut GibsonContextOpaque) ->
     res.unwrap_or(GibsonStatus::ErrPanic)
 }
 
+/// Inserts **raw** UTF-8 text into scrollback above the active live region.
+///
+/// The text is split on newlines and written as a terminal byte stream with
+/// **no sanitization**: embedded escape/OSC/CSI sequences reach the terminal.
+/// Use [`gibson_insert_text_before_live`] for untrusted text.
 #[no_mangle]
-pub unsafe extern "C" fn gibson_insert_before_live(
+pub unsafe extern "C" fn gibson_insert_raw_lines_before_live_unchecked(
     ctx: *mut GibsonContextOpaque,
     utf8_text: *const c_char,
 ) -> GibsonStatus {
@@ -573,7 +590,33 @@ pub unsafe extern "C" fn gibson_insert_before_live(
             Err(e) => return e,
         };
         let lines: Vec<&str> = s.lines().collect();
-        match (*ctx).inner.insert_before_live(&lines) {
+        match (*ctx).inner.insert_raw_lines_before_live_unchecked(&lines) {
+            Ok(_) => GibsonStatus::Ok,
+            Err(e) => {
+                set_last_error(e.to_string());
+                GibsonStatus::ErrIo
+            }
+        }
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Inserts safe, width-aware plain text into scrollback above the active live
+/// region. Terminal control characters are neutralized.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_insert_text_before_live(
+    ctx: *mut GibsonContextOpaque,
+    utf8_text: *const c_char,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let s = match read_utf8(utf8_text, "text") {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+        match (*ctx).inner.insert_text_before_live(s) {
             Ok(_) => GibsonStatus::Ok,
             Err(e) => {
                 set_last_error(e.to_string());
@@ -773,6 +816,33 @@ pub unsafe extern "C" fn gibson_node_box_row(out: *mut *mut GibsonNodeOpaque) ->
             return GibsonStatus::ErrInvalidParam;
         }
         *out = Box::into_raw(Box::new(GibsonNodeOpaque { inner: Node::row() }));
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gibson_node_stack(out: *mut *mut GibsonNodeOpaque) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if out.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        *out = Box::into_raw(Box::new(GibsonNodeOpaque {
+            inner: Node::stack(),
+        }));
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Creates a dim-veil node (style-only overlay when composited in a stack).
+#[no_mangle]
+pub unsafe extern "C" fn gibson_node_dim(out: *mut *mut GibsonNodeOpaque) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if out.is_null() {
+            return GibsonStatus::ErrInvalidParam;
+        }
+        *out = Box::into_raw(Box::new(GibsonNodeOpaque { inner: Node::dim() }));
         GibsonStatus::Ok
     }));
     res.unwrap_or(GibsonStatus::ErrPanic)

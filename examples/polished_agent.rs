@@ -13,9 +13,9 @@ use gibson::context::Context;
 use gibson::input::{Event, KeyCode, KeyModifiers, TextInputState};
 use gibson::node::{Node, WrapMode};
 use gibson::show;
-use gibson::{BorderType, ThemeStyles};
+use gibson::{BorderType, ThemeStyles, TimeSource};
 use std::env;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 // ---------------------------------------------------------------------------
 // Visual effects wrapper (respects --no-color)
@@ -123,7 +123,7 @@ const PERMISSION_OPTIONS: &[(&str, &str)] = &[
 ];
 
 struct App {
-    started: Instant,
+    time: TimeSource,
     fx: Fx,
     tools: Vec<Tool>,
     tool_cursor: usize,
@@ -138,7 +138,12 @@ struct App {
     bg_sent: bool,
     frame_bytes: Vec<f32>,
     last_total_bytes: u64,
-    frames: u64,
+    render_frames: u64,
+    /// (text, first-shown animation second)
+    toast: Option<(String, f32)>,
+    debug: bool,
+    debug_info: String,
+    permission_ready_at: u64,
     done: bool,
 }
 
@@ -155,9 +160,14 @@ fn select_theme(light: bool, dark: bool, no_color: bool) -> Theme {
 }
 
 impl App {
-    fn new(fx: Fx) -> Self {
+    fn new(fx: Fx, deterministic: bool, debug: bool) -> Self {
+        let time = if deterministic {
+            TimeSource::fixed(Duration::from_millis(16))
+        } else {
+            TimeSource::real()
+        };
         Self {
-            started: Instant::now(),
+            time,
             fx,
             tools: vec![
                 Tool::new("research", "src/renderer.rs"),
@@ -177,13 +187,17 @@ impl App {
             bg_sent: false,
             frame_bytes: Vec::new(),
             last_total_bytes: 0,
-            frames: 0,
+            render_frames: 0,
+            toast: None,
+            debug,
+            debug_info: String::new(),
+            permission_ready_at: 0,
             done: false,
         }
     }
 
     fn elapsed(&self) -> f32 {
-        self.started.elapsed().as_secs_f32()
+        self.time.now().as_secs_f32()
     }
 
     fn spinner(&self) -> usize {
@@ -195,19 +209,34 @@ impl App {
     }
 
     fn fps(&self) -> u64 {
+        // Renderer frames, not application loop iterations.
         let e = self.elapsed().max(0.05);
-        (self.frames as f32 / e).round() as u64
+        (self.render_frames as f32 / e).round() as u64
     }
 
     fn sample(&mut self, ctx: &mut Context) {
-        self.frames += 1;
-        let total = ctx.stats().frame_bytes;
-        let delta = total.saturating_sub(self.last_total_bytes) as f32;
-        self.last_total_bytes = total;
-        self.frame_bytes.push(delta);
-        if self.frame_bytes.len() > 200 {
-            self.frame_bytes.remove(0);
+        // Count actual renderer frames, and record the wire bytes of the most
+        // recent frame (not an application sampling interval).
+        let stats = ctx.stats();
+        if stats.frames > self.render_frames {
+            let delta = stats.frame_bytes.saturating_sub(self.last_total_bytes) as f32;
+            self.last_total_bytes = stats.frame_bytes;
+            self.frame_bytes.push(delta);
+            if self.frame_bytes.len() > 200 {
+                self.frame_bytes.remove(0);
+            }
         }
+        self.render_frames = stats.frames;
+        if self.debug {
+            self.debug_info = format!(
+                "FRAMES {} · FULL {} · RESYNC {} · INS {}",
+                stats.frames, stats.full_repaints, stats.anchor_resyncs, stats.history_insertions
+            );
+        }
+    }
+
+    fn show_toast(&mut self, text: &str) {
+        self.toast = Some((text.to_string(), self.elapsed()));
     }
 
     /// Advance decorative animation and the plan timeline.
@@ -233,10 +262,14 @@ impl App {
             if self.tool_cursor == 2 && !self.bg_sent {
                 self.bg_sent = true;
                 self.add_event("diagnostics refreshed · 0 warnings".into(), self.fx.good);
+                self.show_toast("diagnostics refreshed · 0 warnings");
             }
             if self.tool_cursor >= self.tools.len() {
                 self.add_event("patch conflict: needs review".into(), Color::Reset);
                 self.phase = Phase::Permission;
+                // Keep the modal on screen for a few frames in scripted mode so
+                // it is visible and capturable deterministically.
+                self.permission_ready_at = self.render_frames + 15;
             }
         }
     }
@@ -245,8 +278,10 @@ impl App {
         match self.phase {
             Phase::Plan => self.animate(),
             Phase::Permission => {
-                self.permission = 0;
-                self.confirm_permission();
+                if self.render_frames >= self.permission_ready_at {
+                    self.permission = 0;
+                    self.confirm_permission();
+                }
             }
             Phase::Prompt => {
                 for ch in "review the fast-path invariant 🦀 你好世界 e\u{0301} 🇺🇸".chars()
@@ -263,7 +298,7 @@ impl App {
     }
 
     fn add_event(&mut self, text: String, color: Color) {
-        let stamp = format!("{:04}", self.frames);
+        let stamp = format!("{:04}", self.render_frames);
         let style = if self.fx.color {
             Style::new().fg(color)
         } else {
@@ -423,7 +458,7 @@ fn build_root(app: &App, ctx: &Context) -> Node {
         root = root.child(panel_plan(app, cols).flex_grow(2.0).min_width(0.0));
         root = root.child(panel_stream(app).flex_grow(2.0).min_width(0.0));
         if rows >= 20 {
-            root = root.child(panel_telemetry(app).flex_grow(1.0).min_width(0.0));
+            root = root.child(panel_telemetry(app, cols).flex_grow(1.0).min_width(0.0));
         }
     } else {
         let right_w: u16 = if wide { 40 } else { 32 };
@@ -443,7 +478,7 @@ fn build_root(app: &App, ctx: &Context) -> Node {
             .min_width(0.0)
             .gap(0.0)
             .child(panel_transcript(app, right_w).flex_grow(1.0).min_width(0.0))
-            .child(panel_telemetry(app).flex_grow(1.0).min_width(0.0))
+            .child(panel_telemetry(app, right_w).flex_grow(1.0).min_width(0.0))
             .child(panel_events(app, right_w).flex_grow(1.0).min_width(0.0));
 
         root = root.child(
@@ -457,7 +492,110 @@ fn build_root(app: &App, ctx: &Context) -> Node {
     }
 
     root = root.child(panel_footer(app, cols));
+
+    // Floating overlays. The base dashboard is never rebuilt or reflowed; the
+    // overlay is composited on top through the Stack layer.
+    if app.phase == Phase::Permission {
+        return Node::stack()
+            .percent_width(100.0)
+            .percent_height(100.0)
+            .child(root)
+            .child(permission_overlay(app));
+    }
+    if let Some((text, shown_at)) = &app.toast {
+        let age = app.elapsed() - *shown_at;
+        // Decorative toasts are suppressed on ultra-narrow terminals where they
+        // would cover essential panel titles.
+        if age < 2.4 && cols >= 66 {
+            return Node::stack()
+                .percent_width(100.0)
+                .percent_height(100.0)
+                .child(root)
+                .child(toast_overlay(app, text, age));
+        }
+    }
     root
+}
+
+/// A centered, opaque permission modal over a dim veil.
+fn permission_overlay(app: &App) -> Node {
+    let fx = &app.fx;
+    let mut body = RichText::new().line(
+        Line::new()
+            .span(Span::styled("Allow ", fx.st.muted))
+            .span(Span::styled("patch src/ansi.rs", fx.st.text))
+            .span(Span::styled("?", fx.st.muted)),
+    );
+    for (i, (label, detail)) in PERMISSION_OPTIONS.iter().enumerate() {
+        let sel = i == app.permission;
+        let mut line = Line::new()
+            .span(Span::styled(
+                if sel { "❯ " } else { "  " },
+                if sel { fx.st.accent } else { fx.st.faint },
+            ))
+            .span(Span::styled(format!("[{}] ", i + 1), fx.st.muted))
+            .span(Span::styled(
+                *label,
+                if sel { Style::new().bold() } else { fx.st.text },
+            ));
+        if detail.len() < 40 {
+            line = line.span(Span::styled(format!("  — {detail}"), fx.st.muted));
+        }
+        body = body.line(line);
+    }
+
+    Node::stack()
+        .percent_width(100.0)
+        .percent_height(100.0)
+        // Dim veil over everything beneath the modal (style-only layer).
+        .child(Node::dim().percent_width(100.0).percent_height(100.0))
+        .child(
+            Node::col()
+                .percent_width(100.0)
+                .percent_height(100.0)
+                .align_items(gibson::node::AlignItems::Center)
+                .justify_content(gibson::node::JustifyContent::Center)
+                .child(
+                    Node::panel("PERMISSION", BorderType::Rounded, fx.st.warning)
+                        .width(44.0)
+                        .height(7.0)
+                        .background(Color::Reset)
+                        .child(Node::rich_text_wrapped(body, WrapMode::NoWrap)),
+                ),
+        )
+}
+
+/// A toast that slides down from the top-right and fades out.
+fn toast_overlay(app: &App, text: &str, age: f32) -> Node {
+    let fx = &app.fx;
+    let appear = (age / 0.25).clamp(0.0, 1.0);
+    let gone = ((age - 1.8) / 0.6).clamp(0.0, 1.0);
+    let alpha = appear * (1.0 - gone);
+    let pad_top = ((1.0 - appear) * 2.0).round();
+    let style = if alpha > 0.6 {
+        fx.st.success
+    } else if alpha > 0.3 {
+        fx.st.warning
+    } else {
+        fx.st.muted
+    };
+    let body = Line::new()
+        .span(Span::styled("◆ ", fx.st.accent))
+        .span(Span::styled(text, style));
+
+    Node::col()
+        .percent_width(100.0)
+        .percent_height(100.0)
+        .align_items(gibson::node::AlignItems::End)
+        .justify_content(gibson::node::JustifyContent::Start)
+        .padding_top(pad_top)
+        .padding_right(2.0)
+        .child(
+            Node::panel("TOAST", BorderType::Rounded, fx.st.border)
+                .width(((text.len() as u16) + 10).clamp(24, 46) as f32)
+                .background(Color::Reset)
+                .child(Node::line(body)),
+        )
 }
 
 fn banner(app: &App, wide: bool) -> Node {
@@ -585,39 +723,58 @@ fn panel_transcript(app: &App, width: u16) -> Node {
         .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
 }
 
-fn panel_telemetry(app: &App) -> Node {
+fn panel_telemetry(app: &App, width: u16) -> Node {
     let fx = &app.fx;
-    let spark_w = 30usize;
+    let spark_w = (width.saturating_sub(4) as usize).clamp(8, 46);
     let latest = app.frame_bytes.last().copied().unwrap_or(0.0) as u64;
-    let rt = RichText::new()
+    let mut rt = RichText::new()
         .line(
             Line::new()
                 .span(Span::styled("frame ", fx.st.muted))
                 .span(Span::styled(format!("{latest:>5} B"), fx.st.text))
                 .span(Span::styled("   frames ", fx.st.muted))
-                .span(Span::styled(format!("{:<5}", app.frames), fx.st.text)),
-        )
-        .line(fx.spark(&app.frame_bytes, spark_w))
-        .line(
-            Line::new()
-                .span(Span::styled("fps ", fx.st.muted))
-                .span(Span::styled(format!("{:<4}", app.fps()), fx.st.text))
-                .span(Span::styled("spinner ", fx.st.muted))
                 .span(Span::styled(
-                    gibson::node::SPINNER_BRAILLE
-                        [app.spinner() % gibson::node::SPINNER_BRAILLE.len()],
-                    fx.st.accent,
-                ))
-                .span(Span::styled("  state ", fx.st.muted))
-                .span(Span::styled(
-                    if app.phase == Phase::Done {
-                        "idle"
-                    } else {
-                        "streaming"
-                    },
-                    fx.st.accent,
+                    format!("{:<5}", app.render_frames),
+                    fx.st.text,
                 )),
-        );
+        )
+        .line(fx.spark(&app.frame_bytes, spark_w));
+
+    // A braille oscilloscope of real per-frame bytes (1 color per cell, 2x4
+    // dots per cell) demonstrates the sub-cell canvas.
+    let max = app.frame_bytes.iter().cloned().fold(1.0_f32, f32::max);
+    let vals: Vec<f32> = if app.frame_bytes.is_empty() {
+        vec![0.0; 8]
+    } else {
+        app.frame_bytes
+            .iter()
+            .map(|v| (v / max) * 2.0 - 1.0)
+            .collect()
+    };
+    let scope = gibson::braille_oscilloscope(&vals, spark_w as u16, 2);
+    for l in scope.to_lines() {
+        rt = rt.line(Line::styled(l, fx.st.accent));
+    }
+
+    rt = rt.line(
+        Line::new()
+            .span(Span::styled("fps ", fx.st.muted))
+            .span(Span::styled(format!("{:<4}", app.fps()), fx.st.text))
+            .span(Span::styled("spinner ", fx.st.muted))
+            .span(Span::styled(
+                gibson::node::SPINNER_BRAILLE[app.spinner() % gibson::node::SPINNER_BRAILLE.len()],
+                fx.st.accent,
+            ))
+            .span(Span::styled("  state ", fx.st.muted))
+            .span(Span::styled(
+                if app.phase == Phase::Done {
+                    "idle"
+                } else {
+                    "streaming"
+                },
+                fx.st.accent,
+            )),
+    );
     tpanel("TELEMETRY", fx.st.border)
         .percent_width(100.0)
         .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
@@ -648,54 +805,26 @@ fn panel_events(app: &App, width: u16) -> Node {
 
 fn panel_footer(app: &App, width: u16) -> Node {
     let fx = &app.fx;
-    let inner = width.saturating_sub(4) as usize;
-    if app.phase == Phase::Permission {
-        let mut rt = RichText::new().line(
-            Line::new()
-                .span(Span::styled("Allow ", fx.st.muted))
-                .span(Span::styled("patch src/ansi.rs", fx.st.text))
-                .span(Span::styled("?", fx.st.muted)),
+    let _ = width;
+    // The footer stays a stable prompt; the permission decision floats above it
+    // as an overlay modal rather than reflowing the layout.
+    let prompt = Node::row()
+        .gap(1.0)
+        .child(Node::text("❯", fx.st.accent))
+        .child(
+            Node::text_input(
+                &app.input.text,
+                app.input.cursor_grapheme,
+                Some("type a follow-up…"),
+                fx.st.text,
+            )
+            .scroll_offset(app.input.scroll_offset)
+            .flex_grow(1.0),
         );
-        for (i, (label, detail)) in PERMISSION_OPTIONS.iter().enumerate() {
-            let sel = i == app.permission;
-            let mut line = Line::new()
-                .span(Span::styled(
-                    if sel { "❯ " } else { "  " },
-                    if sel { fx.st.accent } else { fx.st.faint },
-                ))
-                .span(Span::styled(format!("[{}] ", i + 1), fx.st.muted))
-                .span(Span::styled(
-                    *label,
-                    if sel { Style::new().bold() } else { fx.st.text },
-                ));
-            if inner > 44 {
-                line = line.span(Span::styled(format!("  — {detail}"), fx.st.muted));
-            }
-            rt = rt.line(line);
-        }
-        tpanel("PERMISSION", fx.st.warning)
-            .percent_width(100.0)
-            .height(6.0)
-            .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
-    } else {
-        let prompt = Node::row()
-            .gap(1.0)
-            .child(Node::text("❯", fx.st.accent))
-            .child(
-                Node::text_input(
-                    &app.input.text,
-                    app.input.cursor_grapheme,
-                    Some("type a follow-up…"),
-                    fx.st.text,
-                )
-                .scroll_offset(app.input.scroll_offset)
-                .flex_grow(1.0),
-            );
-        tpanel("PROMPT", fx.st.border)
-            .percent_width(100.0)
-            .height(3.0)
-            .child(prompt)
-    }
+    tpanel("PROMPT", fx.st.border)
+        .percent_width(100.0)
+        .height(3.0)
+        .child(prompt)
 }
 
 // ---------------------------------------------------------------------------
@@ -704,13 +833,21 @@ fn panel_footer(app: &App, width: u16) -> Node {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
-    let auto = args
+    let deterministic = args
         .iter()
-        .any(|a| a == "--auto" || a == "--scripted" || a == "--headless");
+        .any(|a| a == "--deterministic" || a == "--frames");
+    let freeze_at: Option<usize> = args
+        .iter()
+        .find_map(|a| a.strip_prefix("--freeze-at=").and_then(|v| v.parse().ok()));
+    let auto = deterministic
+        || args
+            .iter()
+            .any(|a| a == "--auto" || a == "--scripted" || a == "--headless");
     let inline = args.iter().any(|a| a == "--inline");
     let light = args.iter().any(|a| a == "--light");
     let dark = args.iter().any(|a| a == "--dark");
     let no_color = args.iter().any(|a| a == "--no-color");
+    let debug = args.iter().any(|a| a == "--debug-renderer");
 
     let fx = Fx::new(select_theme(light, dark, no_color), !no_color);
     let mut ctx = if inline {
@@ -721,18 +858,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ctx.set_max_fps(if auto { 240 } else { 60 });
     ctx.set_animation_interval(Duration::from_millis(if auto { 8 } else { 66 }));
 
-    let mut app = App::new(fx);
+    let mut app = App::new(fx, deterministic, debug);
 
     let mut iterations = 0usize;
     let max_iterations = if auto { 5000 } else { usize::MAX };
     while !app.done && iterations < max_iterations {
         iterations += 1;
 
-        app.sample(&mut ctx);
-        if auto {
-            app.auto_step();
-        } else {
-            app.animate();
+        // In deterministic mode, stop advancing state/animation once we reach the
+        // frozen frame so the rendered screen is stable and reproducible.
+        let frozen = deterministic && freeze_at.is_some_and(|n| iterations > n);
+        if !frozen {
+            // Advance animation time exactly once per frame.
+            let _t = app.time.advance();
+            app.sample(&mut ctx);
+            if auto {
+                app.auto_step();
+            } else {
+                app.animate();
+            }
         }
 
         ctx.set_root(build_root(&app, &ctx));
@@ -747,9 +891,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        if frozen {
+            std::thread::sleep(Duration::from_millis(30));
+        }
+
         // A background event while the user is typing. In inline mode it is
         // pushed into real terminal scrollback above the live dashboard.
-        if !auto && app.phase == Phase::Prompt && !app.bg_sent && app.frames > 90 {
+        if !auto && app.phase == Phase::Prompt && !app.bg_sent && app.render_frames > 90 {
             app.bg_sent = true;
             let msg = "index finished while you were typing";
             if inline {
@@ -761,6 +909,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ctx.insert_rich_text_before_live(&rich)?;
             } else {
                 app.add_event(msg.to_string(), app.fx.good);
+                app.show_toast(msg);
             }
         }
     }

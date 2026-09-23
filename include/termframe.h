@@ -27,7 +27,7 @@ typedef gibson_color_t       tf_color;
 #define tf_render_if_due     gibson_render_if_due
 #define tf_request_render    gibson_request_render
 #define tf_commit            gibson_commit
-#define tf_insert_before_live gibson_insert_before_live
+#define tf_insert_before_live gibson_insert_raw_lines_before_live_unchecked
 #define tf_poll_event        gibson_poll_event
 
 #define tf_box_col           gibson_node_box_col

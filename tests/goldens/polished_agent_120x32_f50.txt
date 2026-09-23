@@ -1,0 +1,32 @@
+◢ LIBGIBSON AGENT  ● ONLINE    session hardening  ·  model gibson-v2  ·  ╭─ TOAST ───────────────────────────────────╮
+╭─ TASK PLAN ────────────────────────────────────────────────────────────│◆ diagnostics refreshed · 0 warnings       │─╮
+│✔ research ██████████████████████████████ 100%                          ╰───────────────────────────────────────────╯ │
+│✔ search   ██████████████████████████████ 100%                               │ │✔ research src/renderer.rs            │
+│◐ build    █████████████████████████████─  96%                               │ │✔ search   insert_before_live         │
+│· patch    ──────────────────────────────   0%                               │ │                                      │
+│                                                                             │ │                                      │
+│                                                                             │ │                                      │
+│                                                                             │ │                                      │
+│                                                                             │ ╰──────────────────────────────────────╯
+│                                                                             │ ╭─ TELEMETRY ──────────────────────────╮
+╰─────────────────────────────────────────────────────────────────────────────╯ │frame   145 B   frames 49             │
+╭─ STREAM ────────────────────────────────────────────────────────────────────╮ │────────────────────────────────────  │
+│I audited the differential pipeline and the scrollback handoff. The live     │ │⢹                                     │
+│region now tracks an explicit physical anchor, so a resize forces a full     │ │ ⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⢦⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⡠⣀⣀⡠⣀⣀⣀⣀⣀⡠⣀⣀  │
+│re-anchor instead of trusting stale coordinates. Insert-before-live is       │ │fps 61  spinner ⠏  state streaming    │
+│proven to leave the live framebuffer untouched on the fast path, with a      │ │                                      │
+│correct repaint fallback otherwise.                                          │ │                                      │
+│                                                                             │ │                                      │
+│                                                                             │ │                                      │
+│                                                                             │ │                                      │
+│                                                                             │ ╰──────────────────────────────────────╯
+│                                                                             │ ╭─ EVENTS ─────────────────────────────╮
+│                                                                             │ │0033 diagnostics refreshed · 0 warning│
+│                                                                             │ │                                      │
+│                                                                             │ │                                      │
+│                                                                             │ │                                      │
+│                                                                             │ │                                      │
+╰─────────────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────╯
+╭─ PROMPT ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│❯  ype a follow-up…                                                                                                   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

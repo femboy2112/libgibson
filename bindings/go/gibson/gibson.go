@@ -121,7 +121,7 @@ func (c *Context) InsertBeforeLive(text string) error {
 	cStr := C.CString(text)
 	defer C.free(unsafe.Pointer(cStr))
 
-	status := C.gibson_insert_before_live(c.ptr, cStr)
+	status := C.gibson_insert_raw_lines_before_live_unchecked(c.ptr, cStr)
 	if status != C.GIBSON_OK {
 		return errors.New("failed to insert text before live region")
 	}
@@ -245,6 +245,20 @@ func NewColNode() *Node {
 func NewRowNode() *Node {
 	var ptr *C.gibson_node_t
 	C.gibson_node_box_row(&ptr)
+	return &Node{ptr: ptr}
+}
+
+// NewStackNode creates an overlay container (children composited in order).
+func NewStackNode() *Node {
+	var ptr *C.gibson_node_t
+	C.gibson_node_stack(&ptr)
+	return &Node{ptr: ptr}
+}
+
+// NewDimNode creates a dim-veil overlay node.
+func NewDimNode() *Node {
+	var ptr *C.gibson_node_t
+	C.gibson_node_dim(&ptr)
 	return &Node{ptr: ptr}
 }
 

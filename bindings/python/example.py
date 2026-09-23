@@ -51,7 +51,7 @@ def main():
         ctx.commit_rich_text(rich)
 
         # 5. Insert before live
-        ctx.insert_before_live("[Python ctypes] Async background update inserted above active prompt.")
+        ctx.insert_raw_lines_before_live_unchecked("[Python ctypes] Async background update inserted above active prompt.")
 
         # 6. Commit output
         ctx.commit("[Python ctypes] Frame rendered and committed successfully.")

@@ -66,7 +66,7 @@ int main() {
         }
 
         // 5. Test insert_before_live
-        ctx.insert_before_live("[C++ RAII] Async notice inserted before active live region.");
+        ctx.insert_raw_lines_before_live_unchecked("[C++ RAII] Async notice inserted before active live region.");
 
         // 6. Commit output
         ctx.commit("[C++ RAII] Tree rendered and committed successfully.");

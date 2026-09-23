@@ -53,6 +53,20 @@ impl Context {
         self.session.set_sync_updates(enabled);
     }
 
+    /// Overrides detected terminal capabilities.
+    pub fn set_capabilities(&mut self, caps: crate::capability::TerminalCapabilities) {
+        self.session.set_capabilities(caps);
+    }
+
+    /// Overrides the color depth used for live frames and scrollback output.
+    pub fn set_color_depth(&mut self, depth: crate::capability::ColorDepth) {
+        self.session.set_color_depth(depth);
+    }
+
+    pub fn capabilities(&self) -> crate::capability::TerminalCapabilities {
+        self.session.capabilities()
+    }
+
     pub fn set_max_fps(&mut self, fps: u32) {
         self.scheduler.max_fps = fps.max(1);
     }
@@ -221,10 +235,24 @@ impl Context {
         Ok(())
     }
 
-    /// Inserts already-safe lines into scrollback ABOVE the active live region.
-    pub fn insert_before_live(&mut self, lines: &[&str]) -> io::Result<()> {
+    /// Inserts **raw** lines into scrollback above the live region. The lines are
+    /// treated as terminal byte streams and are **not** sanitized — escape
+    /// sequences reach the terminal. Prefer the safe insertion methods.
+    pub fn insert_raw_lines_before_live_unchecked(&mut self, lines: &[&str]) -> io::Result<()> {
+        self.renderer.insert_raw_lines_before_live_unchecked(
+            lines,
+            &mut self.session,
+            &mut std::io::stdout(),
+        )?;
+        self.sync_renderer_metrics();
+        Ok(())
+    }
+
+    /// Inserts safe, width-aware plain text into scrollback above the live region.
+    /// Control characters are neutralized by the cell model.
+    pub fn insert_text_before_live(&mut self, text: &str) -> io::Result<()> {
         self.renderer
-            .insert_before_live(lines, &mut self.session, &mut std::io::stdout())?;
+            .insert_text_before_live(text, &mut self.session, &mut std::io::stdout())?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -237,13 +265,16 @@ impl Context {
         Ok(())
     }
 
-    /// Inserts rich text into scrollback ABOVE the active live region, using the
-    /// width-aware layout engine.
+    /// Inserts safe rich text into scrollback ABOVE the active live region, using
+    /// the width-aware layout engine.
     pub fn insert_rich_text_before_live(&mut self, rich: &RichText) -> io::Result<()> {
-        let (term_cols, _) = self.session.terminal_size();
-        let mut node = Node::rich_text_wrapped(rich.clone(), crate::node::WrapMode::WordWrap);
-        node.layout_style.width = crate::node::Dimension::Length(term_cols as f32);
-        self.insert_node_before_live(&mut node)
+        self.renderer.insert_rich_text_before_live(
+            rich,
+            &mut self.session,
+            &mut std::io::stdout(),
+        )?;
+        self.sync_renderer_metrics();
+        Ok(())
     }
 
     /// Strategy used by the most recent insertion, if any.

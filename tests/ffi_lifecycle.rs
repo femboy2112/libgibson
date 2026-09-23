@@ -93,7 +93,7 @@ fn test_ffi_render_and_commit() {
 
         let insert_msg = CString::new("Inserted above live via C ABI").unwrap();
         assert_eq!(
-            gibson_insert_before_live(ctx, insert_msg.as_ptr()),
+            gibson_insert_raw_lines_before_live_unchecked(ctx, insert_msg.as_ptr()),
             GibsonStatus::Ok
         );
 
@@ -239,7 +239,7 @@ fn test_ffi_hostile_null_pointers() {
             GibsonStatus::ErrInvalidParam
         );
         assert_eq!(
-            gibson_insert_before_live(ctx, ptr::null()),
+            gibson_insert_raw_lines_before_live_unchecked(ctx, ptr::null()),
             GibsonStatus::ErrInvalidParam
         );
         assert_eq!(
@@ -375,5 +375,53 @@ fn test_ffi_non_finite_layout_values_rejected() {
         );
         assert_eq!(gibson_node_set_width(root, 10.0), GibsonStatus::Ok);
         gibson_node_free(root);
+    }
+}
+
+/// A caller compiled against a *larger* stats struct (e.g. a future engine that
+/// appended fields, or a caller with private trailing space) must be safe: the
+/// engine writes only `min(caller_size, engine_size)` bytes and leaves the
+/// trailing bytes untouched.
+#[repr(C)]
+struct OversizedStats {
+    head: GibsonStats,
+    trailing: [u64; 8],
+}
+
+#[test]
+fn test_ffi_stats_oversized_buffer_prefix_write_leaves_trailing_untouched() {
+    unsafe {
+        let ctx = make_ctx();
+        let sentinel = [0xDEAD_BEEF_u64; 8];
+        let mut big = OversizedStats {
+            head: GibsonStats::default(),
+            trailing: sentinel,
+        };
+        big.head.struct_size = size_of::<OversizedStats>() as u32;
+        big.head.abi_version = GIBSON_ABI_VERSION;
+
+        let status = gibson_get_stats(ctx, &mut big.head as *mut GibsonStats);
+        assert_eq!(status, GibsonStatus::Ok);
+        assert_eq!(big.trailing, sentinel, "engine wrote past its own struct");
+        assert_eq!(big.head.frames, 0);
+        gibson_destroy_context(ctx);
+    }
+}
+
+#[test]
+fn test_ffi_insert_text_is_safe_raw_is_explicit() {
+    unsafe {
+        let ctx = make_ctx();
+        let safe = CString::new("safe \x1b[2J text").unwrap();
+        assert_eq!(
+            gibson_insert_text_before_live(ctx, safe.as_ptr()),
+            GibsonStatus::Ok
+        );
+        let raw = CString::new("\x1b[2J raw").unwrap();
+        assert_eq!(
+            gibson_insert_raw_lines_before_live_unchecked(ctx, raw.as_ptr()),
+            GibsonStatus::Ok
+        );
+        gibson_destroy_context(ctx);
     }
 }

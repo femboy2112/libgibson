@@ -8,7 +8,7 @@ use taffy::prelude::*;
 use taffy::style::{
     AlignItems as TaffyAlignItems, Dimension as TaffyDimension,
     FlexDirection as TaffyFlexDirection, JustifyContent as TaffyJustifyContent, LengthPercentage,
-    LengthPercentageAuto,
+    LengthPercentageAuto, Position,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -360,6 +360,10 @@ fn measure_leaf(
             width: known_dimensions.width.unwrap_or(2.0),
             height: known_dimensions.height.unwrap_or(2.0),
         },
+        NodeKind::Stack | NodeKind::Dim => Size {
+            width: known_dimensions.width.unwrap_or(0.0),
+            height: known_dimensions.height.unwrap_or(0.0),
+        },
         NodeKind::Box { border, .. } => {
             let min_s = if border.is_some() { 2.0 } else { 0.0 };
             Size {
@@ -381,13 +385,32 @@ fn build_taffy_tree(
         child_ids.push(cid);
     }
 
+    let is_stack = matches!(node.kind, NodeKind::Stack);
     let style = convert_style(&node.layout_style);
-
-    if child_ids.is_empty() {
-        taffy.new_leaf_with_context(style, node.kind.clone())
+    let id = if child_ids.is_empty() {
+        taffy.new_leaf_with_context(style, node.kind.clone())?
     } else {
-        taffy.new_with_children(style, &child_ids)
+        taffy.new_with_children(style, &child_ids)?
+    };
+
+    if is_stack {
+        // Overlay container: children are absolutely positioned to fill the
+        // stack's content box, so they contribute no intrinsic size and simply
+        // pile up in child order. Give the stack an explicit/percent/flex size.
+        for cid in &child_ids {
+            let mut cs = taffy.style(*cid)?.clone();
+            cs.position = Position::Absolute;
+            cs.inset = TaffyRect {
+                left: LengthPercentageAuto::length(0.0),
+                right: LengthPercentageAuto::length(0.0),
+                top: LengthPercentageAuto::length(0.0),
+                bottom: LengthPercentageAuto::length(0.0),
+            };
+            taffy.set_style(*cid, cs)?;
+        }
     }
+
+    Ok(id)
 }
 
 /// Recursively copies computed layout coordinates from Taffy to Node tree.

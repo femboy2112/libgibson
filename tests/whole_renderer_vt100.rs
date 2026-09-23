@@ -39,7 +39,7 @@ impl Harness {
         let mut out = Vec::new();
         let (bytes, strategy) = self
             .renderer
-            .insert_before_live(lines, &mut self.session, &mut out)
+            .insert_raw_lines_before_live_unchecked(lines, &mut self.session, &mut out)
             .unwrap();
         self.parser.process(&out);
         (bytes, strategy)
@@ -203,7 +203,7 @@ fn insert_line_fast_path_inserts_history_without_repainting_live() {
     let mut out: Vec<u8> = Vec::new();
     let (bytes, strategy) = h
         .renderer
-        .insert_before_live(&["HISTORY-1"], &mut h.session, &mut out)
+        .insert_raw_lines_before_live_unchecked(&["HISTORY-1"], &mut h.session, &mut out)
         .unwrap();
     assert_eq!(
         strategy,
@@ -282,7 +282,11 @@ fn repaint_fallback_used_when_no_room_and_restores_live_and_cursor() {
     let mut out: Vec<u8> = Vec::new();
     let (_bytes, strategy) = h
         .renderer
-        .insert_before_live(&["A", "B", "C", "D", "E"], &mut h.session, &mut out)
+        .insert_raw_lines_before_live_unchecked(
+            &["A", "B", "C", "D", "E"],
+            &mut h.session,
+            &mut out,
+        )
         .unwrap();
     assert_eq!(strategy, InsertStrategy::RepaintFallback);
     let s = String::from_utf8_lossy(&out);
@@ -546,4 +550,111 @@ fn whole_renderer_fullscreen_owns_the_canvas() {
         .unwrap();
     assert!(!full3);
     assert_eq!(bytes3, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Layer compositor through the whole renderer
+// ---------------------------------------------------------------------------
+
+fn fs_root_with(base_extra: Node, modal: bool) -> Node {
+    let base = Node::col()
+        .percent_width(100.0)
+        .percent_height(100.0)
+        .child(
+            Node::panel("BASE", gibson::BorderType::Rounded, Style::default())
+                .percent_width(100.0)
+                .percent_height(100.0)
+                .child(Node::text("UNDERLYING-CONTENT", Style::default()))
+                .child(base_extra),
+        );
+    if !modal {
+        return base;
+    }
+    Node::stack()
+        .percent_width(100.0)
+        .percent_height(100.0)
+        .child(base)
+        .child(
+            Node::col()
+                .align_items(gibson::node::AlignItems::Center)
+                .justify_content(gibson::node::JustifyContent::Center)
+                .child(
+                    Node::panel("PERMISSION", gibson::BorderType::Rounded, Style::default())
+                        .width(26.0)
+                        .height(6.0)
+                        .background(Color::Reset)
+                        .child(Node::text("Apply patch?", Style::default())),
+                ),
+        )
+}
+
+fn fullscreen_screen(cols: u16, rows: u16, modal: bool) -> (Vec<String>, u64) {
+    let mut renderer = Renderer::new(gibson::RenderMode::Fullscreen);
+    let mut session = TerminalSession::headless(cols, rows);
+    let mut parser = vt100::Parser::new(rows, cols, 0);
+    let mut out = Vec::new();
+    for _ in 0..3 {
+        let mut root = fs_root_with(Node::text("detail", Style::default()), modal);
+        renderer.render(&mut root, &mut session, &mut out).unwrap();
+    }
+    parser.process(&out);
+    let rows_out = parser.screen().rows(0, cols).collect::<Vec<_>>();
+    (rows_out, renderer.anchor_resyncs)
+}
+
+#[test]
+fn overlay_modal_composites_without_reflowing_the_base() {
+    let (base, _) = fullscreen_screen(44, 16, false);
+    let (with_modal, _) = fullscreen_screen(44, 16, true);
+    assert!(with_modal.iter().any(|r| r.contains("PERMISSION")));
+    assert!(with_modal.iter().any(|r| r.contains("UNDERLYING-CONTENT")));
+    // Rows outside the centred modal are byte-identical to the base frame.
+    assert_eq!(base[0], with_modal[0], "top row reflowed");
+    assert_eq!(base[15], with_modal[15], "bottom row reflowed");
+    assert_eq!(base[1], with_modal[1], "second row reflowed");
+}
+
+#[test]
+fn overlay_removal_leaves_no_ghost_cells() {
+    let (base_before, _) = fullscreen_screen(44, 16, false);
+    let (with_modal, _) = fullscreen_screen(44, 16, true);
+    assert_ne!(base_before, with_modal);
+    let (base_after, _) = fullscreen_screen(44, 16, false);
+    assert_eq!(base_before, base_after, "modal left ghost cells behind");
+}
+
+#[test]
+fn resize_during_overlay_animation_reanchors_without_panic() {
+    let mut renderer = Renderer::new(gibson::RenderMode::Fullscreen);
+    let mut session = TerminalSession::headless(44, 16);
+    let mut parser = vt100::Parser::new(16, 44, 0);
+    let mut out = Vec::new();
+
+    let mut root = fs_root_with(Node::text("frame", Style::default()), true);
+    renderer.render(&mut root, &mut session, &mut out).unwrap();
+    parser.process(&out);
+    let resyncs_before = renderer.anchor_resyncs;
+
+    // Resize mid-animation, then keep rendering the overlay.
+    session.set_terminal_size(30, 10);
+    parser.set_size(10, 30);
+    let mut out2 = Vec::new();
+    let mut root2 = fs_root_with(Node::text("frame", Style::default()), true);
+    renderer
+        .render(&mut root2, &mut session, &mut out2)
+        .unwrap();
+    parser.process(&out2);
+
+    assert!(
+        renderer.anchor_resyncs > resyncs_before,
+        "resize must re-anchor"
+    );
+    let screen = parser.screen().contents();
+    assert!(screen.contains("PERMISSION") || screen.contains("BASE"));
+    for line in parser.screen().rows(0, 30) {
+        assert!(
+            unicode_width::UnicodeWidthStr::width(line.as_str()) <= 30,
+            "line overflows after resize: {line:?}"
+        );
+    }
 }

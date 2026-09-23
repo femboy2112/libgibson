@@ -76,6 +76,18 @@ This round converted earlier over-strong claims into verified behavior and expli
 
 ---
 
+## Phase 1.85: Compositor, Sub-cell Canvas & Determinism — IMPLEMENTED + TESTED
+
+- **Safety split**: safe `insert_text_before_live` / `insert_rich_text_before_live` / `insert_node_before_live`; raw is explicitly `insert_raw_lines_before_live_unchecked`. `Renderer::commit` is now safe text (`commit_text`), fixing the old name-inverts-safety bug. (`tests/safety_api.rs`)
+- **Exact wire metrics**: `TerminalTransaction::commit` returns the exact byte count including the synchronized-update terminator; renderer metrics no longer undercount. (`src/transaction.rs`)
+- **Layer compositor**: `Node::stack()` + explicit `Cell::transparent` + `Node::dim()` style-only veil; overlay removal leaves no ghosts; floating modals do not reflow. (`tests/compositor.rs`, `whole_renderer_vt100`)
+- **Sub-cell canvases**: `BrailleCanvas`, `HalfBlockCanvas`, `braille_oscilloscope`; exact glyph/colour tests; bounded update cost. (`src/canvas.rs`, `tests/effects_perf.rs`)
+- **Deterministic clock**: `TimeSource`/`FixedStepClock` + motion helpers; scripted frames are reproducible. (`src/clock.rs`)
+- **Capability + color ladder**: `TerminalCapabilities`, tri-state `Capability`, `ColorDepth`, central quantization; the `CSI L` fast path requires explicit support. (`src/capability.rs`, `tests/capability_fallback.rs`)
+- **Visual goldens**: deterministic PTY→vt100 screen snapshots under `tests/goldens/` with explicit regeneration. (`tests/visual_goldens.rs`)
+- **Demos**: `polished_agent` gains a floating permission modal, dim veil, toast overlay and a Braille telemetry scope; `hack_the_gibson` gains a Braille virus-scan instrument and a CRT scanline overlay.
+- **CI status**: the workflow now also runs the visual goldens and capability tests. Remote GitHub Actions is currently **blocked by account billing** (the job is refused before any step runs: "recent account payments have failed or your spending limit needs to be increased"). This is environmental, not a code failure; local verification is green.
+
 ## Phase 2: Input Protocols & Interaction Enhancements — PLANNED
 
 - [ ] **Kitty Keyboard Protocol**: progressive enhancement for disambiguated escape keys, key release events, and modifier combinations.

@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 /// * [`RenderStats::frame_bytes`] — bytes emitted by live differential frames.
 /// * [`RenderStats::commit_bytes`] — bytes emitted by commits to scrollback.
 /// * [`RenderStats::insertion_bytes`] — bytes emitted by
-///   [`crate::Context::insert_before_live`] operations.
+///   [`crate::Context::insert_raw_lines_before_live_unchecked`] operations.
 /// * [`RenderStats::control_bytes`] — bytes emitted by standalone control
 ///   operations such as [`crate::Context::clear_live_region`].
 /// * [`RenderStats::total_terminal_bytes`] — the sum of the four above.

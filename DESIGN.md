@@ -28,7 +28,7 @@ Because earlier revisions of this document overstated completion, architectural 
 | Label | Meaning |
 | --- | --- |
 | **IMPLEMENTED** | The described code path exists and is reached in normal operation. |
-| **TESTED** | Covered by an automated test in this repository (`cargo test`, 121 tests) that exercises the behavior described. |
+| **TESTED** | Covered by an automated test in this repository (`cargo test`, 177 tests) that exercises the behavior described. |
 | **PARTIALLY TESTED** | Implemented, and some behavior is covered, but at least one named facet is not automatically verified. The gap is stated explicitly. |
 | **UNVERIFIED** | Written down because it exists in source or is a documented assumption, but has not been compiled or executed in any environment we can attest to. |
 
@@ -265,11 +265,11 @@ When stdout is not a TTY, live interactive frames are suppressed. Structured com
 
 ---
 
-## 11. Asynchronous Scrollback Insertion (`insert_before_live`)
+## 11. Asynchronous Scrollback Insertion
 
 **IMPLEMENTED + TESTED** (`src/renderer.rs`; `whole_renderer_vt100` tests both strategies directly).
 
-In real agent CLIs, asynchronous events occur while the user is typing or a spinner is running (git filesystem notifications, LSP diagnostics, streaming logs). `insert_before_live` inserts already-safe lines into native scrollback **above** the live region. There are **two named strategies**, exposed via `InsertStrategy` and counted in metrics:
+In real agent CLIs, asynchronous events occur while the user is typing or a spinner is running (git filesystem notifications, LSP diagnostics, streaming logs). Insertion into native scrollback **above** the live region is split by safety: `insert_text_before_live` / `insert_rich_text_before_live` / `insert_node_before_live` are safe (width-aware, controls neutralized), while `insert_raw_lines_before_live_unchecked` is the explicit raw escape hatch. There are **two named strategies**, exposed via `InsertStrategy` and counted in metrics:
 
 ### `InsertLineFastPath`
 
@@ -339,7 +339,7 @@ The Go bindings exist in source form and were updated during this hardening roun
 | `frame_bytes` | Wire bytes for live differential frames (control sequences included). |
 | `full_repaints` | Frames that rebuilt the region from scratch. |
 | `last_render_duration_micros` | Duration of the last frame. |
-| `history_insertions` | Total `insert_before_live` operations. |
+| `history_insertions` | Total scrollback-insertion operations. |
 | `insertion_repaints` | Insertions that used `RepaintFallback`. |
 | `fast_insertions` | Insertions that used `InsertLineFastPath`. |
 | `insertion_bytes` | Wire bytes for insertion operations. |
@@ -421,15 +421,106 @@ When text or background cells reach column `width - 1`, standard VT100/ANSI term
 
 ---
 
-## 20. Known Limitations
+## 20. Layer Compositor (Stacks and Explicit Transparency)
+
+**IMPLEMENTED + TESTED** (`tests/compositor.rs`, `whole_renderer_vt100`, demos).
+
+The node tree is no longer only rectangular flow. `Node::stack()` is an overlay
+container whose children are absolutely positioned to fill the stack's content
+box and composited in child order (later = on top).
+
+Transparency is **explicit**, never inferred from blank cells:
+
+- A scratch layer for an overlay is a `Surface::new_transparent()`; untouched
+  cells carry `Cell::transparent == true` and contribute nothing.
+- Opaque cells replace the destination cell (with the existing wide-glyph
+  invariants preserved).
+- Style-only cells (`Cell::style_only`, produced by `Node::dim()`) merge their
+  style onto the destination cell without replacing its glyph. This powers
+  dimming veils, scanlines and hover washes.
+
+Painting a stack composites each child through a transparent scratch surface and
+`Surface::blit_transparent`. Consequences proven by tests:
+
+- a transparent overlay does not alter the lower glyph;
+- an opaque overlay replaces it;
+- removing an overlay leaves **no ghost cells** (the diff drives the erase);
+- a floating modal does not reflow the layout beneath it;
+- a dim veil preserves existing bold while adding dim;
+- wide glyphs are correctly cleared when an overlay writes their continuation.
+
+`Stack` and `Dim` cross the C ABI as `gibson_node_stack` / `gibson_node_dim`.
+
+## 21. Deterministic Time and Motion
+
+**IMPLEMENTED + TESTED** (`src/clock.rs`, `tests/visual_goldens.rs`).
+
+Animation is a pure function of time. `TimeSource::{real, fixed}` wraps either a
+wall clock (`RealClock`) or a `FixedStepClock` whose time is exactly
+`frame_index * step`. Demos advance the source once per frame, so
+`--deterministic --freeze-at=N` yields a reproducible frame regardless of CPU
+speed or scheduler jitter. A small motion toolkit (`phase`, `pulse`, `saw`,
+`triangle`, `lerp`, `ease_in/out/in_out`, `spring`) keeps motion out of
+application state. This is what makes `tests/goldens/` possible.
+
+## 22. Sub-cell Canvases
+
+**IMPLEMENTED + TESTED** (`src/canvas.rs`).
+
+Two ordinary-cell raster backends, no graphics protocol:
+
+- `BrailleCanvas` — 2×4 binary dots per cell (`U+2800`..`U+28FF`), one color per
+  cell, Bresenham line/polyline, exact per-dot tests.
+- `HalfBlockCanvas` — 2 vertical RGB samples per cell via `▀` (fg = top pixel,
+  bg = bottom pixel), with explicit transparency where both pixels are `None`.
+
+Both convert to a `Surface` and therefore flow through the normal
+diff/compiler pipeline. `braille_oscilloscope` renders a waveform. Per-frame
+phase updates are asserted to dirty a minority of cells (`tests/effects_perf.rs`).
+
+## 23. Capability Model and Color Ladder
+
+**IMPLEMENTED + TESTED** (`src/capability.rs`, `tests/capability_fallback.rs`).
+
+`TerminalCapabilities` carries a `ColorDepth` plus tri-state `Capability`
+values (`Supported` / `Unsupported` / `Unknown`) for synchronized updates,
+`CSI L`, OSC 8, Kitty keyboard/graphics, Sixel and iTerm images. Detection is
+passive (environment only); `Unknown` is **not** treated as supported, so the
+`insert_line` fast path requires explicit support and otherwise uses the
+repaint fallback.
+
+Color intent is separated from representation: application code emits RGB or
+semantic colours, and a central `quantize_style`/`quantize_color` maps them to
+the session's depth. Tests prove the same UI emits `38;2` only under TrueColor,
+quantizes to indexed under Ansi256, base colors under Ansi16, and no color
+attributes under Mono. `Color::lerp` documents that it approximates
+`Color::Reset`; `Color::lerp_resolved` refuses to fabricate a value for it.
+
+## 24. Visual Regression Methodology
+
+**IMPLEMENTED + TESTED** (`tests/visual_goldens.rs`).
+
+Because time is deterministic, whole demo frames can be captured exactly. Each
+demo is run as `--deterministic --freeze-at=<frame> --no-color` in a real PTY;
+the complete byte stream is replayed through `vt100` and the reconstructed
+**plain screen text** is compared with a small file under `tests/goldens/`.
+Goldens are never updated implicitly: use
+`UPDATE_GOLDENS=1 cargo test --test visual_goldens` or
+`scripts/dev/update_visual_goldens.sh`, then review the diff. `tests/demo_render.rs`
+keeps the cheaper structural smoke checks (panel presence, width fit,
+no-truecolor under `--no-color`).
+
+## 25. Known Limitations
 
 The following are **not** implemented or **not** verified. Do not describe them as complete:
 
-- **Go bindings are UNVERIFIED** — source exists and was updated, but no Go compiler was available.
+- **Go bindings are UNVERIFIED** — source exists and was updated (including `NewStackNode`/`NewDimNode`), but no Go compiler was available.
 - **Windows / ConPTY is UNVERIFIED** — only Linux x86_64 (Ubuntu 24.04) was exercised.
 - **tmux / screen / SSH matrix is UNVERIFIED.**
-- **Terminal capability negotiation is NOT implemented.** The fast insertion path assumes the terminal supports `CSI L`; this assumption is not probed at runtime. `primary`/`secondary` device attribute queries and truecolor/graphics negotiation are future work.
+- **Active terminal capability negotiation is NOT implemented.** Capabilities are inferred passively from the environment (`NO_COLOR`, `TERM`, `COLORTERM`). `CSI L` is marked supported for non-dumb terminals, but `Unknown` is never treated as supported; device-attribute queries and graphics negotiation are future work.
 - **Absolute cursor query (DSR) is NOT implemented.** Re-anchoring on resize is best-effort relative erase-from-cursor-down, not exact absolute recovery.
+- **Full-screen dim veils may dirty most cells** on first appearance (a whole-screen style change); this is a deliberate, measured cost, not an accident. Moving scanlines and braille phase updates are bounded (`tests/effects_perf.rs`).
+- **Remote CI is currently blocked by GitHub account billing** (private-repo Actions minutes/spending limit), not by a code failure; see ROADMAP. Local `fmt`/`clippy`/`test`/`release`/binding smoke are green.
 - **Hard `SIGKILL` cannot be intercepted** by any userland process.
 - **Ctrl-C handling** in the interactive demos is implemented as raw-mode key events; the engine relies on RAII / panic-hook restoration for terminal state. Signal handling is not a general engine guarantee.
 - **Fuzzing**: `TextInputState` has deterministic randomized edit fuzzing, but there is no `cargo-fuzz` / AFL target for arbitrary byte streams or resize storms.

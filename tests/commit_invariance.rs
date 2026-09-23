@@ -80,7 +80,7 @@ fn test_insert_before_live_preserves_live_surface() {
     assert!(original_height > 0);
 
     let (_bytes, _strategy) = renderer
-        .insert_before_live(
+        .insert_raw_lines_before_live_unchecked(
             &["[background] Task completed successfully"],
             &mut session,
             &mut out,

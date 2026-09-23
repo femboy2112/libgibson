@@ -1,3 +1,4 @@
+use crate::capability::{Capability, ColorDepth, TerminalCapabilities};
 use crossterm::{
     cursor::Show,
     event::{DisableBracketedPaste, EnableBracketedPaste},
@@ -22,6 +23,7 @@ pub struct TerminalSession {
     cursor_hidden: bool,
     bracketed_paste_enabled: bool,
     sync_updates_enabled: bool,
+    capabilities: TerminalCapabilities,
 }
 
 impl TerminalSession {
@@ -37,6 +39,7 @@ impl TerminalSession {
             cursor_hidden: false,
             bracketed_paste_enabled: false,
             sync_updates_enabled: true,
+            capabilities: TerminalCapabilities::detect_from_env(),
         };
 
         Self::ensure_panic_hook();
@@ -60,7 +63,34 @@ impl TerminalSession {
             cursor_hidden: false,
             bracketed_paste_enabled: false,
             sync_updates_enabled: true,
+            capabilities: TerminalCapabilities::truecolor(),
         }
+    }
+
+    /// Current passive capability snapshot.
+    pub fn capabilities(&self) -> TerminalCapabilities {
+        self.capabilities
+    }
+
+    /// Overrides capabilities (used by capability-injection tests and callers
+    /// that know better than the environment).
+    pub fn set_capabilities(&mut self, caps: TerminalCapabilities) {
+        self.capabilities = caps;
+    }
+
+    /// Convenience: current color depth.
+    pub fn color_depth(&self) -> ColorDepth {
+        self.capabilities.color_depth
+    }
+
+    /// Convenience: override color depth while keeping other capabilities.
+    pub fn set_color_depth(&mut self, depth: ColorDepth) {
+        self.capabilities.color_depth = depth;
+    }
+
+    /// Whether `CSI L` insertion is explicitly known to be supported.
+    pub fn insert_line_supported(&self) -> bool {
+        self.capabilities.insert_line == Capability::Supported
     }
 
     /// Updates the geometry reported by a headless session. Used to simulate

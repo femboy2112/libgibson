@@ -37,6 +37,10 @@ impl Color {
 
     /// Approximate RGB triple for this color. 16-color and 256-color values are
     /// mapped onto the xterm palette so gradients work across color depths.
+    ///
+    /// `Color::Reset` has **no** defined RGB value; it is approximated as
+    /// `(204, 204, 204)` for display/legacy interpolation. Use
+    /// [`Color::resolve_rgb`] when that approximation would be a lie.
     pub fn to_rgb(self) -> (u8, u8, u8) {
         match self {
             Color::Reset => (204, 204, 204),
@@ -64,6 +68,10 @@ impl Color {
     /// Linear interpolation toward `other` by `t` in `[0, 1]`, returning truecolor.
     ///
     /// Useful for gradients, heat maps and animated color sweeps.
+    ///
+    /// **Note:** if either endpoint is [`Color::Reset`] this interpolates through
+    /// the arbitrary `(204, 204, 204)` approximation. If that is not what you
+    /// want, use [`Color::lerp_resolved`] and handle `None`.
     pub fn lerp(self, other: Color, t: f32) -> Color {
         let t = t.clamp(0.0, 1.0);
         let (r1, g1, b1) = self.to_rgb();
@@ -71,10 +79,30 @@ impl Color {
         let mix = |a: u8, b: u8| ((a as f32) + (b as f32 - a as f32) * t).round() as u8;
         Color::Rgb(mix(r1, r2), mix(g1, g2), mix(b1, b2))
     }
+
+    /// RGB triple, or `None` for [`Color::Reset`] ("terminal default"), which has
+    /// no defined numeric value.
+    pub fn resolve_rgb(self) -> Option<(u8, u8, u8)> {
+        if self == Color::Reset {
+            None
+        } else {
+            Some(self.to_rgb())
+        }
+    }
+
+    /// Like [`Color::lerp`], but returns `None` when either endpoint is
+    /// [`Color::Reset`], so callers do not silently interpolate a fake gray.
+    pub fn lerp_resolved(self, other: Color, t: f32) -> Option<Color> {
+        let a = self.resolve_rgb()?;
+        let b = other.resolve_rgb()?;
+        let t = t.clamp(0.0, 1.0);
+        let mix = |x: u8, y: u8| ((x as f32) + (y as f32 - x as f32) * t).round() as u8;
+        Some(Color::Rgb(mix(a.0, b.0), mix(a.1, b.1), mix(a.2, b.2)))
+    }
 }
 
 /// Maps an xterm-256 index to an approximate RGB triple.
-fn xterm_rgb(n: u8) -> (u8, u8, u8) {
+pub(crate) fn xterm_rgb(n: u8) -> (u8, u8, u8) {
     match n {
         0..=15 => {
             // Reuse the 16 base colors.
@@ -323,6 +351,22 @@ impl Style {
             && !self.italic
             && !self.underline
             && !self.reverse
+    }
+
+    /// Combines a style-only overlay on top of this base style.
+    ///
+    /// Explicit `fg`/`bg` in the overlay win; boolean attributes are OR-ed, so a
+    /// dim veil on an already-bold cell stays bold and dim.
+    pub fn overlay(self, over: Style) -> Style {
+        Style {
+            fg: over.fg.or(self.fg),
+            bg: over.bg.or(self.bg),
+            bold: self.bold || over.bold,
+            dim: self.dim || over.dim,
+            italic: self.italic || over.italic,
+            underline: self.underline || over.underline,
+            reverse: self.reverse || over.reverse,
+        }
     }
 
     pub fn to_sgr(&self) -> String {
@@ -697,6 +741,13 @@ pub struct Cell {
     pub style: Style,
     /// True if this cell is the trailing continuation half of a wide (display_width == 2) glyph.
     pub is_continuation: bool,
+    /// Explicit transparency. A transparent cell is *not* painted by the
+    /// compositor and leaves the lower layer untouched. Ordinary blank spaces
+    /// are opaque; transparency must be requested deliberately.
+    pub transparent: bool,
+    /// Style-only overlay. When true (and not transparent), the cell contributes
+    /// its style to the cell beneath it without replacing its glyph.
+    pub style_only: bool,
 }
 
 impl Cell {
@@ -705,6 +756,8 @@ impl Cell {
             glyph,
             style,
             is_continuation: false,
+            transparent: false,
+            style_only: false,
         }
     }
 
@@ -713,6 +766,8 @@ impl Cell {
             glyph: Glyph::space(),
             style,
             is_continuation: false,
+            transparent: false,
+            style_only: false,
         }
     }
 
@@ -721,6 +776,31 @@ impl Cell {
             glyph: Glyph::empty(),
             style,
             is_continuation: true,
+            transparent: false,
+            style_only: false,
+        }
+    }
+
+    /// A fully transparent cell: contributes nothing when composited.
+    pub fn transparent() -> Self {
+        Self {
+            glyph: Glyph::space(),
+            style: Style::default(),
+            is_continuation: false,
+            transparent: true,
+            style_only: false,
+        }
+    }
+
+    /// A style-only cell: contributes `style` to the cell beneath it without
+    /// replacing its glyph (used for dimming/veils).
+    pub fn style_overlay(style: Style) -> Self {
+        Self {
+            glyph: Glyph::space(),
+            style,
+            is_continuation: false,
+            transparent: false,
+            style_only: true,
         }
     }
 
@@ -728,6 +808,8 @@ impl Cell {
         self.glyph = Glyph::space();
         self.style = Style::default();
         self.is_continuation = false;
+        self.transparent = false;
+        self.style_only = false;
     }
 }
 

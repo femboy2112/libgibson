@@ -49,6 +49,18 @@ public:
         return Node(n);
     }
 
+    static Node stack() {
+        gibson_node_t* n = nullptr;
+        gibson_node_stack(&n);
+        return Node(n);
+    }
+
+    static Node dim() {
+        gibson_node_t* n = nullptr;
+        gibson_node_dim(&n);
+        return Node(n);
+    }
+
     static Node text(const std::string& str, const gibson_style_t* style = nullptr, gibson_wrap_mode_t wrap = GIBSON_WRAP_WORD) {
         gibson_node_t* n = nullptr;
         gibson_node_text(str.c_str(), style, wrap, &n);
@@ -330,10 +342,19 @@ public:
         }
     }
 
-    void insert_before_live(const std::string& text) {
-        gibson_status_t st = gibson_insert_before_live(ctx_, text.c_str());
+    /// Safe: width-aware plain text with terminal controls neutralized.
+    void insert_text_before_live(const std::string& text) {
+        gibson_status_t st = gibson_insert_text_before_live(ctx_, text.c_str());
         if (st != GIBSON_OK) {
-            throw std::runtime_error("Gibson insert_before_live failed");
+            throw std::runtime_error("Gibson insert_text_before_live failed");
+        }
+    }
+
+    /// Raw escape hatch: `text` is a terminal byte stream and is NOT sanitized.
+    void insert_raw_lines_before_live_unchecked(const std::string& text) {
+        gibson_status_t st = gibson_insert_raw_lines_before_live_unchecked(ctx_, text.c_str());
+        if (st != GIBSON_OK) {
+            throw std::runtime_error("Gibson insert_raw_lines_before_live_unchecked failed");
         }
     }
 

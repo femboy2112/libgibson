@@ -127,6 +127,10 @@ pub enum NodeKind {
         style: Style,
         title: Option<String>,
         title_style: Style,
+        /// Optional background fill for the whole panel rect (used by floating
+        /// panels/modals so the layer beneath is hidden). `Color::Reset` fills
+        /// with the terminal default background.
+        background: Option<Color>,
     },
     Spinner {
         frames: Vec<String>,
@@ -144,6 +148,12 @@ pub enum NodeKind {
         cursor_style: Style,
         scroll_offset: usize,
     },
+    /// Overlapping layer container. Children are laid out into the same content
+    /// box (z-order = child order) and composited with explicit transparency.
+    Stack,
+    /// A dim veil over its rectangle. Applied in-place on an opaque surface, or
+    /// as a style-only layer when painted into a transparent scratch surface.
+    Dim,
 }
 
 /// A node in the declarative UI render tree.
@@ -186,6 +196,21 @@ impl Node {
         });
         n.layout_style.direction = FlexDirection::Row;
         n
+    }
+
+    /// Creates an overlapping-layer container.
+    ///
+    /// Children occupy the same content box; z-order is child order (later
+    /// children paint on top). Composite transparency means a child only covers
+    /// the cells it actually paints. Give the stack an explicit size, percent
+    /// size, or flex sizing — it sizes to its largest child otherwise.
+    pub fn stack() -> Self {
+        Self::new(NodeKind::Stack)
+    }
+
+    /// Creates a dim veil over the node's rectangle.
+    pub fn dim() -> Self {
+        Self::new(NodeKind::Dim)
     }
 
     /// Creates a text node.
@@ -307,6 +332,7 @@ impl Node {
             style,
             title: Some(title.into()),
             title_style: style.bold(),
+            background: None,
         });
         n.layout_style.padding_top = 1.0;
         n.layout_style.padding_bottom = 1.0;
@@ -420,11 +446,14 @@ impl Node {
     }
 
     pub fn background(mut self, bg: Color) -> Self {
-        if let NodeKind::Box {
-            ref mut background, ..
-        } = self.kind
-        {
-            *background = Some(bg);
+        match &mut self.kind {
+            NodeKind::Box {
+                ref mut background, ..
+            } => *background = Some(bg),
+            NodeKind::Border {
+                ref mut background, ..
+            } => *background = Some(bg),
+            _ => {}
         }
         self
     }

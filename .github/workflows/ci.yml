@@ -36,6 +36,15 @@ jobs:
       - name: Test
         run: cargo test
 
+      - name: Visual goldens (deterministic)
+        run: cargo test --test visual_goldens
+
+      - name: Capability fallback
+        run: cargo test --test capability_fallback
+
+      - name: Bounded effect cost
+        run: cargo test --test effects_perf
+
       - name: Build release
         run: cargo build --release
 

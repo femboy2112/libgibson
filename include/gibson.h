@@ -146,9 +146,14 @@ typedef struct {
 /**
  * Versioned statistics snapshot.
  *
- * Initialize with gibson_stats_init() before calling gibson_get_stats(). The
- * engine writes at most `struct_size` bytes, so new fields appended in future
- * ABI versions are always forward-compatible and never overflow this buffer.
+ * Initialize with gibson_stats_init() before calling gibson_get_stats().
+ *
+ * ABI contract (exact-version): `abi_version` must equal GIBSON_ABI_VERSION,
+ * and `struct_size` must be at least `sizeof(gibson_stats_t)`. The engine writes
+ * exactly `min(struct_size, sizeof(gibson_stats_t))` bytes. A caller with a
+ * larger buffer is safe (trailing bytes untouched); a caller built against an
+ * older, smaller struct is rejected with GIBSON_ERR_INVALID_PARAM rather than
+ * truncated. GIBSON_ABI_VERSION is bumped whenever this layout changes.
  */
 typedef struct {
     uint32_t struct_size;   /* caller sets to sizeof(gibson_stats_t) */
@@ -193,7 +198,10 @@ gibson_status_t gibson_request_render(gibson_context_t *ctx);
 gibson_status_t gibson_commit_text(gibson_context_t *ctx, const char *utf8_text);
 gibson_status_t gibson_commit(gibson_context_t *ctx, const char *utf8_text); /* alias of commit_text */
 gibson_status_t gibson_commit_raw_ansi_unchecked(gibson_context_t *ctx, const char *utf8_ansi);
-gibson_status_t gibson_insert_before_live(gibson_context_t *ctx, const char *utf8_text);
+/* Safe: width-aware plain text; terminal controls neutralized. */
+gibson_status_t gibson_insert_text_before_live(gibson_context_t *ctx, const char *utf8_text);
+/* Raw escape hatch: text is a terminal byte stream, NOT sanitized. */
+gibson_status_t gibson_insert_raw_lines_before_live_unchecked(gibson_context_t *ctx, const char *utf8_text);
 gibson_status_t gibson_commit_node(gibson_context_t *ctx, gibson_node_t *node);
 gibson_status_t gibson_insert_node_before_live(gibson_context_t *ctx, gibson_node_t *node);
 gibson_status_t gibson_commit_rich_text(gibson_context_t *ctx, const gibson_rich_text_t *rich);
@@ -210,6 +218,10 @@ int32_t         gibson_last_error_message(char *buf, size_t buf_len);
 /* Node Construction */
 gibson_status_t gibson_node_box_col(gibson_node_t **out);
 gibson_status_t gibson_node_box_row(gibson_node_t **out);
+/* Overlay container: children are absolutely positioned and composited in order. */
+gibson_status_t gibson_node_stack(gibson_node_t **out);
+/* Dim veil (style-only overlay when composited in a stack). */
+gibson_status_t gibson_node_dim(gibson_node_t **out);
 gibson_status_t gibson_node_text(const char *utf8_text, const gibson_style_t *style, int32_t wrap_mode, gibson_node_t **out);
 gibson_status_t gibson_node_spinner(uint32_t frame_index, const gibson_style_t *style, const char *label, gibson_node_t **out);
 gibson_status_t gibson_node_text_input(const char *value, uint32_t cursor_grapheme, const char *placeholder, const gibson_style_t *style, gibson_node_t **out);

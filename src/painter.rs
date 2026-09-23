@@ -122,7 +122,11 @@ fn paint_node(node: &Node, surface: &mut Surface, clip: Rect, ctx: &mut PaintCon
             style,
             title,
             title_style,
+            background,
         } => {
+            if let Some(bg) = background {
+                surface.fill_rect(rect, Cell::space(Style::new().bg(*bg)));
+            }
             surface.draw_border(rect, *border_type, *style);
             if let Some(t) = title {
                 if rect.width > 4 {
@@ -184,11 +188,15 @@ fn paint_node(node: &Node, surface: &mut Surface, clip: Rect, ctx: &mut PaintCon
                 ctx,
             );
         }
+        NodeKind::Dim => {
+            surface.apply_dim_rect(rect);
+        }
+        NodeKind::Stack => {}
     }
 
-    // Paint children. Bordered containers clip children to the *inside* of the
-    // border so content can never overwrite the frame, regardless of how the
-    // flex layout sizes the panel.
+    // Bordered containers clip children to the *inside* of the border so content
+    // can never overwrite the frame, regardless of how the flex layout sizes the
+    // panel.
     let child_clip = match &node.kind {
         NodeKind::Box {
             border: Some(_), ..
@@ -196,6 +204,18 @@ fn paint_node(node: &Node, surface: &mut Surface, clip: Rect, ctx: &mut PaintCon
         NodeKind::Border { .. } => rect.shrink(1),
         _ => rect,
     };
+
+    if matches!(node.kind, NodeKind::Stack) {
+        // Composite children in z-order through transparent scratch layers.
+        // A child only covers the cells it actually paints.
+        for child in &node.children {
+            let mut layer = Surface::new_transparent(surface.width, surface.height);
+            paint_node(child, &mut layer, child_clip, ctx);
+            surface.blit_transparent(&layer);
+        }
+        return;
+    }
+
     for child in &node.children {
         paint_node(child, surface, child_clip, ctx);
     }

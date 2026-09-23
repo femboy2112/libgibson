@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     KeyCode::Char('q') | KeyCode::Esc => break,
                     // Ctrl-G inserts an async event; printable characters type normally.
                     KeyCode::Char('g') if k.modifiers.contains(KeyModifiers::CONTROL) => {
-                        ctx.insert_before_live(&[
+                        ctx.insert_raw_lines_before_live_unchecked(&[
                             "── ASYNC INSERTION (arrived above live region) ──",
                         ])?;
                     }

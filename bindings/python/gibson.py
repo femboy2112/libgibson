@@ -155,8 +155,8 @@ _lib.gibson_request_render.restype = ctypes.c_int32
 _lib.gibson_commit.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 _lib.gibson_commit.restype = ctypes.c_int32
 
-_lib.gibson_insert_before_live.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
-_lib.gibson_insert_before_live.restype = ctypes.c_int32
+_lib.gibson_insert_raw_lines_before_live_unchecked.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+_lib.gibson_insert_raw_lines_before_live_unchecked.restype = ctypes.c_int32
 
 _lib.gibson_commit_node.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
 _lib.gibson_commit_node.restype = ctypes.c_int32
@@ -175,6 +175,10 @@ _lib.gibson_node_box_col.restype = ctypes.c_int32
 
 _lib.gibson_node_box_row.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
 _lib.gibson_node_box_row.restype = ctypes.c_int32
+_lib.gibson_node_stack.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+_lib.gibson_node_stack.restype = ctypes.c_int32
+_lib.gibson_node_dim.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+_lib.gibson_node_dim.restype = ctypes.c_int32
 
 _lib.gibson_node_text.argtypes = [ctypes.c_char_p, ctypes.POINTER(GibsonStyle), ctypes.c_int32, ctypes.POINTER(ctypes.c_void_p)]
 _lib.gibson_node_text.restype = ctypes.c_int32
@@ -367,6 +371,18 @@ class Node:
         return cls(h)
 
     @classmethod
+    def stack(cls):
+        h = ctypes.c_void_p()
+        _lib.gibson_node_stack(ctypes.byref(h))
+        return cls(h)
+
+    @classmethod
+    def dim(cls):
+        h = ctypes.c_void_p()
+        _lib.gibson_node_dim(ctypes.byref(h))
+        return cls(h)
+
+    @classmethod
     def text(cls, content, style=None, wrap=WrapMode.WORD):
         h = ctypes.c_void_p()
         style_ref = ctypes.byref(style) if style is not None else None
@@ -533,8 +549,8 @@ class Context:
         if status != 0:
             raise RuntimeError(f"Insert rich text failed: status {status}")
 
-    def insert_before_live(self, text: str):
-        status = _lib.gibson_insert_before_live(self.handle, text.encode("utf-8"))
+    def insert_raw_lines_before_live_unchecked(self, text: str):
+        status = _lib.gibson_insert_raw_lines_before_live_unchecked(self.handle, text.encode("utf-8"))
         if status != 0:
             raise RuntimeError(f"Insert before live failed: status {status}")
 

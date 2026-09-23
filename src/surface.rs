@@ -109,6 +109,71 @@ impl Surface {
         }
     }
 
+    /// Creates a fully transparent surface, used as a scratch layer for
+    /// compositing overlays. Untouched cells contribute nothing.
+    pub fn new_transparent(width: u16, height: u16) -> Self {
+        let count = (width as usize) * (height as usize);
+        Self {
+            width,
+            height,
+            cells: vec![Cell::transparent(); count],
+        }
+    }
+
+    /// Composites `src` onto this surface at the origin.
+    ///
+    /// Transparent source cells leave this surface untouched; style-only source
+    /// cells merge their style onto the destination cell's style without
+    /// replacing its glyph; opaque source cells replace the destination cell.
+    pub fn blit_transparent_at(&mut self, src: &Surface, dx: u16, dy: u16) {
+        for y in 0..src.height {
+            for x in 0..src.width {
+                let Some(c) = src.get(x, y) else { continue };
+                if c.transparent {
+                    continue;
+                }
+                let tx = x.saturating_add(dx);
+                let ty = y.saturating_add(dy);
+                if c.style_only {
+                    if let Some(dst) = self.get_mut(tx, ty) {
+                        dst.style = dst.style.overlay(c.style);
+                    }
+                } else {
+                    let cell = c.clone();
+                    self.set_cell(tx, ty, cell);
+                }
+            }
+        }
+    }
+
+    /// Composites `src` onto this surface at the origin.
+    pub fn blit_transparent(&mut self, src: &Surface) {
+        self.blit_transparent_at(src, 0, 0);
+    }
+
+    /// Applies a dim veil to `rect`.
+    ///
+    /// Transparent cells in the region become style-only dim cells (so they can
+    /// later be composited as a veil); opaque cells get the dim attribute merged
+    /// in place.
+    pub fn apply_dim_rect(&mut self, rect: Rect) {
+        let inter = self.area().intersection(&rect);
+        if inter.is_empty() {
+            return;
+        }
+        for y in inter.y..(inter.y + inter.height) {
+            for x in inter.x..(inter.x + inter.width) {
+                if let Some(idx) = self.index(x, y) {
+                    if self.cells[idx].transparent {
+                        self.cells[idx] = Cell::style_overlay(Style::new().dim());
+                    } else {
+                        self.cells[idx].style = self.cells[idx].style.overlay(Style::new().dim());
+                    }
+                }
+            }
+        }
+    }
+
     pub fn area(&self) -> Rect {
         Rect::new(0, 0, self.width, self.height)
     }

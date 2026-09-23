@@ -150,6 +150,8 @@ impl Renderer {
         }
 
         let (term_cols, term_rows) = session.terminal_size();
+        // Color quality is decided centrally from the session's capabilities.
+        self.compiler.color_depth = session.color_depth();
         let reanchor = self.observe_geometry(term_cols, term_rows);
         let is_full_repaint = self.previous_surface.is_none();
 
@@ -288,10 +290,13 @@ impl Renderer {
             }
         }
 
-        let bytes_emitted = tx.buffer.len();
-        if bytes_emitted > 0 {
-            tx.commit()?;
-        }
+        // Exact wire bytes, including the synchronized-update terminator that
+        // `commit` appends. Do not sample `buffer.len()` before committing.
+        let bytes_emitted = if tx.buffered_len() > 0 {
+            tx.commit()?
+        } else {
+            0
+        };
 
         self.previous_surface = Some(next_surface);
         self.last_cursor_visible = Some(desired_visible);
@@ -361,8 +366,7 @@ impl Renderer {
             tx.push(b"\r\n");
         }
 
-        let bytes = tx.buffer.len();
-        tx.commit()?;
+        let bytes = tx.commit()?;
 
         // Committing finalizes live state; the next live frame starts fresh.
         self.invalidate_anchor(false);
@@ -385,15 +389,20 @@ impl Renderer {
         self.write_committed_lines(&lines, session, writer)
     }
 
-    /// Backwards-compatible alias for [`Renderer::commit_raw_ansi_unchecked`].
+    /// Safe, structured plain-text commit.
+    ///
+    /// Historically `Renderer::commit` was an alias for the **raw** escape hatch
+    /// while `Context::commit` was safe text — the same name inverted its safety
+    /// meaning depending on abstraction level. The raw alias has been removed;
+    /// this now routes to [`Renderer::commit_text`].
+    #[deprecated(note = "use `commit_text`, `commit_rich_text`, or `commit_node`")]
     pub fn commit(
         &mut self,
         text: &str,
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<()> {
-        self.commit_raw_ansi_unchecked(text, session, writer)
-            .map(|_| ())
+        self.commit_text(text, session, writer).map(|_| ())
     }
 
     /// Commits plain structured text to immutable scrollback, routed through the
@@ -407,7 +416,12 @@ impl Renderer {
         let (term_cols, _) = session.terminal_size();
         let mut node = Node::text_wrapped(text, Style::default(), WrapMode::WordWrap);
         node.layout_style.width = crate::node::Dimension::Length(term_cols as f32);
-        let lines = render_node_to_lines(&mut node, session.is_tty, term_cols)?;
+        let lines = render_node_to_lines_with_depth(
+            &mut node,
+            session.is_tty,
+            term_cols,
+            session.color_depth(),
+        )?;
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
         self.write_committed_lines(&refs, session, writer)
     }
@@ -423,7 +437,12 @@ impl Renderer {
         let (term_cols, _) = session.terminal_size();
         let mut node = Node::rich_text_wrapped(rich.clone(), WrapMode::WordWrap);
         node.layout_style.width = crate::node::Dimension::Length(term_cols as f32);
-        let lines = render_node_to_lines(&mut node, session.is_tty, term_cols)?;
+        let lines = render_node_to_lines_with_depth(
+            &mut node,
+            session.is_tty,
+            term_cols,
+            session.color_depth(),
+        )?;
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
         self.write_committed_lines(&refs, session, writer)
     }
@@ -437,16 +456,75 @@ impl Renderer {
         writer: &mut dyn Write,
     ) -> io::Result<usize> {
         let (term_cols, _) = session.terminal_size();
-        let lines = render_node_to_lines(node, session.is_tty, term_cols)?;
+        let lines = render_node_to_lines_with_depth(
+            node,
+            session.is_tty,
+            term_cols,
+            session.color_depth(),
+        )?;
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
         self.write_committed_lines(&refs, session, writer)
     }
 
-    /// Inserts committed lines into native terminal scrollback ABOVE the active
-    /// live region, preserving the live region's content, geometry and anchor.
+    /// Inserts **raw** lines into native terminal scrollback ABOVE the active live
+    /// region. The lines are treated as terminal byte streams: **no sanitization
+    /// is performed**, so escape/OSC/CSI sequences in `lines` reach the terminal.
+    ///
+    /// This is the intentionally-ugly escape hatch. Prefer
+    /// [`Renderer::insert_text_before_live`],
+    /// [`Renderer::insert_rich_text_before_live`] or
+    /// [`Renderer::insert_node_before_live`].
     ///
     /// Returns `(bytes, strategy)`. See [`InsertStrategy`] for the two mechanisms.
-    pub fn insert_before_live(
+    pub fn insert_raw_lines_before_live_unchecked(
+        &mut self,
+        lines: &[&str],
+        session: &mut TerminalSession,
+        writer: &mut dyn Write,
+    ) -> io::Result<(usize, InsertStrategy)> {
+        self.insert_lines_before_live(lines, session, writer)
+    }
+
+    /// Inserts **safe** plain text into scrollback above the live region.
+    ///
+    /// The text is wrapped width-aware by the same layout engine used for live
+    /// nodes, and control characters are neutralized at the cell model boundary,
+    /// so untrusted text cannot inject terminal controls.
+    pub fn insert_text_before_live(
+        &mut self,
+        text: &str,
+        session: &mut TerminalSession,
+        writer: &mut dyn Write,
+    ) -> io::Result<(usize, InsertStrategy)> {
+        let (term_cols, _) = session.terminal_size();
+        let mut node = Node::text_wrapped(text, Style::default(), WrapMode::WordWrap);
+        node.layout_style.width = crate::node::Dimension::Length(term_cols as f32);
+        let lines = render_node_to_lines_with_depth(
+            &mut node,
+            session.is_tty,
+            term_cols,
+            session.color_depth(),
+        )?;
+        let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+        self.insert_lines_before_live(&refs, session, writer)
+    }
+
+    /// Inserts **safe** rich text into scrollback above the live region, wrapped
+    /// and aligned by the same layout engine used for live nodes.
+    pub fn insert_rich_text_before_live(
+        &mut self,
+        rich: &RichText,
+        session: &mut TerminalSession,
+        writer: &mut dyn Write,
+    ) -> io::Result<(usize, InsertStrategy)> {
+        let (term_cols, _) = session.terminal_size();
+        let mut node = Node::rich_text_wrapped(rich.clone(), WrapMode::WordWrap);
+        node.layout_style.width = crate::node::Dimension::Length(term_cols as f32);
+        self.insert_node_before_live(&mut node, session, writer)
+    }
+
+    /// Shared insertion implementation. `lines` are engine-generated bytes.
+    fn insert_lines_before_live(
         &mut self,
         lines: &[&str],
         session: &mut TerminalSession,
@@ -475,10 +553,13 @@ impl Renderer {
         let (_, term_rows) = session.terminal_size();
         let combined_height = m.saturating_add(self.live_region_height);
 
-        // The fast path relies on trustworthy relative cursor/region state.
+        // The fast path relies on trustworthy relative cursor/region state and on
+        // `CSI L` actually being supported. Unknown capability is NOT treated as
+        // supported: we fall back to the always-correct repaint path.
         let anchor_stable = matches!(self.anchor, AnchorState::Stable { .. });
         let use_fast = self.live_region_height > 0
             && anchor_stable
+            && session.insert_line_supported()
             && combined_height <= term_rows
             && self.previous_surface.is_some();
 
@@ -566,8 +647,7 @@ impl Renderer {
             }
         }
 
-        let bytes = tx.buffer.len();
-        tx.commit()?;
+        let bytes = tx.commit()?;
 
         self.history_insertions += 1;
         self.total_insertion_bytes += bytes as u64;
@@ -588,9 +668,14 @@ impl Renderer {
         writer: &mut dyn Write,
     ) -> io::Result<(usize, InsertStrategy)> {
         let (term_cols, _) = session.terminal_size();
-        let lines = render_node_to_lines(node, session.is_tty, term_cols)?;
+        let lines = render_node_to_lines_with_depth(
+            node,
+            session.is_tty,
+            term_cols,
+            session.color_depth(),
+        )?;
         let line_refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
-        self.insert_before_live(&line_refs, session, writer)
+        self.insert_lines_before_live(&line_refs, session, writer)
     }
 
     /// Clears the live region from the terminal without leaving artifacts.
@@ -625,8 +710,7 @@ impl Renderer {
             tx.push(b"\r");
         }
 
-        let bytes = tx.buffer.len();
-        tx.commit()?;
+        let bytes = tx.commit()?;
 
         self.invalidate_anchor(false);
         self.total_control_bytes += bytes as u64;
@@ -683,6 +767,23 @@ pub fn strip_ansi_escapes(s: &str) -> String {
 /// If `is_tty` is true, renders styled ANSI lines.
 /// If `is_tty` is false, renders plain UTF-8 text with ZERO escape codes.
 pub fn render_node_to_lines(node: &mut Node, is_tty: bool, width: u16) -> io::Result<Vec<String>> {
+    render_node_to_lines_with_depth(
+        node,
+        is_tty,
+        width,
+        crate::capability::ColorDepth::TrueColor,
+    )
+}
+
+/// Like [`render_node_to_lines`], but quantizes styles for `depth` so scrollback
+/// output obeys the same color ladder as live frames.
+pub fn render_node_to_lines_with_depth(
+    node: &mut Node,
+    is_tty: bool,
+    width: u16,
+    depth: crate::capability::ColorDepth,
+) -> io::Result<Vec<String>> {
+    use crate::capability::quantize_style;
     let rect = compute_layout(node, width, 0).map_err(io::Error::other)?;
     let height = rect.height.max(1);
     let mut surface = Surface::new(width, height);
@@ -710,14 +811,15 @@ pub fn render_node_to_lines(node: &mut Node, is_tty: bool, width: u16) -> io::Re
                     if cell.is_continuation {
                         continue;
                     }
-                    if cell.style != cur_style {
+                    let style = quantize_style(cell.style, depth);
+                    if style != cur_style {
                         if !cur_style.is_default() {
                             line_str.push_str("\x1b[0m");
                         }
-                        if !cell.style.is_default() {
-                            cell.style.write_sgr(&mut line_str);
+                        if !style.is_default() {
+                            style.write_sgr(&mut line_str);
                         }
-                        cur_style = cell.style;
+                        cur_style = style;
                     }
                     if cell.glyph.is_empty() {
                         line_str.push(' ');

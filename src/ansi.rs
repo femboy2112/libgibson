@@ -1,3 +1,4 @@
+use crate::capability::{quantize_style, ColorDepth};
 use crate::cell::{Color, Style};
 use crate::diff::{RowPatch, SurfaceDiff};
 use std::io::Write;
@@ -7,6 +8,9 @@ pub struct AnsiCompiler {
     pub cursor_x: u16,
     pub cursor_y: u16,
     pub current_style: Style,
+    /// Color quality used when emitting SGR codes. Centralized so application
+    /// code can express intent without knowing the terminal's color depth.
+    pub color_depth: ColorDepth,
 }
 
 impl AnsiCompiler {
@@ -15,6 +19,7 @@ impl AnsiCompiler {
             cursor_x: 0,
             cursor_y: 0,
             current_style: Style::default(),
+            color_depth: ColorDepth::TrueColor,
         }
     }
     pub fn reset_cursor(&mut self, x: u16, y: u16) {
@@ -69,8 +74,9 @@ impl AnsiCompiler {
                     continue;
                 }
 
-                if cell.style != self.current_style {
-                    self.apply_style(cell.style, out);
+                let target = quantize_style(cell.style, self.color_depth);
+                if target != self.current_style {
+                    self.apply_style(target, out);
                 }
 
                 if cell.glyph.is_empty() {

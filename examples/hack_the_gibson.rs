@@ -14,9 +14,9 @@ use gibson::context::Context;
 use gibson::input::{Event, KeyCode, KeyModifiers, TextInputState};
 use gibson::node::{Node, WrapMode};
 use gibson::show;
-use gibson::{BorderType, ThemeStyles};
+use gibson::{BorderType, ThemeStyles, TimeSource};
 use std::env;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 // ---------------------------------------------------------------------------
 // Neon effects
@@ -126,7 +126,7 @@ const TACTICAL: &[&str] = &[
 ];
 
 struct App {
-    started: Instant,
+    time: TimeSource,
     fx: Fx,
     phase: Phase,
     breach: f32,
@@ -166,9 +166,14 @@ fn select_theme(light: bool, dark: bool, no_color: bool) -> Theme {
 }
 
 impl App {
-    fn new(fx: Fx) -> Self {
+    fn new(fx: Fx, deterministic: bool) -> Self {
+        let time = if deterministic {
+            TimeSource::fixed(Duration::from_millis(16))
+        } else {
+            TimeSource::real()
+        };
         Self {
-            started: Instant::now(),
+            time,
             fx,
             phase: Phase::Handshake,
             breach: 0.0,
@@ -188,14 +193,16 @@ impl App {
     }
 
     fn elapsed(&self) -> f32 {
-        self.started.elapsed().as_secs_f32()
+        self.time.now().as_secs_f32()
     }
 
     fn sample(&mut self, ctx: &mut Context) {
         self.frames += 1;
-        let total = ctx.stats().frame_bytes;
-        let delta = total.saturating_sub(self.last_total) as f32;
-        self.last_total = total;
+        // Renderer frames, not application loop iterations, drive the wire-byte
+        // throughput graph.
+        let stats = ctx.stats();
+        let delta = stats.frame_bytes.saturating_sub(self.last_total) as f32;
+        self.last_total = stats.frame_bytes;
         self.throughput.push(delta);
         if self.throughput.len() > 48 {
             self.throughput.remove(0);
@@ -469,7 +476,23 @@ fn build_root(app: &App, ctx: &Context) -> Node {
 
     root = root.child(panel_transfer(app, cols));
     root = root.child(bottom_panel(app, cols));
-    root
+
+    // CRT-ish scanline overlay: a dim band sweeps vertically without touching
+    // the layout beneath it (style-only composite). Cheap: only a few rows.
+    let band = (app.elapsed() * 0.9) as u16;
+    let y = (band % (rows.max(1))) as f32;
+    Node::stack()
+        .percent_width(100.0)
+        .percent_height(100.0)
+        .child(root)
+        .child(
+            Node::col()
+                .percent_width(100.0)
+                .percent_height(100.0)
+                .padding_top(y)
+                .child(Node::dim().percent_width(100.0).height(1.0))
+                .child(Node::dim().percent_width(100.0).height(2.0)),
+        )
 }
 
 fn banner(app: &App, cols: u16, wide: bool) -> Node {
@@ -589,8 +612,36 @@ fn panel_garbage(app: &App, width: u16) -> Node {
 fn panel_davinci(app: &App, width: u16) -> Node {
     let fx = &app.fx;
     let inner = width.saturating_sub(4) as usize;
-    let scan_cols = inner.clamp(6, 20);
-    let glyphs = ["·", "░", "▒", "▓", "█"];
+    let scan_cols = inner.clamp(6, 20) as u16;
+
+    // Sub-cell Braille instrument: a moving worm plus a sweeping scanner beam.
+    let rows = 4u16;
+    let mut worm = gibson::BrailleCanvas::new(scan_cols, rows);
+    let mut beam = gibson::BrailleCanvas::new(scan_cols, rows);
+    let pw = worm.pixel_width() as f32;
+    let ph = worm.pixel_height() as f32;
+    let t = app.elapsed();
+    let mut prev: Option<(i32, i32)> = None;
+    let mut x = 0i32;
+    while x < worm.pixel_width() as i32 {
+        let fx1 = x as f32 / pw;
+        let y = (ph * 0.5
+            + (fx1 * 9.0 + t * 2.2).sin() * (ph * 0.32)
+            + (fx1 * 23.0 + t * 1.1).sin() * (ph * 0.08))
+            .clamp(0.0, ph - 1.0);
+        let yi = y.round() as i32;
+        if let Some((px, py)) = prev {
+            worm.line(px, py, x, yi);
+        } else {
+            worm.set(x, yi);
+        }
+        prev = Some((x, yi));
+        x += 1;
+    }
+    // Scanner beam sweeps across the instrument.
+    let beam_x = ((app.scan / 100.0) * (worm.pixel_width().saturating_sub(1) as f32)) as i32;
+    beam.line(beam_x, 0, beam_x, worm.pixel_height() as i32 - 1);
+
     let mut rt = RichText::new().line(
         Line::new()
             .span(Span::styled("SCAN ", fx.st.muted))
@@ -602,21 +653,29 @@ fn panel_davinci(app: &App, width: u16) -> Node {
             .span(Span::styled("  sweep ", fx.st.muted))
             .span(Span::styled(format!("{:>3.0}%", app.scan), fx.st.text)),
     );
-    for r in 0..3usize {
+
+    for cy in 0..rows {
         let mut line = Line::new();
-        for c in 0..scan_cols {
-            let phase = ((c as f32 * 12.0 + r as f32 * 30.0 + app.scan * 3.0) % 100.0) / 100.0;
-            let idx = (phase * 4.0).round() as usize;
-            let style = if fx.color {
-                let color = fx
-                    .green
-                    .lerp(fx.magenta, (r as f32 / 3.0).clamp(0.0, 1.0))
-                    .lerp(Color::Rgb(255, 255, 255), (phase * 0.4).clamp(0.0, 1.0));
-                Style::new().fg(color)
+        for cx in 0..scan_cols {
+            let b = beam.glyph_at(cx, cy);
+            let w = worm.glyph_at(cx, cy);
+            if let Some(ch) = b {
+                let style = if fx.color {
+                    Style::new().fg(fx.magenta)
+                } else {
+                    Style::default()
+                };
+                line = line.span(Span::styled(ch.to_string(), style));
+            } else if let Some(ch) = w {
+                let style = if fx.color {
+                    Style::new().fg(fx.green)
+                } else {
+                    Style::default()
+                };
+                line = line.span(Span::styled(ch.to_string(), style));
             } else {
-                Style::default()
-            };
-            line = line.span(Span::styled(glyphs[idx.min(4)], style));
+                line = line.span(Span::raw(" "));
+            }
         }
         rt = rt.line(line);
     }
@@ -776,9 +835,14 @@ fn bottom_panel(app: &App, width: u16) -> Node {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
-    let auto = args
+    let deterministic = args.iter().any(|a| a == "--deterministic");
+    let freeze_at: Option<usize> = args
         .iter()
-        .any(|a| a == "--auto" || a == "--scripted" || a == "--headless");
+        .find_map(|a| a.strip_prefix("--freeze-at=").and_then(|v| v.parse().ok()));
+    let auto = deterministic
+        || args
+            .iter()
+            .any(|a| a == "--auto" || a == "--scripted" || a == "--headless");
     let inline = args.iter().any(|a| a == "--inline");
     let light = args.iter().any(|a| a == "--light");
     let dark = args.iter().any(|a| a == "--dark");
@@ -793,18 +857,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ctx.set_max_fps(if auto { 240 } else { 60 });
     ctx.set_animation_interval(Duration::from_millis(if auto { 8 } else { 45 }));
 
-    let mut app = App::new(fx);
+    let mut app = App::new(fx, deterministic);
 
     let mut iterations = 0usize;
     let cap = if auto { 8000 } else { usize::MAX };
     while !app.done && iterations < cap {
         iterations += 1;
-        app.sample(&mut ctx);
-        if auto {
+        let frozen = deterministic && freeze_at.is_some_and(|n| iterations > n);
+        if !frozen {
+            app.time.advance();
+            app.sample(&mut ctx);
             app.animate();
-            app.auto_step();
-        } else {
-            app.animate();
+            if auto {
+                app.auto_step();
+            }
         }
 
         ctx.set_root(build_root(&app, &ctx));
@@ -816,6 +882,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if app.handle(&event) {
                 ctx.request_render();
             }
+        }
+        if frozen {
+            std::thread::sleep(Duration::from_millis(30));
         }
     }
 
