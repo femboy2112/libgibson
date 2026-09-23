@@ -173,3 +173,48 @@ fn hack_the_gibson_compact_structure() {
     assert_fits(&screen, 56);
     assert!(!String::from_utf8_lossy(&raw).contains("\u{1b}[38;2;"));
 }
+
+#[test]
+fn fx_lab_wireframe_scene_structure() {
+    let (screen, raw, _) = capture(
+        "fx_lab",
+        &[
+            "--no-color",
+            "--deterministic",
+            "--freeze-at=30",
+            "--scene=5",
+        ],
+        100,
+        28,
+        1.6,
+    );
+    if std::env::var("DUMP_SCREEN").is_ok() {
+        println!("\n--- fx_lab scene 4 @100x28 ---\n{screen}\n");
+    }
+    assert!(screen.contains("FX LAB"), "fx_lab header missing");
+    assert!(screen.contains("Wireframe torus"), "scene name missing");
+    assert_fits(&screen, 100);
+    assert!(!String::from_utf8_lossy(&raw).contains("\u{1b}[38;2;"));
+}
+
+#[test]
+fn fx_lab_plasma_scene_structure() {
+    let (screen, _raw, _) = capture(
+        "fx_lab",
+        &[
+            "--deterministic",
+            "--freeze-at=40",
+            "--scene=2",
+            "--truecolor",
+        ],
+        100,
+        28,
+        1.6,
+    );
+    if std::env::var("DUMP_SCREEN").is_ok() {
+        println!("\n--- fx_lab scene 2 (plasma) @100x28 ---\n{screen}\n");
+    }
+    assert!(screen.contains("FX LAB"));
+    assert!(screen.contains("HalfBlock plasma"));
+    assert_fits(&screen, 100);
+}
