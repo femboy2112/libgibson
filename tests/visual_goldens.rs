@@ -286,6 +286,24 @@ const CASES: &[Case] = &[
         secs: 1.2,
         extra: &["--scene=17"],
     },
+    Case {
+        demo: "fx_lab",
+        label: "scene_algebra",
+        cols: 100,
+        rows: 28,
+        freeze: 30,
+        secs: 1.2,
+        extra: &["--scene=18"],
+    },
+    Case {
+        demo: "fx_lab",
+        label: "story_graph",
+        cols: 100,
+        rows: 28,
+        freeze: 90,
+        secs: 1.2,
+        extra: &["--scene=19"],
+    },
 ];
 
 fn example_path(name: &str) -> PathBuf {

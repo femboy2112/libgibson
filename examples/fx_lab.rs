@@ -16,6 +16,8 @@ use gibson::ansi::AnsiCompiler;
 use gibson::cell::{Color, Line, RichText, Span, Style, Theme, ThemeStyles};
 use gibson::diff::compute_diff;
 use gibson::node::{Node, WrapMode};
+use gibson::scene::{Effect, Presentation, Scene, SceneEntity, SceneTarget};
+use gibson::story::{Beat, Condition, Story, StoryAction, StoryEvent};
 use gibson::surface::{BorderType, Rect, Surface};
 use gibson::{
     BrailleCanvas, Context, Mesh, Projector, TimeSource, Transform3, Vec3, ViewportState,
@@ -39,6 +41,8 @@ const SCENES: &[&str] = &[
     "Gibson data city",
     "Packet routes",
     "Water particles",
+    "Scene algebra: sequence vs parallel",
+    "Story graph: branch & rejoin",
 ];
 
 struct Fx {
@@ -353,7 +357,9 @@ impl Lab {
             13 => mono_dither_scene(fx, inner_w, content_rows, self.t),
             14 => data_city_scene(fx, inner_w, content_rows, self.t),
             15 => packet_routes_scene(fx, inner_w, content_rows, self.t),
-            _ => water_particles_scene(fx, inner_w, content_rows, self.t),
+            16 => water_particles_scene(fx, inner_w, content_rows, self.t),
+            17 => scene_algebra_scene(fx, inner_w, content_rows, self.t),
+            _ => story_graph_scene(fx, inner_w, content_rows, self.t),
         }
     }
 
@@ -644,6 +650,142 @@ fn water_particles_scene(fx: &Fx, inner_w: u16, rows: u16, t: f32) -> Node {
             fx.st.muted,
         ))
         .child(Node::raster(canvas.to_surface(bright(fx))))
+}
+
+/// Scene algebra demo: one entity driven by `sequence` (composition), one by
+/// `parallel` (monoidal product). The entities are ordinary `Node`s; the effects
+/// only write presentation channels, and the result renders through the normal
+/// pipeline via the `Render : SCENE → UI` functor.
+fn scene_algebra_scene(fx: &Fx, inner_w: u16, rows: u16, t: f32) -> Node {
+    let w = inner_w.clamp(24, 100) as f32;
+    let h = rows.max(6) as f32;
+    let mut scene = Scene::new();
+    let seq = scene.add(SceneEntity::new(
+        "seq",
+        Node::text("◈", fx.st.accent).width(2.0).height(1.0),
+    ));
+    let par = scene.add(SceneEntity::new(
+        "par",
+        Node::text("◆", fx.st.warning).width(2.0).height(1.0),
+    ));
+
+    let period = Duration::from_millis(2400);
+    let half = Duration::from_millis(1200);
+    let seq_eff = Effect::sequence([
+        Effect::translate(SceneTarget::Id(seq), (2.0, 1.0), (w - 4.0, 1.0), half),
+        Effect::translate(
+            SceneTarget::Id(seq),
+            (w - 4.0, 1.0),
+            (w - 4.0, h - 2.0),
+            half,
+        ),
+    ]);
+    let par_eff = Effect::parallel([
+        Effect::translate(
+            SceneTarget::Id(par),
+            (2.0, h - 2.0),
+            (w - 4.0, h - 2.0),
+            period,
+        ),
+        Effect::reveal(SceneTarget::Id(par), 0.25, 1.0, period),
+    ]);
+
+    let local = (t % 2.4) / 2.4;
+    let local_dur = Duration::from_secs_f32(local * 2.4);
+    let mut p = Presentation::new();
+    seq_eff.eval(local_dur, &scene, &mut p);
+    par_eff.eval(local_dur, &scene, &mut p);
+    let overlay = scene.to_node(&p, w, h);
+
+    let caption = format!(
+        "sequence ◈ = (right ; down)   ·   parallel ◆ = (right ⊗ fade)   ·   phase {:.0}%",
+        local * 100.0
+    );
+    Node::col()
+        .child(Node::text(caption, fx.st.muted))
+        .child(overlay)
+}
+
+/// A small tactical StoryGraph used by the story-graph lab scene.
+fn lab_tactical_story() -> Story {
+    Story::new("grand-central")
+        .beat(
+            Beat::new("grand-central")
+                .transition(Condition::user("crew"), "crew")
+                .transition(Condition::user("pool"), "pool")
+                .after(Duration::from_millis(1400), "download"),
+        )
+        .beat(
+            Beat::new("pool")
+                .on_enter(StoryAction::set_bool("pool-distraction", true))
+                .after(Duration::ZERO, "download"),
+        )
+        .beat(
+            Beat::new("crew")
+                .on_enter(StoryAction::set_bool("crew-online", true))
+                .after(Duration::ZERO, "download"),
+        )
+        .beat(Beat::new("download").terminal())
+}
+
+/// Story-graph demo: replays a deterministic session in which the crew branch is
+/// chosen, then shows the live beat, facts and mounted bundles. Branch and rejoin
+/// are real story-graph transitions, not a `match` on a selection index.
+fn story_graph_scene(fx: &Fx, _inner_w: u16, rows: u16, t: f32) -> Node {
+    let story = lab_tactical_story();
+    let mut d = story.start();
+    let mut elapsed_ms: u64 = 0;
+    let mut chosen = false;
+    let cap_ms = ((t * 1000.0) as u64).min(8000);
+    while elapsed_ms < cap_ms && !d.is_finished() {
+        elapsed_ms += 16;
+        let evs: Vec<StoryEvent> = if elapsed_ms >= 900 && !chosen {
+            chosen = true;
+            vec![StoryEvent::user_selected("crew")]
+        } else {
+            Vec::new()
+        };
+        d.update(Duration::from_millis(16), &evs);
+    }
+
+    let mut rt = RichText::new();
+    rt = rt.line(Line::new().span(Span::styled(
+        format!(
+            "beat {}   ·   t {:.2}s",
+            d.current_beat(),
+            d.elapsed().as_secs_f32()
+        ),
+        fx.st.accent,
+    )));
+    rt = rt.line(Line::new().span(Span::styled(
+        "grand-central ─┬─ pool ─┐",
+        if d.current_beat() == "pool" || d.facts().bool("pool-distraction") {
+            fx.st.warning
+        } else {
+            fx.st.muted
+        },
+    )));
+    rt = rt.line(Line::new().span(Span::styled(
+        "               └─ crew ─┴─→ download",
+        if d.facts().bool("crew-online") || d.current_beat() == "crew" {
+            fx.st.success
+        } else {
+            fx.st.muted
+        },
+    )));
+    for (k, v) in d.facts().iter() {
+        rt = rt.line(Line::new().span(Span::styled(format!("fact {k} = {v:?}"), fx.st.muted)));
+    }
+    for m in d.mounted() {
+        rt = rt.line(Line::new().span(Span::styled(format!("mounted {m}"), fx.st.muted)));
+    }
+    rt = rt.line(Line::new().span(Span::styled(
+        format!("trace: {}", d.trace().beat_sequence().join(" > ")),
+        fx.st.text,
+    )));
+    let _ = rows;
+    Node::panel("STORY GRAPH", BorderType::Rounded, fx.st.border)
+        .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
 }
 
 fn apply_capability_flags(ctx: &mut Context, args: &[String]) {

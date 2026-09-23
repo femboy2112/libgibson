@@ -10,8 +10,10 @@
 //! failure and recovery) → permission → code review → completion summary. It
 //! never claims global numbers; all counts are demo-local.
 //!
-//! Modes: `--auto`/`--deterministic`, `--fullscreen`, and theme proofs
-//! `--light` `--dark` `--no-color`.
+//! Modes: `--auto`/`--deterministic`, `--fullscreen`, `--stage=<name>` for fast
+//! deterministic start states (`plan`, `permission`, `failure`, `prompt`,
+//! `rejected`, `cancelled`), `--debug-scene` for the story inspector, and theme
+//! proofs `--light` `--dark` `--no-color`.
 
 use gibson::cell::{Color, Line, RichText, Span, Style, Theme};
 use gibson::context::Context;
@@ -239,6 +241,8 @@ struct App {
     summary_committed: bool,
     /// True while a modal owns all keyboard input.
     modal_captured: bool,
+    /// Optional story inspector (`--debug-scene`).
+    debug_scene: bool,
 }
 
 fn select_theme(light: bool, dark: bool, no_color: bool) -> Theme {
@@ -284,6 +288,7 @@ impl App {
             code_cam: ViewportState::new(),
             summary_committed: false,
             modal_captured: false,
+            debug_scene: false,
         };
         if let Some(stage) = stage {
             app.apply_stage(stage);
@@ -1457,7 +1462,12 @@ fn panel_events(app: &App, width: u16) -> Node {
     let fx = &app.fx;
     let inner = width.saturating_sub(4) as usize;
     let mut rt = RichText::new();
-    if app.events.is_empty() {
+    if app.debug_scene {
+        // Optional story inspector: current beat, facts and time.
+        for line in app.director.debug_lines() {
+            rt = rt.line(Line::new().span(Span::styled(truncate(&line, inner), fx.st.accent)));
+        }
+    } else if app.events.is_empty() {
         rt = rt.line(Line::new().span(Span::styled("waiting for events…", fx.st.faint)));
     } else {
         for e in app.events.iter().rev().take(5).rev() {
@@ -1471,9 +1481,16 @@ fn panel_events(app: &App, width: u16) -> Node {
             rt = rt.line(line);
         }
     }
-    tpanel("EVENTS", fx.st.border)
-        .percent_width(100.0)
-        .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
+    tpanel(
+        if app.debug_scene {
+            "STORY INSPECTOR"
+        } else {
+            "EVENTS"
+        },
+        fx.st.border,
+    )
+    .percent_width(100.0)
+    .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
 }
 
 fn panel_footer(app: &App, width: u16) -> Node {
@@ -1583,6 +1600,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     apply_capability_flags(&mut ctx, &args, no_color);
 
     let mut app = App::new(fx, deterministic, debug, stage.as_deref());
+    app.debug_scene = args.iter().any(|a| a == "--debug-scene");
 
     // ACT 1 — real session open. In inline mode the header and the user request
     // are committed to genuine terminal scrollback, above the live foreground.
