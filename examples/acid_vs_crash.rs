@@ -1293,7 +1293,9 @@ impl Encounter {
                     .offset(width.saturating_sub(31) as f32, 2.0),
             );
         }
-        let headline = if width < 100 {
+        let headline = if let Some(outcome) = w.outcome {
+            format!("{} / TRACE {}%", outcome.as_str(), w.trace_confidence / 10)
+        } else if width < 100 {
             format!(
                 "CRASH / TRACE {}% / ACID → {}",
                 w.trace_confidence / 10,

@@ -27,10 +27,16 @@ struct PtyHarness {
     buf: Arc<Mutex<Vec<u8>>>,
     parser: vt100::Parser,
     processed: usize,
+    #[cfg(unix)]
+    initial_termios: Option<String>,
 }
 
 impl PtyHarness {
     fn spawn(cols: u16, rows: u16) -> Self {
+        Self::spawn_demo("resize_test_app", &[], cols, rows)
+    }
+
+    fn spawn_demo(name: &str, args: &[&str], cols: u16, rows: u16) -> Self {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -41,6 +47,8 @@ impl PtyHarness {
             })
             .expect("openpty");
 
+        #[cfg(unix)]
+        let initial_termios = pair.master.get_termios().map(|t| format!("{t:?}"));
         let exe_path = std::env::current_exe()
             .expect("current_exe")
             .parent()
@@ -48,17 +56,20 @@ impl PtyHarness {
             .parent()
             .expect("target dir")
             .join("examples")
-            .join("resize_test_app");
+            .join(name);
 
         if !exe_path.exists() {
             let status = std::process::Command::new("cargo")
-                .args(["build", "--example", "resize_test_app"])
+                .args(["build", "--example", name])
                 .status()
                 .expect("build resize_test_app");
             assert!(status.success());
         }
 
         let mut cmd = CommandBuilder::new(&exe_path);
+        for arg in args {
+            cmd.arg(arg);
+        }
         cmd.env("TERM", "xterm-256color");
         let child = pair.slave.spawn_command(cmd).expect("spawn");
         let killer = child.clone_killer();
@@ -85,6 +96,8 @@ impl PtyHarness {
             buf,
             parser: vt100::Parser::new(rows, cols, 8000),
             processed: 0,
+            #[cfg(unix)]
+            initial_termios,
         }
     }
 
@@ -94,6 +107,7 @@ impl PtyHarness {
     }
 
     fn resize(&mut self, cols: u16, rows: u16) {
+        self.pump();
         self.master
             .resize(PtySize {
                 rows,
@@ -155,7 +169,7 @@ impl PtyHarness {
         let start = Instant::now();
         loop {
             match self.child.try_wait() {
-                Ok(Some(_)) => return true,
+                Ok(Some(status)) => return status.success(),
                 Ok(None) => {}
                 Err(_) => return false,
             }
@@ -293,4 +307,142 @@ fn test_pty_resize_torture_with_assertions() {
         live_header_count <= 4,
         "suspicious duplicated live region ({live_header_count} occurrences)"
     );
+}
+
+impl Drop for PtyHarness {
+    fn drop(&mut self) {
+        let _ = self.killer.kill();
+    }
+}
+
+#[test]
+fn acid_graphical_and_feedback_resize_torture_restores_terminal() {
+    // Actual moving rasters, not only frozen snapshots. Reassembly uses auto
+    // cinematography; forcing cyber would deliberately prevent return to UI.
+    let cases: [(&str, &[&str], &str); 4] = [
+        (
+            "acid_vs_crash",
+            &[
+                "--manual",
+                "--visual=cyber",
+                "--stage=first-breach",
+                "--deterministic",
+                "--color=truecolor",
+            ],
+            "crash >",
+        ),
+        (
+            "acid_vs_crash",
+            &[
+                "--manual",
+                "--visual=cyber",
+                "--stage=takeover",
+                "--deterministic",
+                "--color=truecolor",
+            ],
+            "crash >",
+        ),
+        (
+            "acid_vs_crash",
+            &[
+                "--manual",
+                "--visual=auto",
+                "--stage=crash-win",
+                "--deterministic",
+                "--speed=20",
+                "--color=truecolor",
+            ],
+            "crash >",
+        ),
+        (
+            "fx_lab",
+            &["--deterministic", "--scene=feedback", "--truecolor"],
+            "FEEDBACK TRAILS",
+        ),
+    ];
+    for (name, args, marker) in cases {
+        let mut h = PtyHarness::spawn_demo(name, args, 120, 32);
+        assert!(
+            h.wait_screen(marker, Duration::from_secs(3)),
+            "initial graphical frame missing: {}",
+            h.screen()
+        );
+        let mut typed = String::new();
+        for (cols, rows) in [(56, 24), (80, 24), (160, 40), (120, 32)] {
+            let before = h.raw().len();
+            h.resize(cols, rows);
+            // Let SIGWINCH reach the event reader before sending the next key;
+            // readiness below still requires actual reconstructed input.
+            std::thread::sleep(Duration::from_millis(60));
+            if name == "acid_vs_crash" {
+                h.send("r");
+                typed.push('r');
+                let input = format!("crash > {typed}");
+                assert!(
+                    h.wait_screen(&input, Duration::from_secs(2)),
+                    "control input lost after {cols}x{rows}: {}",
+                    h.screen()
+                );
+            } else {
+                // Pump until bytes from a post-resize frame arrive. The scene's
+                // readable header and RGB body must survive each actual resize.
+                let start = Instant::now();
+                while h.raw().len() <= before && start.elapsed() < Duration::from_secs(2) {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                assert!(
+                    h.wait_screen(marker, Duration::from_secs(2)),
+                    "feedback header lost at {cols}x{rows}: {}",
+                    h.screen()
+                );
+            }
+            assert!(h.raw().len() > before, "resize emitted no new frame");
+            let screen = h.screen();
+            assert!(
+                screen.contains(marker),
+                "semantic island lost after resize: {screen}"
+            );
+            assert!(screen.lines().count() <= usize::from(rows));
+        }
+        if args.contains(&"--stage=crash-win") {
+            assert!(
+                h.wait_screen("LOCAL FABRIC", Duration::from_secs(2)),
+                "ending never reconstructed the machine UI: {}",
+                h.screen()
+            );
+        }
+        let raw = String::from_utf8_lossy(&h.raw()).into_owned();
+        assert!(
+            raw.contains('▀') && raw.contains("38;2;") && raw.contains("48;2;"),
+            "RGB raster path not exercised for {name} {args:?}"
+        );
+        assert!(!raw.contains("\x1b_G") && !raw.contains("\x1bP") && !raw.contains("1337;File="));
+        h.send("\x03");
+        assert!(
+            h.wait_exit(Duration::from_secs(2)),
+            "Ctrl-C failed after graphical resizing"
+        );
+        assert!(
+            h.wait_raw("\x1b[?1049l", Duration::from_secs(1)),
+            "alternate screen not restored"
+        );
+        assert!(
+            h.wait_raw(
+                "\x1b[0m\x1b[?2026l\x1b[?7h\x1b[?25h",
+                Duration::from_secs(1)
+            ),
+            "terminal cleanup missing"
+        );
+        h.pump();
+        assert!(!h.parser.screen().alternate_screen());
+        assert!(!h.parser.screen().hide_cursor());
+        #[cfg(unix)]
+        if let Some(initial) = &h.initial_termios {
+            assert_eq!(
+                h.master.get_termios().map(|t| format!("{t:?}")),
+                Some(initial.clone()),
+                "raw terminal state not restored"
+            );
+        }
+    }
 }

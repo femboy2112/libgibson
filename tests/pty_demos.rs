@@ -56,7 +56,10 @@ impl Session {
         #[cfg(unix)]
         let initial_termios = pair.master.get_termios().map(|t| format!("{t:?}"));
         let mut cmd = CommandBuilder::new(example_path(demo));
-        if !args.iter().any(|a| a.starts_with("--color=")) {
+        if !args.iter().any(|a| {
+            a.starts_with("--color=")
+                || matches!(*a, "--truecolor" | "--ansi256" | "--ansi16" | "--mono")
+        }) {
             cmd.arg("--no-color");
         }
         for a in args {
@@ -451,6 +454,7 @@ fn acid_trace_changes_visible_world_and_planner_during_first_contest() {
     let mut s = Session::spawn(
         "acid_vs_crash",
         &[
+            "--visual=flat",
             "--manual",
             "--stage=route-contested",
             "--deterministic",
@@ -484,6 +488,7 @@ fn acid_isolation_disconnects_route_and_causes_valid_pivot() {
     let mut s = Session::spawn(
         "acid_vs_crash",
         &[
+            "--visual=flat",
             "--manual",
             "--stage=first-breach",
             "--deterministic",
@@ -520,6 +525,7 @@ fn acid_decoy_draws_remote_lease_then_opponent_recognizes_mirror() {
     let mut s = Session::spawn(
         "acid_vs_crash",
         &[
+            "--visual=flat",
             "--manual",
             "--stage=first-breach",
             "--deterministic",
@@ -558,6 +564,7 @@ fn acid_hard_isolation_costs_visible_telemetry_and_available_actions() {
     let mut s = Session::spawn(
         "acid_vs_crash",
         &[
+            "--visual=flat",
             "--manual",
             "--stage=display-intrusion",
             "--deterministic",
@@ -591,6 +598,7 @@ fn acid_final_cut_link_resolves_and_replays_before_restoring_terminal() {
     let mut s = Session::spawn(
         "acid_vs_crash",
         &[
+            "--visual=flat",
             "--manual",
             "--stage=climax",
             "--deterministic",
@@ -625,7 +633,12 @@ fn acid_final_cut_link_resolves_and_replays_before_restoring_terminal() {
 fn acid_default_crash_fights_without_input_and_accepts_intervention() {
     let mut s = Session::spawn(
         "acid_vs_crash",
-        &["--stage=route-contested", "--deterministic", "--speed=2"],
+        &[
+            "--visual=flat",
+            "--stage=route-contested",
+            "--deterministic",
+            "--speed=2",
+        ],
         120,
         32,
     );
@@ -658,7 +671,12 @@ fn acid_default_crash_fights_without_input_and_accepts_intervention() {
 fn acid_default_stays_for_aftermath_and_world_replay() {
     let mut s = Session::spawn(
         "acid_vs_crash",
-        &["--stage=climax", "--deterministic", "--speed=20"],
+        &[
+            "--visual=flat",
+            "--stage=climax",
+            "--deterministic",
+            "--speed=20",
+        ],
         120,
         32,
     );
@@ -687,7 +705,7 @@ fn acid_default_stays_for_aftermath_and_world_replay() {
 fn acid_auto_completes_entire_story_without_input() {
     let mut s = Session::spawn(
         "acid_vs_crash",
-        &["--auto", "--deterministic", "--speed=20"],
+        &["--visual=flat", "--auto", "--deterministic", "--speed=20"],
         120,
         32,
     );
@@ -704,6 +722,7 @@ fn acid_ctrl_c_restores_terminal_during_display_takeover() {
     let mut s = Session::spawn(
         "acid_vs_crash",
         &[
+            "--visual=flat",
             "--manual",
             "--stage=takeover",
             "--deterministic",
@@ -731,6 +750,7 @@ fn acid_responsive_compositions_survive_all_color_capabilities() {
         let mut s = Session::spawn(
             "acid_vs_crash",
             &[
+                "--visual=flat",
                 "--manual",
                 "--stage=route-contested",
                 "--deterministic",
@@ -772,4 +792,127 @@ fn acid_responsive_compositions_survive_all_color_capabilities() {
         s.type_str("exit\r");
         s.assert_clean_exit(Duration::from_secs(2));
     }
+}
+
+fn assert_unicode_rgb_graphics(raw: &str) {
+    assert!(raw.contains('▀'), "half-block RGB realization absent");
+    assert!(
+        raw.contains("38;2;") && raw.contains("48;2;"),
+        "two RGB subpixels per cell absent"
+    );
+    assert!(!raw.contains("\x1b_G"), "Kitty graphics protocol forbidden");
+    assert!(
+        !raw.contains("\x1bP"),
+        "Sixel/DCS graphics protocol forbidden"
+    );
+    assert!(
+        !raw.contains("1337;File="),
+        "inline image protocol forbidden"
+    );
+}
+
+#[test]
+fn acid_cyber_trace_decoy_and_full_visual_replay_use_real_pty_input() {
+    let mut s = Session::spawn(
+        "acid_vs_crash",
+        &[
+            "--manual",
+            "--visual=cyber",
+            "--stage=first-breach",
+            "--deterministic",
+            "--freeze-at=4",
+            "--color=truecolor",
+        ],
+        120,
+        32,
+    );
+    let ready = s.wait_until(Duration::from_secs(3), |screen| screen.contains("crash >"));
+    assert!(
+        ready.contains("crash >"),
+        "cyber control island absent: {ready}"
+    );
+    assert_unicode_rgb_graphics(&s.raw_string());
+    s.type_str("trace\r");
+    let traced = s.wait_until(Duration::from_secs(2), |screen| {
+        screen.contains("TRACE 28%")
+    });
+    assert!(
+        traced.contains("TRACE 28%"),
+        "cyber trace action not applied: {traced}"
+    );
+    s.type_str("decoy\r");
+    let decoy = s.wait_until(Duration::from_secs(2), |screen| {
+        screen.contains("mirror attached")
+    });
+    assert!(
+        decoy.contains("mirror attached"),
+        "cyber decoy action not applied: {decoy}"
+    );
+    assert!(
+        decoy.contains("DECOY"),
+        "semantic alternate target absent: {decoy}"
+    );
+    s.type_str("replay\r");
+    let replay = s.wait_until(Duration::from_secs(2), |screen| {
+        screen.contains("REPLAY VERIFIED")
+    });
+    assert!(
+        replay.contains("REPLAY VERIFIED"),
+        "visual/world replay failed: {replay}"
+    );
+    s.write(b"\x03");
+    s.assert_clean_exit(Duration::from_secs(2));
+}
+
+#[test]
+fn acid_cyber_takeover_keeps_final_agency_and_restores_terminal() {
+    let mut s = Session::spawn(
+        "acid_vs_crash",
+        &[
+            "--manual",
+            "--visual=cyber",
+            "--stage=takeover",
+            "--deterministic",
+            "--freeze-at=2",
+            "--color=truecolor",
+        ],
+        80,
+        24,
+    );
+    let screen = s.wait_until(Duration::from_secs(3), |screen| screen.contains("crash >"));
+    assert!(
+        screen.contains("CUT LINK") && screen.contains("crash >"),
+        "final agency lost in graphical takeover: {screen}"
+    );
+    assert_unicode_rgb_graphics(&s.raw_string());
+    s.type_str("cut link\r");
+    let ending = s.wait_until(Duration::from_secs(2), |screen| {
+        screen.contains("CRASH CONTAINS")
+    });
+    assert!(
+        ending.contains("CRASH CONTAINS"),
+        "graphical cut did not resolve: {ending}"
+    );
+    s.write(b"\x03");
+    s.assert_clean_exit(Duration::from_secs(2));
+}
+
+#[test]
+fn fx_lab_deterministic_filled_3d_accepts_ctrl_c() {
+    let mut s = Session::spawn(
+        "fx_lab",
+        &["--deterministic", "--scene=filled-3d", "--truecolor"],
+        120,
+        32,
+    );
+    let screen = s.wait_until(Duration::from_secs(3), |screen| {
+        screen.contains("FILLED 3D") && screen.contains('▀')
+    });
+    assert!(
+        screen.contains("FILLED 3D"),
+        "filled scene absent: {screen}"
+    );
+    assert_unicode_rgb_graphics(&s.raw_string());
+    s.write(b"\x03");
+    s.assert_clean_exit(Duration::from_secs(2));
 }
