@@ -16,6 +16,7 @@ pub mod node;
 pub mod painter;
 pub mod particles;
 pub mod renderer;
+pub mod replication;
 pub mod scene;
 pub mod scheduler;
 pub mod session;
@@ -51,6 +52,7 @@ pub use node::{
 pub use painter::{paint, PaintContext};
 pub use particles::{Particle, ParticleSystem, Rng};
 pub use renderer::{AnchorState, InsertStrategy, RenderMode, Renderer};
+pub use replication::Replication;
 pub use scene::{
     Channel, Easing, Effect, EffectBundle, Presentation, ResolvedEntity, Scene, SceneEntity,
     SceneId, SceneTarget, TagId,

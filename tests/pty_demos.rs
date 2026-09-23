@@ -195,6 +195,56 @@ fn hack_shell_commands_trigger_real_effects() {
 }
 
 #[test]
+fn hack_rabbit_replicates_and_cookie_neutralizes_it() {
+    let mut s = Session::spawn("hack_the_gibson", &["--act=shell"], 110, 32);
+    s.wait_until(Duration::from_secs(3), |sc| sc.contains("ROOT SHELL"));
+
+    // Rabbit: a real replication graph, with a truthful bounded label.
+    s.type_str("rabbit");
+    s.write(b"\r");
+    let screen = s.wait_until(Duration::from_secs(3), |sc| {
+        sc.contains("RABBIT REPLICATION")
+    });
+    assert!(
+        screen.contains("RABBIT REPLICATION"),
+        "rabbit did not mount a replication entity: {screen}"
+    );
+
+    // Cookie: neutralize that same entity (collapse), not a generic burst.
+    s.type_str("cookie");
+    s.write(b"\r");
+    let screen = s.wait_until(Duration::from_secs(3), |sc| {
+        sc.contains("NEUTRALIZED") || sc.contains("collapsing")
+    });
+    assert!(
+        screen.contains("NEUTRALIZED") || screen.contains("collapsing"),
+        "cookie did not neutralize the rabbit: {screen}"
+    );
+
+    s.type_str("exit");
+    s.write(b"\r");
+    s.shutdown();
+}
+
+#[test]
+fn hack_tactical_choices_have_local_consequences() {
+    // Select option 2 (Da Vinci) and confirm: the directive must report the
+    // branch-specific consequence before reconverging on Download.
+    let mut s = Session::spawn("hack_the_gibson", &["--act=tactical"], 110, 32);
+    s.wait_until(Duration::from_secs(3), |sc| sc.contains("TACTICAL"));
+    s.write(b"\x1b[B"); // Down → Da Vinci
+    s.write(b"\r");
+    let screen = s.wait_until(Duration::from_secs(3), |sc| {
+        sc.contains("frozen") || sc.contains("quarantine")
+    });
+    assert!(
+        screen.contains("frozen") || screen.contains("quarantine"),
+        "Da Vinci branch had no local consequence: {screen}"
+    );
+    s.shutdown();
+}
+
+#[test]
 fn hack_tactical_selector_commits_a_directive() {
     let mut s = Session::spawn("hack_the_gibson", &["--act=tactical"], 110, 30);
     s.wait_until(Duration::from_secs(3), |sc| sc.contains("TACTICAL"));

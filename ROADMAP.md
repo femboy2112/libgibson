@@ -13,6 +13,43 @@ This document outlines completed work and the planned future milestones for LibG
 
 ---
 
+## Scene Algebra & Story Director Round — IMPLEMENTED (EXPERIMENTAL) + TESTED
+
+This round stops hand-wiring visual effects to application state by introducing a
+small deterministic Scene Algebra and Story Director.
+
+- [x] **Bounded 2D line clipping** (Liang–Barsky) before Bresenham, in both
+      canvases: huge finite / near-`i32`-extreme endpoints can no longer cause
+      magnitude-proportional walks or overflow. Hostile clipping regression tests.
+- [x] **Honest damage metrics**: `exact_changed_cell_count` (true semantic delta)
+      alongside `affected_cell_count` (cells *addressed* by update semantics, may
+      exceed the live area when rows are removed). Docs corrected.
+- [x] **Projector parameter validation**: `Projector::new`/`is_valid` reject
+      pathological parameters; no NaN reaches raster math.
+- [x] **Scene Algebra** (`src/scene.rs`): `Scene`/`SceneEntity`/`SceneId`/`TagId`,
+      `Effect` with `identity`, `sequence` (composition) and `parallel` (monoidal
+      product), `Presentation`, `EffectBundle`, and the `Render : SCENE → UI`
+      functor (`Scene::to_node`). Effects write presentation channels; they never
+      mutate `Node`s.
+- [x] **Story Director** (`src/story.rs`): `Facts`, `StoryEvent`, `Beat`,
+      `Condition`, `StoryAction`, `StoryDirector`, `StoryTrace` + deterministic
+      `Story::replay`. Branch/rejoin, mounted bundles, semantic (persistent) facts.
+- [x] **Real replication effect** (`src/replication.rs`): bounded deterministic
+      branching graph with freeze/neutralize; rabbit/cookie in the demo are a real
+      entity, not a generic particle burst.
+- [x] **`polished_agent` migration**: story-directed beats, permission *before*
+      mutation, truthful approve/reject/cancel outcomes, focus actually routes
+      input, overlays animated through Scene effects, `--stage=` fast starts.
+- [x] **`hack_the_gibson` partial migration**: tactical branch via `StoryDirector`,
+      Plague as persistent semantic state, rabbit/cookie real effect, shell
+      commands mutate semantic scene state. The act timeline remains `Phase`-based.
+- [x] **Docs truth pass** incl. a new DESIGN §37.
+
+Integration tests: `tests/scene_algebra.rs` (functor through the renderer, bounded
+damage, associativity, branch/rejoin, replay). Total: **346 tests**.
+
+---
+
 ## Phase 1: Core Engine & Minimal Vertical Slice — IMPLEMENTED + TESTED
 
 - [x] Clean-room cell framebuffer architecture

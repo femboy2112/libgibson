@@ -14,9 +14,10 @@ use gibson::context::Context;
 use gibson::input::{Event, KeyCode, KeyModifiers, TextInputState};
 use gibson::node::{Node, WrapMode};
 use gibson::show;
+use gibson::story::{Beat, Condition, Story, StoryAction, StoryDirector, StoryEvent};
 use gibson::{
-    BorderType, BrailleCanvas, Mesh, ParticleSystem, Projector, ThemeStyles, TimeSource,
-    Transform3, Vec3,
+    BorderType, BrailleCanvas, Mesh, ParticleSystem, Projector, Replication, ThemeStyles,
+    TimeSource, Transform3, Vec3,
 };
 use std::collections::HashMap;
 use std::env;
@@ -153,6 +154,43 @@ const TACTICAL: &[&str] = &[
     "🕶  Rollerblade away before Agent Gill arrives",
 ];
 
+/// The tactical choice as a free category: each arrow sets local facts, and all
+/// arrows reconverge on the Download beat. No combinatorial state explosion.
+fn tactical_story() -> Story {
+    Story::new("tactical")
+        .beat(
+            Beat::new("tactical")
+                .transition(Condition::user("pool"), "pool")
+                .transition(Condition::user("davinci"), "davinci")
+                .transition(Condition::user("crew"), "crew")
+                .transition(Condition::user("skate"), "skate")
+                .after(Duration::from_secs(30), "download"),
+        )
+        .beat(
+            Beat::new("pool")
+                .on_enter(StoryAction::set_bool("pool-distraction", true))
+                .after(Duration::ZERO, "download"),
+        )
+        .beat(
+            Beat::new("davinci")
+                .on_enter(StoryAction::set_bool("worm-frozen", true))
+                .on_enter(StoryAction::set_bool("deadline-slow", true))
+                .after(Duration::ZERO, "download"),
+        )
+        .beat(
+            Beat::new("crew")
+                .on_enter(StoryAction::set_bool("packet-boost", true))
+                .on_enter(StoryAction::set_bool("crew-online", true))
+                .after(Duration::ZERO, "download"),
+        )
+        .beat(
+            Beat::new("skate")
+                .on_enter(StoryAction::set_number("camera-escape", 1.0))
+                .after(Duration::ZERO, "download"),
+        )
+        .beat(Beat::new("download").terminal())
+}
+
 /// Crew nodes for the Grand Central assault; each has a subsystem target.
 const CREW: &[(&str, &str, f32)] = &[
     ("CRASH", "gibson-core", 0.92),
@@ -221,13 +259,27 @@ struct App {
     broadcast_frames: u32,
     pool_frames: u32,
     curtain_frames: u32,
-    plague_frames: u32,
-    rabbit_frames: u32,
+    /// Semantic presence: the Plague is active from its introduction until it is
+    /// explicitly defeated. Rendering attaches to this fact, not to a timer.
+    plague_active: bool,
+    /// Short entrance flare only (never the source of truth for presence).
+    plague_pulse: u32,
+    /// Real replication graph (the "rabbit" effect) and its neutralization.
+    rabbit: Replication,
     pool_granted: bool,
     crew_joined: usize,
     city_angle: f32,
     /// Elapsed time when the current act began (deterministic under FixedStepClock).
     phase_start: f32,
+
+    // Tactical-choice consequences (local facts; all reconverge on Download).
+    pool_distraction: bool,
+    worm_frozen: bool,
+    deadline_slow: bool,
+    packet_boost: bool,
+    camera_escape: f32,
+    /// Tactical branch selection as a real StoryGraph (branch, then rejoin).
+    tactical: StoryDirector,
 
     // FX state
     particles: ParticleSystem,
@@ -318,12 +370,19 @@ impl App {
             broadcast_frames: 0,
             pool_frames: 0,
             curtain_frames: 0,
-            plague_frames: 0,
-            rabbit_frames: 0,
+            plague_active: false,
+            plague_pulse: 0,
+            rabbit: Replication::new(5, 63),
             pool_granted: false,
             crew_joined: 0,
             city_angle: 0.0,
             phase_start: 0.0,
+            pool_distraction: false,
+            worm_frozen: false,
+            deadline_slow: false,
+            packet_boost: false,
+            camera_escape: 0.0,
+            tactical: tactical_story().start(),
             particles: ParticleSystem::new(0x9E37_79B9),
             damage: HashMap::new(),
             glitch_frames: 0,
@@ -398,7 +457,8 @@ impl App {
         }
         self.glitch_frames = self.glitch_frames.saturating_sub(1);
         self.planet_frames = self.planet_frames.saturating_sub(1);
-        self.rabbit_frames = self.rabbit_frames.saturating_sub(1);
+        self.plague_pulse = self.plague_pulse.saturating_sub(1);
+        self.rabbit.update(1.0 / 60.0);
     }
 
     fn add_event(&mut self, text: &str, color: Color) {
@@ -427,6 +487,10 @@ impl App {
 
     /// Transitions to a new act and stamps its start time.
     fn enter(&mut self, p: Phase) {
+        if p == Phase::Tactical {
+            // Fresh branch point each time.
+            self.tactical = tactical_story().start();
+        }
         self.phase = p;
         self.phase_start = self.elapsed();
     }
@@ -466,12 +530,16 @@ impl App {
             }
             Phase::Plague => {
                 self.plague = 0.6;
-                self.plague_frames = 60;
+                self.plague_active = true;
+                self.plague_pulse = 60;
             }
             Phase::DaVinci => self.scan = 55.0,
             Phase::Broadcast => self.broadcast_frames = 120,
             Phase::Attack => self.countdown = 0.5,
-            Phase::Tactical => self.countdown = 0.6,
+            Phase::Tactical => {
+                self.countdown = 0.6;
+                self.tactical = tactical_story().start();
+            }
             Phase::Download => {
                 // The golden beat is the completed download (Joey's callback).
                 self.download = 1.0;
@@ -483,6 +551,8 @@ impl App {
                 self.crash = 0.5;
                 self.download = 1.0;
                 self.download_done = true;
+                // The Gibson falls and the Plague is defeated.
+                self.plague_active = false;
             }
             Phase::Endgame => self.broadcast_frames = 120,
             Phase::Pool => {
@@ -494,6 +564,10 @@ impl App {
                 self.crew_joined = 5;
                 self.countdown = 1.0;
                 self.pool_granted = true;
+                // The shell is a playground: the Plague is present and can be
+                // inspected (and neutralized) through real commands.
+                self.plague_active = true;
+                self.plague_pulse = 60;
             }
             _ => {}
         }
@@ -504,9 +578,15 @@ impl App {
     }
 
     fn animate(&mut self) {
-        // The camera never stops panning the data city.
+        // The camera never stops panning the data city — but a quarantined
+        // (frozen) worm calms it, and a rollerblade escape throws it wide.
         if self.city_act() {
-            self.city_angle += 0.006;
+            let base = if self.worm_frozen { 0.0015 } else { 0.006 };
+            self.city_angle += base;
+            if self.camera_escape > 0.0 {
+                self.city_angle += self.camera_escape * 0.05;
+                self.camera_escape = (self.camera_escape - 0.01).max(0.0);
+            }
         }
         let since = self.since();
         match self.phase {
@@ -595,8 +675,10 @@ impl App {
             // ACT 4 — The Plague arrives and invades the scene.
             Phase::Plague => {
                 self.plague = (self.plague + 0.03).min(1.0);
-                // The Plague's presence persists through the endgame.
-                self.plague_frames = 60;
+                // Semantic truth: the Plague is now active and stays active until
+                // explicitly defeated. `plague_pulse` is only the entrance flare.
+                self.plague_active = true;
+                self.plague_pulse = 60;
                 self.glitch_frames = self.glitch_frames.max(1);
                 if since > 1.2 {
                     self.once(
@@ -609,7 +691,12 @@ impl App {
             }
             // ACT 5 — forensics: garbage fragments reveal WORM / DA VINCI.
             Phase::DaVinci => {
-                self.scan = (self.scan + 0.08) % 100.0;
+                if self.worm_frozen {
+                    // Quarantined: the scan halts at its current head.
+                    self.scan = self.scan.max(42.0);
+                } else {
+                    self.scan = (self.scan + 0.08) % 100.0;
+                }
                 if since > 0.8 {
                     self.once(11, "reconstructed fragments reveal: WORM", self.fx.amber);
                 }
@@ -632,7 +719,8 @@ impl App {
             }
             // ACT 8 — Grand Central-style coordinated assault.
             Phase::Attack => {
-                self.countdown = (self.countdown + 0.004).min(1.0);
+                let rate = if self.deadline_slow { 0.0016 } else { 0.004 };
+                self.countdown = (self.countdown + rate).min(1.0);
                 if since > 1.8 {
                     self.enter(Phase::Tactical);
                 }
@@ -641,7 +729,8 @@ impl App {
             // ACT 10 — Joey finishes the download.
             Phase::Download => {
                 self.download = (self.download + 0.02).min(1.0);
-                self.countdown = (self.countdown + 0.006).min(1.0);
+                let rate = if self.deadline_slow { 0.0024 } else { 0.006 };
+                self.countdown = (self.countdown + rate).min(1.0);
                 if self.download >= 1.0 && !self.download_done {
                     self.download_done = true;
                     self.enter(Phase::Crash);
@@ -652,7 +741,8 @@ impl App {
                 self.crash = (self.crash + 0.012).min(1.0);
                 self.glitch_frames = 4;
                 // The Plague is defeated as the Gibson falls.
-                self.plague_frames = 0;
+                self.plague_active = false;
+                self.plague_pulse = 0;
                 if since > 1.6 {
                     self.enter(Phase::Endgame);
                 }
@@ -739,13 +829,72 @@ impl App {
     }
 
     fn commit_tactical(&mut self) {
-        let choice = TACTICAL[self.selected.min(TACTICAL.len() - 1)];
+        self.selected = self.selected.min(TACTICAL.len() - 1);
+        let choice = TACTICAL[self.selected];
+        let key = ["pool", "davinci", "crew", "skate"][self.selected];
+        // The StoryGraph selects the arrow and sets semantic facts; the app does
+        // not branch on the raw selection index.
+        self.tactical
+            .update(Duration::ZERO, &[StoryEvent::user_selected(key)]);
+        let f = self.tactical.facts();
+        if f.bool("pool-distraction") {
+            self.pool_distraction = true;
+            self.pool_frames = 120;
+            self.pool_granted = true;
+            // Water appears on the peripheral region of the city.
+            for i in 0..48 {
+                let x = if i % 2 == 0 { 1.0 } else { 96.0 };
+                self.particles.particles.push(gibson::Particle {
+                    x: x + (i as f32 % 5.0),
+                    y: 6.0 + (i as f32 % 12.0),
+                    vx: if i % 2 == 0 { 1.2 } else { -1.2 },
+                    vy: 0.6,
+                    life: 2.4,
+                    max_life: 2.4,
+                    intensity: 0.8,
+                });
+            }
+        }
+        if f.bool("worm-frozen") {
+            self.worm_frozen = true;
+        }
+        if f.bool("deadline-slow") {
+            self.deadline_slow = true;
+        }
+        if f.bool("packet-boost") {
+            self.packet_boost = true;
+        }
+        if f.bool("crew-online") {
+            self.crew_joined = CREW.len();
+        }
+        if f.number("camera-escape") > 0.0 {
+            self.camera_escape = 1.0;
+            self.glitch_frames = 12;
+        }
+
+        let consequence = match key {
+            "pool" => "pool sprinkler distraction · Plague scan quality −40%",
+            "davinci" => "Da Vinci quarantined · worm geometry frozen · deadline slowed",
+            "crew" => "crew summoned · route density up · packet graph expanded",
+            _ => "rollerblade escape · camera pan engaged · attack continues remotely",
+        };
+        let short = match key {
+            "pool" => "pool distraction active · water on the periphery",
+            "davinci" => "worm frozen · Da Vinci quarantine active",
+            "crew" => "crew reinforced · route density boosted",
+            _ => "camera escape engaged · attack continues remotely",
+        };
+        self.add_event(short, self.fx.amber);
         let line = Line::new()
             .span(Span::styled("[DIRECTIVE] ", self.fx.st.warning))
             .span(Span::styled(choice, self.fx.st.text));
         self.shell_log.push(line);
+        self.shell_log.push(Line::new().span(Span::styled(
+            format!("           ↳ {consequence}"),
+            self.fx.st.muted,
+        )));
         self.once(14, "\"HACK THE PLANET! HACK THE PLANET!\"", self.fx.magenta);
-        self.glitch_frames = 6;
+        self.glitch_frames = self.glitch_frames.max(6);
         self.enter(Phase::Download);
     }
 
@@ -786,15 +935,41 @@ impl App {
                 self.curtain_frames = 60;
                 vec![("CRASH AND BURN".into(), self.fx.st.warning)]
             }
-            "gibson" | "city" => vec![(
-                "camera on the Gibson data city · towers + circuit plane".into(),
-                self.fx.st.accent,
-            )],
-            "route" => vec![("route 66 → gibson-core → zero-cool".into(), self.fx.st.code)],
-            "modem" => vec![(
-                "acoustic coupler 28.8k · carrier stable".into(),
-                Style::new().fg(self.fx.cyan),
-            )],
+            "gibson" | "city" => {
+                // Camera actually enters the data city.
+                self.city_angle = 0.7;
+                vec![(
+                    "camera on the Gibson data city · towers + circuit plane".into(),
+                    self.fx.st.accent,
+                )]
+            }
+            "route" => {
+                // Route graph becomes the focal layer: packet density up.
+                self.packet_boost = true;
+                vec![(
+                    "route 66 → gibson-core → zero-cool (graph focal)".into(),
+                    self.fx.st.code,
+                )]
+            }
+            "modem" => {
+                // Acoustic waveform: a short particle ring in the periphery.
+                for i in 0..30 {
+                    let a = i as f32 * 0.4;
+                    self.particles.particles.push(gibson::Particle {
+                        x: 4.0 + (i as f32 % 20.0),
+                        y: 4.0,
+                        vx: a.cos() * 0.4,
+                        vy: a.sin() * 0.4,
+                        life: 1.2,
+                        max_life: 1.2,
+                        intensity: 0.7,
+                    });
+                }
+                vec![(
+                    "acoustic coupler 28.8k · carrier stable".into(),
+                    Style::new().fg(self.fx.cyan),
+                )]
+            }
             "cyberdelia" => {
                 self.show_plasma = true;
                 vec![(
@@ -802,37 +977,58 @@ impl App {
                     Style::new().fg(self.fx.magenta),
                 )]
             }
-            "garbage" => vec![(
-                "garbage.bin /usr/spool/garbage (256 MB) · file object animating".into(),
-                self.fx.st.text,
-            )],
-            "da-vinci" => vec![(
-                "da-vinci worm · ballast control · $25,000,000 siphon".into(),
-                self.fx.st.warning,
-            )],
+            "garbage" => {
+                // The garbage.bin object becomes visible/animated.
+                self.transfer = self.transfer.max(0.2);
+                self.show_wireframe = true;
+                vec![(
+                    "garbage.bin /usr/spool/garbage (256 MB) · file object animating".into(),
+                    self.fx.st.text,
+                )]
+            }
+            "da-vinci" => {
+                // Mount the worm entity as structured geometry.
+                self.worm_frozen = false;
+                self.scan = 55.0;
+                self.show_wireframe = true;
+                self.wire_mesh = 1;
+                vec![(
+                    "da-vinci worm · ballast control · $25,000,000 siphon".into(),
+                    self.fx.st.warning,
+                )]
+            }
             "tanker" => {
                 self.countdown = self.deadline().max(0.7);
                 vec![("tanker fleet deadline advanced".into(), self.fx.st.error)]
             }
             "plague" => {
-                self.plague_frames = 90;
+                self.plague_active = true;
+                self.plague_pulse = 90;
                 self.glitch_frames = 6;
                 vec![(
-                    "THE PLAGUE enters — hostile scan entity".into(),
+                    "THE PLAGUE enters — hostile scan entity (persists)".into(),
                     self.fx.st.error,
                 )]
             }
             "rabbit" => {
-                self.rabbit_frames = 120;
+                self.rabbit.start();
                 self.planet_frames = 30;
                 vec![(
-                    "rabbit replication particles released".into(),
+                    format!(
+                        "rabbit replication started — {} nodes, gen {} (bounded)",
+                        self.rabbit.node_count(),
+                        self.rabbit.generation()
+                    ),
                     self.fx.st.warning,
                 )]
             }
             "cookie" => {
-                self.rabbit_frames = 0;
-                vec![("cookie neutralized the rabbit".into(), self.fx.st.success)]
+                let was = self.rabbit.node_count();
+                self.rabbit.neutralize();
+                vec![(
+                    format!("cookie neutralized the rabbit ({was} nodes collapsing)"),
+                    self.fx.st.success,
+                )]
             }
             "broadcast" => {
                 self.broadcast_frames = 120;
@@ -1064,6 +1260,9 @@ fn build_root(app: &App, ctx: &Context) -> Node {
     if app.planet_frames > 0 {
         scene = scene.child(planet_overlay(app, cols, rows));
     }
+    if app.rabbit.is_active() {
+        scene = scene.child(rabbit_overlay(app, cols, rows));
+    }
     if app.broadcast_frames > 0 {
         scene = scene.child(broadcast_overlay(app, cols, rows));
     }
@@ -1111,6 +1310,39 @@ fn damage_overlay(app: &App, cols: u16, rows: u16) -> Node {
     Node::raster(layer).width(cols as f32).height(rows as f32)
 }
 
+/// The rabbit replication graph as a real scene entity: a bounded branching
+/// tree drawn in braille, with a truthful status label. Cookie neutralization is
+/// visible as a collapse, not a generic particle burst.
+fn rabbit_overlay(app: &App, cols: u16, rows: u16) -> Node {
+    let fx = &app.fx;
+    let mut canvas = BrailleCanvas::new(cols, rows);
+    app.rabbit.render_braille(&mut canvas);
+    let style = if fx.color {
+        fx.st.warning
+    } else {
+        Style::default()
+    };
+    let mut layer = gibson::surface::Surface::new_transparent(cols, rows);
+    canvas.paint_into(&mut layer, (0, 0), style);
+    let label = if app.rabbit.is_collapsing() {
+        format!(
+            "RABBIT NEUTRALIZED (cookie) · collapsing {:.0}%",
+            app.rabbit.collapse() * 100.0
+        )
+    } else {
+        format!(
+            "RABBIT REPLICATION · gen {} · {} nodes (bounded)",
+            app.rabbit.generation(),
+            app.rabbit.node_count()
+        )
+    };
+    Node::stack()
+        .percent_width(100.0)
+        .percent_height(100.0)
+        .child(Node::raster(layer).width(cols as f32).height(rows as f32))
+        .child(Node::text(label, fx.st.warning).offset(2.0, 1.0))
+}
+
 /// Deterministic particle burst ("HACK THE PLANET"). No persistent state: the
 /// burst is reconstructed from the countdown, so it is reproducible.
 fn planet_overlay(app: &App, cols: u16, rows: u16) -> Node {
@@ -1142,7 +1374,7 @@ fn banner(app: &App, cols: u16, wide: bool) -> Node {
     line = line.span(Span::styled(
         format!(" ACT {} ", phase_name(app.phase)),
         Style::new()
-            .fg(if app.plague_frames > 0 {
+            .fg(if app.plague_active {
                 fx.red
             } else {
                 fx.magenta
@@ -1253,7 +1485,7 @@ fn data_city_surface(app: &App, cw: u16, ch: u16) -> gibson::surface::Surface {
     let mut near = BrailleCanvas::new(cw, ch);
     for e in &edges {
         // The Plague constrains the geometry: far edges collapse toward the core.
-        let collapse = app.plague_frames > 0 && e.depth > median;
+        let collapse = app.plague_active && e.depth > median;
         if e.depth <= median {
             near.line(e.a.0, e.a.1, e.b.0, e.b.1);
         } else if !collapse {
@@ -1297,17 +1529,17 @@ fn panel_city(app: &App, width: u16) -> Node {
     if matches!(app.phase, Phase::Attack | Phase::Download) {
         paint_packets(&mut layer, app, cw, ch);
     }
-    if app.plague_frames > 0 {
+    if app.plague_active {
         paint_plague_beam(&mut layer, app, cw, ch);
     }
-    let title = if app.plague_frames > 0 {
+    let title = if app.plague_active {
         "GIBSON · DATA CITY ⚠ PLAGUE"
     } else {
         "GIBSON · DATA CITY"
     };
     tpanel(
         title,
-        if app.plague_frames > 0 {
+        if app.plague_active {
             Style::new().fg(fx.red)
         } else {
             fx.st.border
@@ -1334,19 +1566,30 @@ fn paint_packets(layer: &mut gibson::surface::Surface, app: &App, cw: u16, ch: u
         (0.20, 0.70),
     ];
     let pos = |i: usize| (nodes[i].0 * pw, nodes[i].1 * ph);
-    // Crew links plus Plague counter-routes.
+    // Crew links plus Plague counter-routes. A pool distraction degrades the
+    // hostile scan, so the counter-routes thin out; crew reinforcement increases
+    // packet density along the friendly routes.
     let routes = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0), (0, 3)];
+    let packets_per_route = if app.packet_boost { 6 } else { 3 };
+    let show_counter = app.plague_active && !app.pool_distraction;
     let mut canvas = BrailleCanvas::new(cw, ch);
     for &(a, b) in &routes {
         let (x0, y0) = pos(a);
         let (x1, y1) = pos(b);
         canvas.line(x0 as i32, y0 as i32, x1 as i32, y1 as i32);
+        if show_counter {
+            // Hostile counter-route offset by a couple of dots.
+            canvas.line(x0 as i32 + 2, y0 as i32, x1 as i32 + 2, y1 as i32);
+        }
     }
     for (k, &(a, b)) in routes.iter().enumerate() {
         let (x0, y0) = pos(a);
         let (x1, y1) = pos(b);
-        for j in 0..3 {
-            let phase = (app.elapsed() * 0.7 + k as f32 * 0.14 + j as f32 * 0.33).fract();
+        for j in 0..packets_per_route {
+            let phase = (app.elapsed() * 0.7
+                + k as f32 * 0.14
+                + j as f32 * (1.0 / packets_per_route as f32))
+                .fract();
             let x = x0 + (x1 - x0) * phase;
             let y = y0 + (y1 - y0) * phase;
             canvas.set(x.round() as i32, y.round() as i32);
@@ -1862,7 +2105,7 @@ fn bottom_panel(app: &App, width: u16) -> Node {
                 ),
                 fx.st.text,
             )));
-            if app.plague_frames > 0 {
+            if app.plague_active {
                 rt = rt.line(Line::new().span(Span::styled(
                     truncate(
                         "⚠ THE PLAGUE active · hostile scan beam crossing the data city",
