@@ -13,6 +13,35 @@ This document outlines completed work and the planned future milestones for LibG
 
 ---
 
+## Cinematic frontier — IMPLEMENTED + TESTED, EXPERIMENTAL Rust-only
+
+- [x] Ordered entity `SurfaceFx` on arbitrary ordinary nodes; transparent scratch
+  only when active. Glyph-safe style/scan/tear/scramble/dissolve and progressive
+  StyleMask; removal restores the underlying node.
+- [x] Additive displacement/jitter independent of legacy placement; persistent
+  finite-period loops and overflow-safe timing.
+- [x] In-beat Reactions with explicit event/action order, one transition per
+  update, validation, exact replay and bundle clocks.
+- [x] `acid_vs_crash`: coherent fictional machine, semantic ownership, deterministic
+  adversary/auto defender, interactive counters, local branches/rejoin, display
+  possession, stable command island and three endings. No real attack capability.
+- [x] 13 new semantic PTY goldens; seven PTY interaction/capability cases;
+  whole-renderer frames at 56x24, 80x24, 120x32, 160x40; live resize and input
+  preservation; stage/branch replay and bounded damage checks.
+- [x] FX Lab scene 20 demonstrates generic post-processing, additive motion and
+  reactions without transitions.
+- [x] Fixed natural clipping of positioned panels and stale blank cells on
+  fullscreen resize. Existing 30 visual goldens remain unchanged.
+- [x] Local fmt, all-target/all-feature clippy with warnings denied, **430 tests**
+  (226 unit + 204 integration), release build, C/C++/Python smoke and ASan/UBSan.
+- [ ] Subjective cinematic taste, extended human playtesting and terminals beyond
+  the local Linux/VT100 evidence remain **PARTIALLY TESTED / UNVERIFIED**.
+- [ ] Go remains **UNVERIFIED**: no toolchain installed.
+- [ ] Remote CI remains **BLOCKED / ENVIRONMENTAL**: live check confirms billing
+  rejection with zero executed steps. No automatic merge.
+
+See [the evidence and command record](docs/acid-vs-crash-validation.md).
+
 ## Scene Algebra & Story Director Round — IMPLEMENTED (EXPERIMENTAL) + TESTED
 
 This round stops hand-wiring visual effects to application state by introducing a

@@ -28,7 +28,7 @@ Because earlier revisions of this document overstated completion, architectural 
 | Label | Meaning |
 | --- | --- |
 | **IMPLEMENTED** | The described code path exists and is reached in normal operation. |
-| **TESTED** | Covered by an automated test in this repository (`cargo test`, 362 tests) that exercises the behavior described. |
+| **TESTED** | Covered by an automated test in this repository (`cargo test`, 430 tests) that exercises the behavior described. |
 | **PARTIALLY TESTED** | Implemented, and some behavior is covered, but at least one named facet is not automatically verified. The gap is stated explicitly. |
 | **UNVERIFIED** | Written down because it exists in source or is a documented assumption, but has not been compiled or executed in any environment we can attest to. |
 
@@ -784,3 +784,113 @@ The following are **not** implemented or **not** verified. Do not describe them 
 - **Hard `SIGKILL` cannot be intercepted** by any userland process.
 - **Ctrl-C handling** in the interactive demos is implemented as raw-mode key events; the engine relies on RAII / panic-hook restoration for terminal state. Signal handling is not a general engine guarantee.
 - **Fuzzing**: `TextInputState` has deterministic randomized edit fuzzing, but there is no `cargo-fuzz` / AFL target for arbitrary byte streams or resize storms.
+
+## 39. Entity post-processing and SurfaceFx
+
+**EXPERIMENTAL, Rust-only.** An ordinary `Node` carries an optional, already
+realized `surface_fx` chain. `Scene::evaluate` appends the entity's Presentation
+chain to a cloned node; neither the original widget nor layout changes. The
+painter only allocates the extra transparent entity-sized surface when the chain
+is nonempty. It paints the subtree at its natural extent, applies the chain, then
+composites through the existing clipping-aware blit. No second renderer, timers,
+story state, raw ANSI, arbitrary alpha, or new C ABI is involved.
+
+`SurfaceFx` are ordered endomorphisms on realized entity surfaces. The empty
+chain is identity; concatenation is associative; application is left to right.
+Order is significant: successive foreground overlays choose the later colour.
+Available operations are style overlay, stable fractional style mask, dim,
+reverse attribute, row shift, strip tear, narrow-glyph scramble, seeded dissolve,
+and scanline. These preserve transparent holes and style-only cells. Vacated
+shift cells are transparent. Wide graphemes move or disappear as complete pairs.
+Dissolve fraction zero hides everything; one preserves the exact original.
+StyleMask selects the same kind of stable threshold but styles selected cells
+instead of deleting them. Neither operation is opacity.
+
+Masks use entity-local coordinates and an explicit seed; tag-targeted effects
+mix in `SceneId` so objects get distinct reproducible masks. Clipping does not
+reshuffle them. Removing a bundle yields the underlying declarative rendering
+on the next frame, with cleanup provided by ordinary differential rendering.
+
+Processed subtrees do not publish a hardware input cursor because a mask or tear
+can invalidate its position. An unaffected focused input can retain its cursor;
+this is the demo's stable command island. TextInput itself still owns ordinary
+viewport scrolling. Identity-effects tests exposed and corrected trailing-edge
+positioned-panel clipping: clipping a border must not redraw it inward at the visible edge.
+
+## 40. Placement, displacement and persistent effects
+
+`Translate` and legacy `Shake` keep their absolute placement semantics.
+`Displace` and `Jitter` write a separate additive channel. Effective position is
+placement (or baseline) plus the sum of rounded cell displacements. Contributions
+accumulate in a wider integer and clamp only on the final conversion to cell
+coordinates. Independent displacements commute; ordered surface effects do not.
+A fresh `Presentation` is required per frame, as produced by StoryDirector.
+
+`Loop(inner)` evaluates at exact nanosecond `t mod duration(inner)`. A
+zero-duration inner is a no-op. Its public duration is `Duration::MAX`, a
+practical persistent sentinel; remove the mounted bundle to stop it. Arithmetic
+saturates for public durations, while Sequence and Repeat preserve exact elapsed
+remainders at large times. Reverse a finite inner before looping; an infinite
+animation has no natural final frame to reverse from.
+
+Sequence retains completed contributions. For additive motion, successive
+segments express additional displacement, not replacements for earlier values.
+For SurfaceFx, a completed zero dissolve remains in the chain and still hides
+later content. Remove/replace the bundle for a reveal-again lifecycle; do not
+expect a later mask to undo an earlier one.
+
+## 41. Reactions and the one-transition law
+
+Story transitions are morphisms between beats. Reactions are endomorphisms on
+the current beat. `Beat::reaction(event_condition, actions)` alters facts and
+mounted bundles without changing beats or resetting beat time. Reactions use
+only event conditions; story validation rejects timer/fact reaction guards.
+
+Each update records its exact `(dt, events)` step, then executes all matching
+reactions on the original beat in event, declaration, and action order. Reactions
+ignore `min_duration`. Next, the first matching event transition may fire. If
+none fires, at most one automatic transition is selected; its fact guards see
+the final reaction facts. New-beat entry actions run last. Events are never
+reprocessed against the newly entered beat. There is at most one **transition**
+per update, even when multiple reactions run.
+
+Replay remains the ordered update trace against the same Story definition.
+Direct `facts_mut` and `jump_to` changes are not trace-recorded. The cinematic
+demo therefore constructs inspection stages as declared starts with coherent
+initial facts and bundles, and records every subsequent controller decision as
+a StoryEvent. Presentation also replays, including bundle mount times.
+
+## 42. Acid vs Crash encounter
+
+The example's world is entirely Facts: subsystem ownership/integrity, isolation,
+trace confidence, decoy occupancy, identity, scars and outcome. Its small Acid
+controller chooses fictional semantic events from those facts; auto mode uses a
+Crash controller on the same story graph. Both controllers' decisions enter the
+trace. There is no network, external host, system command execution, or separate
+simulation engine. Input text and inspector selection are UI state outside replay;
+they do not determine subsystem truth except through submitted recorded commands.
+
+The graph establishes a quiet machine, then an inbound handshake, identity,
+route contest, ordinary panel infection, adaptation, display intrusion, ghost
+cursor, trap, clash and takeover. Local decoy, bypass, trace and pressure branches
+rejoin. Final moves yield containment, temporary Acid ownership followed by
+voluntary release, or mutual respect. Counters unmount effects; they never
+mutate a widget to undo corruption. Ownership labels, disconnected geometry,
+packet grammar and reverse attributes preserve meaning in Mono. The stable
+command island is excluded from display-sensitive tags.
+
+Inspection starts include their causal setup in the immutable Story definition.
+Tests replay every stage at irregular cadence and compare facts, subsystem state,
+beat sequence, outcome, mount clocks and Presentation. Whole-renderer tests feed
+actual frames through the ANSI compiler and VT100 parser at 56x24, 80x24, 120x32
+and 160x40; PTYs also exercise real input and terminal mode restoration.
+These checks establish deterministic behavior and protocol correctness within
+the tested Linux environment, not subjective cinematic quality on all terminals.
+
+Fullscreen geometry changes now clear the invalidated physical canvas in the
+renderer transaction before compiling a fresh diff. Fresh diffs omit default
+blanks; without the clear, old map fragments survived resize behind dissolved
+panels. Renderer affected-footprint accounting includes the entire clear, while
+SurfaceDiff's exact semantic delta remains its separate framebuffer comparison.
+A following identical frame still emits zero bytes. Flow-widget clipping and
+all preexisting visual snapshots are preserved.
