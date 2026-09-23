@@ -83,7 +83,19 @@ fn paint_node(
     }
     // Realize before destination clipping, preserving natural layout and stable
     // entity-local masks. Only this entity's extent needs the extra allocation.
-    let mut local = Surface::new_transparent(cr.width, cr.height);
+    // Flow widgets retain their existing visible-width layout contract; an
+    // explicitly positioned entity keeps its natural off-screen extent.
+    let sw = if !node.layout_style.absolute && x >= clip.x as i32 {
+        cr.width.min(visible.width)
+    } else {
+        cr.width
+    };
+    let sh = if !node.layout_style.absolute && y >= clip.y as i32 {
+        cr.height.min(visible.height)
+    } else {
+        cr.height
+    };
+    let mut local = Surface::new_transparent(sw, sh);
     let mut local_ctx = PaintContext::default();
     let area = local.area();
     paint_node_contents(
@@ -116,18 +128,20 @@ fn paint_node_contents(
         return;
     }
 
-    // Paint at natural extent before clipping on ANY edge. Leading-edge clips
-    // otherwise lose the origin; trailing-edge clips rewrap text and move the
-    // border inward. Identity post-processing must produce the same geometry.
+    // Positioned entities paint at natural extent before clipping on any edge.
+    // Leading-edge clips otherwise lose the origin; trailing-edge clips rewrap
+    // text and move borders inward. Flow widgets keep visible-width behavior.
     if origin_x < clip.x as i32
         || origin_y < clip.y as i32
-        || (!matches!(
-            node.kind,
-            NodeKind::TextInput { .. }
-                | NodeKind::Box { border: None, .. }
-                | NodeKind::Stack
-                | NodeKind::Viewport { .. }
-        ) && (rect.width < cr.width || rect.height < cr.height))
+        || (node.layout_style.absolute
+            && !matches!(
+                node.kind,
+                NodeKind::TextInput { .. }
+                    | NodeKind::Box { border: None, .. }
+                    | NodeKind::Stack
+                    | NodeKind::Viewport { .. }
+            )
+            && (rect.width < cr.width || rect.height < cr.height))
     {
         let tx = ox - origin_x; // maps this node's origin to 0
         let ty = oy - origin_y;
