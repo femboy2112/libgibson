@@ -13,7 +13,8 @@
 //! * a [`Scene`] is a set of semantically identified [`SceneEntity`]s, each
 //!   wrapping an ordinary [`Node`];
 //! * an [`Effect`] is a deterministic transformation of *presentation* channels
-//!   (position, visibility, camera, custom), targeting entities by [`SceneId`]
+//!   (placement, additive displacement, visibility, camera, custom, surface FX),
+//!   targeting entities by [`SceneId`]
 //!   or [`TagId`];
 //! * [`Effect::parallel`] and [`Effect::sequence`] compose effects, and
 //!   [`Effect::identity`] is the no-op.
@@ -27,8 +28,8 @@
 //!   `f ; g` is [`Effect::sequence`]; the identity is [`Effect::identity`].
 //! * **Monoidal product** `f ⊗ g` is [`Effect::parallel`]: run both over the
 //!   same interval. Parallel effects on *independent* channels/targets commute;
-//!   effects on the same channel are resolved by explicit write order, never by
-//!   assuming commutativity.
+//!   placement/scalar writes resolve by explicit write order. Displacements
+//!   add as integer vectors; surface operations append in deterministic order.
 //! * **Functor** `Render : SCENE → UI`: [`Scene::to_node`] maps a scene
 //!   presentation into ordinary `Node`s (a `Stack` of offset layers inside an
 //!   optional camera `Viewport`). It is **not** a second renderer; it produces
@@ -39,6 +40,7 @@
 //! goldens, replay and tests.
 
 use crate::node::Node;
+use crate::{Style, SurfaceFx};
 use std::collections::BTreeMap;
 use std::time::Duration;
 
@@ -66,6 +68,10 @@ pub enum SceneTarget {
 pub enum Channel {
     /// Integer cell translation (`(dx, dy)`), applied as an absolute-layer offset.
     Position,
+    /// Additive integer cell perturbations, summed after absolute placement.
+    Displacement,
+    /// Ordered post-process endomorphisms of a realized entity surface.
+    SurfaceFx,
     /// Visibility in `[0, 1]`. Terminals have no alpha, so the render functor
     /// thresholds at `> 0.0`; the precise value is available to raster effects.
     Visibility,
@@ -153,12 +159,16 @@ impl SceneEntity {
 
 /// The evaluated presentation delta produced by effects.
 ///
-/// Per channel, effects override one another by write order. Fields are only
-/// populated for channels an effect actually wrote, so unpopulated channels fall
+/// Placement/scalars override in write order; displacement sums and surface
+/// effects append in write order. Build a fresh presentation each frame: `eval`
+/// accumulates contributions and does not reset a previously populated value.
+/// Fields are populated only for channels an effect actually wrote, so untouched channels fall
 /// back to the entity's baseline in [`Scene::to_node`].
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Presentation {
     offsets: BTreeMap<SceneId, (i32, i32)>,
+    displacements: BTreeMap<SceneId, (i128, i128)>,
+    surface_fx: BTreeMap<SceneId, Vec<SurfaceFx>>,
     visibility: BTreeMap<SceneId, f32>,
     custom: BTreeMap<(SceneId, u64), f32>,
     camera: (i32, i32),
@@ -169,12 +179,39 @@ impl Presentation {
         Self::default()
     }
 
-    /// Effective offset for an entity (effect override, else baseline).
+    /// Absolute placement (effect override or baseline) plus the sum of rounded
+    /// displacement contributions, clamped to `i32` only after summation.
     pub fn offset_of(&self, scene: &Scene, id: SceneId) -> (i32, i32) {
-        self.offsets
+        let placement = self
+            .offsets
             .get(&id)
             .copied()
-            .unwrap_or_else(|| scene.baseline_offset(id))
+            .unwrap_or_else(|| scene.baseline_offset(id));
+        let delta = self.displacement_of(id);
+        (
+            (i128::from(placement.0) + delta.0).clamp(i32::MIN as i128, i32::MAX as i128) as i32,
+            (i128::from(placement.1) + delta.1).clamp(i32::MIN as i128, i32::MAX as i128) as i32,
+        )
+    }
+
+    /// Summed additive displacement, before the final coordinate clamp.
+    pub fn displacement_of(&self, id: SceneId) -> (i128, i128) {
+        self.displacements.get(&id).copied().unwrap_or_default()
+    }
+
+    /// Ordered post-process chain. An empty chain adds no rasterization.
+    pub fn surface_fx(&self, id: SceneId) -> &[SurfaceFx] {
+        self.surface_fx.get(&id).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    fn add_displacement(&mut self, id: SceneId, delta: (i32, i32)) {
+        let sum = self.displacements.entry(id).or_default();
+        sum.0 += i128::from(delta.0);
+        sum.1 += i128::from(delta.1);
+    }
+
+    fn append_fx(&mut self, id: SceneId, fx: SurfaceFx) {
+        self.surface_fx.entry(id).or_default().push(fx);
     }
 
     /// Effective visibility for an entity (effect override, else baseline).
@@ -193,7 +230,7 @@ impl Presentation {
         self.visibility.get(&id).copied()
     }
 
-    /// Raw offset override, if any.
+    /// Raw absolute placement override, excluding additive displacement.
     pub fn raw_offset(&self, id: SceneId) -> Option<(i32, i32)> {
         self.offsets.get(&id).copied()
     }
@@ -269,6 +306,48 @@ pub enum Effect {
         duration: Duration,
         easing: Easing,
     },
+    /// Add a rounded displacement without overwriting absolute placement.
+    Displace {
+        target: SceneTarget,
+        from: (f32, f32),
+        to: (f32, f32),
+        duration: Duration,
+        easing: Easing,
+    },
+    /// Add deterministic jitter without overwriting absolute placement.
+    Jitter {
+        target: SceneTarget,
+        amplitude: f32,
+        period: Duration,
+        duration: Duration,
+    },
+    /// Append a static post-process operation to every matching entity.
+    PostProcess { target: SceneTarget, fx: SurfaceFx },
+    /// Terminal-native reveal by a stable cell mask, independent of visibility.
+    Dissolve {
+        target: SceneTarget,
+        from: f32,
+        to: f32,
+        seed: u64,
+        duration: Duration,
+        easing: Easing,
+    },
+    /// Progressively apply a style through a stable cell mask without erasure.
+    StyleMask {
+        target: SceneTarget,
+        style: Style,
+        from: f32,
+        to: f32,
+        seed: u64,
+        duration: Duration,
+        easing: Easing,
+    },
+    /// Move one styled scanline down an entity's realized surface.
+    Scanline {
+        target: SceneTarget,
+        style: Style,
+        duration: Duration,
+    },
     /// Ramp [`Channel::Visibility`] from `from` to `to` in `[0, 1]`.
     Reveal {
         target: SceneTarget,
@@ -314,6 +393,11 @@ pub enum Effect {
     Delay(Duration, Box<Effect>),
     /// Run `inner` `times` times in sequence.
     Repeat(Box<Effect>, usize),
+    /// Repeat using exact integer-nanosecond modulo; zero duration is a no-op.
+    /// `duration()` reports `Duration::MAX`, the representable time horizon.
+    /// Reverse a finite child before looping it; reversing a loop instead uses
+    /// that horizon as its phase origin. Cycles reset, never accumulate motion.
+    Loop(Box<Effect>),
     /// Run `inner` backwards in time.
     Reverse(Box<Effect>),
 }
@@ -338,6 +422,100 @@ impl Effect {
             duration,
             easing: Easing::Linear,
         }
+    }
+
+    /// Add a rounded displacement to placement. Multiple displacements commute.
+    pub fn displace(
+        target: SceneTarget,
+        from: (f32, f32),
+        to: (f32, f32),
+        duration: Duration,
+    ) -> Self {
+        Self::Displace {
+            target,
+            from,
+            to,
+            duration,
+            easing: Easing::Linear,
+        }
+    }
+
+    /// Add jitter around placement; unlike legacy `shake`, this composes with motion.
+    pub fn jitter(
+        target: SceneTarget,
+        amplitude: f32,
+        period: Duration,
+        duration: Duration,
+    ) -> Self {
+        Self::Jitter {
+            target,
+            amplitude,
+            period,
+            duration,
+        }
+    }
+
+    /// Append an operation after normal entity painting. Static operations persist
+    /// while mounted, even though their interpolation duration is zero.
+    pub fn post_process(target: SceneTarget, fx: SurfaceFx) -> Self {
+        Self::PostProcess { target, fx }
+    }
+
+    /// Reveal cells with a stable threshold mask. Seeds are mixed with entity ids
+    /// for tag targets so separate entities do not share identical masks.
+    pub fn dissolve(
+        target: SceneTarget,
+        from: f32,
+        to: f32,
+        seed: u64,
+        duration: Duration,
+    ) -> Self {
+        Self::Dissolve {
+            target,
+            from,
+            to,
+            seed,
+            duration,
+            easing: Easing::Linear,
+        }
+    }
+
+    /// Spread a style over a stable cell mask, preserving every source glyph.
+    /// Tag targets mix the explicit seed with each entity's stable identity.
+    pub fn style_mask(
+        target: SceneTarget,
+        style: Style,
+        from: f32,
+        to: f32,
+        seed: u64,
+        duration: Duration,
+    ) -> Self {
+        Self::StyleMask {
+            target,
+            style,
+            from,
+            to,
+            seed,
+            duration,
+            easing: Easing::Linear,
+        }
+    }
+
+    /// Sweep a scanline from the top to bottom of a realized entity.
+    pub fn scanline(target: SceneTarget, style: Style, duration: Duration) -> Self {
+        Self::Scanline {
+            target,
+            style,
+            duration,
+        }
+    }
+
+    /// Keep a finite effect running until its owning bundle is removed.
+    /// Each cycle restarts at zero; it does not accumulate previous cycles.
+    /// A zero-duration child contributes nothing. For backwards cycles, wrap
+    /// the finite child in `Reverse` first, then call `looping`.
+    pub fn looping(self) -> Self {
+        Self::Loop(Box::new(self))
     }
 
     /// Reveal/ramp `target`'s visibility.
@@ -433,6 +611,9 @@ impl Effect {
     pub fn eased(mut self, e: Easing) -> Self {
         match &mut self {
             Effect::Translate { easing, .. }
+            | Effect::Displace { easing, .. }
+            | Effect::Dissolve { easing, .. }
+            | Effect::StyleMask { easing, .. }
             | Effect::Reveal { easing, .. }
             | Effect::CameraPan { easing, .. }
             | Effect::CustomRamp { easing, .. } => *easing = e,
@@ -444,8 +625,15 @@ impl Effect {
     /// Total duration of the effect.
     pub fn duration(&self) -> Duration {
         match self {
-            Effect::Identity | Effect::SetCustom { .. } => Duration::ZERO,
+            Effect::Identity | Effect::SetCustom { .. } | Effect::PostProcess { .. } => {
+                Duration::ZERO
+            }
             Effect::Translate { duration, .. }
+            | Effect::Displace { duration, .. }
+            | Effect::Jitter { duration, .. }
+            | Effect::Dissolve { duration, .. }
+            | Effect::StyleMask { duration, .. }
+            | Effect::Scanline { duration, .. }
             | Effect::Reveal { duration, .. }
             | Effect::CameraPan { duration, .. }
             | Effect::Shake { duration, .. }
@@ -455,9 +643,12 @@ impl Effect {
                 .map(|e| e.duration())
                 .max()
                 .unwrap_or(Duration::ZERO),
-            Effect::Sequence(v) => v.iter().map(|e| e.duration()).sum(),
-            Effect::Delay(d, inner) => *d + inner.duration(),
-            Effect::Repeat(inner, n) => inner.duration().saturating_mul(*n as u32),
+            Effect::Sequence(v) => v
+                .iter()
+                .fold(Duration::ZERO, |d, e| d.saturating_add(e.duration())),
+            Effect::Delay(d, inner) => d.saturating_add(inner.duration()),
+            Effect::Repeat(inner, n) => repeated_duration(inner.duration(), *n),
+            Effect::Loop(_) => Duration::MAX,
             Effect::Reverse(inner) => inner.duration(),
         }
     }
@@ -472,8 +663,10 @@ impl Effect {
 
     /// Evaluates the effect at local time `t`, writing presentation deltas.
     ///
-    /// Pure: `(scene, t, events)` fully determine the result. Effects never
-    /// touch the terminal, the renderer or a `Node`.
+    /// Deterministically accumulates into `out`; start each frame with a fresh
+    /// presentation. Effects never touch the terminal, renderer or source `Node`.
+    /// Sequences retain elapsed children's final contributions, including
+    /// displacement and surface effects.
     pub fn eval(&self, t: Duration, scene: &Scene, out: &mut Presentation) {
         let d = self.duration();
         let k = self.local_t(t, d);
@@ -493,6 +686,107 @@ impl Effect {
                 );
                 for id in scene.resolve(*target) {
                     out.set_offset(id, v);
+                }
+            }
+            Effect::Displace {
+                target,
+                from,
+                to,
+                easing,
+                ..
+            } => {
+                let e = easing.apply(k);
+                let delta = (
+                    crate::clock::lerp(from.0, to.0, e).round() as i32,
+                    crate::clock::lerp(from.1, to.1, e).round() as i32,
+                );
+                for id in scene.resolve(*target) {
+                    out.add_displacement(id, delta);
+                }
+            }
+            Effect::Jitter {
+                target,
+                amplitude,
+                period,
+                ..
+            } => {
+                if period.is_zero() {
+                    return;
+                }
+                let phase = std::f64::consts::TAU
+                    * ((t.as_nanos() % period.as_nanos()) as f64 / period.as_nanos() as f64);
+                let delta = (
+                    (phase.sin() * f64::from(*amplitude)).round() as i32,
+                    (phase.cos() * f64::from(*amplitude)).round() as i32,
+                );
+                for id in scene.resolve(*target) {
+                    out.add_displacement(id, delta);
+                }
+            }
+            Effect::PostProcess { target, fx } => {
+                for id in scene.resolve(*target) {
+                    let mut fx = fx.clone();
+                    if let (
+                        SceneTarget::Tag(_),
+                        SurfaceFx::Dissolve { seed, .. } | SurfaceFx::StyleMask { seed, .. },
+                    ) = (target, &mut fx)
+                    {
+                        *seed ^= id.0.wrapping_mul(0x9e3779b97f4a7c15);
+                    }
+                    out.append_fx(id, fx);
+                }
+            }
+            Effect::Dissolve {
+                target,
+                from,
+                to,
+                seed,
+                easing,
+                ..
+            } => {
+                let fraction = crate::clock::lerp(*from, *to, easing.apply(k));
+                for id in scene.resolve(*target) {
+                    let seed = match target {
+                        SceneTarget::Tag(_) => seed ^ id.0.wrapping_mul(0x9e3779b97f4a7c15),
+                        SceneTarget::Id(_) => *seed,
+                    };
+                    out.append_fx(id, SurfaceFx::Dissolve { seed, fraction });
+                }
+            }
+            Effect::StyleMask {
+                target,
+                style,
+                from,
+                to,
+                seed,
+                easing,
+                ..
+            } => {
+                let fraction = crate::clock::lerp(*from, *to, easing.apply(k));
+                for id in scene.resolve(*target) {
+                    let seed = match target {
+                        SceneTarget::Tag(_) => seed ^ id.0.wrapping_mul(0x9e3779b97f4a7c15),
+                        SceneTarget::Id(_) => *seed,
+                    };
+                    out.append_fx(
+                        id,
+                        SurfaceFx::StyleMask {
+                            style: *style,
+                            seed,
+                            fraction,
+                        },
+                    );
+                }
+            }
+            Effect::Scanline { target, style, .. } => {
+                for id in scene.resolve(*target) {
+                    out.append_fx(
+                        id,
+                        SurfaceFx::Scanline {
+                            position: k,
+                            style: *style,
+                        },
+                    );
                 }
             }
             Effect::Reveal {
@@ -553,22 +847,23 @@ impl Effect {
                 }
             }
             Effect::Parallel(v) => {
-                // Explicit write order: later children override earlier ones on
-                // the same channel. Independent channels/targets are unaffected.
+                // Explicit order for scalar/placement writes and surface chains;
+                // displacement contributions sum independently of that order.
                 for e in v {
                     e.eval(t, scene, out);
                 }
             }
             Effect::Sequence(v) => {
-                let mut acc = Duration::ZERO;
+                let mut elapsed = t.as_nanos();
                 for e in v {
                     let ed = e.duration();
-                    if t >= acc.saturating_add(ed) {
-                        // Fully elapsed: contribute its final presentation.
+                    if elapsed >= ed.as_nanos() {
+                        // Subtract exact elapsed time, rather than saturating a
+                        // cumulative endpoint and accidentally skipping children.
                         e.eval(ed, scene, out);
-                        acc = acc.saturating_add(ed);
+                        elapsed -= ed.as_nanos();
                     } else {
-                        e.eval(t.saturating_sub(acc), scene, out);
+                        e.eval(duration_from_nanos(elapsed), scene, out);
                         break;
                     }
                 }
@@ -584,15 +879,25 @@ impl Effect {
                 if id.is_zero() || *n == 0 {
                     return;
                 }
-                let total = id.saturating_mul(*n as u32);
-                if t >= total {
+                let total_nanos = id.as_nanos().saturating_mul(*n as u128);
+                if t.as_nanos() >= total_nanos {
                     inner.eval(id, scene, out);
                 } else {
-                    // Exact sub-duration remainder; clamp for the (unrealistic)
-                    // case of durations beyond `u64` nanoseconds.
-                    let rem = t.as_nanos() % id.as_nanos();
-                    let rem = rem.min(u64::MAX as u128) as u64;
-                    inner.eval(Duration::from_nanos(rem), scene, out);
+                    inner.eval(
+                        duration_from_nanos(t.as_nanos() % id.as_nanos()),
+                        scene,
+                        out,
+                    );
+                }
+            }
+            Effect::Loop(inner) => {
+                let period = inner.duration();
+                if !period.is_zero() {
+                    inner.eval(
+                        duration_from_nanos(t.as_nanos() % period.as_nanos()),
+                        scene,
+                        out,
+                    );
                 }
             }
             Effect::Reverse(inner) => {
@@ -600,6 +905,19 @@ impl Effect {
             }
         }
     }
+}
+
+// Convert in seconds plus nanoseconds instead of truncating at u64 nanoseconds.
+fn duration_from_nanos(nanos: u128) -> Duration {
+    let nanos = nanos.min(Duration::MAX.as_nanos());
+    Duration::new(
+        (nanos / 1_000_000_000) as u64,
+        (nanos % 1_000_000_000) as u32,
+    )
+}
+
+fn repeated_duration(duration: Duration, times: usize) -> Duration {
+    duration_from_nanos(duration.as_nanos().saturating_mul(times as u128))
 }
 
 // ---------------------------------------------------------------------------
@@ -792,7 +1110,7 @@ impl Scene {
                     offset: p.offset_of(self, e.id),
                     visible: visibility > 0.0,
                     visibility,
-                    node: e.node.clone(),
+                    node: e.node.clone().post_process(p.surface_fx(e.id).to_vec()),
                 }
             })
             .collect();

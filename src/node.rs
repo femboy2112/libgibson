@@ -187,6 +187,9 @@ pub struct Node {
     pub children: Vec<Node>,
     /// Computed layout rectangle after layout pass.
     pub computed_rect: Rect,
+    /// Already-realized, ordered surface operations. Empty uses the ordinary
+    /// paint path. No clocks, application state, or layout changes live here.
+    pub surface_fx: Vec<crate::surface_fx::SurfaceFx>,
 }
 
 impl Node {
@@ -196,6 +199,7 @@ impl Node {
             layout_style: LayoutStyle::default(),
             children: Vec::new(),
             computed_rect: Rect::default(),
+            surface_fx: Vec::new(),
         }
     }
 
@@ -208,6 +212,18 @@ impl Node {
         });
         n.layout_style.direction = FlexDirection::Column;
         n
+    }
+
+    /// Appends post-processing to this node's ordinary painted subtree.
+    ///
+    /// Layout is identical. Only nodes with a nonempty chain allocate an entity
+    /// scratch surface. Removing the chain reveals the original rendering.
+    pub fn post_process(
+        mut self,
+        effects: impl IntoIterator<Item = crate::surface_fx::SurfaceFx>,
+    ) -> Self {
+        self.surface_fx.extend(effects);
+        self
     }
 
     /// Creates a row flex box.

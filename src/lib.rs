@@ -23,6 +23,7 @@ pub mod session;
 pub mod show;
 pub mod story;
 pub mod surface;
+pub mod surface_fx;
 pub mod transaction;
 pub mod transition;
 pub mod viewport;
@@ -60,9 +61,10 @@ pub use scene::{
 pub use scheduler::{FrameScheduler, RenderStats, DEFAULT_ANIMATION_INTERVAL};
 pub use session::TerminalSession;
 pub use story::{
-    Beat, Condition, FactValue, Facts, Story, StoryAction, StoryDirector, StoryError, StoryEvent,
-    StoryTrace, TraceStep, Transition,
+    Beat, Condition, FactValue, Facts, Reaction, Story, StoryAction, StoryDirector, StoryError,
+    StoryEvent, StoryTrace, TraceStep, Transition,
 };
 pub use surface::{BorderType, Rect, Surface};
+pub use surface_fx::SurfaceFx;
 pub use transition::{dissolve, scramble, scramble_line, type_on, SCRAMBLE_GLYPHS};
 pub use viewport::ViewportState;
