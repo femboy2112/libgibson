@@ -457,7 +457,8 @@ fn capture_screen(case: &Case) -> String {
     cmd.arg("--no-color");
     cmd.arg("--deterministic");
     if case.demo == "acid_vs_crash" {
-        cmd.arg("--manual"); // Inspect the authored stage without defender input.
+        cmd.arg("--manual");
+        cmd.arg("--visual=flat"); // Inspect the authored stage without defender input.
     }
     cmd.arg(format!("--freeze-at={}", case.freeze));
     for a in case.extra {

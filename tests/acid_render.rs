@@ -105,6 +105,7 @@ fn measure(label: &str, a: Node, b: Node, w: u16, h: u16) -> (usize, usize, usiz
 #[test]
 fn real_ghost_cursor_and_route_motion_have_bounded_damage() {
     let mut e = Encounter::new("ghost", false);
+    e.set_visual_mode(encounter::cyber::VisualMode::Flat);
     e.update(Duration::from_millis(600), &[]);
     let a = e.frame(120, 32);
     let mut b = a.clone();
@@ -136,6 +137,7 @@ fn real_ghost_cursor_and_route_motion_have_bounded_damage() {
 #[test]
 fn display_counter_removes_invasion_without_corrupting_control_island() {
     let mut e = Encounter::new("takeover", false);
+    e.set_visual_mode(encounter::cyber::VisualMode::Flat);
     e.update(Duration::from_secs(3), &[]);
     let before = e.frame(120, 32);
     let before_surface = surface(before.clone(), 120, 32);
@@ -194,6 +196,7 @@ fn ghost_input_never_edits_crash_buffer_and_live_resize_keeps_renderer_correct()
 #[test]
 fn real_auth_frontier_increment_is_panel_local_and_frozen_frame_is_free() {
     let mut e = Encounter::new("first-breach", false);
+    e.set_visual_mode(encounter::cyber::VisualMode::Flat);
     let a = e.frame(120, 32);
     e.update(Duration::from_millis(100), &[]);
     let next = e.frame(120, 32);
@@ -226,6 +229,7 @@ fn real_auth_frontier_increment_is_panel_local_and_frozen_frame_is_free() {
 #[test]
 fn instant_final_counter_does_not_freeze_a_recoil_offscreen() {
     let mut e = Encounter::new("climax", false);
+    e.set_visual_mode(encounter::cyber::VisualMode::Flat);
     e.command("hard isolate");
     e.command("cut link");
     assert!(e.director().is_finished());

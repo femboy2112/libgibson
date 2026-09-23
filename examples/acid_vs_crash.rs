@@ -7,6 +7,9 @@
 
 #[path = "acid_vs_crash/battle.rs"]
 pub mod battle;
+#[path = "acid_vs_crash/cyber.rs"]
+pub mod cyber;
+use cyber::{VisualHistory, VisualMode};
 
 use battle::{Control, EncounterModel, NodeId};
 use gibson::cell::{Color, Line, RichText, Span, Style};
@@ -488,6 +491,9 @@ pub struct Encounter {
     mono: bool,
     debug_battle: bool,
     watching: bool,
+    visual_mode: VisualMode,
+    visual_history: VisualHistory,
+    debug_raster: bool,
 }
 impl Encounter {
     pub fn new(stage: &str, mono: bool) -> Self {
@@ -501,6 +507,7 @@ impl Encounter {
         let palette = Palette::new(mono);
         let story = battle_story(&mut scene, stage, &world, palette);
         let director = story.start();
+        let visual_history = VisualHistory::new(&world);
         Self {
             story,
             director,
@@ -517,7 +524,19 @@ impl Encounter {
             mono,
             debug_battle: false,
             watching: false,
+            visual_mode: VisualMode::Auto,
+            visual_history,
+            debug_raster: false,
         }
+    }
+    pub fn set_visual_mode(&mut self, mode: VisualMode) {
+        self.visual_mode = mode;
+    }
+    pub fn set_debug_raster(&mut self, enabled: bool) {
+        self.debug_raster = enabled;
+    }
+    pub fn visual_history(&self) -> &VisualHistory {
+        &self.visual_history
     }
     pub fn director(&self) -> &StoryDirector {
         &self.director
@@ -549,6 +568,7 @@ impl Encounter {
             events: events.to_vec(),
         });
         if self.director.is_finished() {
+            self.visual_history.update(dt, &self.world);
             return;
         }
         let before = semantic_state(&self.world);
@@ -560,6 +580,7 @@ impl Encounter {
             })
             .collect::<Vec<_>>();
         let milestones = self.world.update(dt, &commands);
+        self.visual_history.update(dt, &self.world);
         let mut derived = events
             .iter()
             .filter(|e| matches!(e, StoryEvent::Command(_)))
@@ -615,6 +636,8 @@ impl Encounter {
         let mut replay = Self::replay_trace(&self.trace, self.mono);
         replay.watching = self.watching;
         replay.debug_battle = self.debug_battle;
+        replay.visual_mode = self.visual_mode;
+        replay.debug_raster = self.debug_raster;
         replay
     }
     pub fn replay_trace(trace: &EncounterTrace, mono: bool) -> Self {
@@ -630,6 +653,7 @@ impl Encounter {
         let replay = self.replay();
         let story = self.story.replay(self.director.trace());
         replay.world == self.world
+            && replay.visual_history == self.visual_history
             && replay.trace == self.trace
             && replay.director.trace() == self.director.trace()
             && replay.facts() == self.facts()
@@ -646,9 +670,13 @@ impl Encounter {
             "reset" => {
                 let watching = self.watching;
                 let debug = self.debug_battle;
+                let visual_mode = self.visual_mode;
+                let debug_raster = self.debug_raster;
                 *self = Self::new("quiet", self.mono);
                 self.watching = watching;
                 self.debug_battle = debug;
+                self.visual_mode = visual_mode;
+                self.debug_raster = debug_raster;
             }
             "replay" => {
                 self.inspector = if self.replay_matches() {
@@ -709,10 +737,15 @@ impl Encounter {
     fn map(&self, width: u16, height: u16) -> Node {
         let w = width.saturating_sub(2).max(8);
         let h = height.saturating_sub(2).max(8);
-        let mut surface = Surface::new(w, h);
         let p = self.palette;
         let world = &self.world;
         let positions = Self::positions(width, height);
+        let mut surface =
+            if self.visual_mode != VisualMode::Flat && !self.mono && world.outcome.is_none() {
+                cyber::flat_light(world, &positions, w, h)
+            } else {
+                Surface::new(w, h)
+            };
         let t = world.visual_time().as_secs_f32();
         for (index, edge) in world.graph.edges.iter().enumerate() {
             if (edge.from == NodeId::Decoy || edge.to == NodeId::Decoy)
@@ -1216,7 +1249,185 @@ impl Encounter {
         }
         presentation
     }
+    /// Same semantic world, two deterministic realizations. No paint-time state.
     pub fn frame(&self, width: u16, height: u16) -> Node {
+        let width = width.max(1);
+        let height = height.max(1);
+        let dive = cyber::immersion(
+            &self.world,
+            &self.visual_history,
+            self.visual_mode,
+            self.director.time_in_beat().as_secs_f32(),
+        );
+        if dive <= 0.0 {
+            return self.flat_frame(width, height);
+        }
+        let controls_h = if width < 76 { 5 } else { 4 };
+        let graphic_h = height.saturating_sub(controls_h + 1).max(1);
+        let graphic = cyber::render(
+            &self.world,
+            &self.visual_history,
+            width,
+            graphic_h,
+            self.mono,
+            dive,
+        );
+        let mut root = Node::stack()
+            .width(width as f32)
+            .height(height as f32)
+            .child(Node::raster(graphic.surface).offset(0.0, 1.0));
+        let p = self.palette;
+        let w = &self.world;
+        let presentation = self.realized_presentation(&self.scene);
+        let header_fx = presentation
+            .surface_fx(self.scene.id_of("header").unwrap())
+            .to_vec();
+        let display_fraction = w.graph.node(NodeId::Display).acid_fraction();
+        if (0.4..0.8).contains(&display_fraction) && w.remote_active && width >= 100 {
+            let fx = presentation
+                .surface_fx(self.scene.id_of("session").unwrap())
+                .to_vec();
+            root = root.child(
+                self.sessions(30, 6)
+                    .post_process(fx)
+                    .offset(width.saturating_sub(31) as f32, 2.0),
+            );
+        }
+        let headline = if width < 100 {
+            format!(
+                "CRASH / TRACE {}% / ACID → {}",
+                w.trace_confidence / 10,
+                w.planner.target.name().to_ascii_uppercase()
+            )
+        } else {
+            format!(
+                "CRASH / {}    TRACE {}%    {} → {}",
+                self.director.beat_label(),
+                w.trace_confidence / 10,
+                if w.elapsed_ms >= 6500 {
+                    "ACID"
+                } else {
+                    "UNKNOWN"
+                },
+                w.planner.target.name().to_ascii_uppercase()
+            )
+        };
+        root = root.child(
+            Node::text(headline, p.crash)
+                .post_process(header_fx)
+                .width(width as f32)
+                .height(1.0)
+                .background(Color::Reset)
+                .offset(0.0, 0.0),
+        );
+        let final_move = w.elapsed_ms >= 45000 || w.takeover >= 600;
+        let commands = if self.director.is_finished() {
+            vec!["replay", "facts", "reset", "exit"]
+        } else if final_move {
+            vec!["cut link", "turn trace", "spring decoy", "let her in"]
+        } else {
+            vec!["trace", "isolate", "decoy", "hard isolate"]
+        };
+        let action_labels = commands
+            .iter()
+            .map(|c| {
+                format!(
+                    "{}{}",
+                    c.to_ascii_uppercase(),
+                    if w.action_status(c).available {
+                        ""
+                    } else {
+                        "·"
+                    }
+                )
+            })
+            .collect::<Vec<_>>();
+        let actions = if width < 76 {
+            action_labels[..2].join(" / ")
+        } else {
+            action_labels.join(" / ")
+        };
+        let mut action_node = Node::col().child(Node::text(actions, p.crash).height(1.0));
+        if width < 76 {
+            action_node =
+                action_node.child(Node::text(action_labels[2..].join(" / "), p.crash).height(1.0));
+        }
+        let receipt = if self.debug_raster {
+            format!(
+                "RGB {}px / triangles {} / z {} / fields {} / trails {}",
+                graphic.metrics.pixels,
+                graphic.metrics.triangles.triangles_drawn,
+                graphic.metrics.triangles.z_tests,
+                graphic.metrics.field_samples,
+                graphic.metrics.feedback_passes
+            )
+        } else if !self.inspector.is_empty() {
+            self.inspector.clone()
+        } else if self.debug_battle {
+            format!(
+                "AI {:?}/{:?} / {}",
+                w.planner.goal, w.planner.tactic, w.last_action
+            )
+        } else {
+            format!("{} / {}", w.last_action, self.remote_line())
+        };
+        let prompt = Node::col()
+            .width(width as f32)
+            .height(controls_h as f32)
+            .background(Color::Reset)
+            .child(action_node)
+            .child(Node::text(receipt, p.warning).height(1.0))
+            .child(
+                Node::row()
+                    .height(1.0)
+                    .child(Node::text("crash > ", p.crash).width(8.0))
+                    .child(
+                        Node::text_input(
+                            &self.input.text,
+                            self.input.cursor_grapheme,
+                            Some(if self.watching {
+                                &w.last_action
+                            } else {
+                                "simulated action · Enter"
+                            }),
+                            p.white,
+                        )
+                        .flex_grow(1.0),
+                    ),
+            )
+            .child(
+                Node::text(
+                    if self.watching {
+                        "CRASH WORKING / type to intervene · Esc / Ctrl-C exit"
+                    } else {
+                        "LOCAL CONTROL / Enter · Esc / Ctrl-C exit"
+                    },
+                    p.muted,
+                )
+                .height(1.0),
+            );
+        root = root.child(prompt.offset(0.0, height.saturating_sub(controls_h) as f32));
+        // A cell dissolve preserves real terminal semantics while the ordinary
+        // UI gives way to RGB mass. Bottom controls stay exact and opaque.
+        if dive < 1.0 {
+            root = root.child(
+                Node::stack()
+                    .width(width as f32)
+                    .height(height.saturating_sub(controls_h) as f32)
+                    .child(
+                        self.flat_frame(width, height)
+                            .post_process([SurfaceFx::Dissolve {
+                                seed: SEED,
+                                fraction: 1.0 - dive,
+                            }])
+                            .offset(0.0, 0.0),
+                    )
+                    .offset(0.0, 0.0),
+            );
+        }
+        root
+    }
+    fn flat_frame(&self, width: u16, height: u16) -> Node {
         let mut scene = self.scene.clone();
         let p = self.palette;
         let w = &self.world;
@@ -1589,6 +1800,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         depth == Some(ColorDepth::Mono),
     );
     encounter.set_watching(auto);
+    encounter.set_visual_mode(match value("--visual=") {
+        Some("flat") => VisualMode::Flat,
+        Some("cyber") => VisualMode::Cyber,
+        _ => VisualMode::Auto,
+    });
+    encounter.set_debug_raster(has("--debug-raster") || has("--debug-renderer"));
     encounter.set_debug_battle(has("--debug-battle") || has("--debug-ai"));
     let mut ctx = Context::fullscreen()?;
     if let Some(depth) = depth {
@@ -1628,7 +1845,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         if exit_after && encounter.director.is_finished() && !frozen {
             end_frames += 1;
-            if end_frames >= 40 {
+            if end_frames >= 40 && encounter.visual_history.aftermath >= seconds(4.5) {
                 break;
             }
         }

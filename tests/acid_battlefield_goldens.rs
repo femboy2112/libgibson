@@ -82,6 +82,8 @@ fn battlefield_semantic_goldens() {
     let update = std::env::var("UPDATE_GOLDENS").as_deref() == Ok("1");
     for (label, stage, commands, ticks, mono) in cases {
         let mut encounter = Encounter::new(stage, *mono);
+        // Historical flat-machine snapshots remain a separate realization.
+        encounter.set_visual_mode(encounter::cyber::VisualMode::Flat);
         for command in *commands {
             encounter.command(command);
         }
