@@ -819,6 +819,22 @@ mix in `SceneId` so objects get distinct reproducible masks. Clipping does not
 reshuffle them. Removing a bundle yields the underlying declarative rendering
 on the next frame, with cleanup provided by ordinary differential rendering.
 
+`SurfaceFx::Scoped { mask: FxMask, effect }` restricts an ordinary operation to
+entity-local cells. Rectangles clip in cells; horizontal/vertical wipes, radial
+frontiers and traveling horizontal bands use normalized coordinates. Seeded
+noise provides a stable alternative. Wipe/radial/noise fraction zero is identity
+and one applies the entire inner effect. The fraction selects cells, not alpha.
+A radial frontier is an ellipse in normalized cell coordinates; it is not a
+claim of physical pixel-circular geometry.
+
+A wide grapheme participates only when both cells are selected. Partial scopes
+isolate selected input on a transparent scratch, run the inner effect, and commit
+only complete output glyphs inside the selection. This prevents a tear from
+importing outside text or exporting half a glyph. Outside cells stay exact;
+style-only cells keep their semantics. Empty and full scopes take no-op/direct
+paths. Nested masks share the full entity coordinate system. Scoping adds no
+layout, clock, story, capability or terminal-protocol dependency.
+
 Processed subtrees do not publish a hardware input cursor because a mask or tear
 can invalidate its position. An unaffected focused input can retain its cursor;
 this is the demo's stable command island. TextInput itself still owns ordinary

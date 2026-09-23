@@ -65,6 +65,6 @@ pub use story::{
     StoryEvent, StoryTrace, TraceStep, Transition,
 };
 pub use surface::{BorderType, Rect, Surface};
-pub use surface_fx::SurfaceFx;
+pub use surface_fx::{FxMask, SurfaceFx};
 pub use transition::{dissolve, scramble, scramble_line, type_on, SCRAMBLE_GLYPHS};
 pub use viewport::ViewportState;

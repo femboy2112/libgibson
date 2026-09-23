@@ -381,3 +381,313 @@ fn ordinary_text_input_is_postprocessed_without_changing_its_data() {
     assert!(matches!(input.kind,NodeKind::TextInput{value,..} if value=="unchanged 界"));
     valid(&processed);
 }
+
+fn grid(width: u16, height: u16) -> Surface {
+    let mut surface = Surface::new_transparent(width, height);
+    for y in 0..height {
+        surface.print_str(0, y, &"x".repeat(width as usize), Style::new(), None);
+    }
+    surface
+}
+
+#[test]
+fn scoped_wipes_are_normalized_and_responsive() {
+    for (width, height) in [(8, 4), (32, 12), (56, 24), (120, 32)] {
+        for fraction in [0.0, 0.25, 0.5, 1.0] {
+            for horizontal in [false, true] {
+                let mask = if horizontal {
+                    FxMask::HorizontalWipe { fraction }
+                } else {
+                    FxMask::VerticalWipe { fraction }
+                };
+                let mut s = grid(width, height);
+                SurfaceFx::Reverse.scoped(mask).apply(&mut s);
+                for y in 0..height {
+                    for x in 0..width {
+                        let position = if horizontal {
+                            (f32::from(x) + 0.5) / f32::from(width)
+                        } else {
+                            (f32::from(y) + 0.5) / f32::from(height)
+                        };
+                        assert_eq!(s.get(x, y).unwrap().style.reverse, position < fraction);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn scoped_radial_and_band_have_spatial_geometry() {
+    let mut s = grid(10, 10);
+    SurfaceFx::Reverse
+        .scoped(FxMask::Radial {
+            center: (0.5, 0.5),
+            fraction: 0.5,
+        })
+        .apply(&mut s);
+    assert!(s.get(5, 5).unwrap().style.reverse);
+    assert!(!s.get(0, 0).unwrap().style.reverse);
+    // A radial frontier stays symmetric in normalized coordinates.
+    for y in 0..10 {
+        for x in 0..10 {
+            assert_eq!(s.get(x, y).unwrap().style, s.get(9 - x, y).unwrap().style);
+            assert_eq!(s.get(x, y).unwrap().style, s.get(y, x).unwrap().style);
+        }
+    }
+    let mut band = grid(10, 10);
+    SurfaceFx::Reverse
+        .scoped(FxMask::Band {
+            position: 0.5,
+            width: 0.2,
+        })
+        .apply(&mut band);
+    for y in 0..10 {
+        assert_eq!(band.get(0, y).unwrap().style.reverse, y == 4 || y == 5);
+    }
+}
+
+#[test]
+fn scoped_rect_clips_and_nested_scopes_intersect() {
+    let base = grid(10, 6);
+    let mut s = base.clone();
+    SurfaceFx::Reverse
+        .scoped(FxMask::Rect(Rect::new(7, 3, u16::MAX, u16::MAX)))
+        .apply(&mut s);
+    for y in 0..6 {
+        for x in 0..10 {
+            assert_eq!(s.get(x, y).unwrap().style.reverse, x >= 7 && y >= 3);
+        }
+    }
+    let mut nested = base;
+    SurfaceFx::Reverse
+        .scoped(FxMask::HorizontalWipe { fraction: 0.5 })
+        .scoped(FxMask::VerticalWipe { fraction: 0.5 })
+        .apply(&mut nested);
+    for y in 0..6 {
+        for x in 0..10 {
+            assert_eq!(nested.get(x, y).unwrap().style.reverse, x < 5 && y < 3);
+        }
+    }
+}
+
+#[test]
+fn scoped_noise_is_stable_monotone_and_keeps_transparency() {
+    let mut base = grid(22, 6);
+    base.set_cell(3, 3, Cell::transparent());
+    base.set_cell(7, 2, Cell::style_overlay(Style::new().dim()));
+    let mut previous = base.clone();
+    for fraction in [0.0, 0.2, 0.4, 0.7, 1.0] {
+        let fx = SurfaceFx::Reverse.scoped(FxMask::Noise { seed: 98, fraction });
+        let mut a = base.clone();
+        let mut b = base.clone();
+        fx.apply(&mut a);
+        fx.apply(&mut b);
+        assert_eq!(a, b);
+        for ((before, after), old) in base.cells.iter().zip(&a.cells).zip(&previous.cells) {
+            assert_eq!(before.glyph, after.glyph);
+            assert_eq!(before.transparent, after.transparent);
+            assert_eq!(before.style_only, after.style_only);
+            if old.style.reverse {
+                assert!(after.style.reverse);
+            }
+        }
+        previous = a;
+    }
+}
+
+#[test]
+fn scoped_endpoints_match_identity_and_full_effect_including_movement() {
+    let base = render(panel(), 22, 6);
+    let effects = [
+        SurfaceFx::RowShift { amount: 2, seed: 7 },
+        SurfaceFx::Tear {
+            row: 1,
+            height: 3,
+            amount: -1,
+        },
+        SurfaceFx::Scramble {
+            seed: 18,
+            intensity: 0.8,
+        },
+        SurfaceFx::Dissolve {
+            seed: 55,
+            fraction: 0.4,
+        },
+        SurfaceFx::StyleOverlay(Style::new().reverse()),
+    ];
+    for effect in effects {
+        let mut full = base.clone();
+        effect.apply(&mut full);
+        for fraction in [0.0, 1.0] {
+            for mask in [
+                FxMask::HorizontalWipe { fraction },
+                FxMask::VerticalWipe { fraction },
+                FxMask::Radial {
+                    center: (0.0, 0.3),
+                    fraction,
+                },
+                FxMask::Noise { seed: 6, fraction },
+                FxMask::Band {
+                    position: 0.7,
+                    width: fraction,
+                },
+            ] {
+                let mut scoped = base.clone();
+                effect.clone().scoped(mask).apply(&mut scoped);
+                assert_eq!(scoped, if fraction == 0.0 { &base } else { &full }.clone());
+                valid(&scoped);
+            }
+        }
+    }
+}
+
+#[test]
+fn scoped_wide_boundary_is_indivisible_and_protects_neighbors() {
+    let mut base = Surface::new_transparent(8, 1);
+    base.print_str(0, 0, "a界bc界d", Style::new(), None);
+    for rect in [
+        Rect::new(0, 0, 2, 1),
+        Rect::new(2, 0, 5, 1),
+        Rect::new(6, 0, 2, 1),
+    ] {
+        for effect in [
+            SurfaceFx::Reverse,
+            SurfaceFx::RowShift { amount: 1, seed: 0 },
+            SurfaceFx::RowShift {
+                amount: -1,
+                seed: 0,
+            },
+            SurfaceFx::Dissolve {
+                seed: 5,
+                fraction: 0.0,
+            },
+        ] {
+            let mut s = base.clone();
+            effect.scoped(FxMask::Rect(rect)).apply(&mut s);
+            valid(&s);
+            for x in 0..8 {
+                if !rect.contains(x, 0) {
+                    assert_eq!(s.get(x, 0), base.get(x, 0));
+                }
+            }
+            for start in [1, 5] {
+                if !(rect.contains(start, 0) && rect.contains(start + 1, 0)) {
+                    assert_eq!(s.get(start, 0), base.get(start, 0));
+                    assert_eq!(s.get(start + 1, 0), base.get(start + 1, 0));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn scoped_movement_never_imports_outside_content_or_exports_partial_glyphs() {
+    let mut s = Surface::new_transparent(8, 1);
+    s.print_str(0, 0, "AB界CDEF", Style::new(), None);
+    let base = s.clone();
+    SurfaceFx::RowShift {
+        amount: -1,
+        seed: 0,
+    }
+    .scoped(FxMask::Rect(Rect::new(2, 0, 4, 1)))
+    .apply(&mut s);
+    // The moved wide pair would cross the left mask boundary, so it is dropped
+    // whole. Outside F cannot enter the now-vacant right edge of the selection.
+    assert_eq!(s.get(0, 0), base.get(0, 0));
+    assert_eq!(s.get(1, 0), base.get(1, 0));
+    assert!(s.get(2, 0).unwrap().transparent);
+    assert_eq!(s.get(3, 0).unwrap().glyph.grapheme.as_str(), "C");
+    assert_eq!(s.get(4, 0).unwrap().glyph.grapheme.as_str(), "D");
+    assert!(s.get(5, 0).unwrap().transparent);
+    assert_eq!(s.get(6, 0), base.get(6, 0));
+    assert_eq!(s.get(7, 0), base.get(7, 0));
+    valid(&s);
+}
+
+#[test]
+fn scoped_hostile_chains_keep_wide_glyphs_valid_and_outside_exact() {
+    let base = render(panel(), 22, 6);
+    for seed in 0..24 {
+        for amount in [i32::MIN, -3, -1, 1, 3, i32::MAX] {
+            let rect = Rect::new(3, 1, 14, 4);
+            let mut s = base.clone();
+            for effect in [
+                SurfaceFx::RowShift { amount, seed },
+                SurfaceFx::Scramble {
+                    seed,
+                    intensity: 0.8,
+                },
+                SurfaceFx::Dissolve {
+                    seed,
+                    fraction: 0.5,
+                },
+            ] {
+                effect.scoped(FxMask::Rect(rect)).apply(&mut s);
+                valid(&s);
+            }
+            for y in 0..6 {
+                for x in 0..22 {
+                    if !rect.contains(x, y) {
+                        assert_eq!(s.get(x, y), base.get(x, y));
+                    }
+                }
+            }
+        }
+    }
+    for dimension in [(0, 0), (0, 5), (5, 0)] {
+        let mut s = Surface::new_transparent(dimension.0, dimension.1);
+        SurfaceFx::Reverse
+            .scoped(FxMask::Radial {
+                center: (f32::NAN, f32::INFINITY),
+                fraction: f32::NAN,
+            })
+            .apply(&mut s);
+        assert!(s.cells.is_empty());
+    }
+}
+
+#[test]
+fn ordinary_panel_frontier_has_local_damage_and_frozen_frame_is_free() {
+    let make = |fraction| {
+        Node::stack().width(120.0).height(32.0).child(
+            panel()
+                .post_process([SurfaceFx::Reverse.scoped(FxMask::HorizontalWipe { fraction })])
+                .offset(7.0, 3.0),
+        )
+    };
+    let before = render(make(0.25), 120, 32);
+    let after = render(make(0.30), 120, 32);
+    let diff = compute_diff(Some(&before), &after);
+    assert!(diff.exact_changed_cell_count() > 0);
+    assert!(diff.exact_changed_cell_count() <= 12);
+    assert!(diff
+        .exact_changed_cells()
+        .iter()
+        .all(|&(x, y)| (12..14).contains(&x) && (3..9).contains(&y)));
+    let mut renderer = Renderer::new(RenderMode::Fullscreen);
+    let mut terminal = TerminalSession::headless(120, 32);
+    let mut wire = Vec::new();
+    renderer
+        .render(&mut make(0.25), &mut terminal, &mut wire)
+        .unwrap();
+    wire.clear();
+    let (_, _, bytes, _, _) = renderer
+        .render(&mut make(0.30), &mut terminal, &mut wire)
+        .unwrap();
+    eprintln!(
+        "scoped panel frontier: exact={} affected={} wire={bytes}",
+        diff.exact_changed_cell_count(),
+        diff.affected_cell_count()
+    );
+    assert!(bytes > 0 && bytes < 400);
+    wire.clear();
+    let (_, _, bytes, _, _) = renderer
+        .render(&mut make(0.30), &mut terminal, &mut wire)
+        .unwrap();
+    assert_eq!(bytes, 0);
+    assert!(wire.is_empty());
+    let frozen = compute_diff(Some(&after), &after);
+    assert_eq!(frozen.exact_changed_cell_count(), 0);
+    assert_eq!(frozen.affected_cell_count(), 0);
+}

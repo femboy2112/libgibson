@@ -5,11 +5,79 @@
 //! never terminal operations. Transparent holes stay holes, style-only cells
 //! remain style-only, and a wide grapheme is indivisible. There is no alpha.
 
-use crate::{Cell, Glyph, Rng, Style, Surface};
+use crate::{Cell, Glyph, Rect, Rng, Style, Surface};
+
+/// An entity-local cell selection, independent of color or terminal capability.
+///
+/// Normalized coordinates sample cell centers. Fractions are clamped to [0, 1];
+/// NaN is zero. A wide glyph is selected only when **both** cells are inside the
+/// mask, so a boundary never divides a glyph or modifies a cell outside itself.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FxMask {
+    /// A clipped integer cell rectangle.
+    Rect(Rect),
+    /// A left-to-right frontier. Zero selects nothing; one selects everything.
+    HorizontalWipe { fraction: f32 },
+    /// A top-to-bottom frontier. Zero selects nothing; one selects everything.
+    VerticalWipe { fraction: f32 },
+    /// An expanding ellipse in normalized entity coordinates, centered at
+    /// `center`. At one its radius reaches the farthest corner; zero is empty.
+    Radial { center: (f32, f32), fraction: f32 },
+    /// A horizontal band with normalized height `width`. Its position travels
+    /// from the topmost to bottommost fitting band; width one selects all rows.
+    Band { position: f32, width: f32 },
+    /// A stable coordinate-seeded selection. Increasing the fraction only adds
+    /// cells; zero is empty and one selects the complete entity.
+    Noise { seed: u64, fraction: f32 },
+}
+
+impl FxMask {
+    fn contains(&self, x: u16, y: u16, width: u16, height: u16) -> bool {
+        let nx = (f32::from(x) + 0.5) / f32::from(width);
+        let ny = (f32::from(y) + 0.5) / f32::from(height);
+        match *self {
+            Self::Rect(rect) => rect.contains(x, y),
+            Self::HorizontalWipe { fraction } => nx < unit(fraction),
+            Self::VerticalWipe { fraction } => ny < unit(fraction),
+            Self::Radial { center, fraction } => {
+                let fraction = f64::from(unit(fraction));
+                let cx = f64::from(unit(center.0));
+                let cy = f64::from(unit(center.1));
+                // Subtract the center before dividing, preserving reflection
+                // symmetry at a half-cell frontier (not nx - cx rounding).
+                let dx = (f64::from(x) + 0.5 - cx * f64::from(width)) / f64::from(width);
+                let dy = (f64::from(y) + 0.5 - cy * f64::from(height)) / f64::from(height);
+                let farthest_squared = cx.max(1.0 - cx).powi(2) + cy.max(1.0 - cy).powi(2);
+                fraction > 0.0
+                    && (fraction == 1.0
+                        || dx.powi(2) + dy.powi(2) <= fraction.powi(2) * farthest_squared)
+            }
+            Self::Band { position, width } => {
+                let width = unit(width);
+                let start = unit(position) * (1.0 - width);
+                ny >= start && ny < start + width
+            }
+            Self::Noise { seed, fraction } => {
+                let fraction = unit(fraction);
+                fraction > 0.0
+                    && (fraction == 1.0
+                        || Rng::new(seed ^ ((y as u64) << 32) ^ x as u64).next_f32() < fraction)
+            }
+        }
+    }
+}
 
 /// A fully realized operation: no clocks, story state, or hidden randomness.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SurfaceFx {
+    /// Apply an ordinary effect only to selected complete glyphs. The input
+    /// outside the mask is hidden from the effect and left exactly unchanged.
+    /// Moved output is clipped as whole glyphs to the same selection. Nested
+    /// scopes intersect; their coordinate system remains the full entity.
+    Scoped {
+        mask: FxMask,
+        effect: Box<SurfaceFx>,
+    },
     StyleOverlay(Style),
     /// Apply a style to a stable seeded fraction of painted graphemes, leaving
     /// unselected cells intact. A terminal-native invasion/reveal, not alpha.
@@ -54,6 +122,10 @@ impl SurfaceFx {
     /// Apply this operation to the whole entity-local surface.
     pub fn apply(&self, surface: &mut Surface) {
         match *self {
+            Self::Scoped {
+                ref mask,
+                ref effect,
+            } => scoped(surface, mask, effect),
             Self::StyleOverlay(style) => overlay(surface, style, None),
             Self::StyleMask {
                 style,
@@ -112,10 +184,81 @@ impl SurfaceFx {
         }
     }
 
+    /// Restrict this effect to an entity-local mask, preserving its order in
+    /// the chain. Scopes do not change the entity's layout or dimensions.
+    pub fn scoped(self, mask: FxMask) -> Self {
+        Self::Scoped {
+            mask,
+            effect: Box::new(self),
+        }
+    }
+
     /// Ordered composition. Concatenating chains is associative; [] is identity.
     pub fn apply_chain(chain: &[Self], surface: &mut Surface) {
         for effect in chain {
             effect.apply(surface);
+        }
+    }
+}
+
+fn scoped(surface: &mut Surface, mask: &FxMask, effect: &SurfaceFx) {
+    let width = surface.width;
+    let height = surface.height;
+    let mut selected: Vec<bool> = (0..surface.height)
+        .flat_map(|y| (0..width).map(move |x| mask.contains(x, y, width, height)))
+        .collect();
+    // Narrow a selection at original wide-glyph boundaries. Cells outside the
+    // selection must remain byte-for-byte intact, including their continuation.
+    for y in 0..surface.height {
+        for x in 0..width {
+            let i = y as usize * width as usize + x as usize;
+            let cell = &surface.cells[i];
+            if !cell.transparent && !cell.style_only && cell.glyph.display_width == 2 {
+                let whole = x + 1 < width && selected[i] && selected[i + 1];
+                selected[i] = whole;
+                if x + 1 < width {
+                    selected[i + 1] = whole;
+                }
+            }
+        }
+    }
+    if !selected.iter().any(|&s| s) {
+        return;
+    }
+    if selected.iter().all(|&s| s) {
+        effect.apply(surface);
+        return;
+    }
+    let mut local = surface.clone();
+    for (cell, &keep) in local.cells.iter_mut().zip(&selected) {
+        if !keep {
+            *cell = Cell::transparent();
+        }
+    }
+    effect.apply(&mut local);
+    for (cell, &replace) in surface.cells.iter_mut().zip(&selected) {
+        if replace {
+            *cell = Cell::transparent();
+        }
+    }
+    for y in 0..surface.height {
+        let mut x = 0;
+        while x < width {
+            let i = y as usize * width as usize + x as usize;
+            let cell = &local.cells[i];
+            let span = if !cell.transparent && !cell.style_only && cell.glyph.display_width == 2 {
+                2
+            } else {
+                1
+            };
+            if !cell.is_continuation
+                && x + span <= width
+                && selected[i..i + span as usize].iter().all(|&s| s)
+            {
+                surface.cells[i..i + span as usize]
+                    .clone_from_slice(&local.cells[i..i + span as usize]);
+            }
+            x += span;
         }
     }
 }
