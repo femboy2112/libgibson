@@ -372,3 +372,37 @@ fn autonomous_default_visits_cyberspace_and_reconstructs_without_input() {
     );
     assert!(e.replay_matches());
 }
+
+#[test]
+fn moving_graphics_report_real_damage_and_wire_cost() {
+    for stage in ["first-breach", "trace", "takeover"] {
+        let mut e = prepared(stage);
+        let previous = painted(e.frame(160, 40), 160, 40);
+        let mut renderer = Renderer::new(RenderMode::Fullscreen);
+        let mut terminal = TerminalSession::headless(160, 40);
+        let mut wire = Vec::new();
+        renderer
+            .render(&mut e.frame(160, 40), &mut terminal, &mut wire)
+            .unwrap();
+        e.update(Duration::from_millis(17), &[]);
+        let start = std::time::Instant::now();
+        let node = e.frame(160, 40);
+        let generation = start.elapsed();
+        let next = painted(node.clone(), 160, 40);
+        let diff = compute_diff(Some(&previous), &next);
+        wire.clear();
+        let (_, _, bytes, _, _) = renderer
+            .render(&mut node.clone(), &mut terminal, &mut wire)
+            .unwrap();
+        eprintln!("{stage} 160x40/17ms: exact={} affected={} bytes={bytes} generation_us={} (observation, not a timing assertion)",diff.exact_changed_cell_count(),diff.affected_cell_count(),generation.as_micros());
+        assert!(diff.exact_changed_cell_count() > 0);
+        assert!(diff.affected_cell_count() >= diff.exact_changed_cell_count());
+        assert!(bytes > 0);
+        wire.clear();
+        let (_, _, frozen, _, _) = renderer
+            .render(&mut node.clone(), &mut terminal, &mut wire)
+            .unwrap();
+        assert_eq!(frozen, 0);
+        assert!(wire.is_empty());
+    }
+}
