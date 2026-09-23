@@ -675,6 +675,26 @@ impl Scene {
         &self.entities
     }
 
+    /// Mutable access to an entity (e.g. to refresh a dynamic overlay's node).
+    pub fn entity_mut(&mut self, id: SceneId) -> Option<&mut SceneEntity> {
+        self.entities.iter_mut().find(|e| e.id == id)
+    }
+
+    pub fn entity(&self, id: SceneId) -> Option<&SceneEntity> {
+        self.entities.iter().find(|e| e.id == id)
+    }
+
+    /// Replaces an entity's node in place. Returns `false` if the id is unknown.
+    pub fn set_node(&mut self, id: SceneId, node: Node) -> bool {
+        match self.entity_mut(id) {
+            Some(e) => {
+                e.node = node;
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.entities.len()
     }

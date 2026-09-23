@@ -18,7 +18,9 @@ use gibson::context::Context;
 use gibson::focus::{FocusId, FocusRing};
 use gibson::input::{Event, KeyCode, KeyModifiers, TextInputState};
 use gibson::node::{Node, WrapMode};
+use gibson::scene::{Easing, Effect, Presentation, Scene, SceneEntity, SceneTarget};
 use gibson::show;
+use gibson::story::{Beat, Condition, Story, StoryAction, StoryDirector, StoryEvent};
 use gibson::{BorderType, ThemeStyles, TimeSource, ViewportState};
 use std::env;
 use std::time::Duration;
@@ -139,11 +141,65 @@ fn initial_plan() -> Vec<Tool> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Phase {
-    Plan,
-    Permission,
-    Prompt,
-    Done,
+enum SessionOutcome {
+    /// The mutation was approved and the post-approval plan ran.
+    Approved,
+    /// The user rejected the mutation; nothing was written.
+    Rejected,
+    /// The operator cancelled (Ctrl-C) before completion.
+    Cancelled,
+}
+
+/// The story graph: preflight inspection → permission → mutation plan → prompt.
+///
+/// Permission happens **before** any mutation, and rejection/cancellation are
+/// real terminal beats with truthful outcomes. Transitions that fire on tool
+/// completion use semantic facts (`preflight-done`, `mutation-done`) rather than
+/// hand-refreshed timers.
+fn polished_story() -> Story {
+    Story::new("inspect")
+        .beat(
+            Beat::new("inspect")
+                .label("Inspect & reproduce")
+                .transition(Condition::fact_true("preflight-done"), "permission")
+                // Safety net so a stalled run cannot hang forever.
+                .after(Duration::from_secs(30), "permission"),
+        )
+        .beat(
+            Beat::new("permission")
+                .label("Permission")
+                .transition(Condition::on(StoryEvent::PermissionApproved), "patch")
+                .transition(Condition::on(StoryEvent::PermissionRejected), "rejected")
+                .transition(Condition::on(StoryEvent::Cancelled), "cancelled"),
+        )
+        .beat(
+            Beat::new("patch")
+                .label("Apply approved change")
+                .on_enter(StoryAction::set_bool("approved", true))
+                .transition(Condition::fact_true("mutation-done"), "prompt")
+                .transition(Condition::on(StoryEvent::Cancelled), "cancelled")
+                .after(Duration::from_secs(30), "prompt"),
+        )
+        .beat(
+            Beat::new("prompt")
+                .label("Prompt")
+                .on_enter(StoryAction::set_bool("session-active", true))
+                .transition(Condition::on(StoryEvent::custom("finish")), "done")
+                .transition(Condition::on(StoryEvent::Cancelled), "cancelled"),
+        )
+        .beat(
+            Beat::new("rejected")
+                .label("Rejected")
+                .on_enter(StoryAction::set_bool("rejected", true))
+                .terminal(),
+        )
+        .beat(
+            Beat::new("cancelled")
+                .label("Cancelled")
+                .on_enter(StoryAction::set_bool("cancelled", true))
+                .terminal(),
+        )
+        .beat(Beat::new("done").label("Done").terminal())
 }
 
 const STREAM_TEXT: &str = "I audited the differential pipeline and the scrollback handoff. The live region now tracks an explicit physical anchor, so a resize forces a full re-anchor instead of trusting stale coordinates. Insert-before-live is proven to leave the live framebuffer untouched on the fast path, with a correct repaint fallback otherwise.";
@@ -159,13 +215,13 @@ struct App {
     fx: Fx,
     tools: Vec<Tool>,
     tool_cursor: usize,
-    phase: Phase,
+    /// Deterministic story beats + semantic facts (replaces ad-hoc `Phase`).
+    director: StoryDirector,
     stream: String,
     stream_shown: usize,
     transcript: Vec<Line>,
     events: Vec<Line>,
     permission: usize,
-    approved: bool,
     input: TextInputState,
     bg_sent: bool,
     frame_bytes: Vec<f32>,
@@ -175,13 +231,14 @@ struct App {
     toast: Option<(String, f32)>,
     debug: bool,
     debug_info: String,
-    permission_ready_at: u64,
     done: bool,
     /// Keyboard focus (prompt vs code viewport). A modal captures focus.
     focus: FocusRing,
     /// Scrollable camera over the synthetic code/diff viewport.
     code_cam: ViewportState,
     summary_committed: bool,
+    /// True while a modal owns all keyboard input.
+    modal_captured: bool,
 }
 
 fn select_theme(light: bool, dark: bool, no_color: bool) -> Theme {
@@ -197,24 +254,23 @@ fn select_theme(light: bool, dark: bool, no_color: bool) -> Theme {
 }
 
 impl App {
-    fn new(fx: Fx, deterministic: bool, debug: bool) -> Self {
+    fn new(fx: Fx, deterministic: bool, debug: bool, stage: Option<&str>) -> Self {
         let time = if deterministic {
             TimeSource::fixed(Duration::from_millis(16))
         } else {
             TimeSource::real()
         };
-        Self {
+        let mut app = Self {
             time,
             fx,
             tools: initial_plan(),
             tool_cursor: 0,
-            phase: Phase::Plan,
+            director: polished_story().start(),
             stream: STREAM_TEXT.to_string(),
             stream_shown: 0,
             transcript: Vec::new(),
             events: Vec::new(),
             permission: 0,
-            approved: false,
             input: TextInputState::new(),
             bg_sent: false,
             frame_bytes: Vec::new(),
@@ -223,12 +279,113 @@ impl App {
             toast: None,
             debug,
             debug_info: String::new(),
-            permission_ready_at: 0,
             done: false,
             focus: FocusRing::new([FOCUS_PROMPT, FOCUS_CODE]),
             code_cam: ViewportState::new(),
             summary_committed: false,
+            modal_captured: false,
+        };
+        if let Some(stage) = stage {
+            app.apply_stage(stage);
         }
+        app
+    }
+
+    /// Deterministic start states for fast tests and goldens (`--stage=`).
+    ///
+    /// This sets coherent state (tool states + story facts), it does not skip
+    /// rendering: the live foreground still paints and PTY interaction is real.
+    fn apply_stage(&mut self, stage: &str) {
+        match stage {
+            "plan" => {}
+            "permission" => {
+                self.complete_tools(0, 3, None);
+                self.director.facts_mut().set_bool("preflight-done", true);
+                self.director.jump_to("permission");
+                self.begin_permission();
+            }
+            "failure" => {
+                // Post-approval plan paused at the failing test.
+                self.complete_tools(0, 4, None);
+                self.tools[4].state = ToolState::Failed;
+                self.complete_tools(5, 5, None);
+                self.director.facts_mut().set_bool("preflight-done", true);
+                self.director.facts_mut().set_bool("approved", true);
+                self.director.jump_to("patch");
+                self.stream_shown = self.stream.chars().count();
+            }
+            "prompt" | "done" => {
+                self.complete_tools(0, 9, Some(4));
+                self.director.facts_mut().set_bool("preflight-done", true);
+                self.director.facts_mut().set_bool("approved", true);
+                self.director.facts_mut().set_bool("mutation-done", true);
+                self.stream_shown = self.stream.chars().count();
+                if stage == "done" {
+                    self.director.jump_to("done");
+                } else {
+                    self.director.jump_to("prompt");
+                }
+            }
+            "rejected" => {
+                self.complete_tools(0, 3, None);
+                self.director.facts_mut().set_bool("preflight-done", true);
+                self.director.jump_to("permission");
+                self.director
+                    .update(Duration::ZERO, &[StoryEvent::PermissionRejected]);
+            }
+            "cancelled" => {
+                self.director
+                    .update(Duration::ZERO, &[StoryEvent::Cancelled]);
+            }
+            _ => {}
+        }
+    }
+
+    /// Marks tools `[start, end)` complete, with an optional failing index.
+    fn complete_tools(&mut self, start: usize, end: usize, fail_at: Option<usize>) {
+        for i in start..end.min(self.tools.len()) {
+            self.tools[i].progress = 1.0;
+            self.tools[i].state = if Some(i) == fail_at {
+                ToolState::Failed
+            } else if i == 1 {
+                ToolState::Warn
+            } else {
+                ToolState::Done
+            };
+        }
+        self.tool_cursor = end.min(self.tools.len());
+    }
+
+    fn begin_permission(&mut self) {
+        if !self.modal_captured {
+            self.focus.capture();
+            self.modal_captured = true;
+        }
+        self.permission = 0;
+    }
+
+    /// The current story beat id.
+    fn beat(&self) -> &str {
+        self.director.current_beat()
+    }
+
+    fn in_permission(&self) -> bool {
+        self.beat() == "permission"
+    }
+
+    /// The truthful session outcome derived from story facts / beats.
+    fn outcome(&self) -> SessionOutcome {
+        if self.director.facts().bool("rejected") {
+            SessionOutcome::Rejected
+        } else if self.director.facts().bool("cancelled") {
+            SessionOutcome::Cancelled
+        } else {
+            SessionOutcome::Approved
+        }
+    }
+
+    fn is_done(&self) -> bool {
+        self.director.is_finished()
     }
 
     fn elapsed(&self) -> f32 {
@@ -274,43 +431,62 @@ impl App {
         self.toast = Some((text.to_string(), self.elapsed()));
     }
 
-    /// Advance decorative animation and the plan timeline.
+    /// Advance the story-driven plan timeline.
+    ///
+    /// The tool runner is gated by the [`StoryDirector`]'s beat: preflight tools
+    /// run in `inspect`, mutation tools run in `patch`. Completing a group sets a
+    /// semantic fact; the director follows the matching transition. There is no
+    /// phase enum and no `*_frames` counter synchronising the visuals.
     fn animate(&mut self) {
-        if self.phase == Phase::Plan {
-            if let Some(tool) = self.tools.get_mut(self.tool_cursor) {
-                if tool.state == ToolState::Queued {
-                    tool.state = ToolState::Running;
-                }
-                tool.progress = (tool.progress + 0.06).min(1.0);
-                if tool.progress >= 1.0 {
-                    // Tool 1 (`inspect`) warns; tool 4 (`test`) genuinely fails;
-                    // everything else passes. This is a real state machine, not a
-                    // predetermined happy path.
-                    tool.state = match self.tool_cursor {
-                        1 => ToolState::Warn,
-                        4 => ToolState::Failed,
-                        _ => ToolState::Done,
-                    };
-                    let line = tool_line(tool, &self.fx);
-                    self.transcript.push(line);
-                    let (verb, detail, state) = (tool.verb, tool.detail, tool.state);
-                    self.on_tool_complete(verb, detail, state);
-                    self.tool_cursor += 1;
-                }
-            }
+        let beat = self.beat().to_string();
+        let (start, end) = match beat.as_str() {
+            "inspect" => (0usize, 3usize),
+            "patch" => (3usize, self.tools.len()),
+            _ => (0, 0),
+        };
+        if end > start {
+            self.advance_tool(start, end);
             self.stream_shown = (self.stream_shown + 9).min(self.stream.chars().count());
             if self.tool_cursor == 2 && !self.bg_sent {
                 self.bg_sent = true;
                 self.add_event("diagnostics refreshed · 0 warnings".into(), self.fx.good);
                 self.show_toast("diagnostics refreshed · 0 warnings");
             }
-            if self.tool_cursor >= self.tools.len() {
-                self.add_event("patch conflict: needs review".into(), Color::Reset);
-                self.phase = Phase::Permission;
-                self.focus.capture();
-                // Keep the modal on screen for a few frames in scripted mode so
-                // it is visible and capturable deterministically.
-                self.permission_ready_at = self.render_frames + 15;
+        }
+
+        // Publish completion facts; the director owns the transition.
+        if beat == "inspect" && self.tool_cursor >= 3 {
+            self.add_event("patch conflict: needs review".into(), Color::Reset);
+            self.director.facts_mut().set_bool("preflight-done", true);
+        } else if beat == "patch" && self.tool_cursor >= self.tools.len() {
+            self.director.facts_mut().set_bool("mutation-done", true);
+        }
+    }
+
+    /// Advances exactly one tool in `[start, end)` by one progress step.
+    fn advance_tool(&mut self, start: usize, end: usize) {
+        if self.tool_cursor < start || self.tool_cursor >= end {
+            return;
+        }
+        let idx = self.tool_cursor;
+        if let Some(tool) = self.tools.get_mut(idx) {
+            if tool.state == ToolState::Queued {
+                tool.state = ToolState::Running;
+            }
+            tool.progress = (tool.progress + 0.06).min(1.0);
+            if tool.progress >= 1.0 {
+                // Tool 1 (`inspect`) warns; tool 4 (`test`) genuinely fails;
+                // everything else passes. A real state machine, not a happy path.
+                tool.state = match idx {
+                    1 => ToolState::Warn,
+                    4 => ToolState::Failed,
+                    _ => ToolState::Done,
+                };
+                let line = tool_line(tool, &self.fx);
+                let (verb, detail, state) = (tool.verb, tool.detail, tool.state);
+                self.transcript.push(line);
+                self.on_tool_complete(verb, detail, state);
+                self.tool_cursor += 1;
             }
         }
     }
@@ -350,15 +526,14 @@ impl App {
     }
 
     fn auto_step(&mut self) {
-        match self.phase {
-            Phase::Plan => self.animate(),
-            Phase::Permission => {
-                if self.render_frames >= self.permission_ready_at {
-                    self.permission = 0;
-                    self.confirm_permission();
-                }
+        match self.beat() {
+            "inspect" | "patch" => self.animate(),
+            "permission" => {
+                // Scripted runs choose the first (Approve once) option.
+                self.permission = 0;
+                self.resolve_permission();
             }
-            Phase::Prompt => {
+            "prompt" => {
                 // Hostile Unicode end-to-end: ASCII, emoji, CJK, combining mark,
                 // ZWJ sequence and a regional-indicator flag.
                 for ch in
@@ -370,7 +545,9 @@ impl App {
                 self.add_event("index finished while you were typing".into(), self.fx.good);
                 self.finish();
             }
-            Phase::Done => self.done = true,
+            _ => {
+                self.finish();
+            }
         }
     }
 
@@ -393,127 +570,184 @@ impl App {
 
     fn handle_event(&mut self, event: &Event) -> bool {
         if is_cancel(event) {
-            self.add_event("cancelled by operator (Ctrl-C)".into(), self.fx.bad);
-            self.phase = Phase::Done;
-            self.done = true;
+            self.cancel_session();
             return true;
         }
         match event {
-            Event::Key(k) => match self.phase {
-                Phase::Permission => match k.code {
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.permission = if self.permission == 0 {
-                            2
-                        } else {
-                            self.permission - 1
-                        };
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        self.permission = (self.permission + 1) % 3
-                    }
-                    KeyCode::Char(c @ '1'..='3') => self.permission = (c as usize) - ('1' as usize),
-                    KeyCode::Char('a') => {
-                        self.permission = 1;
-                        self.confirm_permission();
-                    }
-                    KeyCode::Enter => self.confirm_permission(),
-                    KeyCode::Esc => {
-                        self.permission = 2;
-                        self.confirm_permission();
-                    }
-                    _ => {}
-                },
-                Phase::Prompt => match k.code {
-                    KeyCode::Tab => {
-                        self.focus.focus_next();
-                        return true;
-                    }
-                    KeyCode::BackTab => {
-                        self.focus.focus_prev();
-                        return true;
-                    }
-                    // Arrow/Page/Home/End drive the code viewport. Home/End are
-                    // only taken from the prompt when the code view holds focus,
-                    // so text-editing keys are never stolen.
-                    KeyCode::Up => {
-                        self.code_cam.scroll_by(0, -1);
-                        return true;
-                    }
-                    KeyCode::Down => {
-                        self.code_cam.scroll_by(0, 1);
-                        return true;
-                    }
-                    KeyCode::PageUp => {
-                        self.code_cam.page(CODE_VIEW_H, -1);
-                        return true;
-                    }
-                    KeyCode::PageDown => {
-                        self.code_cam.page(CODE_VIEW_H, 1);
-                        return true;
-                    }
-                    KeyCode::Home if self.focus.current() == Some(FOCUS_CODE) => {
-                        self.code_cam.home();
-                        return true;
-                    }
-                    KeyCode::End if self.focus.current() == Some(FOCUS_CODE) => {
-                        self.code_cam.end(CODE_VIEW.len() as u16, CODE_VIEW_H);
-                        return true;
-                    }
-                    KeyCode::Enter => {
-                        let text = self.input.text.clone();
-                        self.transcript.push(
-                            Line::new()
-                                .span(Span::styled("❯ ", self.fx.st.accent))
-                                .span(Span::styled(text, self.fx.st.text)),
-                        );
-                        self.input = TextInputState::new();
-                    }
-                    KeyCode::Esc => {
-                        self.finish();
-                    }
-                    _ => return self.input.handle_event(event),
-                },
-                _ => {}
-            },
-            Event::Paste(_) => {
-                return self.phase == Phase::Prompt && self.input.handle_event(event)
+            Event::Key(k) => {
+                // A modal captures ALL relevant keyboard input.
+                if self.in_permission() {
+                    return self.handle_permission_key(k);
+                }
+                if self.beat() == "prompt" {
+                    return self.handle_prompt_key(event, k);
+                }
+                // After a terminal beat (rejected/cancelled/done) the session is
+                // over: Enter/Esc acknowledges and commits the truthful summary.
+                if self.director.is_finished() && matches!(k.code, KeyCode::Enter | KeyCode::Esc) {
+                    self.finish();
+                    return true;
+                }
+                false
+            }
+            Event::Paste(_) => self.beat() == "prompt" && self.input.handle_event(event),
+            _ => false,
+        }
+    }
+
+    /// Modal input policy: every relevant key is consumed here; nothing leaks
+    /// through to the dashboard or prompt beneath.
+    fn handle_permission_key(&mut self, k: &gibson::input::KeyEvent) -> bool {
+        match k.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.permission = if self.permission == 0 {
+                    2
+                } else {
+                    self.permission - 1
+                };
+                false
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.permission = (self.permission + 1) % 3;
+                false
+            }
+            KeyCode::Char(c @ '1'..='3') => {
+                self.permission = (c as usize) - ('1' as usize);
+                false
+            }
+            KeyCode::Char('a') => {
+                self.permission = 1;
+                self.resolve_permission();
+                true
+            }
+            KeyCode::Enter => {
+                self.resolve_permission();
+                true
+            }
+            KeyCode::Esc => {
+                self.permission = 2;
+                self.resolve_permission();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Focus-aware input routing.
+    ///
+    /// `FOCUS_PROMPT`: characters and text-editing keys go to the `TextInput`.
+    /// `FOCUS_CODE`: vertical navigation belongs to the code viewport and
+    /// characters are ignored (they are never silently typed into the prompt).
+    fn handle_prompt_key(&mut self, event: &Event, k: &gibson::input::KeyEvent) -> bool {
+        match k.code {
+            KeyCode::Tab => {
+                self.focus.focus_next();
+                return true;
+            }
+            KeyCode::BackTab => {
+                self.focus.focus_prev();
+                return true;
             }
             _ => {}
         }
-        false
-    }
-
-    fn confirm_permission(&mut self) {
-        self.approved = self.permission != 2;
-        if !self.approved {
-            // Rejection aborts the session: remaining plan entries are skipped.
-            for t in self.tools.iter_mut() {
-                if t.state == ToolState::Queued {
-                    t.state = ToolState::Skipped;
+        if self.focus.current() == Some(FOCUS_CODE) {
+            match k.code {
+                KeyCode::Up => {
+                    self.code_cam.scroll_by(0, -1);
+                    true
                 }
+                KeyCode::Down => {
+                    self.code_cam.scroll_by(0, 1);
+                    true
+                }
+                KeyCode::PageUp => {
+                    self.code_cam.page(CODE_VIEW_H, -1);
+                    true
+                }
+                KeyCode::PageDown => {
+                    self.code_cam.page(CODE_VIEW_H, 1);
+                    true
+                }
+                KeyCode::Home => {
+                    self.code_cam.home();
+                    true
+                }
+                KeyCode::End => {
+                    self.code_cam.end(CODE_VIEW.len() as u16, CODE_VIEW_H);
+                    true
+                }
+                KeyCode::Esc => {
+                    self.finish();
+                    true
+                }
+                KeyCode::Enter => {
+                    self.submit_prompt();
+                    true
+                }
+                _ => false,
+            }
+        } else {
+            match k.code {
+                KeyCode::Esc => {
+                    self.finish();
+                    true
+                }
+                KeyCode::Enter => {
+                    self.submit_prompt();
+                    true
+                }
+                _ => self.input.handle_event(event),
             }
         }
-        let (glyph, style, msg) = if self.approved {
-            (
-                "✔ ",
-                self.fx.st.success,
-                "patch applied  src/ansi.rs  (+18 −2)",
-            )
-        } else {
-            ("✖ ", self.fx.st.error, "patch rejected")
-        };
+    }
+
+    fn submit_prompt(&mut self) {
+        let text = self.input.text.clone();
         self.transcript.push(
             Line::new()
-                .span(Span::styled(glyph, style))
-                .span(Span::styled(msg, self.fx.st.text)),
+                .span(Span::styled("❯ ", self.fx.st.accent))
+                .span(Span::styled(text, self.fx.st.text)),
         );
-        if self.approved {
-            // Real diff presentation with semantic roles.
+        self.input = TextInputState::new();
+    }
+
+    /// Applies the modal decision as a semantic story event and narrates the
+    /// truthful result. Approval moves to the mutation beat; rejection marks the
+    /// remaining plan entries skipped — permission is never post-hoc.
+    fn resolve_permission(&mut self) {
+        let approved = self.permission != 2;
+        let event = if approved {
+            StoryEvent::PermissionApproved
+        } else {
+            StoryEvent::PermissionRejected
+        };
+        self.director.update(Duration::ZERO, &[event]);
+
+        if self.modal_captured {
+            self.focus.release();
+            self.modal_captured = false;
+        }
+
+        if approved {
+            self.transcript.push(
+                Line::new()
+                    .span(Span::styled("✔ ", self.fx.st.success))
+                    .span(Span::styled(
+                        "approved  patch src/geom.rs  (+31 −9)",
+                        self.fx.st.text,
+                    )),
+            );
             let diff: &[(&str, Option<&str>, Option<&str>)] = &[
-                ("214", Some("self.previous_surface = None;"), None),
-                ("214", None, Some("self.preserve_live_surface();")),
-                ("215", Some("self.compiler.reset_cursor(0, 0);"), None),
-                ("215", None, Some("self.compiler.home_cursor();")),
+                (
+                    "351",
+                    Some("if z < self.near { return None; }"),
+                    Some("if !self.is_valid() || z < self.near { return None; }"),
+                ),
+                (
+                    "393",
+                    None,
+                    Some("let z_limit = limit - limit * CLIP_INSET_ULPS * f32::EPSILON;"),
+                ),
             ];
             for (lineno, del, add) in diff {
                 if let Some(d) = del {
@@ -533,16 +767,37 @@ impl App {
                     );
                 }
             }
+        } else {
+            for t in self.tools.iter_mut() {
+                if t.state == ToolState::Queued || t.state == ToolState::Running {
+                    t.state = ToolState::Skipped;
+                }
+            }
+            self.transcript.push(
+                Line::new()
+                    .span(Span::styled("✖ ", self.fx.st.error))
+                    .span(Span::styled("patch rejected", self.fx.st.text)),
+            );
         }
-        // Closing the modal restores the focus it captured on open.
-        if self.focus.is_captured() {
-            self.focus.release();
-        }
-        self.phase = Phase::Prompt;
     }
 
-    /// Commits the completion summary to the transcript (demo-local numbers).
+    /// Ctrl-C: a real cancellation path with a truthful outcome.
+    fn cancel_session(&mut self) {
+        self.add_event("cancelled by operator (Ctrl-C)".into(), self.fx.bad);
+        if !self.director.is_finished() {
+            self.director
+                .update(Duration::ZERO, &[StoryEvent::Cancelled]);
+        }
+        self.finish();
+    }
+
+    /// Commits the completion summary to the transcript, derived from the actual
+    /// [`SessionOutcome`]. Demo-local numbers only — no repository-wide telemetry.
     fn finish(&mut self) {
+        if !self.director.is_finished() {
+            self.director
+                .update(Duration::ZERO, &[StoryEvent::custom("finish")]);
+        }
         if self.summary_committed {
             self.done = true;
             return;
@@ -550,28 +805,37 @@ impl App {
         self.summary_committed = true;
         let fx = self.fx;
         self.transcript.push(Line::new());
-        let (glyph, glyph_style, title, lines): (&str, Style, &str, &[&str]) = if self.approved {
-            (
+        let (glyph, glyph_style, title, lines): (&str, Style, &str, &[&str]) = match self.outcome()
+        {
+            SessionOutcome::Approved => (
                 "✔ ",
                 fx.st.success,
                 "session complete",
                 &[
-                    "3 files changed  (geom.rs · surface.rs · painter.rs)",
-                    "17 tests added  ·  local suite 233 → 250",
-                    "renderer invariant proven: no edge popping, no clip leak",
+                    "3 files changed  (geom.rs · surface.rs · canvas.rs)",
+                    "17 targeted checks added  ·  clip regression suite green",
+                    "no edge popping, no wide-glyph clip leak, damage honest",
                 ],
-            )
-        } else {
-            (
+            ),
+            SessionOutcome::Rejected => (
                 "✖ ",
                 fx.st.error,
                 "session stopped — patch rejected",
                 &[
                     "no files changed · working tree untouched",
-                    "plan paused after 4 of 9 steps",
+                    "plan paused after 3 of 9 steps (before any mutation)",
                     "nothing was written to disk",
                 ],
-            )
+            ),
+            SessionOutcome::Cancelled => (
+                "⊘ ",
+                fx.st.warning,
+                "session cancelled",
+                &[
+                    "no files changed · working tree untouched",
+                    "operator aborted before completion",
+                ],
+            ),
         };
         self.transcript.push(
             Line::new()
@@ -585,7 +849,6 @@ impl App {
                     .span(Span::styled(*line, fx.st.muted)),
             );
         }
-        self.phase = Phase::Done;
         self.done = true;
     }
 }
@@ -774,36 +1037,115 @@ fn build_root(app: &App, ctx: &Context) -> Node {
     root = root.child(panel_footer(app, cols));
 
     // Floating overlays. The base dashboard is never rebuilt or reflowed; the
-    // overlay is composited on top through the Stack layer.
-    if app.phase == Phase::Permission {
+    // overlay is composited on top through the Stack layer. Overlay motion
+    // (reveal, slide) comes from the Scene Algebra `Effect`s, not hand-computed
+    // padding — the panel itself knows nothing about animation.
+    if let Some(overlay) = build_overlay(app, cols, rows) {
         return Node::stack()
             .percent_width(100.0)
             .percent_height(100.0)
             .child(root)
-            .child(permission_overlay(app));
+            .child(overlay);
     }
+    root
+}
+
+/// Builds the scene overlay through the render functor.
+///
+/// Entities wrap ordinary nodes; [`Effect`]s drive position and visibility. The
+/// result is a normal `Node` tree composited over the dashboard.
+fn build_overlay(app: &App, cols: u16, rows: u16) -> Option<Node> {
+    let mut scene = Scene::new();
+    let (w, h) = (cols as f32, rows as f32);
+    let mut p = Presentation::new();
+    let mut any = false;
+
+    if app.in_permission() {
+        let dim = scene.add(
+            SceneEntity::new(
+                "dim",
+                Node::dim().percent_width(100.0).percent_height(100.0),
+            )
+            .z(0)
+            .hidden(),
+        );
+        let modal = scene.add(
+            SceneEntity::new("modal", permission_modal_node(app))
+                .z(1)
+                .hidden(),
+        );
+        let (mw, mh) = (46.0f32, 8.0f32);
+        let cx = ((w - mw) * 0.5).max(0.0).round();
+        let cy = ((h - mh) * 0.5).max(0.0).round();
+        let effect = Effect::parallel([
+            Effect::reveal(SceneTarget::Id(dim), 0.0, 1.0, Duration::from_millis(140)),
+            Effect::reveal(SceneTarget::Id(modal), 0.0, 1.0, Duration::from_millis(180)),
+            Effect::translate(
+                SceneTarget::Id(modal),
+                (cx, cy - 3.0),
+                (cx, cy),
+                Duration::from_millis(220),
+            )
+            .eased(Easing::EaseOut),
+        ]);
+        effect.eval(app.director.time_in_beat(), &scene, &mut p);
+        any = true;
+    }
+
     if let Some((text, shown_at)) = &app.toast {
         let age = app.elapsed() - *shown_at;
         // Decorative toasts are suppressed on ultra-narrow terminals where they
         // would cover essential panel titles.
         if age < 2.4 && cols >= 66 {
-            return Node::stack()
-                .percent_width(100.0)
-                .percent_height(100.0)
-                .child(root)
-                .child(toast_overlay(app, text, age));
+            let panel_w = ((text.len() as u16) + 10).clamp(24, 46) as f32;
+            let toast = scene.add(
+                SceneEntity::new("toast", toast_panel_node(app, text, panel_w))
+                    .z(2)
+                    .hidden(),
+            );
+            let (ax, ay) = ((w - panel_w - 2.0).max(0.0), 2.0f32);
+            let enter = Effect::parallel([
+                Effect::reveal(SceneTarget::Id(toast), 0.0, 1.0, Duration::from_millis(160)),
+                Effect::translate(
+                    SceneTarget::Id(toast),
+                    (ax, ay - 2.0),
+                    (ax, ay),
+                    Duration::from_millis(200),
+                )
+                .eased(Easing::EaseOut),
+            ]);
+            let exit = Effect::parallel([
+                Effect::reveal(SceneTarget::Id(toast), 1.0, 0.0, Duration::from_millis(400)),
+                Effect::translate(
+                    SceneTarget::Id(toast),
+                    (ax, ay),
+                    (ax, ay - 1.0),
+                    Duration::from_millis(400),
+                ),
+            ]);
+            let effect = Effect::sequence([
+                enter,
+                Effect::Delay(Duration::from_millis(1600), Box::new(Effect::identity())),
+                exit,
+            ]);
+            effect.eval(Duration::from_secs_f32(age.max(0.0)), &scene, &mut p);
+            any = true;
         }
     }
-    root
+
+    if !any {
+        return None;
+    }
+    Some(scene.to_node(&p, w, h))
 }
 
-/// A centered, opaque permission modal over a dim veil.
-fn permission_overlay(app: &App) -> Node {
+/// The opaque permission modal (the dim veil is a separate scene entity).
+fn permission_modal_node(app: &App) -> Node {
     let fx = &app.fx;
     let mut body = RichText::new().line(
         Line::new()
             .span(Span::styled("Allow ", fx.st.muted))
-            .span(Span::styled("patch src/ansi.rs", fx.st.text))
+            .span(Span::styled("patch src/geom.rs", fx.st.text))
             .span(Span::styled("?", fx.st.muted)),
     );
     for (i, (label, detail)) in PERMISSION_OPTIONS.iter().enumerate() {
@@ -823,20 +1165,7 @@ fn permission_overlay(app: &App) -> Node {
         }
         body = body.line(line);
     }
-
-    Node::stack()
-        .percent_width(100.0)
-        .percent_height(100.0)
-        // Dim veil over everything beneath the modal (style-only layer).
-        .child(Node::dim().percent_width(100.0).percent_height(100.0))
-        .child(
-            Node::col()
-                .percent_width(100.0)
-                .percent_height(100.0)
-                .align_items(gibson::node::AlignItems::Center)
-                .justify_content(gibson::node::JustifyContent::Center)
-                .child(modal_with_shadow(fx, body)),
-        )
+    modal_with_shadow(fx, body)
 }
 
 /// A floating modal with a block-glyph drop shadow. The shadow is a raster layer
@@ -867,38 +1196,18 @@ fn modal_with_shadow(fx: &Fx, body: RichText) -> Node {
         )
 }
 
-/// A toast that slides down from the top-right and fades out.
-fn toast_overlay(app: &App, text: &str, age: f32) -> Node {
+/// The toast panel itself. Its slide/fade is a Scene [`Effect`]; this builder is
+/// purely declarative and has no idea it is animated.
+fn toast_panel_node(app: &App, text: &str, width: f32) -> Node {
     let fx = &app.fx;
-    let appear = (age / 0.25).clamp(0.0, 1.0);
-    let gone = ((age - 1.8) / 0.6).clamp(0.0, 1.0);
-    let alpha = appear * (1.0 - gone);
-    let pad_top = ((1.0 - appear) * 2.0).round();
-    let style = if alpha > 0.6 {
-        fx.st.success
-    } else if alpha > 0.3 {
-        fx.st.warning
-    } else {
-        fx.st.muted
-    };
     let body = Line::new()
         .span(Span::styled("◆ ", fx.st.accent))
-        .span(Span::styled(text, style));
-
-    Node::col()
-        .percent_width(100.0)
-        .percent_height(100.0)
-        .align_items(gibson::node::AlignItems::End)
-        .justify_content(gibson::node::JustifyContent::Start)
-        // Keep the toast below the panel title rows so it never hides them.
-        .padding_top(2.0 + pad_top)
-        .padding_right(2.0)
-        .child(
-            Node::panel("TOAST", BorderType::Rounded, fx.st.border)
-                .width(((text.len() as u16) + 10).clamp(24, 46) as f32)
-                .background(Color::Reset)
-                .child(Node::line(body)),
-        )
+        .span(Span::styled(text, fx.st.success));
+    Node::panel("TOAST", BorderType::Rounded, fx.st.border)
+        .width(width)
+        .height(3.0)
+        .background(Color::Reset)
+        .child(Node::line(body))
 }
 
 fn banner(app: &App, wide: bool) -> Node {
@@ -1135,11 +1444,7 @@ fn panel_telemetry(app: &App, width: u16) -> Node {
             ))
             .span(Span::styled("  state ", fx.st.muted))
             .span(Span::styled(
-                if app.phase == Phase::Done {
-                    "idle"
-                } else {
-                    "streaming"
-                },
+                if app.is_done() { "idle" } else { "streaming" },
                 fx.st.accent,
             )),
     );
@@ -1189,12 +1494,19 @@ fn panel_footer(app: &App, width: u16) -> Node {
             .scroll_offset(app.input.scroll_offset)
             .flex_grow(1.0),
         );
-    tpanel("PROMPT", fx.st.border)
-        .percent_width(100.0)
-        .height(3.0)
-        // The prompt must never be squeezed off-screen by a tall content column.
-        .flex_shrink(0.0)
-        .child(prompt)
+    tpanel(
+        if app.beat() == "prompt" {
+            "PROMPT ●"
+        } else {
+            "PROMPT"
+        },
+        fx.st.border,
+    )
+    .percent_width(100.0)
+    .height(3.0)
+    // The prompt must never be squeezed off-screen by a tall content column.
+    .flex_shrink(0.0)
+    .child(prompt)
 }
 
 // ---------------------------------------------------------------------------
@@ -1251,6 +1563,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dark = args.iter().any(|a| a == "--dark");
     let no_color = args.iter().any(|a| a == "--no-color");
     let debug = args.iter().any(|a| a == "--debug-renderer");
+    let stage = args
+        .iter()
+        .find_map(|a| a.strip_prefix("--stage=").map(str::to_string));
 
     let fx = Fx::new(select_theme(light, dark, no_color), !no_color);
     let mut ctx = if inline {
@@ -1267,7 +1582,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ctx.set_animation_interval(Duration::from_millis(if auto { 8 } else { 66 }));
     apply_capability_flags(&mut ctx, &args, no_color);
 
-    let mut app = App::new(fx, deterministic, debug);
+    let mut app = App::new(fx, deterministic, debug, stage.as_deref());
 
     // ACT 1 — real session open. In inline mode the header and the user request
     // are committed to genuine terminal scrollback, above the live foreground.
@@ -1291,8 +1606,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let frozen = deterministic && freeze_at.is_some_and(|n| iterations > n);
         if !frozen {
             // Advance animation time exactly once per frame.
+            let prev = app.time.now();
             let _t = app.time.advance();
+            let dt = app.time.now().saturating_sub(prev);
             app.sample(&mut ctx);
+            // The director owns beat timing, facts and mounted effect bundles.
+            app.director.update(dt, &[]);
             if auto {
                 app.auto_step();
             } else {
@@ -1318,7 +1637,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // A background event while the user is typing. In inline mode it is
         // pushed into real terminal scrollback above the live dashboard.
-        if !auto && app.phase == Phase::Prompt && !app.bg_sent && app.render_frames > 90 {
+        if !auto && app.beat() == "prompt" && !app.bg_sent && app.render_frames > 90 {
             app.bg_sent = true;
             let msg = "index finished while you were typing";
             if inline {
@@ -1341,11 +1660,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = ctx.run_once(ctx.animation_interval());
 
     // ACT 10 — final response is committed to history so the user gets their
-    // shell back with an ordinary, greppable record of what happened.
+    // shell back with an ordinary, greppable record of what actually happened.
     if inline {
-        ctx.commit_text(
-            "✔ session complete · 3 files changed · 17 tests added · renderer invariant proven",
-        )?;
+        let epilogue = match app.outcome() {
+            SessionOutcome::Approved => {
+                "✔ session complete · 3 files changed · 17 targeted checks added · clip regression suite green"
+            }
+            SessionOutcome::Rejected => {
+                "✖ session stopped — patch rejected · no files changed · nothing written to disk"
+            }
+            SessionOutcome::Cancelled => {
+                "⊘ session cancelled · no files changed · working tree untouched"
+            }
+        };
+        ctx.commit_text(epilogue)?;
     }
     ctx.restore()?;
 
@@ -1360,13 +1688,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             stats.anchor_resyncs
         );
     } else {
+        let label = match app.outcome() {
+            SessionOutcome::Approved => "✔ session complete.",
+            SessionOutcome::Rejected => "✖ session stopped (patch rejected).",
+            SessionOutcome::Cancelled => "⊘ session cancelled.",
+        };
         println!(
             "{} {} frames · {} full repaints · {} anchor resyncs · {} B frames · {} B commits",
-            if app.approved {
-                "✔ session complete."
-            } else {
-                "session complete."
-            },
+            label,
             stats.frames,
             stats.full_repaints,
             stats.anchor_resyncs,

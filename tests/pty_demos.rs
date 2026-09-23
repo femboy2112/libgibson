@@ -117,6 +117,24 @@ impl Session {
         }
     }
 
+    /// Polls the raw byte stream until `pred` holds or the timeout elapses.
+    ///
+    /// Inline sessions commit the truthful epilogue to real scrollback, which may
+    /// be outside the current visible screen, so tests assert on the raw stream.
+    fn wait_until_raw(&mut self, timeout: Duration, pred: impl Fn(&str) -> bool) -> String {
+        let start = Instant::now();
+        loop {
+            let raw = self.raw_string();
+            if pred(&raw) {
+                return raw;
+            }
+            if start.elapsed() >= timeout {
+                return raw;
+            }
+            std::thread::sleep(Duration::from_millis(40));
+        }
+    }
+
     fn exited(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(Some(_)))
     }
@@ -194,44 +212,64 @@ fn hack_tactical_selector_commits_a_directive() {
 
 #[test]
 fn polished_permission_reject_returns_to_prompt() {
-    let mut s = Session::spawn("polished_agent", &["--fullscreen"], 100, 30);
-    // The plan plays out in real time; wait for the permission modal.
-    let screen = s.wait_until(Duration::from_secs(25), |sc| sc.contains("PERMISSION"));
+    // Fast deterministic start-state: jump straight to the permission modal.
+    let mut s = Session::spawn(
+        "polished_agent",
+        &["--fullscreen", "--stage=permission"],
+        100,
+        30,
+    );
+    let screen = s.wait_until(Duration::from_secs(5), |sc| sc.contains("PERMISSION"));
     assert!(
         screen.contains("PERMISSION"),
         "permission modal missing: {screen}"
     );
+    assert!(
+        screen.contains("patch src/geom.rs"),
+        "modal must name the real change target: {screen}"
+    );
     // Select the third option (Reject) and confirm.
     s.write(b"\x1b[B\x1b[B");
     s.write(b"\r");
-    std::thread::sleep(Duration::from_millis(120));
-    // Esc ends the session and commits the aborted summary.
-    s.write(b"\x1b");
-    let screen = s.wait_until(Duration::from_secs(5), |sc| {
-        sc.contains("patch rejected") || sc.contains("session stopped")
-    });
+    let screen = s.wait_until(Duration::from_secs(3), |sc| sc.contains("patch rejected"));
     assert!(
-        screen.contains("patch rejected") || screen.contains("session stopped"),
+        screen.contains("patch rejected"),
         "reject path not shown: {screen}"
+    );
+    // Esc acknowledges the terminal beat and commits the truthful summary.
+    s.write(b"\x1b");
+    let screen = s.wait_until(Duration::from_secs(3), |sc| sc.contains("session stopped"));
+    assert!(
+        screen.contains("session stopped") || screen.contains("patch rejected"),
+        "reject summary missing: {screen}"
     );
     s.shutdown();
 }
 
 #[test]
 fn polished_accepts_hostile_unicode_and_scrolls_code() {
-    let mut s = Session::spawn("polished_agent", &["--fullscreen"], 110, 30);
-    let screen = s.wait_until(Duration::from_secs(25), |sc| sc.contains("PERMISSION"));
+    let mut s = Session::spawn(
+        "polished_agent",
+        &["--fullscreen", "--stage=permission"],
+        110,
+        30,
+    );
+    let screen = s.wait_until(Duration::from_secs(5), |sc| sc.contains("PERMISSION"));
     assert!(
         screen.contains("PERMISSION"),
         "permission modal missing: {screen}"
     );
     // Approve once.
     s.write(b"\r");
-    s.wait_until(Duration::from_secs(3), |sc| sc.contains("PROMPT"));
+    // Wait until the mutation beat has completed and the prompt is live.
+    s.wait_until(Duration::from_secs(10), |sc| sc.contains("PROMPT ●"));
     // Focus the code viewport and scroll it.
     s.write(b"\t"); // Tab → code focus
     s.write(b"\x1b[B\x1b[B"); // Down Down
     std::thread::sleep(Duration::from_millis(80));
+    // Return focus to the prompt before typing: characters must NOT leak into the
+    // prompt while the code view owns focus.
+    s.write(b"\t");
     // Type a hostile Unicode line and submit it.
     s.type_str("e\u{0301}\u{4f60}\u{597d}\u{1f980}");
     s.write(b"\r");
@@ -244,5 +282,62 @@ fn polished_accepts_hostile_unicode_and_scrolls_code() {
     );
     // Exit cleanly.
     s.write(b"\x1b"); // Esc → finish
+    s.shutdown();
+}
+
+#[test]
+fn polished_inline_approve_commits_truthful_summary() {
+    // Inline (the product identity). Approve, let the mutation plan run, finish,
+    // then assert the *real* completion record landed in scrollback.
+    let mut s = Session::spawn("polished_agent", &["--stage=permission"], 100, 30);
+    s.wait_until(Duration::from_secs(5), |sc| sc.contains("PERMISSION"));
+    s.write(b"\r"); // Approve once
+    s.wait_until(Duration::from_secs(10), |sc| sc.contains("PROMPT ●"));
+    s.write(b"\x1b"); // finish
+    let raw = s.wait_until_raw(Duration::from_secs(5), |r| r.contains("session complete"));
+    assert!(
+        raw.contains("session complete"),
+        "approved inline epilogue missing: {raw}"
+    );
+    assert!(
+        raw.contains("clip regression suite green"),
+        "truthful demo-local metrics missing: {raw}"
+    );
+    s.shutdown();
+}
+
+#[test]
+fn polished_inline_reject_commits_no_changes() {
+    let mut s = Session::spawn("polished_agent", &["--stage=permission"], 100, 30);
+    s.wait_until(Duration::from_secs(5), |sc| sc.contains("PERMISSION"));
+    s.write(b"\x1b[B\x1b[B"); // Reject
+    s.write(b"\r");
+    s.write(b"\x1b"); // acknowledge
+    let raw = s.wait_until_raw(Duration::from_secs(5), |r| r.contains("no files changed"));
+    assert!(
+        raw.contains("no files changed"),
+        "reject must report no files changed: {raw}"
+    );
+    assert!(
+        !raw.contains("session complete"),
+        "a rejected session must never claim completion: {raw}"
+    );
+    s.shutdown();
+}
+
+#[test]
+fn polished_inline_cancel_reports_cancelled() {
+    let mut s = Session::spawn("polished_agent", &["--stage=permission"], 100, 30);
+    s.wait_until(Duration::from_secs(5), |sc| sc.contains("PERMISSION"));
+    s.write(b"\x03"); // Ctrl-C
+    let raw = s.wait_until_raw(Duration::from_secs(5), |r| r.contains("session cancelled"));
+    assert!(
+        raw.contains("session cancelled"),
+        "cancel must report a cancelled session: {raw}"
+    );
+    assert!(
+        !raw.contains("session complete"),
+        "a cancelled session must not claim completion: {raw}"
+    );
     s.shutdown();
 }

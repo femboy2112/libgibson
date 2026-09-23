@@ -622,6 +622,22 @@ impl StoryDirector {
         p
     }
 
+    /// Jumps directly to a beat, running its `on_enter` actions.
+    ///
+    /// This is the deterministic "start state" hook for tests, goldens and
+    /// `--stage=` flags (analogous to the Hackers `--act=` jump). Returns `false`
+    /// if the beat is unknown.
+    pub fn jump_to(&mut self, beat: impl AsRef<str>) -> bool {
+        let id = beat.as_ref().to_string();
+        if self.story.beats.contains_key(&id) {
+            self.finished = false;
+            self.enter(id);
+            true
+        } else {
+            false
+        }
+    }
+
     /// A compact debug inspector: current beat, facts, mounted bundles and time.
     pub fn debug_lines(&self) -> Vec<String> {
         let mut out = vec![format!(
