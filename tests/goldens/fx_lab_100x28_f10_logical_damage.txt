@@ -1,0 +1,28 @@
+FX LAB [13] Logical damage vs wire cost  t=  0.2s
+╭─ Logical damage vs wire cost ────────────────────────────────────────────────────────────────────╮
+│erase whole row  →  logical 60  explicit  0  wire 13 B                                            │
+│shrink to 'status: ok'  →  logical 60  explicit 10  wire 23 B                                     │
+│logical damage counts erased visible cells; wire cost counts emitted bytes                        │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

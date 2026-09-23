@@ -1,0 +1,28 @@
+FX LAB [12] Wide-glyph clip boundary  t=  0.2s
+╭─ Wide-glyph clip boundary ───────────────────────────────────────────────────────────────────────╮
+│top: wide lead on the final clip column is suppressed, base untouched                             │
+│bottom: a wide glyph that fits is placed with its continuation                                    │
+│abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij                                      │
+│--你--------------------------------------------------------                                      │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

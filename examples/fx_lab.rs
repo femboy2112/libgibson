@@ -12,10 +12,14 @@ use std::collections::HashMap;
 use std::env;
 use std::time::Duration;
 
+use gibson::ansi::AnsiCompiler;
 use gibson::cell::{Color, Line, RichText, Span, Style, Theme, ThemeStyles};
+use gibson::diff::compute_diff;
 use gibson::node::{Node, WrapMode};
-use gibson::surface::BorderType;
-use gibson::{Context, Mesh, Projector, TimeSource, Transform3, ViewportState};
+use gibson::surface::{BorderType, Rect, Surface};
+use gibson::{
+    BrailleCanvas, Context, Mesh, Projector, TimeSource, Transform3, Vec3, ViewportState,
+};
 
 const SCENES: &[&str] = &[
     "Braille oscilloscope",
@@ -28,6 +32,13 @@ const SCENES: &[&str] = &[
     "Compositor (modal+shadow)",
     "Viewport camera pan",
     "Damage heatmap",
+    "Near-plane clipping",
+    "Wide-glyph clip boundary",
+    "Logical damage vs wire cost",
+    "Mono ordered dithering",
+    "Gibson data city",
+    "Packet routes",
+    "Water particles",
 ];
 
 struct Fx {
@@ -301,7 +312,7 @@ impl Lab {
                     ))
                     .child(view)
             }
-            _ => {
+            9 => {
                 // Damage heatmap: how often each cell changed over N frames.
                 let cw = inner_w.clamp(8, 90);
                 let ch = content_rows.max(4);
@@ -329,13 +340,20 @@ impl Lab {
                 Node::col()
                     .child(Node::text(
                         format!(
-                            "cells changed over {} distinct positions",
+                            "logical damage cells over {} distinct positions",
                             self.damage.len()
                         ),
                         fx.st.muted,
                     ))
                     .child(Node::raster(canvas.to_surface(fx.st.warning)))
             }
+            10 => near_plane_clip_scene(fx, inner_w, content_rows, self.t),
+            11 => wide_clip_scene(fx, inner_w),
+            12 => logical_vs_wire_scene(fx),
+            13 => mono_dither_scene(fx, inner_w, content_rows, self.t),
+            14 => data_city_scene(fx, inner_w, content_rows, self.t),
+            15 => packet_routes_scene(fx, inner_w, content_rows, self.t),
+            _ => water_particles_scene(fx, inner_w, content_rows, self.t),
         }
     }
 
@@ -353,6 +371,279 @@ impl Lab {
             ))
             .child(Node::raster(canvas.to_surface(fx.st.accent)))
     }
+}
+
+fn bright(fx: &Fx) -> Style {
+    if fx.color {
+        fx.st.accent
+    } else {
+        Style::default().bold()
+    }
+}
+
+fn dim(fx: &Fx) -> Style {
+    if fx.color {
+        fx.st.muted
+    } else {
+        Style::default().dim()
+    }
+}
+
+fn near_plane_clip_scene(fx: &Fx, inner_w: u16, rows: u16, t: f32) -> Node {
+    let cw = inner_w.clamp(8, 90);
+    let ch = rows.max(5);
+    let proj = Projector {
+        camera_z: 3.0,
+        near: 0.6,
+    };
+    let mesh = Mesh::box_xyz(1.6, 1.6, 1.6);
+    let mut canvas = BrailleCanvas::new(cw, ch);
+    // Push the box toward the camera so its front face sits behind the near
+    // plane. Crossing edges must render their visible truncated part.
+    let tf = Transform3 {
+        rx: 0.5,
+        ry: t * 0.6,
+        rz: 0.0,
+        scale: 1.0,
+        offset: Vec3::new(0.0, 0.0, 2.4),
+    };
+    proj.draw(&mesh, &tf, &mut canvas, 1.0);
+    Node::col()
+        .child(Node::text(
+            format!(
+                "near plane z={:.2} (inclusive) · crossing edges are truncated, never dropped",
+                proj.camera_z - proj.near
+            ),
+            fx.st.muted,
+        ))
+        .child(Node::raster(canvas.to_surface(bright(fx))))
+}
+
+fn wide_clip_scene(fx: &Fx, inner_w: u16) -> Node {
+    let w = inner_w.clamp(12, 60);
+    let style = if fx.color {
+        fx.st.text
+    } else {
+        Style::default()
+    };
+    let letters = "abcdefghij".repeat((w as usize / 10) + 1);
+    let mut base = Surface::new(w, 2);
+    base.print_str(0, 0, &letters, style, Some(w));
+    base.print_str(0, 1, &"-".repeat(w as usize), dim(fx), Some(w));
+
+    let mut layer = Surface::new_transparent(w, 2);
+    // Lead lands on the final clip column: suppressed (no continuation leak).
+    layer.print_str(w.saturating_sub(1), 0, "你", style, None);
+    // Fully inside the clip: placed normally.
+    layer.print_str(2, 1, "你", style, None);
+    base.blit_transparent_clipped(&layer, 0, 0, Rect::new(0, 0, w, 2));
+
+    Node::col()
+        .child(Node::text(
+            "top: wide lead on the final clip column is suppressed, base untouched",
+            fx.st.muted,
+        ))
+        .child(Node::text(
+            "bottom: a wide glyph that fits is placed with its continuation",
+            fx.st.muted,
+        ))
+        .child(Node::raster(base))
+}
+
+fn logical_vs_wire_scene(fx: &Fx) -> Node {
+    let cols = 60u16;
+    let mut long = Surface::new(cols, 1);
+    long.print_str(0, 0, &"#".repeat(cols as usize), Style::default(), None);
+    let blank = Surface::new(cols, 1);
+    let erase = compute_diff(Some(&long), &blank);
+    let explicit = erase.explicit_dirty_count();
+    let logical = erase.logical_dirty_count();
+    let mut comp = AnsiCompiler::new();
+    let wire = comp.compile(&erase).len();
+
+    let mut short = Surface::new(cols, 1);
+    short.print_str(0, 0, "status: ok", Style::default(), None);
+    let shrink = compute_diff(Some(&long), &short);
+    let mut comp2 = AnsiCompiler::new();
+    let wire2 = comp2.compile(&shrink).len();
+
+    Node::col()
+        .child(Node::text(
+            format!(
+                "erase whole row  →  logical {:>2}  explicit {:>2}  wire {:>2} B",
+                logical, explicit, wire
+            ),
+            fx.st.text,
+        ))
+        .child(Node::text(
+            format!(
+                "shrink to 'status: ok'  →  logical {:>2}  explicit {:>2}  wire {:>2} B",
+                shrink.logical_dirty_count(),
+                shrink.explicit_dirty_count(),
+                wire2
+            ),
+            fx.st.text,
+        ))
+        .child(Node::text(
+            "logical damage counts erased visible cells; wire cost counts emitted bytes",
+            fx.st.muted,
+        ))
+}
+
+fn mono_dither_scene(fx: &Fx, inner_w: u16, rows: u16, t: f32) -> Node {
+    let cw = inner_w.clamp(8, 90);
+    let ch = (rows.saturating_sub(2) / 2).max(3);
+    let style = if fx.color {
+        fx.st.accent
+    } else {
+        Style::default()
+    };
+    let mut dither = BrailleCanvas::new(cw, ch);
+    gibson::render_field_braille_dithered(&mut dither, t, 0.3, 5.0, 1.0);
+    let mut hard = BrailleCanvas::new(cw, ch);
+    gibson::render_field_braille(&mut hard, t, 0.3, 0.5, 5.0);
+    Node::col()
+        .child(Node::text("ordered 4x4 Bayer dither", fx.st.muted))
+        .child(Node::raster(dither.to_surface(style)))
+        .child(Node::text(
+            "hard threshold (collapses to solid)",
+            fx.st.muted,
+        ))
+        .child(Node::raster(hard.to_surface(dim(fx))))
+}
+
+/// A reusable "Gibson data city": perspective circuit plane, data towers and a
+/// central rotating core. Near edges are drawn bright, far edges dim, using the
+/// projector's depth output (no z-buffer, no occlusion claim).
+fn data_city(fx: &Fx, cw: u16, ch: u16, t: f32) -> Node {
+    let mut mesh = Mesh::grid_xz(6.0, 6.0, 12);
+    let towers: &[(f32, f32, f32, f32, f32)] = &[
+        (-4.0, -3.0, 0.8, 2.2, 0.8),
+        (-2.0, 2.0, 1.0, 3.4, 1.0),
+        (1.0, -2.0, 0.9, 2.8, 0.9),
+        (3.5, 2.5, 1.2, 4.0, 1.2),
+        (0.0, 4.0, 0.7, 1.8, 0.7),
+        (-4.5, 3.5, 0.6, 2.6, 0.6),
+    ];
+    for &(x, z, w, h, d) in towers {
+        mesh.append(&Mesh::data_tower(x, z, w, h, d));
+    }
+    mesh.append(&Mesh::octahedron(0.7).translated(Vec3::new(0.0, 2.8, 0.0)));
+
+    let tf = Transform3 {
+        rx: -0.75,
+        ry: t * 0.22,
+        rz: 0.0,
+        scale: 1.0,
+        offset: Vec3::new(0.0, -1.1, 0.0),
+    };
+    let pw = (cw as f32) * 2.0;
+    let ph = (ch as f32) * 4.0;
+    let edges = Projector::default().project_mesh(&mesh, &tf, pw, ph, 1.0);
+    let mut depths: Vec<f32> = edges.iter().map(|e| e.depth).collect();
+    depths.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = depths.get(depths.len() / 2).copied().unwrap_or(0.0);
+
+    let mut far = BrailleCanvas::new(cw, ch);
+    let mut near = BrailleCanvas::new(cw, ch);
+    for e in &edges {
+        if e.depth <= median {
+            near.line(e.a.0, e.a.1, e.b.0, e.b.1);
+        } else {
+            far.line(e.a.0, e.a.1, e.b.0, e.b.1);
+        }
+    }
+    let mut layer = Surface::new_transparent(cw, ch);
+    far.paint_into(&mut layer, (0, 0), dim(fx));
+    near.paint_into(&mut layer, (0, 0), bright(fx));
+    Node::raster(layer)
+}
+
+fn data_city_scene(fx: &Fx, inner_w: u16, rows: u16, t: f32) -> Node {
+    let cw = inner_w.clamp(8, 100);
+    let ch = rows.max(5);
+    Node::col()
+        .child(Node::text(
+            "near edges bright, far edges dim · towers + circuit plane + core",
+            fx.st.muted,
+        ))
+        .child(data_city(fx, cw, ch, t))
+}
+
+fn packet_routes_scene(fx: &Fx, inner_w: u16, rows: u16, t: f32) -> Node {
+    let cw = inner_w.clamp(8, 100);
+    let ch = rows.max(5);
+    let pw = (cw as f32) * 2.0;
+    let ph = (ch as f32) * 4.0;
+    let nodes = [
+        (0.12, 0.25),
+        (0.38, 0.12),
+        (0.72, 0.28),
+        (0.88, 0.62),
+        (0.58, 0.85),
+        (0.22, 0.72),
+    ];
+    let pos = |i: usize| (nodes[i].0 * pw, nodes[i].1 * ph);
+    let routes = [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 4),
+        (4, 5),
+        (5, 0),
+        (0, 3),
+        (2, 5),
+    ];
+    let mut canvas = BrailleCanvas::new(cw, ch);
+    for &(a, b) in &routes {
+        let (x0, y0) = pos(a);
+        let (x1, y1) = pos(b);
+        canvas.line(x0 as i32, y0 as i32, x1 as i32, y1 as i32);
+    }
+    // Deterministic packet dots travelling each route.
+    for (k, &(a, b)) in routes.iter().enumerate() {
+        let (x0, y0) = pos(a);
+        let (x1, y1) = pos(b);
+        for j in 0..3 {
+            let phase = (t * 0.55 + k as f32 * 0.13 + j as f32 * 0.34).fract();
+            let x = x0 + (x1 - x0) * phase;
+            let y = y0 + (y1 - y0) * phase;
+            canvas.set(x.round() as i32, y.round() as i32);
+            canvas.set(x.round() as i32 + 1, y.round() as i32);
+        }
+    }
+    Node::col()
+        .child(Node::text(
+            "network graph + moving packet particles along fixed routes",
+            fx.st.muted,
+        ))
+        .child(Node::raster(canvas.to_surface(bright(fx))))
+}
+
+fn water_particles_scene(fx: &Fx, inner_w: u16, rows: u16, t: f32) -> Node {
+    let cw = inner_w.clamp(8, 100);
+    let ch = rows.max(5);
+    let cycle = 2.0f32;
+    let local = (t % cycle) / cycle;
+    let mut ps = gibson::ParticleSystem::new(0xBEEF_1234);
+    ps.burst_directional(
+        220,
+        cw as f32 * 0.5,
+        0.0,
+        12.0,
+        cycle,
+        std::f32::consts::FRAC_PI_2,
+        1.6,
+    );
+    ps.update(local * cycle);
+    let mut canvas = BrailleCanvas::new(cw, ch);
+    ps.render_braille(&mut canvas);
+    Node::col()
+        .child(Node::text(
+            "directional burst (rooftop pool) spilling down the viewport",
+            fx.st.muted,
+        ))
+        .child(Node::raster(canvas.to_surface(bright(fx))))
 }
 
 fn apply_capability_flags(ctx: &mut Context, args: &[String]) {
@@ -406,10 +697,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         TimeSource::real()
     };
+    let debug_damage = has("--debug-damage");
     let mut lab = Lab::new(Fx::new(theme, !no_color), debug);
     if debug {
         // Start on the damage scene when explicitly debugging damage.
         lab.scene = 9;
+    }
+    if debug_damage {
+        // Logical damage vs wire cost is the most direct damage comparison.
+        lab.scene = 12;
     }
     if let Some(s) = args.iter().find_map(|a| {
         a.strip_prefix("--scene=")
@@ -452,7 +748,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     KeyCode::Char(c @ '1'..='9') => {
                         lab.scene = (c as usize - '1' as usize).min(SCENES.len() - 1);
                     }
-                    KeyCode::Char('0') => lab.scene = SCENES.len() - 1,
+                    KeyCode::Char('0') => lab.scene = 9,
+                    KeyCode::Right | KeyCode::Char('n') | KeyCode::Char(']') => {
+                        lab.scene = (lab.scene + 1) % SCENES.len();
+                    }
+                    KeyCode::Left | KeyCode::Char('p') | KeyCode::Char('[') => {
+                        lab.scene = (lab.scene + SCENES.len() - 1) % SCENES.len();
+                    }
                     KeyCode::Char('q') | KeyCode::Esc => break,
                     _ => {}
                 }

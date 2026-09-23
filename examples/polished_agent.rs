@@ -1,21 +1,30 @@
-//! Polished Agent — a restrained, full-screen agent console.
+//! Polished Agent — a restrained coding-session console.
 //!
-//! It owns the character-cell framebuffer and renders a persistent multi-panel
-//! dashboard: a gradient shimmer banner, a transcript, a live task plan with
-//! sub-cell progress meters, real telemetry (frame-byte sparkline), a streaming
-//! result panel, an event feed, and a permission/prompt footer.
+//! Inline by default: the session header and the committed user request go into
+//! **real terminal scrollback**, while a mutable live foreground shows a task
+//! plan, a streaming answer, a scrollable code/diff viewport, event feed, a
+//! permission modal and a persistent Unicode prompt. `--fullscreen` opts into the
+//! alternate-screen dashboard instead.
 //!
-//! Modes: `--auto` (deterministic), `--inline` (uses the scrollback insertion
-//! path), and theme proofs `--light` `--dark` `--no-color`.
+//! The narrative is a real session shape: plan → tool operations (with one
+//! failure and recovery) → permission → code review → completion summary. It
+//! never claims global numbers; all counts are demo-local.
+//!
+//! Modes: `--auto`/`--deterministic`, `--fullscreen`, and theme proofs
+//! `--light` `--dark` `--no-color`.
 
 use gibson::cell::{Color, Line, RichText, Span, Style, Theme};
 use gibson::context::Context;
+use gibson::focus::{FocusId, FocusRing};
 use gibson::input::{Event, KeyCode, KeyModifiers, TextInputState};
 use gibson::node::{Node, WrapMode};
 use gibson::show;
-use gibson::{BorderType, ThemeStyles, TimeSource};
+use gibson::{BorderType, ThemeStyles, TimeSource, ViewportState};
 use std::env;
 use std::time::Duration;
+
+const FOCUS_PROMPT: FocusId = FocusId(1);
+const FOCUS_CODE: FocusId = FocusId(2);
 
 // ---------------------------------------------------------------------------
 // Visual effects wrapper (respects --no-color)
@@ -28,6 +37,7 @@ struct Fx {
     b: Color,
     good: Color,
     bad: Color,
+    warn: Color,
     dim: Color,
     st: ThemeStyles,
 }
@@ -48,6 +58,7 @@ impl Fx {
             b: c((180, 120, 255)),
             good: c((80, 230, 150)),
             bad: c((255, 95, 120)),
+            warn: c((255, 200, 90)),
             dim: c((96, 106, 126)),
             st,
         }
@@ -86,24 +97,45 @@ enum ToolState {
     Done,
     Warn,
     Failed,
+    /// Plan entry skipped because the session was aborted (permission rejected).
+    Skipped,
 }
 
 struct Tool {
     verb: &'static str,
     target: &'static str,
+    /// Short semantic result shown once the op finishes (READ ranges, match
+    /// counts, diff stats, diagnostics).
+    detail: &'static str,
     progress: f32,
     state: ToolState,
 }
 
 impl Tool {
-    fn new(verb: &'static str, target: &'static str) -> Self {
+    fn new(verb: &'static str, target: &'static str, detail: &'static str) -> Self {
         Self {
             verb,
             target,
+            detail,
             progress: 0.0,
             state: ToolState::Queued,
         }
     }
+}
+
+/// The scripted session plan, including one failure and its recovery loop.
+fn initial_plan() -> Vec<Tool> {
+    vec![
+        Tool::new("research", "src/renderer.rs", "read 214 lines"),
+        Tool::new("inspect", "insert_before_live", "3 call sites"),
+        Tool::new("reproduce", "clip_near regression", "edge pops confirmed"),
+        Tool::new("patch", "src/geom.rs", "+31 −9"),
+        Tool::new("test", "cargo test", "FAILED: wide-glyph clip leak"),
+        Tool::new("diagnose", "surface.rs blit", "clip wins over glyph"),
+        Tool::new("patch", "src/surface.rs", "+24 −6"),
+        Tool::new("test", "clip + damage suites", "248 passing"),
+        Tool::new("review", "invariant proof", "no edge popping"),
+    ]
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -145,6 +177,11 @@ struct App {
     debug_info: String,
     permission_ready_at: u64,
     done: bool,
+    /// Keyboard focus (prompt vs code viewport). A modal captures focus.
+    focus: FocusRing,
+    /// Scrollable camera over the synthetic code/diff viewport.
+    code_cam: ViewportState,
+    summary_committed: bool,
 }
 
 fn select_theme(light: bool, dark: bool, no_color: bool) -> Theme {
@@ -169,12 +206,7 @@ impl App {
         Self {
             time,
             fx,
-            tools: vec![
-                Tool::new("research", "src/renderer.rs"),
-                Tool::new("search", "insert_before_live"),
-                Tool::new("build", "cargo test"),
-                Tool::new("patch", "src/ansi.rs"),
-            ],
+            tools: initial_plan(),
             tool_cursor: 0,
             phase: Phase::Plan,
             stream: STREAM_TEXT.to_string(),
@@ -193,6 +225,9 @@ impl App {
             debug_info: String::new(),
             permission_ready_at: 0,
             done: false,
+            focus: FocusRing::new([FOCUS_PROMPT, FOCUS_CODE]),
+            code_cam: ViewportState::new(),
+            summary_committed: false,
         }
     }
 
@@ -248,13 +283,18 @@ impl App {
                 }
                 tool.progress = (tool.progress + 0.06).min(1.0);
                 if tool.progress >= 1.0 {
+                    // Tool 1 (`inspect`) warns; tool 4 (`test`) genuinely fails;
+                    // everything else passes. This is a real state machine, not a
+                    // predetermined happy path.
                     tool.state = match self.tool_cursor {
-                        2 => ToolState::Warn,
-                        3 => ToolState::Failed,
+                        1 => ToolState::Warn,
+                        4 => ToolState::Failed,
                         _ => ToolState::Done,
                     };
                     let line = tool_line(tool, &self.fx);
                     self.transcript.push(line);
+                    let (verb, detail, state) = (tool.verb, tool.detail, tool.state);
+                    self.on_tool_complete(verb, detail, state);
                     self.tool_cursor += 1;
                 }
             }
@@ -267,11 +307,46 @@ impl App {
             if self.tool_cursor >= self.tools.len() {
                 self.add_event("patch conflict: needs review".into(), Color::Reset);
                 self.phase = Phase::Permission;
+                self.focus.capture();
                 // Keep the modal on screen for a few frames in scripted mode so
                 // it is visible and capturable deterministically.
                 self.permission_ready_at = self.render_frames + 15;
             }
         }
+    }
+
+    /// Emits narrative reactions for a completed tool operation.
+    fn on_tool_complete(&mut self, verb: &str, detail: &str, state: ToolState) {
+        if state == ToolState::Warn {
+            self.add_event(format!("{verb}: {detail} · needs attention"), self.fx.warn);
+            return;
+        }
+        match (verb, state) {
+            ("test", ToolState::Failed) => {
+                self.add_event(format!("test failed: {detail}"), self.fx.bad);
+                self.show_toast("test failed · wide-glyph clip leak");
+                self.reveal_code_at(0);
+            }
+            ("diagnose", _) => {
+                self.add_event(
+                    "root cause: clipping must win over glyph shape".into(),
+                    self.fx.good,
+                );
+            }
+            ("test", ToolState::Done) => {
+                self.add_event("re-run green · clip + logical damage".into(), self.fx.good);
+                self.show_toast("tests green · invariant proven");
+            }
+            ("patch", _) => {
+                self.add_event(format!("patch applied · {detail}"), self.fx.good);
+            }
+            _ => {}
+        }
+    }
+
+    /// Scrolls the code viewport to the top so a highlight is visible.
+    fn reveal_code_at(&mut self, y: i32) {
+        self.code_cam.offset_y = y.max(0);
     }
 
     fn auto_step(&mut self) {
@@ -284,14 +359,16 @@ impl App {
                 }
             }
             Phase::Prompt => {
-                for ch in "review the fast-path invariant 🦀 你好世界 e\u{0301} 🇺🇸".chars()
+                // Hostile Unicode end-to-end: ASCII, emoji, CJK, combining mark,
+                // ZWJ sequence and a regional-indicator flag.
+                for ch in
+                    "review the fast-path invariant 🦀 你好世界 e\u{0301} 🇺🇸 👩\u{200D}💻".chars()
                 {
                     self.input.insert_char(ch);
                 }
                 self.bg_sent = true;
                 self.add_event("index finished while you were typing".into(), self.fx.good);
-                self.phase = Phase::Done;
-                self.done = true;
+                self.finish();
             }
             Phase::Done => self.done = true,
         }
@@ -347,6 +424,41 @@ impl App {
                     _ => {}
                 },
                 Phase::Prompt => match k.code {
+                    KeyCode::Tab => {
+                        self.focus.focus_next();
+                        return true;
+                    }
+                    KeyCode::BackTab => {
+                        self.focus.focus_prev();
+                        return true;
+                    }
+                    // Arrow/Page/Home/End drive the code viewport. Home/End are
+                    // only taken from the prompt when the code view holds focus,
+                    // so text-editing keys are never stolen.
+                    KeyCode::Up => {
+                        self.code_cam.scroll_by(0, -1);
+                        return true;
+                    }
+                    KeyCode::Down => {
+                        self.code_cam.scroll_by(0, 1);
+                        return true;
+                    }
+                    KeyCode::PageUp => {
+                        self.code_cam.page(CODE_VIEW_H, -1);
+                        return true;
+                    }
+                    KeyCode::PageDown => {
+                        self.code_cam.page(CODE_VIEW_H, 1);
+                        return true;
+                    }
+                    KeyCode::Home if self.focus.current() == Some(FOCUS_CODE) => {
+                        self.code_cam.home();
+                        return true;
+                    }
+                    KeyCode::End if self.focus.current() == Some(FOCUS_CODE) => {
+                        self.code_cam.end(CODE_VIEW.len() as u16, CODE_VIEW_H);
+                        return true;
+                    }
                     KeyCode::Enter => {
                         let text = self.input.text.clone();
                         self.transcript.push(
@@ -357,8 +469,7 @@ impl App {
                         self.input = TextInputState::new();
                     }
                     KeyCode::Esc => {
-                        self.phase = Phase::Done;
-                        self.done = true;
+                        self.finish();
                     }
                     _ => return self.input.handle_event(event),
                 },
@@ -374,6 +485,14 @@ impl App {
 
     fn confirm_permission(&mut self) {
         self.approved = self.permission != 2;
+        if !self.approved {
+            // Rejection aborts the session: remaining plan entries are skipped.
+            for t in self.tools.iter_mut() {
+                if t.state == ToolState::Queued {
+                    t.state = ToolState::Skipped;
+                }
+            }
+        }
         let (glyph, style, msg) = if self.approved {
             (
                 "✔ ",
@@ -415,12 +534,80 @@ impl App {
                 }
             }
         }
+        // Closing the modal restores the focus it captured on open.
+        if self.focus.is_captured() {
+            self.focus.release();
+        }
         self.phase = Phase::Prompt;
+    }
+
+    /// Commits the completion summary to the transcript (demo-local numbers).
+    fn finish(&mut self) {
+        if self.summary_committed {
+            self.done = true;
+            return;
+        }
+        self.summary_committed = true;
+        let fx = self.fx;
+        self.transcript.push(Line::new());
+        let (glyph, glyph_style, title, lines): (&str, Style, &str, &[&str]) = if self.approved {
+            (
+                "✔ ",
+                fx.st.success,
+                "session complete",
+                &[
+                    "3 files changed  (geom.rs · surface.rs · painter.rs)",
+                    "17 tests added  ·  local suite 233 → 250",
+                    "renderer invariant proven: no edge popping, no clip leak",
+                ],
+            )
+        } else {
+            (
+                "✖ ",
+                fx.st.error,
+                "session stopped — patch rejected",
+                &[
+                    "no files changed · working tree untouched",
+                    "plan paused after 4 of 9 steps",
+                    "nothing was written to disk",
+                ],
+            )
+        };
+        self.transcript.push(
+            Line::new()
+                .span(Span::styled(glyph, glyph_style))
+                .span(Span::styled(title, fx.st.text)),
+        );
+        for line in lines {
+            self.transcript.push(
+                Line::new()
+                    .span(Span::styled("  · ", fx.st.faint))
+                    .span(Span::styled(*line, fx.st.muted)),
+            );
+        }
+        self.phase = Phase::Done;
+        self.done = true;
     }
 }
 
 fn is_cancel(event: &Event) -> bool {
     matches!(event, Event::Key(k) if k.code == KeyCode::Char('c') && k.modifiers.contains(KeyModifiers::CONTROL))
+}
+
+/// Distinct visual grammar per tool event type.
+fn verb_marker(verb: &str) -> &'static str {
+    match verb {
+        "research" | "read" => "≡",
+        "inspect" | "search" => "⌕",
+        "reproduce" => "◈",
+        "patch" => "±",
+        "test" => "⚗",
+        "diagnose" => "✦",
+        "review" => "§",
+        "build" => "⚙",
+        "shell" => "$",
+        _ => "·",
+    }
 }
 
 fn tool_line(tool: &Tool, fx: &Fx) -> Line {
@@ -430,12 +617,74 @@ fn tool_line(tool: &Tool, fx: &Fx) -> Line {
         ToolState::Done => ("✔", fx.st.success),
         ToolState::Warn => ("▲", fx.st.warning),
         ToolState::Failed => ("✖", fx.st.error),
+        ToolState::Skipped => ("⊘", fx.st.faint),
     };
-    Line::new()
+    let mut line = Line::new()
         .span(Span::styled(format!("{marker} "), style))
+        .span(Span::styled(
+            format!("{} ", verb_marker(tool.verb)),
+            fx.st.faint,
+        ))
         .span(Span::styled(format!("{:<9}", tool.verb), fx.st.code))
-        .span(Span::styled(tool.target, fx.st.text))
+        .span(Span::styled(tool.target, fx.st.text));
+    if tool.state != ToolState::Queued && !tool.detail.is_empty() {
+        let detail_style = match tool.state {
+            ToolState::Failed => fx.st.error,
+            ToolState::Warn => fx.st.warning,
+            _ => fx.st.muted,
+        };
+        line = line.span(Span::styled(format!("  · {}", tool.detail), detail_style));
+    }
+    line
 }
+
+/// Synthetic code/diff content for the scrollable viewport.
+/// `kind`: 0 context, 1 added, -1 removed, 2 highlighted.
+const CODE_VIEW: &[(u16, &str, i8)] = &[
+    (
+        210,
+        "pub fn clip_near(&self, a: Vec3, b: Vec3) -> Option<(Vec3, Vec3)> {",
+        0,
+    ),
+    (211, "    let a_in = self.is_visible(a);", 1),
+    (212, "    let b_in = self.is_visible(b);", 1),
+    (213, "    match (a_in, b_in) {", 0),
+    (214, "        (true, true) => Some((a, b)),", 0),
+    (215, "        (false, false) => None,", 0),
+    (216, "        _ => {", 0),
+    (217, "            let limit = self.camera_z - self.near;", 1),
+    (
+        218,
+        "            let t = ((limit - a.z) / denom).clamp(0.0, 1.0);",
+        1,
+    ),
+    (219, "            let mid = Vec3::new(.., z_limit);", 1),
+    (
+        220,
+        "            if a_in { Some((a, mid)) } else { Some((mid, b)) }",
+        0,
+    ),
+    (221, "        }", 0),
+    (222, "    }", 0),
+    (223, "}", 0),
+    (224, "", 0),
+    (225, "pub fn blit_transparent_clipped(..) {", 0),
+    (226, "    if c.is_continuation { continue; }", 1),
+    (227, "    if c.glyph.display_width == 2 {", 2),
+    (228, "        let fits = clip.contains(tx + 1, ty);", 1),
+    (
+        229,
+        "        if fits { self.set_cell(tx, ty, c.clone()); }",
+        1,
+    ),
+    (230, "    }", 2),
+    (231, "}", 0),
+    (300, "// logical damage: runs ∪ erase-eol ∪ cleared rows", 2),
+    (301, "pub fn logical_dirty_count(&self) -> usize {", 0),
+    (302, "    self.explicit_dirty_count()", 0),
+    (303, "        + erase_region + cleared_rows", 1),
+    (304, "}", 0),
+];
 
 fn truncate(s: &str, w: usize) -> String {
     use unicode_segmentation::UnicodeSegmentation as _;
@@ -487,6 +736,9 @@ fn build_root(app: &App, ctx: &Context) -> Node {
         if rows >= 20 {
             root = root.child(panel_telemetry(app, cols).flex_grow(1.0).min_width(0.0));
         }
+        if rows >= 26 {
+            root = root.child(panel_code(app, cols));
+        }
     } else {
         let right_w: u16 = if wide { 40 } else { 32 };
         let left_w = cols.saturating_sub(right_w + 1);
@@ -505,7 +757,7 @@ fn build_root(app: &App, ctx: &Context) -> Node {
             .min_width(0.0)
             .gap(0.0)
             .child(panel_transcript(app, right_w).flex_grow(1.0).min_width(0.0))
-            .child(panel_telemetry(app, right_w).flex_grow(1.0).min_width(0.0))
+            .child(panel_code(app, right_w))
             .child(panel_events(app, right_w).flex_grow(1.0).min_width(0.0));
 
         root = root.child(
@@ -513,6 +765,7 @@ fn build_root(app: &App, ctx: &Context) -> Node {
                 .percent_width(100.0)
                 .gap(1.0)
                 .flex_grow(1.0)
+                .min_height(0.0)
                 .child(left)
                 .child(right),
         );
@@ -668,7 +921,7 @@ fn banner(app: &App, wide: bool) -> Node {
     } else {
         line = line.span(Span::styled("  ◐ v2", fx.st.muted));
     }
-    Node::line(line).height(1.0)
+    Node::line(line).height(1.0).flex_shrink(0.0)
 }
 
 impl Fx {
@@ -709,8 +962,9 @@ fn panel_plan(app: &App, width: u16) -> Node {
             ToolState::Done => ("✔", fx.st.success),
             ToolState::Warn => ("▲", fx.st.warning),
             ToolState::Failed => ("✖", fx.st.error),
+            ToolState::Skipped => ("⊘", fx.st.faint),
         };
-        let progress = if tool.state == ToolState::Queued {
+        let progress = if matches!(tool.state, ToolState::Queued | ToolState::Skipped) {
             0.0
         } else {
             tool.progress
@@ -750,6 +1004,58 @@ fn panel_stream(app: &App) -> Node {
         .child(Node::rich_text_wrapped(rt, WrapMode::WordWrap))
 }
 
+/// Height heuristic used to clamp the code viewport camera. The viewport itself
+/// clips authoritatively; this only keeps Home/End/PgUp/PgDn honest.
+const CODE_VIEW_H: u16 = 8;
+
+fn panel_code(app: &App, width: u16) -> Node {
+    let fx = &app.fx;
+    let inner = width.saturating_sub(6);
+    let mut rt = RichText::new();
+    for (num, text, kind) in CODE_VIEW {
+        let (sign, prefix_style, text_style) = match kind {
+            -1 => ("−", fx.st.error, fx.st.error),
+            1 => ("+", fx.st.success, fx.st.success),
+            2 => ("◆", fx.st.warning, Style::new().bold()),
+            _ => (" ", fx.st.muted, fx.st.text),
+        };
+        rt = rt.line(
+            Line::new()
+                .span(Span::styled(format!("{num:>4} {sign} "), prefix_style))
+                .span(Span::styled(*text, text_style)),
+        );
+    }
+    let content_h = CODE_VIEW.len() as u16;
+    let mut cam = app.code_cam;
+    cam.clamp(inner, content_h.max(CODE_VIEW_H), inner, CODE_VIEW_H);
+    let focused = app.focus.current() == Some(FOCUS_CODE);
+    tpanel(
+        if focused {
+            "CODE VIEW ●"
+        } else {
+            "CODE VIEW"
+        },
+        if focused { fx.st.accent } else { fx.st.border },
+    )
+    .percent_width(100.0)
+    // Fixed height: the camera clips a taller buffer, so the panel must not be
+    // sized by the buffer's intrinsic height.
+    .height((CODE_VIEW_H + 2) as f32)
+    .flex_shrink(0.0)
+    .min_width(0.0)
+    .child(
+        // A fixed-height camera keeps the panel's layout basis small so the
+        // column's flex distribution stays honest, while the viewport clips and
+        // scrolls the (much taller) code buffer.
+        Node::viewport(cam.offset_x, cam.offset_y)
+            .percent_width(100.0)
+            .height(CODE_VIEW_H as f32)
+            .max_height(CODE_VIEW_H as f32)
+            .min_height(0.0)
+            .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap).width(inner as f32)),
+    )
+}
+
 fn panel_transcript(app: &App, width: u16) -> Node {
     let fx = &app.fx;
     let inner = width.saturating_sub(4) as usize;
@@ -759,7 +1065,7 @@ fn panel_transcript(app: &App, width: u16) -> Node {
             .span(Span::styled("❯ ", fx.st.accent))
             .span(Span::styled(
                 truncate(
-                    "Harden the renderer invariants and make the demos exceptional",
+                    "Audit the renderer, fix clipping, and prove it.",
                     inner.saturating_sub(2),
                 ),
                 fx.st.text,
@@ -886,6 +1192,8 @@ fn panel_footer(app: &App, width: u16) -> Node {
     tpanel("PROMPT", fx.st.border)
         .percent_width(100.0)
         .height(3.0)
+        // The prompt must never be squeezed off-screen by a tall content column.
+        .flex_shrink(0.0)
         .child(prompt)
 }
 
@@ -936,7 +1244,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || args
             .iter()
             .any(|a| a == "--auto" || a == "--scripted" || a == "--headless");
-    let inline = args.iter().any(|a| a == "--inline");
+    // Inline is the product identity: normal terminal scrollback plus a stable
+    // mutable live foreground. `--fullscreen` opts into the alternate screen.
+    let inline = !args.iter().any(|a| a == "--fullscreen");
     let light = args.iter().any(|a| a == "--light");
     let dark = args.iter().any(|a| a == "--dark");
     let no_color = args.iter().any(|a| a == "--no-color");
@@ -958,6 +1268,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     apply_capability_flags(&mut ctx, &args, no_color);
 
     let mut app = App::new(fx, deterministic, debug);
+
+    // ACT 1 — real session open. In inline mode the header and the user request
+    // are committed to genuine terminal scrollback, above the live foreground.
+    if inline {
+        ctx.commit_text(
+            "$ gibson-agent .\n\
+             workspace  LibGibson\n\
+             branch     deepseek/visual-fx-frontier\n\
+             model      gibson-v2    session  hardening\n\
+             ❯ Audit the renderer, fix clipping, and prove it.",
+        )?;
+    }
 
     let mut iterations = 0usize;
     let max_iterations = if auto { 5000 } else { usize::MAX };
@@ -1017,6 +1339,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the alternate screen.
     ctx.request_render();
     let _ = ctx.run_once(ctx.animation_interval());
+
+    // ACT 10 — final response is committed to history so the user gets their
+    // shell back with an ordinary, greppable record of what happened.
+    if inline {
+        ctx.commit_text(
+            "✔ session complete · 3 files changed · 17 tests added · renderer invariant proven",
+        )?;
+    }
     ctx.restore()?;
 
     let stats = ctx.stats();

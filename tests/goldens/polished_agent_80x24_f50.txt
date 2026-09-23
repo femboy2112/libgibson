@@ -1,24 +1,24 @@
+❯ Audit the renderer, fix clipping, and prove it.
 ◢ LIBGIBSON  ● ONLINE    ◐ v2
 ╭─ TASK PLAN ─────────────────────────────────╮ ╭─ TRANSCRIPT ─────────────────╮
 │✔ research █████████████████████╭─ TOAST ───────────────────────────────────╮ │
-│✔ search   █████████████████████│◆ diagnostics refreshed · 0 warnings       │ │
-│◐ build    █████████████████████╰───────────────────────────────────────────╯ │
-│· patch    ─────────────────────────────   0%│ │                              │
-│                                             │ │                              │
-╰─────────────────────────────────────────────╯ ╰──────────────────────────────╯
-╭─ STREAM ────────────────────────────────────╮ ╭─ TELEMETRY ──────────────────╮
-│I audited the differential pipeline and the  │ │frame   115 B   frames 49     │
-│scrollback handoff. The live region now      │ │────────────────────────────  │
-│tracks an explicit physical anchor, so a     │ │⢹                             │
-│resize forces a full re-anchor instead of    │ │ ⣇⣀⣀⣀⣀⣀⣀⠤⡠⣀⣀⣀⣀⣀⢄⣀⣀⣀⢦⣀⡠⣀⣀⣀⣀⢄⣀  │
-│trusting stale coordinates.                  │ │fps 61  spinner ⠏  state strea│
-│Insert-before-live is proven to leave the    │ │                              │
-│live framebuffer untouched on the fast path, │ ╰──────────────────────────────╯
-│with a correct repaint fallback otherwise.   │ ╭─ EVENTS ─────────────────────╮
-│                                             │ │0033 diagnostics refreshed · 0│
-│                                             │ │                              │
-│                                             │ │                              │
+│▲ inspect  █████████████████████│◆ diagnostics refreshed · 0 warnings       │ │
+│◐ reproduce█████████████████████╰───────────────────────────────────────────╯ │
+│· patch    ─────────────────────────────   0%│ ╰──────────────────────────────╯
+│· test     ─────────────────────────────   0%│ ╭─ CODE VIEW ──────────────────╮
+│· diagnose ─────────────────────────────   0%│ │ 210   pub fn clip_near(&s    │
+│· patch    ─────────────────────────────   0%│ │ 211 +     let a_in = self    │
+│· test     ─────────────────────────────   0%│ │ 212 +     let b_in = self    │
+╰─────────────────────────────────────────────╯ │ 213       match (a_in, b_    │
+╭─ STREAM ────────────────────────────────────╮ │ 214           (true, true    │
+│I audited the differential pipeline and the  │ │ 215           (false, fal    │
+│scrollback handoff. The live region now      │ │ 216           _ => {         │
+│tracks an explicit physical anchor, so a     │ │ 217 +             let lim    │
+│resize forces a full re-anchor instead of    │ ╰──────────────────────────────╯
+│trusting stale coordinates.                  │ ╭─ EVENTS ─────────────────────╮
+│Insert-before-live is proven to leave the    │ │0033 inspect: 3 call sites · n│
+│live framebuffer untouched on the fast path, │ │0033 diagnostics refreshed · 0│
 ╰─────────────────────────────────────────────╯ ╰──────────────────────────────╯
 ╭─ PROMPT ─────────────────────────────────────────────────────────────────────╮
-│❯  ype a follow-up…                                                           │
+│❯ type a follow-up…                                                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯

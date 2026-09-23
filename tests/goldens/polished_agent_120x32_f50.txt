@@ -1,26 +1,26 @@
+❯ Audit the renderer, fix clipping, and prove it.
 ◢ LIBGIBSON AGENT  ● ONLINE    session hardening  ·  model gibson-v2  ·  differential
 ╭─ TASK PLAN ─────────────────────────────────────────────────────────────────╮ ╭─ TRANSCRIPT ─────────────────────────╮
 │✔ research ██████████████████████████████ 100%                          ╭─ TOAST ───────────────────────────────────╮ │
-│✔ search   ██████████████████████████████ 100%                          │◆ diagnostics refreshed · 0 warnings       │ │
-│◐ build    █████████████████████████████─  96%                          ╰───────────────────────────────────────────╯ │
+│▲ inspect  ██████████████████████████████ 100%                          │◆ diagnostics refreshed · 0 warnings       │ │
+│◐ reproduce█████████████████████████████─  96%                          ╰───────────────────────────────────────────╯ │
 │· patch    ──────────────────────────────   0%                               │ │                                      │
-│                                                                             │ │                                      │
-│                                                                             │ │                                      │
-│                                                                             │ │                                      │
-│                                                                             │ ╰──────────────────────────────────────╯
-│                                                                             │ ╭─ TELEMETRY ──────────────────────────╮
-╰─────────────────────────────────────────────────────────────────────────────╯ │frame   145 B   frames 49             │
-╭─ STREAM ────────────────────────────────────────────────────────────────────╮ │────────────────────────────────────  │
-│I audited the differential pipeline and the scrollback handoff. The live     │ │⢹                                     │
-│region now tracks an explicit physical anchor, so a resize forces a full     │ │ ⣇⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⢦⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⡠⣀⣀⡠⣀⣀⣀⣀⣀⡠⣀⣀  │
-│re-anchor instead of trusting stale coordinates. Insert-before-live is       │ │fps 61  spinner ⠏  state streaming    │
-│proven to leave the live framebuffer untouched on the fast path, with a      │ │                                      │
-│correct repaint fallback otherwise.                                          │ │                                      │
-│                                                                             │ │                                      │
-│                                                                             │ │                                      │
-│                                                                             │ │                                      │
-│                                                                             │ ╰──────────────────────────────────────╯
-│                                                                             │ ╭─ EVENTS ─────────────────────────────╮
+│· test     ──────────────────────────────   0%                               │ │                                      │
+│· diagnose ──────────────────────────────   0%                               │ │                                      │
+│· patch    ──────────────────────────────   0%                               │ │                                      │
+│· test     ──────────────────────────────   0%                               │ ╰──────────────────────────────────────╯
+│· review   ──────────────────────────────   0%                               │ ╭─ CODE VIEW ──────────────────────────╮
+│                                                                             │ │ 210   pub fn clip_near(&self, a:     │
+│                                                                             │ │ 211 +     let a_in = self.is_visi    │
+│                                                                             │ │ 212 +     let b_in = self.is_visi    │
+╰─────────────────────────────────────────────────────────────────────────────╯ │ 213       match (a_in, b_in) {       │
+╭─ STREAM ────────────────────────────────────────────────────────────────────╮ │ 214           (true, true) => Som    │
+│I audited the differential pipeline and the scrollback handoff. The live     │ │ 215           (false, false) => N    │
+│region now tracks an explicit physical anchor, so a resize forces a full     │ │ 216           _ => {                 │
+│re-anchor instead of trusting stale coordinates. Insert-before-live is       │ │ 217 +             let limit = sel    │
+│proven to leave the live framebuffer untouched on the fast path, with a      │ ╰──────────────────────────────────────╯
+│correct repaint fallback otherwise.                                          │ ╭─ EVENTS ─────────────────────────────╮
+│                                                                             │ │0033 inspect: 3 call sites · needs att│
 │                                                                             │ │0033 diagnostics refreshed · 0 warning│
 │                                                                             │ │                                      │
 │                                                                             │ │                                      │
@@ -28,5 +28,5 @@
 │                                                                             │ │                                      │
 ╰─────────────────────────────────────────────────────────────────────────────╯ ╰──────────────────────────────────────╯
 ╭─ PROMPT ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│❯  ype a follow-up…                                                                                                   │
+│❯ type a follow-up…                                                                                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

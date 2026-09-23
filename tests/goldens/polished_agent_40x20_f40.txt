@@ -1,8 +1,14 @@
+prove it.
 ◢ LIBGIBSON  ● ONLINE    ◐ v2
 ╭─ TASK PLAN ──────────────────────────╮
 │✔ research ██████████████████████ 100%│
-│✔ search   ██████████████████████ 100%│
-│◐ build    ████████──────────────  36%│
+│▲ inspect  ██████████████████████ 100%│
+│◐ reproduce████████──────────────  36%│
+│· patch    ──────────────────────   0%│
+│· test     ──────────────────────   0%│
+│· diagnose ──────────────────────   0%│
+│· patch    ──────────────────────   0%│
+│· test     ──────────────────────   0%│
 ╰──────────────────────────────────────╯
 ╭─ STREAM ─────────────────────────────╮
 │I audited the differential pipeline   │
@@ -11,10 +17,4 @@
 │physical anchor, so a resize forces a │
 │full re-anchor instead of trusting    │
 │stale coordinates. Insert-before-live │
-│is proven to leave the live           │
-│framebuffer untouched on the fast     │
-│path, with a correct repaint fallback │
-╰──────────────────────────────────────╯
-╭─ TELEMETRY ──────────────────────────╮
-│frame    76 B   frames 39             │
 ╰──────────────────────────────────────╯

@@ -91,7 +91,12 @@ fn assert_fits(screen: &str, cols: u16) {
 fn polished_agent_fullscreen_structure() {
     let (screen, raw, _) = capture(
         "polished_agent",
-        &["--no-color", "--deterministic", "--freeze-at=40"],
+        &[
+            "--fullscreen",
+            "--no-color",
+            "--deterministic",
+            "--freeze-at=30",
+        ],
         110,
         30,
         1.4,
@@ -117,7 +122,7 @@ fn polished_agent_fullscreen_structure() {
     assert!(screen.contains("TASK PLAN"), "plan panel missing");
     assert!(screen.contains("STREAM"), "stream panel missing");
     assert!(screen.contains("TRANSCRIPT"), "transcript panel missing");
-    assert!(screen.contains("TELEMETRY"), "telemetry panel missing");
+    assert!(screen.contains("CODE VIEW"), "code viewport panel missing");
     assert!(
         screen.contains("PROMPT") || screen.contains("PERMISSION"),
         "footer panel missing: {screen:?}"
@@ -127,6 +132,40 @@ fn polished_agent_fullscreen_structure() {
         !String::from_utf8_lossy(&raw).contains("\u{1b}[38;2;"),
         "--no-color must not emit truecolor foreground sequences"
     );
+    // `--fullscreen` must actually enter the alternate screen.
+    assert!(String::from_utf8_lossy(&raw).contains("\u{1b}[?1049h"));
+}
+
+#[test]
+fn polished_agent_inline_is_the_default() {
+    // No `--inline`, no `--fullscreen`: inline is the product identity. The
+    // session header lands in real scrollback and the screen is *not* an
+    // alternate screen.
+    let (screen, raw, _) = capture(
+        "polished_agent",
+        &["--no-color", "--deterministic", "--freeze-at=40"],
+        100,
+        30,
+        1.5,
+    );
+    if std::env::var("DUMP_SCREEN").is_ok() {
+        println!("\n--- polished_agent inline @100x30 ---\n{screen}\n");
+    }
+    let raw_s = String::from_utf8_lossy(&raw);
+    assert!(
+        !raw_s.contains("\u{1b}[?1049h"),
+        "default must stay inline (no alternate screen)"
+    );
+    // The session header and user request must be committed to real scrollback,
+    // so they appear in the emitted byte stream (even if later scrolled off the
+    // visible screen by the live foreground).
+    assert!(
+        raw_s.contains("gibson-agent") && raw_s.contains("Audit the renderer"),
+        "session header should be committed to scrollback"
+    );
+    assert!(screen.contains("TASK PLAN"), "plan panel missing");
+    assert!(screen.contains("STREAM"), "stream panel missing");
+    assert_fits(&screen, 100);
 }
 
 #[test]
