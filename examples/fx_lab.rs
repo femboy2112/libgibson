@@ -3,14 +3,18 @@
 //! This is not a narrative demo. It isolates each reusable primitive so it can be
 //! inspected, benchmarked and used as a renderer torture gallery.
 //!
-//! Keys: `1..9`/`0` select a scene, `q`/Ctrl-C/End quit.
+//! Keys: `1..9`/`0` select a scene, arrows / `n` / `p` browse, `q`/Ctrl-C quit.
 //!
 //! Flags: `--deterministic --freeze-at=N --no-color --debug-renderer`
 //!        `--mono --ansi16 --ansi256 --truecolor --no-sync --no-insert-line`
+//!        `--list-scenes --scene=filled-3d --scene=feedback --debug-raster`
 
 use std::collections::HashMap;
 use std::env;
 use std::time::Duration;
+
+#[path = "fx_lab/rgb.rs"]
+mod rgb;
 
 use gibson::ansi::AnsiCompiler;
 use gibson::cell::{Color, Line, RichText, Span, Style, Theme, ThemeStyles};
@@ -44,6 +48,13 @@ const SCENES: &[&str] = &[
     "Scene algebra: sequence vs parallel",
     "Story graph: branch & rejoin",
     "Entity cinema: reaction & post-process",
+    "FILLED 3D / shaded core",
+    "DEPTH / Z BUFFER",
+    "FEEDBACK TRAILS / trace beam",
+    "PROCEDURAL FIELD",
+    "METABALLS",
+    "RASTER WARP",
+    "HYBRID RGB + BRAILLE",
 ];
 
 struct Fx {
@@ -72,6 +83,7 @@ struct Lab {
     frame_bytes: Vec<f32>,
     debug: bool,
     cinematic: CinematicProbe,
+    graphical: rgb::GraphicalLab,
 }
 
 impl Lab {
@@ -89,11 +101,22 @@ impl Lab {
             frame_bytes: Vec::new(),
             debug,
             cinematic,
+            graphical: rgb::GraphicalLab::new(),
         }
     }
 
     fn tick(&mut self, ctx: &mut Context) {
         self.t += 1.0 / 60.0;
+        if self.scene >= 20 {
+            let (cols, rows) = ctx.session.terminal_size();
+            self.graphical.advance(
+                self.scene - 20,
+                cols,
+                rows.saturating_sub(2),
+                self.t,
+                Duration::from_secs_f64(1.0 / 60.0),
+            );
+        }
         if self.scene == 19 {
             self.cinematic.tick();
         }
@@ -948,13 +971,20 @@ fn apply_capability_flags(ctx: &mut Context, args: &[String]) {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     let has = |f: &str| args.iter().any(|a| a == f);
+    if has("--list-scenes") {
+        for (index, scene) in SCENES.iter().enumerate() {
+            println!("{}: {scene}", index + 1);
+        }
+        println!("Names: filled-3d, depth, feedback, field, metaballs, warp, hybrid");
+        return Ok(());
+    }
     let deterministic = has("--deterministic");
     let freeze_at: Option<usize> = args
         .iter()
         .find_map(|a| a.strip_prefix("--freeze-at=").and_then(|v| v.parse().ok()));
     let auto = deterministic || has("--auto") || has("--scripted");
     let no_color = has("--no-color");
-    let debug = has("--debug-renderer");
+    let debug = has("--debug-renderer") || has("--debug-raster");
 
     let theme = if no_color {
         Theme::no_color()
@@ -974,25 +1004,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let debug_damage = has("--debug-damage");
     let mut lab = Lab::new(Fx::new(theme, !no_color), debug);
-    if debug {
+    if has("--debug-renderer") {
         // Start on the damage scene when explicitly debugging damage.
         lab.scene = 9;
+    }
+    if has("--debug-raster") {
+        lab.scene = 20;
     }
     if debug_damage {
         // Logical damage vs wire cost is the most direct damage comparison.
         lab.scene = 12;
     }
     if let Some(s) = args.iter().find_map(|a| {
-        a.strip_prefix("--scene=")
-            .and_then(|v| v.parse::<usize>().ok())
+        a.strip_prefix("--scene=").and_then(|v| {
+            v.parse::<usize>().ok().or_else(|| {
+                [
+                    "filled-3d",
+                    "depth",
+                    "feedback",
+                    "field",
+                    "metaballs",
+                    "warp",
+                    "hybrid",
+                ]
+                .iter()
+                .position(|name| *name == v)
+                .map(|index| index + 21)
+            })
+        })
     }) {
         // 1-based, matching the keyboard shortcuts shown in the UI.
         lab.scene = s.saturating_sub(1).min(SCENES.len() - 1);
     }
 
     let mut iterations = 0usize;
+    let mut graphical_timing = false;
     let cap = if auto { 4000 } else { usize::MAX };
     while iterations < cap {
+        if graphical_timing != (lab.scene >= 20) {
+            graphical_timing = lab.scene >= 20;
+            ctx.set_max_fps(if graphical_timing || !auto { 60 } else { 240 });
+            ctx.set_animation_interval(if graphical_timing {
+                Duration::from_secs_f64(1.0 / 60.0)
+            } else {
+                Duration::from_millis(if auto { 8 } else { 33 })
+            });
+        }
         iterations += 1;
         let frozen = deterministic && freeze_at.is_some_and(|n| iterations > n);
         if !frozen {
@@ -1001,24 +1058,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let (cols, rows) = ctx.session.terminal_size();
         let stats = ctx.stats();
+        let content = if lab.scene >= 20 {
+            let mono = matches!(ctx.capabilities().color_depth, gibson::ColorDepth::Mono);
+            let image =
+                lab.graphical
+                    .surface(lab.scene - 20, cols, rows.saturating_sub(2), lab.t, mono);
+            Node::col()
+                .child(Node::raster(image))
+                .child(Node::text(lab.graphical.caption(debug), lab.fx.st.muted).height(1.0))
+        } else {
+            Node::panel(SCENES[lab.scene], BorderType::Rounded, lab.fx.st.border)
+                .percent_width(100.0)
+                .percent_height(100.0)
+                .child(lab.body(cols, rows))
+        };
         let root = Node::col()
             .percent_width(100.0)
             .percent_height(100.0)
             .child(lab.header(&stats))
-            .child(
-                Node::panel(SCENES[lab.scene], BorderType::Rounded, lab.fx.st.border)
-                    .percent_width(100.0)
-                    .percent_height(100.0)
-                    .child(lab.body(cols, rows)),
-            );
+            .child(content);
         ctx.set_root(root);
 
-        if auto {
+        let event = if auto {
             ctx.request_render();
-            ctx.run_once(ctx.animation_interval())?;
-        } else if let Some(event) = ctx.run_once(Duration::from_millis(40))? {
-            use gibson::input::{Event, KeyCode};
+            ctx.run_once(ctx.animation_interval())?
+        } else {
+            ctx.run_once(Duration::from_millis(40))?
+        };
+        if let Some(event) = event {
+            use gibson::input::{Event, KeyCode, KeyModifiers};
             if let Event::Key(k) = event {
+                if k.code == KeyCode::Char('c') && k.modifiers.contains(KeyModifiers::CONTROL) {
+                    break;
+                }
                 match k.code {
                     KeyCode::Char(c @ '1'..='9') => {
                         lab.scene = (c as usize - '1' as usize).min(SCENES.len() - 1);
