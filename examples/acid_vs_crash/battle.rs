@@ -914,9 +914,21 @@ impl EncounterModel {
                 node.activity = 0;
             }
             for edge in &mut self.graph.edges {
-                edge.connected = false;
+                if outcome == Outcome::Crash || self.quality.collateral_isolation > 0 {
+                    edge.connected = false;
+                }
                 edge.pressure = 0;
             }
+        }
+        if outcome == Outcome::Stalemate {
+            // Neither side claims the previously invaded territory. A route
+            // hold preserves its topology; prior isolation yields disconnect.
+            for node in &mut self.graph.nodes {
+                if node.influence < 350 {
+                    node.influence = 0;
+                }
+            }
+            self.takeover = 0;
         }
         if outcome == Outcome::Crash {
             for node in &mut self.graph.nodes {

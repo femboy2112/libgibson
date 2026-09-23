@@ -2,8 +2,8 @@ C R A S H   O V E R R I D E  //  LOCAL NODE
 LOCAL FABRIC / TRACE 0% / integrity 97% / clean contain
 ─── CRASH CONTAINS / keep the scars ────────────────────────────────────────────────────────────────────────────────────
 ┌─  LOCAL FABRIC / live topology  ─────────────────────────────────────┐┌─  SESSION / PROCESS VIEW  ───────────────────┐
-│                                                                      ││REMOTE  ACID BURN                             │
-│                               ■ MODEM                                ││HERE DISPLAY → MODEM                          │
+│                                                                      ││REMOTE  DISCONNECTED                          │
+│                               ■ MODEM                                ││lease closed / history retained               │
 │                                   ⡇⠑⢄                                ││TRACE   0% / reserve 100%                     │
 │                                   ⠃  ⠣⡀                              ││SYSTEM    HOLD       INTEGRITY                │
 │                                   ⡀   ⠈⠢                             ││MODEM     Crash     100%                      │

@@ -725,8 +725,11 @@ impl Encounter {
                         || (pair[1] == edge.from && pair[0] == edge.to)
                 }) || (world.graph.node(edge.from).influence < 0
                     && world.graph.node(edge.to).influence < 0));
+            let held = world.outcome == Some(battle::Outcome::Stalemate)
+                && world.graph.node(edge.from).owner() == Control::Contested
+                && world.graph.node(edge.to).owner() == Control::Contested;
             if edge.connected {
-                if active {
+                if active || held {
                     // Acid grammar is a broken carrier, distinguishable without RGB.
                     for segment in 0..12 {
                         if segment % 3 != 2 {
@@ -760,7 +763,7 @@ impl Encounter {
                 (0, 0),
                 if !edge.connected {
                     p.muted.dim()
-                } else if active {
+                } else if active || held {
                     p.acid
                 } else {
                     p.muted
@@ -887,6 +890,10 @@ impl Encounter {
                 .span(Span::styled("LOCAL   ", p.muted))
                 .span(Span::styled("CRASH OVERRIDE", p.crash));
             lines[1] = Line::styled("1 local lease / no remote session", p.white);
+        }
+        if self.world.outcome.is_some() && !self.world.remote_active {
+            lines[0] = Line::styled("REMOTE  DISCONNECTED", p.muted);
+            lines[1] = Line::styled("lease closed / history retained", p.white);
         }
         if self.facts().bool("crash-blind") {
             lines[2] = Line::styled("LOCAL TELEMETRY LOST", p.warning);

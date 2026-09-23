@@ -326,3 +326,21 @@ fn recognized_mirror_draws_a_real_approach_then_retreat_without_capture() {
         .iter()
         .any(|line| line.starts_with("FEINT /")));
 }
+
+#[test]
+fn stalemate_quality_matches_held_or_disconnected_topology() {
+    let held = EncounterModel::new("stalemate", 42);
+    assert_eq!(held.outcome_quality, "mutual route hold");
+    assert!(held.graph.route(NodeId::Modem, NodeId::Display).is_some());
+    assert_eq!(held.graph.node(NodeId::Route).owner(), Control::Contested);
+    assert!(!held.remote_active);
+    assert!(held.graph.edges.iter().all(|e| e.pressure == 0));
+    let mut disconnected = EncounterModel::new("first-breach", 42);
+    command(&mut disconnected, "isolate");
+    disconnected.elapsed_ms = 79_950;
+    advance(&mut disconnected, 50);
+    assert_eq!(disconnected.outcome, Some(battle::Outcome::Stalemate));
+    assert_eq!(disconnected.outcome_quality, "mutual disconnect");
+    assert!(disconnected.graph.edges.iter().all(|e| !e.connected));
+    assert!(!disconnected.remote_active);
+}
