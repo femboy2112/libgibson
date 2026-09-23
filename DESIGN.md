@@ -538,6 +538,14 @@ world does not shrink (its flex-shrink is pinned to 0). `ViewportState` owns the
 camera (`scroll_by`, `page`, `home`, `end`, `clamp`) and is deliberately integer
 and small; camera motion produces ordinary Surface diffs (no cursor tricks).
 
+**Viewport ≠ virtualization.** A camera viewport is a *clipped translation* of a
+world that has already been laid out and painted. Rendering a node clipped on its
+left/top edge allocates a scratch surface sized `max(target, natural node size)`.
+That is fine for bounded worlds (a diff viewport, a data city, a transcript), but
+it is **not** a source-window virtualizer: a `120 × 100_000`-cell world would
+still be laid out and painted in full. Virtualized source-window rendering for
+giant worlds is **NOT IMPLEMENTED**; the demos do not claim otherwise.
+
 ## 27. Raster Embedding
 
 **IMPLEMENTED + TESTED**.
@@ -564,9 +572,23 @@ for the 3D projector, fields and particle rendering.
 
 `Vec3`/`Transform3`/`Mesh`/`Projector` provide just enough 3D: rotate, clip
 against the near plane, perspective-project, and draw edges as Braille lines.
-Shape generators cover cube, octahedron and torus. Projection rejects non-finite
+Shape generators cover cube, octahedron, torus, general `box_xyz`, a composable
+`grid_xz` circuit plane and vertical `data_tower`s. Projection rejects non-finite
 coordinates, so NaNs never reach the canvas; wireframe frames are deterministic
 under `FixedStepClock`. The demos rotate real geometry — no ASCII-art frames.
+
+**Near-plane convention (single source of truth).** `depth(p) = camera_z - p.z`;
+a point is visible when `depth >= near` — the near plane itself is *inclusive*.
+`project` and `clip_near` both use this predicate. A segment with one endpoint
+behind the plane is truncated, and the crossing is nudged a few ULPs *inside* the
+visible half-space so the subsequent `project` cannot re-reject it. Regression
+tests cover visible/visible, behind/behind, both crossing directions, endpoint
+exactly on the near plane, very shallow crossings, NaN/infinity, and a drawn
+truncated edge. This removes the old "clipped edge disappears" bug.
+
+`Projector::project_mesh` returns `ProjectedEdge { a, b, depth }` so callers can
+fake near/far styling (bright near edges, dim far edges) by drawing into two
+layers. The projector remains geometry-only: no z-buffer, no occlusion claim.
 
 ## 30. Particles
 
@@ -576,14 +598,23 @@ A tiny deterministic particle system: a seeded xorshift64* PRNG, burst emission,
 linear integration and expiry. It renders to Braille dots or cell sprites. No
 thread RNG, no ECS, no physics engine; `--deterministic` reproduces exactly.
 
+Emission is explicit: `burst` is a plain radial burst; `burst_with_life_variance`
+scales lifetime only; `burst_directional(n, x, y, speed, life, heading,
+angular_spread)` emits around a heading. (The old trailing `spread` parameter
+scaled lifetime, not angle — it was renamed, and tests assert that lifetime
+variance does not change headings.)
+
 ## 31. Procedural Fields
 
 **IMPLEMENTED + TESTED** (`src/field.rs`).
 
 Deterministic scalar fields (plasma, interference, radial pulse) plus an
 intensity colour ramp rendered through `HalfBlockCanvas`. Under Mono the RGB is
-stripped centrally and a Braille density fallback preserves shape. A full-field
-plasma legitimately dirties most cells; locally-moving effects stay bounded.
+stripped centrally and a Braille density fallback preserves shape; the fallback
+now uses a deterministic 4×4 Bayer ordered dither (`render_field_braille_dithered`,
+`bayer4_threshold`) so scalar structure degrades into dot *density* instead of
+collapsing into solid blocks. A full-field plasma legitimately dirties most
+cells; locally-moving effects stay bounded.
 
 ## 32. Text Transitions and Safe Glitch
 
@@ -597,12 +628,26 @@ the transport remains owned by the ANSI compiler and `TerminalTransaction`.
 
 ## 33. Damage / Debug Model
 
-**PARTIALLY TESTED**.
+**IMPLEMENTED + TESTED**.
 
-`SurfaceDiff::dirty_cells()` returns explicit coordinates; `Renderer::capture_damage`
-records them per frame and `Context::last_dirty_cells()` exposes them. This powers
-the demos' live damage maps and `fx_lab`'s heatmap. Damage capture is opt-in (it
-allocates). A full general damage-map API is not yet public beyond this.
+Two distinct damage concepts are tracked and must not be collapsed:
+
+* **Logical damage** — every visible cell whose terminal state changes:
+  explicit changed runs **∪** the region erased by a `CSI K`
+  (`erase_eol_from`) **∪** cleared trailing rows. Exposed as
+  `SurfaceDiff::logical_dirty_count()` / `logical_dirty_cells()`.
+* **Explicit run cells** — only cells covered by `CellRun` writes
+  (`explicit_dirty_count()`/`explicit_dirty_cells()`), kept for callers that
+  mean exactly that.
+* **Wire cost** — bytes actually emitted, returned by `Renderer::render` and
+  tracked by the scheduler. A single `CSI K` can logically clear dozens of cells
+  while costing a handful of bytes.
+
+`Renderer` reports *logical* damage and, with `capture_damage`, records logical
+coordinates; `Context::last_dirty_cells()` exposes them. This powers the demos'
+damage maps and `fx_lab`'s heatmap, and makes `dirty %` truthful for shrinking
+content. Damage capture is opt-in (it allocates). `fx_lab`'s "logical damage vs
+wire cost" scene and `--debug-damage` demonstrate the contrast directly.
 
 ## 34. Capability Degradation for Effects
 
@@ -617,17 +662,34 @@ Geometry (wireframe) and motion (particles) survive with colour removed.
 ## 35. Deterministic Goldens for Effects
 
 **IMPLEMENTED + TESTED**. Extends the methodology in section 24: the golden set
-now includes `fx_lab` scenes and the FX-enabled demo frames. Goldens are
-reproducible because effect time is deterministic and headers hide
-non-deterministic counters (`--debug-renderer` reveals them in `fx_lab`).
+now covers `polished_agent` (inline by default plus one `--fullscreen` proof),
+representative `hack_the_gibson` narrative beats (`--act=<name>` deterministically
+fast-forwards state so each beat is capturable at a small frame count), and the
+`fx_lab` regression scenes (torus, plasma, near-plane clip, wide-glyph clip,
+logical-vs-wire, dithering, data city, packets, water). Goldens are reproducible
+because effect time is deterministic and headers hide non-deterministic counters
+(`--debug-renderer` reveals them in `fx_lab`).
 
-## 36. Known Limitations
+## 36. Focus and Event Routing
+
+**IMPLEMENTED (minimal) + TESTED** (`src/focus.rs`, `tests/pty_demos.rs`).
+
+`FocusId` / `FocusRing` track which widget owns the keyboard: cycle with
+`focus_next`/`focus_prev` (Tab / Shift-Tab), `set` a known id, `capture` on modal
+open and `release` on close to restore the previous owner (nestable). This is
+deliberately *not* a DOM/event router — applications keep their own dispatch, and
+the ring only tracks identity. `polished_agent` uses it to route Tab/arrows
+between the prompt and the code viewport and to capture focus while the
+permission modal is open; mouse remains deferred.
+
+## 37. Known Limitations
 
 - **Raster/`Node::raster`, positioned layers and viewports are Rust-only** for now: no C ABI representation yet, and language-neutral support is not claimed.
-- **Damage map API is partial**: dirty coordinates are exposed for debug overlays, not as a general public `DamageMap`.
-- **Focus/event routing is NOT implemented this round**: the permission modal does not yet capture/restore focus; mouse remains deferred.
-- **Structured Markdown streaming is NOT implemented**: `polished_agent` streams plain/styled text and a semantic diff, not a Markdown renderer.
-- **The 3D projector is not a 3D engine**: no depth buffer, no shading, no occlusion — line geometry only.
+- **Virtualization / source-window rendering is NOT IMPLEMENTED**: camera viewports clip an already-painted world; they do not virtualize giant `m × n` worlds. Bounded worlds only.
+- **Damage API exposes logical vs explicit counts plus coordinates**, but there is no standalone public `DamageMap` type; the demos and `fx_lab` build heatmaps from coordinates.
+- **Focus is a minimal ring, not an event router**: applications still own dispatch. Mouse is deferred.
+- **Structured Markdown streaming is NOT implemented**: `polished_agent` streams plain/styled text, a semantic diff and a scrollable code viewport, not a CommonMark renderer.
+- **The 3D projector is not a 3D engine**: no depth buffer, no shading, no occlusion. Depth is exposed per edge for cheap near/far styling only.
 The following are **not** implemented or **not** verified. Do not describe them as complete:
 
 - **Go bindings are UNVERIFIED** — source exists and was updated (including `NewStackNode`/`NewDimNode`), but no Go compiler was available.

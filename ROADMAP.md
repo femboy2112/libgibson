@@ -103,7 +103,22 @@ This round converted earlier over-strong claims into verified behavior and expli
 - **Tests**: bounded effect damage, resize-during-wireframe, deterministic goldens incl. `fx_lab`. 233 tests total.
 - **Remote CI remains BLOCKED / ENVIRONMENTAL** (GitHub account billing); local verification green.
 
-## Phase 2: Input Protocols & Interaction Enhancements — PLANNED
+## Phase 1.10: Correctness Hardening + Interactive Demos — IMPLEMENTED + TESTED
+
+- **Near-plane clipping made consistent**: inclusive `depth >= near` predicate shared by `project`/`clip_near`; crossings no longer disappear. Decisive tests. (`src/geom.rs`)
+- **Wide-glyph clip containment**: clipping wins; no continuation leaks past any clip rectangle. Regression tests for raster nodes, viewports and positioned layers. (`src/surface.rs`, `tests/scene.rs`)
+- **Logical damage model**: runs ∪ erase-to-EOL ∪ cleared rows, separate from wire cost. (`src/diff.rs`, `src/renderer.rs`, `tests/effects_perf.rs`)
+- **TextInput cursor policy**: the placeholder stays intact; the software cursor highlights an existing glyph rather than blanking it. (`src/painter.rs`)
+- **Particle API truth**: radial vs life-variance vs directional bursts. (`src/particles.rs`)
+- **Mono field ordered dithering** (4×4 Bayer). (`src/field.rs`)
+- **Minimal focus ring** + `PageUp`/`PageDown` keys. (`src/focus.rs`, `src/input.rs`)
+- **Demos**: `polished_agent` is **inline by default** (real scrollback + mutable live foreground), with a richer plan (failure/recovery), scrollable code viewport and a completion summary; `hack_the_gibson` is an act-based *Hackers* (1995) homage (Gibson data city, Plague, Da Vinci, broadcast, Grand Central attack, rooftop pool, CRASH AND BURN) with a real root shell. `fx_lab` adds regression scenes and `--debug-damage`.
+- **Tests**: 291 total (was 233), incl. interactive PTY tests (`tests/pty_demos.rs`) and expanded visual goldens.
+- **Remote CI remains BLOCKED / ENVIRONMENTAL** (GitHub account billing); local verification green.
+
+## Phase 2: Input Protocols & Interaction Enhancements — PARTIAL
+
+- [x] **Minimal focus ring** (`FocusId`/`FocusRing`, Tab/Shift-Tab, modal capture/restore) — implemented; a full hierarchical focus tree and event bubbling remain planned.
 
 - [ ] **Kitty Keyboard Protocol**: progressive enhancement for disambiguated escape keys, key release events, and modifier combinations.
 - [ ] **Focus Management Tree**: hierarchical focus tree with Tab / Shift-Tab cycling and focus restoration.
