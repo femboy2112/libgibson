@@ -50,8 +50,11 @@ def main():
         ctx.insert_rich_text_before_live(rich)
         ctx.commit_rich_text(rich)
 
-        # 5. Insert before live
-        ctx.insert_raw_lines_before_live_unchecked("[Python ctypes] Async background update inserted above active prompt.")
+        # 5. Safe insertion: controls in the text are neutralized by the engine.
+        ctx.insert_text_before_live("[Python ctypes] Async background update inserted above active prompt.")
+
+        # 5b. Raw escape hatch: explicitly unchecked and unsanitized.
+        ctx.insert_raw_lines_before_live_unchecked("[Python ctypes] Raw notice (unchecked path).")
 
         # 6. Commit output
         ctx.commit("[Python ctypes] Frame rendered and committed successfully.")

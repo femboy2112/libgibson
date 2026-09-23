@@ -471,8 +471,11 @@ Two ordinary-cell raster backends, no graphics protocol:
 
 - `BrailleCanvas` — 2×4 binary dots per cell (`U+2800`..`U+28FF`), one color per
   cell, Bresenham line/polyline, exact per-dot tests.
-- `HalfBlockCanvas` — 2 vertical RGB samples per cell via `▀` (fg = top pixel,
-  bg = bottom pixel), with explicit transparency where both pixels are `None`.
+- `HalfBlockCanvas` — **one horizontal and two vertical RGB samples per cell**:
+  the addressable grid is exactly `width` × `(2 * height)` pixels, rendered with
+  `▀` (fg = top pixel, bg = bottom pixel), with explicit transparency where both
+  pixels are `None`. Every horizontal pixel maps to its own cell; no column is
+  discarded.
 
 Both convert to a `Surface` and therefore flow through the normal
 diff/compiler pipeline. `braille_oscilloscope` renders a waveform. Per-frame

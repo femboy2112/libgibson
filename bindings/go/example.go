@@ -38,7 +38,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx.InsertBeforeLive("[Go cgo] Live asynchronous notice inserted before active region.")
+	// Safe insertion: controls in the text are neutralized by the engine.
+	if err := ctx.InsertTextBeforeLive("[Go cgo] Live asynchronous notice inserted before active region."); err != nil {
+		fmt.Fprintf(os.Stderr, "insert text failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Raw escape hatch: explicitly unchecked and unsanitized.
+	if err := ctx.InsertRawLinesBeforeLiveUnchecked("[Go cgo] Raw notice (unchecked path)."); err != nil {
+		fmt.Fprintf(os.Stderr, "insert raw lines failed: %v\n", err)
+		os.Exit(1)
+	}
+
 	ctx.Commit("[Go cgo] Output rendered and committed.")
 	fmt.Println("[Go cgo] Example finished successfully.")
 }

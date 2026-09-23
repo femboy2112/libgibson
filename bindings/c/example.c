@@ -106,8 +106,12 @@ int main(void) {
         fprintf(stderr, "Render failed with status: %d\n", status);
     }
 
-    // 5. Insert asynchronous notice into scrollback above the active region
-    gibson_insert_raw_lines_before_live_unchecked(ctx, "[C FFI] Notice: Live background event inserted above active region.");
+    // 5. Safe insertion: controls in the text are neutralized by the engine.
+    gibson_insert_text_before_live(ctx, "[C FFI] Notice: Live background event inserted above active region.");
+
+    // 5b. Raw escape hatch: explicitly unchecked, text is a terminal byte
+    //     stream (not sanitized).
+    gibson_insert_raw_lines_before_live_unchecked(ctx, "[C FFI] Raw notice (unchecked path).");
 
     // 6. Commit completion line to finalize
     gibson_commit_text(ctx, "[C FFI] Render executed and output committed to scrollback.");

@@ -116,16 +116,41 @@ func (c *Context) Commit(text string) error {
 	return nil
 }
 
-// InsertBeforeLive inserts text into scrollback ABOVE the active live region, preserving live state.
-func (c *Context) InsertBeforeLive(text string) error {
+// InsertTextBeforeLive inserts safe, width-aware plain text into scrollback
+// ABOVE the active live region, preserving live state. Terminal control
+// characters are neutralized by the engine.
+func (c *Context) InsertTextBeforeLive(text string) error {
+	cStr := C.CString(text)
+	defer C.free(unsafe.Pointer(cStr))
+
+	status := C.gibson_insert_text_before_live(c.ptr, cStr)
+	if status != C.GIBSON_OK {
+		return errors.New("failed to insert text before live region")
+	}
+	return nil
+}
+
+// InsertRawLinesBeforeLiveUnchecked inserts raw text into scrollback ABOVE the
+// active live region. The text is treated as a terminal byte stream and is NOT
+// sanitized: embedded escape/OSC/CSI sequences reach the terminal. Prefer
+// InsertTextBeforeLive for untrusted text.
+func (c *Context) InsertRawLinesBeforeLiveUnchecked(text string) error {
 	cStr := C.CString(text)
 	defer C.free(unsafe.Pointer(cStr))
 
 	status := C.gibson_insert_raw_lines_before_live_unchecked(c.ptr, cStr)
 	if status != C.GIBSON_OK {
-		return errors.New("failed to insert text before live region")
+		return errors.New("failed to insert raw lines before live region")
 	}
 	return nil
+}
+
+// InsertBeforeLive is retained for compatibility and aliases the SAFE text path
+// (InsertTextBeforeLive). It never uses the unchecked raw path.
+//
+// Deprecated: use InsertTextBeforeLive (or InsertRawLinesBeforeLiveUnchecked).
+func (c *Context) InsertBeforeLive(text string) error {
+	return c.InsertTextBeforeLive(text)
 }
 
 // CommitNode renders a UI node into scrollback and clears active live region.

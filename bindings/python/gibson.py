@@ -155,6 +155,9 @@ _lib.gibson_request_render.restype = ctypes.c_int32
 _lib.gibson_commit.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 _lib.gibson_commit.restype = ctypes.c_int32
 
+_lib.gibson_insert_text_before_live.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+_lib.gibson_insert_text_before_live.restype = ctypes.c_int32
+
 _lib.gibson_insert_raw_lines_before_live_unchecked.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 _lib.gibson_insert_raw_lines_before_live_unchecked.restype = ctypes.c_int32
 
@@ -549,10 +552,25 @@ class Context:
         if status != 0:
             raise RuntimeError(f"Insert rich text failed: status {status}")
 
+    def insert_text_before_live(self, text: str):
+        """Insert safe, width-aware plain text above the live region.
+
+        Terminal control characters are neutralized by the engine; untrusted
+        text cannot inject escape sequences.
+        """
+        status = _lib.gibson_insert_text_before_live(self.handle, text.encode("utf-8"))
+        if status != 0:
+            raise RuntimeError(f"Insert text before live failed: status {status}")
+
     def insert_raw_lines_before_live_unchecked(self, text: str):
+        """Insert raw text above the live region WITHOUT sanitization.
+
+        The text is a terminal byte stream; embedded escape/OSC/CSI sequences
+        reach the terminal. Prefer insert_text_before_live.
+        """
         status = _lib.gibson_insert_raw_lines_before_live_unchecked(self.handle, text.encode("utf-8"))
         if status != 0:
-            raise RuntimeError(f"Insert before live failed: status {status}")
+            raise RuntimeError(f"Insert raw lines before live failed: status {status}")
 
     def commit_node(self, node: Node):
         status = _lib.gibson_commit_node(self.handle, node.release())

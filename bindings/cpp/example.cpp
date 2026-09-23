@@ -65,8 +65,11 @@ int main() {
             ctx.commit_rich_text(rich);
         }
 
-        // 5. Test insert_before_live
-        ctx.insert_raw_lines_before_live_unchecked("[C++ RAII] Async notice inserted before active live region.");
+        // 5. Safe insertion: controls in the text are neutralized by the engine.
+        ctx.insert_text_before_live("[C++ RAII] Async notice inserted before active live region.");
+
+        // 5b. Raw escape hatch: explicitly unchecked and unsanitized.
+        ctx.insert_raw_lines_before_live_unchecked("[C++ RAII] Raw notice (unchecked path).");
 
         // 6. Commit output
         ctx.commit("[C++ RAII] Tree rendered and committed successfully.");

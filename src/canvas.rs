@@ -4,8 +4,9 @@
 //! resolution out of plain terminal cells:
 //!
 //! * [`BrailleCanvas`] — 2×4 binary dots per cell (`⠀`..`⣿`), 1 color per cell.
-//! * [`HalfBlockCanvas`] — 2 vertical RGB samples per cell via `▀`, foreground =
-//!   top pixel, background = bottom pixel.
+//! * [`HalfBlockCanvas`] — 1 horizontal × 2 vertical RGB samples per cell
+//!   (addressable grid `width` × `2 * height`) via `▀`, foreground = top pixel,
+//!   background = bottom pixel.
 //!
 //! Both produce a [`Surface`] (or styled text), so they flow through the normal
 //! diff/ANSI pipeline and composite like any other node.
@@ -201,8 +202,13 @@ impl BrailleCanvas {
 // Half-block RGB
 // ---------------------------------------------------------------------------
 
-/// RGB raster canvas: `2 * width` by `2 * height` addressable pixels, rendered
-/// as `▀` cells (top pixel = foreground, bottom pixel = background).
+/// RGB raster canvas: `width` by `2 * height` addressable pixels, rendered as
+/// `▀` cells (top pixel = foreground, bottom pixel = background).
+///
+/// The `▀` glyph's two colour attributes give **exactly one horizontal sample
+/// and two vertical samples per terminal cell**, so the addressable grid is
+/// `width` columns by `height * 2` rows — not `2 * width`. Each horizontal
+/// pixel maps to its own cell; no column is discarded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HalfBlockCanvas {
     pub width: u16,
@@ -215,14 +221,17 @@ impl HalfBlockCanvas {
         Self {
             width,
             height,
-            pixels: vec![None; (width as usize) * 2 * (height as usize) * 2],
+            pixels: vec![None; (width as usize) * (height as usize) * 2],
         }
     }
 
+    /// Addressable pixel columns. One per terminal cell (the half-block glyph is
+    /// only half-width in the vertical direction).
     pub fn pixel_width(&self) -> u16 {
-        self.width * 2
+        self.width
     }
 
+    /// Addressable pixel rows. Two per terminal cell (top and bottom halves).
     pub fn pixel_height(&self) -> u16 {
         self.height * 2
     }
@@ -305,8 +314,8 @@ impl HalfBlockCanvas {
         let mut s = Surface::new_transparent(self.width, self.height);
         for cy in 0..self.height {
             for cx in 0..self.width {
-                let top = self.get_pixel(cx as i32 * 2, cy as i32 * 2);
-                let bottom = self.get_pixel(cx as i32 * 2, cy as i32 * 2 + 1);
+                let top = self.get_pixel(cx as i32, cy as i32 * 2);
+                let bottom = self.get_pixel(cx as i32, cy as i32 * 2 + 1);
                 let (glyph, style) = match (top, bottom) {
                     (None, None) => continue,
                     (Some(t), None) => ("▀", Style::new().fg(Color::Rgb(t.0, t.1, t.2))),
@@ -338,8 +347,8 @@ impl HalfBlockCanvas {
         for cy in 0..self.height {
             let mut line = Line::new();
             for cx in 0..self.width {
-                let top = self.get_pixel(cx as i32 * 2, cy as i32 * 2);
-                let bottom = self.get_pixel(cx as i32 * 2, cy as i32 * 2 + 1);
+                let top = self.get_pixel(cx as i32, cy as i32 * 2);
+                let bottom = self.get_pixel(cx as i32, cy as i32 * 2 + 1);
                 match (top, bottom) {
                     (None, None) => line = line.span(Span::raw(" ")),
                     (Some(t), None) => {
@@ -531,12 +540,49 @@ mod tests {
 
     #[test]
     fn half_block_rect_and_clipping() {
-        let mut c = HalfBlockCanvas::new(3, 3); // 6x6 pixels
-        c.rect(0, 0, 6, 6, (1, 2, 3));
+        let mut c = HalfBlockCanvas::new(3, 3); // 3 columns x 6 rows of pixels
+        c.rect(0, 0, 3, 6, (1, 2, 3));
         assert!(c.get_pixel(0, 0).is_some());
-        assert!(c.get_pixel(5, 5).is_some());
-        assert!(c.get_pixel(3, 3).is_none());
+        assert!(c.get_pixel(2, 5).is_some());
+        assert!(c.get_pixel(1, 3).is_none());
         c.set_pixel(99, 99, (9, 9, 9)); // ignored
+    }
+
+    #[test]
+    fn half_block_geometry_is_one_pixel_wide_two_tall_per_cell() {
+        let c = HalfBlockCanvas::new(2, 1);
+        assert_eq!(c.pixel_width(), 2, "one addressable pixel column per cell");
+        assert_eq!(c.pixel_height(), 2, "two addressable pixel rows per cell");
+
+        // Both horizontal pixels are addressable; the odd column is not discarded.
+        let mut c = HalfBlockCanvas::new(2, 1);
+        c.set_pixel(0, 0, (255, 0, 0));
+        c.set_pixel(1, 0, (0, 255, 0));
+        let s = c.to_surface();
+        assert_eq!(s.get(0, 0).unwrap().style.fg, Some(Color::Rgb(255, 0, 0)));
+        assert_eq!(s.get(1, 0).unwrap().style.fg, Some(Color::Rgb(0, 255, 0)));
+
+        // Changing x=0 vs x=1 must alter *different* terminal cells.
+        let mut x0 = HalfBlockCanvas::new(2, 1);
+        x0.set_pixel(0, 0, (1, 2, 3));
+        let mut x1 = HalfBlockCanvas::new(2, 1);
+        x1.set_pixel(1, 0, (1, 2, 3));
+        let s0 = x0.to_surface();
+        let s1 = x1.to_surface();
+        assert!(s0.get(0, 0).unwrap().style.fg.is_some());
+        assert!(s0.get(1, 0).unwrap().transparent);
+        assert!(s1.get(0, 0).unwrap().transparent);
+        assert!(s1.get(1, 0).unwrap().style.fg.is_some());
+    }
+
+    #[test]
+    fn half_block_odd_column_pixel_is_rendered_in_rich_text() {
+        let mut c = HalfBlockCanvas::new(2, 1);
+        c.set_pixel(1, 1, (9, 9, 9)); // bottom half of the *second* cell
+        let rt = c.to_rich_text();
+        let line = &rt.lines[0];
+        let rendered: String = line.spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(rendered, " ▄");
     }
 
     #[test]
