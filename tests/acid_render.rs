@@ -190,3 +190,54 @@ fn ghost_input_never_edits_crash_buffer_and_live_resize_keeps_renderer_correct()
         assert!(e.replay_matches());
     }
 }
+
+#[test]
+fn real_auth_frontier_increment_is_panel_local_and_frozen_frame_is_free() {
+    let mut e = Encounter::new("first-breach", false);
+    let a = e.frame(120, 32);
+    e.update(Duration::from_millis(100), &[]);
+    let next = e.frame(120, 32);
+    let session = |n: &Node| matches!(&n.kind,NodeKind::Border{title:Some(title),..} if title.contains("SESSION /"));
+    let index = a
+        .children
+        .iter()
+        .position(session)
+        .expect("ordinary session entity");
+    let mut b = a.clone();
+    // Isolate the actual changed entity from graph packets and narrative data.
+    b.children[index] = next.children.iter().find(|n| session(n)).unwrap().clone();
+    let sa = surface(a.clone(), 120, 32);
+    let sb = surface(b.clone(), 120, 32);
+    let diff = compute_diff(Some(&sa), &sb);
+    for (x, y) in diff.exact_changed_cells() {
+        assert!(
+            x >= 72 && (3..19).contains(&y),
+            "frontier escaped session: {x},{y}"
+        );
+    }
+    let (exact, affected, bytes) = measure("actual AUTH frontier 100ms", a, b.clone(), 120, 32);
+    assert!(exact > 0 && exact < 48 * 16 / 2);
+    assert!(affected < 48 * 16);
+    assert!(bytes < 4000);
+    let frozen = measure("frozen battlefield", b.clone(), b, 120, 32);
+    assert_eq!(frozen, (0, 0, 0));
+}
+
+#[test]
+fn instant_final_counter_does_not_freeze_a_recoil_offscreen() {
+    let mut e = Encounter::new("climax", false);
+    e.command("hard isolate");
+    e.command("cut link");
+    assert!(e.director().is_finished());
+    let frame = e.frame(120, 32);
+    let map = frame
+        .children
+        .iter()
+        .find(
+            |n| matches!(&n.kind,NodeKind::Border{title:Some(t),..} if t.contains("LOCAL FABRIC")),
+        )
+        .unwrap();
+    assert_eq!(map.layout_style.offset_x, 0.0);
+    assert!(!e.director().mounted().any(|name| name == "route-isolation"));
+    assert!(e.replay_matches());
+}

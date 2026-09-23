@@ -1,32 +1,32 @@
-C R\A S @   O V E R^R I D E  */  LOCAL$NODE   ~             +   ++                                  \
-MODEM LINK / LIVE / 000.4s / integrit+ 08^% / ~ anomalous sessions   %           &                               =
-─── CONTESTE? ~ONTROL / route collision ─────?─────────────~─────~──────────────────────────────────────────────────&───
-                                                                       ┌─  SESSION / PROCESS VIEW  <──────────────────┐
- ┌─  SYSTEM MAP / LOCAL FABRIC  ───────────────────────────────────────│SESSION  ACID BURN                            │
- │                                                                     │TARGET   DISPLAY                              │
- │                           ◀ AB■ MODEM                               │TRACE      4%  PASSIVE                        │
- │                                  ⠐⠗                                  │&UBSYSTEM    OWNER      INTEGRITY
- │                                   ⡇                                 │MODEM        Cra*h     100%           @       │
- │                                   ⡇                                 │ROUTE        Contested 1@0%                   │
- │                                  ⢰⣲                                 │AUTH         Acid       62%                   @
-   │                               ~ ROUTE                             │SHELL        Contested 100%                   │
-   │                           ⢀⣄⠤⠒⠊⠉    ⠈⠉⠒⠤⢄⣀                        │FILES        Crash     100%   \               │
- │                       ⣀⡀⠒⠉ ⠁            ⠸⠽⠉⢴⠄⡀                      │DISPLAY      Contested  71%     *             │
- │                   ⢀⡠⠔⠉⠓⠃                     ⠈⠑⠢⢄                   │FIL@S / 0 altered entries        %            │
- │             < AUTH⡀                            ~ SHELL              │                                              │
- │                   ⠈⠉⣖⡆⠤⣀⡀                  ⢀⣀⠤⠔⠊⠉                   │                                  >           │
- │                         ⠈⠑⠢⢄⡀           ⡠⠔⠊⠁                        │                 %                            │
- │                             ⠈⢴⠄⣀    ⢀⠤⠒⠉                            └──────────────────────────**──────────────────┘
- │                               ■ FILES                                ┌─  REMOTE SESSION / read only  ───────────────┐
- │                                  ⢀⣀                                  │that little cyan line is yours. for now.      │
- │                               ~ DISPLAY                              │                                              │
- │                                                                      └──────────────────────────────────────────────┘
-┌─  EVENT TRACE / causal receipts  ────────────────────────────────────┐┌─  CRASH / LOCAL CONTROL  ────────────────────┐
-│000.0  CLIMAX                                                         ││CUT LINK / LET HER IN                         │
-│                                                                      ││TRACE or DECOY to prepare a counter           │
-│                                                                      ││DECOY / HARD ISOLATE / TRACE TOKEN            │
-│                                                                      ││                                              │
-│                                                                      ││                                              │
-└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
-crash > type a simulated action · Enter
-FICTIONAL / LOCAL SIMULATION     Enter command · Esc / Ctrl-C exit
+
+ R A S H   O V E R R I D E  //  LOCAL NODE
+OCAL FABRIC / TRACE 0% / integrity 97% / CONTEST IN PROGRESS
+── FINAL MOVE / keep one hand on the controls ─────────────────────────────────────────────────────────────────────────
+─  LOCAL FABRIC / live topology  ─────────────────────────────────────────────────────────────────────────────────────┐
+┌─  SESSIO@ / PROCESS VIEW  ─┐                                                       ┌─  REMOTE / read only  ────────┐│
+│RE^OTE  ACID BURN           │                         ◀ MODEM                       │hello cr                       ││
+=HERE DISPLAY → DISPLAY      │                           ▰▰▰▰⠈⠑⠤⡀                    │                               │
+ │TRACE   0% / reserve 100%                                ⠇   ⠈⠑⠢⣀                   └───────────────────────────────│
+└─────────?──?───────────────┘                             ⡇       ⠑⠢⢄                                                │
+                                                          ⠠⡦          ⠉⠢⢄⡀                                            │
+                                                       ◀ ROUTE⣄          ⠈⠒⠤⡀                                         │
+                                                ⣀⣀⡠⠤  ⠉⠁▰▰▰▰  ⠁⠉⠒⠢⠤⢄⣀       ⠈⠺⠂⣀                                      │
+                                        ⢀⣀⣀⠤⠄ ⠈⠉                     ⠉⠉⠒⠒⠤⢄⣀⡀   ⠑⠢⣀                                   │
+                                 ⣀⣀⡠⠤  ⠉⠁                                   ⠈⠉⠑⠒⠤⠤⣀⠉⠢⢄                                │
+                         ◀ AUTH⣀⣀                                                  ⠈■ SHELL                           │
+                          ▰▰▰▰   ⠉⠁⠐⠗⠤⣀⣀⡀                                   ⢀ ⢀⣀⠤⠤⠒⠊⠉⠁                                │
+                                        ⠈⠉  ⠤⢄⣀⣀                       ⣀⣀⠤⠔⠒⠙⠁⠁                                       │
+                                                ⠉⠁ ⣖⡆⣀⣀⡀        ⣀⡠⠤⠔⠒⠉⠉                                               │
+                                                       ◀ FILES⠉⠉◀ AB                                                  │
+                                                        ▰▰▰▰                                                          │
+                                                       ◀ DISPLAY                                                      │
+                                                        ▰▰▰▰▰                                                         │
+┌─  CRASH / LOCAL CONTROL  ────────────────────────────────────────────────────────────────────────────────────────────┐
+│CUT LINK     READY / disconnects local graph                                                                          │
+│TURN TRACE   NEED TRACE80 / requires trace 80%                                                                        │
+│SPRING DECOY NEED OCCUPIED MIRROR / requires occupied mirror                                                          │
+│LET HER IN   READY / sacrifices DISPLAY                                                                               │
+│LOCAL CONTROLS READY                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+crash > simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter · Esc / Ctrl-C exit

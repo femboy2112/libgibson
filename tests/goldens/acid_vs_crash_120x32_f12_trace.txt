@@ -1,32 +1,32 @@
 C R A S H   O V E R R I D E  //  LOCAL NODE
-MODEM LINK / LIVE / 000.4s / integrity 094% / 1 anomalous sessions
-─── TRACE NOTICED / source route splits ────────────────────────────────────────────────────────────────────────────────
-┌─  SYSTEM MAP / LOCAL FABRIC  ────────────────────────────────────────┌─  SESSION / PROCESS VIEW  <──────────────────┐
-│ TRACE 64% ↗                 ⢄     ⡄    ⢀⠄                            │SESSION  ACID BURN                            │
-│                             ⠈⢆■ MODEM⠤⢀⠎⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⡄ │TARGET   DISPLAY                              │
-│                            ◀ AB  ⠐⡇  ⢀⠎                            ⡇ │TRACE     64%  RETURN TOKEN                   │
-│                               ⠈⢢  ⡇ ⢠⠊                             ⡇ ││&UBSYSTEM    OWNER      INTEGRITY
-│                                 ⢣ ⡇⢠⠃                              ⡇ │MODEM        Cra*h     100%           @       │
-│                                  ⢣⣧⠃                               ⡇ │ROUTE        Contested 1@0%                   │
-│                               ~ ROUTE                              ⡇ │AUTH         Acid       62%                   @
-│                           ⢀⣄⠤⠒⠊⠉    ⠈⠉⠒⠤⢄⣀                         ⡇ │SHELL        Crash     100%                   │
-│                       ⣀⡀⠒⠉ ⠁            ⠸⠽⠉⢴⠄⡀                     ⡇ │FILES        Crash     100%   \               │
-│                   ⢀⡠⠔⠉⠓⠃                     ⠈⠑⠢⢄                  ⡇ │DISPLAY      Crash     100%     *             │
-│             < AUTH⡀                            ■ SHELL             ⡇ │FIL@S / 0 altered entries        %            │
-│                   ⠈⠉⣖⡆⠤⣀⡀                  ⢀⣀⠤⠔⠊⠉                  ⡇ │                                              │
-│                         ⠈⠑⠢⢄⡀           ⡠⠔⠊⠁                       ⡇ │                                  >           │
-│                             ⠈⢴⠄⣀    ⢀⠤⠒⠉                           ⡇ │                 %                            │
-│                               ■ FILES                              ⡇ └──────────────────────────**──────────────────┘
-│                                   ⠁                                ⡇ │┌─  REMOTE SESSION / read only  ───────────────┐
-│                               ■ DISPLAY⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠁ ││following me? keep up.                        │
+LOCAL FABRIC / TRACE 70% / integrity 97% / CONTEST IN PROGRESS
+─── COUNTERPLAY / every door has a price ───────────────────────────────────────────────────────────────────────────────
+┌─  LOCAL FABRIC / live topology  ─────────────────────────────────────┐┌─  SESSIO@ / PROCESS VIE^  ───────────────────┐
+│ TRACE 70% ↗                                                          ││REMOTE= ACID BURN                             │
+│                               ◀ MODEM                                ││HERE AUTH → DISPLAY    ?  ?                   │
+│                                ▰▰▰▰⠺⠂                                ││TRACE  70% / reserve\100%                     │
+│                                  ⠑⠒⠁ ⠑⢄                              ││SYSTEM    HOLD       INTEGRITY                │
+│                                  ⢀⣀   ⠈⠢⡀                            ││MODEM   > Acid      100%                      │
+│                                  ⠘⠚     ⠈⠢⡀                          ││ROUTE     Acid     #100%                      │
+│                               ◀ ROUTE     ⠈⠢⡀                        ││AUTH      Acid    %  87%     >                │
+│                          ⢀⠤⢄⣀⠤ ▰▰▰▰ ⠉⠒⠤⣀    ⠈⠢⡀                      ││SHELL     Crash     100%                      │
+│                       ⢠⢤⡠⠘⠤⠜            ⠉⠒⠠⡦⡀ ⠈⢆                     ││FILES     Crash     100%                      │
+│                   ⢀⣀⠤ ⠈⠉                    ⠈⠑⠢⢄⠑⢄                   ││DISPLAY   Crash     100%                      │
+│             ◀ AUTH⡀                            ■ SHELL               ││FILES / 0 altered en<ries                     │
+│              ▰▰▰▰ ⠈⠁⢠⠒⢢       ◀ AB           ⢀⡠⠔⠊⠁                   ││                        *                     │
+│                     ⠈⠒⠊⠉ ⠤⣀⢀⣀            ⣀⠤⠔⠊⠁                       ││                                              │
+│                            ⠘⠚⠠⢄⣀    ⢀⣄⠤⠒⠉                            ││                                              │
+│                               ■ FILES⠁                               │└──────────────────────────────────────────────┘
+│                                  ⠈⠉                                  │┌─  REMOTE / read only  ───────────────────────┐
+│                               ■ DISPLAY                              ││hello cr                                      │
 │                                                                      ││                                              │
 └──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
-┌─  EVENT TRACE / causal receipts  ────────────────────────────────────┐┌─  CRASH / LOCAL CONTROL  ────────────────────┐
-│000.0  TRACE                                                          ││TRACE / ISOLATE / DECOY                       │
-│                                                                      ││ISOLATE AUTH / KILL / HARD ISOLATE            │
-│                                                                      ││WATCH / TRACE / DROP available                │
-│                                                                      ││                                              │
-│                                                                      ││                                              │
+┌─  RECEIPTS / the machine remembers  ─────────────────────────────────┐┌─  CRASH / LOCAL CONTROL  ────────────────────┐
+│                                                                      ││TRACE        READY / bandwidth / awareness    │
+│                                                                      ││ISOLATE      READY / local visibility         │
+│                                                                      ││DECOY        READY / 250 resources            │
+│                                                                      ││KILL         READY / 100 resources / one lease│
+│                                                                      ││LOCAL CONTROLS READY                          │
 └──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
-crash > type a simulated action · Enter
-FICTIONAL / LOCAL SIMULATION     Enter command · Esc / Ctrl-C exit
+crash > simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter · Esc / Ctrl-C exit

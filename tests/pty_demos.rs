@@ -447,91 +447,136 @@ fn polished_inline_cancel_reports_cancelled() {
 }
 
 #[test]
-fn acid_trace_changes_visible_world_during_first_contest() {
+fn acid_trace_changes_visible_world_and_planner_during_first_contest() {
     let mut s = Session::spawn(
         "acid_vs_crash",
         &[
             "--stage=route-contested",
             "--deterministic",
             "--freeze-at=0",
+            "--debug-battle",
         ],
         120,
         32,
     );
     let before = s.wait_until(Duration::from_secs(3), |sc| sc.contains("crash >"));
-    assert!(
-        before.contains("ROUTE / two hands"),
-        "wrong stage: {before}"
-    );
-    assert!(!before.contains("TRACE 64%"));
+    assert!(before.contains("CONTEST"), "wrong act: {before}");
     s.type_str("trace\r");
-    let after = s.wait_until(Duration::from_secs(2), |sc| sc.contains("TRACE 64%"));
+    let after = s.wait_until(Duration::from_secs(2), |sc| {
+        sc.contains("EvadeTrace") && sc.contains("TRACE 28%")
+    });
+    assert!(after.contains("TRACE 28%"), "trace did not change: {after}");
     assert!(
-        after.contains("TRACE 64%"),
-        "trace geometry absent: {after}"
+        after.contains("EvadeTrace") && after.contains("SplitRoute"),
+        "planner did not respond: {after}"
     );
-    assert!(after.contains("RETURN TOKEN"), "session unchanged: {after}");
     assert!(
-        after.contains("ROUTE / two hands"),
-        "reaction left beat: {after}"
+        after.contains("CONTEST"),
+        "in-beat defense jumped act: {after}"
     );
     s.type_str("exit\r");
     s.assert_clean_exit(Duration::from_secs(2));
 }
 
 #[test]
-fn acid_isolation_disconnects_route_and_causes_sidepath_adaptation() {
+fn acid_isolation_disconnects_route_and_causes_valid_pivot() {
     let mut s = Session::spawn(
         "acid_vs_crash",
-        &["--stage=first-breach", "--deterministic", "--speed=4"],
+        &[
+            "--stage=first-breach",
+            "--deterministic",
+            "--speed=3",
+            "--debug-battle",
+        ],
         120,
         32,
     );
     let ready = s.wait_until(Duration::from_secs(3), |sc| sc.contains("crash >"));
-    assert!(ready.contains("crash >"), "prompt absent: {ready}");
+    assert!(ready.contains("crash >"));
     s.type_str("isolate\r");
-    let isolated = s.wait_until(Duration::from_secs(2), |sc| {
-        sc.contains("ISOLATE / ROUTE disconnected") && sc.contains("CUT")
-    });
-    assert!(
-        isolated.contains("ISOLATE / ROUTE disconnected") && isolated.contains("CUT"),
-        "route was not visibly disconnected: {isolated}"
-    );
     let adapted = s.wait_until(Duration::from_secs(3), |sc| {
-        sc.contains("ACID ADAPTS / bypass via MODEM")
+        sc.contains("ROUTE CUT") && sc.contains("PunishIsolation")
     });
     assert!(
-        adapted.contains("ACID ADAPTS / bypass via MODEM"),
-        "Acid did not reroute after isolation: {adapted}"
+        adapted.contains("ROUTE CUT"),
+        "route not visibly cut: {adapted}"
+    );
+    assert!(
+        adapted.contains("PunishIsolation"),
+        "Acid did not react: {adapted}"
+    );
+    assert!(
+        adapted.contains("telemetry lost"),
+        "defense cost hidden: {adapted}"
     );
     s.type_str("exit\r");
     s.assert_clean_exit(Duration::from_secs(2));
 }
 
 #[test]
-fn acid_decoy_materializes_then_draws_remote_session() {
+fn acid_decoy_draws_remote_lease_then_opponent_recognizes_mirror() {
     let mut s = Session::spawn(
         "acid_vs_crash",
-        &["--stage=first-breach", "--deterministic", "--speed=4"],
+        &[
+            "--stage=first-breach",
+            "--deterministic",
+            "--speed=4",
+            "--debug-battle",
+        ],
         120,
         32,
     );
     let ready = s.wait_until(Duration::from_secs(3), |sc| sc.contains("crash >"));
-    assert!(ready.contains("crash >"), "prompt absent: {ready}");
+    assert!(ready.contains("crash >"));
     s.type_str("decoy\r");
     let deployed = s.wait_until(Duration::from_secs(2), |sc| {
-        sc.contains("MIRROR FILES / DECOY") && sc.contains("lure ready")
+        sc.contains("MIRROR FILES") && sc.contains("AttackDecoy")
     });
     assert!(
-        deployed.contains("MIRROR FILES / DECOY") && deployed.contains("lure ready"),
-        "decoy failed to materialize: {deployed}"
+        deployed.contains("MIRROR FILES") && deployed.contains("AttackDecoy"),
+        "mirror not targeted: {deployed}"
     );
-    let taken = s.wait_until(Duration::from_secs(3), |sc| {
-        sc.contains("DECOY TRIGGERED") && sc.contains("TARGET   DECOY")
+    let taken = s.wait_until(Duration::from_secs(3), |sc| sc.contains("mirror lease"));
+    assert!(
+        taken.contains("mirror lease"),
+        "decoy never occupied: {taken}"
+    );
+    let recognized = s.wait_until(Duration::from_secs(3), |sc| sc.contains("cute once"));
+    assert!(
+        recognized.contains("cute once"),
+        "Acid did not learn: {recognized}"
+    );
+    s.type_str("exit\r");
+    s.assert_clean_exit(Duration::from_secs(2));
+}
+
+#[test]
+fn acid_hard_isolation_costs_visible_telemetry_and_available_actions() {
+    let mut s = Session::spawn(
+        "acid_vs_crash",
+        &[
+            "--stage=display-intrusion",
+            "--deterministic",
+            "--freeze-at=0",
+        ],
+        120,
+        32,
+    );
+    let ready = s.wait_until(Duration::from_secs(3), |sc| sc.contains("crash >"));
+    assert!(ready.contains("crash >"));
+    s.type_str("hard isolate\r");
+    let blind = s.wait_until(Duration::from_secs(2), |sc| {
+        sc.contains("LOCAL TELEMETRY LOST")
     });
     assert!(
-        taken.contains("DECOY TRIGGERED") && taken.contains("TARGET   DECOY"),
-        "Acid did not change target to decoy: {taken}"
+        blind.contains("LOCAL TELEMETRY LOST"),
+        "hard-isolate cost absent: {blind}"
+    );
+    s.type_str("decoy\r");
+    let blocked = s.wait_until(Duration::from_secs(2), |sc| sc.contains("UNAVAILABLE"));
+    assert!(
+        blocked.contains("UNAVAILABLE"),
+        "blind machine fabricated decoy capability: {blocked}"
     );
     s.type_str("exit\r");
     s.assert_clean_exit(Duration::from_secs(2));
@@ -548,22 +593,20 @@ fn acid_final_cut_link_resolves_and_replays_before_restoring_terminal() {
     let ready = s.wait_until(Duration::from_secs(3), |sc| sc.contains("CUT LINK"));
     assert!(ready.contains("CUT LINK"), "final agency absent: {ready}");
     s.type_str("cut link\r");
-    let ending = s.wait_until(Duration::from_secs(2), |sc| {
-        sc.contains("CRASH CONTAINS") && sc.contains("BATTLE SHELL")
-    });
+    let ending = s.wait_until(Duration::from_secs(2), |sc| sc.contains("CRASH CONTAINS"));
     assert!(
-        ending.contains("CRASH CONTAINS") && ending.contains("LINK CUT"),
-        "cut link failed to resolve the battle: {ending}"
+        ending.contains("CRASH CONTAINS"),
+        "cut did not resolve: {ending}"
     );
     assert!(
-        ending.contains("BATTLE SHELL"),
-        "inspector absent: {ending}"
+        ending.contains("replay"),
+        "aftercredits inspector absent: {ending}"
     );
     s.type_str("replay\r");
     let replay = s.wait_until(Duration::from_secs(2), |sc| sc.contains("REPLAY VERIFIED"));
     assert!(
         replay.contains("REPLAY VERIFIED"),
-        "replay failed: {replay}"
+        "world replay failed: {replay}"
     );
     s.type_str("exit\r");
     s.assert_clean_exit(Duration::from_secs(2));
@@ -622,11 +665,11 @@ fn acid_responsive_compositions_survive_all_color_capabilities() {
         );
         let screen = s.wait_until(Duration::from_secs(3), |sc| sc.contains("crash >"));
         assert!(
-            screen.contains("SYSTEM MAP"),
+            screen.contains("LOCAL FABRIC"),
             "map missing at {cols}x{rows}: {screen}"
         );
         assert!(
-            screen.contains("~ ROUTE"),
+            screen.contains("≋ ROUTE"),
             "contested identity lost: {screen}"
         );
         assert!(

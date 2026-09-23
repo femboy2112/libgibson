@@ -1,23 +1,24 @@
-//! Acid vs Crash: a fictional terminal short film. No sockets, shell execution,
-//! network probes or real intrusion. Every world mutation is a recorded story action.
+//! A fictional local machine contested by two deterministic operators.
+//! BattleGraph owns tactical truth; StoryDirector owns the dramatic acts.
+//! No sockets, host commands, credentials or real intrusion exist here.
 //!
-//! Run `cargo run --example acid_vs_crash -- --auto --deterministic`.
-//! Interactive commands: trace, isolate, isolate auth, decoy, kill, hard isolate;
-//! final moves: cut link, turn trace, spring decoy, let her in.
-//! Inspection: --stage=climax --freeze-at=60 --color=mono --seconds=3.
+//! `--auto --deterministic`, `--stage=climax`, `--debug-battle`, `--color=mono`.
 
+#[path = "acid_vs_crash/battle.rs"]
+pub mod battle;
+
+use battle::{Control, EncounterModel, NodeId};
 use gibson::cell::{Color, Line, RichText, Span, Style};
 use gibson::input::{Event, KeyCode, KeyModifiers, TextInputState};
 use gibson::node::{Node, WrapMode};
-use gibson::scene::{Effect, EffectBundle, Scene, SceneEntity, SceneTarget};
+use gibson::scene::{Effect, EffectBundle, Presentation, Scene, SceneEntity, SceneTarget};
 use gibson::story::{Beat, Condition, Facts, Story, StoryAction, StoryDirector, StoryEvent};
 use gibson::surface::{BorderType, Surface};
-use gibson::surface_fx::SurfaceFx;
+use gibson::surface_fx::{FxMask, SurfaceFx};
 use gibson::{BrailleCanvas, ColorDepth, Context, FixedStepClock};
 use std::time::Duration;
 
 const SEED: u64 = 0xAC1D_C2A5;
-const SYSTEMS: [&str; 6] = ["modem", "route", "auth", "shell", "files", "display"];
 pub const STAGES: &[&str] = &[
     "quiet",
     "knock",
@@ -38,34 +39,26 @@ pub const STAGES: &[&str] = &[
     "acid-win",
     "stalemate",
 ];
-
 fn seconds(n: f32) -> Duration {
     Duration::from_secs_f32(n)
 }
-fn text(key: &str, value: &str) -> StoryAction {
-    StoryAction::set_text(key, value)
-}
-fn number(key: &str, value: f32) -> StoryAction {
-    StoryAction::set_number(key, value)
-}
-fn flag(key: &str, value: bool) -> StoryAction {
-    StoryAction::set_bool(key, value)
-}
-fn owner(system: &str, value: &str) -> StoryAction {
-    text(&format!("{system}-control"), value)
-}
-fn integrity(system: &str, value: f32) -> StoryAction {
-    number(&format!("{system}-integrity"), value)
+fn act(stage: &str) -> &str {
+    match stage {
+        "adapt" | "sidepath" | "decoy" | "trace" | "pressure" | "trap" => "counterplay",
+        "display-intrusion" | "ghost" => "escalation",
+        "climax" => "takeover",
+        other => other,
+    }
 }
 
 #[derive(Clone, Copy)]
 struct Palette {
     crash: Style,
     acid: Style,
+    infection: Style,
     muted: Style,
     warning: Style,
     white: Style,
-    bg: Color,
 }
 impl Palette {
     fn new(mono: bool) -> Self {
@@ -79,17 +72,26 @@ impl Palette {
         Self {
             crash: Style::new().fg(rgb(76, 218, 255)).bold(),
             acid: Style::new().fg(rgb(255, 79, 192)).bold().reverse(),
+            infection: if mono {
+                Style::new().bold().reverse()
+            } else {
+                Style::new().fg(rgb(255, 79, 192)).bold()
+            },
             muted: Style::new().fg(rgb(105, 124, 158)),
             warning: Style::new().fg(rgb(255, 200, 91)).bold(),
             white: Style::new().fg(rgb(223, 235, 255)),
-            bg: Color::Reset,
+        }
+    }
+    fn owner(self, owner: Control) -> Style {
+        match owner {
+            Control::Crash => self.crash,
+            Control::Contested => self.warning,
+            Control::Acid => self.acid,
         }
     }
 }
-
 fn scene_template() -> Scene {
     let mut scene = Scene::new();
-    // Tags are interned before entities, so every frame and story has the same targets.
     for tag in [
         "display-sensitive",
         "auth",
@@ -140,193 +142,146 @@ fn scene_template() -> Scene {
     scene
 }
 
-fn controls(mut beat: Beat) -> Beat {
-    for (command, actions) in [
-        (
-            "watch",
-            vec![text("last-action", "WATCH / observe inbound route")],
-        ),
-        (
-            "trace",
-            vec![
-                number("trace-confidence", 64.0),
-                flag("tracing", true),
-                text("last-action", "TRACE / return token following remote route"),
-                StoryAction::mount("trace-token"),
-            ],
-        ),
-        (
-            "isolate",
-            vec![
-                flag("route-isolated", true),
-                owner("route", "Crash"),
-                text("last-action", "ISOLATE / ROUTE disconnected"),
-                StoryAction::mount("route-isolation"),
-            ],
-        ),
-        (
-            "isolate auth",
-            vec![
-                flag("auth-isolated", true),
-                owner("auth", "Crash"),
-                text("last-action", "ISOLATE AUTH / session quarantined"),
-                StoryAction::unmount("auth-presence"),
-                StoryAction::mount("auth-isolation"),
-            ],
-        ),
-        (
-            "decoy",
-            vec![
-                flag("decoy-open", true),
-                text("last-action", "DECOY / mirror FILES mounted"),
-                StoryAction::mount("decoy-reveal"),
-            ],
-        ),
-        (
-            "kill",
-            vec![
-                owner("auth", "Crash"),
-                flag("session-killed", true),
-                text(
-                    "last-action",
-                    "KILL SESSION / lease revoked; remote link remains",
-                ),
-                StoryAction::unmount("auth-presence"),
-            ],
-        ),
-        (
-            "hard isolate",
-            vec![
-                flag("route-isolated", true),
-                flag("hard-isolated", true),
-                flag("auth-isolated", true),
-                owner("route", "Crash"),
-                owner("display", "Crash"),
-                owner("auth", "Crash"),
-                owner("modem", "Crash"),
-                text(
-                    "last-action",
-                    "HARD ISOLATE / DISPLAY clean; local visibility reduced",
-                ),
-                StoryAction::unmount("display-presence"),
-                StoryAction::unmount("takeover"),
-                StoryAction::unmount("ghost"),
-                StoryAction::unmount("auth-presence"),
-                StoryAction::mount("route-isolation"),
-            ],
-        ),
-        (
-            "trace token",
-            vec![
-                number("trace-confidence", 92.0),
-                flag("tracing", true),
-                text("last-action", "TRACE TOKEN / source corridor resolved"),
-                StoryAction::mount("trace-token"),
-            ],
-        ),
-    ] {
-        beat = beat.reaction(Condition::command(command), actions);
+// Only categorical milestones cross the simulation/story boundary. Influence,
+// integrity, cooldowns and clocks remain in BattleGraph, never duplicated in Facts.
+fn semantic_state(world: &EncounterModel) -> Vec<(String, String)> {
+    let mut values = Vec::new();
+    for node in &world.graph.nodes {
+        values.push((
+            format!("{}-control", node.id.name()),
+            node.owner().as_str().into(),
+        ));
+        values.push((
+            format!("{}-isolated", node.id.name()),
+            node.isolated.to_string(),
+        ));
     }
-    beat.reaction(
-        Condition::on(StoryEvent::custom("TraceDeepen")),
-        [
-            number("trace-confidence", 92.0),
-            text(
-                "last-action",
-                "TRACE / source corridor narrowed to one return path",
-            ),
-        ],
-    )
+    let auth = &world.graph.nodes[NodeId::Auth.index()];
+    let display = &world.graph.nodes[NodeId::Display.index()];
+    let decoy = &world.graph.nodes[NodeId::Decoy.index()];
+    let display_connected =
+        world.remote_active && world.graph.route(NodeId::Modem, NodeId::Display).is_some();
+    values.extend([
+        (
+            "identity".into(),
+            if world.elapsed_ms >= 6500 {
+                "ACID BURN"
+            } else {
+                "UNRESOLVED"
+            }
+            .into(),
+        ),
+        (
+            "auth-pressure".into(),
+            (auth.influence < 900 && !auth.isolated && world.remote_active).to_string(),
+        ),
+        (
+            "display-pressure".into(),
+            (display.influence < 900 && display_connected).to_string(),
+        ),
+        (
+            "display-contested".into(),
+            (display.influence < 350 && display_connected).to_string(),
+        ),
+        (
+            "takeover-ready".into(),
+            (display.influence < -400 && display_connected).to_string(),
+        ),
+        (
+            "trace-high".into(),
+            (world.trace_confidence >= 800).to_string(),
+        ),
+        ("tracing".into(), (world.trace_confidence > 40).to_string()),
+        (
+            "remote-present".into(),
+            (world.remote_active && world.elapsed_ms >= 6500).to_string(),
+        ),
+        (
+            "release-complete".into(),
+            (!world.remote_active
+                && world.graph.nodes[..6]
+                    .iter()
+                    .all(|n| n.owner() == Control::Crash))
+            .to_string(),
+        ),
+        ("decoy-open".into(), decoy.visible.to_string()),
+        (
+            "acid-victory".into(),
+            (world.remote_active && world.outcome == Some(battle::Outcome::Acid)).to_string(),
+        ),
+        (
+            "decoy-taken".into(),
+            (decoy.visible && decoy.influence < 0).to_string(),
+        ),
+        (
+            "crash-blind".into(),
+            (world.graph.nodes[..6].iter().filter(|n| !n.visible).count() >= 3).to_string(),
+        ),
+        (
+            "foothold".into(),
+            world.graph.nodes[1..6]
+                .iter()
+                .any(|n| n.influence < 0)
+                .to_string(),
+        ),
+        (
+            "two-footholds".into(),
+            (world.graph.nodes[1..6]
+                .iter()
+                .filter(|n| n.influence < 0)
+                .count()
+                >= 2)
+                .to_string(),
+        ),
+    ]);
+    values
 }
-
-fn defaults() -> Vec<StoryAction> {
-    let mut actions = vec![
-        text("identity", "UNRESOLVED"),
-        text("outcome", "LIVE"),
-        text("acid-target", "route"),
-        number("trace-confidence", 0.0),
-        number("pressure", 0.0),
-        number("altered-files", 0.0),
-        text("remote-line", "link idle"),
-        text("last-action", "LOCAL CONTROL / awaiting input"),
-    ];
-    for system in SYSTEMS {
-        actions.push(owner(system, "Crash"));
-        actions.push(integrity(system, 100.0));
+fn semantic_event(key: &str, value: &str) -> StoryEvent {
+    StoryEvent::custom(format!("world:{key}={value}"))
+}
+fn semantic_actions(key: &str, value: &str) -> Vec<StoryAction> {
+    let mut actions = vec![if value == "true" || value == "false" {
+        StoryAction::set_bool(key, value == "true")
+    } else {
+        StoryAction::set_text(key, value)
+    }];
+    if let Some(bundle) = match key {
+        "auth-pressure" => Some("auth-presence"),
+        "acid-victory" => Some("acid-victory"),
+        "remote-present" => Some("ghost"),
+        "display-pressure" => Some("display-presence"),
+        "decoy-open" => Some("decoy-reveal"),
+        "decoy-taken" => Some("decoy-occupied"),
+        "route-isolated" => Some("route-isolation"),
+        "auth-isolated" => Some("auth-isolation"),
+        "tracing" => Some("trace-token"),
+        "takeover-ready" => Some("takeover"),
+        _ => None,
+    } {
+        actions.push(if value == "true" {
+            StoryAction::mount(bundle)
+        } else {
+            StoryAction::unmount(bundle)
+        });
+    }
+    if key == "remote-present" && value == "false" {
+        actions.push(StoryAction::unmount("acid-victory"));
     }
     actions
 }
-
-/// Immutable graph; semantic controls and ownership remain inside Story Facts.
-/// Stage starts use coherent on-enter initialization, so the normal StoryTrace
-/// contains the complete input model and can be replayed without hidden jumps.
-fn battle_story(scene: &mut Scene, stage: &str, p: Palette) -> Story {
+fn battle_story(scene: &mut Scene, stage: &str, world: &EncounterModel, p: Palette) -> Story {
     let target = |scene: &mut Scene, tag| SceneTarget::Tag(scene.tag(tag));
-    let sensitive = target(scene, "display-sensitive");
     let auth = target(scene, "auth");
     let map = target(scene, "map");
-    let remote = target(scene, "remote");
     let decoy = target(scene, "decoy");
     let cursor = target(scene, "cursor");
-    let header = target(scene, "header");
-    let mut story = Story::new(stage)
-        .bundle(EffectBundle::new("signature").effect(Effect::post_process(
-            remote,
-            SurfaceFx::StyleOverlay(p.acid),
-        )))
-        .bundle(EffectBundle::new("auth-presence").effects([
-            Effect::post_process(auth, SurfaceFx::StyleOverlay(p.acid)),
-            Effect::jitter(auth, 1.0, seconds(0.23), seconds(2.0)).looping(),
-            Effect::post_process(
-                auth,
-                SurfaceFx::Tear {
-                    row: 4,
-                    height: 1,
-                    amount: 1,
-                },
-            ),
-            Effect::post_process(
-                auth,
-                SurfaceFx::Scramble {
-                    seed: SEED,
-                    intensity: 0.018,
-                },
-            ),
-            Effect::scanline(auth, p.acid, seconds(2.7)).looping(),
-        ]))
-        .bundle(EffectBundle::new("display-presence").effects([
-            Effect::style_mask(sensitive, p.acid, 0.04, 0.38, SEED + 2, seconds(5.0)),
-            Effect::jitter(map, 1.0, seconds(0.19), seconds(3.0)).looping(),
-            Effect::scanline(sensitive, p.acid, seconds(3.6)).looping(),
-            Effect::post_process(
-                map,
-                SurfaceFx::Tear {
-                    row: 7,
-                    height: 2,
-                    amount: 2,
-                },
-            ),
-            Effect::post_process(
-                header,
-                SurfaceFx::Scramble {
-                    seed: SEED + 1,
-                    intensity: 0.08,
-                },
-            ),
-        ]))
-        .bundle(EffectBundle::new("takeover").effects([
-            Effect::style_mask(sensitive, p.acid, 0.1, 0.96, SEED + 2, seconds(5.0)),
-            Effect::dissolve(sensitive, 1.0, 0.82, SEED, seconds(5.0)),
-            Effect::post_process(
-                sensitive,
-                SurfaceFx::RowShift {
-                    amount: 2,
-                    seed: SEED + 3,
-                },
-            ),
-            Effect::scanline(sensitive, p.acid, seconds(0.8)).looping(),
-            Effect::jitter(sensitive, 1.0, seconds(0.13), seconds(2.0)).looping(),
-        ]))
+    let sensitive = target(scene, "display-sensitive");
+    // Presence bundles own lifecycle; continuous scope is supplied by the pure
+    // presentation projection below. Widgets never inspect ownership for FX.
+    let mut story = Story::new(act(stage))
+        .bundle(EffectBundle::new("auth-presence").effect(Effect::set_custom(auth, 1, 1.0)))
+        .bundle(EffectBundle::new("display-presence").effect(Effect::set_custom(sensitive, 2, 1.0)))
+        .bundle(EffectBundle::new("takeover").effect(Effect::set_custom(sensitive, 3, 1.0)))
         .bundle(
             EffectBundle::new("route-isolation").effect(Effect::displace(
                 map,
@@ -338,568 +293,199 @@ fn battle_story(scene: &mut Scene, stage: &str, p: Palette) -> Story {
         .bundle(
             EffectBundle::new("auth-isolation").effect(Effect::post_process(auth, SurfaceFx::Dim)),
         )
-        .bundle(
-            EffectBundle::new("trace-token")
-                .effect(Effect::scanline(map, p.crash, seconds(2.2)).looping()),
-        )
+        .bundle(EffectBundle::new("trace-token").effect(Effect::set_custom(map, 4, 1.0)))
         .bundle(EffectBundle::new("decoy-reveal").effects([
             Effect::reveal(decoy, 1.0, 1.0, Duration::ZERO),
-            Effect::dissolve(decoy, 0.0, 1.0, SEED + 8, seconds(1.2)),
+            Effect::dissolve(decoy, 0.0, 1.0, SEED + 8, seconds(0.8)),
         ]))
-        .bundle(EffectBundle::new("decoy-occupied").effects([
-            Effect::post_process(decoy, SurfaceFx::StyleOverlay(p.acid)),
-            Effect::jitter(decoy, 1.0, seconds(0.12), seconds(1.5)).looping(),
-            Effect::scanline(decoy, p.acid, seconds(1.1)).looping(),
-        ]))
-        .bundle(
-            EffectBundle::new("ghost").effects([
-                Effect::reveal(cursor, 1.0, 1.0, Duration::ZERO),
-                Effect::displace(cursor, (0.0, 0.0), (12.0, 4.0), seconds(3.0))
-                    .then(Effect::displace(
-                        cursor,
-                        (12.0, 4.0),
-                        (0.0, 0.0),
-                        seconds(3.0),
-                    ))
-                    .looping(),
-            ]),
-        )
-        .bundle(EffectBundle::new("counter-recoil").effect(Effect::displace(
-            map,
-            (2.0, 0.0),
-            (0.0, 0.0),
-            seconds(0.5),
-        )))
+        .bundle(EffectBundle::new("decoy-occupied").effect(Effect::set_custom(decoy, 1, 1.0)))
+        .bundle(EffectBundle::new("ghost").effect(Effect::reveal(cursor, 1.0, 1.0, Duration::ZERO)))
         .bundle(EffectBundle::new("acid-victory").effects([
-            Effect::displace(map, (0.0, 0.0), (2.0, 1.0), seconds(1.0)),
-            Effect::displace(auth, (0.0, 0.0), (-2.0, 0.0), seconds(1.0)),
-            Effect::post_process(sensitive, SurfaceFx::StyleOverlay(p.acid)),
-            Effect::scanline(sensitive, p.acid, seconds(2.0)).looping(),
+            Effect::post_process(sensitive, SurfaceFx::StyleOverlay(p.infection)),
+            Effect::displace(map, (0.0, 0.0), (2.0, 0.0), seconds(1.0)),
         ]));
-
-    type BeatSpec = (
-        &'static str,
-        &'static str,
-        Vec<StoryAction>,
-        Option<(&'static str, f32)>,
-    );
-    let entries: Vec<BeatSpec> = vec![
-        (
-            "quiet",
-            "LOCAL NODE / all routes nominal",
-            vec![],
-            Some(("knock", 4.0)),
-        ),
+    let specs = [
+        ("quiet", "LOCAL NODE / ordinary night", Some(("knock", 4.0))),
         (
             "knock",
-            "UNKNOWN INBOUND HANDSHAKE",
-            vec![
-                number("pressure", 8.0),
-                text("remote-line", "inbound carrier / no identity"),
-                text("last-action", "WATCH / TRACE / DROP available"),
-            ],
-            Some(("signature", 3.0)),
+            "INBOUND / one packet disagrees",
+            Some(("signature", 4.5)),
         ),
         (
             "signature",
-            "SESSION IDENTITY RESOLVED",
-            vec![
-                text("identity", "ACID BURN"),
-                text("remote-line", "hello crash."),
-                number("pressure", 16.0),
-                StoryAction::mount("signature"),
-                StoryAction::mount("ghost"),
-            ],
-            Some(("route-contested", 3.4)),
+            "CONTACT / hello, Crash",
+            Some(("route-contested", 4.0)),
         ),
         (
             "route-contested",
-            "ROUTE / two hands on one switch",
-            vec![number("pressure", 28.0)],
-            Some(("first-breach", 6.0)),
+            "CONTEST / choose what to protect",
+            Some(("first-breach", 12.0)),
         ),
         (
             "first-breach",
-            "SESSION HIJACK / AUTH lease contested",
-            vec![
-                number("pressure", 43.0),
-                text("remote-line", "your windows have good acoustics."),
-            ],
-            Some(("adapt", 5.0)),
+            "INTRUSION / the machine has geography",
+            Some(("counterplay", 10.0)),
         ),
         (
-            "adapt",
-            "REMOTE SESSION / choosing a new route",
-            vec![],
-            None,
+            "counterplay",
+            "COUNTERPLAY / every door has a price",
+            Some(("escalation", 13.0)),
         ),
         (
-            "sidepath",
-            "ACID ADAPTS / bypass via MODEM",
-            vec![
-                owner("modem", "Contested"),
-                text("acid-target", "display"),
-                text("remote-line", "you closed a door. i found a window."),
-                flag("acid-adapted", true),
-            ],
-            Some(("display-intrusion", 3.8)),
-        ),
-        (
-            "decoy",
-            "DECOY TRIGGERED / mirror occupied",
-            vec![
-                flag("decoy-open", true),
-                flag("decoy-taken", true),
-                owner("auth", "Crash"),
-                text("acid-target", "decoy"),
-                number("trace-confidence", 82.0),
-                text("remote-line", "this room looks familiar."),
-                flag("acid-adapted", true),
-                StoryAction::unmount("auth-presence"),
-                StoryAction::mount("decoy-reveal"),
-                StoryAction::mount("decoy-occupied"),
-            ],
-            Some(("display-intrusion", 4.0)),
-        ),
-        (
-            "trace",
-            "TRACE NOTICED / source route splits",
-            vec![
-                flag("false-paths", true),
-                StoryAction::mount("trace-token"),
-                flag("tracing", true),
-                number("trace-confidence", 64.0),
-                text("acid-target", "display"),
-                text("remote-line", "following me? keep up."),
-                number("pressure", 62.0),
-                flag("acid-adapted", true),
-            ],
-            Some(("display-intrusion", 4.0)),
-        ),
-        (
-            "pressure",
-            "FILE CORRUPTION / one directory scar",
-            vec![
-                owner("files", "Contested"),
-                integrity("files", 84.0),
-                number("altered-files", 3.0),
-                text("acid-target", "files"),
-                number("pressure", 65.0),
-                flag("acid-adapted", true),
-            ],
-            Some(("display-intrusion", 3.8)),
-        ),
-        (
-            "display-intrusion",
-            "DISPLAY INTRUSION / existing surfaces contested",
-            vec![
-                owner("display", "Contested"),
-                integrity("display", 71.0),
-                text("acid-target", "display"),
-                number("pressure", 72.0),
-                text("remote-line", "still there?"),
-                StoryAction::mount("display-presence"),
-            ],
-            Some(("ghost", 5.2)),
-        ),
-        (
-            "ghost",
-            "REMOTE CURSOR / she can see this room",
-            vec![
-                StoryAction::mount("ghost"),
-                text("remote-line", "that little cyan line is yours. for now."),
-            ],
-            Some(("trap", 4.0)),
-        ),
-        (
-            "trap",
-            "SET THE TRAP / choose what to sacrifice",
-            vec![text("last-action", "DECOY / HARD ISOLATE / TRACE TOKEN")],
-            None,
-        ),
-        (
-            "climax",
-            "CONTESTED CONTROL / route collision",
-            vec![
-                owner("shell", "Contested"),
-                number("pressure", 88.0),
-                StoryAction::mount("counter-recoil"),
-            ],
-            Some(("takeover", 5.0)),
+            "escalation",
+            "ESCALATION / she noticed",
+            Some(("takeover", 12.0)),
         ),
         (
             "takeover",
-            "DISPLAY TAKEOVER / command island survives",
-            vec![
-                owner("display", "Acid"),
-                integrity("display", 31.0),
-                number("pressure", 100.0),
-                text("remote-line", "i can almost fit the whole room in my hand."),
-                StoryAction::mount("takeover"),
-            ],
-            Some(("acid-win", 8.0)),
-        ),
-        (
-            "crash-win",
-            "LINK CUT / Crash contains",
-            vec![
-                text("outcome", "CRASH CONTAINS"),
-                text("remote-line", "nice catch. keep the receipt."),
-                number("pressure", 0.0),
-                number("trace-confidence", 100.0),
-                flag("link-cut", true),
-            ],
+            "FINAL MOVE / keep one hand on the controls",
             None,
         ),
-        (
-            "acid-win",
-            "DISPLAY OWNER / Acid wins the round",
-            vec![
-                text("outcome", "ACID WINS THE ROUND"),
-                owner("display", "Acid"),
-                text("remote-line", "borrowed your screen. left it better."),
-                StoryAction::mount("acid-victory"),
-            ],
-            Some(("release", 3.5)),
-        ),
-        (
-            "stalemate",
-            "CARRIER HOLD / mutual respect",
-            vec![
-                text("outcome", "STALEMATE / MUTUAL RESPECT"),
-                owner("route", "Contested"),
-                text("remote-line", "same time. different door."),
-                number("pressure", 0.0),
-                number("trace-confidence", 92.0),
-            ],
-            None,
-        ),
-        (
-            "release",
-            "REMOTE DISCONNECTED / the machine remembers",
-            vec![
-                owner("display", "Crash"),
-                text("remote-line", "screen returned. rivalry retained."),
-                StoryAction::unmount("acid-victory"),
-                number("pressure", 0.0),
-            ],
-            None,
-        ),
+        ("crash-win", "CRASH CONTAINS / keep the scars", None),
+        ("acid-win", "ACID WINS THE ROUND / borrowed display", None),
+        ("stalemate", "CARRIER HOLD / mutual respect", None),
+        ("release", "AFTERMATH / screen returned", None),
     ];
-    // Inspection stages reconstruct prior semantic causes at time zero. A stage's
-    // initialization is part of its Story definition, not out-of-band mutation.
-    let mut prelude = defaults();
-    let common = [
-        "quiet",
-        "knock",
-        "signature",
-        "route-contested",
-        "first-breach",
-        "display-intrusion",
-        "ghost",
-        "trap",
-        "climax",
-        "takeover",
-    ];
-    let rank = match stage {
-        "adapt" | "sidepath" | "decoy" | "trace" | "pressure" => 5,
-        "crash-win" | "acid-win" | "stalemate" | "release" => common.len(),
-        _ => common.iter().position(|s| *s == stage).unwrap_or(0),
-    };
-    if rank >= 1 {
-        prelude.push(number("trace-confidence", 4.0));
-    }
-    if rank >= 3 {
-        prelude.push(owner("route", "Contested"));
-    }
-    if rank >= 4 {
-        prelude.extend([
-            owner("auth", "Acid"),
-            integrity("auth", 62.0),
-            text("acid-target", "auth"),
-            StoryAction::mount("auth-presence"),
-        ]);
-    }
-    for prior in common.iter().take(rank) {
-        if let Some((_, _, actions, _)) = entries.iter().find(|(id, _, _, _)| id == prior) {
-            prelude.extend(actions.clone());
-        }
-    }
-    if stage == "sidepath" {
-        prelude.extend([
-            flag("route-isolated", true),
-            owner("route", "Crash"),
-            StoryAction::mount("route-isolation"),
-        ]);
-    }
-    for (id, label, actions, next) in entries {
+    let initial = semantic_state(world);
+    for (id, label, next) in specs {
         let mut beat = Beat::new(id).label(label);
-        if id == stage {
-            for action in &prelude {
-                beat = beat.on_enter(action.clone());
+        if id == act(stage) {
+            for (key, value) in &initial {
+                for action in semantic_actions(key, value) {
+                    beat = beat.on_enter(action);
+                }
             }
-        }
-        for action in actions {
-            beat = beat.on_enter(action);
         }
         if let Some((next, after)) = next {
             beat = beat.after(seconds(after), next);
         }
-        if id == "knock" {
-            beat = beat.reaction(
-                Condition::on(StoryEvent::custom("HandshakeObserved")),
-                [number("trace-confidence", 4.0)],
-            );
-        }
-        if id == "climax" {
-            beat = beat.effect(Effect::translate(map, (0.0, 3.0), (1.0, 3.0), seconds(2.0)));
-        }
-        if id == "signature" {
-            beat = beat.effect(Effect::displace(auth, (1.0, 0.0), (0.0, 0.0), seconds(0.3)));
-        }
-        if id == "route-contested" {
-            beat = beat.reaction(
-                Condition::on(StoryEvent::custom("RouteProbe")),
-                [owner("route", "Contested"), flag("route-probed", true)],
-            );
-        }
-        if id == "first-breach" {
-            beat = beat.reaction(
-                Condition::on(StoryEvent::custom("SessionHijack")),
-                [
-                    owner("auth", "Acid"),
-                    integrity("auth", 62.0),
-                    flag("auth-breached", true),
-                    text("acid-target", "auth"),
-                    StoryAction::mount("auth-presence"),
-                ],
-            );
-        }
-        if id == "adapt" {
-            for (event, next) in [
-                ("DecoyTriggered", "decoy"),
-                ("SidePath", "sidepath"),
-                ("TraceAttempt", "trace"),
-                ("FileCorruption", "pressure"),
-            ] {
-                beat = beat.transition(Condition::on(StoryEvent::custom(event)), next);
-            }
-            beat = beat.after(seconds(2.0), "pressure");
-        }
-        if id == "trap" {
-            for event in ["TrapDecoy", "TrapIsolate", "TrapTrace", "TrapPressure"] {
-                beat = beat.transition(Condition::on(StoryEvent::custom(event)), "climax");
-            }
-            beat = beat.after(seconds(7.0), "climax");
-            beat = beat.reaction(
-                Condition::on(StoryEvent::custom("TrapDecoy")),
-                [
-                    flag("decoy-taken", true),
-                    text("acid-target", "decoy"),
-                    text("remote-line", "a mirror. you built me a mirror."),
-                    StoryAction::mount("decoy-occupied"),
-                    number("trace-confidence", 94.0),
-                ],
-            );
-            beat = beat.reaction(
-                Condition::on(StoryEvent::custom("TrapIsolate")),
-                [
-                    text("acid-target", "display"),
-                    text("remote-line", "then we fight over the glass."),
-                    owner("display", "Contested"),
-                    StoryAction::mount("display-presence"),
-                ],
-            );
-            beat = beat.reaction(
-                Condition::on(StoryEvent::custom("TrapTrace")),
-                [
-                    flag("false-paths", true),
-                    text("remote-line", "pick a reflection."),
-                    number("trace-confidence", 92.0),
-                ],
-            );
-        }
-        if !["crash-win", "acid-win", "stalemate", "release"].contains(&id) {
-            beat = controls(beat);
-            // Early cut/drop is a meaningful route counter, not an early finale.
-            if ["climax", "takeover"].contains(&id) {
-                for (command, next) in [("cut link", "crash-win"), ("let her in", "acid-win")] {
-                    beat = beat.transition(Condition::command(command), next);
-                }
-                beat = beat
-                    .transition(Condition::on(StoryEvent::custom("TurnTrace")), "stalemate")
-                    .transition(
-                        Condition::on(StoryEvent::custom("SpringDecoy")),
-                        "crash-win",
-                    )
-                    .reaction(
-                        Condition::on(StoryEvent::custom("TurnTrace")),
-                        [text(
-                            "last-action",
-                            "TURN TRACE / source resolved; carrier held",
-                        )],
-                    )
-                    .reaction(
-                        Condition::on(StoryEvent::custom("SpringDecoy")),
-                        [text(
-                            "last-action",
-                            "SPRING DECOY / mirror sealed; remote lease contained",
-                        )],
-                    )
-                    .reaction(
-                        Condition::command("cut link"),
-                        [text(
-                            "last-action",
-                            "CUT LINK / remote carrier disconnected",
-                        )],
-                    )
-                    .reaction(
-                        Condition::command("let her in"),
-                        [text(
-                            "last-action",
-                            "LET HER IN / display lease voluntarily surrendered",
-                        )],
-                    )
-                    .reaction(
-                        Condition::command("turn trace"),
-                        [text(
-                            "last-action",
-                            "TURN TRACE needs TRACE or TRACE TOKEN first",
-                        )],
-                    )
-                    .reaction(
-                        Condition::command("spring decoy"),
-                        [text("last-action", "SPRING DECOY needs DECOY first")],
-                    );
+        for (key, value) in &initial {
+            let options: Vec<&str> = if key.ends_with("-control") {
+                vec!["Crash", "Contested", "Acid"]
+            } else if key == "identity" {
+                vec!["UNRESOLVED", "ACID BURN"]
             } else {
+                vec!["false", "true"]
+            };
+            let _ = value;
+            for v in options {
                 beat = beat.reaction(
-                    Condition::command("drop"),
-                    [
-                        flag("route-isolated", true),
-                        owner("route", "Crash"),
-                        text("last-action", "DROP / inbound route closed"),
-                    ],
+                    Condition::on(semantic_event(key, v)),
+                    semantic_actions(key, v),
                 );
             }
         }
-        if ["crash-win", "acid-win", "stalemate"].contains(&id) {
-            for bundle in [
-                "takeover",
-                "display-presence",
+        for milestone in [
+            "RouteProbe",
+            "IdentityResolved",
+            "Foothold",
+            "DisplayIntrusion",
+            "DecoyTriggered",
+            "TraceAttempt",
+            "Adapted",
+            "TakeoverReady",
+        ] {
+            beat = beat.reaction(
+                Condition::on(StoryEvent::custom(milestone)),
+                [StoryAction::set_bool(milestone, true)],
+            );
+        }
+        match id {
+            "route-contested" => {
+                beat = beat.transition(
+                    Condition::on(StoryEvent::custom("paced:foothold")),
+                    "first-breach",
+                )
+            }
+            "first-breach" => {
+                beat = beat.transition(
+                    Condition::on(StoryEvent::custom("paced:adapted")),
+                    "counterplay",
+                )
+            }
+            "counterplay" => {
+                beat = beat.transition(
+                    Condition::on(StoryEvent::custom("paced:display")),
+                    "escalation",
+                )
+            }
+            "escalation" => {
+                beat = beat.transition(
+                    Condition::on(StoryEvent::custom("paced:takeover")),
+                    "takeover",
+                )
+            }
+            "acid-win" => {
+                beat = beat.transition(Condition::fact_true("release-complete"), "release")
+            }
+            _ => (),
+        }
+        if !["crash-win", "acid-win", "stalemate", "release"].contains(&id) {
+            for (event, next) in [
+                ("CrashResolved", "crash-win"),
+                ("AcidResolved", "acid-win"),
+                ("MutualResolved", "stalemate"),
+            ] {
+                beat = beat.transition(Condition::on(StoryEvent::custom(event)), next);
+            }
+        }
+        if ["crash-win", "acid-win", "stalemate", "release"].contains(&id) {
+            for name in [
                 "auth-presence",
+                "display-presence",
+                "takeover",
                 "ghost",
                 "decoy-occupied",
                 "trace-token",
+                "route-isolation",
             ] {
-                beat = beat.on_enter(StoryAction::unmount(bundle));
+                beat = beat.on_enter(StoryAction::unmount(name));
             }
+            beat = beat.on_enter(StoryAction::set_text(
+                "outcome",
+                match id {
+                    "crash-win" => "CRASH CONTAINS",
+                    "stalemate" => "STALEMATE / MUTUAL RESPECT",
+                    _ => "ACID WINS THE ROUND",
+                },
+            ));
             if id != "acid-win" {
-                beat = beat.on_enter(flag("remote-disconnected", true));
-                for system in SYSTEMS {
-                    if id != "stalemate" || system != "route" {
-                        beat = beat.on_enter(owner(system, "Crash"));
-                    }
-                }
-            }
-            if id != "acid-win" {
-                beat = beat.terminal();
-            }
-        }
-        if id == "release" {
-            beat = beat.on_enter(flag("remote-disconnected", true)).terminal();
-            for system in SYSTEMS {
-                beat = beat.on_enter(owner(system, "Crash"));
+                beat = beat
+                    .on_enter(StoryAction::unmount("acid-victory"))
+                    .terminal();
             }
         }
         story = story.beat(beat);
     }
-    story
-        .validate()
-        .expect("the fictional battle graph is valid");
+    story.validate().expect("valid macro story");
     story
 }
 
-/// Rules consume only replayable facts and beat time; the seed chooses a stable
-/// passive preference. No random state, wall clock, networking or external AI.
-pub struct AcidController;
-impl AcidController {
-    pub fn decide(director: &StoryDirector) -> Option<StoryEvent> {
-        let f = director.facts();
-        let time = director.time_in_beat().as_secs_f32();
-        let event = match director.current_beat() {
-            "knock" if f.number("trace-confidence") == 0.0 => "HandshakeObserved",
-            "route-contested" if !f.bool("route-isolated") && !f.bool("route-probed") => {
-                "RouteProbe"
-            }
-            "first-breach"
-                if !f.bool("route-isolated")
-                    && !f.bool("auth-isolated")
-                    && !f.bool("session-killed")
-                    && !f.bool("auth-breached") =>
-            {
-                "SessionHijack"
-            }
-            "adapt" if time >= 0.8 => {
-                if f.bool("decoy-open") {
-                    "DecoyTriggered"
-                } else if f.bool("route-isolated")
-                    || f.bool("session-killed")
-                    || f.bool("auth-isolated")
-                {
-                    "SidePath"
-                } else if f.bool("tracing") {
-                    "TraceAttempt"
-                } else if SEED & 1 == 1 {
-                    "FileCorruption"
-                } else {
-                    "SidePath"
-                }
-            }
-            "trap" if time >= 3.0 => {
-                if f.bool("decoy-open") {
-                    "TrapDecoy"
-                } else if f.bool("hard-isolated") || f.bool("route-isolated") {
-                    "TrapIsolate"
-                } else if f.bool("tracing") {
-                    "TrapTrace"
-                } else {
-                    "TrapPressure"
-                }
-            }
-            _ => return None,
-        };
-        Some(StoryEvent::custom(event))
-    }
+/// Exact external inputs, including ordered commands and irregular dt. Derived
+/// planner/milestone events are recomputed, so replay verifies the reducer too.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EncounterTrace {
+    pub stage: String,
+    pub seed: u64,
+    pub steps: Vec<EncounterStep>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EncounterStep {
+    pub dt: Duration,
+    pub events: Vec<StoryEvent>,
 }
 
-pub struct CrashController;
-impl CrashController {
-    pub fn decide(d: &StoryDirector) -> Option<StoryEvent> {
-        let f = d.facts();
-        let command = match d.current_beat() {
-            "route-contested" if !f.bool("tracing") => "trace",
-            "first-breach" if !f.bool("route-isolated") && d.time_in_beat() >= seconds(1.4) => {
-                "isolate"
-            }
-            "ghost" if !f.bool("decoy-open") => "decoy",
-            "trap" if f.number("trace-confidence") < 90.0 => "trace token",
-            "takeover" if d.time_in_beat() >= seconds(2.5) => "cut link",
-            _ => return None,
-        };
-        Some(StoryEvent::command(command))
-    }
-}
-
-/// Testable demo model. Every important world field is a Story Fact. UI editor
-/// and inspector selection are deliberately outside replay: neither alters the world.
 pub struct Encounter {
     story: Story,
     director: StoryDirector,
     scene: Scene,
     palette: Palette,
+    world: EncounterModel,
+    trace: EncounterTrace,
     pub input: TextInputState,
     inspector: String,
     mono: bool,
+    debug_battle: bool,
 }
 impl Encounter {
     pub fn new(stage: &str, mono: bool) -> Self {
@@ -908,18 +494,26 @@ impl Encounter {
         } else {
             "quiet"
         };
+        let world = EncounterModel::new(stage, SEED);
         let mut scene = scene_template();
         let palette = Palette::new(mono);
-        let story = battle_story(&mut scene, stage, palette);
+        let story = battle_story(&mut scene, stage, &world, palette);
         let director = story.start();
         Self {
             story,
             director,
             scene,
             palette,
+            world,
+            trace: EncounterTrace {
+                stage: stage.into(),
+                seed: SEED,
+                steps: Vec::new(),
+            },
             input: TextInputState::new(),
             inspector: String::new(),
             mono,
+            debug_battle: false,
         }
     }
     pub fn director(&self) -> &StoryDirector {
@@ -931,81 +525,139 @@ impl Encounter {
     pub fn facts(&self) -> &Facts {
         self.director.facts()
     }
+    pub fn battle(&self) -> &EncounterModel {
+        &self.world
+    }
+    pub fn trace(&self) -> &EncounterTrace {
+        &self.trace
+    }
+    pub fn encounter_trace(&self) -> &EncounterTrace {
+        &self.trace
+    }
+    pub fn set_debug_battle(&mut self, enabled: bool) {
+        self.debug_battle = enabled;
+    }
     pub fn update(&mut self, dt: Duration, events: &[StoryEvent]) {
-        let mut recorded = Vec::new();
-        let mut has_decoy = self.facts().bool("decoy-open");
-        let mut has_trace = self.facts().bool("tracing");
-        for event in events {
-            recorded.push(event.clone());
-            if let StoryEvent::Command(command) = event {
-                if command == "trace" && has_trace {
-                    recorded.push(StoryEvent::custom("TraceDeepen"));
-                }
-                if command == "decoy" {
-                    has_decoy = true;
-                }
-                if command == "trace" || command == "trace token" {
-                    has_trace = true;
-                }
-                if command == "spring decoy" && has_decoy {
-                    recorded.push(StoryEvent::custom("SpringDecoy"));
-                } else if command == "turn trace" && has_trace {
-                    recorded.push(StoryEvent::custom("TurnTrace"));
-                }
+        self.trace.steps.push(EncounterStep {
+            dt,
+            events: events.to_vec(),
+        });
+        if self.director.is_finished() {
+            return;
+        }
+        let before = semantic_state(&self.world);
+        let commands = events
+            .iter()
+            .filter_map(|e| match e {
+                StoryEvent::Command(c) => Some(c.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let milestones = self.world.update(dt, &commands);
+        let mut derived = events
+            .iter()
+            .filter(|e| matches!(e, StoryEvent::Command(_)))
+            .cloned()
+            .collect::<Vec<_>>();
+        for (key, value) in semantic_state(&self.world) {
+            if !before.iter().any(|(k, v)| *k == key && *v == value) {
+                derived.push(semantic_event(&key, &value));
             }
         }
-        self.director.update(dt, &recorded);
+        derived.extend(
+            milestones
+                .into_iter()
+                .map(|m| StoryEvent::custom(m.as_str())),
+        );
+        if let Some(outcome) = &self.world.outcome {
+            derived.push(StoryEvent::custom(match outcome.as_str() {
+                "CRASH CONTAINS" => "CrashResolved",
+                "ACID WINS THE ROUND" => "AcidResolved",
+                _ => "MutualResolved",
+            }));
+        }
+        if self.director.time_in_beat().saturating_add(dt) >= seconds(3.0) {
+            let state = semantic_state(&self.world);
+            for (key, event) in [
+                ("foothold", "paced:foothold"),
+                ("display-contested", "paced:display"),
+                ("takeover-ready", "paced:takeover"),
+            ] {
+                if state.iter().any(|(k, v)| k == key && v == "true") {
+                    derived.push(StoryEvent::custom(event));
+                }
+            }
+            if self.world.quality.adaptations >= 2 {
+                derived.push(StoryEvent::custom("paced:adapted"));
+            }
+        }
+        self.director.update(dt, &derived);
     }
     pub fn tick(&mut self, dt: Duration, auto: bool) {
-        if auto {
-            if let Some(event) = CrashController::decide(&self.director) {
-                self.update(Duration::ZERO, &[event]);
-            }
-        }
-        let events = AcidController::decide(&self.director)
-            .into_iter()
-            .collect::<Vec<_>>();
+        let events = if auto {
+            self.world
+                .defender_command()
+                .map(StoryEvent::command)
+                .into_iter()
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         self.update(dt, &events);
     }
-    pub fn replay_matches(&self) -> bool {
-        let replay = self.story.replay(self.director.trace());
-        replay.facts() == self.facts()
-            && replay.current_beat() == self.director.current_beat()
-            && replay.trace() == self.director.trace()
-            && replay.mounted().collect::<Vec<_>>() == self.director.mounted().collect::<Vec<_>>()
-            && replay.presentation(&self.scene) == self.director.presentation(&self.scene)
+    pub fn replay(&self) -> Self {
+        Self::replay_trace(&self.trace, self.mono)
     }
-    /// Returns false on exit. Commands are semantic simulated actions only.
+    pub fn replay_trace(trace: &EncounterTrace, mono: bool) -> Self {
+        // The seed is versioned with this demo trace, not a general disk format.
+        assert_eq!(trace.seed, SEED, "unsupported encounter seed");
+        let mut fresh = Self::new(&trace.stage, mono);
+        for step in &trace.steps {
+            fresh.update(step.dt, &step.events);
+        }
+        fresh
+    }
+    pub fn replay_matches(&self) -> bool {
+        let replay = self.replay();
+        let story = self.story.replay(self.director.trace());
+        replay.world == self.world
+            && replay.trace == self.trace
+            && replay.director.trace() == self.director.trace()
+            && replay.facts() == self.facts()
+            && story.facts() == self.facts()
+            && replay.director.current_beat() == self.director.current_beat()
+            && replay.director.mounted().collect::<Vec<_>>()
+                == self.director.mounted().collect::<Vec<_>>()
+            && replay.presentation() == self.presentation()
+    }
     pub fn command(&mut self, command: &str) -> bool {
         let command = command.trim().to_ascii_lowercase();
         match command.as_str() {
             "exit" | "quit" => return false,
             "reset" => {
+                let debug = self.debug_battle;
                 *self = Self::new("quiet", self.mono);
+                self.debug_battle = debug;
             }
             "replay" => {
                 self.inspector = if self.replay_matches() {
-                    "REPLAY VERIFIED / exact steps, facts, beats, bundles, presentation"
+                    "REPLAY VERIFIED / world, planner, facts, beats, bundles, presentation"
                 } else {
                     "REPLAY MISMATCH"
                 }
-                .into();
+                .into()
             }
-            "facts" | "trace" | "damage" | "scene" | "acid" | "crash"
-                if self.director.is_finished() =>
-            {
-                self.inspector = command
-            }
+            "facts" | "damage" | "scene" | "acid" | "crash" => self.inspector = command,
+            "trace" if self.director.is_finished() => self.inspector = command,
             _ => self.update(Duration::ZERO, &[StoryEvent::command(command)]),
         }
         true
     }
     pub fn handle(&mut self, event: &Event) -> bool {
         if let Event::Key(key) = event {
-            if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
-                return false;
-            }
-            if key.code == KeyCode::Esc {
+            if (key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL))
+                || key.code == KeyCode::Esc
+            {
                 return false;
             }
             if key.code == KeyCode::Enter {
@@ -1017,10 +669,9 @@ impl Encounter {
         self.input.handle_event(event);
         true
     }
-
     fn panel(&self, title: &str, width: u16, height: u16, content: Node) -> Node {
         Node::panel(title, BorderType::Single, self.palette.muted)
-            .background(self.palette.bg)
+            .background(Color::Reset)
             .width(width as f32)
             .height(height as f32)
             .child(content)
@@ -1028,385 +679,566 @@ impl Encounter {
     fn lines(&self, lines: Vec<Line>) -> Node {
         Node::rich_text_wrapped(RichText::from_lines(lines), WrapMode::NoWrap)
     }
-    fn control_style(&self, system: &str) -> Style {
-        match self.facts().text(&format!("{system}-control")) {
-            "Acid" => self.palette.acid,
-            "Contested" => self.palette.warning,
-            _ => self.palette.crash,
-        }
+    fn positions(width: u16, height: u16) -> [(i32, i32); 7] {
+        let w = i32::from(width.saturating_sub(2).max(8));
+        let h = i32::from(height.saturating_sub(2).max(8));
+        let cx = w / 2;
+        let left = (cx / 2).max(4);
+        let right = (cx + cx / 2).min(w - 6);
+        [
+            (cx, 1),
+            (cx, (h / 3).max(3)),
+            (left, (h * 3 / 5).max(5)),
+            (right, (h * 3 / 5).max(5)),
+            (cx, (h * 4 / 5).min(h - 3)),
+            (cx, h - 2),
+            ((left / 2).max(4), (h * 4 / 5).min(h - 3)),
+        ]
     }
-
     fn map(&self, width: u16, height: u16) -> Node {
         let w = width.saturating_sub(2).max(8);
         let h = height.saturating_sub(2).max(8);
-        let p = self.palette;
-        let f = self.facts();
         let mut surface = Surface::new(w, h);
-        let cx = i32::from(w) / 2;
-        let left = (cx / 2).max(5);
-        let right = (cx + cx / 2).min(i32::from(w) - 6);
-        let top = 1;
-        let route_y = (i32::from(h) / 3).max(3);
-        let fork_y = (i32::from(h) * 3 / 5).max(route_y + 2);
-        let files_y = (i32::from(h) * 4 / 5).min(i32::from(h) - 3);
-        let positions = [
-            (cx, top),
-            (cx, route_y),
-            (left, fork_y),
-            (right, fork_y),
-            (cx, files_y),
-            (cx, i32::from(h) - 2),
-        ];
-        let t = self.director.elapsed().as_secs_f32();
-        let active = f.number("pressure") > 0.0;
-        for (index, (a, b)) in [(0, 1), (1, 2), (1, 3), (2, 4), (3, 4), (4, 5)]
-            .into_iter()
-            .enumerate()
-        {
-            let isolated = f.bool("hard-isolated")
-                || (f.bool("route-isolated") && (a == 1 || b == 1))
-                || (f.bool("auth-isolated") && (a == 2 || b == 2));
-            let (x0, y0) = positions[a];
-            let (x1, y1) = positions[b];
+        let p = self.palette;
+        let world = &self.world;
+        let positions = Self::positions(width, height);
+        let t = world.elapsed_ms as f32 / 1000.0;
+        for (index, edge) in world.graph.edges.iter().enumerate() {
+            if (edge.from == NodeId::Decoy || edge.to == NodeId::Decoy)
+                && !world.graph.nodes[NodeId::Decoy.index()].visible
+            {
+                continue;
+            }
+            let (x0, y0) = positions[edge.from.index()];
+            let (x1, y1) = positions[edge.to.index()];
+            let point = |q: f32| {
+                (
+                    (x0 as f32 + (x1 - x0) as f32 * q) * 2.0,
+                    (y0 as f32 + (y1 - y0) as f32 * q) * 4.0 + 2.0,
+                )
+            };
             let mut line = BrailleCanvas::new(w, h);
-            let mid = ((x0 + x1), (y0 + y1) * 2);
-            if !isolated {
-                line.polyline(&[(x0 * 2, y0 * 4 + 2), mid, (x1 * 2, y1 * 4 + 2)]);
+            let active = world.elapsed_ms >= 3500
+                && world.remote_active
+                && (world.planner.path.windows(2).any(|pair| {
+                    (pair[0] == edge.from && pair[1] == edge.to)
+                        || (pair[1] == edge.from && pair[0] == edge.to)
+                }) || (world.graph.node(edge.from).influence < 0
+                    && world.graph.node(edge.to).influence < 0));
+            if edge.connected {
+                if active {
+                    // Acid grammar is a broken carrier, distinguishable without RGB.
+                    for segment in 0..12 {
+                        if segment % 3 != 2 {
+                            let a = point(segment as f32 / 12.0);
+                            let b = point((segment + 1) as f32 / 12.0);
+                            line.line(a.0 as i32, a.1 as i32, b.0 as i32, b.1 as i32);
+                        }
+                    }
+                } else {
+                    let a = point(0.0);
+                    let b = point(1.0);
+                    line.line(a.0 as i32, a.1 as i32, b.0 as i32, b.1 as i32);
+                }
             } else {
-                line.line(x0 * 2, y0 * 4 + 2, (x0 * 3 + x1) / 2, (y0 * 3 + y1) + 2);
-                line.line((x0 + x1 * 3) / 2, (y0 + y1 * 3) + 2, x1 * 2, y1 * 4 + 2);
+                for (a, b) in [(0.0, 0.35), (0.65, 1.0)] {
+                    let a = point(a);
+                    let b = point(b);
+                    line.line(a.0 as i32, a.1 as i32, b.0 as i32, b.1 as i32);
+                }
+                let mid = point(0.5);
+                surface.print_str(
+                    (mid.0 / 2.0).max(0.0) as u16,
+                    (mid.1 / 4.0).max(0.0) as u16,
+                    "×",
+                    p.warning,
+                    Some(w),
+                );
             }
             line.paint_into(
                 &mut surface,
                 (0, 0),
-                if isolated { p.muted.dim() } else { p.muted },
+                if !edge.connected {
+                    p.muted.dim()
+                } else if active {
+                    p.acid
+                } else {
+                    p.muted
+                },
             );
-            if !isolated {
-                let progress = (t * 0.45 + index as f32 * 0.19).fract();
+            if edge.connected {
+                let q = (t * 0.28 + index as f32 * 0.137).fract();
+                let a = point(q);
                 let mut packet = BrailleCanvas::new(w, h);
-                let x = (x0 as f32 + (x1 - x0) as f32 * progress) * 2.0;
-                let y = (y0 as f32 + (y1 - y0) as f32 * progress) * 4.0 + 2.0;
-                packet.filled_circle(x as i32, y as i32, 1);
+                packet.filled_circle(a.0 as i32, a.1 as i32, 1);
                 packet.paint_into(&mut surface, (0, 0), p.crash);
-                let hostile_route = active
-                    && (index == 0
-                        || f.number("pressure") >= 65.0
-                        || f.text(&format!("{}-control", SYSTEMS[a])) != "Crash"
-                        || f.text(&format!("{}-control", SYSTEMS[b])) != "Crash");
-                if hostile_route {
-                    let q = 1.0 - progress;
-                    let mut hostile = BrailleCanvas::new(w, h);
-                    let x = (x0 as f32 + (x1 - x0) as f32 * q) * 2.0;
-                    let y = (y0 as f32 + (y1 - y0) as f32 * q) * 4.0 + 2.0;
-                    hostile.rect(x as i32 - 1, y as i32 - 1, 3, 3);
-                    hostile.paint_into(&mut surface, (0, 0), p.acid);
+                if active {
+                    let direction = world
+                        .planner
+                        .path
+                        .windows(2)
+                        .any(|pair| pair[0] == edge.from && pair[1] == edge.to);
+                    let a = point(if direction { q } else { 1.0 - q });
+                    let mut packet = BrailleCanvas::new(w, h);
+                    packet.rect(a.0 as i32 - 1, a.1 as i32 - 1, 3, 3);
+                    packet.paint_into(&mut surface, (0, 0), p.acid);
+                    if world.trace_confidence > 40 {
+                        let a = point(if direction { 1.0 - q } else { q });
+                        let mut pulse = BrailleCanvas::new(w, h);
+                        pulse.circle(a.0 as i32, a.1 as i32, 2);
+                        pulse.paint_into(&mut surface, (0, 0), p.crash);
+                    }
                 }
             }
         }
-        // Alternate MODEM -> DISPLAY is a real semantic adaptation, not decoration.
-        if f.bool("acid-adapted") && f.text("acid-target") == "display" {
-            let mut bypass = BrailleCanvas::new(w, h);
-            bypass.polyline(&[
-                (cx * 2, 6),
-                (i32::from(w) * 2 - 4, 6),
-                (i32::from(w) * 2 - 4, (i32::from(h) - 2) * 4),
-                (cx * 2, (i32::from(h) - 2) * 4),
-            ]);
-            bypass.paint_into(&mut surface, (0, 0), p.acid);
-        }
-        if f.bool("false-paths") {
-            let mut paths = BrailleCanvas::new(w, h);
-            for dx in [-6, 0, 6] {
-                paths.line(cx * 2, route_y * 4, cx * 2 + dx * 2, 2);
+        for node in &world.graph.nodes {
+            if node.id == NodeId::Decoy && !node.visible {
+                continue;
             }
-            paths.paint_into(&mut surface, (0, 0), p.acid);
-        }
-        for (index, (x, y)) in positions.into_iter().enumerate() {
-            let system = SYSTEMS[index];
-            let control = f.text(&format!("{system}-control"));
-            let marker = match control {
-                "Acid" => "<",
-                "Contested" => "~",
-                _ => "■",
+            let (mut x, y) = positions[node.id.index()];
+            if node.isolated {
+                x += if x < i32::from(w) / 2 { -2 } else { 2 };
+            }
+            let marker = if node.isolated {
+                "×"
+            } else if node.id == NodeId::Decoy {
+                "◇◇"
+            } else {
+                match node.owner() {
+                    Control::Crash => "■",
+                    Control::Contested => "≋",
+                    Control::Acid => "◀",
+                }
             };
-            let label = format!("{marker} {}", system.to_ascii_uppercase());
+            let label = format!("{marker} {}", node.id.name().to_ascii_uppercase());
             surface.print_str(
                 (x - 4).max(0) as u16,
                 y.max(0) as u16,
                 &label,
-                self.control_style(system),
+                if node.visible {
+                    p.owner(node.owner())
+                } else {
+                    p.muted.dim()
+                },
                 Some(w),
             );
+            // A cell frontier inhabits the node itself; integrity stays independent.
+            if y + 1 < i32::from(h) && world.remote_active && node.influence < 900 && !node.isolated
+            {
+                let n = ((1000 - i32::from(node.influence)) * 6 / 2000).clamp(1, 6) as usize;
+                surface.print_str(
+                    (x - 3).max(0) as u16,
+                    (y + 1) as u16,
+                    &"▰".repeat(n),
+                    p.acid,
+                    Some(w),
+                );
+            }
         }
-        if f.bool("route-isolated") {
-            surface.print_str(1, route_y as u16, "CUT", p.warning, Some(w));
-        }
-        if f.bool("tracing") {
+        if world.trace_confidence > 40 {
             surface.print_str(
                 1,
                 0,
-                &format!("TRACE {:02.0}% ↗", f.number("trace-confidence")),
+                &format!("TRACE {:02}% ↗", world.trace_confidence / 10),
                 p.crash,
                 Some(w),
             );
         }
+        if world.graph.nodes[NodeId::Route.index()].isolated {
+            surface.print_str(1, 2, "ROUTE CUT", p.warning, Some(w));
+        }
+        if self.facts().bool("crash-blind") {
+            surface.print_str(1, 0, "LOCAL TELEMETRY LOST", p.warning, Some(w));
+        }
         self.panel(
-            " SYSTEM MAP / LOCAL FABRIC ",
+            " LOCAL FABRIC / live topology ",
             width,
             height,
             Node::raster(surface),
         )
     }
-
     fn sessions(&self, width: u16, height: u16) -> Node {
         let p = self.palette;
-        let f = self.facts();
+        let w = &self.world;
         let mut lines = vec![
             Line::new()
-                .span(Span::styled("SESSION  ", p.muted))
-                .span(Span::styled(
-                    f.text("identity"),
-                    if f.text("identity") == "UNRESOLVED" {
-                        p.white
-                    } else {
-                        p.acid
-                    },
-                )),
+                .span(Span::styled("REMOTE  ", p.muted))
+                .span(Span::styled(self.facts().text("identity"), p.white)),
             Line::styled(
-                format!("TARGET   {}", f.text("acid-target").to_ascii_uppercase()),
+                format!(
+                    "HERE {} → {}",
+                    w.planner.location.name().to_ascii_uppercase(),
+                    w.planner.target.name().to_ascii_uppercase()
+                ),
                 p.white,
             ),
             Line::styled(
                 format!(
-                    "TRACE    {:>3.0}%  {}",
-                    f.number("trace-confidence"),
-                    if f.bool("tracing") {
-                        "RETURN TOKEN"
-                    } else {
-                        "PASSIVE"
-                    }
+                    "TRACE {:3}% / reserve {:3}%",
+                    w.trace_confidence / 10,
+                    w.resources / 10
                 ),
                 p.crash,
             ),
-            Line::styled("SUBSYSTEM    OWNER      INTEGRITY", p.muted),
+            Line::styled("SYSTEM    HOLD       INTEGRITY", p.muted),
         ];
-        if height < 12 {
-            lines.pop();
-            let focal = f.text("acid-target");
-            let focus_system = if SYSTEMS.contains(&focal) {
-                focal
-            } else {
-                "files"
-            };
-            lines.push(Line::styled(
-                format!(
-                    "{}  {}  {:.0}%",
-                    focus_system.to_ascii_uppercase(),
-                    f.text(&format!("{focus_system}-control")),
-                    f.number(&format!("{focus_system}-integrity"))
-                ),
-                self.control_style(focus_system),
-            ));
-            lines.push(Line::styled(
-                format!(
-                    "ROUTE {} / AUTH {}",
-                    f.text("route-control"),
-                    f.text("auth-control")
-                ),
-                p.muted,
-            ));
-            lines.push(Line::styled(
-                if f.bool("route-isolated") {
-                    "ROUTE DISCONNECTED"
-                } else {
-                    "LOCAL FABRIC ONLINE"
-                },
-                p.warning,
-            ));
-            return self.panel(" SESSION / PROCESS VIEW ", width, height, self.lines(lines));
+        if w.elapsed_ms < 3500 {
+            lines[0] = Line::new()
+                .span(Span::styled("LOCAL   ", p.muted))
+                .span(Span::styled("CRASH OVERRIDE", p.crash));
+            lines[1] = Line::styled("1 local lease / no remote session", p.white);
         }
-        for system in SYSTEMS {
+        if self.facts().bool("crash-blind") {
+            lines[2] = Line::styled("LOCAL TELEMETRY LOST", p.warning);
+        }
+        for node in &w.graph.nodes[..6] {
             lines.push(Line::styled(
-                format!(
-                    "{:<9}    {:<9} {:>3.0}%",
-                    system.to_ascii_uppercase(),
-                    f.text(&format!("{system}-control")),
-                    f.number(&format!("{system}-integrity"))
-                ),
-                self.control_style(system),
+                if node.visible {
+                    format!(
+                        "{:<8}  {:<9} {:3}%",
+                        node.id.name().to_ascii_uppercase(),
+                        node.owner().as_str(),
+                        node.integrity / 10
+                    )
+                } else {
+                    format!("{:<8}  TELEMETRY LOST", node.id.name().to_ascii_uppercase())
+                },
+                if node.visible {
+                    p.owner(node.owner())
+                } else {
+                    p.muted.dim()
+                },
             ));
         }
         lines.push(Line::styled(
-            format!(
-                "FILES / {} altered entries",
-                f.number("altered-files") as u32
-            ),
+            format!("FILES / {} altered entries", w.quality.altered_files),
             p.muted,
         ));
-        self.panel(" SESSION / PROCESS VIEW ", width, height, self.lines(lines))
-    }
-
-    fn event_trace(&self, width: u16, height: u16) -> Node {
-        let p = self.palette;
-        let capacity = height.saturating_sub(3) as usize;
-        let mut events = Vec::new();
-        for (at, beat) in &self.director.trace().beats {
-            events.push((
-                at.as_millis(),
-                format!(
-                    "{:05.1}  {}",
-                    at.as_secs_f32(),
-                    beat.replace('-', " ").to_ascii_uppercase()
-                ),
-                p.muted,
+        if self.debug_battle {
+            lines.clear();
+            lines.push(Line::styled(
+                format!("GOAL {:?}", w.planner.goal),
+                p.warning,
             ));
-        }
-        let mut at = Duration::ZERO;
-        for step in &self.director.trace().steps {
-            at = at.saturating_add(step.dt);
-            for event in &step.events {
-                let style = if matches!(event, StoryEvent::Command(_)) {
-                    p.crash
-                } else {
-                    p.acid
-                };
-                events.push((
-                    at.as_millis(),
-                    format!("{:05.1}  {}", at.as_secs_f32(), event.label()),
-                    style,
+            lines.push(Line::styled(
+                format!("TACTIC {:?}", w.planner.tactic),
+                p.acid,
+            ));
+            for candidate in w.planner.candidates.iter().take(3) {
+                lines.push(Line::styled(
+                    format!(
+                        "{:?} {} {:+}",
+                        candidate.tactic,
+                        candidate.target.name().to_ascii_uppercase(),
+                        candidate.score
+                    ),
+                    p.muted,
+                ));
+            }
+            lines.push(Line::styled(
+                format!(
+                    "PATH {}",
+                    w.planner
+                        .path
+                        .iter()
+                        .map(|n| n.name())
+                        .collect::<Vec<_>>()
+                        .join(" > ")
+                ),
+                p.white,
+            ));
+            for group in w.graph.nodes[..6].chunks(3) {
+                lines.push(Line::styled(
+                    group
+                        .iter()
+                        .map(|node| {
+                            format!(
+                                "{} {:+}",
+                                &node.id.name()[..1].to_ascii_uppercase(),
+                                node.influence
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("  "),
+                    p.warning,
+                ));
+            }
+            if w.graph.node(NodeId::Decoy).visible {
+                lines.push(Line::styled(
+                    format!("MIRROR {:+}", w.graph.node(NodeId::Decoy).influence),
+                    p.warning,
                 ));
             }
         }
-        events.sort_by_key(|e| e.0);
-        let lines = events
-            .iter()
-            .rev()
-            .take(capacity)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .map(|(_, line, style)| Line::styled(line, *style))
-            .collect();
         self.panel(
-            " EVENT TRACE / causal receipts ",
-            width,
-            height,
-            self.lines(lines),
-        )
-    }
-
-    fn actions(&self, width: u16, height: u16) -> Node {
-        let p = self.palette;
-        let ending = self.director.is_finished();
-        let final_move = ["climax", "takeover"].contains(&self.director.current_beat());
-        let (first, second) = if ending {
-            (
-                "replay · facts · trace · damage",
-                "scene · acid · crash · reset · exit",
-            )
-        } else if final_move {
-            match (
-                self.facts().bool("tracing"),
-                self.facts().bool("decoy-open"),
-            ) {
-                (true, true) => ("CUT LINK / TURN TRACE", "SPRING DECOY / LET HER IN"),
-                (true, false) => ("CUT LINK / TURN TRACE", "LET HER IN / DECOY to set a trap"),
-                (false, true) => (
-                    "CUT LINK / SPRING DECOY",
-                    "LET HER IN / TRACE to follow her",
-                ),
-                (false, false) => (
-                    "CUT LINK / LET HER IN",
-                    "TRACE or DECOY to prepare a counter",
-                ),
-            }
-        } else if self.director.current_beat() == "trap" {
-            ("DECOY / HARD ISOLATE", "TRACE TOKEN / hold your ground")
-        } else {
-            (
-                "TRACE / ISOLATE / DECOY",
-                "ISOLATE AUTH / KILL / HARD ISOLATE",
-            )
-        };
-        let mut lines = vec![Line::styled(first, p.crash), Line::styled(second, p.white)];
-        if height >= 5 {
-            lines.push(Line::styled(self.facts().text("last-action"), p.muted));
-        }
-        self.panel(
-            if ending {
-                " CRASH / BATTLE SHELL "
+            if self.debug_battle {
+                " BATTLE INSPECTOR "
             } else {
-                " CRASH / LOCAL CONTROL "
+                " SESSION / PROCESS VIEW "
             },
             width,
             height,
             self.lines(lines),
         )
     }
-
-    /// An ordinary Scene → Node frame. Rebuilding content never changes a widget
-    /// to compensate for corruption; unmounting a bundle restores that content.
+    fn remote_line(&self) -> String {
+        if self.world.elapsed_ms < 3500 {
+            return "no remote lease".into();
+        }
+        if self.world.outcome.is_some() && !self.world.remote_active {
+            return self.world.remote_line.clone();
+        }
+        let n = self
+            .world
+            .elapsed_ms
+            .saturating_sub(self.world.remote_line_at_ms)
+            / 45;
+        let text = self
+            .world
+            .remote_line
+            .chars()
+            .take(n as usize)
+            .collect::<String>();
+        format!(
+            "{text}{}",
+            if (self.world.elapsed_ms / 450).is_multiple_of(2) {
+                "▍"
+            } else {
+                " "
+            }
+        )
+    }
+    fn event_trace(&self, width: u16, height: u16) -> Node {
+        let lines = self
+            .world
+            .receipts
+            .iter()
+            .rev()
+            .take(height.saturating_sub(2) as usize)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .map(|s| Line::styled(s, self.palette.muted))
+            .collect();
+        self.panel(
+            " RECEIPTS / the machine remembers ",
+            width,
+            height,
+            self.lines(lines),
+        )
+    }
+    fn actions(&self, width: u16, height: u16) -> Node {
+        let p = self.palette;
+        let mut lines = if self.director.is_finished() {
+            vec![
+                Line::styled("replay · facts · trace · damage", p.crash),
+                Line::styled("scene · acid · crash · reset · exit", p.white),
+            ]
+        } else {
+            let commands =
+                if self.world.elapsed_ms >= 45000 || self.director.current_beat() == "takeover" {
+                    vec!["cut link", "turn trace", "spring decoy", "let her in"]
+                } else {
+                    vec![
+                        "trace",
+                        if self.world.planner.target == NodeId::Auth {
+                            "isolate auth"
+                        } else {
+                            "isolate"
+                        },
+                        "decoy",
+                        if self.world.graph.nodes[NodeId::Display.index()].influence < 350 {
+                            "hard isolate"
+                        } else {
+                            "kill"
+                        },
+                    ]
+                };
+            if height <= 5 {
+                let labels = commands
+                    .iter()
+                    .map(|command| {
+                        let status = self.world.action_status(command);
+                        format!(
+                            "{} {}",
+                            command.to_ascii_uppercase(),
+                            if status.available { "✓" } else { "·" }
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                vec![
+                    Line::styled(labels[..2].join(" / "), p.crash),
+                    Line::styled(labels[2..].join(" / "), p.white),
+                ]
+            } else {
+                commands
+                    .into_iter()
+                    .take(height.saturating_sub(3) as usize)
+                    .map(|command| {
+                        let status = self.world.action_status(command);
+                        let state = if status.available {
+                            "READY".to_string()
+                        } else if status.cooldown_ms > 0 {
+                            format!("WAIT {:.1}s", status.cooldown_ms as f32 / 1000.0)
+                        } else {
+                            status.reason.to_string()
+                        };
+                        Line::styled(
+                            format!(
+                                "{:<12} {} / {}",
+                                command.to_ascii_uppercase(),
+                                state,
+                                status.cost
+                            ),
+                            if status.available { p.crash } else { p.muted },
+                        )
+                    })
+                    .collect()
+            }
+        };
+        lines.push(Line::styled(&self.world.last_action, p.warning));
+        self.panel(" CRASH / LOCAL CONTROL ", width, height, self.lines(lines))
+    }
+    /// Pure model→Scene projection. Scope and ghost trajectory are deterministic
+    /// presentation inputs; ordinary widgets have no post-processing knowledge.
+    pub fn presentation(&self) -> Presentation {
+        self.realized_presentation(&self.scene)
+    }
+    fn realized_presentation(&self, scene: &Scene) -> Presentation {
+        let mut presentation = self.director.presentation(scene);
+        let elapsed = Duration::from_millis(self.world.elapsed_ms);
+        let p = self.palette;
+        let auth = &self.world.graph.nodes[NodeId::Auth.index()];
+        let display = &self.world.graph.nodes[NodeId::Display.index()];
+        for (entity, node, key) in [
+            ("session", auth, 1),
+            ("decoy", &self.world.graph.nodes[NodeId::Decoy.index()], 1),
+        ] {
+            let id = scene.id_of(entity).unwrap();
+            if presentation.custom(id, key).is_some() {
+                let fraction = (1000.0 - node.influence as f32) / 2000.0;
+                let target = SceneTarget::Id(id);
+                for fx in [
+                    SurfaceFx::StyleOverlay(p.infection)
+                        .scoped(FxMask::HorizontalWipe { fraction }),
+                    SurfaceFx::Scramble {
+                        seed: SEED + node.id.index() as u64,
+                        intensity: 0.025,
+                    }
+                    .scoped(FxMask::HorizontalWipe { fraction }),
+                    SurfaceFx::Scanline {
+                        position: (self.world.elapsed_ms % 2200) as f32 / 2200.0,
+                        style: p.acid,
+                    }
+                    .scoped(FxMask::HorizontalWipe { fraction }),
+                ] {
+                    Effect::post_process(target, fx).eval(elapsed, scene, &mut presentation);
+                }
+            }
+        }
+        let amount = (1000.0 - display.influence as f32) / 2000.0;
+        let sensitive = scene
+            .entities()
+            .iter()
+            .filter(|entity| presentation.custom(entity.id, 2).is_some())
+            .map(|e| e.id)
+            .collect::<Vec<_>>();
+        for id in sensitive {
+            let entity = scene.entity(id).unwrap();
+            let fraction = match entity.label.as_str() {
+                "header" => ((amount - 0.6) / 0.4).clamp(0.0, 1.0),
+                "event-trace" => ((amount - 0.3) / 0.7).clamp(0.0, 1.0),
+                _ => amount,
+            };
+            let mask = if entity.label == "system-map" {
+                FxMask::Radial {
+                    center: (0.5, 1.0),
+                    fraction,
+                }
+            } else {
+                FxMask::VerticalWipe { fraction }
+            };
+            let target = SceneTarget::Id(id);
+            Effect::post_process(
+                target,
+                SurfaceFx::StyleOverlay(p.infection).scoped(mask.clone()),
+            )
+            .eval(elapsed, scene, &mut presentation);
+            if fraction > 0.3 {
+                Effect::post_process(
+                    target,
+                    SurfaceFx::Tear {
+                        row: 3,
+                        height: 1,
+                        amount: 1,
+                    }
+                    .scoped(mask),
+                )
+                .eval(elapsed, scene, &mut presentation);
+                Effect::jitter(target, fraction, seconds(0.21), seconds(1.0))
+                    .looping()
+                    .eval(elapsed, scene, &mut presentation);
+            }
+        }
+        presentation
+    }
     pub fn frame(&self, width: u16, height: u16) -> Node {
         let mut scene = self.scene.clone();
         let p = self.palette;
-        let f = self.facts();
+        let w = &self.world;
         let width = width.max(1);
         let height = height.max(1);
         let narrow = width < 76;
+        let tension = matches!(
+            self.director.current_beat(),
+            "escalation" | "takeover" | "acid-win"
+        );
         let header_h = 3u16;
         let prompt_h = 2u16;
-        let body_h = height.saturating_sub(header_h + prompt_h).max(1);
-        let lower_h = if narrow { 7 } else { 7.min(body_h / 2) };
-        let upper_h = body_h.saturating_sub(lower_h).max(1);
-        let left_w = if narrow {
+        let lower_h = if narrow {
+            7
+        } else {
+            7.min(height.saturating_sub(5) / 2)
+        };
+        let upper_h = height.saturating_sub(header_h + prompt_h + lower_h).max(1);
+        let left_w = if narrow || tension {
             width
         } else {
             (width * 3 / 5).min(width.saturating_sub(30))
         };
         let right_w = width.saturating_sub(left_w);
-        let title = if f.text("outcome") == "ACID WINS THE ROUND"
-            && self.director.current_beat() == "acid-win"
-        {
+        let title = if self.director.current_beat() == "acid-win" && w.remote_active {
             "A C I D   B U R N  //  borrowed display"
         } else {
             "C R A S H   O V E R R I D E  //  LOCAL NODE"
         };
-        let summary = format!(
-            "{} / {} / {:05.1}s / integrity {:03.0}% / {} anomalous sessions",
-            if f.bool("link-cut") {
-                "LINK CUT"
-            } else {
-                "MODEM LINK"
-            },
-            f.text("outcome"),
-            self.director.elapsed().as_secs_f32(),
-            SYSTEMS
-                .iter()
-                .map(|s| f.number(&format!("{s}-integrity")))
-                .sum::<f32>()
-                / 6.0,
-            if f.number("pressure") > 0.0 && !f.bool("remote-disconnected") {
-                1
-            } else {
-                0
-            }
-        );
-        let summary = if narrow && self.director.current_beat() == "quiet" {
-            "MODEM LINK / 0 anomalous sessions / integrity 100%".to_owned()
+        let summary = if w.elapsed_ms < 4000 {
+            "MODEM LINK / 0 anomalous sessions / integrity 100%".to_string()
         } else {
-            summary
+            format!(
+                "LOCAL FABRIC / TRACE {}% / integrity {}% / {}",
+                w.trace_confidence / 10,
+                w.graph.nodes[..6]
+                    .iter()
+                    .map(|n| u32::from(n.integrity))
+                    .sum::<u32>()
+                    / 60,
+                if w.outcome.is_some() {
+                    w.outcome_quality.as_str()
+                } else {
+                    "CONTEST IN PROGRESS"
+                }
+            )
         };
         let header = Node::col()
             .width(width as f32)
-            .height(header_h as f32)
-            .background(p.bg)
+            .height(3.0)
+            .background(Color::Reset)
             .child(Node::text(title, p.crash).height(1.0))
             .child(Node::text(summary, p.muted).height(1.0))
             .child(Node::rule(Some(self.director.beat_label()), p.muted).height(1.0));
         let place = |scene: &mut Scene, id: &str, node: Node, x: u16, y: u16, visible: bool| {
-            let entity = scene
-                .entity_mut(scene.id_of(id).expect("template entity"))
-                .expect("template entity");
+            let entity = scene.entity_mut(scene.id_of(id).unwrap()).unwrap();
             entity.node = node;
             entity.offset = (i32::from(x), i32::from(y));
             entity.visible = visible;
@@ -1421,27 +1253,26 @@ impl Encounter {
             true,
         );
         if narrow {
-            // Intentional narrow composition: geometry plus focal ownership in
-            // the map, one remote line and a full-width command island.
             place(&mut scene, "session", Node::col(), 0, 0, false);
             place(&mut scene, "event-trace", Node::col(), 0, 0, false);
+            let node = &w.graph.nodes[w.planner.target.index()];
             place(
                 &mut scene,
                 "remote-session",
                 self.lines(vec![
                     Line::styled(
-                        format!("{} > {}", f.text("identity"), f.text("remote-line")),
+                        format!("{} > {}", self.facts().text("identity"), self.remote_line()),
                         p.white,
                     ),
                     Line::styled(
                         format!(
-                            "{} {} / TRACE {:.0}% / {}",
-                            f.text("acid-target").to_ascii_uppercase(),
-                            f.text(&format!("{}-control", f.text("acid-target"))),
-                            f.number("trace-confidence"),
-                            if f.bool("route-isolated") {
+                            "{} {} / TRACE {}% / {}",
+                            node.id.name().to_ascii_uppercase(),
+                            node.owner().as_str(),
+                            w.trace_confidence / 10,
+                            if w.graph.nodes[NodeId::Route.index()].isolated {
                                 "ROUTE CUT"
-                            } else if f.bool("decoy-open") {
+                            } else if w.graph.nodes[NodeId::Decoy.index()].visible {
                                 "DECOY OPEN"
                             } else {
                                 "LINK OPEN"
@@ -1464,6 +1295,47 @@ impl Encounter {
                 header_h + upper_h + 2,
                 true,
             );
+        } else if tension {
+            // The same fabric becomes a hero view. Auxiliary entities reflow
+            // into small witness panels; Crash retains a full-width island.
+            let witness_w = (width / 4).clamp(22, 36);
+            place(
+                &mut scene,
+                "session",
+                self.sessions(
+                    witness_w,
+                    if self.debug_battle {
+                        upper_h.saturating_sub(2)
+                    } else {
+                        5
+                    },
+                ),
+                1,
+                header_h + 1,
+                true,
+            );
+            place(
+                &mut scene,
+                "remote-session",
+                self.panel(
+                    " REMOTE / read only ",
+                    witness_w + 3,
+                    4,
+                    self.lines(vec![Line::styled(self.remote_line(), p.white)]),
+                ),
+                width.saturating_sub(witness_w + 4),
+                header_h + 1,
+                true,
+            );
+            place(&mut scene, "event-trace", Node::col(), 0, 0, false);
+            place(
+                &mut scene,
+                "actions",
+                self.actions(width, lower_h),
+                0,
+                header_h + upper_h,
+                true,
+            );
         } else {
             let remote_h = 4.min(upper_h / 3);
             place(
@@ -1474,16 +1346,15 @@ impl Encounter {
                 header_h,
                 true,
             );
-            let remote = self.panel(
-                " REMOTE SESSION / read only ",
-                right_w,
-                remote_h,
-                self.lines(vec![Line::styled(f.text("remote-line"), p.white)]),
-            );
             place(
                 &mut scene,
                 "remote-session",
-                remote,
+                self.panel(
+                    " REMOTE / read only ",
+                    right_w,
+                    remote_h,
+                    self.lines(vec![Line::styled(self.remote_line(), p.white)]),
+                ),
                 left_w,
                 header_h + upper_h - remote_h,
                 true,
@@ -1505,37 +1376,52 @@ impl Encounter {
                 true,
             );
         }
-        let decoy_width = (left_w / 2).clamp(15, 28).min(width);
-        let decoy = self.panel(
-            " MIRROR FILES / DECOY ",
-            decoy_width,
-            4,
-            self.lines(vec![
-                Line::styled(
-                    if f.bool("decoy-taken") {
-                        "< ACID / trapped lease"
-                    } else {
-                        "■ CRASH / lure ready"
-                    },
-                    p.white,
-                ),
-                Line::styled("0 real files exposed", p.muted),
-            ]),
-        );
+        let decoy_width = (left_w / 3).clamp(15, 26).min(width);
         place(
             &mut scene,
             "decoy",
-            decoy,
+            self.panel(
+                " MIRROR FILES ",
+                decoy_width,
+                3,
+                self.lines(vec![Line::styled(
+                    if w.graph.nodes[NodeId::Decoy.index()].influence < 0 {
+                        "< ACID / mirror lease"
+                    } else {
+                        "◇◇ lure / 0 real files"
+                    },
+                    p.white,
+                )]),
+            ),
             1,
-            header_h + upper_h.saturating_sub(5),
+            header_h + upper_h.saturating_sub(4),
             false,
+        );
+        let positions = Self::positions(left_w, upper_h);
+        let path = &w.planner.path;
+        let scaled = w.planner.progress as f32 / 1000.0 * path.len().saturating_sub(1) as f32;
+        let segment = (scaled.floor() as usize).min(path.len().saturating_sub(1));
+        let from = positions[path
+            .get(segment)
+            .copied()
+            .unwrap_or(w.planner.location)
+            .index()];
+        let to = positions[path
+            .get(segment + 1)
+            .copied()
+            .unwrap_or(w.planner.location)
+            .index()];
+        let progress = scaled.fract();
+        let ghost = (
+            from.0 as f32 + (to.0 - from.0) as f32 * progress,
+            from.1 as f32 + (to.1 - from.1) as f32 * progress,
         );
         place(
             &mut scene,
             "ghost-cursor",
-            Node::text("◀ AB", p.acid).width(5.0).height(1.0),
-            (left_w / 2).saturating_sub(9),
-            header_h + 2,
+            Node::text("◀ AB", p.acid).width(4.0).height(1.0),
+            (ghost.0.max(0.0) as u16 + 5).min(left_w.saturating_sub(4)),
+            header_h + (ghost.1.max(0.0) as u16).min(upper_h.saturating_sub(1)),
             false,
         );
         let input = Node::row()
@@ -1546,68 +1432,74 @@ impl Encounter {
                 Node::text_input(
                     &self.input.text,
                     self.input.cursor_grapheme,
-                    Some("type a simulated action · Enter"),
+                    Some("simulated action · Enter"),
                     p.white,
                 )
                 .flex_grow(1.0),
             );
         let inspector = if self.inspector.is_empty() {
-            "FICTIONAL / LOCAL SIMULATION     Enter command · Esc / Ctrl-C exit".to_string()
+            if self.debug_battle {
+                format!(
+                    "AI {:?}/{:?} {} {:+} / CD {:.1}/{:.1}/{:.1}s / {}",
+                    w.planner.goal,
+                    w.planner.tactic,
+                    w.planner.target.name(),
+                    w.graph.nodes[w.planner.target.index()].influence,
+                    w.cooldowns[0] as f32 / 1000.0,
+                    w.cooldowns[1] as f32 / 1000.0,
+                    w.cooldowns[2] as f32 / 1000.0,
+                    self.director.current_beat()
+                )
+            } else {
+                "FICTIONAL / LOCAL SIMULATION     Enter · Esc / Ctrl-C exit".to_string()
+            }
         } else {
             match self.inspector.as_str() {
                 "facts" => format!(
-                    "FACTS / {} keys / outcome {} / target {}",
-                    f.iter().count(),
-                    f.text("outcome"),
-                    f.text("acid-target")
+                    "FACTS / {} semantic keys / {}",
+                    self.facts().iter().count(),
+                    self.facts().text("outcome")
                 ),
                 "trace" => format!(
-                    "TRACE / {} exact steps / {} beats / confidence {:.0}%",
-                    self.director.trace().steps.len(),
+                    "TRACE / {} raw steps / {} beats / {}%",
+                    self.trace.steps.len(),
                     self.director.trace().beats.len(),
-                    f.number("trace-confidence")
+                    w.trace_confidence / 10
+                ),
+                "damage" => format!(
+                    "DAMAGE / AUTH {}% / FILES {}% / DISPLAY {}%",
+                    w.graph.nodes[2].integrity / 10,
+                    w.graph.nodes[4].integrity / 10,
+                    w.graph.nodes[5].integrity / 10
                 ),
                 "scene" => format!(
-                    "SCENE / {} entities / bundles {}",
+                    "SCENE / {} entities / {}",
                     scene.len(),
                     self.director.mounted().collect::<Vec<_>>().join(", ")
                 ),
-                "damage" => format!(
-                    "DAMAGE / {} altered files / AUTH {:.0}% / DISPLAY {:.0}%",
-                    f.number("altered-files"),
-                    f.number("auth-integrity"),
-                    f.number("display-integrity")
-                ),
                 "acid" => format!(
-                    "ACID / target {} / adapted {} / {}",
-                    f.text("acid-target"),
-                    f.bool("acid-adapted"),
-                    f.text("remote-line")
+                    "ACID / {:?} / {:?} / {}",
+                    w.planner.goal, w.planner.tactic, w.remote_line
                 ),
-                "crash" => format!(
-                    "CRASH / {} / trace {:.0}%",
-                    f.text("last-action"),
-                    f.number("trace-confidence")
-                ),
+                "crash" => format!("CRASH / {} / reserve {}%", w.last_action, w.resources / 10),
                 _ => self.inspector.clone(),
             }
         };
-        let prompt = Node::col()
-            .width(width as f32)
-            .height(prompt_h as f32)
-            .background(p.bg)
-            .child(input)
-            .child(Node::text(inspector, p.muted).height(1.0));
         place(
             &mut scene,
             "prompt",
-            prompt,
+            Node::col()
+                .width(width as f32)
+                .height(2.0)
+                .background(Color::Reset)
+                .child(input)
+                .child(Node::text(inspector, p.muted).height(1.0)),
             0,
             height.saturating_sub(prompt_h),
             true,
         );
         scene.to_node(
-            &self.director.presentation(&scene),
+            &self.realized_presentation(&scene),
             width as f32,
             height as f32,
         )
@@ -1644,6 +1536,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         value("--stage=").unwrap_or("quiet"),
         depth == Some(ColorDepth::Mono),
     );
+    encounter.set_debug_battle(has("--debug-battle") || has("--debug-ai"));
     let mut ctx = Context::fullscreen()?;
     if let Some(depth) = depth {
         ctx.set_color_depth(depth);
