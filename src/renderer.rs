@@ -151,7 +151,11 @@ impl Renderer {
     }
 
     /// Renders a UI node tree onto the terminal.
-    /// Returns (dirty_cells, total_cells, bytes_emitted, is_full_repaint, PaintContext).
+    ///
+    /// Returns `(affected_cells, total_cells, bytes_emitted, is_full_repaint,
+    /// PaintContext)`. `affected_cells` is the logical affected footprint
+    /// (`SurfaceDiff::logical_dirty_count`), **not** an exact state delta; see
+    /// [`crate::SurfaceDiff`] and [`crate::RenderStats::dirty_cells`].
     pub fn render(
         &mut self,
         root: &mut Node,

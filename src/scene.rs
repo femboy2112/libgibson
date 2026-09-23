@@ -579,6 +579,7 @@ impl Effect {
                 }
             }
             Effect::Repeat(inner, n) => {
+                // Zero-duration or zero-count inner is a no-op (documented).
                 let id = inner.duration();
                 if id.is_zero() || *n == 0 {
                     return;
@@ -587,8 +588,11 @@ impl Effect {
                 if t >= total {
                     inner.eval(id, scene, out);
                 } else {
+                    // Exact sub-duration remainder; clamp for the (unrealistic)
+                    // case of durations beyond `u64` nanoseconds.
                     let rem = t.as_nanos() % id.as_nanos();
-                    inner.eval(Duration::from_nanos(rem as u64), scene, out);
+                    let rem = rem.min(u64::MAX as u128) as u64;
+                    inner.eval(Duration::from_nanos(rem), scene, out);
                 }
             }
             Effect::Reverse(inner) => {
@@ -601,6 +605,21 @@ impl Effect {
 // ---------------------------------------------------------------------------
 // Scene
 // ---------------------------------------------------------------------------
+
+/// An error from [`Scene::try_add`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SceneError {
+    /// An entity with this label already exists in the scene.
+    DuplicateLabel(String),
+}
+
+impl std::fmt::Display for SceneError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SceneError::DuplicateLabel(s) => write!(f, "duplicate scene entity label: `{s}`"),
+        }
+    }
+}
 
 /// A set of semantically identified entities, plus the functor to ordinary `Node`s.
 #[derive(Debug, Clone, Default)]
@@ -631,7 +650,27 @@ impl Scene {
     }
 
     /// Adds an entity, assigning it a stable [`SceneId`] and interning its tags.
-    pub fn add(&mut self, mut entity: SceneEntity) -> SceneId {
+    ///
+    /// Labels are unique within a scene. **Panics** on a duplicate label — use
+    /// [`Scene::try_add`] to handle the collision explicitly. Silent overwrite
+    /// would make `Scene::target(label)` ambiguous.
+    pub fn add(&mut self, entity: SceneEntity) -> SceneId {
+        let label = entity.label.clone();
+        if self.by_label.contains_key(&label) {
+            panic!("duplicate scene entity label: `{label}`");
+        }
+        self.add_unchecked(entity)
+    }
+
+    /// Fallible add; returns [`SceneError::DuplicateLabel`] instead of panicking.
+    pub fn try_add(&mut self, entity: SceneEntity) -> Result<SceneId, SceneError> {
+        if self.by_label.contains_key(&entity.label) {
+            return Err(SceneError::DuplicateLabel(entity.label));
+        }
+        Ok(self.add_unchecked(entity))
+    }
+
+    fn add_unchecked(&mut self, mut entity: SceneEntity) -> SceneId {
         let id = SceneId(self.next_id);
         self.next_id += 1;
         entity.id = id;
@@ -842,6 +881,48 @@ mod tests {
         ids.sort();
         assert_eq!(ids, vec![a.min(b), a.max(b)]);
         assert_eq!(scene.len(), 2);
+    }
+
+    #[test]
+    fn duplicate_labels_are_rejected() {
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("plague", text("1")));
+        // Fallible path reports the collision instead of overwriting.
+        let err = scene.try_add(SceneEntity::new("plague", text("2")));
+        assert_eq!(err, Err(SceneError::DuplicateLabel("plague".into())));
+        // The original mapping and entity count are unchanged.
+        assert_eq!(scene.id_of("plague"), Some(a));
+        assert_eq!(scene.len(), 1);
+        assert_eq!(scene.resolve(SceneTarget::Id(a)), vec![a]);
+    }
+
+    #[test]
+    #[should_panic(expected = "duplicate scene entity label")]
+    fn add_panics_loudly_on_duplicate_label() {
+        let mut scene = Scene::new();
+        scene.add(SceneEntity::new("plague", text("1")));
+        scene.add(SceneEntity::new("plague", text("2")));
+    }
+
+    #[test]
+    fn identity_and_interning_are_deterministic() {
+        let build = || {
+            let mut scene = Scene::new();
+            let x = scene.add(SceneEntity::new("x", text("x")).tag("t"));
+            let y = scene.add(SceneEntity::new("y", text("y")).tag("t"));
+            (scene.tag("t"), x, y, scene.id_of("y"))
+        };
+        let (t1, x1, y1, yl1) = build();
+        let (t2, x2, y2, yl2) = build();
+        assert_eq!((t1, x1, y1, yl1), (t2, x2, y2, yl2));
+    }
+
+    #[test]
+    fn unknown_targets_resolve_to_empty_without_panicking() {
+        let scene = Scene::new();
+        assert!(scene.resolve(SceneTarget::Id(SceneId(999))).is_empty());
+        assert!(scene.resolve(SceneTarget::Tag(TagId(999))).is_empty());
+        assert_eq!(scene.id_of("nope"), None);
     }
 
     #[test]

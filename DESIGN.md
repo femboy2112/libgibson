@@ -28,7 +28,7 @@ Because earlier revisions of this document overstated completion, architectural 
 | Label | Meaning |
 | --- | --- |
 | **IMPLEMENTED** | The described code path exists and is reached in normal operation. |
-| **TESTED** | Covered by an automated test in this repository (`cargo test`, 346 tests) that exercises the behavior described. |
+| **TESTED** | Covered by an automated test in this repository (`cargo test`, 362 tests) that exercises the behavior described. |
 | **PARTIALLY TESTED** | Implemented, and some behavior is covered, but at least one named facet is not automatically verified. The gap is stated explicitly. |
 | **UNVERIFIED** | Written down because it exists in source or is a documented assumption, but has not been compiled or executed in any environment we can attest to. |
 
@@ -725,9 +725,30 @@ without a combinatorial state machine, and branches may reconverge. Narrative
 truth is stored as **`Facts`** (semantic world state) rather than countdown
 timers: `PlagueActive = true` stays true until something explicitly clears it, so
 effects attach to the fact. `EffectBundle`s can be mounted/unmounted as one
-semantic cause with many coordinated presentations. `StoryTrace` records events
-and entered beats and `Story::replay` reproduces the identical beat sequence from
-a fixed timestep.
+semantic cause with many coordinated presentations.
+
+**The one-arrow law.** `StoryDirector::update(dt, events)` performs at most one
+categorical arrow. All events are trace-recorded in input order; the *first* event
+selecting an outgoing arrow from the current beat triggers exactly one transition,
+after which no further transition is evaluated that update — including a fact,
+`After(Duration::ZERO)` or default transition on the newly entered beat. Remaining
+events are recorded but not re-applied; call `update` again to handle them. This
+guarantees every entered beat is observable for at least one update, and makes
+`After(ZERO)` a deliberate one-frame beat rather than an accidental collapse. Epsilon
+chaining is intentionally not provided.
+
+**Replay is exact.** `StoryTrace` records the ordered `(dt, events)` update steps
+(plus entered beats), not timestamped events. Because `update` is a pure function
+of `(story, ordered steps)`, `Story::replay` reproduces the identical beat
+sequence, facts, mounted bundles and final beat for **any** original cadence,
+including irregular timesteps — a genuine deterministic replay theorem for the
+implemented semantics.
+
+**Graph integrity.** Entity labels within a `Scene` are unique: `Scene::add`
+panics loudly on a duplicate and `Scene::try_add` returns `SceneError`. Story beat
+ids and bundle names likewise cannot be silently redefined (the builders panic),
+and `Story::validate` checks reference integrity (start exists, every transition
+and default target exists, every mounted bundle is defined).
 
 **Capability realization is separate from story logic.** Story and scene code are
 colour-depth agnostic; the existing capability ladder realizes the same semantic

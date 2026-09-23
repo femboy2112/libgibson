@@ -78,7 +78,7 @@ ctx.commit_text("Finalized output text")?; // ctx.commit(...) is an alias
 
 ## Verification Status
 
-Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **346 tests**: 210 library unit tests and 136 integration tests (across `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
+Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **362 tests**: 226 library unit tests and 136 integration tests (across `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
 
 `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings are UNVERIFIED** — no Go toolchain was available, so they were never compiled. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
 
@@ -114,7 +114,7 @@ Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repos
 - **Bounded 2D line clipping** (TESTED): `clip_line_to_bounds` runs Liang–Barsky before Bresenham in both sub-cell canvases, so a finite near-camera projection with coordinates in the tens of millions draws only its visible portion instead of walking millions of steps, and near-`i32`-extreme endpoints cannot overflow. Hostile regression tests in `src/canvas.rs`.
 - **Honest damage accounting** (TESTED): `SurfaceDiff` exposes `exact_changed_cell_count` (a true per-cell state delta) and `affected_cell_count` (cells *addressed* by update semantics — explicit runs ∪ erase-to-EOL ∪ cleared rows, which may exceed the live area when rows are removed). The earlier over-strong "every visible cell whose state changes" wording is corrected.
 - **Scene Algebra** (TESTED, EXPERIMENTAL, Rust-only): `Scene`/`SceneEntity`/`SceneId`/`TagId` wrap ordinary `Node`s with identity; `Effect` provides `identity`, `sequence` (composition) and `parallel` (monoidal product) over presentation channels. `Scene::to_node` is the `Render : SCENE → UI` functor — it emits ordinary nodes through the existing pipeline, and moving one entity produces a bounded framebuffer diff rather than a whole-screen repaint.
-- **Story Director** (TESTED, EXPERIMENTAL, Rust-only): `Facts` store semantic world state (not countdown timers), `Beat`/`Condition`/`Transition` form a free-category story graph where user choices branch and reconverge, and `StoryTrace` + `Story::replay` reproduce a session deterministically.
+- **Story Director** (TESTED, EXPERIMENTAL, Rust-only): `Facts` store semantic world state (not countdown timers), `Beat`/`Condition`/`Transition` form a free-category story graph where user choices branch and reconverge, and `StoryTrace` records exact `(dt, events)` update steps so `Story::replay` reproduces a session deterministically at any cadence. `StoryDirector::update` follows **at most one transition per call** (see DESIGN §37).
 - **Real replication primitive** (TESTED): `Replication` is a bounded, deterministic branching graph with freeze and neutralize; the Hackers rabbit/cookie interaction is a real entity, not a generic particle burst.
 
 ---
@@ -264,7 +264,7 @@ cargo run --example resize_test_app
 # Build library and release artifacts (.so, .a)
 cargo build --release
 
-# Run the full test suite (346 tests: 210 unit + 136 integration)
+# Run the full test suite (362 tests: 226 unit + 136 integration)
 cargo test
 
 # Static analysis and formatting checks

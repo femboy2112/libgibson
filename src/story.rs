@@ -333,30 +333,76 @@ impl Beat {
 // Trace
 // ---------------------------------------------------------------------------
 
-/// A recorded sequence of events and entered beats, for deterministic replay.
+/// One recorded `update` call: the exact timestep and the events it carried.
+///
+/// Recording steps (rather than timestamped events) makes replay exact: the
+/// director's semantics are a pure function of the ordered sequence of
+/// `(dt, events)` updates, so replaying the steps reproduces the identical state
+/// regardless of cadence.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TraceStep {
+    pub dt: Duration,
+    pub events: Vec<StoryEvent>,
+}
+
+/// A recorded sequence of `update` calls and entered beats, for exact replay.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct StoryTrace {
-    pub events: Vec<(Duration, StoryEvent)>,
+    /// Every `update(dt, events)` call, in order.
+    pub steps: Vec<TraceStep>,
+    /// Every entered beat with the elapsed time at entry.
     pub beats: Vec<(Duration, String)>,
 }
 
 impl StoryTrace {
-    pub fn record(&mut self, at: Duration, e: StoryEvent) {
-        self.events.push((at, e));
-    }
-
     pub fn record_beat(&mut self, at: Duration, beat: impl Into<String>) {
         self.beats.push((at, beat.into()));
     }
 
+    /// The sequence of entered beats (including the start beat).
     pub fn beat_sequence(&self) -> Vec<&str> {
         self.beats.iter().map(|(_, b)| b.as_str()).collect()
+    }
+
+    /// Total elapsed time covered by the recorded steps.
+    pub fn duration(&self) -> Duration {
+        self.steps.iter().map(|s| s.dt).sum()
     }
 }
 
 // ---------------------------------------------------------------------------
 // Story + Director
 // ---------------------------------------------------------------------------
+
+/// A malformed story definition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StoryError {
+    /// The start beat is not defined.
+    UnknownStart(String),
+    /// A transition points at a beat that does not exist.
+    UnknownTarget { from: String, to: String },
+    /// `default_after` is set without a valid `default_next`.
+    MissingDefaultTarget(String),
+    /// A mounted bundle name is not defined.
+    UnknownBundle { beat: String, bundle: String },
+}
+
+impl std::fmt::Display for StoryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StoryError::UnknownStart(s) => write!(f, "start beat `{s}` is not defined"),
+            StoryError::UnknownTarget { from, to } => {
+                write!(f, "beat `{from}` transitions to unknown beat `{to}`")
+            }
+            StoryError::MissingDefaultTarget(s) => {
+                write!(f, "beat `{s}` has default_after but no valid default_next")
+            }
+            StoryError::UnknownBundle { beat, bundle } => {
+                write!(f, "beat `{beat}` mounts unknown bundle `{bundle}`")
+            }
+        }
+    }
+}
 
 /// An immutable story definition: beats and their effect bundles.
 #[derive(Debug, Clone)]
@@ -375,14 +421,65 @@ impl Story {
         }
     }
 
+    /// Adds a beat. **Panics** on a duplicate beat id: a semantic graph must not
+    /// silently redefine one of its objects.
     pub fn beat(mut self, beat: Beat) -> Self {
+        assert!(
+            !self.beats.contains_key(&beat.id),
+            "duplicate beat id: `{}`",
+            beat.id
+        );
         self.beats.insert(beat.id.clone(), beat);
         self
     }
 
+    /// Adds an effect bundle. **Panics** on a duplicate name.
     pub fn bundle(mut self, bundle: EffectBundle) -> Self {
+        assert!(
+            !self.bundles.contains_key(&bundle.name),
+            "duplicate effect bundle: `{}`",
+            bundle.name
+        );
         self.bundles.insert(bundle.name.clone(), bundle);
         self
+    }
+
+    /// Schema validation for a story definition.
+    ///
+    /// Duplicate beats/bundles are impossible by construction (the builders
+    /// panic). This checks reference integrity: the start beat and every
+    /// transition/default target exists, and every mounted bundle is defined.
+    pub fn validate(&self) -> Result<(), StoryError> {
+        if !self.beats.contains_key(&self.start) {
+            return Err(StoryError::UnknownStart(self.start.clone()));
+        }
+        for beat in self.beats.values() {
+            for t in &beat.transitions {
+                if !self.beats.contains_key(&t.next) {
+                    return Err(StoryError::UnknownTarget {
+                        from: beat.id.clone(),
+                        to: t.next.clone(),
+                    });
+                }
+            }
+            if beat.default_after.is_some() {
+                match &beat.default_next {
+                    Some(n) if self.beats.contains_key(n) => {}
+                    _ => return Err(StoryError::MissingDefaultTarget(beat.id.clone())),
+                }
+            }
+            for action in &beat.on_enter {
+                if let StoryAction::Mount(name) = action {
+                    if !self.bundles.contains_key(name) {
+                        return Err(StoryError::UnknownBundle {
+                            beat: beat.id.clone(),
+                            bundle: name.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Creates a fresh director at the start beat.
@@ -408,33 +505,20 @@ impl Story {
         d
     }
 
-    /// Replays a trace with a fixed timestep and returns the resulting director.
+    /// Exact replay: re-applies every recorded `update` step in order.
     ///
-    /// Deterministic: same story + same trace + same `dt` ⇒ identical state.
-    pub fn replay(&self, trace: &StoryTrace, dt: Duration) -> StoryDirector {
+    /// Because [`StoryDirector::update`] is a pure function of
+    /// `(story, ordered (dt, events) steps)`, replay reproduces the identical
+    /// state — same beat sequence, facts, mounted bundles and final beat — for
+    /// **any** original cadence, including irregular timesteps. This is stronger
+    /// than replaying timestamped events onto a new grid.
+    pub fn replay(&self, trace: &StoryTrace) -> StoryDirector {
         let mut d = self.start();
-        if dt.is_zero() {
-            return d;
-        }
-        let horizon = trace
-            .events
-            .iter()
-            .map(|(t, _)| *t)
-            .chain(trace.beats.iter().map(|(t, _)| *t))
-            .max()
-            .unwrap_or(Duration::ZERO)
-            + dt;
-        let mut frame: u64 = 1;
-        while d.elapsed < horizon && !d.finished {
-            let now = dt.saturating_mul(frame as u32);
-            let evs: Vec<StoryEvent> = trace
-                .events
-                .iter()
-                .filter(|(t, _)| *t == now)
-                .map(|(_, e)| e.clone())
-                .collect();
-            d.update(dt, &evs);
-            frame += 1;
+        for step in &trace.steps {
+            if d.is_finished() {
+                break;
+            }
+            d.update(step.dt, &step.events);
         }
         d
     }
@@ -498,12 +582,30 @@ impl StoryDirector {
         &self.trace
     }
 
-    /// Advances time, applies events, and follows at most one transition.
+    /// Advances time, applies events, and follows **at most one transition**.
     ///
-    /// Deterministic given `(story, dt sequence, events)`. Event transitions are
-    /// gated by the current beat's `min_duration`; timed and fact transitions are
-    /// checked afterwards, so a beat with `min_duration == 0` can still advance
-    /// on the same frame if nothing else fires.
+    /// # Semantics (the one-arrow law)
+    ///
+    /// A single `update` performs at most one categorical arrow. Concretely:
+    ///
+    /// * Every event is trace-recorded in input order.
+    /// * The **first** event (in order) whose condition selects an outgoing arrow
+    ///   from the current beat triggers exactly one transition. Once a transition
+    ///   fires, no further transition is evaluated this update — including a
+    ///   fact, `After(0)` or default transition on the *newly entered* beat.
+    /// * Remaining events are recorded but not re-applied to the new beat. If an
+    ///   application needs them handled, it calls `update` again.
+    /// * If no event transition fires, at most one automatic transition (fact,
+    ///   `After`, or `default_after`) may fire.
+    ///
+    /// Event transitions are gated by the current beat's [`Beat::min_duration`].
+    ///
+    /// This guarantees every entered beat is observable for at least one update,
+    /// and it makes `After(Duration::ZERO)` a deliberate one-frame beat rather
+    /// than an accidental collapse. Epsilon/immediate chaining is intentionally
+    /// **not** provided.
+    ///
+    /// Deterministic given `(story, ordered dt/events sequence)`.
     pub fn update(&mut self, dt: Duration, events: &[StoryEvent]) {
         if self.finished {
             return;
@@ -511,18 +613,21 @@ impl StoryDirector {
         self.elapsed = self.elapsed.saturating_add(dt);
         self.time_in_beat = self.time_in_beat.saturating_add(dt);
 
-        for e in events {
-            self.trace.record(self.elapsed, e.clone());
-            if self.time_in_beat >= self.min_duration() {
-                if let Some(next) = self.find_event_transition(e) {
-                    self.enter(next);
-                    if self.finished {
-                        return;
-                    }
-                }
+        // Record the exact step so replay can reproduce this call precisely.
+        self.trace.steps.push(TraceStep {
+            dt,
+            events: events.to_vec(),
+        });
+
+        // At most one arrow: the first matching event transition wins.
+        if !events.is_empty() && self.time_in_beat >= self.min_duration() {
+            if let Some(next) = events.iter().find_map(|e| self.find_event_transition(e)) {
+                self.enter(next);
+                return;
             }
         }
 
+        // Otherwise at most one automatic transition.
         if let Some(next) = self.find_auto_transition() {
             self.enter(next);
         }
@@ -785,10 +890,203 @@ mod tests {
         }
         let original = d.trace().beat_sequence().join(">");
 
-        let replayed = story.replay(d.trace(), ms(10));
+        let replayed = story.replay(d.trace());
         let replay_seq = replayed.trace().beat_sequence().join(">");
         assert_eq!(original, replay_seq);
         assert_eq!(replayed.current_beat(), d.current_beat());
+    }
+
+    #[test]
+    fn replay_reproduces_irregular_dt_exactly() {
+        // Option B contract: the trace records the exact (dt, events) updates, so
+        // replay reproduces any cadence — including irregular timesteps.
+        let story = tactical_story();
+        let dts = [ms(7), ms(13), ms(41), ms(3), ms(60), ms(5), ms(22), ms(9)];
+        let mut d = story.start();
+        for (i, dt) in dts.iter().enumerate() {
+            let evs: Vec<StoryEvent> = if i == 4 {
+                vec![StoryEvent::user_selected("pool")]
+            } else {
+                vec![]
+            };
+            d.update(*dt, &evs);
+            if d.is_finished() {
+                break;
+            }
+        }
+
+        let replayed = story.replay(d.trace());
+        assert_eq!(replayed.current_beat(), d.current_beat());
+        assert_eq!(
+            replayed.trace().beat_sequence(),
+            d.trace().beat_sequence(),
+            "entered-beat sequence must match"
+        );
+        assert_eq!(
+            replayed.facts().bool("pool-distraction"),
+            d.facts().bool("pool-distraction")
+        );
+        assert_eq!(replayed.mounted().count(), d.mounted().count());
+    }
+
+    // -----------------------------------------------------------------------
+    // One-arrow law.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn event_then_immediate_beat_is_observable() {
+        // A --go--> B ; B --After(0)--> C : B must survive one update.
+        let story = Story::new("a")
+            .beat(
+                Beat::new("a")
+                    .transition(Condition::user("go"), "b")
+                    .after(ms(1000), "c"),
+            )
+            .beat(Beat::new("b").after(Duration::ZERO, "c"))
+            .beat(Beat::new("c").terminal());
+        let mut d = story.start();
+        d.update(ms(10), &[StoryEvent::user_selected("go")]);
+        assert_eq!(d.current_beat(), "b", "B must be observable for one update");
+        d.update(ms(10), &[]);
+        assert_eq!(d.current_beat(), "c");
+    }
+
+    #[test]
+    fn multiple_events_only_the_first_transitions() {
+        let story = Story::new("a")
+            .beat(
+                Beat::new("a")
+                    .transition(Condition::user("foo"), "b")
+                    .after(ms(1000), "z"),
+            )
+            .beat(
+                Beat::new("b")
+                    .transition(Condition::user("bar"), "c")
+                    .after(ms(1000), "z"),
+            )
+            .beat(Beat::new("c").terminal())
+            .beat(Beat::new("z").terminal());
+        let mut d = story.start();
+        d.update(
+            ms(10),
+            &[
+                StoryEvent::user_selected("foo"),
+                StoryEvent::user_selected("bar"),
+            ],
+        );
+        // Only `foo` drives a transition; `bar` must not chain into C.
+        assert_eq!(d.current_beat(), "b");
+        // Both events were trace-recorded.
+        assert_eq!(d.trace().steps[0].events.len(), 2);
+    }
+
+    #[test]
+    fn fact_transition_waits_for_next_update() {
+        let story = Story::new("a")
+            .beat(
+                Beat::new("a")
+                    .transition(Condition::user("go"), "b")
+                    .after(ms(1000), "c"),
+            )
+            .beat(
+                Beat::new("b")
+                    .on_enter(StoryAction::set_bool("ready", true))
+                    .transition(Condition::fact_true("ready"), "c")
+                    .after(ms(1000), "z"),
+            )
+            .beat(Beat::new("c").terminal())
+            .beat(Beat::new("z").terminal());
+        let mut d = story.start();
+        d.update(ms(10), &[StoryEvent::user_selected("go")]);
+        assert_eq!(d.current_beat(), "b");
+        assert!(d.facts().bool("ready"));
+        d.update(ms(1), &[]);
+        assert_eq!(d.current_beat(), "c");
+    }
+
+    #[test]
+    fn trace_records_every_intermediate_beat() {
+        let story = Story::new("a")
+            .beat(
+                Beat::new("a")
+                    .transition(Condition::user("go"), "b")
+                    .after(ms(1000), "c"),
+            )
+            .beat(Beat::new("b").after(Duration::ZERO, "c"))
+            .beat(Beat::new("c").terminal());
+        let mut d = story.start();
+        d.update(ms(10), &[StoryEvent::user_selected("go")]);
+        d.update(ms(10), &[]);
+        assert_eq!(d.trace().beat_sequence(), vec!["a", "b", "c"]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Graph integrity.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    #[should_panic(expected = "duplicate beat id")]
+    fn duplicate_beat_ids_are_rejected() {
+        let _ = Story::new("a").beat(Beat::new("a")).beat(Beat::new("a"));
+    }
+
+    #[test]
+    #[should_panic(expected = "duplicate effect bundle")]
+    fn duplicate_bundle_names_are_rejected() {
+        let _ = Story::new("a")
+            .bundle(EffectBundle::new("fx"))
+            .bundle(EffectBundle::new("fx"))
+            .beat(Beat::new("a"));
+    }
+
+    #[test]
+    fn validate_accepts_a_well_formed_story() {
+        assert!(tactical_story().validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_unknown_start() {
+        let s = Story::new("missing").beat(Beat::new("a"));
+        assert_eq!(
+            s.validate(),
+            Err(StoryError::UnknownStart("missing".into()))
+        );
+    }
+
+    #[test]
+    fn validate_rejects_unknown_transition_target() {
+        let s = Story::new("a").beat(Beat::new("a").transition(Condition::user("x"), "nope"));
+        assert_eq!(
+            s.validate(),
+            Err(StoryError::UnknownTarget {
+                from: "a".into(),
+                to: "nope".into()
+            })
+        );
+    }
+
+    #[test]
+    fn validate_rejects_missing_default_target() {
+        // default_after set, default_next absent.
+        let mut beat = Beat::new("a");
+        beat.default_after = Some(ms(10));
+        let s = Story::new("a").beat(beat);
+        assert_eq!(
+            s.validate(),
+            Err(StoryError::MissingDefaultTarget("a".into()))
+        );
+    }
+
+    #[test]
+    fn validate_rejects_unknown_mounted_bundle() {
+        let s = Story::new("a").beat(Beat::new("a").on_enter(StoryAction::mount("ghost")));
+        assert_eq!(
+            s.validate(),
+            Err(StoryError::UnknownBundle {
+                beat: "a".into(),
+                bundle: "ghost".into()
+            })
+        );
     }
 
     #[test]

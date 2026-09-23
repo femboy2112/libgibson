@@ -871,6 +871,10 @@ impl App {
             self.camera_escape = 1.0;
             self.glitch_frames = 12;
         }
+        // The branch beat is a discrete story object: it advanced out of the
+        // tactical beat in the update above, and now (as a second arrow) advances
+        // to Download, so the trace is tactical > branch > download.
+        self.tactical.update(Duration::from_millis(1), &[]);
 
         let consequence = match key {
             "pool" => "pool sprinkler distraction · Plague scan quality −40%",

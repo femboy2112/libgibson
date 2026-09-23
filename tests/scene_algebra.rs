@@ -11,7 +11,7 @@
 //! * a recorded trace replays to the identical beat sequence.
 
 use gibson::scene::{Easing, Effect, EffectBundle, Scene, SceneEntity, SceneTarget};
-use gibson::story::{Beat, Condition, Story, StoryAction, StoryEvent, StoryTrace};
+use gibson::story::{Beat, Condition, Story, StoryAction, StoryEvent};
 use gibson::{Node, RenderMode, Renderer, Style, TerminalSession};
 use std::time::Duration;
 
@@ -223,7 +223,7 @@ fn story_trace_replays_identically() {
     let original = d.trace().beat_sequence().join(">");
     assert_eq!(original, "grand-central>crew-reinforcement>download");
 
-    let replayed = story.replay(d.trace(), ms(10));
+    let replayed = story.replay(d.trace());
     assert_eq!(replayed.trace().beat_sequence().join(">"), original);
     assert_eq!(replayed.current_beat(), d.current_beat());
     assert!(replayed.facts().bool("crew-reinforced"));
@@ -260,10 +260,21 @@ fn effect_identity_and_associativity_through_the_functor() {
 }
 
 #[test]
-fn trace_label_round_trips_events() {
-    let mut trace = StoryTrace::default();
-    trace.record(ms(10), StoryEvent::user_selected("pool"));
-    trace.record(ms(20), StoryEvent::command("city"));
-    assert_eq!(trace.events[0].1.label(), "user:pool");
-    assert_eq!(trace.events[1].1.label(), "cmd:city");
+fn trace_steps_capture_events_in_order() {
+    // The trace records the exact update steps; labels round-trip through events.
+    let story = tactical_story();
+    let mut d = story.start();
+    d.update(
+        ms(80),
+        &[
+            StoryEvent::user_selected("crew"),
+            StoryEvent::command("city"),
+        ],
+    );
+    let step = &d.trace().steps[0];
+    assert_eq!(step.dt, ms(80));
+    assert_eq!(step.events[0].label(), "user:crew");
+    assert_eq!(step.events[1].label(), "cmd:city");
+    // Only the first matching event transitioned; the step is preserved for replay.
+    assert_eq!(d.current_beat(), "crew-reinforcement");
 }

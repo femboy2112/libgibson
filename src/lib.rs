@@ -55,13 +55,13 @@ pub use renderer::{AnchorState, InsertStrategy, RenderMode, Renderer};
 pub use replication::Replication;
 pub use scene::{
     Channel, Easing, Effect, EffectBundle, Presentation, ResolvedEntity, Scene, SceneEntity,
-    SceneId, SceneTarget, TagId,
+    SceneError, SceneId, SceneTarget, TagId,
 };
 pub use scheduler::{FrameScheduler, RenderStats, DEFAULT_ANIMATION_INTERVAL};
 pub use session::TerminalSession;
 pub use story::{
-    Beat, Condition, FactValue, Facts, Story, StoryAction, StoryDirector, StoryEvent, StoryTrace,
-    Transition,
+    Beat, Condition, FactValue, Facts, Story, StoryAction, StoryDirector, StoryError, StoryEvent,
+    StoryTrace, TraceStep, Transition,
 };
 pub use surface::{BorderType, Rect, Surface};
 pub use transition::{dissolve, scramble, scramble_line, type_on, SCRAMBLE_GLYPHS};

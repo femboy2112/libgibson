@@ -34,6 +34,10 @@ small deterministic Scene Algebra and Story Director.
 - [x] **Story Director** (`src/story.rs`): `Facts`, `StoryEvent`, `Beat`,
       `Condition`, `StoryAction`, `StoryDirector`, `StoryTrace` + deterministic
       `Story::replay`. Branch/rejoin, mounted bundles, semantic (persistent) facts.
+      Hardened in the merge-gate pass: **at most one transition per `update`**,
+      **exact `(dt, events)` step replay**, duplicate beat/bundle rejection, and
+      `Story::validate` reference checking. Scene entity labels are unique
+      (`Scene::add` panics / `Scene::try_add` errors).
 - [x] **Real replication effect** (`src/replication.rs`): bounded deterministic
       branching graph with freeze/neutralize; rabbit/cookie in the demo are a real
       entity, not a generic particle burst.
@@ -46,7 +50,9 @@ small deterministic Scene Algebra and Story Director.
 - [x] **Docs truth pass** incl. a new DESIGN §37.
 
 Integration tests: `tests/scene_algebra.rs` (functor through the renderer, bounded
-damage, associativity, branch/rejoin, replay). Total: **346 tests**.
+damage, associativity, branch/rejoin, replay). Merge-gate hardening included the
+one-arrow law, exact step replay and semantic-identity validation. Total:
+**362 tests**.
 
 ---
 

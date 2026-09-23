@@ -232,6 +232,8 @@ pub struct GibsonStats {
     pub abi_version: u32,
     pub frames: u64,
     pub skipped_frames: u64,
+    /// Logical affected footprint (cells addressed by update semantics), not an
+    /// exact state delta; may exceed `total_cells` when rows are removed.
     pub dirty_cells: u64,
     pub total_cells: u64,
     pub frame_bytes: u64,

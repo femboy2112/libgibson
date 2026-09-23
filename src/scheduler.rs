@@ -24,6 +24,12 @@ use std::time::{Duration, Instant};
 pub struct RenderStats {
     pub frames: u64,
     pub skipped_frames: u64,
+    /// Logical **affected footprint**, not an exact state delta: the cells
+    /// *addressed* by update semantics (explicit changed runs ∪ erase-to-EOL
+    /// region ∪ cleared trailing rows). A single `CSI K` can address many
+    /// already-blank cells, and removing rows can make this exceed
+    /// [`RenderStats::total_cells`]. See [`crate::SurfaceDiff`] for the exact
+    /// (`exact_changed_cell_count`) vs affected (`affected_cell_count`) ontology.
     pub dirty_cells: u64,
     pub total_cells: u64,
     /// Bytes emitted by live differential frames (control sequences included).
