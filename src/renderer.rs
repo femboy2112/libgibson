@@ -81,6 +81,11 @@ pub struct Renderer {
     pub fast_insertions: u64,
     pub fallback_insertions: u64,
     pub last_insert_strategy: Option<InsertStrategy>,
+
+    /// When true, the renderer records the explicit coordinates of this frame's
+    /// dirty cells (for damage-map debug overlays). Off by default: it allocates.
+    pub capture_damage: bool,
+    last_dirty_cells: Vec<(u16, u16)>,
 }
 
 impl Renderer {
@@ -105,7 +110,16 @@ impl Renderer {
             fast_insertions: 0,
             fallback_insertions: 0,
             last_insert_strategy: None,
+            capture_damage: false,
+            last_dirty_cells: Vec::new(),
         }
+    }
+
+    /// Coordinates of the cells changed by the most recent rendered frame.
+    ///
+    /// Empty unless [`Renderer::capture_damage`] was enabled for that frame.
+    pub fn last_dirty_cells(&self) -> &[(u16, u16)] {
+        &self.last_dirty_cells
     }
 
     /// Marks the physical anchor as untrustworthy and discards diff state so the
@@ -179,6 +193,11 @@ impl Renderer {
 
         let total_cells = (surface_width as usize) * (surface_height as usize);
         let dirty_cells = diff.total_dirty_cells();
+        if self.capture_damage {
+            self.last_dirty_cells = diff.dirty_cells();
+        } else {
+            self.last_dirty_cells.clear();
+        }
 
         // Cursor visibility/position are part of physical truth: an unchanged
         // framebuffer does not imply "nothing needs emitting".

@@ -126,14 +126,35 @@ impl Surface {
     /// cells merge their style onto the destination cell's style without
     /// replacing its glyph; opaque source cells replace the destination cell.
     pub fn blit_transparent_at(&mut self, src: &Surface, dx: u16, dy: u16) {
+        self.blit_transparent_clipped(src, dx as i32, dy as i32, self.area());
+    }
+
+    /// Composites `src` onto this surface with a signed destination origin,
+    /// writing only cells inside `clip`.
+    ///
+    /// This is the clipping-aware form used by the raster and camera nodes: a
+    /// source may be partly (or fully) off the clip rectangle, including negative
+    /// origins, and wide-glyph invariants are preserved by `set_cell`.
+    pub fn blit_transparent_clipped(&mut self, src: &Surface, dx: i32, dy: i32, clip: Rect) {
+        let clip = self.area().intersection(&clip);
+        if clip.is_empty() {
+            return;
+        }
         for y in 0..src.height {
             for x in 0..src.width {
                 let Some(c) = src.get(x, y) else { continue };
                 if c.transparent {
                     continue;
                 }
-                let tx = x.saturating_add(dx);
-                let ty = y.saturating_add(dy);
+                let tx = dx + x as i32;
+                let ty = dy + y as i32;
+                if tx < clip.x as i32 || ty < clip.y as i32 {
+                    continue;
+                }
+                let (tx, ty) = (tx as u16, ty as u16);
+                if !clip.contains(tx, ty) {
+                    continue;
+                }
                 if c.style_only {
                     if let Some(dst) = self.get_mut(tx, ty) {
                         dst.style = dst.style.overlay(c.style);

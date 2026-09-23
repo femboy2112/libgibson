@@ -38,6 +38,21 @@ impl SurfaceDiff {
             .map(|p| p.runs.iter().map(|r| r.cells.len()).sum::<usize>())
             .sum()
     }
+
+    /// Explicit coordinates of every dirty cell this frame, row-major.
+    ///
+    /// Intended for debug overlays (damage maps). Cheap; only call when needed.
+    pub fn dirty_cells(&self) -> Vec<(u16, u16)> {
+        let mut out = Vec::with_capacity(self.total_dirty_cells());
+        for patch in &self.patches {
+            for run in &patch.runs {
+                for i in 0..run.cells.len() {
+                    out.push((run.x.saturating_add(i as u16), patch.y));
+                }
+            }
+        }
+        out
+    }
 }
 
 /// Compares `prev` (if any) and `next` surfaces, producing a minimal diff.

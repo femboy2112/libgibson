@@ -67,6 +67,18 @@ impl Context {
         self.session.capabilities()
     }
 
+    /// Enables recording of per-frame dirty-cell coordinates (for damage-map
+    /// debug overlays). Off by default because it allocates per frame.
+    pub fn set_capture_damage(&mut self, on: bool) {
+        self.renderer.capture_damage = on;
+    }
+
+    /// Coordinates of the cells changed by the most recent frame (empty unless
+    /// [`Context::set_capture_damage`] was enabled).
+    pub fn last_dirty_cells(&self) -> &[(u16, u16)] {
+        self.renderer.last_dirty_cells()
+    }
+
     pub fn set_max_fps(&mut self, fps: u32) {
         self.scheduler.max_fps = fps.max(1);
     }

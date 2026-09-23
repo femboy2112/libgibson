@@ -17,13 +17,99 @@ pub struct PaintContext {
 /// Paints a laid-out UI node tree onto the target surface.
 pub fn paint(root: &Node, surface: &mut Surface) -> PaintContext {
     let mut ctx = PaintContext::default();
-    paint_node(root, surface, surface.area(), &mut ctx);
+    paint_node(root, surface, surface.area(), 0, 0, &mut ctx);
     ctx
 }
 
-fn paint_node(node: &Node, surface: &mut Surface, clip: Rect, ctx: &mut PaintContext) {
-    let rect = node.computed_rect.intersection(&clip);
+/// Intersects a possibly-negative, offset rectangle with `clip`.
+///
+/// Positioned layers may sit partly or fully off-screen (including negative
+/// origins); this computes the visible sub-rectangle.
+fn intersect_signed(x: i32, y: i32, w: u16, h: u16, clip: Rect) -> Rect {
+    if w == 0 || h == 0 {
+        return Rect::new(0, 0, 0, 0);
+    }
+    let x1 = x + w as i32;
+    let y1 = y + h as i32;
+    let cx1 = clip.x as i32 + clip.width as i32;
+    let cy1 = clip.y as i32 + clip.height as i32;
+    let ix0 = x.max(clip.x as i32);
+    let iy0 = y.max(clip.y as i32);
+    let ix1 = x1.min(cx1);
+    let iy1 = y1.min(cy1);
+    if ix1 <= ix0 || iy1 <= iy0 {
+        Rect::new(0, 0, 0, 0)
+    } else {
+        Rect::new(
+            ix0 as u16,
+            iy0 as u16,
+            (ix1 - ix0) as u16,
+            (iy1 - iy0) as u16,
+        )
+    }
+}
+
+/// Accumulated signed offset for a child. Absolutely-positioned children add
+/// their own offset; others inherit the parent offset unchanged.
+fn child_offset(child: &Node, ox: i32, oy: i32) -> (i32, i32) {
+    if child.layout_style.absolute {
+        (
+            ox + child.layout_style.offset_x.round() as i32,
+            oy + child.layout_style.offset_y.round() as i32,
+        )
+    } else {
+        (ox, oy)
+    }
+}
+
+fn paint_node(
+    node: &Node,
+    surface: &mut Surface,
+    clip: Rect,
+    ox: i32,
+    oy: i32,
+    ctx: &mut PaintContext,
+) {
+    let cr = node.computed_rect;
+    let origin_x = cr.x as i32 + ox;
+    let origin_y = cr.y as i32 + oy;
+    let rect = intersect_signed(origin_x, origin_y, cr.width, cr.height, clip);
     if rect.is_empty() {
+        return;
+    }
+
+    // A node clipped on its left/top edge (negative offset, camera pan, or a
+    // layer crossing the boundary) cannot be drawn in place: surface primitives
+    // would start at the *visible* origin and lose the off-screen part. Render
+    // the subtree translated so its own origin maps to 0, then blit clipped.
+    if origin_x < clip.x as i32 || origin_y < clip.y as i32 {
+        let tx = ox - origin_x; // maps this node's origin to 0
+        let ty = oy - origin_y;
+        // The scratch must fit the node's natural extent (it may be larger than
+        // the target surface, e.g. a viewport world wider than the camera).
+        let sw = surface.width.max(cr.width);
+        let sh = surface.height.max(cr.height);
+        let mut scratch = Surface::new_transparent(sw, sh);
+        let prev_cursor = ctx.cursor_position.take();
+        let scratch_area = scratch.area();
+        paint_node(node, &mut scratch, scratch_area, tx, ty, ctx);
+        surface.blit_transparent_clipped(&scratch, origin_x, origin_y, rect);
+        ctx.cursor_position = match ctx.cursor_position.take() {
+            Some((cx, cy)) => {
+                let mx = cx as i32 + origin_x;
+                let my = cy as i32 + origin_y;
+                if mx >= rect.x as i32
+                    && my >= rect.y as i32
+                    && mx < (rect.x + rect.width) as i32
+                    && my < (rect.y + rect.height) as i32
+                {
+                    Some((mx as u16, my as u16))
+                } else {
+                    prev_cursor
+                }
+            }
+            None => prev_cursor,
+        };
         return;
     }
 
@@ -192,6 +278,12 @@ fn paint_node(node: &Node, surface: &mut Surface, clip: Rect, ctx: &mut PaintCon
             surface.apply_dim_rect(rect);
         }
         NodeKind::Stack => {}
+        NodeKind::Viewport { .. } => {}
+        NodeKind::Raster { surface: raster } => {
+            // Draw the raster aligned to the node origin, clipped to the visible
+            // rectangle (supports partly/fully off-screen placement).
+            surface.blit_transparent_clipped(raster.as_ref(), origin_x, origin_y, rect);
+        }
     }
 
     // Bordered containers clip children to the *inside* of the border so content
@@ -209,15 +301,27 @@ fn paint_node(node: &Node, surface: &mut Surface, clip: Rect, ctx: &mut PaintCon
         // Composite children in z-order through transparent scratch layers.
         // A child only covers the cells it actually paints.
         for child in &node.children {
+            let (cx, cy) = child_offset(child, ox, oy);
             let mut layer = Surface::new_transparent(surface.width, surface.height);
-            paint_node(child, &mut layer, child_clip, ctx);
+            paint_node(child, &mut layer, child_clip, cx, cy, ctx);
             surface.blit_transparent(&layer);
         }
         return;
     }
 
+    // A camera viewport translates its world by the negative camera offset.
+    let (cam_x, cam_y) = match &node.kind {
+        NodeKind::Viewport { offset_x, offset_y } => (-*offset_x, -*offset_y),
+        _ => (0, 0),
+    };
+
     for child in &node.children {
-        paint_node(child, surface, child_clip, ctx);
+        let (cx, cy) = if cam_x != 0 || cam_y != 0 {
+            (ox + cam_x, oy + cam_y)
+        } else {
+            child_offset(child, ox, oy)
+        };
+        paint_node(child, surface, child_clip, cx, cy, ctx);
     }
 }
 

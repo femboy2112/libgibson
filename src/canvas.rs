@@ -154,6 +154,104 @@ impl BrailleCanvas {
         }
     }
 
+    /// Closes a polygon and draws its outline.
+    pub fn polygon(&mut self, points: &[(i32, i32)]) {
+        if points.len() < 2 {
+            return;
+        }
+        self.polyline(points);
+        let first = points[0];
+        let last = points[points.len() - 1];
+        self.line(last.0, last.1, first.0, first.1);
+    }
+
+    /// Rectangle outline.
+    pub fn rect(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        if w <= 0 || h <= 0 {
+            return;
+        }
+        self.line(x, y, x + w - 1, y);
+        self.line(x, y + h - 1, x + w - 1, y + h - 1);
+        self.line(x, y, x, y + h - 1);
+        self.line(x + w - 1, y, x + w - 1, y + h - 1);
+    }
+
+    /// Filled rectangle.
+    pub fn filled_rect(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        for yy in y..(y + h) {
+            for xx in x..(x + w) {
+                self.set(xx, yy);
+            }
+        }
+    }
+
+    /// Midpoint circle outline.
+    pub fn circle(&mut self, cx: i32, cy: i32, r: i32) {
+        if r < 0 {
+            return;
+        }
+        let mut x = r;
+        let mut y = 0;
+        let mut err = 1 - r;
+        while x >= y {
+            for (px, py) in [
+                (cx + x, cy + y),
+                (cx + y, cy + x),
+                (cx - y, cy + x),
+                (cx - x, cy + y),
+                (cx - x, cy - y),
+                (cx - y, cy - x),
+                (cx + y, cy - x),
+                (cx + x, cy - y),
+            ] {
+                self.set(px, py);
+            }
+            y += 1;
+            if err < 0 {
+                err += 2 * y + 1;
+            } else {
+                x -= 1;
+                err += 2 * (y - x) + 1;
+            }
+        }
+    }
+
+    /// Filled circle via horizontal scanlines.
+    pub fn filled_circle(&mut self, cx: i32, cy: i32, r: i32) {
+        if r < 0 {
+            return;
+        }
+        for dy in -r..=r {
+            let dx = ((r * r - dy * dy) as f32).sqrt().round() as i32;
+            self.line(cx - dx, cy + dy, cx + dx, cy + dy);
+        }
+    }
+
+    /// Ellipse outline (axis-aligned).
+    pub fn ellipse(&mut self, cx: i32, cy: i32, rx: i32, ry: i32) {
+        if rx <= 0 || ry <= 0 {
+            return;
+        }
+        let steps = ((rx + ry) as f32 * 1.5).max(12.0) as i32;
+        let mut prev: Option<(i32, i32)> = None;
+        for i in 0..=steps {
+            let a = std::f32::consts::TAU * i as f32 / steps as f32;
+            let p = (
+                cx + (rx as f32 * a.cos()).round() as i32,
+                cy + (ry as f32 * a.sin()).round() as i32,
+            );
+            if let Some(q) = prev {
+                self.line(q.0, q.1, p.0, p.1);
+            }
+            prev = Some(p);
+        }
+    }
+
+    /// True when every dot is clear.
+    pub fn is_empty(&self) -> bool {
+        self.cells.iter().all(|c| *c == 0)
+    }
+
     /// Paints the canvas into `surface` at `origin` with `style`.
     pub fn paint_into(&self, surface: &mut Surface, origin: (u16, u16), style: Style) {
         for cy in 0..self.height {
@@ -240,6 +338,11 @@ impl HalfBlockCanvas {
         for p in &mut self.pixels {
             *p = None;
         }
+    }
+
+    /// True when no pixel is set.
+    pub fn is_empty(&self) -> bool {
+        self.pixels.iter().all(|p| p.is_none())
     }
 
     #[inline]
@@ -590,5 +693,56 @@ mod tests {
         let vals: Vec<f32> = (0..64).map(|i| (i as f32 * 0.3).sin()).collect();
         let c = braille_oscilloscope(&vals, 8, 2);
         assert!(c.to_lines().iter().any(|l| !l.trim().is_empty()));
+    }
+
+    #[test]
+    fn braille_rect_outline_and_fill() {
+        let mut outline = BrailleCanvas::new(3, 2); // 6 x 8 dots
+        outline.rect(0, 0, 6, 8);
+        assert!(outline.get(0, 0));
+        assert!(outline.get(5, 7));
+        assert!(!outline.get(3, 3), "outline must be hollow");
+
+        let mut filled = BrailleCanvas::new(3, 2);
+        filled.filled_rect(0, 0, 6, 8);
+        assert!(filled.get(3, 3), "filled rect must cover interior");
+    }
+
+    #[test]
+    fn braille_circle_is_round_and_bounded() {
+        let mut c = BrailleCanvas::new(8, 4); // 16 x 16 dots
+        c.circle(8, 8, 6);
+        assert!(c.get(8, 2), "top of circle");
+        assert!(c.get(8, 14), "bottom of circle");
+        assert!(c.get(2, 8), "left of circle");
+        assert!(c.get(14, 8), "right of circle");
+        assert!(!c.get(8, 8), "circle is hollow");
+    }
+
+    #[test]
+    fn braille_filled_circle_covers_centre() {
+        let mut c = BrailleCanvas::new(8, 4);
+        c.filled_circle(8, 8, 5);
+        assert!(c.get(8, 8));
+        assert!(!c.get(0, 0));
+    }
+
+    #[test]
+    fn braille_ellipse_and_polygon() {
+        let mut c = BrailleCanvas::new(8, 4);
+        c.ellipse(8, 8, 7, 3);
+        assert!(c.get(8, 5) || c.get(7, 5) || c.get(9, 5));
+        let mut p = BrailleCanvas::new(8, 4);
+        p.polygon(&[(1, 1), (14, 1), (14, 14), (1, 14)]);
+        assert!(p.get(1, 1) && p.get(14, 1) && p.get(14, 14) && p.get(1, 14));
+        assert!(!p.get(8, 8), "polygon outline is hollow");
+    }
+
+    #[test]
+    fn halfblock_is_empty_tracks_pixels() {
+        let mut c = HalfBlockCanvas::new(2, 1);
+        assert!(c.is_empty());
+        c.set_pixel(0, 0, (1, 2, 3));
+        assert!(!c.is_empty());
     }
 }

@@ -1,5 +1,6 @@
 use crate::cell::{Color, Line, RichText, Style};
-use crate::surface::{BorderType, Rect};
+use crate::surface::{BorderType, Rect, Surface};
+use std::sync::Arc;
 
 /// Flex direction for layout containers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -58,6 +59,13 @@ pub struct LayoutStyle {
     pub padding_right: f32,
     pub align_items: Option<AlignItems>,
     pub justify_content: Option<JustifyContent>,
+    /// When true this node is taken out of flow and positioned relative to its
+    /// parent's content origin by `(offset_x, offset_y)`. Signed offsets allow
+    /// off-screen placement; painting clips to the parent. Siblings never
+    /// reflow when the offset changes.
+    pub absolute: bool,
+    pub offset_x: f32,
+    pub offset_y: f32,
 }
 
 impl Default for LayoutStyle {
@@ -80,6 +88,9 @@ impl Default for LayoutStyle {
             padding_right: 0.0,
             align_items: None,
             justify_content: None,
+            absolute: false,
+            offset_x: 0.0,
+            offset_y: 0.0,
         }
     }
 }
@@ -154,6 +165,18 @@ pub enum NodeKind {
     /// A dim veil over its rectangle. Applied in-place on an opaque surface, or
     /// as a style-only layer when painted into a transparent scratch surface.
     Dim,
+    /// A clipped camera: its single child is translated by `(offset_x, offset_y)`
+    /// (in cells) and clipped to this node's rectangle. Pair with
+    /// [`crate::ViewportState`] for scrolling.
+    Viewport {
+        offset_x: i32,
+        offset_y: i32,
+    },
+    /// An already-rendered raster surface composited at this node's rectangle.
+    /// Held behind an `Arc` so cloning a node never duplicates the buffer.
+    Raster {
+        surface: Arc<Surface>,
+    },
 }
 
 /// A node in the declarative UI render tree.
@@ -211,6 +234,33 @@ impl Node {
     /// Creates a dim veil over the node's rectangle.
     pub fn dim() -> Self {
         Self::new(NodeKind::Dim)
+    }
+
+    /// Creates a clipped camera viewport. Its single child is translated by
+    /// `(offset_x, offset_y)` cells and clipped to the viewport rectangle.
+    pub fn viewport(offset_x: i32, offset_y: i32) -> Self {
+        Self::new(NodeKind::Viewport { offset_x, offset_y })
+    }
+
+    /// Creates a raster node from a shared surface (cheap to clone).
+    pub fn surface(surface: Arc<Surface>) -> Self {
+        Self::new(NodeKind::Raster { surface })
+    }
+
+    /// Creates a raster node owning a surface.
+    pub fn raster(surface: Surface) -> Self {
+        Self::surface(Arc::new(surface))
+    }
+
+    /// Positions this node absolutely inside its parent by `(x, y)` cells.
+    ///
+    /// The node is removed from flow, so moving it never reflows siblings.
+    /// Negative offsets (partly/fully off-screen) clip at the parent bounds.
+    pub fn offset(mut self, x: f32, y: f32) -> Self {
+        self.layout_style.absolute = true;
+        self.layout_style.offset_x = x;
+        self.layout_style.offset_y = y;
+        self
     }
 
     /// Creates a text node.

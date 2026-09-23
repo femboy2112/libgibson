@@ -364,6 +364,14 @@ fn measure_leaf(
             width: known_dimensions.width.unwrap_or(0.0),
             height: known_dimensions.height.unwrap_or(0.0),
         },
+        NodeKind::Viewport { .. } => Size {
+            width: known_dimensions.width.unwrap_or(0.0),
+            height: known_dimensions.height.unwrap_or(0.0),
+        },
+        NodeKind::Raster { surface } => Size {
+            width: known_dimensions.width.unwrap_or(surface.width as f32),
+            height: known_dimensions.height.unwrap_or(surface.height as f32),
+        },
         NodeKind::Box { border, .. } => {
             let min_s = if border.is_some() { 2.0 } else { 0.0 };
             Size {
@@ -386,6 +394,7 @@ fn build_taffy_tree(
     }
 
     let is_stack = matches!(node.kind, NodeKind::Stack);
+    let is_viewport = matches!(node.kind, NodeKind::Viewport { .. });
     let style = convert_style(&node.layout_style);
     let id = if child_ids.is_empty() {
         taffy.new_leaf_with_context(style, node.kind.clone())?
@@ -393,11 +402,17 @@ fn build_taffy_tree(
         taffy.new_with_children(style, &child_ids)?
     };
 
-    if is_stack {
-        // Overlay container: children are absolutely positioned to fill the
-        // stack's content box, so they contribute no intrinsic size and simply
-        // pile up in child order. Give the stack an explicit/percent/flex size.
-        for cid in &child_ids {
+    for (i, cid) in child_ids.iter().enumerate() {
+        let child_abs = node
+            .children
+            .get(i)
+            .map(|c| c.layout_style.absolute)
+            .unwrap_or(false);
+
+        if is_stack || child_abs {
+            // Stack children fill the content box; explicitly positioned layers
+            // are out of flow at the content origin (the painter applies their
+            // signed offset, so off-screen/negative placement still clips).
             let mut cs = taffy.style(*cid)?.clone();
             cs.position = Position::Absolute;
             cs.inset = TaffyRect {
@@ -406,6 +421,13 @@ fn build_taffy_tree(
                 top: LengthPercentageAuto::length(0.0),
                 bottom: LengthPercentageAuto::length(0.0),
             };
+            taffy.set_style(*cid, cs)?;
+        }
+
+        if is_viewport {
+            // The world may be larger than the camera; it must not shrink.
+            let mut cs = taffy.style(*cid)?.clone();
+            cs.flex_shrink = 0.0;
             taffy.set_style(*cid, cs)?;
         }
     }
