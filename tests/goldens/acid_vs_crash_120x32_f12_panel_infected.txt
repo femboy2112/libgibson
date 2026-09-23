@@ -1,0 +1,32 @@
+C R A S H   O V E R R I D E  //  LOCAL NODE
+MODEM LINK / LIVE / 000.4s / integrity 094% / 1 anomalous sessions
+─── SESSION HIJACK / AUTH lease contested ─────────────────────────────┌─  SESSION / PROCESS VIEW  <──────────────────┐─
+┌─  SYSTEM MAP / LOCAL FABRIC  ────────────────────────────────────────│SESSION  ACID BURN                            │
+│                                                                      │TARGET   AUTH                                 │
+│                               ■ MODEM                                │TRACE      4%  PASSIVE                        │
+│                            ◀ AB  ⠐⠗                                  ││&UBSYSTEM    OWNER      INTEGRITY
+│                                   ⡇                                  │MODEM        Cra*h     100%           @       │
+│                                   ⡇                                  │ROUTE        Contested 1@0%                   │
+│                                  ⢰⣲                                  │AUTH         Acid       62%                   @
+│                               ~ ROUTE                                │SHELL        Crash     100%                   │
+│                           ⢀⣄⠤⠒⠊⠉    ⠈⠉⠒⠤⢄⣀                           │FILES        Crash     100%   \               │
+│                       ⣀⡀⠒⠉ ⠁            ⠸⠽⠉⢴⠄⡀                       │DISPLAY      Crash     100%     *             │
+│                   ⢀⡠⠔⠉⠓⠃                     ⠈⠑⠢⢄                    │FIL@S / 0 altered entries        %            │
+│             < AUTH⡀                            ■ SHELL               │                                              │
+│                   ⠈⠉⣖⡆⠤⣀⡀                  ⢀⣀⠤⠔⠊⠉                    │                                  >           │
+│                         ⠈⠑⠢⢄⡀           ⡠⠔⠊⠁                         │                 %                            │
+│                             ⠈⢴⠄⣀    ⢀⠤⠒⠉                             └──────────────────────────**──────────────────┘
+│                               ■ FILES                                │
+│                                   ⠁                                  │┌─  REMOTE SESSION / read only  ───────────────┐
+│                               ■ DISPLAY                              ││your windows have good acoustics.             │
+│                                                                      ││                                              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+┌─  EVENT TRACE / causal receipts  ────────────────────────────────────┐┌─  CRASH / LOCAL CONTROL  ────────────────────┐
+│000.0  FIRST BREACH                                                   ││TRACE / ISOLATE / DECOY                       │
+│000.0  custom:SessionHijack                                           ││ISOLATE AUTH / KILL / HARD ISOLATE            │
+│                                                                      ││WATCH / TRACE / DROP available                │
+│                                                                      ││                                              │
+│                                                                      ││                                              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+crash > type a simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter command · Esc / Ctrl-C exit

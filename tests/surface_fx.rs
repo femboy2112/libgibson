@@ -366,3 +366,18 @@ fn style_mask_spreads_without_erasing_glyphs_or_transparency() {
         }
     }
 }
+
+#[test]
+fn ordinary_text_input_is_postprocessed_without_changing_its_data() {
+    let input = Node::text_input("unchanged 界", 3, None, Style::new())
+        .width(18.0)
+        .height(1.0);
+    let before = render(input.clone(), 18, 1);
+    let processed = render(input.clone().post_process([SurfaceFx::Reverse]), 18, 1);
+    for (a, b) in before.cells.iter().zip(&processed.cells) {
+        assert_eq!(a.glyph, b.glyph);
+        assert_eq!(a.transparent, b.transparent);
+    }
+    assert!(matches!(input.kind,NodeKind::TextInput{value,..} if value=="unchanged 界"));
+    valid(&processed);
+}

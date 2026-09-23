@@ -1,0 +1,32 @@
+C R A S H   O V E R R I D E  //  LOCAL NODE
+MODEM LINK / LIVE / 000.4s / integrity 094% / 1 anomalous sessions
+─── DECOY TRIGGERED / mirror occupied ──────────────────────────────────────────────────────────────────────────────────
+┌─  SYSTEM MAP / LOCAL FABRIC  ────────────────────────────────────────┐┌─  SESSION / PROCESS VIEW  ───────────────────┐
+│                                                                      ││SESSION  ACID BURN                            │
+│                               ■ MODEM                                ││TARGET   DECOY                                │
+│                            ◀ AB  ⠐⠗                                  ││TRACE     82%  PASSIVE                        │
+│                                   ⡇                                  ││SUBSYSTEM    OWNER      INTEGRITY             │
+│                                   ⡇                                  ││MODEM        Crash     100%                   │
+│                                  ⢰⣲                                  ││ROUTE        Contested 100%                   │
+│                               ~ ROUTE                                ││AUTH         Crash      62%                   │
+│                           ⢀⣄⠤⠒⠊⠉    ⠈⠉⠒⠤⢄⣀                           ││SHELL        Crash     100%                   │
+│                       ⣀⡀⠒⠉ ⠁            ⠸⠽⠉⢴⠄⡀                       ││FILES        Crash     100%                   │
+│                   ⢀⡠⠔⠉⠓⠃                     ⠈⠑⠢⢄                    ││DISPLAY      Crash     100%                   │
+│             ■ AUTH⡀                            ■ SHELL               ││FILES / 0 altered entries                     │
+│                   ⠈⠉⠒⠢⠤⣀⡀                  ⢀⣀⠤⠔⠊⠉                    ││                                              │
+│                         ⠈⠑⠢⢄⡀           ⡠⠔⠊⠁                         ││                                              │
+│ ┌    I R R  I  S    EC    ─ ⠈⢴⠄⣀    ⢀⠤⠒⠉                             ││                                              │
+│    ACI               se    │  ■ FILES                                │└──────────────────────────────────────────────┘
+│    re l   l    x  s d             ⠁                                  │┌─  REMOTE SESSION / read only  ───────────────┐
+│    ─     ───       ─  ───     ■ DISPLAY                              ││this room looks familiar.                     │
+│                                                                      ││                                              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+┌─  EVENT TRACE / causal receipts  ────────────────────────────────────┐┌─  CRASH / LOCAL CONTROL  ────────────────────┐
+│000.0  DECOY                                                          ││TRACE / ISOLATE / DECOY                       │
+│                                                                      ││ISOLATE AUTH / KILL / HARD ISOLATE            │
+│                                                                      ││WATCH / TRACE / DROP available                │
+│                                                                      ││                                              │
+│                                                                      ││                                              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+crash > type a simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter command · Esc / Ctrl-C exit

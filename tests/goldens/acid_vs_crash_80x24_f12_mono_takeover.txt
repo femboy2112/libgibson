@@ -1,0 +1,24 @@
+
+ C R\A S @   O V E R^R I D E  */  LOCAL NODE   ~             +   ++
+ MODEM LINK / LIVE / \00.4s / integrity 082% / 1 anomalous se sions           +
+  ─^─ DI~PLAY TAKEOVER / com an% island sur&ives ──────────────────────────=────
+                                                ┌─  SESSION / PROCESS VIEW  <──
+  ┌─  SYSTEM MAP / LOCAL FABRIC  ───────────────│SESSION  ACID BUR
+  │              ◀ AB                            │TARGET   DISPLAY
+   │                   ■ MODEM                   │TRACE      4%  PASSIV
+   │                      ⢀⣀                      │DISPLAY  Acid  31%
+   │                   ~ ROUTE                  │ROUTE Conteste  / AUTH  cid
+  │                ⣀⠤⢴⠄⠉    ⠈⠑⡤⡄⡀                │L&CAL FABRIC ONLINE
+   │              ⠸⠽           ⠉⠁⠋⠑⠤⡀             └────────────────────────────
+      │       < AUTH⢠⢤⠤⠤⠤⣀⡀      ⢀⣀⠤⠤~ SHELL     ┌─  REMOTE SESSION / read onl ─
+     │             ⠈⠉    ■ FILE ⠁                │i can almost fit the whole roo
+    │                   < DISPLAY                 │
+  │                                             ┌─  CRASH / LOCAL CONTROL  ────┐
+ ┌─  EVENT TRACE / causal receipts  ────────────│CUT LINK / LET HER IN         │
+ │000.0  TAKEOVER                               │TRACE or DECOY to prepare a co│
+  │                                             │DECOY / HARD ISOLATE / TRACE T│
+  │                                             │                              │
+  │                                             │                              │
+ │                                              └──────────────────────────────┘
+crash > type a simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter command · Esc / Ctrl-C exit

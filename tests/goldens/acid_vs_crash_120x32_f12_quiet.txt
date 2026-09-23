@@ -1,0 +1,32 @@
+C R A S H   O V E R R I D E  //  LOCAL NODE
+MODEM LINK / LIVE / 000.4s / integrity 100% / 0 anomalous sessions
+─── LOCAL NODE / all routes nominal ────────────────────────────────────────────────────────────────────────────────────
+┌─  SYSTEM MAP / LOCAL FABRIC  ────────────────────────────────────────┐┌─  SESSION / PROCESS VIEW  ───────────────────┐
+│                                                                      ││SESSION  UNRESOLVED                           │
+│                               ■ MODEM                                ││TARGET   ROUTE                                │
+│                                  ⠐⠗                                  ││TRACE      0%  PASSIVE                        │
+│                                   ⡇                                  ││SUBSYSTEM    OWNER      INTEGRITY             │
+│                                   ⡇                                  ││MODEM        Crash     100%                   │
+│                                   ⡇                                  ││ROUTE        Crash     100%                   │
+│                               ■ ROUTE                                ││AUTH         Crash     100%                   │
+│                           ⢀⣄⠤⠒⠊⠉    ⠈⠉⠒⠤⢄⣀                           ││SHELL        Crash     100%                   │
+│                       ⣀⠤⠒⠉ ⠁              ⠉⢴⠄⡀                       ││FILES        Crash     100%                   │
+│                   ⢀⡠⠔⠉                       ⠈⠑⠢⢄                    ││DISPLAY      Crash     100%                   │
+│             ■ AUTH⡀                            ■ SHELL               ││FILES / 0 altered entries                     │
+│                   ⠈⠉⠒⠢⠤⣀⡀                  ⢀⣀⠤⠔⠊⠉                    ││                                              │
+│                         ⠈⠑⠢⢄⡀           ⡠⠔⠊⠁                         ││                                              │
+│                             ⠈⢴⠄⣀    ⢀⠤⠒⠉                             ││                                              │
+│                               ■ FILES                                │└──────────────────────────────────────────────┘
+│                                   ⠁                                  │┌─  REMOTE SESSION / read only  ───────────────┐
+│                               ■ DISPLAY                              ││link idle                                     │
+│                                                                      ││                                              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+┌─  EVENT TRACE / causal receipts  ────────────────────────────────────┐┌─  CRASH / LOCAL CONTROL  ────────────────────┐
+│000.0  QUIET                                                          ││TRACE / ISOLATE / DECOY                       │
+│                                                                      ││ISOLATE AUTH / KILL / HARD ISOLATE            │
+│                                                                      ││LOCAL CONTROL / awaiting input                │
+│                                                                      ││                                              │
+│                                                                      ││                                              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+crash > type a simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter command · Esc / Ctrl-C exit

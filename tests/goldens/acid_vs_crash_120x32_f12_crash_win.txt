@@ -1,0 +1,32 @@
+C R A S H   O V E R R I D E  //  LOCAL NODE
+LINK CUT / CRASH CONTAINS / 000.0s / integrity 082% / 0 anomalous sessions
+─── LINK CUT / Crash contains ──────────────────────────────────────────────────────────────────────────────────────────
+  ┌─  SYSTEM MAP / LOCAL FABRIC  ───────────────────────────────────────┌─  SESSION / PROCESS VIEW  ───────────────────┐
+  │                                                                     │SESSION  ACID BURN                            │
+  │                               ■ MODEM                               │TARGET   DISPLAY                              │
+  │                                   ⡇                                 │TRACE    100%  PASSIVE                        │
+  │                                   ⡇                                 │SUBSYSTEM    OWNER      INTEGRITY             │
+  │                                   ⡇                                 │MODEM        Crash     100%                   │
+  │                                   ⡇                                 │ROUTE        Crash     100%                   │
+  │                               ■ ROUTE                               │AUTH         Crash      62%                   │
+  │                           ⣀⡠⠤⠒⠺⠂    ⠈⠉⠒⠤⡀⣀                          │SHELL        Crash     100%                   │
+  │                       ⣀⠤⠒⠉             ⠈⠋ ⠉⠒⠤⡀                      │FILES        Crash     100%                   │
+  │                   ⢀⡠⠔⠉                       ⠈⠑⠢⢄                   │DISPLAY      Crash      31%                   │
+  │             ■ AUTH⡀                            ■ SHELL              │FILES / 0 altered entries                     │
+  │                   ⠈⠉⠒⠢⠤⣀⡀                  ⢀⣀⠤⠔⠊⠉                   │                                              │
+  │                         ⠈⢀⣄⢄⡀           ⡠⠔⠊⠁                        │                                              │
+  │                           ⠁ ⠈⠑⠤⣀    ⢀⠠⡦⠉                            │                                              │
+  │                               ■ FILES                               └──────────────────────────────────────────────┘
+  │                                   ⡇                                 ┌─  REMOTE SESSION / read only  ───────────────┐
+  │                               ■ DISPLAY                             │nice catch. keep the receipt.                 │
+  │                                                                     │                                              │
+  └─────────────────────────────────────────────────────────────────────└──────────────────────────────────────────────┘
+┌─  EVENT TRACE / causal receipts  ────────────────────────────────────┐┌─  CRASH / BATTLE SHELL  ─────────────────────┐
+│000.0  CRASH WIN                                                      ││replay · facts · trace · damage               │
+│                                                                      ││scene · acid · crash · reset · exit           │
+│                                                                      ││DECOY / HARD ISOLATE / TRACE TOKEN            │
+│                                                                      ││                                              │
+│                                                                      ││                                              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+crash > type a simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter command · Esc / Ctrl-C exit

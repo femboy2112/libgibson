@@ -1,0 +1,32 @@
+C R A S H   O V E R R I D E  //  LOCAL NODE
+MODEM LINK / LIVE / 000.4s / integrity 094% / 1 anomalous sessions
+─── TRACE NOTICED / source route splits ────────────────────────────────────────────────────────────────────────────────
+┌─  SYSTEM MAP / LOCAL FABRIC  ────────────────────────────────────────┌─  SESSION / PROCESS VIEW  <──────────────────┐
+│ TRACE 64% ↗                 ⢄     ⡄    ⢀⠄                            │SESSION  ACID BURN                            │
+│                             ⠈⢆■ MODEM⠤⢀⠎⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⠤⡄ │TARGET   DISPLAY                              │
+│                            ◀ AB  ⠐⡇  ⢀⠎                            ⡇ │TRACE     64%  RETURN TOKEN                   │
+│                               ⠈⢢  ⡇ ⢠⠊                             ⡇ ││&UBSYSTEM    OWNER      INTEGRITY
+│                                 ⢣ ⡇⢠⠃                              ⡇ │MODEM        Cra*h     100%           @       │
+│                                  ⢣⣧⠃                               ⡇ │ROUTE        Contested 1@0%                   │
+│                               ~ ROUTE                              ⡇ │AUTH         Acid       62%                   @
+│                           ⢀⣄⠤⠒⠊⠉    ⠈⠉⠒⠤⢄⣀                         ⡇ │SHELL        Crash     100%                   │
+│                       ⣀⡀⠒⠉ ⠁            ⠸⠽⠉⢴⠄⡀                     ⡇ │FILES        Crash     100%   \               │
+│                   ⢀⡠⠔⠉⠓⠃                     ⠈⠑⠢⢄                  ⡇ │DISPLAY      Crash     100%     *             │
+│             < AUTH⡀                            ■ SHELL             ⡇ │FIL@S / 0 altered entries        %            │
+│                   ⠈⠉⣖⡆⠤⣀⡀                  ⢀⣀⠤⠔⠊⠉                  ⡇ │                                              │
+│                         ⠈⠑⠢⢄⡀           ⡠⠔⠊⠁                       ⡇ │                                  >           │
+│                             ⠈⢴⠄⣀    ⢀⠤⠒⠉                           ⡇ │                 %                            │
+│                               ■ FILES                              ⡇ └──────────────────────────**──────────────────┘
+│                                   ⠁                                ⡇ │┌─  REMOTE SESSION / read only  ───────────────┐
+│                               ■ DISPLAY⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠉⠁ ││following me? keep up.                        │
+│                                                                      ││                                              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+┌─  EVENT TRACE / causal receipts  ────────────────────────────────────┐┌─  CRASH / LOCAL CONTROL  ────────────────────┐
+│000.0  TRACE                                                          ││TRACE / ISOLATE / DECOY                       │
+│                                                                      ││ISOLATE AUTH / KILL / HARD ISOLATE            │
+│                                                                      ││WATCH / TRACE / DROP available                │
+│                                                                      ││                                              │
+│                                                                      ││                                              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+crash > type a simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter command · Esc / Ctrl-C exit

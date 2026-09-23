@@ -304,6 +304,123 @@ const CASES: &[Case] = &[
         secs: 1.2,
         extra: &["--scene=19"],
     },
+    Case {
+        demo: "acid_vs_crash",
+        label: "quiet",
+        cols: 120,
+        rows: 32,
+        freeze: 12,
+        secs: 0.8,
+        extra: &["--stage=quiet"],
+    },
+    Case {
+        demo: "acid_vs_crash",
+        label: "signature",
+        cols: 120,
+        rows: 32,
+        freeze: 12,
+        secs: 0.8,
+        extra: &["--stage=signature"],
+    },
+    Case {
+        demo: "acid_vs_crash",
+        label: "route_contested",
+        cols: 120,
+        rows: 32,
+        freeze: 12,
+        secs: 0.8,
+        extra: &["--stage=route-contested"],
+    },
+    Case {
+        demo: "acid_vs_crash",
+        label: "panel_infected",
+        cols: 120,
+        rows: 32,
+        freeze: 12,
+        secs: 0.8,
+        extra: &["--stage=first-breach"],
+    },
+    Case {
+        demo: "acid_vs_crash",
+        label: "display_intrusion",
+        cols: 120,
+        rows: 32,
+        freeze: 12,
+        secs: 0.8,
+        extra: &["--stage=display-intrusion"],
+    },
+    Case {
+        demo: "acid_vs_crash",
+        label: "decoy",
+        cols: 120,
+        rows: 32,
+        freeze: 12,
+        secs: 0.8,
+        extra: &["--stage=decoy"],
+    },
+    Case {
+        demo: "acid_vs_crash",
+        label: "trace",
+        cols: 120,
+        rows: 32,
+        freeze: 12,
+        secs: 0.8,
+        extra: &["--stage=trace"],
+    },
+    Case {
+        demo: "acid_vs_crash",
+        label: "climax",
+        cols: 120,
+        rows: 32,
+        freeze: 12,
+        secs: 0.8,
+        extra: &["--stage=climax"],
+    },
+    Case {
+        demo: "acid_vs_crash",
+        label: "crash_win",
+        cols: 120,
+        rows: 32,
+        freeze: 12,
+        secs: 0.8,
+        extra: &["--stage=crash-win"],
+    },
+    Case {
+        demo: "acid_vs_crash",
+        label: "acid_win",
+        cols: 120,
+        rows: 32,
+        freeze: 12,
+        secs: 0.8,
+        extra: &["--stage=acid-win"],
+    },
+    Case {
+        demo: "acid_vs_crash",
+        label: "stalemate",
+        cols: 120,
+        rows: 32,
+        freeze: 12,
+        secs: 0.8,
+        extra: &["--stage=stalemate"],
+    },
+    Case {
+        demo: "acid_vs_crash",
+        label: "narrow",
+        cols: 56,
+        rows: 24,
+        freeze: 12,
+        secs: 0.8,
+        extra: &["--stage=display-intrusion"],
+    },
+    Case {
+        demo: "acid_vs_crash",
+        label: "mono_takeover",
+        cols: 80,
+        rows: 24,
+        freeze: 12,
+        secs: 0.8,
+        extra: &["--stage=takeover"],
+    },
 ];
 
 fn example_path(name: &str) -> PathBuf {
@@ -399,9 +516,21 @@ fn golden_path(case: &Case) -> PathBuf {
 
 #[test]
 fn visual_goldens() {
+    check_goldens(false);
+}
+
+#[test]
+fn acid_cinematic_goldens() {
+    check_goldens(true);
+}
+
+fn check_goldens(acid: bool) {
     let update = std::env::var("UPDATE_GOLDENS").is_ok();
     let mut failures = Vec::new();
-    for case in CASES {
+    for case in CASES
+        .iter()
+        .filter(|case| (case.demo == "acid_vs_crash") == acid)
+    {
         let actual = capture_screen(case);
         let path = golden_path(case);
         if update || !path.exists() {

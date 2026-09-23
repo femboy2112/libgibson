@@ -1,0 +1,32 @@
+A C I D   B U R N  //  borrowed display
+MODEM LINK / ACID WINS THE ROUND / 000.4s / integrity 082% / 1 anomalous sessions
+─── DISPLAY OWNER / Acid wins the round ────────────────────────────────────────────────────────────────────────────────
+ ┌─  SYSTEM MAP / LOCAL FABRIC  ───────────────────────────────────────┌─  SESSION / PROCESS VIEW  ───────────────────┐
+ │                                                                     │SESSION  ACID BURN                            │
+ │                               ■ MODEM                               │TARGET   DISPLAY                              │
+ │                                  ⠐⠗                                 │TRACE      4%  PASSIVE                        │
+ │                                   ⡇                                 │SUBSYSTEM    OWNER      INTEGRITY             │
+ │                                   ⡇                                 │MODEM        Crash     100%                   │
+ │                                  ⢰⣲                                 │ROUTE        Contested 100%                   │
+ │                               ~ ROUTE                               │AUTH         Acid       62%                   │
+ │                           ⢀⣄⠤⠒⠊⠉    ⠈⠉⠒⠤⢄⣀                          │SHELL        Contested 100%                   │
+ │                       ⣀⡀⠒⠉ ⠁            ⠸⠽⠉⢴⠄⡀                      │FILES        Crash     100%                   │
+ │                   ⢀⡠⠔⠉⠓⠃                     ⠈⠑⠢⢄                   │DISPLAY      Acid       31%                   │
+ │             < AUTH⡀                            ~ SHELL              │FILES / 0 altered entries                     │
+ │                   ⠈⠉⣖⡆⠤⣀⡀                  ⢀⣀⠤⠔⠊⠉                   │                                              │
+ │                         ⠈⠑⠢⢄⡀           ⡠⠔⠊⠁                        │                                              │
+ │                             ⠈⢴⠄⣀    ⢀⠤⠒⠉                            │                                              │
+ │                               ■ FILES                               └──────────────────────────────────────────────┘
+ │                                  ⢀⣀                                  ┌─  REMOTE SESSION / read only  ───────────────┐
+ │                               < DISPLAY                              │borrowed your screen. left it better.         │
+ │                                                                      │                                              │
+ └──────────────────────────────────────────────────────────────────────└──────────────────────────────────────────────┘
+┌─  EVENT TRACE / causal receipts  ────────────────────────────────────┐┌─  CRASH / LOCAL CONTROL  ────────────────────┐
+│000.0  ACID WIN                                                       ││TRACE / ISOLATE / DECOY                       │
+│                                                                      ││ISOLATE AUTH / KILL / HARD ISOLATE            │
+│                                                                      ││DECOY / HARD ISOLATE / TRACE TOKEN            │
+│                                                                      ││                                              │
+│                                                                      ││                                              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+crash > type a simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter command · Esc / Ctrl-C exit

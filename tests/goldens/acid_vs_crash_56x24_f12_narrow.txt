@@ -1,0 +1,24 @@
+C R\A S @   O V E R^R I D E  */  LOCAL$NODE   ~
+MODE+ LI++ / LIVE / 000.4s / integrity 089% \ 1 anomalou
+─── DISPLAY INTRUSION / existing surfaces con+est^d ──~─
+
+ ┌─  SYSTEM MAP / LOCAL FABRIC  ────────────────────────
+ │
+ │                   ◀ AB■ MODEM
+ │                          ⢀⣀
+ │                       ~ ROUTE
+ │                   ⣀⠤⢴⠄⠉⠁    ⠈⠉⠑⡤⡄⡀
+ │               ⢀⡠⠸⠽             ⠉⠁⠋⠉⠢⢄
+   │         < AUTH⠤⡤⡄⠤⠤⠤⣀⣀        ⢀⣀⠤⠤⠤■ SHELL
+   │                ⠉⠁     ■ FILES⠉⠁
+ │                       ~ DISPLAY
+ │
+ACID BURN > still there?────────────────────────────────
+DISPLAY Contested / TRACE 4% / LINK OPEN
+┌─  CRASH / LOCAL CONTROL  ────────────────────────────┐
+│TRACE / ISOLATE / DECOY                               │
+│ISOLATE AUTH / KILL / HARD ISOLATE                    │
+│WATCH / TRACE / DROP available                        │
+└──────────────────────────────────────────────────────┘
+crash > type a simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter command · Esc / C

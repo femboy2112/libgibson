@@ -1,0 +1,192 @@
+//! Whole-frame and bounded-damage evidence for the actual fictional encounter.
+#[allow(dead_code)]
+#[path = "../examples/acid_vs_crash.rs"]
+mod encounter;
+
+use encounter::Encounter;
+use gibson::*;
+use std::time::Duration;
+
+fn surface(mut root: Node, w: u16, h: u16) -> Surface {
+    compute_layout(&mut root, w, h).unwrap();
+    let mut s = Surface::new(w, h);
+    paint(&root, &mut s);
+    s
+}
+fn rows(s: &Surface) -> Vec<String> {
+    (0..s.height)
+        .map(|y| {
+            (0..s.width)
+                .filter_map(|x| {
+                    let c = s.get(x, y).unwrap();
+                    (!c.is_continuation).then_some(c.glyph.grapheme.as_str())
+                })
+                .collect::<String>()
+                .trim_end()
+                .to_string()
+        })
+        .collect()
+}
+fn valid(s: &Surface) {
+    for y in 0..s.height {
+        for x in 0..s.width {
+            let c = s.get(x, y).unwrap();
+            if c.is_continuation {
+                assert!(x > 0);
+                assert_eq!(s.get(x - 1, y).unwrap().glyph.display_width, 2);
+            } else if c.glyph.display_width == 2 {
+                assert!(s.get(x + 1, y).is_some_and(|c| c.is_continuation));
+            }
+        }
+    }
+}
+#[test]
+fn actual_story_frames_match_whole_renderer_vt100_across_sizes() {
+    for (w, h) in [(56, 24), (80, 24), (120, 32), (160, 40)] {
+        let mut renderer = Renderer::new(RenderMode::Fullscreen);
+        let mut terminal = TerminalSession::headless(w, h);
+        let mut parser = vt100::Parser::new(h, w, 0);
+        for stage in encounter::STAGES {
+            let mut e = Encounter::new(stage, true);
+            e.update(Duration::from_millis(400), &[]);
+            let expected = surface(e.frame(w, h), w, h);
+            valid(&expected);
+            let mut wire = Vec::new();
+            renderer
+                .render(&mut e.frame(w, h), &mut terminal, &mut wire)
+                .unwrap();
+            parser.process(&wire);
+            let got = parser
+                .screen()
+                .rows(0, w)
+                .map(|s| s.trim_end().to_string())
+                .collect::<Vec<_>>();
+            assert_eq!(got, rows(&expected), "{stage} at {w}x{h}");
+            let text = got.join("\n");
+            assert!(
+                text.contains("crash >"),
+                "control island missing in {stage} at {w}x{h}"
+            );
+            wire.clear();
+            let (_, _, bytes, _, _) = renderer
+                .render(&mut e.frame(w, h), &mut terminal, &mut wire)
+                .unwrap();
+            assert_eq!(bytes, 0, "frozen {stage} at {w}x{h}");
+            assert!(wire.is_empty());
+        }
+    }
+}
+
+fn measure(label: &str, a: Node, b: Node, w: u16, h: u16) -> (usize, usize, usize) {
+    let previous = surface(a.clone(), w, h);
+    let next = surface(b.clone(), w, h);
+    let diff = compute_diff(Some(&previous), &next);
+    let mut renderer = Renderer::new(RenderMode::Fullscreen);
+    let mut terminal = TerminalSession::headless(w, h);
+    let mut wire = Vec::new();
+    renderer
+        .render(&mut a.clone(), &mut terminal, &mut wire)
+        .unwrap();
+    wire.clear();
+    let (_, _, bytes, _, _) = renderer
+        .render(&mut b.clone(), &mut terminal, &mut wire)
+        .unwrap();
+    eprintln!(
+        "{label}: exact={} affected={} wire={bytes}",
+        diff.exact_changed_cell_count(),
+        diff.affected_cell_count()
+    );
+    (
+        diff.exact_changed_cell_count(),
+        diff.affected_cell_count(),
+        bytes,
+    )
+}
+#[test]
+fn real_ghost_cursor_and_route_motion_have_bounded_damage() {
+    let mut e = Encounter::new("ghost", false);
+    e.update(Duration::from_millis(600), &[]);
+    let a = e.frame(120, 32);
+    let mut b = a.clone();
+    // Hold the world fixed and move only its actual ghost entity by one cell.
+    let cursor = b
+        .children
+        .iter_mut()
+        .find(|n| matches!(&n.kind,NodeKind::Text{text,..} if text.contains("◀ AB")))
+        .expect("ghost scene entity");
+    cursor.layout_style.offset_x += 1.0;
+    let (exact, affected, bytes) = measure("ghost one cell", a, b, 120, 32);
+    assert!((1..=12).contains(&exact));
+    assert!(affected <= 12);
+    assert!(bytes < 400);
+
+    let mut quiet = Encounter::new("quiet", false);
+    let a = quiet.frame(120, 32);
+    quiet.update(Duration::from_millis(100), &[]);
+    let mut b = a.clone();
+    let advanced = quiet.frame(120, 32);
+    // Isolate the real map's packet advancement from the machine clock label.
+    b.children[1] = advanced.children[1].clone();
+    let (exact, affected, bytes) = measure("route packets 100ms", a, b, 120, 32);
+    assert!(exact > 0);
+    assert!(exact < 120 * 32 / 4);
+    assert!(affected < 120 * 32 / 3);
+    assert!(bytes < 4000);
+}
+#[test]
+fn display_counter_removes_invasion_without_corrupting_control_island() {
+    let mut e = Encounter::new("takeover", false);
+    e.update(Duration::from_secs(3), &[]);
+    let before = e.frame(120, 32);
+    let before_surface = surface(before.clone(), 120, 32);
+    assert!(e.command("hard isolate"));
+    let after = e.frame(120, 32);
+    let after_surface = surface(after.clone(), 120, 32);
+    for y in 30..32 {
+        for x in 0..120 {
+            assert_eq!(
+                before_surface.get(x, y),
+                after_surface.get(x, y),
+                "command island {x},{y}"
+            );
+        }
+    }
+    assert!(!e
+        .director()
+        .mounted()
+        .any(|b| b == "takeover" || b == "display-presence"));
+    let (exact, _, _) = measure("display removal", before, after, 120, 32);
+    assert!(exact > 200);
+    assert!(e.replay_matches());
+}
+
+#[test]
+fn ghost_input_never_edits_crash_buffer_and_live_resize_keeps_renderer_correct() {
+    let mut e = Encounter::new("takeover", true);
+    e.input.insert_str("my unfinished response 界 e\u{301}");
+    let original = e.input.text.clone();
+    let cursor = e.input.cursor_grapheme;
+    let mut renderer = Renderer::new(RenderMode::Fullscreen);
+    let mut terminal = TerminalSession::headless(120, 32);
+    let mut parser = vt100::Parser::new(32, 120, 0);
+    for (w, h) in [(120, 32), (56, 24), (160, 40), (80, 24), (120, 32)] {
+        terminal.set_terminal_size(w, h);
+        parser.set_size(h, w);
+        e.tick(Duration::from_millis(150), false);
+        let expected = surface(e.frame(w, h), w, h);
+        let mut wire = Vec::new();
+        renderer
+            .render(&mut e.frame(w, h), &mut terminal, &mut wire)
+            .unwrap();
+        parser.process(&wire);
+        assert_eq!(e.input.text, original);
+        assert_eq!(e.input.cursor_grapheme, cursor);
+        let actual = parser
+            .screen()
+            .rows(0, w)
+            .map(|s| s.trim_end().to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(actual, rows(&expected), "live resize {w}x{h}");
+        assert!(e.replay_matches());
+    }
+}
