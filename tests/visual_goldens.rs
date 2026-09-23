@@ -21,10 +21,13 @@ use std::time::{Duration, Instant};
 
 struct Case {
     demo: &'static str,
+    /// Distinguishes multiple goldens that share a demo/size/freeze.
+    label: &'static str,
     cols: u16,
     rows: u16,
     freeze: usize,
     secs: f64,
+    extra: &'static [&'static str],
 }
 
 const CASES: &[Case] = &[
@@ -34,6 +37,8 @@ const CASES: &[Case] = &[
         rows: 24,
         freeze: 50,
         secs: 1.6,
+        label: "",
+        extra: &[],
     },
     Case {
         demo: "polished_agent",
@@ -41,6 +46,8 @@ const CASES: &[Case] = &[
         rows: 32,
         freeze: 50,
         secs: 1.6,
+        label: "",
+        extra: &[],
     },
     Case {
         demo: "polished_agent",
@@ -48,6 +55,8 @@ const CASES: &[Case] = &[
         rows: 20,
         freeze: 40,
         secs: 1.6,
+        label: "",
+        extra: &[],
     },
     Case {
         demo: "hack_the_gibson",
@@ -55,6 +64,8 @@ const CASES: &[Case] = &[
         rows: 32,
         freeze: 120,
         secs: 1.8,
+        label: "",
+        extra: &[],
     },
     Case {
         demo: "hack_the_gibson",
@@ -62,6 +73,26 @@ const CASES: &[Case] = &[
         rows: 24,
         freeze: 90,
         secs: 1.8,
+        label: "",
+        extra: &[],
+    },
+    Case {
+        demo: "fx_lab",
+        label: "torus",
+        cols: 100,
+        rows: 28,
+        freeze: 30,
+        secs: 1.6,
+        extra: &["--scene=5"],
+    },
+    Case {
+        demo: "fx_lab",
+        label: "plasma",
+        cols: 100,
+        rows: 28,
+        freeze: 40,
+        secs: 1.6,
+        extra: &["--scene=2"],
     },
 ];
 
@@ -99,6 +130,9 @@ fn capture_screen(case: &Case) -> String {
     cmd.arg("--no-color");
     cmd.arg("--deterministic");
     cmd.arg(format!("--freeze-at={}", case.freeze));
+    for a in case.extra {
+        cmd.arg(a);
+    }
     cmd.env("TERM", "xterm-256color");
     let mut child = pair.slave.spawn_command(cmd).expect("spawn");
     let mut killer = child.clone_killer();
@@ -140,8 +174,16 @@ fn golden_path(case: &Case) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/goldens");
     let _ = std::fs::create_dir_all(&dir);
     dir.join(format!(
-        "{}_{}x{}_f{}.txt",
-        case.demo, case.cols, case.rows, case.freeze
+        "{}_{}x{}_f{}{}.txt",
+        case.demo,
+        case.cols,
+        case.rows,
+        case.freeze,
+        if case.label.is_empty() {
+            String::new()
+        } else {
+            format!("_{}", case.label)
+        }
     ))
 }
 

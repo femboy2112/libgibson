@@ -1,13 +1,13 @@
-◢ LIBGIBSON  ● ONLINE    ◐ v2    ╭─ TOAST ───────────────────────────────────╮
-╭─ TASK PLAN ────────────────────│◆ diagnostics refreshed · 0 warnings       │─╮
-│✔ research █████████████████████╰───────────────────────────────────────────╯ │
-│✔ search   █████████████████████████████ 100%│ │✔ research src/renderer.rs    │
-│◐ build    ████████████████████████████─  96%│ │✔ search   insert_before_live │
+◢ LIBGIBSON  ● ONLINE    ◐ v2
+╭─ TASK PLAN ─────────────────────────────────╮ ╭─ TRANSCRIPT ─────────────────╮
+│✔ research █████████████████████╭─ TOAST ───────────────────────────────────╮ │
+│✔ search   █████████████████████│◆ diagnostics refreshed · 0 warnings       │ │
+│◐ build    █████████████████████╰───────────────────────────────────────────╯ │
 │· patch    ─────────────────────────────   0%│ │                              │
 │                                             │ │                              │
 ╰─────────────────────────────────────────────╯ ╰──────────────────────────────╯
 ╭─ STREAM ────────────────────────────────────╮ ╭─ TELEMETRY ──────────────────╮
-│I audited the differential pipeline and the  │ │frame   146 B   frames 49     │
+│I audited the differential pipeline and the  │ │frame   115 B   frames 49     │
 │scrollback handoff. The live region now      │ │────────────────────────────  │
 │tracks an explicit physical anchor, so a     │ │⢹                             │
 │resize forces a full re-anchor instead of    │ │ ⣇⣀⣀⣀⣀⣀⣀⠤⡠⣀⣀⣀⣀⣀⢄⣀⣀⣀⢦⣀⡠⣀⣀⣀⣀⢄⣀  │

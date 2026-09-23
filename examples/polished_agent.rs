@@ -582,13 +582,35 @@ fn permission_overlay(app: &App) -> Node {
                 .percent_height(100.0)
                 .align_items(gibson::node::AlignItems::Center)
                 .justify_content(gibson::node::JustifyContent::Center)
-                .child(
-                    Node::panel("PERMISSION", BorderType::Rounded, fx.st.warning)
-                        .width(44.0)
-                        .height(7.0)
-                        .background(Color::Reset)
-                        .child(Node::rich_text_wrapped(body, WrapMode::NoWrap)),
-                ),
+                .child(modal_with_shadow(fx, body)),
+        )
+}
+
+/// A floating modal with a block-glyph drop shadow. The shadow is a raster layer
+/// offset by one cell so it only peeks along the right/bottom edges; the opaque
+/// panel hides the rest. No reflow, no fake alpha.
+fn modal_with_shadow(fx: &Fx, body: RichText) -> Node {
+    let mut shadow = gibson::surface::Surface::new_transparent(44, 7);
+    shadow.fill_rect(
+        gibson::surface::Rect::new(0, 0, 44, 7),
+        gibson::cell::Cell::new(gibson::cell::Glyph::new("░"), Style::new().dim()),
+    );
+    Node::stack()
+        .width(46.0)
+        .height(8.0)
+        .child(
+            Node::raster(shadow)
+                .width(44.0)
+                .height(7.0)
+                .offset(1.0, 1.0),
+        )
+        .child(
+            Node::panel("PERMISSION", BorderType::Rounded, fx.st.warning)
+                .width(44.0)
+                .height(7.0)
+                .background(Color::Reset)
+                .offset(0.0, 0.0)
+                .child(Node::rich_text_wrapped(body, WrapMode::NoWrap)),
         )
 }
 
@@ -615,7 +637,8 @@ fn toast_overlay(app: &App, text: &str, age: f32) -> Node {
         .percent_height(100.0)
         .align_items(gibson::node::AlignItems::End)
         .justify_content(gibson::node::JustifyContent::Start)
-        .padding_top(pad_top)
+        // Keep the toast below the panel title rows so it never hides them.
+        .padding_top(2.0 + pad_top)
         .padding_right(2.0)
         .child(
             Node::panel("TOAST", BorderType::Rounded, fx.st.border)
@@ -745,9 +768,21 @@ fn panel_transcript(app: &App, width: u16) -> Node {
     for line in &app.transcript {
         rt = rt.line(line.clone());
     }
+    // A clipped camera keeps the transcript pinned to the newest lines without
+    // reflowing the panel; long histories scroll through the viewport.
+    let content_h = rt.lines.len() as u16;
+    let view_h = 6u16;
+    let mut cam = gibson::ViewportState::new();
+    cam.offset_y = content_h.saturating_sub(view_h) as i32;
+    cam.clamp(inner as u16, content_h.max(view_h), inner as u16, view_h);
     tpanel("TRANSCRIPT", fx.st.border)
         .percent_width(100.0)
-        .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
+        .child(
+            Node::viewport(cam.offset_x, cam.offset_y)
+                .percent_width(100.0)
+                .percent_height(100.0)
+                .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap).width(inner as f32)),
+        )
 }
 
 fn panel_telemetry(app: &App, width: u16) -> Node {
@@ -858,6 +893,37 @@ fn panel_footer(app: &App, width: u16) -> Node {
 // main
 // ---------------------------------------------------------------------------
 
+/// Capability overrides for fallback proofs: `--mono`, `--ansi16`, `--ansi256`,
+/// `--truecolor`, `--no-sync`, `--no-insert-line`.
+fn apply_capability_flags(ctx: &mut Context, args: &[String], no_color: bool) {
+    use gibson::capability::ColorDepth;
+    let has = |f: &str| args.iter().any(|a| a == f);
+    let depth = if has("--mono") {
+        Some(ColorDepth::Mono)
+    } else if has("--ansi16") {
+        Some(ColorDepth::Ansi16)
+    } else if has("--ansi256") {
+        Some(ColorDepth::Ansi256)
+    } else if has("--truecolor") {
+        Some(ColorDepth::TrueColor)
+    } else if no_color {
+        Some(ColorDepth::Mono)
+    } else {
+        None
+    };
+    if let Some(d) = depth {
+        ctx.set_color_depth(d);
+    }
+    if has("--no-sync") {
+        ctx.set_sync_updates(false);
+    }
+    if has("--no-insert-line") {
+        let mut caps = ctx.capabilities();
+        caps.insert_line = gibson::Capability::Unsupported;
+        ctx.set_capabilities(caps);
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     let deterministic = args
@@ -889,6 +955,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     ctx.set_max_fps(if auto { 240 } else { 60 });
     ctx.set_animation_interval(Duration::from_millis(if auto { 8 } else { 66 }));
+    apply_capability_flags(&mut ctx, &args, no_color);
 
     let mut app = App::new(fx, deterministic, debug);
 

@@ -89,7 +89,13 @@ fn assert_fits(screen: &str, cols: u16) {
 
 #[test]
 fn polished_agent_fullscreen_structure() {
-    let (screen, raw, _) = capture("polished_agent", &["--no-color"], 110, 30, 1.4);
+    let (screen, raw, _) = capture(
+        "polished_agent",
+        &["--no-color", "--deterministic", "--freeze-at=40"],
+        110,
+        30,
+        1.4,
+    );
     if std::env::var("DUMP_SCREEN").is_ok() {
         let s = String::from_utf8_lossy(&raw);
         println!(
@@ -125,7 +131,13 @@ fn polished_agent_fullscreen_structure() {
 
 #[test]
 fn polished_agent_narrow_structure() {
-    let (screen, raw, _) = capture("polished_agent", &["--no-color"], 52, 20, 1.2);
+    let (screen, raw, _) = capture(
+        "polished_agent",
+        &["--no-color", "--deterministic", "--freeze-at=30"],
+        52,
+        20,
+        1.2,
+    );
     if std::env::var("DUMP_SCREEN").is_ok() {
         println!("\n--- polished_agent @52x20 ---\n{screen}\n");
     }

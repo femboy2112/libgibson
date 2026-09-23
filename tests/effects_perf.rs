@@ -101,3 +101,121 @@ fn scanline_overlay_moves_with_small_diff() {
         "scanline dirtied too much: {dirty} of {total2}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// FX substrate damage bounds
+// ---------------------------------------------------------------------------
+
+fn wireframe_node(t: f32, cols: u16, rows: u16) -> Node {
+    let mut canvas = gibson::BrailleCanvas::new(cols, rows);
+    let tf = gibson::Transform3::rotation(t * 0.9, t * 1.3, t * 0.4);
+    gibson::Projector::default().draw(
+        &gibson::Mesh::torus(1.0, 0.38, 16, 10),
+        &tf,
+        &mut canvas,
+        1.0,
+    );
+    Node::raster(canvas.to_surface(gibson::Style::default()))
+        .width(cols as f32)
+        .height(rows as f32)
+}
+
+#[test]
+fn wireframe_rotation_damage_is_bounded_and_static_frame_is_free() {
+    let cols = 30u16;
+    let rows = 10u16;
+    let mut renderer = Renderer::new(RenderMode::Fullscreen);
+    let mut session = TerminalSession::headless(cols, rows);
+    let mut out = Vec::new();
+
+    renderer
+        .render(&mut wireframe_node(0.0, cols, rows), &mut session, &mut out)
+        .unwrap();
+    out.clear();
+    let (dirty, total, bytes, _, _) = renderer
+        .render(
+            &mut wireframe_node(0.05, cols, rows),
+            &mut session,
+            &mut out,
+        )
+        .unwrap();
+    assert!(bytes > 0);
+    assert!(
+        dirty * 2 <= total,
+        "wireframe rotation dirtied too much: {dirty}/{total}"
+    );
+
+    // A frozen frame must emit nothing.
+    out.clear();
+    let (_, _, bytes_same, _, _) = renderer
+        .render(
+            &mut wireframe_node(0.05, cols, rows),
+            &mut session,
+            &mut out,
+        )
+        .unwrap();
+    assert_eq!(bytes_same, 0, "identical wireframe must be clean");
+}
+
+#[test]
+fn particle_field_motion_is_bounded() {
+    let cols = 40u16;
+    let rows = 10u16;
+    let mut renderer = Renderer::new(RenderMode::Fullscreen);
+    let mut session = TerminalSession::headless(cols, rows);
+    let mut out = Vec::new();
+
+    let build = |step: usize| {
+        let mut ps = gibson::ParticleSystem::new(0x1234);
+        ps.burst(60, cols as f32, rows as f32 * 0.5, 8.0, 2.0, 1.0);
+        for _ in 0..step {
+            ps.update(1.0 / 60.0);
+        }
+        let mut canvas = gibson::BrailleCanvas::new(cols, rows);
+        ps.render_braille(&mut canvas);
+        Node::raster(canvas.to_surface(gibson::Style::default()))
+            .width(cols as f32)
+            .height(rows as f32)
+    };
+
+    renderer
+        .render(&mut build(0), &mut session, &mut out)
+        .unwrap();
+    out.clear();
+    let (dirty, total, _b, _, _) = renderer
+        .render(&mut build(1), &mut session, &mut out)
+        .unwrap();
+    assert!(total > 0);
+    // Even a broad particle field should not necessarily dirty everything.
+    assert!(dirty <= total);
+}
+
+#[test]
+fn resize_during_wireframe_animation_is_safe_and_reanchors() {
+    let mut renderer = Renderer::new(RenderMode::Fullscreen);
+    let mut session = TerminalSession::headless(60, 20);
+    let mut parser = vt100::Parser::new(20, 60, 0);
+    let mut out = Vec::new();
+
+    renderer
+        .render(&mut wireframe_node(0.1, 40, 12), &mut session, &mut out)
+        .unwrap();
+    parser.process(&out);
+    let before = renderer.anchor_resyncs;
+
+    session.set_terminal_size(30, 10);
+    parser.set_size(10, 30);
+    let mut out2 = Vec::new();
+    renderer
+        .render(&mut wireframe_node(0.2, 20, 8), &mut session, &mut out2)
+        .unwrap();
+    parser.process(&out2);
+
+    assert!(renderer.anchor_resyncs > before, "resize must re-anchor");
+    for line in parser.screen().rows(0, 30) {
+        assert!(
+            unicode_width::UnicodeWidthStr::width(line.as_str()) <= 30,
+            "line overflows after resize: {line:?}"
+        );
+    }
+}

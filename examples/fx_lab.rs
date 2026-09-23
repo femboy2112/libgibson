@@ -122,7 +122,7 @@ impl Lab {
         }
     }
 
-    fn header(&self, stats: &gibson::RenderStats, cols: u16) -> Node {
+    fn header(&self, stats: &gibson::RenderStats) -> Node {
         let fx = &self.fx;
         let dirty_pct = if stats.total_cells > 0 {
             (stats.dirty_cells as f64 / (stats.frames.max(1) as f64 * stats.total_cells as f64)
@@ -137,7 +137,7 @@ impl Lab {
                 fx.st.text,
             ))
             .span(Span::styled(format!("  t={:>5.1}s", self.t), fx.st.muted));
-        if self.debug || cols >= 70 {
+        if self.debug {
             line = line
                 .span(Span::styled("  frames ", fx.st.muted))
                 .span(Span::styled(format!("{}", stats.frames), fx.st.text))
@@ -433,7 +433,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let root = Node::col()
             .percent_width(100.0)
             .percent_height(100.0)
-            .child(lab.header(&stats, cols))
+            .child(lab.header(&stats))
             .child(
                 Node::panel(SCENES[lab.scene], BorderType::Rounded, lab.fx.st.border)
                     .percent_width(100.0)

@@ -14,7 +14,8 @@ use gibson::context::Context;
 use gibson::input::{Event, KeyCode, KeyModifiers, TextInputState};
 use gibson::node::{Node, WrapMode};
 use gibson::show;
-use gibson::{BorderType, ThemeStyles, TimeSource};
+use gibson::{BorderType, Mesh, ParticleSystem, Projector, ThemeStyles, TimeSource, Transform3};
+use std::collections::HashMap;
 use std::env;
 use std::time::Duration;
 
@@ -142,6 +143,15 @@ struct App {
     last_total: u64,
     done: bool,
     seen: [bool; 8],
+
+    // FX state
+    particles: ParticleSystem,
+    damage: HashMap<(u16, u16), u32>,
+    glitch_frames: u32,
+    planet_frames: u32,
+    show_wireframe: bool,
+    show_plasma: bool,
+    show_damage: bool,
 }
 
 fn select_theme(light: bool, dark: bool, no_color: bool) -> Theme {
@@ -189,6 +199,13 @@ impl App {
             last_total: 0,
             done: false,
             seen: [false; 8],
+            particles: ParticleSystem::new(0x9E37_79B9),
+            damage: HashMap::new(),
+            glitch_frames: 0,
+            planet_frames: 0,
+            show_wireframe: true,
+            show_plasma: false,
+            show_damage: false,
         }
     }
 
@@ -207,6 +224,32 @@ impl App {
         if self.throughput.len() > 48 {
             self.throughput.remove(0);
         }
+
+        // Deterministic starfield / data tunnel.
+        if self.phase != Phase::Done && self.particles.len() < 180 {
+            for i in 0..10 {
+                self.particles.particles.push(gibson::Particle {
+                    x: ((i * 53 + self.frames as usize * 7) % 100) as f32,
+                    y: 0.0,
+                    vx: 0.0,
+                    vy: 4.0,
+                    life: 3.0,
+                    max_life: 3.0,
+                    intensity: 1.0,
+                });
+            }
+        }
+        self.particles.update(1.0 / 60.0);
+        if self.particles.len() > 2200 {
+            self.particles.particles.drain(0..800);
+        }
+        if self.show_damage {
+            for (x, y) in ctx.last_dirty_cells() {
+                *self.damage.entry((*x, *y)).or_insert(0) += 1;
+            }
+        }
+        self.glitch_frames = self.glitch_frames.saturating_sub(1);
+        self.planet_frames = self.planet_frames.saturating_sub(1);
     }
 
     fn add_event(&mut self, text: &str, color: Color) {
@@ -288,7 +331,19 @@ impl App {
                 self.commit_tactical();
             }
             Phase::Shell => {
-                for cmd in ["status", "trace", "pool", "da-vinci", "metrics", "exit"] {
+                for cmd in [
+                    "status",
+                    "trace",
+                    "wireframe",
+                    "plasma",
+                    "virus",
+                    "planet",
+                    "damage",
+                    "pool",
+                    "da-vinci",
+                    "metrics",
+                    "exit",
+                ] {
                     self.input = TextInputState::with_text(cmd);
                     self.run_command(cmd);
                     self.input = TextInputState::new();
@@ -308,13 +363,14 @@ impl App {
             .span(Span::styled(choice, self.fx.st.text));
         self.shell_log.push(line);
         self.once(7, "\"HACK THE PLANET! HACK THE PLANET!\"", self.fx.magenta);
+        self.glitch_frames = 6;
         self.phase = Phase::Shell;
     }
 
     fn run_command(&mut self, cmd: &str) {
         let out = match cmd {
             "help" => vec![(
-                "commands: help status pool garbage da-vinci trace metrics exit",
+                "commands: help status pool garbage da-vinci virus wireframe plasma damage trace planet metrics exit",
                 self.fx.st.muted,
             )],
             "status" => vec![(
@@ -344,6 +400,29 @@ impl App {
                 "metrics available after exit (see stdout summary)",
                 self.fx.st.muted,
             )],
+            "wireframe" => {
+                self.show_wireframe = !self.show_wireframe;
+                vec![
+                    ("3D core projection toggled", self.fx.st.code),
+                    ("projecting octahedron through perspective matrix", self.fx.st.muted),
+                ]
+            }
+            "plasma" => {
+                self.show_plasma = !self.show_plasma;
+                vec![("core temperature field toggled", self.fx.st.warning)]
+            }
+            "damage" => {
+                self.show_damage = !self.show_damage;
+                vec![("LIVE DAMAGE MAP toggled — this renderer is watching itself", self.fx.st.accent)]
+            }
+            "virus" => {
+                self.glitch_frames = 8;
+                vec![("da-vinci mutation event — framebuffer glitch", self.fx.st.error)]
+            }
+            "planet" => {
+                self.planet_frames = 90;
+                vec![("HACK THE PLANET", self.fx.st.accent)]
+            }
             "exit" | "quit" => vec![(
                 "connection severed by foreign host. Skate fast.",
                 self.fx.st.error,
@@ -388,7 +467,10 @@ impl App {
                         self.selected = (self.selected + 1) % TACTICAL.len()
                     }
                     KeyCode::Char(c @ '1'..='4') => self.selected = (c as usize) - ('1' as usize),
-                    KeyCode::Enter => self.commit_tactical(),
+                    KeyCode::Enter => {
+                        self.commit_tactical();
+                        return true;
+                    }
                     KeyCode::Esc => self.done = true,
                     _ => {}
                 },
@@ -405,6 +487,8 @@ impl App {
                         if cmd == "exit" || cmd == "quit" {
                             self.done = true;
                         }
+                        // A command changes the shell log; request a repaint.
+                        return true;
                     }
                     KeyCode::Esc => self.done = true,
                     _ => return self.input.handle_event(event),
@@ -481,7 +565,7 @@ fn build_root(app: &App, ctx: &Context) -> Node {
     // the layout beneath it (style-only composite). Cheap: only a few rows.
     let band = (app.elapsed() * 0.9) as u16;
     let y = (band % (rows.max(1))) as f32;
-    Node::stack()
+    let mut scene = Node::stack()
         .percent_width(100.0)
         .percent_height(100.0)
         .child(root)
@@ -492,7 +576,66 @@ fn build_root(app: &App, ctx: &Context) -> Node {
                 .padding_top(y)
                 .child(Node::dim().percent_width(100.0).height(1.0))
                 .child(Node::dim().percent_width(100.0).height(2.0)),
-        )
+        );
+
+    // Optional effects, composited as real layers.
+    if app.show_damage {
+        scene = scene.child(damage_overlay(app, cols, rows));
+    }
+    if app.planet_frames > 0 {
+        scene = scene.child(planet_overlay(app, cols, rows));
+    }
+    scene
+}
+
+/// Renders the renderer's own dirty-cell history as a Braille heatmap.
+fn damage_overlay(app: &App, cols: u16, rows: u16) -> Node {
+    let fx = &app.fx;
+    let mut canvas = gibson::BrailleCanvas::new(cols, rows);
+    let max = app.damage.values().copied().max().unwrap_or(1).max(1);
+    let dots = [
+        (0, 0),
+        (0, 1),
+        (0, 2),
+        (1, 0),
+        (1, 1),
+        (1, 2),
+        (0, 3),
+        (1, 3),
+    ];
+    for (&(x, y), &count) in &app.damage {
+        if x >= cols || y >= rows {
+            continue;
+        }
+        let lit = ((count as f32 / max as f32) * 8.0).ceil() as usize;
+        for &(dx, dy) in dots.iter().take(lit) {
+            canvas.set(x as i32 * 2 + dx, y as i32 * 4 + dy);
+        }
+    }
+    let style = if fx.color {
+        fx.st.warning
+    } else {
+        Style::default()
+    };
+    Node::raster(canvas.to_surface(style))
+}
+
+/// Deterministic particle burst ("HACK THE PLANET"). No persistent state: the
+/// burst is reconstructed from the countdown, so it is reproducible.
+fn planet_overlay(app: &App, cols: u16, rows: u16) -> Node {
+    let fx = &app.fx;
+    let mut ps = ParticleSystem::new(0x9E37_0000);
+    ps.burst(260, cols as f32, rows as f32 * 0.6, 26.0, 1.4, 1.0);
+    let progress = 1.0 - (app.planet_frames as f32 / 90.0).clamp(0.0, 1.0);
+    ps.update(progress * 1.4);
+    let mut canvas = gibson::BrailleCanvas::new(cols, rows);
+    ps.render_braille(&mut canvas);
+    let style = if fx.color {
+        fx.st.accent
+    } else {
+        Style::default()
+    };
+    Node::raster(canvas.to_surface(style))
 }
 
 fn banner(app: &App, cols: u16, wide: bool) -> Node {
@@ -585,9 +728,32 @@ fn panel_mainframe(app: &App, width: u16) -> Node {
                 fx.st.warning,
             )),
     );
+    let mut body = Node::col()
+        .percent_width(100.0)
+        .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap));
+
+    // Rotating 3D core: real perspective projection to sub-cell Braille lines.
+    if app.show_wireframe {
+        let cw = inner.clamp(8, 40) as u16;
+        let ch = 4u16;
+        let mut canvas = gibson::BrailleCanvas::new(cw, ch);
+        let e = app.elapsed();
+        let t = Transform3::rotation(e * 0.9, e * 1.4, e * 0.3);
+        Projector::default().draw(&Mesh::octahedron(1.25), &t, &mut canvas, 1.0);
+        let mut surf = canvas.to_surface(fx.st.accent);
+        if app.glitch_frames > 0 {
+            gibson::tear(
+                &mut surf,
+                gibson::surface::Rect::new(0, 0, cw, ch),
+                app.frames ^ 0xABCD,
+            );
+        }
+        body = body.child(Node::raster(surf));
+    }
+
     tpanel("MAINFRAME", fx.st.border)
         .percent_width(100.0)
-        .child(Node::rich_text_wrapped(rt, WrapMode::NoWrap))
+        .child(body)
 }
 
 fn panel_garbage(app: &App, width: u16) -> Node {
@@ -739,27 +905,32 @@ fn panel_transfer(app: &App, width: u16) -> Node {
         )
         .line(fx.spark(&app.throughput, bar_w.min(40)));
 
-    // Half-block RGB spectrum: two vertical samples per cell, no graphics
-    // protocol. Under mono the color quantizer strips the RGB and the block
-    // shapes remain as a density fallback.
+    // Half-block RGB spectrum / core temperature field: one horizontal and two
+    // vertical samples per cell, no graphics protocol. Under mono the color
+    // quantizer strips the RGB and the block shapes remain as a density fallback.
     {
         let spec_w = bar_w.clamp(8, 40) as u16;
         let mut canvas = gibson::HalfBlockCanvas::new(spec_w, 2);
-        let pw = canvas.pixel_width() as f32;
-        let ph = canvas.pixel_height() as f32;
-        for x in 0..canvas.pixel_width() as i32 {
-            let t = x as f32 / pw;
-            let energy = (t * 18.0 + app.elapsed() * 3.0).sin() * 0.5 + 0.5;
-            let bars = (energy * (ph - 1.0)).round() as i32;
-            for y in 0..=bars {
-                let yy = ph as i32 - 1 - y;
-                let g = (180.0 + 75.0 * (y as f32 / ph)).min(255.0) as u8;
-                let c = fx.green.lerp(fx.cyan, y as f32 / ph);
-                let (r, gg, b) = match c {
-                    Color::Rgb(r, gg, b) => (r, gg, b),
-                    _ => (g, g, g),
-                };
-                canvas.set_pixel(x, yy, (r, gg, b));
+        if app.show_plasma {
+            // Animated procedural plasma field (demoscene in a shell).
+            gibson::render_plasma_halfblock(&mut canvas, app.elapsed(), 0.3);
+        } else {
+            let pw = canvas.pixel_width() as f32;
+            let ph = canvas.pixel_height() as f32;
+            for x in 0..canvas.pixel_width() as i32 {
+                let t = x as f32 / pw;
+                let energy = (t * 18.0 + app.elapsed() * 3.0).sin() * 0.5 + 0.5;
+                let bars = (energy * (ph - 1.0)).round() as i32;
+                for y in 0..=bars {
+                    let yy = ph as i32 - 1 - y;
+                    let g = (180.0 + 75.0 * (y as f32 / ph)).min(255.0) as u8;
+                    let c = fx.green.lerp(fx.cyan, y as f32 / ph);
+                    let (r, gg, b) = match c {
+                        Color::Rgb(r, gg, b) => (r, gg, b),
+                        _ => (g, g, g),
+                    };
+                    canvas.set_pixel(x, yy, (r, gg, b));
+                }
             }
         }
         rt = rt.line(Line::raw(""));
@@ -863,6 +1034,37 @@ fn bottom_panel(app: &App, width: u16) -> Node {
 // main
 // ---------------------------------------------------------------------------
 
+/// Capability overrides for fallback proofs: `--mono`, `--ansi16`, `--ansi256`,
+/// `--truecolor`, `--no-sync`, `--no-insert-line`.
+fn apply_capability_flags(ctx: &mut Context, args: &[String], no_color: bool) {
+    use gibson::capability::ColorDepth;
+    let has = |f: &str| args.iter().any(|a| a == f);
+    let depth = if has("--mono") {
+        Some(ColorDepth::Mono)
+    } else if has("--ansi16") {
+        Some(ColorDepth::Ansi16)
+    } else if has("--ansi256") {
+        Some(ColorDepth::Ansi256)
+    } else if has("--truecolor") {
+        Some(ColorDepth::TrueColor)
+    } else if no_color {
+        Some(ColorDepth::Mono)
+    } else {
+        None
+    };
+    if let Some(d) = depth {
+        ctx.set_color_depth(d);
+    }
+    if has("--no-sync") {
+        ctx.set_sync_updates(false);
+    }
+    if has("--no-insert-line") {
+        let mut caps = ctx.capabilities();
+        caps.insert_line = gibson::Capability::Unsupported;
+        ctx.set_capabilities(caps);
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     let deterministic = args.iter().any(|a| a == "--deterministic");
@@ -891,6 +1093,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     ctx.set_max_fps(if auto { 240 } else { 60 });
     ctx.set_animation_interval(Duration::from_millis(if auto { 8 } else { 45 }));
+    apply_capability_flags(&mut ctx, &args, no_color);
+    // The damage map reads the renderer's own dirty-cell history.
+    ctx.set_capture_damage(true);
 
     let mut app = App::new(fx, deterministic);
 

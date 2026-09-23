@@ -1,8 +1,8 @@
-◢ LIBGIBSON AGENT  ● ONLINE    session hardening  ·  model gibson-v2  ·  ╭─ TOAST ───────────────────────────────────╮
-╭─ TASK PLAN ────────────────────────────────────────────────────────────│◆ diagnostics refreshed · 0 warnings       │─╮
-│✔ research ██████████████████████████████ 100%                          ╰───────────────────────────────────────────╯ │
-│✔ search   ██████████████████████████████ 100%                               │ │✔ research src/renderer.rs            │
-│◐ build    █████████████████████████████─  96%                               │ │✔ search   insert_before_live         │
+◢ LIBGIBSON AGENT  ● ONLINE    session hardening  ·  model gibson-v2  ·  differential
+╭─ TASK PLAN ─────────────────────────────────────────────────────────────────╮ ╭─ TRANSCRIPT ─────────────────────────╮
+│✔ research ██████████████████████████████ 100%                          ╭─ TOAST ───────────────────────────────────╮ │
+│✔ search   ██████████████████████████████ 100%                          │◆ diagnostics refreshed · 0 warnings       │ │
+│◐ build    █████████████████████████████─  96%                          ╰───────────────────────────────────────────╯ │
 │· patch    ──────────────────────────────   0%                               │ │                                      │
 │                                                                             │ │                                      │
 │                                                                             │ │                                      │
