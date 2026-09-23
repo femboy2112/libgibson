@@ -28,7 +28,7 @@ Because earlier revisions of this document overstated completion, architectural 
 | Label | Meaning |
 | --- | --- |
 | **IMPLEMENTED** | The described code path exists and is reached in normal operation. |
-| **TESTED** | Covered by an automated test in this repository (`cargo test`, 430 tests) that exercises the behavior described. |
+| **TESTED** | Covered by an automated test in this repository (`cargo test`, 464 tests) that exercises the behavior described. |
 | **PARTIALLY TESTED** | Implemented, and some behavior is covered, but at least one named facet is not automatically verified. The gap is stated explicitly. |
 | **UNVERIFIED** | Written down because it exists in source or is a documented assumption, but has not been compiled or executed in any environment we can attest to. |
 
@@ -886,30 +886,71 @@ a StoryEvent. Presentation also replays, including bundle mount times.
 
 ## 42. Acid vs Crash encounter
 
-The example's world is entirely Facts: subsystem ownership/integrity, isolation,
-trace confidence, decoy occupancy, identity, scars and outcome. Its small Acid
-controller chooses fictional semantic events from those facts; auto mode uses a
-Crash controller on the same story graph. Both controllers' decisions enter the
-trace. There is no network, external host, system command execution, or separate
-simulation engine. Input text and inspector selection are UI state outside replay;
-they do not determine subsystem truth except through submitted recorded commands.
+The demo now has two deterministic reducers with different responsibilities.
+`examples/acid_vs_crash/battle.rs` owns a seven-node `BattleGraph` (six local
+subsystems plus a dormant mirror), influence, integrity, connectivity, visibility,
+activity, resource reserves, cooldowns, planner memory and outcome quality.
+`StoryDirector` owns broad dramatic acts, categorical Facts and effect-bundle
+lifecycles. No hacking ontology enters the library. There are no sockets,
+external hosts, credentials, system commands or persistence.
 
-The graph establishes a quiet machine, then an inbound handshake, identity,
-route contest, ordinary panel infection, adaptation, display intrusion, ghost
-cursor, trap, clash and takeover. Local decoy, bypass, trace and pressure branches
-rejoin. Final moves yield containment, temporary Acid ownership followed by
-voluntary release, or mutual respect. Counters unmount effects; they never
-mutate a widget to undo corruption. Ownership labels, disconnected geometry,
-packet grammar and reverse attributes preserve meaning in Mono. The stable
-command island is excluded from display-sensitive tags.
+Control uses fixed-point integers from -1000 (Acid) to +1000 (Crash). Ownership
+is derived at ±350 thresholds; integrity is a separate 0–1000 quantity.
+Edges explicitly connect nodes and carry cost and pressure. Routing respects
+severed edges and isolated endpoints. The planner scores only reachable targets,
+using objective value, novelty, structural vulnerability, personality, prior
+isolation, trace exposure and route cost. Stable seeded ties make selection
+repeatable. A fortified intermediate node must yield before forward movement.
+Repeated decoys can cause a feint: approach on a legal edge, then withdraw
+without applying influence to the mirror.
 
-Inspection starts include their causal setup in the immutable Story definition.
-Tests replay every stage at irregular cadence and compare facts, subsystem state,
-beat sequence, outcome, mount clocks and Presentation. Whole-renderer tests feed
-actual frames through the ANSI compiler and VT100 parser at 56x24, 80x24, 120x32
-and 160x40; PTYs also exercise real input and terminal mode restoration.
-These checks establish deterministic behavior and protocol correctness within
-the tested Linux environment, not subjective cinematic quality on all terminals.
+The reducer applies ordered commands at an update boundary and advances exact
+50ms quanta with a retained nanosecond remainder. Its finite horizon bounds
+extreme-duration work; it does not promise an unbounded simulation. TRACE costs
+reserves and increases awareness; isolation blocks real routes and hides local
+telemetry; decoys cost reserves and become recognizable; KILL removes influence
+from one lease while others survive. Final actions have prerequisites. Explicit
+LET HER IN reopens a declared invitation corridor and sacrifices its control;
+a timeout cannot silently reopen that corridor. Outcome metadata records costly,
+clean or traced containment, temporary or decisive possession, and two kinds of
+stalemate. Integrity and altered-file receipts survive the resolution.
+
+Only categorical truths cross into Story Facts: ownership, isolation, footholds,
+trace threshold, display pressure, release completion and outcome. Predeclared
+Reactions project these facts and mount/unmount bundles. Continuous values stay
+in the model. Milestones can move the broad acts after breathing room; fallback
+timeouts preserve dramatic progress without granting control. Final-resolution
+events remain immediate. Terminal acts freeze the world only after its release
+and semantic projection agree.
+
+`EncounterTrace` records the initial inspection stage and fixed seed plus every
+exact dt and ordered input event batch. A fresh encounter re-runs the battlefield
+reducer, derives milestone events, then replays the director. Tests compare the
+entire graph/planner/resources/cooldowns/history/outcome, StoryTrace, facts,
+mounted bundles, Presentation and realized frames. The narrower StoryTrace still
+reproduces its semantic projection independently. Input editor and inspector
+selection are UI state outside world replay. This is an in-memory example trace,
+not a promised stable disk serialization format.
+
+Rendering projects actual graph edges, broken islands, trace pulses, owned
+corridors, decoy geometry and the planner's path. The ghost follows path segments;
+remote typing follows sparse action-driven dialogue. Scoped SurfaceFx advance
+through the existing session and display entities according to their influence.
+Ordinary widgets do not contain cinematic corruption logic. A live, reachable
+DISPLAY corridor is required for its mounted invasion effects. During escalation
+the same map becomes a full-width hero view while session/remote entities shrink
+to witnesses; default debug-free composition preserves the Crash command island.
+No bounds/resize core channel was necessary: responsive node reflow plus existing
+Scene displacement and entity-local effects suffice. Mono retains explicit
+ownership, distinct line grammar and reverse highlights.
+
+Shared-prefix isolation/decoy counterfactual tests require different legal paths,
+targets, facts and realized screens. A severed display path remains severed even
+when the story advances. Stage fixtures establish topology before Story start,
+so inspection and replay share the same initial cause. Existing renderer/VT100
+checks cover 56x24, 80x24, 120x32 and 160x40 plus live resize. PTYs exercise actual
+commands, opponent adaptation and terminal restoration. These establish behavior
+within the tested environment, not subjective cinematic quality on all terminals.
 
 Fullscreen geometry changes now clear the invalidated physical canvas in the
 renderer transaction before compiling a fresh diff. Fresh diffs omit default

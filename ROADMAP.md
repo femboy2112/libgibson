@@ -13,6 +13,36 @@ This document outlines completed work and the planned future milestones for LibG
 
 ---
 
+## Living battlefield round — IMPLEMENTED + TESTED, EXPERIMENTAL Rust-only
+
+- [x] Scoped SurfaceFx: rect, normalized wipes/radial/band, seeded noise; wide
+  glyph, transparency, outside-cell preservation and local-damage tests.
+- [x] Demo-local topology reducer with fixed-point influence, separate integrity,
+  legal path traversal, telemetry loss, resource costs and cooldowns.
+- [x] Deterministic scored Acid planner with personality, trace/isolation/decoy
+  memory, legal pivots and repeat-decoy feints. State-based auto defender.
+- [x] Broad Story acts consume semantic milestones; in-beat battles continue
+  without tactical micro-beats or timer-authored ownership.
+- [x] Full EncounterTrace replay includes graph, planner, resources, history,
+  StoryDirector, mounts and realized scene. Shared-prefix counterfactuals change
+  targets, legal routes, facts and screens.
+- [x] Directed influence fronts, actual graph traffic and ghost trajectory,
+  full-width climax composition, stable command island, aftermath quality/scars.
+- [x] Eight new glyph/style goldens; 13 retained/refreshed Acid PTY cases; all 30
+  other demo snapshots unchanged. Eight Acid PTY tests cover genuine adaptation,
+  telemetry trade-offs, replay, auto completion and terminal restoration.
+- [x] Local fmt, all-target/all-feature strict Clippy, **464 tests** (226 unit +
+  238 integration), release, C/C++/Python and C/C++ ASan/UBSan smoke.
+- [x] DESIGN §33 distinguishes exact semantic delta, affected footprint and wire
+  cost without renaming existing APIs.
+- [ ] Extended human playtesting and subjective cinematic impact remain
+  **PARTIALLY TESTED**. Linux terminal/VT100 evidence is not universal portability.
+- [ ] Go, Windows and broader emulator/multiplexer/SSH behavior are **UNVERIFIED**.
+- [ ] No stable serialized encounter replay format; traces are in-memory.
+- [ ] Remote Actions remain **BLOCKED / ENVIRONMENTAL** (billing, zero steps).
+
+See [round II architecture, commands and evidence](docs/acid-vs-crash-round2-validation.md).
+
 ## Cinematic frontier — IMPLEMENTED + TESTED, EXPERIMENTAL Rust-only
 
 - [x] Ordered entity `SurfaceFx` on arbitrary ordinary nodes; transparent scratch
@@ -32,7 +62,7 @@ This document outlines completed work and the planned future milestones for LibG
   reactions without transitions.
 - [x] Fixed natural clipping of positioned panels and stale blank cells on
   fullscreen resize. Existing 30 visual goldens remain unchanged.
-- [x] Local fmt, all-target/all-feature clippy with warnings denied, **430 tests**
+- [x] Round I verification: fmt, all-target/all-feature clippy, **430 tests**
   (226 unit + 204 integration), release build, C/C++/Python smoke and ASan/UBSan.
 - [ ] Subjective cinematic taste, extended human playtesting and terminals beyond
   the local Linux/VT100 evidence remain **PARTIALLY TESTED / UNVERIFIED**.
