@@ -1,21 +1,27 @@
-//! LibGibson Runtime Observatory — workstream D, chunk 1.
+//! LibGibson Runtime Observatory — workstream D, chunks 1-2.
 //!
 //! A NASA-control-room instrument for watching the runtime's own honesty
 //! guarantees at work, instead of just reading about them in a probe's stdout
-//! dump. This chunk ships the shared scaffold (bounded diagnostic log,
-//! restrained mission-control rendering, `--dump` path) plus exactly one
-//! mode: Million-Tick, which is issue #10 (unbounded `StoryTrace`) staged as
-//! a picture instead of a paragraph. Other modes are NOT built here — that's
-//! the next chunk, and pretending otherwise in this file would be exactly the
-//! kind of fabrication the rest of this tool refuses to do.
+//! dump. Chunk 1 shipped the shared scaffold (bounded diagnostic log,
+//! restrained mission-control rendering, `--dump` path) plus Million-Tick.
+//! Chunk 2 adds Ghost-Key: a pure replay of the REAL crossterm #1126 evidence
+//! from `docs/fixtures/event-pressure/` through the same scaffold. Other
+//! modes are still NOT built here — pretending otherwise in this file would
+//! be exactly the kind of fabrication the rest of this tool refuses to do.
 //!
 //! Usage:
 //!   cargo run --release --example runtime_observatory -- \
 //!     --mode million-tick --dump --retention all --ticks 100000 \
 //!     [--width 120] [--height 32] [--color mono|ansi16|ansi256|truecolor]
+//!
+//!   cargo run --release --example runtime_observatory -- \
+//!     --mode ghost-key --dump --gate crossterm|raw [--freeze-at US]
+//!     [--width 120] [--height 32] [--color mono|ansi16|ansi256|truecolor]
 
 #[path = "runtime_observatory/diag.rs"]
 mod diag;
+#[path = "runtime_observatory/ghost_key.rs"]
+mod ghost_key;
 #[path = "runtime_observatory/million_tick.rs"]
 mod million_tick;
 #[path = "runtime_observatory/visual.rs"]
@@ -36,7 +42,7 @@ fn number(args: &[String], name: &str, default: u64) -> io::Result<u64> {
     })
 }
 
-const HELP: &str = "LibGibson Runtime Observatory (workstream D, chunk 1: scaffold + Million-Tick)\n  --mode million-tick --dump [--width W] [--height H] [--color mono|ansi16|ansi256|truecolor]\n           [--ticks N] [--retention all|bounded:CAP|disabled]\nRenders one deterministic frame to stdout and exits. Pure render: no state\nmutation happens at paint time. Other modes (workstream D chunks 2+) are not\nbuilt yet; --mode anything else errors rather than faking a frame.";
+const HELP: &str = "LibGibson Runtime Observatory (workstream D, chunks 1-2: scaffold + Million-Tick + Ghost-Key)\n  --mode million-tick --dump [--width W] [--height H] [--color mono|ansi16|ansi256|truecolor]\n           [--ticks N] [--retention all|bounded:CAP|disabled]\n  --mode ghost-key --dump [--gate crossterm|raw] [--freeze-at US]\n           [--width W] [--height H] [--color mono|ansi16|ansi256|truecolor]\nRenders one deterministic frame to stdout and exits. Pure render: no state\nmutation happens at paint time (Ghost-Key doesn't drive anything at all — it\nreplays real recorded receipts from docs/fixtures/event-pressure/). Other\nmodes (workstream D chunks 3+) are not built yet; --mode anything else errors\nrather than faking a frame.";
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -46,9 +52,9 @@ fn main() -> io::Result<()> {
     }
 
     let mode = option(&args, "--mode").unwrap_or_else(|| "million-tick".to_string());
-    if mode != "million-tick" {
+    if mode != "million-tick" && mode != "ghost-key" {
         return Err(io::Error::other(format!(
-            "--mode {mode} is not built in this chunk (only million-tick exists so far)"
+            "--mode {mode} is not built yet (only million-tick and ghost-key exist so far)"
         )));
     }
 
@@ -66,11 +72,23 @@ fn main() -> io::Result<()> {
     };
     let width = number(&args, "--width", 120)?.clamp(1, 240) as u16;
     let height = number(&args, "--height", 32)?.clamp(1, 80) as u16;
-    let ticks = number(&args, "--ticks", 100_000)?.max(1);
-    let retention_arg = option(&args, "--retention").unwrap_or_else(|| "all".to_string());
-    let retention = million_tick::parse_retention(&retention_arg).map_err(io::Error::other)?;
 
-    let text = million_tick::dump(ticks, retention, width, height, depth);
+    let text = if mode == "million-tick" {
+        let ticks = number(&args, "--ticks", 100_000)?.max(1);
+        let retention_arg = option(&args, "--retention").unwrap_or_else(|| "all".to_string());
+        let retention = million_tick::parse_retention(&retention_arg).map_err(io::Error::other)?;
+        million_tick::dump(ticks, retention, width, height, depth)
+    } else {
+        let gate_arg = option(&args, "--gate").unwrap_or_else(|| "crossterm".to_string());
+        let gate = ghost_key::parse_gate(&gate_arg).map_err(io::Error::other)?;
+        let freeze_at = option(&args, "--freeze-at")
+            .map(|s| {
+                s.parse::<u64>()
+                    .map_err(|_| io::Error::other("invalid --freeze-at"))
+            })
+            .transpose()?;
+        ghost_key::dump(gate, freeze_at, width, height, depth)
+    };
     print!("{text}");
     Ok(())
 }

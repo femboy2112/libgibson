@@ -71,6 +71,11 @@ pub struct View<'a> {
     pub subtitle: String,
     pub panel_title: String,
     pub panel_rows: Vec<PanelRow>,
+    /// Pipeline/stage-style rows (Ghost-Key's EVENT PIPELINE list, plus any
+    /// witness lines). When non-empty this replaces the sparkline area —
+    /// Million-Tick uses `sparks`, Ghost-Key uses this; a mode never needs
+    /// both. Empty by default so old modes don't have to know this exists.
+    pub stage_rows: Vec<PanelRow>,
     pub sparks: Vec<Spark>,
     pub log: &'a DiagLog,
     pub footer: String,
@@ -95,9 +100,23 @@ impl Ink<'_> {
         }
         let mut style = self.style(color);
         style.bold = bold;
-        let clean: String = text.chars().filter(|c| !c.is_control()).collect();
-        self.surface
-            .print_str(x, y, &clean, style, Some(width.min(self.surface.width - x)));
+        let avail = width.min(self.surface.width - x);
+        let mut clean: String = text.chars().filter(|c| !c.is_control()).collect();
+        // Graceful ellipsis instead of a mid-word hard chop: a truncated
+        // source string that just stops is easy to misread as complete.
+        let char_len = clean.chars().count() as u16;
+        if avail > 0 && char_len > avail {
+            clean = if avail == 1 {
+                "…".to_string()
+            } else {
+                clean
+                    .chars()
+                    .take(usize::from(avail - 1))
+                    .collect::<String>()
+                    + "…"
+            };
+        }
+        self.surface.print_str(x, y, &clean, style, Some(avail));
     }
     fn rule(&mut self, x: u16, y: u16, width: u16, color: Color) {
         self.text(x, y, width, &"─".repeat(usize::from(width)), color, false);
@@ -232,7 +251,15 @@ fn numeric_panel(ink: &mut Ink<'_>, view: &View, r: Rect) {
         );
     }
     let y = r.y + 2 + rows + 1;
-    let spark_h = (r.y + r.height).saturating_sub(1).saturating_sub(y);
+    let lower_h = (r.y + r.height).saturating_sub(1).saturating_sub(y);
+    if lower_h == 0 {
+        return;
+    }
+    if !view.stage_rows.is_empty() {
+        stage_list(ink, view, x, y, w, lower_h);
+        return;
+    }
+    let spark_h = lower_h;
     if spark_h < 3 || view.sparks.is_empty() {
         return;
     }
@@ -297,6 +324,25 @@ fn numeric_panel(ink: &mut Ink<'_>, view: &View, r: Rect) {
         let canvas = braille_oscilloscope(&normalized, cw, graph_h);
         let style = ink.style(INK_NOMINAL);
         canvas.paint_into(ink.surface, (sx, y + 2), style);
+    }
+}
+
+/// One row per pipeline stage (or witness line) — label, then whatever the
+/// mode driver already decided to say about it, tone and all. This function
+/// doesn't judge observed-vs-'?'; it just prints what it's handed. If a mode
+/// driver lies to it, that's the driver's problem, not this function's.
+fn stage_list(ink: &mut Ink<'_>, view: &View, x: u16, y: u16, w: u16, h: u16) {
+    for (i, row) in view.stage_rows.iter().take(usize::from(h)).enumerate() {
+        let ry = y + i as u16;
+        ink.text(x, ry, 14, &row.label, MUTED, true);
+        ink.text(
+            x + 15,
+            ry,
+            w.saturating_sub(15),
+            &row.value,
+            row.tone.color(),
+            false,
+        );
     }
 }
 

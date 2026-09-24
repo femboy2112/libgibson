@@ -265,6 +265,7 @@ pub fn build_view(result: &RunResult) -> View<'_> {
         ),
         panel_title: "RESOURCE TELEMETRY".to_string(),
         panel_rows,
+        stage_rows: Vec::new(),
         sparks,
         log: &result.log,
         footer:
