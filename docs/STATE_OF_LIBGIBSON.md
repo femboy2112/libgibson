@@ -28,7 +28,7 @@ tests pass separately. This inventory is scope, not a quality score.
 Important discoveries remain open: hostile `Rect` arithmetic, inaccurate exact
 changed-coordinate enumeration, and PTY harness cleanup/deadline weaknesses.
 The native CI loader and Go setup defects were fixed and exercised locally during
-public readiness; hosted-runner proof is still pending. Passing the existing
+public readiness; hosted-runner proof is recorded in the public CI evidence below. Passing the existing
 suite does not erase the remaining findings. See the reproducible probes below.
 
 ## What LibGibson is
@@ -200,7 +200,7 @@ build the Rust cinematic flagship via this ABI: Scene/Story/replay, raster uploa
 3D/RasterFx/feedback, viewport/focus state, positioned offsets and modern capability
 setters are absent. C++ RAII and Python ctypes are locally smoke-tested; Go cgo
 now passes local vet/build/example smoke. Its repo-local packaging is repaired;
-there are no Go unit tests and no public stable-Go runner result yet.
+there are no Go unit tests; public Go 1.27.1 build/example smoke now also passes.
 
 FFI checks nulls, UTF-8 and raw enum-like integers and catches unwinding at
 substantive entry points. It cannot validate arbitrary dangling pointers, lengths,
@@ -220,7 +220,7 @@ contracts settle. No new ABI is implemented here.
 Host: Linux x86_64, Ubuntu-based kernel `7.0.0-28-generic`.
 Rust `1.97.0-nightly (a5c825cd8 2026-04-14)`; Cargo
 `1.97.0-nightly (eb94155a9 2026-04-09)`. This is a local nightly result, not proof
-of a minimum stable Rust version. The workflow requests stable, but did not execute.
+of a minimum stable Rust version. The initial private workflow did not execute. Subsequent public stable-Rust evidence appears below.
 
 At the initial state-audit checkpoint, executed before edits and again after housekeeping:
 
@@ -324,17 +324,17 @@ before reusing buffers or caching meshes. Preserve replay/resize purity when cac
 | Windows / ConPTY | UNVERIFIED; no job or host run. Key event-kind handling, lifecycle and loader paths need explicit tests. |
 | tmux / screen / SSH | UNVERIFIED; passive environment assumptions and local PTY tests are insufficient. |
 | Specific terminal emulator matrix | UNVERIFIED broadly; one parser and local PTY are not certification of every emulator/font. |
-| Go | PARTIALLY TESTED: Linux gccgo 14.2 / Go 1.18 vet/build/example smoke; no unit tests, public stable-Go CI pending. |
+| Go | PARTIALLY TESTED: local gccgo 14.2 / Go 1.18 and public Go 1.27.1 vet/build/example smoke; no Go unit tests or platform matrix. |
 | Active negotiation / DSR | PLANNED; color inference and relative anchors exist instead. |
 
-Fresh merged-main [Actions run 35941989705](https://github.com/femboy2112/libgibson/actions/runs/35941989705)
+Historical private merged-main [Actions run 35941989705](https://github.com/femboy2112/libgibson/actions/runs/35941989705)
 failed with **zero Rust steps**; dependent jobs were skipped. Its annotation states
 that recent payments failed or the spending limit needs increasing.
-**REMOTE CI: BLOCKED / ENVIRONMENTAL**, neither green nor a demonstrated source
+At that checkpoint **REMOTE CI: BLOCKED / ENVIRONMENTAL**, neither green nor a demonstrated source
 failure. This was verified for the main SHA above, not copied from a prior dossier.
 The later audit-tip [run 35942790824](https://github.com/femboy2112/libgibson/actions/runs/35942790824)
-also executed zero steps. Public-readiness workflow fixes are locally verified;
-no useful public runner execution has happened yet.
+also executed zero steps. These billing records remain historical evidence. The
+owner-authorized public launch and executed CI results below supersede that status.
 
 ## Known blockers and technical debt
 
@@ -346,8 +346,8 @@ feature or core fix is hidden in this consolidation branch.
 | --- | --- | --- |
 | D1 | Public Rect overflow | Debug probe confirms intersection at x=65535,width=1 and shrink(32768) panic. Endpoint/multiplication arithmetic in surface.rs is unchecked; release wrapping must also receive a defined contract and regression. Ordinary terminal geometry is not a reproducer. |
 | D2 | Exact coordinate enumeration is incomplete | Erasing `hello` from an 8×1 Surface yields exact count 5, but exact_changed_cells() returns []. It enumerates explicit runs, omitting erase/removal deltas. Repair storage/contract with blank-padding, erasure and removed-row regressions; leave compatibility metrics distinct. |
-| D3 | RESOLVED LOCALLY; hosted runner pending | Former literal `$PWD` RUNPATH caused exit 127 (historical probe below). All four workflow C/C++/sanitizer commands now expand `$GITHUB_WORKSPACE`; readelf and execution without LD_LIBRARY_PATH pass. |
-| D4 | Repository build STRUCTURALLY RESOLVED + LOCAL SMOKE; distribution remains limited | Correct module/import, normal command example, SRCDIR paths, per-job native build and hard-failing vet/test/build/example. Local gccgo succeeds. No Go unit tests or hosted stable-Go result; standalone installation remains D6 debt. |
+| D3 | RESOLVED + PUBLIC CI VERIFIED | Former literal `$PWD` RUNPATH caused exit 127 (historical probe below). All four workflow C/C++/sanitizer commands now expand `$GITHUB_WORKSPACE`; readelf and execution without LD_LIBRARY_PATH pass; both public binding/sanitizer jobs also execute successfully. |
+| D4 | Repository build RESOLVED + PUBLIC SMOKE; distribution remains limited | Correct module/import, normal command example, SRCDIR paths, per-job native build and hard-failing vet/test/build/example. Local gccgo succeeds. Hosted Go 1.27.1 vet/build/example also passes. No Go unit tests; standalone installation remains D6 debt. |
 | D5 | Test harness lifecycle/deadlines | Older pty_integration blocking read_line defeats its apparent timeout; visual_goldens kill without wait/join; several harnesses build only when binary absent. Fresh build ordering and bounded reaping need consolidation. |
 | D6 | Packaging/API contract | No declared/tested MSRV, changelog, crate overview, installable foreign packages or explicit API stability policy. Full MIT/Apache texts and Cargo package integrity are now verified; the remaining API/MSRV/installable-package contract is OPEN. |
 | D7 | Long-session/resource policy | Story trace grows indefinitely until completion; public Surface storage and caller-sized helpers lack uniform hostile-resource bounds. No sustained memory/backpressure study. |
@@ -456,7 +456,7 @@ full modern API parity is absent. A clean-machine packaging exercise, not anothe
 graphics demo, is the next evidence needed for release confidence.
 
 A serious release should close D1–D6 or explicitly narrow its supported contract,
-restore useful CI, define Linux-first support rather than imply platform parity,
+maintain useful CI, define Linux-first support rather than imply platform parity,
 and document stable versus experimental APIs. “Ready to merge the approved
 feature work” was not a claim that every public API was release-candidate quality.
 
@@ -466,12 +466,12 @@ Ranked by evidence, not spectacle:
 
 | Priority | Work / why | Dependency | Acceptance criterion | Architectural risk |
 | --- | --- | --- | --- | --- |
-| P0 | Obtain useful exact-main public CI; workflow security, paths and native job inputs are prepared | Owner changes visibility after exposure gate, then dispatches CI | Every Rust/native/Go/PTY job executes successfully; record exact SHA/run; zero-step billing failures are not test results | LOW |
+| P0 | Keep public CI useful; enable owner-selected security settings and main protection | First exact-main public CI is now green | Preserve five executed jobs; require meaningful checks through owner-approved protection; no unreviewed bot merges | LOW |
 | P1 | Fix D1/D2, add bounded property tests for Rect/Surface/diff reconstruction | Explicit endpoint/delta contracts | Debug/release hostile cases defined; erased/removed coordinates agree with exact count; seeded generative corpus passes | MEDIUM |
 | P1 | Consolidate fresh-build, bounded/reaped PTY harnesses | Existing stronger demo harness patterns | No stale executable path, zombie child or uninterruptible timeout; resize/input checks retained | LOW |
 | P1 | Establish release/API/MSRV/package contract | Useful CI and license review | Minimal Rust/C/Python apps build from documented clean install; full license texts, ownership docs and tested compiler floor | LOW–MEDIUM |
 | P1 | Profile sustained graphics and trace retention | Representative deterministic workloads | Separate generation/allocation/wire/consumer metrics, memory trend and slow-reader behavior; no universal FPS claim | MEDIUM |
-| P2 | Verify hosted stable Go and expand wrapper coverage; establish macOS/Windows then tmux/screen/SSH matrix | Toolchains/hosts/native artifacts | Each claimed environment executes input/lifecycle/resize/binding tests; unsupported cells remain explicit | MEDIUM |
+| P2 | Expand Go wrapper coverage; establish macOS/Windows then tmux/screen/SSH matrix | Toolchains/hosts/native artifacts | Each claimed environment executes input/lifecycle/resize/binding tests; unsupported cells remain explicit | MEDIUM |
 | P2 | Evaluate active capabilities/DSR and core ABI parity | Actual terminal failure evidence; stable input/query routing | Query timeout/fallback tests and no input theft; parity requirements agreed before API expansion | MEDIUM–HIGH |
 | P2 | Evaluate minimal raster upload versus Scene command ABI | Rust API stabilization and consumer need | Versioned ownership/resource design with two foreign-language consumers and adversarial validation | HIGH |
 | P3 | Semantic terminal application runtime with replay/inspection and accessibility | Portable core and mature cross-language contracts | Ordinary CLI and graphical applications share one tested realization/output model, with useful non-graphical fallbacks | HIGH |
@@ -497,10 +497,10 @@ alone does not advance that objective now.
 
 ## Public repository readiness
 
-**ENGINEERING ALPHA / PUBLIC-READY**, subject to the owner's visibility switch.
-The repository is still **PRIVATE** at this checkpoint. No visibility change,
-branch deletion, history rewrite, crate publication or security-setting change
-was performed. Public runner success is **NOT YET OBSERVED**.
+**Historical preparation checkpoint: ENGINEERING ALPHA / PUBLIC-READY.**
+The repository was still **PRIVATE** when PR #2 merged. The owner subsequently
+authorized the visibility switch; the current public CI evidence is recorded below.
+No branch deletion, history rewrite or crate publication was performed.
 
 ### Exposure gate and accepted disclosure
 
@@ -598,7 +598,8 @@ Actionlint **v1.7.12**, YAML invariant checks and an independent source review p
 Each of the four exact C/C++/ASan workflow command blocks was run with
 `GITHUB_WORKSPACE` set to the checkout and `LD_LIBRARY_PATH` removed. `readelf -d`
 confirmed an expanded RUNPATH; `env -u LD_LIBRARY_PATH <binary>` passed again for
-all four binaries. This closes D3 locally, not on a hosted runner yet.
+all four binaries. This closed D3 locally at preparation; the public evidence below now also covers
+the hosted runner.
 
 Go now has module `github.com/femboy2112/libgibson/bindings/go`, a normal
 `cmd/example` package, corrected imports and `${SRCDIR}` cgo paths. Local
@@ -606,7 +607,8 @@ Go now has module `github.com/femboy2112/libgibson/bindings/go`, a normal
 (with the explicit native-library path) all exit 0 on Go 1.18 / gccgo 14.2.
 There are **no Go test files**; this is compile/example smoke, not exhaustive API
 coverage. The smoke script and Go CI no longer mask failures. Hosted stable-Go
-verification remains pending, as does standalone Go distribution.
+verification was pending at preparation and is recorded below; standalone Go
+distribution remains open.
 
 The first plain `cargo package --list` refused the uncommitted tree (exit 101);
 this was an integrity guard, not a build failure. With explicit `--allow-dirty`,
@@ -614,6 +616,9 @@ listing and package build verification passed. The archive contains Cargo.toml,
 source, README and both complete licenses. Nothing was published.
 
 ### Owner launch sequence
+
+Visibility, dispatch, evidence recording and issue creation are now complete.
+The security-settings and branch-protection choices remain with the owner.
 
 1. Settings → General → Danger Zone → Change repository visibility → Public;
    confirm `femboy2112/libgibson`.
@@ -634,6 +639,53 @@ repositories** ([billing policy](https://docs.github.com/en/billing/concepts/pro
 That is the expected route past the private-minutes block, not a guarantee that
 an account-level issue cannot remain. Diagnose the actual first public run.
 
+## Executed public CI evidence
+
+The owner explicitly authorized publication after accepting the historical personal
+path disclosure. The repository is now **PUBLIC**. PR #2 merged readiness work at
+`9e8602acca353e4ce3409a792f0135cb6796b9bf`; a manual dispatch immediately followed.
+
+The first public [run 35945512611](https://github.com/femboy2112/libgibson/actions/runs/35945512611)
+executed on stable Rust 1.98.1 and failed strict Clippy. That was a real lint failure,
+not billing. Two manual canvas-clear loops and one redundant formatting borrow
+were replaced with equivalent syntax in [PR #12](https://github.com/femboy2112/libgibson/pull/12).
+No rendering/story behavior, public signature, dependency or lint policy changed.
+Exact-toolchain local fmt/Clippy and all 536 tests passed before submission; all
+five public PR jobs passed in run 35945896281.
+
+**First green exact-public-main run:**
+[35946157443](https://github.com/femboy2112/libgibson/actions/runs/35946157443),
+commit `aa60036a66413925309f0f6e9d99830a967cf7ff`.
+
+| Job | Executed result |
+| --- | --- |
+| Rust (fmt, clippy, test, build) | PASS: Rust 1.98.1; fmt, strict all-target Clippy, examples, 536 tests, 3 FX Lab tests, strict rustdoc, release build |
+| Bindings (C, C++, Python) | PASS: fresh native release and all three example runs |
+| AddressSanitizer (C, C++) | PASS: both ASan/UBSan examples; LeakSanitizer disabled |
+| Go bindings | PASS: Go 1.27.1; fresh native build, vet/test/build/example; no Go unit test files |
+| PTY integration tests | PASS: fresh examples and five integration/resize tests |
+
+This closes the billing execution gap and D3/D4 hosted-runner uncertainty for this
+Linux snapshot. It does not establish an MSRV, exhaustive Go wrapper coverage,
+other-platform support, universal performance or release-candidate maturity.
+**REMOTE CI GREEN** refers to this exact executed snapshot, not future commits.
+
+Known debt now has public reproductions/contracts and acceptance criteria:
+[D1 #7](https://github.com/femboy2112/libgibson/issues/7),
+[D2 #8](https://github.com/femboy2112/libgibson/issues/8),
+[D5 #9](https://github.com/femboy2112/libgibson/issues/9),
+[D7 #10](https://github.com/femboy2112/libgibson/issues/10),
+[D8 #11](https://github.com/femboy2112/libgibson/issues/11).
+D6's API/MSRV/distribution work remains open. Four initial Dependabot update PRs
+remain unmerged; they are not included in the green main result.
+
+Settings observed at launch: default Actions token read-only, Actions cannot
+approve PR reviews, first-time fork-contributor approval required. Private
+vulnerability reporting, secret scanning/push protection and Dependabot security
+updates were disabled. The owner should review/enable these and main protection
+now that actual check names/results exist. No such settings or branches were
+changed automatically.
+
 ## Current claim ledger
 
 | Claim | Status | Boundary / next evidence |
@@ -641,7 +693,7 @@ an account-level issue cannot remain. Diagnose the actual first public run.
 | Approved cinematic work is on main | VERIFIED | Ancestor of 0b673cc; PR #1 merged. |
 | Linux core pipeline works | IMPLEMENTED + TESTED | 536 tests and native smokes; D1/D2 remain outside previous coverage. |
 | C/C++/Python binding smoke works | IMPLEMENTED + TESTED | Local checkout; sanitizer boundary stated above. |
-| Go bindings build and example runs | PARTIALLY TESTED | Local Linux Go 1.18/gccgo 14.2; no unit tests; hosted stable-Go and wider API coverage pending. |
+| Go bindings build and example runs | PARTIALLY TESTED | Local gccgo plus public Go 1.27.1 smoke; no Go unit tests or wider API/platform certification. |
 | Windows/macOS/mux/SSH work | UNVERIFIED | Need actual host/terminal matrix. |
 | Scene/Story semantics are exercised | EXPERIMENTAL + TESTED | No API freeze; recorded updates only, no portable serialization. |
 | RGB/3D/effects work through Unicode cells | EXPERIMENTAL + TESTED | No image protocol; normal Surface/diff output. |
@@ -649,12 +701,12 @@ an account-level issue cannot remain. Diagnose the actual first public run.
 | Renderer is uniformly hostile-input hardened | FALSE as a broad claim | Rect counterexample, mutable storage and resource policies. |
 | Exact changed-coordinate enumeration is complete | FALSE | D2 erase probe. Exact count is a separate API. |
 | 60 FPS everywhere | DO NOT CLAIM | Cadence ceiling; sustained transport and slow hardware unverified. |
-| Remote CI is green | FALSE / BLOCKED ENVIRONMENTALLY | Zero-step billing evidence; corrected workflow has not yet executed on public runners. |
+| Remote CI is green | VERIFIED for the recorded public-main snapshot | Run 35946157443 at aa60036; five executed jobs passed. Historical private failures remain preserved. |
 | Full modern API is language-neutral | FALSE | Core UI ABI exists; modern composition/graphics remain Rust-only. |
 | New aesthetic acceptance was performed | UNVERIFIED THIS ROUND | No new cinematic content or human visual review. |
 | Reachable-history credential scan | PASS, accepted privacy disclosure | Gitleaks history + all blobs + supplemental patterns; owner accepted old personal path; bounded detection. |
 | Own license packaging | VERIFIED | Complete MIT/Apache texts; Cargo archive verification. |
-| Public workflow least privilege | VERIFIED FROM YAML + ACTIONLINT | SHA-pinned, read-only, no persisted checkout credentials/secrets/publish paths; remote execution pending. |
+| Public workflow least privilege | VERIFIED FROM YAML + ACTIONLINT | SHA-pinned, read-only, no persisted checkout credentials/secrets/publish paths; five public CI jobs now pass at the recorded SHA. |
 | Native CI loader paths | FIXED + LOCAL EXACT-COMMAND VERIFIED | Four normal/sanitized binaries run without LD_LIBRARY_PATH. |
-| Public GitHub CI | NOT YET RUN | Repository remains private; owner must dispatch exact-main after publication. |
+| Public GitHub CI | IMPLEMENTED + TESTED | Public, exact-main run 35946157443; stable Rust 1.98.1 and Go 1.27.1 evidence. |
 | Project is a release-candidate platform | NOT YET | Engineering alpha; operational, core-contract and distribution work outrank new features. |
