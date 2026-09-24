@@ -382,3 +382,40 @@ fn animated_shot_damage_keeps_delta_footprint_and_wire_separate() {
         assert_eq!(frozen, 0);
     }
 }
+
+#[test]
+fn quiet_does_not_announce_acid_with_premature_magenta_routes() {
+    let mut encounter = Encounter::new("quiet", false);
+    encounter.update(Duration::from_millis(400), &[]);
+    let plan = shot(&encounter, 120, 29);
+    let frame = cyber::render_shot(
+        encounter.battle(),
+        encounter.visual_history(),
+        120,
+        29,
+        false,
+        &plan,
+    );
+    assert!(!frame
+        .raster
+        .pixels()
+        .iter()
+        .any(|&(r, g, b)| r as u16 > g as u16 + 40 && b as u16 > g as u16 + 30));
+}
+
+#[test]
+fn actor_dialogue_does_not_concatenate_with_subsystem_labels() {
+    let mut encounter = Encounter::new("first-breach", false);
+    encounter.update(Duration::from_millis(400), &[]);
+    for (w, h) in [(120, 32), (160, 40)] {
+        let surface = painted(encounter.frame(w, h), w, h);
+        let content = text(&surface);
+        let (_, after) = content
+            .split_once("hello crash.")
+            .expect("visible remote dialogue");
+        assert!(
+            !after.chars().next().is_some_and(char::is_alphabetic),
+            "caption collided at {w}x{h}"
+        );
+    }
+}

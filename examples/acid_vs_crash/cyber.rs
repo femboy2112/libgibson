@@ -561,7 +561,7 @@ fn render_inner(
         let active = world.planner.path.windows(2).any(|p| {
             (p[0] == edge.from && p[1] == edge.to) || (p[1] == edge.from && p[0] == edge.to)
         });
-        let color = if active && world.remote_active {
+        let color = if active && world.remote_active && world.elapsed_ms >= 3500 {
             PINK
         } else {
             CYAN
@@ -800,6 +800,23 @@ fn render_inner(
                 .clamp(0, width.saturating_sub(label.len() as u16) as i32)
                 as u16;
             let y = (y as i32 / 2 + 1).clamp(0, height.saturating_sub(1) as i32) as u16;
+            // Reserve the actor's caption before placing subsystem labels.
+            // Otherwise sparse labels can concatenate into invented dialogue.
+            if shot.is_some() && world.remote_active && world.elapsed_ms >= 3500 {
+                if let Some((ax, ay, _)) =
+                    project(actor_position(world).plus(Vec3::new(0.0, 0.6, 0.0)))
+                {
+                    let row = (ay / 2.0) as i32;
+                    let caption = world.remote_line.chars().count().max(12) as i32 + 3;
+                    if (y as i32 >= row && y as i32 <= row + 1)
+                        && (x as i32) < ax as i32 + caption
+                        && x as i32 + label.chars().count() as i32 + 3 > ax as i32
+                    {
+                        continue;
+                    }
+                }
+            }
+
             surface.print_str(
                 x,
                 y,
