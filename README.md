@@ -6,6 +6,12 @@ LibGibson is a language-neutral, high-performance terminal UI and differential r
 
 LibGibson treats the terminal as a 2D logical cell framebuffer with an explicit architectural separation between **mutable live interactive state** and **immutable terminal scrollback history**.
 
+Read the [current project state](docs/STATE_OF_LIBGIBSON.md) for the architecture,
+core/experimental boundary, known blockers and priorities. The
+[validation index](docs/VALIDATION_INDEX.md) preserves historical evidence.
+Modern Scene/Story and software graphics APIs are experimental and Rust-only;
+the C ABI exposes the established UI/output subset.
+
 ---
 
 ## The Mental Model
@@ -93,7 +99,7 @@ Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repos
 - **Layer compositor** (TESTED): `Node::stack()` overlays children in one content box with **explicit** cell transparency (`Cell::transparent`). Transparent cells leave the lower layer untouched; `Node::dim()` is a style-only veil. Overlay removal is diff-driven and leaves no ghost cells; a floating modal does not reflow the layout beneath it. `Stack`/`Dim` have C ABI constructors (`gibson_node_stack`, `gibson_node_dim`).
 - **Sub-cell canvases** (TESTED): `BrailleCanvas` (2×4 dots/cell) and `HalfBlockCanvas` (1 horizontal × 2 vertical RGB samples per cell, so the grid is `width` × `2*height` pixels, via `▀`), with Bresenham lines/polylines and exact glyph/colour tests. No graphics protocol required.
 - **Deterministic clock** (TESTED): `TimeSource::{real,fixed}` + `FixedStepClock` and a small motion toolkit (`phase`, `pulse`, `saw`, `triangle`, easings). Scripted frames are `frame * step`, enabling reproducible goldens.
-- **Scene composition** (TESTED): `Node::offset(x,y)` positions a node absolutely inside its parent (out of flow) with signed, clipped placement; `Node::viewport(cam_x,cam_y)` is a clipped camera; `Node::raster(Arc<Surface>)`/`Node::surface` embeds a prebuilt surface. `ViewportState` owns pan/page/home/end + clamping. (`tests/scene.rs`)
+- **Scene composition** (TESTED): `Node::offset(x,y)` positions a node absolutely inside its parent (out of flow) with signed, clipped placement; `Node::viewport(cam_x,cam_y)` is a clipped camera; `Node::raster(Surface)`/`Node::surface(Arc<Surface>)` embeds a prebuilt surface. `ViewportState` owns pan/page/home/end + clamping. (`tests/scene.rs`)
 - **FX substrate** (TESTED): deterministic `geom` 3D wireframe projector (cube/octahedron/torus/box/grid/data-tower, inclusive near-plane clipping, per-edge depth), seeded `particles` (radial / life-variance / directional bursts), procedural `field` (plasma/interference + heat ramp + Bayer-dithered mono fallback), grapheme-safe `transition` helpers (type-on/dissolve/scramble), and safe `glitch` primitives (row shift/tear/invert/scramble) that mutate only cell content.
 - **Damage inspection** (TESTED): logical damage (`SurfaceDiff::logical_dirty_count`/`logical_dirty_cells`, including erase-to-EOL and cleared rows) plus explicit run counts and independently measured wire bytes; `Renderer::capture_damage`/`Context::last_dirty_cells()` expose per-frame logical coordinates for debug overlays (the demos visualize the renderer's own damage).
 - **Minimal focus** (TESTED): `FocusId`/`FocusRing` cycle (Tab/Shift-Tab), capture on modal open and restore on close, without a DOM/event-router. (`src/focus.rs`)
@@ -372,7 +378,7 @@ The C and C++ examples are exercised under AddressSanitizer + UndefinedBehaviorS
 ```bash
 gcc -fsanitize=address,undefined -fno-sanitize=leak -Iinclude \
     bindings/c/example.c -Ltarget/release -lgibson \
-    -Wl,-rpath,'$ORIGIN/../../target/release' -o /tmp/example_c_asan
+    -Wl,-rpath,"$PWD/target/release" -o /tmp/example_c_asan
 ASAN_OPTIONS=detect_leaks=0 /tmp/example_c_asan
 ```
 
@@ -456,4 +462,6 @@ Licensed under either of:
 - Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
 - MIT license (http://opensource.org/licenses/MIT)
 
-at your option. Both license texts are included in [LICENSE](LICENSE).
+at your option. [LICENSE](LICENSE) contains the MIT text and an Apache 2.0 notice/link.
+Completing the referenced license-file packaging is tracked in the
+[state audit](docs/STATE_OF_LIBGIBSON.md#known-blockers-and-technical-debt).

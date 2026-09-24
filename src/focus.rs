@@ -12,7 +12,7 @@ pub struct FocusId(pub u64);
 
 /// A small ordered set of focusable ids with a current owner and a modal stack.
 ///
-/// * [`FocusRing::next`] / [`FocusRing::prev`] cycle with wraparound.
+/// * [`FocusRing::focus_next`] / [`FocusRing::focus_prev`] cycle with wraparound.
 /// * [`FocusRing::capture`] remembers the current owner (modal open).
 /// * [`FocusRing::release`] restores it (modal close).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

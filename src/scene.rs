@@ -1,9 +1,11 @@
 //! Scene Algebra — a tiny compositional semantics of visual change.
 //!
+//! Experimental, Rust-only API; tested semantics do not imply an API stability promise.
+//!
 //! ## Why this exists
 //!
-//! LibGibson already has a stable renderer (`Node` → `Surface` → `Layout` →
-//! compositing → diff → ANSI). What it did **not** have was a way for visual
+//! LibGibson already has a renderer (`Node` → layout → painter/compositing →
+//! `Surface` → diff → ANSI). What it did **not** have was a way for visual
 //! dynamism to act on UI objects abstractly. Demos had to hand-wire
 //! `if plague_frames > 0 { … }` into application state, forcing the effect, the
 //! scene object and the application phase to know too much about each other.

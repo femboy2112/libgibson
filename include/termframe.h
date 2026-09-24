@@ -27,6 +27,8 @@ typedef gibson_color_t       tf_color;
 #define tf_render_if_due     gibson_render_if_due
 #define tf_request_render    gibson_request_render
 #define tf_commit            gibson_commit
+/* Legacy raw-ANSI alias: payload is not sanitized. Prefer
+ * gibson_insert_text_before_live for ordinary untrusted text. */
 #define tf_insert_before_live gibson_insert_raw_lines_before_live_unchecked
 #define tf_poll_event        gibson_poll_event
 
