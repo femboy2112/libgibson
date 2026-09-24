@@ -439,3 +439,15 @@ pullback change more cells. It is an accepted spectacle cost, not sparse-output
 or 60 FPS evidence. Narrow TrueColor ascent, wide TrueColor membrane and narrow
 Mono finale smokes also exited 0 and restored the terminal. Generated captures
 remain outside the repository. Exact pushed-tip CI is recorded in PR #14.
+
+The first remote follow-up run,
+[35957005460](https://github.com/femboy2112/libgibson/actions/runs/35957005460)
+at `5b6a715`, passed the geometric tests but hit the auto-film PTY test's
+14-second deadline; dependent jobs were skipped. This was an executed test
+failure, not billing or runner admission. The completion test now uses the
+supported 56×24 viewport while retaining ANSI256, the full timeline, the same
+14-second deadline and every final-label/restoration assertion. Separate
+TrueColor PTY coverage still exercises canonical/wide frames and resize.
+`cargo +1.98.1 test --test intro_pty -- --test-threads=1` passes all six tests;
+strict fmt/Clippy pass too. No runtime or film timing changed for this correction.
+The subsequent exact-tip CI result is recorded in PR #14.
