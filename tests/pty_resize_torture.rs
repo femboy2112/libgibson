@@ -315,9 +315,13 @@ fn acid_graphical_and_feedback_resize_torture_restores_terminal() {
         for (cols, rows) in [(56, 24), (80, 24), (160, 40), (120, 32)] {
             let before = h.raw().len();
             h.resize(cols, rows);
-            // Let SIGWINCH reach the event reader before sending the next key;
-            // readiness below still requires actual reconstructed input.
-            std::thread::sleep(Duration::from_millis(60));
+            // Keep draining while SIGWINCH reaches the event reader. Sleeping
+            // here would fill the PTY output queue and strand the child in a
+            // frame write, delaying resize handling until after the next key.
+            // Readiness below still requires the exact reconstructed input.
+            h.capture
+                .collect_for(Duration::from_millis(60))
+                .expect("drain resize frame");
             if name == "acid_vs_crash" {
                 h.send("r");
                 typed.push('r');
@@ -422,7 +426,9 @@ fn acid_cinematic_shots_resize_without_losing_input_or_terminal_state() {
         let mut typed = String::new();
         for (cols, rows) in [(56, 24), (80, 24), (160, 40), (120, 32)] {
             h.resize(cols, rows);
-            std::thread::sleep(Duration::from_millis(60));
+            h.capture
+                .collect_for(Duration::from_millis(60))
+                .expect("drain resize frame");
             // Lowercase input is ordinary text even in final/ending shots.
             typed.push('r');
             h.send("r");
