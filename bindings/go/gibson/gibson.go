@@ -2,14 +2,14 @@
 package gibson
 
 /*
-#cgo CFLAGS: -I${SRCDIR}/../../../include
-#cgo LDFLAGS: -L${SRCDIR}/../../../target/release -lgibson
-#include "gibson.h"
+#cgo pkg-config: libgibson
+#include <gibson.h>
 #include <stdlib.h>
 */
 import "C"
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 )
 
@@ -57,6 +57,23 @@ func AbiVersion() uint32 {
 	return uint32(C.gibson_abi_version())
 }
 
+// ExpectedABIVersion is the C ABI version this wrapper was compiled against
+// (GIBSON_ABI_VERSION, from the gibson.h it was built with).
+const ExpectedABIVersion = uint32(C.GIBSON_ABI_VERSION)
+
+// CheckABI verifies that the loaded native library's ABI version matches the
+// version this wrapper was built against, returning a clear error on mismatch
+// instead of letting a signature skew corrupt memory later.
+func CheckABI() error {
+	if got := AbiVersion(); got != ExpectedABIVersion {
+		return fmt.Errorf(
+			"libgibson ABI mismatch: wrapper built against ABI %d, loaded native "+
+				"library reports ABI %d; install a compatible libgibson",
+			ExpectedABIVersion, got)
+	}
+	return nil
+}
+
 // Context wraps a LibGibson native terminal context.
 type Context struct {
 	ptr *C.gibson_context_t
@@ -64,6 +81,9 @@ type Context struct {
 
 // NewContext creates a new LibGibson context.
 func NewContext(mode RenderMode) (*Context, error) {
+	if err := CheckABI(); err != nil {
+		return nil, err
+	}
 	var ptr *C.gibson_context_t
 	status := C.gibson_create_context(C.int32_t(mode), &ptr)
 	if status != C.GIBSON_OK {
