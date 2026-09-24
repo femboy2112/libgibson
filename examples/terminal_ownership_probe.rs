@@ -6,6 +6,9 @@
 
 use gibson::{TerminalLease, TerminalSession};
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 fn main() {
     let scenario = std::env::args().nth(1).unwrap_or_default();
@@ -13,6 +16,7 @@ fn main() {
         "second-owner" => second_owner(),
         "drop-reacquire" => drop_reacquire(),
         "panic-when-owned" => panic_when_owned(),
+        "duel-trace" => duel_trace(),
         other => {
             eprintln!("unknown terminal-ownership scenario: {other:?}");
             std::process::exit(2);
@@ -82,4 +86,129 @@ fn panic_when_owned() {
     let _ = std::io::stdout().flush();
 
     panic!("intentional panic while owning the terminal");
+}
+
+/// Runtime Observatory's Ownership-Duel fixture source. Two contexts fight
+/// over the process-global lease for real: ctx#1 acquires, ctx#2 is rejected
+/// while ctx#1 still holds it, ctx#1 restores, ctx#2 reacquires, teardown.
+/// Every line printed is `seq\tus\tsource\tkind\tvalue`, same shape the other
+/// release-lab fixtures use — this is measured, not staged.
+///
+/// A background thread spins on `TerminalSession::lease_state()` the whole
+/// run and records every state it actually catches (with the real timestamp
+/// it caught it at). `restore()` is synchronous on the main thread, so
+/// whether that poller ever actually witnesses the transient `Restoring`
+/// value is a real race, not a guarantee — whatever it measures is what gets
+/// printed, including if it measures nothing.
+fn duel_trace() {
+    let epoch = Instant::now();
+    let mut seq: u64 = 0;
+    let emit_at = |seq: &mut u64, us: u64, source: &str, kind: &str, value: &str| {
+        println!("{seq}\t{us}\t{source}\t{kind}\t{value}");
+        *seq += 1;
+    };
+    let emit = |seq: &mut u64, source: &str, kind: &str, value: &str| {
+        let us = epoch.elapsed().as_micros() as u64;
+        println!("{seq}\t{us}\t{source}\t{kind}\t{value}");
+        *seq += 1;
+    };
+
+    let witness: Arc<Mutex<Vec<(u64, TerminalLease)>>> = Arc::new(Mutex::new(Vec::new()));
+    let stop = Arc::new(AtomicBool::new(false));
+    let poller = {
+        let witness = witness.clone();
+        let stop = stop.clone();
+        std::thread::spawn(move || {
+            let mut last = None;
+            while !stop.load(Ordering::Relaxed) {
+                let now = TerminalSession::lease_state();
+                if Some(now) != last {
+                    let us = epoch.elapsed().as_micros() as u64;
+                    witness.lock().unwrap().push((us, now));
+                    last = Some(now);
+                }
+            }
+        })
+    };
+
+    emit(&mut seq, "SESSION", "LeaseState", "start:Available");
+
+    let mut ctx1 = TerminalSession::new().expect("ctx1 must acquire the terminal");
+    emit(&mut seq, "SESSION", "Acquire", "ctx1:ok");
+    emit(
+        &mut seq,
+        "SESSION",
+        "LeaseState",
+        &format!("ctx1:{:?}", TerminalSession::lease_state()),
+    );
+
+    match TerminalSession::new() {
+        Ok(_) => {
+            eprintln!("ctx2 unexpectedly acquired while ctx1 owns the terminal");
+            std::process::exit(1);
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+            emit(
+                &mut seq,
+                "SESSION",
+                "Acquire",
+                "ctx2:rejected:AlreadyExists",
+            );
+        }
+        Err(err) => {
+            eprintln!("ctx2 failed with unexpected error kind: {err:?}");
+            std::process::exit(1);
+        }
+    }
+    emit(
+        &mut seq,
+        "SESSION",
+        "LeaseState",
+        &format!("ctx2-attempt:{:?}", TerminalSession::lease_state()),
+    );
+
+    emit(&mut seq, "SESSION", "RestoreBegin", "ctx1");
+    ctx1.restore().expect("ctx1 restore must succeed");
+    emit(&mut seq, "SESSION", "RestoreResult", "ctx1:ok");
+    emit(
+        &mut seq,
+        "SESSION",
+        "LeaseState",
+        &format!("post-restore:{:?}", TerminalSession::lease_state()),
+    );
+
+    let ctx2 = TerminalSession::new().expect("ctx2 must reacquire after ctx1 restore");
+    emit(&mut seq, "SESSION", "Acquire", "ctx2:ok");
+    emit(
+        &mut seq,
+        "SESSION",
+        "LeaseState",
+        &format!("ctx2:{:?}", TerminalSession::lease_state()),
+    );
+
+    drop(ctx2);
+    emit(&mut seq, "SESSION", "Teardown", "ctx2");
+    emit(
+        &mut seq,
+        "SESSION",
+        "LeaseState",
+        &format!("final:{:?}", TerminalSession::lease_state()),
+    );
+
+    stop.store(true, Ordering::Relaxed);
+    poller.join().expect("witness poller must not panic");
+    let samples = witness.lock().unwrap();
+    for (us, state) in samples.iter() {
+        emit_at(
+            &mut seq,
+            *us,
+            "SESSION",
+            "LeaseStateWitness",
+            &format!("{state:?}"),
+        );
+    }
+
+    println!("DUEL_DONE");
+    let _ = std::io::stdout().flush();
+    std::process::exit(0);
 }
