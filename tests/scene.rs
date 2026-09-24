@@ -335,7 +335,12 @@ impl Fs {
     }
 
     fn cell(&self, x: u16, y: u16) -> String {
-        self.parser.screen().cell(y, x).unwrap().contents()
+        self.parser
+            .screen()
+            .cell(y, x)
+            .unwrap()
+            .contents()
+            .to_owned()
     }
 }
 

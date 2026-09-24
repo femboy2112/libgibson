@@ -336,7 +336,7 @@ fn resize_during_wireframe_animation_is_safe_and_reanchors() {
     let before = renderer.anchor_resyncs;
 
     session.set_terminal_size(30, 10);
-    parser.set_size(10, 30);
+    parser.screen_mut().set_size(10, 30);
     let mut out2 = Vec::new();
     renderer
         .render(&mut wireframe_node(0.2, 20, 8), &mut session, &mut out2)
