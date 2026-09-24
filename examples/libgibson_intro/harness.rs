@@ -172,16 +172,22 @@ fn receipts(width: u16, time: f32) -> Node {
         }
     }
     let values: Vec<f32> = (0..40)
-        .map(|i| 0.3 + 0.25 * (time * 0.4 + i as f32 * 0.45).sin() + 0.15 * (i as f32 * 1.7).cos())
+        .map(|i| {
+            let at = time - (39 - i) as f32 * 0.25;
+            AGENTS
+                .iter()
+                .map(|a| (a.progress(at) - a.progress(at - 0.25)) * 10.0)
+                .sum()
+        })
         .collect();
-    nodes.push(text("SCHEDULER ACTIVITY", DIM));
+    nodes.push(text("JOB PROGRESS / 250ms", DIM));
     nodes.push(Node::line(gibson::show::sparkline(
         &values,
         usize::from(width.saturating_sub(2)),
         CYAN,
         LILAC,
     )));
-    nodes.push(text("4 workers / bounded fictional run", DIM));
+    nodes.push(text("4 workers / local simulation", DIM));
     Node::col().children(nodes)
 }
 pub fn render(width: u16, height: u16, time: f32) -> Surface {

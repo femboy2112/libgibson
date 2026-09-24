@@ -126,16 +126,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|s| s.parse::<f32>().ok())
         .filter(|n| n.is_finite() && *n > 0.0);
     let fixed = gibson::FixedStepClock::new(cadence);
+    let mut realized = None;
     loop {
         let (w, h) = ctx.session.terminal_size();
-        ctx.set_root(Node::raster(frame(
-            &d,
-            w,
-            h,
-            ctx.session.color_depth(),
-            !has("--no-hints"),
-        )));
-        if let Some(Event::Key(k)) = ctx.run_once(cadence)? {
+        let key = (d.seconds.to_bits(), w, h, d.paused);
+        if realized != Some(key) {
+            ctx.set_root(Node::raster(frame(
+                &d,
+                w,
+                h,
+                ctx.session.color_depth(),
+                !has("--no-hints"),
+            )));
+            realized = Some(key);
+        }
+        // A frozen image reuses its ordinary Node. Keep input responsive without
+        // regenerating the raster or spinning on an expired frame deadline.
+        let event = if ctx.scheduler.is_dirty {
+            ctx.run_once(cadence)?
+        } else if ctx.session.is_tty {
+            ctx.poll_event(cadence)?
+        } else {
+            std::thread::sleep(cadence);
+            None
+        };
+        if let Some(Event::Key(k)) = event {
             match k.code {
                 KeyCode::Esc => break,
                 KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => break,
