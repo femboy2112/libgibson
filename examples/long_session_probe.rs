@@ -12,7 +12,7 @@
 //!   cargo +1.98.1 run --release --example long_session_probe -- --ticks 1000000
 //!   cargo +1.98.1 run --release --example long_session_probe -- --ticks 1000000 --events
 
-use gibson::{Beat, Story, StoryEvent, TraceStep};
+use gibson::{Beat, Story, StoryEvent, TraceRetention, TraceStep};
 use std::time::{Duration, Instant};
 
 /// Two numbers straight from `/proc/self/status`, in kB, exactly as the
@@ -58,6 +58,17 @@ fn build_looping_story() -> Story {
     Story::new("loop").beat(Beat::new("loop"))
 }
 
+/// A ping-pong story: two beats, each auto-transitioning to the other on every
+/// update (`After(0)`). Every `update` fires exactly one transition, so the
+/// `StoryTrace.beats` log grows one entry per tick — the worst case for the beat
+/// log, the counterpart to the looping story's worst case for the step log
+/// (issue #10, A2). Left unbounded, `beats` is just as linear as `steps`.
+fn build_ping_pong_story() -> Story {
+    Story::new("ping")
+        .beat(Beat::new("ping").after(Duration::ZERO, "pong"))
+        .beat(Beat::new("pong").after(Duration::ZERO, "ping"))
+}
+
 /// Estimate of heap bytes owned by the per-step `events` vectors: the
 /// `Vec<StoryEvent>` buffer itself (by *capacity*, since that's what's
 /// actually allocated, not just `len`), plus any `String` payload carried by
@@ -84,14 +95,26 @@ fn events_heap_bytes(steps: &[TraceStep]) -> usize {
         .sum()
 }
 
+#[derive(Clone, Copy)]
+enum StoryKind {
+    /// One beat, no transitions: worst case for the step log.
+    Looping,
+    /// Two beats, one transition per update: worst case for the beat log.
+    PingPong,
+}
+
 struct Args {
     ticks: u64,
     use_events: bool,
+    story: StoryKind,
+    retention: TraceRetention,
 }
 
 fn parse_args() -> Args {
     let mut ticks = 100_000u64;
     let mut use_events = false;
+    let mut story = StoryKind::Looping;
+    let mut retention = TraceRetention::All;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -104,10 +127,39 @@ fn parse_args() -> Args {
                 }
             }
             "--events" => use_events = true,
+            "--story" => {
+                story = match args.next().as_deref() {
+                    Some("loop") | Some("looping") => StoryKind::Looping,
+                    Some("pingpong") | Some("ping-pong") => StoryKind::PingPong,
+                    Some(other) => panic!("--story expects loop|pingpong, got `{other}`"),
+                    None => panic!("--story expects a value"),
+                };
+            }
+            "--retention" => {
+                retention = match args.next().as_deref() {
+                    Some("all") => TraceRetention::All,
+                    Some("disabled") => TraceRetention::Disabled,
+                    Some(spec) if spec.starts_with("bounded:") => {
+                        let cap = spec["bounded:".len()..]
+                            .parse::<usize>()
+                            .expect("--retention bounded:CAP expects an integer cap");
+                        TraceRetention::Bounded(cap)
+                    }
+                    Some(other) => {
+                        panic!("--retention expects all|disabled|bounded:CAP, got `{other}`")
+                    }
+                    None => panic!("--retention expects a value"),
+                };
+            }
             other => eprintln!("(ignoring unknown arg `{other}`)"),
         }
     }
-    Args { ticks, use_events }
+    Args {
+        ticks,
+        use_events,
+        story,
+        retention,
+    }
 }
 
 fn fmt_kb(v: Option<u64>) -> String {
@@ -135,9 +187,13 @@ fn main() {
     println!("host note: VmRSS/VmHWM are read from /proc/self/status and are");
     println!("therefore Linux-specific; every other number here is portable.\n");
 
-    let story = build_looping_story();
-    story.validate().expect("looping story must validate");
+    let story = match args.story {
+        StoryKind::Looping => build_looping_story(),
+        StoryKind::PingPong => build_ping_pong_story(),
+    };
+    story.validate().expect("probe story must validate");
     let mut director = story.start();
+    director.set_trace_retention(args.retention);
 
     // Baseline captured right here: the director already exists (fixed, O(1)
     // cost — one beat, one empty trace) but the trace has not yet been asked
@@ -165,6 +221,17 @@ fn main() {
     let len_basis_bytes = steps_len * step_size + events_heap_bytes(&trace.steps);
     let cap_basis_bytes = steps_cap * step_size + events_heap_bytes(&trace.steps);
 
+    // Beat log: the second retained history #10/A2 must also bound. A ping-pong
+    // story pushes one beat per tick, so this grows linearly under `All`.
+    let beats_len = trace.beats.len();
+    let beats_cap = trace.beats.capacity();
+    let beat_pair_size = std::mem::size_of::<(Duration, String)>();
+    let beats_string_bytes: usize = trace.beats.iter().map(|(_, s)| s.capacity()).sum();
+    let beats_bytes = beats_cap * beat_pair_size + beats_string_bytes;
+    let dropped_steps = trace.dropped_steps();
+    let dropped_beats = trace.dropped_beats();
+    let is_complete = trace.is_complete();
+
     let replay_start = Instant::now();
     let replayed = story.replay(trace);
     let replay_elapsed = replay_start.elapsed();
@@ -186,18 +253,32 @@ fn main() {
     );
     println!("ticks (N):                     {}", args.ticks);
     println!("dt per tick:                   {dt:?}");
+    println!(
+        "story:                         {}",
+        match args.story {
+            StoryKind::Looping => "looping (1 beat, 0 transitions: step-log worst case)",
+            StoryKind::PingPong => "ping-pong (2 beats, 1 transition/tick: beat-log worst case)",
+        }
+    );
+    println!("retention:                     {:?}", args.retention);
     println!();
     println!("trace().steps.len():           {steps_len}");
     println!("trace().steps.capacity():      {steps_cap}");
     println!("size_of::<TraceStep>():        {step_size} bytes");
     println!(
-        "retained bytes (len basis):    {len_basis_bytes} bytes  ({:.3} MiB)",
-        len_basis_bytes as f64 / (1024.0 * 1024.0)
-    );
-    println!(
-        "retained bytes (cap basis):    {cap_basis_bytes} bytes  ({:.3} MiB)",
+        "retained step bytes (cap):     {cap_basis_bytes} bytes  ({:.3} MiB)",
         cap_basis_bytes as f64 / (1024.0 * 1024.0)
     );
+    println!("  (len basis:                  {len_basis_bytes} bytes)",);
+    println!("trace().beats.len():           {beats_len}");
+    println!("trace().beats.capacity():      {beats_cap}");
+    println!(
+        "retained beat bytes (cap):     {beats_bytes} bytes  ({:.3} MiB)",
+        beats_bytes as f64 / (1024.0 * 1024.0)
+    );
+    println!("dropped_steps():               {dropped_steps}");
+    println!("dropped_beats():               {dropped_beats}");
+    println!("is_complete():                 {is_complete}");
     println!();
     println!(
         "VmRSS  before (baseline):      {}",
