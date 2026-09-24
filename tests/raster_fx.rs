@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use gibson::raster::RgbRaster;
+use gibson::raster::{RgbRaster, MAX_RASTER_DIMENSION};
 use gibson::raster_fx::{
     metaballs, palette, radial_glow, ring, vortex, FeedbackBuffer, RasterFx, RasterFxWorkspace,
 };
@@ -205,6 +205,37 @@ fn feedback_zero_dt_is_identity_even_with_new_input_dimensions() {
     let before = feedback.clone();
     feedback.update(Duration::ZERO, &RgbRaster::new(2, 2));
     assert_eq!(feedback, before);
+}
+
+#[test]
+fn feedback_resize_preserves_history_when_clamped_dimensions_match() {
+    // Exercise each axis independently: only 2,048 pixels per buffer, not 2048².
+    for (width, height) in [(3000, 1), (1, 3000)] {
+        let mut feedback = FeedbackBuffer::new(1, 1, Duration::from_secs(1));
+        feedback.resize(width, height);
+        let dimensions = (
+            width.min(MAX_RASTER_DIMENSION),
+            height.min(MAX_RASTER_DIMENSION),
+        );
+        let mut input = RgbRaster::new(width, height);
+        input.set(0, 0, (240, 120, 60));
+        feedback.update(Duration::from_millis(137), &input);
+        input.clear((0, 0, 0));
+        feedback.update(Duration::from_millis(71), &input);
+        assert_eq!(feedback.updates(), 2);
+        assert_ne!(feedback.raster().get(0, 0), Some((0, 0, 0)));
+        let before = feedback.clone();
+
+        for requested in [(width, height), (width, height), dimensions] {
+            feedback.resize(requested.0, requested.1);
+            assert_eq!(
+                (feedback.raster().width(), feedback.raster().height()),
+                dimensions
+            );
+            // Includes floating energy, output, half-life, and update counter.
+            assert_eq!(feedback, before);
+        }
+    }
 }
 
 #[test]

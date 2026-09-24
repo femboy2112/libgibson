@@ -6,7 +6,8 @@ use crate::surface::Surface;
 use std::io::{self, Write};
 
 pub type Rgb = (u8, u8, u8);
-/// Explicit allocation bound for tiny software graphics, per pixel axis.
+/// Hard allocation bound per pixel axis, not a recommended operating size.
+/// Normal terminal rasters are orders of magnitude smaller than this ceiling.
 pub const MAX_RASTER_DIMENSION: u16 = 2048;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,7 +55,8 @@ impl RgbRaster {
     pub fn clear(&mut self, color: Rgb) {
         self.pixels.fill(color);
     }
-    /// Linear RGB interpolation. Nonfinite amounts are ignored; finite amounts clamp.
+    /// Linear per-channel interpolation of stored 8-bit RGB values, not linear-light
+    /// color-space interpolation. Nonfinite amounts are ignored; finite amounts clamp.
     pub fn blend(&mut self, x: i32, y: i32, color: Rgb, amount: f32) {
         if !amount.is_finite() {
             return;

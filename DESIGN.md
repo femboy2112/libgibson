@@ -28,7 +28,7 @@ Because earlier revisions of this document overstated completion, architectural 
 | Label | Meaning |
 | --- | --- |
 | **IMPLEMENTED** | The described code path exists and is reached in normal operation. |
-| **TESTED** | Covered by an automated test in this repository (`cargo test`, 515 tests) that exercises the behavior described. |
+| **TESTED** | Covered by an automated test in this repository (`cargo test`, 536 tests: 226 unit + 310 integration) that exercises the behavior described. |
 | **PARTIALLY TESTED** | Implemented, and some behavior is covered, but at least one named facet is not automatically verified. The gap is stated explicitly. |
 | **UNVERIFIED** | Written down because it exists in source or is a documented assumption, but has not been compiled or executed in any environment we can attest to. |
 
@@ -1000,10 +1000,16 @@ a palette interpolator provide fields without introducing a shader language.
 
 `FeedbackBuffer` is explicit state, not a pure Scene effect. Each update decays
 floating RGB history by an explicit half-life and adds the supplied emission;
-conversion saturates to RGB bytes. Zero dt is identity. Reset and resize clear
-history. Exact replay means the same ordered dt/emission inputs; arbitrary
+conversion saturates to RGB bytes. Zero dt is identity. Reset and changes to
+effective (clamped) dimensions clear history; resizing to the same effective
+dimensions preserves it. Exact replay means the same ordered dt/emission inputs; arbitrary
 repartitioning of emission updates is not claimed equivalent. Black input
 predictably decays, including sub-byte energy; NaNs never enter the buffer.
+
+`MAX_RASTER_DIMENSION` is a hard allocation bound, not a recommended operating
+size. A maximum 2048×2048 feedback buffer holds 96 MiB of floating energy plus
+12 MiB of RGB output (about 108 MiB before allocator overhead). Normal terminal
+rasters are orders of magnitude smaller.
 
 TrueColor preserves RGB; ANSI256/ANSI16 quantize in the existing ANSI compiler.
 Mono has a separate luminance-to-Braille ordered-dither realization rather than

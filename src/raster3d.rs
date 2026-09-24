@@ -101,7 +101,10 @@ impl Camera {
             height,
         })
     }
-    /// Project a world point inside the frustum to pixel x/y and camera depth.
+    /// Project a world point inside the frustum to continuous pixel-space x/y
+    /// and camera depth. Coordinates use framebuffer edges: exact right/bottom
+    /// frustum boundaries may map to `width`/`height`, not valid pixel indices.
+    /// Rasterization/clipping owns conversion to discrete raster indices.
     pub fn project(&self, point: Vec3, width: u16, height: u16) -> Option<(f32, f32, f32)> {
         if !point.is_finite() {
             return None;

@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use crate::raster::{Rgb, RgbRaster};
+use crate::raster::{Rgb, RgbRaster, MAX_RASTER_DIMENSION};
 
 /// A small, bounded RGB post-process. Invalid floating parameters are no-ops.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -159,6 +159,11 @@ fn scale(c: Rgb, gain: f32) -> Rgb {
 /// same ordered rasters and durations; splitting a step is not equivalent.
 /// High-precision history avoids 8-bit rounding leaving immortal faint trails.
 /// RGB energy is saturated at 255 per channel. No terminal alpha is involved.
+///
+/// Dimensions share [`MAX_RASTER_DIMENSION`], a hard allocation bound, not a
+/// recommended operating size. At 2048 × 2048, floating energy uses 96 MiB and
+/// RGB output another 12 MiB (about 108 MiB total, excluding allocator overhead).
+/// Normal terminal rasters are orders of magnitude smaller.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FeedbackBuffer {
     output: RgbRaster,
@@ -188,8 +193,11 @@ impl FeedbackBuffer {
         self.updates = 0;
     }
 
-    /// Change dimensions and clear history; same dimensions preserve history.
+    /// Change effective dimensions and clear history. Requests are clamped to
+    /// [`MAX_RASTER_DIMENSION`]; unchanged effective dimensions preserve history.
     pub fn resize(&mut self, width: u16, height: u16) {
+        let width = width.min(MAX_RASTER_DIMENSION);
+        let height = height.min(MAX_RASTER_DIMENSION);
         if self.output.width() == width && self.output.height() == height {
             return;
         }
