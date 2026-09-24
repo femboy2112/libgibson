@@ -7,8 +7,8 @@ semantics and experimental compositional animation and software graphics.
 
 **Engineering alpha.** Linux is the best-tested environment. Scene, Story, and
 software graphics are experimental Rust-only APIs. C/C++/Python expose an
-established UI/output subset; Go now passes local Linux build/example smoke checks,
-with remote verification pending. Capability is not an API stability promise.
+established UI/output subset; Go passes local and public Linux build/example smoke
+checks. Capability is not an API stability promise.
 
 LibGibson treats the terminal as a 2D logical cell framebuffer with an explicit architectural separation between **mutable live interactive state** and **immutable terminal scrollback history**.
 
@@ -19,6 +19,10 @@ Modern Scene/Story and software graphics APIs are experimental and Rust-only;
 the C ABI exposes the established UI/output subset.
 
 ---
+
+Public CI is now executing: [first green main run](https://github.com/femboy2112/libgibson/actions/runs/35946157443)
+verified Rust 1.98.1, C/C++/Python, native sanitizers, Go 1.27.1 and PTYs.
+See the [exact evidence and limits](docs/STATE_OF_LIBGIBSON.md#executed-public-ci-evidence).
 
 ## The Mental Model
 
@@ -92,7 +96,7 @@ ctx.commit_text("Finalized output text")?; // ctx.commit(...) is an alias
 
 Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **536 tests**: 226 library unit tests and 310 integration tests (across `acid_architecture`, `acid_presentation`, `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
 
-`cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings pass local Linux vet/build/example smoke**; no Go unit tests exist and remote stable-Go validation remains pending. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
+`cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings pass local Linux vet/build/example smoke**; no Go unit tests exist and public Go 1.27.1 smoke also passes. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
 
 ---
 
@@ -388,7 +392,7 @@ gcc -fsanitize=address,undefined -fno-sanitize=leak -Iinclude \
 ASAN_OPTIONS=detect_leaks=0 /tmp/example_c_asan
 ```
 
-The [Go cgo wrapper](bindings/go/README.md) now has a module and runnable command example. Local Linux vet/build/example smoke passes; standalone installation, exhaustive wrapper coverage, and remote CI remain pending.
+The [Go cgo wrapper](bindings/go/README.md) now has a module and runnable command example. Local Linux vet/build/example smoke passes; standalone installation and exhaustive wrapper coverage remain pending; public Go 1.27.1 CI smoke passes.
 
 ---
 
@@ -454,7 +458,7 @@ The [Go cgo wrapper](bindings/go/README.md) now has a module and runnable comman
 - **Terminals**: the engine targets ANSI-compatible terminals and was exercised under Linux terminals on x86_64. A broad terminal matrix (xterm, Alacritty, Kitty, WezTerm, iTerm2, GNOME Terminal, Windows Terminal, …) is **not** automatically verified.
 - **Windows / ConPTY**: **UNVERIFIED**. Only Linux x86_64 was exercised.
 - **tmux / screen / SSH**: **UNVERIFIED**.
-- **Go bindings**: local Linux vet/build/example smoke passed with Go 1.18 (gccgo 14.2). `go test ./...` compiles packages but reports no test files. Public stable-Go CI and other platforms remain **UNVERIFIED**.
+- **Go bindings**: local Linux vet/build/example smoke passed with Go 1.18 (gccgo 14.2). `go test ./...` compiles packages but reports no test files. Public Go 1.27.1 CI smoke also passes; other platforms remain **UNVERIFIED**.
 - **Terminal capability negotiation**: **NOT implemented**. The fast insertion path assumes `CSI L` support; this is not probed at runtime. On a terminal without it, or when the anchor is untrustworthy or space is insufficient, the always-correct `RepaintFallback` is used.
 - **Absolute cursor anchoring**: **NOT implemented**. Resize re-anchoring is a best-effort erase-from-cursor-down rebuild, not an absolute DSR query.
 - **Signals**: RAII and the panic hook restore terminal state on normal exit, errors, and Rust panics. Interactive demos handle Ctrl-C as a raw-mode key event. Hard `SIGKILL` (`kill -9`) cannot be intercepted by any userland process; this is an operating-system boundary.
