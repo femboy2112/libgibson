@@ -13,6 +13,78 @@
 
 use crate::canvas::BrailleCanvas;
 
+/// Experimental cubic Bézier route in world space. Useful for both camera
+/// targets and semantic couriers; sampling owns no clock or mutable state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CubicPath3 {
+    pub start: Vec3,
+    pub control1: Vec3,
+    pub control2: Vec3,
+    pub end: Vec3,
+}
+
+impl CubicPath3 {
+    /// Sample a clamped route parameter. Nonfinite time means the start;
+    /// nonfinite control points produce the origin. f64 intermediates avoid
+    /// overflow for finite f32 control points.
+    pub fn sample(&self, t: f32) -> Vec3 {
+        let points = [self.start, self.control1, self.control2, self.end];
+        if points.iter().any(|p| !p.is_finite()) {
+            return Vec3::default();
+        }
+        let t = if t.is_finite() {
+            t.clamp(0., 1.) as f64
+        } else {
+            0.
+        };
+        let u = 1. - t;
+        let weights = [u * u * u, 3. * u * u * t, 3. * u * t * t, t * t * t];
+        let coordinate = |f: fn(Vec3) -> f32| {
+            points
+                .iter()
+                .zip(weights)
+                .map(|(&p, w)| f(p) as f64 * w)
+                .sum::<f64>() as f32
+        };
+        Vec3::new(
+            coordinate(|p| p.x),
+            coordinate(|p| p.y),
+            coordinate(|p| p.z),
+        )
+    }
+
+    /// Unit direction of travel. Stationary/invalid routes return the zero vector.
+    pub fn tangent(&self, t: f32) -> Vec3 {
+        let points = [self.start, self.control1, self.control2, self.end];
+        if points.iter().any(|p| !p.is_finite()) {
+            return Vec3::default();
+        }
+        let t = if t.is_finite() {
+            t.clamp(0., 1.) as f64
+        } else {
+            0.
+        };
+        let coordinate = |f: fn(Vec3) -> f32| {
+            let [a, b, c, d] = points.map(|p| f(p) as f64);
+            3. * ((1. - t).powi(2) * (b - a) + 2. * (1. - t) * t * (c - b) + t * t * (d - c))
+        };
+        let v = [
+            coordinate(|p| p.x),
+            coordinate(|p| p.y),
+            coordinate(|p| p.z),
+        ];
+        let length = v.iter().map(|x| x * x).sum::<f64>().sqrt();
+        if length <= f64::EPSILON {
+            return Vec3::default();
+        }
+        Vec3::new(
+            (v[0] / length) as f32,
+            (v[1] / length) as f32,
+            (v[2] / length) as f32,
+        )
+    }
+}
+
 /// A 3D point/vector.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Vec3 {
