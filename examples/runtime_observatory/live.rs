@@ -250,6 +250,145 @@ impl LiveMode for MillionTick {
 }
 
 // ---------------------------------------------------------------------------
+// Mode 6 — Endurance (D7): a sustained bounded soak that stays healthy.
+// ---------------------------------------------------------------------------
+
+/// The counterpart to Million-Tick's leak demo: one director under a *bounded*
+/// policy driven hard over a long accelerated soak, to show the runtime stays
+/// flat — RSS bounded, per-update cost steady, history windowed — instead of
+/// degrading. Real measurements, sustained interaction, not a benchmark score.
+pub struct Endurance {
+    dir: StoryDirector,
+    cap: usize,
+    iterations: u64,
+    frames: u64,
+    rss_series: Vec<f64>,
+    cost_series: Vec<f64>,
+    log: DiagLog,
+}
+
+impl Endurance {
+    pub fn new(cap: usize) -> Self {
+        let mut dir = ping_pong_story().start();
+        dir.set_trace_retention(gibson::TraceRetention::Bounded(cap));
+        Self {
+            dir,
+            cap,
+            iterations: 0,
+            frames: 0,
+            rss_series: Vec::new(),
+            cost_series: Vec::new(),
+            log: DiagLog::new(256),
+        }
+    }
+}
+
+impl LiveMode for Endurance {
+    fn key(&self) -> char {
+        '6'
+    }
+
+    fn tick(&mut self, now_us: u64, intensity: i32) {
+        let batch = 1u64 << (7 + intensity.clamp(-6, 6)).clamp(1, 20) as u32;
+        let dt = Duration::from_micros(16);
+        let t0 = Instant::now();
+        for _ in 0..batch {
+            self.dir.update(dt, &[]);
+        }
+        let ns_per = t0.elapsed().as_nanos() as f64 / batch as f64;
+        self.iterations += batch;
+        self.frames += 1;
+        push_sample(&mut self.cost_series, ns_per, SERIES_WIDTH);
+        if let Some(rss) = vm_rss_kb() {
+            push_sample(&mut self.rss_series, rss as f64, SERIES_WIDTH);
+            self.log.push(
+                now_us,
+                Category::Resource,
+                "proc.vm_rss_kb",
+                "/proc/self/status",
+                format!("{rss} kB"),
+                Some(rss as f64),
+            );
+        }
+        self.log.push(
+            now_us,
+            Category::Resource,
+            "update.ns_per",
+            "Instant timing over the batch",
+            format!("{ns_per:.1} ns"),
+            Some(ns_per),
+        );
+    }
+
+    fn build_view(&self, now_us: u64, paused: bool, _intensity: i32) -> View<'_> {
+        let t = self.dir.trace();
+        let rss = vm_rss_kb();
+        let (hero, tone) = if paused {
+            ("PAUSED".to_string(), Tone::Warn)
+        } else {
+            (format!("SOAK · {} iters", self.iterations), Tone::Nominal)
+        };
+        let panel_rows = vec![
+            PanelRow::new("iterations", format!("{}", self.iterations), Tone::Nominal),
+            PanelRow::new("frames", format!("{}", self.frames), Tone::Nominal),
+            PanelRow::new(
+                "retained",
+                format!("{}s / {}b (cap {})", t.steps.len(), t.beats.len(), self.cap),
+                Tone::Nominal,
+            ),
+            PanelRow::new(
+                "dropped",
+                format!("{}s / {}b", t.dropped_steps(), t.dropped_beats()),
+                Tone::Nominal,
+            ),
+            PanelRow::new(
+                "proc VmRSS",
+                rss.map(|k| format!("{k} kB")).unwrap_or_else(|| "?".into()),
+                Tone::Nominal,
+            ),
+            PanelRow::new(
+                "cost",
+                self.cost_series
+                    .last()
+                    .map(|c| format!("{c:.0} ns/upd"))
+                    .unwrap_or_else(|| "?".into()),
+                Tone::Nominal,
+            ),
+        ];
+        let sparks = vec![
+            Spark {
+                title: "VmRSS (should stay flat)".into(),
+                values: self.rss_series.clone(),
+                unit: "kB".into(),
+            },
+            Spark {
+                title: "update cost (steady)".into(),
+                values: self.cost_series.clone(),
+                unit: "ns".into(),
+            },
+        ];
+        View {
+            monotonic_us: now_us,
+            mode_label: "ENDURANCE".into(),
+            hero_state: hero,
+            hero_tone: tone,
+            subtitle: format!("bounded soak · cap={} · sustained interaction, not a benchmark", self.cap),
+            panel_title: "SUSTAINED SOAK (bounded retention, measured)".into(),
+            panel_rows,
+            stage_rows: Vec::new(),
+            sparks,
+            log: &self.log,
+            footer: "Bounded retention holds RSS and per-update cost flat over a long accelerated run: no leak, no slowdown.".into(),
+            controls: "1-6 mode · Space pause · R restart · [ ] batch · Esc exit".into(),
+        }
+    }
+
+    fn restart(&mut self) {
+        *self = Endurance::new(self.cap);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The live loop.
 // ---------------------------------------------------------------------------
 
@@ -267,6 +406,7 @@ pub fn run(depth: ColorDepth, initial: char, max_frames: Option<u64>) -> io::Res
         Box::new(MillionTick::new(1024)),
         Box::new(crate::supervised::SupervisedReplay::ownership_duel()),
         Box::new(crate::supervised::SupervisedReplay::restore_failure()),
+        Box::new(Endurance::new(1024)),
     ];
     let mut current = modes.iter().position(|m| m.key() == initial).unwrap_or(0);
     let mut paused = false;

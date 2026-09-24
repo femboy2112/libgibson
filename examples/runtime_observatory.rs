@@ -85,9 +85,10 @@ fn main() -> io::Result<()> {
             "million-tick" => '1',
             "ownership-duel" => '3',
             "restore-failure" => '5',
+            "endurance" => '6',
             other => {
                 return Err(io::Error::other(format!(
-                    "no live driver for --mode {other}; live modes: million-tick, ownership-duel, restore-failure (or add --dump for a deterministic frame)"
+                    "no live driver for --mode {other}; live modes: million-tick, ownership-duel, restore-failure, endurance (or add --dump for a deterministic frame)"
                 )))
             }
         };

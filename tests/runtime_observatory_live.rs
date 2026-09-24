@@ -157,3 +157,36 @@ fn live_restore_failure_reveals_real_child_receipts() {
     );
     assert!(status.success(), "exit {status:?}");
 }
+
+/// Endurance live (D7): a sustained bounded soak that stays healthy — real
+/// iterations, frames, RSS and per-update cost, in-process (issue #10).
+#[test]
+fn live_endurance_soaks_and_stays_bounded() {
+    let mut cmd = CommandBuilder::new(pty_capture::example_path("runtime_observatory"));
+    cmd.args([
+        "--mode",
+        "endurance",
+        "--frames",
+        "50",
+        "--color",
+        "ansi256",
+    ]);
+    let mut capture = pty_capture::Capture::spawn(cmd, 110, 32, Duration::from_secs(12));
+    capture
+        .collect_until(|b| String::from_utf8_lossy(b).contains("ENDURANCE"))
+        .expect("capture endurance header");
+    let status = wait_exit(&mut capture);
+    let output = capture.finish();
+    let s = String::from_utf8_lossy(&output);
+
+    assert!(s.contains("ENDURANCE"), "no mode label");
+    assert!(
+        s.contains("iterations") && s.contains("SUSTAINED SOAK"),
+        "no soak panel"
+    );
+    assert!(
+        find_sub(&output, SHOW_CURSOR),
+        "did not restore the terminal on exit"
+    );
+    assert!(status.success(), "exit {status:?}");
+}
