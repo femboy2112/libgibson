@@ -31,6 +31,9 @@ core/experimental boundary, known blockers and priorities. The
 The [external expressivity campaign](docs/research/AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md)
 tests six consumers against the unchanged public API, including three post-freeze
 concepts; it does not claim universal UI expressivity or stable APIs.
+The [Event Pressure Lab](docs/EVENT_PRESSURE_LAB.md) traces real PTY input, resize,
+output pressure and delivery. Run `cargo run --release --example event_pressure_lab -- --auto`.
+Its diagnostic reproduces an upstream input stall; it does not claim the bug is fixed.
 Modern Scene/Story and software graphics APIs are experimental and Rust-only;
 the C ABI exposes the established UI/output subset.
 
@@ -110,7 +113,9 @@ ctx.commit_text("Finalized output text")?; // ctx.commit(...) is an alias
 
 ## Verification Status
 
-Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **574 tests**: 226 library unit tests and 348 integration tests (across `geometry_diff_contract`, `cinematic_paths`, `intro_cinema`, `intro_pty`, `acid_architecture`, `acid_presentation`, `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
+The event-pressure collision-delivery acceptance is explicitly ignored and still fails when run; the diagnostic tests detect the upstream bug rather than certify its repair.
+
+Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently passes **591 tests**: 226 library unit tests and 365 integration tests (across `event_pressure_pty`, `event_pressure_trace`, `event_pressure_visual`, `geometry_diff_contract`, `cinematic_paths`, `intro_cinema`, `intro_pty`, `acid_architecture`, `acid_presentation`, `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
 
 `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings pass local Linux vet/build/example smoke**; no Go unit tests exist and public Go 1.27.1 smoke also passes. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
 
@@ -374,7 +379,7 @@ library: `DUMP_ACID_RGB=/tmp/acid-rgb cargo test --test acid_graphics`.
 # Build library and release artifacts (.so, .a)
 cargo build --release
 
-# Run the full test suite (574 tests: 226 unit + 348 integration)
+# Run the full test suite (591 passed: 226 unit + 365 integration; one known-red acceptance ignored)
 cargo test
 
 # Static analysis and formatting checks

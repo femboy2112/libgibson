@@ -23,6 +23,8 @@ cinematic branch was subsequently merged through PR #1 at main `0b673cc`.
 | Introductory cinema / consolidation | [Introduction](INTRODUCTORY_CINEMA.md) | Dependency PR integration, D1/D2/D5 fixes, cubic routes, finite cinematic intro, art-direction/continuity pass, Surface and PTY witnesses | Merged through PR #14 at e5ede0a; exact-main CI 35960000454 green. Not an API stability or aesthetic certification. |
 | External agent-native UI / frozen API | [Campaign results](research/AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md) | Shared fixture, three planned consumers, no core promotions, three post-freeze holdouts, 61 lab tests, freeze and public CI | Bounded expressivity corroboration; independent lab count, no universal ease or platform claim. |
 
+| Event pressure / upstream isolation | [Event Pressure Lab](EVENT_PRESSURE_LAB.md) | Raw/Crossterm/Context controls, actual epoll witness, scratch causal contrast, bounded visual replay and repeated matrix | Upstream cause isolated; no production fix; #15 acceptance remains red. |
+
 Older visual FX, Scene Algebra and Story checkpoints live in [ROADMAP](../ROADMAP.md)
 and [DESIGN](../DESIGN.md), with executable regressions under `tests/`; there is
 no separate validation file to invent for them.

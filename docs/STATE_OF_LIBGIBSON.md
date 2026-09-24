@@ -44,6 +44,22 @@ showed ergonomic friction with a working public route; no core promotion was
 justified. This corroborates bounded expressivity, not arbitrary-UI universality,
 comparative ease, or a stable API. Its schema and domain tools remain external.
 
+## Event delivery evidence
+
+The event-pressure branch passes **591 tests = 226 unit + 365 integration**,
+with one explicitly ignored, demonstrably failing collision-delivery acceptance.
+The [Event Pressure Lab](EVENT_PRESSURE_LAB.md) investigates #15 without changing
+core scheduling or dependencies. Its separate child PTY, monotonic receipt channel,
+raw/Crossterm/Context controls, bounded captures and visual replay locate a
+readiness-batch consumption defect upstream. Backpressure is one way to create the
+polling gap; the standalone quiet reproducer also fails. An additional Context
+write delay is a separate synchronous-output contract, not evidence of byte loss.
+
+The supported repair remains **OPEN**. Ordinary diagnostic tests can pass while
+the explicitly ignored no-second-key collision acceptance fails; green CI is not
+claimed as a fix. #10 long-session retention and #11 embedding ownership remain
+open. This work adds example/test diagnostics, not a public tracing framework.
+
 ## What LibGibson is
 
 **A cell-framebuffer terminal UI engine with native scrollback/live-region
@@ -369,7 +385,7 @@ through PR #14, with regressions. Issues #7, #8 and #9 are closed. D3/D4 retain 
 | D6 | Packaging/API contract | No declared/tested MSRV, changelog, installable foreign packages or explicit API stability policy. Full MIT/Apache texts and Cargo package integrity are now verified; the remaining API/MSRV/installable-package contract is OPEN. |
 | D7 | Long-session/resource policy | Story trace grows indefinitely until completion; public Surface storage and caller-sized helpers lack uniform hostile-resource bounds. No sustained memory/backpressure study. |
 | D8 | Embedded lifecycle ownership | Global panic hook/stdout and best-effort restore suit a single terminal owner; concurrent contexts, failed writes and host panic-hook integration lack a product contract. |
-| D9 | Queued input under resize/backpressure | [Issue #15](https://github.com/femboy2112/libgibson/issues/15): a delayed key is released by a later key. The test harness now drains output correctly; possible upstream readiness mechanism needs an independent bounded reproducer. |
+| D9 | Queued input under resize/backpressure | [Issue #15](https://github.com/femboy2112/libgibson/issues/15): a delayed key is released by a later key. **REPRODUCED / ISOLATED UPSTREAM, NOT FIXED.** [Event Pressure Lab](EVENT_PRESSURE_LAB.md) supplies a bounded independent raw/Crossterm/Context reproducer. Syscalls show a signal-first batch with both tokens, followed by loss of the remaining TTY token; scratch retention restores delivery. [Upstream #1126](https://github.com/crossterm-rs/crossterm/issues/1126). Production dependencies and runtime remain unchanged; explicit collision acceptance stays red. |
 
 Historical audit reproducer (now fixed by the consolidation regressions):
 

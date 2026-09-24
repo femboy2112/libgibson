@@ -29,6 +29,20 @@ Avoid expanding graphics features before those remaining contracts improve. The 
 preserve development history rather than promise an execution order. Their older
 CI/Go statuses are historical and superseded by the public run linked above.
 
+## Event delivery investigation
+
+[Event Pressure Lab](docs/EVENT_PRESSURE_LAB.md), PR #18, isolates issue #15 at
+Crossterm's consumption of a simultaneous signal/TTY readiness batch. Raw input,
+standalone Crossterm, Context, syscall observation and a scratch token-retention
+intervention separate this from graphical output delays and screen reconstruction.
+[Upstream #1126](https://github.com/crossterm-rs/crossterm/issues/1126) carries the
+minimal independent reproducer. **No production fix is shipped; #15 remains open.**
+Next: evaluate a supported upstream repair, including zero-timeout behavior,
+large reads, EOF/error handling and bounded fairness, then enable the currently
+red collision-delivery acceptance. Local branch suite: 591 passed (226 unit + 365
+integration), one known-red acceptance ignored. D6/D7/D8 remain separate programs. The lab's
+finite output/latency observations are diagnostic evidence, not a long-session policy.
+
 ## Verification labels
 
 - **IMPLEMENTED + TESTED** — the code exists and is covered by automated tests in `cargo test`.
