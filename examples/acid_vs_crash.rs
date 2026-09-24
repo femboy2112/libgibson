@@ -10,6 +10,10 @@ pub mod battle;
 #[path = "acid_vs_crash/cyber.rs"]
 pub mod cyber;
 use cyber::{VisualHistory, VisualMode};
+#[path = "acid_vs_crash/presentation.rs"]
+pub mod presentation;
+#[path = "acid_vs_crash/world_geom.rs"]
+pub mod world_geom;
 
 use battle::{Control, EncounterModel, NodeId};
 use gibson::cell::{Color, Line, RichText, Span, Style};
@@ -494,6 +498,8 @@ pub struct Encounter {
     visual_mode: VisualMode,
     visual_history: VisualHistory,
     debug_raster: bool,
+    legacy: bool,
+    debug_shot: bool,
 }
 impl Encounter {
     pub fn new(stage: &str, mono: bool) -> Self {
@@ -527,10 +533,19 @@ impl Encounter {
             visual_mode: VisualMode::Auto,
             visual_history,
             debug_raster: false,
+            legacy: false,
+            debug_shot: false,
         }
     }
     pub fn set_visual_mode(&mut self, mode: VisualMode) {
+        self.legacy = mode != VisualMode::Auto;
         self.visual_mode = mode;
+    }
+    pub fn set_legacy(&mut self, enabled: bool) {
+        self.legacy = enabled;
+    }
+    pub fn shot_plan(&self, width: u16, height: u16) -> presentation::ShotPlan {
+        presentation::plan(&self.world, &self.visual_history, width, height)
     }
     pub fn set_debug_raster(&mut self, enabled: bool) {
         self.debug_raster = enabled;
@@ -638,6 +653,8 @@ impl Encounter {
         replay.debug_battle = self.debug_battle;
         replay.visual_mode = self.visual_mode;
         replay.debug_raster = self.debug_raster;
+        replay.legacy = self.legacy;
+        replay.debug_shot = self.debug_shot;
         replay
     }
     pub fn replay_trace(trace: &EncounterTrace, mono: bool) -> Self {
@@ -672,11 +689,15 @@ impl Encounter {
                 let debug = self.debug_battle;
                 let visual_mode = self.visual_mode;
                 let debug_raster = self.debug_raster;
+                let legacy = self.legacy;
+                let debug_shot = self.debug_shot;
                 *self = Self::new("quiet", self.mono);
                 self.watching = watching;
                 self.debug_battle = debug;
                 self.visual_mode = visual_mode;
                 self.debug_raster = debug_raster;
+                self.legacy = legacy;
+                self.debug_shot = debug_shot;
             }
             "replay" => {
                 self.inspector = if self.replay_matches() {
@@ -698,6 +719,24 @@ impl Encounter {
                 || key.code == KeyCode::Esc
             {
                 return false;
+            }
+            // Uppercase shortcuts leave ordinary lowercase command entry intact.
+            if self.input.text.is_empty() && !key.modifiers.contains(KeyModifiers::CONTROL) {
+                let final_move = self.world.elapsed_ms >= 45000 || self.world.takeover >= 600;
+                let command = match key.code {
+                    KeyCode::Char('T') => Some("trace"),
+                    KeyCode::Char('I') => Some("isolate"),
+                    KeyCode::Char('D') => Some("decoy"),
+                    KeyCode::Char('K') => Some("kill"),
+                    KeyCode::Char('1' | 'C') if final_move => Some("cut link"),
+                    KeyCode::Char('2' | 'R') if final_move => Some("turn trace"),
+                    KeyCode::Char('3' | 'S') if final_move => Some("spring decoy"),
+                    KeyCode::Char('4' | 'L') if final_move => Some("let her in"),
+                    _ => None,
+                };
+                if let Some(command) = command {
+                    return self.command(command);
+                }
             }
             if key.code == KeyCode::Enter {
                 let command = self.input.text.clone();
@@ -1251,6 +1290,220 @@ impl Encounter {
     }
     /// Same semantic world, two deterministic realizations. No paint-time state.
     pub fn frame(&self, width: u16, height: u16) -> Node {
+        if !self.legacy {
+            return self.cinematic_frame(width.max(1), height.max(1));
+        }
+        self.legacy_frame(width, height)
+    }
+    fn cinematic_frame(&self, width: u16, height: u16) -> Node {
+        let w = &self.world;
+        let p = self.palette;
+        let gh = height.saturating_sub(3).max(1);
+        let shot = self.shot_plan(width, gh);
+        let graphic = cyber::render_shot(w, &self.visual_history, width, gh, self.mono, &shot);
+        let metrics = graphic.metrics;
+        let mut root = Node::stack()
+            .width(width as f32)
+            .height(height as f32)
+            .child(Node::raster(graphic.surface).offset(0.0, 0.0));
+        let header = if let Some(outcome) = w.outcome {
+            format!("{}  /  {}", outcome.as_str(), w.outcome_quality)
+        } else if w.elapsed_ms < 3500 {
+            "CRASH OVERRIDE // LOCAL NODE".into()
+        } else {
+            format!("CRASH OVERRIDE  /  TRACE {}%", w.trace_confidence / 10)
+        };
+        let presentation = self.realized_presentation(&self.scene);
+        let fx = presentation
+            .surface_fx(self.scene.id_of("header").unwrap())
+            .to_vec();
+        root = root.child(
+            Node::text(header, p.crash)
+                .width(width as f32)
+                .height(1.0)
+                .post_process(fx)
+                .offset(1.0, 0.0),
+        );
+        // Ordinary text enters the world at the projected DISPLAY plane. Its
+        // existing Scene bundle supplies corruption; the widget knows no attacker.
+        let display = w.graph.node(NodeId::Display);
+        if w.remote_active && display.acid_fraction() > 0.55 && width >= 76 {
+            if let Some((x, y, _)) = shot.camera.project(
+                cyber::position(w, NodeId::Display).plus(gibson::Vec3::new(-1.0, 3.1, -0.15)),
+                width.min(320),
+                gh.min(120) * 2,
+            ) {
+                if x > 0.0
+                    && x < width as f32 - 22.0
+                    && y > 3.0
+                    && y < (gh.saturating_sub(3) * 2) as f32
+                {
+                    let fx = presentation
+                        .surface_fx(self.scene.id_of("session").unwrap())
+                        .to_vec();
+                    let card = Node::col()
+                        .width(24.0)
+                        .height(3.0)
+                        .child(Node::text("DISPLAY // LOCAL ECHO", p.muted))
+                        .child(Node::text(
+                            format!(
+                                "crash > {}",
+                                if self.input.text.is_empty() {
+                                    "_"
+                                } else {
+                                    &self.input.text
+                                }
+                            ),
+                            p.crash,
+                        ))
+                        .child(Node::text(&w.remote_line, p.acid));
+                    root = root.child(card.post_process(fx).offset(x, y * 0.5));
+                }
+            }
+        }
+        if w.outcome.is_some() && self.visual_history.aftermath >= seconds(4.5) {
+            let scars = w
+                .graph
+                .nodes
+                .iter()
+                .take(6)
+                .filter(|n| n.integrity < 1000 || n.isolated)
+                .map(|n| {
+                    format!(
+                        "{} {}%{}",
+                        n.id.name().to_uppercase(),
+                        n.integrity / 10,
+                        if n.isolated { " ×" } else { "" }
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" / ");
+            root = root.child(
+                Node::col()
+                    .width(width.saturating_sub(4) as f32)
+                    .height(4.0)
+                    .child(Node::text("SYSTEM SCARS", p.muted))
+                    .child(Node::text(
+                        if scars.is_empty() {
+                            "structure intact"
+                        } else {
+                            &scars
+                        },
+                        p.white,
+                    ))
+                    .child(Node::text(
+                        format!(
+                            "TRACE RECEIPT {}% / {} file changes",
+                            w.trace_confidence / 10,
+                            w.quality.altered_files
+                        ),
+                        p.crash,
+                    ))
+                    .child(Node::text(
+                        "BATTLE REPLAY / replay · facts · damage · reset",
+                        p.muted,
+                    ))
+                    .offset(2.0, gh.saturating_sub(6) as f32),
+            );
+        }
+        let final_move = w.elapsed_ms >= 45000 || w.takeover >= 600;
+        let commands: &[(&str, &str)] = if self.director.is_finished() {
+            &[("", "replay"), ("", "facts"), ("", "reset"), ("", "exit")]
+        } else if final_move {
+            &[
+                ("1", "cut link"),
+                ("2", "turn trace"),
+                ("3", "spring decoy"),
+                ("4", "let her in"),
+            ]
+        } else {
+            &[
+                ("T", "trace"),
+                ("I", "isolate"),
+                ("D", "decoy"),
+                ("K", "kill"),
+            ]
+        };
+        let labels = commands
+            .iter()
+            .map(|(key, c)| {
+                let status = w.action_status(c);
+                let suffix = if self.director.is_finished() || status.available {
+                    String::new()
+                } else if status.cooldown_ms > 0 {
+                    format!(" {:.1}s", status.cooldown_ms as f32 / 1000.0)
+                } else {
+                    "·".into()
+                };
+                let label = if width < 76 {
+                    match *c {
+                        "cut link" => "CUT",
+                        "turn trace" => "TRACE",
+                        "spring decoy" => "SPRING",
+                        "let her in" => "LET IN",
+                        other => other,
+                    }
+                } else {
+                    c
+                };
+                format!("{key} {}{suffix}", label.to_uppercase())
+            })
+            .collect::<Vec<_>>()
+            .join("  ");
+        let receipt = if self.debug_shot {
+            format!(
+                "SHOT {:?} / {:?} / blend {:.2}",
+                shot.kind, shot.focal, shot.transition
+            )
+        } else if self.debug_raster {
+            format!(
+                "RGB {}px / triangles {} / z {} / fields {} / trails {}",
+                metrics.pixels,
+                metrics.triangles.triangles_drawn,
+                metrics.triangles.z_tests,
+                metrics.field_samples,
+                metrics.feedback_passes
+            )
+        } else if self.debug_battle {
+            format!(
+                "AI {:?}/{:?} → {}",
+                w.planner.goal,
+                w.planner.tactic,
+                w.planner.target.name()
+            )
+        } else if !self.inspector.is_empty() {
+            self.inspector.clone()
+        } else if w.elapsed_ms < 3500 {
+            "CRASH WORKING / uppercase shortcut or type · Esc exits".into()
+        } else {
+            w.last_action.clone()
+        };
+        // Three opaque terminal rows are the invariant local control surface.
+        root.child(
+            Node::col()
+                .width(width as f32)
+                .height(3.0)
+                .background(Color::Reset)
+                .child(Node::text(labels, p.crash).height(1.0))
+                .child(
+                    Node::row()
+                        .height(1.0)
+                        .child(Node::text("crash > ", p.crash))
+                        .child(
+                            Node::text_input(
+                                self.input.text.clone(),
+                                self.input.cursor_grapheme,
+                                Some("type command · Enter"),
+                                p.white,
+                            )
+                            .flex_grow(1.0),
+                        ),
+                )
+                .child(Node::text(receipt, p.muted).height(1.0))
+                .offset(0.0, height.saturating_sub(3) as f32),
+        )
+    }
+    fn legacy_frame(&self, width: u16, height: u16) -> Node {
         let width = width.max(1);
         let height = height.max(1);
         let dive = cyber::immersion(
@@ -1807,6 +2060,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("cyber") => VisualMode::Cyber,
         _ => VisualMode::Auto,
     });
+    if has("--presentation=legacy") {
+        encounter.set_legacy(true);
+    }
+    encounter.debug_shot = has("--debug-shot");
     encounter.set_debug_raster(has("--debug-raster") || has("--debug-renderer"));
     encounter.set_debug_battle(has("--debug-battle") || has("--debug-ai"));
     let mut ctx = Context::fullscreen()?;

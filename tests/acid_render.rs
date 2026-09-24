@@ -122,6 +122,7 @@ fn real_ghost_cursor_and_route_motion_have_bounded_damage() {
     assert!(bytes < 400);
 
     let mut quiet = Encounter::new("quiet", false);
+    quiet.set_visual_mode(encounter::cyber::VisualMode::Flat);
     let a = quiet.frame(120, 32);
     quiet.update(Duration::from_millis(100), &[]);
     let mut b = a.clone();
@@ -249,6 +250,7 @@ fn instant_final_counter_does_not_freeze_a_recoil_offscreen() {
 #[test]
 fn packets_advance_between_world_quanta_and_replay_exactly() {
     let mut e = Encounter::new("quiet", false);
+    e.set_visual_mode(encounter::cyber::VisualMode::Flat);
     let graph = e.battle().graph.clone();
     let before = e.frame(160, 40);
     e.update(Duration::from_millis(33), &[]);
@@ -270,7 +272,8 @@ fn packets_advance_between_world_quanta_and_replay_exactly() {
 
 #[test]
 fn acid_route_strokes_do_not_fill_terminal_cell_backgrounds() {
-    let e = Encounter::new("route-contested", false);
+    let mut e = Encounter::new("route-contested", false);
+    e.set_visual_mode(encounter::cyber::VisualMode::Flat);
     let s = surface(e.frame(120, 32), 120, 32);
     let mut acid_dots = 0;
     for y in 0..s.height {

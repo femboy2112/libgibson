@@ -302,9 +302,10 @@ fn visual_mode_is_a_projection_and_feedback_history_is_bounded() {
 }
 
 #[test]
-fn ending_reassembles_ui_on_recorded_visual_time_without_mutating_final_world() {
+fn legacy_ending_reassembles_ui_on_recorded_visual_time_without_mutating_final_world() {
     for stage in ["crash-win", "stalemate"] {
         let mut encounter = Encounter::new(stage, false);
+        encounter.set_legacy(true);
         assert!(encounter.director().is_finished());
         let world = encounter.battle().clone();
         let initial = painted(encounter.frame(120, 32), 120, 32);

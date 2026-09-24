@@ -1,6 +1,7 @@
 //! A second realization of the same BattleGraph. RGB light, depth-tested mass,
 //! sparse Braille structure, and ordinary text all end as ordinary Surface cells.
 use super::battle::{EncounterModel, NodeId, Outcome};
+use super::presentation::{ShotHistory, ShotPlan};
 use gibson::raster::{Rgb, RgbRaster};
 use gibson::raster3d::{Camera, Fog, Material, RasterStats, Rasterizer, TriangleMesh};
 use gibson::raster_fx::{FeedbackBuffer, RasterFx};
@@ -64,6 +65,29 @@ pub fn position(world: &EncounterModel, id: NodeId) -> Vec3 {
     }
     p
 }
+/// The actor follows reducer progress, never a looping decorative phase.
+pub fn actor_position(world: &EncounterModel) -> Vec3 {
+    if world.elapsed_ms < 6500 {
+        let f = (world.elapsed_ms as f32 / 6500.0).clamp(0.0, 1.0);
+        return position(world, NodeId::Modem).plus(Vec3::new(
+            -5.0 * (1.0 - f),
+            0.7 + 2.0 * (1.0 - f),
+            -7.0 * (1.0 - f),
+        ));
+    }
+    let path = &world.planner.path;
+    if path.len() < 2 {
+        return position(world, world.planner.location).plus(Vec3::new(0.0, 0.6, 0.0));
+    }
+    let at = world.planner.progress as f32 / 1000.0 * (path.len() - 1) as f32;
+    let i = (at as usize).min(path.len() - 2);
+    let (a, b) = (path[i], path[i + 1]);
+    if !world.graph.connected(a, b) {
+        return position(world, world.planner.location).plus(Vec3::new(0.0, 0.6, 0.0));
+    }
+    lerp(position(world, a), position(world, b), at - i as f32).plus(Vec3::new(0.0, 0.6, 0.0))
+}
+
 fn path_point(world: &EncounterModel, reverse: bool, t: f32) -> Option<Vec3> {
     let path = &world.planner.path;
     if path.len() < 2 {
@@ -87,17 +111,19 @@ struct LightSample {
 }
 /// Bounded, recorded-input visual state. Samples are taken by update, never paint.
 /// Reprojection on resize rebuilds feedback from the same world-space history.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct VisualHistory {
     samples: VecDeque<LightSample>,
     entered_at: Option<Duration>,
     pub aftermath: Duration,
+    pub shots: ShotHistory,
 }
 impl VisualHistory {
     pub fn new(world: &EncounterModel) -> Self {
         Self {
             samples: VecDeque::new(),
             aftermath: Duration::ZERO,
+            shots: ShotHistory::new(world),
             entered_at: has_foothold(world)
                 .then(|| world.visual_time().saturating_sub(Duration::from_secs(2))),
         }
@@ -109,16 +135,14 @@ impl VisualHistory {
         if self.entered_at.is_none() && has_foothold(world) {
             self.entered_at = Some(world.visual_time());
         }
+        self.shots.update(world, self.aftermath);
         if dt.is_zero() {
             return;
         }
         let t = world.visual_time().as_secs_f32();
         self.samples.push_back(LightSample {
             dt,
-            acid: world
-                .remote_active
-                .then(|| path_point(world, false, t))
-                .flatten(),
+            acid: (world.remote_active && world.elapsed_ms >= 1800).then(|| actor_position(world)),
             crash: (world.trace_confidence > 0)
                 .then(|| path_point(world, true, t))
                 .flatten(),
@@ -184,6 +208,120 @@ fn glow_dot(raster: &mut RgbRaster, x: f32, y: f32, radius: f32, color: Rgb) {
     }
 }
 
+fn cinematic_forces(
+    renderer: &mut Rasterizer,
+    camera: &Camera,
+    world: &EncounterModel,
+    shot: &ShotPlan,
+    history: &VisualHistory,
+) {
+    use super::battle::Tactic;
+    use super::presentation::ShotKind;
+    let t = world.visual_time().as_secs_f32();
+    let actor = actor_position(world);
+    // A faceted remote presence, not a label that teleports between widgets.
+    if world.remote_active && world.elapsed_ms >= 1800 {
+        renderer.draw_mesh(
+            &TriangleMesh::octahedron(0.18),
+            Transform3 {
+                offset: actor,
+                ry: t * 1.1,
+                rz: t * 0.7,
+                ..Transform3::default()
+            },
+            camera,
+            Material {
+                color: PINK,
+                ambient: 0.5,
+                diffuse: 0.4,
+                emissive: 0.5,
+            },
+        );
+    }
+    // Trace returns along legal topology. Consecutive luminous samples make a
+    // coherent beam; its head moves in the reverse direction of Acid's path.
+    if world.trace_confidence > 0 && world.outcome != Some(Outcome::Acid) {
+        for segment in world.planner.path.windows(2) {
+            if !world.graph.connected(segment[0], segment[1]) {
+                continue;
+            }
+            let a = position(world, segment[0]).plus(Vec3::new(0.0, 0.45, 0.0));
+            let b = position(world, segment[1]).plus(Vec3::new(0.0, 0.45, 0.0));
+            for j in 0..36 {
+                let u = j as f32 / 36.0;
+                let pulse = (1.0 - ((u + (t * 0.8).fract()).fract())).powi(5);
+                let col = scale(CYAN, 0.18 + pulse * 0.82);
+                renderer.line(
+                    lerp(a, b, u),
+                    lerp(a, b, (j + 1) as f32 / 36.0),
+                    camera,
+                    col,
+                );
+            }
+        }
+    }
+    // Feints are visibly incomplete: they branch from her position and fade
+    // before reaching a node. They never claim to be connected graph edges.
+    if world.remote_active && matches!(world.planner.tactic, Tactic::SplitRoute | Tactic::Feint) {
+        for branch in 0..3 {
+            for j in 0..28 {
+                let point = |k: usize| {
+                    let u = k as f32 / 28.0;
+                    actor.plus(Vec3::new(
+                        (branch as f32 - 1.0) * u * 3.5,
+                        (u * std::f32::consts::PI).sin() * (0.6 + branch as f32 * 0.2),
+                        u * 3.0,
+                    ))
+                };
+                renderer.line(
+                    point(j),
+                    point(j + 1),
+                    camera,
+                    scale(PINK, (1.0 - j as f32 / 28.0) * 0.65),
+                );
+            }
+        }
+    }
+    let rupture = shot.kind == ShotKind::Isolation || shot.kind == ShotKind::CrashWin;
+    if rupture {
+        let phase = if shot.kind == ShotKind::CrashWin {
+            history.aftermath.as_secs_f32()
+        } else {
+            shot.phase
+        };
+        let impact = (1.0 - phase / 2.4).clamp(0.0, 1.0);
+        for edge in world.graph.edges.iter().filter(|e| !e.connected) {
+            let center = lerp(position(world, edge.from), position(world, edge.to), 0.5);
+            for j in 0..9 {
+                let angle = j as f32 * 2.4;
+                let delta = Vec3::new(angle.cos(), (j as f32 * 1.3).sin() * 0.6, angle.sin());
+                let start = center.plus(delta.scale(phase * 0.8));
+                renderer.line(
+                    start,
+                    start.plus(delta.scale(0.15 + impact * 0.4)),
+                    camera,
+                    scale(CYAN, impact),
+                );
+            }
+        }
+    }
+    if shot.kind == ShotKind::Stalemate {
+        // Balanced ownership creates a motionless standing boundary.
+        for j in 0..100 {
+            let point = |k: usize| {
+                let x = k as f32 / 100.0 * 13.0 - 6.5;
+                Vec3::new(x, 0.7 + (x * 1.7).sin() * 0.4, 1.4)
+            };
+            renderer.line(
+                point(j),
+                point(j + 1),
+                camera,
+                if j % 2 == 0 { CYAN } else { PINK },
+            );
+        }
+    }
+}
+
 /// Pure realization: replay and frozen paints cannot advance the trail buffer.
 pub fn render(
     world: &EncounterModel,
@@ -192,6 +330,30 @@ pub fn render(
     height: u16,
     mono: bool,
     dive: f32,
+) -> CyberFrame {
+    render_inner(world, history, width, height, mono, dive, None)
+}
+
+pub fn render_shot(
+    world: &EncounterModel,
+    history: &VisualHistory,
+    width: u16,
+    height: u16,
+    mono: bool,
+    shot: &ShotPlan,
+) -> CyberFrame {
+    render_inner(world, history, width, height, mono, 1.0, Some(shot))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_inner(
+    world: &EncounterModel,
+    history: &VisualHistory,
+    width: u16,
+    height: u16,
+    mono: bool,
+    dive: f32,
+    shot: Option<&ShotPlan>,
 ) -> CyberFrame {
     // Bound demo work independently of hostile terminal dimensions.
     let width = width.clamp(1, 320);
@@ -223,6 +385,7 @@ pub fn render(
         far: 80.0,
         ..Camera::default()
     };
+    let camera = shot.map_or(camera, |s| s.camera);
     renderer.fog = Some(Fog {
         color: DARK,
         start: 14.0,
@@ -265,81 +428,105 @@ pub fn render(
             renderer.raster.set(
                 x as i32,
                 y as i32,
-                add(
-                    add(c, energy),
-                    scale((230, 185, 255), collision * (0.11 + assault * ridge * 0.25)),
+                scale(
+                    add(
+                        add(c, energy),
+                        scale((230, 185, 255), collision * (0.11 + assault * ridge * 0.25)),
+                    ),
+                    shot.map_or(1.0, |s| s.field_strength),
                 ),
             );
         }
     }
     // A perspective floor provides depth before the first tower is drawn.
-    for i in -8..=8 {
-        let k = i as f32 * 1.5;
+    for i in -6..=6 {
+        let k = i as f32 * 2.0;
         renderer.line(
             Vec3::new(k, -0.15, -7.0),
             Vec3::new(k, -0.15, 11.0),
             &camera,
-            (8, 24, 43),
+            if shot.is_some() {
+                (3, 9, 19)
+            } else {
+                (8, 24, 43)
+            },
         );
         renderer.line(
             Vec3::new(-12.0, -0.15, k),
             Vec3::new(12.0, -0.15, k),
             &camera,
-            (8, 24, 43),
+            if shot.is_some() {
+                (3, 9, 19)
+            } else {
+                (8, 24, 43)
+            },
         );
     }
-    for node in &world.graph.nodes {
-        if node.decoy && !node.visible {
-            continue;
-        }
-        let p = position(world, node.id);
-        let height = 0.6
-            + node.integrity as f32 / 1000.0 * [1.1, 1.6, 2.5, 1.2, 1.8, 3.0, 1.8][node.id.index()];
-        let fraction = node.acid_fraction();
-        let color = if node.isolated {
-            (48, 57, 79)
-        } else {
-            mix(CYAN, PINK, fraction)
-        };
-        // Stepped architecture, not isolated identical cubes.
-        for tier in 0..3 {
-            let size = 1.55 - tier as f32 * 0.3;
-            let h = height / 3.0;
-            let mesh = TriangleMesh::box_xyz(size, h, size);
+    let rails = if let Some(shot) = shot {
+        super::world_geom::draw(
+            &mut renderer,
+            &camera,
+            world,
+            t,
+            shot.focal,
+            shot.light_strength,
+        )
+    } else {
+        for node in &world.graph.nodes {
+            if node.decoy && !node.visible {
+                continue;
+            }
+            let p = position(world, node.id);
+            let height = 0.6
+                + node.integrity as f32 / 1000.0
+                    * [1.1, 1.6, 2.5, 1.2, 1.8, 3.0, 1.8][node.id.index()];
+            let fraction = node.acid_fraction();
+            let color = if node.isolated {
+                (48, 57, 79)
+            } else {
+                mix(CYAN, PINK, fraction)
+            };
+            // Stepped architecture, not isolated identical cubes.
+            for tier in 0..3 {
+                let size = 1.55 - tier as f32 * 0.3;
+                let h = height / 3.0;
+                let mesh = TriangleMesh::box_xyz(size, h, size);
+                renderer.draw_mesh(
+                    &mesh,
+                    Transform3 {
+                        offset: p.plus(Vec3::new(0.0, h * (tier as f32 + 0.5), 0.0)),
+                        ry: if node.decoy { -0.25 } else { 0.0 },
+                        ..Transform3::default()
+                    },
+                    &camera,
+                    Material {
+                        color,
+                        ambient: 0.19,
+                        diffuse: 0.85,
+                        emissive: 0.07,
+                    },
+                );
+            }
+            let mesh = TriangleMesh::octahedron(if node.id == NodeId::Display { 1.0 } else { 0.4 });
             renderer.draw_mesh(
                 &mesh,
                 Transform3 {
-                    offset: p.plus(Vec3::new(0.0, h * (tier as f32 + 0.5), 0.0)),
-                    ry: if node.decoy { -0.25 } else { 0.0 },
+                    offset: p.plus(Vec3::new(0.0, height + 0.7, 0.0)),
+                    ry: t * (0.3 + fraction * 0.6),
+                    rz: t * 0.17,
                     ..Transform3::default()
                 },
                 &camera,
                 Material {
-                    color,
-                    ambient: 0.19,
-                    diffuse: 0.85,
-                    emissive: 0.07,
+                    color: mix(color, (220, 245, 255), 0.2),
+                    ambient: 0.2,
+                    diffuse: 0.8,
+                    emissive: 0.15,
                 },
             );
         }
-        let mesh = TriangleMesh::octahedron(if node.id == NodeId::Display { 1.0 } else { 0.4 });
-        renderer.draw_mesh(
-            &mesh,
-            Transform3 {
-                offset: p.plus(Vec3::new(0.0, height + 0.7, 0.0)),
-                ry: t * (0.3 + fraction * 0.6),
-                rz: t * 0.17,
-                ..Transform3::default()
-            },
-            &camera,
-            Material {
-                color: mix(color, (220, 245, 255), 0.2),
-                ambient: 0.2,
-                diffuse: 0.8,
-                emissive: 0.15,
-            },
-        );
-    }
+        Vec::new()
+    };
     if assault > 0.0 {
         let center = position(world, NodeId::Display).plus(Vec3::new(0.0, 3.5, 0.0));
         // DISPLAY's plane opens into an orbital lattice as control is lost.
@@ -384,7 +571,10 @@ pub fn render(
                 a,
                 b,
                 &camera,
-                scale(color, if active { 0.75 } else { 0.38 }),
+                scale(
+                    color,
+                    if active { 0.75 } else { 0.38 } * shot.map_or(1.0, |s| s.light_strength),
+                ),
             );
             // One fine structure overlay; alternate dotted Acid grammar.
             if let (Some((ax, ay, _)), Some((bx, by, _))) = (project(a), project(b)) {
@@ -439,14 +629,46 @@ pub fn render(
     }
     // The moving remote actor has the same position as its current legal path.
     if world.remote_active && world.elapsed_ms >= 3500 {
-        let point =
-            path_point(world, false, t).unwrap_or_else(|| position(world, world.planner.location));
+        let point = if shot.is_some() {
+            actor_position(world)
+        } else {
+            path_point(world, false, t).unwrap_or_else(|| position(world, world.planner.location))
+        };
         if let Some((x, y, z)) = project(point.plus(Vec3::new(0.0, 0.5, 0.0))) {
             if renderer
                 .depth(x as i32, y as i32)
                 .is_none_or(|d| z < d + 0.8)
             {
                 glow_dot(&mut renderer.raster, x, y, 4.0, PINK);
+            }
+        }
+    }
+    if let Some(shot) = shot {
+        cinematic_forces(&mut renderer, &camera, world, shot, history);
+    }
+    let mut rail_vectors = BrailleCanvas::new(width, height);
+    let mut rail_colors = vec![CYAN; width as usize * height as usize];
+    for (a, b, color) in rails {
+        let steps = if let (Some((ax, ay, _)), Some((bx, by, _))) = (project(a), project(b)) {
+            ((ax - bx).abs().max((ay - by).abs()) * 3.0)
+                .ceil()
+                .clamp(2.0, 180.0) as usize
+        } else {
+            48
+        };
+        for j in 0..=steps {
+            if let Some((x, y, z)) = project(lerp(a, b, j as f32 / steps as f32)) {
+                if x >= 0.0
+                    && x < width as f32
+                    && y >= 0.0
+                    && y < ph as f32
+                    && renderer
+                        .depth(x as i32, y as i32)
+                        .is_none_or(|d| z <= d + 0.2)
+                {
+                    rail_vectors.set((x * 2.0) as i32, (y * 2.0) as i32);
+                    rail_colors[(y as usize / 2) * width as usize + x as usize] = color;
+                }
             }
         }
     }
@@ -473,8 +695,16 @@ pub fn render(
             phase: t * 2.0,
         });
     }
-    if world.outcome == Some(Outcome::Acid) && world.remote_active {
-        title_fragments(&mut renderer.raster, t, history.aftermath.as_secs_f32());
+    if world.outcome == Some(Outcome::Acid)
+        && world.remote_active
+        && (shot.is_none() || history.aftermath.as_secs_f32() < 4.5)
+    {
+        title_fragments(
+            &mut renderer.raster,
+            t,
+            history.aftermath.as_secs_f32(),
+            shot.is_some(),
+        );
     }
     RasterFx::apply_chain(&mut renderer.raster, &effects);
     let mut surface = if mono {
@@ -502,11 +732,57 @@ pub fn render(
             }
         }
     }
+    if shot.is_some() {
+        for y in 0..height {
+            for x in 0..width {
+                if let Some(glyph) = rail_vectors.glyph_at(x, y).filter(|g| *g != '\u{2800}') {
+                    let color = rail_colors[y as usize * width as usize + x as usize];
+                    let upper = renderer.raster.get(x as i32, y as i32 * 2).unwrap_or(DARK);
+                    let lower = renderer
+                        .raster
+                        .get(x as i32, y as i32 * 2 + 1)
+                        .unwrap_or(DARK);
+                    let bg = mix(upper, lower, 0.5);
+                    let style = if mono {
+                        Style::new().bold()
+                    } else {
+                        Style::new()
+                            .fg(Color::Rgb(color.0, color.1, color.2))
+                            .bg(Color::Rgb(bg.0, bg.1, bg.2))
+                    };
+                    surface.print_str(x, y, &glyph.to_string(), style, Some(1));
+                }
+            }
+        }
+    }
     for node in &world.graph.nodes {
         if node.decoy && !node.visible {
             continue;
         }
+        if shot.is_some_and(|s| {
+            width < 90 && s.focal.is_some_and(|f| f != node.id) && node.id != world.planner.location
+        }) {
+            continue;
+        }
+        if let Some(shot) = shot {
+            use super::presentation::LabelPolicy;
+            let anchor = shot.focal == Some(node.id) || node.id == world.planner.location;
+            let keep = match shot.labels {
+                LabelPolicy::All => true,
+                LabelPolicy::FocalAndRoute => anchor || world.planner.path.contains(&node.id),
+                LabelPolicy::Minimal => anchor,
+                LabelPolicy::Scars => node.integrity < 1000 || node.isolated || anchor,
+            };
+            if !keep {
+                continue;
+            }
+        }
         if let Some((x, y, _)) = project(position(world, node.id)) {
+            if shot.is_some()
+                && (x < 2.0 || x > width as f32 - 8.0 || y < 0.0 || y > ph as f32 - 4.0)
+            {
+                continue;
+            }
             let label = format!(
                 "{}{}",
                 if node.isolated {
@@ -535,6 +811,43 @@ pub fn render(
             );
         }
     }
+    if shot.is_some() && world.remote_active && world.elapsed_ms >= 3500 {
+        if let Some((x, y, _)) = project(actor_position(world).plus(Vec3::new(0.0, 0.6, 0.0))) {
+            if x >= 1.0 && x < width as f32 - 12.0 && y >= 2.0 && y < ph as f32 - 6.0 {
+                let label = if world.elapsed_ms >= 6500 {
+                    "‹ ACID BURN"
+                } else {
+                    "‹ unknown"
+                };
+                let style = if mono {
+                    Style::new().reverse()
+                } else {
+                    Style::new()
+                        .fg(Color::Rgb(255, 147, 215))
+                        .bg(Color::Rgb(2, 4, 14))
+                };
+                surface.print_str(
+                    x as u16,
+                    (y / 2.0) as u16,
+                    label,
+                    style,
+                    Some(width - x as u16),
+                );
+                if world.elapsed_ms.saturating_sub(world.remote_line_at_ms) < 3200
+                    && !world.remote_line.is_empty()
+                    && world.graph.node(NodeId::Display).acid_fraction() <= 0.55
+                {
+                    surface.print_str(
+                        x as u16,
+                        (y / 2.0) as u16 + 1,
+                        &world.remote_line,
+                        style,
+                        Some(width - x as u16),
+                    );
+                }
+            }
+        }
+    }
     let metrics = Metrics {
         pixels: width as usize * ph as usize,
         triangles: renderer.stats,
@@ -549,7 +862,26 @@ pub fn render(
 }
 
 // Demo-local 5×7 fragments, deliberately not a general font engine.
-fn title_fragments(raster: &mut RgbRaster, t: f32, aftermath: f32) {
+fn title_fragments(raster: &mut RgbRaster, t: f32, aftermath: f32, from_machine: bool) {
+    // Gather illuminated fragments from the actual realized machine. The finale
+    // transports those samples into the lettering instead of inventing a cloud.
+    let fragments: Vec<_> = if from_machine {
+        raster
+            .pixels()
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.0.max(c.1).max(c.2) > 55)
+            .map(|(i, &c)| {
+                (
+                    (i % raster.width() as usize) as f32,
+                    (i / raster.width() as usize) as f32,
+                    c,
+                )
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     let align = smooth(aftermath / 1.8);
     let letters: [(&str, [u8; 7]); 8] = [
         ("A", [14, 17, 17, 31, 17, 17, 17]),
@@ -573,14 +905,23 @@ fn title_fragments(raster: &mut RgbRaster, t: f32, aftermath: f32) {
                 let seed = (i * 37 + y * 17 + x as usize * 11) as i32;
                 let dx = ((seed % 53 - 26) as f32 * (1.0 - align)) as i32;
                 let dy = ((seed % 37 - 18) as f32 * (1.0 - align)) as i32;
+                let target_x = start_x + (i % 4) as i32 * 6 * size + x * size;
+                let target_y = start_y + (i / 4) as i32 * 10 * size + y as i32 * size;
+                let (px, py, base_color) = if let Some(&(fx, fy, color)) =
+                    fragments.get((seed as usize * 37) % fragments.len().max(1))
+                {
+                    (
+                        (fx + (target_x as f32 - fx) * align) as i32,
+                        (fy + (target_y as f32 - fy) * align) as i32,
+                        mix(color, (255, 155, 225), align),
+                    )
+                } else {
+                    (target_x + dx, target_y + dy, (255, 155, 225))
+                };
                 let shimmer = 0.75 + 0.25 * (t * 1.4 + i as f32 + x as f32 * 0.3).sin();
                 for sy in 0..size {
                     for sx in 0..size {
-                        raster.set(
-                            start_x + (i % 4) as i32 * 6 * size + x * size + sx + dx,
-                            start_y + (i / 4) as i32 * 10 * size + y as i32 * size + sy + dy,
-                            scale((255, 155, 225), shimmer),
-                        );
+                        raster.set(px + sx, py + sy, scale(base_color, shimmer));
                     }
                 }
             }
