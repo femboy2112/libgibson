@@ -2,11 +2,27 @@
 name = "libgibson"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.85"
 authors = ["LibGibson Contributors"]
 description = "A language-neutral terminal UI engine with a real cell framebuffer, differential renderer, and immutable-scrollback / mutable-live-region semantics."
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/femboy2112/libgibson"
+
+# The published crate ships the Rust library plus the C header (for native-library
+# builders) and the license/readme/design docs. The engineering-demo corpus
+# (examples/, integration tests + goldens, internal docs/, dev scripts, and the
+# language bindings — which are delivered via the separate native SDK) stays in the
+# repository but is NOT part of the crate. See docs/RELEASE_CONTRACT.md.
+exclude = [
+    "/examples",
+    "/tests",
+    "/docs",
+    "/scripts",
+    "/bindings",
+    "/.github",
+    "/.gitignore",
+]
 
 [lib]
 name = "gibson"
@@ -19,7 +35,6 @@ unicode-segmentation = "1.12"
 unicode-width = "0.2"
 compact_str = "0.10"
 bitflags = "2.4"
-thiserror = "2.0"
 libc = "0.2"
 
 [dev-dependencies]
