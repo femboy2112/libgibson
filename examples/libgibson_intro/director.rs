@@ -64,16 +64,25 @@ pub const CUES: [Cue; 7] = [
 pub struct Director {
     pub seconds: f32,
     pub paused: bool,
+    /// Explicit presentation time, never wall-clock or paint-time state.
+    pub hints_until: f32,
 }
 impl Default for Director {
     fn default() -> Self {
         Self {
             seconds: 0.0,
             paused: false,
+            hints_until: 4.0,
         }
     }
 }
 impl Director {
+    pub fn hints_visible(&self) -> bool {
+        self.paused || self.seconds < self.hints_until || self.seconds >= 71.0
+    }
+    pub fn interacted(&mut self) {
+        self.hints_until = self.seconds + 3.0;
+    }
     pub fn cue(&self) -> Cue {
         CUES.iter()
             .copied()
@@ -109,5 +118,6 @@ impl Director {
             index.saturating_sub(1)
         }]
         .start;
+        self.interacted();
     }
 }

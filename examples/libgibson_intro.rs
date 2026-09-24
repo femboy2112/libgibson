@@ -7,12 +7,16 @@
 pub mod director;
 #[path = "libgibson_intro/harness.rs"]
 mod harness;
-#[path = "libgibson_intro/membrane.rs"]
-mod membrane;
 #[path = "libgibson_intro/identity.rs"]
 pub mod identity;
+#[path = "libgibson_intro/membrane.rs"]
+mod membrane;
 #[path = "libgibson_intro/model.rs"]
 pub mod model;
+#[path = "libgibson_intro/planet.rs"]
+pub mod planet;
+#[path = "libgibson_intro/shots.rs"]
+pub mod shots;
 #[path = "libgibson_intro/world.rs"]
 pub mod world;
 use director::{Act, Director};
@@ -32,7 +36,7 @@ pub fn frame(
 ) -> Surface {
     let w = width.min(320);
     let h = height.min(100);
-    let content_h = h.saturating_sub(1);
+    let content_h = h;
     let mut out = match director.cue().act {
         Act::Harness => harness::render(w, content_h, director.seconds),
         Act::Membrane => membrane::render(
@@ -43,17 +47,25 @@ pub fn frame(
         _ => world::render(w, content_h, director.seconds, depth),
     };
     out.resize(w, h);
-    if h > 0 && hints {
+    if h > 0 && hints && director.hints_visible() {
         let label = if director.paused {
             "PAUSED · space resume · ←/→ act · R replay · Esc exit"
+        } else if director.seconds >= 71.0 {
+            "replay / R   exit / Esc"
         } else {
             "space pause · ←/→ act · R replay · Esc exit"
         };
         out.print_str(
-            1,
+            if director.seconds >= 71.0 && !director.paused {
+                w.saturating_sub(label.len() as u16 + 2)
+            } else {
+                1
+            },
             h - 1,
             label,
-            Style::new().fg(Color::Rgb(93, 116, 140)),
+            Style::new()
+                .fg(Color::Rgb(93, 116, 140))
+                .bg(Color::Rgb(2, 4, 12)),
             Some(w.saturating_sub(2)),
         );
     }
@@ -64,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let has = |s: &str| args.iter().any(|a| a == s);
     let value = |p: &str| args.iter().find_map(|a| a.strip_prefix(p));
     if has("--help") {
-        println!("libgibson_intro — a 72-second terminal short film\n\n--auto exit after finale; otherwise hold for replay\n--stage=harness|membrane|city|facades|couriers|ascent|planet\n--at=SECONDS --freeze --speed=FACTOR --deterministic\n--color=truecolor|ansi256|ansi16|mono --seconds=SMOKE_LIMIT\n--dump=PATH --width=120 --height=32 exports a developer RGB PPM\nSpace pause; arrows skip; R replay; Esc or Ctrl-C exit.");
+        println!("libgibson_intro — a 72-second terminal short film\n\n--auto exit after finale; otherwise hold for replay\n--stage=harness|membrane|city|facades|couriers|ascent|planet\n--at=SECONDS --freeze --speed=FACTOR --deterministic\n--color=truecolor|ansi256|ansi16|mono --seconds=SMOKE_LIMIT\n--dump=PATH --width=120 --height=32 exports a developer RGB PPM\nSpace pause; arrows skip; R replay; Esc or Ctrl-C exit.\nHints retreat after opening and return on interaction/pause/final hold.");
         return Ok(());
     }
     let mut d = Director::default();
@@ -156,7 +168,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             match k.code {
                 KeyCode::Esc => break,
                 KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => break,
-                KeyCode::Char(' ') => d.paused = !d.paused,
+                KeyCode::Char(' ') => {
+                    d.paused = !d.paused;
+                    d.interacted();
+                }
                 KeyCode::Char('r' | 'R') => d = Director::default(),
                 KeyCode::Right => d.skip(true),
                 KeyCode::Left => d.skip(false),

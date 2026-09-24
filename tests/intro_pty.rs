@@ -101,6 +101,7 @@ impl Film {
 fn intro_space_pauses_exact_output_then_resumes_and_escape_restores() {
     let mut film = Film::spawn(&["--at=5", "--deterministic", "--color=truecolor"]);
     film.wait_text("AGENT OPERATIONS");
+    assert!(!film.parser.screen().contents().contains("space pause"));
     film.key(b" ");
     film.wait_text("PAUSED");
     film.assert_frozen();
@@ -108,6 +109,7 @@ fn intro_space_pauses_exact_output_then_resumes_and_escape_restores() {
     film.key(b" ");
     film.pump(Duration::from_millis(200));
     assert!(!film.parser.screen().contents().contains("PAUSED"));
+    assert!(film.parser.screen().contents().contains("space pause"));
     assert!(film.capture.raw().len() > bytes);
     film.key(b"\x1b");
     film.assert_restored();
@@ -137,9 +139,6 @@ fn intro_resize_reprojects_frozen_membrane_city_and_earth_without_advancing() {
         let mut film = Film::spawn(&[at, "--freeze", "--color=truecolor"]);
         film.wait_text("PAUSED");
         let original = film.assert_frozen();
-        if at == "--at=68" {
-            film.wait_text("Hack the planet!");
-        }
         for (cols, rows) in [(56, 24), (160, 40), (120, 32)] {
             film.resize(cols, rows);
             film.assert_frozen();
@@ -168,7 +167,7 @@ fn intro_auto_runs_from_harness_through_finale_and_exits_cleanly() {
     let mut finale = false;
     loop {
         film.pump(Duration::from_millis(10));
-        finale |= film.parser.screen().contents().contains("Hack the planet!");
+        finale |= film.parser.screen().contents().contains("replay / R");
         if film.capture.try_wait().expect("poll auto film").is_some() {
             break;
         }
@@ -187,7 +186,24 @@ fn intro_auto_runs_from_harness_through_finale_and_exits_cleanly() {
 #[test]
 fn intro_smoke_limit_exits_even_when_visual_time_is_frozen() {
     let mut film = Film::spawn(&["--at=68", "--freeze", "--color=ansi16", "--seconds=0.5"]);
-    film.wait_text("Hack the planet!");
     film.wait_text("PAUSED");
+    film.assert_restored();
+}
+
+#[test]
+fn intro_opening_hints_disappear_and_navigation_restores_them() {
+    let mut film = Film::spawn(&["--at=3.8", "--deterministic", "--color=truecolor"]);
+    film.wait_text("space pause");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while film.parser.screen().contents().contains("space pause") {
+        film.pump(Duration::from_millis(20));
+        assert!(Instant::now() < deadline, "opening hints never retreated");
+    }
+    film.key(b"\x1b[C");
+    film.wait_text("space pause");
+    film.key(b" ");
+    film.wait_text("PAUSED");
+    film.assert_frozen();
+    film.key(b"\x1b");
     film.assert_restored();
 }

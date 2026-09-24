@@ -1,7 +1,9 @@
 //! The introduction's information city. Pure world-space rendering: buildings,
 //! mounted receipts and couriers share the same coordinates and camera. No state
 //! advances during paint; scrubbing to a time reconstructs the same frame.
+use super::identity::IDENTITIES;
 use super::model::{AGENTS, MESSAGES};
+use super::shots;
 use gibson::geom::{CubicPath3, Transform3, Vec3};
 use gibson::raster::{Rgb, RgbRaster};
 use gibson::raster3d::{Camera, Fog, Material, Rasterizer, TriangleMesh};
@@ -9,15 +11,10 @@ use gibson::raster_fx::RasterFx;
 use gibson::{Cell, Color, ColorDepth, Glyph, Style, Surface};
 use std::f32::consts::{PI, TAU};
 
-const ICE: Rgb = (96, 224, 255);
-const GOLD: Rgb = (255, 193, 87);
-const VIOLET: Rgb = (153, 139, 255);
-
 #[derive(Clone, Copy)]
 struct Building {
     position: Vec3,
     height: f32,
-    color: Rgb,
 }
 const BUILDINGS: [Building; 4] = [
     Building {
@@ -27,7 +24,6 @@ const BUILDINGS: [Building; 4] = [
             z: 0.,
         },
         height: 5.2,
-        color: ICE,
     },
     Building {
         position: Vec3 {
@@ -36,25 +32,22 @@ const BUILDINGS: [Building; 4] = [
             z: 1.,
         },
         height: 4.1,
-        color: GOLD,
     },
     Building {
         position: Vec3 {
-            x: -3.,
+            x: -7.,
             y: 0.,
             z: 7.,
         },
         height: 6.3,
-        color: VIOLET,
     },
     Building {
         position: Vec3 {
-            x: 4.,
+            x: 7.,
             y: 0.,
             z: 8.,
         },
         height: 4.8,
-        color: ICE,
     },
 ];
 
@@ -80,55 +73,141 @@ fn safe_time(seconds: f32) -> f32 {
     }
 }
 
-/// Camera keyframes describe shots, not simulation changes. The close framing
-/// holds long enough to read the actual building face before following its mail.
-fn camera(seconds: f32, width: u16, height: u16) -> Camera {
+/// A curved dolly between deliberately held compositions. Camera and target
+/// share endpoints at every cue boundary; courier follow is an additive framing
+/// influence with zero weight at departure/arrival, not a second camera mode.
+pub fn camera(seconds: f32, width: u16, height: u16) -> Camera {
+    let seconds = safe_time(seconds);
     let keys = [
-        (28., Vec3::new(0., 5., -22.), Vec3::new(0., 2., 4.)),
-        (34., Vec3::new(10., 9., -17.), Vec3::new(0., 2., 4.)),
-        (37., Vec3::new(-4., 3.8, -9.), Vec3::new(-4., 3.2, 0.)),
-        (41., Vec3::new(-3.8, 3.8, -9.), Vec3::new(-4., 3.2, 0.)),
-        (44., Vec3::new(-11., 8., -8.), Vec3::new(0., 3., 3.)),
-        (49., Vec3::new(11., 9., -4.), Vec3::new(0., 3., 5.)),
-        (53., Vec3::new(14., 11., -15.), Vec3::new(0., 2., 4.)),
-        (60., Vec3::new(5., 50., -57.), Vec3::new(0., 0., 4.)),
+        (28., Vec3::new(0., 6., -23.), Vec3::new(0., 2.8, 4.), 0.88),
+        (32., Vec3::new(12., 8.5, -20.), Vec3::new(0., 2.8, 4.), 0.85),
+        (35., Vec3::new(-9., 6.5, -17.), Vec3::new(-1., 3., 3.), 0.85),
+        (
+            36.55,
+            Vec3::new(-3.4, 4.4, -9.5),
+            Vec3::new(-4., 3.1, 0.),
+            0.78,
+        ),
+        (
+            37.6,
+            Vec3::new(-3.4, 4.4, -9.5),
+            Vec3::new(-4., 3.1, 0.),
+            0.78,
+        ),
+        (
+            38.55,
+            Vec3::new(4.6, 4.3, -10.3),
+            Vec3::new(4., 3.3, 1.),
+            0.78,
+        ),
+        (
+            39.6,
+            Vec3::new(4.6, 4.3, -10.3),
+            Vec3::new(4., 3.3, 1.),
+            0.78,
+        ),
+        (
+            40.55,
+            Vec3::new(-7.5, 4.6, -3.4),
+            Vec3::new(-7., 3.5, 7.),
+            0.78,
+        ),
+        (
+            41.6,
+            Vec3::new(-7.5, 4.6, -3.4),
+            Vec3::new(-7., 3.5, 7.),
+            0.78,
+        ),
+        (
+            42.55,
+            Vec3::new(7.6, 4.2, -1.5),
+            Vec3::new(7., 2.9, 8.),
+            0.78,
+        ),
+        (
+            43.45,
+            Vec3::new(7.6, 4.2, -1.5),
+            Vec3::new(7., 2.9, 8.),
+            0.78,
+        ),
+        (44., Vec3::new(-9., 10., -13.), Vec3::new(0., 5., 3.), 0.86),
+        (47., Vec3::new(8., 11., -12.), Vec3::new(0., 5., 4.), 0.86),
+        (50., Vec3::new(13., 12., -6.), Vec3::new(0., 5., 5.), 0.86),
+        (53., Vec3::new(14., 12., -17.), Vec3::new(0., 2.8, 4.), 0.88),
+        (56., Vec3::new(6., 35., -34.), Vec3::new(0., 0., 4.), 0.91),
+        (60., Vec3::new(5., 50., -57.), Vec3::new(0., 0., 4.), 0.95),
     ];
     let mut position = keys[0].1;
     let mut target = keys[0].2;
-    for pair in keys.windows(2) {
-        if seconds >= pair[0].0 {
-            let t = smooth((seconds - pair[0].0) / (pair[1].0 - pair[0].0));
-            position = mix(pair[0].1, pair[1].1, t);
-            target = mix(pair[0].2, pair[1].2, t);
+    let mut fov_y = keys[0].3;
+    for (index, pair) in keys.windows(2).enumerate() {
+        if seconds < pair[0].0 {
+            break;
         }
+        let t = smooth((seconds - pair[0].0) / (pair[1].0 - pair[0].0));
+        let displacement = pair[1].1.plus(pair[0].1.scale(-1.));
+        let turn = Vec3::new(-displacement.z, 0., displacement.x).scale(0.11);
+        let lift = Vec3::new(0., displacement.length() * 0.055, 0.);
+        let path = CubicPath3 {
+            start: pair[0].1,
+            control1: pair[0]
+                .1
+                .plus(displacement.scale(0.32))
+                .plus(turn)
+                .plus(lift),
+            control2: pair[0]
+                .1
+                .plus(displacement.scale(0.68))
+                .plus(turn)
+                .plus(lift),
+            end: pair[1].1,
+        };
+        position = path.sample(t);
+        let next = keys[(index + 2).min(keys.len() - 1)].2;
+        target = CubicPath3 {
+            start: pair[0].2,
+            control1: mix(pair[0].2, pair[1].2, 0.33),
+            control2: mix(pair[0].2, pair[1].2, 0.72)
+                .plus(next.plus(pair[1].2.scale(-1.)).scale(t * (1. - t) * 0.03)),
+            end: pair[1].2,
+        }
+        .sample(t);
+        fov_y = pair[0].3 * (1. - t) + pair[1].3 * t;
     }
-    if let Some(message) = MESSAGES
+    let base_position = position;
+    let base_target = target;
+    for message in MESSAGES
         .iter()
-        .find(|m| seconds >= m.depart && seconds < m.arrive)
+        .filter(|m| seconds >= m.depart && seconds < m.arrive)
     {
         let phase = (seconds - message.depart) / (message.arrive - message.depart);
-        let courier = route(message.from, message.to).sample(phase);
-        let weight = (phase * PI).sin().powi(2) * 0.32;
-        let shift = courier.plus(target.scale(-1.));
-        target = mix(target, courier, weight);
-        position = position.plus(shift.scale(weight * 0.18));
+        let path = route(message.from, message.to);
+        let point = path.sample(phase);
+        let tangent = path.tangent(phase);
+        let lookahead = path.sample((phase + 0.13).min(1.));
+        let follow = point.plus(tangent.scale(-6.)).plus(Vec3::new(0., 3.6, -3.));
+        let attention = (phase * PI).sin().powi(2) * 0.48;
+        position = position.plus(follow.minus(base_position).scale(attention));
+        target = target.plus(lookahead.minus(base_target).scale(attention * 1.3));
+        fov_y -= attention * 0.06;
+    }
+    // Narrow terminals frame a single landmark with contextual depth rather than
+    // squeezing the wide establishing shot into the available columns.
+    if width < height.saturating_mul(3) {
+        fov_y += 0.18;
     }
     Camera {
         position,
         target,
-        fov_y: if width < height.saturating_mul(3) {
-            1.05
-        } else {
-            0.88
-        },
-        far: 160.,
+        fov_y,
+        far: 180.,
         ..Camera::default()
     }
 }
 
-fn route(from: usize, to: usize) -> CubicPath3 {
-    let a = BUILDINGS[from];
-    let b = BUILDINGS[to];
+pub fn route(from: usize, to: usize) -> CubicPath3 {
+    let a = BUILDINGS[from.min(3)];
+    let b = BUILDINGS[to.min(3)];
     let start = a.position.plus(Vec3::new(0., a.height + 0.35, 0.));
     let end = b.position.plus(Vec3::new(0., b.height + 0.35, 0.));
     CubicPath3 {
@@ -147,7 +226,13 @@ fn box_lines(
     color: Rgb,
     floors: usize,
 ) {
-    let mesh = TriangleMesh::box_xyz(dimensions.x, dimensions.y, dimensions.z);
+    // The light rails stand proud of recessed dark cladding. Keeping these
+    // distinct physical planes avoids coplanar line/triangle depth contention.
+    let mesh = TriangleMesh::box_xyz(
+        dimensions.x * 0.96,
+        dimensions.y * 0.96,
+        dimensions.z * 0.96,
+    );
     renderer.draw_mesh(
         &mesh,
         Transform3 {
@@ -162,7 +247,11 @@ fn box_lines(
             emissive: 0.,
         },
     );
-    let corners: Vec<_> = mesh.vertices.iter().map(|v| v.plus(center)).collect();
+    let corners: Vec<_> = mesh
+        .vertices
+        .iter()
+        .map(|v| v.scale(1. / 0.96).plus(center))
+        .collect();
     for (a, b) in [
         (0, 1),
         (1, 2),
@@ -274,155 +363,559 @@ fn face_text(
     }
 }
 
+/// Quiet architectural frames share the same facade dimensions, but their
+/// silhouettes are intentional: ordered terraces, sensor mast, scaffold, vault.
+fn hero(renderer: &mut Rasterizer, camera: &Camera, index: usize, gain: f32, seconds: f32) {
+    let a = BUILDINGS[index];
+    let color = shade(IDENTITIES[index].accent, gain);
+    let center = a.position.plus(Vec3::new(0., a.height * 0.5, 0.));
+    box_lines(
+        renderer,
+        camera,
+        center,
+        Vec3::new(4., a.height, 2.4),
+        shade(color, 0.76),
+        if index == 2 { 4 } else { 2 },
+    );
+    match index {
+        0 => {
+            for tier in 0..3 {
+                box_lines(
+                    renderer,
+                    camera,
+                    a.position
+                        .plus(Vec3::new(0., a.height + 0.22 + tier as f32 * 0.48, 0.)),
+                    Vec3::new(3.6 - tier as f32 * 0.85, 0.44, 2.25 - tier as f32 * 0.5),
+                    shade(color, 1. - tier as f32 * 0.12),
+                    1,
+                );
+            }
+            for x in [-1.65, 1.65] {
+                renderer.line(
+                    a.position.plus(Vec3::new(x, 0.1, -1.25)),
+                    a.position.plus(Vec3::new(x, a.height, -1.25)),
+                    camera,
+                    shade(color, 0.55),
+                );
+            }
+        }
+        1 => {
+            box_lines(
+                renderer,
+                camera,
+                a.position.plus(Vec3::new(0., a.height + 1.15, 0.)),
+                Vec3::new(0.75, 2.3, 0.75),
+                color,
+                3,
+            );
+            renderer.line(
+                a.position.plus(Vec3::new(0., a.height + 2.3, 0.)),
+                a.position.plus(Vec3::new(0., a.height + 3.15, 0.)),
+                camera,
+                color,
+            );
+            for arm in 0..4 {
+                let angle = arm as f32 * PI * 0.5;
+                let end = Vec3::new(angle.cos() * 2.5, a.height + 1.8, angle.sin() * 2.5);
+                renderer.line(
+                    a.position.plus(Vec3::new(0., a.height + 1.8, 0.)),
+                    a.position.plus(end),
+                    camera,
+                    shade(color, 0.68),
+                );
+                renderer.line(
+                    a.position.plus(end),
+                    a.position.plus(end.plus(Vec3::new(0., 0.8, 0.))),
+                    camera,
+                    color,
+                );
+            }
+            ring(
+                renderer,
+                camera,
+                a.position.plus(Vec3::new(0., a.height + 0.4, 0.)),
+                1.5,
+                shade(color, 0.42),
+                seconds * 0.05,
+            );
+        }
+        2 => {
+            for tier in 0..4 {
+                let y = tier as f32 * a.height / 4.;
+                let offset = if tier % 2 == 0 { 0.24 } else { -0.24 };
+                let base = a.position.plus(Vec3::new(offset, y + a.height / 8., 0.));
+                box_lines(
+                    renderer,
+                    camera,
+                    base,
+                    Vec3::new(4.5, a.height / 4., 2.8),
+                    shade(color, 0.7),
+                    1,
+                );
+                // Lateral cross-bracing leaves the front information plane quiet.
+                for side in [-1., 1.] {
+                    let x = side * 2.28 + offset;
+                    renderer.line(
+                        a.position.plus(Vec3::new(x, y, -1.4)),
+                        a.position.plus(Vec3::new(x, y + a.height / 4., 1.4)),
+                        camera,
+                        shade(color, 0.5),
+                    );
+                    renderer.line(
+                        a.position.plus(Vec3::new(x, y, 1.4)),
+                        a.position.plus(Vec3::new(x, y + a.height / 4., -1.4)),
+                        camera,
+                        shade(color, 0.5),
+                    );
+                }
+            }
+            box_lines(
+                renderer,
+                camera,
+                a.position.plus(Vec3::new(0.9, a.height + 0.4, 0.)),
+                Vec3::new(1.8, 0.8, 1.8),
+                color,
+                1,
+            );
+        }
+        _ => {
+            for ring_index in 0..3 {
+                let r = 2.8 - ring_index as f32 * 0.25;
+                let z = a.position.z + 0.5 + ring_index as f32 * 0.25;
+                for step in 0..8 {
+                    let t = step as f32 / 8. * TAU;
+                    let u = (step + 1) as f32 / 8. * TAU;
+                    renderer.line(
+                        Vec3::new(a.position.x + r * t.cos(), a.height * 0.5 + r * t.sin(), z),
+                        Vec3::new(a.position.x + r * u.cos(), a.height * 0.5 + r * u.sin(), z),
+                        camera,
+                        shade(color, 0.85 - ring_index as f32 * 0.15),
+                    );
+                }
+            }
+            for side in [-1., 1.] {
+                box_lines(
+                    renderer,
+                    camera,
+                    a.position.plus(Vec3::new(side * 2.3, a.height * 0.5, 0.2)),
+                    Vec3::new(0.35, a.height + 0.8, 2.8),
+                    shade(color, 0.8),
+                    2,
+                );
+            }
+        }
+    }
+}
+
+fn ring(
+    renderer: &mut Rasterizer,
+    camera: &Camera,
+    center: Vec3,
+    radius: f32,
+    color: Rgb,
+    angle: f32,
+) {
+    for step in 0..36 {
+        let t = step as f32 / 36. * TAU + angle;
+        let u = (step + 1) as f32 / 36. * TAU + angle;
+        renderer.line(
+            center.plus(Vec3::new(t.cos() * radius, 0., t.sin() * radius)),
+            center.plus(Vec3::new(u.cos() * radius, 0., u.sin() * radius)),
+            camera,
+            color,
+        );
+    }
+}
+
+/// A facade is a tiny plane, not a texture system: normalized diagram points
+/// become ordinary depth-tested world lines. Four different receipts occupy it.
+struct FacadeDisplay {
+    origin: Vec3,
+    width: f32,
+    height: f32,
+    color: Rgb,
+}
+impl FacadeDisplay {
+    fn point(&self, x: f32, y: f32) -> Vec3 {
+        self.origin
+            .plus(Vec3::new(x * self.width, -y * self.height, 0.))
+    }
+    fn line(
+        &self,
+        renderer: &mut Rasterizer,
+        camera: &Camera,
+        a: (f32, f32),
+        b: (f32, f32),
+        gain: f32,
+    ) {
+        renderer.line(
+            self.point(a.0, a.1),
+            self.point(b.0, b.1),
+            camera,
+            shade(self.color, gain),
+        );
+    }
+    fn node(&self, renderer: &mut Rasterizer, camera: &Camera, x: f32, y: f32, r: f32) {
+        let corners = [(x - r, y), (x, y - r), (x + r, y), (x, y + r)];
+        for i in 0..4 {
+            self.line(renderer, camera, corners[i], corners[(i + 1) % 4], 1.);
+        }
+    }
+    fn content(&self, renderer: &mut Rasterizer, camera: &Camera, index: usize) {
+        match index {
+            0 => {
+                for (a, b) in [
+                    ((0.12, 0.5), (0.43, 0.16)),
+                    ((0.12, 0.5), (0.43, 0.83)),
+                    ((0.43, 0.16), (0.83, 0.5)),
+                    ((0.43, 0.83), (0.83, 0.5)),
+                ] {
+                    self.line(renderer, camera, a, b, 0.65);
+                }
+                for (x, y) in [(0.12, 0.5), (0.43, 0.16), (0.43, 0.83), (0.83, 0.5)] {
+                    self.node(renderer, camera, x, y, 0.07);
+                }
+            }
+            1 => {
+                let nodes = [
+                    (0.08, 0.6),
+                    (0.3, 0.18),
+                    (0.37, 0.75),
+                    (0.57, 0.39),
+                    (0.76, 0.12),
+                    (0.93, 0.66),
+                ];
+                for (a, b) in [(0, 1), (0, 2), (1, 3), (2, 3), (3, 4), (3, 5), (4, 5)] {
+                    self.line(renderer, camera, nodes[a], nodes[b], 0.48);
+                }
+                for (x, y) in nodes {
+                    self.node(renderer, camera, x, y, 0.04);
+                }
+            }
+            2 => {
+                for lane in 0..3 {
+                    let gain = if lane == 1 { 1.1 } else { 0.72 };
+                    for step in 0..24 {
+                        let t = step as f32 / 24.;
+                        let next = (step + 1) as f32 / 24.;
+                        let x = 0.09 + t * 0.82;
+                        let nx = 0.09 + next * 0.82;
+                        let y = 0.5 + (lane as f32 - 1.) * 0.43 * (t * PI).sin();
+                        let ny = 0.5 + (lane as f32 - 1.) * 0.43 * (next * PI).sin();
+                        self.line(renderer, camera, (x, y), (nx, ny), gain);
+                    }
+                }
+                self.node(renderer, camera, 0.06, 0.5, 0.05);
+                self.node(renderer, camera, 0.94, 0.5, 0.05);
+                self.line(renderer, camera, (0.67, 0.40), (0.75, 0.50), 1.1);
+                self.line(renderer, camera, (0.75, 0.50), (0.67, 0.60), 1.1);
+            }
+            _ => {
+                for row in 0..4 {
+                    for col in 0..6 {
+                        let x = 0.04 + col as f32 * 0.16;
+                        let y = 0.1 + row as f32 * 0.24;
+                        self.line(renderer, camera, (x, y + 0.03), (x + 0.035, y + 0.09), 0.85);
+                        self.line(
+                            renderer,
+                            camera,
+                            (x + 0.035, y + 0.09),
+                            (x + 0.10, y - 0.03),
+                            0.85,
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn facade_graphics(
+    renderer: &mut Rasterizer,
+    camera: &Camera,
+    index: usize,
+    gain: f32,
+    selected: bool,
+) {
+    let a = BUILDINGS[index];
+    let color = shade(IDENTITIES[index].accent, gain);
+    if !selected {
+        face_text(
+            renderer,
+            camera,
+            AGENTS[index].name,
+            a.position.plus(Vec3::new(-1.65, a.height - 0.55, -1.27)),
+            0.065,
+            color,
+        );
+    }
+    if index == 2 {
+        // BUILDER's structural cross members pass behind its mounted route
+        // display. A physical dark plate protects the selected curve's contour.
+        renderer.draw_mesh(
+            &TriangleMesh::box_xyz(3.45, 1.55, 0.025),
+            Transform3 {
+                offset: a.position.plus(Vec3::new(0., a.height - 2.66, -1.66)),
+                ..Transform3::default()
+            },
+            camera,
+            Material {
+                color: (2, 4, 12),
+                ambient: 1.,
+                diffuse: 0.,
+                emissive: 0.,
+            },
+        );
+    }
+    let plane = FacadeDisplay {
+        origin: a.position.plus(Vec3::new(
+            -1.55,
+            a.height - if index == 2 { 2.03 } else { 2.55 },
+            if index == 2 { -1.7 } else { -1.47 },
+        )),
+        width: 3.1,
+        height: 1.28,
+        color,
+    };
+    plane.content(renderer, camera, index);
+    // A paired, identical witness is VERIFY's geometry-level replay receipt.
+    if index == 3 {
+        for step in 0..10 {
+            let x = -1.5 + step as f32 * 0.31;
+            let y = 0.38 + ((step * 7) % 5) as f32 * 0.055;
+            for offset in [0., 0.2] {
+                renderer.line(
+                    a.position.plus(Vec3::new(x, y + offset, -1.47)),
+                    a.position.plus(Vec3::new(x + 0.2, y + offset, -1.47)),
+                    camera,
+                    shade(color, 0.7),
+                );
+            }
+        }
+    }
+}
+
+fn capsule(
+    renderer: &mut Rasterizer,
+    camera: &Camera,
+    point: Vec3,
+    tangent: Vec3,
+    color: Rgb,
+    seconds: f32,
+    sender: usize,
+) {
+    let axis = if tangent.length() > 0.001 {
+        tangent
+    } else {
+        Vec3::new(0., 1., 0.)
+    };
+    let up = Vec3::new(-axis.z, 0., axis.x).normalize();
+    let side = axis.cross(up).normalize();
+    let mut rings = [[Vec3::default(); 4]; 2];
+    for (end, vertices) in rings.iter_mut().enumerate() {
+        for (v, point_out) in vertices.iter_mut().enumerate() {
+            let theta = v as f32 * PI * 0.5 + seconds * 1.4 + sender as f32 * 0.3;
+            *point_out = point
+                .plus(axis.scale(if end == 0 { -0.31 } else { 0.31 }))
+                .plus(up.scale(theta.cos() * 0.19))
+                .plus(side.scale(theta.sin() * 0.19));
+        }
+    }
+    for v in 0..4 {
+        renderer.line(rings[0][v], rings[0][(v + 1) % 4], camera, color);
+        renderer.line(rings[1][v], rings[1][(v + 1) % 4], camera, color);
+        renderer.line(rings[0][v], rings[1][v], camera, shade(color, 0.8));
+    }
+    renderer.line(
+        point.plus(axis.scale(-0.36)),
+        point.plus(axis.scale(0.36)),
+        camera,
+        (221, 245, 255),
+    );
+    // Three payload slats trail the cage in its own local tangent frame.
+    for strip in 0..3 {
+        let p = point.plus(axis.scale(-0.5 - strip as f32 * 0.22));
+        renderer.line(
+            p.plus(up.scale(-0.12)),
+            p.plus(up.scale(0.12)),
+            camera,
+            shade(color, 0.8 - strip as f32 * 0.18),
+        );
+    }
+}
+
 fn city(width: u16, height: u16, seconds: f32) -> RgbRaster {
     let mut renderer = Rasterizer::new(width, height.saturating_mul(2));
     let camera = camera(seconds, width, height);
+    let focal = shots::facade(seconds);
+    let focus = if focal.is_some() {
+        let local = seconds - shots::at(seconds).start;
+        smooth((local - 0.12) / 0.35) * (1. - smooth((local - 1.62) / 0.38))
+    } else {
+        0.
+    };
+    let context = 1. - focus * 0.52;
     renderer.clear((2, 4, 12));
     renderer.fog = Some(Fog {
         color: (2, 4, 12),
-        start: 18.,
-        end: 80.,
+        start: 20. - focus * 8.,
+        end: 92. - focus * 54.,
     });
-    // Sparse skyline and a circuit plane establish scale without becoming a wall
-    // of labels. Streets remain the same world coordinates in every camera shot.
-    for i in -12..=12 {
+    let curvature = smooth((seconds - 53.) / 3.) * 0.004;
+    // As altitude rises, the same circuit plane bends toward the emerging globe.
+    // Each grid line is segmented so its horizon curves continuously in geometry.
+    for i in -13..=13 {
         let v = i as f32 * 2.;
-        renderer.line(
-            Vec3::new(v, 0., -18.),
-            Vec3::new(v, 0., 34.),
-            &camera,
-            (12, 36, 62),
-        );
-        renderer.line(
-            Vec3::new(-24., 0., v + 8.),
-            Vec3::new(24., 0., v + 8.),
-            &camera,
-            (12, 36, 62),
-        );
+        let segments = if curvature > 0. { 14 } else { 1 };
+        for segment in 0..segments {
+            let a = -24. + segment as f32 * 54. / segments as f32;
+            let b = a + 54. / segments as f32;
+            for (p, q) in [
+                (
+                    Vec3::new(v, -curvature * (v * v + a * a), a + 4.),
+                    Vec3::new(v, -curvature * (v * v + b * b), b + 4.),
+                ),
+                (
+                    Vec3::new(a, -curvature * (a * a + v * v), v + 4.),
+                    Vec3::new(b, -curvature * (b * b + v * v), v + 4.),
+                ),
+            ] {
+                renderer.line(p, q, &camera, shade((14, 48, 77), context));
+            }
+        }
     }
-    for i in 0..28 {
+    // Four repeatable skyline families; open streets protect landmark silhouettes.
+    let background_count = if width <= 112 { 22 } else { 36 };
+    for i in 0..background_count {
         let side = if i % 2 == 0 { -1. } else { 1. };
-        let x = side * (9. + (i % 5) as f32 * 2.5);
-        let z = (i / 2) as f32 * 3.1 - 10.;
+        let x = side * (10.5 + (i % 5) as f32 * 3.5);
+        let z = (i / 2) as f32 * 3.25 - 11.;
         let h = 1.2 + ((i * 17) % 11) as f32 * 0.42;
+        let color = shade((25, 78, 121), context);
+        let (w, d, hh) = match i % 4 {
+            0 => (3.8, 2.8, h * 0.3),
+            1 => (0.7, 0.9, h * 1.65),
+            2 => (2.5, 1.3, h),
+            _ => (1.25, 1.3, h),
+        };
         box_lines(
             &mut renderer,
             &camera,
-            Vec3::new(x, h * 0.5, z),
-            Vec3::new(1.4, h, 1.5),
-            (27, 74, 112),
-            4,
+            Vec3::new(x, hh * 0.5, z),
+            Vec3::new(w, hh, d),
+            color,
+            if i % 4 == 2 { 2 } else { 1 },
         );
+        if i % 7 == 0 {
+            renderer.line(
+                Vec3::new(x, hh, z),
+                Vec3::new(x, hh + 2., z),
+                &camera,
+                shade(color, 0.85),
+            );
+        }
+        if i % 6 == 0 {
+            for rail in [-0.35, 0.35] {
+                renderer.line(
+                    Vec3::new(x, 1.2, z + rail),
+                    Vec3::new(x - side * 4.5, 1.2, z + rail + 3.),
+                    &camera,
+                    shade(color, 0.62),
+                );
+            }
+        }
     }
     for (index, a) in BUILDINGS.iter().enumerate() {
-        let center = a.position.plus(Vec3::new(0., a.height * 0.5, 0.));
-        box_lines(
+        let arrival = MESSAGES
+            .iter()
+            .filter(|m| m.to == index)
+            .map(|m| {
+                let age = seconds - m.arrive;
+                if (0.0..0.8).contains(&age) {
+                    1. - age / 0.8
+                } else {
+                    0.
+                }
+            })
+            .fold(0f32, f32::max);
+        let gain = if focal.is_none_or(|f| f == index) {
+            1.
+        } else {
+            1. - focus * 0.66
+        };
+        hero(
             &mut renderer,
             &camera,
-            center,
-            Vec3::new(4., a.height, 2.4),
-            shade(a.color, 0.8),
-            6,
+            index,
+            gain * (0.78 + arrival * 0.38),
+            seconds,
         );
-        // Small roof terraces and antennas distinguish the computational actors.
-        box_lines(
+        facade_graphics(
             &mut renderer,
             &camera,
-            a.position.plus(Vec3::new(0., a.height + 0.25, 0.)),
-            Vec3::new(2.8, 0.5, 1.6),
-            a.color,
-            1,
+            index,
+            gain * (0.75 + arrival * 0.35),
+            focal == Some(index),
         );
-        renderer.line(
-            a.position.plus(Vec3::new(0., a.height + 0.5, 0.)),
-            a.position.plus(Vec3::new(0., a.height + 1.3, 0.)),
-            &camera,
-            a.color,
-        );
-        if index != 0 || !(36.7..41.7).contains(&seconds) {
-            face_text(
+        if arrival > 0. {
+            let age = (seconds
+                - MESSAGES
+                    .iter()
+                    .find(|m| m.to == index)
+                    .map_or(seconds, |m| m.arrive))
+            .max(0.);
+            ring(
                 &mut renderer,
                 &camera,
-                AGENTS[index].name,
-                a.position.plus(Vec3::new(-1.7, a.height - 0.6, -1.23)),
-                0.061,
-                a.color,
+                a.position.plus(Vec3::new(0., a.height + 0.45, 0.)),
+                1.1 + age * 3.,
+                shade(IDENTITIES[index].accent, arrival),
+                0.,
             );
-            for (row, fragment) in AGENTS[index].result.split('/').take(3).enumerate() {
-                let text = fragment.trim().to_ascii_uppercase();
-                let pixel = (3.4 / (text.len().max(1) as f32 * 6.)).min(0.058);
-                face_text(
-                    &mut renderer,
-                    &camera,
-                    &text,
-                    a.position
-                        .plus(Vec3::new(-1.7, a.height - 1.45 - row as f32 * 0.55, -1.24)),
-                    pixel,
-                    (175, 214, 227),
-                );
-            }
-        }
-        // Mounted tool-result rows: the bars and glyphs live on the facade, get
-        // clipped and depth-tested exactly like its architecture.
-        for row in 0..3 {
-            let y = a.height - 3.3 - row as f32 * 0.25;
-            let count = 3 + ((seconds as usize / 2 + row + index) % 5);
-            for column in 0..count {
-                let x = -1.65 + column as f32 * 0.39;
-                renderer.line(
-                    a.position.plus(Vec3::new(x, y, -1.25)),
-                    a.position.plus(Vec3::new(x + 0.24, y, -1.25)),
-                    &camera,
-                    shade(a.color, 0.5),
-                );
-            }
         }
     }
-    // Four repeatable transactions: plan, evidence, implementation, verification.
-    // Every packet has a sender, receiver, and path; trails sample its own past.
     for message in MESSAGES {
-        let from = message.from;
-        let path = route(from, message.to);
-        let color = BUILDINGS[from].color;
-        for step in 0..36 {
+        let path = route(message.from, message.to);
+        let color = IDENTITIES[message.from].accent;
+        let phase = ((seconds - message.depart) / (message.arrive - message.depart)).clamp(0., 1.);
+        let active = seconds >= message.depart && seconds < message.arrive;
+        for step in 0..48 {
+            let p = step as f32 / 48.;
+            let gain = if active {
+                (0.08 + (-(p - phase - 0.06).abs() * 17.).exp() * 0.72) * context
+            } else {
+                0.045 * context
+            };
             renderer.line(
-                path.sample(step as f32 / 36.),
-                path.sample((step + 1) as f32 / 36.),
+                path.sample(p),
+                path.sample((step + 1) as f32 / 48.),
                 &camera,
-                shade(color, 0.18),
+                shade(color, gain),
             );
         }
-        if seconds < message.depart || seconds > message.arrive + 0.4 {
+        if !active {
             continue;
         }
-        let phase = ((seconds - message.depart) / (message.arrive - message.depart)).clamp(0., 1.);
-        for tail in (0..16).rev() {
-            let t = phase - tail as f32 * 0.008;
+        for tail in (0..20).rev() {
+            let t = phase - tail as f32 * 0.011;
             if t < 0. {
                 continue;
             }
             renderer.line(
                 path.sample(t),
-                path.sample((t + 0.015).min(1.)),
+                path.sample((t + 0.014).min(1.)),
                 &camera,
-                shade(color, 1. - tail as f32 / 18.),
+                shade(color, 1. - tail as f32 / 22.),
             );
         }
-        let point = path.sample(phase);
-        renderer.draw_mesh(
-            &TriangleMesh::octahedron(0.14),
-            Transform3 {
-                offset: point,
-                ry: seconds,
-                ..Transform3::default()
-            },
+        capsule(
+            &mut renderer,
             &camera,
-            Material {
-                color,
-                ambient: 1.,
-                diffuse: 0.,
-                emissive: 0.3,
-            },
+            path.sample(phase),
+            path.tangent(phase),
+            color,
+            seconds,
+            message.from,
         );
     }
     RasterFx::apply_chain(
@@ -430,235 +923,25 @@ fn city(width: u16, height: u16, seconds: f32) -> RgbRaster {
         &[
             RasterFx::Glow {
                 radius: 1,
-                threshold: 105,
-                strength: 0.75,
+                threshold: 108,
+                strength: 0.55,
             },
-            RasterFx::Vignette { strength: 0.3 },
+            RasterFx::Vignette { strength: 0.24 },
         ],
     );
     renderer.raster
 }
 
-// Coarse hand-authored geographic silhouettes, explicitly illustration rather
-// than cartographic data. Longitude/latitude polygons rotate with the globe.
-const LAND: &[&[(f32, f32)]] = &[
-    &[
-        (-168., 70.),
-        (-130., 72.),
-        (-108., 57.),
-        (-60., 52.),
-        (-81., 25.),
-        (-98., 15.),
-        (-112., 29.),
-        (-128., 50.),
-        (-160., 57.),
-    ],
-    &[
-        (-80., 12.),
-        (-50., 5.),
-        (-35., -7.),
-        (-45., -24.),
-        (-68., -55.),
-        (-78., -18.),
-    ],
-    &[
-        (-17., 36.),
-        (12., 37.),
-        (35., 28.),
-        (50., 10.),
-        (35., -30.),
-        (18., -35.),
-        (5., -8.),
-        (-15., 8.),
-    ],
-    &[
-        (-10., 36.),
-        (-11., 59.),
-        (30., 72.),
-        (60., 68.),
-        (90., 76.),
-        (160., 62.),
-        (174., 48.),
-        (142., 36.),
-        (121., 20.),
-        (110., 0.),
-        (78., 8.),
-        (58., 28.),
-        (36., 35.),
-    ],
-    &[
-        (113., -12.),
-        (137., -10.),
-        (154., -24.),
-        (148., -39.),
-        (116., -34.),
-    ],
-    &[(-52., 60.), (-22., 69.), (-40., 83.), (-61., 76.)],
-];
-fn inside(x: f32, y: f32, polygon: &[(f32, f32)]) -> bool {
-    let mut hit = false;
-    let mut j = polygon.len() - 1;
-    for i in 0..polygon.len() {
-        let (ax, ay) = polygon[i];
-        let (bx, by) = polygon[j];
-        if (ay > y) != (by > y) && x < (bx - ax) * (y - ay) / (by - ay) + ax {
-            hit = !hit;
-        }
-        j = i;
-    }
-    hit
-}
-fn earth(width: u16, height: u16, seconds: f32) -> RgbRaster {
-    let mut raster = RgbRaster::new(width, height.saturating_mul(2));
-    let w = raster.width() as f32;
-    let h = raster.height() as f32;
-    let arrive = smooth((seconds - 56.) / 7.);
-    let radius = h * (0.83 - 0.45 * arrive);
-    let cx = w * 0.5;
-    let cy = h * 0.46;
-    for y in 0..raster.height() {
-        for x in 0..raster.width() {
-            let px = (x as f32 - cx) / radius;
-            let py = (cy - y as f32) / radius;
-            let d = px * px + py * py;
-            let mut color;
-            if d < 1. {
-                let z = (1. - d).sqrt();
-                let lat = py.asin() * 180. / PI;
-                let lon = (px.atan2(z) * 180. / PI - 30. + (seconds - 60.) * 1.8 + 180.)
-                    .rem_euclid(360.)
-                    - 180.;
-                let land = LAND.iter().any(|polygon| inside(lon, lat, polygon));
-                let light = (px * (-0.45) + py * 0.45 + z * 0.77).max(0.);
-                let grid = (lon.rem_euclid(15.).min(15. - lon.rem_euclid(15.)) < 0.55
-                    || lat.rem_euclid(15.).min(15. - lat.rem_euclid(15.)) < 0.55)
-                    as u8;
-                let base = if land { (49, 154, 153) } else { (13, 62, 126) };
-                color = shade(base, 0.2 + light * 0.95);
-                let haze = (1. - z).powi(3) * 0.8;
-                color = (
-                    color.0.saturating_add((haze * 55.) as u8),
-                    color.1.saturating_add((haze * 120.) as u8 + grid * 16),
-                    color.2.saturating_add((haze * 150.) as u8 + grid * 23),
-                );
-                // Sparse cities glow on the darker limb, never random per frame.
-                if land && light < 0.45 && (u32::from(x) * 97 + u32::from(y) * 31) % 37 == 0 {
-                    color = (153, 158, 104);
-                }
-            } else {
-                let halo = (-(d.sqrt() - 1.) * 29.).exp();
-                color = (2, (5. + halo * 69.) as u8, (13. + halo * 139.) as u8);
-                let star =
-                    (u32::from(x) * 1973 + u32::from(y) * 9277 + u32::from(x) * u32::from(y) * 17)
-                        % 1301;
-                if star < 5 {
-                    color = shade((170, 197, 236), 0.4 + star as f32 * 0.1);
-                }
-            }
-            raster.set(x as i32, y as i32, color);
-        }
-    }
-    // The former city keeps one geographic address through the scale change.
-    // A small beacon, not a second city simulation, remains at the landing site.
-    let latitude = 48f32.to_radians();
-    let longitude = (38. - (seconds - 60.) * 1.8).to_radians();
-    let site_x = cx + radius * latitude.cos() * longitude.sin();
-    let site_y = cy - radius * latitude.sin();
-    if seconds >= 59. {
-        raster.disc(site_x, site_y, 1.1, (217, 251, 255));
-        let ring_radius = 2.3 + ((seconds - 59.) * 1.3).sin() * 0.4;
-        for step in 0..32 {
-            let angle = step as f32 / 32. * TAU;
-            raster.set(
-                (site_x + ring_radius * angle.cos()) as i32,
-                (site_y + ring_radius * angle.sin()) as i32,
-                (69, 176, 222),
-            );
-        }
-    }
-    // Orbiting information: the city becomes one point in a connected planet.
-    for step in 0..200 {
-        let a = step as f32 / 200. * TAU;
-        let x = cx + radius * 1.24 * a.cos();
-        let y = cy + radius * 0.24 * a.sin() + radius * 0.22 * a.cos();
-        let back = a.sin() < 0.;
-        if !back || ((x - cx).powi(2) + (y - cy).powi(2)) > radius * radius {
-            raster.set(
-                x as i32,
-                y as i32,
-                shade(ICE, if back { 0.18 } else { 0.6 }),
-            );
-        }
-    }
-    if seconds >= 63. {
-        wordmark(&mut raster, smooth((seconds - 63.) / 2.));
-    }
-    RasterFx::apply_chain(
-        &mut raster,
-        &[RasterFx::Glow {
-            radius: 1,
-            threshold: 155,
-            strength: 0.6,
-        }],
-    );
-    raster
-}
-fn wordmark(raster: &mut RgbRaster, reveal: f32) {
-    let text = "libGibson";
-    let scale = (raster.width() as f32 / 56.).floor().clamp(1., 3.) as i32;
-    let width = 53 * scale;
-    let x0 = (raster.width() as i32 - width) / 2;
-    let y0 = (raster.height() as f32 * 0.50) as i32;
-    let visible = (text.len() as f32 * reveal).ceil() as usize;
-    // Extruded italic chrome: a small graphic wordmark, not terminal text alpha.
-    for depth in (0..=3).rev() {
-        for (letter, c) in text.chars().take(visible).enumerate() {
-            for (row, bits) in glyph(c).iter().enumerate() {
-                for col in 0..5 {
-                    if bits & (1 << (4 - col)) == 0 {
-                        continue;
-                    }
-                    for sy in 0..scale {
-                        for sx in 0..scale {
-                            let x = x0
-                                + (letter as i32 * 6 + col) * scale
-                                + sx
-                                + (6 - row as i32) * scale / 4
-                                + depth;
-                            let y = y0 + row as i32 * scale + sy + depth;
-                            let color = if depth > 0 {
-                                (37, 40, 108)
-                            } else if row < 3 {
-                                (210, 244, 255)
-                            } else if row == 3 {
-                                (255, 236, 152)
-                            } else {
-                                (72, 175, 244)
-                            };
-                            raster.set(x, y, color);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// The city pulls back into its geographic address. Source coordinates remain
-/// centered on the same four-agent site; the enclosing radial boundary shrinks
-/// continuously. Empty space reveals the planet behind the contracting geometry.
-fn site_pullback(width: u16, height: u16, seconds: f32) -> (f32, f32, f32, f32) {
+/// Geometry condenses into the same geographic beacon. There is no circular
+/// compositing boundary: only luminous city marks travel, leaving the emerging
+/// atmosphere visible in their negative space.
+fn site_pullback(width: u16, height: u16, seconds: f32) -> (f32, f32, f32) {
     let t = smooth((seconds - 56.) / 4.);
-    let zoom = (1. - t).powi(2).max(0.0001);
-    let radius = height as f32 * 2. * (0.83 - 0.45 * smooth((seconds - 56.) / 7.));
-    let latitude = 48f32.to_radians();
-    let longitude = (38. - (seconds - 60.) * 1.8).to_radians();
-    let site_x = width as f32 * 0.5 + radius * latitude.cos() * longitude.sin();
-    let site_y = height as f32 * 0.92 - radius * latitude.sin();
+    let zoom = (1. - t).powf(1.65).max(0.0001);
+    let (site_x, site_y) = super::planet::site(width, height, seconds);
     let x = width as f32 * 0.5 * (1. - t) + site_x * t;
     let y = height as f32 * (1. - t) + site_y * t;
-    let boundary = ((width as f32 * 0.5).powi(2) + (height as f32).powi(2)).sqrt() * zoom;
-    (x, y, zoom, boundary)
+    (x, y, zoom)
 }
 
 /// Opaque RGB realization. Useful for small optional PPM development captures.
@@ -666,23 +949,23 @@ fn site_pullback(width: u16, height: u16, seconds: f32) -> (f32, f32, f32, f32) 
 pub fn raster(width: u16, height: u16, seconds: f32) -> RgbRaster {
     let seconds = safe_time(seconds);
     if seconds >= 60. {
-        return earth(width, height, seconds);
+        return super::planet::raster(width, height, seconds);
     }
     if seconds <= 56. {
         return city(width, height, seconds);
     }
     let site = city(width, height, 56.);
-    let mut planet = earth(width, height, seconds);
+    let mut planet = super::planet::raster(width, height, seconds);
     let reveal = smooth((seconds - 56.) / 4.);
     for color in planet.pixels_mut() {
         *color = shade(*color, reveal);
     }
-    let (cx, cy, zoom, boundary) = site_pullback(width, height, seconds);
+    let (cx, cy, zoom) = site_pullback(width, height, seconds);
     for y in 0..planet.height() {
         for x in 0..planet.width() {
             let dx = x as f32 - cx;
             let dy = y as f32 - cy;
-            if dx * dx + dy * dy < boundary * boundary {
+            {
                 let sx = (dx / zoom + width as f32 * 0.5).round() as i32;
                 let sy = (dy / zoom + height as f32).round() as i32;
                 if let Some(color) = site.get(sx, sy) {
@@ -724,13 +1007,27 @@ fn wire_surface(width: u16, height: u16, seconds: f32, capability: ColorDepth) -
                 }
             }
             let glyph = char::from_u32(0x2800 + bits as u32).unwrap_or(' ');
-            let style = if capability == ColorDepth::Mono {
+            let mut style = if capability == ColorDepth::Mono {
                 Style::new()
             } else {
+                let color = if capability == ColorDepth::Ansi16 && maximum > 0 {
+                    // The small ANSI palette needs discrete lit edges; depth is
+                    // carried by DIM below instead of quantizing dusk to black.
+                    shade(brightest, 170. / maximum.max(100) as f32)
+                } else {
+                    brightest
+                };
                 Style::new()
-                    .fg(Color::Rgb(brightest.0, brightest.1, brightest.2))
+                    .fg(Color::Rgb(color.0, color.1, color.2))
                     .bg(Color::Rgb(2, 4, 12))
             };
+            if matches!(capability, ColorDepth::Mono | ColorDepth::Ansi16) {
+                if maximum < 105 {
+                    style = style.dim();
+                } else if maximum > 175 {
+                    style = style.bold();
+                }
+            }
             surface.set_cell(x, y, Cell::new(Glyph::new(&glyph.to_string()), style));
         }
     }
@@ -745,7 +1042,7 @@ pub fn render(width: u16, height: u16, seconds: f32, capability: ColorDepth) -> 
         wire_surface(width, height, seconds, capability)
     } else if seconds < 60. {
         let site = wire_surface(width, height, 56., capability);
-        let mut rgb = earth(width, height, seconds);
+        let mut rgb = super::planet::raster(width, height, seconds);
         let reveal = smooth((seconds - 56.) / 4.);
         for color in rgb.pixels_mut() {
             *color = shade(*color, reveal);
@@ -755,12 +1052,12 @@ pub fn render(width: u16, height: u16, seconds: f32, capability: ColorDepth) -> 
         } else {
             rgb.to_surface()
         };
-        let (cx, cy, zoom, boundary) = site_pullback(width, height, seconds);
+        let (cx, cy, zoom) = site_pullback(width, height, seconds);
         for y in 0..height {
             for x in 0..width {
                 let dx = x as f32 - cx;
                 let dy = y as f32 * 2. + 0.5 - cy;
-                if dx * dx + dy * dy < boundary * boundary {
+                {
                     let sx = (dx / zoom + width as f32 * 0.5).round() as i32;
                     let sy = ((dy / zoom + height as f32) * 0.5).round() as i32;
                     let cell = if sx >= 0 && sy >= 0 {
@@ -808,60 +1105,118 @@ pub fn render(width: u16, height: u16, seconds: f32, capability: ColorDepth) -> 
             rgb.to_surface()
         }
     };
-    let style = Style::new().fg(Color::Rgb(190, 231, 247));
-    if (36.5..41.8).contains(&seconds) {
-        // The rasterized receipt stays ON the building. This small readable
-        // annotation is tethered to its roof, and disappears with this shot.
-        let c = camera(seconds, width, height);
-        if let Some((x, y, _)) = c.project(
-            BUILDINGS[0].position.plus(Vec3::new(-2., 6.1, 0.)),
-            width,
-            height.saturating_mul(2),
-        ) {
-            surface.print_str(
-                x.max(0.) as u16,
-                (y.max(0.) / 2.) as u16,
-                "01 / ARCHITECT",
-                style,
-                None,
-            );
+    if let Some(index) = shots::facade(seconds) {
+        // Native type is reserved for the near-frontal hold. Its origin is the
+        // very same depth-tested facade plane as the graphic receipt below it.
+        let local = seconds - shots::at(seconds).start;
+        if (0.52..1.62).contains(&local) {
+            let c = camera(seconds, width, height);
+            let building = BUILDINGS[index];
+            let anchor = building
+                .position
+                .plus(Vec3::new(-1.65, building.height - 0.6, -1.5));
+            let right = building
+                .position
+                .plus(Vec3::new(1.8, building.height - 0.6, -1.5));
+            if let (Some((x, y, _)), Some((rx, _, _))) = (
+                c.project(anchor, width, height.saturating_mul(2)),
+                c.project(right, width, height.saturating_mul(2)),
+            ) {
+                let x = x.max(0.) as u16;
+                let y = (y.max(0.) / 2.) as u16;
+                let available = (rx.max(0.) as u16)
+                    .saturating_sub(x)
+                    .min(width.saturating_sub(x));
+                let heading = format!("{} {}", IDENTITIES[index].signature, AGENTS[index].name);
+                let details = if available >= 24 {
+                    [
+                        ["ACCEPTANCE CONTRACT", "4 contracts / plan sealed"],
+                        ["TOPOLOGY / 128 STOPS", "384 links / 6 invariants"],
+                        ["CANDIDATE ROUTES", "3 candidates / seeded"],
+                        ["REPLAY EQUIVALENCE", "24 fixtures / 24 pass"],
+                    ]
+                } else {
+                    [
+                        ["CONTRACT SEALED", "4 contracts / OK"],
+                        ["ROUTE TOPOLOGY", "128 / 384 links"],
+                        ["ROUTE CANDIDATES", "3 routes / seed"],
+                        ["REPLAY WITNESS", "24/24 exact"],
+                    ]
+                };
+                let color = IDENTITIES[index].accent;
+                let heading_style = if capability == ColorDepth::Mono {
+                    Style::new().bold()
+                } else {
+                    Style::new()
+                        .fg(Color::Rgb(color.0, color.1, color.2))
+                        .bg(Color::Rgb(2, 7, 14))
+                        .bold()
+                };
+                let receipt_style = if capability == ColorDepth::Mono {
+                    Style::new()
+                } else {
+                    Style::new()
+                        .fg(Color::Rgb(183, 207, 221))
+                        .bg(Color::Rgb(2, 7, 14))
+                };
+                surface.print_str(x, y, &heading, heading_style, Some(available));
+                for (row, line) in details[index].iter().enumerate() {
+                    surface.print_str(
+                        x,
+                        y.saturating_add(row as u16 + 1),
+                        line,
+                        receipt_style,
+                        Some(available),
+                    );
+                }
+            }
         }
-    }
-    // During a framed facade shot the UI projection supplies native terminal
-    // typography at the SAME plane anchors. This is intentionally restricted to
-    // the nearly frontal readable shot; oblique views use the depth-tested glyphs.
-    if (36.7..41.7).contains(&seconds) {
+    } else if (28.0..35.0).contains(&seconds) {
         let c = camera(seconds, width, height);
-        let building = BUILDINGS[0];
-        let anchor = building
-            .position
-            .plus(Vec3::new(-1.65, building.height - 0.55, -1.27));
-        if let Some((x, y, _)) = c.project(anchor, width, height.saturating_mul(2)) {
-            let right = c.project(
+        let mut labels: Vec<(i32, i32, i32)> = Vec::with_capacity(4);
+        for (index, building) in BUILDINGS.iter().enumerate() {
+            if let Some((x, y, _)) = c.project(
                 building
                     .position
-                    .plus(Vec3::new(1.85, building.height - 0.55, -1.27)),
+                    .plus(Vec3::new(0., building.height + 1.7, 0.)),
                 width,
                 height.saturating_mul(2),
-            );
-            if let Some((rx, _, _)) = right {
-                let available = (rx - x).max(0.) as u16;
+            ) {
+                let label = if width < 74 {
+                    format!(
+                        "{} {}",
+                        IDENTITIES[index].signature, IDENTITIES[index].short
+                    )
+                } else {
+                    format!("{} {}", IDENTITIES[index].signature, AGENTS[index].name)
+                };
+                let len = label.chars().count() as i32;
+                let x = (x as i32 - len / 2).clamp(0, (i32::from(width) - len).max(0));
+                let anchor_y = (y / 2.) as i32;
+                let mut row = anchor_y;
+                for shift in [0, -2, -4, 2, 4] {
+                    let candidate =
+                        (anchor_y + shift).clamp(0, i32::from(height.saturating_sub(1)));
+                    let overlaps = labels.iter().any(|&(lx, ly, ll)| {
+                        (ly - candidate).abs() < 2 && x < lx + ll + 2 && lx < x + len + 2
+                    });
+                    if !overlaps {
+                        row = candidate;
+                        break;
+                    }
+                }
+                labels.push((x, row, len));
                 let style = Style::new()
-                    .fg(Color::Rgb(184, 239, 255))
-                    .bg(Color::Rgb(3, 12, 18));
-                let lines = [
-                    AGENTS[0].name,
-                    "ACCEPTANCE PLAN",
-                    "4 contracts sealed",
-                    "offline transit solver",
-                ];
-                for (row, line) in lines.iter().enumerate() {
+                    .fg(IDENTITIES[index].color())
+                    .bg(Color::Rgb(2, 4, 12));
+                surface.print_str(x as u16, row as u16, &label, style, None);
+                if row != anchor_y && width >= 74 {
                     surface.print_str(
-                        x as u16,
-                        (y as u16 / 2).saturating_add(row as u16),
-                        line,
+                        (x + len / 2) as u16,
+                        (row + (anchor_y - row).signum()).max(0) as u16,
+                        "·",
                         style,
-                        Some(available),
+                        None,
                     );
                 }
             }
@@ -871,31 +1226,39 @@ pub fn render(width: u16, height: u16, seconds: f32, capability: ColorDepth) -> 
         for message in MESSAGES {
             if seconds >= message.depart && seconds < message.arrive {
                 let progress = (seconds - message.depart) / (message.arrive - message.depart);
-                let point = route(message.from, message.to).sample(progress);
+                let path = route(message.from, message.to);
+                let point = path.sample(progress);
                 let c = camera(seconds, width, height);
                 if let Some((x, y, _)) = c.project(point, width, height.saturating_mul(2)) {
-                    let x = (x as u16).min(width.saturating_sub(message.payload.len() as u16));
+                    let heading = format!(
+                        "{} {} → {}",
+                        IDENTITIES[message.from].signature,
+                        IDENTITIES[message.from].short,
+                        IDENTITIES[message.to].short
+                    );
+                    let caption = message.payload;
+                    let left =
+                        (x.max(0.) as u16).min(width.saturating_sub(caption.len() as u16 + 1));
+                    let row = ((y.max(0.) / 2.) as u16)
+                        .saturating_add(2)
+                        .min(height.saturating_sub(2));
+                    let style = Style::new()
+                        .fg(IDENTITIES[message.from].color())
+                        .bg(Color::Rgb(2, 4, 12));
+                    // The short tether marks the caption as a packet plate, not
+                    // a screen-global log. The payload moves with its carrier.
+                    surface.print_str(left, row.saturating_sub(1), "╎", style, None);
+                    surface.print_str(left, row, &heading, style.bold(), None);
                     surface.print_str(
-                        x,
-                        (y as u16 / 2).saturating_add(1),
-                        message.payload,
+                        left,
+                        row.saturating_add(1),
+                        caption,
                         style,
-                        None,
+                        Some(width.saturating_sub(left)),
                     );
                 }
             }
         }
-    }
-    if seconds >= 65. {
-        let text = "Hack the planet!";
-        let y = (height as f32 * 0.87) as u16;
-        surface.print_str(
-            width.saturating_sub(text.len() as u16) / 2,
-            y,
-            text,
-            Style::new().fg(Color::Rgb(255, 222, 141)),
-            None,
-        );
     }
     surface
 }
