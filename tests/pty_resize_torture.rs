@@ -116,7 +116,7 @@ impl PtyHarness {
                 pixel_height: 0,
             })
             .expect("resize");
-        self.parser.set_size(rows, cols);
+        self.parser.screen_mut().set_size(rows, cols);
     }
 
     /// Feeds any new PTY bytes into the virtual terminal model.

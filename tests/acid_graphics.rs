@@ -240,7 +240,7 @@ fn resize_reprojects_history_without_advancing_or_retaining_old_pixels() {
     let mut parser = vt100::Parser::new(32, 120, 0);
     for (width, height) in [(120, 32), (56, 24), (160, 40), (80, 24), (120, 32)] {
         terminal.set_terminal_size(width, height);
-        parser.set_size(height, width);
+        parser.screen_mut().set_size(height, width);
         let mut wire = Vec::new();
         renderer
             .render(
