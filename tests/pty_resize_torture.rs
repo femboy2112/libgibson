@@ -59,7 +59,7 @@ impl PtyHarness {
     fn resize(&mut self, cols: u16, rows: u16) {
         self.pump();
         self.capture.resize(cols, rows);
-        self.parser.set_size(rows, cols);
+        self.parser.screen_mut().set_size(rows, cols);
     }
 
     /// Feeds any new PTY bytes into the virtual terminal model.
