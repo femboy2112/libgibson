@@ -1,0 +1,57 @@
+# LibGibson C ABI v1 — exported symbol baseline (GIBSON_ABI_VERSION = 1).
+# Source: nm -D --defined-only libgibson.so, text (T) symbols matching ^gibson_, sorted.
+# These symbols must not disappear or change signature without bumping GIBSON_ABI_VERSION.
+# This is a release guard for the Linux x86_64 ABI surface, not a cross-platform
+# binary-compatibility proof. Verify/regenerate with scripts/release/check-abi.sh.
+gibson_abi_version
+gibson_clear_live_region
+gibson_commit
+gibson_commit_node
+gibson_commit_raw_ansi_unchecked
+gibson_commit_rich_text
+gibson_commit_text
+gibson_create_context
+gibson_destroy_context
+gibson_get_stats
+gibson_insert_node_before_live
+gibson_insert_raw_lines_before_live_unchecked
+gibson_insert_rich_text_before_live
+gibson_insert_text_before_live
+gibson_last_error_message
+gibson_line_add_span
+gibson_line_free
+gibson_line_new
+gibson_line_set_align
+gibson_node_add_child
+gibson_node_border_box
+gibson_node_box_col
+gibson_node_box_row
+gibson_node_dim
+gibson_node_free
+gibson_node_rail
+gibson_node_rich_text
+gibson_node_rule
+gibson_node_set_flex_grow
+gibson_node_set_gap
+gibson_node_set_height
+gibson_node_set_max_width
+gibson_node_set_min_width
+gibson_node_set_padding
+gibson_node_set_padding_sides
+gibson_node_set_percent_width
+gibson_node_set_width
+gibson_node_spinner
+gibson_node_stack
+gibson_node_text
+gibson_node_text_input
+gibson_poll_event
+gibson_render
+gibson_render_if_due
+gibson_request_render
+gibson_rich_text_add_line
+gibson_rich_text_free
+gibson_rich_text_new
+gibson_set_max_fps
+gibson_set_root_node
+gibson_set_sync_updates
+gibson_stats_init
