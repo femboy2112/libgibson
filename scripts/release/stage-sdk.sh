@@ -98,6 +98,14 @@ install -m 0644 LICENSE-MIT            "$PREFIX/share/doc/libgibson/LICENSE-MIT"
 install -m 0644 LICENSE-APACHE         "$PREFIX/share/doc/libgibson/LICENSE-APACHE"
 install -m 0644 LICENSES-THIRD-PARTY.md "$PREFIX/share/doc/libgibson/LICENSES-THIRD-PARTY.md"
 
+# Exhaustive third-party notices for the current dependency closure. Regenerated
+# fresh so the staged SDK always matches the libraries it actually ships.
+if [[ -x scripts/release/gen-third-party-notices.sh ]]; then
+    scripts/release/gen-third-party-notices.sh "$PREFIX/share/doc/libgibson/THIRD-PARTY-NOTICES.md" >&2
+elif [[ -f THIRD-PARTY-NOTICES.md ]]; then
+    install -m 0644 THIRD-PARTY-NOTICES.md "$PREFIX/share/doc/libgibson/THIRD-PARTY-NOTICES.md"
+fi
+
 # Relocatable pkg-config metadata: prefix derives from the .pc file's own location
 # (<prefix>/lib/pkgconfig/../.. == <prefix>), so the tree can be moved freely.
 cat > "$PREFIX/lib/pkgconfig/libgibson.pc" <<PC
