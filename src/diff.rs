@@ -26,7 +26,7 @@ pub struct RowPatch {
 ///
 /// * **Exact semantic delta** ([`SurfaceDiff::exact_changed_cell_count`]) — the
 ///   number of cells whose *rendered state* actually changed, treating absent
-///   rows as blank. This is the only metric that is a true "state delta".
+///   rows/columns as blank. This is the only metric that is a true "state delta".
 /// * **Logical affected footprint** ([`SurfaceDiff::logical_dirty_count`], also
 ///   [`SurfaceDiff::affected_cell_count`]) — the cells *addressed* by the logical
 ///   update semantics: the union of explicit changed runs, the region covered by
@@ -42,7 +42,7 @@ pub struct RowPatch {
 /// footprint can **exceed the current framebuffer area** when rows are removed.
 /// That is expected: it is an addressed-cell count, not a fraction of the live
 /// screen. Callers that want a percentage must choose the metric whose
-/// denominator matches: `exact_changed_cell_count() / next_area` for a state
+/// denominator matches: `exact_changed_cell_count() / union_area` for a state
 /// delta, and the raw affected count (not a fraction) when rows may be removed.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SurfaceDiff {
@@ -53,11 +53,18 @@ pub struct SurfaceDiff {
     pub rows_to_clear: u16,
     /// Width of the previous surface (used to size cleared trailing rows).
     pub prev_width: u16,
-    /// Width of the next surface (used to size erase-to-EOL regions).
+    /// Width of the next surface (erase-to-EOL uses the larger of both widths).
     pub next_width: u16,
     /// Exact number of cells whose rendered state differs from `prev`, treating
     /// absent rows/cells as blank. This is a true semantic delta.
     pub exact_changed: usize,
+    /// Exact semantic delta retained as `(row, start_column, length)` spans.
+    ///
+    /// `compute_diff` produces nonempty, disjoint spans in row-major order.
+    /// This includes erasures and removed cells that cannot be recovered from
+    /// output patches. Like `exact_changed`, this metadata describes the
+    /// original comparison and must be kept consistent if manually constructed.
+    pub exact_changed_spans: Vec<(u16, u16, u16)>,
 }
 
 impl SurfaceDiff {
@@ -93,7 +100,7 @@ impl SurfaceDiff {
         let mut n = self.explicit_dirty_count();
         for p in &self.patches {
             if let Some(x) = p.erase_eol_from {
-                n += self.next_width.saturating_sub(x) as usize;
+                n += self.prev_width.max(self.next_width).saturating_sub(x) as usize;
             }
         }
         n += self.rows_to_clear as usize * self.prev_width as usize;
@@ -110,24 +117,22 @@ impl SurfaceDiff {
     ///
     /// Unlike [`SurfaceDiff::logical_dirty_count`], this never counts a cell that
     /// was already blank. Use this for exact percentages:
-    /// `exact_changed_cell_count() / current_area`.
+    /// `exact_changed_cell_count() / union_area` (previous and next extents).
     pub fn exact_changed_cell_count(&self) -> usize {
         self.exact_changed
     }
 
     /// Coordinates of every cell whose rendered state actually changed.
     ///
-    /// Row-major; excludes already-blank cells addressed by a `CSI K`.
+    /// Row-major and unique for diffs returned by [`compute_diff`]; excludes
+    /// already-blank cells addressed by a `CSI K`. Removed columns/rows remain
+    /// in the previous coordinate space. Wide glyph continuations count as
+    /// occupied cells, including when an entire row is added or removed.
     pub fn exact_changed_cells(&self) -> Vec<(u16, u16)> {
-        // Reconstructed from the same rule by which `exact_changed` is computed,
-        // but only available after `compute_diff` filled in patches. Kept cheap
-        // and out of the hot path.
         let mut out = Vec::with_capacity(self.exact_changed);
-        for patch in &self.patches {
-            for run in &patch.runs {
-                for i in 0..run.cells.len() {
-                    out.push((run.x.saturating_add(i as u16), patch.y));
-                }
+        for &(y, x, length) in &self.exact_changed_spans {
+            for cx in x..x.saturating_add(length) {
+                out.push((cx, y));
             }
         }
         out
@@ -160,7 +165,7 @@ impl SurfaceDiff {
                 }
             }
             if let Some(x) = patch.erase_eol_from {
-                for cx in x..self.next_width {
+                for cx in x..self.prev_width.max(self.next_width) {
                     out.push((cx, patch.y));
                 }
             }
@@ -178,7 +183,7 @@ impl SurfaceDiff {
 /// True when a cell renders identically to an absent/blank cell.
 fn cell_is_blank(c: &Cell) -> bool {
     let g = c.glyph.grapheme.as_str();
-    (g.is_empty() || g == " ") && c.style.is_default()
+    !c.is_continuation && (g.is_empty() || g == " ") && c.style.is_default()
 }
 
 /// Compares `prev` (if any) and `next` surfaces, producing a minimal diff.
@@ -187,6 +192,7 @@ pub fn compute_diff(prev: Option<&Surface>, next: &Surface) -> SurfaceDiff {
     let prev_height = prev.map(|p| p.height).unwrap_or(0);
     let next_height = next.height;
     let mut exact_changed = 0usize;
+    let mut exact_changed_spans = Vec::new();
 
     // Diff row by row for all rows in `next`
     for y in 0..next_height {
@@ -204,26 +210,15 @@ pub fn compute_diff(prev: Option<&Surface>, next: &Surface) -> SurfaceDiff {
         let next_end = next_start + (next.width as usize);
         let next_row = &next.cells[next_start..next_end];
 
-        // Exact semantic delta: a newly-present row is treated as starting blank.
-        match prev_row {
-            Some(prev_cells) => {
-                let common = prev_cells.len().min(next_row.len());
-                for x in 0..common {
-                    if prev_cells[x] != next_row[x] {
-                        exact_changed += 1;
-                    }
-                }
-                // Cells only present in `next` are new; blank ones don't count.
-                for c in &next_row[common..] {
-                    if !cell_is_blank(c) {
-                        exact_changed += 1;
-                    }
-                }
-            }
-            None => {
-                exact_changed += next_row.iter().filter(|c| !cell_is_blank(c)).count();
-            }
-        }
+        // Retain exact spans independently of wire patches: CSI K deliberately
+        // collapses changed and already-blank cells into one output operation.
+        record_exact_row(
+            y,
+            prev_row,
+            next_row,
+            &mut exact_changed_spans,
+            &mut exact_changed,
+        );
 
         let patch = diff_row(y, prev_row, next_row, next.width);
         if let Some(p) = patch {
@@ -237,10 +232,13 @@ pub fn compute_diff(prev: Option<&Surface>, next: &Surface) -> SurfaceDiff {
         for y in next_height..prev_height {
             let start = (y as usize) * (p.width as usize);
             let end = start + (p.width as usize);
-            exact_changed += p.cells[start..end]
-                .iter()
-                .filter(|c| !cell_is_blank(c))
-                .count();
+            record_exact_row(
+                y,
+                Some(&p.cells[start..end]),
+                &[],
+                &mut exact_changed_spans,
+                &mut exact_changed,
+            );
         }
     }
 
@@ -252,6 +250,37 @@ pub fn compute_diff(prev: Option<&Surface>, next: &Surface) -> SurfaceDiff {
         prev_width: prev.map(|p| p.width).unwrap_or(0),
         next_width: next.width,
         exact_changed,
+        exact_changed_spans,
+    }
+}
+
+// Compare the union of row extents, treating absent cells as default blanks.
+// Wide continuations occupy a cell even when their stored grapheme is empty.
+fn record_exact_row(
+    y: u16,
+    prev: Option<&[Cell]>,
+    next: &[Cell],
+    spans: &mut Vec<(u16, u16, u16)>,
+    count: &mut usize,
+) {
+    let prev = prev.unwrap_or(&[]);
+    let width = prev.len().max(next.len());
+    let mut start = None;
+    for x in 0..width {
+        let changed = match (prev.get(x), next.get(x)) {
+            (Some(a), Some(b)) => a != b,
+            (Some(c), None) | (None, Some(c)) => !cell_is_blank(c),
+            (None, None) => false,
+        };
+        if changed {
+            *count += 1;
+            start.get_or_insert(x);
+        } else if let Some(first) = start.take() {
+            spans.push((y, first as u16, (x - first) as u16));
+        }
+    }
+    if let Some(first) = start {
+        spans.push((y, first as u16, (width - first) as u16));
     }
 }
 
@@ -264,9 +293,7 @@ fn diff_row(y: u16, prev: Option<&[Cell]>, next: &[Cell], _width: u16) -> Option
         None => {
             // No previous surface: entire row is new.
             // Find rightmost non-default cell to avoid writing trailing blank spaces
-            let last_non_empty = next.iter().rposition(|c| {
-                !c.glyph.is_empty() && c.glyph.grapheme.as_str() != " " || !c.style.is_default()
-            });
+            let last_non_empty = next.iter().rposition(|c| !cell_is_blank(c));
 
             if let Some(last_idx) = last_non_empty {
                 let count = last_idx + 1;

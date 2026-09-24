@@ -2,6 +2,12 @@ use crate::cell::{Cell, Glyph, Style};
 use unicode_segmentation::UnicodeSegmentation;
 
 /// A 2D integer rectangle in cell coordinates.
+///
+/// Coverage uses half-open intervals with exclusive right/bottom endpoints
+/// saturated at `u16::MAX`, matching the largest representable Surface extent.
+/// Coordinate `u16::MAX` is therefore outside every rectangle. Constructors
+/// preserve supplied dimensions; intersection and shrink normalize clipped
+/// extents. No helper wraps coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Rect {
     pub x: u16,
@@ -21,7 +27,7 @@ impl Rect {
     }
 
     pub const fn is_empty(&self) -> bool {
-        self.width == 0 || self.height == 0
+        self.width == 0 || self.height == 0 || self.x == u16::MAX || self.y == u16::MAX
     }
 
     pub const fn contains(&self, x: u16, y: u16) -> bool {
@@ -34,8 +40,14 @@ impl Rect {
     pub fn intersection(&self, other: &Rect) -> Rect {
         let x1 = self.x.max(other.x);
         let y1 = self.y.max(other.y);
-        let x2 = (self.x + self.width).min(other.x + other.width);
-        let y2 = (self.y + self.height).min(other.y + other.height);
+        let x2 = self
+            .x
+            .saturating_add(self.width)
+            .min(other.x.saturating_add(other.width));
+        let y2 = self
+            .y
+            .saturating_add(self.height)
+            .min(other.y.saturating_add(other.height));
 
         if x2 > x1 && y2 > y1 {
             Rect::new(x1, y1, x2 - x1, y2 - y1)
@@ -44,16 +56,23 @@ impl Rect {
         }
     }
 
-    /// Shrinks this rectangle inward on every side by `amount` (saturating).
+    /// Shrinks the clipped rectangle inward on every side by `amount`.
+    ///
+    /// If either dimension is exhausted, returns an empty rectangle at the
+    /// original origin. Oversized amounts never wrap; even zero shrink
+    /// normalizes dimensions to the representable extent.
     pub fn shrink(&self, amount: u16) -> Rect {
-        if self.width <= amount * 2 || self.height <= amount * 2 {
+        let width = self.width.min(u16::MAX - self.x);
+        let height = self.height.min(u16::MAX - self.y);
+        let twice = u32::from(amount) * 2;
+        if u32::from(width) <= twice || u32::from(height) <= twice {
             return Rect::new(self.x, self.y, 0, 0);
         }
         Rect::new(
             self.x + amount,
             self.y + amount,
-            self.width - amount * 2,
-            self.height - amount * 2,
+            width - twice as u16,
+            height - twice as u16,
         )
     }
 }
