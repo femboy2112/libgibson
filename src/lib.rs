@@ -83,7 +83,7 @@ pub use scheduler::{FrameScheduler, RenderStats, DEFAULT_ANIMATION_INTERVAL};
 pub use session::{TerminalLease, TerminalSession};
 pub use story::{
     Beat, Condition, FactValue, Facts, Reaction, Story, StoryAction, StoryDirector, StoryError,
-    StoryEvent, StoryTrace, TraceStep, Transition,
+    StoryEvent, StoryTrace, TraceRetention, TraceStep, Transition,
 };
 pub use surface::{BorderType, Rect, Surface};
 pub use surface_fx::{FxMask, SurfaceFx};
