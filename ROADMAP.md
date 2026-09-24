@@ -43,6 +43,31 @@ red collision-delivery acceptance. Local branch suite: 591 passed (226 unit + 36
 integration), one known-red acceptance ignored. D6/D7/D8 remain separate programs. The lab's
 finite output/latency observations are diagnostic evidence, not a long-session policy.
 
+## Runtime architecture megaround
+
+Branch `claude/runtime-architecture-megaround` / PR #19 turns three previously
+implicit runtime contracts into explicit, tested, and *observable* ones:
+
+- **#11 terminal ownership** — a process-global lease (Available/Owned/Restoring);
+  a second owner errors with `AlreadyExists`; `restore()` now reports its first
+  error with best-effort completion while Drop stays best-effort; the panic hook
+  is gated on the lease. IMPLEMENTED + TESTED (4 PTY tests). **Not closed**: the
+  restore-error path lacks a failing-write test.
+- **#10 trace retention** — measured (~40 B/tick, unbounded) then bounded:
+  `TraceRetention {All (default), Bounded(cap), Disabled}` + `drain_trace` with
+  honest `is_complete()`/`dropped_steps()`. Default `All` = no behavior change.
+  IMPLEMENTED + TESTED. **Not closed**: Scene/Facts append-only gaps remain.
+- **#15 crossterm input starvation** — CORROBORATED, and the naive drain fix is
+  *proven to hang* on the blocking `VMIN=1` fd; analysis staged
+  ([`CROSSTERM_1126_FIX_ANALYSIS.md`](docs/CROSSTERM_1126_FIX_ANALYSIS.md)), no
+  fork vendored. **Still open.**
+
+The [Runtime Observatory](docs/RUNTIME_OBSERVATORY.md) (`--dump`-only, three
+grounded modes) renders all three from real state. Full local suite: 600 passed,
+0 failed on Rust 1.98.1; PR #19 public CI green. Next: the #15 fix fork (upstream
+patch vs. narrow workaround vs. document-and-wait), and D6
+(MSRV/API-stability/installable packages) as the real 0.1 gate.
+
 ## Verification labels
 
 - **IMPLEMENTED + TESTED** — the code exists and is covered by automated tests in `cargo test`.

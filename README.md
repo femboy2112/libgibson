@@ -34,6 +34,14 @@ concepts; it does not claim universal UI expressivity or stable APIs.
 The [Event Pressure Lab](docs/EVENT_PRESSURE_LAB.md) traces real PTY input, resize,
 output pressure and delivery. Run `cargo run --release --example event_pressure_lab -- --auto`.
 Its diagnostic reproduces an upstream input stall; it does not claim the bug is fixed.
+The [Runtime Observatory](docs/RUNTIME_OBSERVATORY.md) is a restrained,
+mission-control-style diagnostic instrument for three specific runtime
+contracts: bounded `StoryTrace` retention (issue #10), the crossterm #1126
+input-starvation collision (issue #15), and the terminal-ownership lease
+(issue #11). Run `cargo run --release --example runtime_observatory -- --help`.
+It renders one deterministic frame via `--dump` per mode today; it is a
+diagnostic instrument, not a finished live TUI, and it does not claim any of
+those three issues are closed.
 Modern Scene/Story and software graphics APIs are experimental and Rust-only;
 the C ABI exposes the established UI/output subset.
 
