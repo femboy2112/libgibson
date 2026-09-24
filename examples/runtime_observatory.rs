@@ -33,6 +33,8 @@ mod live;
 mod million_tick;
 #[path = "runtime_observatory/ownership_duel.rs"]
 mod ownership_duel;
+#[path = "runtime_observatory/supervised.rs"]
+mod supervised;
 #[path = "runtime_observatory/visual.rs"]
 mod visual;
 
@@ -61,14 +63,6 @@ fn main() -> io::Result<()> {
     }
 
     let mode = option(&args, "--mode").unwrap_or_else(|| "million-tick".to_string());
-    if !matches!(
-        mode.as_str(),
-        "million-tick" | "ghost-key" | "ownership-duel"
-    ) {
-        return Err(io::Error::other(format!(
-            "--mode {mode} is not built yet (only million-tick, ghost-key and ownership-duel exist so far)"
-        )));
-    }
 
     let depth = match option(&args, "--color").as_deref() {
         Some("mono") => ColorDepth::Mono,
@@ -89,13 +83,25 @@ fn main() -> io::Result<()> {
             .transpose()?;
         let initial = match mode.as_str() {
             "million-tick" => '1',
+            "ownership-duel" => '3',
+            "restore-failure" => '5',
             other => {
                 return Err(io::Error::other(format!(
-                    "the live loop for --mode {other} is not built yet; run it with --dump, or use --mode million-tick for the live instrument"
+                    "no live driver for --mode {other}; live modes: million-tick, ownership-duel, restore-failure (or add --dump for a deterministic frame)"
                 )))
             }
         };
         return live::run(depth, initial, max_frames);
+    }
+
+    // --dump path: only the three deterministic-frame modes exist here.
+    if !matches!(
+        mode.as_str(),
+        "million-tick" | "ghost-key" | "ownership-duel"
+    ) {
+        return Err(io::Error::other(format!(
+            "--mode {mode} has no --dump frame (dump modes: million-tick, ghost-key, ownership-duel)"
+        )));
     }
 
     let width = number(&args, "--width", 120)?.clamp(1, 240) as u16;

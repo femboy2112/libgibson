@@ -263,7 +263,11 @@ pub fn run(depth: ColorDepth, initial: char, max_frames: Option<u64>) -> io::Res
         ));
     }
 
-    let mut modes: Vec<Box<dyn LiveMode>> = vec![Box::new(MillionTick::new(1024))];
+    let mut modes: Vec<Box<dyn LiveMode>> = vec![
+        Box::new(MillionTick::new(1024)),
+        Box::new(crate::supervised::SupervisedReplay::ownership_duel()),
+        Box::new(crate::supervised::SupervisedReplay::restore_failure()),
+    ];
     let mut current = modes.iter().position(|m| m.key() == initial).unwrap_or(0);
     let mut paused = false;
     let mut intensity: i32 = 0;

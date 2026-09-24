@@ -80,3 +80,80 @@ fn live_million_tick_paints_and_restores() {
         "live observatory should exit 0 under --frames, got {status:?}"
     );
 }
+
+/// Ownership-Duel live (D4) runs the REAL duel-trace probe as a child under its
+/// own PTY and reveals the child's genuine lease-transition receipts (issue #11).
+#[test]
+fn live_ownership_duel_reveals_real_child_receipts() {
+    // The supervised mode spawns this sibling binary via current_exe; make sure
+    // it is built in this test process's target dir.
+    let _ = pty_capture::example_path("terminal_ownership_probe");
+    let mut cmd = CommandBuilder::new(pty_capture::example_path("runtime_observatory"));
+    cmd.args([
+        "--mode",
+        "ownership-duel",
+        "--frames",
+        "90",
+        "--color",
+        "ansi256",
+    ]);
+    let mut capture = pty_capture::Capture::spawn(cmd, 110, 32, Duration::from_secs(15));
+    capture
+        .collect_until(|b| String::from_utf8_lossy(b).contains("OWNERSHIP-DUEL"))
+        .expect("capture ownership-duel header");
+    let status = wait_exit(&mut capture);
+    let output = capture.finish();
+    let s = String::from_utf8_lossy(&output);
+
+    assert!(s.contains("OWNERSHIP-DUEL"), "no mode label");
+    assert!(s.contains("SUPERVISED RECEIPTS"), "no supervised panel");
+    assert!(
+        !s.contains("PROBE UNAVAILABLE"),
+        "supervised child could not be spawned: {s:?}"
+    );
+    // A genuine receipt from the real child reached the panel.
+    assert!(
+        s.contains("Acquire") || s.contains("LeaseState"),
+        "no real duel receipt revealed"
+    );
+    assert!(
+        find_sub(&output, SHOW_CURSOR),
+        "did not restore the terminal on exit"
+    );
+    assert!(status.success(), "exit {status:?}");
+}
+
+/// Restore-Failure live (D5) runs the REAL restore-output-failure probe (fd 1 ->
+/// /dev/full) and reveals its genuine cleanup receipts (issue #11 B1).
+#[test]
+fn live_restore_failure_reveals_real_child_receipts() {
+    let _ = pty_capture::example_path("terminal_ownership_probe");
+    let mut cmd = CommandBuilder::new(pty_capture::example_path("runtime_observatory"));
+    cmd.args([
+        "--mode",
+        "restore-failure",
+        "--frames",
+        "90",
+        "--color",
+        "ansi256",
+    ]);
+    let mut capture = pty_capture::Capture::spawn(cmd, 110, 32, Duration::from_secs(15));
+    capture
+        .collect_until(|b| String::from_utf8_lossy(b).contains("RESTORE-FAILURE"))
+        .expect("capture restore-failure header");
+    let status = wait_exit(&mut capture);
+    let output = capture.finish();
+    let s = String::from_utf8_lossy(&output);
+
+    assert!(s.contains("RESTORE-FAILURE"), "no mode label");
+    assert!(
+        !s.contains("PROBE UNAVAILABLE"),
+        "supervised child could not be spawned: {s:?}"
+    );
+    // Genuine markers from the induced-failure child (contract, not just success).
+    assert!(
+        s.contains("RESTORE_RESULT") || s.contains("RAW_AFTER") || s.contains("RAW_BEFORE"),
+        "no real restore-failure receipt revealed"
+    );
+    assert!(status.success(), "exit {status:?}");
+}
