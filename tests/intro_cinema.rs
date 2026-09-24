@@ -299,6 +299,14 @@ fn four_identities_are_unique_cell_safe_and_survive_every_readable_facade() {
                     labels.contains(identity.signature),
                     "missing identity mark at {w}x{h}"
                 );
+                // A mounted miniature application, not six unstructured
+                // print_str rows: chrome, active tab, status and graphic output
+                // remain legible without relying on color.
+                for chrome in ["╭", "╮", "╰", "╯", "│"] {
+                    assert!(labels.contains(chrome), "missing window chrome at {w}x{h}");
+                }
+                assert!(labels.contains(["PLAN", "MAP", "ROUTES", "PROOF"][index]));
+                assert!(labels.contains("SEALED") || labels.contains("OK"));
                 for detail in [
                     ["4 contracts", "offline transit", "SCOUT"],
                     ["128 stops", "384 links", "BUILDER"],

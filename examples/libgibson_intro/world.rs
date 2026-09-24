@@ -1,6 +1,7 @@
 //! The introduction's information city. Pure world-space rendering: buildings,
 //! mounted receipts and couriers share the same coordinates and camera. No state
 //! advances during paint; scrubbing to a time reconstructs the same frame.
+use super::facade;
 use super::identity::IDENTITIES;
 use super::model::{AGENTS, MESSAGES};
 use super::shots;
@@ -8,7 +9,7 @@ use gibson::geom::{CubicPath3, Transform3, Vec3};
 use gibson::raster::{Rgb, RgbRaster};
 use gibson::raster3d::{Camera, Fog, Material, Rasterizer, TriangleMesh};
 use gibson::raster_fx::RasterFx;
-use gibson::{Cell, Color, ColorDepth, Glyph, Style, Surface};
+use gibson::{Cell, Color, ColorDepth, Glyph, Rect, Style, Surface};
 use std::f32::consts::{PI, TAU};
 
 #[derive(Clone, Copy)]
@@ -564,143 +565,110 @@ impl FacadeDisplay {
             shade(self.color, gain),
         );
     }
-    fn node(&self, renderer: &mut Rasterizer, camera: &Camera, x: f32, y: f32, r: f32) {
-        let corners = [(x - r, y), (x, y - r), (x + r, y), (x, y + r)];
-        for i in 0..4 {
-            self.line(renderer, camera, corners[i], corners[(i + 1) % 4], 1.);
+    fn window(index: usize, gain: f32) -> Self {
+        let a = BUILDINGS[index];
+        Self {
+            origin: a.position.plus(Vec3::new(-1.96, a.height - 0.14, -1.78)),
+            width: 3.92,
+            height: a.height - 0.28,
+            color: shade(IDENTITIES[index].accent, gain),
         }
     }
-    fn content(&self, renderer: &mut Rasterizer, camera: &Camera, index: usize) {
-        match index {
-            0 => {
-                for (a, b) in [
-                    ((0.12, 0.5), (0.43, 0.16)),
-                    ((0.12, 0.5), (0.43, 0.83)),
-                    ((0.43, 0.16), (0.83, 0.5)),
-                    ((0.43, 0.83), (0.83, 0.5)),
-                ] {
-                    self.line(renderer, camera, a, b, 0.65);
-                }
-                for (x, y) in [(0.12, 0.5), (0.43, 0.16), (0.43, 0.83), (0.83, 0.5)] {
-                    self.node(renderer, camera, x, y, 0.07);
-                }
-            }
-            1 => {
-                let nodes = [
-                    (0.08, 0.6),
-                    (0.3, 0.18),
-                    (0.37, 0.75),
-                    (0.57, 0.39),
-                    (0.76, 0.12),
-                    (0.93, 0.66),
-                ];
-                for (a, b) in [(0, 1), (0, 2), (1, 3), (2, 3), (3, 4), (3, 5), (4, 5)] {
-                    self.line(renderer, camera, nodes[a], nodes[b], 0.48);
-                }
-                for (x, y) in nodes {
-                    self.node(renderer, camera, x, y, 0.04);
-                }
-            }
-            2 => {
-                for lane in 0..3 {
-                    let gain = if lane == 1 { 1.1 } else { 0.72 };
-                    for step in 0..24 {
-                        let t = step as f32 / 24.;
-                        let next = (step + 1) as f32 / 24.;
-                        let x = 0.09 + t * 0.82;
-                        let nx = 0.09 + next * 0.82;
-                        let y = 0.5 + (lane as f32 - 1.) * 0.43 * (t * PI).sin();
-                        let ny = 0.5 + (lane as f32 - 1.) * 0.43 * (next * PI).sin();
-                        self.line(renderer, camera, (x, y), (nx, ny), gain);
-                    }
-                }
-                self.node(renderer, camera, 0.06, 0.5, 0.05);
-                self.node(renderer, camera, 0.94, 0.5, 0.05);
-                self.line(renderer, camera, (0.67, 0.40), (0.75, 0.50), 1.1);
-                self.line(renderer, camera, (0.75, 0.50), (0.67, 0.60), 1.1);
-            }
-            _ => {
-                for row in 0..4 {
-                    for col in 0..6 {
-                        let x = 0.04 + col as f32 * 0.16;
-                        let y = 0.1 + row as f32 * 0.24;
-                        self.line(renderer, camera, (x, y + 0.03), (x + 0.035, y + 0.09), 0.85);
-                        self.line(
-                            renderer,
-                            camera,
-                            (x + 0.035, y + 0.09),
-                            (x + 0.10, y - 0.03),
-                            0.85,
-                        );
-                    }
-                }
-            }
-        }
+
+    /// Inscribe whole terminal cells inside the projected four-corner plate.
+    /// The native UI is deliberately limited to near-frontal readable holds;
+    /// moving/oblique views retain the depth-tested vector realization.
+    fn cell_bounds(&self, camera: &Camera, width: u16, height: u16) -> Option<Rect> {
+        let project = |x, y| camera.project(self.point(x, y), width, height.saturating_mul(2));
+        let (tl, tr, bl, br) = (
+            project(0., 0.)?,
+            project(1., 0.)?,
+            project(0., 1.)?,
+            project(1., 1.)?,
+        );
+        let left = tl.0.max(bl.0).ceil().max(0.) as u16;
+        let right = (tr.0.min(br.0).floor().max(0.) as u16).min(width);
+        let top = (tl.1.max(tr.1) * 0.5).ceil().max(0.) as u16;
+        let bottom = ((bl.1.min(br.1) * 0.5).floor().max(0.) as u16).min(height);
+        let bounds = Rect::new(
+            left,
+            top,
+            right.saturating_sub(left),
+            bottom.saturating_sub(top),
+        );
+        (bounds.width >= 17 && bounds.height >= 8).then_some(bounds)
     }
 }
 
-fn facade_graphics(
-    renderer: &mut Rasterizer,
-    camera: &Camera,
-    index: usize,
-    gain: f32,
-    selected: bool,
-) {
-    let a = BUILDINGS[index];
-    let color = shade(IDENTITIES[index].accent, gain);
-    if !selected {
-        face_text(
+fn facade_graphics(renderer: &mut Rasterizer, camera: &Camera, index: usize, gain: f32) {
+    let window = FacadeDisplay::window(index, gain);
+    // A physical display plate occludes structural crossmembers. Its UI chrome
+    // and receipt diagram exist in world space even before native type resolves.
+    renderer.draw_mesh(
+        &TriangleMesh::box_xyz(window.width, window.height, 0.02),
+        Transform3 {
+            offset: window.point(0.5, 0.5).plus(Vec3::new(0., 0., 0.04)),
+            ..Transform3::default()
+        },
+        camera,
+        Material {
+            color: (3, 8, 17),
+            ambient: 1.,
+            diffuse: 0.,
+            emissive: 0.,
+        },
+    );
+    for (a, b) in [
+        ((0., 0.), (1., 0.)),
+        ((1., 0.), (1., 1.)),
+        ((1., 1.), (0., 1.)),
+        ((0., 1.), (0., 0.)),
+        ((0., 0.15), (1., 0.15)),
+        ((0., 0.89), (1., 0.89)),
+        ((0.07, 0.43), (0.93, 0.43)),
+    ] {
+        window.line(renderer, camera, a, b, 0.65);
+    }
+    face_text(
+        renderer,
+        camera,
+        AGENTS[index].name,
+        window.point(0.07, 0.035),
+        0.048,
+        window.color,
+    );
+    // Sealed job contracts: a short tab rail and completed status ticks, not
+    // invented live telemetry. Each agent's graph/matrix is the native card's
+    // same normalized recipe, projected onto this building plane.
+    for i in 0..4 {
+        window.line(
             renderer,
             camera,
-            AGENTS[index].name,
-            a.position.plus(Vec3::new(-1.65, a.height - 0.55, -1.27)),
-            0.065,
-            color,
+            (0.07 + i as f32 * 0.14, 0.21),
+            (0.16 + i as f32 * 0.14, 0.21),
+            if i == index { 1. } else { 0.3 },
         );
     }
-    if index == 2 {
-        // BUILDER's structural cross members pass behind its mounted route
-        // display. A physical dark plate protects the selected curve's contour.
-        renderer.draw_mesh(
-            &TriangleMesh::box_xyz(3.45, 1.55, 0.025),
-            Transform3 {
-                offset: a.position.plus(Vec3::new(0., a.height - 2.66, -1.66)),
-                ..Transform3::default()
-            },
+    for i in 0..3 {
+        window.line(
+            renderer,
             camera,
-            Material {
-                color: (2, 4, 12),
-                ambient: 1.,
-                diffuse: 0.,
-                emissive: 0.,
-            },
+            (0.08, 0.29 + i as f32 * 0.045),
+            (0.62 + i as f32 * 0.08, 0.29 + i as f32 * 0.045),
+            0.35,
         );
     }
-    let plane = FacadeDisplay {
-        origin: a.position.plus(Vec3::new(
-            -1.55,
-            a.height - if index == 2 { 2.03 } else { 2.55 },
-            if index == 2 { -1.7 } else { -1.47 },
-        )),
-        width: 3.1,
-        height: 1.28,
-        color,
+    let chart = FacadeDisplay {
+        origin: window.point(0.08, 0.49),
+        width: window.width * 0.84,
+        height: window.height * 0.32,
+        color: window.color,
     };
-    plane.content(renderer, camera, index);
-    // A paired, identical witness is VERIFY's geometry-level replay receipt.
-    if index == 3 {
-        for step in 0..10 {
-            let x = -1.5 + step as f32 * 0.31;
-            let y = 0.38 + ((step * 7) % 5) as f32 * 0.055;
-            for offset in [0., 0.2] {
-                renderer.line(
-                    a.position.plus(Vec3::new(x, y + offset, -1.47)),
-                    a.position.plus(Vec3::new(x + 0.2, y + offset, -1.47)),
-                    camera,
-                    shade(color, 0.7),
-                );
-            }
-        }
+    facade::diagram_lines(index, |a, b, gain| chart.line(renderer, camera, a, b, gain));
+    window.line(renderer, camera, (0.08, 0.94), (0.62, 0.94), 0.7);
+    // A small outbound port carries the same accent as the message capsule.
+    for (a, b) in [((0.84, 0.92), (0.88, 0.94)), ((0.88, 0.94), (0.84, 0.96))] {
+        window.line(renderer, camera, a, b, 1.);
     }
 }
 
@@ -871,7 +839,6 @@ fn city(width: u16, height: u16, seconds: f32) -> RgbRaster {
             &camera,
             index,
             gain * (0.75 + arrival * 0.35),
-            focal == Some(index),
         );
         if arrival > 0. {
             let age = (seconds
@@ -1089,119 +1056,21 @@ pub fn render(width: u16, height: u16, seconds: f32, capability: ColorDepth) -> 
         ground
     };
     if let Some(index) = shots::facade(seconds) {
-        // Native type is reserved for the near-frontal hold. Its origin is the
-        // very same depth-tested facade plane as the graphic receipt below it.
+        // Resolve the actual miniature Node UI only while the facade is held
+        // near-frontally. Its rectangle is inscribed in the same world plate,
+        // never clamped into an unrelated screen-space HUD position.
         let local = seconds - shots::at(seconds).start;
         if (0.52..1.62).contains(&local) {
             let c = camera(seconds, width, height);
-            let building = BUILDINGS[index];
-            let anchor = building
-                .position
-                .plus(Vec3::new(-1.65, building.height - 0.6, -1.5));
-            let right = building
-                .position
-                .plus(Vec3::new(1.8, building.height - 0.6, -1.5));
-            if let (Some((x, y, _)), Some((rx, _, _))) = (
-                c.project(anchor, width, height.saturating_mul(2)),
-                c.project(right, width, height.saturating_mul(2)),
-            ) {
-                let x = x.max(0.) as u16;
-                let y = (y.max(0.) / 2.) as u16;
-                let available = (rx.max(0.) as u16)
-                    .saturating_sub(x)
-                    .min(width.saturating_sub(x));
-                let heading = format!("{} {}", IDENTITIES[index].signature, AGENTS[index].name);
-                // These are the same finite simulated contracts shown in the
-                // harness, expanded into a readable receipt on each facade.
-                let details = if available >= 24 {
-                    [
-                        [
-                            "ACCEPTANCE CONTRACT",
-                            "4 contracts / sealed",
-                            "offline transit plan",
-                            "accessibility first",
-                            "handoff > SCOUT",
-                        ],
-                        [
-                            "TOPOLOGY / INDEXED",
-                            "128 stops / 384 links",
-                            "6 invariants checked",
-                            "disconnected paths",
-                            "handoff > BUILDER",
-                        ],
-                        [
-                            "REROUTE CANDIDATES",
-                            "3 candidates / seeded",
-                            "deterministic tie-break",
-                            "accessible transfers",
-                            "handoff > VERIFY",
-                        ],
-                        [
-                            "REPLAY EQUIVALENCE",
-                            "24 fixtures / 24 pass",
-                            "hostile inputs checked",
-                            "replay == original",
-                            "receipt > ARCHITECT",
-                        ],
-                    ]
-                } else {
-                    [
-                        [
-                            "CONTRACT SEALED",
-                            "4 contracts / OK",
-                            "offline transit",
-                            "accessible plan",
-                            "to SCOUT",
-                        ],
-                        [
-                            "ROUTE TOPOLOGY",
-                            "128 stops",
-                            "384 links",
-                            "6 invariants",
-                            "to BUILDER",
-                        ],
-                        [
-                            "ROUTE CANDIDATES",
-                            "3 routes / seed",
-                            "stable tie-break",
-                            "accessible path",
-                            "to VERIFY",
-                        ],
-                        [
-                            "REPLAY WITNESS",
-                            "24/24 exact",
-                            "hostile fixtures",
-                            "replay == source",
-                            "to ARCHITECT",
-                        ],
-                    ]
-                };
-                let color = IDENTITIES[index].accent;
-                let heading_style = if capability == ColorDepth::Mono {
-                    Style::new().bold()
-                } else {
-                    Style::new()
-                        .fg(Color::Rgb(color.0, color.1, color.2))
-                        .bg(Color::Rgb(2, 7, 14))
-                        .bold()
-                };
-                let receipt_style = if capability == ColorDepth::Mono {
-                    Style::new()
-                } else {
-                    Style::new()
-                        .fg(Color::Rgb(183, 207, 221))
-                        .bg(Color::Rgb(2, 7, 14))
-                };
-                surface.print_str(x, y, &heading, heading_style, Some(available));
-                for (row, line) in details[index].iter().enumerate() {
-                    surface.print_str(
-                        x,
-                        y.saturating_add(row as u16 + 1),
-                        line,
-                        receipt_style,
-                        Some(available),
-                    );
-                }
+            let window = FacadeDisplay::window(index, 1.);
+            if let Some(bounds) = window.cell_bounds(&c, width, height) {
+                let card = facade::render(index, bounds.width, bounds.height, capability);
+                surface.blit_transparent_clipped(
+                    &card,
+                    i32::from(bounds.x),
+                    i32::from(bounds.y),
+                    bounds,
+                );
             }
         }
     } else if (28.0..35.0).contains(&seconds) {
@@ -1294,4 +1163,51 @@ pub fn render(width: u16, height: u16, seconds: f32, capability: ColorDepth) -> 
         }
     }
     surface
+}
+
+#[cfg(test)]
+mod facade_tests {
+    use super::*;
+
+    #[test]
+    fn native_windows_fit_inside_their_projected_building_plates() {
+        for (width, height) in [(56, 24), (120, 32), (160, 40)] {
+            for index in 0..4 {
+                for phase in [0.56, 1., 1.4] {
+                    let camera = camera(36. + index as f32 * 2. + phase, width, height);
+                    let window = FacadeDisplay::window(index, 1.);
+                    let rect = window
+                        .cell_bounds(&camera, width, height)
+                        .unwrap_or_else(|| {
+                            panic!("missing facade {index}, {width}x{height}, {phase}")
+                        });
+                    let polygon = [(0., 0.), (1., 0.), (1., 1.), (0., 1.)].map(|(x, y)| {
+                        let (px, py, _) = camera
+                            .project(window.point(x, y), width, height * 2)
+                            .unwrap();
+                        (px, py * 0.5)
+                    });
+                    // Independent convex-polygon containment check on each
+                    // cell rectangle corner: projection's bounding box alone
+                    // would spill off the sloped left/right plate edges.
+                    for (x, y) in [
+                        (rect.x, rect.y),
+                        (rect.x + rect.width, rect.y),
+                        (rect.x + rect.width, rect.y + rect.height),
+                        (rect.x, rect.y + rect.height),
+                    ] {
+                        assert!(x <= width && y <= height);
+                        for edge in 0..4 {
+                            let a = polygon[edge];
+                            let b = polygon[(edge + 1) % 4];
+                            let cross = (b.0 - a.0) * (f32::from(y) - a.1)
+                                - (b.1 - a.1) * (f32::from(x) - a.0);
+                            assert!(cross >= -0.001, "facade {index}, {width}x{height}, {phase}");
+                        }
+                    }
+                    assert!(window.cell_bounds(&camera, 1, 1).is_none());
+                }
+            }
+        }
+    }
 }

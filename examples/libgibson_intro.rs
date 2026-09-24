@@ -5,6 +5,8 @@
 //! --at=38 --freeze, --speed=2, --color=mono, --deterministic, --seconds=5.
 #[path = "libgibson_intro/director.rs"]
 pub mod director;
+#[path = "libgibson_intro/facade.rs"]
+mod facade;
 #[path = "libgibson_intro/harness.rs"]
 mod harness;
 #[path = "libgibson_intro/identity.rs"]

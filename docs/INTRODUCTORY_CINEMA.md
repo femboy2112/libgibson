@@ -28,7 +28,7 @@ wall-clock smoke-test exit, not narrative state. `--help` lists inspection flags
 | 0–20 s | Agent harness | Ordinary declarative Node UI. ARCHITECT defines acceptance, SCOUT maps an offline transit graph, BUILDER produces a solver, VERIFY challenges fixtures. The UI reports this finite fictional job graph. |
 | 20–28 s | Membrane | The actual painted harness refracts through one coalescing scalar field. Its glyphs and strokes feed the well; buildings appear inside it before the city fills the frame. |
 | 28–36 s | Information city | Depth-tested architecture and fine colored Braille wireframes. Four landmarks retain the agents' identities. |
-| 36–44 s | Facades | Four two-second shots frame acceptance, topology, candidate routes and replay witnesses. Depth-tested diagrams and native annotations occupy the same facade anchors. |
+| 36–44 s | Facades | Four two-second shots frame acceptance, topology, candidate routes and replay witnesses. Depth-tested application windows resolve into native micro-UIs on the same facade anchors. |
 | 44–53 s | Couriers | Contract, graph, candidate and verification messages follow named source/destination routes. Tangent/lookahead camera attention follows their actual route; sender-colored capsules carry payload slats and trigger receiving-facade pulses. |
 | 53–60 s | Ascent | The live city and curved ground share a perspective camera. Altitude reveals the horizon; the buildings recede to their geographic beacon without rescaling a captured city frame. |
 | 60–72 s | Earth | Rotating, perspective ray/sphere Earth, atmosphere and four identity-colored network arcs. The complete chrome `libGibson` title approaches from depth, locks, catches a highlight, and holds above graphical gold “Hack the planet!” lettering. |
@@ -57,7 +57,9 @@ Acid vs Crash retains its separate adversarial story and presentation.
   gradient, RGB tunnel and approaching Braille city geometry. Four identity conduits
   connect harness anchors to the same building roofs; no expanding circular wipe.
   Complete cell writes preserve glyph ownership; there is no terminal alpha.
-- `world.rs`: four distinct wireframe landmarks, small world-plane diagrams, semantic
+- `facade.rs`: compact ordinary Node applications: framed identity, status tab, metrics,
+  Braille chart and handoff footer. One diagram recipe serves the card and world plane.
+- `world.rs`: four distinct wireframe landmarks, mounted information displays, semantic
   routes, curved camera framing and the scale transition. Overlapping courier
   attention sums continuously; it does not jump between the first active messages.
 - `planet.rs` / `wordart.rs`: analytic perspective sphere, shared city camera/site
@@ -390,7 +392,7 @@ receding city extent, visibly rotating fixed-scale geography, hidden-side route
 occlusion and near-plane rejection. Facade assertions now require meaningful
 receipt details and the next agent at all three sizes in TrueColor and Mono.
 Title bounds, deterministic replay, frozen 0/0/0 output and the original
-late-ascent witness remain covered. The current full suite is **573 tests:
+late-ascent witness remain covered. That perspective follow-up passed **573 tests:
 226 unit + 347 integration**, with three additional FX Lab tests.
 
 Inspected reconstructed TrueColor frames at 56×24, 120×32 and 160×40, covering
@@ -451,3 +453,41 @@ TrueColor PTY coverage still exercises canonical/wide frames and resize.
 `cargo +1.98.1 test --test intro_pty -- --test-threads=1` passes all six tests;
 strict fmt/Clippy pass too. No runtime or film timing changed for this correction.
 The subsequent exact-tip CI result is recorded in PR #14.
+
+## Mounted micro-UIs
+
+The facade follow-up from `f08fc50` replaces bare receipt lines with ordinary
+Node applications: a rounded identity header, active tab, status badge, paired
+metrics, Braille diagram and model-derived next-agent footer. ARCHITECT carries
+a contract graph; SCOUT a topology map; BUILDER candidate curves; VERIFY a fixture
+matrix. Larger views include additional receipt details. The completed statuses
+come from the same finite simulated work; there are no new agents or timers.
+
+Each window has a physical world-space plate. Moving views draw its chrome and
+diagram with depth testing. During the existing near-frontal holds, the native
+UI fits entirely inside the projected four-corner plate and clips to that
+rectangle. This is a deliberate level-of-detail realization, not arbitrary
+perspective texture mapping of text. The vector and native diagrams share one
+normalized recipe. No core API, story, camera path or timeline changed.
+
+The projection regression checks rectangle containment independently against
+all four projected edges at the three supported sizes. Existing facade checks
+now require window chrome, tab/status and the original meaningful receipts in
+TrueColor and Mono. Replay, resize-only projection and frozen 0 exact / 0 affected /
+0 wire remain green. Current full suite: **574 tests = 226 unit + 348 integration**;
+FX Lab has three additional explicit tests.
+
+Inspected actual cell/color reconstructions of all four holds (37/39/41/43s) at
+56×24, 120×32 and 160×40, plus canonical Mono and moving entry/exit frames.
+The capture helper treats a reset background as terminal-default black rather
+than applying the foreground RGB approximation; captures assume that dark theme.
+No screenshot corpus is committed. Real release PTY runs through the facade
+sequence passed at all three sizes in TrueColor and at 56×24 in Mono, exiting 0
+and restoring termios and the alternate screen. The 120×32 normal-speed segment
+ran 9.17s and emitted 6,371,064 bytes; this is a segment, not another full-film run.
+
+Validation on Rust 1.98.1: fmt, all-target/all-feature Clippy with warnings denied,
+all example builds (debug/release), full `cargo test`, `intro_cinema` (17), strict
+rustdoc, FX Lab (3), native bindings smoke with ASan/UBSan, and package file listing.
+The full suite includes the six intro PTY interaction tests. Exact pushed-tip CI
+is recorded in PR #14; the PR remains unmerged.
