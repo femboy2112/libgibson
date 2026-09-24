@@ -12,14 +12,16 @@ known correctness gaps and release boundaries, and the
 
 Public-readiness preparation now supplies full license files, read-only SHA-pinned
 CI, corrected native loader paths, and a Go module/example that passes local Linux
-smoke. Visibility remains private until the owner changes it; a useful public
-stable-Rust/Go CI run is still pending.
+smoke. The owner authorized public visibility. Exact-main public CI now passes all five
+jobs: [run 35946157443](https://github.com/femboy2112/libgibson/actions/runs/35946157443)
+on `aa60036` (Rust 1.98.1 and Go 1.27.1). This does not establish an MSRV.
 
-Next: obtain useful exact-main public CI; harden public rectangle
+Next: maintain useful public CI and configure owner-approved protection; harden public rectangle
 arithmetic and exact changed-coordinate reporting; consolidate bounded PTY
 harnesses; establish API/MSRV/package contracts; profile sustained graphics.
 New cinematic features are not the current priority. The phase sections below
-preserve development history rather than promise an execution order.
+preserve development history rather than promise an execution order. Their older
+CI/Go statuses are historical and superseded by the public run linked above.
 
 ## Verification labels
 
@@ -335,4 +337,4 @@ This round converted earlier over-strong claims into verified behavior and expli
 - [ ] **Windows ConPTY Torture Testing**: extended automated testing under the Windows Console API and ConPTY.
 - [ ] **Multiplexer & Remote Shell Hardening**: specialized test matrix for tmux, screen, and SSH connections over high-latency networks.
 - [ ] **Property & Fuzz Testing**: `cargo-fuzz` / AFL suite exercising arbitrary Unicode sequences, arbitrary terminal byte streams, invalid ANSI input, and rapid terminal resizes.
-- [ ] **Executable Foreign Binding CI**: C/C++/Python/ASan and Go jobs are prepared with corrected native paths, fresh native builds, least privilege and timeouts. Local Go smoke passes. Exact-main public-runner execution remains pending; see the state audit.
+- [x] **Executable Foreign Binding CI**: C/C++/Python/ASan and Go jobs are prepared with corrected native paths, fresh native builds, least privilege and timeouts. Local Go smoke passes. All five public-main jobs now pass; see the state audit for the exact run and remaining coverage limits.
