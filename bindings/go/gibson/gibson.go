@@ -1,9 +1,9 @@
-// UNVERIFIED: Go compiler not available in current test environment
+// Package gibson wraps the LibGibson C ABI. Build the native library first.
 package gibson
 
 /*
-#cgo CFLAGS: -I../../../include
-#cgo LDFLAGS: -L../../../target/release -lgibson
+#cgo CFLAGS: -I${SRCDIR}/../../../include
+#cgo LDFLAGS: -L${SRCDIR}/../../../target/release -lgibson
 #include "gibson.h"
 #include <stdlib.h>
 */

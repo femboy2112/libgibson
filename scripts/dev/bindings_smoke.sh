@@ -8,8 +8,8 @@
 # disabled (detect_leaks=0) because the engine intentionally keeps process-global
 # terminal state; ASan/UBSan remain active.
 #
-# Go bindings are skipped when no Go toolchain is installed (they are currently
-# UNVERIFIED upstream).
+# Go bindings are checked when a Go toolchain is installed; absence is reported.
+# A present but failing toolchain is a hard failure, not a best-effort pass.
 #
 # Usage: scripts/dev/bindings_smoke.sh [--asan]
 
@@ -71,8 +71,15 @@ if [ "$ASAN" -eq 1 ]; then
 fi
 
 if command -v go >/dev/null 2>&1; then
-    echo "==> Go bindings (best effort)"
-    (cd bindings/go && go build ./...) || echo "Go build failed (bindings UNVERIFIED)" >&2
+    echo "==> Go bindings (vet, test, build, example)"
+    (
+        cd bindings/go
+        export LD_LIBRARY_PATH="$ROOT/target/release${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+        go vet ./...
+        go test ./...
+        go build ./...
+        go run ./cmd/example
+    )
 else
     echo "==> Go toolchain not found; skipping Go bindings (UNVERIFIED)."
 fi

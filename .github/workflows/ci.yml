@@ -2,8 +2,12 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,16 +20,21 @@ jobs:
   rust:
     name: Rust (fmt, clippy, test, build)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           components: rustfmt, clippy
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Format check
         run: cargo fmt --check
@@ -33,17 +42,19 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      - name: Build examples (fresh binaries for PTY/golden tests)
+        run: cargo build --examples
+
       - name: Test
         run: cargo test
 
-      - name: Visual goldens (deterministic)
-        run: cargo test --test visual_goldens
+      - name: FX Lab generator tests
+        run: cargo test --example fx_lab
 
-      - name: Capability fallback
-        run: cargo test --test capability_fallback
-
-      - name: Bounded effect cost
-        run: cargo test --test effects_perf
+      - name: Documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps
 
       - name: Build release
         run: cargo build --release
@@ -51,27 +62,32 @@ jobs:
   bindings:
     name: Bindings (C, C++, Python)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Build release
         run: cargo build --release
 
       - name: C example
         run: |
-          gcc -Iinclude bindings/c/example.c -Ltarget/release -lgibson -Wl,-rpath,'$PWD/target/release' -o /tmp/example_c
+          gcc -Iinclude bindings/c/example.c -Ltarget/release -lgibson -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/example_c
           /tmp/example_c
 
       - name: C++ example
         run: |
-          g++ -std=c++17 -Iinclude bindings/cpp/example.cpp -Ltarget/release -lgibson -Wl,-rpath,'$PWD/target/release' -o /tmp/example_cpp
+          g++ -std=c++17 -Iinclude bindings/cpp/example.cpp -Ltarget/release -lgibson -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/example_cpp
           /tmp/example_cpp
 
       - name: Python ctypes example
@@ -82,15 +98,20 @@ jobs:
   asan:
     name: AddressSanitizer (C, C++)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Build release
         run: cargo build --release
@@ -101,7 +122,7 @@ jobs:
         run: |
           gcc -Iinclude bindings/c/example.c \
             -fsanitize=address,undefined \
-            -Ltarget/release -lgibson -Wl,-rpath,'$PWD/target/release' \
+            -Ltarget/release -lgibson -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" \
             -o /tmp/example_c_asan
           /tmp/example_c_asan
 
@@ -111,43 +132,72 @@ jobs:
         run: |
           g++ -std=c++17 -Iinclude bindings/cpp/example.cpp \
             -fsanitize=address,undefined \
-            -Ltarget/release -lgibson -Wl,-rpath,'$PWD/target/release' \
+            -Ltarget/release -lgibson -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" \
             -o /tmp/example_cpp_asan
           /tmp/example_cpp_asan
 
   go:
-    name: Go bindings (best effort)
+    name: Go bindings
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: rust
-    continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+
+      - name: Build native library
+        run: cargo build --release
 
       - name: Install Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version: stable
+          cache: false # No external Go modules/go.sum yet.
 
       - name: Vet
         working-directory: bindings/go
         run: go vet ./...
 
+      - name: Test
+        working-directory: bindings/go
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+        run: go test ./...
+
       - name: Build
         working-directory: bindings/go
         run: go build ./...
 
+      - name: Example smoke
+        working-directory: bindings/go
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
+        run: go run ./cmd/example
+
   pty:
     name: PTY integration tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: rust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: Build examples (fresh binaries)
+        run: cargo build --examples
 
       - name: PTY tests
         run: cargo test --test pty_integration --test pty_resize_torture -- --test-threads=1

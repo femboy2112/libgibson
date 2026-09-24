@@ -1,5 +1,9 @@
 # LibGibson Architecture & Design Document
 
+For current maturity, known defects, release blockers and priorities, see
+[State of LibGibson](docs/STATE_OF_LIBGIBSON.md). Historical run evidence is in
+the [validation index](docs/VALIDATION_INDEX.md).
+
 ## 1. Overview and Core Philosophy
 
 LibGibson solves a fundamental deficiency in modern CLI applications: the friction between **terminal scrollback history** and **interactive mutable user interfaces**.

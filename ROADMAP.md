@@ -2,6 +2,25 @@
 
 This document outlines completed work and the planned future milestones for LibGibson.
 
+## Post-merge priorities
+
+The approved cinematic branch is merged at `0b673cc`. Fresh local validation
+remains **536 tests (226 unit + 310 integration)**. See the canonical
+[State of LibGibson](docs/STATE_OF_LIBGIBSON.md) for the ranked P0–P3 roadmap,
+known correctness gaps and release boundaries, and the
+[validation index](docs/VALIDATION_INDEX.md) for historical checkpoints.
+
+Public-readiness preparation now supplies full license files, read-only SHA-pinned
+CI, corrected native loader paths, and a Go module/example that passes local Linux
+smoke. Visibility remains private until the owner changes it; a useful public
+stable-Rust/Go CI run is still pending.
+
+Next: obtain useful exact-main public CI; harden public rectangle
+arithmetic and exact changed-coordinate reporting; consolidate bounded PTY
+harnesses; establish API/MSRV/package contracts; profile sustained graphics.
+New cinematic features are not the current priority. The phase sections below
+preserve development history rather than promise an execution order.
+
 ## Verification labels
 
 - **IMPLEMENTED + TESTED** — the code exists and is covered by automated tests in `cargo test`.
@@ -9,7 +28,7 @@ This document outlines completed work and the planned future milestones for LibG
 - **UNVERIFIED** — present in source or assumed, but never compiled/executed in an attested environment.
 - **PLANNED** — not implemented.
 
-> Historical note: earlier revisions of this roadmap marked phases "Completed" and listed Go bindings as verified. Go is **UNVERIFIED** (no Go toolchain), and the hardening round below re-states what is actually proven.
+> Historical note: earlier revisions of this roadmap marked phases "Completed" and listed Go bindings as verified. Go was **UNVERIFIED** at those checkpoints. The public-readiness round now supplies local build/example evidence; historical entries below retain their original boundaries.
 
 ---
 
@@ -25,7 +44,7 @@ This document outlines completed work and the planned future milestones for LibG
 - [x] Shot/camera/raster replay, frozen 0/0/0, geometry and damage probes,
   real PTY shortcuts/full auto and seven-shot resize exercise.
 - [x] Production-design research, release PTY frame inspection and stage matrix.
-- [x] **535 tests** (226 unit + 309 integration); strict local gates and binding
+- [x] At the cinematic presentation checkpoint: **535 tests** (226 unit + 309 integration); strict local gates and binding
   smoke tests pass. Remote CI remains billing-blocked.
 - [ ] Independent human aesthetic acceptance remains **UNVERIFIED**; screenshots
   and test metrics are not a substitute for the user's visual judgment.
@@ -290,7 +309,7 @@ This round converted earlier over-strong claims into verified behavior and expli
 ## Phase 3: Advanced Layout & Rich Components — PLANNED
 
 - [ ] **Incremental Layout Caching**: cache Taffy layout subtrees across frames when node contents are unmodified.
-- [ ] **Scrollable Viewport Widgets**: scrollable virtual boxes with vertical and horizontal scrollbars.
+- [ ] **Viewport Scrollbar Widgets**: `Node::viewport` and `ViewportState` already provide tested clipping/pan/page state; integrated scrollbar widgets and virtualized containers remain planned.
 - [ ] **Virtualization Engine**: virtual list and table rendering supporting very large datasets without memory pressure.
 - [ ] **Rich Component Library**:
   - Tables with auto-sizing columns and alignment.
@@ -303,7 +322,7 @@ This round converted earlier over-strong claims into verified behavior and expli
 
 ## Phase 4: Styling, Themes, and Accessibility — PLANNED
 
-- [ ] **24-bit Truecolor Palettes and Themes**: CSS-like theme definitions with automatic fallback to ANSI-256 or 16-color ANSI.
+- [ ] **Extensible Theme Definitions**: `Theme` and TrueColor/ANSI256/ANSI16/Mono fallback already exist and are tested; a configurable theme schema remains planned. No CSS system is required.
 - [ ] **Terminal Capability Negotiation**: automatic detection via Primary and Secondary Device Attributes (`CSI c`, `CSI > c`) for synchronized output, color depth, and graphics protocols. This also lets the engine choose the insertion strategy from measured capability rather than assumption.
 - [ ] **DSR Absolute Anchoring**: query the cursor position (`CSI 6 n`) to re-anchor exactly after resize/reflow instead of the current best-effort relative rebuild.
 - [ ] **Accessibility (A11y)**: screen reader annotations, semantic headings, and ARIA-like terminal roles for assistive technology.
@@ -316,4 +335,4 @@ This round converted earlier over-strong claims into verified behavior and expli
 - [ ] **Windows ConPTY Torture Testing**: extended automated testing under the Windows Console API and ConPTY.
 - [ ] **Multiplexer & Remote Shell Hardening**: specialized test matrix for tmux, screen, and SSH connections over high-latency networks.
 - [ ] **Property & Fuzz Testing**: `cargo-fuzz` / AFL suite exercising arbitrary Unicode sequences, arbitrary terminal byte streams, invalid ANSI input, and rapid terminal resizes.
-- [ ] **Go / Foreign Binding CI**: compile and run the Go bindings once a Go toolchain is available; add binding smoke tests to CI.
+- [ ] **Executable Foreign Binding CI**: C/C++/Python/ASan and Go jobs are prepared with corrected native paths, fresh native builds, least privilege and timeouts. Local Go smoke passes. Exact-main public-runner execution remains pending; see the state audit.
