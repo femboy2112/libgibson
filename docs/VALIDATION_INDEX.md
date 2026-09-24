@@ -21,7 +21,7 @@ cinematic branch was subsequently merged through PR #1 at main `0b673cc`.
 | Final merge gate / 536 | [Hardening validation](acid-vs-crash-hardening-validation.md) | Feedback resize counterexample/fix, docs contracts, exact gates, bindings and release PTY | Approved tip 3b67ca2; superseded by post-merge audit for current blockers and CI. |
 | Post-merge / 536 | [State of LibGibson](STATE_OF_LIBGIBSON.md) | Fresh gates, architecture/API inventory, source review, decisive debt probes and roadmap | Original baseline; current debt ledger is updated explicitly by later sections. |
 
-| Introductory cinema / consolidation | [Introduction](INTRODUCTORY_CINEMA.md) | Dependency PR integration, D1/D2/D5 fixes, cubic routes, finite cinematic intro, Surface and PTY witnesses | Current branch implementation/validation; not an API stability or aesthetic certification. |
+| Introductory cinema / consolidation | [Introduction](INTRODUCTORY_CINEMA.md) | Dependency PR integration, D1/D2/D5 fixes, cubic routes, finite cinematic intro, art-direction/continuity pass, Surface and PTY witnesses | Current branch implementation/validation; not an API stability or aesthetic certification. |
 
 Older visual FX, Scene Algebra and Story checkpoints live in [ROADMAP](../ROADMAP.md)
 and [DESIGN](../DESIGN.md), with executable regressions under `tests/`; there is

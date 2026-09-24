@@ -6,13 +6,17 @@ information system changing its visual realization, entirely through Unicode
 cells and terminal colors.
 
 ```sh
-cargo run --release --example libgibson_intro -- --auto
+cargo run --release --example libgibson_intro -- --auto --color=truecolor
 cargo run --release --example libgibson_intro -- --stage=city
 cargo run --release --example libgibson_intro -- --at=39 --freeze
 cargo run --release --example libgibson_intro -- --color=mono
 ```
 
 Space pauses; left/right selects adjacent acts; R restarts; Esc or Ctrl-C exits.
+Hints appear for the first four seconds, retreat during playback, and return for
+three presentation seconds after pause/resume or act navigation. Pausing keeps
+them visible without advancing visual time; the final hold gets a quiet replay
+affordance after 71s. `--no-hints` suppresses those overlays.
 Without `--auto`, the final image holds for replay. `--deterministic` uses a fixed
 positive presentation step; `--speed=2` accelerates the film. `--seconds=5` is a
 wall-clock smoke-test exit, not narrative state. `--help` lists inspection flags.
@@ -22,12 +26,12 @@ wall-clock smoke-test exit, not narrative state. `--help` lists inspection flags
 | Time | Act | Visual and semantic purpose |
 | --- | --- | --- |
 | 0–20 s | Agent harness | Ordinary declarative Node UI. ARCHITECT defines acceptance, SCOUT maps an offline transit graph, BUILDER produces a solver, VERIFY challenges fixtures. The UI reports this finite fictional job graph. |
-| 20–28 s | Membrane | The actual painted harness refracts through growing lenses. Its glyphs spiral into an RGB tunnel. An expanding aperture reveals the city. |
+| 20–28 s | Membrane | The actual painted harness refracts through one coalescing scalar field. Its glyphs and strokes feed the well; buildings appear inside it before the city fills the frame. |
 | 28–36 s | Information city | Depth-tested architecture and fine colored Braille wireframes. Four landmarks retain the agents' identities. |
-| 36–44 s | Facades | Results live on world-space building faces. A held, nearly frontal shot combines projected lettering with readable native terminal text. |
-| 44–53 s | Couriers | Contract, graph, candidate and verification messages follow named source/destination routes. Camera attention follows their actual route position. |
-| 53–60 s | Ascent | Pull back from the architecture into a planetary composition. |
-| 60–72 s | Earth | Illustrated globe, atmosphere, network arc and extruded `libGibson` wordmark; “Hack the planet!” Hold for a readable ending. |
+| 36–44 s | Facades | Four two-second shots frame acceptance, topology, candidate routes and replay witnesses. Depth-tested diagrams and native annotations occupy the same facade anchors. |
+| 44–53 s | Couriers | Contract, graph, candidate and verification messages follow named source/destination routes. Tangent/lookahead camera attention follows their actual route; sender-colored capsules carry payload slats and trigger receiving-facade pulses. |
+| 53–60 s | Ascent | The circuit plane bends as altitude rises; luminous architecture condenses into its shared geographic beacon without a circular compositing edge. |
+| 60–72 s | Earth | Illustrated globe, atmosphere and four identity-colored network arcs. The complete chrome `libGibson` title approaches from depth, locks, catches a highlight, and holds above graphical gold “Hack the planet!” lettering. |
 
 The city draws from the film's information-as-architecture idea: the original
 production notes describe Manhattan becoming a circuit board with information
@@ -43,12 +47,21 @@ Acid vs Crash retains its separate adversarial story and presentation.
   and city. All tools and outcomes are explicitly simulated.
 - `director.rs`: seven contiguous, seekable cues. Pure projection of explicit
   time; no per-frame trace retention. Pause and final hold stop time advancement.
+- `identity.rs`: four persistent accents, one-cell signatures and semantic membrane
+  anchors. Colors support identity; silhouettes and marks preserve it without color.
+- `shots.rs`: twelve finite city subshots, including four facade holds and four
+  courier follows. This is film direction, not a new core cinematic API.
 - `harness.rs`: ordinary Node/layout/painter realization. Widgets know nothing
   about their later distortion.
-- `membrane.rs`: inverse sampling of that realized Surface, RGB tunnel and aperture.
+- `membrane.rs`: inverse sampling of that realized Surface, summed field and analytic
+  gradient, RGB tunnel and early city recognition.
   Complete cell writes preserve glyph ownership; there is no terminal alpha.
-- `world.rs`: world-space architecture, face receipts, routes, camera framing,
-  illustrated Earth and title. Camera and courier positions share cubic routes.
+- `world.rs`: four distinct wireframe landmarks, small world-plane diagrams, semantic
+  routes, curved camera framing and the scale transition. Overlapping courier
+  attention sums continuously; it does not jump between the first active messages.
+- `planet.rs` / `wordart.rs`: illustrated Earth, shared site projection, identity
+  arcs and bounded bitmap art. Face coverage is sampled once and reused across
+  extrusion layers; no font asset or generic texture engine is introduced.
 - `libgibson_intro.rs`: Context lifecycle, controls, capability selection and
   frame composition. Painting neither advances the world nor records history.
 
@@ -129,11 +142,14 @@ color response, bandwidth and display latency can change the experience.
 Final command results and remote PR evidence are recorded in the completion
 update below. Historical validation documents retain their original counts.
 
-### Measured scope and retained failures
+### Initial 564-test checkpoint: measured scope and retained failures
 
 The release 120×32 deterministic full film completed at normal speed in 77.44s on
 this Linux host and emitted 7,822,634 bytes; terminal mode and alternate-screen
-restoration passed. Stage smokes passed at 56×24 Mono, 160×40 TrueColor and 120×32
+restoration passed. That runner did not set `--color`, and its effective color
+depth was not recorded. It is not a measured TrueColor baseline. The current
+host has `NO_COLOR=1`, which takes precedence over `COLORTERM`; an inherited
+Mono setting is a plausible explanation, not recoverable historical proof. Stage smokes passed at 56×24 Mono, 160×40 TrueColor and 120×32
 ANSI256. The 72s cue timeline is visual time; scheduling/generation/transport can
 extend elapsed playback. No universal frame-rate claim follows.
 
@@ -171,7 +187,7 @@ Dependency duplication is now limited to proc-macro/transitive `syn` and
 branch). The vt100 update unifies unicode-width. No broad dependency upgrade,
 API rewrite, generated image corpus or runtime asset dependency was introduced.
 
-### Final local validation
+### Initial 564-test checkpoint: local validation
 
 Linux x86_64, Rust/Cargo 1.98.1. Commands below exited 0 after the documented
 resize-capture correction. The earlier failed full-suite run is retained as a
@@ -231,3 +247,107 @@ Public CI also passed all five jobs for intro tip
 [run 35950398202](https://github.com/femboy2112/libgibson/actions/runs/35950398202):
 Rust, native/Python bindings, native sanitizers, Go and PTY. This is branch
 evidence; it does not imply that the intro is already on main.
+
+## Cinematic art-direction pass
+
+Starting tip: `5aa91018d083a12b9321366a71772f9ebb5b87af`; main remained
+`3438c89645c760201be4b2598cf12161efada782`. PR #14 stays unmerged.
+The stable baseline again passed all 564 tests. This pass changes only the intro,
+its presentation tests, and documentation; D1/D2/D5, the four-agent model and
+all other demos retain their implementation.
+
+The four identities are ARCHITECT/cyan/house frame, SCOUT/gold/diamond,
+BUILDER/violet/scaffold, VERIFY/mint/validation lattice. Their marks, colors,
+structures and payload routes persist across the different realizations.
+The film still lasts 72 presentation seconds, with its original seven acts.
+
+Visual review is separate from correctness. Reconstructed cell frames were
+inspected with actual glyphs, Braille dots and capability-quantized styles;
+`--dump` remains a lower-resolution RGB witness. The review found and corrected
+occluded rear-landmark camera corridors, overlapping narrow labels, projected
+output that read like structural floors, dark orbital strokes overwriting Earth,
+and clipped subtitle placement. These were demo presentation faults, not new
+core renderer defects. No subjective human acceptance is inferred from tests.
+
+The title bounds contract reports unclamped geometry, including extrusion,
+subtitle, rail and the timed sparkle. Supported-size checks therefore detect
+clipping instead of merely testing already-clamped coordinates. Other new
+contracts cover all four readable facade identities, continuous camera positions
+at shot and overlapping-message boundaries, and transient hints through real PTY
+input. Frozen frames still require zero exact delta, footprint and wire bytes.
+
+The full stable suite now passes **571 tests: 226 unit + 345 integration**, plus
+three explicit FX Lab tests. Seven new contracts supplement the prior 564-test
+checkpoint: hint lifetime, real PTY hint retreat/navigation, identity/facade
+coverage, camera continuity, unclamped title bounds/frozen hold, and additive
+planetary emission, and late-ascent source clipping. The emission regression catches route markers or beacon
+rings darkening the globe during their entrance. Prior numbers above remain
+historical evidence.
+
+A final independent review reproduced a late-ascent glyph leak at 59.94084s,
+120×32: an inverse sample `(327717,131101)` narrowed to `u16` and wrapped into
+source cell `(37,29)`. The new regression failed before the fix and passed after
+checking signed source bounds before conversion. This demo-only fix prevents a
+stray city glyph at destination `(107,18)`; it changes no core raster semantics.
+
+Five-sample optimized generation medians on this Linux host:
+
+| Cells | Harness 12s | Membrane 24s | City 33s | Facade 39s | Courier 47s | Ascent 58s | Title 68s |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 56×24 | 0.11ms | 0.81ms | 1.36ms | 1.36ms | 1.62ms | 2.05ms | 0.47ms |
+| 120×32 | 0.37ms | 2.43ms | 3.26ms | 3.98ms | 3.81ms | 4.45ms | 1.42ms |
+| 160×40 | 0.47ms | 3.74ms | 5.02ms | 6.22ms | 5.54ms | 6.83ms | 2.36ms |
+
+The earlier city recognition overlaps RGB membrane and fine wireframe generation
+at 26s: 7.55ms at 120×32, 10.99ms at 160×40. The previous implementation also
+paid for both realizations near its later exit. The hero title costs about twice
+the old shallow wordmark; it now covers substantially more pixels with multiple
+bevel/extrusion layers and network light. Flattened bitmap rows and a reused
+coverage mask reduced the first implementation's roughly 2.75/4.80ms canonical/
+wide title samples to roughly 1.42/2.36ms. These are observations with host noise,
+not timing assertions or end-to-end frame-rate claims. The new film uses all rows
+instead of reserving a permanent footer.
+
+A 1/60s membrane increment at 160×40 changed 6,135 cells and emitted 127,964 bytes;
+city33s changed 1,813 cells / 31,338 bytes. Graphics legitimately change broadly.
+Frozen comparisons across acts and the final title remain exactly **0 / 0 / 0**.
+The explicit TrueColor normal-speed release film at 120×32 emitted 75,906,237
+bytes in 79.40s on the corrected code tip, exited 0 and restored termios and the
+alternate screen. A prior full run took 79.10s and emitted the same byte count.
+Stage release smokes also passed at 56×24 Mono, 160×40 TrueColor and 120×32
+ANSI256, each with terminal restoration. Capture
+inspection counted 3,978 nonempty transactions, no consecutive identical payloads,
+and a median 593 emitted glyphs per transaction; this is not a blanket repaint.
+The historical 7.8MB run above used auto-detection with unrecorded effective depth,
+so it cannot establish a same-capability regression ratio. Matched TrueColor
+samples do show higher costs: city33s 10,306→20,196 bytes/update and title68s
+1,022→5,372. Broad moving color is expensive over a terminal transport.
+
+Inspected requested TrueColor times 8,18,21,24,27,30,35,37,39,41,43,45,47,50,52,
+55,58,61,64,67,70 at all three sizes. Boundary pairs 19.8/20.2,27.8/28.2,
+35.8/36.2,43.8/44.2,52.8/53.2,59.8/60.2,64.8/65.2 preserve recognizable objects,
+geometry or title motion. Mono was inspected separately. These cell-reconstructed
+images and local PPM dumps are inspection artifacts, not a committed image corpus
+or proof of identical appearance in every terminal font.
+
+All commands in the local-validation block above passed again on Rust 1.98.1.
+Additional explicit gates:
+
+```sh
+cargo +1.98.1 test --test geometry_diff_contract --test cinematic_paths --test whole_renderer_vt100 --test surface_fx
+cargo +1.98.1 test --test intro_cinema
+cargo +1.98.1 test --test intro_pty --test pty_integration --test pty_resize_torture -- --test-threads=1
+```
+
+C/C++/Python and ASan/UBSan passed. Go vet/test/build/example passed locally;
+the Go package still has no unit tests. Package listing includes the new modules
+and complete licenses; nothing was published. No core API, model, dependency,
+workflow, ABI or other demo implementation changed in this polish pass.
+D6/D7/D8 and issue #15 remain open with their existing claim boundaries.
+
+Public CI passed all five jobs for the final code checkpoint
+`4d87e2a756067bd43ef674a3422fb980745d62a5` in
+[run 35954830898](https://github.com/femboy2112/libgibson/actions/runs/35954830898):
+Rust, C/C++/Python, ASan/UBSan, Go and PTY. The earlier polished code checkpoint
+`0d9b3f6` also passed in run 35954297546. The final documentation tip has its own
+CI evidence in PR #14; these links attest only to their named commits.

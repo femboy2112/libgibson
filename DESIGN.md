@@ -32,7 +32,7 @@ Because earlier revisions of this document overstated completion, architectural 
 | Label | Meaning |
 | --- | --- |
 | **IMPLEMENTED** | The described code path exists and is reached in normal operation. |
-| **TESTED** | Covered by an automated test in this repository (`cargo test`, 564 tests: 226 unit + 338 integration) that exercises the behavior described. |
+| **TESTED** | Covered by an automated test in this repository (`cargo test`, 571 tests: 226 unit + 345 integration) that exercises the behavior described. |
 | **PARTIALLY TESTED** | Implemented, and some behavior is covered, but at least one named facet is not automatically verified. The gap is stated explicitly. |
 | **UNVERIFIED** | Written down because it exists in source or is a documented assumption, but has not been compiled or executed in any environment we can attest to. |
 
@@ -1097,8 +1097,11 @@ StoryTrace because this linear film has no interactive narrative branches.
 `geom::CubicPath3` supplies shared world-space interpolation and unit tangents for
 semantic couriers and camera attention. It is pure, clamped and finite-safe; it
 does not introduce actors, clocks or another scene graph into core. The runner
-reuses held Nodes while the presentation key is unchanged. Full details and
-validation are in [Introductory cinema](docs/INTRODUCTORY_CINEMA.md).
+reuses held Nodes while the presentation key is unchanged. The film now keeps
+identity, scalar membrane, facade planes, named camera subshots and title art in
+demo-local modules. Transient hints use explicit presentation time; painting never
+starts their timer. The world model and core APIs are unchanged by art direction.
+Full details and validation are in [Introductory cinema](docs/INTRODUCTORY_CINEMA.md).
 
 The accompanying core hardening preserves Rect's saturated half-open extent
 contract. Exact SurfaceDiff spans now retain erasures/removals independently of

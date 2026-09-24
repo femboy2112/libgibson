@@ -22,7 +22,7 @@ license, CI and Go build hygiene; no core/cinematic behavior is changed. The
 publication evidence below supersedes initial D3/D4/license-packaging status.
 
 The post-merge/public-readiness checkpoint passed **536 tests = 226 unit + 310
-integration**. The introductory-cinema branch passes **564 tests = 226 unit + 338 integration**
+integration**. The introductory-cinema branch passes **571 tests = 226 unit + 345 integration**
 and adds Rect/diff, PTY lifecycle, route and cinematic regressions; see [its current validation](INTRODUCTORY_CINEMA.md).
 Historical command tables below preserve the checkpoint they measured.
 
@@ -271,7 +271,7 @@ The baseline `cargo test` command took about 92 seconds on this host; visual_gol
 reported about 37 seconds. These are observations, not timing assertions. Golden
 captures use fixed wall-clock waits; semantic/raster tests use deterministic time.
 Three fx_lab example tests sit outside the default count (536 at the initial audit,
-564 on the introductory-cinema branch). Repeated checks at
+571 on the introductory-cinema branch). Repeated checks at
 model/presentation/terminal layers guard distinct boundaries; the former CI's repeated goldens
 and PTY commands also duplicate some full-suite execution and can later be tuned.
 

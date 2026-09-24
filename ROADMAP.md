@@ -17,7 +17,7 @@ smoke. The owner authorized public visibility. Exact-main public CI now passes a
 jobs: [run 35946157443](https://github.com/femboy2112/libgibson/actions/runs/35946157443)
 on `aa60036` (Rust 1.98.1 and Go 1.27.1). This does not establish an MSRV.
 
-The introductory-cinema branch passes **564 tests (226 unit + 338 integration)**
+The introductory-cinema branch passes **571 tests (226 unit + 345 integration)**
 and fixes rectangle arithmetic and exact changed-coordinate
 reporting, consolidates bounded Unix PTY harnesses, and adds a canonical short film.
 Next: land these tested changes; maintain useful public CI and owner-approved protection;
