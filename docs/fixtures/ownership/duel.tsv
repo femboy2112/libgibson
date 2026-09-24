@@ -1,0 +1,12 @@
+0	75	SESSION	LeaseState	start:Available
+1	99	SESSION	Acquire	ctx1:ok
+2	106	SESSION	LeaseState	ctx1:Owned
+3	113	SESSION	Acquire	ctx2:rejected:AlreadyExists
+4	119	SESSION	LeaseState	ctx2-attempt:Owned
+5	125	SESSION	RestoreBegin	ctx1
+6	134	SESSION	RestoreResult	ctx1:ok
+7	141	SESSION	LeaseState	post-restore:Available
+8	154	SESSION	Acquire	ctx2:ok
+9	161	SESSION	LeaseState	ctx2:Owned
+10	170	SESSION	Teardown	ctx2
+11	192	SESSION	LeaseState	final:Available

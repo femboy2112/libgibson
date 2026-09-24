@@ -376,13 +376,61 @@ pub struct TraceStep {
     pub events: Vec<StoryEvent>,
 }
 
+/// How much of the update trace a [`StoryDirector`] keeps in memory.
+///
+/// The trace grows by one [`TraceStep`] per `update` call — even for empty
+/// events — and by one entered-beat entry per transition. Left unbounded, a
+/// long-lived session bleeds ~40 bytes per tick on the step log (~40 MiB at a
+/// million ticks), and a story that transitions every update grows the beat log
+/// just as fast: linear, unbounded, and nobody's idea of a feature. This policy
+/// is the tourniquet for **both** logs. See LibGibson issue #10.
+///
+/// Only [`TraceRetention::All`] preserves an exact replay from time zero and a
+/// full [`StoryTrace::beat_sequence`]. Under a bounded or disabled policy the
+/// retained steps and beats are a *window*, not the original timeline — query
+/// [`StoryTrace::is_complete`] before trusting a replay, and read the honesty
+/// note on [`Story::replay`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TraceRetention {
+    /// Keep every recorded step. The default, and the only policy under which
+    /// [`Story::replay`] reconstructs the full run from time zero.
+    All,
+    /// Keep only the most-recent steps *and* entered beats, evicting the oldest
+    /// to bound memory.
+    ///
+    /// Both logs hold at most `2 * cap` entries at any instant (the slack-drain
+    /// amortizes eviction; see [`StoryDirector::update`]). The cap is clamped
+    /// with saturating arithmetic, so an absurd `cap` such as `usize::MAX` never
+    /// overflows into a tiny threshold — it simply never evicts at any practical
+    /// process size. A trace under this policy is [`StoryTrace::is_complete`]-false
+    /// as soon as it sheds its first step or beat. `Bounded(0)` records no
+    /// *subsequent* step or transition-beat history, exactly like
+    /// [`TraceRetention::Disabled`]; the genesis start-beat recorded by
+    /// [`Story::start`] under the director's initial `All` policy is still
+    /// present (a caller can only switch retention afterward).
+    Bounded(usize),
+    /// Record no steps whatsoever. Replay reconstructs nothing.
+    Disabled,
+}
+
 /// A recorded sequence of `update` calls and entered beats, for exact replay.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct StoryTrace {
-    /// Every `update(dt, events)` call, in order.
+    /// Every retained `update(dt, events)` call, in order. Under a bounded or
+    /// disabled policy this is the retained *window*, not the full timeline.
     pub steps: Vec<TraceStep>,
-    /// Every entered beat with the elapsed time at entry.
+    /// Every retained entered beat with the elapsed time at entry. Bounded and
+    /// evicted under the same policy as [`Self::steps`]; see [`TraceRetention`].
     pub beats: Vec<(Duration, String)>,
+    /// Update steps evicted (or never recorded) under a bounded/disabled policy.
+    /// Private so the count can only move through the honest recording path —
+    /// you don't get to forge a clean chart.
+    dropped: usize,
+    /// Entered beats evicted (or never recorded) under a bounded/disabled
+    /// policy. Tracked independently of [`Self::dropped`] because a ping-pong
+    /// story transitions on every update, so the beat log can shed at a
+    /// different rate than the step log. Private for the same honesty reason.
+    dropped_beats: usize,
 }
 
 impl StoryTrace {
@@ -390,7 +438,38 @@ impl StoryTrace {
         self.beats.push((at, beat.into()));
     }
 
-    /// The sequence of entered beats (including the start beat).
+    /// Number of update steps evicted (or never recorded) under a bounded or
+    /// disabled retention policy. Zero under [`TraceRetention::All`].
+    pub fn dropped_steps(&self) -> usize {
+        self.dropped
+    }
+
+    /// Number of entered beats evicted (or never recorded) under a bounded or
+    /// disabled retention policy. Zero under [`TraceRetention::All`].
+    ///
+    /// A ping-pong story transitions on every update, so under a bounded policy
+    /// the beat log sheds at its own rate; this is that rate, kept separate from
+    /// [`Self::dropped_steps`].
+    pub fn dropped_beats(&self) -> usize {
+        self.dropped_beats
+    }
+
+    /// Whether the trace still holds every update step **and** every entered
+    /// beat it ever saw.
+    ///
+    /// True iff both [`Self::dropped_steps`] and [`Self::dropped_beats`] are
+    /// zero. A complete trace replays exactly from time zero and its
+    /// [`Self::beat_sequence`] is the full narrative path; an incomplete one
+    /// only reconstructs its retained window and must not be read as the
+    /// original timeline.
+    pub fn is_complete(&self) -> bool {
+        self.dropped == 0 && self.dropped_beats == 0
+    }
+
+    /// The sequence of entered beats (including the start beat) that the trace
+    /// still retains. Under a bounded/disabled policy this is the retained
+    /// window, not the full path — check [`Self::is_complete`] /
+    /// [`Self::dropped_beats`] before treating it as the whole narrative.
     pub fn beat_sequence(&self) -> Vec<&str> {
         self.beats.iter().map(|(_, b)| b.as_str()).collect()
     }
@@ -546,6 +625,7 @@ impl Story {
             facts: Facts::new(),
             mounted: BTreeMap::new(),
             trace: StoryTrace::default(),
+            retention: TraceRetention::All,
             finished: false,
         };
         // Run the start beat's on_enter actions and record it.
@@ -571,6 +651,16 @@ impl Story {
     /// to [`StoryDirector::facts_mut`] or [`StoryDirector::jump_to`] are not
     /// recorded. Define inspection stages as the story's start beat with complete
     /// entry actions, and use reactions for replayable runtime mutations.
+    ///
+    /// # Retention honesty
+    ///
+    /// Replay reconstructs from the **retained** steps only. It is an exact
+    /// replay from time zero **iff** `trace.is_complete()`. If the trace evicted
+    /// steps under [`TraceRetention::Bounded`] (`trace.dropped_steps() > 0`) or
+    /// recorded nothing under [`TraceRetention::Disabled`], this call replays
+    /// only the retained window from the start beat — a partial reconstruction
+    /// that must **not** be treated as the original timeline. The math here is
+    /// unchanged; completeness is simply queryable via [`StoryTrace::is_complete`].
     pub fn replay(&self, trace: &StoryTrace) -> StoryDirector {
         let mut d = self.start();
         for step in &trace.steps {
@@ -594,6 +684,7 @@ pub struct StoryDirector {
     facts: Facts,
     mounted: BTreeMap<String, Duration>,
     trace: StoryTrace,
+    retention: TraceRetention,
     finished: bool,
 }
 
@@ -644,6 +735,44 @@ impl StoryDirector {
         &self.trace
     }
 
+    /// Sets the trace retention policy.
+    ///
+    /// Applies to steps recorded *after* this call; already-buffered steps are
+    /// left where they are. Switching to a tighter [`TraceRetention::Bounded`]
+    /// cap therefore trims the buffer on subsequent updates rather than retroactively.
+    pub fn set_trace_retention(&mut self, policy: TraceRetention) {
+        self.retention = policy;
+    }
+
+    /// The active trace retention policy.
+    pub fn trace_retention(&self) -> TraceRetention {
+        self.retention
+    }
+
+    /// Moves the recorded trace out for external sinking and resets the live
+    /// buffer, so a long session can flush history to a sink instead of hoarding it.
+    ///
+    /// The returned [`StoryTrace`] owns the retained steps, entered beats and
+    /// dropped-step count as they stood; the director keeps running under the
+    /// same retention policy. After a drain, in-process replay-from-zero is no
+    /// longer available here — that history now belongs to the caller, and a
+    /// subsequent [`Story::replay`] of the director's live trace reconstructs
+    /// only what has been recorded *since* the drain. Accordingly the live trace
+    /// carries the drained prefix forward in its dropped-step count, so it
+    /// reports [`StoryTrace::is_complete`]-false: it no longer holds this
+    /// director's full history.
+    pub fn drain_trace(&mut self) -> StoryTrace {
+        let taken = std::mem::take(&mut self.trace);
+        // The live buffer no longer holds the drained prefix, so it is not a
+        // from-zero record of this director's life. Carry both shed counts
+        // forward so `is_complete()` stays honest (false) for steps and beats
+        // alike — consistent with a bounded eviction — rather than masquerading
+        // as a pristine trace.
+        self.trace.dropped = taken.steps.len().saturating_add(taken.dropped);
+        self.trace.dropped_beats = taken.beats.len().saturating_add(taken.dropped_beats);
+        taken
+    }
+
     /// Advances time, applies events, and follows **at most one transition**.
     ///
     /// # Semantics (the one-arrow law)
@@ -683,11 +812,10 @@ impl StoryDirector {
         self.elapsed = self.elapsed.saturating_add(dt);
         self.time_in_beat = self.time_in_beat.saturating_add(dt);
 
-        // Record the exact step so replay can reproduce this call precisely.
-        self.trace.steps.push(TraceStep {
-            dt,
-            events: events.to_vec(),
-        });
+        // Record the exact step so replay can reproduce this call precisely —
+        // subject to the retention policy, which decides whether this step lives
+        // in the buffer, evicts an older one, or is never kept at all.
+        self.record_step(dt, events);
 
         // Freeze the reaction definitions, not the facts: every event is handled
         // by the original beat before any outgoing transition is selected.
@@ -718,6 +846,68 @@ impl StoryDirector {
         // Otherwise at most one automatic transition.
         if let Some(next) = self.find_auto_transition() {
             self.enter(next);
+        }
+    }
+
+    /// Records one update step under the active retention policy, keeping the
+    /// dropped-step accounting honest whether the step is kept, evicted, or
+    /// discarded on arrival.
+    fn record_step(&mut self, dt: Duration, events: &[StoryEvent]) {
+        match self.retention {
+            TraceRetention::All => {
+                self.trace.steps.push(TraceStep {
+                    dt,
+                    events: events.to_vec(),
+                });
+            }
+            // A zero cap is a disabled buffer wearing a different hat: keep
+            // nothing, but still count what walked past.
+            TraceRetention::Disabled | TraceRetention::Bounded(0) => {
+                self.trace.dropped += 1;
+            }
+            TraceRetention::Bounded(cap) => {
+                self.trace.steps.push(TraceStep {
+                    dt,
+                    events: events.to_vec(),
+                });
+                // Slack-drain: let the buffer run out to 2*cap, then excise the
+                // oldest half in a single batch back down to cap. Amortized O(1)
+                // per push, and the live window never exceeds 2*cap. The limit is
+                // computed with saturating arithmetic so a hostile `cap` (e.g.
+                // usize::MAX) can't overflow into a tiny threshold that would
+                // silently invert the policy; an absurd cap simply never evicts.
+                let limit = cap.saturating_mul(2);
+                if self.trace.steps.len() > limit {
+                    let evict = self.trace.steps.len() - cap;
+                    self.trace.steps.drain(0..evict);
+                    self.trace.dropped += evict;
+                }
+            }
+        }
+    }
+
+    /// Records one entered beat under the active retention policy, mirroring
+    /// [`Self::record_step`]: `All` keeps every beat, `Disabled`/`Bounded(0)`
+    /// keep none, and `Bounded(cap)` keeps a slack-drained window of at most
+    /// `2 * cap`. Kept honest via [`StoryTrace::dropped_beats`]. The genesis
+    /// (start-beat) record in [`Story::start`] is intentionally *not* routed
+    /// here: a fresh director is always `All`, so the start beat is recorded
+    /// unconditionally, exactly as a fresh step buffer starts empty.
+    fn record_transition_beat(&mut self, at: Duration, beat: String) {
+        match self.retention {
+            TraceRetention::All => self.trace.beats.push((at, beat)),
+            TraceRetention::Disabled | TraceRetention::Bounded(0) => {
+                self.trace.dropped_beats += 1;
+            }
+            TraceRetention::Bounded(cap) => {
+                self.trace.beats.push((at, beat));
+                let limit = cap.saturating_mul(2);
+                if self.trace.beats.len() > limit {
+                    let evict = self.trace.beats.len() - cap;
+                    self.trace.beats.drain(0..evict);
+                    self.trace.dropped_beats += evict;
+                }
+            }
         }
     }
 
@@ -771,7 +961,7 @@ impl StoryDirector {
         self.current = next;
         self.time_in_beat = Duration::ZERO;
         self.apply_actions(&beat.on_enter);
-        self.trace.record_beat(self.elapsed, self.current.clone());
+        self.record_transition_beat(self.elapsed, self.current.clone());
         if beat.terminal {
             self.finished = true;
         }
@@ -1246,5 +1436,280 @@ mod tests {
         assert!(lines.iter().any(|l| l.contains("seen")));
         assert!(lines.iter().any(|l| l.contains("mounted fx")));
         assert_eq!(d.beat_label(), "Arrival");
+    }
+
+    // -----------------------------------------------------------------------
+    // Trace retention (issue #10).
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn retention_all_is_default_and_records_every_step() {
+        // Default policy: nothing evicted, trace stays complete.
+        let story = tactical_story();
+        let mut d = story.start();
+        assert_eq!(d.trace_retention(), TraceRetention::All);
+        let n = 30;
+        for _ in 0..n {
+            // Start beat holds until 500ms; 30 * 1ms keeps us there.
+            d.update(ms(1), &[]);
+        }
+        assert_eq!(d.current_beat(), "tactical");
+        assert_eq!(d.trace().steps.len(), n);
+        assert_eq!(d.trace().dropped_steps(), 0);
+        assert!(d.trace().is_complete());
+    }
+
+    #[test]
+    fn retention_all_replays_exactly_from_zero() {
+        // A complete trace reconstructs the same length, beat and facts.
+        let story = tactical_story();
+        let mut d = story.start();
+        d.update(ms(60), &[StoryEvent::user_selected("crew")]);
+        for _ in 0..20 {
+            d.update(ms(10), &[]);
+        }
+        assert!(d.trace().is_complete());
+
+        let replayed = story.replay(d.trace());
+        assert_eq!(replayed.trace().steps.len(), d.trace().steps.len());
+        assert_eq!(replayed.current_beat(), d.current_beat());
+        assert_eq!(
+            replayed.facts().bool("crew-reinforced"),
+            d.facts().bool("crew-reinforced")
+        );
+        assert!(replayed.trace().is_complete());
+    }
+
+    #[test]
+    fn retention_bounded_keeps_a_recent_window_and_reports_drops() {
+        // Far past the cap: memory stays bounded, honesty flips to incomplete.
+        let story = tactical_story();
+        let mut d = story.start();
+        let cap = 8;
+        d.set_trace_retention(TraceRetention::Bounded(cap));
+        let total = 100;
+        for _ in 0..total {
+            // Stay in the start beat (min 50ms, after 500ms) so every update records.
+            d.update(ms(1), &[]);
+        }
+        assert_eq!(d.current_beat(), "tactical");
+        assert!(
+            d.trace().steps.len() <= 2 * cap,
+            "live window must stay within 2*cap"
+        );
+        assert!(d.trace().dropped_steps() > 0);
+        assert!(!d.trace().is_complete());
+        // Conservation: every update is either retained or counted as dropped.
+        assert_eq!(d.trace().steps.len() + d.trace().dropped_steps(), total);
+    }
+
+    #[test]
+    fn retention_bounded_zero_and_disabled_record_nothing() {
+        // A zero cap and Disabled are behaviourally identical: no steps kept.
+        let story = tactical_story();
+        let total = 20;
+
+        for policy in [TraceRetention::Bounded(0), TraceRetention::Disabled] {
+            let mut d = story.start();
+            d.set_trace_retention(policy);
+            for _ in 0..total {
+                d.update(ms(1), &[]);
+            }
+            assert!(d.trace().steps.is_empty(), "{policy:?} kept steps");
+            assert_eq!(d.trace().dropped_steps(), total, "{policy:?} miscounted");
+            assert!(!d.trace().is_complete(), "{policy:?} claimed completeness");
+        }
+    }
+
+    #[test]
+    fn drain_trace_hands_off_steps_and_resets_live_buffer() {
+        // Ownership moves to the caller; the director runs on with a clean buffer.
+        let story = tactical_story();
+        let mut d = story.start();
+        for _ in 0..10 {
+            d.update(ms(1), &[]);
+        }
+        assert_eq!(d.trace().steps.len(), 10);
+
+        let drained = d.drain_trace();
+        assert_eq!(drained.steps.len(), 10);
+        assert!(
+            drained.is_complete(),
+            "drained trace kept every step it saw"
+        );
+        // Live buffer holds no steps but stays HONEST about the drained prefix:
+        // it no longer represents this director's full history, so it is not complete.
+        assert!(d.trace().steps.is_empty());
+        assert_eq!(d.trace().dropped_steps(), 10);
+        // The start beat "tactical" (recorded at genesis; a 10ms window sees no
+        // transition) is the only beat record, and drain carries it forward too.
+        assert_eq!(d.trace().dropped_beats(), 1);
+        assert!(!d.trace().is_complete());
+        // The director keeps running; new steps land in the buffer.
+        d.update(ms(1), &[]);
+        assert_eq!(d.trace().steps.len(), 1);
+        assert!(!d.trace().is_complete(), "drained prefix stays gone");
+        // Retention policy survives the drain.
+        assert_eq!(d.trace_retention(), TraceRetention::All);
+    }
+
+    // -----------------------------------------------------------------------
+    // Hostile retention inputs and beat-log bounding (issue #10, A1/A2/A5).
+    // -----------------------------------------------------------------------
+
+    /// A ping-pong story: two beats, each auto-transitioning to the other every
+    /// update (`After(0)`, no `min_duration`). Exactly one transition — hence
+    /// one entered-beat record — per update: the worst case for beat-log growth.
+    fn ping_pong_story() -> Story {
+        Story::new("ping")
+            .beat(Beat::new("ping").after(Duration::ZERO, "pong"))
+            .beat(Beat::new("pong").after(Duration::ZERO, "ping"))
+    }
+
+    #[test]
+    fn retention_bounded_huge_cap_never_overflows_or_inverts() {
+        // A1: a hostile cap must not panic (debug) or wrap (release) computing
+        // the 2*cap threshold, and must not silently invert into eviction. Push
+        // a handful of steps under absurd caps; assert everything is retained.
+        let story = tactical_story();
+        for cap in [usize::MAX, usize::MAX / 2 + 1, usize::MAX - 1] {
+            let mut d = story.start();
+            d.set_trace_retention(TraceRetention::Bounded(cap));
+            for _ in 0..32 {
+                d.update(ms(1), &[]);
+            }
+            assert_eq!(
+                d.trace().steps.len(),
+                32,
+                "cap={cap} evicted under absurd cap"
+            );
+            assert_eq!(
+                d.trace().dropped_steps(),
+                0,
+                "cap={cap} dropped under absurd cap"
+            );
+            assert!(d.trace().is_complete(), "cap={cap} claimed incomplete");
+        }
+    }
+
+    #[test]
+    fn retention_all_keeps_full_beat_log() {
+        // A2: default All must retain every beat (preserved behaviour). A
+        // ping-pong transitions every update, so beats == start + one per update.
+        let story = ping_pong_story();
+        let mut d = story.start();
+        let total = 50;
+        for _ in 0..total {
+            d.update(ms(1), &[]);
+        }
+        assert_eq!(d.trace().beats.len(), total + 1);
+        assert_eq!(d.trace().dropped_beats(), 0);
+        assert!(d.trace().is_complete());
+    }
+
+    #[test]
+    fn retention_bounds_beat_log_not_just_steps() {
+        // A2: the beat log is retained history too. Under a bounded policy a
+        // ping-pong story must bound BOTH logs and stay honest via dropped_beats.
+        let story = ping_pong_story();
+        let mut d = story.start();
+        let cap = 8;
+        d.set_trace_retention(TraceRetention::Bounded(cap));
+        let total = 200;
+        for _ in 0..total {
+            d.update(ms(1), &[]);
+        }
+        assert!(d.trace().steps.len() <= 2 * cap, "step log unbounded");
+        assert!(d.trace().beats.len() <= 2 * cap, "beat log unbounded");
+        assert!(d.trace().dropped_steps() > 0);
+        assert!(d.trace().dropped_beats() > 0);
+        assert!(!d.trace().is_complete());
+        // Conservation: the start beat plus one transition per update is either
+        // still retained or counted as a beat drop — nothing vanishes silently.
+        assert_eq!(
+            d.trace().beats.len() + d.trace().dropped_beats(),
+            total + 1,
+            "start beat + one transition per update"
+        );
+    }
+
+    #[test]
+    fn retention_policy_transitions_keep_honest_accounting() {
+        // A5: All -> Bounded -> All -> Disabled, asserting no false completeness
+        // and conserved step accounting across every switch.
+        let story = tactical_story();
+        let mut d = story.start();
+
+        // All: 20 steps, complete.
+        for _ in 0..20 {
+            d.update(ms(1), &[]);
+        }
+        assert!(d.trace().is_complete());
+        assert_eq!(d.trace().steps.len(), 20);
+
+        // All -> Bounded(small): trims on subsequent updates, flips incomplete.
+        d.set_trace_retention(TraceRetention::Bounded(4));
+        for _ in 0..20 {
+            d.update(ms(1), &[]);
+        }
+        assert!(
+            !d.trace().is_complete(),
+            "bounded eviction must show incomplete"
+        );
+        assert!(d.trace().steps.len() <= 8);
+        let dropped_after_bounded = d.trace().dropped_steps();
+        assert!(dropped_after_bounded > 0);
+
+        // Bounded -> All: stops evicting, but earlier drops are not forgotten.
+        d.set_trace_retention(TraceRetention::All);
+        for _ in 0..5 {
+            d.update(ms(1), &[]);
+        }
+        assert!(
+            !d.trace().is_complete(),
+            "prior drops must persist across ->All"
+        );
+        assert_eq!(
+            d.trace().dropped_steps(),
+            dropped_after_bounded,
+            "All must not drop"
+        );
+
+        // All -> Disabled: keeps nothing new, counts everything past.
+        d.set_trace_retention(TraceRetention::Disabled);
+        let len_before = d.trace().steps.len();
+        let drop_before = d.trace().dropped_steps();
+        for _ in 0..10 {
+            d.update(ms(1), &[]);
+        }
+        assert_eq!(d.trace().steps.len(), len_before, "disabled kept a step");
+        assert_eq!(d.trace().dropped_steps(), drop_before + 10);
+    }
+
+    #[test]
+    fn drain_under_bounded_carries_both_shed_counts() {
+        // A5: draining an already-incomplete bounded trace hands off the retained
+        // window and leaves the live buffer honestly incomplete for steps AND beats.
+        let story = ping_pong_story();
+        let mut d = story.start();
+        d.set_trace_retention(TraceRetention::Bounded(4));
+        for _ in 0..50 {
+            d.update(ms(1), &[]);
+        }
+        assert!(!d.trace().is_complete());
+
+        let drained = d.drain_trace();
+        assert!(
+            !drained.is_complete(),
+            "a bounded window was already incomplete"
+        );
+        assert!(drained.dropped_steps() > 0 || drained.dropped_beats() > 0);
+
+        // Live buffer: empty logs, but carries the drained prefix forward.
+        assert!(d.trace().steps.is_empty());
+        assert!(d.trace().beats.is_empty());
+        assert!(d.trace().dropped_steps() > 0);
+        assert!(d.trace().dropped_beats() > 0);
+        assert!(!d.trace().is_complete());
     }
 }

@@ -34,6 +34,15 @@ concepts; it does not claim universal UI expressivity or stable APIs.
 The [Event Pressure Lab](docs/EVENT_PRESSURE_LAB.md) traces real PTY input, resize,
 output pressure and delivery. Run `cargo run --release --example event_pressure_lab -- --auto`.
 Its diagnostic reproduces an upstream input stall; it does not claim the bug is fixed.
+The [Runtime Observatory](docs/RUNTIME_OBSERVATORY.md) is a restrained,
+mission-control-style diagnostic instrument for three specific runtime
+contracts: bounded `StoryTrace` retention (issue #10), the crossterm #1126
+input-starvation collision (issue #15), and the terminal-ownership lease
+(issue #11). Run `cargo run --release --example runtime_observatory -- --help`.
+It runs as a live interactive instrument (Million-Tick, Ownership-Duel,
+Restore-Failure, Endurance) and also renders one deterministic frame via `--dump`;
+it is a diagnostic aid, not a stability promise, and it does not claim any of
+those three issues are closed.
 Modern Scene/Story and software graphics APIs are experimental and Rust-only;
 the C ABI exposes the established UI/output subset.
 
@@ -115,7 +124,7 @@ ctx.commit_text("Finalized output text")?; // ctx.commit(...) is an alias
 
 The event-pressure collision-delivery acceptance is explicitly ignored and still fails when run; the diagnostic tests detect the upstream bug rather than certify its repair.
 
-Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently passes **591 tests**: 226 library unit tests and 365 integration tests (across `event_pressure_pty`, `event_pressure_trace`, `event_pressure_visual`, `geometry_diff_contract`, `cinematic_paths`, `intro_cinema`, `intro_pty`, `acid_architecture`, `acid_presentation`, `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
+Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently passes **612 tests**: 236 library unit tests and 376 integration tests (across `event_pressure_pty`, `event_pressure_trace`, `event_pressure_visual`, `geometry_diff_contract`, `cinematic_paths`, `intro_cinema`, `intro_pty`, `acid_architecture`, `acid_presentation`, `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, `whole_renderer_vt100`, `terminal_ownership`, and `runtime_observatory_live`).
 
 `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings pass local Linux vet/build/example smoke**; no Go unit tests exist and public Go 1.27.1 smoke also passes. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
 
@@ -147,7 +156,7 @@ Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repos
 - **Clean Plain-Text Degradation** (TESTED): Detects redirected output and suppresses interactive escapes while emitting clean plain text with zero escape sequences. The internal ANSI stripper is for engine-generated output only, **not** a sanitizer for untrusted input.
 - **Language-Neutral Rich Text ABI** (TESTED for C/C++/Python; Go compiles, rich-text runtime coverage pending): Opaque `gibson_line_t` / `gibson_rich_text_t` with span/align builders. No wrapping logic is duplicated outside Rust.
 - **Versioned C ABI** (TESTED): `GIBSON_ABI_VERSION = 1`, `gibson_abi_version()`, `gibson_stats_init()`. Enum-like inputs cross as raw `int32` and are validated. `gibson_get_stats` validates the ABI version and refuses an undersized buffer instead of overflowing it.
-- **Safe Terminal Lifecycle** (TESTED): RAII guard plus a global panic hook restore raw mode, cursor visibility, alternate buffer, and bracketed paste on normal exit, error, or Rust panic. Interactive demo Ctrl-C is handled as a raw-mode key event; see limitations.
+- **Safe Terminal Lifecycle** (TESTED): the RAII guard restores raw mode, cursor visibility, alternate buffer, and bracketed paste on normal exit and on error. LibGibson's installed panic hook adds best-effort restoration for an unhandled panic **on the terminal-owning thread**; a recoverable panic on a *non-owner* worker thread deliberately does **not** tear down the owner's terminal (panic restoration is owner-thread-scoped), and a pre-existing host panic hook is chained. Interactive demo Ctrl-C is handled as a raw-mode key event; see limitations.
 - **Bounded 2D line clipping** (TESTED): `clip_line_to_bounds` runs Liang–Barsky before Bresenham in both sub-cell canvases, so a finite near-camera projection with coordinates in the tens of millions draws only its visible portion instead of walking millions of steps, and near-`i32`-extreme endpoints cannot overflow. Hostile regression tests in `src/canvas.rs`.
 - **Honest damage accounting** (TESTED): `SurfaceDiff` exposes `exact_changed_cell_count` (a true per-cell state delta) and `affected_cell_count` (cells *addressed* by update semantics — explicit runs ∪ erase-to-EOL ∪ cleared rows, which may exceed the live area when rows are removed). The earlier over-strong "every visible cell whose state changes" wording is corrected.
 - **Scene Algebra** (TESTED, EXPERIMENTAL, Rust-only): `Scene`/`SceneEntity`/`SceneId`/`TagId` wrap ordinary `Node`s with identity; `Effect` provides `identity`, `sequence` (composition) and `parallel` (monoidal product) over presentation channels. `Scene::to_node` is the `Render : SCENE → UI` functor — it emits ordinary nodes through the existing pipeline, and moving one entity produces a bounded framebuffer diff rather than a whole-screen repaint.
@@ -379,7 +388,7 @@ library: `DUMP_ACID_RGB=/tmp/acid-rgb cargo test --test acid_graphics`.
 # Build library and release artifacts (.so, .a)
 cargo build --release
 
-# Run the full test suite (591 passed: 226 unit + 365 integration; one known-red acceptance ignored)
+# Run the full test suite (612 passed: 236 unit + 376 integration; one known-red acceptance ignored)
 cargo test
 
 # Static analysis and formatting checks
@@ -482,7 +491,7 @@ The [Go cgo wrapper](bindings/go/README.md) now has a module and runnable comman
 - **Go bindings**: local Linux vet/build/example smoke passed with Go 1.18 (gccgo 14.2). `go test ./...` compiles packages but reports no test files. Public Go 1.27.1 CI smoke also passes; other platforms remain **UNVERIFIED**.
 - **Terminal capability negotiation**: **NOT implemented**. The fast insertion path assumes `CSI L` support; this is not probed at runtime. On a terminal without it, or when the anchor is untrustworthy or space is insufficient, the always-correct `RepaintFallback` is used.
 - **Absolute cursor anchoring**: **NOT implemented**. Resize re-anchoring is a best-effort erase-from-cursor-down rebuild, not an absolute DSR query.
-- **Signals**: RAII and the panic hook restore terminal state on normal exit, errors, and Rust panics. Interactive demos handle Ctrl-C as a raw-mode key event. Hard `SIGKILL` (`kill -9`) cannot be intercepted by any userland process; this is an operating-system boundary.
+- **Signals**: the RAII guard restores terminal state on normal exit and on errors; the installed panic hook adds best-effort restoration for an unhandled panic **on the terminal-owning thread** (a panic on a *non-owner* worker thread does not restore the owner's terminal). Interactive demos handle Ctrl-C as a raw-mode key event. Hard `SIGKILL` (`kill -9`) cannot be intercepted by any userland process; this is an operating-system boundary.
 
 ---
 

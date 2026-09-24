@@ -25,6 +25,10 @@ cinematic branch was subsequently merged through PR #1 at main `0b673cc`.
 
 | Event pressure / upstream isolation | [Event Pressure Lab](EVENT_PRESSURE_LAB.md) | Raw/Crossterm/Context controls, actual epoll witness, scratch causal contrast, bounded visual replay and repeated matrix | Upstream cause isolated; no production fix; #15 acceptance remains red. |
 
+| Crossterm #1126 fix analysis | [Fix analysis](CROSSTERM_1126_FIX_ANALYSIS.md) | Corroborated defect (early-return over a shared mio readiness batch), the drain-fix's blocking-fd hang reproduced by strace, two proposed fix shapes (A: single-read discipline, B: non-blocking fd) | Shape A fix implemented and independently verified in an isolated crossterm 0.29.0 clone (stock reproduces the stall, the fix delivers both events with no hang); staged with a ready upstream PR body but NOT filed, NOT vendored, no `[patch.crates-io]`; #15 remains open. |
+
+| Runtime Observatory / live + `--dump` | [Runtime Observatory](RUNTIME_OBSERVATORY.md) | Live interactive loop over real session machinery: Million-Tick (All-vs-Bounded `StoryDirector`, #10), Ownership-Duel and Restore-Failure (run a real `terminal_ownership_probe` child under a PTY, #11), Endurance (bounded soak); plus deterministic `--dump` frames (Million-Tick/Ghost-Key/Ownership-Duel replaying real fixtures, #10/#15/#11); shared bounded diagnostic log and `?`-for-unobserved epistemic rule; PTY smoke tests | Both live and `--dump` exist; a live Ghost-Key and Slow-Terminal are not built (Event Pressure Lab provides the latter); does not close #10, #11 or #15; VmRSS/VmHWM are Linux `/proc`-specific; #11's `restore()` error path is now covered by a failing-write test. |
+
 Older visual FX, Scene Algebra and Story checkpoints live in [ROADMAP](../ROADMAP.md)
 and [DESIGN](../DESIGN.md), with executable regressions under `tests/`; there is
 no separate validation file to invent for them.

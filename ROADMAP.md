@@ -43,6 +43,44 @@ red collision-delivery acceptance. Local branch suite: 591 passed (226 unit + 36
 integration), one known-red acceptance ignored. D6/D7/D8 remain separate programs. The lab's
 finite output/latency observations are diagnostic evidence, not a long-session policy.
 
+## Runtime architecture megaround
+
+Branch `claude/runtime-architecture-megaround` / PR #19 turns three previously
+implicit runtime contracts into explicit, tested, and *observable* ones:
+
+- **#11 terminal ownership** — a process-global lease (Available/Owned/Restoring);
+  a second owner errors with `AlreadyExists`; `restore()` is one-shot, reports its
+  first error with best-effort completion, and releases the lease even on failure;
+  Drop stays best-effort. Round II: panic restoration is owner-thread-scoped, so a
+  recoverable non-owner worker panic no longer tears down the owner's terminal (a
+  real bug, proven on a PTY then fixed); the restore-failure path (fd → /dev/full)
+  and host-hook chaining are now tested. IMPLEMENTED + TESTED (7 PTY tests).
+  **Not closed**: awaits PR #19 merge + final audit.
+- **#10 trace retention** — measured (~40 B/tick, unbounded) then bounded:
+  `TraceRetention {All (default), Bounded(cap), Disabled}` + `drain_trace` with
+  honest `is_complete()`/`dropped_steps()`. Round II: the *beat* log is bounded
+  too (a ping-pong story leaked ~44 MiB of beats at 1M ticks, invisible to the
+  steps-only fix), `dropped_beats()` added, `Bounded(usize::MAX)` overflow fixed,
+  and the resource inventory is documented
+  ([`RESOURCE_OWNERSHIP.md`](docs/RESOURCE_OWNERSHIP.md)): Facts/Scene are
+  caller-owned domains, not engine leaks. Default `All` = no behavior change.
+  IMPLEMENTED + TESTED. **Not closed**: awaits PR #19 merge + final audit.
+- **#15 crossterm input starvation** — CORROBORATED, and the naive drain fix is
+  *proven to hang* on the blocking `VMIN=1` fd. Round II: the minimal Shape A fix
+  is implemented and independently verified in an isolated crossterm 0.29.0 clone
+  (stock reproduces the stall, the fix delivers both events with no hang), staged
+  with a ready upstream PR body but **NOT filed and NOT vendored**
+  ([`CROSSTERM_1126_FIX_ANALYSIS.md`](docs/CROSSTERM_1126_FIX_ANALYSIS.md)).
+  **Still open** — LibGibson still builds on unpatched crossterm 0.29.0.
+
+The [Runtime Observatory](docs/RUNTIME_OBSERVATORY.md) is now a live interactive
+instrument (Million-Tick, Ownership-Duel, Restore-Failure, Endurance) plus the
+deterministic `--dump` frames, rendering the contracts from real state. Full local
+suite: **612 passed (236 unit + 376 integration)**, 0 failed, 1 known-red ignored,
+on Rust 1.98.1; PR #19 public CI green. Next: decide the #15 fix disposition (file
+the staged upstream PR vs. narrow workaround vs. wait), and D6
+(MSRV/API-stability/installable packages) as the real 0.1 gate.
+
 ## Verification labels
 
 - **IMPLEMENTED + TESTED** — the code exists and is covered by automated tests in `cargo test`.
