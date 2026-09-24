@@ -344,3 +344,41 @@ fn narrow_shot_framing_changes_without_modifying_semantic_anchor() {
     finite(&narrow);
     finite(&wide);
 }
+
+#[test]
+fn animated_shot_damage_keeps_delta_footprint_and_wire_separate() {
+    for stage in ["first-breach", "trace", "climax"] {
+        let mut encounter = Encounter::new(stage, false);
+        let first = encounter.frame(160, 40);
+        encounter.update(Duration::from_millis(17), &[]);
+        let next = encounter.frame(160, 40);
+        let delta = compute_diff(
+            Some(&painted(first.clone(), 160, 40)),
+            &painted(next.clone(), 160, 40),
+        );
+        assert!(delta.exact_changed_cell_count() > 0);
+        assert!(delta.exact_changed_cell_count() <= delta.affected_cell_count());
+        let mut renderer = Renderer::new(RenderMode::Fullscreen);
+        let mut terminal = TerminalSession::headless(160, 40);
+        terminal.set_color_depth(gibson::ColorDepth::TrueColor);
+        let mut bytes = Vec::new();
+        renderer
+            .render(&mut first.clone(), &mut terminal, &mut bytes)
+            .unwrap();
+        bytes.clear();
+        let (_, _, wire, _, _) = renderer
+            .render(&mut next.clone(), &mut terminal, &mut bytes)
+            .unwrap();
+        assert!(wire > 0);
+        eprintln!(
+            "{stage} 17ms: exact={} affected={} wire={wire}",
+            delta.exact_changed_cell_count(),
+            delta.affected_cell_count()
+        );
+        bytes.clear();
+        let (_, _, frozen, _, _) = renderer
+            .render(&mut next.clone(), &mut terminal, &mut bytes)
+            .unwrap();
+        assert_eq!(frozen, 0);
+    }
+}

@@ -916,3 +916,159 @@ fn fx_lab_deterministic_filled_3d_accepts_ctrl_c() {
     s.write(b"\x03");
     s.assert_clean_exit(Duration::from_secs(2));
 }
+
+#[test]
+fn acid_cinematic_shortcuts_preserve_typed_input_and_change_world() {
+    for (key, receipt) in [
+        ("T", "TRACE / return pulse / awareness rises"),
+        ("I", "ISOLATE ROUTE / telemetry lost"),
+        ("D", "DECOY / mirror attached to FILES"),
+    ] {
+        let mut s = Session::spawn(
+            "acid_vs_crash",
+            &[
+                "--manual",
+                "--stage=first-breach",
+                "--deterministic",
+                "--freeze-at=0",
+                "--color=truecolor",
+            ],
+            120,
+            32,
+        );
+        let ready = s.wait_until(Duration::from_secs(3), |screen| screen.contains("crash >"));
+        assert!(
+            ready.contains("T TRACE") && ready.contains("D DECOY"),
+            "cinematic affordances absent: {ready}"
+        );
+        assert!(
+            !ready.contains("LOCAL FABRIC"),
+            "default restored legacy dashboard: {ready}"
+        );
+        assert_unicode_rgb_graphics(&s.raw_string());
+
+        // A shortcut only fires in an empty command buffer. Uppercase text in
+        // an existing command must remain ordinary editable TextInput content.
+        s.type_str(&format!("x{key}"));
+        let typed = s.wait_until(Duration::from_secs(2), |screen| {
+            screen.contains(&format!("crash > x{key}"))
+        });
+        assert!(
+            typed.contains(&format!("crash > x{key}")),
+            "shortcut consumed typed text: {typed}"
+        );
+        assert!(
+            !typed.contains(receipt),
+            "typing changed the world: {typed}"
+        );
+        s.write(b"\x7f\x7f");
+        s.type_str(key);
+        let acted = s.wait_until(Duration::from_secs(2), |screen| screen.contains(receipt));
+        assert!(
+            acted.contains(receipt),
+            "{key} failed without Enter: {acted}"
+        );
+        assert!(acted.contains("crash >"));
+        s.type_str("replay\r");
+        let replay = s.wait_until(Duration::from_secs(2), |screen| {
+            screen.contains("REPLAY VERIFIED")
+        });
+        assert!(
+            replay.contains("REPLAY VERIFIED"),
+            "shortcut world/visual replay diverged: {replay}"
+        );
+        s.write(b"\x03");
+        s.assert_clean_exit(Duration::from_secs(2));
+    }
+}
+
+#[test]
+fn acid_cinematic_final_numeric_shortcut_resolves_and_esc_restores() {
+    let mut s = Session::spawn(
+        "acid_vs_crash",
+        &[
+            "--manual",
+            "--stage=climax",
+            "--deterministic",
+            "--freeze-at=0",
+            "--color=truecolor",
+        ],
+        80,
+        24,
+    );
+    let ready = s.wait_until(Duration::from_secs(3), |screen| {
+        screen.contains("1 CUT LINK")
+    });
+    assert!(
+        ready.contains("1 CUT LINK") && ready.contains("4 LET HER IN"),
+        "final shortcuts absent: {ready}"
+    );
+    assert_unicode_rgb_graphics(&s.raw_string());
+    s.type_str("1");
+    let ended = s.wait_until(Duration::from_secs(2), |screen| {
+        screen.contains("CRASH CONTAINS")
+    });
+    assert!(
+        ended.contains("CRASH CONTAINS"),
+        "numeric final move did not resolve: {ended}"
+    );
+    s.type_str("replay\r");
+    let replay = s.wait_until(Duration::from_secs(2), |screen| {
+        screen.contains("REPLAY VERIFIED")
+    });
+    assert!(
+        replay.contains("REPLAY VERIFIED"),
+        "final shortcut replay failed: {replay}"
+    );
+    s.write(b"\x1b");
+    s.assert_clean_exit(Duration::from_secs(2));
+}
+
+#[test]
+fn acid_cinematic_default_crash_fights_and_accepts_typed_intervention() {
+    let mut s = Session::spawn(
+        "acid_vs_crash",
+        &[
+            "--stage=route-contested",
+            "--deterministic",
+            "--speed=2",
+            "--color=truecolor",
+        ],
+        120,
+        32,
+    );
+    let fought = s.wait_until(Duration::from_secs(3), |screen| {
+        screen.contains("TRACE 28%")
+    });
+    assert!(
+        fought.contains("TRACE 28%"),
+        "default cinematic Crash never defended: {fought}"
+    );
+    assert_unicode_rgb_graphics(&s.raw_string());
+    s.type_str("exit\r");
+    s.assert_clean_exit(Duration::from_secs(2));
+}
+
+#[test]
+fn acid_cinematic_auto_completes_full_story_and_restores_terminal() {
+    let mut s = Session::spawn(
+        "acid_vs_crash",
+        &[
+            "--auto",
+            "--deterministic",
+            "--speed=100",
+            "--color=truecolor",
+        ],
+        120,
+        32,
+    );
+    let ending = s.wait_until(Duration::from_secs(8), |screen| {
+        screen.contains("CRASH CONTAINS")
+    });
+    assert!(
+        ending.contains("CRASH CONTAINS"),
+        "cinematic auto never resolved: {ending}"
+    );
+    assert_unicode_rgb_graphics(&s.raw_string());
+    s.assert_clean_exit(Duration::from_secs(3));
+}

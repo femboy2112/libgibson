@@ -317,8 +317,9 @@ impl Drop for PtyHarness {
 
 #[test]
 fn acid_graphical_and_feedback_resize_torture_restores_terminal() {
-    // Actual moving rasters, not only frozen snapshots. Reassembly uses auto
-    // cinematography; forcing cyber would deliberately prevent return to UI.
+    // Actual moving rasters, not only frozen snapshots. The ending uses the
+    // default shot director and returns to its compact postmortem, while the
+    // explicit cyber cases retain coverage of the historical RGB projection.
     let cases: [(&str, &[&str], &str); 4] = [
         (
             "acid_vs_crash",
@@ -406,8 +407,8 @@ fn acid_graphical_and_feedback_resize_torture_restores_terminal() {
         }
         if args.contains(&"--stage=crash-win") {
             assert!(
-                h.wait_screen("LOCAL FABRIC", Duration::from_secs(2)),
-                "ending never reconstructed the machine UI: {}",
+                h.wait_screen("SYSTEM SCARS", Duration::from_secs(2)),
+                "ending never revealed the cinematic postmortem: {}",
                 h.screen()
             );
         }
@@ -442,6 +443,83 @@ fn acid_graphical_and_feedback_resize_torture_restores_terminal() {
                 h.master.get_termios().map(|t| format!("{t:?}")),
                 Some(initial.clone()),
                 "raw terminal state not restored"
+            );
+        }
+    }
+}
+
+#[test]
+fn acid_cinematic_shots_resize_without_losing_input_or_terminal_state() {
+    for stage in [
+        "first-breach",
+        "trace",
+        "display-intrusion",
+        "climax",
+        "crash-win",
+        "acid-win",
+        "stalemate",
+    ] {
+        let stage_arg = format!("--stage={stage}");
+        let mut h = PtyHarness::spawn_demo(
+            "acid_vs_crash",
+            &[
+                "--manual",
+                "--deterministic",
+                "--color=truecolor",
+                &stage_arg,
+            ],
+            120,
+            32,
+        );
+        assert!(
+            h.wait_screen("crash >", Duration::from_secs(3)),
+            "{stage} never rendered: {}",
+            h.screen()
+        );
+        let mut typed = String::new();
+        for (cols, rows) in [(56, 24), (80, 24), (160, 40), (120, 32)] {
+            h.resize(cols, rows);
+            std::thread::sleep(Duration::from_millis(60));
+            // Lowercase input is ordinary text even in final/ending shots.
+            typed.push('r');
+            h.send("r");
+            assert!(
+                h.wait_screen(&format!("crash > {typed}"), Duration::from_secs(2)),
+                "{stage} input lost at {cols}x{rows}: {}",
+                h.screen()
+            );
+            let screen = h.screen();
+            assert!(
+                !screen.contains("LOCAL FABRIC"),
+                "{stage} reverted to dashboard at {cols}x{rows}"
+            );
+            assert!(screen.lines().count() <= usize::from(rows));
+        }
+        let raw = String::from_utf8_lossy(&h.raw()).into_owned();
+        assert!(
+            raw.contains('▀') && raw.contains("38;2;") && raw.contains("48;2;"),
+            "{stage} did not exercise RGB cells"
+        );
+        assert!(!raw.contains("\x1b_G") && !raw.contains("\x1bP") && !raw.contains("1337;File="));
+        h.send("\x03");
+        assert!(
+            h.wait_exit(Duration::from_secs(2)),
+            "{stage} did not exit cleanly"
+        );
+        assert!(h.wait_raw("\x1b[?1049l", Duration::from_secs(1)));
+        assert!(h.wait_raw(
+            "\x1b[0m\x1b[?2026l\x1b[?7h\x1b[?25h",
+            Duration::from_secs(1)
+        ));
+        h.pump();
+        assert!(!h.parser.screen().alternate_screen());
+        assert!(!h.parser.screen().hide_cursor());
+        #[cfg(unix)]
+        if let Some(initial) = &h.initial_termios {
+            assert_eq!(
+                h.master.get_termios().map(|t| format!("{t:?}")),
+                Some(initial.clone()),
+                "{stage} raw mode not restored"
             );
         }
     }
