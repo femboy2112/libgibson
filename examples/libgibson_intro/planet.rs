@@ -4,6 +4,7 @@
 use super::identity::IDENTITIES;
 use gibson::geom::Vec3;
 use gibson::raster::{Rgb, RgbRaster};
+use gibson::raster3d::Camera;
 use gibson::raster_fx::RasterFx;
 use std::f32::consts::{PI, TAU};
 
@@ -36,30 +37,145 @@ fn safe_time(t: f32) -> f32 {
     }
 }
 
+// City coordinates are a tangent frame at the geographic beacon. Earth is
+// hundreds of city units across; zooming out changes only the perspective pose.
+const RADIUS: f32 = 600.;
+const CENTER: Vec3 = Vec3 {
+    x: 0.,
+    y: -RADIUS,
+    z: 4.,
+};
+
+/// One perspective pullback, shared by the city, spherical ground, routes and
+/// atmosphere. After orbital altitude is reached the globe turns under the
+/// camera: transport the camera into the body's rotating coordinate frame.
+pub fn camera(width: u16, height: u16, seconds: f32) -> Camera {
+    let seconds = safe_time(seconds);
+    let t = smooth((seconds - 56.) / 7.);
+    let start = Vec3::new(6., 35., -34.);
+    let initial = start.minus(CENTER);
+    let altitude = (initial.length() - RADIUS) * (1450. / (initial.length() - RADIUS)).powf(t);
+    let direction = initial
+        .normalize()
+        .scale(1. - t)
+        .plus(Vec3::new(0., 0.68, -0.7332121).scale(t))
+        .normalize();
+    let position = CENTER.plus(direction.scale(RADIUS + altitude));
+    let target = Vec3::new(0., 0., 4.).scale(1. - t).plus(
+        CENTER
+            .plus(Vec3::new(0., 0.7332121, 0.68).scale(RADIUS * 0.36))
+            .scale(t),
+    );
+    let spin =
+        ((seconds - 60.).max(0.).powi(2) / ((seconds - 60.).max(0.) + 2.)) * 8.0f32.to_radians();
+    let axis = local(geo(90., 0.));
+    // Rodrigues rotation about the Earth's axis. The same rigid transform is
+    // used for camera position, look target and up, so projected geometry agrees.
+    let rotate = |p: Vec3| {
+        p.scale(spin.cos())
+            .plus(axis.cross(p).scale(spin.sin()))
+            .plus(axis.scale(axis.dot(p) * (1. - spin.cos())))
+    };
+    Camera {
+        position: CENTER.plus(rotate(position.minus(CENTER))),
+        target: CENTER.plus(rotate(target.minus(CENTER))),
+        up: rotate(Vec3::new(0., 1., 0.)),
+        fov_y: 0.91
+            + if width < height.saturating_mul(3) {
+                0.18
+            } else {
+                0.
+            },
+        far: 6000.,
+        ..Camera::default()
+    }
+}
+
+// Geographic unit vectors <-> the city's east / up / north tangent frame.
+fn local(p: Vec3) -> Vec3 {
+    let east = Vec3::new(8f32.to_radians().cos(), 0., -8f32.to_radians().sin());
+    let north = geo(48., 8.).cross(east);
+    Vec3::new(p.dot(east), p.dot(geo(48., 8.)), p.dot(north))
+}
+fn geographic(p: Vec3) -> Vec3 {
+    let east = Vec3::new(8f32.to_radians().cos(), 0., -8f32.to_radians().sin());
+    let up = geo(48., 8.);
+    east.scale(p.x)
+        .plus(up.scale(p.y))
+        .plus(up.cross(east).scale(p.z))
+}
+
 #[derive(Clone, Copy)]
 struct Globe {
-    x: f32,
-    y: f32,
-    radius: f32,
-    rotation: f32,
+    camera: Camera,
+    width: u16,
+    height: u16,
+    forward: Vec3,
+    right: Vec3,
+    up: Vec3,
+    focal: f32,
 }
 impl Globe {
     fn at(width: u16, height: u16, seconds: f32) -> Self {
-        let h = height as f32 * 2.;
-        let settle = smooth((seconds - 56.) / 7.);
-        let final_radius = if width < 74 { 0.305 } else { 0.34 };
+        let camera = if seconds < 56. {
+            super::world::camera(seconds, width, height)
+        } else {
+            camera(width, height, seconds)
+        };
+        let forward = camera.target.minus(camera.position).normalize();
+        let right = camera.up.cross(forward).normalize();
+        let up = forward.cross(right);
         Self {
-            x: width as f32 * 0.5,
-            y: h * (0.46 + 0.17 * settle),
-            radius: h * (0.83 + (final_radius - 0.83) * settle),
-            rotation: (30. - (seconds - 60.) * 1.8).to_radians(),
+            camera,
+            width,
+            height: height.saturating_mul(2),
+            forward,
+            right,
+            up,
+            focal: height as f32 / (camera.fov_y * 0.5).tan(),
         }
     }
+    fn ray(self, x: f32, y: f32) -> Vec3 {
+        self.forward
+            .plus(self.right.scale((x - self.width as f32 * 0.5) / self.focal))
+            .plus(self.up.scale((self.height as f32 * 0.5 - y) / self.focal))
+            .normalize()
+    }
+    fn hit(self, ray: Vec3) -> Option<Vec3> {
+        // f64 discriminant prevents cancellation close to the surface.
+        let o = self.camera.position.minus(CENTER);
+        let b = f64::from(o.x) * f64::from(ray.x)
+            + f64::from(o.y) * f64::from(ray.y)
+            + f64::from(o.z) * f64::from(ray.z);
+        let c = f64::from(o.x).powi(2) + f64::from(o.y).powi(2) + f64::from(o.z).powi(2)
+            - f64::from(RADIUS).powi(2);
+        let discriminant = b * b - c;
+        if discriminant < 0. {
+            return None;
+        }
+        let distance = -b - discriminant.sqrt();
+        (distance > 0.).then(|| o.plus(ray.scale(distance as f32)).normalize())
+    }
     fn project(self, p: Vec3) -> (f32, f32, f32) {
-        let (s, c) = self.rotation.sin_cos();
-        let x = p.x * c + p.z * s;
-        let z = p.z * c - p.x * s;
-        (self.x + self.radius * x, self.y - self.radius * p.y, z)
+        let world = CENTER.plus(local(p).scale(RADIUS));
+        let offset = world.minus(self.camera.position);
+        let depth = offset.dot(self.forward);
+        // The rotating network can pass close to the camera during ascent.
+        // Respect the near plane before division, just as the city rasterizer does.
+        if depth < self.camera.near {
+            return (0., 0., -1.);
+        }
+        let x = self.width as f32 * 0.5 + self.focal * offset.dot(self.right) / depth;
+        let y = self.height as f32 * 0.5 - self.focal * offset.dot(self.up) / depth;
+        let visible = self.hit(offset.normalize()).is_none_or(|normal| {
+            CENTER
+                .plus(normal.scale(RADIUS))
+                .minus(self.camera.position)
+                .length()
+                + 0.5
+                >= offset.length()
+        });
+        (x, y, if visible { 1. } else { -1. })
     }
 }
 fn geo(latitude: f32, longitude: f32) -> Vec3 {
@@ -231,8 +347,7 @@ fn network(raster: &mut RgbRaster, globe: Globe, seconds: f32) {
         for step in 0..=80 {
             let phase = step as f32 / 80.;
             let (x, y, z) = globe.project(arc_point(index, phase));
-            let outside = (x - globe.x).powi(2) + (y - globe.y).powi(2) > globe.radius.powi(2);
-            let visible = z > 0. || outside;
+            let visible = z > 0.;
             let pattern = match index {
                 1 => step % 9 < 6,
                 2 => step % 5 != 0,
@@ -270,7 +385,10 @@ fn network(raster: &mut RgbRaster, globe: Globe, seconds: f32) {
             mark(raster, x, y, index, shade(identity.accent, reveal * 0.65));
         }
     }
-    let (x, y, _) = globe.project(geo(48., 8.));
+    let (x, y, visible) = globe.project(geo(48., 8.));
+    if visible <= 0. {
+        return;
+    }
     let pulse = (seconds * 0.7).sin() * 0.5 + 0.5;
     let mut previous = None;
     for step in 0..36 {
@@ -309,21 +427,23 @@ pub fn raster(width: u16, height: u16, seconds: f32) -> RgbRaster {
         return raster;
     }
     let globe = Globe::at(width, height, seconds);
-    let rotation = globe.rotation.to_degrees();
+    let sunlight = globe
+        .right
+        .scale(-0.70)
+        .plus(globe.up.scale(0.40))
+        .plus(globe.forward.scale(-0.58))
+        .normalize();
     for y in 0..raster.height() {
         for x in 0..raster.width() {
-            let px = (x as f32 + 0.5 - globe.x) / globe.radius;
-            let py = (globe.y - y as f32 - 0.5) / globe.radius;
-            let d = px * px + py * py;
-            let color = if d < 1. {
-                let z = (1. - d).sqrt();
-                let latitude = py.asin().to_degrees();
-                let longitude =
-                    (px.atan2(z).to_degrees() - rotation + 180.).rem_euclid(360.) - 180.;
+            let ray = globe.ray(x as f32 + 0.5, y as f32 + 0.5);
+            let color = if let Some(normal) = globe.hit(ray) {
+                let geographical = geographic(normal);
+                let latitude = geographical.y.clamp(-1., 1.).asin().to_degrees();
+                let longitude = geographical.x.atan2(geographical.z).to_degrees();
                 let land = LAND
                     .iter()
                     .any(|polygon| inside(longitude, latitude, polygon));
-                let light = (-px * 0.70 + py * 0.40 + z * 0.58).max(0.);
+                let light = normal.dot(sunlight).max(0.);
                 let relief = 0.91 + 0.09 * (longitude * 0.23 + latitude * 0.41).sin();
                 let base = if land { (24, 128, 120) } else { (9, 52, 115) };
                 let mut c = shade(base, 0.12 + light * 1.13 * relief);
@@ -347,7 +467,7 @@ pub fn raster(width: u16, height: u16, seconds: f32) -> RgbRaster {
                 let lat_grid = latitude.rem_euclid(15.).min(15. - latitude.rem_euclid(15.));
                 let grid = (1. - lon_grid.min(lat_grid) / 0.55).clamp(0., 1.);
                 c = add(c, shade((29, 62, 78), grid * (0.24 + light * 0.3)));
-                let atmosphere = (1. - z).powi(4);
+                let atmosphere = (1. - normal.dot(ray.scale(-1.)).max(0.)).powi(4);
                 c = add(c, shade((46, 147, 207), atmosphere * (0.52 + light * 0.48)));
                 // City lights are locked to longitude/latitude, never screen pixels.
                 let gx = ((longitude + 180.) * 1.6).floor() as u32;
@@ -356,9 +476,14 @@ pub fn raster(width: u16, height: u16, seconds: f32) -> RgbRaster {
                 if land && light < 0.42 && hash % 47 < 2 {
                     c = add(c, shade((183, 157, 89), 1. - light));
                 }
-                c
+                // Near the city the surface reads as a dark circuit substrate;
+                // altitude reveals its geography without exchanging framebuffers.
+                shade(c, 0.16 + 0.84 * smooth((seconds - 53.) / 6.))
             } else {
-                let distance = (d.sqrt() - 1.) * globe.radius;
+                let offset = globe.camera.position.minus(CENTER);
+                let along = -offset.dot(ray);
+                let closest = offset.plus(ray.scale(along.max(0.))).length();
+                let distance = ((closest - RADIUS) * globe.focal / offset.length()).max(0.);
                 let outer = (-distance * 0.60).exp();
                 let inner = (-distance * 2.0).exp();
                 let mut c = add((2, 4, 12), shade((15, 49, 98), outer));
@@ -376,28 +501,45 @@ pub fn raster(width: u16, height: u16, seconds: f32) -> RgbRaster {
             raster.set(i32::from(x), i32::from(y), color);
         }
     }
-    network(&mut raster, globe, seconds);
-    // One tilted orbital rail frames the planet rather than a Saturn-like stack.
-    let orbit_reveal = smooth((seconds - 60.) / 3.);
-    let mut previous_orbit_pixel = None;
-    for step in 0..240 {
-        let a = step as f32 / 240. * TAU;
-        let x = globe.x + globe.radius * 1.24 * a.cos();
-        let y = globe.y + globe.radius * (0.22 * a.sin() + 0.28 * a.cos());
-        let back = a.sin() < 0.;
-        let outside = (x - globe.x).powi(2) + (y - globe.y).powi(2) > globe.radius.powi(2);
-        let pixel = (x.round() as i32, y.round() as i32);
-        if (!back || outside) && previous_orbit_pixel != Some(pixel) {
-            previous_orbit_pixel = Some(pixel);
-            light(
-                &mut raster,
-                x as i32,
-                y as i32,
+    // The atmospheric horizon develops out of the existing dark circuit floor
+    // at ascent entry. Every sample is already the same perspective sphere.
+    let emergence = smooth((seconds - 53.) / 2.);
+    if emergence < 1. {
+        for pixel in raster.pixels_mut() {
+            *pixel = add(
+                (2, 4, 12),
                 shade(
-                    (75, 147, 191),
-                    orbit_reveal * if back { 0.22 } else { 0.46 },
+                    (
+                        pixel.0.saturating_sub(2),
+                        pixel.1.saturating_sub(4),
+                        pixel.2.saturating_sub(12),
+                    ),
+                    emergence,
                 ),
             );
+        }
+    }
+    network(&mut raster, globe, seconds);
+    // A spatial orbit passes behind the globe, with actual ray/sphere occlusion.
+    let orbit_reveal = smooth((seconds - 60.) / 3.);
+    let mut previous = None;
+    for step in 0..=240 {
+        let a = step as f32 / 240. * TAU;
+        let p = Vec3::new(a.cos(), a.sin() * 0.25, a.sin() * 0.968246).scale(1.24);
+        let (x, y, visible) = globe.project(p);
+        let point = (x.round() as i32, y.round() as i32);
+        if visible > 0. {
+            if let Some(old) = previous {
+                light_line(
+                    &mut raster,
+                    old,
+                    point,
+                    shade((75, 147, 191), orbit_reveal * 0.46),
+                );
+            }
+            previous = Some(point);
+        } else {
+            previous = None;
         }
     }
     RasterFx::apply_chain(
@@ -415,6 +557,72 @@ pub fn raster(width: u16, height: u16, seconds: f32) -> RgbRaster {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn city_site_and_spherical_ground_share_perspective_rays() {
+        for (w, h) in [(56, 24), (120, 32), (160, 40)] {
+            for seconds in [53., 55.9, 56., 58., 60., 63.] {
+                let globe = Globe::at(w, h, seconds);
+                let (x, y, visible) = globe.project(geo(48., 8.));
+                assert!(visible > 0.);
+                let city = globe
+                    .camera
+                    .project(Vec3::new(0., 0., 4.), w, h * 2)
+                    .unwrap();
+                assert!((x - city.0).abs() < 0.001 && (y - city.1).abs() < 0.001);
+                let normal = globe.hit(globe.ray(x, y)).unwrap();
+                assert!(normal.minus(Vec3::new(0., 1., 0.)).length() < 0.0001);
+            }
+            // Genuine perspective scale: moving away reduces projected city
+            // extent, rather than resampling a frame captured at an earlier time.
+            let mut previous = f32::INFINITY;
+            for seconds in [56., 57., 58., 59., 60., 61., 62., 63.] {
+                let camera = camera(w, h, seconds);
+                let left = camera.project(Vec3::new(-7., 0., 4.), w, h * 2).unwrap();
+                let right = camera.project(Vec3::new(7., 0., 4.), w, h * 2).unwrap();
+                let span = (left.0 - right.0).hypot(left.1 - right.1);
+                assert!(span < previous, "city did not recede at {seconds}s");
+                previous = span;
+            }
+        }
+    }
+
+    #[test]
+    fn orbital_hold_rotates_geography_with_fixed_scale_and_correct_occlusion() {
+        let a = Globe::at(120, 32, 63.);
+        let b = Globe::at(120, 32, 70.);
+        assert!(
+            (a.camera.position.minus(CENTER).length() - b.camera.position.minus(CENTER).length())
+                .abs()
+                < 0.001
+        );
+        let landmark = geo(0., 0.);
+        let pa = a.project(landmark);
+        let pb = b.project(landmark);
+        assert!(pa.2 > 0. && pb.2 > 0.);
+        assert!((pa.0 - pb.0).hypot(pa.1 - pb.1) > 4.);
+        for globe in [a, b] {
+            let (x, y, _) = globe.project(landmark);
+            let recovered = geographic(globe.hit(globe.ray(x, y)).unwrap());
+            assert!(recovered.minus(landmark).length() < 0.0001);
+            let backside = geographic(globe.camera.position.minus(CENTER).normalize().scale(-1.));
+            assert!(
+                globe.project(backside).2 < 0.,
+                "hidden-side marker leaked through Earth"
+            );
+            let near = globe
+                .camera
+                .position
+                .plus(globe.forward.scale(globe.camera.near * 0.5));
+            assert!(
+                globe
+                    .project(geographic(near.minus(CENTER).scale(1. / RADIUS)))
+                    .2
+                    < 0.
+            );
+        }
+        assert_eq!(raster(120, 32, 70.), raster(120, 32, 70.));
+    }
 
     #[test]
     fn emerging_network_light_never_erases_the_underlying_globe() {

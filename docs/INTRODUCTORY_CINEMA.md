@@ -30,8 +30,8 @@ wall-clock smoke-test exit, not narrative state. `--help` lists inspection flags
 | 28–36 s | Information city | Depth-tested architecture and fine colored Braille wireframes. Four landmarks retain the agents' identities. |
 | 36–44 s | Facades | Four two-second shots frame acceptance, topology, candidate routes and replay witnesses. Depth-tested diagrams and native annotations occupy the same facade anchors. |
 | 44–53 s | Couriers | Contract, graph, candidate and verification messages follow named source/destination routes. Tangent/lookahead camera attention follows their actual route; sender-colored capsules carry payload slats and trigger receiving-facade pulses. |
-| 53–60 s | Ascent | The circuit plane bends as altitude rises; luminous architecture condenses into its shared geographic beacon without a circular compositing edge. |
-| 60–72 s | Earth | Illustrated globe, atmosphere and four identity-colored network arcs. The complete chrome `libGibson` title approaches from depth, locks, catches a highlight, and holds above graphical gold “Hack the planet!” lettering. |
+| 53–60 s | Ascent | The live city and curved ground share a perspective camera. Altitude reveals the horizon; the buildings recede to their geographic beacon without rescaling a captured city frame. |
+| 60–72 s | Earth | Rotating, perspective ray/sphere Earth, atmosphere and four identity-colored network arcs. The complete chrome `libGibson` title approaches from depth, locks, catches a highlight, and holds above graphical gold “Hack the planet!” lettering. |
 
 The city draws from the film's information-as-architecture idea: the original
 production notes describe Manhattan becoming a circuit board with information
@@ -54,12 +54,14 @@ Acid vs Crash retains its separate adversarial story and presentation.
 - `harness.rs`: ordinary Node/layout/painter realization. Widgets know nothing
   about their later distortion.
 - `membrane.rs`: inverse sampling of that realized Surface, summed field and analytic
-  gradient, RGB tunnel and early city recognition.
+  gradient, RGB tunnel and approaching Braille city geometry. Four identity conduits
+  connect harness anchors to the same building roofs; no expanding circular wipe.
   Complete cell writes preserve glyph ownership; there is no terminal alpha.
 - `world.rs`: four distinct wireframe landmarks, small world-plane diagrams, semantic
   routes, curved camera framing and the scale transition. Overlapping courier
   attention sums continuously; it does not jump between the first active messages.
-- `planet.rs` / `wordart.rs`: illustrated Earth, shared site projection, identity
+- `planet.rs` / `wordart.rs`: analytic perspective sphere, shared city camera/site
+  projection, illustrated geographic material, body rotation, occluded identity
   arcs and bounded bitmap art. Face coverage is sampled once and reused across
   extrusion layers; no font asset or generic texture engine is introduced.
 - `libgibson_intro.rs`: Context lifecycle, controls, capability selection and
@@ -276,7 +278,7 @@ contracts cover all four readable facade identities, continuous camera positions
 at shot and overlapping-message boundaries, and transient hints through real PTY
 input. Frozen frames still require zero exact delta, footprint and wire bytes.
 
-The full stable suite now passes **571 tests: 226 unit + 345 integration**, plus
+That polish checkpoint passed **571 tests: 226 unit + 345 integration**, plus
 three explicit FX Lab tests. Seven new contracts supplement the prior 564-test
 checkpoint: hint lifetime, real PTY hint retreat/navigation, identity/facade
 coverage, camera continuity, unclamped title bounds/frozen hold, and additive
@@ -351,3 +353,89 @@ Public CI passed all five jobs for the final code checkpoint
 Rust, C/C++/Python, ASan/UBSan, Go and PTY. The earlier polished code checkpoint
 `0d9b3f6` also passed in run 35954297546. The final documentation tip has its own
 CI evidence in PR #14; these links attest only to their named commits.
+
+## Perspective Earth and continuity follow-up
+
+Starting from `c03bc4d`, the follow-up replaces the remaining city-frame shrink
+with an actual perspective pullback. The city is still rendered from its live
+world coordinates. Its circuit ground is tangent to a radius-600 software
+sphere; the geographic site, city camera and planetary material share the same
+basis. Rays intersect that sphere analytically, then evaluate illustrated
+longitude/latitude land, lighting, clouds and atmosphere. There are no image
+assets. At orbital altitude the Earth's body frame rotates visibly beneath the
+camera. Network paths use ray/sphere occlusion and reject the camera near plane
+before projection. The title and final hold retain the existing timeline.
+
+The horizon develops from the circuit ground at 53–55s; the shared camera
+pulls back through 63s. Constant floor subdivision avoids a sampling-pattern
+change when curvature first becomes nonzero. Fine city detail yields to the
+site beacon only as it becomes subpixel. The previous inverse-screenshot
+sampling path is gone; its historical stray-cell regression remains.
+
+The harness-to-city transition also loses its circular copy/wipe. The incoming
+city's actual Braille dots approach through the tunnel, with identity-colored
+conduits terminating at the four shared building-roof anchors. This transition
+still samples a finite upcoming city view; it does not add mutable simulation or
+claim general widget-to-world morphing. Each facade now carries a five-line
+simulated receipt: contract, graph constraints, candidate policy or replay
+witness, plus its next handoff. The finite agent model is unchanged.
+
+Chrome lettering keeps a continuous bright front face, open dark counters and
+quieter side faces. Narrow lettering is wider and straighter; the gold subtitle
+has a dark separating shadow. No font assets, rendering APIs or engine modules
+were added.
+
+Two new geometric contracts verify perspective site/ray agreement, strictly
+receding city extent, visibly rotating fixed-scale geography, hidden-side route
+occlusion and near-plane rejection. Facade assertions now require meaningful
+receipt details and the next agent at all three sizes in TrueColor and Mono.
+Title bounds, deterministic replay, frozen 0/0/0 output and the original
+late-ascent witness remain covered. The current full suite is **573 tests:
+226 unit + 347 integration**, with three additional FX Lab tests.
+
+Inspected reconstructed TrueColor frames at 56×24, 120×32 and 160×40, covering
+membrane/city entry, all four facades, ascent, Earth rotation and the final text.
+Mono and ANSI16 were inspected separately. These are actual cell/color
+reconstructions, not terminal photographs or guarantees about every font.
+
+Five-sample release generation medians on this host:
+
+| Cells | Membrane 24s | City 33s | Ascent 58s | Title 68s |
+| --- | ---: | ---: | ---: | ---: |
+| 56×24 | 2.53ms | 1.45ms | 1.98ms | 0.52ms |
+| 120×32 | 6.32ms | 3.55ms | 5.08ms | 1.78ms |
+| 160×40 | 9.65ms | 5.11ms | 8.36ms | 2.55ms |
+
+Earlier city recognition now pays for both realizations at 24s; the 26s overlap
+is about 6.49/10.03ms at canonical/wide sizes. These are generation observations,
+not transport or frame-rate guarantees. Rotating geography legitimately costs
+more wire than a slowly changing globe: the 120×32 title sample at 68s emits
+10,475 bytes for a 1/60s increment. Frozen state still emits none.
+
+Local follow-up gates passed on Rust 1.98.1:
+
+```sh
+cargo +1.98.1 fmt --check
+cargo +1.98.1 clippy --all-targets --all-features -- -D warnings
+cargo +1.98.1 build --examples
+cargo +1.98.1 test
+cargo +1.98.1 build --release --examples
+cargo +1.98.1 build --release --example libgibson_intro
+RUSTDOCFLAGS="-D warnings" cargo +1.98.1 doc --no-deps
+cargo +1.98.1 test --example fx_lab
+cargo +1.98.1 test --test intro_cinema
+RUSTUP_TOOLCHAIN=1.98.1 bash scripts/dev/bindings_smoke.sh --asan
+cargo +1.98.1 package --list --allow-dirty
+git diff --check
+```
+
+The full suite includes all six intro PTY tests, the renderer/geometry regressions
+and existing visual goldens. C/C++/Python, native sanitizers and Go smoke passed.
+A normal-speed release `--auto --deterministic --color=truecolor` run at 120×32
+completed in 79.47s, emitted 99,108,558 bytes, exited 0 and restored termios and
+the alternate screen. This is about 31% more transport than the preceding
+explicit-TrueColor film: longer overlapping geometry and the live spherical
+pullback change more cells. It is an accepted spectacle cost, not sparse-output
+or 60 FPS evidence. Narrow TrueColor ascent, wide TrueColor membrane and narrow
+Mono finale smokes also exited 0 and restored the terminal. Generated captures
+remain outside the repository. Exact pushed-tip CI is recorded in PR #14.

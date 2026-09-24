@@ -81,16 +81,16 @@ impl Layout {
         let entrance = smooth((seconds - 62.7) / 2.8);
         let scale = 0.31 + entrance * 0.69;
         let narrow = width < 74;
-        let face_h = h * if narrow { 0.185 } else { 0.20 };
-        let depth = (h * if narrow { 0.042 } else { 0.066 }).max(1.) * scale;
-        let face_w = w * if narrow { 0.82 } else { 0.86 } * scale;
+        let face_h = h * 0.20;
+        let depth = (h * if narrow { 0.032 } else { 0.050 }).max(1.) * scale;
+        let face_w = w * if narrow { 0.88 } else { 0.86 } * scale;
         Self {
             x: (w - face_w) * 0.5 - depth * 0.36,
             y: h * (0.063 + (1. - entrance) * 0.28),
             width: face_w,
             height: face_h * scale,
-            arch: h * 0.018 * scale,
-            skew: face_h * if narrow { 0.10 } else { 0.20 } * scale,
+            arch: h * if narrow { 0. } else { 0.012 } * scale,
+            skew: face_h * if narrow { 0.04 } else { 0.14 } * scale,
             depth,
             reveal: smooth((seconds - 62.7) / 0.65),
             sharp: narrow,
@@ -161,12 +161,12 @@ pub fn bounds(width: u16, height: u16, seconds: f32) -> Option<(i32, i32, i32, i
 fn chrome(t: f32) -> Rgb {
     const STOPS: [(f32, Rgb); 7] = [
         (0., (250, 255, 252)),
-        (0.25, (126, 220, 241)),
-        (0.44, (33, 72, 128)),
-        (0.50, (17, 37, 70)),
+        (0.25, (150, 229, 249)),
+        (0.44, (100, 159, 195)),
+        (0.50, (76, 130, 179)),
         (0.54, (255, 255, 234)),
-        (0.78, (202, 213, 191)),
-        (1., (78, 151, 213)),
+        (0.78, (220, 230, 218)),
+        (1., (136, 196, 226)),
     ];
     for pair in STOPS.windows(2) {
         if t <= pair[1].0 {
@@ -299,16 +299,16 @@ fn subtitle(raster: &mut RgbRaster, seconds: f32) {
         for x in x0.max(0)..x1.min(i32::from(raster.width())) {
             let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
             if display.contains(px, py - 1.) {
-                raster.blend(x, y, (92, 50, 54), display.reveal);
+                raster.blend(x, y, (10, 18, 30), display.reveal);
             }
             if display.contains(px, py) {
                 let row = (py - display.y) / display.height;
                 let color = if row < 0.32 {
                     (255, 240, 181)
                 } else if row < 0.65 {
-                    (249, 201, 105)
+                    (255, 216, 130)
                 } else {
-                    (220, 151, 67)
+                    (243, 184, 82)
                 };
                 raster.blend(x, y, color, display.reveal);
             }
@@ -372,14 +372,28 @@ pub fn paint(raster: &mut RgbRaster, seconds: f32) {
                 } else {
                     let q = depth as f32 / layout.depth.max(1.);
                     let (_, v) = layout.uv(x as f32 - dx, y as f32 - dy);
-                    let side = mix((48, 106, 174), (79, 35, 123), q);
+                    let side = mix((23, 65, 111), (45, 20, 76), q);
                     if v > 3.2 && v < 4.1 {
-                        mix(side, (187, 115, 54), 0.75)
+                        mix(side, (96, 76, 46), 0.5)
                     } else {
                         side
                     }
                 };
                 raster.blend(x, y, color, coverage * layout.reveal);
+            }
+        }
+    }
+    // A narrow ink keyline separates the chrome front from its extrusion and
+    // keeps counters open. Reflections must not erase the letter silhouettes.
+    for y in yrange.clone() {
+        for x in xrange.clone() {
+            let neighbors = coverage_at(x - 1, y)
+                .max(coverage_at(x + 1, y))
+                .max(coverage_at(x, y - 1))
+                .max(coverage_at(x, y + 1));
+            let edge = (neighbors - coverage_at(x, y)).max(0.);
+            if edge > 0. {
+                raster.blend(x, y, (6, 13, 27), edge * layout.reveal * 0.85);
             }
         }
     }
@@ -397,7 +411,7 @@ pub fn paint(raster: &mut RgbRaster, seconds: f32) {
             if upper_edge {
                 color = mix(color, (248, 255, 238), 0.72);
             } else if lower_edge {
-                color = mix(color, (26, 94, 153), 0.45);
+                color = mix(color, (89, 165, 212), 0.30);
             }
             let streak = if sweep > 0. && sweep < 1. {
                 (1. - ((u / WIDTH - sweep) * 13. + v * 0.075).abs()).clamp(0., 1.)

@@ -299,6 +299,18 @@ fn four_identities_are_unique_cell_safe_and_survive_every_readable_facade() {
                     labels.contains(identity.signature),
                     "missing identity mark at {w}x{h}"
                 );
+                for detail in [
+                    ["4 contracts", "offline transit", "SCOUT"],
+                    ["128 stops", "384 links", "BUILDER"],
+                    ["seed", "tie-break", "VERIFY"],
+                    ["24", "replay ==", "ARCHITECT"],
+                ][index]
+                {
+                    assert!(
+                        labels.contains(detail),
+                        "missing facade receipt {detail} at {w}x{h}"
+                    );
+                }
             }
         }
     }
@@ -375,10 +387,9 @@ fn graphical_title_and_companion_fit_the_supported_compositions() {
 
 #[test]
 fn late_ascent_sampling_cannot_wrap_into_a_distant_city_cell() {
-    // At this measured frame the inverse sample is (327717, 131101), well
-    // outside the source. Narrowing first used to wrap it to city cell (37,29).
-    // The RGB sampling path keeps signed coordinates and is an independent
-    // witness for the untouched planet at the distant destination.
+    // The previous snapshot-resizing ascent wrapped an inverse sample at this
+    // frame into a stray city cell. The shared perspective implementation removes
+    // that sampling path entirely; retain the original distant-cell witness.
     let seconds = 59.94084;
     let expected = intro::world::raster(120, 32, seconds).to_surface();
     let actual = intro::world::render(120, 32, seconds, ColorDepth::TrueColor);

@@ -51,6 +51,12 @@ const BUILDINGS: [Building; 4] = [
     },
 ];
 
+/// Shared semantic roof anchor for the harness-to-city realization.
+pub fn agent_site(index: usize) -> Vec3 {
+    let building = BUILDINGS[index.min(BUILDINGS.len() - 1)];
+    building.position.plus(Vec3::new(0., building.height, 0.))
+}
+
 fn smooth(t: f32) -> f32 {
     let t = t.clamp(0., 1.);
     t * t * (3. - 2. * t)
@@ -78,6 +84,9 @@ fn safe_time(seconds: f32) -> f32 {
 /// influence with zero weight at departure/arrival, not a second camera mode.
 pub fn camera(seconds: f32, width: u16, height: u16) -> Camera {
     let seconds = safe_time(seconds);
+    if seconds >= 56. {
+        return super::planet::camera(width, height, seconds);
+    }
     let keys = [
         (28., Vec3::new(0., 6., -23.), Vec3::new(0., 2.8, 4.), 0.88),
         (32., Vec3::new(12., 8.5, -20.), Vec3::new(0., 2.8, 4.), 0.85),
@@ -200,7 +209,7 @@ pub fn camera(seconds: f32, width: u16, height: u16) -> Camera {
         position,
         target,
         fov_y,
-        far: 180.,
+        far: 6000.,
         ..Camera::default()
     }
 }
@@ -756,17 +765,24 @@ fn city(width: u16, height: u16, seconds: f32) -> RgbRaster {
     };
     let context = 1. - focus * 0.52;
     renderer.clear((2, 4, 12));
+    let altitude_fog = if seconds >= 53. {
+        camera.position.minus(Vec3::new(0., 2.8, 4.)).length() - 28.
+    } else {
+        0.
+    }
+    .max(0.);
     renderer.fog = Some(Fog {
         color: (2, 4, 12),
-        start: 20. - focus * 8.,
-        end: 92. - focus * 54.,
+        start: 20. - focus * 8. + altitude_fog,
+        end: 92. - focus * 54. + altitude_fog,
     });
-    let curvature = smooth((seconds - 53.) / 3.) * 0.004;
+    let curvature = smooth((seconds - 53.) / 3.) / 1200.;
     // As altitude rises, the same circuit plane bends toward the emerging globe.
     // Each grid line is segmented so its horizon curves continuously in geometry.
     for i in -13..=13 {
         let v = i as f32 * 2.;
-        let segments = if curvature > 0. { 14 } else { 1 };
+        // Fixed subdivision prevents a sampling-pattern pop at zero curvature.
+        let segments = 14;
         for segment in 0..segments {
             let a = -24. + segment as f32 * 54. / segments as f32;
             let b = a + 54. / segments as f32;
@@ -932,51 +948,37 @@ fn city(width: u16, height: u16, seconds: f32) -> RgbRaster {
     renderer.raster
 }
 
-/// Geometry condenses into the same geographic beacon. There is no circular
-/// compositing boundary: only luminous city marks travel, leaving the emerging
-/// atmosphere visible in their negative space.
-fn site_pullback(width: u16, height: u16, seconds: f32) -> (f32, f32, f32) {
-    let t = smooth((seconds - 56.) / 4.);
-    let zoom = (1. - t).powf(1.65).max(0.0001);
-    let (site_x, site_y) = super::planet::site(width, height, seconds);
-    let x = width as f32 * 0.5 * (1. - t) + site_x * t;
-    let y = height as f32 * (1. - t) + site_y * t;
-    (x, y, zoom)
-}
-
-/// Opaque RGB realization. Useful for small optional PPM development captures.
+/// Opaque RGB realization. The same perspective camera projects the actual
+/// city and its spherical ground during ascent; no city screenshot is rescaled.
 /// Both arguments describe terminal cells; RGB uses two samples per cell row.
 pub fn raster(width: u16, height: u16, seconds: f32) -> RgbRaster {
     let seconds = safe_time(seconds);
-    if seconds >= 60. {
-        return super::planet::raster(width, height, seconds);
-    }
-    if seconds <= 56. {
+    if seconds < 53. {
         return city(width, height, seconds);
     }
-    let site = city(width, height, 56.);
     let mut planet = super::planet::raster(width, height, seconds);
-    let reveal = smooth((seconds - 56.) / 4.);
-    for color in planet.pixels_mut() {
-        *color = shade(*color, reveal);
-    }
-    let (cx, cy, zoom) = site_pullback(width, height, seconds);
-    for y in 0..planet.height() {
-        for x in 0..planet.width() {
-            let dx = x as f32 - cx;
-            let dy = y as f32 - cy;
-            {
-                let sx = (dx / zoom + width as f32 * 0.5).round() as i32;
-                let sy = (dy / zoom + height as f32).round() as i32;
-                if let Some(color) = site.get(sx, sy) {
-                    if color.0.max(color.1).max(color.2) > 24 {
-                        planet.set(x as i32, y as i32, color);
-                    }
-                }
-            }
+    if seconds < 63. {
+        let geometry = city(width, height, seconds);
+        let gain = city_resolve(seconds);
+        for (base, ink) in planet.pixels_mut().iter_mut().zip(geometry.pixels()) {
+            // Emissive geometry shares projection with the sphere underneath it.
+            base.0 = base
+                .0
+                .saturating_add(((ink.0.saturating_sub(2)) as f32 * gain) as u8);
+            base.1 = base
+                .1
+                .saturating_add(((ink.1.saturating_sub(4)) as f32 * gain) as u8);
+            base.2 = base
+                .2
+                .saturating_add(((ink.2.saturating_sub(12)) as f32 * gain) as u8);
         }
     }
     planet
+}
+fn city_resolve(seconds: f32) -> f32 {
+    // Subpixel city detail condenses into the geographic beacon as the camera
+    // reaches orbit. This is an LOD handoff, not a resized snapshot or wipe.
+    1. - smooth((seconds - 59.) / 4.)
 }
 
 /// Wireframe edges use the terminal's 2x4 Braille frequency band. The city is
@@ -1038,73 +1040,53 @@ fn wire_surface(width: u16, height: u16, seconds: f32, capability: ColorDepth) -
 /// RGB quantization remains the central ANSI compiler's responsibility.
 pub fn render(width: u16, height: u16, seconds: f32, capability: ColorDepth) -> Surface {
     let seconds = safe_time(seconds);
-    let mut surface = if seconds <= 56. {
+    let mut surface = if seconds < 53. {
         wire_surface(width, height, seconds, capability)
-    } else if seconds < 60. {
-        let site = wire_surface(width, height, 56., capability);
-        let mut rgb = super::planet::raster(width, height, seconds);
-        let reveal = smooth((seconds - 56.) / 4.);
-        for color in rgb.pixels_mut() {
-            *color = shade(*color, reveal);
-        }
-        let mut planet = if capability == ColorDepth::Mono {
+    } else {
+        let rgb = super::planet::raster(width, height, seconds);
+        let mut ground = if capability == ColorDepth::Mono {
             rgb.to_mono_surface()
         } else {
             rgb.to_surface()
         };
-        let (cx, cy, zoom) = site_pullback(width, height, seconds);
-        for y in 0..height {
-            for x in 0..width {
-                let dx = x as f32 - cx;
-                let dy = y as f32 * 2. + 0.5 - cy;
-                {
-                    let sx = (dx / zoom + width as f32 * 0.5).round() as i32;
-                    let sy = ((dy / zoom + height as f32) * 0.5).round() as i32;
-                    let cell =
-                        if sx >= 0 && sy >= 0 && sx < i32::from(width) && sy < i32::from(height) {
-                            site.get(sx as u16, sy as u16).cloned()
-                        } else {
-                            None
-                        };
-                    if let Some(mut cell) = cell {
-                        if cell.glyph.grapheme != "⠀" {
-                            if capability != ColorDepth::Mono {
-                                let top =
-                                    rgb.get(i32::from(x), i32::from(y) * 2).unwrap_or_default();
-                                let bottom = rgb
-                                    .get(i32::from(x), i32::from(y) * 2 + 1)
-                                    .unwrap_or_default();
-                                let average =
-                                    |a: u8, b: u8| ((u16::from(a) + u16::from(b)) / 2) as u8;
-                                let background = (
-                                    average(top.0, bottom.0),
-                                    average(top.1, bottom.1),
-                                    average(top.2, bottom.2),
-                                );
-                                cell.style.bg =
-                                    Some(Color::Rgb(background.0, background.1, background.2));
-                                if let Some(Color::Rgb(r, g, b)) = cell.style.fg {
-                                    cell.style.fg = Some(Color::Rgb(
-                                        r.max(background.0.saturating_add(20)),
-                                        g.max(background.1.saturating_add(20)),
-                                        b.max(background.2.saturating_add(20)),
-                                    ));
-                                }
-                            }
-                            planet.set_cell(x, y, cell);
-                        }
+        if seconds < 63. {
+            let geometry = wire_surface(width, height, seconds, capability);
+            let gain = city_resolve(seconds);
+            for y in 0..height {
+                for x in 0..width {
+                    let Some(mut cell) = geometry.get(x, y).cloned() else {
+                        continue;
+                    };
+                    if cell.glyph.grapheme == "⠀" || gain <= 0. {
+                        continue;
                     }
+                    if capability != ColorDepth::Mono {
+                        let top = rgb.get(i32::from(x), i32::from(y) * 2).unwrap_or_default();
+                        let bottom = rgb
+                            .get(i32::from(x), i32::from(y) * 2 + 1)
+                            .unwrap_or_default();
+                        let average = |a: u8, b: u8| ((u16::from(a) + u16::from(b)) / 2) as u8;
+                        let bg = (
+                            average(top.0, bottom.0),
+                            average(top.1, bottom.1),
+                            average(top.2, bottom.2),
+                        );
+                        cell.style.bg = Some(Color::Rgb(bg.0, bg.1, bg.2));
+                        if let Some(Color::Rgb(r, g, b)) = cell.style.fg {
+                            cell.style.fg = Some(Color::Rgb(
+                                bg.0.saturating_add((f32::from(r.saturating_sub(2)) * gain) as u8),
+                                bg.1.saturating_add((f32::from(g.saturating_sub(4)) * gain) as u8),
+                                bg.2.saturating_add((f32::from(b.saturating_sub(12)) * gain) as u8),
+                            ));
+                        }
+                    } else if gain < 0.5 {
+                        cell.style = cell.style.dim();
+                    }
+                    ground.set_cell(x, y, cell);
                 }
             }
         }
-        planet
-    } else {
-        let rgb = raster(width, height, seconds);
-        if capability == ColorDepth::Mono {
-            rgb.to_mono_surface()
-        } else {
-            rgb.to_surface()
-        }
+        ground
     };
     if let Some(index) = shots::facade(seconds) {
         // Native type is reserved for the near-frontal hold. Its origin is the
@@ -1129,19 +1111,69 @@ pub fn render(width: u16, height: u16, seconds: f32, capability: ColorDepth) -> 
                     .saturating_sub(x)
                     .min(width.saturating_sub(x));
                 let heading = format!("{} {}", IDENTITIES[index].signature, AGENTS[index].name);
+                // These are the same finite simulated contracts shown in the
+                // harness, expanded into a readable receipt on each facade.
                 let details = if available >= 24 {
                     [
-                        ["ACCEPTANCE CONTRACT", "4 contracts / plan sealed"],
-                        ["TOPOLOGY / 128 STOPS", "384 links / 6 invariants"],
-                        ["CANDIDATE ROUTES", "3 candidates / seeded"],
-                        ["REPLAY EQUIVALENCE", "24 fixtures / 24 pass"],
+                        [
+                            "ACCEPTANCE CONTRACT",
+                            "4 contracts / sealed",
+                            "offline transit plan",
+                            "accessibility first",
+                            "handoff > SCOUT",
+                        ],
+                        [
+                            "TOPOLOGY / INDEXED",
+                            "128 stops / 384 links",
+                            "6 invariants checked",
+                            "disconnected paths",
+                            "handoff > BUILDER",
+                        ],
+                        [
+                            "REROUTE CANDIDATES",
+                            "3 candidates / seeded",
+                            "deterministic tie-break",
+                            "accessible transfers",
+                            "handoff > VERIFY",
+                        ],
+                        [
+                            "REPLAY EQUIVALENCE",
+                            "24 fixtures / 24 pass",
+                            "hostile inputs checked",
+                            "replay == original",
+                            "receipt > ARCHITECT",
+                        ],
                     ]
                 } else {
                     [
-                        ["CONTRACT SEALED", "4 contracts / OK"],
-                        ["ROUTE TOPOLOGY", "128 / 384 links"],
-                        ["ROUTE CANDIDATES", "3 routes / seed"],
-                        ["REPLAY WITNESS", "24/24 exact"],
+                        [
+                            "CONTRACT SEALED",
+                            "4 contracts / OK",
+                            "offline transit",
+                            "accessible plan",
+                            "to SCOUT",
+                        ],
+                        [
+                            "ROUTE TOPOLOGY",
+                            "128 stops",
+                            "384 links",
+                            "6 invariants",
+                            "to BUILDER",
+                        ],
+                        [
+                            "ROUTE CANDIDATES",
+                            "3 routes / seed",
+                            "stable tie-break",
+                            "accessible path",
+                            "to VERIFY",
+                        ],
+                        [
+                            "REPLAY WITNESS",
+                            "24/24 exact",
+                            "hostile fixtures",
+                            "replay == source",
+                            "to ARCHITECT",
+                        ],
                     ]
                 };
                 let color = IDENTITIES[index].accent;
