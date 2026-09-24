@@ -1,0 +1,32 @@
+C R A S H   O V E R R I D E  //  LOCAL NODE
+LOCAL FABRIC / TRACE 0% / integrity 97% / mutual route hold
+─── CARRIER HOLD / mutual respect ──────────────────────────────────────────────────────────────────────────────────────
+┌─  LOCAL FABRIC / live topology  ─────────────────────────────────────┐┌─  SESSION / PROCESS VIEW  ───────────────────┐
+│                                                                      ││REMOTE  DISCONNECTED                          │
+│                               ≋ MODEM                                ││lease closed / history retained               │
+│                                   ⠆⠑⢄                                ││TRACE   0% / reserve 100%                     │
+│                                   ⠇  ⠑⢄                              ││SYSTEM    HOLD       INTEGRITY                │
+│                                   ⡇   ⠈⠢⡀                            ││MODEM     Contested 100%                      │
+│                                   ⡆     ⠈⠢⡀                          ││ROUTE     Contested 100%                      │
+│                               ≋ ROUTE     ⠈⠢⡀                        ││AUTH      Contested  87%                      │
+│                            ⢀⡠⠤ ⠉    ⠉⠒⠤⣀    ⠈⠢⡀                      ││SHELL     Crash     100%                      │
+│                        ⣀⡠⠄⠈⠁            ⠉⠒⠂⢄⡀ ⠈⢆                     ││FILES     Contested 100%                      │
+│                   ⢀⣀⠤ ⠉                     ⠈⠑⠢⢄⠑⢄                   ││DISPLAY   Contested 100%                      │
+│             ≋ AUTH⡀                            ● SHELL               ││FILES / 3 altered entries                     │
+│                   ⠈⠁⠠⢄⣀                      ⢀⡠⠔⠊⠁                   ││                                              │
+│                        ⠉ ⠤⣀⡀             ⣀⠤⠔⠊⠁                       ││                                              │
+│                            ⠈⠁⠠⢄⣀     ⣀⠒⠒⠉                            ││                                              │
+│                               ≋ FILES                                │└──────────────────────────────────────────────┘
+│                                   ⡇                                  │┌─  REMOTE / read only  ───────────────────────┐
+│                               ≋ DISPLAY                              ││same time, different route.                   │
+│                                                                      ││                                              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+┌─  RECEIPTS / the machine remembers  ─────────────────────────────────┐┌─  CRASH / LOCAL CONTROL  ────────────────────┐
+│RESOLVED / mutual route hold                                          ││replay · facts · trace · damage               │
+│                                                                      ││scene · acid · crash · reset · exit           │
+│                                                                      ││RESOLVED / mutual route hold                  │
+│                                                                      ││                                              │
+│                                                                      ││                                              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+crash > simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter · Esc / Ctrl-C exit

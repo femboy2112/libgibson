@@ -29,8 +29,8 @@ fn intersect_signed(x: i32, y: i32, w: u16, h: u16, clip: Rect) -> Rect {
     if w == 0 || h == 0 {
         return Rect::new(0, 0, 0, 0);
     }
-    let x1 = x + w as i32;
-    let y1 = y + h as i32;
+    let x1 = x.saturating_add(w as i32);
+    let y1 = y.saturating_add(h as i32);
     let cx1 = clip.x as i32 + clip.width as i32;
     let cy1 = clip.y as i32 + clip.height as i32;
     let ix0 = x.max(clip.x as i32);
@@ -70,6 +70,56 @@ fn paint_node(
     oy: i32,
     ctx: &mut PaintContext,
 ) {
+    if node.surface_fx.is_empty() {
+        paint_node_contents(node, surface, clip, ox, oy, ctx);
+        return;
+    }
+    let cr = node.computed_rect;
+    let x = (cr.x as i32).saturating_add(ox);
+    let y = (cr.y as i32).saturating_add(oy);
+    let visible = intersect_signed(x, y, cr.width, cr.height, clip);
+    if visible.is_empty() {
+        return;
+    }
+    // Realize before destination clipping, preserving natural layout and stable
+    // entity-local masks. Only this entity's extent needs the extra allocation.
+    // Flow widgets retain their existing visible-width layout contract; an
+    // explicitly positioned entity keeps its natural off-screen extent.
+    let sw = if !node.layout_style.absolute && x >= clip.x as i32 {
+        cr.width.min(visible.width)
+    } else {
+        cr.width
+    };
+    let sh = if !node.layout_style.absolute && y >= clip.y as i32 {
+        cr.height.min(visible.height)
+    } else {
+        cr.height
+    };
+    let mut local = Surface::new_transparent(sw, sh);
+    let mut local_ctx = PaintContext::default();
+    let area = local.area();
+    paint_node_contents(
+        node,
+        &mut local,
+        area,
+        -(cr.x as i32),
+        -(cr.y as i32),
+        &mut local_ctx,
+    );
+    crate::surface_fx::SurfaceFx::apply_chain(&node.surface_fx, &mut local);
+    surface.blit_transparent_clipped(&local, x, y, visible);
+    // Effects may displace/erase an input insertion point. Do not publish its
+    // stale hardware cursor: retain the previous unaffected focused cursor.
+}
+
+fn paint_node_contents(
+    node: &Node,
+    surface: &mut Surface,
+    clip: Rect,
+    ox: i32,
+    oy: i32,
+    ctx: &mut PaintContext,
+) {
     let cr = node.computed_rect;
     let origin_x = cr.x as i32 + ox;
     let origin_y = cr.y as i32 + oy;
@@ -78,11 +128,21 @@ fn paint_node(
         return;
     }
 
-    // A node clipped on its left/top edge (negative offset, camera pan, or a
-    // layer crossing the boundary) cannot be drawn in place: surface primitives
-    // would start at the *visible* origin and lose the off-screen part. Render
-    // the subtree translated so its own origin maps to 0, then blit clipped.
-    if origin_x < clip.x as i32 || origin_y < clip.y as i32 {
+    // Positioned entities paint at natural extent before clipping on any edge.
+    // Leading-edge clips otherwise lose the origin; trailing-edge clips rewrap
+    // text and move borders inward. Flow widgets keep visible-width behavior.
+    if origin_x < clip.x as i32
+        || origin_y < clip.y as i32
+        || (node.layout_style.absolute
+            && !matches!(
+                node.kind,
+                NodeKind::TextInput { .. }
+                    | NodeKind::Box { border: None, .. }
+                    | NodeKind::Stack
+                    | NodeKind::Viewport { .. }
+            )
+            && (rect.width < cr.width || rect.height < cr.height))
+    {
         let tx = ox - origin_x; // maps this node's origin to 0
         let ty = oy - origin_y;
         // The scratch must fit the node's natural extent (it may be larger than

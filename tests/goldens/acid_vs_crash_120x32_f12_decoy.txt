@@ -1,0 +1,32 @@
+C R A S H   O V E R R I D E  //  LOCAL NODE
+LOCAL FABRIC / TRACE 0% / integrity 97% / CONTEST IN PROGRESS
+─── COUNTERPLAY / every door has a price ───────────────────────────────────────────────────────────────────────────────
+┌─  LOCAL FABRIC / live topology  ─────────────────────────────────────┐┌─  SESSIO@ / PROCESS VIE^  ───────────────────┐
+│                                                                      ││REMOTE= ACID BURN                             │
+│                               ‹ MODEM                                ││HERE AUTH → DECOY      ?  ?                   │
+│                                ⠉⠉⠉⠉⠁⢄                                ││TRACE   0% / reserve\ 75%                     │
+│                                   ⠇  ⠑⢄                              ││SYSTEM    HOLD       INTEGRITY                │
+│                                   ⡇   ⠈⠢⡀                            ││MODEM   > Acid      100%                      │
+│                                   ⠆     ⠈⠢⡀                          ││ROUTE     Acid     #100%                      │
+│                               ‹ ROUTE     ⠈⠢⡀                        ││AUTH      Acid    %  87%     >                │
+│                            ⢀⡀⠤ ⠉⠉⠉⠉⠁⠉⠒⠤⣀    ⠈⠢⡀                      ││SHELL     Crash     100%                      │
+│                        ⣀⡠⠄⠈⠁            ⠉⠐⠂⢄⡀ ⠈⢆                     ││FILES     Crash     100%                      │
+│                   ⢀⣀⠤⠐⠁                     ⠈⠑⠢⢄⠑⢄                   ││DISPLAY   Crash     100%                      │
+│             ‹ AUTH⡀      ◀ AB                  ● SHELL               ││FILES / 0 altered en<ries                     │
+│              ⠉⠉⠉⠉⠁⠈⠁⠠⢄⣀             ⣀⣀⣀⠤⠤⠔⠒⠉⠉⠉⠉⠔⠊⠁                   ││                        *                     │
+│                        ⠉ ⣀⣀⣀⠤⠤⠔⠒⠒⠊⠉⠉     ⣀⠤⠔⠊⠁                       ││                                              │
+│               ⣀⣀⣀⠤⠤⠔⠒⠒⠊⠉⠉  ⠁⠁⠠⢄⣀     ⣀⠔⠒⠉                            ││                                              │
+│    ◇◇ DECOY⠤⠤⠤  ⠤⠤⠤⠤⠤ ⠠⠤⠤⠠⠠⠄ ⠠● FILES                                │└──────────────────────────────────────────────┘
+│┌    I R       S    ──             ⡇                                  │┌─  REMOTE / read only  ───────────────────────┐
+│    lu e /           es        ● DISPLAY                              ││hell                                          │
+│   ─  ─   ─    ─  ─ ─                                                 ││                                              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+┌─  RECEIPTS / the machine remembers  ─────────────────────────────────┐┌─  CRASH / LOCAL CONTROL  ────────────────────┐
+│DECOY / mirror attached to FILES                                      ││TRACE        READY / bandwidth / awareness    │
+│                                                                      ││ISOLATE      READY / local visibility         │
+│                                                                      ││DECOY        WAIT 2.3s / 250 resources        │
+│                                                                      ││KILL         READY / 100 resources / one lease│
+│                                                                      ││DECOY / mirror attached to FILES              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+crash > simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter · Esc / Ctrl-C exit

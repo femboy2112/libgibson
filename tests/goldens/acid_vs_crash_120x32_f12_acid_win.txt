@@ -1,0 +1,32 @@
+A C I D   B U R N  //  borrowed display
+LOCAL FABRIC / TRACE 0% / integrity 97% / display prank
+─── ACID WINS THE ROUND / borrowed display ─────────────────────────────────────────────────────────────────────────────
+┌─  LOCAL FABRIC / live topology  ─────────────────────────────────────────────────────────────────────────────────────┐
+│┌─  SESSION / PROCESS VIEW  ─┐                                                       ┌─  REMOTE / read only  ────────┐│
+││REMOTE  ACID BURN           │                         ‹ MODEM                       │borr▍                          ││
+││HERE DISPLAY → MODEM        │                          ⠉⠉⠉⠉⠁⠁⠤⡀                     │                               ││
+││TRACE   0% / reserve 100%   │                             ⠇   ⠈⠑⠢⣀                  └───────────────────────────────┘│
+│└────────────────────────────┘                             ⡇       ⠑⠢⢄                                                │
+│                                                           ⠃          ⠉⠢⢄⡀                                            │
+│                                                       ‹ ROUTE           ⠈⠒⠤⡀                                         │
+│                                                ⡀⣀⡠⠤  ⠉⠁⠉⠉⠉⠉⠁ ⠉⠉⠒⠢⠤⢄⣀       ⠈⠑⠤⣀                                      │
+│                                        ⢀⣀⣀⠤⠄ ⠈⠉                     ⠉⠉⠒⠒⠢⠄⣀⡀   ⠑⠢⣀                                   │
+│                                 ⣀⣀⡠⠤  ⠁⠁                                   ⠈⠉⠑⠒⠤⠤⣀⠉⠢⢄                                │
+│                         ‹ AUTH⣀⣀                                                  ⠈● SHELL                           │
+│                          ⠉⠉⠉⠉   ⠉⠁ ⠠⠤⢀⣀⡀                                     ⢀⣀⠤⠤⠒⠊⠉⠁                                │
+│                                        ⠁⠉  ⠤⢄⣀⣀                       ⣀⣀⠤⠔⠒⠊⠉⠁                                       │
+│                                               ⠈⠉⠁ ⠠⠤⣀⣀⡀        ⠠⠤⠤⠔⠒⠉⠉                                               │
+│                                                       ‹ FILES⠉⠉                                                      │
+│                                                        ⠉⠉⠉⠉⠁                                                         │
+│                                                       ‹ DISPLAY                                                      │
+│                                                        ⠉⠉⠉⠉⠉⠉                                                        │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─  CRASH / LOCAL CONTROL  ────────────────────────────────────────────────────────────────────────────────────────────┐
+│CUT LINK     RESOLVED / disconnects local graph                                                                       │
+│TURN TRACE   RESOLVED / requires trace 80%                                                                            │
+│SPRING DECOY RESOLVED / requires occupied mirror                                                                      │
+│LET HER IN   RESOLVED / sacrifices DISPLAY                                                                            │
+│RESOLVED / display prank                                                                                              │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+crash > simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter · Esc / Ctrl-C exit

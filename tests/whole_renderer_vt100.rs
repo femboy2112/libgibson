@@ -658,3 +658,44 @@ fn resize_during_overlay_animation_reanchors_without_panic() {
         );
     }
 }
+
+#[test]
+fn fullscreen_resize_clears_stale_blank_regions_and_accounts_for_clear() {
+    let mut renderer = Renderer::new(gibson::RenderMode::Fullscreen);
+    renderer.capture_damage = true;
+    let mut session = TerminalSession::headless(40, 10);
+    let mut parser = vt100::Parser::new(10, 40, 0);
+    let mut old = Node::col()
+        .width(40.0)
+        .height(10.0)
+        .child(Node::text("OLD CONTENT MUST DISAPPEAR", Style::new()).height(1.0))
+        .child(Node::text("SECOND OLD ROW", Style::new()).height(1.0));
+    let mut wire = Vec::new();
+    renderer.render(&mut old, &mut session, &mut wire).unwrap();
+    parser.process(&wire);
+    session.set_terminal_size(20, 6);
+    parser.set_size(6, 20);
+    let mut new = Node::stack().width(20.0).height(6.0).child(
+        Node::text("NEW", Style::new())
+            .width(3.0)
+            .height(1.0)
+            .offset(4.0, 3.0),
+    );
+    wire.clear();
+    let (affected, total, bytes, full, _) =
+        renderer.render(&mut new, &mut session, &mut wire).unwrap();
+    parser.process(&wire);
+    assert!(full);
+    assert_eq!(affected, total);
+    assert_eq!(affected, 120);
+    assert_eq!(bytes, wire.len());
+    assert_eq!(renderer.last_dirty_cells().len(), 120);
+    let contents = parser.screen().contents();
+    assert!(!contents.contains("OLD"));
+    assert!(!contents.contains("SECOND"));
+    assert_eq!(contents.trim(), "NEW");
+    wire.clear();
+    let (_, _, bytes, _, _) = renderer.render(&mut new, &mut session, &mut wire).unwrap();
+    assert_eq!(bytes, 0);
+    assert!(wire.is_empty());
+}

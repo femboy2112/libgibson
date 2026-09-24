@@ -1,0 +1,32 @@
+C R A S H   O V E R R I D E  //  LOCAL NODE
+LOCAL FABRIC / TRACE 0% / integrity 97% / CONTEST IN PROGRESS
+─── ESCALATION / she noticed ───────────────────────────────────────────────────────────────────────────────────────────
+┌─  LOCAL FABRIC / live topology  ─────────────────────────────────────────────────────────────────────────────────────┐
+│┌─  SESSIO@ / PROCESS VIEW  ─┐                                                       ┌─  REMOTE / read only  ────────┐│
+││RE^OTE  ACID BURN           │                         ‹ MODEM                       │hell                           ││
+│=HERE DISPLAY → DISPLAY      │                          ⠉⠉⠉⠉⠁⠑⠤⡀                     │                               ││
+││TRACE   0% / reserve 100%   │                             ⠇   ⠈⠑⠢⣀                  └───────────────────────────────┘│
+│└─────────?──?───────────────┘                             ⡇       ⠑⠢⢄                                                │
+│                                                           ⡆          ⠉⠢⢄⡀                                            │
+│                                                       ‹ ROUTE           ⠈⠒⠤⡀                                         │
+│                                                ⣀⣀⡠⠤  ⠉⠁⠉⠉⠉⠉⠁ ⠉⠉⠒⠢⠤⠄⣀       ⠈⠑⠤⣀                                      │
+│                                        ⢀⣀⣀⠤⠄ ⠈⠉                     ⠉⠉⠒⠒⠤⢄⣀⡀   ⠑⠢⢄                                   │
+│                                 ⢀⣀⡠⠤  ⠉⠁                                   ⠈⠉⠑⠒⠤⠤⣀⠁⠢⢄                                │
+│                         ‹ AUTH⣀⣀                                                  ⠈● SHELL                           │
+│                          ⠉⠉⠉⠉   ⠉⠁ ⠠⠤⣀⣀⡀                                     ⢀⣀⠤⠤⠒⠊⠉⠁                                │
+│                                        ⠈⠉  ⠤⢄⡀⢀                       ⢀⡠⠤⠔⠒⠊⠉⠁                                       │
+│                                                ⠉⠁ ⠠⠤⣀⣀⡀        ⣀⡠⠤⠔⠒⠉⠉                                               │
+│                                                       ‹ FILES⠉⠉                                                      │
+│                                                        ⠉⠉⠉⠉⠁  ◀ AB                                                   │
+│                                                       ≋ DISPLAY                                                      │
+│                                                        ⠉⠉⠉⠁                                                          │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─  CRASH / LOCAL CONTROL  ────────────────────────────────────────────────────────────────────────────────────────────┐
+│TRACE        READY / bandwidth / awareness                                                                            │
+│ISOLATE      READY / local visibility                                                                                 │
+│DECOY        READY / 250 resources                                                                                    │
+│HARD ISOLATE READY / telemetry / four systems                                                                         │
+│LOCAL CONTROLS READY                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+crash > simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter · Esc / Ctrl-C exit

@@ -28,7 +28,7 @@ Because earlier revisions of this document overstated completion, architectural 
 | Label | Meaning |
 | --- | --- |
 | **IMPLEMENTED** | The described code path exists and is reached in normal operation. |
-| **TESTED** | Covered by an automated test in this repository (`cargo test`, 362 tests) that exercises the behavior described. |
+| **TESTED** | Covered by an automated test in this repository (`cargo test`, 536 tests: 226 unit + 310 integration) that exercises the behavior described. |
 | **PARTIALLY TESTED** | Implemented, and some behavior is covered, but at least one named facet is not automatically verified. The gap is stated explicitly. |
 | **UNVERIFIED** | Written down because it exists in source or is a documented assumption, but has not been compiled or executed in any environment we can attest to. |
 
@@ -630,24 +630,32 @@ the transport remains owned by the ANSI compiler and `TerminalTransaction`.
 
 **IMPLEMENTED + TESTED**.
 
-Two distinct damage concepts are tracked and must not be collapsed:
+Three distinct measurements must not be collapsed:
 
-* **Logical damage** — every visible cell whose terminal state changes:
-  explicit changed runs **∪** the region erased by a `CSI K`
-  (`erase_eol_from`) **∪** cleared trailing rows. Exposed as
-  `SurfaceDiff::logical_dirty_count()` / `logical_dirty_cells()`.
-* **Explicit run cells** — only cells covered by `CellRun` writes
-  (`explicit_dirty_count()`/`explicit_dirty_cells()`), kept for callers that
-  mean exactly that.
-* **Wire cost** — bytes actually emitted, returned by `Renderer::render` and
-  tracked by the scheduler. A single `CSI K` can logically clear dozens of cells
-  while costing a handful of bytes.
+* **Exact semantic delta** — cells whose realized state actually differs,
+  including changed cells in removed previous rows. Exposed as
+  `SurfaceDiff::exact_changed_cell_count()` / `exact_changed_cells()`.
+* **Affected footprint** — cells addressed by update semantics: explicit runs
+  **∪** the region erased by `CSI K` (`erase_eol_from`) **∪** cleared trailing
+  rows. This may include already-blank cells. Exposed as
+  `affected_cell_count()` and the existing `logical_dirty_count()` /
+  `logical_dirty_cells()` APIs. The legacy names remain supported.
+* **Wire cost** — actual bytes emitted, returned by `Renderer::render` and
+  tracked by the scheduler. A short erase command can address many cells.
 
-`Renderer` reports *logical* damage and, with `capture_damage`, records logical
-coordinates; `Context::last_dirty_cells()` exposes them. This powers the demos'
-damage maps and `fx_lab`'s heatmap, and makes `dirty %` truthful for shrinking
-content. Damage capture is opt-in (it allocates). `fx_lab`'s "logical damage vs
-wire cost" scene and `--debug-damage` demonstrate the contrast directly.
+`explicit_dirty_count()` / `explicit_dirty_cells()` count only `CellRun`
+writes; they are neither the complete affected footprint nor a general exact
+state-delta measure.
+
+`Renderer` reports the affected footprint and, with `capture_damage`, records
+its coordinates; `Context::last_dirty_cells()` exposes them. Fullscreen resize
+re-anchoring also accounts for its canvas clear. Damage maps and `fx_lab`'s
+heatmap therefore show where update operations act, not exclusively where
+cell state changed. An affected-footprint percentage can exceed the new frame
+area when old rows are removed; it must not be described as an exact “dirty
+percentage.” Label the numerator and denominator. Damage capture is opt-in
+(it allocates). The `fx_lab` damage scene and `--debug-damage` show the
+footprint/wire contrast.
 
 ## 34. Capability Degradation for Effects
 
@@ -784,3 +792,290 @@ The following are **not** implemented or **not** verified. Do not describe them 
 - **Hard `SIGKILL` cannot be intercepted** by any userland process.
 - **Ctrl-C handling** in the interactive demos is implemented as raw-mode key events; the engine relies on RAII / panic-hook restoration for terminal state. Signal handling is not a general engine guarantee.
 - **Fuzzing**: `TextInputState` has deterministic randomized edit fuzzing, but there is no `cargo-fuzz` / AFL target for arbitrary byte streams or resize storms.
+
+## 39. Entity post-processing and SurfaceFx
+
+**EXPERIMENTAL, Rust-only.** An ordinary `Node` carries an optional, already
+realized `surface_fx` chain. `Scene::evaluate` appends the entity's Presentation
+chain to a cloned node; neither the original widget nor layout changes. The
+painter only allocates the extra transparent entity-sized surface when the chain
+is nonempty. It paints the subtree at its natural extent, applies the chain, then
+composites through the existing clipping-aware blit. No second renderer, timers,
+story state, raw ANSI, arbitrary alpha, or new C ABI is involved.
+
+`SurfaceFx` are ordered endomorphisms on realized entity surfaces. The empty
+chain is identity; concatenation is associative; application is left to right.
+Order is significant: successive foreground overlays choose the later colour.
+Available operations are style overlay, stable fractional style mask, dim,
+reverse attribute, row shift, strip tear, narrow-glyph scramble, seeded dissolve,
+and scanline. These preserve transparent holes and style-only cells. Vacated
+shift cells are transparent. Wide graphemes move or disappear as complete pairs.
+Dissolve fraction zero hides everything; one preserves the exact original.
+StyleMask selects the same kind of stable threshold but styles selected cells
+instead of deleting them. Neither operation is opacity.
+
+Masks use entity-local coordinates and an explicit seed; tag-targeted effects
+mix in `SceneId` so objects get distinct reproducible masks. Clipping does not
+reshuffle them. Removing a bundle yields the underlying declarative rendering
+on the next frame, with cleanup provided by ordinary differential rendering.
+
+`SurfaceFx::Scoped { mask: FxMask, effect }` restricts an ordinary operation to
+entity-local cells. Rectangles clip in cells; horizontal/vertical wipes, radial
+frontiers and traveling horizontal bands use normalized coordinates. Seeded
+noise provides a stable alternative. Wipe/radial/noise fraction zero is identity
+and one applies the entire inner effect. The fraction selects cells, not alpha.
+A radial frontier is an ellipse in normalized cell coordinates; it is not a
+claim of physical pixel-circular geometry.
+
+A wide grapheme participates only when both cells are selected. Partial scopes
+isolate selected input on a transparent scratch, run the inner effect, and commit
+only complete output glyphs inside the selection. This prevents a tear from
+importing outside text or exporting half a glyph. Outside cells stay exact;
+style-only cells keep their semantics. Empty and full scopes take no-op/direct
+paths. Nested masks share the full entity coordinate system. Scoping adds no
+layout, clock, story, capability or terminal-protocol dependency.
+
+Processed subtrees do not publish a hardware input cursor because a mask or tear
+can invalidate its position. An unaffected focused input can retain its cursor;
+this is the demo's stable command island. TextInput itself still owns ordinary
+viewport scrolling. Identity-effects tests exposed and corrected trailing-edge
+positioned-panel clipping: clipping a border must not redraw it inward at the visible edge.
+
+## 40. Placement, displacement and persistent effects
+
+`Translate` and legacy `Shake` keep their absolute placement semantics.
+`Displace` and `Jitter` write a separate additive channel. Effective position is
+placement (or baseline) plus the sum of rounded cell displacements. Contributions
+accumulate in a wider integer and clamp only on the final conversion to cell
+coordinates. Independent displacements commute; ordered surface effects do not.
+A fresh `Presentation` is required per frame, as produced by StoryDirector.
+
+`Loop(inner)` evaluates at exact nanosecond `t mod duration(inner)`. A
+zero-duration inner is a no-op. Its public duration is `Duration::MAX`, a
+practical persistent sentinel; remove the mounted bundle to stop it. Arithmetic
+saturates for public durations, while Sequence and Repeat preserve exact elapsed
+remainders at large times. Reverse a finite inner before looping; an infinite
+animation has no natural final frame to reverse from.
+
+Sequence retains completed contributions. For additive motion, successive
+segments express additional displacement, not replacements for earlier values.
+For SurfaceFx, a completed zero dissolve remains in the chain and still hides
+later content. Remove/replace the bundle for a reveal-again lifecycle; do not
+expect a later mask to undo an earlier one.
+
+## 41. Reactions and the one-transition law
+
+Story transitions are morphisms between beats. Reactions are endomorphisms on
+the current beat. `Beat::reaction(event_condition, actions)` alters facts and
+mounted bundles without changing beats or resetting beat time. Reactions use
+only event conditions; story validation rejects timer/fact reaction guards.
+
+Each update records its exact `(dt, events)` step, then executes all matching
+reactions on the original beat in event, declaration, and action order. Reactions
+ignore `min_duration`. Next, the first matching event transition may fire. If
+none fires, at most one automatic transition is selected; its fact guards see
+the final reaction facts. New-beat entry actions run last. Events are never
+reprocessed against the newly entered beat. There is at most one **transition**
+per update, even when multiple reactions run.
+
+Replay remains the ordered update trace against the same Story definition.
+Direct `facts_mut` and `jump_to` changes are not trace-recorded. The cinematic
+demo therefore constructs inspection stages as declared starts with coherent
+initial facts and bundles, and records every subsequent controller decision as
+a StoryEvent. Presentation also replays, including bundle mount times.
+
+## 42. Acid vs Crash encounter
+
+The demo now has two deterministic reducers with different responsibilities.
+`examples/acid_vs_crash/battle.rs` owns a seven-node `BattleGraph` (six local
+subsystems plus a dormant mirror), influence, integrity, connectivity, visibility,
+activity, resource reserves, cooldowns, planner memory and outcome quality.
+`StoryDirector` owns broad dramatic acts, categorical Facts and effect-bundle
+lifecycles. No hacking ontology enters the library. There are no sockets,
+external hosts, credentials, system commands or persistence.
+
+Control uses fixed-point integers from -1000 (Acid) to +1000 (Crash). Ownership
+is derived at ±350 thresholds; integrity is a separate 0–1000 quantity.
+Edges explicitly connect nodes and carry cost and pressure. Routing respects
+severed edges and isolated endpoints. The planner scores only reachable targets,
+using objective value, novelty, structural vulnerability, personality, prior
+isolation, trace exposure and route cost. Stable seeded ties make selection
+repeatable. A fortified intermediate node must yield before forward movement.
+Repeated decoys can cause a feint: approach on a legal edge, then withdraw
+without applying influence to the mirror.
+
+The reducer applies ordered commands at an update boundary and advances exact
+50ms quanta with a retained nanosecond remainder. Its finite horizon bounds
+extreme-duration work; it does not promise an unbounded simulation. TRACE costs
+reserves and increases awareness; isolation blocks real routes and hides local
+telemetry; decoys cost reserves and become recognizable; KILL removes influence
+from one lease while others survive. Final actions have prerequisites. Explicit
+LET HER IN reopens a declared invitation corridor and sacrifices its control;
+a timeout cannot silently reopen that corridor. Outcome metadata records costly,
+clean or traced containment, temporary or decisive possession, and two kinds of
+stalemate. Integrity and altered-file receipts survive the resolution.
+
+Only categorical truths cross into Story Facts: ownership, isolation, footholds,
+trace threshold, display pressure, release completion and outcome. Predeclared
+Reactions project these facts and mount/unmount bundles. Continuous values stay
+in the model. Milestones can move the broad acts after breathing room; fallback
+timeouts preserve dramatic progress without granting control. Final-resolution
+events remain immediate. Terminal acts freeze the world only after its release
+and semantic projection agree.
+
+`EncounterTrace` records the initial inspection stage and fixed seed plus every
+exact dt and ordered input event batch. A fresh encounter re-runs the battlefield
+reducer, derives milestone events, then replays the director. Tests compare the
+entire graph/planner/resources/cooldowns/history/outcome, StoryTrace, facts,
+mounted bundles, Presentation and realized frames. The narrower StoryTrace still
+reproduces its semantic projection independently. Input editor and inspector
+selection are UI state outside world replay. This is an in-memory example trace,
+not a promised stable disk serialization format.
+
+Rendering projects actual graph edges, broken islands, trace pulses, owned
+corridors, decoy geometry and the planner's path. The ghost follows path segments;
+remote typing follows sparse action-driven dialogue. Scoped SurfaceFx advance
+through the existing session and display entities according to their influence.
+Ordinary widgets do not contain cinematic corruption logic. A live, reachable
+DISPLAY corridor is required for its mounted invasion effects. During escalation
+the same map becomes a full-width hero view while session/remote entities shrink
+to witnesses; default debug-free composition preserves the Crash command island.
+No bounds/resize core channel was necessary: responsive node reflow plus existing
+Scene displacement and entity-local effects suffice. Mono retains explicit
+ownership, distinct line grammar and reverse highlights.
+
+Shared-prefix isolation/decoy counterfactual tests require different legal paths,
+targets, facts and realized screens. A severed display path remains severed even
+when the story advances. Stage fixtures establish topology before Story start,
+so inspection and replay share the same initial cause. Existing renderer/VT100
+checks cover 56x24, 80x24, 120x32 and 160x40 plus live resize. PTYs exercise actual
+commands, opponent adaptation and terminal restoration. These establish behavior
+within the tested environment, not subjective cinematic quality on all terminals.
+
+Fullscreen geometry changes now clear the invalidated physical canvas in the
+renderer transaction before compiling a fresh diff. Fresh diffs omit default
+blanks; without the clear, old map fragments survived resize behind dissolved
+panels. Renderer affected-footprint accounting includes the entire clear, while
+SurfaceDiff's exact semantic delta remains its separate framebuffer comparison.
+A following identical frame still emits zero bytes. Flow-widget clipping and
+all preexisting visual snapshots are preserved.
+
+## 43. RGB subcell graphics and filled depth
+
+**IMPLEMENTED + TESTED, EXPERIMENTAL, Rust-only** (`raster`, `raster3d`,
+`raster_fx`). These generators end at an ordinary `Surface`; they do not own
+terminal transport, story state, or a second cell compositor.
+
+`RgbRaster` stores opaque RGB pixel samples. A terminal region of W×H cells
+normally uses W×2H pixels: each `▀` uses foreground for the upper sample and
+background for the lower sample. Software RGB interpolation happens before
+cell realization, so this introduces no terminal alpha. Pixel dimensions are
+explicit and capped at 2048 per axis. Out-of-bounds pixel writes are ignored;
+line/disc work is bounded by the raster. Odd final rows use black for the
+missing lower pixel. `write_ppm` is an optional dependency-free inspection path.
+
+`TriangleMesh` supplies indexed faces, with box/cube/octahedron constructors.
+`Rasterizer` uses the existing Vec3/Transform3 vocabulary. A look-at camera
+transforms into positive-forward camera depth; six frustum planes clip before
+projection. Pixel-center barycentric interpolation operates on reciprocal Z,
+then reconstructs camera depth for the actual depth buffer. The buffer is
+cleared with color and metrics. Exact coplanar ties have a stable color tie-break.
+Degenerate/nonfinite geometry and invalid cameras are rejected; finite hostile
+coordinates cannot produce coordinate-sized raster walks. Depth-tested lines
+share the same buffer. Optional backface culling is independent of correctness.
+
+Flat face lighting is ambient + diffuse·max(0,n·l) + emissive, with RGB
+saturation and linear camera-depth fog. This is intentionally small software
+rendering, not a material system. Metrics expose submitted/drawn triangles and
+Z tests. Drawn counts depend on whether a submitted face writes pixels; they
+are work counters, not a canonical count of final visible faces.
+
+`RasterFx` are ordered endomorphisms on an RGB raster: empty is identity;
+concatenation applies A then B and generally does not commute. Glow, chromatic
+split, sine warp, vignette and scanlines operate before cell realization.
+`RasterFxWorkspace` retains one source scratch shared across the chain. Glow is
+bounded to radius three. Finite-safe radial/metaball/vortex/ring functions and
+a palette interpolator provide fields without introducing a shader language.
+`SurfaceFx` remains the separate layer of grapheme/cell transformations.
+
+`FeedbackBuffer` is explicit state, not a pure Scene effect. Each update decays
+floating RGB history by an explicit half-life and adds the supplied emission;
+conversion saturates to RGB bytes. Zero dt is identity. Reset and changes to
+effective (clamped) dimensions clear history; resizing to the same effective
+dimensions preserves it. Exact replay means the same ordered dt/emission inputs; arbitrary
+repartitioning of emission updates is not claimed equivalent. Black input
+predictably decays, including sub-byte energy; NaNs never enter the buffer.
+
+`MAX_RASTER_DIMENSION` is a hard allocation bound, not a recommended operating
+size. A maximum 2048×2048 feedback buffer holds 96 MiB of floating energy plus
+12 MiB of RGB output (about 108 MiB before allocator overhead). Normal terminal
+rasters are orders of magnitude smaller.
+
+TrueColor preserves RGB; ANSI256/ANSI16 quantize in the existing ANSI compiler.
+Mono has a separate luminance-to-Braille ordered-dither realization rather than
+solid white half blocks. Color is not the only ownership signal: Acid, contest,
+and isolated labels retain distinct glyph grammar. Full animated rasters can
+legitimately change broad regions. Exact delta, affected footprint and wire
+cost remain distinct (§33); identical frozen graphics still emit zero bytes.
+
+## 44. One world, cinematic realizations
+
+The demo-local `presentation.rs` chooses a `ShotPlan` from BattleGraph and
+recorded visual history. This replaces the default flat-UI/dive distinction;
+legacy projections remain explicitly selectable. Nothing in shot selection
+changes the graph, planner, actions, story, facts, bundles or outcome.
+
+Shots cover establishment, arrival, route contest, node closeup, trace,
+isolation, decoy, evasion, DISPLAY assault, final duel, three resolutions and
+aftermath. Each selects a camera pose, focal node, light/field exposure and
+label policy. Stable subsystem positions preserve anchors across shots.
+`world_geom.rs` gives those anchors distinct silhouettes: gateway rings,
+switching prism, nested vault, sloped console, data stacks/mirror, and portal.
+Integrity removes pieces; foreign influence misaligns layers and changes the
+light field. Filled faces and emissive structural rails share camera/depth;
+a sparse, depth-checked Braille overlay adds finer edges over opaque RGB mass.
+No generic engine API was added for this art direction.
+
+`ShotHistory` is derived update state with a recorded prior camera, selected
+shot, action cue, exposure and entry clock. It updates even for zero-duration
+semantic commands. Actions get a bounded 2.4-second attention window; ordinary
+shot changes have a minimum hold. Camera and exposure interpolate over 1.25
+seconds from the prior presentation. Viewport dimensions adjust framing at
+paint time without changing history. Outcome/aftermath time is explicit.
+Exact update replay rebuilds the shot/camera sequence and final raster; no
+wall clock or paint count participates. This is exact ordered-input replay,
+not equivalence under arbitrary timestep repartitioning.
+
+`cyber.rs` remains the common raster generator. Acid's actor follows planner
+progress along valid graph edges; normal traffic dots have separate phases.
+Trace light follows the reverse path. Incomplete feint curves are presentation
+of a real feint tactic, not secretly connected graph edges. Isolation exposes
+broken routes and bounded sparks. A one-level semantic topology/trace engraving
+lives in DISPLAY's geometry, and an ordinary text echo of the live input can
+appear at its projected position with the existing entity SurfaceFx. The real
+input buffer is never modified by the echo or Acid's actor.
+
+The compositional reading is `C(W, shot)`: text, topology, depth and fields are
+projections of the same semantic object W, selected together by the shot.
+They are not separate copies of narrative truth. Three opaque command rows
+are the stable local-control boundary. Richer receipts/scars appear only in
+aftermath or debug inspection. Uppercase shortcuts leave lowercase typed
+commands untouched; numeric final shortcuts are active only on empty input.
+
+VisualHistory retains at most 48 world-space light samples. Painting rebuilds
+feedback in the current camera/dimensions; resize reprojects and repeated paint
+adds no energy. The raster is bounded to 320×240 RGB samples. Whole moving
+camera/raster views can change broadly, while identical frozen frames still
+have zero exact delta, affected footprint and emitted bytes (§33).
+
+Crash resolution pulls outward and preserves damage, Acid assembles tiny
+bitmap lettering from illuminated raster fragments of the current machine,
+and stalemate creates a stationary interference boundary. This is original
+demo-specific choreography, not arbitrary mesh morphing or a font engine.
+Aftermath is a compact scar/trace/replay view over the same architecture.
+
+Legacy `--presentation=legacy` retains the original automatic dive;
+`--visual=flat|cyber` retains individual historical projections for comparison.
+The cinematic default starts with geometry already present. TrueColor, central
+ANSI quantization and Mono density/bright structural rails share world truth;
+color fidelity and perceptual equivalence across terminals are not guaranteed.

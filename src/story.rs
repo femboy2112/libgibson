@@ -153,7 +153,7 @@ impl StoryEvent {
 // Actions and conditions
 // ---------------------------------------------------------------------------
 
-/// A side effect run when a beat is entered.
+/// A semantic action run on beat entry or by an in-beat reaction.
 #[derive(Debug, Clone, PartialEq)]
 pub enum StoryAction {
     SetBool(String, bool),
@@ -183,7 +183,7 @@ impl StoryAction {
     }
 }
 
-/// A transition guard.
+/// A transition guard, or an event matcher for a [`Reaction`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum Condition {
     /// Fire when the beat has been active for at least this long.
@@ -245,6 +245,15 @@ pub struct Transition {
     pub next: String,
 }
 
+/// An event-triggered endomorphism on the current beat: actions without entry
+/// into another beat or resetting its clock. Only event conditions (`On`,
+/// `OnUser`, `OnCommand`) are supported; [`Story::validate`] rejects others.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Reaction {
+    pub condition: Condition,
+    pub actions: Vec<StoryAction>,
+}
+
 // ---------------------------------------------------------------------------
 // Beat
 // ---------------------------------------------------------------------------
@@ -262,6 +271,8 @@ pub struct Beat {
     pub default_after: Option<Duration>,
     pub default_next: Option<String>,
     pub transitions: Vec<Transition>,
+    /// In-beat event reactions, evaluated in declaration order for each event.
+    pub reactions: Vec<Reaction>,
     /// Terminal beats stop the director.
     pub terminal: bool,
 }
@@ -278,6 +289,7 @@ impl Beat {
             default_after: None,
             default_next: None,
             transitions: Vec::new(),
+            reactions: Vec::new(),
             terminal: false,
         }
     }
@@ -319,6 +331,23 @@ impl Beat {
         self.transitions.push(Transition {
             condition,
             next: next.into(),
+        });
+        self
+    }
+
+    /// React to an event without leaving this beat or resetting beat time.
+    ///
+    /// Reactions run before transition selection and are not gated by
+    /// [`Self::min_duration`]. Actions run in declaration order; remounting a
+    /// bundle restarts its local clock, as with an entry action.
+    pub fn reaction(
+        mut self,
+        condition: Condition,
+        actions: impl IntoIterator<Item = StoryAction>,
+    ) -> Self {
+        self.reactions.push(Reaction {
+            condition,
+            actions: actions.into_iter().collect(),
         });
         self
     }
@@ -385,6 +414,8 @@ pub enum StoryError {
     MissingDefaultTarget(String),
     /// A mounted bundle name is not defined.
     UnknownBundle { beat: String, bundle: String },
+    /// A reaction uses a timer or fact condition instead of an event matcher.
+    InvalidReactionCondition { beat: String, reaction: usize },
 }
 
 impl std::fmt::Display for StoryError {
@@ -399,6 +430,12 @@ impl std::fmt::Display for StoryError {
             }
             StoryError::UnknownBundle { beat, bundle } => {
                 write!(f, "beat `{beat}` mounts unknown bundle `{bundle}`")
+            }
+            StoryError::InvalidReactionCondition { beat, reaction } => {
+                write!(
+                    f,
+                    "beat `{beat}` reaction {reaction} requires an event condition"
+                )
             }
         }
     }
@@ -468,7 +505,22 @@ impl Story {
                     _ => return Err(StoryError::MissingDefaultTarget(beat.id.clone())),
                 }
             }
-            for action in &beat.on_enter {
+            for (index, reaction) in beat.reactions.iter().enumerate() {
+                if !matches!(
+                    reaction.condition,
+                    Condition::On(_) | Condition::OnUser(_) | Condition::OnCommand(_)
+                ) {
+                    return Err(StoryError::InvalidReactionCondition {
+                        beat: beat.id.clone(),
+                        reaction: index,
+                    });
+                }
+            }
+            for action in beat
+                .on_enter
+                .iter()
+                .chain(beat.reactions.iter().flat_map(|reaction| &reaction.actions))
+            {
                 if let StoryAction::Mount(name) = action {
                     if !self.bundles.contains_key(name) {
                         return Err(StoryError::UnknownBundle {
@@ -496,7 +548,7 @@ impl Story {
         };
         // Run the start beat's on_enter actions and record it.
         if let Some(start) = self.beats.get(&self.start).cloned() {
-            d.apply_actions(&start);
+            d.apply_actions(&start.on_enter);
             d.trace.record_beat(Duration::ZERO, self.start.clone());
             d.finished = start.terminal;
         } else {
@@ -512,6 +564,11 @@ impl Story {
     /// state — same beat sequence, facts, mounted bundles and final beat — for
     /// **any** original cadence, including irregular timesteps. This is stronger
     /// than replaying timestamped events onto a new grid.
+    ///
+    /// This contract covers changes made through recorded updates. Direct calls
+    /// to [`StoryDirector::facts_mut`] or [`StoryDirector::jump_to`] are not
+    /// recorded. Define inspection stages as the story's start beat with complete
+    /// entry actions, and use reactions for replayable runtime mutations.
     pub fn replay(&self, trace: &StoryTrace) -> StoryDirector {
         let mut d = self.start();
         for step in &trace.steps {
@@ -566,6 +623,8 @@ impl StoryDirector {
         &self.facts
     }
 
+    /// Mutate facts outside the event model. These changes are **not** recorded
+    /// in [`StoryTrace`]; prefer [`Beat::reaction`] when exact replay is required.
     pub fn facts_mut(&mut self) -> &mut Facts {
         &mut self.facts
     }
@@ -586,17 +645,25 @@ impl StoryDirector {
     ///
     /// # Semantics (the one-arrow law)
     ///
-    /// A single `update` performs at most one categorical arrow. Concretely:
+    /// A single `update` follows at most one arrow between beats. Reactions are
+    /// endomorphisms and do not count as beat transitions. Concretely:
     ///
     /// * Every event is trace-recorded in input order.
+    /// * All matching reactions on the **original** beat run, in event order,
+    ///   then reaction declaration order, then action order. Reactions do not
+    ///   reset beat time and ignore `min_duration`. They match events only;
+    ///   facts and timers are reserved for transition conditions.
     /// * The **first** event (in order) whose condition selects an outgoing arrow
     ///   from the current beat triggers exactly one transition. Once a transition
     ///   fires, no further transition is evaluated this update — including a
     ///   fact, `After(0)` or default transition on the *newly entered* beat.
-    /// * Remaining events are recorded but not re-applied to the new beat. If an
-    ///   application needs them handled, it calls `update` again.
+    /// * No events are re-applied to the new beat. Even events after the winning
+    ///   transition event have already run their reactions on the original beat.
     /// * If no event transition fires, at most one automatic transition (fact,
     ///   `After`, or `default_after`) may fire.
+    ///   Fact guards observe the facts after **all** reactions. Explicit guards
+    ///   use declaration order, followed by `default_after`. Entry actions on
+    ///   the new beat run last and can overwrite reaction facts or mounts.
     ///
     /// Event transitions are gated by the current beat's [`Beat::min_duration`].
     ///
@@ -618,6 +685,24 @@ impl StoryDirector {
             dt,
             events: events.to_vec(),
         });
+
+        // Freeze the reaction definitions, not the facts: every event is handled
+        // by the original beat before any outgoing transition is selected.
+        if let Some(beat) = self
+            .story
+            .beats
+            .get(&self.current)
+            .filter(|_| !events.is_empty())
+        {
+            let reactions = beat.reactions.clone();
+            for event in events {
+                for reaction in &reactions {
+                    if reaction.condition.matches_event(event) {
+                        self.apply_actions(&reaction.actions);
+                    }
+                }
+            }
+        }
 
         // At most one arrow: the first matching event transition wins.
         if !events.is_empty() && self.time_in_beat >= self.min_duration() {
@@ -651,7 +736,7 @@ impl StoryDirector {
 
     fn find_auto_transition(&self) -> Option<String> {
         let beat = self.story.beats.get(&self.current)?;
-        // Fact conditions next (in declaration order), then explicit `After`.
+        // Explicit fact/After guards share declaration order, then the default.
         for t in &beat.transitions {
             match &t.condition {
                 Condition::FactIs(..) | Condition::FactTrue(..)
@@ -682,15 +767,15 @@ impl StoryDirector {
         };
         self.current = next;
         self.time_in_beat = Duration::ZERO;
-        self.apply_actions(&beat);
+        self.apply_actions(&beat.on_enter);
         self.trace.record_beat(self.elapsed, self.current.clone());
         if beat.terminal {
             self.finished = true;
         }
     }
 
-    fn apply_actions(&mut self, beat: &Beat) {
-        for action in &beat.on_enter {
+    fn apply_actions(&mut self, actions: &[StoryAction]) {
+        for action in actions {
             match action {
                 StoryAction::SetBool(k, v) => self.facts.set_bool(k.clone(), *v),
                 StoryAction::SetNumber(k, v) => self.facts.set_number(k.clone(), *v),
@@ -732,6 +817,10 @@ impl StoryDirector {
     /// This is the deterministic "start state" hook for tests, goldens and
     /// `--stage=` flags (analogous to the Hackers `--act=` jump). Returns `false`
     /// if the beat is unknown.
+    ///
+    /// This jump is not an update step and cannot be reproduced by trace replay.
+    /// For replayable stage inspection, construct a story starting at that beat
+    /// with entry actions establishing the complete initial state.
     pub fn jump_to(&mut self, beat: impl AsRef<str>) -> bool {
         let id = beat.as_ref().to_string();
         if self.story.beats.contains_key(&id) {

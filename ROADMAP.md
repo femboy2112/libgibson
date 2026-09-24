@@ -13,6 +13,122 @@ This document outlines completed work and the planned future milestones for LibG
 
 ---
 
+## Cinematic machine presentation — IMPLEMENTED + TESTED, EXPERIMENTAL demo-local
+
+- [x] Default shot-directed machine from frame one; legacy flat/cyber retained.
+- [x] Deterministic camera and exposure transitions, responsive focal framing,
+  distinct subsystem architecture and depth-checked Braille structural rails.
+- [x] Planner-positioned Acid actor, trace chase, feint paths, isolation rupture,
+  mirror materialization, DISPLAY UI echo, distinct endings and scarred aftermath.
+- [x] Three-row stable controls, uppercase shortcuts and numeric final actions;
+  ordinary typed input and autonomous Crash preserved.
+- [x] Shot/camera/raster replay, frozen 0/0/0, geometry and damage probes,
+  real PTY shortcuts/full auto and seven-shot resize exercise.
+- [x] Production-design research, release PTY frame inspection and stage matrix.
+- [x] **535 tests** (226 unit + 309 integration); strict local gates and binding
+  smoke tests pass. Remote CI remains billing-blocked.
+- [ ] Independent human aesthetic acceptance remains **UNVERIFIED**; screenshots
+  and test metrics are not a substitute for the user's visual judgment.
+
+See [research](docs/acid-vs-crash-cinematic-research.md) and
+[validation/commands](docs/acid-vs-crash-cinematic-validation.md).
+
+## Terminal software graphics — IMPLEMENTED + TESTED, EXPERIMENTAL Rust-only
+
+- [x] Opaque RGB raster, software blending, half-block realization, Mono density,
+  bounded shapes and dependency-free PPM inspection.
+- [x] Filled triangle meshes, camera/frustum clipping, reciprocal-depth Z buffer,
+  Lambert shading, fog, emissive terms and depth-tested paths.
+- [x] Ordered bounded RasterFx, explicit feedback history and procedural fields.
+- [x] Seven borderless FX Lab scenes, deterministic input/resize/freeze checks.
+- [x] BattleGraph → shaded topology + influence field + trails; automatic dive,
+  DISPLAY lattice, existing UI fragment, stable controls and ending reassembly.
+- [x] Full semantic/visual replay; RGB counterfactuals; frozen 0/0/0 law;
+  graphical counterplay and resize in real PTYs. Original flat goldens retained.
+- [x] At the RGB substrate checkpoint: **515 tests** (226 unit + 289 integration), plus three explicit FX Lab
+  generator tests. All required local gates and native binding smokes pass.
+- [ ] Subjective “mistaken for an image protocol” acceptance is **UNVERIFIED**;
+  visual quality has direct screenshot inspection, not an independent human panel.
+- [ ] Sustained performance across terminal emulators, SSH and multiplexers is
+  **PARTIALLY TESTED**. Optional SDF raymarching and general mesh/font loaders
+  are not implemented; the triangle path is the hero renderer.
+
+See [graphics evidence and exact commands](docs/acid-vs-crash-rgb-validation.md).
+
+## Window into Crash's machine — IMPLEMENTED + TESTED
+
+- [x] Crash fights by default; typed interventions remain available. `--manual`
+  selects human defense; `--auto` retains automatic exit after resolution.
+- [x] Deterministic 1.2s operator pauses after accepted actions, visible command
+  receipts, persistent aftermath and exact replay of autonomous counterplay.
+- [x] Foreground-only route strokes, thin Braille influence fronts and packet
+  trails; presentation advances between 50ms world steps at a 60 FPS ceiling.
+  Whole-panel jitter is reserved for near-complete display possession.
+- [x] Five additional tests: default operator PTYs, aftermath replay, operator
+  pacing/intervention, sub-quantum motion/replay, foreground route rendering.
+  At that checkpoint: **469 tests** (226 unit + 243 integration).
+
+See [spectator refinement evidence](docs/acid-vs-crash-spectator-validation.md).
+
+## Living battlefield round — IMPLEMENTED + TESTED, EXPERIMENTAL Rust-only
+
+- [x] Scoped SurfaceFx: rect, normalized wipes/radial/band, seeded noise; wide
+  glyph, transparency, outside-cell preservation and local-damage tests.
+- [x] Demo-local topology reducer with fixed-point influence, separate integrity,
+  legal path traversal, telemetry loss, resource costs and cooldowns.
+- [x] Deterministic scored Acid planner with personality, trace/isolation/decoy
+  memory, legal pivots and repeat-decoy feints. State-based auto defender.
+- [x] Broad Story acts consume semantic milestones; in-beat battles continue
+  without tactical micro-beats or timer-authored ownership.
+- [x] Full EncounterTrace replay includes graph, planner, resources, history,
+  StoryDirector, mounts and realized scene. Shared-prefix counterfactuals change
+  targets, legal routes, facts and screens.
+- [x] Directed influence fronts, actual graph traffic and ghost trajectory,
+  full-width climax composition, stable command island, aftermath quality/scars.
+- [x] Eight new glyph/style goldens; 13 retained/refreshed Acid PTY cases; all 30
+  other demo snapshots unchanged. Eight Acid PTY tests cover genuine adaptation,
+  telemetry trade-offs, replay, auto completion and terminal restoration.
+- [x] Local fmt, all-target/all-feature strict Clippy, **464 tests** (226 unit +
+  238 integration), release, C/C++/Python and C/C++ ASan/UBSan smoke.
+- [x] DESIGN §33 distinguishes exact semantic delta, affected footprint and wire
+  cost without renaming existing APIs.
+- [ ] Extended human playtesting and subjective cinematic impact remain
+  **PARTIALLY TESTED**. Linux terminal/VT100 evidence is not universal portability.
+- [ ] Go, Windows and broader emulator/multiplexer/SSH behavior are **UNVERIFIED**.
+- [ ] No stable serialized encounter replay format; traces are in-memory.
+- [ ] Remote Actions remain **BLOCKED / ENVIRONMENTAL** (billing, zero steps).
+
+See [round II architecture, commands and evidence](docs/acid-vs-crash-round2-validation.md).
+
+## Cinematic frontier — IMPLEMENTED + TESTED, EXPERIMENTAL Rust-only
+
+- [x] Ordered entity `SurfaceFx` on arbitrary ordinary nodes; transparent scratch
+  only when active. Glyph-safe style/scan/tear/scramble/dissolve and progressive
+  StyleMask; removal restores the underlying node.
+- [x] Additive displacement/jitter independent of legacy placement; persistent
+  finite-period loops and overflow-safe timing.
+- [x] In-beat Reactions with explicit event/action order, one transition per
+  update, validation, exact replay and bundle clocks.
+- [x] `acid_vs_crash`: coherent fictional machine, semantic ownership, deterministic
+  adversary/auto defender, interactive counters, local branches/rejoin, display
+  possession, stable command island and three endings. No real attack capability.
+- [x] 13 new semantic PTY goldens; seven PTY interaction/capability cases;
+  whole-renderer frames at 56x24, 80x24, 120x32, 160x40; live resize and input
+  preservation; stage/branch replay and bounded damage checks.
+- [x] FX Lab scene 20 demonstrates generic post-processing, additive motion and
+  reactions without transitions.
+- [x] Fixed natural clipping of positioned panels and stale blank cells on
+  fullscreen resize. Existing 30 visual goldens remain unchanged.
+- [x] Round I verification: fmt, all-target/all-feature clippy, **430 tests**
+  (226 unit + 204 integration), release build, C/C++/Python smoke and ASan/UBSan.
+- [ ] Subjective cinematic taste, extended human playtesting and terminals beyond
+  the local Linux/VT100 evidence remain **PARTIALLY TESTED / UNVERIFIED**.
+- [ ] Go remains **UNVERIFIED**: no toolchain installed.
+- [ ] Remote CI remains **BLOCKED / ENVIRONMENTAL**: live check confirms billing
+  rejection with zero executed steps. No automatic merge.
+
+See [the evidence and command record](docs/acid-vs-crash-validation.md).
+
 ## Scene Algebra & Story Director Round — IMPLEMENTED (EXPERIMENTAL) + TESTED
 
 This round stops hand-wiring visual effects to application state by introducing a

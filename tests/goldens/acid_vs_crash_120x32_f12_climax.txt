@@ -1,0 +1,32 @@
+C R A S H   O V E R R I D E  //  LOCAL NODE
+LOCAL FABRIC / TRACE 0% / integrity 97% / CONTEST IN PROGRESS
+─── FINAL MOVE / keep one hand on the controls ─────────────────────────────────────────────────────────────────────────
+ ┌─  LOCAL FABRIC / live topology  ─────────────────────────────────────────────────────────────────────────────────────
+ │┌─  SESSIO@ / PROCESS VIEW  ─┐                                                       ┌─  REMOTE / read only  ────────┐
+ ││RE^OTE  ACID BURN           │                         ‹ MODEM                       │hell                           │
+  =HERE DISPLAY → DISPLAY      │                           ⠉⠉⠉⠉⠁⠑⠤⡀                    │                               │
+ │ │TRACE   0% / reserve 100%                                ⠇   ⠈⠑⠢⣀                   └───────────────────────────────
+ │└─────────?──?───────────────┘                             ⡇       ⠑⠢⢄
+ │                                                           ⠃          ⠉⠢⢄⡀
+ │                                                       ‹ ROUTE           ⠈⠒⢄⡀
+ │                                                ⣀⣀⡠⠤  ⠉⠁⠉⠉⠉⠉⠁ ⠉⠉⠒⠢⠤⢄⣀       ⠈⠑⠤⣀
+ │                                        ⢀⣀⣀⠤⠄ ⠈⠉                     ⠉⠉⠒⠒⠤⢄⣀⡀   ⠑⠢⣀
+ │                                 ⣀⣀⡠⠤  ⠉⠁                                   ⠈⠉⠑⠒⠤⠤⣀⠉⠢⢄
+ │                         ‹ AUTH⣀⣀                                                  ⠈● SHELL
+ │                          ⠉⠉⠉⠉   ⠈⠉ ⠠⠤⣀⣀⡀                                     ⢀⡠⠤⠤⠒⠊⠉⠁
+ │                                        ⠈⠉  ⠤⢄⣀⣀                       ⣀⣀⠤⠔⠒⠊⠉⠁
+ │                                                ⠉⠁ ⠠⠤⡀⢀⡀        ⣀⡠⠤⠔⠒⠉⠉
+ │                                                       ‹ FILES⠉⠉
+ │                                                        ⠉⠉⠉⠉⠁ ◀ AB
+ │                                                       ‹ DISPLAY
+ │                                                        ⠉⠉⠉⠉⠉
+ └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+┌─  CRASH / LOCAL CONTROL  ────────────────────────────────────────────────────────────────────────────────────────────┐
+│CUT LINK     READY / disconnects local graph                                                                          │
+│TURN TRACE   NEED TRACE80 / requires trace 80%                                                                        │
+│SPRING DECOY NEED OCCUPIED MIRROR / requires occupied mirror                                                          │
+│LET HER IN   READY / sacrifices DISPLAY                                                                               │
+│LOCAL CONTROLS READY                                                                                                  │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+crash > simulated action · Enter
+FICTIONAL / LOCAL SIMULATION     Enter · Esc / Ctrl-C exit
