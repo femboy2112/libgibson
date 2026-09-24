@@ -1,12 +1,10 @@
-// UNVERIFIED: Go compiler not available in current test environment
-//go:build ignore
 package main
 
 import (
 	"fmt"
 	"os"
 
-	"github.com/libgibson/libgibson/bindings/go/gibson"
+	"github.com/femboy2112/libgibson/bindings/go/gibson"
 )
 
 func main() {

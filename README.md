@@ -2,7 +2,13 @@
 
 > **"Treat a terminal like a small character-cell framebuffer."**
 
-LibGibson is a language-neutral, high-performance terminal UI and differential rendering engine designed for modern agent CLIs, developer tools, and interactive consoles.
+LibGibson is a cell-framebuffer terminal UI engine with native scrollback/live-region
+semantics and experimental compositional animation and software graphics.
+
+**Engineering alpha.** Linux is the best-tested environment. Scene, Story, and
+software graphics are experimental Rust-only APIs. C/C++/Python expose an
+established UI/output subset; Go now passes local Linux build/example smoke checks,
+with remote verification pending. Capability is not an API stability promise.
 
 LibGibson treats the terminal as a 2D logical cell framebuffer with an explicit architectural separation between **mutable live interactive state** and **immutable terminal scrollback history**.
 
@@ -86,7 +92,7 @@ ctx.commit_text("Finalized output text")?; // ctx.commit(...) is an alias
 
 Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **536 tests**: 226 library unit tests and 310 integration tests (across `acid_architecture`, `acid_presentation`, `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
 
-`cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings are UNVERIFIED** — no Go toolchain was available, so they were never compiled. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
+`cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings pass local Linux vet/build/example smoke**; no Go unit tests exist and remote stable-Go validation remains pending. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
 
 ---
 
@@ -114,7 +120,7 @@ Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repos
 - **Grapheme-Based TextInput** (TESTED): Single-line input with display-width-aware navigation, horizontal scrolling, and bracketed paste. Mutations are byte-range edits and the cursor grapheme index is re-derived from the full resulting string, so boundary-merging insertions (combining accents, ZWJ emoji, skin-tone modifiers, flags) preserve `cursor_grapheme <= grapheme_count`. Single-line paste normalizes `\r\n`, `\r`, and `\n` to a space.
 - **Scheduler / Runtime** (TESTED as a module): `DEFAULT_ANIMATION_INTERVAL = 80ms` (60 FPS is an input-latency ceiling, not a spinner target). `Context::run_once(max_wait)` waits up to the next frame deadline, gives input priority, then renders if due. `render_if_due`, `request_render`, `animation_interval`, and `frame_budget` are available. The demos use these instead of `render() + sleep()`.
 - **Clean Plain-Text Degradation** (TESTED): Detects redirected output and suppresses interactive escapes while emitting clean plain text with zero escape sequences. The internal ANSI stripper is for engine-generated output only, **not** a sanitizer for untrusted input.
-- **Language-Neutral Rich Text ABI** (TESTED for C/C++/Python; Go UNVERIFIED): Opaque `gibson_line_t` / `gibson_rich_text_t` with span/align builders. No wrapping logic is duplicated outside Rust.
+- **Language-Neutral Rich Text ABI** (TESTED for C/C++/Python; Go compiles, rich-text runtime coverage pending): Opaque `gibson_line_t` / `gibson_rich_text_t` with span/align builders. No wrapping logic is duplicated outside Rust.
 - **Versioned C ABI** (TESTED): `GIBSON_ABI_VERSION = 1`, `gibson_abi_version()`, `gibson_stats_init()`. Enum-like inputs cross as raw `int32` and are validated. `gibson_get_stats` validates the ABI version and refuses an undersized buffer instead of overflowing it.
 - **Safe Terminal Lifecycle** (TESTED): RAII guard plus a global panic hook restore raw mode, cursor visibility, alternate buffer, and bracketed paste on normal exit, error, or Rust panic. Interactive demo Ctrl-C is handled as a raw-mode key event; see limitations.
 - **Bounded 2D line clipping** (TESTED): `clip_line_to_bounds` runs Liang–Barsky before Bresenham in both sub-cell canvases, so a finite near-camera projection with coordinates in the tens of millions draws only its visible portion instead of walking millions of steps, and near-`i32`-extreme endpoints cannot overflow. Hostile regression tests in `src/canvas.rs`.
@@ -382,7 +388,7 @@ gcc -fsanitize=address,undefined -fno-sanitize=leak -Iinclude \
 ASAN_OPTIONS=detect_leaks=0 /tmp/example_c_asan
 ```
 
-The Go bindings in `bindings/go/` are source-only and **UNVERIFIED** because no Go toolchain was available to compile them.
+The [Go cgo wrapper](bindings/go/README.md) now has a module and runnable command example. Local Linux vet/build/example smoke passes; standalone installation, exhaustive wrapper coverage, and remote CI remain pending.
 
 ---
 
@@ -419,7 +425,7 @@ The Go bindings in `bindings/go/` are source-only and **UNVERIFIED** because no 
 │   ├── c/                   # Native C example
 │   ├── cpp/                 # Modern C++ RAII header and example
 │   ├── python/              # Python ctypes wrapper and example
-│   └── go/                  # Go cgo wrapper and example (UNVERIFIED)
+│   └── go/                  # Go cgo module and runnable command example
 ├── examples/
 │   ├── polished_agent.rs    # Flagship product demo
 │   ├── hack_the_gibson.rs   # Maximalist demo (no raw ANSI literals)
@@ -444,11 +450,11 @@ The Go bindings in `bindings/go/` are source-only and **UNVERIFIED** because no 
 
 ## Current Platform Support & Limitations
 
-- **Platforms exercised**: Linux x86_64 (Ubuntu 24.04) only, with the Rust, C, C++, and Python toolchains.
+- **Platforms exercised**: Linux x86_64 (Ubuntu 24.04) only, with the Rust, C, C++, Python, and Go toolchains (Go smoke only).
 - **Terminals**: the engine targets ANSI-compatible terminals and was exercised under Linux terminals on x86_64. A broad terminal matrix (xterm, Alacritty, Kitty, WezTerm, iTerm2, GNOME Terminal, Windows Terminal, …) is **not** automatically verified.
 - **Windows / ConPTY**: **UNVERIFIED**. Only Linux x86_64 was exercised.
 - **tmux / screen / SSH**: **UNVERIFIED**.
-- **Go bindings**: source updated but **UNVERIFIED** — no Go compiler was installed, so they were never compiled or run.
+- **Go bindings**: local Linux vet/build/example smoke passed with Go 1.18 (gccgo 14.2). `go test ./...` compiles packages but reports no test files. Public stable-Go CI and other platforms remain **UNVERIFIED**.
 - **Terminal capability negotiation**: **NOT implemented**. The fast insertion path assumes `CSI L` support; this is not probed at runtime. On a terminal without it, or when the anchor is untrustworthy or space is insufficient, the always-correct `RepaintFallback` is used.
 - **Absolute cursor anchoring**: **NOT implemented**. Resize re-anchoring is a best-effort erase-from-cursor-down rebuild, not an absolute DSR query.
 - **Signals**: RAII and the panic hook restore terminal state on normal exit, errors, and Rust panics. Interactive demos handle Ctrl-C as a raw-mode key event. Hard `SIGKILL` (`kill -9`) cannot be intercepted by any userland process; this is an operating-system boundary.
@@ -459,9 +465,9 @@ The Go bindings in `bindings/go/` are source-only and **UNVERIFIED** because no 
 
 Licensed under either of:
 
-- Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
-- MIT license (http://opensource.org/licenses/MIT)
+- [Apache License, Version 2.0](LICENSE-APACHE)
+- [MIT license](LICENSE-MIT)
 
-at your option. [LICENSE](LICENSE) contains the MIT text and an Apache 2.0 notice/link.
-Completing the referenced license-file packaging is tracked in the
-[state audit](docs/STATE_OF_LIBGIBSON.md#known-blockers-and-technical-debt).
+at your option. Both complete license texts are included. See the
+[direct-dependency license summary](LICENSES-THIRD-PARTY.md) and
+[security reporting policy](SECURITY.md).

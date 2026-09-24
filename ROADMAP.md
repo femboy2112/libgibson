@@ -10,7 +10,12 @@ remains **536 tests (226 unit + 310 integration)**. See the canonical
 known correctness gaps and release boundaries, and the
 [validation index](docs/VALIDATION_INDEX.md) for historical checkpoints.
 
-Next: restore useful CI and fix its native loader paths; harden public rectangle
+Public-readiness preparation now supplies full license files, read-only SHA-pinned
+CI, corrected native loader paths, and a Go module/example that passes local Linux
+smoke. Visibility remains private until the owner changes it; a useful public
+stable-Rust/Go CI run is still pending.
+
+Next: obtain useful exact-main public CI; harden public rectangle
 arithmetic and exact changed-coordinate reporting; consolidate bounded PTY
 harnesses; establish API/MSRV/package contracts; profile sustained graphics.
 New cinematic features are not the current priority. The phase sections below
@@ -23,7 +28,7 @@ preserve development history rather than promise an execution order.
 - **UNVERIFIED** — present in source or assumed, but never compiled/executed in an attested environment.
 - **PLANNED** — not implemented.
 
-> Historical note: earlier revisions of this roadmap marked phases "Completed" and listed Go bindings as verified. Go is **UNVERIFIED** (no Go toolchain), and the hardening round below re-states what is actually proven.
+> Historical note: earlier revisions of this roadmap marked phases "Completed" and listed Go bindings as verified. Go was **UNVERIFIED** at those checkpoints. The public-readiness round now supplies local build/example evidence; historical entries below retain their original boundaries.
 
 ---
 
@@ -330,4 +335,4 @@ This round converted earlier over-strong claims into verified behavior and expli
 - [ ] **Windows ConPTY Torture Testing**: extended automated testing under the Windows Console API and ConPTY.
 - [ ] **Multiplexer & Remote Shell Hardening**: specialized test matrix for tmux, screen, and SSH connections over high-latency networks.
 - [ ] **Property & Fuzz Testing**: `cargo-fuzz` / AFL suite exercising arbitrary Unicode sequences, arbitrary terminal byte streams, invalid ANSI input, and rapid terminal resizes.
-- [ ] **Executable Foreign Binding CI**: C/C++/Python/ASan jobs already exist, but account billing prevents execution and native rpath commands need correction. Go additionally needs module/native-library job setup and an actual toolchain run; see the state audit.
+- [ ] **Executable Foreign Binding CI**: C/C++/Python/ASan and Go jobs are prepared with corrected native paths, fresh native builds, least privilege and timeouts. Local Go smoke passes. Exact-main public-runner execution remains pending; see the state audit.
