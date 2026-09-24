@@ -9,6 +9,8 @@ pub mod director;
 mod harness;
 #[path = "libgibson_intro/membrane.rs"]
 mod membrane;
+#[path = "libgibson_intro/identity.rs"]
+pub mod identity;
 #[path = "libgibson_intro/model.rs"]
 pub mod model;
 #[path = "libgibson_intro/world.rs"]

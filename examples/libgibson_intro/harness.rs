@@ -1,71 +1,103 @@
 //! An ordinary declarative UI. The membrane receives its realized Surface;
 //! none of these widgets knows that it will become a city.
+use super::identity::{GRAPH_POINTS, IDENTITIES};
 use super::model::{JobStatus, AGENTS};
 use gibson::canvas::BrailleCanvas;
-use gibson::cell::{Color, Line, RichText, Span, Style};
+use gibson::cell::{Color, Line, Span, Style};
 use gibson::node::Node;
 use gibson::surface::Surface;
 
-const INK: Color = Color::Rgb(203, 216, 233);
-const DIM: Color = Color::Rgb(97, 119, 146);
-const CYAN: Color = Color::Rgb(101, 225, 237);
-const LILAC: Color = Color::Rgb(178, 156, 245);
+const INK: Color = Color::Rgb(207, 220, 237);
+const DIM: Color = Color::Rgb(101, 124, 150);
+const CYAN: Color = Color::Rgb(76, 218, 244);
 const BG: Color = Color::Rgb(7, 12, 23);
+const LIFT: Color = Color::Rgb(15, 26, 40);
+const RULE: Color = Color::Rgb(32, 50, 69);
 fn text(s: impl Into<String>, color: Color) -> Node {
     Node::text(s, Style::new().fg(color).bg(BG)).height(1.0)
 }
 fn line(parts: &[(&str, Color)]) -> Node {
+    line_bg(parts, BG)
+}
+fn line_bg(parts: &[(&str, Color)], bg: Color) -> Node {
     Node::line(Line::from_spans(
         parts
             .iter()
-            .map(|(s, c)| Span::styled(s, Style::new().fg(*c).bg(BG)))
+            .map(|(s, c)| Span::styled(s, Style::new().fg(*c).bg(bg)))
             .collect(),
     ))
+    .background(bg)
     .height(1.0)
 }
 fn graph(width: u16, height: u16, time: f32) -> Surface {
     let mut b = BrailleCanvas::new(width, height);
     let w = width as f32 * 2.0;
     let h = height as f32 * 4.0;
-    let p = [
-        (w * 0.12, h * 0.5),
-        (w * 0.38, h * 0.25),
-        (w * 0.63, h * 0.7),
-        (w * 0.88, h * 0.4),
-    ];
+    let p = GRAPH_POINTS.map(|(x, y)| (x * w, y * h));
     for i in 0..3 {
         let (a, c) = (p[i], p[i + 1]);
         b.line(a.0 as i32, a.1 as i32, c.0 as i32, c.1 as i32);
-        let u = (time * 0.35 - i as f32 * 0.18).rem_euclid(1.0);
-        let x = a.0 + (c.0 - a.0) * u;
-        let y = a.1 + (c.1 - a.1) * u;
-        for dy in -1..=1 {
-            for dx in -1..=1 {
-                b.set(x as i32 + dx, y as i32 + dy);
-            }
-        }
     }
+    let mut surface = b.to_surface(Style::new().fg(RULE).bg(BG));
     for (i, (x, y)) in p.into_iter().enumerate() {
-        let r: i32 = if AGENTS[i].status(time) == JobStatus::Running {
-            4
-        } else {
-            2
-        };
+        let agent = AGENTS[i];
+        let id = IDENTITIES[i];
+        let status = agent.status(time);
+        let mut layer = BrailleCanvas::new(width, height);
+        let running = status == JobStatus::Running;
+        let r: i32 = if running { 3 } else { 2 };
+        // Different footprints preserve node identity when color is unavailable.
         for dy in -r..=r {
             for dx in -r..=r {
-                if dx.abs() + dy.abs() == r {
-                    b.set(x as i32 + dx, y as i32 + dy);
+                let on = match i {
+                    0 => dx == -r || dx == r || dy == -r || dy == r,
+                    1 => dx.abs() + dy.abs() == r,
+                    2 => dx == -r || dx == r || dy == 0,
+                    _ => dx == 0 || dy == 0,
+                };
+                if on {
+                    layer.set(x as i32 + dx, y as i32 + dy);
                 }
             }
         }
-    }
-    {
-        let mut surface = b.to_surface(Style::new().fg(CYAN).bg(BG));
-        for c in &mut surface.cells {
-            c.style.bg = Some(BG);
+        if running {
+            let phase = (agent.progress(time) * std::f32::consts::TAU).sin();
+            let halo = 4 + (phase > 0.0) as i32;
+            for dx in [-halo, halo] {
+                layer.set(x as i32 + dx, y as i32);
+                layer.set(x as i32, y as i32 + dx);
+            }
         }
-        surface
+        if i > 0 && status != JobStatus::Queued {
+            let (a, c) = (p[i - 1], p[i]);
+            let u = (agent.progress(time) * 3.0).fract();
+            // Only the currently executing dependency carries moving light.
+            if running {
+                for j in 0..5 {
+                    let at = (u - j as f32 * 0.035).max(0.0);
+                    layer.set(
+                        (a.0 + (c.0 - a.0) * at) as i32,
+                        (a.1 + (c.1 - a.1) * at) as i32,
+                    );
+                }
+            }
+        }
+        let color = if status == JobStatus::Queued {
+            DIM
+        } else {
+            id.color()
+        };
+        let pixels = layer.to_surface(Style::new().fg(color).bg(BG));
+        for (dst, src) in surface.cells.iter_mut().zip(pixels.cells) {
+            if src.glyph.grapheme.as_str() != " " && src.glyph.grapheme.as_str() != "⠀" {
+                *dst = src;
+            }
+        }
     }
+    for c in &mut surface.cells {
+        c.style.bg = Some(BG);
+    }
+    surface
 }
 fn agents(width: u16, time: f32) -> Node {
     let mut nodes = vec![
@@ -73,83 +105,139 @@ fn agents(width: u16, time: f32) -> Node {
         text("PLAN → MAP → BUILD → PROVE", DIM),
         text("", DIM),
     ];
-    for a in AGENTS {
-        let (mark, state, col) = match a.status(time) {
-            JobStatus::Queued => ("○", "queued", DIM),
-            JobStatus::Running => ("◈", "running", CYAN),
-            JobStatus::Complete => ("✓", "sealed", LILAC),
+    for (i, a) in AGENTS.into_iter().enumerate() {
+        let id = IDENTITIES[i];
+        let status = a.status(time);
+        let (state, col, bg) = match status {
+            JobStatus::Queued => ("queued", DIM, BG),
+            JobStatus::Running => ("active", id.color(), LIFT),
+            JobStatus::Complete => ("sealed", id.color(), BG),
         };
-        nodes.push(line(&[
-            (&format!("{mark}  {:<10}", a.name), col),
-            (&format!("  {state}"), DIM),
-        ]));
-        nodes.push(text(format!("   {}", a.role), DIM));
-        let n = usize::from(width.saturating_sub(5)).min(30);
-        let filled = (a.progress(time) * n as f32) as usize;
-        nodes.push(line(&[
-            ("   ", DIM),
-            (&"━".repeat(filled), col),
-            (&"─".repeat(n - filled), Color::Rgb(31, 48, 67)),
-        ]));
+        let rail = if status == JobStatus::Running {
+            "┃"
+        } else {
+            "│"
+        };
+        nodes.push(
+            line_bg(
+                &[
+                    (rail, col),
+                    (&format!(" {} {:<10}", id.signature, a.name), col),
+                    (&format!(" {state}"), DIM),
+                ],
+                bg,
+            )
+            .width(width as f32),
+        );
+        nodes.push(
+            line_bg(&[(rail, col), (&format!("   {}", a.role), DIM)], bg).width(width as f32),
+        );
+        let n = usize::from(width.saturating_sub(6)).min(25);
+        let fill = a.progress(time) * n as f32;
+        let filled = fill as usize;
+        let head = if filled < n && status == JobStatus::Running {
+            "╸"
+        } else {
+            ""
+        };
+        nodes.push(
+            line_bg(
+                &[
+                    (rail, col),
+                    ("   ", DIM),
+                    (&"━".repeat(filled), col),
+                    (head, INK),
+                    (
+                        &"─".repeat(n.saturating_sub(filled + usize::from(!head.is_empty()))),
+                        RULE,
+                    ),
+                ],
+                bg,
+            )
+            .width(width as f32),
+        );
         nodes.push(text("", DIM));
     }
     Node::col().children(nodes)
 }
+const STEPS: [[&str; 4]; 4] = [
+    [
+        "contract / accessibility is invariant",
+        "decompose / map before changing policy",
+        "reject / disconnected edge proposal",
+        "accept / four ordered job contracts",
+    ],
+    [
+        "read / fixtures/transit.graph",
+        "index / 128 stops, 384 directed links",
+        "resolve / transfer and access constraints",
+        "emit / normalized topology witness",
+    ],
+    [
+        "build / stable shortest viable route",
+        "refine / three candidate paths",
+        "reject / closed transfer in candidate 02",
+        "emit / candidate 03 + replay seed",
+    ],
+    [
+        "probe / disconnected destination",
+        "probe / ties and zero transfer window",
+        "replay / same events, same result",
+        "seal / 24 of 24 fixtures converge",
+    ],
+];
 fn workspace(width: u16, height: u16, time: f32) -> Node {
     let current = AGENTS
         .iter()
         .position(|a| a.status(time) == JobStatus::Running)
         .unwrap_or(3);
     let a = AGENTS[current];
+    let id = IDENTITIES[current];
     let p = a.progress(time);
+    let stage = ((p * 4.0) as usize).min(3);
     let mut nodes = vec![
         line(&[("02  ", CYAN), ("LIVE WORKSPACE", INK)]),
         text("OFFLINE TRANSIT / DISRUPTION PLANNER", DIM),
         text("", DIM),
+        line(&[
+            (id.signature, id.color()),
+            (&format!("  {}", a.name), id.color()),
+            ("  /  ", DIM),
+            (a.role, DIM),
+        ]),
+        text(a.task, INK),
+        text("", DIM),
     ];
-    nodes.push(text(a.task, INK));
-    nodes.push(text("", DIM));
-    let lines: [&[&str]; 4] = [
-        &[
-            "goal   Preserve reachable, accessible routes.",
-            "split  Extract topology before changing policy.",
-            "gate   No route may invent a disconnected edge.",
-            "emit   Acceptance contract → SCOUT",
-        ],
-        &[
-            "read   fixtures/transit.graph",
-            "index  128 stops · 384 directed links",
-            "check  wheelchair access / transfer windows",
-            "emit   Normalized route graph → BUILDER",
-        ],
-        &[
-            "build  Deterministic shortest viable route",
-            "refine Three candidates; stable tie ordering",
-            "check  Closed transfer must invalidate path",
-            "emit   Candidate + replay seed → VERIFY",
-        ],
-        &[
-            "test   Disconnected destination / empty graph",
-            "test   Tie ordering / zero transfer window",
-            "replay Same events → same answer",
-            "seal   24 fixtures passed; no external calls",
-        ],
-    ];
-    for (i, s) in lines[current].iter().enumerate() {
-        if p > i as f32 * 0.22 {
-            nodes.push(text(format!("  {s}"), if i == 3 { CYAN } else { INK }));
+    for (i, s) in STEPS[current].iter().enumerate() {
+        if i <= stage {
+            let mark = if i == stage && p < 1.0 { "›" } else { "·" };
+            nodes.push(line(&[
+                (&format!("{mark} "), id.color()),
+                (s, if i == stage { INK } else { DIM }),
+            ]));
         } else {
             nodes.push(text("", DIM));
         }
     }
     nodes.push(text("", DIM));
+    let graph_height = height.saturating_sub(15).clamp(3, 8);
     nodes.push(Node::raster(graph(
         width.saturating_sub(1),
-        height.saturating_sub(15).clamp(3, 8),
+        graph_height,
         time,
     )));
+    nodes.push(line(&[
+        ("⌂ PLAN  ", IDENTITIES[0].color()),
+        ("◇ MAP  ", IDENTITIES[1].color()),
+        ("▥ BUILD  ", IDENTITIES[2].color()),
+        ("⊞ PROVE", IDENTITIES[3].color()),
+    ]));
     nodes.push(text(
-        "A: PLAN        S: MAP        B: BUILD        V: PROVE",
+        if p >= 1.0 {
+            "WITNESS SEALED / all contracts discharged"
+        } else {
+            "contract → execution → witness"
+        },
         DIM,
     ));
     Node::col().children(nodes)
@@ -160,14 +248,16 @@ fn receipts(width: u16, time: f32) -> Node {
         text("LOCAL FIXTURES / SIMULATED", DIM),
         text("", DIM),
     ];
-    for a in AGENTS {
+    for (i, a) in AGENTS.into_iter().enumerate() {
         if a.status(time) == JobStatus::Complete {
-            nodes.push(text(
-                format!("{:05.1}s  {}", a.finish_ms as f32 / 1000.0, a.name),
-                CYAN,
-            ));
-            let words = a.result.split(" / ").map(|s| text(format!("  {s}"), INK));
-            nodes.extend(words);
+            nodes.push(line(&[
+                (IDENTITIES[i].signature, IDENTITIES[i].color()),
+                (
+                    &format!(" {:05.1}s  {}", a.finish_ms as f32 / 1000.0, a.name),
+                    IDENTITIES[i].color(),
+                ),
+            ]));
+            nodes.extend(a.result.split(" / ").map(|s| text(format!("  {s}"), INK)));
             nodes.push(text("", DIM));
         }
     }
@@ -180,14 +270,14 @@ fn receipts(width: u16, time: f32) -> Node {
                 .sum()
         })
         .collect();
-    nodes.push(text("JOB PROGRESS / 250ms", DIM));
+    nodes.push(text("WORK DISCHARGED / 250ms", DIM));
     nodes.push(Node::line(gibson::show::sparkline(
         &values,
         usize::from(width.saturating_sub(2)),
         CYAN,
-        LILAC,
+        IDENTITIES[3].color(),
     )));
-    nodes.push(text("4 workers / local simulation", DIM));
+    nodes.push(text("4 workers / one finite graph", DIM));
     Node::col().children(nodes)
 }
 pub fn render(width: u16, height: u16, time: f32) -> Surface {
@@ -203,22 +293,19 @@ pub fn render(width: u16, height: u16, time: f32) -> Surface {
         .padding_axes(margin, 1.0)
         .children(vec![
             Node::row().children(vec![
-                text("G / LIBGIBSON", CYAN).flex_grow(1.0),
+                line(&[("G / ", CYAN), ("LIBGIBSON", INK)]).flex_grow(1.0),
                 text("AGENT OPERATIONS    /    01", DIM),
             ]),
             text("", DIM),
             Node::row().children(vec![
                 text("Build a resilient transit planner.", INK).flex_grow(1.0),
-                text(format!("{complete}/4 SEALED"), LILAC),
+                text(format!("{complete}/4 SEALED"), IDENTITIES[3].color()),
             ]),
             text(
                 "A finite multi-agent simulation. One shared objective.",
                 DIM,
             ),
-            Node::rule(
-                None::<String>,
-                Style::new().fg(Color::Rgb(35, 55, 78)).bg(BG),
-            ),
+            Node::rule(None::<String>, Style::new().fg(RULE).bg(BG)),
         ]);
     let available = height.saturating_sub(9);
     if width >= 110 {
@@ -239,20 +326,17 @@ pub fn render(width: u16, height: u16, time: f32) -> Surface {
             workspace(width.saturating_sub(4), available, time).height(available as f32),
         );
     }
-    root.add_child(
-        Node::rich_text(RichText::from_lines(vec![Line::from_spans(vec![
-            Span::styled("◈  ", Style::new().fg(CYAN).bg(BG)),
-            Span::styled(
-                if time < 19.5 {
-                    "orchestrator › contracts in flight"
-                } else {
-                    "orchestrator › evidence sealed. Look closer."
-                },
-                Style::new().fg(INK).bg(BG),
-            ),
-        ])]))
-        .height(1.0),
-    );
+    root.add_child(line(&[
+        ("◈  ", CYAN),
+        (
+            if time < 19.5 {
+                "orchestrator › contracts in flight"
+            } else {
+                "orchestrator › evidence sealed. Look closer."
+            },
+            INK,
+        ),
+    ]));
     let mut out = Surface::new(width, height);
     if gibson::layout::compute_layout(&mut root, width, height).is_ok() {
         gibson::painter::paint(&root, &mut out);
