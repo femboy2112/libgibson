@@ -1,5 +1,10 @@
 # Agent-Native UI Experiments and Acceptance Plan
 
+> **Campaign update:** the external program has now completed. See the
+> [recorded results](AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md) for frozen revisions,
+> three post-freeze holdout verdicts and limits. This proposal/audit below is
+> preserved as preregistration; it creates no core commitment.
+
 **Status:** NON-BINDING PREREGISTRATION / PRESSURE TEST ONLY / NO NEW CORE COMMITMENT
 
 **Initial substrate:** `e5ede0a4ab8ff52caa567ee10d45824e42c1ebc6` (merged PR #14; pin exactly)

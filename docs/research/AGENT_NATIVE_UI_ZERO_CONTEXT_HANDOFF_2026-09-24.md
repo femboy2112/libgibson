@@ -1,5 +1,10 @@
 # Zero-Context Handoff — Agent-Native Dynamic UI Pressure Tests
 
+> **Campaign update:** the external program has now completed. See the
+> [recorded results](AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md) for frozen revisions,
+> three post-freeze holdout verdicts and limits. This proposal/audit below is
+> preserved as preregistration; it creates no core commitment.
+
 **Status:** NON-BINDING RESEARCH / PRESSURE TEST ONLY / NO NEW CORE COMMITMENT
 
 **Initial substrate:** LibGibson public main `e5ede0a4ab8ff52caa567ee10d45824e42c1ebc6`

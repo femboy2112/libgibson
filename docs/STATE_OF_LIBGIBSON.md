@@ -22,11 +22,13 @@ license, CI and Go build hygiene; no core/cinematic behavior is changed. The
 publication evidence below supersedes initial D3/D4/license-packaging status.
 
 The post-merge/public-readiness checkpoint passed **536 tests = 226 unit + 310
-integration**. The introductory-cinema branch passes **574 tests = 226 unit + 348 integration**
+integration**. The merged introductory cinema passes **574 tests = 226 unit + 348 integration**
 and adds Rect/diff, PTY lifecycle, route and cinematic regressions; see [its current validation](INTRODUCTORY_CINEMA.md).
 Historical command tables below preserve the checkpoint they measured.
 
-The introductory-cinema branch fixes the discovered hostile `Rect` arithmetic,
+PR #14 merged at `e5ede0a4ab8ff52caa567ee10d45824e42c1ebc6`, with all five
+exact-main jobs passing in [run 35960000454](https://github.com/femboy2112/libgibson/actions/runs/35960000454).
+The merge fixes the discovered hostile `Rect` arithmetic,
 exact changed-coordinate enumeration, and Unix PTY harness cleanup/deadline weaknesses.
 D6 API/distribution, D7 general resources and D8 embedding contracts remain open.
 The resize investigation also records a queued-input/backpressure follow-up in
@@ -34,6 +36,13 @@ The resize investigation also records a queued-input/backpressure follow-up in
 The native CI loader and Go setup defects were fixed and exercised locally during
 public readiness; hosted-runner proof is recorded in the public CI evidence below. Passing the expanded
 suite does not erase the remaining findings. See the reproducible probes below.
+
+The subsequent [external agent-native UI campaign](research/AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md)
+built three planned consumers and three post-freeze holdouts on an unchanged
+public revision. The separate lab passes 61 tests. G1 interaction identity/routing
+showed ergonomic friction with a working public route; no core promotion was
+justified. This corroborates bounded expressivity, not arbitrary-UI universality,
+comparative ease, or a stable API. Its schema and domain tools remain external.
 
 ## What LibGibson is
 
@@ -347,9 +356,8 @@ owner-authorized public launch and executed CI results below supersede that stat
 
 ## Known blockers and technical debt
 
-D1/D2 and the bounded Unix direct-child portion of D5 are resolved on
-`codex/introductory-cinema`, with regressions. These are branch changes until that
-PR lands. D3/D4 retain public-run proof; D6/D7/D8 remain open.
+D1/D2 and the bounded Unix direct-child portion of D5 are resolved on main
+through PR #14, with regressions. Issues #7, #8 and #9 are closed. D3/D4 retain public-run proof; D6/D7/D8 remain open.
 
 | ID | Finding | Evidence and required next check |
 | --- | --- | --- |
@@ -702,8 +710,8 @@ changed automatically.
 
 | Claim | Status | Boundary / next evidence |
 | --- | --- | --- |
-| Approved cinematic work is on main | VERIFIED | Ancestor of 0b673cc; PR #1 merged. |
-| Linux core pipeline works | IMPLEMENTED + TESTED | Expanded branch regressions now cover D1/D2; historical full-run evidence and current intro validation are separately identified. |
+| Approved cinematic work is on main | VERIFIED | Acid-vs-Crash through PR #1; introductory flagship through PR #14 at e5ede0a. |
+| Linux core pipeline works | IMPLEMENTED + TESTED | Merged regressions now cover D1/D2; historical full-run evidence and current intro validation are separately identified. |
 | C/C++/Python binding smoke works | IMPLEMENTED + TESTED | Local checkout; sanitizer boundary stated above. |
 | Go bindings build and example runs | PARTIALLY TESTED | Local gccgo plus public Go 1.27.1 smoke; no Go unit tests or wider API/platform certification. |
 | Windows/macOS/mux/SSH work | UNVERIFIED | Need actual host/terminal matrix. |
@@ -711,14 +719,15 @@ changed automatically.
 | RGB/3D/effects work through Unicode cells | EXPERIMENTAL + TESTED | No image protocol; normal Surface/diff output. |
 | Replay and frozen 0/0/0 hold | IMPLEMENTED + TESTED | Recorded world/visual history and unchanged physical terminal state. |
 | Renderer is uniformly hostile-input hardened | FALSE as a broad claim | Mutable storage and resource policies. |
-| Exact changed-coordinate enumeration is complete | IMPLEMENTED + TESTED on consolidation branch | Erase/removal/wide-glyph oracle; forged public mutable metadata remains caller responsibility. |
+| Exact changed-coordinate enumeration is complete | IMPLEMENTED + TESTED on main | Erase/removal/wide-glyph oracle; forged public mutable metadata remains caller responsibility. |
 | 60 FPS everywhere | DO NOT CLAIM | Cadence ceiling; sustained transport and slow hardware unverified. |
-| Remote CI is green | VERIFIED for the recorded public-main snapshot | Run 35946157443 at aa60036; five executed jobs passed. Historical private failures remain preserved. |
+| Remote CI is green | VERIFIED for the recorded public-main snapshot | Run 35960000454 at e5ede0a; five executed jobs passed. Documentation-only research merge 3d9117d also passed run 35961022598. Historical private failures remain preserved. |
 | Full modern API is language-neutral | FALSE | Core UI ABI exists; modern composition/graphics remain Rust-only. |
 | New aesthetic acceptance was performed | PARTIALLY TESTED | Intro Surface frames inspected and release/PTY paths exercised; independent human taste acceptance remains unverified. |
 | Reachable-history credential scan | PASS, accepted privacy disclosure | Gitleaks history + all blobs + supplemental patterns; owner accepted old personal path; bounded detection. |
 | Own license packaging | VERIFIED | Complete MIT/Apache texts; Cargo archive verification. |
 | Public workflow least privilege | VERIFIED FROM YAML + ACTIONLINT | SHA-pinned, read-only, no persisted checkout credentials/secrets/publish paths; five public CI jobs now pass at the recorded SHA. |
 | Native CI loader paths | FIXED + LOCAL EXACT-COMMAND VERIFIED | Four normal/sanitized binaries run without LD_LIBRARY_PATH. |
-| Public GitHub CI | IMPLEMENTED + TESTED | Public, exact-main run 35946157443; stable Rust 1.98.1 and Go 1.27.1 evidence. |
+| Public GitHub CI | IMPLEMENTED + TESTED | Public, exact-main run 35960000454; stable Rust 1.98.1 and Go 1.27.1 evidence. |
+| External dynamic-UI expressivity | CORROBORATED in tested domain | Three planned consumers and three post-freeze holdouts; shared model/fixture limits, no core promotion, no universal ease claim. |
 | Project is a release-candidate platform | NOT YET | Engineering alpha; operational, core-contract and distribution work outrank new features. |
