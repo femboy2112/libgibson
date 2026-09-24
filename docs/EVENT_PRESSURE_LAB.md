@@ -112,9 +112,9 @@ Those values exclude the intentional polling suspension and are **not**
 PTY-write-to-application latencies.
 
 The initial evidence, small parent/child sources, syscall logs, and intervention
-diff were retained in local scratch space. Final portable commands, retained
-fixtures, and broader repetition results are pending integration into the lab;
-the scratch paths are not installation dependencies.
+diff were retained in local scratch space. The independent [control script](../scripts/dev/crossterm_resize_repro.py) and
+[small normalized witness](fixtures/event-pressure/README.md) preserve the portable
+recipe and provenance; scratch paths are not installation dependencies.
 
 ## Earliest failing layer and source path
 
@@ -209,28 +209,202 @@ Upstream review on 2026-09-24 found related open work:
   level-triggered backend alone is not established as a safe replacement for
   callers that use `Duration::ZERO`.
 
-An upstream report has been prepared; submission/link is pending. No dependency
+[Crossterm issue #1126](https://github.com/crossterm-rs/crossterm/issues/1126)
+contains the submitted independent report, source links and reproduction command. No dependency
 fork, alternate backend, fake input, repeated synthetic SIGWINCH, unbounded
 drain loop, or core scheduling modification is adopted by this evidence record.
 The supported repair still needs correctness, zero-timeout compatibility,
 bounded fairness, portability, and integration evidence.
 
-## Lab integration and final gates
+## Running the oscilloscope
 
-**Pending finalization:** exact executable controls and replay commands; committed
-small failure fixture; raw/Crossterm/Context scenario matrix; repeated graphical
-pressure counts and end-to-end percentiles; final local suite count; exact-tip
-public CI; issue #15 update/upstream report link. These are deliberately not
-reported as passing while implementation continues.
+```sh
+# Measured normal graphical traffic, repeatedly; M switches input control.
+cargo run --release --example event_pressure_lab -- --auto
 
-The required scenario protocol includes normal `ABC`, resize-then-key,
-key-then-resize, a controlled coincident batch, silent application, paused output
-drain at 20/60/150 ms, bounded burst output, and resize storm. Finite trials must
-assert exact key order and multiplicity, retain bounded failure traces, terminate
-and reap every child, and verify terminal restoration. No standard acceptance
-trial may inject a second key to release the first.
+# Actual separate child PTY with a deliberately paused output reader.
+cargo run --release --example event_pressure_lab -- --scenario=slow-drain --pause-ms=150 --auto
 
-No input-draining fix has been introduced, so no new 10,000-event fairness
-guarantee is claimed. The lab's retention/resource measurements may inform #10,
-and restoration observations may inform #11; neither issue is resolved by a
-finite PTY diagnostic campaign.
+# Interleaved size changes/keys with graphical output.
+cargo run --release --example event_pressure_lab -- --scenario=storm --auto
+
+# Quiet causal control: the input fails without rendering.
+cargo run --release --example event_pressure_lab -- --scenario=coincident --workload=silent --mode=crossterm
+
+# Same scenario, raw reader control; this is NOT a patched production backend.
+cargo run --release --example event_pressure_lab -- --scenario=coincident --workload=silent --mode=raw
+
+# Real historical receipts, replayed at quarter speed; Space holds the projection.
+cargo run --release --example event_pressure_lab -- --replay-trace docs/fixtures/event-pressure/crossterm-gate.tsv
+cargo run --release --example event_pressure_lab -- --replay-trace docs/fixtures/event-pressure/raw-gate.tsv
+
+# Deterministic inspection at a supplied trace time, in microseconds.
+cargo run --release --example event_pressure_lab -- --replay-trace docs/fixtures/event-pressure/crossterm-gate.tsv --freeze-at=700000 --deterministic --dump --width=120 --height=32 --color=mono
+
+# Independent upstream reproduction, no LibGibson dependency. Expected exit 1.
+python3 scripts/dev/crossterm_resize_repro.py --repeat 2 --strace --out-dir /tmp/crossterm-evidence
+
+# Explicit real acceptance: currently FAILS (exit 101), intentionally ignored normally.
+cargo +1.98.1 test --test event_pressure_pty context_coincident_lone_key_delivery_acceptance -- --ignored --exact --nocapture
+```
+
+Live controls: `1..7` select normal, settled resize-key, key-resize, controlled
+coincident, slow-drain, burst, or storm. `M` rotates raw/Crossterm/Context. `[`/`]`
+change the next trial's drain pause and rerun; `R` reruns; `A` toggles repeat;
+Space freezes only the visual projection while supervision continues. Esc/Ctrl-C
+exits. Lowercase ordinary ASCII keys are forwarded to a still-running child and
+are recorded as additional real inputs; they are never used as automated rescue
+keys. Finished trials require rerun. Manual injection naturally changes the script.
+
+The burst workload requests full graphical frames at up to 240 Hz, versus 60 Hz
+for normal graphical trials; actual commits depend on rendering/output. No FPS
+promise follows. Silent controls build no raster; standalone raw/Crossterm silent
+children construct no Context. The viewer owns a different terminal from the
+supervised child. The raw/Crossterm graphical controls reuse Context only for the
+same output workload, never for their input path.
+
+`--headless --trace FILE` records one real trial without the viewer and exits 2
+on failed delivery. `--matrix --repeat 20 --workload graphics --pause-ms 60
+--deadline-ms 500` runs all three modes and seven scenarios, outputting CSV;
+its exit 0 means the measurement completed, **not that every trial delivered**.
+Failure columns remain explicit. Live physical timings are never deterministic;
+`--deterministic` is for trace/illustrative projection. `--illustrative --dump`
+is deliberately marked ILLUSTRATIVE and is not a historical witness.
+
+## Bounds and telemetry
+
+- Supervisor drains at most 64 KiB per turn, using nonblocking reads on its own
+  thread. It does not retain terminal output. There is no detached reader.
+- Child receipt file: 65,536 records, 8 MiB reader cap; combined finite trial:
+  65,536 records. Budget exhaustion is an instrument error, not dropped evidence.
+  Visual history uses at most 512 entries, eight pulses, and 512 latency samples.
+- Trial startup deadline 2 s; supervisor lifetime 7 s; child self-limit 8 s;
+  kill/reap cleanup bounded at 2 s. No arbitrary-descendant supervision claim.
+- Input delivery deadline is configurable 100–3000 ms after the nominal final
+  script operation. Tests use a generous 700 ms; recorded matrix uses 500 ms.
+  A 60 ms duplicate/cleanup observation window cannot convert a missed deadline
+  into success. Late, invalid, duplicate and reordered receipts fail.
+- PTY write timestamp is captured **before the successful write syscall**. Child
+  receipt can otherwise precede the parent's return. Latency includes intentional
+  gate/drain delays and diagnostic overhead. Samples are conditional on complete
+  exact-sequence delivery, not a distribution over missing/censored keys.
+- Committed frame bytes exclude in-flight blocked writes and lifecycle controls.
+  Committed minus drained is only an accounting estimate, not kernel queue depth;
+  an unmatched frame begin explicitly says in-flight bytes are unmeasured.
+- Backend readiness is unprobed in normal application traces. It remains `?`;
+  the separately retained syscall witness establishes that layer. Context receipts
+  mean run_once returned, not that an internal decode hook was observed.
+- Monochrome changes presentation only. Frozen frames have zero exact delta,
+  affected footprint and wire bytes; real viewer freeze/resize/restore is tested.
+
+## Validation and repetition
+
+The final local suite passes **591 tests: 226 unit + 365 integration**, plus
+one deliberately ignored upstream delivery acceptance. Repetition results follow.
+No input-draining fix was introduced, so no new 10,000-event fairness guarantee
+is claimed. Such a test belongs to the eventual supported backend repair. This
+finite lab does not close #10 or #11.
+
+### Release repetition results
+
+[Machine-readable matrix](fixtures/event-pressure/pressure-matrix.csv), with
+[commands/resource provenance](fixtures/event-pressure/README.md#repeated-matrix):
+
+| Input path | Trials | Exact delivery | Readable but undelivered | Other failures | Restored |
+|---|---:|---:|---:|---:|---:|
+| Raw poll/read | 700 | 700 | 0 | 0 | 700 |
+| Crossterm poll/read | 700 | 539 | 161 | 0 | 700 |
+| Context run_once | 700 | 592 | 108 | 0 | 700 |
+
+All controlled signal-first collision trials failed through Crossterm and Context
+(100/100 per path across silent and graphical configurations); raw delivered
+100/100. Normal and settled resize-key controls delivered in every tested cell. One of
+the 100 graphical Crossterm storm trials also stranded input (60 ms configuration
+row, which does not itself pause during storm). This is not a
+universal assertion that any overlap must strand a key.
+
+The graphical slow-drain subset, **20 trials per cell**:
+
+| Path | 0 ms | 20 ms | 60 ms | 150 ms |
+|---|---:|---:|---:|---:|
+| Raw | 20 delivered | 20 delivered | 20 delivered | 20 delivered |
+| Crossterm | 20 delivered | 20 stalled | 20 stalled | 20 stalled |
+| Context | 20 delivered | 20 delivered | 20 delivered | 20 delivered |
+
+Context's final slow-drain cells passed even though an earlier graphical witness
+stalled after draining resumed. Source ordering and render timing change which
+ready token is consumed first; this variation is why the separate quiet barrier
+and actual syscall witness matter. In the silent zero-pause slow-drain script,
+Context stalled 8/20: adjacent resize/key operations can also coincide without
+output. Do not cherry-pick a passing workload as a backend repair.
+
+Representative successful-sequence latency, PTY write start → APP receipt:
+
+| Path/scenario | Samples | p50 | p95 | max |
+|---|---:|---:|---:|---:|
+| Raw, graphical slow drain 150 ms | 20 | 78.422 ms | 79.470 ms | 80.444 ms |
+| Context, graphical slow drain 150 ms | 20 | 76.579 ms | 77.926 ms | 78.220 ms |
+| Crossterm, graphical slow drain 150 ms | 0 | censored | censored | deadline failures |
+
+Keys are injected partway through the pause, so their delay need not equal its
+full duration. The remaining per-cell percentiles and sample counts are in the
+CSV; they are conditional diagnostics, not an SLA. Across all configurations,
+3,629 keys belong to successful exact-sequence trials.
+
+The matrix used bounded logging and discarded 1.46 GB of output across 15,114
+frames. GNU time maximum RSS was 3.4–4.8 MiB; aggregate user+system time was
+5.50 s over 73.05 s for the silent matrix and 12.36–13.80 s over 69.81–88.77 s for
+graphical matrices. These are finite process measurements, not proof against all
+busy-loop/resource failures or a resolution of #10.
+
+### Final local gates
+
+All of these exited **0** on Rust 1.98.1:
+
+```sh
+cargo +1.98.1 fmt --check
+cargo +1.98.1 clippy --all-targets --all-features -- -D warnings
+cargo +1.98.1 test
+cargo +1.98.1 build --release
+cargo +1.98.1 build --examples
+cargo +1.98.1 build --release --examples
+RUSTDOCFLAGS="-D warnings" cargo +1.98.1 doc --no-deps
+cargo +1.98.1 test --example fx_lab
+RUSTUP_TOOLCHAIN=1.98.1 bash scripts/dev/bindings_smoke.sh --asan
+git diff --check
+cargo +1.98.1 test --test event_pressure_pty --test event_pressure_trace --test event_pressure_visual --test pty_integration --test pty_resize_torture --test intro_pty --test resize_torture -- --test-threads=1
+cargo +1.98.1 test --test pty_demos acid_ -- --test-threads=1
+```
+
+Full suite: **591 passed = 226 unit + 365 integration**, with **one explicitly
+ignored known-failing delivery acceptance**. FX Lab separately passed three
+example tests. Bindings smoke exercised C/C++/Python/Go and native ASan/UBSan.
+The standard suite took 77.5 s on this host. The dedicated serial PTY/resize/intro
+selection took 26.8 s; Acid PTYs 18.5 s. No timing is a CI assertion.
+
+The ignored acceptance was also run explicitly and **failed, exit 101**, as it
+must on the unresolved backend: exactly one `r` sent, zero application keys,
+positive readable-byte receipts through deadline, restored termios and exit 0
+from the supervised child. The standalone upstream Python probe independently
+exits **1** for the same delivery failure. Neither result is reclassified green.
+
+Diagnostic regressions additionally reject duplicate/reordered/malformed/late
+receipts and inverted timestamps; replay cannot import a future verdict or hide
+a nonzero child exit/restoration failure. The Mono viewer test checks input,
+frozen zero wire, 56↔160↔120 reflow and restoration. Separate release PTYs at
+56×24 Mono, 120×32 TrueColor and 160×40 TrueColor exited/restored with Esc or
+Ctrl-C. Agent inspection of reconstructed measured frames covered those sizes
+and Mono. This is agent visual inspection, not independent human UX acceptance.
+
+First lab commit `a913dd5` passed all five public jobs in
+[run 35968176421](https://github.com/femboy2112/libgibson/actions/runs/35968176421).
+[PR #18](https://github.com/femboy2112/libgibson/pull/18) records final exact-tip
+checks separately; the earlier run must not be substituted for a later SHA.
+The existing PTY job now also invokes `event_pressure_pty`; the long repetition
+matrix stays an explicit local command rather than multiplying normal CI time.
+
+**Verdict:** runtime failure **reproduced**; earliest responsible layer
+**isolated upstream**; batch-loss causal mechanism **CORROBORATED** by source,
+syscalls and a narrow intervention. Production repair **NOT IMPLEMENTED**.
+Issue #15 remains **OPEN**. Core code/dependencies/bindings/cinematic content are
+unchanged. No merge is performed by this investigation.

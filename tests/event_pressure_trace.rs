@@ -64,3 +64,23 @@ fn malformed_key_and_extreme_clock_are_not_hidden_by_analysis() {
         "INVALID CAUSAL TIMESTAMPS"
     );
 }
+
+#[test]
+fn replay_cannot_hide_a_child_exit_or_restoration_failure() {
+    let mut records = vec![
+        r(0, "PTY", "Config", "raw,normal,false,60,700"),
+        r(10, "PTY", "Write", "97"),
+        r(20, "APP", "Key", "97"),
+        r(30, "PTY", "VerdictWindow", "received"),
+        r(40, "PTY", "Exit", "1"),
+    ];
+    let view = host::view(&probe::Config::default(), &records, 0, 40, false);
+    assert_eq!(view.result, "CHILD FAILED");
+    records[4].value = "0".into();
+    records.push(r(45, "PTY", "TerminalRestoration", "false"));
+    assert_eq!(
+        host::view(&probe::Config::default(), &records, 0, 45, false).result,
+        "RESTORATION FAILED"
+    );
+    assert!(!probe::analyze(&records, 0, true).passed());
+}

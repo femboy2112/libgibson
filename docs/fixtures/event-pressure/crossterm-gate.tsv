@@ -1,0 +1,24 @@
+0	726	PTY	Config	crossterm,coincident,false,60,700
+1	3338	CHILD	Gate	source-initialized
+2	3927	PTY	Resize	80x24
+3	14679	PTY	Write	114
+4	24412	PTY	Release	
+5	24678	CHILD	Released	crossterm
+6	24716	TTY	Readable	1:true
+7	24733	TTY	Size	80x24
+8	24735	CROSSTERM	PollBegin	
+9	24753	CROSSTERM	PollReady	
+10	24755	CROSSTERM	Resize	80x24
+11	25830	TTY	Readable	1:true
+12	25839	CROSSTERM	PollBegin	
+13	30899	CROSSTERM	Empty	
+14	37082	CROSSTERM	Empty	
+15	724703	PTY	VerdictWindow	deadline
+16	773913	TTY	Readable	1:true
+17	773925	CROSSTERM	PollBegin	
+18	778994	CROSSTERM	Empty	
+19	780123	TTY	Readable	1:true
+20	780153	CROSSTERM	PollBegin	
+21	785223	CROSSTERM	Empty	
+22	786345	CHILD	Restored	
+23	787886	PTY	Exit	0

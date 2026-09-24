@@ -364,6 +364,7 @@ impl Trial {
             let restored = self.initial_termios.is_some()
                 && self.initial_termios == self.master.get_termios().map(|t| format!("{t:?}"))
                 && self.records.iter().any(|r| r.kind == "Restored");
+            self.emit("TerminalRestoration", restored);
             let mut report = analyze(&self.records, self.drained, restored);
             if !status.success() {
                 report.verdict = "CHILD FAILED".into();
@@ -478,6 +479,17 @@ pub fn analyze(records: &[Record], drained: u64, restored: bool) -> Report {
     }
     if !valid {
         verdict = "INVALID KEY RECEIPT";
+    }
+    if records
+        .iter()
+        .any(|r| r.source == "PTY" && r.kind == "Exit" && r.value != "0")
+    {
+        verdict = "CHILD FAILED";
+    } else if records
+        .iter()
+        .any(|r| r.source == "PTY" && r.kind == "TerminalRestoration" && r.value != "true")
+    {
+        verdict = "RESTORATION FAILED";
     }
     let commits: Vec<_> = records
         .iter()

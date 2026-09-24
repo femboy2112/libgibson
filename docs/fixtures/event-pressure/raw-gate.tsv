@@ -1,0 +1,22 @@
+0	734	PTY	Config	raw,coincident,false,60,700
+1	1748	CHILD	Gate	source-initialized
+2	1849	PTY	Resize	80x24
+3	12573	PTY	Write	114
+4	22464	PTY	Release	
+5	23088	CHILD	Released	raw
+6	23128	TTY	Readable	1:true
+7	23128	TTY	Readable	1:true
+8	23153	TTY	Size	80x24
+9	23156	RAW	PollBegin	
+10	23167	RAW	Read	1
+11	23171	APP	Key	114
+12	23594	PTY	VerdictWindow	received
+13	24245	RAW	PollBegin	
+14	29329	RAW	Empty	
+15	35517	RAW	Empty	
+16	73856	RAW	PollBegin	
+17	78945	RAW	Empty	
+18	80045	RAW	PollBegin	
+19	85123	RAW	Empty	
+20	86219	CHILD	Restored	
+21	87818	PTY	Exit	0

@@ -64,3 +64,61 @@ eight children restored termios and exited zero. The script exited 1.
 
 This evidence isolates readiness consumption; it does not by itself establish
 every graphical workload's behavior or close issue #15's integration gates.
+
+## Visual playback receipts
+
+`crossterm-gate.tsv` and `raw-gate.tsv` are real release-lab traces from the same
+controlled signal-first scenario on this host. They preserve all semantic
+receipts and only the first/last two repetitive poll/empty/queue samples per
+category. Sequence numbers were renumbered after thinning; monotonic elapsed
+microseconds and values are unchanged. No interpolated backend receipts were
+added. These are separate measured trials, not a before/after production fix.
+
+```sh
+cargo run --release --example event_pressure_lab -- --replay-trace docs/fixtures/event-pressure/crossterm-gate.tsv
+cargo run --release --example event_pressure_lab -- --replay-trace docs/fixtures/event-pressure/raw-gate.tsv
+```
+
+The first stops at an observed readable TTY; the second shows raw control delivery.
+Backend-internal readiness stays unprobed in these application traces. Consult
+the independent syscall witness for that layer. The viewer retains the recorded
+mode/scenario/pause instead of accepting unrelated command-line labels.
+
+## Repeated matrix
+
+`pressure-matrix.csv` records 2,100 finite release trials at implementation commit
+`a913dd5a36ed0a659bbd540d9f1d233b675a9e06` on the same Linux host. Five invocations
+ran sequentially: silent/0 ms, graphics/0 ms, graphics/20 ms, graphics/60 ms,
+graphics/150 ms. Each invoked all 3 controls × 7 scenarios × 20 repetitions with
+`--deadline-ms 500`. Pause values affect only the slow-drain scenario; repeated
+normal rows are not independent factorial interventions. No seed or RNG is used;
+real OS scheduling is intentionally observed, not claimed deterministic.
+
+All five matrix commands exited zero (measurement completion). The file preserves
+**269 failed-delivery trials**; this is not a green acceptance matrix. All 2,100
+children restored termios. Key percentiles use nearest rank and only completed
+exact-sequence trials; `key_samples=0` has no latency estimate (numeric CSV zero
+is a sentinel, not instantaneous delivery). The 500 ms deadline starts after the
+nominal final operation; the intentional gate/pause contributes to latency.
+
+Command template:
+
+```sh
+target/release/examples/event_pressure_lab --matrix --repeat 20 --workload graphics --pause-ms 60 --deadline-ms 500
+```
+
+GNU time observations (no CI thresholds):
+
+| Workload / pause | Elapsed s | User s | System s | Maximum RSS KiB |
+|---|---:|---:|---:|---:|
+| Silent / 0 | 73.05 | 1.34 | 4.16 | 3460 |
+| Graphical / 0 | 69.81 | 6.48 | 5.88 | 4828 |
+| Graphical / 20 | 80.85 | 7.17 | 6.28 | 4780 |
+| Graphical / 60 | 83.76 | 7.26 | 6.38 | 4760 |
+| Graphical / 150 | 88.77 | 7.20 | 6.60 | 4784 |
+
+These include the supervisor and child process work; RSS is the tool's maximum,
+not simultaneous process-tree heap accounting. The reader discarded about
+1.46 GB of terminal output across 15,114 committed frames instead of retaining
+captures. The matrix does not establish long-session stability, a CPU SLA, or
+cross-machine latency. Other bounded development activity occurred on the host.

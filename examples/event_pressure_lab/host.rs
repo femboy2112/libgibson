@@ -25,7 +25,7 @@ fn number(args: &[String], name: &str, default: u64) -> io::Result<u64> {
 pub fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|a| a == "--help") {
-        println!("Event Pressure Lab (Unix)\n  --mode raw|crossterm|context --scenario normal|resize-key|key-resize|coincident|slow-drain|burst|storm\n  --workload silent|graphics --pause-ms 0..500 --deadline-ms 100..3000\n  --headless [--trace FILE]   one real trial; exit 2 on delivery failure\n  --matrix --repeat 1..100  CSV observations; failure rows remain failures\n  --replay-trace FILE [--dump --freeze-at MICROSECONDS --deterministic]\n  --illustrative --dump --width 120 --height 32 --color truecolor|ansi16|mono\nLive: 1..7 scenario, M input mode, [ ] drain pause, R rerun, A repeat, Space freeze view, Esc/Ctrl-C exit. Ordinary lowercase keys go to child.\nReal PTY timings are measured, never deterministic. A frozen trace projection is deterministic.");
+        println!("Event Pressure Lab (Unix)\n  --mode raw|crossterm|context --scenario normal|resize-key|key-resize|coincident|slow-drain|burst|storm\n  --workload silent|graphics --pause-ms 0..500 --deadline-ms 100..3000\n  --auto (repeat live trials)\n  --headless [--trace FILE]   one real trial; exit 2 on delivery failure\n  --matrix --repeat 1..100  CSV observations; failure rows remain failures\n  --replay-trace FILE [--freeze-at MICROSECONDS] [--dump] [--deterministic]\n  --illustrative --dump --width 120 --height 32 --color truecolor|ansi16|mono\nLive: 1..7 scenario, M input mode, [ ] drain pause, R rerun, A repeat, Space freeze view, Esc/Ctrl-C exit. Ordinary lowercase keys go to child.\nReal PTY timings are measured, never deterministic. A frozen trace projection is deterministic.");
         return Ok(());
     }
     if let Some(mode) = option(&args, "--child") {
@@ -119,6 +119,12 @@ pub fn main() -> io::Result<()> {
     let replay = option(&args, "--replay-trace")
         .map(|p| load(&p))
         .transpose()?;
+    if args.iter().any(|s| s == "--deterministic")
+        && replay.is_none()
+        && !args.iter().any(|s| s == "--illustrative")
+    {
+        return Err(io::Error::other("real PTY timing is measured; deterministic inspection requires a trace or illustrative fixture"));
+    }
     if args.iter().any(|s| s == "--dump") {
         let view = if let Some(records) = replay.as_ref() {
             let end = number(&args, "--freeze-at", records.last().map_or(0, |r| r.us))?;
@@ -148,7 +154,13 @@ pub fn main() -> io::Result<()> {
         }
         return Ok(());
     }
-    live(c, depth, replay)
+    let freeze = option(&args, "--freeze-at")
+        .map(|s| {
+            s.parse::<u64>()
+                .map_err(|_| io::Error::other("invalid freeze time"))
+        })
+        .transpose()?;
+    live(c, depth, replay, freeze, args.iter().any(|s| s == "--auto"))
 }
 fn save(path: &str, r: &Report) -> io::Result<()> {
     let text: String = r.records.iter().map(Record::line).collect();
@@ -291,7 +303,13 @@ pub fn view(c: &Config, records: &[Record], drained: u64, at: u64, running: bool
             .into(),
     }
 }
-fn live(mut c: Config, depth: ColorDepth, replay: Option<Vec<Record>>) -> io::Result<()> {
+fn live(
+    mut c: Config,
+    depth: ColorDepth,
+    replay: Option<Vec<Record>>,
+    freeze: Option<u64>,
+    mut auto: bool,
+) -> io::Result<()> {
     let exe = std::env::current_exe()?;
     let mut ctx = Context::fullscreen()?;
     ctx.session.enter_interactive()?;
@@ -303,7 +321,6 @@ fn live(mut c: Config, depth: ColorDepth, replay: Option<Vec<Record>>) -> io::Re
     };
     let mut start = Instant::now();
     let mut held: Option<View> = None;
-    let mut auto = false;
     let mut done_at = None;
     loop {
         if let Some(t) = &mut trial {
@@ -312,7 +329,15 @@ fn live(mut c: Config, depth: ColorDepth, replay: Option<Vec<Record>>) -> io::Re
             }
         }
         let current = if let Some(records) = &replay {
-            view(&c, records, 0, start.elapsed().as_micros() as u64, false)
+            // Quarter-speed display makes subsecond measured gaps inspectable;
+            // receipts retain their real timestamps, not playback timestamps.
+            view(
+                &c,
+                records,
+                0,
+                freeze.unwrap_or(start.elapsed().as_micros() as u64 / 4),
+                false,
+            )
         } else {
             let t = trial.as_ref().unwrap();
             view(
@@ -355,9 +380,11 @@ fn live(mut c: Config, depth: ColorDepth, replay: Option<Vec<Record>>) -> io::Re
                 }
                 KeyCode::Char('[') => {
                     c.pause_ms = c.pause_ms.saturating_sub(20);
+                    rerun = true;
                 }
                 KeyCode::Char(']') => {
                     c.pause_ms = (c.pause_ms + 20).min(500);
+                    rerun = true;
                 }
                 KeyCode::Char(ch) if ch.is_ascii_graphic() => {
                     if let Some(t) = &mut trial {

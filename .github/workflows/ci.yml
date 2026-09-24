@@ -200,4 +200,4 @@ jobs:
         run: cargo build --examples
 
       - name: PTY tests
-        run: cargo test --test pty_integration --test pty_resize_torture -- --test-threads=1
+        run: cargo test --test pty_integration --test pty_resize_torture --test event_pressure_pty -- --test-threads=1
