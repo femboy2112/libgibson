@@ -4,8 +4,9 @@ This document outlines completed work and the planned future milestones for LibG
 
 ## Post-merge priorities
 
-The approved cinematic branch is merged at `0b673cc`. Fresh local validation
-remains **536 tests (226 unit + 310 integration)**. See the canonical
+The approved cinematic branch is merged at `0b673cc`. That checkpoint validated
+**536 tests (226 unit + 310 integration)**. Current intro/consolidation evidence is
+[recorded separately](docs/INTRODUCTORY_CINEMA.md). See the canonical
 [State of LibGibson](docs/STATE_OF_LIBGIBSON.md) for the ranked P0–P3 roadmap,
 known correctness gaps and release boundaries, and the
 [validation index](docs/VALIDATION_INDEX.md) for historical checkpoints.
@@ -16,10 +17,12 @@ smoke. The owner authorized public visibility. Exact-main public CI now passes a
 jobs: [run 35946157443](https://github.com/femboy2112/libgibson/actions/runs/35946157443)
 on `aa60036` (Rust 1.98.1 and Go 1.27.1). This does not establish an MSRV.
 
-Next: maintain useful public CI and configure owner-approved protection; harden public rectangle
-arithmetic and exact changed-coordinate reporting; consolidate bounded PTY
-harnesses; establish API/MSRV/package contracts; profile sustained graphics.
-New cinematic features are not the current priority. The phase sections below
+The introductory-cinema branch passes **564 tests (226 unit + 338 integration)**
+and fixes rectangle arithmetic and exact changed-coordinate
+reporting, consolidates bounded Unix PTY harnesses, and adds a canonical short film.
+Next: land these tested changes; maintain useful public CI and owner-approved protection;
+establish API/MSRV/package contracts; profile sustained graphics and build a platform matrix.
+Avoid expanding graphics features before those remaining contracts improve. The phase sections below
 preserve development history rather than promise an execution order. Their older
 CI/Go statuses are historical and superseded by the public run linked above.
 

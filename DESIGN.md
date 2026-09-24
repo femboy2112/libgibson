@@ -32,7 +32,7 @@ Because earlier revisions of this document overstated completion, architectural 
 | Label | Meaning |
 | --- | --- |
 | **IMPLEMENTED** | The described code path exists and is reached in normal operation. |
-| **TESTED** | Covered by an automated test in this repository (`cargo test`, 536 tests: 226 unit + 310 integration) that exercises the behavior described. |
+| **TESTED** | Covered by an automated test in this repository (`cargo test`, 564 tests: 226 unit + 338 integration) that exercises the behavior described. |
 | **PARTIALLY TESTED** | Implemented, and some behavior is covered, but at least one named facet is not automatically verified. The gap is stated explicitly. |
 | **UNVERIFIED** | Written down because it exists in source or is a documented assumption, but has not been compiled or executed in any environment we can attest to. |
 
@@ -1083,3 +1083,24 @@ Legacy `--presentation=legacy` retains the original automatic dive;
 The cinematic default starts with geometry already present. TrueColor, central
 ANSI quantization and Mono density/bright structural rails share world truth;
 color fidelity and perceptual equivalence across terminals are not guaranteed.
+
+## 42. Seekable introductory cinema and shared routes
+
+The introductory demo realizes one finite job graph as Node UI, a refracted
+Surface, depth-tested information architecture and a planetary title composition.
+Its demo-local cue sheet derives presentation from explicit time; seeking does not
+replay hidden paint-time mutations. It intentionally uses no growing per-frame
+StoryTrace because this linear film has no interactive narrative branches.
+
+`geom::CubicPath3` supplies shared world-space interpolation and unit tangents for
+semantic couriers and camera attention. It is pure, clamped and finite-safe; it
+does not introduce actors, clocks or another scene graph into core. The runner
+reuses held Nodes while the presentation key is unchanged. Full details and
+validation are in [Introductory cinema](docs/INTRODUCTORY_CINEMA.md).
+
+The accompanying core hardening preserves Rect's saturated half-open extent
+contract. Exact SurfaceDiff spans now retain erasures/removals independently of
+ANSI patches, so coordinate enumeration agrees with the semantic delta count.
+Affected footprint still includes already-blank erased cells; wire cost is still
+measured separately. The added public Rust metadata field changes exhaustive
+struct-literal construction; the C ABI is unchanged.

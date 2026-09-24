@@ -2,7 +2,7 @@
 
 ## Executive summary
 
-This is the canonical bird's-eye assessment of the post-merge baseline and public-readiness consolidation,
+This is the canonical bird's-eye assessment, including the introductory-cinema consolidation,
 not a replacement for [DESIGN](../DESIGN.md). Historical evidence is catalogued
 in the [validation index](VALIDATION_INDEX.md).
 
@@ -21,14 +21,18 @@ changes only. A separately authorized public-readiness commit adds repository,
 license, CI and Go build hygiene; no core/cinematic behavior is changed. The
 publication evidence below supersedes initial D3/D4/license-packaging status.
 
-Both baseline and final local gates passed: **536 tests = 226 unit + 310
-integration**, no failures or ignored tests. Three additional FX Lab example
-tests pass separately. This inventory is scope, not a quality score.
+The post-merge/public-readiness checkpoint passed **536 tests = 226 unit + 310
+integration**. The introductory-cinema branch passes **564 tests = 226 unit + 338 integration**
+and adds Rect/diff, PTY lifecycle, route and cinematic regressions; see [its current validation](INTRODUCTORY_CINEMA.md).
+Historical command tables below preserve the checkpoint they measured.
 
-Important discoveries remain open: hostile `Rect` arithmetic, inaccurate exact
-changed-coordinate enumeration, and PTY harness cleanup/deadline weaknesses.
+The introductory-cinema branch fixes the discovered hostile `Rect` arithmetic,
+exact changed-coordinate enumeration, and Unix PTY harness cleanup/deadline weaknesses.
+D6 API/distribution, D7 general resources and D8 embedding contracts remain open.
+The resize investigation also records a queued-input/backpressure follow-up in
+[issue #15](https://github.com/femboy2112/libgibson/issues/15).
 The native CI loader and Go setup defects were fixed and exercised locally during
-public readiness; hosted-runner proof is recorded in the public CI evidence below. Passing the existing
+public readiness; hosted-runner proof is recorded in the public CI evidence below. Passing the expanded
 suite does not erase the remaining findings. See the reproducible probes below.
 
 ## What LibGibson is
@@ -114,7 +118,7 @@ contract. It does not include every hostile input or every emulator.
 | Primary-screen inline mode; fullscreen | IMPLEMENTED + TESTED | Renderer, whole_renderer_vt100, commit_invariance, PTYs. |
 | Lifecycle, cursor, resize/re-anchor | IMPLEMENTED + TESTED; PARTIALLY TESTED across environments | Drop/panic cleanup and PTY input/resize; relative inline anchor, no DSR. Restore errors are best effort. |
 | Synchronized updates | IMPLEMENTED + PARTIALLY TESTED | Transaction markers tested; user toggle + TTY enables them, not negotiated support. |
-| Differential rendering | IMPLEMENTED + TESTED, known coordinate-report defect | Count, affected footprint and bytes are distinct; see debt D2. |
+| Differential rendering | IMPLEMENTED + TESTED | Count, exact coordinate spans, affected footprint and bytes are distinct; D2 regression now covered. |
 | Scrollback insertion | IMPLEMENTED + TESTED | CSI L fast path or repaint fallback; not universally zero repaint. Passive capability assumptions remain. |
 | Structured output / non-TTY | IMPLEMENTED + TESTED | Text/RichText/Node share layout; redirected output is plain text. |
 | Raw ANSI escape hatch | IMPLEMENTED + TESTED, caller responsibility | Explicit unchecked paths bypass sanitization; legacy alias noted below. |
@@ -163,7 +167,8 @@ Overlapping APIs mostly serve distinct levels:
 - `commit`, old dirty-count names and `termframe` aliases preserve compatibility.
   Recommend modern explicit names in new code; do not remove them casually.
 
-API documentation still needs a support/stability policy, crate-level entrypoint,
+Crate documentation now supplies an entrypoint and alpha/ownership boundaries.
+API documentation still needs a tested support/stability policy,
 FFI ownership contracts and a review of public mutable implementation fields.
 Privatization, renaming and feature flags are recommendations, not this audit's edits.
 
@@ -176,15 +181,17 @@ They are a domain model and its projections, not core library concepts.
 
 | Demo | Job | Positioning |
 | --- | --- | --- |
+| libgibson_intro | Professional Node harness → refracted Surface → information city → Earth | Canonical introductory short film; finite simulated jobs and seekable pure presentation. |
 | polished_agent | Practical inline UI, native history, mutable foreground, focus/viewport | Product-oriented example; good next step after Quickstart. |
 | hack_the_gibson | Broad act/effect showcase and fictional Hackers homage | Showcase, not minimal API tutorial; shell is simulated. |
 | fx_lab | Isolated primitive gallery and regression microscope | Engineering lab; three example tests require explicit invocation. |
-| acid_vs_crash | Integrated deterministic model → shots → graphics/UI → terminal | Cinematic flagship; default Crash fights, manual interventions remain. |
+| acid_vs_crash | Integrated deterministic model → shots → graphics/UI → terminal | Interactive cinematic battle; default Crash fights, manual interventions remain. |
 | agent_chat | Earlier lifecycle/chat example | Legacy example/fixture; manual timing and raw output make it a weaker starting point. |
 | perf_probe / resize_test_app | Damage/byte and resize exercise | Probe/fixture, not universal performance certification. |
 
 Legacy flat/cyber projections intentionally preserve comparison and goldens.
-Do not delete them as dead code or spend another round polishing the flagship.
+Do not delete them as dead code. The intro demonstrates another realization grammar,
+without replacing the existing demos or changing Acid battle semantics.
 
 ## Language-neutral ABI status
 
@@ -252,7 +259,7 @@ Test taxonomy:
 | Group | What it establishes | Boundary |
 | --- | --- | --- |
 | 226 source unit tests | Cells, layout, input, scheduling, geometry and semantics | Finite examples, not exhaustive public-input safety. |
-| 32 integration targets / 310 tests | Composition, diff, ABI, replay, graphics, PTY and fixtures | Some targets import demo modules, so this is also demo maintenance coverage. |
+| Original audit: 32 integration targets / 310 tests | Composition, diff, ABI, replay, graphics, PTY and fixtures | Some targets import demo modules, so this is also demo maintenance coverage. |
 | whole_renderer_vt100 / screen_state_vt100 | Full renderer or diff/compiler bytes reconstruct expected screen | Shared vt100 parser family, not independent emulator consensus. |
 | scene/story/acid model tests | One-arrow law, reactions, irregular dt replay, counterfactual choices, visual history/camera equality | Exact recorded input updates; no durable portable replay format. |
 | raster3d / raster_fx / surface_fx | Occlusion, clipping, hostile floats, masks, wide cells, deterministic feedback | Newer raster safety does not cover every older helper. |
@@ -263,7 +270,8 @@ Test taxonomy:
 The baseline `cargo test` command took about 92 seconds on this host; visual_goldens
 reported about 37 seconds. These are observations, not timing assertions. Golden
 captures use fixed wall-clock waits; semantic/raster tests use deterministic time.
-Three fx_lab example tests sit outside the 536 default count. Repeated checks at
+Three fx_lab example tests sit outside the default count (536 at the initial audit,
+564 on the introductory-cinema branch). Repeated checks at
 model/presentation/terminal layers guard distinct boundaries; the former CI's repeated goldens
 and PTY commands also duplicate some full-suite execution and can later be tuned.
 
@@ -338,22 +346,23 @@ owner-authorized public launch and executed CI results below supersede that stat
 
 ## Known blockers and technical debt
 
-Core findings remain open. Public-readiness work resolves D3 locally, repairs D4's
-repository build setup, and completes D6's license-file packaging only. No new
-feature or core fix is hidden in this consolidation branch.
+D1/D2 and the bounded Unix direct-child portion of D5 are resolved on
+`codex/introductory-cinema`, with regressions. These are branch changes until that
+PR lands. D3/D4 retain public-run proof; D6/D7/D8 remain open.
 
 | ID | Finding | Evidence and required next check |
 | --- | --- | --- |
-| D1 | Public Rect overflow | Debug probe confirms intersection at x=65535,width=1 and shrink(32768) panic. Endpoint/multiplication arithmetic in surface.rs is unchecked; release wrapping must also receive a defined contract and regression. Ordinary terminal geometry is not a reproducer. |
-| D2 | Exact coordinate enumeration is incomplete | Erasing `hello` from an 8×1 Surface yields exact count 5, but exact_changed_cells() returns []. It enumerates explicit runs, omitting erase/removal deltas. Repair storage/contract with blank-padding, erasure and removed-row regressions; leave compatibility metrics distinct. |
+| D1 | FIXED + LOCAL REGRESSIONS | Saturated half-open Rect endpoints, normalized intersection/shrink and overflow-safe amounts. Debug/release boundary oracle tests. Coordinate 65535 is outside the maximum Surface extent. |
+| D2 | FIXED + LOCAL REGRESSIONS | Compact exact spans include erased/removed rows and columns plus wide continuations; an independent union-of-extents oracle checks count/enumeration agreement. Public Rust SurfaceDiff gains a field; exhaustive literals need updating. C ABI unchanged. |
 | D3 | RESOLVED + PUBLIC CI VERIFIED | Former literal `$PWD` RUNPATH caused exit 127 (historical probe below). All four workflow C/C++/sanitizer commands now expand `$GITHUB_WORKSPACE`; readelf and execution without LD_LIBRARY_PATH pass; both public binding/sanitizer jobs also execute successfully. |
 | D4 | Repository build RESOLVED + PUBLIC SMOKE; distribution remains limited | Correct module/import, normal command example, SRCDIR paths, per-job native build and hard-failing vet/test/build/example. Local gccgo succeeds. Hosted Go 1.27.1 vet/build/example also passes. No Go unit tests; standalone installation remains D6 debt. |
-| D5 | Test harness lifecycle/deadlines | Older pty_integration blocking read_line defeats its apparent timeout; visual_goldens kill without wait/join; several harnesses build only when binary absent. Fresh build ordering and bounded reaping need consolidation. |
-| D6 | Packaging/API contract | No declared/tested MSRV, changelog, crate overview, installable foreign packages or explicit API stability policy. Full MIT/Apache texts and Cargo package integrity are now verified; the remaining API/MSRV/installable-package contract is OPEN. |
+| D5 | FIXED for Unix direct-child harnesses | All four existing captures plus intro tests share nonblocking reads/writes, deadlines, bounded output and kill/reap cleanup on every exit. Fresh builds and assertion-unwind regression. Windows and arbitrary descendants remain outside this tested contract. |
+| D6 | Packaging/API contract | No declared/tested MSRV, changelog, installable foreign packages or explicit API stability policy. Full MIT/Apache texts and Cargo package integrity are now verified; the remaining API/MSRV/installable-package contract is OPEN. |
 | D7 | Long-session/resource policy | Story trace grows indefinitely until completion; public Surface storage and caller-sized helpers lack uniform hostile-resource bounds. No sustained memory/backpressure study. |
 | D8 | Embedded lifecycle ownership | Global panic hook/stdout and best-effort restore suit a single terminal owner; concurrent contexts, failed writes and host panic-hook integration lack a product contract. |
+| D9 | Queued input under resize/backpressure | [Issue #15](https://github.com/femboy2112/libgibson/issues/15): a delayed key is released by a later key. The test harness now drains output correctly; possible upstream readiness mechanism needs an independent bounded reproducer. |
 
-Small reproducible Rust probe, linked against the existing debug rlib:
+Historical audit reproducer (now fixed by the consolidation regressions):
 
 ```rust
 use gibson::{compute_diff, Rect, Style, Surface};
@@ -389,7 +398,7 @@ env -u LD_LIBRARY_PATH /tmp/libgibson-post-merge/ci-rpath-probe
 ```
 
 The literal RUNPATH and exit 127 were observed. No CI permission or billing bypass was
-attempted. The existing suite was green despite D1–D3; the public-readiness exact-command check now covers the D3 fix.
+attempted. The earlier suite was green despite D1–D3; the public-readiness exact-command check now covers the D3 fix.
 
 Robustness strengths remain substantial: structured text skips control-containing
 graphemes, wide glyph invariants are tested, FFI enums are validated, clipping
@@ -467,8 +476,8 @@ Ranked by evidence, not spectacle:
 | Priority | Work / why | Dependency | Acceptance criterion | Architectural risk |
 | --- | --- | --- | --- | --- |
 | P0 | Keep public CI useful; enable owner-selected security settings and main protection | First exact-main public CI is now green | Preserve five executed jobs; require meaningful checks through owner-approved protection; no unreviewed bot merges | LOW |
-| P1 | Fix D1/D2, add bounded property tests for Rect/Surface/diff reconstruction | Explicit endpoint/delta contracts | Debug/release hostile cases defined; erased/removed coordinates agree with exact count; seeded generative corpus passes | MEDIUM |
-| P1 | Consolidate fresh-build, bounded/reaped PTY harnesses | Existing stronger demo harness patterns | No stale executable path, zombie child or uninterruptible timeout; resize/input checks retained | LOW |
+| P1 | Build on fixed D1/D2 with broader property tests for Rect/Surface/diff reconstruction | Implemented endpoint/delta contracts | Debug/release hostile cases defined; erased/removed coordinates agree with exact count; seeded generative corpus passes | MEDIUM |
+| P1 | Extend consolidated Unix PTY harnesses to a platform matrix | Existing stronger demo harness patterns | No stale executable path, zombie child or uninterruptible timeout; resize/input checks retained | LOW |
 | P1 | Establish release/API/MSRV/package contract | Useful CI and license review | Minimal Rust/C/Python apps build from documented clean install; full license texts, ownership docs and tested compiler floor | LOW–MEDIUM |
 | P1 | Profile sustained graphics and trace retention | Representative deterministic workloads | Separate generation/allocation/wire/consumer metrics, memory trend and slow-reader behavior; no universal FPS claim | MEDIUM |
 | P2 | Expand Go wrapper coverage; establish macOS/Windows then tmux/screen/SSH matrix | Toolchains/hosts/native artifacts | Each claimed environment executes input/lifecycle/resize/binding tests; unsupported cells remain explicit | MEDIUM |
@@ -691,19 +700,19 @@ changed automatically.
 | Claim | Status | Boundary / next evidence |
 | --- | --- | --- |
 | Approved cinematic work is on main | VERIFIED | Ancestor of 0b673cc; PR #1 merged. |
-| Linux core pipeline works | IMPLEMENTED + TESTED | 536 tests and native smokes; D1/D2 remain outside previous coverage. |
+| Linux core pipeline works | IMPLEMENTED + TESTED | Expanded branch regressions now cover D1/D2; historical full-run evidence and current intro validation are separately identified. |
 | C/C++/Python binding smoke works | IMPLEMENTED + TESTED | Local checkout; sanitizer boundary stated above. |
 | Go bindings build and example runs | PARTIALLY TESTED | Local gccgo plus public Go 1.27.1 smoke; no Go unit tests or wider API/platform certification. |
 | Windows/macOS/mux/SSH work | UNVERIFIED | Need actual host/terminal matrix. |
 | Scene/Story semantics are exercised | EXPERIMENTAL + TESTED | No API freeze; recorded updates only, no portable serialization. |
 | RGB/3D/effects work through Unicode cells | EXPERIMENTAL + TESTED | No image protocol; normal Surface/diff output. |
 | Replay and frozen 0/0/0 hold | IMPLEMENTED + TESTED | Recorded world/visual history and unchanged physical terminal state. |
-| Renderer is uniformly hostile-input hardened | FALSE as a broad claim | Rect counterexample, mutable storage and resource policies. |
-| Exact changed-coordinate enumeration is complete | FALSE | D2 erase probe. Exact count is a separate API. |
+| Renderer is uniformly hostile-input hardened | FALSE as a broad claim | Mutable storage and resource policies. |
+| Exact changed-coordinate enumeration is complete | IMPLEMENTED + TESTED on consolidation branch | Erase/removal/wide-glyph oracle; forged public mutable metadata remains caller responsibility. |
 | 60 FPS everywhere | DO NOT CLAIM | Cadence ceiling; sustained transport and slow hardware unverified. |
 | Remote CI is green | VERIFIED for the recorded public-main snapshot | Run 35946157443 at aa60036; five executed jobs passed. Historical private failures remain preserved. |
 | Full modern API is language-neutral | FALSE | Core UI ABI exists; modern composition/graphics remain Rust-only. |
-| New aesthetic acceptance was performed | UNVERIFIED THIS ROUND | No new cinematic content or human visual review. |
+| New aesthetic acceptance was performed | PARTIALLY TESTED | Intro Surface frames inspected and release/PTY paths exercised; independent human taste acceptance remains unverified. |
 | Reachable-history credential scan | PASS, accepted privacy disclosure | Gitleaks history + all blobs + supplemental patterns; owner accepted old personal path; bounded detection. |
 | Own license packaging | VERIFIED | Complete MIT/Apache texts; Cargo archive verification. |
 | Public workflow least privilege | VERIFIED FROM YAML + ACTIONLINT | SHA-pinned, read-only, no persisted checkout credentials/secrets/publish paths; five public CI jobs now pass at the recorded SHA. |

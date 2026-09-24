@@ -1,3 +1,21 @@
+//! A cell-framebuffer terminal UI engine with native history/live-region semantics.
+//!
+//! **Engineering alpha.** The Linux renderer and established C ABI subset have
+//! regression coverage; this is not a stable API or universal terminal promise.
+//! Start with [`Context`], declarative [`Node`] content and [`Style`]. Layout,
+//! painting, [`Surface`], differential updates and ANSI compilation remain
+//! separate layers.
+//!
+//! [`scene`], [`story`], [`surface_fx`], [`raster`], [`raster3d`] and [`raster_fx`]
+//! are experimental Rust-only composition/graphics APIs. They do not own terminal
+//! lifecycle. Experimental additions may require source changes between releases.
+//!
+//! Use one active terminal owner per process. Context/session rendering uses
+//! stdout and a process-global panic hook; nested/concurrent terminal contexts and
+//! arbitrary host-hook composition are not a supported embedding contract.
+//! Explicit restore, Drop and panic cleanup are best effort, not guarantees after
+//! abort, SIGKILL, OOM or a disconnected output stream.
+
 pub mod ansi;
 pub mod canvas;
 pub mod capability;
