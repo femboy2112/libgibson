@@ -5,16 +5,19 @@ specific LibGibson runtime contracts happen, instead of reading about them in
 a probe's stdout dump: issue #10's trace-retention bound, the crossterm #1126
 input-starvation collision (issue #15), and issue #11's process-global
 terminal-lease contract. It lives at `examples/runtime_observatory.rs` plus
-`examples/runtime_observatory/{diag,visual,million_tick,ghost_key,
-ownership_duel}.rs`. It is a diagnostic instrument with a `--dump` path, not a
-finished live TUI — see [Honest boundaries](#honest-boundaries) before relying
-on anything here as a stability or completeness claim.
+`examples/runtime_observatory/{diag,visual,live,supervised,million_tick,
+ghost_key,ownership_duel}.rs`. It is both a **live interactive instrument** and a
+deterministic `--dump` path — see [Honest boundaries](#honest-boundaries) before
+relying on anything here as a stability or completeness claim.
 
-**Status: three grounded modes built, `--dump` only. Issues #10, #11 and #15
-remain open** (#10 and #11 have merged fixes, exercised here; #15's upstream
-input-starvation defect has no production fix — see
+**Status: a live interactive loop plus deterministic `--dump` frames. Live modes:
+Million-Tick, Ownership-Duel, Restore-Failure, Endurance. Issues #10, #11 and #15
+remain open** — #10 and #11 have runtime contracts *implemented on PR #19 (a draft,
+not merged to main)*, exercised here; #15's upstream input-starvation defect has a
+Shape A fix implemented and verified in an isolated crossterm clone but staged,
+not filed, and not shipped — see
 [Crossterm #1126 fix analysis](CROSSTERM_1126_FIX_ANALYSIS.md) and the
-[Event Pressure Lab](EVENT_PRESSURE_LAB.md)). Built 2026-09-24 on
+[Event Pressure Lab](EVENT_PRESSURE_LAB.md). Built 2026-09-24 on
 `claude/runtime-architecture-megaround`, Rust/Cargo `1.98.1`, Linux
 `7.0.0-28-generic` x86_64.
 
@@ -24,9 +27,41 @@ input-starvation defect has no production fix — see
 cargo run --release --example runtime_observatory -- --help
 ```
 
-Every mode requires `--dump` today; there is no live/interactive loop (see
-[Honest boundaries](#honest-boundaries)). `--dump` renders exactly one
-deterministic frame to stdout and exits.
+With no `--dump`, the default is the **live interactive loop** (needs a real
+terminal): `cargo run --release --example runtime_observatory` opens Million-Tick;
+`1`/`3`/`5`/`6` switch to Million-Tick/Ownership-Duel/Restore-Failure/Endurance,
+`Space` pauses, `R` restarts, `[`/`]` adjust intensity, `Esc` exits. `--frames N`
+runs a bounded number of frames then exits (used by the headless PTY smoke test).
+`--dump` renders exactly one deterministic frame to stdout and exits, for tests
+and piping.
+
+## The live loop
+
+`cargo run --release --example runtime_observatory` (no `--dump`) opens the live
+instrument over ordinary session machinery: a `TerminalSession` for lifecycle,
+`compute_diff` + `AnsiCompiler` for painting the mission-control `Surface`, and
+`poll_event` for input — the existing pipeline, not a second renderer. It restores
+the terminal on every exit path, including an I/O error mid-loop, and a `Resize`
+forces a full repaint. `LiveMode` (in `live.rs`) is the trait each mode implements:
+advance real state on `tick`, project it to a `View` for `frame()`.
+
+- **Million-Tick (`1`)** drives two `StoryDirector`s on identical accelerated
+  ping-pong workload — one `All`, one `Bounded(cap)` — so the retained-bytes
+  climb-vs-flatten contrast is live, alongside real per-director steps/beats/
+  dropped/complete and process VmRSS.
+- **Ownership-Duel (`3`)** and **Restore-Failure (`5`)** each run the REAL
+  `terminal_ownership_probe` scenario as a child under its own fresh PTY (never
+  the Observatory's terminal, so it can enter raw/alt mode and induce failures
+  safely), capture the child's genuine receipts, and reveal them in order. If the
+  sibling probe binary isn't built, the mode shows a fault row rather than
+  inventing a trace.
+- **Endurance (`6`)** drives one `Bounded` director hard over a long accelerated
+  soak, showing RSS and per-update cost hold flat — the health counterpart to
+  Million-Tick's leak demo.
+
+Reveal pacing in the supervised modes is a presentation choice; every value shown
+is a real measurement this frame or a real receipt from a real child run this
+session. The epistemic rule below is never relaxed for the live path.
 
 ## The shared spine
 
@@ -232,10 +267,14 @@ only carries `SESSION`-lane lease transitions, nothing else.
 
 ## Honest boundaries
 
-- **Only `--dump` is wired today.** Every mode errors if you omit it. There is
-  no live/interactive loop; the original vision's heavier modes — Slow-
-  Terminal, Restore-Failure, Endurance — are **not built**. Nothing in this
-  document should be read as a claim they exist.
+- **Live loop and `--dump` both exist.** The live loop runs Million-Tick,
+  Ownership-Duel, Restore-Failure and Endurance over real session machinery;
+  `--dump` renders the three deterministic-frame modes (Million-Tick, Ghost-Key,
+  Ownership-Duel). Two of the original vision's modes are **not built**: a live
+  Ghost-Key (the collision is covered by the `--dump` Ghost-Key replay and by the
+  verified crossterm reproducer), and Slow-Terminal (the Event Pressure Lab at
+  `examples/event_pressure_lab/` already provides that output-pressure supervision
+  as a standalone tool). Nothing here claims those two live modes exist.
 - **VmRSS/VmHWM are Linux `/proc/self/status`-specific**, same convention as
   `examples/long_session_probe.rs`. If `/proc` is unavailable, those fields
   are never populated and render `?`, not a fake number; this path has not
@@ -243,20 +282,22 @@ only carries `SESSION`-lane lease transitions, nothing else.
 - **The transient `Restoring` lease state is real but currently
   unwitnessed** in the captured fixture — see Ownership-Duel above. This is a
   measured absence, not a missing feature.
-- **The crossterm #1126 fix is analysis-only, not shipped.** See
-  [`CROSSTERM_1126_FIX_ANALYSIS.md`](CROSSTERM_1126_FIX_ANALYSIS.md): the
-  diagnosis is corroborated and a fix shape is proposed, but no patched
-  crossterm ships in LibGibson and issue #15's collision-delivery acceptance
-  remains red. Ghost-Key visualizes the *evidence* for that open defect, not a
-  fix.
+- **The crossterm #1126 Shape A fix is implemented and verified, but staged —
+  not shipped.** See [`CROSSTERM_1126_FIX_ANALYSIS.md`](CROSSTERM_1126_FIX_ANALYSIS.md):
+  Shape A is implemented and independently verified in an isolated crossterm
+  0.29.0 clone (stock reproduces the stall, the fix delivers both events with no
+  hang), but it is not filed upstream, not vendored, and no patched crossterm
+  ships in LibGibson — issue #15's collision-delivery acceptance remains red.
+  Ghost-Key visualizes the *evidence* for that open defect, not a fix in this tree.
 - **Issues #10, #11 and #15 are not closed.** #10 (unbounded `StoryTrace`) and
-  #11 (terminal-ownership lease) both have merged runtime contracts that this
-  instrument exercises and visualizes — that is not the same claim as the
-  GitHub issues being closed, and this document does not assert that. #11's
-  `restore()` best-effort error path (`src/session.rs`: attempts every
-  cleanup op, reports the first error) is implemented but is **not covered by
-  a test that forces a failing terminal write** — that path is exercised only
-  by the happy-path restoration tests in `tests/terminal_ownership.rs`.
+  #11 (terminal-ownership lease) have runtime contracts *implemented on PR #19*
+  (a draft, not merged to main) that this instrument exercises and visualizes —
+  not the same claim as the GitHub issues being closed, which this document does
+  not assert. #11's `restore()` best-effort error path is now covered by a test
+  that forces a failing terminal write
+  (`restore_reports_output_failure_but_still_tears_down` in
+  `tests/terminal_ownership.rs`: fd 1 → `/dev/full`, restore returns `Err` yet raw
+  mode is still torn down and the lease released).
 - **`docs/fixtures/ownership/duel.tsv` is a captured artifact**, produced by
   the exact `script`-over-PTY command documented above, then mechanically
   normalized (control-byte/line-ending stripping only, no value changes) —
@@ -274,6 +315,8 @@ only carries `SESSION`-lane lease transitions, nothing else.
 | `examples/runtime_observatory.rs` | CLI entry point, mode dispatch, `--dump`-only gate |
 | `examples/runtime_observatory/diag.rs` | `Category`, `DiagRecord`, bounded `DiagLog` |
 | `examples/runtime_observatory/visual.rs` | Shared scaffold: header/panels/events rail, pure `frame()` |
+| `examples/runtime_observatory/live.rs` | Live interactive loop + `LiveMode` trait + Million-Tick/Endurance modes |
+| `examples/runtime_observatory/supervised.rs` | Live Ownership-Duel/Restore-Failure: run a real probe child under a PTY |
 | `examples/runtime_observatory/million_tick.rs` | Million-Tick mode: drives a real `StoryDirector` |
 | `examples/runtime_observatory/ghost_key.rs` | Ghost-Key mode: replays `docs/fixtures/event-pressure/*.tsv` + witness JSON |
 | `examples/runtime_observatory/ownership_duel.rs` | Ownership-Duel mode: replays `docs/fixtures/ownership/duel.tsv` |

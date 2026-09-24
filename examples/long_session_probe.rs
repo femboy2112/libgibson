@@ -1,16 +1,18 @@
 //! Long-session trace/resource retention probe for issue #10 — ooh yeah,
 //! MEASURE FIRST! No API design lives in this file, just cold hard numbers.
 //!
-//! `StoryDirector::update` unconditionally pushes a `TraceStep` onto
-//! `StoryTrace.steps` on *every* call — even when `events` is empty — and it
-//! does this before the trace ever gets a chance to gate on anything
-//! (src/story.rs, the `self.trace.steps.push(..)` line runs ahead of the
-//! empty-events check). There is no cap, no window, no opt-out. This probe
-//! hammers that exact path for N ticks and reports exactly how big it gets.
+//! `StoryDirector::update` records a `TraceStep` on *every* call (even empty
+//! events), and `enter` records a beat on every transition. Under the default
+//! `TraceRetention::All` both logs grow unbounded — this probe measured that
+//! first (~40 B/tick on steps; a ping-pong story adds another ~44 B/transition
+//! on beats). The `--story loop|pingpong` and `--retention all|bounded:CAP|
+//! disabled` flags then demonstrate the fix (`src/story.rs`) bounding both logs.
+//! This probe only reports raw numbers; the retention contract lives in the lib.
 //!
 //! Run it:
 //!   cargo +1.98.1 run --release --example long_session_probe -- --ticks 1000000
-//!   cargo +1.98.1 run --release --example long_session_probe -- --ticks 1000000 --events
+//!   cargo +1.98.1 run --release --example long_session_probe -- --ticks 1000000 --story pingpong
+//!   cargo +1.98.1 run --release --example long_session_probe -- --ticks 1000000 --story pingpong --retention bounded:1024
 
 use gibson::{Beat, Story, StoryEvent, TraceRetention, TraceStep};
 use std::time::{Duration, Instant};

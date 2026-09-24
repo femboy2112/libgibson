@@ -39,8 +39,9 @@ mission-control-style diagnostic instrument for three specific runtime
 contracts: bounded `StoryTrace` retention (issue #10), the crossterm #1126
 input-starvation collision (issue #15), and the terminal-ownership lease
 (issue #11). Run `cargo run --release --example runtime_observatory -- --help`.
-It renders one deterministic frame via `--dump` per mode today; it is a
-diagnostic instrument, not a finished live TUI, and it does not claim any of
+It runs as a live interactive instrument (Million-Tick, Ownership-Duel,
+Restore-Failure, Endurance) and also renders one deterministic frame via `--dump`;
+it is a diagnostic aid, not a stability promise, and it does not claim any of
 those three issues are closed.
 Modern Scene/Story and software graphics APIs are experimental and Rust-only;
 the C ABI exposes the established UI/output subset.
@@ -123,7 +124,7 @@ ctx.commit_text("Finalized output text")?; // ctx.commit(...) is an alias
 
 The event-pressure collision-delivery acceptance is explicitly ignored and still fails when run; the diagnostic tests detect the upstream bug rather than certify its repair.
 
-Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently passes **591 tests**: 226 library unit tests and 365 integration tests (across `event_pressure_pty`, `event_pressure_trace`, `event_pressure_visual`, `geometry_diff_contract`, `cinematic_paths`, `intro_cinema`, `intro_pty`, `acid_architecture`, `acid_presentation`, `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
+Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently passes **612 tests**: 236 library unit tests and 376 integration tests (across `event_pressure_pty`, `event_pressure_trace`, `event_pressure_visual`, `geometry_diff_contract`, `cinematic_paths`, `intro_cinema`, `intro_pty`, `acid_architecture`, `acid_presentation`, `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, `whole_renderer_vt100`, `terminal_ownership`, and `runtime_observatory_live`).
 
 `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings pass local Linux vet/build/example smoke**; no Go unit tests exist and public Go 1.27.1 smoke also passes. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
 
@@ -387,7 +388,7 @@ library: `DUMP_ACID_RGB=/tmp/acid-rgb cargo test --test acid_graphics`.
 # Build library and release artifacts (.so, .a)
 cargo build --release
 
-# Run the full test suite (591 passed: 226 unit + 365 integration; one known-red acceptance ignored)
+# Run the full test suite (612 passed: 236 unit + 376 integration; one known-red acceptance ignored)
 cargo test
 
 # Static analysis and formatting checks
