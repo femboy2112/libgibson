@@ -15,12 +15,15 @@ Public-readiness preparation now supplies full license files, read-only SHA-pinn
 CI, corrected native loader paths, and a Go module/example that passes local Linux
 smoke. The owner authorized public visibility. Exact-main public CI now passes all five
 jobs: [run 35946157443](https://github.com/femboy2112/libgibson/actions/runs/35946157443)
-on `aa60036` (Rust 1.98.1 and Go 1.27.1). This does not establish an MSRV.
+on `aa60036` (Rust 1.98.1 and Go 1.27.1), the first public checkpoint. This does not establish an MSRV.
 
-The introductory-cinema branch passes **574 tests (226 unit + 348 integration)**
-and fixes rectangle arithmetic and exact changed-coordinate
-reporting, consolidates bounded Unix PTY harnesses, and adds a canonical short film.
-Next: land these tested changes; maintain useful public CI and owner-approved protection;
+PR #14 is merged at `e5ede0a4ab8ff52caa567ee10d45824e42c1ebc6`, containing
+flagship tip `11d2cca12430f68eb8fa3de3231827e1176e6c27`. The merged baseline passes
+**574 tests (226 unit + 348 integration)** locally on Rust 1.98.1 and all five
+exact-main public jobs in [run 35960000454](https://github.com/femboy2112/libgibson/actions/runs/35960000454).
+It fixes rectangle arithmetic and exact changed-coordinate reporting, consolidates
+bounded Unix PTY harnesses, and adds the canonical introductory short film.
+Next: maintain useful public CI and owner-approved protection;
 establish API/MSRV/package contracts; profile sustained graphics and build a platform matrix.
 Avoid expanding graphics features before those remaining contracts improve. The phase sections below
 preserve development history rather than promise an execution order. Their older
@@ -341,3 +344,41 @@ This round converted earlier over-strong claims into verified behavior and expli
 - [ ] **Multiplexer & Remote Shell Hardening**: specialized test matrix for tmux, screen, and SSH connections over high-latency networks.
 - [ ] **Property & Fuzz Testing**: `cargo-fuzz` / AFL suite exercising arbitrary Unicode sequences, arbitrary terminal byte streams, invalid ANSI input, and rapid terminal resizes.
 - [x] **Executable Foreign Binding CI**: C/C++/Python/ASan and Go jobs are prepared with corrected native paths, fresh native builds, least privilege and timeouts. Local Go smoke passes. All five public-main jobs now pass; see the state audit for the exact run and remaining coverage limits.
+
+
+---
+
+## Research pressure test — Agent-native dynamic interfaces (NON-BINDING)
+
+This docs-only, **NON-BINDING / PRESSURE TEST ONLY / NO NEW CORE COMMITMENT**
+dossier records three external pressure tests for the public API. It preserves
+original research tip `bc4d1ce748ffa67121104ac39d960ba4a82736d3` and refreshes its
+baseline to the green PR #14 merge, `e5ede0a4ab8ff52caa567ee10d45824e42c1ebc6`:
+
+- manga/comic sequential-art presentation grammar;
+- semantic meme reaction layer;
+- agent-generated temporary interactive instruments.
+
+These are **not planned LibGibson products** and should not be implemented as core widget families. They exist to test a broader architectural claim: common professional dynamic graphics should be easy, while unanticipated visual ideas should remain possible through safe public lower layers (`Node`, `Scene`, `Surface`, `RgbRaster`, generic geometry/effects) rather than renderer forks or raw ANSI.
+
+Core promotion is earned only by repeated generic pressure, a correctness boundary, or a missing minimal primitive. Harness-specific vocabulary stays external.
+
+The flagship's ordinary Node mini-UIs mounted on projected city facades are
+**CORROBORATING EVIDENCE** for rendering composition without building-specific
+core widgets. They do not solve the predicted **G1 stable interaction identity /
+event routing** pressure for arbitrary runtime-created objects. Pin the initial
+external lab to the merged baseline, record first-contact friction, reconcile it,
+and promote nothing by default. The final API/helper freeze precedes fresh
+holdout selection; examples already named in the dossier are ineligible holdouts.
+
+Research dossier:
+
+- [Agent-native dynamic UI research program](docs/research/AGENT_NATIVE_DYNAMIC_UI_RESEARCH_PROGRAM_2026-09-24.md)
+- [LibGibson expressivity/API audit](docs/research/LIBGIBSON_EXPRESSIVITY_API_AUDIT_2026-09-24.md)
+- [Experiment and acceptance plan](docs/research/AGENT_NATIVE_UI_EXPERIMENT_PLAN_2026-09-24.md)
+- [Zero-context handoff](docs/research/AGENT_NATIVE_UI_ZERO_CONTEXT_HANDOFF_2026-09-24.md)
+
+This track is complete only after fresh, post-freeze holdouts test "unknown dope shit"
+without allowing LibGibson core or expressive IR changes during the holdout.
+Failed holdouts are valid completed research outcomes and must remain visible.
+D6/D7/D8 and issue #15 remain separate engineering debt, not scope for this campaign.
