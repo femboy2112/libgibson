@@ -1,71 +1,21 @@
+//! Unix PTY probes use poll-based bounded capture; these are not ConPTY coverage.
+#![cfg(unix)]
+
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-use std::io::{BufRead, BufReader};
+
+#[path = "common/pty_capture.rs"]
+mod pty_capture;
 use std::time::Duration;
 
 #[test]
 fn test_pty_agent_chat_lifecycle() {
-    let pty_system = native_pty_system();
-
-    let pair = pty_system
-        .openpty(PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .expect("Failed to create PTY pair");
-
-    let exe_path = std::env::current_exe()
-        .expect("Failed to get test exe path")
-        .parent()
-        .expect("parent dir")
-        .parent()
-        .expect("target dir")
-        .join("examples")
-        .join("agent_chat");
-
-    // If agent_chat hasn't been built yet in target/debug/examples, build it
-    if !exe_path.exists() {
-        let status = std::process::Command::new("cargo")
-            .args(["build", "--example", "agent_chat"])
-            .status()
-            .expect("Failed to build agent_chat example");
-        assert!(status.success());
-    }
-
-    let mut cmd = CommandBuilder::new(&exe_path);
+    let mut cmd = CommandBuilder::new(pty_capture::example_path("agent_chat"));
     cmd.arg("--auto");
-
-    let mut child = pair
-        .slave
-        .spawn_command(cmd)
-        .expect("Failed to spawn command");
-
-    // Read output from master
-    let reader = pair
-        .master
-        .try_clone_reader()
-        .expect("Failed to get reader");
-    let mut buf_reader = BufReader::new(reader);
-
-    let mut output = String::new();
-    let start = std::time::Instant::now();
-
-    while start.elapsed() < Duration::from_secs(10) {
-        let mut line = String::new();
-        match buf_reader.read_line(&mut line) {
-            Ok(0) => break, // EOF
-            Ok(_) => {
-                output.push_str(&line);
-                if output.contains("[metrics]") {
-                    break;
-                }
-            }
-            Err(_) => break,
-        }
-    }
-
-    let _ = child.wait();
+    let mut capture = pty_capture::Capture::spawn(cmd, 80, 24, Duration::from_secs(10));
+    capture
+        .collect_until(|bytes| String::from_utf8_lossy(bytes).contains("[metrics]"))
+        .expect("capture agent chat");
+    let output = String::from_utf8_lossy(&capture.finish()).into_owned();
 
     // Verify key invariants in output
     assert!(
@@ -121,4 +71,54 @@ fn test_pty_window_resize_safety() {
             pixel_height: 0,
         })
         .expect("Failed to shrink PTY");
+}
+
+#[test]
+fn pty_capture_bounds_silent_and_partial_line_children_and_reaps() {
+    for script in [
+        "exec sleep 30",
+        "printf partial; exec sleep 30",
+        "printf early",
+    ] {
+        let mut cmd = CommandBuilder::new("sh");
+        cmd.args(["-c", script]);
+        let start = std::time::Instant::now();
+        let mut capture = pty_capture::Capture::spawn(cmd, 80, 24, Duration::from_millis(100));
+        capture
+            .collect_until(|_| false)
+            .expect("controlled capture");
+        let raw = capture.finish(); // Asserts direct child was reaped, no reader exists.
+        assert!(
+            start.elapsed() < Duration::from_secs(3),
+            "capture deadline was not enforced"
+        );
+        if script.contains("partial") {
+            assert!(raw.windows(7).any(|s| s == b"partial"));
+        }
+        if script.contains("early") {
+            assert!(raw.windows(5).any(|s| s == b"early"));
+        }
+    }
+}
+
+#[test]
+fn pty_capture_reaps_on_assertion_unwind() {
+    let child_pid = std::sync::atomic::AtomicU32::new(0);
+    let result = std::panic::catch_unwind(|| {
+        let mut cmd = CommandBuilder::new("sh");
+        cmd.args(["-c", "exec sleep 30"]);
+        let capture = pty_capture::Capture::spawn(cmd, 80, 24, Duration::from_millis(100));
+        child_pid.store(capture.process_id(), std::sync::atomic::Ordering::Relaxed);
+        panic!("controlled assertion failure");
+    });
+    assert!(result.is_err());
+    let pid = child_pid.load(std::sync::atomic::Ordering::Relaxed) as libc::pid_t;
+    assert!(pid > 0);
+    // SAFETY: waitpid probes only our recorded child; WNOHANG cannot block.
+    let result = unsafe { libc::waitpid(pid, std::ptr::null_mut(), libc::WNOHANG) };
+    assert_eq!(result, -1, "child remained live or unreaped after unwind");
+    assert_eq!(
+        std::io::Error::last_os_error().raw_os_error(),
+        Some(libc::ECHILD)
+    );
 }

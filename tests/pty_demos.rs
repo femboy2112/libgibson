@@ -1,61 +1,28 @@
 //! Interactive PTY tests for the narrative demos.
 //!
 //! Each test drives a real terminal: it spawns the demo binary, writes keystrokes
-//! to the master, drains the byte stream on a background thread, and asserts on a
-//! `vt100` reconstruction of the screen. Every wait is bounded and the child is
-//! always killed, so these can never hang CI.
+//! to the master and drains nonblocking bytes on the test thread into `vt100`.
+//! Sessions have a total deadline and direct-child kill/reap cleanup, including
+//! assertion failures. Unix PTYs are covered; this is not ConPTY evidence.
 
-use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
-use std::io::{Read, Write};
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+#![cfg(unix)]
+
+#[path = "common/pty_capture.rs"]
+mod pty_capture;
+
+use portable_pty::CommandBuilder;
 use std::time::{Duration, Instant};
 
-fn example_path(name: &str) -> PathBuf {
-    let path = std::env::current_exe()
-        .expect("current_exe")
-        .parent()
-        .expect("deps")
-        .parent()
-        .expect("target")
-        .join("examples")
-        .join(name);
-    if !path.exists() {
-        let status = std::process::Command::new("cargo")
-            .args(["build", "--example", name])
-            .status()
-            .expect("build example");
-        assert!(status.success());
-    }
-    path
-}
-
 struct Session {
-    child: Box<dyn Child + Send + Sync>,
-    killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
-    writer: Box<dyn Write + Send>,
-    raw: Arc<Mutex<Vec<u8>>>,
+    capture: pty_capture::Capture,
     cols: u16,
     rows: u16,
-    _master: Box<dyn MasterPty + Send>,
-    #[cfg(unix)]
     initial_termios: Option<String>,
 }
 
 impl Session {
     fn spawn(demo: &str, args: &[&str], cols: u16, rows: u16) -> Self {
-        let pty_system = native_pty_system();
-        let pair = pty_system
-            .openpty(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .expect("openpty");
-        #[cfg(unix)]
-        let initial_termios = pair.master.get_termios().map(|t| format!("{t:?}"));
-        let mut cmd = CommandBuilder::new(example_path(demo));
+        let mut cmd = CommandBuilder::new(pty_capture::example_path(demo));
         if !args.iter().any(|a| {
             a.starts_with("--color=")
                 || matches!(*a, "--truecolor" | "--ansi256" | "--ansi16" | "--mono")
@@ -66,51 +33,38 @@ impl Session {
             cmd.arg(a);
         }
         cmd.env("TERM", "xterm-256color");
-        let child = pair.slave.spawn_command(cmd).expect("spawn");
-        let killer = child.clone_killer();
-        let mut reader = pair.master.try_clone_reader().expect("reader");
-        let writer = pair.master.take_writer().expect("writer");
-        let raw = Arc::new(Mutex::new(Vec::new()));
-        let sink = Arc::clone(&raw);
-        std::thread::spawn(move || {
-            let mut chunk = [0u8; 4096];
-            loop {
-                match reader.read(&mut chunk) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => sink.lock().unwrap().extend_from_slice(&chunk[..n]),
-                }
-            }
-        });
+        let capture = pty_capture::Capture::spawn(cmd, cols, rows, Duration::from_secs(90));
+        let initial_termios = capture.initial_termios.clone();
         Self {
-            child,
-            killer,
-            writer,
-            raw,
+            capture,
             cols,
             rows,
-            _master: pair.master,
-            #[cfg(unix)]
             initial_termios,
         }
     }
 
     fn write(&mut self, bytes: &[u8]) {
-        let _ = self.writer.write_all(bytes);
-        let _ = self.writer.flush();
+        self.capture.write(bytes).expect("write PTY input");
     }
 
     fn type_str(&mut self, s: &str) {
         self.write(s.as_bytes());
     }
 
-    fn screen(&self) -> String {
+    fn screen(&mut self) -> String {
+        self.capture
+            .collect_for(Duration::from_millis(2))
+            .expect("drain PTY");
         let mut parser = vt100::Parser::new(self.rows, self.cols, 0);
-        parser.process(&self.raw.lock().unwrap());
+        parser.process(self.capture.raw());
         parser.screen().contents()
     }
 
-    fn raw_string(&self) -> String {
-        String::from_utf8_lossy(&self.raw.lock().unwrap()).into_owned()
+    fn raw_string(&mut self) -> String {
+        self.capture
+            .collect_for(Duration::from_millis(2))
+            .expect("drain PTY");
+        String::from_utf8_lossy(self.capture.raw()).into_owned()
     }
 
     /// Polls the reconstructed screen until `pred` holds or the timeout elapses.
@@ -147,7 +101,7 @@ impl Session {
     }
 
     fn exited(&mut self) -> bool {
-        matches!(self.child.try_wait(), Ok(Some(_)))
+        matches!(self.capture.try_wait(), Ok(Some(_)))
     }
 
     /// Requires a successful voluntary exit and verifies both terminal protocol
@@ -156,7 +110,7 @@ impl Session {
     fn assert_clean_exit(&mut self, timeout: Duration) {
         let started = Instant::now();
         loop {
-            if let Some(status) = self.child.try_wait().expect("poll child") {
+            if let Some(status) = self.capture.try_wait().expect("poll child") {
                 assert!(status.success(), "demo exited unsuccessfully: {status:?}");
                 break;
             }
@@ -165,9 +119,11 @@ impl Session {
                 "demo did not exit voluntarily; screen: {}",
                 self.screen()
             );
-            std::thread::sleep(Duration::from_millis(20));
+            self.capture
+                .collect_for(Duration::from_millis(20))
+                .expect("drain on exit");
         }
-        // Exit may race the background reader's final chunk.
+        // Drain the child's final terminal-restoration bytes after its exit.
         let raw = self.wait_until_raw(Duration::from_secs(1), |r| {
             r.contains("\x1b[0m\x1b[?2026l\x1b[?7h\x1b[?25h")
         });
@@ -189,7 +145,7 @@ impl Session {
         #[cfg(unix)]
         if let Some(initial) = &self.initial_termios {
             assert_eq!(
-                self._master.get_termios().map(|t| format!("{t:?}")),
+                self.capture.termios(),
                 Some(initial.clone()),
                 "raw-mode terminal settings were not restored"
             );
@@ -204,14 +160,7 @@ impl Session {
             }
             std::thread::sleep(Duration::from_millis(50));
         }
-        let _ = self.killer.kill();
-        let _ = self.child.wait();
-    }
-}
-
-impl Drop for Session {
-    fn drop(&mut self) {
-        let _ = self.killer.kill();
+        self.capture.terminate();
     }
 }
 

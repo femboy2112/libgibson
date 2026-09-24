@@ -10,6 +10,19 @@ software graphics are experimental Rust-only APIs. C/C++/Python expose an
 established UI/output subset; Go passes local and public Linux build/example smoke
 checks. Capability is not an API stability promise.
 
+The introductory short film turns a live agent harness into a wireframe city of
+information, follows messages between its buildings, and pulls back to Earth:
+
+```sh
+cargo run --release --example libgibson_intro -- --auto --color=truecolor
+```
+
+Four persistent agent identities, a coalescing membrane, readable architectural
+outputs and a continuous pullback to a rotating software-rendered Earth form one
+72-second film, crowned by an extravagant chrome finale.
+[Film structure, controls and engineering notes](docs/INTRODUCTORY_CINEMA.md).
+It is a local simulation rendered with Unicode and terminal colors; no image protocol.
+
 LibGibson treats the terminal as a 2D logical cell framebuffer with an explicit architectural separation between **mutable live interactive state** and **immutable terminal scrollback history**.
 
 Read the [current project state](docs/STATE_OF_LIBGIBSON.md) for the architecture,
@@ -94,7 +107,7 @@ ctx.commit_text("Finalized output text")?; // ctx.commit(...) is an alias
 
 ## Verification Status
 
-Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **536 tests**: 226 library unit tests and 310 integration tests (across `acid_architecture`, `acid_presentation`, `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
+Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **574 tests**: 226 library unit tests and 348 integration tests (across `geometry_diff_contract`, `cinematic_paths`, `intro_cinema`, `intro_pty`, `acid_architecture`, `acid_presentation`, `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
 
 `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings pass local Linux vet/build/example smoke**; no Go unit tests exist and public Go 1.27.1 smoke also passes. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
 
@@ -358,7 +371,7 @@ library: `DUMP_ACID_RGB=/tmp/acid-rgb cargo test --test acid_graphics`.
 # Build library and release artifacts (.so, .a)
 cargo build --release
 
-# Run the full test suite (536 tests: 226 unit + 310 integration)
+# Run the full test suite (574 tests: 226 unit + 348 integration)
 cargo test
 
 # Static analysis and formatting checks

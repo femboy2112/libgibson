@@ -32,7 +32,7 @@ Because earlier revisions of this document overstated completion, architectural 
 | Label | Meaning |
 | --- | --- |
 | **IMPLEMENTED** | The described code path exists and is reached in normal operation. |
-| **TESTED** | Covered by an automated test in this repository (`cargo test`, 536 tests: 226 unit + 310 integration) that exercises the behavior described. |
+| **TESTED** | Covered by an automated test in this repository (`cargo test`, 574 tests: 226 unit + 348 integration) that exercises the behavior described. |
 | **PARTIALLY TESTED** | Implemented, and some behavior is covered, but at least one named facet is not automatically verified. The gap is stated explicitly. |
 | **UNVERIFIED** | Written down because it exists in source or is a documented assumption, but has not been compiled or executed in any environment we can attest to. |
 
@@ -316,7 +316,7 @@ The test suite covers boundary-merging insertions for combining accents, ZWJ emo
 
 ## 13. Language-Neutral Rich Text ABI
 
-**IMPLEMENTED + TESTED for C, C++, Python. UNVERIFIED for Go.**
+**IMPLEMENTED + TESTED for C, C++, Python. Go build/example smoke tested.**
 
 The C ABI exposes opaque `gibson_line_t` and `gibson_rich_text_t` handles with span/align builders:
 
@@ -326,7 +326,9 @@ The C ABI exposes opaque `gibson_line_t` and `gibson_rich_text_t` handles with s
 
 Foreign callers build structured rich text without duplicating any wrapping logic; the Rust layout engine handles width, wrapping, and alignment. Covered by `tests/ffi_lifecycle.rs::test_ffi_rich_text_abi` and `test_ffi_bad_align_rejected`, and the C / C++ / Python examples.
 
-The Go bindings exist in source form and were updated during this hardening round, but **no Go compiler was available**, so they are **UNVERIFIED** (never compiled or executed).
+The Go module now passes local and public Linux build/example smoke checks.
+This is not exhaustive wrapper parity; the package has no Go unit tests.
+See [current validation evidence](docs/STATE_OF_LIBGIBSON.md).
 
 ---
 
@@ -783,16 +785,16 @@ reconverge on Download) and uses semantic facts for Plague presence and a real
 - **Damage API exposes logical vs explicit counts plus coordinates**, but there is no standalone public `DamageMap` type; the demos and `fx_lab` build heatmaps from coordinates.
 - **Focus is a minimal ring, not an event router**: applications still own dispatch. Mouse is deferred.
 - **Structured Markdown streaming is NOT implemented**: `polished_agent` streams plain/styled text, a semantic diff and a scrollable code viewport, not a CommonMark renderer.
-- **The 3D projector is not a 3D engine**: no depth buffer, no shading, no occlusion. Depth is exposed per edge for cheap near/far styling only.
+- **The edge projector in `geom` is wireframe-only**: it exposes depth per edge for near/far styling. The separate experimental `raster3d` module provides filled triangles, a depth buffer, shading and occlusion (§43).
 The following are **not** implemented or **not** verified. Do not describe them as complete:
 
-- **Go bindings are UNVERIFIED** — source exists and was updated (including `NewStackNode`/`NewDimNode`), but no Go compiler was available.
+- **Go wrapper parity is incomplete** — local and public Linux vet/build/example smoke passes, but there are no Go unit tests or independently installable native-library packages.
 - **Windows / ConPTY is UNVERIFIED** — only Linux x86_64 (Ubuntu 24.04) was exercised.
 - **tmux / screen / SSH matrix is UNVERIFIED.**
 - **Active terminal capability negotiation is NOT implemented.** Capabilities are inferred passively from the environment (`NO_COLOR`, `TERM`, `COLORTERM`). `CSI L` is marked supported for non-dumb terminals, but `Unknown` is never treated as supported; device-attribute queries and graphics negotiation are future work.
 - **Absolute cursor query (DSR) is NOT implemented.** Re-anchoring on resize is best-effort relative erase-from-cursor-down, not exact absolute recovery.
 - **Full-screen dim veils may dirty most cells** on first appearance (a whole-screen style change); this is a deliberate, measured cost, not an accident. Moving scanlines and braille phase updates are bounded (`tests/effects_perf.rs`).
-- **Remote CI is currently blocked by GitHub account billing** (private-repo Actions minutes/spending limit), not by a code failure; see ROADMAP. Local `fmt`/`clippy`/`test`/`release`/binding smoke are green.
+- **Public Linux CI now executes**; the former private-repository billing block is historical. Exact successful snapshots are recorded in [State of LibGibson](docs/STATE_OF_LIBGIBSON.md) and [intro validation](docs/INTRODUCTORY_CINEMA.md), not a guarantee for future commits or other platforms.
 - **Hard `SIGKILL` cannot be intercepted** by any userland process.
 - **Ctrl-C handling** in the interactive demos is implemented as raw-mode key events; the engine relies on RAII / panic-hook restoration for terminal state. Signal handling is not a general engine guarantee.
 - **Fuzzing**: `TextInputState` has deterministic randomized edit fuzzing, but there is no `cargo-fuzz` / AFL target for arbitrary byte streams or resize storms.
@@ -1083,3 +1085,27 @@ Legacy `--presentation=legacy` retains the original automatic dive;
 The cinematic default starts with geometry already present. TrueColor, central
 ANSI quantization and Mono density/bright structural rails share world truth;
 color fidelity and perceptual equivalence across terminals are not guaranteed.
+
+## 45. Seekable introductory cinema and shared routes
+
+The introductory demo realizes one finite job graph as Node UI, a refracted
+Surface, depth-tested information architecture and a planetary title composition.
+Its demo-local cue sheet derives presentation from explicit time; seeking does not
+replay hidden paint-time mutations. It intentionally uses no growing per-frame
+StoryTrace because this linear film has no interactive narrative branches.
+
+`geom::CubicPath3` supplies shared world-space interpolation and unit tangents for
+semantic couriers and camera attention. It is pure, clamped and finite-safe; it
+does not introduce actors, clocks or another scene graph into core. The runner
+reuses held Nodes while the presentation key is unchanged. The film now keeps
+identity, scalar membrane, facade planes, named camera subshots and title art in
+demo-local modules. Transient hints use explicit presentation time; painting never
+starts their timer. The world model and core APIs are unchanged by art direction.
+Full details and validation are in [Introductory cinema](docs/INTRODUCTORY_CINEMA.md).
+
+The accompanying core hardening preserves Rect's saturated half-open extent
+contract. Exact SurfaceDiff spans now retain erasures/removals independently of
+ANSI patches, so coordinate enumeration agrees with the semantic delta count.
+Affected footprint still includes already-blank erased cells; wire cost is still
+measured separately. The added public Rust metadata field changes exhaustive
+struct-literal construction; the C ABI is unchanged.

@@ -1,5 +1,8 @@
 //! Deterministic visual golden tests.
 //!
+//! Capture uses Unix poll/nonblocking reads, not a detached reader thread.
+//! These tests do not claim Windows/ConPTY coverage.
+//!
 //! Each demo is run with `--deterministic --freeze-at=<frame> --no-color`, so
 //! the frame sequence is exactly `frame * 16ms` and the captured frame is
 //! stable. The full byte stream is replayed through `vt100` and the reconstructed
@@ -13,11 +16,14 @@
 //!
 //! or `scripts/dev/update_visual_goldens.sh`.
 
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-use std::io::Read;
+#![cfg(unix)]
+
+#[path = "common/pty_capture.rs"]
+mod pty_capture;
+
+use portable_pty::CommandBuilder;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 struct Case {
     demo: &'static str,
@@ -423,36 +429,8 @@ const CASES: &[Case] = &[
     },
 ];
 
-fn example_path(name: &str) -> PathBuf {
-    let path = std::env::current_exe()
-        .expect("current_exe")
-        .parent()
-        .expect("deps")
-        .parent()
-        .expect("target")
-        .join("examples")
-        .join(name);
-    if !path.exists() {
-        let status = std::process::Command::new("cargo")
-            .args(["build", "--example", name])
-            .status()
-            .expect("build example");
-        assert!(status.success());
-    }
-    path
-}
-
 fn capture_screen(case: &Case) -> String {
-    let pty_system = native_pty_system();
-    let pair = pty_system
-        .openpty(PtySize {
-            rows: case.rows,
-            cols: case.cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .expect("openpty");
-    let exe = example_path(case.demo);
+    let exe = pty_capture::example_path(case.demo);
     let mut cmd = CommandBuilder::new(&exe);
     cmd.arg("--no-color");
     cmd.arg("--deterministic");
@@ -465,30 +443,16 @@ fn capture_screen(case: &Case) -> String {
         cmd.arg(a);
     }
     cmd.env("TERM", "xterm-256color");
-    let mut child = pair.slave.spawn_command(cmd).expect("spawn");
-    let mut killer = child.clone_killer();
-    let mut reader = pair.master.try_clone_reader().expect("reader");
-
-    let buf = Arc::new(Mutex::new(Vec::new()));
-    let buf2 = Arc::clone(&buf);
-    std::thread::spawn(move || {
-        let mut chunk = [0u8; 4096];
-        loop {
-            match reader.read(&mut chunk) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => buf2.lock().unwrap().extend_from_slice(&chunk[..n]),
-            }
-        }
-    });
-
-    let start = Instant::now();
-    while start.elapsed().as_secs_f64() < case.secs {
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    let raw = buf.lock().unwrap().clone();
-    if !matches!(child.try_wait(), Ok(Some(_))) {
-        let _ = killer.kill();
-    }
+    let mut capture = pty_capture::Capture::spawn(
+        cmd,
+        case.cols,
+        case.rows,
+        Duration::from_secs_f64(case.secs),
+    );
+    capture
+        .collect_until(|_| false)
+        .expect("capture golden frame");
+    let raw = capture.finish();
 
     let mut parser = vt100::Parser::new(case.rows, case.cols, 0);
     parser.process(&raw);

@@ -11,20 +11,19 @@
 //! bytes: the engine emits a minimal diff, so words can legitimately be written
 //! as separate runs separated by cursor-motion sequences.
 
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
-use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
+#![cfg(unix)]
+
+#[path = "common/pty_capture.rs"]
+mod pty_capture;
+
+use portable_pty::CommandBuilder;
 use std::time::{Duration, Instant};
 
 const READY: &str = "GIBSON_RESIZE_PROBE_READY";
 const DONE: &str = "GIBSON_RESIZE_PROBE_DONE";
 
 struct PtyHarness {
-    child: Box<dyn portable_pty::Child + Send + Sync>,
-    killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
-    writer: Box<dyn Write + Send>,
-    master: Box<dyn portable_pty::MasterPty + Send>,
-    buf: Arc<Mutex<Vec<u8>>>,
+    capture: pty_capture::Capture,
     parser: vt100::Parser,
     processed: usize,
     #[cfg(unix)]
@@ -37,63 +36,15 @@ impl PtyHarness {
     }
 
     fn spawn_demo(name: &str, args: &[&str], cols: u16, rows: u16) -> Self {
-        let pty_system = native_pty_system();
-        let pair = pty_system
-            .openpty(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .expect("openpty");
-
-        #[cfg(unix)]
-        let initial_termios = pair.master.get_termios().map(|t| format!("{t:?}"));
-        let exe_path = std::env::current_exe()
-            .expect("current_exe")
-            .parent()
-            .expect("deps dir")
-            .parent()
-            .expect("target dir")
-            .join("examples")
-            .join(name);
-
-        if !exe_path.exists() {
-            let status = std::process::Command::new("cargo")
-                .args(["build", "--example", name])
-                .status()
-                .expect("build resize_test_app");
-            assert!(status.success());
-        }
-
-        let mut cmd = CommandBuilder::new(&exe_path);
+        let mut cmd = CommandBuilder::new(pty_capture::example_path(name));
         for arg in args {
             cmd.arg(arg);
         }
         cmd.env("TERM", "xterm-256color");
-        let child = pair.slave.spawn_command(cmd).expect("spawn");
-        let killer = child.clone_killer();
-        let writer = pair.master.take_writer().expect("take_writer");
-        let mut reader = pair.master.try_clone_reader().expect("reader");
-
-        let buf = Arc::new(Mutex::new(Vec::new()));
-        let buf2 = Arc::clone(&buf);
-        std::thread::spawn(move || {
-            let mut chunk = [0u8; 4096];
-            loop {
-                match reader.read(&mut chunk) {
-                    Ok(0) | Err(_) => break,
-                    Ok(n) => buf2.lock().unwrap().extend_from_slice(&chunk[..n]),
-                }
-            }
-        });
-
+        let capture = pty_capture::Capture::spawn(cmd, cols, rows, Duration::from_secs(90));
+        let initial_termios = capture.initial_termios.clone();
         Self {
-            child,
-            killer,
-            writer,
-            master: pair.master,
-            buf,
+            capture,
             parser: vt100::Parser::new(rows, cols, 8000),
             processed: 0,
             #[cfg(unix)]
@@ -102,34 +53,30 @@ impl PtyHarness {
     }
 
     fn send(&mut self, s: &str) {
-        self.writer.write_all(s.as_bytes()).expect("write");
-        self.writer.flush().expect("flush");
+        self.capture.write(s.as_bytes()).expect("write PTY input");
     }
 
     fn resize(&mut self, cols: u16, rows: u16) {
         self.pump();
-        self.master
-            .resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })
-            .expect("resize");
+        self.capture.resize(cols, rows);
         self.parser.screen_mut().set_size(rows, cols);
     }
 
     /// Feeds any new PTY bytes into the virtual terminal model.
     fn pump(&mut self) {
-        let snapshot = self.buf.lock().unwrap().clone();
+        self.capture
+            .collect_for(Duration::from_millis(2))
+            .expect("drain PTY");
+        let snapshot = self.capture.raw();
         if snapshot.len() > self.processed {
             self.parser.process(&snapshot[self.processed..]);
             self.processed = snapshot.len();
         }
     }
 
-    fn raw(&self) -> Vec<u8> {
-        self.buf.lock().unwrap().clone()
+    fn raw(&mut self) -> Vec<u8> {
+        self.pump();
+        self.capture.raw().to_vec()
     }
 
     fn screen(&mut self) -> String {
@@ -144,7 +91,7 @@ impl PtyHarness {
                 return true;
             }
             if start.elapsed() > timeout {
-                let _ = self.killer.kill();
+                self.capture.terminate();
                 return false;
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -158,7 +105,7 @@ impl PtyHarness {
                 return true;
             }
             if start.elapsed() > timeout {
-                let _ = self.killer.kill();
+                self.capture.terminate();
                 return false;
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -168,16 +115,18 @@ impl PtyHarness {
     fn wait_exit(&mut self, timeout: Duration) -> bool {
         let start = Instant::now();
         loop {
-            match self.child.try_wait() {
+            match self.capture.try_wait() {
                 Ok(Some(status)) => return status.success(),
                 Ok(None) => {}
                 Err(_) => return false,
             }
             if start.elapsed() > timeout {
-                let _ = self.killer.kill();
+                self.capture.terminate();
                 return false;
             }
-            std::thread::sleep(Duration::from_millis(10));
+            self.capture
+                .collect_for(Duration::from_millis(10))
+                .expect("drain on exit");
         }
     }
 }
@@ -309,12 +258,6 @@ fn test_pty_resize_torture_with_assertions() {
     );
 }
 
-impl Drop for PtyHarness {
-    fn drop(&mut self) {
-        let _ = self.killer.kill();
-    }
-}
-
 #[test]
 fn acid_graphical_and_feedback_resize_torture_restores_terminal() {
     // Actual moving rasters, not only frozen snapshots. The ending uses the
@@ -372,9 +315,13 @@ fn acid_graphical_and_feedback_resize_torture_restores_terminal() {
         for (cols, rows) in [(56, 24), (80, 24), (160, 40), (120, 32)] {
             let before = h.raw().len();
             h.resize(cols, rows);
-            // Let SIGWINCH reach the event reader before sending the next key;
-            // readiness below still requires actual reconstructed input.
-            std::thread::sleep(Duration::from_millis(60));
+            // Keep draining while SIGWINCH reaches the event reader. Sleeping
+            // here would fill the PTY output queue and strand the child in a
+            // frame write, delaying resize handling until after the next key.
+            // Readiness below still requires the exact reconstructed input.
+            h.capture
+                .collect_for(Duration::from_millis(60))
+                .expect("drain resize frame");
             if name == "acid_vs_crash" {
                 h.send("r");
                 typed.push('r');
@@ -440,7 +387,7 @@ fn acid_graphical_and_feedback_resize_torture_restores_terminal() {
         #[cfg(unix)]
         if let Some(initial) = &h.initial_termios {
             assert_eq!(
-                h.master.get_termios().map(|t| format!("{t:?}")),
+                h.capture.termios(),
                 Some(initial.clone()),
                 "raw terminal state not restored"
             );
@@ -479,7 +426,9 @@ fn acid_cinematic_shots_resize_without_losing_input_or_terminal_state() {
         let mut typed = String::new();
         for (cols, rows) in [(56, 24), (80, 24), (160, 40), (120, 32)] {
             h.resize(cols, rows);
-            std::thread::sleep(Duration::from_millis(60));
+            h.capture
+                .collect_for(Duration::from_millis(60))
+                .expect("drain resize frame");
             // Lowercase input is ordinary text even in final/ending shots.
             typed.push('r');
             h.send("r");
@@ -517,7 +466,7 @@ fn acid_cinematic_shots_resize_without_losing_input_or_terminal_state() {
         #[cfg(unix)]
         if let Some(initial) = &h.initial_termios {
             assert_eq!(
-                h.master.get_termios().map(|t| format!("{t:?}")),
+                h.capture.termios(),
                 Some(initial.clone()),
                 "{stage} raw mode not restored"
             );
