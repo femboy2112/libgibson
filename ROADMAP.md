@@ -68,17 +68,18 @@ implicit runtime contracts into explicit, tested, and *observable* ones:
 - **#15 crossterm input starvation** — CORROBORATED, and the naive drain fix is
   *proven to hang* on the blocking `VMIN=1` fd. Round II: the minimal Shape A fix
   is implemented and independently verified in an isolated crossterm 0.29.0 clone
-  (stock reproduces the stall, the fix delivers both events with no hang), staged
-  with a ready upstream PR body but **NOT filed and NOT vendored**
-  ([`CROSSTERM_1126_FIX_ANALYSIS.md`](docs/CROSSTERM_1126_FIX_ANALYSIS.md)).
+  (stock reproduces the stall, the fix delivers both events with no hang), then
+  rebased onto crossterm `master` and **filed upstream as
+  [crossterm#1128](https://github.com/crossterm-rs/crossterm/pull/1128)** — not yet
+  merged, **NOT vendored** ([`CROSSTERM_1126_FIX_ANALYSIS.md`](docs/CROSSTERM_1126_FIX_ANALYSIS.md)).
   **Still open** — LibGibson still builds on unpatched crossterm 0.29.0.
 
 The [Runtime Observatory](docs/RUNTIME_OBSERVATORY.md) is now a live interactive
 instrument (Million-Tick, Ownership-Duel, Restore-Failure, Endurance) plus the
 deterministic `--dump` frames, rendering the contracts from real state. Full local
 suite: **612 passed (236 unit + 376 integration)**, 0 failed, 1 known-red ignored,
-on Rust 1.98.1; PR #19 public CI green. Next: decide the #15 fix disposition (file
-the staged upstream PR vs. narrow workaround vs. wait), and D6
+on Rust 1.98.1; PR #19 public CI green. Next: track crossterm#1128 upstream (filed;
+awaiting maintainer review) toward a fixed release LibGibson can adopt, and D6
 (MSRV/API-stability/installable packages) as the real 0.1 gate.
 
 ## Verification labels
