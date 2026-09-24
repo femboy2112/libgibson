@@ -65,7 +65,7 @@ impl Film {
     fn resize(&mut self, cols: u16, rows: u16) {
         self.pump(Duration::from_millis(10));
         let bytes = self.capture.raw().len();
-        self.parser.set_size(rows, cols);
+        self.parser.screen_mut().set_size(rows, cols);
         self.capture.resize(cols, rows);
         let deadline = Instant::now() + Duration::from_secs(4);
         while self.capture.raw().len() == bytes {
