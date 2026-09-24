@@ -225,3 +225,9 @@ core fixes are reviewed separately in [PR #14](https://github.com/femboy2112/lib
 The first PR #14 run exposed the resize harness failure; subsequent exact-tip
 results must be read as distinct checkpoints. Main has the dependency updates;
 this feature/hardening PR remains unmerged until separately accepted.
+
+Public CI also passed all five jobs for intro tip
+`22009cef516e0df1f69c7b4787a5d26699384f0b` in
+[run 35950398202](https://github.com/femboy2112/libgibson/actions/runs/35950398202):
+Rust, native/Python bindings, native sanitizers, Go and PTY. This is branch
+evidence; it does not imply that the intro is already on main.

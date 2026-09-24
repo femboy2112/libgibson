@@ -275,8 +275,8 @@ Three fx_lab example tests sit outside the default count (536 at the initial aud
 model/presentation/terminal layers guard distinct boundaries; the former CI's repeated goldens
 and PTY commands also duplicate some full-suite execution and can later be tuned.
 
-Highest-value missing coverage is generative cell/diff and geometry invariants,
-bounded fresh-build PTY harnesses, actual platform/mux runs, sustained graphics
+Highest-value missing coverage is broader generative cell/diff and geometry invariants,
+PTY coverage beyond Unix direct children, actual platform/mux runs, sustained graphics
 memory/transport, and foreign binding parity. Use property testing first for small
 in-process invariants; add cargo-fuzz for parser/FFI-adjacent valid harnesses and
 clipping after a corpus and input contracts exist. Do not feed invalid foreign
@@ -285,8 +285,9 @@ pointers and call resulting UB a fuzzable safe API contract.
 Existing tests reconfirm frozen-frame exact delta/affected/wire **0/0/0**, full
 encounter/shot/camera/final-frame replay, and resize re-projection without semantic
 advance. Frozen *cells alone* do not imply zero wire if physical cursor or anchor
-state changed. This audit did not repeat aesthetic acceptance or a full manual
-playthrough; previous frame inspections are historical evidence, not a new human vote.
+state changed. The initial state audit did not repeat aesthetic acceptance or a full
+manual playthrough. The [intro validation](INTRODUCTORY_CINEMA.md) adds a release PTY
+playthrough and rendered-frame inspection; neither is independent human aesthetic acceptance.
 
 ## Performance model
 
@@ -686,7 +687,9 @@ Known debt now has public reproductions/contracts and acceptance criteria:
 [D7 #10](https://github.com/femboy2112/libgibson/issues/10),
 [D8 #11](https://github.com/femboy2112/libgibson/issues/11).
 D6's API/MSRV/distribution work remains open. Four initial Dependabot update PRs
-remain unmerged; they are not included in the green main result.
+were unmerged at this `aa60036` checkpoint. All four subsequently passed public CI
+and merged during the [intro consolidation](INTRODUCTORY_CINEMA.md); they are not
+part of the older green-main result above.
 
 Settings observed at launch: default Actions token read-only, Actions cannot
 approve PR reviews, first-time fork-contributor approval required. Private
