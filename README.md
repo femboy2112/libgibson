@@ -78,7 +78,7 @@ ctx.commit_text("Finalized output text")?; // ctx.commit(...) is an alias
 
 ## Verification Status
 
-Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **515 tests**: 226 library unit tests and 289 integration tests (across `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
+Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently runs **535 tests**: 226 library unit tests and 309 integration tests (across `acid_architecture`, `acid_presentation`, `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, and `whole_renderer_vt100`).
 
 `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings are UNVERIFIED** — no Go toolchain was available, so they were never compiled. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
 
@@ -237,13 +237,13 @@ with Context() as ctx:
 ## Running the Demos
 
 ```bash
-# Cinematic flagship: the machine UI opens into filled RGB cyberspace
+# Cinematic flagship: one machine, shot-directed RGB architecture
 cargo run --release --example acid_vs_crash                     # watch Crash work and fight
 cargo run --release --example acid_vs_crash -- --manual          # play Crash yourself
 cargo run --release --example acid_vs_crash -- --auto            # watch, then exit after resolution
 cargo run --release --example acid_vs_crash -- --deterministic --stage=display-intrusion
 cargo run --release --example acid_vs_crash -- --stage=climax --color=mono
-cargo run --release --example acid_vs_crash -- --stage=takeover --visual=cyber --color=truecolor
+cargo run --release --example acid_vs_crash -- --stage=takeover --color=truecolor
 cargo run --release --example fx_lab -- --scene=filled-3d --truecolor
 cargo run --release --example fx_lab -- --scene=feedback --truecolor
 
@@ -265,8 +265,9 @@ cargo run --example resize_test_app
 ```
 
 `acid_vs_crash` is an offline fictional terminal short film viewed from Crash
-Override's machine. Acid Burn gradually occupies the same ordinary map, session,
-and event panels through Scene-mounted SurfaceFx. Crash works and fights back
+Override's machine. A shot director reveals one continuous 3D place: MODEM's
+gateway, AUTH's nested vault, FILES' data stacks and the DISPLAY portal. Acid's
+actor follows her actual path; influence becomes light and integrity shapes damage. Crash works and fights back
 automatically by default: this is a window into his machine. You can intervene
 at any time, or use `--manual` to make every defensive choice yourself. Type
 `trace`, `isolate`, `isolate auth`, `decoy`, `kill`, or `hard isolate`; the story keeps moving while
@@ -280,21 +281,33 @@ The default view runs a state-based defender against Acid's deterministic planne
 on the same live topology and stays open in the aftermath. `--auto` uses the same
 defender and exits after resolution. Influence changes gradually; isolation
 severs real paths, trace consumes reserves and provokes evasion, and a familiar decoy can draw a
-feint. The action surface shows prerequisites, cooldowns and costs. StoryDirector
+feint. The compact action rail shows availability and cooldowns; commands retain their
+world-model costs. Uppercase `T/I/D/K` act immediately when the input is empty;
+lowercase text remains ordinary typed input. Final shortcuts are `1/2/3/4`
+(or uppercase `C/R/S/L`). StoryDirector
 sets the dramatic pace while the graph decides what actually happens.
 
-Use a release build for the RGB spectacle. The default `--visual=auto` begins in the machine UI, then dissolves into a
-filled 3D topology when Acid wins a foothold. Shaded subsystem towers, cyan and
-magenta light fields, depth-tested routes, feedback trails and a DISPLAY lattice
-all derive from the same graph. The UI reconstructs after resolution. These
-are Unicode half blocks and Braille with ordinary foreground/background colors:
-no Kitty, Sixel, images or video. TrueColor is the hero mode; ANSI256/ANSI16 use
-central quantization and Mono uses Braille density plus ownership grammar.
+Use a release build for the RGB spectacle. The default presentation begins in a
+dim architectural establishing shot, follows tactical pressure into closeups,
+rides a cyan trace, reveals the mirror, and confronts DISPLAY from inside the
+same machine. RGB faces, depth-tested Braille rails, signed influence fields,
+feedback trails and occasional raster distortion share one framebuffer. A
+small ordinary UI echo appears inside DISPLAY; its Scene-mounted SurfaceFx can
+become contested while the real three-row command island stays crisp.
 
-Use `--visual=flat` for the original machine view or `--visual=cyber` to inspect
-the graphical realization directly. `--debug-raster` shows pixels, triangles,
-Z tests, field samples and feedback passes. A 60 FPS ceiling does not promise
-60 FPS on every terminal. Large raster changes naturally cost more wire bytes.
+The research-informed composition draws on *Hackers*' physical City of Text and
+layered color work; see the [visual research record](docs/acid-vs-crash-cinematic-research.md).
+Everything is Unicode and ordinary foreground/background color: no Kitty,
+Sixel, images or video. TrueColor is the hero mode; ANSI256/ANSI16 use central
+quantization and Mono combines density shading, bright Braille structure and
+reverse Acid labels. Endings retain the machine's scars in a compact aftermath.
+
+`--presentation=legacy` retains the previous UI/dive choreography.
+`--visual=flat` and `--visual=cyber` explicitly select the historical projections;
+`--visual=auto` uses the new cinematic default. `--debug-shot` exposes shot and
+focal target. `--debug-raster` shows pixels, triangles, Z tests, field samples
+and feedback passes. A 60 FPS ceiling is scheduling policy, not a throughput
+promise. Animated camera views naturally produce broad differential updates.
 
 `--deterministic` fixes time while preserving the selected automatic or manual
 mode. Add `--debug-battle` (or `--debug-ai`) to inspect goals, candidate scores, routes and
@@ -306,6 +319,8 @@ influence. Inspection hooks include
 now start within the same broad act. After the battle, `replay` checks the full
 graph, planner memory, world state and story against exact recorded inputs.
 Scene/Story/SurfaceFx and the RGB raster APIs remain **EXPERIMENTAL, Rust-only**.
+See the [cinematic presentation validation record](docs/acid-vs-crash-cinematic-validation.md)
+for current shots, replay, actual PTY captures and claim limits.
 See the [RGB graphics validation record](docs/acid-vs-crash-rgb-validation.md)
 for replay, depth, visual inspection, PTY and performance evidence.
 See the [round II evidence record](docs/acid-vs-crash-round2-validation.md) and
@@ -327,7 +342,7 @@ library: `DUMP_ACID_RGB=/tmp/acid-rgb cargo test --test acid_graphics`.
 # Build library and release artifacts (.so, .a)
 cargo build --release
 
-# Run the full test suite (515 tests: 226 unit + 289 integration)
+# Run the full test suite (535 tests: 226 unit + 309 integration)
 cargo test
 
 # Static analysis and formatting checks

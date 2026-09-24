@@ -1012,38 +1012,64 @@ and isolated labels retain distinct glyph grammar. Full animated rasters can
 legitimately change broad regions. Exact delta, affected footprint and wire
 cost remain distinct (§33); identical frozen graphics still emit zero bytes.
 
-## 44. Two visual realizations of the battlefield
+## 44. One world, cinematic realizations
 
-The unchanged BattleGraph has two demo-local projections: the ordinary machine
-UI and `examples/acid_vs_crash/cyber.rs`. Integrity controls tower height;
-signed influence controls material mixture and the spatial light field;
-connected edges determine luminous paths; isolation moves structures into
-separate islands and opens physical gaps. Decoys add a mirrored structure.
-Trace pulses run backward on Acid's legal path. DISPLAY possession grows a
-lattice, field contours and intermittent raster distortion. Existing session
-content and its entity SurfaceFx can reappear as a small UI fragment. The
-command island is composed afterward and stays ordinary text/input.
+The demo-local `presentation.rs` chooses a `ShotPlan` from BattleGraph and
+recorded visual history. This replaces the default flat-UI/dive distinction;
+legacy projections remain explicitly selectable. Nothing in shot selection
+changes the graph, planner, actions, story, facts, bundles or outcome.
 
-A genuine foothold starts the automatic dive. A recorded entry time makes the
-transition continuous across broad beats; a stable cell dissolve lets the flat
-view give way to RGB depth. `--visual=flat` and `--visual=cyber` select a projection
-without mutating world or story. In a category-theoretic view these are two
-realizations of the same semantic object, not two copies of narrative truth.
-The transition is choreographed, not a general widget-to-mesh morph.
+Shots cover establishment, arrival, route contest, node closeup, trace,
+isolation, decoy, evasion, DISPLAY assault, final duel, three resolutions and
+aftermath. Each selects a camera pose, focal node, light/field exposure and
+label policy. Stable subsystem positions preserve anchors across shots.
+`world_geom.rs` gives those anchors distinct silhouettes: gateway rings,
+switching prism, nested vault, sloped console, data stacks/mirror, and portal.
+Integrity removes pieces; foreign influence misaligns layers and changes the
+light field. Filled faces and emissive structural rails share camera/depth;
+a sparse, depth-checked Braille overlay adds finer edges over opaque RGB mass.
+No generic engine API was added for this art direction.
 
-VisualHistory records at most 48 world-space light samples at update boundaries.
-Painting reconstructs a local feedback raster from those samples with the
-current camera and dimensions. Resize reprojects history; repeated paint does
-not add emissions. This trades bounded reconstruction work for a pure frame
-interface. Explicit recorded aftermath time continues reassembly after a
-terminal story beat while the final semantic world stays fixed. Full encounter
-replay checks this visual state as well as the graph, planner, facts, beats and
-bundles. View configuration is copied by `Encounter::replay`; it is not world
-state stored in the semantic trace.
+`ShotHistory` is derived update state with a recorded prior camera, selected
+shot, action cue, exposure and entry clock. It updates even for zero-duration
+semantic commands. Actions get a bounded 2.4-second attention window; ordinary
+shot changes have a minimum hold. Camera and exposure interpolate over 1.25
+seconds from the prior presentation. Viewport dimensions adjust framing at
+paint time without changing history. Outcome/aftermath time is explicit.
+Exact update replay rebuilds the shot/camera sequence and final raster; no
+wall clock or paint count participates. This is exact ordered-input replay,
+not equivalence under arbitrary timestep repartitioning.
 
-The Acid victory formation is demo-local 5×7 RGB fragments assembling over the
-existing world, not a font engine or mesh-text framework. The battlefield
-raster is capped at 320×240 samples; normal requested dimensions are native
-one-by-two samples per cell. Small terminals use a focal graphic and a minimal
-HUD with two action rows. A nominal 60 FPS ceiling is scheduling policy, not a
-measured throughput guarantee for every terminal or machine.
+`cyber.rs` remains the common raster generator. Acid's actor follows planner
+progress along valid graph edges; normal traffic dots have separate phases.
+Trace light follows the reverse path. Incomplete feint curves are presentation
+of a real feint tactic, not secretly connected graph edges. Isolation exposes
+broken routes and bounded sparks. A one-level semantic topology/trace engraving
+lives in DISPLAY's geometry, and an ordinary text echo of the live input can
+appear at its projected position with the existing entity SurfaceFx. The real
+input buffer is never modified by the echo or Acid's actor.
+
+The compositional reading is `C(W, shot)`: text, topology, depth and fields are
+projections of the same semantic object W, selected together by the shot.
+They are not separate copies of narrative truth. Three opaque command rows
+are the stable local-control boundary. Richer receipts/scars appear only in
+aftermath or debug inspection. Uppercase shortcuts leave lowercase typed
+commands untouched; numeric final shortcuts are active only on empty input.
+
+VisualHistory retains at most 48 world-space light samples. Painting rebuilds
+feedback in the current camera/dimensions; resize reprojects and repeated paint
+adds no energy. The raster is bounded to 320×240 RGB samples. Whole moving
+camera/raster views can change broadly, while identical frozen frames still
+have zero exact delta, affected footprint and emitted bytes (§33).
+
+Crash resolution pulls outward and preserves damage, Acid assembles tiny
+bitmap lettering from illuminated raster fragments of the current machine,
+and stalemate creates a stationary interference boundary. This is original
+demo-specific choreography, not arbitrary mesh morphing or a font engine.
+Aftermath is a compact scar/trace/replay view over the same architecture.
+
+Legacy `--presentation=legacy` retains the original automatic dive;
+`--visual=flat|cyber` retains individual historical projections for comparison.
+The cinematic default starts with geometry already present. TrueColor, central
+ANSI quantization and Mono density/bright structural rails share world truth;
+color fidelity and perceptual equivalence across terminals are not guaranteed.

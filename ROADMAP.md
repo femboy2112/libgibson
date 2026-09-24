@@ -13,6 +13,26 @@ This document outlines completed work and the planned future milestones for LibG
 
 ---
 
+## Cinematic machine presentation — IMPLEMENTED + TESTED, EXPERIMENTAL demo-local
+
+- [x] Default shot-directed machine from frame one; legacy flat/cyber retained.
+- [x] Deterministic camera and exposure transitions, responsive focal framing,
+  distinct subsystem architecture and depth-checked Braille structural rails.
+- [x] Planner-positioned Acid actor, trace chase, feint paths, isolation rupture,
+  mirror materialization, DISPLAY UI echo, distinct endings and scarred aftermath.
+- [x] Three-row stable controls, uppercase shortcuts and numeric final actions;
+  ordinary typed input and autonomous Crash preserved.
+- [x] Shot/camera/raster replay, frozen 0/0/0, geometry and damage probes,
+  real PTY shortcuts/full auto and seven-shot resize exercise.
+- [x] Production-design research, release PTY frame inspection and stage matrix.
+- [x] **535 tests** (226 unit + 309 integration); strict local gates and binding
+  smoke tests pass. Remote CI remains billing-blocked.
+- [ ] Independent human aesthetic acceptance remains **UNVERIFIED**; screenshots
+  and test metrics are not a substitute for the user's visual judgment.
+
+See [research](docs/acid-vs-crash-cinematic-research.md) and
+[validation/commands](docs/acid-vs-crash-cinematic-validation.md).
+
 ## Terminal software graphics — IMPLEMENTED + TESTED, EXPERIMENTAL Rust-only
 
 - [x] Opaque RGB raster, software blending, half-block realization, Mono density,
@@ -25,7 +45,7 @@ This document outlines completed work and the planned future milestones for LibG
   DISPLAY lattice, existing UI fragment, stable controls and ending reassembly.
 - [x] Full semantic/visual replay; RGB counterfactuals; frozen 0/0/0 law;
   graphical counterplay and resize in real PTYs. Original flat goldens retained.
-- [x] **515 tests** (226 unit + 289 integration), plus three explicit FX Lab
+- [x] At the RGB substrate checkpoint: **515 tests** (226 unit + 289 integration), plus three explicit FX Lab
   generator tests. All required local gates and native binding smokes pass.
 - [ ] Subjective “mistaken for an image protocol” acceptance is **UNVERIFIED**;
   visual quality has direct screenshot inspection, not an independent human panel.
