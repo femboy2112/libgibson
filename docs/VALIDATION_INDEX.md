@@ -20,8 +20,8 @@ cinematic branch was subsequently merged through PR #1 at main `0b673cc`.
 | Shot-directed machine / 535 | [Cinematic validation](acid-vs-crash-cinematic-validation.md) | Shots, distinct architecture, replay/camera sequence, raster probes, screenshots and resize | Historical visual acceptance scope; does not establish universal emulator performance. |
 | Final merge gate / 536 | [Hardening validation](acid-vs-crash-hardening-validation.md) | Feedback resize counterexample/fix, docs contracts, exact gates, bindings and release PTY | Approved tip 3b67ca2; superseded by post-merge audit for current blockers and CI. |
 | Post-merge / 536 | [State of LibGibson](STATE_OF_LIBGIBSON.md) | Fresh gates, architecture/API inventory, source review, decisive debt probes and roadmap | Original baseline; current debt ledger is updated explicitly by later sections. |
-
-| Introductory cinema / consolidation | [Introduction](INTRODUCTORY_CINEMA.md) | Dependency PR integration, D1/D2/D5 fixes, cubic routes, finite cinematic intro, art-direction/continuity pass, Surface and PTY witnesses | Current branch implementation/validation; not an API stability or aesthetic certification. |
+| Introductory cinema / consolidation | [Introduction](INTRODUCTORY_CINEMA.md) | Dependency PR integration, D1/D2/D5 fixes, cubic routes, finite cinematic intro, art-direction/continuity pass, Surface and PTY witnesses | Merged through PR #14 at e5ede0a; exact-main CI 35960000454 green. Not an API stability or aesthetic certification. |
+| External agent-native UI / frozen API | [Campaign results](research/AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md) | Shared fixture, three planned consumers, no core promotions, three post-freeze holdouts, 61 lab tests, freeze and public CI | Bounded expressivity corroboration; independent lab count, no universal ease or platform claim. |
 
 Older visual FX, Scene Algebra and Story checkpoints live in [ROADMAP](../ROADMAP.md)
 and [DESIGN](../DESIGN.md), with executable regressions under `tests/`; there is

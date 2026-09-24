@@ -1,5 +1,10 @@
 # LibGibson Expressivity & API Audit for Agent-Native Dynamic UI
 
+> **Campaign update:** the external program has now completed. See the
+> [recorded results](AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md) for frozen revisions,
+> three post-freeze holdout verdicts and limits. This proposal/audit below is
+> preserved as preregistration; it creates no core commitment.
+
 **Date:** 2026-09-24
 
 **Audited baseline:** public `main` at `e5ede0a4ab8ff52caa567ee10d45824e42c1ebc6`
@@ -500,7 +505,7 @@ Why:
 - custom graphics do not require ANSI;
 - current cinematic work has repeatedly built genuinely new visuals on the existing pipeline.
 
-### Largest unresolved question
+### Largest unresolved question at preregistration
 
 **Probe-gap:** we have not yet frozen the public API and asked a fresh implementer to build ambitious, previously unspecified interfaces without modifying LibGibson.
 
@@ -514,4 +519,4 @@ Scene/Story/software graphics remain experimental Rust APIs.
 
 The next step is not adding more core features.
 
-The next step is the external holdout program described in [AGENT_NATIVE_UI_EXPERIMENT_PLAN_2026-09-24.md](AGENT_NATIVE_UI_EXPERIMENT_PLAN_2026-09-24.md).
+That planned program has since completed; the [campaign results](AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md) supersede this historical probe-gap. G1 was observed as ergonomic pressure with a working public route; no core promotion was justified.

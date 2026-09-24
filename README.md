@@ -28,6 +28,9 @@ LibGibson treats the terminal as a 2D logical cell framebuffer with an explicit 
 Read the [current project state](docs/STATE_OF_LIBGIBSON.md) for the architecture,
 core/experimental boundary, known blockers and priorities. The
 [validation index](docs/VALIDATION_INDEX.md) preserves historical evidence.
+The [external expressivity campaign](docs/research/AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md)
+tests six consumers against the unchanged public API, including three post-freeze
+concepts; it does not claim universal UI expressivity or stable APIs.
 Modern Scene/Story and software graphics APIs are experimental and Rust-only;
 the C ABI exposes the established UI/output subset.
 

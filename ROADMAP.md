@@ -378,7 +378,10 @@ Research dossier:
 - [Experiment and acceptance plan](docs/research/AGENT_NATIVE_UI_EXPERIMENT_PLAN_2026-09-24.md)
 - [Zero-context handoff](docs/research/AGENT_NATIVE_UI_ZERO_CONTEXT_HANDOFF_2026-09-24.md)
 
-This track is complete only after fresh, post-freeze holdouts test "unknown dope shit"
-without allowing LibGibson core or expressive IR changes during the holdout.
-Failed holdouts are valid completed research outcomes and must remain visible.
+This first campaign is now **COMPLETE within its recorded scope**: the three
+planned consumers and Foldroom/Cuebox/Weavebench holdouts used an unchanged frozen
+public API. No core promotion was justified. See the [results and claim limits](docs/research/AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md).
+The original plan above remains provenance, not an unstarted feature promise.
+Failed consumer attempts and selection exclusions remain visible; broader ease,
+human usability and universality remain unverified.
 D6/D7/D8 and issue #15 remain separate engineering debt, not scope for this campaign.

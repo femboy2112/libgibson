@@ -1,5 +1,10 @@
 # Agent-Native Dynamic Interfaces: LibGibson Research Program
 
+> **Campaign update:** the external program has now completed. See the
+> [recorded results](AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md) for frozen revisions,
+> three post-freeze holdout verdicts and limits. This proposal/audit below is
+> preserved as preregistration; it creates no core commitment.
+
 **Status:** NON-BINDING RESEARCH / PRESSURE TEST ONLY / NO NEW CORE COMMITMENT
 
 **Date:** 2026-09-24
