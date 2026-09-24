@@ -338,3 +338,27 @@ This round converted earlier over-strong claims into verified behavior and expli
 - [ ] **Multiplexer & Remote Shell Hardening**: specialized test matrix for tmux, screen, and SSH connections over high-latency networks.
 - [ ] **Property & Fuzz Testing**: `cargo-fuzz` / AFL suite exercising arbitrary Unicode sequences, arbitrary terminal byte streams, invalid ANSI input, and rapid terminal resizes.
 - [x] **Executable Foreign Binding CI**: C/C++/Python/ASan and Go jobs are prepared with corrected native paths, fresh native builds, least privilege and timeouts. Local Go smoke passes. All five public-main jobs now pass; see the state audit for the exact run and remaining coverage limits.
+
+
+---
+
+## Research pressure test — Agent-native dynamic interfaces (NON-BINDING)
+
+A docs-only research branch, `research/agent-native-dynamic-ui-2026-09-24`, records three external pressure tests for the public API:
+
+- manga/comic sequential-art presentation grammar;
+- semantic meme reaction layer;
+- agent-generated temporary interactive instruments.
+
+These are **not planned LibGibson products** and should not be implemented as core widget families. They exist to test a broader architectural claim: common professional dynamic graphics should be easy, while unanticipated visual ideas should remain possible through safe public lower layers (`Node`, `Scene`, `Surface`, `RgbRaster`, generic geometry/effects) rather than renderer forks or raw ANSI.
+
+Core promotion is earned only by repeated generic pressure, a correctness boundary, or a missing minimal primitive. Harness-specific vocabulary stays external.
+
+Research dossier:
+
+- [Agent-native dynamic UI research program](docs/research/AGENT_NATIVE_DYNAMIC_UI_RESEARCH_PROGRAM_2026-09-24.md)
+- [LibGibson expressivity/API audit](docs/research/LIBGIBSON_EXPRESSIVITY_API_AUDIT_2026-09-24.md)
+- [Experiment and acceptance plan](docs/research/AGENT_NATIVE_UI_EXPERIMENT_PLAN_2026-09-24.md)
+- [Zero-context handoff](docs/research/AGENT_NATIVE_UI_ZERO_CONTEXT_HANDOFF_2026-09-24.md)
+
+This track is complete only after fresh, post-freeze holdouts test "unknown dope shit" without allowing LibGibson core changes during the holdout.
