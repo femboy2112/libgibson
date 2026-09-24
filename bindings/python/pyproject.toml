@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "libgibson"
+version = "0.1.0"
+description = "Python wrapper for the LibGibson terminal UI engine (requires a separately installed native libgibson)."
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [{ name = "LibGibson Contributors" }]
+keywords = ["terminal", "tui", "ui", "ffi", "ctypes"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Terminals",
+]
+
+# This wrapper does not bundle a native binary. It loads a separately installed
+# libgibson shared library (ABI v1) and verifies gibson_abi_version() on import.
+# See README.md for how to point it at the native SDK.
+
+[project.urls]
+Homepage = "https://github.com/femboy2112/libgibson"
+Repository = "https://github.com/femboy2112/libgibson"
+
+[tool.setuptools]
+py-modules = ["gibson"]
