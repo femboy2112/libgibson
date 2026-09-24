@@ -368,7 +368,7 @@ fn resize_invalidates_anchor_and_resyncs() {
 
     // Simulate terminal resize and tell both the session and the virtual terminal.
     h.session.set_terminal_size(40, 12);
-    h.parser.set_size(12, 40);
+    h.parser.screen_mut().set_size(12, 40);
 
     let (_, _, full) = h.render(&mut root);
     assert!(full, "resize must force a full re-anchor repaint");
@@ -398,7 +398,7 @@ fn resize_to_narrow_width_reflows_without_panic() {
     ));
     h.render(&mut root);
     h.session.set_terminal_size(20, 8);
-    h.parser.set_size(8, 20);
+    h.parser.screen_mut().set_size(8, 20);
     h.render(&mut root);
     // No panic; all written rows fit within width.
     for row in h.screen_rows() {
@@ -474,7 +474,7 @@ fn whole_renderer_long_input_survives_resize() {
 
     // Shrink dramatically; the input must re-scroll and keep the cursor in bounds.
     h.session.set_terminal_size(24, 8);
-    h.parser.set_size(8, 24);
+    h.parser.screen_mut().set_size(8, 24);
     let mut out = Vec::new();
     let (_d, _t, _b, _f, paint) = h
         .renderer
@@ -637,7 +637,7 @@ fn resize_during_overlay_animation_reanchors_without_panic() {
 
     // Resize mid-animation, then keep rendering the overlay.
     session.set_terminal_size(30, 10);
-    parser.set_size(10, 30);
+    parser.screen_mut().set_size(10, 30);
     let mut out2 = Vec::new();
     let mut root2 = fs_root_with(Node::text("frame", Style::default()), true);
     renderer
@@ -674,7 +674,7 @@ fn fullscreen_resize_clears_stale_blank_regions_and_accounts_for_clear() {
     renderer.render(&mut old, &mut session, &mut wire).unwrap();
     parser.process(&wire);
     session.set_terminal_size(20, 6);
-    parser.set_size(6, 20);
+    parser.screen_mut().set_size(6, 20);
     let mut new = Node::stack().width(20.0).height(6.0).child(
         Node::text("NEW", Style::new())
             .width(3.0)

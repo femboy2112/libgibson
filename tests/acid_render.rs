@@ -174,7 +174,7 @@ fn ghost_input_never_edits_crash_buffer_and_live_resize_keeps_renderer_correct()
     let mut parser = vt100::Parser::new(32, 120, 0);
     for (w, h) in [(120, 32), (56, 24), (160, 40), (80, 24), (120, 32)] {
         terminal.set_terminal_size(w, h);
-        parser.set_size(h, w);
+        parser.screen_mut().set_size(h, w);
         e.tick(Duration::from_millis(150), false);
         let expected = surface(e.frame(w, h), w, h);
         let mut wire = Vec::new();
