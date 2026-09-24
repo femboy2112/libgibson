@@ -372,3 +372,15 @@ fn graphical_title_and_companion_fit_the_supported_compositions() {
         assert!(AnsiCompiler::new().compile(&diff).is_empty());
     }
 }
+
+#[test]
+fn late_ascent_sampling_cannot_wrap_into_a_distant_city_cell() {
+    // At this measured frame the inverse sample is (327717, 131101), well
+    // outside the source. Narrowing first used to wrap it to city cell (37,29).
+    // The RGB sampling path keeps signed coordinates and is an independent
+    // witness for the untouched planet at the distant destination.
+    let seconds = 59.94084;
+    let expected = intro::world::raster(120, 32, seconds).to_surface();
+    let actual = intro::world::render(120, 32, seconds, ColorDepth::TrueColor);
+    assert_eq!(actual.get(107, 18), expected.get(107, 18));
+}

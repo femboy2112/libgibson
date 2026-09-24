@@ -1060,11 +1060,12 @@ pub fn render(width: u16, height: u16, seconds: f32, capability: ColorDepth) -> 
                 {
                     let sx = (dx / zoom + width as f32 * 0.5).round() as i32;
                     let sy = ((dy / zoom + height as f32) * 0.5).round() as i32;
-                    let cell = if sx >= 0 && sy >= 0 {
-                        site.get(sx as u16, sy as u16).cloned()
-                    } else {
-                        None
-                    };
+                    let cell =
+                        if sx >= 0 && sy >= 0 && sx < i32::from(width) && sy < i32::from(height) {
+                            site.get(sx as u16, sy as u16).cloned()
+                        } else {
+                            None
+                        };
                     if let Some(mut cell) = cell {
                         if cell.glyph.grapheme != "⠀" {
                             if capability != ColorDepth::Mono {
