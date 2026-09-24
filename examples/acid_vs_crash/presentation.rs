@@ -91,6 +91,8 @@ impl Selection {
 pub struct ShotHistory {
     selection: Selection,
     from: CameraPose,
+    from_field: f32,
+    from_light: f32,
     last_pose: CameraPose,
     entered_at: Duration,
     last_action: String,
@@ -113,6 +115,8 @@ impl ShotHistory {
         Self {
             selection,
             from: rig(world, selection, 0.0),
+            from_field: lighting(selection.kind).0,
+            from_light: lighting(selection.kind).1,
             last_pose: rig(world, selection, world.visual_time().as_secs_f32().min(2.0)),
             // Inspection hooks start on a settled composition. Ordinary quiet
             // starts on the same pose, so this does not skip its opening.
@@ -157,6 +161,10 @@ impl ShotHistory {
             // Preserve the previously presented rig rather than re-evaluating
             // its old focal point against the new topology at zero elapsed time.
             self.from = self.last_pose;
+            let blend = smooth(now.saturating_sub(self.entered_at).as_secs_f32() / 1.25);
+            let (field, light, _) = lighting(self.selection.kind);
+            self.from_field += (field - self.from_field) * blend;
+            self.from_light += (light - self.from_light) * blend;
             self.selection = next;
             self.entered_at = now;
         }
@@ -351,7 +359,6 @@ fn rig(world: &EncounterModel, shot: Selection, phase: f32) -> CameraPose {
 /// Pure composition decision. The viewport changes framing, never shot history
 /// or simulation. Narrow terminals favor one focal silhouette over an overview.
 pub fn plan(world: &EncounterModel, history: &VisualHistory, width: u16, height: u16) -> ShotPlan {
-    use ShotKind::*;
     let shots = &history.shots;
     let now = world.visual_time().saturating_add(history.aftermath);
     let phase = now.saturating_sub(shots.entered_at).as_secs_f32();
@@ -369,21 +376,10 @@ pub fn plan(world: &EncounterModel, history: &VisualHistory, width: u16, height:
     if height >= 36 && width >= 120 {
         pose.fov *= 0.94;
     }
-    let (field_strength, light_strength, labels) = match shots.selection.kind {
-        Establishing => (0.17, 0.52, LabelPolicy::All),
-        Arrival => (0.28, 0.72, LabelPolicy::FocalAndRoute),
-        RouteContest => (0.6, 1.0, LabelPolicy::FocalAndRoute),
-        NodeCloseup => (0.72, 1.0, LabelPolicy::FocalAndRoute),
-        Trace | Evasion => (0.46, 1.25, LabelPolicy::FocalAndRoute),
-        Isolation => (0.38, 1.1, LabelPolicy::FocalAndRoute),
-        Decoy => (0.65, 1.1, LabelPolicy::FocalAndRoute),
-        DisplayAssault => (0.9, 1.15, LabelPolicy::Minimal),
-        FinalDuel => (1.0, 1.25, LabelPolicy::Minimal),
-        CrashWin => (0.5, 0.95, LabelPolicy::Scars),
-        AcidWin => (1.0, 1.15, LabelPolicy::Minimal),
-        Stalemate => (0.62, 0.82, LabelPolicy::Minimal),
-        Aftermath => (0.2, 0.65, LabelPolicy::Scars),
-    };
+    let (field, light, labels) = lighting(shots.selection.kind);
+    let blend = smooth(phase / 1.25);
+    let field_strength = shots.from_field + (field - shots.from_field) * blend;
+    let light_strength = shots.from_light + (light - shots.from_light) * blend;
     ShotPlan {
         kind: shots.selection.kind,
         camera: Camera {
@@ -400,5 +396,24 @@ pub fn plan(world: &EncounterModel, history: &VisualHistory, width: u16, height:
         labels,
         phase,
         transition: smooth(phase / 1.25),
+    }
+}
+
+fn lighting(kind: ShotKind) -> (f32, f32, LabelPolicy) {
+    use ShotKind::*;
+    match kind {
+        Establishing => (0.17, 0.52, LabelPolicy::All),
+        Arrival => (0.28, 0.72, LabelPolicy::FocalAndRoute),
+        RouteContest => (0.6, 1.0, LabelPolicy::FocalAndRoute),
+        NodeCloseup => (0.72, 1.0, LabelPolicy::FocalAndRoute),
+        Trace | Evasion => (0.46, 1.25, LabelPolicy::FocalAndRoute),
+        Isolation => (0.38, 1.1, LabelPolicy::FocalAndRoute),
+        Decoy => (0.65, 1.1, LabelPolicy::FocalAndRoute),
+        DisplayAssault => (0.9, 1.15, LabelPolicy::Minimal),
+        FinalDuel => (1.0, 1.25, LabelPolicy::Minimal),
+        CrashWin => (0.5, 0.95, LabelPolicy::Scars),
+        AcidWin => (1.0, 1.15, LabelPolicy::Minimal),
+        Stalemate => (0.62, 0.82, LabelPolicy::Minimal),
+        Aftermath => (0.2, 0.65, LabelPolicy::Scars),
     }
 }

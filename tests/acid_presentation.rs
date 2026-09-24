@@ -102,6 +102,8 @@ fn accepted_zero_time_defenses_change_shot_without_a_camera_cut() {
             before.camera, after.camera,
             "{command} must begin at the presented camera"
         );
+        assert_eq!(before.field_strength, after.field_strength);
+        assert_eq!(before.light_strength, after.light_strength);
         encounter.update(Duration::from_millis(137), &[]);
         let moving = shot(&encounter, 120, 28);
         finite(&moving);
@@ -188,6 +190,7 @@ fn five_hero_shots_have_geometry_light_and_distinct_camera_compositions() {
             encounter.update(Duration::from_millis(1400), &[]);
         }
         let plan = shot(&encounter, 160, 36);
+        let began = std::time::Instant::now();
         let frame = cyber::render_shot(
             encounter.battle(),
             encounter.visual_history(),
@@ -196,6 +199,7 @@ fn five_hero_shots_have_geometry_light_and_distinct_camera_compositions() {
             false,
             &plan,
         );
+        let generation_us = began.elapsed().as_micros();
         let colors = frame
             .raster
             .pixels()
@@ -212,6 +216,13 @@ fn five_hero_shots_have_geometry_light_and_distinct_camera_compositions() {
             "{stage}: geometry must survive projection"
         );
         assert!(frame.metrics.triangles.z_tests > 100, "{stage}");
+        eprintln!(
+            "{stage}: shot={:?} RGB={} triangles={} z={} generation_us={generation_us}",
+            plan.kind,
+            colors.len(),
+            frame.metrics.triangles.triangles_drawn,
+            frame.metrics.triangles.z_tests
+        );
         cameras.push(plan.camera);
         if let Ok(path) = std::env::var("DUMP_ACID_SHOTS") {
             std::fs::create_dir_all(&path).unwrap();
