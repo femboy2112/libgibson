@@ -1,0 +1,37 @@
+--- a/src/event/source/unix/mio.rs
++++ b/src/event/source/unix/mio.rs
+@@ -24,6 +24,7 @@
+ pub(crate) struct UnixInternalEventSource {
+     poll: Poll,
+     events: Events,
++    pending_tokens: VecDeque<Token>,
+     parser: Parser,
+     tty_buffer: [u8; TTY_BUFFER_SIZE],
+     tty_fd: FileDesc<'static>,
+@@ -54,6 +55,7 @@
+         Ok(UnixInternalEventSource {
+             poll,
+             events: Events::with_capacity(3),
++            pending_tokens: VecDeque::with_capacity(3),
+             parser: Parser::default(),
+             tty_buffer: [0u8; TTY_BUFFER_SIZE],
+             tty_fd: input_fd,
+@@ -73,6 +75,7 @@
+         let timeout = PollTimeout::new(timeout);
+ 
+         loop {
++            if self.pending_tokens.is_empty() {
+             if let Err(e) = self.poll.poll(&mut self.events, timeout.leftover()) {
+                 // Mio will throw an interrupted error in case of cursor position retrieval. We need to retry until it succeeds.
+                 // Previous versions of Mio (< 0.7) would automatically retry the poll call if it was interrupted (if EINTR was returned).
+@@ -89,7 +92,9 @@
+                 return Ok(None);
+             }
+ 
+-            for token in self.events.iter().map(|x| x.token()) {
++            self.pending_tokens.extend(self.events.iter().map(|x| x.token()));
++            }
++            while let Some(token) = self.pending_tokens.pop_front() {
+                 match token {
+                     TTY_TOKEN => {
+                         loop {
