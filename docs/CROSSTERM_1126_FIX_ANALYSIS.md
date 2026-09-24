@@ -1,6 +1,9 @@
 # Crossterm #1126 input starvation — diagnosis and fix analysis
 
-**Status: diagnosis CORROBORATED; no production fix implemented in LibGibson.**
+**Status: diagnosis CORROBORATED. Shape A fix IMPLEMENTED + independently VERIFIED
+in an isolated upstream clone (staged, NOT filed upstream, NOT vendored into
+LibGibson). Issue #15 remains OPEN — LibGibson still builds on unpatched
+crossterm 0.29.0.** See [Round II](#round-ii--shape-a-implemented-and-verified-staged-not-filed).
 
 This document is the staged outcome of an independent investigation into the
 single-key input stall tracked in
@@ -111,3 +114,126 @@ response yet; it is the team's own ticket, not community validation.
 `WAKE_TOKEN` path were not exercised. The `read`-after-`Resize` line in the strace
 is a success signal for the *intended* mechanism only — it coexists with the fatal
 hang on the next line, and must not be read in isolation as "fixed."
+
+## Round II — Shape A implemented and verified (staged, NOT filed)
+
+Round II took Shape A from proposal to a **tested, independently verified** patch,
+built entirely in an **isolated clone** of crossterm — never a LibGibson dependency,
+never a vendored fork, never pushed anywhere.
+
+- **Clone:** `crossterm-rs/crossterm` tag `0.29` = commit
+  `36d95b26a26e64b0f8c12edfe11f410a6d56a812` (the latest published release), in a
+  scratch worktree outside the LibGibson tree.
+- **What changed:** only `src/event/source/unix/mio.rs` (34 insertions, 5 deletions),
+  plus a scratch-only reproducer (`tests/repro_1126.rs` + two example fixtures) and
+  the two `[dev-dependencies]` it needs. No fd blocking-mode change, no touched
+  `WAKE_TOKEN`/`event-stream` path.
+
+### The Shape A patch
+
+Both the TTY and SIGNAL arms stop returning the instant they produce an event; they
+enqueue into the parser's existing `internal_events` backlog and let the batch loop
+finish, then one queued event is returned (any remainder is delivered on the next
+call via the pre-existing top-of-function check — no extra `poll()`). The TTY inner
+loop keeps its **identical** bounded read discipline (it detects a decode via a
+length-diff on the backlog and `break`s — it does **not** drain to `WouldBlock`), so
+it adds no read the pristine code didn't already do, and therefore cannot reintroduce
+the blocking-fd hang that killed Shape B.
+
+```diff
+             for token in self.events.iter().map(|x| x.token()) {
+                 match token {
+                     TTY_TOKEN => {
++                        let queued_before = self.parser.internal_events.len();
+                         loop {
+                             match self.tty_fd.read(&mut self.tty_buffer) {
+                                 Ok(read_count) => { /* advance parser as before */ }
+                                 Err(e) => { /* WouldBlock -> break; Interrupted -> continue */ }
+                             };
+-                            if let Some(event) = self.parser.next() {
+-                                return Ok(Some(event));
++                            // A full event decoded off this readiness: stop reading
++                            // (never a further drain) and move on to the rest of the batch.
++                            if self.parser.internal_events.len() > queued_before {
++                                break;
+                             }
+                         }
+                     }
+                     SIGNAL_TOKEN => {
+                         if self.signals.pending().next() == Some(SIGWINCH) {
+                             let new_size = crate::terminal::size()?;
+-                            return Ok(Some(InternalEvent::Event(Event::Resize(new_size.0, new_size.1))));
++                            // Queue instead of early return — see TTY_TOKEN above.
++                            self.parser.internal_events.push_back(
++                                InternalEvent::Event(Event::Resize(new_size.0, new_size.1)));
+                         }
+                     }
+                 }
+             }
++            // Whole batch accounted for: hand back the oldest queued event, if any.
++            if let Some(event) = self.parser.next() {
++                return Ok(Some(event));
++            }
+```
+
+### The reproducer (the evidence #1057 lacked)
+
+A real PTY, a real `SIGWINCH`, a real session leader. The child enables raw mode,
+forces mio/epoll registration, then parks on a sentinel **without polling**; the
+harness pre-arms *both* a resize and a keypress while the child is parked, so the
+child's very first `epoll_wait` after release necessarily returns both tokens in one
+batch — exactly the `epoll_wait(...) = [{SIGNAL}, {TTY}]` shape from the strace above.
+Every wait is bounded, so a hang is a test *failure*, never an actual stall.
+
+### Independently verified (re-run here, not taken on faith)
+
+Reverting `mio.rs` to stock and re-running, then re-applying the patch:
+
+| build | `resize_and_key` (collision) | controls (lone key, lone resize, zero-poll) | wall time |
+|---|---|---|---|
+| **stock 0.29.0** | **FAILED** — `got resize=true key=false` (key stranded) | pass | 2.69 s (bounded, no hang) |
+| **Shape A** | **ok** — both delivered from one batch | pass | 2.27 s |
+
+Zero-duration poll returned in ~103 µs (nowhere near a hang). Full crossterm suite
+with Shape A: 105 unit + 53 doc-tests green, 7 pre-existing unrelated ignores.
+
+### Scope, boundaries, and the honest bits
+
+- Fixes the **#1126** batch-cross-drop. Does **not** fix **#1057** (the >1024-byte
+  partial-drain stall) — that still needs Shape B (non-blocking fd). Not claimed.
+- `WAKE_TOKEN` (`event-stream` feature) is deliberately untouched: feature-gated,
+  unexercised by the rig, a materially larger change than Shape A's minimal footprint.
+- The reproducer pulls `portable-pty` into the clone's dev-deps for safe
+  session-leader setup; a real upstream submission might prefer a lighter PTY helper.
+- Verified on the exact Linux/`pts` stack only; macOS (kqueue), Windows, and a real
+  hardware tty are unexercised.
+
+### Proposed upstream PR (NOT FILED — awaiting an explicit decision)
+
+This is drafted and ready; it has **not** been posted to `crossterm-rs/crossterm`,
+because filing on a third party's repository is an outward action reserved for an
+explicit go-ahead. If filed, it would read:
+
+> **Title:** Fix #1126: deliver every event in a single readiness batch (Unix Mio source)
+>
+> **Body:** On Unix, `UnixInternalEventSource::try_read` returns on the first decoded
+> event in a `poll()` batch and abandons the other ready tokens. Because the tty and
+> signal fds are edge-triggered, the dropped readiness never re-fires, so a keypress
+> that shares one batch with a `SIGWINCH` is stranded until unrelated later I/O
+> (issue #1126). This queues each ready token's event into the parser's existing
+> backlog and returns after the whole batch, keeping the tty read discipline byte-for-
+> byte (one read per readiness; no drain-to-`WouldBlock`), so it does **not** change any
+> fd's blocking mode and cannot introduce the hang that a naive drain would on the
+> blocking `VMIN=1` tty. Distinct from #1057 (>1024-byte partial drain), which this
+> does not address. Includes a real-PTY reproducer that fails on `main` (resize
+> delivered, key stranded) and passes with the fix; controls (lone key, lone resize,
+> zero-duration poll) and the full existing suite stay green.
+
+## LibGibson adoption status (issue #15)
+
+**#15 stays OPEN.** An upstream patch existing — even a verified one — is not adoption.
+LibGibson still depends on unpatched crossterm `0.29.0`; its input path is unchanged;
+no fork is vendored and no `[patch.crates-io]` is added. #15 closes only when a
+*supported* fixed crossterm (a release or an upstream-merged commit) exists, LibGibson
+adopts it, the known-red single-key acceptance turns green, and the fairness/regression
+matrix passes on that adopted path.
