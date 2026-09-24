@@ -19,6 +19,15 @@ use gibson::TerminalSession;
 /// puts on the wire. Its presence is our proof the terminal was cleaned up.
 const SHOW_CURSOR: &[u8] = b"\x1b[?25h";
 
+/// Byte-exact substring search over the raw wire capture. We search bytes, not a
+/// lossy UTF-8 view, so escape sequences and marker offsets stay exact.
+fn find_sub(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || hay.len() < needle.len() {
+        return None;
+    }
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
 fn spawn_probe(scenario: &str) -> pty_capture::Capture {
     let mut cmd = CommandBuilder::new(pty_capture::example_path("terminal_ownership_probe"));
     cmd.arg(scenario);
@@ -102,6 +111,110 @@ fn panic_restores_when_owned() {
         "panic hook did not emit terminal restoration"
     );
     // A panic unwinds to a non-zero exit; the point is it exited at all.
+    assert!(
+        !status.success(),
+        "panic probe should exit non-zero, got {status:?}"
+    );
+}
+
+/// Issue #11 / B3: a recoverable panic on a non-owner worker thread must NOT
+/// tear down the owner thread's live terminal. Proven on the wire — the
+/// restoration sequence must not appear between the owner going active and the
+/// owner restoring explicitly.
+#[test]
+fn worker_panic_leaves_owner_terminal_intact() {
+    let mut capture = spawn_probe("worker-panic");
+    capture
+        .collect_until(|b| String::from_utf8_lossy(b).contains("OWNER_RESTORED"))
+        .expect("capture worker-panic probe");
+    let status = wait_exit(&mut capture);
+    let output = capture.finish();
+
+    let owner_active = find_sub(&output, b"OWNER_ACTIVE").expect("no OWNER_ACTIVE marker");
+    let recovered =
+        find_sub(&output, b"WORKER_PANIC_RECOVERED").expect("process did not survive worker panic");
+    let restoring = find_sub(&output, b"OWNER_RESTORING").expect("no OWNER_RESTORING marker");
+    assert!(
+        owner_active < recovered && recovered < restoring,
+        "probe markers out of order"
+    );
+
+    // The invariant: no terminal restoration on the wire until the owner asks
+    // for it. Its presence in [OWNER_ACTIVE, OWNER_RESTORING) means a non-owner
+    // worker panic dismantled the owner's live terminal — the B3 bug.
+    let window = &output[owner_active..restoring];
+    assert!(
+        find_sub(window, SHOW_CURSOR).is_none(),
+        "a non-owner worker-thread panic emitted terminal restoration (\\x1b[?25h) \
+         before the owner restored: it tore down the owner's live terminal"
+    );
+
+    // The process recovered (did not abort) and the owner's own restore ran.
+    assert!(
+        status.success(),
+        "worker-panic probe should exit 0, got {status:?}"
+    );
+    assert!(
+        find_sub(&output, SHOW_CURSOR).is_some(),
+        "owner never restored the terminal at all"
+    );
+}
+
+/// Issue #11 / B1: an explicit restore whose stdout writes fail must report the
+/// first error, yet still attempt every remaining cleanup step (raw mode, via a
+/// termios path independent of the broken fd) and release the lease.
+#[test]
+fn restore_reports_output_failure_but_still_tears_down() {
+    let mut capture = spawn_probe("restore-output-failure");
+    capture
+        .collect_until(|b| String::from_utf8_lossy(b).contains("RESTORE_FAILURE_DONE"))
+        .expect("capture restore-output-failure probe");
+    let status = wait_exit(&mut capture);
+    let output = capture.finish();
+    let s = String::from_utf8_lossy(&output);
+
+    assert!(
+        s.contains("RAW_BEFORE=true"),
+        "raw mode was not actually enabled before the failure was induced"
+    );
+    assert!(
+        s.contains("RESTORE_RESULT=ERR"),
+        "restore() swallowed the output failure instead of reporting it: {s:?}"
+    );
+    assert!(
+        s.contains("RAW_AFTER=false"),
+        "restore() abandoned raw-mode teardown after the write failed"
+    );
+    assert!(
+        s.contains("LEASE_AFTER=Available"),
+        "restore() left the lease dangling after a failed restore"
+    );
+    assert!(
+        status.success(),
+        "restore-output-failure probe should exit 0, got {status:?}"
+    );
+}
+
+/// Issue #11 / B5: LibGibson chains a host panic hook installed before the first
+/// session. On an owner panic, both the host hook and LibGibson's restoration run.
+#[test]
+fn panic_hook_chains_a_preexisting_host_hook() {
+    let mut capture = spawn_probe("host-hook-chain");
+    capture
+        .collect_until(|b| String::from_utf8_lossy(b).contains("HOOK_CHAIN_OWNED"))
+        .expect("capture host-hook-chain probe");
+    let status = wait_exit(&mut capture);
+    let output = capture.finish();
+    let s = String::from_utf8_lossy(&output);
+
+    assert!(
+        find_sub(&output, SHOW_CURSOR).is_some(),
+        "LibGibson terminal restoration did not run on an owner panic"
+    );
+    assert!(
+        s.contains("HOST_HOOK_RAN"),
+        "LibGibson clobbered the host's pre-existing panic hook instead of chaining it"
+    );
     assert!(
         !status.success(),
         "panic probe should exit non-zero, got {status:?}"

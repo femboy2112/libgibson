@@ -6,6 +6,7 @@
 
 use gibson::{TerminalLease, TerminalSession};
 use std::io::Write;
+use std::os::unix::io::AsRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -16,6 +17,9 @@ fn main() {
         "second-owner" => second_owner(),
         "drop-reacquire" => drop_reacquire(),
         "panic-when-owned" => panic_when_owned(),
+        "worker-panic" => worker_panic(),
+        "restore-output-failure" => restore_output_failure(),
+        "host-hook-chain" => host_hook_chain(),
         "duel-trace" => duel_trace(),
         other => {
             eprintln!("unknown terminal-ownership scenario: {other:?}");
@@ -211,4 +215,109 @@ fn duel_trace() {
     println!("DUEL_DONE");
     let _ = std::io::stdout().flush();
     std::process::exit(0);
+}
+
+/// Issue #11 / B3: a recoverable panic on a NON-owner worker thread must not
+/// dismantle the owner thread's live terminal. Main owns the terminal and holds
+/// raw mode + alternate screen; a worker thread panics and is joined (recovered,
+/// the process continues). The restoration byte sequence (`\x1b[?25h`) must NOT
+/// hit the wire until main restores explicitly — its early appearance is the bug.
+fn worker_panic() {
+    let mut session = TerminalSession::new().expect("main must acquire the terminal");
+    session.enter_interactive().expect("enter interactive");
+    session
+        .enter_alternate_screen()
+        .expect("enter alternate screen");
+    let _ = session.hide_cursor();
+
+    println!("OWNER_ACTIVE");
+    let _ = std::io::stdout().flush();
+
+    // A worker thread panics; joining it recovers (the process continues). The
+    // global panic hook runs on the WORKER thread — it must see that the worker
+    // does not own the lease and keep its hands off main's terminal.
+    let handle = std::thread::spawn(|| {
+        panic!("intentional recoverable panic on a non-owner worker thread");
+    });
+    let joined = handle.join();
+    assert!(joined.is_err(), "worker thread was expected to panic");
+
+    // We survived the worker panic with the terminal still ours.
+    println!("WORKER_PANIC_RECOVERED");
+    let _ = std::io::stdout().flush();
+
+    // Only now do we relinquish the terminal, explicitly.
+    println!("OWNER_RESTORING");
+    let _ = std::io::stdout().flush();
+    session.restore().expect("owner restore must succeed");
+
+    println!("OWNER_RESTORED");
+    let _ = std::io::stdout().flush();
+    std::process::exit(0);
+}
+
+/// Issue #11 / B1: an explicit restore whose terminal WRITES fail must still
+/// attempt every cleanup step and report the first error. We own the terminal,
+/// enter raw mode + alt screen, then redirect fd 1 (stdout) to `/dev/full` so
+/// every write returns ENOSPC, and call `restore()`. Results are reported on fd 2
+/// (stderr, still the PTY) since stdout is now a black hole. Raw-mode restoration
+/// goes through a termios ioctl, not fd 1, so it must succeed even though the
+/// writes fail — proving "every remaining cleanup step is still attempted".
+fn restore_output_failure() {
+    let mut session = TerminalSession::new().expect("must acquire the terminal");
+    session.enter_interactive().expect("enter interactive");
+    session
+        .enter_alternate_screen()
+        .expect("enter alternate screen");
+    let _ = session.hide_cursor();
+
+    let raw_before = crossterm::terminal::is_raw_mode_enabled().unwrap_or(false);
+    eprintln!("RAW_BEFORE={raw_before}");
+
+    // Redirect stdout (fd 1) to /dev/full: writes now fail with ENOSPC. stderr
+    // (fd 2) still points at the PTY, so our markers survive the black hole.
+    let devfull = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/full")
+        .expect("open /dev/full");
+    let rc = unsafe { libc::dup2(devfull.as_raw_fd(), 1) };
+    assert!(rc != -1, "dup2 /dev/full onto stdout failed");
+
+    let result = session.restore();
+
+    let raw_after = crossterm::terminal::is_raw_mode_enabled().unwrap_or(true);
+    let lease_after = TerminalSession::lease_state();
+    match &result {
+        Ok(()) => eprintln!("RESTORE_RESULT=OK"),
+        Err(e) => eprintln!("RESTORE_RESULT=ERR kind={:?}", e.kind()),
+    }
+    eprintln!("RAW_AFTER={raw_after}");
+    eprintln!("LEASE_AFTER={lease_after:?}");
+    eprintln!("RESTORE_FAILURE_DONE");
+    std::process::exit(0);
+}
+
+/// Issue #11 / B5: LibGibson installs its panic hook once and CHAINS whatever
+/// hook was present at install time. A host hook installed BEFORE the first
+/// session must still run on panic, AND LibGibson's terminal restoration must
+/// also run. The owner (main) panics, so restoration is in scope.
+fn host_hook_chain() {
+    // Host installs its own hook FIRST, before any TerminalSession exists.
+    let prior = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        // On stderr, so ordering vs. the restore blob (stdout) does not matter.
+        eprintln!("HOST_HOOK_RAN");
+        prior(info);
+    }));
+
+    let mut session = TerminalSession::new().expect("acquire");
+    session.enter_interactive().expect("enter interactive");
+    session
+        .enter_alternate_screen()
+        .expect("enter alternate screen");
+    let _ = session.hide_cursor();
+    println!("HOOK_CHAIN_OWNED");
+    let _ = std::io::stdout().flush();
+
+    panic!("owner panic to exercise the chained hooks");
 }
