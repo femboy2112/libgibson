@@ -1,9 +1,11 @@
 # Crossterm #1126 input starvation — diagnosis and fix analysis
 
-**Status: diagnosis CORROBORATED. Shape A fix IMPLEMENTED + independently VERIFIED
-in an isolated upstream clone (staged, NOT filed upstream, NOT vendored into
-LibGibson). Issue #15 remains OPEN — LibGibson still builds on unpatched
-crossterm 0.29.0.** See [Round II](#round-ii--shape-a-implemented-and-verified-staged-not-filed).
+**Status: diagnosis CORROBORATED. Shape A fix IMPLEMENTED + independently VERIFIED,
+then rebased onto crossterm `master` and FILED upstream as
+[crossterm-rs/crossterm#1128](https://github.com/crossterm-rs/crossterm/pull/1128)
+(NOT yet merged upstream, NOT vendored into LibGibson). Issue #15 remains OPEN —
+LibGibson still builds on unpatched crossterm 0.29.0.** See
+[Round II](#round-ii--shape-a-implemented-and-verified-filed-upstream).
 
 This document is the staged outcome of an independent investigation into the
 single-key input stall tracked in
@@ -115,11 +117,13 @@ response yet; it is the team's own ticket, not community validation.
 is a success signal for the *intended* mechanism only — it coexists with the fatal
 hang on the next line, and must not be read in isolation as "fixed."
 
-## Round II — Shape A implemented and verified (staged, NOT filed)
+## Round II — Shape A implemented and verified (filed upstream)
 
 Round II took Shape A from proposal to a **tested, independently verified** patch,
-built entirely in an **isolated clone** of crossterm — never a LibGibson dependency,
-never a vendored fork, never pushed anywhere.
+built entirely in an **isolated clone** of crossterm — never a LibGibson dependency
+and never a vendored fork. It was subsequently rebased onto crossterm `master` and
+filed upstream as [crossterm-rs/crossterm#1128](https://github.com/crossterm-rs/crossterm/pull/1128)
+(see below); LibGibson's own dependency is unchanged.
 
 - **Clone:** `crossterm-rs/crossterm` tag `0.29` = commit
   `36d95b26a26e64b0f8c12edfe11f410a6d56a812` (the latest published release), in a
@@ -208,11 +212,15 @@ with Shape A: 105 unit + 53 doc-tests green, 7 pre-existing unrelated ignores.
 - Verified on the exact Linux/`pts` stack only; macOS (kqueue), Windows, and a real
   hardware tty are unexercised.
 
-### Proposed upstream PR (NOT FILED — awaiting an explicit decision)
+### Upstream PR — FILED as crossterm-rs/crossterm#1128
 
-This is drafted and ready; it has **not** been posted to `crossterm-rs/crossterm`,
-because filing on a third party's repository is an outward action reserved for an
-explicit go-ahead. If filed, it would read:
+Filed with explicit authorization as
+[crossterm-rs/crossterm#1128](https://github.com/crossterm-rs/crossterm/pull/1128),
+rebased onto crossterm `master` and re-verified there (stock master fails the
+collision reproducer; the patch passes it plus the controls; `fmt --check`,
+`rustdoc -D warnings`, and `cargo test --lib` clean). It is **not yet merged
+upstream**, and LibGibson still builds on unpatched crossterm 0.29.0. The PR
+description (exact text at #1128) reads, in substance:
 
 > **Title:** Fix #1126: deliver every event in a single readiness batch (Unix Mio source)
 >
