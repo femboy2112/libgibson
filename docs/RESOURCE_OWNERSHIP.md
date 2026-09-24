@@ -1,8 +1,9 @@
 # Resource ownership & retention inventory (issue #10)
 
 **Status: the only engine-retained *unbounded* growth in a long session was the
-Story trace (`steps` + `beats`); Round II bounds both. Every other allocating
-structure is dimension-bounded, hard-capped, schema-bounded, or caller-owned.**
+Story trace (`steps` + `beats`); Round II bounds both. Every other structure
+inventoried in this pass is dimension-bounded, hard-capped, schema-bounded, or
+caller-owned.**
 
 Issue #10 is not "cap everything that allocates." It is: distinguish a **memory
 leak** (the engine retains information the caller never asked for and cannot shed)

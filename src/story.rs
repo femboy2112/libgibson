@@ -403,8 +403,11 @@ pub enum TraceRetention {
     /// with saturating arithmetic, so an absurd `cap` such as `usize::MAX` never
     /// overflows into a tiny threshold — it simply never evicts at any practical
     /// process size. A trace under this policy is [`StoryTrace::is_complete`]-false
-    /// as soon as it sheds its first step or beat. `Bounded(0)` records nothing
-    /// at all, exactly like [`TraceRetention::Disabled`].
+    /// as soon as it sheds its first step or beat. `Bounded(0)` records no
+    /// *subsequent* step or transition-beat history, exactly like
+    /// [`TraceRetention::Disabled`]; the genesis start-beat recorded by
+    /// [`Story::start`] under the director's initial `All` policy is still
+    /// present (a caller can only switch retention afterward).
     Bounded(usize),
     /// Record no steps whatsoever. Replay reconstructs nothing.
     Disabled,
