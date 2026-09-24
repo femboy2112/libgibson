@@ -20,7 +20,7 @@ go run ./cmd/example
 The module has no external Go dependencies and therefore no go.sum. The example
 is a normal command package, included in vet/test/build. There are currently no
 Go unit tests; example execution is a smoke check, not exhaustive wrapper coverage.
-Linux execution was verified locally; public GitHub CI and other platforms remain
-pending. The `go 1.18` module language directive is not a cross-platform support or
+Linux execution was verified locally and in public Go 1.27.1 CI; other platforms
+remain unverified. The `go 1.18` module language directive is not a cross-platform support or
 Rust MSRV promise. See the current evidence in
 [State of LibGibson](../../docs/STATE_OF_LIBGIBSON.md#public-repository-readiness).

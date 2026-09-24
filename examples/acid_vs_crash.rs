@@ -1048,7 +1048,7 @@ impl Encounter {
                         .map(|node| {
                             format!(
                                 "{} {:+}",
-                                &node.id.name()[..1].to_ascii_uppercase(),
+                                node.id.name()[..1].to_ascii_uppercase(),
                                 node.influence
                             )
                         })

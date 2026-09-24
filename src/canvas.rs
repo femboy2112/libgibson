@@ -121,9 +121,7 @@ impl BrailleCanvas {
     }
 
     pub fn clear(&mut self) {
-        for c in &mut self.cells {
-            *c = 0;
-        }
+        self.cells.fill(0);
     }
 
     #[inline]
@@ -431,9 +429,7 @@ impl HalfBlockCanvas {
     }
 
     pub fn clear(&mut self) {
-        for p in &mut self.pixels {
-            *p = None;
-        }
+        self.pixels.fill(None);
     }
 
     /// True when no pixel is set.
