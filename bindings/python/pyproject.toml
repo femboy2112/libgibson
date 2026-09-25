@@ -30,3 +30,8 @@ Repository = "https://github.com/femboy2112/libgibson"
 
 [tool.setuptools]
 py-modules = ["gibson"]
+# Ship the project's dual-license terms inside the built wheel and sdist. A
+# distributed artifact must carry its own license text; classifiers alone do not.
+# These files are kept in sync with the repository-root originals by
+# scripts/release/check-versions.sh.
+license-files = ["LICENSE", "LICENSE-MIT", "LICENSE-APACHE"]
