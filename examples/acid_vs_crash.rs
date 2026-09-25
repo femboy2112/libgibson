@@ -1095,7 +1095,7 @@ impl Encounter {
             .collect::<String>();
         format!(
             "{text}{}",
-            if (self.world.elapsed_ms / 450).is_multiple_of(2) {
+            if (self.world.elapsed_ms / 450) % 2 == 0 {
                 "▍"
             } else {
                 " "
