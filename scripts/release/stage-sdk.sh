@@ -44,9 +44,28 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$PREFIX" ]] || die "--prefix is required (e.g. --prefix /tmp/libgibson-sdk)"
+
+# Sanity guard against a mistyped staging path being handed to `rm -rf` under
+# --force. This is NOT a security sandbox; it just refuses the obviously
+# catastrophic targets. Normalize first so a trailing slash, "./", or a relative
+# path cannot slip a dangerous prefix past the case match below.
 case "$PREFIX" in
-    /|""|/usr|/usr/*|/bin|/lib|/etc|/boot) die "refusing to stage into a system path: $PREFIX" ;;
+    /*) _norm="$PREFIX" ;;
+    *)  _norm="$PWD/$PREFIX" ;;
 esac
+while [[ "$_norm" == */ && "$_norm" != "/" ]]; do _norm="${_norm%/}"; done
+case "$_norm" in
+    /)
+        die "refusing to stage into the filesystem root" ;;
+    /usr | /usr/* | /bin | /bin/* | /sbin | /sbin/* \
+    | /lib | /lib/* | /lib64 | /lib64/* \
+    | /etc | /etc/* | /boot | /boot/* \
+    | /dev | /dev/* | /proc | /proc/* | /sys | /sys/*)
+        die "refusing to stage into a system path: $PREFIX (normalized: $_norm)" ;;
+esac
+if [[ -n "${HOME:-}" && "$_norm" == "${HOME%/}" ]]; then
+    die "refusing to stage directly into \$HOME ($HOME); use a subdirectory such as \$HOME/libgibson-sdk"
+fi
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
