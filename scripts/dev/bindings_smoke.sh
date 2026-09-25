@@ -29,6 +29,12 @@ done
 echo "==> cargo build --release"
 cargo build --release
 
+# The cdylib carries an ELF SONAME of libgibson.so.1 (build.rs), so a consumer that
+# links the in-tree build output records NEEDED=libgibson.so.1 and needs that name
+# present at runtime. The staged SDK ships the symlink; mirror it next to the raw
+# build output so in-tree C/C++ examples load.
+ln -sf libgibson.so "$ROOT/target/release/libgibson.so.1"
+
 RPATH="$ROOT/target/release"
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
@@ -63,7 +69,8 @@ run_asan() {
 
 run_native  c   gcc  bindings/c/example.c ""
 run_native  cpp g++  bindings/cpp/example.cpp "-std=c++17"
-PYTHONPATH=bindings/python python3 bindings/python/example.py
+LIBGIBSON_LIBRARY="$ROOT/target/release/libgibson.so" \
+    PYTHONPATH=bindings/python python3 bindings/python/example.py
 
 if [ "$ASAN" -eq 1 ]; then
     run_asan c   gcc bindings/c/example.c ""

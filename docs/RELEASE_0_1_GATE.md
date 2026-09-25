@@ -100,6 +100,9 @@ a `libgibson.so → libgibson.so.1` dev symlink. Verified: `readelf -d` shows th
 SONAME; a C consumer linked via `-lgibson` records `NEEDED = libgibson.so.1` and
 runs (`abi=1`). The major tracks `GIBSON_ABI_VERSION`; `libgibson.a` and pkg-config
 are unaffected. A real C ABI break bumps both the SONAME major and the ABI version.
+In-tree consumers that link the raw `target/` build output (CI's C/C++/ASan jobs and
+`scripts/dev/bindings_smoke.sh`) now create the matching `libgibson.so.1` symlink
+next to it, mirroring what the staged SDK ships.
 
 ## Gate 8 — Public Rust API freeze — PASS
 - **`transaction` module → `pub(crate)`** — `TerminalTransaction` (and its leaked
