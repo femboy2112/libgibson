@@ -12,6 +12,12 @@ release, or published to any package registry.
 ## [Unreleased]
 
 ### Added
+- Versioned native shared object: the Linux `cdylib` now carries an ELF **SONAME
+  `libgibson.so.1`** (stamped by a new `build.rs` via `-Wl,-soname`, guarded to
+  Linux and scoped to the cdylib), whose major tracks `GIBSON_ABI_VERSION`. The
+  staged SDK installs `libgibson.so.1` plus a `libgibson.so → libgibson.so.1`
+  development symlink, so a dynamic consumer linked through `-lgibson` records
+  `NEEDED = libgibson.so.1`. `libgibson.a` and pkg-config are unaffected.
 - Pre-1.0 release contract (`docs/RELEASE_CONTRACT.md`): Rust API stability tiers
   (CORE vs experimental modules), the C ABI v1 policy and its independence from the
   package version, the wrapper ABI-compatibility policy, the MSRV floor with its
@@ -72,6 +78,10 @@ release, or published to any package registry.
   → film → restore arc.
 
 ### Changed
+- The `transaction` module (`TerminalTransaction`, internal renderer plumbing) is
+  now `pub(crate)` — it is no longer part of the public Rust API. It had no external
+  consumers and was never re-exported; privatizing it before the first tag avoids a
+  later `0.y` break. See `docs/RELEASE_CONTRACT.md` §2.
 - The extension-point public enums are now `#[non_exhaustive]` (decided before the
   first release, since adding it later is itself source-breaking): `node::NodeKind`,
   `input::Event`, `input::KeyCode`, and `glyph::SubcellGlyphMode`. Adding a variant
@@ -82,7 +92,8 @@ release, or published to any package registry.
 - The published Rust crate now **excludes** the engineering-demo corpus (examples,
   integration tests and goldens, internal `docs/`, dev scripts, and the language
   bindings). It ships the library, the C header (for native-library builders), and
-  the license/readme/design docs. Package manifest: 221 → 47 files.
+  the license/readme/design docs. Packaged manifest: 53 files (the demo corpus is
+  excluded).
 - The C++ wrapper header moved to `include/gibson.hpp`; `bindings/cpp/gibson.hpp` is
   now a forwarding shim so existing in-repository consumers keep working.
 - The release preflight now **fails** (was a warning) when `THIRD-PARTY-NOTICES.md`

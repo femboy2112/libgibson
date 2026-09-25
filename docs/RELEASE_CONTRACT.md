@@ -101,9 +101,10 @@ but it is **not a supported Rust API**. Rust consumers should use the safe modul
 above. The stability promise attached to `ffi` is the **C ABI promise** (§5), not a
 Rust-level one.
 
-`transaction::TerminalTransaction` is internal plumbing (used only by the
-renderer). It is currently `pub` but is not intended for external use and may
-become private in a future `0.y` release.
+`transaction::TerminalTransaction` is internal renderer plumbing (the atomic wire
+transaction). As of the 0.1.0 candidate the `transaction` module is `pub(crate)` —
+it is **not** part of the public Rust API. (It was briefly `pub`; privatizing it
+before the first tag avoids a later `0.y` break, and it had no external consumers.)
 
 ### Enum extensibility (forward-compatibility note)
 
@@ -293,10 +294,15 @@ fails CI early.
   docs. The engineering-demo corpus (examples, integration tests + goldens,
   internal `docs/`, dev scripts, and the language bindings) stays in the repository
   but is excluded from the crate (`Cargo.toml` `exclude`).
-- **Native SDK** (Linux x86_64): `libgibson.so`, `libgibson.a`, `gibson.h`,
-  `gibson.hpp`, a `libgibson.pc` pkg-config file, and the license/notice files.
-  (The shared library is an unversioned `libgibson.so` this round; SONAME versioning
-  is future work.)
+- **Native SDK** (Linux x86_64): `libgibson.so.1`, a `libgibson.so → libgibson.so.1`
+  development symlink, `libgibson.a`, `gibson.h`, `gibson.hpp`, a `libgibson.pc`
+  pkg-config file, and the license/notice files. The shared object carries an ELF
+  **SONAME `libgibson.so.1`** (stamped by `build.rs` via
+  `-Wl,-soname`) whose major tracks `GIBSON_ABI_VERSION` (§3), so a dynamic consumer
+  linked through `-lgibson` records `NEEDED = libgibson.so.1` and an ABI-incompatible
+  future major can coexist. The static `libgibson.a` and the pkg-config `-lgibson`
+  are unaffected. (macOS/Windows use different shared-object versioning and are out
+  of scope this round.)
 - **Python wrapper** package (sdist + wheel) that depends on a separately installed,
   ABI-compatible native LibGibson. Both artifacts carry the project's dual-license
   text (`LICENSE`, `LICENSE-MIT`, `LICENSE-APACHE` in the sdist and in the wheel's
@@ -328,3 +334,12 @@ path is as stated in `SECURITY.md`.
 - No cross-platform binary wheels or non-Linux artifacts yet.
 - No byte-for-byte build reproducibility (deterministic manifest + checksums instead).
 - No package-manager ecosystem distribution (Homebrew/AUR/deb/rpm) yet.
+- **Input is not lossless under a simultaneous resize/input collision**
+  ([issue #15](https://github.com/femboy2112/libgibson/issues/15)). On the pinned
+  `crossterm` 0.29.0, a key delivered in the same readiness batch as a resize can be
+  withheld until a later key arrives. The root cause is an upstream starvation,
+  isolated and filed as
+  [crossterm#1128](https://github.com/crossterm-rs/crossterm/pull/1128) (not yet
+  merged; LibGibson stays on stock 0.29.0 and does **not** vendor the fork). The
+  [Event Pressure Lab](EVENT_PRESSURE_LAB.md) reproduces it. This is an accepted
+  Engineering Alpha limitation for 0.1.0; a merged upstream fix would let it close.
