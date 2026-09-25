@@ -1117,7 +1117,7 @@ impl EncounterModel {
                 let node = &mut self.graph.nodes[current.index()];
                 node.influence = (node.influence - rate).max(-1000);
                 node.activity = 1000;
-                if node.influence < 0 && self.elapsed_ms.is_multiple_of(500) {
+                if node.influence < 0 && self.elapsed_ms % 500 == 0 {
                     node.integrity = node.integrity.saturating_sub(2);
                 }
                 if self.planner.progress == 1000 {
@@ -1152,7 +1152,7 @@ impl EncounterModel {
                 self.lost[id.index()] = false;
             }
         }
-        if self.graph.node(Files).influence < 0 && self.elapsed_ms.is_multiple_of(2000) {
+        if self.graph.node(Files).influence < 0 && self.elapsed_ms % 2000 == 0 {
             self.quality.altered_files = self.quality.altered_files.saturating_add(1);
         }
         if self.graph.node(Display).influence < -350 && self.graph.route(Modem, Display).is_some() {

@@ -398,6 +398,12 @@ cargo fmt --check
 
 ### Compiling Language Examples
 
+> These are **source-tree** recipes for developing against a local checkout. To
+> consume an *installed* LibGibson from outside the repository — a staged native
+> SDK via `pkg-config`, a Python wheel, or the Go module — see
+> [`docs/RELEASE_CONTRACT.md`](docs/RELEASE_CONTRACT.md), [`docs/RELEASING.md`](docs/RELEASING.md),
+> and the per-language READMEs under `bindings/`.
+
 ```bash
 # Compile and run C example:
 gcc -Iinclude bindings/c/example.c -Ltarget/release -lgibson \

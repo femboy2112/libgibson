@@ -5,3 +5,7 @@ bindings/c/example_c
 bindings/cpp/example_cpp
 .DS_Store
 __pycache__/
+# Python packaging build artifacts
+bindings/python/build/
+bindings/python/dist/
+*.egg-info/

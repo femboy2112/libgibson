@@ -7,20 +7,59 @@ import ctypes
 import os
 import sys
 
-# Locate libgibson.so
-def _find_library():
-    repo_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    candidates = [
-        os.path.join(repo_dir, "target", "release", "libgibson.so"),
-        os.path.join(repo_dir, "target", "debug", "libgibson.so"),
-        "libgibson.so",
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    return "libgibson.so"
+import ctypes.util
 
-_lib = ctypes.CDLL(_find_library())
+# The C ABI version this wrapper is built against (GIBSON_ABI_VERSION).
+EXPECTED_ABI_VERSION = 1
+
+
+def _load_library():
+    """Locate and load the native libgibson shared library.
+
+    Search order (an installed wrapper never silently walks a source checkout):
+      1. the ``LIBGIBSON_LIBRARY`` environment variable, an explicit path;
+      2. the system loader via ``ctypes.util.find_library("gibson")``;
+      3. a bare ``libgibson.so`` resolved by the dynamic loader (honours
+         ``LD_LIBRARY_PATH``), which is how a staged SDK is typically found.
+
+    For in-repository development, point ``LIBGIBSON_LIBRARY`` at
+    ``target/release/libgibson.so`` (or add that directory to ``LD_LIBRARY_PATH``).
+    """
+    explicit = os.environ.get("LIBGIBSON_LIBRARY")
+    if explicit:
+        if not os.path.exists(explicit):
+            raise RuntimeError(
+                f"LIBGIBSON_LIBRARY is set to {explicit!r}, which does not exist."
+            )
+        return ctypes.CDLL(explicit)
+
+    found = ctypes.util.find_library("gibson")
+    if found:
+        return ctypes.CDLL(found)
+
+    try:
+        return ctypes.CDLL("libgibson.so")
+    except OSError as exc:
+        raise RuntimeError(
+            "Could not locate the native libgibson shared library. Install the "
+            "LibGibson native SDK and either set LIBGIBSON_LIBRARY to the path of "
+            "libgibson.so or add its directory to LD_LIBRARY_PATH."
+        ) from exc
+
+
+_lib = _load_library()
+
+# Verify the native ABI matches what this wrapper was built against, before any
+# other call touches the library — fail clearly instead of segfaulting later.
+_lib.gibson_abi_version.argtypes = []
+_lib.gibson_abi_version.restype = ctypes.c_uint32
+_loaded_abi_version = _lib.gibson_abi_version()
+if _loaded_abi_version != EXPECTED_ABI_VERSION:
+    raise RuntimeError(
+        f"LibGibson ABI mismatch: this wrapper expects ABI {EXPECTED_ABI_VERSION}, "
+        f"but the loaded native library reports ABI {_loaded_abi_version}. Install a "
+        f"compatible libgibson (see docs/RELEASE_CONTRACT.md)."
+    )
 
 # Enums
 class RenderMode:

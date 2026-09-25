@@ -290,11 +290,7 @@ impl GraphicalLab {
         if self.scene == 1 {
             // Alternate submission order every second; geometry/depth semantics
             // stay independent of order (the orbit is continuous).
-            let order = if (t as u64).is_multiple_of(2) {
-                [0, 1]
-            } else {
-                [1, 0]
-            };
+            let order = if (t as u64) % 2 == 0 { [0, 1] } else { [1, 0] };
             for i in order {
                 let offset = if i == 0 {
                     Vec3::new(-0.35, 0.0, -0.4)

@@ -2066,7 +2066,7 @@ fn bottom_panel(app: &App, width: u16) -> Node {
             for line in app.shell_log.iter().rev().take(4).rev() {
                 rt = rt.line(line.clone());
             }
-            let caret = if ((app.elapsed() * 2.0) as usize).is_multiple_of(2) {
+            let caret = if ((app.elapsed() * 2.0) as usize) % 2 == 0 {
                 "▌"
             } else {
                 " "

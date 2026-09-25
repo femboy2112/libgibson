@@ -30,7 +30,7 @@ PR #14 merged at `e5ede0a4ab8ff52caa567ee10d45824e42c1ebc6`, with all five
 exact-main jobs passing in [run 35960000454](https://github.com/femboy2112/libgibson/actions/runs/35960000454).
 The merge fixes the discovered hostile `Rect` arithmetic,
 exact changed-coordinate enumeration, and Unix PTY harness cleanup/deadline weaknesses.
-D6 API/distribution remains open; D7 general resources and D8 embedding contracts
+D6 API/distribution is RESOLVED via the pre-1.0 release contract (PR #21); D7 general resources and D8 embedding contracts
 are implemented and tested on PR #19 (tracked by [#10](https://github.com/femboy2112/libgibson/issues/10)/[#11](https://github.com/femboy2112/libgibson/issues/11)).
 The resize investigation also records a queued-input/backpressure follow-up in
 [issue #15](https://github.com/femboy2112/libgibson/issues/15).
@@ -374,7 +374,7 @@ owner-authorized public launch and executed CI results below supersede that stat
 ## Known blockers and technical debt
 
 D1/D2 and the bounded Unix direct-child portion of D5 are resolved on main
-through PR #14, with regressions. Issues #7, #8 and #9 are closed. D3/D4 retain public-run proof; D6 remains open; D7/D8 are implemented and tested on PR #19 (tracked by #10/#11).
+through PR #14, with regressions. Issues #7, #8 and #9 are closed. D3/D4 retain public-run proof; D6 is RESOLVED / IMPLEMENTED + TESTED (release/API/MSRV/distribution contract, PR #21); D7/D8 are implemented and tested on PR #19 (tracked by #10/#11).
 
 | ID | Finding | Evidence and required next check |
 | --- | --- | --- |
@@ -383,7 +383,7 @@ through PR #14, with regressions. Issues #7, #8 and #9 are closed. D3/D4 retain 
 | D3 | RESOLVED + PUBLIC CI VERIFIED | Former literal `$PWD` RUNPATH caused exit 127 (historical probe below). All four workflow C/C++/sanitizer commands now expand `$GITHUB_WORKSPACE`; readelf and execution without LD_LIBRARY_PATH pass; both public binding/sanitizer jobs also execute successfully. |
 | D4 | Repository build RESOLVED + PUBLIC SMOKE; distribution remains limited | Correct module/import, normal command example, SRCDIR paths, per-job native build and hard-failing vet/test/build/example. Local gccgo succeeds. Hosted Go 1.27.1 vet/build/example also passes. No Go unit tests; standalone installation remains D6 debt. |
 | D5 | FIXED for Unix direct-child harnesses | All four existing captures plus intro tests share nonblocking reads/writes, deadlines, bounded output and kill/reap cleanup on every exit. Fresh builds and assertion-unwind regression. Windows and arbitrary descendants remain outside this tested contract. |
-| D6 | Packaging/API contract | No declared/tested MSRV, changelog, installable foreign packages or explicit API stability policy. Full MIT/Apache texts and Cargo package integrity are now verified; the remaining API/MSRV/installable-package contract is OPEN. |
+| D6 | Release/API/MSRV/distribution contract — RESOLVED / IMPLEMENTED + TESTED (PR #21) | Pre-1.0 release contract ([RELEASE_CONTRACT.md](RELEASE_CONTRACT.md)): declared + tested **MSRV 1.85** on two independently CI-enforced floors — the *resolved-release* floor (committed lock, `cargo +1.85 check/test --locked --lib`) and the *declared-range* floor (fresh unlocked resolution of declared ranges, `scripts/release/msrv-consumer.sh`); CHANGELOG; Rust API stability tiers (CORE vs experimental); C ABI v1 policy + 52-symbol baseline guard; wrapper ABI-compatibility policy — the C++ `Context` now checks `gibson_abi_version()` at construction and throws on mismatch, matching Python/Go. Publication-free release preflight gates clean-room external C/C++/Python/Go/Rust consumers (the Go consumer builds from a module copy staged **outside** the checkout; the Python wheel/sdist and the Go module root carry the dual license), a staged relocatable native SDK, a deterministic bundle, and enforced third-party-notice freshness. **Remaining limitations (separate, not blockers):** no publication yet (no crates.io / PyPI / Go tag / GitHub Release / `v0.1.0` tag); Linux x86_64 artifact only; no stable 1.0 promise; no SONAME; no macOS/Windows package proof. |
 | D7 | Long-session/resource policy — IMPLEMENTED + TESTED (PR #19) | Original finding: the Story trace grew unbounded until completion (measured ~110 MB RSS at 1M ticks under a transition-heavy story). `TraceRetention {All (default)/Bounded(cap)/Disabled}` now bounds **both** the step and beat logs with honest `dropped_steps()`/`dropped_beats()`/`is_complete()`; `drain_trace()` is an external sink; `Bounded(usize::MAX)` arithmetic is saturating-hardened. Resource-retention inventory ([RESOURCE_OWNERSHIP.md](RESOURCE_OWNERSHIP.md)) classifies every structure surveyed; a bounded endurance soak is exercised. Public Surface storage / caller-sized helpers remain caller-owned by contract. Tracked by [issue #10](https://github.com/femboy2112/libgibson/issues/10). |
 | D8 | Embedded lifecycle ownership — IMPLEMENTED + TESTED (PR #19) | Original finding: a global panic hook/stdout + best-effort restore suited a single owner, and concurrent contexts, failed writes and host panic-hook integration lacked a product contract. Now: a process-global exclusive terminal lease (Available/Owned/Restoring) rejects a second interactive owner (`AlreadyExists`); one-shot checked `restore()` reports the first error yet still tears down and releases the lease (tested with fd 1 → `/dev/full`); panic restoration is **owner-thread-scoped** — a non-owner worker panic no longer tears down the owner's terminal (proven on a PTY) — and a pre-existing host panic hook is chained. Drop stays best-effort; SIGKILL/abort/OOM/disconnected-tty remain explicitly unsupported. Tracked by [issue #11](https://github.com/femboy2112/libgibson/issues/11). |
 | D9 | Queued input under resize/backpressure | [Issue #15](https://github.com/femboy2112/libgibson/issues/15): a delayed key is released by a later key. **REPRODUCED / ISOLATED UPSTREAM, NOT FIXED.** [Event Pressure Lab](EVENT_PRESSURE_LAB.md) supplies a bounded independent raw/Crossterm/Context reproducer. Syscalls show a signal-first batch with both tokens, followed by loss of the remaining TTY token; scratch retention restores delivery. [Upstream #1126](https://github.com/crossterm-rs/crossterm/issues/1126). Production dependencies and runtime remain unchanged; explicit collision acceptance stays red. |
@@ -711,7 +711,7 @@ Known debt now has public reproductions/contracts and acceptance criteria:
 [D5 #9](https://github.com/femboy2112/libgibson/issues/9),
 [D7 #10](https://github.com/femboy2112/libgibson/issues/10),
 [D8 #11](https://github.com/femboy2112/libgibson/issues/11).
-D6's API/MSRV/distribution work remains open. Four initial Dependabot update PRs
+D6's API/MSRV/distribution work is RESOLVED via the pre-1.0 release contract (PR #21). Four initial Dependabot update PRs
 were unmerged at this `aa60036` checkpoint. All four subsequently passed public CI
 and merged during the [intro consolidation](INTRODUCTORY_CINEMA.md); they are not
 part of the older green-main result above.

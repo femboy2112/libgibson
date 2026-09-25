@@ -59,6 +59,11 @@ jobs:
       - name: Build release
         run: cargo build --release
 
+      - name: ABI baseline and package sanity
+        run: |
+          scripts/release/check-abi.sh
+          cargo package --list --locked > /dev/null
+
   bindings:
     name: Bindings (C, C++, Python)
     runs-on: ubuntu-latest
@@ -93,6 +98,7 @@ jobs:
       - name: Python ctypes example
         env:
           PYTHONPATH: bindings/python
+          LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
         run: python3 bindings/python/example.py
 
   asan:
@@ -149,8 +155,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
-      - name: Build native library
-        run: cargo build --release
+      - name: Stage native SDK (builds release, generates libgibson.pc)
+        run: |
+          scripts/release/stage-sdk.sh --prefix "$RUNNER_TEMP/sdk"
+          echo "PKG_CONFIG_PATH=$RUNNER_TEMP/sdk/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/sdk/lib" >> "$GITHUB_ENV"
 
       - name: Install Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -164,8 +173,6 @@ jobs:
 
       - name: Test
         working-directory: bindings/go
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
         run: go test ./...
 
       - name: Build
@@ -174,8 +181,6 @@ jobs:
 
       - name: Example smoke
         working-directory: bindings/go
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/target/release
         run: go run ./cmd/example
 
   pty:
@@ -201,3 +206,27 @@ jobs:
 
       - name: PTY tests
         run: cargo test --test pty_integration --test pty_resize_torture --test event_pressure_pty -- --test-threads=1
+
+  msrv:
+    name: MSRV (Rust 1.85, library)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust 1.85 (declared MSRV)
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: "1.85"
+
+      - name: Library check on MSRV (resolved-release floor, committed lock)
+        run: cargo check --locked --lib
+
+      - name: Declared-range consumer MSRV (fresh resolution)
+        # Maintenance rule: a dependency upgrade must not silently raise the
+        # effective MSRV. A fresh crates.io consumer of our DECLARED ranges (no
+        # inherited lockfile) must still resolve to a graph that builds on the
+        # floor. See docs/RELEASE_CONTRACT.md §5.
+        run: MSRV_TOOLCHAIN="+1.85" scripts/release/msrv-consumer.sh

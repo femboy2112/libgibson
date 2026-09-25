@@ -1303,7 +1303,7 @@ fn panel_plan(app: &App, width: u16) -> Node {
 fn panel_stream(app: &App) -> Node {
     let fx = &app.fx;
     let shown: String = app.stream.chars().take(app.stream_shown).collect();
-    let caret = if ((app.elapsed() * 2.0) as usize).is_multiple_of(2) {
+    let caret = if ((app.elapsed() * 2.0) as usize) % 2 == 0 {
         "▌"
     } else {
         " "
