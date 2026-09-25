@@ -42,11 +42,19 @@ echo "msrv-consumer: declared-range fresh-resolution experiment (toolchain $MSRV
 # a crates.io consumer would receive (declared ranges, no lockfile).
 # --no-verify: we only need the produced payload; the consumer builds below ARE
 # the verification (and on the MSRV toolchain, which is the point of the test).
+# NOTE: CARGO_TARGET_DIR is redirected to $WORK, so `cargo package` writes the
+# .crate under $CARGO_TARGET_DIR/package — read it from THERE, not the repo tree
+# (a stale repo-tree .crate must never mask a clean run).
 if ! $CARGO package --no-verify --allow-dirty >/dev/null 2>&1; then
     echo "  [FAIL] cargo package"; exit 1
 fi
-tar xzf "target/package/libgibson-$VERSION.crate" -C "$WORK"
+CRATE="$CARGO_TARGET_DIR/package/libgibson-$VERSION.crate"
+if [ ! -f "$CRATE" ]; then
+    echo "  [FAIL] packaged crate not found at $CRATE"; exit 1
+fi
+tar xzf "$CRATE" -C "$WORK"
 CRATE_DIR="$WORK/libgibson-$VERSION"
+[ -d "$CRATE_DIR" ] || { echo "  [FAIL] crate payload did not unpack to $CRATE_DIR"; exit 1; }
 
 mkcons() {
     local dir="$1"; mkdir -p "$dir/src"
