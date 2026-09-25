@@ -559,14 +559,20 @@ fn acid_final_cut_link_resolves_and_replays_before_restoring_terminal() {
     let ready = s.wait_until(Duration::from_secs(3), |sc| sc.contains("CUT LINK"));
     assert!(ready.contains("CUT LINK"), "final agency absent: {ready}");
     s.type_str("cut link\r");
-    let ending = s.wait_until(Duration::from_secs(2), |sc| sc.contains("CRASH CONTAINS"));
+    let ending = s.wait_until(Duration::from_secs(3), |sc| sc.contains("CRASH CONTAINS"));
     assert!(
         ending.contains("CRASH CONTAINS"),
         "cut did not resolve: {ending}"
     );
+    // The aftercredits inspector (the "replay" affordance) renders a beat AFTER the
+    // crash-contain state resolves — and, under CPU contention, after the rest of the
+    // "cut link" keystrokes are consumed. Wait for it as its own step rather than
+    // asserting it on the snapshot that only guaranteed "CRASH CONTAINS"; that gap is
+    // what made this test flaky under full-suite parallel load.
+    let after = s.wait_until(Duration::from_secs(4), |sc| sc.contains("replay"));
     assert!(
-        ending.contains("replay"),
-        "aftercredits inspector absent: {ending}"
+        after.contains("replay"),
+        "aftercredits inspector absent: {after}"
     );
     s.type_str("replay\r");
     let replay = s.wait_until(Duration::from_secs(2), |sc| sc.contains("REPLAY VERIFIED"));

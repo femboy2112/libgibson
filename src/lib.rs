@@ -46,7 +46,10 @@ pub mod show;
 pub mod story;
 pub mod surface;
 pub mod surface_fx;
-pub mod transaction;
+// Internal renderer plumbing (the atomic wire transaction). Crate-private: it has
+// no external consumers, is not re-exported, and its stability is the renderer's,
+// not a standalone public API. See docs/RELEASE_CONTRACT.md §2.
+pub(crate) mod transaction;
 pub mod transition;
 pub mod viewport;
 

@@ -57,7 +57,13 @@ jobs:
         run: cargo doc --no-deps
 
       - name: Build release
-        run: cargo build --release
+        run: |
+          cargo build --release
+          # The cdylib carries an ELF SONAME of libgibson.so.1 (build.rs), so a
+          # consumer that links the in-tree build output records NEEDED=libgibson.so.1
+          # and needs that name present at runtime. The staged SDK ships the symlink;
+          # mirror it next to the raw build output for in-tree C/C++ linkers.
+          ln -sf libgibson.so target/release/libgibson.so.1
 
       - name: ABI baseline and package sanity
         run: |
@@ -83,7 +89,13 @@ jobs:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Build release
-        run: cargo build --release
+        run: |
+          cargo build --release
+          # The cdylib carries an ELF SONAME of libgibson.so.1 (build.rs), so a
+          # consumer that links the in-tree build output records NEEDED=libgibson.so.1
+          # and needs that name present at runtime. The staged SDK ships the symlink;
+          # mirror it next to the raw build output for in-tree C/C++ linkers.
+          ln -sf libgibson.so target/release/libgibson.so.1
 
       - name: C example
         run: |
@@ -120,7 +132,13 @@ jobs:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Build release
-        run: cargo build --release
+        run: |
+          cargo build --release
+          # The cdylib carries an ELF SONAME of libgibson.so.1 (build.rs), so a
+          # consumer that links the in-tree build output records NEEDED=libgibson.so.1
+          # and needs that name present at runtime. The staged SDK ships the symlink;
+          # mirror it next to the raw build output for in-tree C/C++ linkers.
+          ln -sf libgibson.so target/release/libgibson.so.1
 
       - name: C example (ASan + UBSan)
         env:
