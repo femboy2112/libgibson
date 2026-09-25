@@ -147,9 +147,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: rust
-    env:
-      PKG_CONFIG_PATH: ${{ runner.temp }}/sdk/lib/pkgconfig
-      LD_LIBRARY_PATH: ${{ runner.temp }}/sdk/lib
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -159,7 +156,10 @@ jobs:
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
       - name: Stage native SDK (builds release, generates libgibson.pc)
-        run: scripts/release/stage-sdk.sh --prefix "$RUNNER_TEMP/sdk"
+        run: |
+          scripts/release/stage-sdk.sh --prefix "$RUNNER_TEMP/sdk"
+          echo "PKG_CONFIG_PATH=$RUNNER_TEMP/sdk/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/sdk/lib" >> "$GITHUB_ENV"
 
       - name: Install Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
