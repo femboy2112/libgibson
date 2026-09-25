@@ -45,6 +45,12 @@ allowed — **no new subsystems.** **PENDING** (by design — freeze is the merg
   (`RUSTDOCFLAGS=-D warnings`): clean on nightly and 1.98.1.
 - Exactly **one** ignored test — `tests/event_pressure_pty.rs:169`, the *expected*
   crossterm-#15 collision acceptance (Gate 11); no unexpected ignores.
+- **Flake fixed:** a pre-existing PTY test
+  (`pty_demos.rs::acid_final_cut_link_resolves_and_replays_before_restoring_terminal`)
+  asserted the "replay" aftercredits hint on the same snapshot that only waited for
+  "CRASH CONTAINS"; that render/input gap widened under full-suite CPU contention,
+  making `cargo test` flaky. Fixed by waiting for "replay" as its own step.
+  Validated **0/40** under CPU saturation and **0/6** full-suite loops.
 - Coverage present in-suite: PTY restoration (`intro_pty`, `pty_integration`,
   `terminal_ownership`), resize torture (`resize_torture`, `pty_resize_torture`),
   whole-renderer VT100 (`whole_renderer_vt100`, `screen_state_vt100`), runtime
