@@ -40,7 +40,11 @@ fn node_to_text(mut node: gibson::Node, width: u16, height: u16) -> String {
 /// objective, all four canonical agents, ARCHITECT active and the rest queued.
 #[test]
 fn live_ui_matches_harness_framing_at_handoff() {
-    let text = node_to_text(prologue::live_ui(prologue::prelude_seconds(), 96), 96, 22);
+    let text = node_to_text(
+        prologue::live_ui(prologue::prelude_seconds(), 96, 32),
+        96,
+        30,
+    );
     for needle in [
         "LIBGIBSON",
         "AGENT OPERATIONS",
@@ -61,9 +65,104 @@ fn live_ui_matches_harness_framing_at_handoff() {
         1,
         "only ARCHITECT is active:\n{text}"
     );
+    // The other three are queued (three "queued" tokens).
+    assert_eq!(
+        text.matches("queued").count(),
+        3,
+        "exactly three workers queued:\n{text}"
+    );
+    // ARCHITECT's bar is IGNITED but has done no work yet (matches film t=0's
+    // progress(0)): the head glyph is present, and there is no filled run.
     assert!(
-        text.contains("queued"),
-        "the other three workers should be queued"
+        text.contains('╸'),
+        "ARCHITECT bar head should be lit:\n{text}"
+    );
+    assert!(
+        !text.contains('━'),
+        "no worker should show completed progress at handoff:\n{text}"
+    );
+}
+
+/// The transition is a PROGRESSIVE ASSEMBLY, not a snap: the structure itself
+/// arrives over time. These witnesses pin the intended choreography — early on
+/// only the shell exists; the workers arrive one at a time; the full operational
+/// pose exists only at the end.
+#[test]
+fn assembly_reveals_structure_progressively() {
+    let render = |t: f32| node_to_text(prologue::live_ui(t, 110, 34), 110, 32);
+    let count = |hay: &str, workers: &[&str]| workers.iter().filter(|w| hay.contains(**w)).count();
+    let workers = ["ARCHITECT", "SCOUT", "BUILDER", "VERIFY"];
+
+    // EARLY (shell just up): header exists, but no workers and no footer yet.
+    let early = render(prologue::agent_slot_time(0) - 0.2);
+    assert!(
+        early.contains("LIBGIBSON"),
+        "early: header must exist:\n{early}"
+    );
+    assert_eq!(
+        count(&early, &workers),
+        0,
+        "early: no worker slots yet:\n{early}"
+    );
+    assert!(
+        !early.contains("orchestrator"),
+        "early: footer must not exist yet:\n{early}"
+    );
+
+    // MIDDLE (second slot just arrived): objective + orchestration exist, and
+    // ONLY the first two workers are present — the last two have not arrived.
+    let middle = render(prologue::agent_slot_time(1) + 0.05);
+    assert!(
+        middle.contains("Build a resilient transit planner."),
+        "middle: objective must exist:\n{middle}"
+    );
+    assert!(
+        middle.contains("PLAN → MAP → BUILD → PROVE"),
+        "middle: orchestration must exist:\n{middle}"
+    );
+    assert!(
+        middle.contains("ARCHITECT"),
+        "middle: ARCHITECT present:\n{middle}"
+    );
+    assert!(middle.contains("SCOUT"), "middle: SCOUT present:\n{middle}");
+    assert!(
+        !middle.contains("BUILDER") && !middle.contains("VERIFY"),
+        "middle: last two workers must not have arrived yet:\n{middle}"
+    );
+
+    // LATER (all slots arrived, before the operational pose): four identities
+    // present; the footer/legend have not settled in yet.
+    let later = render(prologue::agent_slot_time(3) + 0.1);
+    assert_eq!(
+        count(&later, &workers),
+        4,
+        "later: all four worker identities present:\n{later}"
+    );
+
+    // HANDOFF: the complete pose, checked by the dedicated test above.
+    let handoff = render(prologue::prelude_seconds());
+    assert!(
+        handoff.contains("orchestrator") && handoff.contains("⌂ PLAN"),
+        "handoff: legend + footer present:\n{handoff}"
+    );
+}
+
+/// No worker may present as ACTIVE before ARCHITECT ignites: while the slots are
+/// still arriving, every worker is queued/linking. This guards the specific
+/// "don't imply work already happened" requirement.
+#[test]
+fn no_worker_is_active_before_ignition() {
+    // Just after the last slot appears but before the plan begins executing.
+    let t = prologue::agent_slot_time(3) + 0.1;
+    let text = node_to_text(prologue::live_ui(t, 110, 34), 110, 32);
+    assert!(
+        text.contains("ARCHITECT"),
+        "sanity: ARCHITECT present:\n{text}"
+    );
+    assert_eq!(
+        text.matches("active").count(),
+        0,
+        "no worker should be active before ignition:\n{text}"
     );
 }
 
@@ -107,12 +206,16 @@ fn dump_prologue() {
     }
     let end = prologue::prelude_seconds();
     for (label, t) in [
-        ("live UI · attach", 4.5_f32),
-        ("live UI · mid", end * 0.7),
-        ("live UI · handoff", end),
+        ("live UI · shell", prologue::agent_slot_time(0) - 0.2),
+        ("live UI · two workers", prologue::agent_slot_time(1) + 0.05),
+        ("live UI · all slots", prologue::agent_slot_time(3) + 0.1),
+        ("live UI · handoff pose", end),
     ] {
-        println!("\n===== {label} (t={t:.2}s) =====");
-        print!("{}", node_to_text(prologue::live_ui(t, 96), 96, 22));
+        println!(
+            "\n===== {label} (t={t:.2}s, stage={:?}) =====",
+            prologue::stage(t)
+        );
+        print!("{}", node_to_text(prologue::live_ui(t, 96, 34), 96, 32));
     }
 }
 
@@ -166,11 +269,14 @@ fn prologue_boots_hands_off_to_film_and_restores() {
         "prologue entered the alternate screen before handoff"
     );
 
-    // 2) Handoff into the fullscreen film: a film-only label ("SEALED") appears.
+    // 2) Handoff into the fullscreen film: a film-only label appears. "LIVE
+    // WORKSPACE" is the film's workspace-column heading (present at t=0 on a
+    // 120-wide terminal) and never appears in the prologue — unlike "SEALED",
+    // which the prologue's match-cut objective row now also shows.
     let deadline = Instant::now() + Duration::from_secs(8);
     loop {
         pump(&mut capture, &mut parser, 15);
-        if parser.screen().contents().contains("SEALED") {
+        if parser.screen().contents().contains("LIVE WORKSPACE") {
             break;
         }
         assert!(
