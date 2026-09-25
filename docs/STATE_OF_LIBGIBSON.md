@@ -12,6 +12,15 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
+**Current status (2026-09-25):** v0.1.0 is released on GitHub as an Engineering Alpha
+(tag → `a3f1e29`, prerelease-flagged, Linux x86_64; the native SDK archive plus the
+Python wrapper wheel/sdist are attached to the release; `main` at `30a2dfa`). The full
+suite is **657 tests (247 unit + 410 integration)**, with one known-red collision
+acceptance ignored. Ecosystem-registry publication (crates.io / PyPI / Go module proxy)
+remains deferred. The per-checkpoint test counts and CI run ids below are historical
+development evidence, preserved as measured (the historical command tables below
+preserve the checkpoint they each measured).
+
 The approved tip `3b67ca23ee6988cc450845977fe2daf017ae6747` was merged through
 [PR #1](https://github.com/femboy2112/libgibson/pull/1). Main at the initial audit was
 `0b673ccfa50492111352c969d58ebe3cfadfcac1`. Ancestry verification succeeded.
@@ -677,6 +686,13 @@ an account-level issue cannot remain. Diagnose the actual first public run.
 
 ## Executed public CI evidence
 
+**Release CI (current):** the v0.1.0 release was gated on exact-main CI
+[run 36165658206](https://github.com/femboy2112/libgibson/actions/runs/36165658206)
+and Release Preflight
+[run 36165709056](https://github.com/femboy2112/libgibson/actions/runs/36165709056),
+both green on `a3f1e29` (all six jobs; 657 tests). The first-public-CI record below is
+preserved as historical evidence of the initial hosted-runner snapshot.
+
 The owner explicitly authorized publication after accepting the historical personal
 path disclosure. The repository is now **PUBLIC**. PR #2 merged readiness work at
 `9e8602acca353e4ce3409a792f0135cb6796b9bf`; a manual dispatch immediately followed.
@@ -748,8 +764,8 @@ changed automatically.
 | Native CI loader paths | FIXED + LOCAL EXACT-COMMAND VERIFIED | Four normal/sanitized binaries run without LD_LIBRARY_PATH. |
 | Public GitHub CI | IMPLEMENTED + TESTED | Public, exact-main run 35960000454; stable Rust 1.98.1 and Go 1.27.1 evidence. |
 | External dynamic-UI expressivity | CORROBORATED in tested domain | Three planned consumers and three post-freeze holdouts; shared model/fixture limits, no core promotion, no universal ease claim. |
-| Terminal ownership lease + checked restore (#11) | IMPLEMENTED + TESTED | Megaround branch `claude/runtime-architecture-megaround` / PR #19: process-global lease (Available/Owned/Restoring), a second owner errors with `AlreadyExists`, one-shot `restore()` reports the first error with best-effort completion and releases the lease even on failure, Drop best-effort. Round II: panic restoration is owner-thread-scoped (a recoverable non-owner worker panic no longer tears down the owner's terminal — a real bug proven on a PTY then fixed); the restore-failure path (fd → `/dev/full`) and host-hook chaining are now tested; 7 PTY ownership tests. **#11 not closed**: awaits PR #19 merge + final audit. |
-| Long-session Story trace retention (#10) | IMPLEMENTED + TESTED | Megaround: measured ~40 B/tick, ~40 MiB at 1M ticks, linear/unbounded; `TraceRetention {All (default), Bounded(cap), Disabled}` + `drain_trace` + honest `is_complete()`/`dropped_steps()`. Round II: the *beat* log is bounded too (ping-pong leaked ~44 MiB of beats at 1M ticks), `dropped_beats()` added, `Bounded(usize::MAX)` overflow fixed; resource inventory documented (`docs/RESOURCE_OWNERSHIP.md`) — Facts/Scene are caller-owned domains, not engine leaks. Default `All` preserves prior behavior. **#10 not closed**: awaits PR #19 merge + final audit. |
+| Terminal ownership lease + checked restore (#11) | IMPLEMENTED + TESTED | Megaround branch `claude/runtime-architecture-megaround` / PR #19: process-global lease (Available/Owned/Restoring), a second owner errors with `AlreadyExists`, one-shot `restore()` reports the first error with best-effort completion and releases the lease even on failure, Drop best-effort. Round II: panic restoration is owner-thread-scoped (a recoverable non-owner worker panic no longer tears down the owner's terminal — a real bug proven on a PTY then fixed); the restore-failure path (fd → `/dev/full`) and host-hook chaining are now tested; 7 PTY ownership tests. **#11:** PR #19 is merged and shipped in v0.1.0; the tracking issue may stay open for further platform hardening. |
+| Long-session Story trace retention (#10) | IMPLEMENTED + TESTED | Megaround: measured ~40 B/tick, ~40 MiB at 1M ticks, linear/unbounded; `TraceRetention {All (default), Bounded(cap), Disabled}` + `drain_trace` + honest `is_complete()`/`dropped_steps()`. Round II: the *beat* log is bounded too (ping-pong leaked ~44 MiB of beats at 1M ticks), `dropped_beats()` added, `Bounded(usize::MAX)` overflow fixed; resource inventory documented (`docs/RESOURCE_OWNERSHIP.md`) — Facts/Scene are caller-owned domains, not engine leaks. Default `All` preserves prior behavior. **#10:** PR #19 is merged and shipped in v0.1.0; the tracking issue may stay open for further retention work. |
 | Crossterm #1126 input starvation (#15) | DIAGNOSED + SHAPE A FILED UPSTREAM (#1128), NOT MERGED / NOT SHIPPED | Megaround + PR #18: CORROBORATED across source, mio `EPOLLET`, runtime delivery counts and strace; the naive drain-to-WouldBlock fix is **proven to hang** on the blocking `VMIN=1` tty fd. Round II: the minimal Shape A fix is implemented and independently verified in an isolated crossterm 0.29.0 clone (stock reproduces the stall, the fix delivers both events with no hang; controls + full suite green), then rebased onto crossterm `master` and **filed upstream as [crossterm#1128](https://github.com/crossterm-rs/crossterm/pull/1128)** (not merged, **NOT vendored**) (`docs/CROSSTERM_1126_FIX_ANALYSIS.md`). **#15 open** — LibGibson still builds on unpatched crossterm 0.29.0. |
 | Runtime Observatory diagnostic instrument | IMPLEMENTED + TESTED | Megaround: a live interactive loop over real session machinery (Million-Tick, Ownership-Duel, Restore-Failure, Endurance — the last two run a real supervised probe child under a PTY) plus deterministic `--dump` frames (Million-Tick/Ghost-Key/Ownership-Duel); unobserved layers render `?`; PTY smoke tests cover the live loop. Not built: a live Ghost-Key and Slow-Terminal (the Event Pressure Lab already provides the latter). See `docs/RUNTIME_OBSERVATORY.md`. |
 | Project is a release-candidate platform | NOT YET | Engineering alpha; operational, core-contract and distribution work outrank new features. |

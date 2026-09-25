@@ -1,204 +1,144 @@
-# LibGibson (`termframe`)
+<div align="center">
 
-> **"Treat a terminal like a small character-cell framebuffer."**
+<img src="docs/assets/libgibson-intro-finale.png" alt="LibGibson intro finale — the &quot;libGibson&quot; wordmark over a network Earth with a &quot;HACK THE PLANET!&quot; end card, rendered entirely in Unicode cells and terminal colour" width="820">
 
-LibGibson is a cell-framebuffer terminal UI engine with native scrollback/live-region
-semantics and experimental compositional animation and software graphics.
+# LibGibson
 
-**Engineering alpha.** Linux is the best-tested environment. Scene, Story, and
-software graphics are experimental Rust-only APIs. C/C++/Python expose an
-established UI/output subset; Go passes local and public Linux build/example smoke
-checks. Capability is not an API stability promise.
+**Treat a terminal like a small character-cell framebuffer.**
+
+A cell-framebuffer terminal UI engine with native scrollback / live-region
+semantics — plus experimental compositional animation and software graphics.
+
+[![release](https://img.shields.io/github/v/release/femboy2112/libgibson?include_prereleases&sort=semver&label=release&color=8a2be2)](https://github.com/femboy2112/libgibson/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/femboy2112/libgibson/ci.yml?branch=main&label=CI)](https://github.com/femboy2112/libgibson/actions/workflows/ci.yml)
+[![MSRV](https://img.shields.io/badge/MSRV-Rust%201.85-orange)](docs/RELEASE_CONTRACT.md)
+[![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
+
+</div>
 
 > **Current release: [v0.1.0 — Engineering Alpha](https://github.com/femboy2112/libgibson/releases/tag/v0.1.0)** (2026-09-25).
-> A Linux x86_64 native SDK archive is attached to the release. LibGibson is
-> distributed as GitHub source + that SDK; it is **not** published to crates.io,
-> PyPI, or the Go module proxy. Rust/C/C++/Python/Go consume it as shown in
-> [Quickstart](#quickstart). See the [changelog](CHANGELOG.md).
+> Linux x86_64. A native SDK archive is attached to the release. LibGibson is
+> distributed as **GitHub source + that SDK** — it is *not* on crates.io, PyPI, or
+> the Go module proxy. See the [changelog](CHANGELOG.md) and
+> [install options](#install--use) below.
 
-The introductory short film turns a live agent harness into a wireframe city of
-information, follows messages between its buildings, and pulls back to Earth:
+> **Engineering alpha.** Linux x86_64 is the best-tested environment. The core
+> engine is implemented and tested; Scene, Story, and software graphics are
+> experimental, Rust-only APIs. *Capability is not an API-stability promise* — see
+> [status & support](#status--support).
+
+---
+
+## Why LibGibson
+
+Traditional terminal libraries force a choice: take over the whole screen with an
+alternate buffer (destroying the user's scrollback), or sprinkle `println!` and ANSI
+helpers that corrupt the display the moment output arrives asynchronously.
+
+LibGibson refuses the choice. It treats the terminal as a **2D logical cell
+framebuffer** with a strict architectural split between **mutable live interactive
+state** and **immutable terminal scrollback history**:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ COMMITTED TERMINAL SCROLLBACK                                │
+│ Immutable from the engine's perspective                     │
+│   prior tool output · finalized messages · past commands    │
+├─────────────────────────────────────────────────────────────┤
+│ LIVE MUTABLE REGION                                         │
+│   spinners/status · streaming tokens · menus & modals       │
+│   grapheme-aware text input                                  │
+│   → differential framebuffer rendering + explicit anchor    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+When live content is finalized you call `ctx.commit_text(...)` (aliased
+`ctx.commit(...)`): the committed lines transition permanently into the terminal's
+**native** scrollback and are purged from the live framebuffer. The payoff:
+
+> Repainting a 3-line live prompt costs the same whether there are 10 lines or
+> 100,000 lines behind it. **Live-region cost is independent of transcript size.**
+
+The rendering path is a clean vertical pipeline — a single atomic write per frame,
+with an explicit physical **anchor** so the renderer always knows where its live
+region actually is:
+
+```
+  UI tree (declarative Node hierarchy)
+      │  Layout (Taffy Flexbox, integer cells)
+      ▼  Surface (grapheme-aware 2D cell framebuffer)
+  Diff (previous vs next frame, per cell)
+      │  AnsiCompiler (stateful minimal patch stream)
+      ▼  TerminalTransaction (sync-update + cursor motion + diff bytes,
+  Terminal      as ONE write_all + flush) ← anchored by Renderer::AnchorState
+```
+
+An unchanged framebuffer does **not** mean "nothing to emit": a cursor move or a
+visibility change is physical truth and is still written.
+
+## Feature highlights
+
+The core engine is **implemented and tested on Linux x86_64**. A few of the load-bearing pieces:
+
+- **Grapheme-aware cell model** — Unicode clusters, CJK width, combining marks, emoji,
+  with wide-glyph overwrite protection.
+- **Differential ANSI rendering** — minimal per-cell diff, contiguous-run batching,
+  and one atomic `TerminalTransaction` per frame with synchronized-update framing.
+- **Scrollback insertion without repaint** — `CSI L` fast path to insert history above
+  a live region, with an always-correct repaint fallback.
+- **Flexbox layout** (Taffy) — rows/columns, constraints, padding, gaps, alignment,
+  word wrapping, plus a layer compositor with explicit cell transparency.
+- **Sub-cell graphics** — `BrailleCanvas` (2×4) and `HalfBlockCanvas` (1×2 RGB) with
+  Bresenham lines and bounded clipping; **no image protocol required**.
+- **Sub-cell glyph realization** — one 2×4 mask realized down a portability ladder
+  (`Braille → HalfBlock → Block → ASCII`), because glyph *realization* is a separate
+  axis from terminal *protocol* (the Linux VT proves it). See [`docs/GLYPHS.md`](docs/GLYPHS.md).
+- **Capability & colour ladder** — `TrueColor → ANSI256 → ANSI16 → Mono` degrade
+  through one central quantizer.
+- **Safe terminal lifecycle** — an RAII guard + owner-thread panic hook restore raw
+  mode, cursor, alt-buffer, and bracketed paste on exit, error, and panic.
+- **Versioned C ABI** — `GIBSON_ABI_VERSION = 1`, ELF SONAME `libgibson.so.1`,
+  validated inputs, with C / C++ / Python / Go wrappers.
+- **Experimental, Rust-only** — Scene algebra (`Render : SCENE → UI` functor), a Story
+  director with deterministic replay, and a software-graphics FX substrate.
+
+📖 **Full tested-feature catalog: [`docs/FEATURES.md`](docs/FEATURES.md).**
+
+## The flagship demo
+
+A 72-second terminal short film that turns a live agent harness into a wireframe city
+of information and pulls back to Earth:
 
 ```sh
 cargo run --release --example libgibson_intro -- --auto --color=truecolor
 ```
 
-Four persistent agent identities, a coalescing membrane, readable architectural
-outputs and a continuous pullback to a rotating software-rendered Earth form one
-72-second film, crowned by an extravagant chrome finale.
+By default it opens with a **first-contact prologue**: an ordinary terminal boots a
+credible (explicitly *simulated*) agent harness into immutable scrollback, that
+information visibly *acquires structure* as a live LibGibson region attaches, and the
+completed pose **match-cuts** into the fullscreen film at its existing `t = 0`. The
+boot log stays in scrollback after the film exits. `--no-prologue` (or
+`--stage`/`--at`/`--dump`) enters the film directly. It is a local simulation drawn in
+Unicode and terminal colour — no image protocol. The hero image above is a real frame
+of this film ([how it was captured](docs/assets/README.md)).
 
-By default the film now opens with a **first-contact prologue**: an ordinary
-terminal boots a credible (explicitly *simulated*) agent harness — workspace,
-repository, deterministic runtime, tool registry, acceptance, coordinator, the
-ARCHITECT/SCOUT/BUILDER/VERIFY workers — as immutable scrollback. That
-information then visibly *acquires structure*: a live LibGibson region attaches
-while the boot log is still streaming and assembles the Harness-act framing
-progressively — header, objective, orchestration, then the four worker slots
-arriving one at a time in step with their boot receipts, ARCHITECT igniting to
-active only as the plan begins executing. After a brief hold the completed pose
-is a **match cut** into the fullscreen film at its existing `t = 0` — the
-72-second timeline is unchanged, and the boot log remains in scrollback after the
-film exits. `--no-prologue` (and `--stage`/`--at`/`--dump`) enter the film
-directly.
-[Film structure, controls and engineering notes](docs/INTRODUCTORY_CINEMA.md).
-It is a local simulation rendered with Unicode and terminal colors; no image protocol.
+[Film structure, controls, and engineering notes →](docs/INTRODUCTORY_CINEMA.md)
 
-LibGibson treats the terminal as a 2D logical cell framebuffer with an explicit architectural separation between **mutable live interactive state** and **immutable terminal scrollback history**.
+## Install & use
 
-Read the [current project state](docs/STATE_OF_LIBGIBSON.md) for the architecture,
-core/experimental boundary, known blockers and priorities. The
-[validation index](docs/VALIDATION_INDEX.md) preserves historical evidence.
-The [external expressivity campaign](docs/research/AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md)
-tests six consumers against the unchanged public API, including three post-freeze
-concepts; it does not claim universal UI expressivity or stable APIs.
-The [Event Pressure Lab](docs/EVENT_PRESSURE_LAB.md) traces real PTY input, resize,
-output pressure and delivery. Run `cargo run --release --example event_pressure_lab -- --auto`.
-Its diagnostic reproduces an upstream input stall; it does not claim the bug is fixed.
-The [Runtime Observatory](docs/RUNTIME_OBSERVATORY.md) is a restrained,
-mission-control-style diagnostic instrument for three specific runtime
-contracts: bounded `StoryTrace` retention (issue #10), the crossterm #1126
-input-starvation collision (issue #15), and the terminal-ownership lease
-(issue #11). Run `cargo run --release --example runtime_observatory -- --help`.
-It runs as a live interactive instrument (Million-Tick, Ownership-Duel,
-Restore-Failure, Endurance) and also renders one deterministic frame via `--dump`;
-it is a diagnostic aid, not a stability promise, and it does not claim any of
-those three issues are closed.
-Modern Scene/Story and software graphics APIs are experimental and Rust-only;
-the C ABI exposes the established UI/output subset.
+LibGibson ships as **GitHub source plus a native SDK archive** on the
+[release](https://github.com/femboy2112/libgibson/releases/tag/v0.1.0). It is not
+published to any package registry.
 
----
+### Rust
 
-Public CI is now executing: [first green main run](https://github.com/femboy2112/libgibson/actions/runs/35946157443)
-verified Rust 1.98.1, C/C++/Python, native sanitizers, Go 1.27.1 and PTYs.
-See the [exact evidence and limits](docs/STATE_OF_LIBGIBSON.md#executed-public-ci-evidence).
-
-## The Mental Model
-
-Traditional terminal libraries either treat the screen as an alternate-buffer fullscreen application (destroying the user's terminal history) or rely on primitive `println!` / ANSI helper macros that corrupt screen state when output updates asynchronously.
-
-LibGibson introduces a clean vertical pipeline. The `TerminalTransaction` at the end is what makes each frame a single atomic write, and the explicit **anchor** is what lets the renderer know where its live region physically is:
-
-```
-    UI tree (declarative Node hierarchy)
-        │
-        ▼
-    Layout (Taffy Flexbox integer cell engine)
-        │
-        ▼
-    Surface (Grapheme-aware 2D cell framebuffer)
-        │
-        ▼
-    Diff (Previous-frame vs Next-frame cell comparison)
-        │
-        ▼
-    AnsiCompiler (stateful minimal patch stream)
-        │
-        ▼
-    TerminalTransaction (sync-update begin/end + cursor motion +
-        │                diff bytes + cursor placement/visibility,
-        │                written as ONE write_all + flush)
-        ▼
-    Terminal  ← anchored by Renderer::AnchorState
-```
-
-The renderer's anchor (`AnchorState::{Invalid, Stable{cols,rows,live_height}}`) records the physical live region and the last committed cursor position/visibility. That matters because **an unchanged framebuffer does not mean "nothing to emit"** — a cursor move or visibility change is physical truth and is still written.
-
-### The Flagship Invariant: Mutable Live Region vs Immutable Scrollback
-
-LibGibson enforces a strict invariant:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ COMMITTED TERMINAL SCROLLBACK                               │
-│ Immutable from the engine's perspective                     │
-│                                                             │
-│ - Prior tool outputs                                        │
-│ - Finalized assistant messages                              │
-│ - Historical user commands                                  │
-├─────────────────────────────────────────────────────────────┤
-│ LIVE MUTABLE REGION                                         │
-│ - Animated spinner / status lines                           │
-│ - Streaming LLM token blocks                                │
-│ - Interactive menus / permission selectors                  │
-│ - Editable grapheme-aware text inputs                       │
-│                                                             │
-│ Differential framebuffer rendering + explicit anchor        │
-└─────────────────────────────────────────────────────────────┘
-```
-
-When live content is finalized, you call:
-
-```rust
-ctx.commit_text("Finalized output text")?; // ctx.commit(...) is an alias
-```
-
-**Upon commitment:**
-
-- The committed lines transition permanently into the terminal's native scrollback.
-- The committed lines are purged from the mutable live framebuffer (the anchor is invalidated).
-- Repainting a 3-line live prompt costs the same whether there are 10 lines or 100,000 lines in the session scrollback: cost is independent of transcript size.
-
----
-
-## Verification Status
-
-The event-pressure collision-delivery acceptance is explicitly ignored and still fails when run; the diagnostic tests detect the upstream bug rather than certify its repair.
-
-Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently passes **657 tests**: 247 library unit tests and 410 integration tests (across `event_pressure_pty`, `event_pressure_trace`, `event_pressure_visual`, `geometry_diff_contract`, `cinematic_paths`, `intro_cinema`, `intro_pty`, `intro_prologue`, `glyph_realization`, `acid_architecture`, `acid_presentation`, `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, `whole_renderer_vt100`, `terminal_ownership`, and `runtime_observatory_live`).
-
-`cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings pass local Linux vet/build/example smoke**; no Go unit tests exist and public Go 1.27.1 smoke also passes. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
-
----
-
-## Core Features
-
-- **Grapheme-Aware Cell Model** (TESTED): Unicode grapheme clusters (`unicode-segmentation`), CJK full-width characters (`display_width == 2`), zero-width combining marks, and emojis.
-- **Wide Glyph Overwrite Protection** (TESTED): Writing into a cell occupied by or adjacent to a wide character safely clears orphaned continuation cells.
-- **Explicit Physical Anchor** (TESTED): The renderer tracks `AnchorState` plus last cursor position/visibility; empty cell diffs still emit when cursor state changes. Geometry changes invalidate the anchor and trigger a re-anchor.
-- **Structured `RichText` / `Line` / `Span` + Semantic `Theme::styles()`** (TESTED): Style roles (`text`, `muted`, `faint`, `accent`, `success`, `warning`, `error`, `border`, `rail`, `code`, `link`, `selection`) instead of hardcoded ANSI. `muted` is default foreground + dim, readable on light and dark terminals. `Theme::no_color()` is available.
-- **Layer compositor** (TESTED): `Node::stack()` overlays children in one content box with **explicit** cell transparency (`Cell::transparent`). Transparent cells leave the lower layer untouched; `Node::dim()` is a style-only veil. Overlay removal is diff-driven and leaves no ghost cells; a floating modal does not reflow the layout beneath it. `Stack`/`Dim` have C ABI constructors (`gibson_node_stack`, `gibson_node_dim`).
-- **Sub-cell canvases** (TESTED): `BrailleCanvas` (2×4 dots/cell) and `HalfBlockCanvas` (1 horizontal × 2 vertical RGB samples per cell, so the grid is `width` × `2*height` pixels, via `▀`), with Bresenham lines/polylines and exact glyph/colour tests. No graphics protocol required.
-- **Sub-cell glyph realization** (TESTED): `SubcellGlyphMode` (`Braille2x4` → `HalfBlock1x2` → `Block` → `Ascii`) realizes the same 2×4 dot mask through progressively more portable glyph families, because glyph *realization* is a distinct axis from terminal *protocol* capability — a UTF-8 terminal need not carry the Braille block (as the Linux kernel VT demonstrates). `transcode_surface_glyphs` re-realizes any Braille surface in one pass (Braille is byte-identical, so the hero path never changes); `--glyphs=auto|braille|halfblock|block|ascii` / `LIBGIBSON_GLYPHS` override, with a console-safe `Auto` default on `TERM=linux`. Orthogonal to color; no C ABI change. See [`docs/GLYPHS.md`](docs/GLYPHS.md) and `cargo run --example glyph_capability_lab`.
-- **Deterministic clock** (TESTED): `TimeSource::{real,fixed}` + `FixedStepClock` and a small motion toolkit (`phase`, `pulse`, `saw`, `triangle`, easings). Scripted frames are `frame * step`, enabling reproducible goldens.
-- **Scene composition** (TESTED): `Node::offset(x,y)` positions a node absolutely inside its parent (out of flow) with signed, clipped placement; `Node::viewport(cam_x,cam_y)` is a clipped camera; `Node::raster(Surface)`/`Node::surface(Arc<Surface>)` embeds a prebuilt surface. `ViewportState` owns pan/page/home/end + clamping. (`tests/scene.rs`)
-- **FX substrate** (TESTED): deterministic `geom` 3D wireframe projector (cube/octahedron/torus/box/grid/data-tower, inclusive near-plane clipping, per-edge depth), seeded `particles` (radial / life-variance / directional bursts), procedural `field` (plasma/interference + heat ramp + Bayer-dithered mono fallback), grapheme-safe `transition` helpers (type-on/dissolve/scramble), and safe `glitch` primitives (row shift/tear/invert/scramble) that mutate only cell content.
-- **Damage inspection** (TESTED): logical damage (`SurfaceDiff::logical_dirty_count`/`logical_dirty_cells`, including erase-to-EOL and cleared rows) plus explicit run counts and independently measured wire bytes; `Renderer::capture_damage`/`Context::last_dirty_cells()` expose per-frame logical coordinates for debug overlays (the demos visualize the renderer's own damage).
-- **Minimal focus** (TESTED): `FocusId`/`FocusRing` cycle (Tab/Shift-Tab), capture on modal open and restore on close, without a DOM/event-router. (`src/focus.rs`)
-- **Clip containment** (TESTED): `blit_transparent_clipped` places a width-2 glyph only when lead **and** continuation lie inside the clip; otherwise it is suppressed, so wide glyphs cannot leak a continuation past a raster node, viewport or positioned layer.
-- **Capability & color ladder** (TESTED): `TerminalCapabilities` with tri-state `Capability` values and `ColorDepth` (TrueColor/Ansi256/Ansi16/Mono). A central quantizer makes the same UI degrade cleanly; `Unknown` is never treated as supported for `CSI L` insertion.
-- **Visual composition helpers** (TESTED): `gibson::show` provides gradient spans, sub-cell progress meters (`▏▎▍▌▋▊▉█`), sparklines (`▁▂▃▄▅▆▇█`) and deterministic hex dumps as plain `Span`s/`Line`s — no widgets and no new layout semantics. `Node::panel` adds titled bordered containers and `Color::lerp` enables gradients. All degrade to zero color under `--no-color`.
-- **Static structured output** (TESTED): `commit_text`, `commit_rich_text`, and `commit_node` route through the same width-aware layout/wrapping engine as live nodes. Control characters in text are neutralized at the cell model boundary, so they cannot inject `ESC`/`OSC`/`CSI`. `commit_raw_ansi_unchecked` is the explicit escape hatch.
-- **Taffy-Powered Flexbox Layout** (TESTED): Flex containers (`Row`, `Column`), percentage width, min/max constraints, padding, gap, alignment, justification, and intrinsic text measurement with word wrapping.
-- **Stateful Differential ANSI Compiler** (TESTED): Groups dirty cells into contiguous runs, computes minimum-distance cursor repositioning, uses `CSI K` when content shrinks, and wraps diff emission in autowrap disabling (`CSI ? 7 l/h`). Synchronized-update (`CSI ? 2026 h/l`) ownership lives in `TerminalTransaction`, not the compiler.
-- **Atomic `TerminalTransaction`** (TESTED): Batches sync-update markers, temporary private modes, cursor motion, framebuffer diff, final cursor placement, and cursor visibility into one `write_all` + `flush`.
-- **Asynchronous Scrollback Insertion** (TESTED): The **safe** entry points are `insert_text_before_live`, `insert_rich_text_before_live` and `insert_node_before_live`; the only raw path is explicitly `insert_raw_lines_before_live_unchecked`. Two named strategies — `InsertLineFastPath` uses `CSI L` to insert history above the live region without repainting it, and `RepaintFallback` erases, prints, repaints, and restores the exact cursor. Strategy counts are exposed in metrics. This is **not** universally zero-repaint: the fallback repaints when the anchor is untrustworthy or space is insufficient.
-- **Grapheme-Based TextInput** (TESTED): Single-line input with display-width-aware navigation, horizontal scrolling, and bracketed paste. Mutations are byte-range edits and the cursor grapheme index is re-derived from the full resulting string, so boundary-merging insertions (combining accents, ZWJ emoji, skin-tone modifiers, flags) preserve `cursor_grapheme <= grapheme_count`. Single-line paste normalizes `\r\n`, `\r`, and `\n` to a space.
-- **Scheduler / Runtime** (TESTED as a module): `DEFAULT_ANIMATION_INTERVAL = 80ms` (60 FPS is an input-latency ceiling, not a spinner target). `Context::run_once(max_wait)` waits up to the next frame deadline, gives input priority, then renders if due. `render_if_due`, `request_render`, `animation_interval`, and `frame_budget` are available. The demos use these instead of `render() + sleep()`.
-- **Clean Plain-Text Degradation** (TESTED): Detects redirected output and suppresses interactive escapes while emitting clean plain text with zero escape sequences. The internal ANSI stripper is for engine-generated output only, **not** a sanitizer for untrusted input.
-- **Language-Neutral Rich Text ABI** (TESTED for C/C++/Python; Go compiles, rich-text runtime coverage pending): Opaque `gibson_line_t` / `gibson_rich_text_t` with span/align builders. No wrapping logic is duplicated outside Rust.
-- **Versioned C ABI** (TESTED): `GIBSON_ABI_VERSION = 1`, `gibson_abi_version()`, `gibson_stats_init()`. Enum-like inputs cross as raw `int32` and are validated. `gibson_get_stats` validates the ABI version and refuses an undersized buffer instead of overflowing it.
-- **Safe Terminal Lifecycle** (TESTED): the RAII guard restores raw mode, cursor visibility, alternate buffer, and bracketed paste on normal exit and on error. LibGibson's installed panic hook adds best-effort restoration for an unhandled panic **on the terminal-owning thread**; a recoverable panic on a *non-owner* worker thread deliberately does **not** tear down the owner's terminal (panic restoration is owner-thread-scoped), and a pre-existing host panic hook is chained. Interactive demo Ctrl-C is handled as a raw-mode key event; see limitations.
-- **Bounded 2D line clipping** (TESTED): `clip_line_to_bounds` runs Liang–Barsky before Bresenham in both sub-cell canvases, so a finite near-camera projection with coordinates in the tens of millions draws only its visible portion instead of walking millions of steps, and near-`i32`-extreme endpoints cannot overflow. Hostile regression tests in `src/canvas.rs`.
-- **Honest damage accounting** (TESTED): `SurfaceDiff` exposes `exact_changed_cell_count` (a true per-cell state delta) and `affected_cell_count` (cells *addressed* by update semantics — explicit runs ∪ erase-to-EOL ∪ cleared rows, which may exceed the live area when rows are removed). The earlier over-strong "every visible cell whose state changes" wording is corrected.
-- **Scene Algebra** (TESTED, EXPERIMENTAL, Rust-only): `Scene`/`SceneEntity`/`SceneId`/`TagId` wrap ordinary `Node`s with identity; `Effect` provides `identity`, `sequence` (composition) and `parallel` (monoidal product) over presentation channels. `Scene::to_node` is the `Render : SCENE → UI` functor — it emits ordinary nodes through the existing pipeline, and moving one entity produces a bounded framebuffer diff rather than a whole-screen repaint.
-- **Story Director** (TESTED, EXPERIMENTAL, Rust-only): `Facts` store semantic world state (not countdown timers), `Beat`/`Condition`/`Transition` form a free-category story graph where user choices branch and reconverge, and `StoryTrace` records exact `(dt, events)` update steps so `Story::replay` reproduces a session deterministically at any cadence. `StoryDirector::update` follows **at most one transition per call** (see DESIGN §37).
-- **Real replication primitive** (TESTED): `Replication` is a bounded, deterministic branching graph with freeze and neutralize; the Hackers rabbit/cookie interaction is a real entity, not a generic particle burst.
-
----
-
-## Quickstart
-
-### 1. Rust Usage
-
-LibGibson is **not** published to crates.io. Depend on the tagged GitHub source
-(the package is `libgibson`; the crate you `use` is `gibson`):
+Not on crates.io — depend on the tagged GitHub source. The package is `libgibson`; the
+crate you `use` is `gibson`:
 
 ```toml
 [dependencies]
 libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.1.0" }
 ```
-
-Then:
 
 ```rust
 use gibson::cell::{Line, RichText, Span, Style, Theme};
@@ -210,356 +150,190 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut ctx = Context::inline()?;
     let styles = Theme::default().styles();
 
-    // Commit structured historical output (width-aware, control-safe)
+    // Commit structured history (width-aware, control-safe) into real scrollback.
     ctx.commit_text("[system] Session initialized.")?;
-    ctx.commit_rich_text(
-        &RichText::new().line(
-            Line::new()
-                .span(Span::styled("status ", styles.muted))
-                .span(Span::styled("ready", styles.success)),
-        ),
-    )?;
+    ctx.commit_rich_text(&RichText::new().line(
+        Line::new()
+            .span(Span::styled("status ", styles.muted))
+            .span(Span::styled("ready", styles.success)),
+    ))?;
 
-    // Build declarative live UI
-    let root = Node::col().child(Node::text("Active task execution", Style::default()));
-    ctx.set_root(root);
+    // Declarative live UI.
+    ctx.set_root(Node::col().child(Node::text("Active task execution", Style::default())));
 
-    // Minimal runtime step: waits for input up to the frame deadline, then renders if due.
+    // One runtime step: wait for input up to the frame deadline, render if due.
     let _event = ctx.run_once(Duration::from_millis(100))?;
 
-    // Finalize
     ctx.commit_text("[task] Completed successfully.")?;
     ctx.restore()?;
     Ok(())
 }
 ```
 
-For a full loop, call `ctx.run_once(max_wait)` repeatedly; input wakes it up immediately, and animation is throttled by `ctx.animation_interval()`.
+For a full loop, call `ctx.run_once(max_wait)` repeatedly — input wakes it immediately;
+animation is throttled by `ctx.animation_interval()`.
 
-### 2. Native C Usage
+### Native SDK (C / C++ / Python / Go)
 
-Include `gibson.h` and link `-lgibson`:
-
-```c
-#include "gibson.h"
-
-int main(void) {
-    gibson_context_t *ctx = NULL;
-    gibson_create_context(GIBSON_MODE_INLINE, &ctx);
-
-    gibson_commit_text(ctx, "Starting session...");
-
-    gibson_node_t *root = NULL;
-    gibson_node_box_col(&root);
-
-    gibson_node_t *text = NULL;
-    gibson_node_text("Hello from C FFI", NULL, GIBSON_WRAP_WORD, &text);
-    gibson_node_add_child(root, text);
-
-    gibson_set_root_node(ctx, root);
-    gibson_render(ctx);
-
-    gibson_commit_text(ctx, "Finished.");
-    gibson_destroy_context(ctx);
-    return 0;
-}
-```
-
-For metrics, initialize the versioned struct before reading it:
-
-```c
-gibson_stats_t stats;
-gibson_stats_init(&stats);
-gibson_get_stats(ctx, &stats);
-```
-
-### 3. Modern C++ RAII
-
-```cpp
-#include "gibson.hpp"
-
-int main() {
-    gibson::Context ctx(GIBSON_MODE_INLINE);
-    ctx.commit_text("C++ RAII session started");
-
-    auto root = gibson::Node::col();
-    root.add_child(gibson::Node::text("C++ Modern Interface"));
-
-    ctx.set_root(std::move(root));
-    ctx.render();
-
-    ctx.commit_text("Done.");
-    return 0;
-}
-```
-
-### 4. Python (`ctypes`)
-
-```python
-from gibson import Context, Node
-
-with Context() as ctx:
-    ctx.commit_text("Python session active")
-    root = Node.col()
-    root.add_child(Node.text("Hello from Python"))
-    ctx.set_root(root)
-    ctx.render()
-    ctx.commit_text("Finished.")
-```
-
-The Python and Go wrappers are **not** published to PyPI or the Go module proxy;
-they load a separately-installed native LibGibson (see below).
-
-### 5. Native SDK (C / C++ / Python / Go) from a GitHub Release
-
-The `v0.1.0` GitHub Release attaches a Linux x86_64 native SDK archive
-(`libgibson-0.1.0-linux-x86_64.tar.gz`, with a `.sha256`). It contains the
-headers, `libgibson.a`, the versioned shared object (`libgibson.so.1` with a
-`libgibson.so` dev symlink, ELF SONAME `libgibson.so.1`), and a relocatable
-`pkg-config` file. Verify, unpack, and build against it:
+The release attaches `libgibson-0.1.0-linux-x86_64.tar.gz` (with a `.sha256`): headers,
+`libgibson.a`, the versioned shared object (`libgibson.so.1` + a `libgibson.so` dev
+symlink), and a relocatable `pkg-config` file.
 
 ```bash
 sha256sum -c libgibson-0.1.0-linux-x86_64.tar.gz.sha256
 tar -xzf libgibson-0.1.0-linux-x86_64.tar.gz          # -> ./libgibson-0.1.0-linux-x86_64/
 export PKG_CONFIG_PATH="$PWD/libgibson-0.1.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
 
-cc app.c $(pkg-config --cflags --libs libgibson) -o app   # C consumer via pkg-config
+cc app.c $(pkg-config --cflags --libs libgibson) -o app   # C consumer
 ```
 
-(Or install the staged prefix system-wide and skip `PKG_CONFIG_PATH`.) The Go
-wrapper consumes the same SDK through `#cgo pkg-config: libgibson`; see
-[`bindings/go/README.md`](bindings/go/README.md).
-
----
-
-## Running the Demos
-
-```bash
-# Cinematic flagship: one machine, shot-directed RGB architecture
-cargo run --release --example acid_vs_crash                     # watch Crash work and fight
-cargo run --release --example acid_vs_crash -- --manual          # play Crash yourself
-cargo run --release --example acid_vs_crash -- --auto            # watch, then exit after resolution
-cargo run --release --example acid_vs_crash -- --deterministic --stage=display-intrusion
-cargo run --release --example acid_vs_crash -- --stage=climax --color=mono
-cargo run --release --example acid_vs_crash -- --stage=takeover --color=truecolor
-cargo run --release --example fx_lab -- --scene=filled-3d --truecolor
-cargo run --release --example fx_lab -- --scene=feedback --truecolor
-
-# Restrained flagship product demo (recommended starting point):
-cargo run --example polished_agent
-cargo run --example polished_agent -- --auto          # deterministic timeline
-
-# Maximalist twin, built on the same primitives:
-cargo run --example hack_the_gibson
-cargo run --example hack_the_gibson -- --auto
-
-# Theme proofs:
-cargo run --example polished_agent -- --light
-cargo run --example polished_agent -- --dark
-cargo run --example polished_agent -- --no-color
-
-# Interactive resize exercise (drives the anchor/re-anchor path):
-cargo run --example resize_test_app
+```c
+#include "gibson.h"
+int main(void) {
+    gibson_context_t *ctx = NULL;
+    gibson_create_context(GIBSON_MODE_INLINE, &ctx);
+    gibson_commit_text(ctx, "Hello from C FFI");
+    gibson_node_t *root = NULL; gibson_node_box_col(&root);
+    gibson_node_t *text = NULL;
+    gibson_node_text("Live node", NULL, GIBSON_WRAP_WORD, &text);
+    gibson_node_add_child(root, text);
+    gibson_set_root_node(ctx, root);
+    gibson_render(ctx);
+    gibson_destroy_context(ctx);
+    return 0;
+}
 ```
 
-`acid_vs_crash` is an offline fictional terminal short film viewed from Crash
-Override's machine. A shot director reveals one continuous 3D place: MODEM's
-gateway, AUTH's nested vault, FILES' data stacks and the DISPLAY portal. Acid's
-actor follows her actual path; influence becomes light and integrity shapes damage. Crash works and fights back
-automatically by default: this is a window into his machine. You can intervene
-at any time, or use `--manual` to make every defensive choice yourself. Type
-`trace`, `isolate`, `isolate auth`, `decoy`, `kill`, or `hard isolate`; the story keeps moving while
-you type. Final moves are `cut link`, `turn trace`, `spring decoy`, and
-`let her in`. The bottom command island remains usable during display takeover.
-After resolution, `replay`, `facts`, `trace`, `damage`, `scene`, `acid`, `crash`,
-`reset`, and `exit` inspect the encounter. These are simulated semantic commands;
-there is no networking, exploitation, or host shell execution.
+- **C++** — `#include "gibson.hpp"`; `gibson::Context` is an RAII wrapper that verifies
+  the loaded ABI on construction.
+- **Python** — a `ctypes` wrapper that loads a **separately installed** native
+  LibGibson. Not on PyPI; the release attaches the built wheel and sdist as
+  clearly-marked wrapper packages (`*-py3-none-any.whl`, `*-python-sdist.tar.gz`).
+  See [`bindings/python/README.md`](bindings/python/README.md).
+- **Go** — a cgo module that consumes the same SDK via `#cgo pkg-config: libgibson`. Not
+  on the Go module proxy. See [`bindings/go/README.md`](bindings/go/README.md).
 
-The default view runs a state-based defender against Acid's deterministic planner
-on the same live topology and stays open in the aftermath. `--auto` uses the same
-defender and exits after resolution. Influence changes gradually; isolation
-severs real paths, trace consumes reserves and provokes evasion, and a familiar decoy can draw a
-feint. The compact action rail shows availability and cooldowns; commands retain their
-world-model costs. Uppercase `T/I/D/K` act immediately when the input is empty;
-lowercase text remains ordinary typed input. Final shortcuts are `1/2/3/4`
-(or uppercase `C/R/S/L`). StoryDirector
-sets the dramatic pace while the graph decides what actually happens.
+> These wrappers expose the established UI/output subset of the C ABI. Scene/Story and
+> software graphics are Rust-only.
 
-Use a release build for the RGB spectacle. The default presentation begins in a
-dim architectural establishing shot, follows tactical pressure into closeups,
-rides a cyan trace, reveals the mirror, and confronts DISPLAY from inside the
-same machine. RGB faces, depth-tested Braille rails, signed influence fields,
-feedback trails and occasional raster distortion share one framebuffer. A
-small ordinary UI echo appears inside DISPLAY; its Scene-mounted SurfaceFx can
-become contested while the real three-row command island stays crisp.
-
-The research-informed composition draws on *Hackers*' physical City of Text and
-layered color work; see the [visual research record](docs/acid-vs-crash-cinematic-research.md).
-Everything is Unicode and ordinary foreground/background color: no Kitty,
-Sixel, images or video. TrueColor is the hero mode; ANSI256/ANSI16 use central
-quantization and Mono combines density shading, bright Braille structure and
-reverse Acid labels. Endings retain the machine's scars in a compact aftermath.
-
-`--presentation=legacy` retains the previous UI/dive choreography.
-`--visual=flat` and `--visual=cyber` explicitly select the historical projections;
-`--visual=auto` uses the new cinematic default. `--debug-shot` exposes shot and
-focal target. `--debug-raster` shows pixels, triangles, Z tests, field samples
-and feedback passes. A 60 FPS ceiling is scheduling policy, not a throughput
-promise. Animated camera views naturally produce broad differential updates.
-
-`--deterministic` fixes time while preserving the selected automatic or manual
-mode. Add `--debug-battle` (or `--debug-ai`) to inspect goals, candidate scores, routes and
-influence. Inspection hooks include
-`--stage=quiet|signature|route-contested|first-breach|display-intrusion|decoy|trace|trap|climax|takeover|crash-win|acid-win|stalemate`,
-`--freeze-at=N`, `--seconds=N`, `--speed=N`, and
-`--color=mono|ansi16|ansi256|truecolor`. For a short movie smoke run, use
-`--auto --speed=20`. Stage aliases preserve inspection entry points; several
-now start within the same broad act. After the battle, `replay` checks the full
-graph, planner memory, world state and story against exact recorded inputs.
-Scene/Story/SurfaceFx and the RGB raster APIs remain **EXPERIMENTAL, Rust-only**.
-See the [cinematic presentation validation record](docs/acid-vs-crash-cinematic-validation.md)
-for current shots, replay, actual PTY captures and claim limits.
-See the [RGB graphics validation record](docs/acid-vs-crash-rgb-validation.md)
-for replay, depth, visual inspection, PTY and performance evidence.
-See the [round II evidence record](docs/acid-vs-crash-round2-validation.md) and
-[round I record](docs/acid-vs-crash-validation.md) for measured coverage and
-limitations. FX Lab scene 20 isolates the generic substrate; `r` attaches or
-removes an effect through an in-beat reaction. Scenes 21–27 are borderless
-`filled-3d`, `depth`, `feedback`, `field`, `metaballs`, `warp`, and `hybrid` probes;
-`--list-scenes` lists them. Three additional generator tests run explicitly with
-`cargo test --example fx_lab`. Optional internal raster dumps require no image
-library: `DUMP_ACID_RGB=/tmp/acid-rgb cargo test --test acid_graphics`.
-
-`polished_agent` is **inline by default** (`--fullscreen` opts into the alternate screen): the session header and the typed user request are committed to *real terminal scrollback*, while a mutable live foreground shows a task plan (queued/running/done/warn/failed/skipped), streaming `RichText`, a scrollable code/diff viewport (`Tab` focuses it; arrows/PageUp/PageDown/Home/End scroll), an event feed, an interactive permission modal that captures and restores focus, persistent Unicode input and a completion summary — including a real failure/recovery loop. `hack_the_gibson` remains fullscreen and is an act-based *Hackers* (1995) homage: a projected Gibson data city with near/far depth cues, the Plague, the Da Vinci worm, a pirate broadcast, a Grand Central-style coordinated attack with packet particles, Joey's garbage-file download, a safe geometry-collapse crash, a rooftop-pool particle payoff and a CRASH AND BURN curtain — followed by a real root shell whose commands trigger reusable effects. It uses zero raw ANSI literals and never glitches the wire protocol (effects mutate Surface state only). Overlays composite through the `Stack`/raster layer engine without reflowing the dashboard beneath. `examples/fx_lab.rs` is a developer gallery (`n`/`p` or `[`/`]` cycle scenes, `1`-`9`/`0` jump) that now includes near-plane clipping, wide-glyph clip containment, logical-damage-vs-wire-cost (`--debug-damage`), mono dithering, data city, packet routes and water particles. Demos support `--auto`/`--scripted`/`--deterministic --freeze-at=<frame>`, hack's `--act=<name>` for deterministic beats, capability overrides (`--mono`/`--ansi16`/`--ansi256`/`--truecolor`, `--no-sync`, `--no-insert-line`) and theme proofs `--light`, `--dark`, `--no-color`.
-
----
-
-## Building and Testing
+## Try the demos
 
 ```bash
-# Build library and release artifacts (.so, .a)
-cargo build --release
+# ── Start here ───────────────────────────────────────────────
+cargo run --release --example libgibson_intro -- --auto --color=truecolor  # the short film
+cargo run --example polished_agent -- --auto        # restrained flagship product demo
+cargo run --example glyph_capability_lab            # the glyph-realization axis, visually
 
-# Run the full test suite (657 passed: 247 unit + 410 integration; one known-red acceptance ignored)
-cargo test
+# ── Go deeper ────────────────────────────────────────────────
+cargo run --release --example acid_vs_crash         # maximalist RGB cinematic (release build!)
+cargo run --release --example fx_lab -- --scene=filled-3d --truecolor   # developer FX gallery
+cargo run --example hack_the_gibson                 # a *Hackers* (1995) homage on the same primitives
 
-# Static analysis and formatting checks
+# ── Diagnostics ──────────────────────────────────────────────
+cargo run --release --example runtime_observatory -- --help   # runtime-contract instrument
+cargo run --release --example event_pressure_lab -- --auto    # PTY input/resize/pressure trace
+cargo run --example resize_test_app                 # interactive anchor / re-anchor exercise
+```
+
+Most demos accept `--auto`/`--deterministic`/`--freeze-at=<frame>`, capability overrides
+(`--truecolor`/`--ansi256`/`--ansi16`/`--mono`, `--no-color`), and theme proofs
+(`--light`/`--dark`). `acid_vs_crash` is a shot-directed offline short film viewed from
+one machine — simulated semantic commands only, no networking, exploitation, or host
+shell. The RGB spectacle wants a `--release` build. Everything is Unicode plus ordinary
+foreground/background colour: **no Kitty, Sixel, images, or video.**
+
+Deep dives: [introductory cinema](docs/INTRODUCTORY_CINEMA.md) ·
+[acid_vs_crash validation](docs/acid-vs-crash-cinematic-validation.md) ·
+[Runtime Observatory](docs/RUNTIME_OBSERVATORY.md) ·
+[Event Pressure Lab](docs/EVENT_PRESSURE_LAB.md).
+
+## Status & support
+
+Core engine behaviour is **IMPLEMENTED + TESTED on Linux x86_64 only**. The suite is
+**657 tests** (247 library unit + 410 integration); `cargo clippy --all-targets
+--all-features -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean.
+C/C++ examples run under ASan + UBSan (LSan disabled); the Python `ctypes` example runs;
+the Go bindings pass local + public Linux build/vet/example smoke (no Go unit tests
+exist). Public CI exercises Rust, MSRV 1.85, C/C++/Python, native sanitizers, PTYs, and
+Go — see the [exact evidence and limits](docs/STATE_OF_LIBGIBSON.md#executed-public-ci-evidence).
+
+**Not verified / not implemented:** Windows / ConPTY · macOS · tmux / screen / SSH · a
+broad terminal matrix (xterm, Alacritty, Kitty, WezTerm, iTerm2, …) · terminal
+capability *negotiation* (the `CSI L` fast path is assumed, not probed; the repaint
+fallback is always correct) · absolute DSR cursor anchoring (resize re-anchor is a
+best-effort erase-and-rebuild). A hard `SIGKILL` cannot be intercepted by any userland
+process.
+
+### Known limitation
+
+Under a resize / input-readiness collision in crossterm 0.29, a key can be briefly
+queued until a later key releases it ([issue #15](https://github.com/femboy2112/libgibson/issues/15)).
+The upstream fix is filed as [crossterm#1128](https://github.com/crossterm-rs/crossterm/pull/1128)
+and is **not** vendored. This is documented, not a claim of lossless delivery under that
+collision; the event-pressure acceptance test that targets it is intentionally ignored
+and still fails when run.
+
+## Documentation
+
+**Start here** · this README → [`docs/FEATURES.md`](docs/FEATURES.md) (what it does) →
+[`docs/STATE_OF_LIBGIBSON.md`](docs/STATE_OF_LIBGIBSON.md) (architecture, core vs
+experimental, blockers, priorities).
+
+| User-facing | Engineering / release | Experimental & research |
+|---|---|---|
+| [FEATURES](docs/FEATURES.md) | [RELEASE_CONTRACT](docs/RELEASE_CONTRACT.md) | [DESIGN](DESIGN.md) |
+| [GLYPHS](docs/GLYPHS.md) | [RELEASING](docs/RELEASING.md) | [INTRODUCTORY_CINEMA](docs/INTRODUCTORY_CINEMA.md) |
+| [CHANGELOG](CHANGELOG.md) | [ROADMAP](ROADMAP.md) | [RUNTIME_OBSERVATORY](docs/RUNTIME_OBSERVATORY.md) |
+| [SECURITY](SECURITY.md) | [VALIDATION_INDEX](docs/VALIDATION_INDEX.md) | [EVENT_PRESSURE_LAB](docs/EVENT_PRESSURE_LAB.md) |
+| [STATE_OF_LIBGIBSON](docs/STATE_OF_LIBGIBSON.md) | [third-party licenses](LICENSES-THIRD-PARTY.md) | [expressivity campaign](docs/research/AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md) |
+
+The [validation index](docs/VALIDATION_INDEX.md) preserves the historical evidence
+trail; the [expressivity campaign](docs/research/AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md)
+tests six consumers against the unchanged public API (it does not claim universal UI
+expressivity or stable APIs).
+
+### Repository layout
+
+```
+src/          engine: cell/surface/layout/node/diff/ansi/transaction/renderer/
+              session/input/scheduler/context/ffi + canvas/glyph/capability/
+              scene/story/replication + raster & FX (geom/particles/field/…)
+include/      gibson.h (canonical C ABI) · gibson.hpp · termframe.h (compat aliases)
+bindings/     c/ · cpp/ · python/ · go/    (native-SDK consumers)
+examples/     13 runnable examples (see "Try the demos")
+tests/        43 integration suites (PTY, vt100, goldens, safety, FFI, …)
+scripts/      release/ tooling (staging, ABI check, clean-room, preflight)
+docs/         design, release, validation, and research docs
+```
+
+## Build & test
+
+```bash
+cargo build --release                                   # library + .so/.a
+cargo test                                              # 657 pass; one known-red acceptance is ignored
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --check
 ```
 
-### Compiling Language Examples
+The C and C++ recipes are shown above; the [`bindings/`](bindings) directory holds the
+Python and Go wrapper READMEs, and [`docs/RELEASING.md`](docs/RELEASING.md) documents
+building against a staged SDK from outside the checkout.
 
-> These are **source-tree** recipes for developing against a local checkout. To
-> consume an *installed* LibGibson from outside the repository — a staged native
-> SDK via `pkg-config`, a Python wheel, or the Go module — see
-> [`docs/RELEASE_CONTRACT.md`](docs/RELEASE_CONTRACT.md), [`docs/RELEASING.md`](docs/RELEASING.md),
-> and the per-language READMEs under `bindings/`.
+## Contributing
 
-```bash
-# Compile and run C example:
-gcc -Iinclude bindings/c/example.c -Ltarget/release -lgibson \
-    -Wl,-rpath,'$ORIGIN/../../target/release' -o bindings/c/example_c
-./bindings/c/example_c
+Issues and PRs are welcome. Before a substantive change, skim
+[`docs/RELEASE_CONTRACT.md`](docs/RELEASE_CONTRACT.md) (API-stability tiers, the C ABI
+policy, and the MSRV floor) so a patch doesn't accidentally break the contract. Please
+run the [build & test](#build--test) checks locally. Security reports go through
+[`SECURITY.md`](SECURITY.md).
 
-# Compile and run C++ example:
-g++ -std=c++17 -Iinclude bindings/cpp/example.cpp -Ltarget/release -lgibson \
-    -Wl,-rpath,'$ORIGIN/../../target/release' -o bindings/cpp/example_cpp
-./bindings/cpp/example_cpp
+## Support
 
-# Run Python example:
-PYTHONPATH=bindings/python python3 bindings/python/example.py
-```
-
-The C and C++ examples are exercised under AddressSanitizer + UndefinedBehaviorSanitizer with LeakSanitizer disabled. For example:
-
-```bash
-gcc -fsanitize=address,undefined -fno-sanitize=leak -Iinclude \
-    bindings/c/example.c -Ltarget/release -lgibson \
-    -Wl,-rpath,"$PWD/target/release" -o /tmp/example_c_asan
-ASAN_OPTIONS=detect_leaks=0 /tmp/example_c_asan
-```
-
-The [Go cgo wrapper](bindings/go/README.md) now has a module and runnable command example. Local Linux vet/build/example smoke passes; standalone installation and exhaustive wrapper coverage remain pending; public Go 1.27.1 CI smoke passes.
-
----
-
-## Project Structure
-
-```
-.
-├── Cargo.toml
-├── LICENSE
-├── LICENSES-THIRD-PARTY.md
-├── README.md
-├── DESIGN.md
-├── ROADMAP.md
-├── include/
-│   ├── gibson.h             # Canonical C ABI header
-│   └── termframe.h          # Compatibility header (tf_* aliases)
-├── src/
-│   ├── lib.rs               # Library root and re-exports
-│   ├── cell.rs              # Grapheme, Glyph, Style, Line, RichText, Theme
-│   ├── surface.rs           # 2D cell grid with wide overwrite + control neutralization
-│   ├── layout.rs            # Flexbox engine (Taffy bridge, word wrapping)
-│   ├── node.rs              # Declarative UI tree and component nodes
-│   ├── painter.rs           # Surface painter and cursor tracking
-│   ├── diff.rs              # Framebuffer differential comparator
-│   ├── ansi.rs              # Minimal ANSI escape sequence compiler
-│   ├── transaction.rs       # Atomic TerminalTransaction (one write_all + flush)
-│   ├── renderer.rs          # Inline/fullscreen renderer, anchor, commit, insertion
-│   ├── session.rs           # Terminal lifecycle, raw mode, RAII drop guard
-│   ├── input.rs             # Event polling and grapheme-aware TextInput
-│   ├── scheduler.rs         # Frame throttling and telemetry statistics
-│   ├── context.rs           # High-level engine coordinator
-│   └── ffi.rs               # extern "C" ABI implementation
-├── bindings/
-│   ├── c/                   # Native C example
-│   ├── cpp/                 # Modern C++ RAII header and example
-│   ├── python/              # Python ctypes wrapper and example
-│   └── go/                  # Go cgo module and runnable command example
-├── examples/
-│   ├── polished_agent.rs    # Flagship product demo
-│   ├── hack_the_gibson.rs   # Maximalist demo (no raw ANSI literals)
-│   ├── agent_chat.rs        # Legacy interactive agent chat demo
-│   ├── resize_test_app.rs   # Interactive resize / re-anchor exercise
-│   └── perf_probe.rs        # Benchmark and invariance probe
-└── tests/
-    ├── whole_renderer_vt100.rs # Full Renderer -> Transaction -> vt100 screen tests
-    ├── screen_state_vt100.rs   # Surface -> Diff -> AnsiCompiler vt100 tests
-    ├── pty_integration.rs      # Real PTY session lifecycle tests
-    ├── pty_resize_torture.rs   # PTY resize storm with assertions
-    ├── diff_golden.rs          # Minimal ANSI patch & diff tests
-    ├── commit_invariance.rs    # Scrollback separation & O(1) diff tests
-    ├── demo_render.rs         # Full-screen demo PTY -> vt100 structure checks
-    ├── ffi_lifecycle.rs        # C ABI lifecycle, validation, hostile-input tests
-    ├── non_tty_redirection.rs  # Plain-text degradation tests (zero escapes)
-    ├── structured_output.rs    # commit_text/rich/node layout parity + control safety
-    └── resize_torture.rs       # Rapid resize and narrow-terminal torture tests
-```
-
----
-
-## Current Platform Support & Limitations
-
-- **Platforms exercised**: Linux x86_64 (Ubuntu 24.04) only, with the Rust, C, C++, Python, and Go toolchains (Go smoke only).
-- **Terminals**: the engine targets ANSI-compatible terminals and was exercised under Linux terminals on x86_64. A broad terminal matrix (xterm, Alacritty, Kitty, WezTerm, iTerm2, GNOME Terminal, Windows Terminal, …) is **not** automatically verified.
-- **Windows / ConPTY**: **UNVERIFIED**. Only Linux x86_64 was exercised.
-- **tmux / screen / SSH**: **UNVERIFIED**.
-- **Go bindings**: local Linux vet/build/example smoke passed with Go 1.18 (gccgo 14.2). `go test ./...` compiles packages but reports no test files. Public Go 1.27.1 CI smoke also passes; other platforms remain **UNVERIFIED**.
-- **Terminal capability negotiation**: **NOT implemented**. The fast insertion path assumes `CSI L` support; this is not probed at runtime. On a terminal without it, or when the anchor is untrustworthy or space is insufficient, the always-correct `RepaintFallback` is used.
-- **Absolute cursor anchoring**: **NOT implemented**. Resize re-anchoring is a best-effort erase-from-cursor-down rebuild, not an absolute DSR query.
-- **Signals**: the RAII guard restores terminal state on normal exit and on errors; the installed panic hook adds best-effort restoration for an unhandled panic **on the terminal-owning thread** (a panic on a *non-owner* worker thread does not restore the owner's terminal). Interactive demos handle Ctrl-C as a raw-mode key event. Hard `SIGKILL` (`kill -9`) cannot be intercepted by any userland process; this is an operating-system boundary.
-
----
+If LibGibson is useful to you, you can [**buy me a coffee ☕**](https://ko-fi.com/leah2112).
 
 ## License
 
-Licensed under either of:
-
-- [Apache License, Version 2.0](LICENSE-APACHE)
-- [MIT license](LICENSE-MIT)
-
-at your option. Both complete license texts are included. See the
-[direct-dependency license summary](LICENSES-THIRD-PARTY.md) and
+Licensed under either of [Apache License 2.0](LICENSE-APACHE) or
+[MIT license](LICENSE-MIT) at your option; both texts are included. See the
+[direct-dependency license summary](LICENSES-THIRD-PARTY.md) and the
 [security reporting policy](SECURITY.md).
