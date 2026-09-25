@@ -1,20 +1,24 @@
-# LibGibson 0.1.0 — release-candidate gate
+# LibGibson 0.1.0 — release gate
 
 **Classification: Engineering Alpha.** `0.1.0` is the first *coherent package release*;
-"Engineering Alpha" describes maturity, not the version string. This is not the
-publication branch — it is the readiness audit. **Publication is NOT authorized by
-this document** (no `v0.1.0` tag, GitHub Release, crates.io, PyPI, or Go tag).
+"Engineering Alpha" describes maturity, not the version string. The readiness audit
+below is now cleared and the maintainer has **authorized the GitHub release** of
+`v0.1.0` (tag + GitHub Release + Linux x86_64 artifacts). **Ecosystem-registry
+publication remains a separate, unauthorized decision** — no crates.io upload, no
+PyPI/TestPyPI upload, no `bindings/go/v0.1.0` module tag, no OS-package formulas.
+`cargo publish --dry-run` and `twine check` are validation only.
 
 Status vocabulary: **PASS** · **BLOCKED** · **WAIVED (known limitation)** ·
 **N/A** · **PENDING (executes at tag time)**.
 
-Candidate branch: `claude/0.1.0-release-gate` (off main `2c0eed2`). The candidate
-SHA is frozen only when the release-candidate PR merges (Gate 1). ABI: v1
-(`GIBSON_ABI_VERSION = 1`) — unchanged. Supported artifact: Linux x86_64.
+Release-prep branch: `claude/release-v0.1.0` (off main `4ba5ea4`, the PR #23
+merge). The final release SHA is frozen when the release-prep PR merges (Gate 1)
+and recorded with the tag (Gate 15). ABI: v1 (`GIBSON_ABI_VERSION = 1`) —
+unchanged. Supported artifact: Linux x86_64.
 
 | # | Gate | Status | Blocking? |
 |---|------|--------|-----------|
-| 1 | Tree freeze / candidate SHA | PENDING (freeze at RC-PR merge) | no |
+| 1 | Tree freeze / candidate SHA | PENDING (freeze at release-prep merge) | no |
 | 2 | Core correctness | PASS | — |
 | 3 | Release preflight | PASS (local); CI re-confirms | — |
 | 4 | Cargo publish dry-run | PASS | — |
@@ -23,11 +27,11 @@ SHA is frozen only when the release-candidate PR merges (Gate 1). ABI: v1
 | 7 | Native ABI / SONAME | PASS — implemented + tested | — |
 | 8 | Public Rust API freeze | PASS | — |
 | 9 | Documentation truth | PASS | — |
-| 10 | Real-terminal acceptance | BLOCKED on maintainer (manual) | **yes, before tag** |
+| 10 | Real-terminal acceptance | PASS (maintainer manual smoke) | — |
 | 11 | Crossterm #15 | WAIVED (known limitation, Path B) | no |
 | 12 | Security / repo settings | PASS + 1 recommendation | no |
 | 13 | Release artifact review | PASS | — |
-| 14 | Changelog cut | PENDING (at tag time) | no |
+| 14 | Changelog cut | PASS (0.1.0 cut in release-prep) | — |
 | 15 | Exact final SHA | PENDING (at tag time) | no |
 
 ---
@@ -135,13 +139,19 @@ described as a policy/override axis (not font detection); SONAME now shipped (wa
 **53 files**; crossterm-#15 limitation stated. Deep evidence lives in `docs/`, not
 the README.
 
-## Gate 10 — Real-terminal acceptance — BLOCKED on maintainer (manual)
-CI/PTYs are not physical terminals. Automated coverage exists (PTY suites, vt100
-whole-renderer, restoration, resize), **but the required physical smoke on a
-graphical Linux terminal and the kernel virtual console (TTY1) can only be done by
-a human and has not been performed on this candidate.** This is the one gate that
-must be cleared by the maintainer before tagging. Commands are in the final report.
-Record for each run: terminal/emulator, `TERM`, color mode, glyph mode, outcome.
+## Gate 10 — Real-terminal acceptance — PASS (maintainer manual smoke)
+CI/PTYs are not physical terminals; the required physical smoke can only be done by
+a human. The maintainer has now run the release candidate on real hardware:
+
+- **Graphical Linux terminal: PASS** — the default intro (with prologue) renders
+  correctly and the terminal restores cleanly on exit.
+- **Kernel virtual console / TTY1: PASS** — the console-safe glyph fallback works
+  and the terminal restores correctly.
+
+Exact terminal/emulator name, `TERM` value, dimensions, color mode, and glyph mode
+were **not recorded** by the maintainer beyond the above; only these outcomes are
+attested. This clears the one gate that automated coverage (PTY suites, vt100
+whole-renderer, restoration, resize) cannot establish.
 
 ## Gate 11 — Crossterm #15 — WAIVED (known limitation, Path B)
 Upstream fix `crossterm#1128` is filed but **not merged**; LibGibson stays on stock
@@ -173,12 +183,15 @@ Tarball contents inspected: headers, `libgibson.a` + `libgibson.so → .so.1` +
 pkg-config is relocatable via `${pcfiledir}` and the shipped `.so.1` carries a
 SONAME but **no RPATH/RUNPATH** to the build tree.
 
-## Gate 14 — Changelog cut — PENDING (at tag time)
-`CHANGELOG.md` keeps its `[Unreleased]` heading (honest: nothing is published). At
-tag time, move entries to `[0.1.0] - <date>` with the real date, leading with:
-Engineering Alpha; Linux x86_64 boundary; core architecture; scrollback/live-region
-model; glyph fallback; ABI v1 (SONAME `libgibson.so.1`); MSRV 1.85; the known
-crossterm limitation (Path B).
+## Gate 14 — Changelog cut — PASS
+`CHANGELOG.md` now carries a `## [0.1.0] - 2026-09-25` entry: a lead summary
+(Engineering Alpha; Linux x86_64 boundary; core architecture; scrollback/live-region
+model; color + glyph ladders; ABI v1 with SONAME `libgibson.so.1`; MSRV 1.85; the
+known crossterm-#15 limitation, Path B) followed by the moved Added/Changed/Removed
+detail. `[Unreleased]` is kept and empty. The banner states 0.1.0 is prepared as the
+GitHub release and is not published to any registry; the post-tag docs pass will
+finalize the "released" wording and compare links (that update is not part of the
+`v0.1.0` tag).
 
 ## Gate 15 — Exact final SHA — PENDING (at tag time)
 The SHA that is tagged must be the SHA that passed CI + Release Preflight + publish
@@ -188,10 +201,12 @@ dry-run + Python artifact check + clean-room + the Gate-10 manual smoke — with
 ---
 
 ## Verdict
-**Ready to CREATE a 0.1.0 release candidate: YES.** Every automated and packaging
-gate is green; the SONAME and API-surface decisions are made and implemented; the
-docs are reconciled. **What still blocks the *tag* (not the RC):** (1) **Gate 10**
-— maintainer's manual smoke on a real graphical terminal and TTY1; (2) the tag-time
-steps — changelog cut (Gate 14), the freeze/exact-SHA discipline (Gates 1/15), and
-`cargo publish`/`twine check` run in CI. #15 does **not** block (Path B). SONAME is
-done. The only accidental-API fix worth making pre-tag (`transaction`) is done.
+**Cleared to TAG and publish the GitHub release: YES.** Every automated, packaging,
+documentation, and manual gate is now green — including **Gate 10** (maintainer's
+real-hardware smoke on a graphical terminal and TTY1) and **Gate 14** (changelog
+cut). The only remaining gates are the mechanical tag-time steps: **Gate 1** (freeze
+at the release-prep merge) and **Gate 15** (record the exact final SHA that carries
+the `v0.1.0` tag, after a final CI + Release Preflight + `cargo publish --dry-run` +
+`twine check` on that exact SHA). Both are recorded in the post-tag docs pass. #15
+does **not** block (Path B, WAIVED). Scope is a **GitHub release only** — crates.io,
+PyPI, and the Go module tag remain separate, unauthorized decisions.
