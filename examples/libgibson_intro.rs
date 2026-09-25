@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let has = |s: &str| args.iter().any(|a| a == s);
     let value = |p: &str| args.iter().find_map(|a| a.strip_prefix(p));
     if has("--help") {
-        println!("libgibson_intro — a 72-second terminal short film\n\n--auto exit after finale; otherwise hold for replay\n--stage=harness|membrane|city|facades|couriers|ascent|planet\n--at=SECONDS --freeze --speed=FACTOR --deterministic\n--color=truecolor|ansi256|ansi16|mono --seconds=SMOKE_LIMIT\n--dump=PATH --width=120 --height=32 exports a developer RGB PPM\nSpace pause; arrows skip; R replay; Esc or Ctrl-C exit.\nHints retreat after opening and return on interaction/pause/final hold.");
+        println!("libgibson_intro — a 72-second terminal short film\n\n--auto exit after finale; otherwise hold for replay\n--stage=harness|membrane|city|facades|couriers|ascent|planet\n--at=SECONDS --freeze --speed=FACTOR --deterministic\n--color=truecolor|ansi256|ansi16|mono --seconds=SMOKE_LIMIT\n--glyphs=auto|braille|halfblock|block|ascii (or LIBGIBSON_GLYPHS)\n  sub-cell realization; auto keeps Braille on graphical terminals and a\n  console-safe fallback on the Linux VT (TERM=linux). See docs/GLYPHS.md.\n--no-prologue skips the first-contact boot sequence; --stage/--at/--dump\n  always enter the film directly.\n--dump=PATH --width=120 --height=32 exports a developer RGB PPM\nSpace pause; arrows skip; R replay; Esc or Ctrl-C exit.\nHints retreat after opening and return on interaction/pause/final hold.");
         return Ok(());
     }
     let mut d = Director::default();
@@ -104,11 +104,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => None,
         Some(s) => return Err(format!("unknown color: {s}").into()),
     };
+    // Sub-cell glyph realization is a distinct axis from color: --glyphs= (or
+    // LIBGIBSON_GLYPHS) > Auto(TERM). Auto keeps Braille on graphical terminals
+    // and falls back to a console-safe family on the Linux VT. Applied as a
+    // surface transcode after frame(); Braille2x4 is a no-op, so the hero path
+    // and every existing golden are byte-identical.
+    let glyph_mode = gibson::detect_glyph_mode(value("--glyphs="), |k| std::env::var(k).ok())?;
     if let Some(path) = value("--dump=") {
         let w = value("--width=").unwrap_or("120").parse::<u16>()?.min(320);
         let h = value("--height=").unwrap_or("32").parse::<u16>()?.min(100);
         // Developer witness includes actual cell colors, not an image protocol.
-        let surface = frame(&d, w, h, depth.unwrap_or(ColorDepth::TrueColor), false);
+        let mut surface = frame(&d, w, h, depth.unwrap_or(ColorDepth::TrueColor), false);
+        gibson::transcode_surface_glyphs(&mut surface, glyph_mode);
         let mut raster = gibson::raster::RgbRaster::new(w, h.saturating_mul(2));
         for y in 0..h {
             for x in 0..w {
@@ -147,13 +154,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (w, h) = ctx.session.terminal_size();
         let key = (d.seconds.to_bits(), w, h, d.paused);
         if realized != Some(key) {
-            ctx.set_root(Node::raster(frame(
-                &d,
-                w,
-                h,
-                ctx.session.color_depth(),
-                !has("--no-hints"),
-            )));
+            let mut surface = frame(&d, w, h, ctx.session.color_depth(), !has("--no-hints"));
+            gibson::transcode_surface_glyphs(&mut surface, glyph_mode);
+            ctx.set_root(Node::raster(surface));
             realized = Some(key);
         }
         // A frozen image reuses its ordinary Node. Keep input responsive without
