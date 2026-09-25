@@ -17,6 +17,8 @@ mod membrane;
 pub mod model;
 #[path = "libgibson_intro/planet.rs"]
 pub mod planet;
+#[path = "libgibson_intro/prologue.rs"]
+pub mod prologue;
 #[path = "libgibson_intro/shots.rs"]
 pub mod shots;
 #[path = "libgibson_intro/world.rs"]
@@ -25,6 +27,7 @@ use director::{Act, Director};
 use gibson::cell::{Color, Style};
 use gibson::input::{Event, KeyCode, KeyModifiers};
 use gibson::{ColorDepth, Context, Node, Surface};
+use std::io::IsTerminal;
 use std::time::{Duration, Instant};
 
 /// Presentation bounds protect demo generation from pathological PTY sizes;
@@ -135,6 +138,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         raster.write_ppm(std::fs::File::create(path)?)?;
         return Ok(());
+    }
+    // First-contact prologue: the default full experience only. Direct-inspection
+    // and non-interactive workflows enter the film immediately: --stage / --at /
+    // --dump / --seconds and a non-terminal stdout all bypass the prelude, as
+    // does --no-prologue. The prologue owns an inline Context and releases the
+    // terminal lease before we acquire the fullscreen one below.
+    let run_prologue = !has("--no-prologue")
+        && value("--stage=").is_none()
+        && value("--at=").is_none()
+        && value("--seconds=").is_none()
+        && std::io::stdout().is_terminal();
+    if run_prologue {
+        match prologue::run(depth, has("--deterministic"))? {
+            prologue::Outcome::Quit => return Ok(()),
+            prologue::Outcome::Proceed => {}
+        }
     }
     let mut ctx = Context::fullscreen()?;
     if let Some(depth) = depth {
