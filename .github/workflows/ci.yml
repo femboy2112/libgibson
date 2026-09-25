@@ -210,7 +210,7 @@ jobs:
   msrv:
     name: MSRV (Rust 1.85, library)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -221,5 +221,12 @@ jobs:
         with:
           toolchain: "1.85"
 
-      - name: Library check on MSRV
+      - name: Library check on MSRV (resolved-release floor, committed lock)
         run: cargo check --locked --lib
+
+      - name: Declared-range consumer MSRV (fresh resolution)
+        # Maintenance rule: a dependency upgrade must not silently raise the
+        # effective MSRV. A fresh crates.io consumer of our DECLARED ranges (no
+        # inherited lockfile) must still resolve to a graph that builds on the
+        # floor. See docs/RELEASE_CONTRACT.md §5.
+        run: MSRV_TOOLCHAIN="+1.85" scripts/release/msrv-consumer.sh
