@@ -54,14 +54,31 @@ release, or published to any package registry.
 - `libgibson_intro`, `fx_lab` (new "Glyph ladder" scene), and `runtime_observatory`
   (live sparklines) honor the glyph mode; deterministic dumps stay Braille.
 - **First-contact prologue** for `libgibson_intro`: the default experience opens
-  in an ordinary terminal, boots a credible agent harness into immutable
-  scrollback, assembles the film's Harness framing in a live region, and hands
-  terminal ownership cleanly to the fullscreen film at its existing `t = 0`
-  (the 72-second timeline is unchanged; the boot log persists in scrollback).
+  in an ordinary terminal and boots a credible — explicitly *simulated* — agent
+  harness into immutable scrollback, then that information visibly *acquires
+  structure*. A live region attaches while the boot log is still streaming (the
+  two coexist), and the Harness framing assembles progressively: a header rail,
+  the objective, the orchestration frame, then the four worker slots arriving one
+  at a time in correspondence with their boot receipts, each resolving from a
+  skeletal placeholder into a full agent record. ARCHITECT ignites to "active"
+  only when the plan begins executing, its progress bar settling at exactly the
+  film's `t = 0` value (an ignited head, no work done). After a short readable
+  hold, terminal ownership hands cleanly to the fullscreen film at that same
+  `t = 0` — a match cut into the existing 72-second timeline (unchanged; the boot
+  log persists in scrollback). Layout is height-aware (compact on short
+  terminals) and the assembly is monotonic (the live region never shrinks).
   `--no-prologue`/`--stage`/`--at`/`--dump` bypass it. Deterministic prelude clock;
-  Unix PTY test covers the boot → handoff → film → restore arc.
+  choreography witnesses plus a Unix PTY test cover the boot → assembly → handoff
+  → film → restore arc.
 
 ### Changed
+- The extension-point public enums are now `#[non_exhaustive]` (decided before the
+  first release, since adding it later is itself source-breaking): `node::NodeKind`,
+  `input::Event`, `input::KeyCode`, and `glyph::SubcellGlyphMode`. Adding a variant
+  to these is a non-breaking `0.1.z` change; downstream `match`es must carry a `_`
+  arm. `capability::Capability`/`ColorDepth` and `glyph::GlyphChoice` are left
+  exhaustive (closed value sets). No `#[repr]`/C-ABI change (`GIBSON_ABI_VERSION`
+  unchanged). See `docs/RELEASE_CONTRACT.md` §2.
 - The published Rust crate now **excludes** the engineering-demo corpus (examples,
   integration tests and goldens, internal `docs/`, dev scripts, and the language
   bindings). It ships the library, the C header (for native-library builders), and

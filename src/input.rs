@@ -32,7 +32,12 @@ impl From<CtKeyModifiers> for KeyModifiers {
 }
 
 /// Logical key code.
+///
+/// `#[non_exhaustive]`: the terminal key repertoire grows (function keys, Insert,
+/// media keys, …), so downstream `match`es must include a `_` arm and adding a key
+/// is a non-breaking `0.1.z` change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum KeyCode {
     Char(char),
     Enter,
@@ -72,7 +77,12 @@ impl KeyEvent {
 }
 
 /// High-level input event.
+///
+/// `#[non_exhaustive]`: new event kinds are expected (mouse routing is planned;
+/// focus, etc.), so downstream `match`es must include a `_` arm and adding an event
+/// is a non-breaking `0.1.z` change.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Event {
     Key(KeyEvent),
     Paste(String),

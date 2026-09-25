@@ -73,7 +73,7 @@ are recorded in the CHANGELOG:
 - the **C-ABI-backed subset** (see §5)
 
 A lower-risk **utility tier** — `ansi`, `canvas`, `clock`, `diff`, `field`,
-`focus`, `geom`, `glitch`, `particles`, `replication`, `scheduler`, `show`,
+`focus`, `geom`, `glitch`, `glyph`, `particles`, `replication`, `scheduler`, `show`,
 `transition`, `viewport` — is public and treated as CORE (same 0.x promise) unless
 a specific item is marked experimental. Two known specifics: `geom` is core vector
 math *except* `CubicPath3`, which is marked experimental; `show` (composition
@@ -105,15 +105,36 @@ Rust-level one.
 renderer). It is currently `pub` but is not intended for external use and may
 become private in a future `0.y` release.
 
-### Enums are exhaustive (forward-compatibility note)
+### Enum extensibility (forward-compatibility note)
 
-No public type is `#[non_exhaustive]` today. Consequently, **adding a variant to a
-public enum is a breaking change** under this contract (it bumps `0.y`), because
-downstream `match` arms without a wildcard would no longer be exhaustive. The
-highest-churn case is `node::NodeKind` (the natural extension point for new
-component kinds). We may adopt `#[non_exhaustive]` on the extension-point enums
-before 1.0; **downstream code that matches LibGibson enums should include a `_`
-wildcard arm** to stay forward-compatible.
+The **extension-point enums are `#[non_exhaustive]`**, decided deliberately before
+the first release (the cheapest moment — adding `#[non_exhaustive]` *after*
+publication is itself source-breaking). For these, **adding a variant is a
+non-breaking `0.1.z` change**; downstream `match`es must therefore include a `_`
+wildcard arm:
+
+- `node::NodeKind` — the primary extension point for new component kinds.
+- `input::Event` — new event kinds are expected (mouse routing is planned; focus).
+- `input::KeyCode` — the terminal key repertoire grows (function keys, Insert, …).
+- `glyph::SubcellGlyphMode` — further sub-cell families are plausible (2×3 sextants,
+  2×2 quadrants).
+
+The remaining public enums are **deliberately left exhaustive** because their value
+set is closed, so downstream exhaustive `match`es on them stay sound and adding a
+variant would (correctly) be a breaking `0.y` change:
+
+- `capability::Capability` — a complete `Supported`/`Unsupported`/`Unknown` tri-state.
+- `capability::ColorDepth` — the closed set of color-realization tiers
+  (`Mono`/`Ansi16`/`Ansi256`/`TrueColor`).
+- `glyph::GlyphChoice` — a closed `Auto`-or-explicit choice.
+
+`#[non_exhaustive]` is a Rust source-compatibility marker only: it changes no
+`#[repr]`, crosses no C ABI (no audited enum is `#[repr(C)]`; input events are
+*translated* at the FFI boundary, not shared by layout), and leaves
+`GIBSON_ABI_VERSION` unchanged. Construction of known variants from downstream is
+unaffected — only exhaustive matching requires the `_` arm. General guidance stands:
+**downstream code that matches LibGibson enums should include a `_` wildcard arm** to
+stay forward-compatible.
 
 ### Deprecations
 
@@ -240,14 +261,26 @@ fails CI early.
   release artifact is labeled `linux-x86_64` engineering alpha accordingly.
 - Negotiated terminal capability axes: color depth (TrueColor / 256 / 16 / mono),
   synchronized updates, insert-line support.
-- **Glyph realization is not negotiated and not promised.** A terminal accepting
-  UTF-8/Unicode does **not** imply its font can realize every glyph. Concretely: the
-  Linux kernel **virtual console** (TTY) cannot realize the Braille block
-  (U+2800–U+28FF) — its loaded console font has a bounded glyph repertoire — so
-  sub-cell Braille graphics degrade there even though layout, text, and overall
-  structure render correctly. Applications that rely on Braille/half-block sub-cell
-  rendering must not assume it is available on every terminal. (A glyph-capability
-  fallback ladder is future work, not part of this release.)
+- **Glyph realization is an explicit policy/override axis — it is not font
+  detection.** A terminal accepting UTF-8/Unicode does **not** imply its font can
+  realize every glyph: the Linux kernel **virtual console** (TTY), for example, has a
+  bounded console-font repertoire and typically cannot draw the Braille block
+  (U+2800–U+28FF), so sub-cell Braille degrades there even though layout, text, and
+  structure render correctly. LibGibson does **not** — and cannot, over any terminal
+  protocol — probe a font's actual repertoire. Instead it exposes a realization
+  ladder, `glyph::SubcellGlyphMode` (`Braille2x4` → `HalfBlock1x2` → `Block` →
+  `Ascii`), and a surface-level transcode (`glyph::transcode_surface_glyphs`) that
+  re-realizes any sub-cell surface into a chosen family. Selection
+  (`glyph::detect_glyph_mode`) is by explicit policy, precedence **`--glyphs=` (CLI) >
+  `LIBGIBSON_GLYPHS` (env) > `Auto`**; `Auto` keeps Braille on ordinary graphical
+  terminals and chooses a **conservative, console-safe** family when `TERM=linux`.
+  That is a heuristic, **not** a claim that Braille is unavailable there — a custom
+  console font may provide it, and an explicit override can always request it. The
+  axis is orthogonal to color depth, and `Braille2x4` is the identity realization, so
+  the existing Braille hero path is byte-for-byte unchanged. Applications must still
+  not *assume* any particular sub-cell family renders on an arbitrary terminal; the
+  ladder is how they degrade deterministically instead of guessing. See
+  `docs/GLYPHS.md`.
 - **Not covered this round:** Windows, macOS, tmux/screen/SSH certification, Kitty
   graphics protocol. These may follow; they are not promised here.
 

@@ -22,13 +22,18 @@ outputs and a continuous pullback to a rotating software-rendered Earth form one
 72-second film, crowned by an extravagant chrome finale.
 
 By default the film now opens with a **first-contact prologue**: an ordinary
-terminal boots a credible agent harness (workspace, repository, deterministic
-runtime, tool registry, acceptance, coordinator, the ARCHITECT/SCOUT/BUILDER/
-VERIFY workers) as immutable scrollback, then a live LibGibson region assembles
-the same Harness-act framing before terminal ownership is handed cleanly to the
-fullscreen film at its existing `t = 0` — the 72-second timeline is unchanged.
-The boot log remains in scrollback after the film exits. `--no-prologue` (and
-`--stage`/`--at`/`--dump`) enter the film directly.
+terminal boots a credible (explicitly *simulated*) agent harness — workspace,
+repository, deterministic runtime, tool registry, acceptance, coordinator, the
+ARCHITECT/SCOUT/BUILDER/VERIFY workers — as immutable scrollback. That
+information then visibly *acquires structure*: a live LibGibson region attaches
+while the boot log is still streaming and assembles the Harness-act framing
+progressively — header, objective, orchestration, then the four worker slots
+arriving one at a time in step with their boot receipts, ARCHITECT igniting to
+active only as the plan begins executing. After a brief hold the completed pose
+is a **match cut** into the fullscreen film at its existing `t = 0` — the
+72-second timeline is unchanged, and the boot log remains in scrollback after the
+film exits. `--no-prologue` (and `--stage`/`--at`/`--dump`) enter the film
+directly.
 [Film structure, controls and engineering notes](docs/INTRODUCTORY_CINEMA.md).
 It is a local simulation rendered with Unicode and terminal colors; no image protocol.
 
@@ -133,7 +138,7 @@ ctx.commit_text("Finalized output text")?; // ctx.commit(...) is an alias
 
 The event-pressure collision-delivery acceptance is explicitly ignored and still fails when run; the diagnostic tests detect the upstream bug rather than certify its repair.
 
-Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently passes **649 tests**: 247 library unit tests and 402 integration tests (across `event_pressure_pty`, `event_pressure_trace`, `event_pressure_visual`, `geometry_diff_contract`, `cinematic_paths`, `intro_cinema`, `intro_pty`, `intro_prologue`, `glyph_realization`, `acid_architecture`, `acid_presentation`, `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, `whole_renderer_vt100`, `terminal_ownership`, and `runtime_observatory_live`).
+Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repository currently passes **657 tests**: 247 library unit tests and 410 integration tests (across `event_pressure_pty`, `event_pressure_trace`, `event_pressure_visual`, `geometry_diff_contract`, `cinematic_paths`, `intro_cinema`, `intro_pty`, `intro_prologue`, `glyph_realization`, `acid_architecture`, `acid_presentation`, `raster3d`, `raster_fx`, `acid_graphics`, `acid_battle`, `acid_battlefield`, `acid_battlefield_goldens`, `acid_render`, `acid_story`, `scene_cinematic`, `story_reactions`, `surface_fx`, `capability_fallback`, `commit_invariance`, `compositor`, `demo_render`, `diff_golden`, `effects_perf`, `ffi_lifecycle`, `non_tty_redirection`, `pty_demos`, `pty_integration`, `pty_resize_torture`, `resize_torture`, `safety_api`, `scene`, `scene_algebra`, `screen_state_vt100`, `structured_output`, `visual_goldens`, `whole_renderer_vt100`, `terminal_ownership`, and `runtime_observatory_live`).
 
 `cargo clippy --all-targets --all-features -- -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean. The C and C++ examples compile and run under AddressSanitizer + UndefinedBehaviorSanitizer (LeakSanitizer disabled), and the Python `ctypes` example runs. The **Go bindings pass local Linux vet/build/example smoke**; no Go unit tests exist and public Go 1.27.1 smoke also passes. Windows, tmux/screen/SSH, terminal capability negotiation, and DSR absolute anchoring are **not** verified or implemented. See [Current Platform Support & Limitations](#current-platform-support--limitations).
 

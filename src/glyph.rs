@@ -63,7 +63,11 @@ use crate::surface::Surface;
 /// `Block`/`HalfBlock`/`Ascii` reduce resolution by *aggregating* the mask
 /// deterministically (vertical halves, or ink density), preserving topology and
 /// readability rather than faking resolution.
+/// `#[non_exhaustive]`: further sub-cell families (e.g. 2×3 sextants or 2×2
+/// quadrants) are plausible future additions, so downstream `match`es must carry a
+/// `_` arm and a new mode is a non-breaking `0.1.z` change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum SubcellGlyphMode {
     /// Unicode Braille (`U+2800 + bits`): the full 2×4 sub-cell resolution and
     /// the hero path. Exactly what [`crate::BrailleCanvas::glyph_at`] emits.

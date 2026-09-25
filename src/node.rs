@@ -109,7 +109,12 @@ pub const SPINNER_BRAILLE: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴",
 pub const SPINNER_DOTS: &[&str] = &[".  ", ".. ", "...", " ..", "  .", "   "];
 
 /// Specific component visual and behavioral variant.
+///
+/// `#[non_exhaustive]`: this is the primary extension point for new component
+/// kinds, so downstream `match`es must include a `_` arm; adding a variant here is
+/// then a non-breaking `0.1.z` change rather than a `0.y` bump.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum NodeKind {
     Box {
         border: Option<BorderType>,
