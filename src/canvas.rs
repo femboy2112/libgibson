@@ -12,6 +12,7 @@
 //! diff/ANSI pipeline and composite like any other node.
 
 use crate::cell::{Color, Glyph, Line, RichText, Span, Style};
+use crate::glyph::SubcellGlyphMode;
 use crate::surface::{Rect, Surface};
 
 // ---------------------------------------------------------------------------
@@ -186,16 +187,31 @@ impl BrailleCanvas {
     }
 
     /// The braille glyph for a cell, or `None` if all dots are clear.
+    ///
+    /// Equivalent to [`glyph_at_mode`](Self::glyph_at_mode) with
+    /// [`SubcellGlyphMode::Braille2x4`] — the full-resolution hero realization.
     pub fn glyph_at(&self, cx: u16, cy: u16) -> Option<char> {
+        self.glyph_at_mode(cx, cy, SubcellGlyphMode::Braille2x4)
+    }
+
+    /// The raw 2×4 dot mask for a cell (0 when every dot is clear).
+    ///
+    /// Exposed so callers can realize a cell in any glyph family via
+    /// [`SubcellGlyphMode::subcell_glyph`] without going through a `Surface`.
+    pub fn mask_at(&self, cx: u16, cy: u16) -> u8 {
+        if cx >= self.width || cy >= self.height {
+            return 0;
+        }
+        self.cells[(cy as usize) * (self.width as usize) + (cx as usize)]
+    }
+
+    /// The realized glyph for a cell under `mode`, or `None` if all dots are
+    /// clear. `Braille2x4` is byte-identical to [`glyph_at`](Self::glyph_at).
+    pub fn glyph_at_mode(&self, cx: u16, cy: u16, mode: SubcellGlyphMode) -> Option<char> {
         if cx >= self.width || cy >= self.height {
             return None;
         }
-        let bits = self.cells[(cy as usize) * (self.width as usize) + (cx as usize)];
-        if bits == 0 {
-            None
-        } else {
-            char::from_u32(0x2800 + bits as u32)
-        }
+        mode.subcell_glyph(self.cells[(cy as usize) * (self.width as usize) + (cx as usize)])
     }
 
     /// Bresenham line between two dot coordinates, clipped to the canvas first.
@@ -387,6 +403,36 @@ impl BrailleCanvas {
             rt = rt.line(Line::styled(line, style));
         }
         rt
+    }
+
+    /// Like [`to_lines`](Self::to_lines) but realizing dots through `mode`
+    /// (blank cells become spaces). `Braille2x4` reproduces `to_lines`.
+    pub fn to_lines_mode(&self, mode: SubcellGlyphMode) -> Vec<String> {
+        (0..self.height)
+            .map(|cy| {
+                (0..self.width)
+                    .map(|cx| self.glyph_at_mode(cx, cy, mode).unwrap_or(' '))
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Like [`to_surface`](Self::to_surface) but realizing dots through `mode`.
+    /// `Braille2x4` reproduces `to_surface`.
+    pub fn to_surface_mode(&self, style: Style, mode: SubcellGlyphMode) -> Surface {
+        let mut s = Surface::new(self.width, self.height);
+        for cy in 0..self.height {
+            for cx in 0..self.width {
+                if let Some(ch) = self.glyph_at_mode(cx, cy, mode) {
+                    s.set_cell(
+                        cx,
+                        cy,
+                        crate::cell::Cell::new(Glyph::new(&ch.to_string()), style),
+                    );
+                }
+            }
+        }
+        s
     }
 }
 
