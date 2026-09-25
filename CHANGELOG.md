@@ -6,10 +6,35 @@ the 0.x Semantic Versioning rules defined in
 [`docs/RELEASE_CONTRACT.md`](docs/RELEASE_CONTRACT.md) — pre-1.0, a breaking change
 bumps the minor slot (`0.y`) and a compatible change bumps the patch slot (`0.1.z`).
 
-LibGibson is **engineering alpha**. Nothing below has been tagged, built as a GitHub
-release, or published to any package registry.
+LibGibson is **engineering alpha**. Version 0.1.0 is prepared as the first GitHub
+release (Linux x86_64: source plus a native SDK archive). It is **not** published
+to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
+
+Nothing yet.
+
+## [0.1.0] - 2026-09-25
+
+The first tagged release — **Engineering Alpha**, Linux x86_64. LibGibson is a
+cell-framebuffer terminal UI engine: a declarative `Node`/Flexbox layout over a
+grapheme-aware 2D cell surface, a differential ANSI compiler, and the flagship
+**immutable-scrollback / mutable-live-region** model with an explicit physical
+anchor. It exposes a language-neutral **C ABI v1** (ELF SONAME `libgibson.so.1`)
+with C/C++/Python/Go wrappers, a color-capability ladder
+(TrueColor → ANSI256 → ANSI16 → Mono) and an orthogonal glyph-realization ladder
+(Braille → HalfBlock → Block → ASCII), plus the experimental Scene/Story and
+software-graphics stack and the `libgibson_intro` short film (with its
+first-contact prologue). **MSRV Rust 1.85**; dual-licensed **MIT OR Apache-2.0**.
+
+Distribution is GitHub source plus a Linux x86_64 native SDK archive attached to
+the release; it is **not** published to crates.io, PyPI, or the Go module proxy.
+
+Known limitation: under a resize/input-readiness collision in crossterm 0.29, a
+key can be briefly queued until a later key releases it (issue #15; upstream fix
+filed as [crossterm#1128](https://github.com/crossterm-rs/crossterm/pull/1128),
+not vendored). This is documented, not a claim of lossless delivery under that
+collision.
 
 ### Added
 - Versioned native shared object: the Linux `cdylib` now carries an ELF **SONAME
@@ -110,9 +135,9 @@ release, or published to any package registry.
 ### Removed
 - Unused `thiserror` dependency (it was declared but never used in `src/`).
 
-## Planned — 0.1.0 (not yet released)
+---
 
-The first engineering-alpha release. Its intended contents and the exact cut
-procedure are documented in [`docs/RELEASE_CONTRACT.md`](docs/RELEASE_CONTRACT.md)
-and [`docs/RELEASING.md`](docs/RELEASING.md). **This is a plan, not a record:**
-0.1.0 has not been tagged, released, or published.
+The contents and exact cut procedure for a release are documented in
+[`docs/RELEASE_CONTRACT.md`](docs/RELEASE_CONTRACT.md) and
+[`docs/RELEASING.md`](docs/RELEASING.md). Ecosystem-registry publication
+(crates.io, PyPI, Go module proxy) remains a separate, later decision.

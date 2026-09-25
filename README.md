@@ -184,7 +184,15 @@ Core engine behavior is **IMPLEMENTED + TESTED on Linux x86_64 only**. The repos
 
 ### 1. Rust Usage
 
-Add `libgibson` to your `Cargo.toml`:
+LibGibson is **not** published to crates.io. Depend on the tagged GitHub source
+(the package is `libgibson`; the crate you `use` is `gibson`):
+
+```toml
+[dependencies]
+libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.1.0" }
+```
+
+Then:
 
 ```rust
 use gibson::cell::{Line, RichText, Span, Style, Theme};
@@ -292,6 +300,29 @@ with Context() as ctx:
     ctx.render()
     ctx.commit_text("Finished.")
 ```
+
+The Python and Go wrappers are **not** published to PyPI or the Go module proxy;
+they load a separately-installed native LibGibson (see below).
+
+### 5. Native SDK (C / C++ / Python / Go) from a GitHub Release
+
+The `v0.1.0` GitHub Release attaches a Linux x86_64 native SDK archive
+(`libgibson-0.1.0-linux-x86_64.tar.gz`, with a `.sha256`). It contains the
+headers, `libgibson.a`, the versioned shared object (`libgibson.so.1` with a
+`libgibson.so` dev symlink, ELF SONAME `libgibson.so.1`), and a relocatable
+`pkg-config` file. Verify, unpack, and build against it:
+
+```bash
+sha256sum -c libgibson-0.1.0-linux-x86_64.tar.gz.sha256
+tar -xzf libgibson-0.1.0-linux-x86_64.tar.gz          # -> ./libgibson-0.1.0-linux-x86_64/
+export PKG_CONFIG_PATH="$PWD/libgibson-0.1.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
+
+cc app.c $(pkg-config --cflags --libs libgibson) -o app   # C consumer via pkg-config
+```
+
+(Or install the staged prefix system-wide and skip `PKG_CONFIG_PATH`.) The Go
+wrapper consumes the same SDK through `#cgo pkg-config: libgibson`; see
+[`bindings/go/README.md`](bindings/go/README.md).
 
 ---
 
@@ -403,7 +434,7 @@ library: `DUMP_ACID_RGB=/tmp/acid-rgb cargo test --test acid_graphics`.
 # Build library and release artifacts (.so, .a)
 cargo build --release
 
-# Run the full test suite (612 passed: 236 unit + 376 integration; one known-red acceptance ignored)
+# Run the full test suite (657 passed: 247 unit + 410 integration; one known-red acceptance ignored)
 cargo test
 
 # Static analysis and formatting checks
