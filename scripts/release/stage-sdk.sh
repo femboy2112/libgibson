@@ -7,7 +7,7 @@
 #
 #     <prefix>/
 #       include/  gibson.h  gibson.hpp  termframe.h
-#       lib/      libgibson.so  libgibson.a
+#       lib/      libgibson.so.1  libgibson.so -> libgibson.so.1  libgibson.a
 #       lib/pkgconfig/  libgibson.pc     (relocatable via ${pcfiledir})
 #       share/doc/libgibson/  README.md  LICENSE-MIT  LICENSE-APACHE  LICENSES-THIRD-PARTY.md
 #       SHA256SUMS
@@ -107,8 +107,13 @@ install -m 0644 include/gibson.h    "$PREFIX/include/gibson.h"
 install -m 0644 include/gibson.hpp  "$PREFIX/include/gibson.hpp"
 install -m 0644 include/termframe.h "$PREFIX/include/termframe.h"
 
-# Libraries.
-install -m 0755 "$SO" "$PREFIX/lib/libgibson.so"
+# Libraries. The shared object is installed VERSIONED as libgibson.so.1 (its ELF
+# SONAME — see build.rs), with a development symlink libgibson.so -> libgibson.so.1
+# that `-lgibson` links against. A dynamic consumer then records
+# NEEDED=libgibson.so.1 at runtime; the symlink is excluded from SHA256SUMS by the
+# `-type f` filter below and preserved by `tar` in bundle.sh.
+install -m 0755 "$SO" "$PREFIX/lib/libgibson.so.1"
+ln -sf libgibson.so.1 "$PREFIX/lib/libgibson.so"
 install -m 0644 "$A"  "$PREFIX/lib/libgibson.a"
 
 # License / doc payload.
