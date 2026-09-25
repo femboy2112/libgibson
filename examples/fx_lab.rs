@@ -24,7 +24,8 @@ use gibson::scene::{Effect, EffectBundle, Presentation, Scene, SceneEntity, Scen
 use gibson::story::{Beat, Condition, Story, StoryAction, StoryDirector, StoryEvent};
 use gibson::surface::{BorderType, Rect, Surface};
 use gibson::{
-    BrailleCanvas, Context, Mesh, Projector, TimeSource, Transform3, Vec3, ViewportState,
+    BrailleCanvas, Context, Mesh, Projector, SubcellGlyphMode, TimeSource, Transform3, Vec3,
+    ViewportState,
 };
 
 const SCENES: &[&str] = &[
@@ -55,7 +56,18 @@ const SCENES: &[&str] = &[
     "METABALLS",
     "RASTER WARP",
     "HYBRID RGB + BRAILLE",
+    "Glyph ladder: braille/half/block/ascii",
 ];
+
+/// The borderless RGB graphical-lab scenes occupy indices
+/// `[GRAPHICAL_FIRST, GRAPHICAL_FIRST + GRAPHICAL_COUNT)`; they are routed to
+/// `GraphicalLab` instead of `body()`. Scenes outside that window (including the
+/// glyph-ladder scene appended after it) render through `body()` normally.
+const GRAPHICAL_FIRST: usize = 20;
+const GRAPHICAL_COUNT: usize = 7;
+fn is_graphical(scene: usize) -> bool {
+    (GRAPHICAL_FIRST..GRAPHICAL_FIRST + GRAPHICAL_COUNT).contains(&scene)
+}
 
 struct Fx {
     st: ThemeStyles,
@@ -107,10 +119,10 @@ impl Lab {
 
     fn tick(&mut self, ctx: &mut Context) {
         self.t += 1.0 / 60.0;
-        if self.scene >= 20 {
+        if is_graphical(self.scene) {
             let (cols, rows) = ctx.session.terminal_size();
             self.graphical.advance(
-                self.scene - 20,
+                self.scene - GRAPHICAL_FIRST,
                 cols,
                 rows.saturating_sub(2),
                 self.t,
@@ -390,6 +402,7 @@ impl Lab {
             16 => water_particles_scene(fx, inner_w, content_rows, self.t),
             17 => scene_algebra_scene(fx, inner_w, content_rows, self.t),
             18 => story_graph_scene(fx, inner_w, content_rows, self.t),
+            27 => glyph_ladder_scene(fx, inner_w, content_rows),
             _ => self.cinematic.body(fx, inner_w, content_rows),
         }
     }
@@ -408,6 +421,48 @@ impl Lab {
             ))
             .child(Node::raster(canvas.to_surface(fx.st.accent)))
     }
+}
+
+/// One deterministic 2×4 source field realized four ways, side by side, so the
+/// sub-cell glyph ladder (Braille → HalfBlock → Block → ASCII) is visible in the
+/// dev gallery. The glyph axis is orthogonal to color: every panel keeps the
+/// same style.
+fn glyph_ladder_scene(fx: &Fx, inner_w: u16, rows: u16) -> Node {
+    let pcols = (inner_w / 4).clamp(8, 26).saturating_sub(1);
+    let prows = rows.saturating_sub(2).clamp(6, 18);
+    // Draw the source ONCE; each panel realizes the same masks in a mode.
+    let mut field = BrailleCanvas::new(pcols, prows);
+    let (pw, ph) = (field.pixel_width() as i32, field.pixel_height() as i32);
+    field.rect(0, 0, pw, ph);
+    field.circle(pw / 2, ph / 2, (ph / 2 - 3).max(2));
+    field.line(1, 1, pw - 2, ph - 2);
+    field.filled_rect(2, 2, 5, 6);
+
+    let style = if fx.color {
+        fx.st.accent
+    } else {
+        Style::default()
+    };
+    let modes = [
+        SubcellGlyphMode::Braille2x4,
+        SubcellGlyphMode::HalfBlock1x2,
+        SubcellGlyphMode::Block,
+        SubcellGlyphMode::Ascii,
+    ];
+    let mut panels = Node::row().gap(2.0);
+    for m in modes {
+        panels = panels.child(
+            Node::col()
+                .child(Node::text(m.as_str(), fx.st.muted))
+                .child(Node::raster(field.to_surface_mode(style, m))),
+        );
+    }
+    Node::col()
+        .child(Node::text(
+            "one 2×4 source field, four realizations (glyph axis ⟂ color)",
+            fx.st.muted,
+        ))
+        .child(panels)
 }
 
 fn bright(fx: &Fx) -> Style {
@@ -1041,8 +1096,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut graphical_timing = false;
     let cap = if auto { 4000 } else { usize::MAX };
     while iterations < cap {
-        if graphical_timing != (lab.scene >= 20) {
-            graphical_timing = lab.scene >= 20;
+        if graphical_timing != is_graphical(lab.scene) {
+            graphical_timing = is_graphical(lab.scene);
             ctx.set_max_fps(if graphical_timing || !auto { 60 } else { 240 });
             ctx.set_animation_interval(if graphical_timing {
                 Duration::from_secs_f64(1.0 / 60.0)
@@ -1058,11 +1113,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         let (cols, rows) = ctx.session.terminal_size();
         let stats = ctx.stats();
-        let content = if lab.scene >= 20 {
+        let content = if is_graphical(lab.scene) {
             let mono = matches!(ctx.capabilities().color_depth, gibson::ColorDepth::Mono);
-            let image =
-                lab.graphical
-                    .surface(lab.scene - 20, cols, rows.saturating_sub(2), lab.t, mono);
+            let image = lab.graphical.surface(
+                lab.scene - GRAPHICAL_FIRST,
+                cols,
+                rows.saturating_sub(2),
+                lab.t,
+                mono,
+            );
             Node::col()
                 .child(Node::raster(image))
                 .child(Node::text(lab.graphical.caption(debug), lab.fx.st.muted).height(1.0))

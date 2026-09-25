@@ -67,7 +67,10 @@ fn braille_transcode_is_identity_on_real_frames() {
         let base = hero_frame(t);
         let mut same = base.clone();
         transcode_surface_glyphs(&mut same, SubcellGlyphMode::Braille2x4);
-        assert_eq!(base, same, "Braille2x4 transcode changed the frame at t={t}");
+        assert_eq!(
+            base, same,
+            "Braille2x4 transcode changed the frame at t={t}"
+        );
     }
 }
 
@@ -124,7 +127,11 @@ fn fallback_modes_are_well_formed_on_real_frames() {
                     }
                     // Non-Braille content is untouched.
                     other => {
-                        assert_eq!(cell_char(fc), other, "{mode:?} touched non-braille at t={t}");
+                        assert_eq!(
+                            cell_char(fc),
+                            other,
+                            "{mode:?} touched non-braille at t={t}"
+                        );
                     }
                 }
             }
@@ -148,7 +155,11 @@ fn linux_vt_auto_policy_emits_no_braille() {
         _ => None,
     };
     let mode = detect_glyph_mode(None, get_env).unwrap();
-    assert_ne!(mode, SubcellGlyphMode::Braille2x4, "auto+linux must not be Braille");
+    assert_ne!(
+        mode,
+        SubcellGlyphMode::Braille2x4,
+        "auto+linux must not be Braille"
+    );
 
     for t in WITNESS {
         let mut f = hero_frame(t);
@@ -176,6 +187,9 @@ fn explicit_braille_override_keeps_hero() {
         let base = hero_frame(t);
         let mut f = base.clone();
         transcode_surface_glyphs(&mut f, mode);
-        assert_eq!(base, f, "explicit braille override diverged from hero at t={t}");
+        assert_eq!(
+            base, f,
+            "explicit braille override diverged from hero at t={t}"
+        );
     }
 }

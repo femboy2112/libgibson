@@ -394,7 +394,12 @@ impl LiveMode for Endurance {
 
 /// Run the interactive Observatory until `Esc`/`q` (or `max_frames`, for the
 /// headless PTY smoke test). Restores the terminal on every exit path.
-pub fn run(depth: ColorDepth, initial: char, max_frames: Option<u64>) -> io::Result<()> {
+pub fn run(
+    depth: ColorDepth,
+    initial: char,
+    max_frames: Option<u64>,
+    glyphs: gibson::SubcellGlyphMode,
+) -> io::Result<()> {
     let mut session = TerminalSession::new()?;
     if !session.is_tty {
         return Err(io::Error::other(
@@ -435,7 +440,7 @@ pub fn run(depth: ColorDepth, initial: char, max_frames: Option<u64>) -> io::Res
             let (cols, rows) = session.terminal_size();
             let surface = {
                 let view = modes[current].build_view(now_us, paused, intensity);
-                frame(&view, cols, rows, depth)
+                frame(&view, cols, rows, depth, glyphs)
             };
             let diff = compute_diff(prev.as_ref(), &surface);
             let bytes = compiler.compile(&diff);

@@ -6,7 +6,10 @@
 
 use gibson::canvas::braille_oscilloscope;
 use gibson::capability::quantize_style;
-use gibson::{Cell, Color, ColorDepth, Glyph, Rect, Style, Surface};
+use gibson::{
+    transcode_surface_glyphs, Cell, Color, ColorDepth, Glyph, Rect, Style, SubcellGlyphMode,
+    Surface,
+};
 
 use crate::diag::{Category, DiagLog};
 
@@ -135,7 +138,13 @@ fn ms(us: u64) -> String {
 /// Pure projection: reads `view`, draws a `Surface`, returns it. No side
 /// effects, no clock, no mutation of the log — the caller's frozen frame stays
 /// frozen no matter how many times you paint it.
-pub fn frame(view: &View, width: u16, height: u16, depth: ColorDepth) -> Surface {
+pub fn frame(
+    view: &View,
+    width: u16,
+    height: u16,
+    depth: ColorDepth,
+    glyphs: SubcellGlyphMode,
+) -> Surface {
     let mut surface = Surface::new(width, height);
     surface.fill_rect(
         surface.area(),
@@ -218,6 +227,10 @@ pub fn frame(view: &View, width: u16, height: u16, depth: ColorDepth) -> Surface
         false,
     );
     ink.text(width - 10, height - 1, 8, "Esc exit", WHITE, false);
+    // Sparklines are the only sub-cell (Braille) content; realize them through
+    // the requested glyph family. Braille2x4 is a no-op, so deterministic
+    // callers stay byte-identical.
+    transcode_surface_glyphs(&mut surface, glyphs);
     surface
 }
 
