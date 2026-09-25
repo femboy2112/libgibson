@@ -179,8 +179,10 @@ actionable message on mismatch (never "segfault first, explain later"):
 - **Go** — an `EXPECTED_ABI` constant and a runtime check that returns an error on
   mismatch.
 - **C++** — the header compiles against `gibson.h` and exposes
-  `gibson::Context::abi_version()`; a convenience check compares it to
-  `GIBSON_ABI_VERSION` at construction.
+  `gibson::Context::abi_version()` and `gibson::Context::abi_compatible()`. The
+  `Context` constructor verifies `gibson_abi_version() == GIBSON_ABI_VERSION`
+  **before any other ABI call** and throws `std::runtime_error` on mismatch — the
+  C++ analogue of the Python/Go load-time checks, not merely an opt-in helper.
 
 There is no negotiation protocol; incompatible native ABI is a hard, clear failure.
 
@@ -190,26 +192,45 @@ There is no negotiation protocol; incompatible native ABI is a hard, clear failu
 
 **MSRV = Rust 1.85** (declared as `rust-version = "1.85"` in `Cargo.toml`).
 
-This is an empirically established floor, not the compiler CI happens to run:
+This is an empirically established floor, not the compiler CI happens to run. Two
+distinct notions of "MSRV" both land on 1.85, and CI enforces both:
 
-- The maximum `rust-version` in LibGibson's **resolved dependency graph** is
-  `unicode-segmentation 1.13.3`, which requires **rustc 1.85.0**. It is a direct
-  dependency, and under the resolver a fresh crates.io consumer of our declared
-  ranges resolves it, so the floor a consumer faces is 1.85.0.
+**Resolved-release MSRV** — the floor for our **committed** dependency graph
+(`Cargo.lock`):
+
 - **Positive control:** `cargo +1.85.1 check --locked --lib` and
-  `cargo +1.85.1 test --locked --lib` both pass (236 library unit tests).
+  `cargo +1.85.1 test --locked --lib` both pass.
 - **Negative control:** `cargo +1.84.1 check --locked --lib` is *refused* by Cargo
   with: `unicode-segmentation@1.13.3 requires rustc 1.85.0`.
+
+**Declared-range consumer MSRV** — the floor a fresh crates.io consumer actually
+faces. A library does not hand consumers its lockfile, so this is tested with a
+fresh, **unlocked** resolution of our declared dependency *ranges* on the MSRV
+toolchain (`scripts/release/msrv-consumer.sh`):
+
+- Both the MSRV-aware resolver (`resolver.incompatible-rust-versions = "fallback"`,
+  stable since Rust 1.84) **and** the default (`allow`) resolver resolve our
+  declared ranges to a graph that builds on 1.85. The maximum `rust-version` in the
+  freshly resolved graph is `unicode-segmentation 1.13.3` (rustc 1.85.0), so the
+  declared-range floor is **also 1.85** — a naive fresh consumer does not even need
+  the MSRV-aware resolver to land on a buildable graph.
 
 The floor is therefore a **dependency requirement**, not a LibGibson language/API
 requirement — LibGibson's own source may compile on older compilers, but the
 supported dependency set does not, so we do not promise below 1.85.
 
+**Maintenance rule:** a dependency upgrade must not silently raise the declared
+MSRV. If a bump makes the fresh-resolution consumer require a newer compiler, either
+constrain the offending dependency deliberately or raise (and document) the MSRV —
+never let it drift unnoticed.
+
 Scope: the MSRV covers **building the supported library** (`cargo check`/`test
 --lib`). It does not promise that every example, dev tool, or the full test harness
 builds under the MSRV toolchain. Raising the MSRV is a `0.y` (minor) change and is
 recorded in the CHANGELOG. CI enforces the floor with a scoped
-`cargo +1.85 check --locked --lib` job.
+`cargo +1.85 check --locked --lib` job **plus** the declared-range fresh-resolution
+consumer (`scripts/release/msrv-consumer.sh`), so a dependency-driven MSRV creep
+fails CI early.
 
 ---
 
@@ -244,8 +265,13 @@ recorded in the CHANGELOG. CI enforces the floor with a scoped
   (The shared library is an unversioned `libgibson.so` this round; SONAME versioning
   is future work.)
 - **Python wrapper** package (sdist + wheel) that depends on a separately installed,
-  ABI-compatible native LibGibson.
-- **Go module** that consumes the installed native SDK via `pkg-config`.
+  ABI-compatible native LibGibson. Both artifacts carry the project's dual-license
+  text (`LICENSE`, `LICENSE-MIT`, `LICENSE-APACHE` in the sdist and in the wheel's
+  `.dist-info/`), with `License-File` metadata — not classifiers alone.
+- **Go module** that consumes the installed native SDK via `pkg-config`. The module
+  root carries the dual-license text (`LICENSE`, `LICENSE-MIT`, `LICENSE-APACHE`) so
+  the tagged module zip ships it — a subdirectory module does not inherit the
+  repository-root license.
 - **Release bundle**: `libgibson-0.1.0-linux-x86_64.tar.gz` (the staged native SDK)
   plus a checksums file.
 

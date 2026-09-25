@@ -33,10 +33,15 @@ steps on its own. What a release promises is defined in
 ./scripts/release/preflight.sh
 ```
 
-This is the merciless gate: format, clippy, tests, rustdoc, MSRV, `cargo package`,
+This is the merciless gate: format, clippy, tests, rustdoc, both MSRV floors (the
+committed-lock `cargo +1.85 check --locked --lib` and the declared-range
+fresh-resolution consumer, `scripts/release/msrv-consumer.sh`), `cargo package`,
 package-content audit, the ABI-v1 symbol baseline, a staged SDK, clean external C /
-C++ / Python / Go consumers, license presence, and a repository-path-leak check. It
-must print `RELEASE PREFLIGHT: PASS`.
+C++ / Python / Go consumers (the Go consumer builds from a module copy staged
+outside the checkout), license presence **and** distributable license-payload
+assertions (Python wheel/sdist and the Go module root carry the dual license),
+enforced third-party-notice freshness, and a repository-path-leak check. It must
+print `RELEASE PREFLIGHT: PASS`.
 
 ## 4. Inspect the artifacts
 

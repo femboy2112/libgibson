@@ -78,9 +78,12 @@ The [Runtime Observatory](docs/RUNTIME_OBSERVATORY.md) is now a live interactive
 instrument (Million-Tick, Ownership-Duel, Restore-Failure, Endurance) plus the
 deterministic `--dump` frames, rendering the contracts from real state. Full local
 suite: **612 passed (236 unit + 376 integration)**, 0 failed, 1 known-red ignored,
-on Rust 1.98.1; PR #19 public CI green. Next: track crossterm#1128 upstream (filed;
-awaiting maintainer review) toward a fixed release LibGibson can adopt, and D6
-(MSRV/API-stability/installable packages) as the real 0.1 gate.
+on Rust 1.98.1; PR #19 public CI green. D6 (MSRV / API-stability / installable-package
+contract) is now RESOLVED via the pre-1.0 release contract (PR #21) — declared+tested
+MSRV 1.85, C ABI v1 policy, clean-room external consumers, and a publication-free
+release preflight; actual publication of 0.1.0 stays deliberately deferred. Next:
+track crossterm#1128 upstream (filed; awaiting maintainer review) toward a fixed
+release LibGibson can adopt.
 
 ## Verification labels
 

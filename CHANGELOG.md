@@ -24,6 +24,18 @@ release, or published to any package registry.
 - Canonical installable C++ header at `include/gibson.hpp`.
 - C ABI v1 exported-symbol baseline (`abi/gibson-abi-v1.symbols`) and a regression
   check that guards against symbols silently disappearing or changing.
+- C++ ABI gate: `gibson::Context`'s constructor now verifies
+  `gibson_abi_version() == GIBSON_ABI_VERSION` before any other ABI call and throws
+  `std::runtime_error` on mismatch (matching the Python/Go load-time checks); a new
+  `gibson::Context::abi_compatible()` exposes the predicate.
+- Declared-range consumer MSRV experiment (`scripts/release/msrv-consumer.sh`): a
+  fresh, unlocked resolution of the declared dependency ranges on Rust 1.85, wired
+  into the CI MSRV job and the release preflight so a dependency upgrade cannot
+  silently raise the effective MSRV.
+- Distributable dual-license payloads: `LICENSE`, `LICENSE-MIT`, and `LICENSE-APACHE`
+  now ship in the Go module root and in the Python wheel/sdist; a
+  `check-versions.sh` guard keeps them byte-identical to the repository-root
+  originals.
 
 ### Changed
 - The published Rust crate now **excludes** the engineering-demo corpus (examples,
@@ -32,6 +44,16 @@ release, or published to any package registry.
   the license/readme/design docs. Package manifest: 221 → 47 files.
 - The C++ wrapper header moved to `include/gibson.hpp`; `bindings/cpp/gibson.hpp` is
   now a forwarding shim so existing in-repository consumers keep working.
+- The release preflight now **fails** (was a warning) when `THIRD-PARTY-NOTICES.md`
+  differs from freshly generated output — a release candidate must not ship stale
+  dependency notices.
+- The Go clean-room consumer is now built from a module copy staged **outside** the
+  checkout (no repository-relative `replace`), with `GOPROXY=off`, asserting no
+  checkout path in `go.mod` and scanning the built Go binary for the checkout path —
+  proving the Go wrapper has no dependency on repository-relative layout.
+- `stage-sdk.sh --force` path guard hardened: it now normalizes the prefix and
+  refuses catastrophic recursive-remove targets including system-path subpaths
+  (`/etc/*`, `/lib/*`, `/bin/*`, `/boot/*`, …) and `$HOME` itself.
 
 ### Removed
 - Unused `thiserror` dependency (it was declared but never used in `src/`).
