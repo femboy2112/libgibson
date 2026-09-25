@@ -377,7 +377,7 @@ mod tests {
             last < PRELUDE_END,
             "boot log ({last}) must fit before PRELUDE_END"
         );
-        assert!(LIVE_START < PRELUDE_END);
+        const { assert!(LIVE_START < PRELUDE_END) };
     }
 
     #[test]

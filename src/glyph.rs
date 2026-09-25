@@ -4,7 +4,7 @@
 //! LibGibson's sub-cell graphics ([`BrailleCanvas`](crate::BrailleCanvas), the
 //! intro wireframes, the field renderers, the FX Lab, the observatory
 //! sparklines) all synthesize a **Braille** glyph `U+2800 + bits`, where `bits`
-//! is an 8-bit mask over a 2×4 dot grid (see [`BrailleCanvas`] and its
+//! is an 8-bit mask over a 2×4 dot grid (see [`BrailleCanvas`](crate::BrailleCanvas) and its
 //! `dot_bit`). Braille is the highest-resolution single-cell realization and the
 //! hero path.
 //!

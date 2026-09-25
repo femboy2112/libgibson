@@ -36,6 +36,30 @@ release, or published to any package registry.
   now ship in the Go module root and in the Python wheel/sdist; a
   `check-versions.sh` guard keeps them byte-identical to the repository-root
   originals.
+- Sub-cell **glyph realization** layer (`src/glyph.rs`): `SubcellGlyphMode`
+  (`Braille2x4`/`HalfBlock1x2`/`Block`/`Ascii`) realizes a 2×4 dot mask through
+  progressively more portable glyph families; `transcode_surface_glyphs` is the
+  generic chokepoint (a Braille glyph losslessly encodes its mask, so one pass
+  re-realizes a whole surface and `Braille2x4` is a no-op — the hero path is
+  byte-identical). `detect_glyph_mode` resolves `--glyphs=` / `LIBGIBSON_GLYPHS`
+  / `Auto(TERM)` with a console-safe default on `TERM=linux`. Glyph realization
+  is a distinct capability axis from terminal protocol/color and adds no C ABI
+  surface (`GIBSON_ABI_VERSION` unchanged). See [`docs/GLYPHS.md`](docs/GLYPHS.md).
+- `BrailleCanvas` gains `mask_at`, `glyph_at_mode`, `to_lines_mode`, and
+  `to_surface_mode`; `glyph_at` now delegates to `glyph_at_mode(.., Braille2x4)`
+  (behavior identical for all 256 masks).
+- `glyph_capability_lab` example: a visual probe rendering each glyph family and
+  one sub-cell field realized four ways, stating that font-repertoire realization
+  requires visual inspection (documents the Linux VT observation).
+- `libgibson_intro`, `fx_lab` (new "Glyph ladder" scene), and `runtime_observatory`
+  (live sparklines) honor the glyph mode; deterministic dumps stay Braille.
+- **First-contact prologue** for `libgibson_intro`: the default experience opens
+  in an ordinary terminal, boots a credible agent harness into immutable
+  scrollback, assembles the film's Harness framing in a live region, and hands
+  terminal ownership cleanly to the fullscreen film at its existing `t = 0`
+  (the 72-second timeline is unchanged; the boot log persists in scrollback).
+  `--no-prologue`/`--stage`/`--at`/`--dump` bypass it. Deterministic prelude clock;
+  Unix PTY test covers the boot → handoff → film → restore arc.
 
 ### Changed
 - The published Rust crate now **excludes** the engineering-demo corpus (examples,
