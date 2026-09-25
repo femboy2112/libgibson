@@ -81,7 +81,9 @@ suite: **612 passed (236 unit + 376 integration)**, 0 failed, 1 known-red ignore
 on Rust 1.98.1; PR #19 public CI green. D6 (MSRV / API-stability / installable-package
 contract) is now RESOLVED via the pre-1.0 release contract (PR #21) — declared+tested
 MSRV 1.85, C ABI v1 policy, clean-room external consumers, and a publication-free
-release preflight; actual publication of 0.1.0 stays deliberately deferred. Next:
+release preflight. **`v0.1.0` is now released on GitHub** (2026-09-25; tag →
+`a3f1e29`, prerelease-flagged, Linux x86_64 SDK attached); ecosystem-registry
+publication (crates.io / PyPI / Go module tag) stays deliberately deferred. Next:
 track crossterm#1128 upstream (filed; awaiting maintainer review) toward a fixed
 release LibGibson can adopt.
 

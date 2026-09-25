@@ -10,6 +10,12 @@ software graphics are experimental Rust-only APIs. C/C++/Python expose an
 established UI/output subset; Go passes local and public Linux build/example smoke
 checks. Capability is not an API stability promise.
 
+> **Current release: [v0.1.0 — Engineering Alpha](https://github.com/femboy2112/libgibson/releases/tag/v0.1.0)** (2026-09-25).
+> A Linux x86_64 native SDK archive is attached to the release. LibGibson is
+> distributed as GitHub source + that SDK; it is **not** published to crates.io,
+> PyPI, or the Go module proxy. Rust/C/C++/Python/Go consume it as shown in
+> [Quickstart](#quickstart). See the [changelog](CHANGELOG.md).
+
 The introductory short film turns a live agent harness into a wireframe city of
 information, follows messages between its buildings, and pulls back to Earth:
 

@@ -2,11 +2,12 @@
 
 **Classification: Engineering Alpha.** `0.1.0` is the first *coherent package release*;
 "Engineering Alpha" describes maturity, not the version string. The readiness audit
-below is now cleared and the maintainer has **authorized the GitHub release** of
-`v0.1.0` (tag + GitHub Release + Linux x86_64 artifacts). **Ecosystem-registry
-publication remains a separate, unauthorized decision** — no crates.io upload, no
-PyPI/TestPyPI upload, no `bindings/go/v0.1.0` module tag, no OS-package formulas.
-`cargo publish --dry-run` and `twine check` are validation only.
+below is cleared and `v0.1.0` is **released on GitHub** (2026-09-25): tag +
+prerelease-flagged GitHub Release + Linux x86_64 artifacts, tag → `a3f1e29`.
+**Ecosystem-registry publication remains a separate, undone decision** — no
+crates.io upload, no PyPI/TestPyPI upload, no `bindings/go/v0.1.0` module tag, no
+OS-package formulas. `cargo publish --dry-run` and `twine check` were validation
+only.
 
 Status vocabulary: **PASS** · **BLOCKED** · **WAIVED (known limitation)** ·
 **N/A** · **PENDING (executes at tag time)**.
@@ -18,7 +19,7 @@ unchanged. Supported artifact: Linux x86_64.
 
 | # | Gate | Status | Blocking? |
 |---|------|--------|-----------|
-| 1 | Tree freeze / candidate SHA | PENDING (freeze at release-prep merge) | no |
+| 1 | Tree freeze / candidate SHA | PASS (frozen at `a3f1e29`) | — |
 | 2 | Core correctness | PASS | — |
 | 3 | Release preflight | PASS (local); CI re-confirms | — |
 | 4 | Cargo publish dry-run | PASS | — |
@@ -32,15 +33,15 @@ unchanged. Supported artifact: Linux x86_64.
 | 12 | Security / repo settings | PASS + 1 recommendation | no |
 | 13 | Release artifact review | PASS | — |
 | 14 | Changelog cut | PASS (0.1.0 cut in release-prep) | — |
-| 15 | Exact final SHA | PENDING (at tag time) | no |
+| 15 | Exact final SHA | PASS (`v0.1.0` → `a3f1e29`) | — |
 
 ---
 
-## Gate 1 — Tree freeze
-No release-shaping branch is pending beyond this one. `main` is clean and green
-(`2c0eed2`). The candidate SHA is fixed when this RC PR merges; after that, only
-release-blocker fixes, documentation-truth fixes, and packaging corrections are
-allowed — **no new subsystems.** **PENDING** (by design — freeze is the merge).
+## Gate 1 — Tree freeze — PASS
+The release-prep PR (#24) merged into `main`, freezing the release at
+**`a3f1e29`**. No release-shaping branch was pending beyond it; only changelog,
+documentation-truth, and packaging corrections landed — no new subsystems. This is
+the SHA that carries the `v0.1.0` tag (Gate 15).
 
 ## Gate 2 — Core correctness — PASS
 - **657 tests** green: **247 library** unit + **410 integration** (`cargo test`,
@@ -193,20 +194,27 @@ GitHub release and is not published to any registry; the post-tag docs pass will
 finalize the "released" wording and compare links (that update is not part of the
 `v0.1.0` tag).
 
-## Gate 15 — Exact final SHA — PENDING (at tag time)
-The SHA that is tagged must be the SHA that passed CI + Release Preflight + publish
-dry-run + Python artifact check + clean-room + the Gate-10 manual smoke — with no
-"fixed one typo after CI" drift. Recorded at tag time.
+## Gate 15 — Exact final SHA — PASS
+The annotated tag **`v0.1.0`** points to **`a3f1e29fb4dcb94e5fb93225041dd92252bb5df7`**
+(the PR #24 merge), verified on the remote (`refs/tags/v0.1.0^{} = a3f1e29`). That
+exact SHA passed, with no post-check drift:
+- normal **CI** on `a3f1e29`: run **36165658206** — success (all 6 jobs);
+- **Release Preflight** on `a3f1e29`: run **36165709056** — success;
+- `cargo publish --dry-run` (53 files) and `twine check` (wheel + sdist) — PASS,
+  re-run on exact final `main`;
+- Gate-10 manual smoke (graphical terminal + TTY1) — PASS.
+
+Release assets were built from the tagged tree (deterministic; the SDK tarball
+reproduced the same SHA256 `65fda7aa…` as the pre-merge build) and the uploaded
+archive verified byte-for-byte against its published `.sha256`.
 
 ---
 
 ## Verdict
-**Cleared to TAG and publish the GitHub release: YES.** Every automated, packaging,
-documentation, and manual gate is now green — including **Gate 10** (maintainer's
-real-hardware smoke on a graphical terminal and TTY1) and **Gate 14** (changelog
-cut). The only remaining gates are the mechanical tag-time steps: **Gate 1** (freeze
-at the release-prep merge) and **Gate 15** (record the exact final SHA that carries
-the `v0.1.0` tag, after a final CI + Release Preflight + `cargo publish --dry-run` +
-`twine check` on that exact SHA). Both are recorded in the post-tag docs pass. #15
-does **not** block (Path B, WAIVED). Scope is a **GitHub release only** — crates.io,
-PyPI, and the Go module tag remain separate, unauthorized decisions.
+**RELEASED.** All 15 gates are cleared (Gate 11 WAIVED, Path B). LibGibson **v0.1.0
+— Engineering Alpha** is published as a GitHub Release
+(<https://github.com/femboy2112/libgibson/releases/tag/v0.1.0>), marked prerelease,
+with the Linux x86_64 native SDK (+ `.sha256`) and the Python wrapper wheel/sdist
+attached. The tag `v0.1.0` points to `a3f1e29`. #15 remains open (documented
+limitation). Scope was a **GitHub release only** — crates.io, PyPI, and the Go
+module tag were **not** published and remain separate, later decisions.
