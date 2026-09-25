@@ -2,6 +2,12 @@
 
 This document outlines completed work and the planned future milestones for LibGibson.
 
+> **Current status (2026-09-25):** v0.1.0 is released on GitHub (Engineering Alpha,
+> Linux x86_64; tag → `a3f1e29`, prerelease-flagged, `main` at `30a2dfa`). The full
+> suite is **657 tests (247 unit + 410 integration)**. Ecosystem-registry publication
+> (crates.io / PyPI / Go module proxy) remains deferred. The checkpoint counts and CI
+> run ids below are historical development evidence, preserved as measured.
+
 ## Post-merge priorities
 
 The approved cinematic branch is merged at `0b673cc`. That checkpoint validated

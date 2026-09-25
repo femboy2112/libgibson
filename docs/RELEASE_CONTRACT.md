@@ -47,7 +47,8 @@ scope for this round.
 ## 2. Rust API stability (pre-1.0)
 
 **Import note.** The package is `libgibson` but the library target is `gibson`
-(`Cargo.toml` `[lib] name = "gibson"`). After `cargo add libgibson`, Rust code
+(`Cargo.toml` `[lib] name = "gibson"`). When you depend on the `libgibson` package
+(via the git dependency shown in the README — it is not on crates.io), Rust code
 imports as **`use gibson::…`**, not `use libgibson::…`. Examples in docs must use
 `gibson::`.
 
