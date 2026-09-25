@@ -232,6 +232,19 @@ private:
 class Context {
 public:
     explicit Context(gibson_render_mode_t mode = GIBSON_MODE_INLINE) {
+        // ABI gate: refuse to run against a native library whose ABI differs from
+        // the one this header was compiled against, BEFORE any other ABI call is
+        // made. Mirrors the load-time checks in the Python and Go wrappers; see
+        // docs/RELEASE_CONTRACT.md §4. There is no negotiation — a mismatch is a
+        // hard, clear failure, not a segfault-first-explain-later.
+        if (!abi_compatible()) {
+            throw std::runtime_error(
+                std::string("LibGibson ABI mismatch: this header was built against ABI ") +
+                std::to_string(static_cast<unsigned>(GIBSON_ABI_VERSION)) +
+                ", but the loaded native library reports ABI " +
+                std::to_string(static_cast<unsigned>(gibson_abi_version())) +
+                "; install a compatible libgibson");
+        }
         gibson_status_t status = gibson_create_context(mode, &ctx_);
         if (status != GIBSON_OK) {
             char buf[256] = {0};
@@ -398,6 +411,11 @@ public:
     }
 
     static uint32_t abi_version() { return gibson_abi_version(); }
+
+    // True iff the loaded native library's ABI matches the ABI this header was
+    // compiled against (GIBSON_ABI_VERSION). The Context constructor enforces
+    // this and throws on mismatch; callers may also check it explicitly.
+    static bool abi_compatible() { return gibson_abi_version() == GIBSON_ABI_VERSION; }
 
 private:
     gibson_context_t* ctx_{nullptr};
