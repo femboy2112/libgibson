@@ -249,7 +249,14 @@ pub fn build_view(s: &Snapshot) -> View<'_> {
 pub fn dump(freeze_at: Option<u64>, width: u16, height: u16, depth: ColorDepth) -> String {
     let snapshot = load(freeze_at);
     let view = build_view(&snapshot);
-    let surface = visual::frame(&view, width, height, depth);
+    // Deterministic replay keeps the hero Braille sparklines (byte-identical).
+    let surface = visual::frame(
+        &view,
+        width,
+        height,
+        depth,
+        gibson::SubcellGlyphMode::Braille2x4,
+    );
     render_to_text(&surface, width, height)
 }
 

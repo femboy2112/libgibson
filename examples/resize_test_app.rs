@@ -82,15 +82,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                 },
-                Event::Paste(_) => {
-                    if input.handle_event(&event) {
-                        ctx.request_render();
-                    }
-                }
                 Event::Resize(_, _) => {
                     ctx.request_render();
                 }
                 Event::Tick => {}
+                // Paste — and any future `Event` kind (`Event` is
+                // `#[non_exhaustive]`) — is offered to the text input; render if it
+                // consumed the event.
+                _ => {
+                    if input.handle_event(&event) {
+                        ctx.request_render();
+                    }
+                }
             }
         }
         tick = !tick;

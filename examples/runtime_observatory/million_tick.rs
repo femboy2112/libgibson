@@ -284,7 +284,14 @@ pub fn dump(
 ) -> String {
     let result = run(ticks, retention);
     let view = build_view(&result);
-    let surface = visual::frame(&view, width, height, depth);
+    // Deterministic replay keeps the hero Braille sparklines (byte-identical).
+    let surface = visual::frame(
+        &view,
+        width,
+        height,
+        depth,
+        gibson::SubcellGlyphMode::Braille2x4,
+    );
     render_to_text(&surface, width, height)
 }
 

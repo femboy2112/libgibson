@@ -36,8 +36,49 @@ release, or published to any package registry.
   now ship in the Go module root and in the Python wheel/sdist; a
   `check-versions.sh` guard keeps them byte-identical to the repository-root
   originals.
+- Sub-cell **glyph realization** layer (`src/glyph.rs`): `SubcellGlyphMode`
+  (`Braille2x4`/`HalfBlock1x2`/`Block`/`Ascii`) realizes a 2×4 dot mask through
+  progressively more portable glyph families; `transcode_surface_glyphs` is the
+  generic chokepoint (a Braille glyph losslessly encodes its mask, so one pass
+  re-realizes a whole surface and `Braille2x4` is a no-op — the hero path is
+  byte-identical). `detect_glyph_mode` resolves `--glyphs=` / `LIBGIBSON_GLYPHS`
+  / `Auto(TERM)` with a console-safe default on `TERM=linux`. Glyph realization
+  is a distinct capability axis from terminal protocol/color and adds no C ABI
+  surface (`GIBSON_ABI_VERSION` unchanged). See [`docs/GLYPHS.md`](docs/GLYPHS.md).
+- `BrailleCanvas` gains `mask_at`, `glyph_at_mode`, `to_lines_mode`, and
+  `to_surface_mode`; `glyph_at` now delegates to `glyph_at_mode(.., Braille2x4)`
+  (behavior identical for all 256 masks).
+- `glyph_capability_lab` example: a visual probe rendering each glyph family and
+  one sub-cell field realized four ways, stating that font-repertoire realization
+  requires visual inspection (documents the Linux VT observation).
+- `libgibson_intro`, `fx_lab` (new "Glyph ladder" scene), and `runtime_observatory`
+  (live sparklines) honor the glyph mode; deterministic dumps stay Braille.
+- **First-contact prologue** for `libgibson_intro`: the default experience opens
+  in an ordinary terminal and boots a credible — explicitly *simulated* — agent
+  harness into immutable scrollback, then that information visibly *acquires
+  structure*. A live region attaches while the boot log is still streaming (the
+  two coexist), and the Harness framing assembles progressively: a header rail,
+  the objective, the orchestration frame, then the four worker slots arriving one
+  at a time in correspondence with their boot receipts, each resolving from a
+  skeletal placeholder into a full agent record. ARCHITECT ignites to "active"
+  only when the plan begins executing, its progress bar settling at exactly the
+  film's `t = 0` value (an ignited head, no work done). After a short readable
+  hold, terminal ownership hands cleanly to the fullscreen film at that same
+  `t = 0` — a match cut into the existing 72-second timeline (unchanged; the boot
+  log persists in scrollback). Layout is height-aware (compact on short
+  terminals) and the assembly is monotonic (the live region never shrinks).
+  `--no-prologue`/`--stage`/`--at`/`--dump` bypass it. Deterministic prelude clock;
+  choreography witnesses plus a Unix PTY test cover the boot → assembly → handoff
+  → film → restore arc.
 
 ### Changed
+- The extension-point public enums are now `#[non_exhaustive]` (decided before the
+  first release, since adding it later is itself source-breaking): `node::NodeKind`,
+  `input::Event`, `input::KeyCode`, and `glyph::SubcellGlyphMode`. Adding a variant
+  to these is a non-breaking `0.1.z` change; downstream `match`es must carry a `_`
+  arm. `capability::Capability`/`ColorDepth` and `glyph::GlyphChoice` are left
+  exhaustive (closed value sets). No `#[repr]`/C-ABI change (`GIBSON_ABI_VERSION`
+  unchanged). See `docs/RELEASE_CONTRACT.md` §2.
 - The published Rust crate now **excludes** the engineering-demo corpus (examples,
   integration tests and goldens, internal `docs/`, dev scripts, and the language
   bindings). It ships the library, the C header (for native-library builders), and

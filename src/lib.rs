@@ -28,6 +28,7 @@ pub mod field;
 pub mod focus;
 pub mod geom;
 pub mod glitch;
+pub mod glyph;
 pub mod input;
 pub mod layout;
 pub mod node;
@@ -66,6 +67,10 @@ pub use field::{
 pub use focus::{FocusId, FocusRing};
 pub use geom::{Mesh, Projector, Transform3, Vec3};
 pub use glitch::{invert_rect, row_shift, sanitize_wide, scramble_rect, tear};
+pub use glyph::{
+    detect_glyph_mode, detect_glyph_mode_from_env, transcode_surface_glyphs, GlyphChoice,
+    SubcellGlyphMode,
+};
 pub use input::{poll_event, Event, KeyCode, KeyEvent, KeyModifiers, TextInputState};
 pub use layout::{compute_layout, wrap_rich_text, wrap_text};
 pub use node::{

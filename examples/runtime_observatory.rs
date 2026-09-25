@@ -53,7 +53,7 @@ fn number(args: &[String], name: &str, default: u64) -> io::Result<u64> {
     })
 }
 
-const HELP: &str = "LibGibson Runtime Observatory (workstream D)\n  (no --dump) LIVE interactive instrument: --mode million-tick · Space pause · R restart · [ ] batch · Esc exit\n  --mode million-tick --dump [--width W] [--height H] [--color mono|ansi16|ansi256|truecolor]\n           [--ticks N] [--retention all|bounded:CAP|disabled]\n  --mode ghost-key --dump [--gate crossterm|raw] [--freeze-at US]\n           [--width W] [--height H] [--color mono|ansi16|ansi256|truecolor]\n  --mode ownership-duel --dump [--freeze-at US]\n           [--width W] [--height H] [--color mono|ansi16|ansi256|truecolor]\nRenders one deterministic frame to stdout and exits. Pure render: no state\nmutation happens at paint time (Ghost-Key and Ownership-Duel drive nothing at\nall — they replay real recorded receipts from docs/fixtures/). --mode\nanything else errors rather than faking a frame.";
+const HELP: &str = "LibGibson Runtime Observatory (workstream D)\n  (no --dump) LIVE interactive instrument: --mode million-tick · Space pause · R restart · [ ] batch · Esc exit\n  [--glyphs auto|braille|halfblock|block|ascii] realizes the live sparklines (or LIBGIBSON_GLYPHS); auto is console-safe on TERM=linux\n  --mode million-tick --dump [--width W] [--height H] [--color mono|ansi16|ansi256|truecolor]\n           [--ticks N] [--retention all|bounded:CAP|disabled]\n  --mode ghost-key --dump [--gate crossterm|raw] [--freeze-at US]\n           [--width W] [--height H] [--color mono|ansi16|ansi256|truecolor]\n  --mode ownership-duel --dump [--freeze-at US]\n           [--width W] [--height H] [--color mono|ansi16|ansi256|truecolor]\nRenders one deterministic frame to stdout and exits. Pure render: no state\nmutation happens at paint time (Ghost-Key and Ownership-Duel drive nothing at\nall — they replay real recorded receipts from docs/fixtures/). --mode\nanything else errors rather than faking a frame.";
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -70,6 +70,14 @@ fn main() -> io::Result<()> {
         Some("ansi256") => ColorDepth::Ansi256,
         _ => ColorDepth::TrueColor,
     };
+
+    // Sub-cell glyph realization for the live view's sparklines: --glyphs VALUE >
+    // LIBGIBSON_GLYPHS > Auto(TERM). Orthogonal to --color. Deterministic --dump
+    // frames keep the hero Braille regardless (their goldens are byte-stable).
+    let glyph_mode = gibson::detect_glyph_mode(option(&args, "--glyphs").as_deref(), |k| {
+        std::env::var(k).ok()
+    })
+    .map_err(io::Error::other)?;
 
     // Live interactive loop is the default; --dump renders one deterministic
     // frame instead (for tests and piping). Only modes with a live driver run
@@ -92,7 +100,7 @@ fn main() -> io::Result<()> {
                 )))
             }
         };
-        return live::run(depth, initial, max_frames);
+        return live::run(depth, initial, max_frames, glyph_mode);
     }
 
     // --dump path: only the three deterministic-frame modes exist here.
