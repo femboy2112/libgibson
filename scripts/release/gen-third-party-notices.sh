@@ -15,6 +15,12 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
+# Deterministic, locale-independent text processing: `sort` collation is
+# locale-sensitive, so without this the generated row order differs between an
+# en_US.UTF-8 developer box and a C/C.UTF-8 CI runner, which would make the
+# (now fatal) freshness check in preflight.sh spuriously fail. Pin to C so the
+# output is byte-identical everywhere.
+export LC_ALL=C
 OUT="${1:-$REPO_ROOT/THIRD-PARTY-NOTICES.md}"
 CARGO="${CARGO:-cargo}"
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
