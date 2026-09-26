@@ -14,6 +14,65 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 Nothing yet.
 
+## [0.2.0] - unreleased
+
+The **experimental semantic UI milestone**. Adds `gibson::ui`, a Rust-only
+composition layer above the existing framebuffer / renderer / terminal substrate. The
+lower-level architecture is unchanged: UI trees lower to ordinary
+`Node`/Taffy/`Surface`/`SurfaceFx`/`Focus`/`Context` objects through the one existing
+rendering pipeline. **No C ABI change** (`GIBSON_ABI_VERSION` stays 1); no language
+wrapper, renderer, layout engine, or terminal owner was added. The minor bump marks
+the size of the new public Rust surface and the project milestone, not an ABI break or
+a stability promise (see [`docs/RELEASE_CONTRACT.md`](docs/RELEASE_CONTRACT.md) §1).
+
+### Added
+- **Experimental `gibson::ui` semantic layer** (Rust-only, EXPERIMENTAL): an
+  `Element<A>` component tree with an ordinary-Rust builder API (`panel`, `status`,
+  `progress`, `button`, `choice`, `text_input`, `modal`, `toast`, `table`, `viewport`,
+  `section`, `sparkline`, …), lowering to ordinary `Node` trees through an inspectable
+  `Compiled<A>` boundary (`compile`, `compile_presented`, `UiRuntime::frame`).
+- **Three built-in design grammars** (`Skin`): `VAPOR95` (windowed workstation),
+  `BLACK_ICE` (compact instrument rails), `SWISS_SIGNAL` (editorial / Bauhaus). Each is
+  a structural grammar (`Chrome::Window | Rail | Editorial`) that stays distinct in
+  Mono and low color depths, not merely a repalette; all tokens are public for local
+  customization, and the existing `Theme` gains no new semantics.
+- **Typed interaction sidecar** (`InteractionMap<A>`): typed actions routed alongside
+  the lowered `Node`, with an `EventOutcome<A>` consumed/actions dispatch contract.
+- **Stable-key focus and presentation continuity** (`UiRuntime`): explicit named keys
+  survive reorder / responsive reflow / same-key replacement / modal transitions /
+  skin switching; focus capture and restoration across nested and sibling modals;
+  duplicate keys are rejected transactionally before any state changes. Retained state
+  is bounded by live semantic state — no frame history, no exit ghosts.
+- **`BuildCx` / `PresentationCx` phase separation**: the construction-time environment
+  (`BuildCx`, no focus/motion) is distinct from reconciled current-frame presentation
+  (`PresentationCx`); `presented(...)` custom nodes run after reconciliation and observe
+  current-frame focus/motion while returning ordinary `Node`s.
+- **Finite semantic motion**: deterministic `elapsed → SurfaceFx` plans that settle to
+  exactly nothing (settled frames emit zero bytes), with `MotionPreference`
+  Full / Reduced / None, lowered onto the existing `SurfaceFx` operations.
+- **Controlled text-input routing**: a focused editor owns editor-class input
+  (printable / paste / Backspace / Delete / Left / Right / Home / End and the
+  Ctrl-a/e/u/k line editors) even without an `on_edit` callback; the application owns
+  all editor and domain state; unsupported chords remain routable.
+- **Escape hatches** into the substrate remain local and explicit — `raw(Node)`,
+  `surface(Arc<Surface>)`, `raster(Surface)`, `presented(...)`, a custom `Component`,
+  and Scene / `SurfaceFx` integration — with no second rendering pipeline.
+- **`ui_showcase` and headless visual proving grounds**: a deterministic operations
+  workspace under all skins with `--dump` / `--transition` / `--at-ms` / `--profile`,
+  plus automated skin × size × color-depth matrices and structural Mono goldens.
+
+### Boundaries
+- `gibson::ui` is **EXPERIMENTAL** and **Rust-only**: no C ABI surface and no
+  C/C++/Python/Go bindings; it may change or be removed between minor releases and is
+  not promoted to CORE by the move to 0.2.0.
+- No mouse / hover router, no list virtualization, no exit-ghost retention, no async
+  framework machinery.
+- **Not a production-stability, API-finality, or universal-portability claim.** Existing
+  platform limitations are unchanged: the core engine is implemented and tested on
+  Linux x86_64 only, and the crossterm 0.29 resize/input-readiness collision (issue #15)
+  still applies. Visual and hostile review to date is implementation-agent evidence, not
+  independent human usability research.
+
 ## [0.1.1] - 2026-09-26
 
 Additive, backwards-compatible fixes surfaced by external consumers testing the

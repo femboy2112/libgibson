@@ -12,8 +12,8 @@ merge decision. Architecture and usage are in [UI_LAYER.md](UI_LAYER.md).
   Cargo `1.98.1 (797e8a9bc 2026-08-05)`.
 - Declared library MSRV: 1.85; verified with
   `rustc 1.85.1 (4eb161250 2025-03-15)`.
-- Package remains 0.1.1; ABI remains 1. No release, wrapper expansion or new
-  dependency is part of this branch.
+- Package prepared as 0.2.0 (unreleased); ABI remains 1. No release, tag, wrapper
+  expansion or new dependency is part of this branch.
 
 | Baseline command | Observed outcome |
 | --- | --- |
@@ -64,7 +64,7 @@ not the outcome of later edits. No remote CI result was claimed for this checkpo
 | `cargo +1.85.1 check --locked --lib` | Exit 0 |
 | `cargo +1.85.1 test --locked --lib` | Exit 0; **257 passed** |
 | `MSRV_TOOLCHAIN=+1.85.1 scripts/release/msrv-consumer.sh` | Exit 0; both fallback and default fresh resolutions build |
-| `scripts/release/check-versions.sh` | Exit 0; package 0.1.1, ABI 1, license payloads agree |
+| `scripts/release/check-versions.sh` | Exit 0; package 0.2.0, ABI 1, license payloads agree |
 | `scripts/release/check-abi.sh` | Exit 0; **52 baseline / 52 built symbols** |
 | `cargo package --list --locked --allow-dirty` | Exit 0; all nine UI source files included |
 | `cargo package --locked --allow-dirty` | Exit 0; packaged crate builds |
@@ -229,18 +229,18 @@ visual fixes are separate interim evidence.
 | `cargo +1.85.1 check --locked --lib` | Exit 0 |
 | `cargo +1.85.1 test --locked --lib` | Exit 0; **263 passed**, 0 failed, 0 ignored |
 | `MSRV_TOOLCHAIN=+1.85.1 scripts/release/msrv-consumer.sh` | Exit 0; both fallback and default fresh resolutions build |
-| `scripts/release/check-versions.sh` | Exit 0; package 0.1.1, ABI 1, license payloads agree |
+| `scripts/release/check-versions.sh` | Exit 0; package 0.2.0, ABI 1, license payloads agree |
 | `scripts/release/check-abi.sh` | Exit 0; **52 baseline / 52 built symbols** |
 | `cargo package --list --locked --allow-dirty` | Exit 0 |
 | `cargo package --locked --allow-dirty` | Exit 0; packaged crate builds |
-| `cargo test --test ui_layer --test ui_goldens --test ui_controls` | Exit 0; **39 passed**, 0 failed (22 + 4 + 13) |
+| `cargo test --test ui_layer --test ui_goldens --test ui_controls` | Exit 0; **40 passed**, 0 failed (22 + 4 + 14) |
 | `cargo test --example fx_lab --example skin_gallery --example polished_agent_ui --example ui_showcase` | Exit 0; **14 passed**, 0 failed (3 + 1 + 5 + 5) |
-| `cargo test` | Exit 0; **716 passed, 0 failed, 1 known ignored**, across 49 result groups |
+| `cargo test` | Exit 0; **717 passed, 0 failed, 1 known ignored**, across 49 result groups |
 | Hosted CI on the final review revision | Reported separately in [draft PR #32](https://github.com/femboy2112/libgibson/pull/32), with exact head SHA, run IDs and final outcomes |
 
-The final main suite is **263 library units + 452 integration tests + 1 doctest**.
-That is 55 additional tests over original main's 661: 16 library units and
-39 UI integrations. The 14 example-local tests are separate, including three
+The final main suite is **263 library units + 453 integration tests + 1 doctest**.
+That is 56 additional tests over original main's 661: 16 library units and
+40 UI integrations. The 14 example-local tests are separate, including three
 pre-existing `fx_lab` tests. The MSRV unit run and explicit UI run repeat subsets
 of the main suite; they are not additional unique tests. No baseline test was
 weakened, removed, newly ignored, or reclassified. The single ignored collision

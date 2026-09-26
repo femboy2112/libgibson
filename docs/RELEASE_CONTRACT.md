@@ -42,6 +42,27 @@ writes `libgibson = "0.1"` accepts `>=0.1.0, <0.2.0`. Therefore:
 There is no 1.0 yet. 1.0 is when the CORE surface (§3) is frozen; that is out of
 scope for this round.
 
+**Deliberate minor milestones.** The table above sets the *minimum* bump a change
+requires. The project may also **elect** a `0.y` minor bump to mark a substantial new
+public subsystem or project milestone, even when the change is purely additive and
+would otherwise qualify as a patch. Pre-1.0 minor lines are the natural place for the
+public Rust API to evolve, so a milestone that introduces a large new (experimental)
+surface is versioned as a minor to signal its scope — not because anything broke.
+
+- **0.2.0** is such a milestone: it adds the experimental `gibson::ui` semantic
+  composition layer (skins, typed interaction, a keyed presentation runtime) on top of
+  the 0.1.x substrate. The change is additive and the **C ABI is unchanged
+  (`GIBSON_ABI_VERSION` stays 1)** — per §5 the package and ABI versions move
+  independently; the minor bump reflects the size of the new public Rust surface and
+  the milestone, not an ABI break. `gibson::ui` is EXPERIMENTAL (§2) and Rust-only: it
+  is not part of the C ABI or any language wrapper, and moving to 0.2.0 does not
+  promote it to CORE.
+
+The conceptual progression: `0.1.x` established the framebuffer / renderer / terminal
+substrate; `0.2.x` adds the semantic UI / design-system layer; later `0.x` milestones
+continue resolving architecture, portability and stability debt; `1.0` waits until the
+CORE public contract (§3) is genuinely stable and frozen.
+
 ---
 
 ## 2. Rust API stability (pre-1.0)
