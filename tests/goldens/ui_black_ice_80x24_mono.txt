@@ -1,0 +1,6 @@
+NEURAL OPERATIONS
+┃ AGENTS                                 ┃ THROUGHPUT
++ Connected                              context  62%
+◆ [Builder]                              ━━━━━━━━━━━╸······
+  [Approve]                              ▂▂▂▅▅▅▃▃▃▆▆▆▅▅▅███
+inspect build
