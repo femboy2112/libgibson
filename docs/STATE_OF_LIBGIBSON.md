@@ -12,14 +12,17 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
-**Current status (2026-09-25):** v0.1.0 is released on GitHub as an Engineering Alpha
-(tag → `a3f1e29`, prerelease-flagged, Linux x86_64; the native SDK archive plus the
-Python wrapper wheel/sdist are attached to the release; `main` at `30a2dfa`). The full
-suite is **657 tests (247 unit + 410 integration)**, with one known-red collision
-acceptance ignored. Ecosystem-registry publication (crates.io / PyPI / Go module proxy)
-remains deferred. The per-checkpoint test counts and CI run ids below are historical
-development evidence, preserved as measured (the historical command tables below
-preserve the checkpoint they each measured).
+**Current status (2026-09-26):** v0.1.1 is released on GitHub as an Engineering Alpha
+(tag → `v0.1.1` at `3789332`, prerelease-flagged, Linux x86_64; the native SDK archive
+plus the Python wrapper wheel/sdist are attached to the release). It is a
+backwards-compatible patch over the first release, v0.1.0 (2026-09-25; tag → `a3f1e29`),
+adding headless render-to-buffer capture and a `RenderMode` re-export (issues #27/#28);
+the C ABI is unchanged (`GIBSON_ABI_VERSION` 1). The full suite is **661 tests (247 unit
++ 413 integration + 1 doctest)**, with one known-red collision acceptance ignored.
+Ecosystem-registry publication (crates.io / PyPI / Go module proxy) remains deferred. The
+per-checkpoint test counts and CI run ids below are historical development evidence,
+preserved as measured (the historical command tables below preserve the checkpoint they
+each measured).
 
 The approved tip `3b67ca23ee6988cc450845977fe2daf017ae6747` was merged through
 [PR #1](https://github.com/femboy2112/libgibson/pull/1). Main at the initial audit was
