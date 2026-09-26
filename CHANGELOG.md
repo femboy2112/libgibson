@@ -14,6 +14,28 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 Nothing yet.
 
+## [0.1.1] - 2026-09-26
+
+Additive, backwards-compatible fixes surfaced by external consumers testing the
+v0.1.0 SDK. **No C ABI change** (`GIBSON_ABI_VERSION` stays 1); a consumer pinned
+`libgibson = "0.1"` (`>=0.1.0, <0.2.0`) upgrades to this automatically.
+
+### Added
+- **Headless output capture** (issue #27): a context created with
+  `Context::headless(...)` now renders into an in-memory buffer instead of the
+  process stdout, so callers can read the exact rendered bytes back for
+  snapshot / assertion testing without escape codes reaching a real terminal.
+  New `Context::rendered_bytes() -> &[u8]` and `Context::take_output() -> String`;
+  interactive contexts are unchanged.
+- **`RenderMode` re-exported from the `context` module** (issue #28): so
+  `use gibson::context::RenderMode;` resolves next to the `Context` methods that
+  consume it, in addition to the existing crate-root `gibson::RenderMode`.
+
+### Fixed
+- `Context::headless` advertised itself for "automation, snapshotting and tests"
+  but wrote rendered frames straight to the real process stdout, making output
+  assertions impossible (issue #27).
+
 ## [0.1.0] - 2026-09-25
 
 The first tagged release — **Engineering Alpha**, Linux x86_64. LibGibson is a
