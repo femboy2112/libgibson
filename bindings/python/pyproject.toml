@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "libgibson"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python wrapper for the LibGibson terminal UI engine (requires a separately installed native libgibson)."
 readme = "README.md"
 requires-python = ">=3.8"

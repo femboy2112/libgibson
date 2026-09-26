@@ -312,7 +312,7 @@ fails CI early.
   root carries the dual-license text (`LICENSE`, `LICENSE-MIT`, `LICENSE-APACHE`) so
   the tagged module zip ships it — a subdirectory module does not inherit the
   repository-root license.
-- **Release bundle**: `libgibson-0.1.0-linux-x86_64.tar.gz` (the staged native SDK)
+- **Release bundle**: `libgibson-0.1.1-linux-x86_64.tar.gz` (the staged native SDK)
   plus a checksums file.
 
 Artifact contents are made deterministic where practical (stable file manifest +

@@ -158,7 +158,7 @@ fn boot_schedule() -> Vec<BootLine> {
             0.15,
             vec![
                 ("libgibson-harness", CYAN),
-                ("   0.1.0 · engineering alpha", DIM),
+                ("   0.1.1 · engineering alpha", DIM),
             ],
         ),
         (

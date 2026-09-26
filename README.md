@@ -16,7 +16,7 @@ semantics — plus experimental compositional animation and software graphics.
 
 </div>
 
-> **Current release: [v0.1.0 — Engineering Alpha](https://github.com/femboy2112/libgibson/releases/tag/v0.1.0)** (2026-09-25).
+> **Current release: [v0.1.1 — Engineering Alpha](https://github.com/femboy2112/libgibson/releases/tag/v0.1.1)** (2026-09-26).
 > Linux x86_64. A native SDK archive is attached to the release. LibGibson is
 > distributed as **GitHub source + that SDK** — it is *not* on crates.io, PyPI, or
 > the Go module proxy. See the [changelog](CHANGELOG.md) and
@@ -127,7 +127,7 @@ of this film ([how it was captured](docs/assets/README.md)).
 ## Install & use
 
 LibGibson ships as **GitHub source plus a native SDK archive** on the
-[release](https://github.com/femboy2112/libgibson/releases/tag/v0.1.0). It is not
+[release](https://github.com/femboy2112/libgibson/releases/tag/v0.1.1). It is not
 published to any package registry.
 
 ### Rust
@@ -137,7 +137,7 @@ crate you `use` is `gibson`:
 
 ```toml
 [dependencies]
-libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.1.0" }
+libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.1.1" }
 ```
 
 ```rust
@@ -175,14 +175,14 @@ animation is throttled by `ctx.animation_interval()`.
 
 ### Native SDK (C / C++ / Python / Go)
 
-The release attaches `libgibson-0.1.0-linux-x86_64.tar.gz` (with a `.sha256`): headers,
+The release attaches `libgibson-0.1.1-linux-x86_64.tar.gz` (with a `.sha256`): headers,
 `libgibson.a`, the versioned shared object (`libgibson.so.1` + a `libgibson.so` dev
 symlink), and a relocatable `pkg-config` file.
 
 ```bash
-sha256sum -c libgibson-0.1.0-linux-x86_64.tar.gz.sha256
-tar -xzf libgibson-0.1.0-linux-x86_64.tar.gz          # -> ./libgibson-0.1.0-linux-x86_64/
-export PKG_CONFIG_PATH="$PWD/libgibson-0.1.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
+sha256sum -c libgibson-0.1.1-linux-x86_64.tar.gz.sha256
+tar -xzf libgibson-0.1.1-linux-x86_64.tar.gz          # -> ./libgibson-0.1.1-linux-x86_64/
+export PKG_CONFIG_PATH="$PWD/libgibson-0.1.1-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 cc app.c $(pkg-config --cflags --libs libgibson) -o app   # C consumer
 ```

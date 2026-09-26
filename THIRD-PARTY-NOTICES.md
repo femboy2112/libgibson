@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-LibGibson 0.1.0 is distributed under `MIT OR Apache-2.0` (see
+LibGibson 0.1.1 is distributed under `MIT OR Apache-2.0` (see
 `LICENSE-MIT` and `LICENSE-APACHE`). Its distributed native artifacts
 incorporate code from the third-party crates listed below.
 
