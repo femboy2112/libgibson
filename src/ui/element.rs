@@ -1,5 +1,5 @@
 //! Semantic intent and ordinary Rust builders. No renderer or terminal ownership.
-use super::compile::BuildCx;
+use super::compile::{BuildCx, PresentationCx};
 use super::motion::MotionRole;
 use super::style::{Density, Elevation, Emphasis, Tone};
 use crate::{Event, Node, Surface, SurfaceFx, TextInputState};
@@ -41,6 +41,7 @@ impl fmt::Display for Key {
 pub(crate) enum ElementKind {
     Screen,
     Row,
+    Tabs,
     Column,
     Stack,
     Spacer,
@@ -74,6 +75,7 @@ pub(crate) enum ElementKind {
     Toast(String),
     Viewport(i32, i32),
     Raw(Node),
+    Presented(Arc<dyn Fn(&PresentationCx) -> Node>),
 }
 
 #[derive(Clone, Default)]
@@ -240,7 +242,10 @@ impl<A> Element<A> {
     }
 }
 
-/// Optional extension route. Ordinary functions returning `Element<A>` work too.
+/// Optional semantic extension route. Ordinary functions returning `Element<A>`
+/// work too. The environment-only context deliberately has no focus or motion:
+/// those are reconciled after this component has returned its tree. A custom
+/// node needing current presentation state can be returned with [`presented`].
 pub trait Component<A> {
     fn build(self, cx: &BuildCx) -> Element<A>;
 }
@@ -298,6 +303,12 @@ pub fn button<A>(label: impl Into<String>) -> Element<A> {
 pub fn choice<A>(label: impl Into<String>, selected: bool) -> Element<A> {
     Element::new(ElementKind::Choice(label.into())).selected(selected)
 }
+/// An application-owned single-line editor. Inputs participate in focus and own
+/// editing keys/paste even without callbacks. Without `on_edit` they consume
+/// these events without changing the supplied state; bind `on_edit` to receive
+/// an edited copy, and rebuild before the next event. Up/Down are consumed
+/// no-ops in this single-line editor. Unsupported shortcuts
+/// remain available to `on_event` or the application's unconsumed-event path.
 pub fn text_input<A>(state: &TextInputState) -> Element<A> {
     Element::new(ElementKind::Input {
         state: state.clone(),
@@ -333,7 +344,7 @@ where
 }
 /// Tabs are controlled choices: the application supplies selection and actions.
 pub fn tabs<A>() -> Element<A> {
-    row().gap(1).responsive(48)
+    Element::new(ElementKind::Tabs).gap(1).responsive(48)
 }
 pub fn modal<A>(title: impl Into<String>) -> Element<A> {
     Element::new(ElementKind::Modal(title.into())).elevation(Elevation::Overlay)
@@ -346,6 +357,19 @@ pub fn viewport<A>(x: i32, y: i32) -> Element<A> {
 }
 pub fn raw<A>(node: Node) -> Element<A> {
     Element::new(ElementKind::Raw(node))
+}
+/// A custom ordinary node constructed during current-frame presentation.
+///
+/// Unlike [`Component::build`], this callback runs after complete-tree key and
+/// focus reconciliation. It cannot add semantic children or action metadata;
+/// bind those on the returned element. Its layout is preserved just like
+/// [`raw`]. Semantic motion and `.post_process` are applied outside its node,
+/// so do not apply the same `cx.motions` chain again inside the callback.
+///
+/// Determinism is the callback author's responsibility: use `cx.build.time` and
+/// captured immutable data instead of reading a wall clock or mutable globals.
+pub fn presented<A>(build: impl Fn(&PresentationCx) -> Node + 'static) -> Element<A> {
+    Element::new(ElementKind::Presented(Arc::new(build)))
 }
 pub fn surface<A>(surface: Arc<Surface>) -> Element<A> {
     raw(Node::surface(surface))

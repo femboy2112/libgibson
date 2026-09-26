@@ -15,7 +15,7 @@ pub mod prelude;
 pub mod runtime;
 pub mod skin;
 pub mod style;
-pub use compile::{compile, BuildCx, Compiled, ElementState};
+pub use compile::{compile, compile_presented, BuildCx, Compiled, ElementState, PresentationCx};
 pub use element::*;
 pub use interaction::*;
 pub use motion::{MotionPreference, MotionRole};

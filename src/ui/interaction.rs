@@ -33,6 +33,7 @@ impl std::error::Error for UiError {}
 ///
 /// `input` is a snapshot supplied by the application each frame. Editing creates
 /// a new value for `on_edit`; the runtime never becomes the input's state owner.
+/// Inputs without `on_edit` still own editing keys/paste and remain unchanged.
 #[derive(Clone)]
 pub struct Interaction<A> {
     pub key: Key,

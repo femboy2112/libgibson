@@ -1,6 +1,8 @@
 //! Bounded keyed presentation continuity and an optional `Context`-owned app loop.
 
-use super::compile::{collect_metadata, compile, BuildCx, Compiled, ElementState};
+use super::compile::{
+    collect_metadata, lower_with_metadata, BuildCx, Compiled, ElementState, PresentationCx,
+};
 use super::element::{Element, Key};
 use super::interaction::{EventOutcome, InteractionMap, UiError};
 use super::motion::{MotionPlan, MotionPreference, MotionRole};
@@ -135,13 +137,21 @@ impl<A: Clone> UiRuntime<A> {
         skin
     }
 
-    /// A custom component/view's environment before the next reconciliation.
-    /// The resulting ordinary `BuildCx` can also be used with free `compile`.
+    /// Environment for a semantic component/view, independent of reconciliation.
+    /// This deliberately exposes neither prior focus nor prior motion. Custom
+    /// nodes needing those use [`super::element::presented`] during lowering.
     pub fn build_cx(&mut self, environment: UiEnvironment, time: Duration) -> BuildCx {
         let time = time.max(self.last_time);
         BuildCx {
             skin: self.resolve(environment),
             environment,
+            time,
+        }
+    }
+
+    fn presentation_cx(&mut self, environment: UiEnvironment, time: Duration) -> PresentationCx {
+        PresentationCx {
+            build: self.build_cx(environment, time),
             focused: self.focus().cloned(),
             motions: self
                 .animations
@@ -151,7 +161,6 @@ impl<A: Clone> UiRuntime<A> {
                     (!effects.is_empty()).then(|| (key.clone(), effects))
                 })
                 .collect(),
-            time,
         }
     }
 
@@ -166,8 +175,8 @@ impl<A: Clone> UiRuntime<A> {
         environment: UiEnvironment,
         time: Duration,
     ) -> Result<Compiled<A>, UiError> {
-        // Validate before changing identity, capture state, or effects. This is
-        // a cheap metadata pass; expensive surfaces are lowered only once.
+        // Validate before changing identity, capture state, or effects. The
+        // resulting sidecars are reused by lowering, never collected twice.
         let metadata = collect_metadata(element)?;
         let time = time.max(self.last_time);
         let skin = self.resolve(environment);
@@ -248,12 +257,14 @@ impl<A: Clone> UiRuntime<A> {
                 }
             }
         }
-        self.interactions = metadata.interactions;
-        self.previous = metadata.keys;
+        // The runtime and caller both own inspectable sidecars, so clone the
+        // metadata values once rather than walking the semantic tree again.
+        self.interactions = metadata.interactions.clone();
+        self.previous = metadata.keys.clone();
         self.presented_focus = focused;
         self.last_time = time;
-        let cx = self.build_cx(environment, time);
-        compile(element, &cx)
+        let cx = self.presentation_cx(environment, time);
+        Ok(lower_with_metadata(element, &cx, metadata))
     }
 
     fn reconcile_focus(&mut self, map: &InteractionMap<A>) {
@@ -352,16 +363,17 @@ impl<A: Clone> UiRuntime<A> {
                     }
                 }
             }
-            if let (Some(state), Some(on_edit)) = (&entry.input, &entry.on_edit) {
-                let mut edited = state.clone();
-                if edited.handle_event(event) {
-                    outcome.actions.push(on_edit(edited));
-                    outcome.consumed = true;
-                    return outcome;
-                }
+            if let Some(state) = &entry.input {
                 if is_edit_event(event) {
-                    // An arrow at the edge, or backspace in an empty buffer,
-                    // still belongs to the editor, even when no state changes.
+                    if let Some(on_edit) = &entry.on_edit {
+                        let mut edited = state.clone();
+                        if edited.handle_event(event) {
+                            outcome.actions.push(on_edit(edited));
+                        }
+                    }
+                    // The editor owns editing keys even without an on_edit
+                    // callback and even when an edge key changes nothing. Do
+                    // not route them to a custom handler or background shortcut.
                     outcome.consumed = true;
                     return outcome;
                 }
@@ -388,6 +400,8 @@ fn is_edit_event(event: &Event) -> bool {
             | KeyCode::Delete
             | KeyCode::Left
             | KeyCode::Right
+            | KeyCode::Up
+            | KeyCode::Down
             | KeyCode::Home
             | KeyCode::End => true,
             _ => false,
@@ -561,7 +575,61 @@ impl App {
 mod tests {
     use super::*;
     use crate::input::{KeyEvent, TextInputState};
-    use crate::ui::{button, column, modal, status, text, text_input};
+    use crate::ui::{button, column, modal, presented, status, text, text_input};
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    #[test]
+    fn each_runtime_frame_collects_semantic_metadata_once() {
+        let tree = column()
+            .child(button("Run").key("run").on_press(()))
+            .child(text_input(&TextInputState::new()).key("prompt"));
+        let mut runtime = UiRuntime::new(skins::BLACK_ICE);
+        for time in [Duration::ZERO, Duration::from_millis(100)] {
+            let before = super::super::compile::metadata_passes();
+            let frame = runtime
+                .frame(&tree, UiEnvironment::default(), time)
+                .unwrap();
+            assert_eq!(super::super::compile::metadata_passes() - before, 1);
+            assert_eq!(frame.keys.len(), 3);
+            assert_eq!(frame.interactions.entries.len(), 2);
+        }
+    }
+
+    #[test]
+    fn invalid_tree_never_invokes_custom_presentation_or_changes_routing() {
+        let mut runtime = UiRuntime::new(skins::BLACK_ICE);
+        runtime
+            .frame(
+                &button("Safe").key("safe").on_press(7),
+                UiEnvironment::default(),
+                Duration::ZERO,
+            )
+            .unwrap();
+        let called = Rc::new(Cell::new(0));
+        let witness = Rc::clone(&called);
+        let tree = column()
+            .child(
+                presented(move |_| {
+                    witness.set(witness.get() + 1);
+                    crate::Node::text("must not build", crate::Style::default())
+                })
+                .key("duplicate"),
+            )
+            .child(button("Duplicate").key("duplicate").on_press(8));
+        assert!(matches!(
+            runtime.frame(&tree, UiEnvironment::default(), Duration::from_secs(1)),
+            Err(UiError::DuplicateKey(_))
+        ));
+        assert_eq!(called.get(), 0);
+        assert_eq!(runtime.focus(), Some(&Key::from("safe")));
+        assert_eq!(runtime.retained_key_count(), 1);
+        let outcome = runtime.handle_event(&Event::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::empty(),
+        )));
+        assert_eq!(outcome.actions, [7]);
+    }
 
     fn modal_stack(order: &[&str]) -> Element<()> {
         let mut tree = column()
@@ -664,7 +732,13 @@ mod tests {
         runtime
             .frame(&tree, UiEnvironment::default(), Duration::ZERO)
             .unwrap();
-        for code in [KeyCode::Backspace, KeyCode::Delete, KeyCode::Left] {
+        for code in [
+            KeyCode::Backspace,
+            KeyCode::Delete,
+            KeyCode::Left,
+            KeyCode::Up,
+            KeyCode::Down,
+        ] {
             let outcome =
                 runtime.handle_event(&Event::Key(KeyEvent::new(code, KeyModifiers::empty())));
             assert!(outcome.consumed);

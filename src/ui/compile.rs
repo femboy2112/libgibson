@@ -8,13 +8,17 @@ use crate::{AlignItems, Dimension, JustifyContent, Node, SurfaceFx, WrapMode};
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-/// The complete context of a pure lowering operation. All clocks are explicit.
-#[derive(Clone)]
+/// Environment for constructing a semantic tree. All clocks are explicit.
+///
+/// Focus and motion are intentionally absent: they are reconciled *after* the
+/// complete tree exists. A [`super::element::Component`] must express semantic
+/// intent without inspecting a previous frame's presentation state. Use
+/// [`super::element::presented`] for a custom ordinary node that needs the
+/// current frame's reconciled [`PresentationCx`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuildCx {
     pub skin: ResolvedSkin,
     pub environment: UiEnvironment,
-    pub focused: Option<Key>,
-    pub motions: BTreeMap<Key, Vec<SurfaceFx>>,
     pub time: Duration,
 }
 impl BuildCx {
@@ -22,9 +26,31 @@ impl BuildCx {
         Self {
             skin: skin.resolve(&environment),
             environment,
+            time: Duration::ZERO,
+        }
+    }
+}
+
+/// Reconciled context used only when lowering a complete semantic tree.
+///
+/// [`super::runtime::UiRuntime::frame`] prepares this after validating keys,
+/// restoring modal focus, and resolving motion for the current frame. Explicit
+/// callers can construct one for [`compile_presented`]. Custom [`super::element::presented`]
+/// leaves see it during lowering and cannot change semantic metadata.
+#[derive(Clone)]
+pub struct PresentationCx {
+    pub build: BuildCx,
+    pub focused: Option<Key>,
+    pub motions: BTreeMap<Key, Vec<SurfaceFx>>,
+}
+
+impl PresentationCx {
+    /// A settled, unfocused presentation for an environment.
+    pub fn new(build: BuildCx) -> Self {
+        Self {
+            build,
             focused: None,
             motions: BTreeMap::new(),
-            time: Duration::ZERO,
         }
     }
 }
@@ -49,7 +75,19 @@ pub(crate) struct UiMetadata<A> {
     pub keys: BTreeMap<Key, ElementState>,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static METADATA_PASSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn metadata_passes() -> usize {
+    METADATA_PASSES.with(std::cell::Cell::get)
+}
+
 pub(crate) fn collect_metadata<A: Clone>(root: &Element<A>) -> Result<UiMetadata<A>, UiError> {
+    #[cfg(test)]
+    METADATA_PASSES.with(|passes| passes.set(passes.get() + 1));
     let mut out = UiMetadata {
         interactions: InteractionMap::default(),
         keys: BTreeMap::new(),
@@ -79,6 +117,7 @@ fn collect<A: Clone>(
             el.kind,
             ElementKind::Screen
                 | ElementKind::Row
+                | ElementKind::Tabs
                 | ElementKind::Column
                 | ElementKind::Stack
                 | ElementKind::Panel(_)
@@ -122,7 +161,11 @@ fn collect<A: Clone>(
     } else {
         modal
     };
-    if el.on_press.is_some() || el.on_edit.is_some() || el.on_event.is_some() {
+    if matches!(el.kind, ElementKind::Input { .. })
+        || el.on_press.is_some()
+        || el.on_edit.is_some()
+        || el.on_event.is_some()
+    {
         out.interactions.entries.push(Interaction {
             key: id,
             disabled,
@@ -151,41 +194,64 @@ fn collect<A: Clone>(
 }
 
 /// Compile without owning any terminal or mutating any application state.
+/// This environment-only path is settled and unfocused. Use [`compile_presented`]
+/// for explicit presentation state or [`super::runtime::UiRuntime::frame`] for
+/// current-tree reconciliation.
 /// Duplicate keys and excessive semantic-tree depth/size are rejected before lowering.
 pub fn compile<A: Clone>(root: &Element<A>, cx: &BuildCx) -> Result<Compiled<A>, UiError> {
+    compile_presented(root, &PresentationCx::new(*cx))
+}
+
+/// Pure lowering with explicit presentation state. Unlike a runtime frame, this
+/// does not reconcile or validate that `focused` belongs to an enabled control;
+/// the caller supplies that state intentionally. Structural validation still
+/// runs before any custom presentation callback is invoked.
+pub fn compile_presented<A: Clone>(
+    root: &Element<A>,
+    cx: &PresentationCx,
+) -> Result<Compiled<A>, UiError> {
     let metadata = collect_metadata(root)?;
+    Ok(lower_with_metadata(root, cx, metadata))
+}
+
+/// Both entry paths lower only after collecting and validating metadata once.
+pub(crate) fn lower_with_metadata<A>(
+    root: &Element<A>,
+    cx: &PresentationCx,
+    metadata: UiMetadata<A>,
+) -> Compiled<A> {
     let mut section = 0;
     let node = lower(root, cx, &mut vec![], &mut section, false, None);
-    Ok(Compiled {
+    Compiled {
         node,
         interactions: metadata.interactions,
         keys: metadata.keys,
-    })
+    }
 }
 
-fn rule(cx: &BuildCx, width: u16) -> Node {
+fn rule(cx: &PresentationCx, width: u16) -> Node {
     Node::text(
-        cx.skin.glyphs.horizontal.repeat(width as usize),
-        cx.skin.border,
+        cx.build.skin.glyphs.horizontal.repeat(width as usize),
+        cx.build.skin.border,
     )
     .height(1.0)
     .min_width(0.0)
     .flex_shrink(0.0)
 }
-fn title(cx: &BuildCx, value: &str, section: usize) -> String {
-    let value = if cx.skin.typography.uppercase_titles {
+fn title(cx: &PresentationCx, value: &str, section: usize) -> String {
+    let value = if cx.build.skin.typography.uppercase_titles {
         value.to_uppercase()
     } else {
         value.to_owned()
     };
-    if cx.skin.typography.numbered_sections {
+    if cx.build.skin.typography.numbered_sections {
         format!("{section:02} / {value}")
     } else {
         value
     }
 }
 fn container(
-    cx: &BuildCx,
+    cx: &PresentationCx,
     skin: &ResolvedSkin,
     value: &str,
     children: Vec<Node>,
@@ -222,7 +288,9 @@ fn container(
             } else {
                 Node::col().child(window).child(
                     Node::text(
-                        skin.glyphs.horizontal.repeat(cx.environment.width as usize),
+                        skin.glyphs
+                            .horizontal
+                            .repeat(cx.build.environment.width as usize),
                         skin.shadow,
                     )
                     .height(1.0)
@@ -250,14 +318,14 @@ fn container(
         }
         Chrome::Editorial => Node::col()
             .background(skin.surface)
-            .child(rule(cx, cx.environment.width))
+            .child(rule(cx, cx.build.environment.width))
             .child(Node::text(title(cx, value, section), skin.title).height(1.0))
             .child(body),
     }
 }
 fn lower<A>(
     el: &Element<A>,
-    cx: &BuildCx,
+    cx: &PresentationCx,
     path: &mut Vec<usize>,
     section: &mut usize,
     disabled: bool,
@@ -265,17 +333,20 @@ fn lower<A>(
 ) -> Node {
     let id = key(el, path);
     let disabled = disabled || el.disabled;
-    let density = el.density.or(inherited_density).unwrap_or(cx.skin.density);
-    let (skin_gap, skin_padding) = cx.skin.spacing.resolve(density);
+    let density = el
+        .density
+        .or(inherited_density)
+        .unwrap_or(cx.build.skin.density);
+    let (skin_gap, skin_padding) = cx.build.skin.spacing.resolve(density);
     let gap = el.layout.gap.unwrap_or(skin_gap);
     let padding = el.layout.padding.unwrap_or(skin_padding);
     let focused = !disabled && cx.focused.as_ref() == Some(&id);
     let style = if disabled {
-        cx.skin.style(el.tone, Emphasis::Faint)
+        cx.build.skin.style(el.tone, Emphasis::Faint)
     } else {
-        cx.skin.style(el.tone, el.emphasis)
+        cx.build.skin.style(el.tone, el.emphasis)
     };
-    let mut chrome_skin = cx.skin;
+    let mut chrome_skin = cx.build.skin;
     chrome_skin.density = density;
     // Tone changes the semantic chrome while retaining its title-bar treatment.
     if el.tone != Tone::Neutral {
@@ -311,11 +382,11 @@ fn lower<A>(
         .collect();
     // A horizontal semantic row allocates unspecified bases by grow weight.
     // Explicit widths and responsive columns retain ordinary dimensions.
-    if matches!(el.kind, ElementKind::Row)
+    if matches!(el.kind, ElementKind::Row | ElementKind::Tabs)
         && !el
             .layout
             .breakpoint
-            .is_some_and(|b| cx.environment.width < b)
+            .is_some_and(|b| cx.build.environment.width < b)
     {
         for (child, semantic) in children.iter_mut().zip(&el.children) {
             if semantic.layout.width.is_none() && semantic.layout.grow.is_some_and(|g| g > 0.0) {
@@ -324,21 +395,22 @@ fn lower<A>(
         }
     }
     let available = cx
+        .build
         .environment
         .width
-        .saturating_sub(2 * padding.min(cx.environment.width / 2));
+        .saturating_sub(2 * padding.min(cx.build.environment.width / 2));
     let width = el.layout.width.unwrap_or(24).min(available);
     let mut node = match &el.kind {
         ElementKind::Screen => Node::col()
-            .background(cx.skin.background)
-            .width(cx.environment.width as f32)
+            .background(cx.build.skin.background)
+            .width(cx.build.environment.width as f32)
             .padding(padding as f32)
             .gap(gap as f32)
             .children(children),
-        ElementKind::Row => if el
+        ElementKind::Row | ElementKind::Tabs => if el
             .layout
             .breakpoint
-            .is_some_and(|b| cx.environment.width < b)
+            .is_some_and(|b| cx.build.environment.width < b)
         {
             Node::col()
         } else {
@@ -354,7 +426,7 @@ fn lower<A>(
         ElementKind::Heading(s) => Node::text(
             s,
             if el.tone == Tone::Neutral {
-                style.overlay(cx.skin.title).bold()
+                style.overlay(cx.build.skin.title).bold()
             } else {
                 style.bold()
             },
@@ -363,12 +435,12 @@ fn lower<A>(
         ElementKind::Code(s) => Node::text(
             s,
             if el.tone == Tone::Neutral {
-                style.overlay(cx.skin.styles.code)
+                style.overlay(cx.build.skin.styles.code)
             } else {
                 style
             },
         ),
-        ElementKind::Divider => rule(cx, cx.environment.width),
+        ElementKind::Divider => rule(cx, cx.build.environment.width),
         ElementKind::Panel(s) | ElementKind::Card(s) | ElementKind::Section(s) => container(
             cx,
             &chrome_skin,
@@ -378,14 +450,16 @@ fn lower<A>(
             (padding, gap),
             el.elevation != Elevation::Flat,
         ),
-        ElementKind::Status(s) => {
-            Node::text(format!("{} {s}", cx.skin.status_marker(el.tone)), style).height(1.0)
-        }
+        ElementKind::Status(s) => Node::text(
+            format!("{} {s}", cx.build.skin.status_marker(el.tone)),
+            style,
+        )
+        .height(1.0),
         ElementKind::Badge(s) => Node::text(format!(" {s} "), style.reverse()).height(1.0),
         ElementKind::Button(s) | ElementKind::Choice(s) => Node::text(
-            cx.skin.button_label(s, focused, el.selected),
+            cx.build.skin.button_label(s, focused, el.selected),
             if focused || el.selected {
-                style.overlay(cx.skin.selection)
+                style.overlay(cx.build.skin.selection)
             } else {
                 style
             },
@@ -408,8 +482,8 @@ fn lower<A>(
                         ..
                     } = &mut input.kind
                     {
-                        *placeholder_style = cx.skin.styles.muted;
-                        *cursor_style = cx.skin.selection;
+                        *placeholder_style = cx.build.skin.styles.muted;
+                        *cursor_style = cx.build.skin.selection;
                     }
                     input
                 }
@@ -423,7 +497,7 @@ fn lower<A>(
                         &state.text
                     },
                     if state.text.is_empty() {
-                        cx.skin.styles.muted
+                        cx.build.skin.styles.muted
                     } else {
                         style
                     },
@@ -431,8 +505,10 @@ fn lower<A>(
                 .height(1.0)
             }
         }
-        ElementKind::Progress { label, fraction } => cx.skin.progress(label, *fraction, width),
-        ElementKind::Sparkline(values) => cx.skin.sparkline(values, width),
+        ElementKind::Progress { label, fraction } => {
+            cx.build.skin.progress(label, *fraction, width)
+        }
+        ElementKind::Sparkline(values) => cx.build.skin.sparkline(values, width),
         ElementKind::Table { headers, rows } => {
             let cols = headers
                 .len()
@@ -443,7 +519,7 @@ fn lower<A>(
                     row = row.child(
                         Node::text(
                             values.get(i).map(String::as_str).unwrap_or(""),
-                            if head { cx.skin.title } else { style },
+                            if head { cx.build.skin.title } else { style },
                         )
                         .percent_width(100.0 / cols.max(1) as f32)
                         .min_width(0.0)
@@ -454,7 +530,7 @@ fn lower<A>(
             };
             let mut table = Node::col()
                 .child(make_row(headers, true))
-                .child(rule(cx, cx.environment.width));
+                .child(rule(cx, cx.build.environment.width));
             for row in rows {
                 table = table.child(make_row(row, false));
             }
@@ -494,10 +570,10 @@ fn lower<A>(
         ElementKind::Toast(s) => {
             let w = el.layout.width.unwrap_or(36);
             let h = el.layout.height.unwrap_or(3);
-            let mut panel = Node::border_box(cx.skin.border_type, cx.skin.border)
-                .background(cx.skin.surface)
+            let mut panel = Node::border_box(cx.build.skin.border_type, cx.build.skin.border)
+                .background(cx.build.skin.surface)
                 .child(Node::text(
-                    format!("{} {s}", cx.skin.status_marker(el.tone)),
+                    format!("{} {s}", cx.build.skin.status_marker(el.tone)),
                     style,
                 ))
                 .percent_width(100.0)
@@ -512,17 +588,18 @@ fn lower<A>(
                 .child(panel)
         }
         ElementKind::Viewport(x, y) => Node::viewport(*x, *y).children(children),
+        ElementKind::Presented(build) => build(cx),
         ElementKind::Raw(raw) => {
             let mut n = raw.clone();
             n.children.extend(children);
             n
         }
     };
-    if matches!(el.kind, ElementKind::Row)
+    if matches!(el.kind, ElementKind::Row | ElementKind::Tabs)
         && !el
             .layout
             .breakpoint
-            .is_some_and(|b| cx.environment.width < b)
+            .is_some_and(|b| cx.build.environment.width < b)
         && el
             .children
             .iter()
@@ -531,7 +608,7 @@ fn lower<A>(
         node = node.percent_width(100.0);
     }
     // Raw nodes preserve their own layout until a builder explicitly overrides it.
-    if !matches!(el.kind, ElementKind::Raw(_)) {
+    if !matches!(el.kind, ElementKind::Raw(_) | ElementKind::Presented(_)) {
         node = node.min_width(0.0).flex_shrink(0.0);
     }
     if !matches!(el.kind, ElementKind::Modal(_) | ElementKind::Toast(_)) {
@@ -581,7 +658,7 @@ fn lower<A>(
         layers.layout_style.offset_x = original.offset_x;
         layers.layout_style.offset_y = original.offset_y;
         if matches!(el.kind, ElementKind::Screen) && el.layout.height.is_none() {
-            layers = layers.height(cx.environment.height as f32);
+            layers = layers.height(cx.build.environment.height as f32);
         }
         node.layout_style.absolute = false;
         node.layout_style.offset_x = 0.0;

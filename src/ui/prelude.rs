@@ -1,5 +1,5 @@
 //! Common composition vocabulary; lower-level APIs remain at their ordinary paths.
-pub use super::compile::{compile, BuildCx, Compiled};
+pub use super::compile::{compile, compile_presented, BuildCx, Compiled, PresentationCx};
 pub use super::element::*;
 pub use super::interaction::{EventOutcome, UiError};
 pub use super::motion::{MotionPreference, MotionRole};
