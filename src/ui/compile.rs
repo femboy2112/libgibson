@@ -474,10 +474,10 @@ fn lower_role<A>(
     // A horizontal semantic row allocates unspecified bases by grow weight.
     // Explicit widths and responsive columns retain ordinary dimensions.
     if matches!(el.kind, ElementKind::Row | ElementKind::Tabs)
-        && !el
+        && el
             .layout
             .breakpoint
-            .is_some_and(|b| cx.build.environment.width < b)
+            .is_none_or(|b| cx.build.environment.width >= b)
     {
         for (child, semantic) in children.iter_mut().zip(&el.children) {
             if semantic.layout.width.is_none() && semantic.layout.grow.is_some_and(|g| g > 0.0) {
@@ -745,10 +745,10 @@ fn lower_role<A>(
         ElementKind::Presented(build) => build(cx),
     };
     if matches!(el.kind, ElementKind::Row | ElementKind::Tabs)
-        && !el
+        && el
             .layout
             .breakpoint
-            .is_some_and(|b| cx.build.environment.width < b)
+            .is_none_or(|b| cx.build.environment.width >= b)
         && el
             .children
             .iter()
