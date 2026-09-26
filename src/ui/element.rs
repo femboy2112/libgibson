@@ -108,6 +108,7 @@ pub struct Element<A> {
     pub(crate) emphasis: Emphasis,
     pub(crate) density: Option<Density>,
     pub(crate) elevation: Elevation,
+    pub(crate) number: Option<u16>,
     pub(crate) layout: Layout,
     pub(crate) effects: Vec<SurfaceFx>,
 }
@@ -130,6 +131,7 @@ impl<A> Element<A> {
             emphasis: Emphasis::Normal,
             density: None,
             elevation: Elevation::Flat,
+            number: None,
             layout: Layout::default(),
             effects: vec![],
         }
@@ -200,6 +202,13 @@ impl<A> Element<A> {
     }
     pub fn elevation(mut self, elevation: Elevation) -> Self {
         self.elevation = elevation;
+        self
+    }
+    /// An authored section number for skins with numbered titles. Unlike the
+    /// automatic traversal ordinal, it stays meaningful through reflow/reorder.
+    /// Applies to panel/card/section/modal titles; other roles ignore it.
+    pub fn number(mut self, number: u16) -> Self {
+        self.number = Some(number);
         self
     }
     pub fn width(mut self, width: u16) -> Self {

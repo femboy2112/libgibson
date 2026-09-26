@@ -2,7 +2,7 @@
 use super::element::{Element, ElementKind, Key};
 use super::interaction::{Interaction, InteractionMap, ModalScope, UiError};
 use super::motion::MotionRole;
-use super::skin::{Chrome, ResolvedSkin, Skin, UiEnvironment};
+use super::skin::{Chrome, ControlRole, ControlState, ResolvedSkin, Skin, UiEnvironment};
 use super::style::{Density, Elevation, Emphasis, Tone};
 use crate::{AlignItems, Dimension, JustifyContent, Node, SurfaceFx, WrapMode};
 use std::collections::BTreeMap;
@@ -250,6 +250,73 @@ fn title(cx: &PresentationCx, value: &str, section: usize) -> String {
         value
     }
 }
+
+// Edges are ordinary positioned text, kept out of intrinsic layout. Their
+// percent bounds are solved by Taffy against the actual local frame, including
+// nested panels; no terminal-sized Surface or persistent post-process is used.
+fn trailing_edges(
+    cx: &PresentationCx,
+    vertical: &str,
+    bottom: Node,
+    style: crate::Style,
+) -> Vec<Node> {
+    let right = Node::col()
+        .percent_width(100.0)
+        .percent_height(100.0)
+        .padding_top(1.0)
+        .align_items(AlignItems::End)
+        .offset(0.0, 0.0)
+        .child(
+            Node::text_wrapped(
+                vertical.repeat(cx.build.environment.height as usize),
+                style,
+                WrapMode::CharWrap,
+            )
+            .width(1.0)
+            .percent_height(100.0)
+            .min_height(0.0),
+        );
+    let bottom = Node::col()
+        .percent_width(100.0)
+        .percent_height(100.0)
+        .justify_content(JustifyContent::End)
+        .offset(0.0, 0.0)
+        .child(bottom.height(1.0).percent_width(100.0).flex_shrink(0.0));
+    vec![right, bottom]
+}
+
+fn beveled_window(cx: &PresentationCx, skin: &ResolvedSkin, window: Node) -> Node {
+    let (_, _, left, right, horizontal, vertical) = skin.border_type.chars();
+    let bottom = Node::row()
+        .child(Node::text(left, skin.lowlight).width(1.0).flex_shrink(0.0))
+        .child(
+            Node::text(
+                horizontal.repeat(cx.build.environment.width as usize),
+                skin.lowlight,
+            )
+            .width(0.0)
+            .flex_grow(1.0),
+        )
+        .child(Node::text(right, skin.lowlight).width(1.0).flex_shrink(0.0));
+    let mut frame = Node::col().child(window.flex_grow(1.0));
+    for edge in trailing_edges(cx, vertical, bottom, skin.lowlight) {
+        frame.add_child(edge);
+    }
+    // The wrapper keeps the natural window size; the shadow is a separate
+    // bounded silhouette, omitted when the application requests Compact.
+    if skin.density == Density::Compact {
+        return frame;
+    }
+    let mut shadow = Node::col()
+        .padding_right(1.0)
+        .padding_bottom(1.0)
+        .child(frame.flex_grow(1.0));
+    let bottom = Node::text(" ".repeat(cx.build.environment.width as usize), skin.shadow);
+    for edge in trailing_edges(cx, " ", bottom, skin.shadow) {
+        shadow.add_child(edge);
+    }
+    shadow
+}
 fn container(
     cx: &PresentationCx,
     skin: &ResolvedSkin,
@@ -281,22 +348,7 @@ fn container(
                         ),
                 )
                 .child(body);
-            // Chrome is ordinary sibling composition: a permanent effect on the
-            // entire window would suppress the focused editor hardware cursor.
-            if skin.density == Density::Compact {
-                window
-            } else {
-                Node::col().child(window).child(
-                    Node::text(
-                        skin.glyphs
-                            .horizontal
-                            .repeat(cx.build.environment.width as usize),
-                        skin.shadow,
-                    )
-                    .height(1.0)
-                    .min_width(0.0),
-                )
-            }
+            beveled_window(cx, skin, window)
         }
         Chrome::Rail => {
             let content = Node::col()
@@ -331,6 +383,18 @@ fn lower<A>(
     disabled: bool,
     inherited_density: Option<Density>,
 ) -> Node {
+    lower_role(el, cx, path, section, disabled, inherited_density, None)
+}
+
+fn lower_role<A>(
+    el: &Element<A>,
+    cx: &PresentationCx,
+    path: &mut Vec<usize>,
+    section: &mut usize,
+    disabled: bool,
+    inherited_density: Option<Density>,
+    control_role: Option<ControlRole>,
+) -> Node {
     let id = key(el, path);
     let disabled = disabled || el.disabled;
     let density = el
@@ -350,9 +414,17 @@ fn lower<A>(
     chrome_skin.density = density;
     // Tone changes the semantic chrome while retaining its title-bar treatment.
     if el.tone != Tone::Neutral {
-        chrome_skin.title.fg = style.fg;
+        if chrome_skin.chrome == Chrome::Window {
+            // The title remains light on a tone-colored title bar. Applying a
+            // dark semantic foreground to the existing plum bar loses contrast.
+            if cx.build.environment.color_depth != crate::ColorDepth::Mono {
+                chrome_skin.title.bg = style.fg.or(chrome_skin.title.bg);
+            }
+        } else {
+            chrome_skin.title.fg = style.fg;
+            chrome_skin.highlight = style.bold();
+        }
         chrome_skin.border = style;
-        chrome_skin.highlight = style.bold();
     }
     if matches!(el.emphasis, Emphasis::Faint | Emphasis::Muted) {
         chrome_skin.title = chrome_skin.title.dim();
@@ -365,7 +437,7 @@ fn lower<A>(
             | ElementKind::Modal(_)
     ) {
         *section += 1;
-        *section
+        el.number.map(usize::from).unwrap_or(*section)
     } else {
         0
     };
@@ -375,7 +447,15 @@ fn lower<A>(
         .enumerate()
         .map(|(i, child)| {
             path.push(i);
-            let n = lower(child, cx, path, section, disabled, Some(density));
+            let n = lower_role(
+                child,
+                cx,
+                path,
+                section,
+                disabled,
+                Some(density),
+                matches!(el.kind, ElementKind::Tabs).then_some(ControlRole::Tab),
+            );
             path.pop();
             n
         })
@@ -456,23 +536,33 @@ fn lower<A>(
         )
         .height(1.0),
         ElementKind::Badge(s) => Node::text(format!(" {s} "), style.reverse()).height(1.0),
-        ElementKind::Button(s) | ElementKind::Choice(s) => Node::text(
-            cx.build.skin.button_label(s, focused, el.selected),
-            if focused || el.selected {
-                style.overlay(cx.build.skin.selection)
+        ElementKind::Button(s) | ElementKind::Choice(s) => cx.build.skin.control(
+            s,
+            control_role.unwrap_or(if matches!(el.kind, ElementKind::Choice(_)) {
+                ControlRole::Choice
+            } else {
+                ControlRole::Button
+            }),
+            ControlState {
+                focused,
+                selected: el.selected,
+                disabled,
+            },
+            style,
+        ),
+        ElementKind::Input { state, placeholder } => {
+            let input_style = if cx.build.skin.chrome == Chrome::Window {
+                style.bg(cx.build.skin.well)
             } else {
                 style
-            },
-        )
-        .height(1.0),
-        ElementKind::Input { state, placeholder } => {
-            if focused {
+            };
+            let input = if focused {
                 {
                     let mut input = Node::text_input(
                         &state.text,
                         state.cursor_grapheme,
                         placeholder.as_deref(),
-                        style,
+                        input_style,
                     )
                     .scroll_offset(state.scroll_offset)
                     .height(1.0);
@@ -482,7 +572,11 @@ fn lower<A>(
                         ..
                     } = &mut input.kind
                     {
-                        *placeholder_style = cx.build.skin.styles.muted;
+                        *placeholder_style = if cx.build.skin.chrome == Chrome::Window {
+                            cx.build.skin.styles.muted.bg(cx.build.skin.well)
+                        } else {
+                            cx.build.skin.styles.muted
+                        };
                         *cursor_style = cx.build.skin.selection;
                     }
                     input
@@ -497,12 +591,21 @@ fn lower<A>(
                         &state.text
                     },
                     if state.text.is_empty() {
-                        cx.build.skin.styles.muted
+                        if cx.build.skin.chrome == Chrome::Window {
+                            cx.build.skin.styles.muted.bg(cx.build.skin.well)
+                        } else {
+                            cx.build.skin.styles.muted
+                        }
                     } else {
-                        style
+                        input_style
                     },
                 )
                 .height(1.0)
+            };
+            if cx.build.skin.chrome == Chrome::Window {
+                cx.build.skin.instrument_well(input, focused)
+            } else {
+                input
             }
         }
         ElementKind::Progress { label, fraction } => {
@@ -552,6 +655,10 @@ fn lower<A>(
             .max_width(w as f32)
             .height(h as f32);
             panel.layout_style.max_height = Dimension::Percent(90.0);
+            if let Some(effects) = cx.motions.get(&id) {
+                panel = panel.post_process(effects.clone());
+            }
+            panel = panel.post_process(el.effects.clone());
             // Percent constraints are resolved by ordinary Taffy against the
             // containing overlay, including local panels and nested modals.
             Node::col()
@@ -570,16 +677,47 @@ fn lower<A>(
         ElementKind::Toast(s) => {
             let w = el.layout.width.unwrap_or(36);
             let h = el.layout.height.unwrap_or(3);
-            let mut panel = Node::border_box(cx.build.skin.border_type, cx.build.skin.border)
-                .background(cx.build.skin.surface)
-                .child(Node::text(
-                    format!("{} {s}", cx.build.skin.status_marker(el.tone)),
-                    style,
-                ))
-                .percent_width(100.0)
-                .max_width(w as f32)
-                .height(h as f32);
+            let skin = &cx.build.skin;
+            let content = format!("{} {s}", skin.status_marker(el.tone));
+            let mut panel = match skin.chrome {
+                Chrome::Window => {
+                    let mut compact = *skin;
+                    compact.density = Density::Compact;
+                    beveled_window(
+                        cx,
+                        &compact,
+                        Node::border_box(skin.border_type, skin.highlight)
+                            .background(skin.surface)
+                            .child(Node::text(content, style)),
+                    )
+                }
+                Chrome::Rail => Node::row()
+                    .background(skin.well)
+                    .padding_axes(1.0, 0.0)
+                    .align_items(AlignItems::Center)
+                    .child(
+                        Node::text(skin.glyphs.rail, style.bg(skin.well).bold())
+                            .width(1.0)
+                            .height(1.0),
+                    )
+                    .child(
+                        Node::text_wrapped(content, style.bg(skin.well), WrapMode::WordWrap)
+                            .min_width(0.0)
+                            .flex_grow(1.0),
+                    ),
+                Chrome::Editorial => Node::col()
+                    .background(skin.surface)
+                    .child(rule(cx, w))
+                    .child(Node::text_wrapped(content, style, WrapMode::WordWrap).min_width(0.0)),
+            }
+            .percent_width(100.0)
+            .max_width(w as f32)
+            .height(h as f32);
             panel.layout_style.max_height = Dimension::Percent(100.0);
+            if let Some(effects) = cx.motions.get(&id) {
+                panel = panel.post_process(effects.clone());
+            }
+            panel = panel.post_process(el.effects.clone());
             Node::col()
                 .percent_width(100.0)
                 .percent_height(100.0)
@@ -588,12 +726,12 @@ fn lower<A>(
                 .child(panel)
         }
         ElementKind::Viewport(x, y) => Node::viewport(*x, *y).children(children),
-        ElementKind::Presented(build) => build(cx),
         ElementKind::Raw(raw) => {
             let mut n = raw.clone();
             n.children.extend(children);
             n
         }
+        ElementKind::Presented(build) => build(cx),
     };
     if matches!(el.kind, ElementKind::Row | ElementKind::Tabs)
         && !el
@@ -636,10 +774,12 @@ fn lower<A>(
             node = node.padding(pad as f32);
         }
     }
-    if let Some(effects) = cx.motions.get(&id) {
-        node = node.post_process(effects.clone());
+    if !matches!(el.kind, ElementKind::Modal(_) | ElementKind::Toast(_)) {
+        if let Some(effects) = cx.motions.get(&id) {
+            node = node.post_process(effects.clone());
+        }
+        node = node.post_process(el.effects.clone());
     }
-    node = node.post_process(el.effects.clone());
     if !el.overlays.is_empty() {
         // An in-flow base plus absolute overlay children keeps intrinsic sizing.
         // A Stack makes *all* children absolute, so using it here would discard
@@ -673,12 +813,99 @@ fn lower<A>(
         layers = layers.child(node);
         for (i, overlay) in el.overlays.iter().enumerate() {
             path.extend([usize::MAX, i]);
-            layers = layers
-                .child(lower(overlay, cx, path, section, disabled, Some(density)).offset(0.0, 0.0));
+            let mut floating = lower(overlay, cx, path, section, disabled, Some(density));
+            // Mount out of flow without erasing an expert Node's local offset.
+            floating.layout_style.absolute = true;
+            layers = layers.child(floating);
             path.pop();
             path.pop();
         }
         node = layers;
     }
     node
+}
+
+#[cfg(test)]
+mod visual_tests {
+    use super::*;
+    use crate::ui::{label, panel, row, skins, text_input, MotionPreference};
+    use crate::{compute_layout, paint, ColorDepth, Surface, TextInputState};
+
+    #[test]
+    fn vapor_bevel_keeps_corners_local_and_inset_editor_keeps_cursor() {
+        for width in [17, 38, 39] {
+            for color_depth in [ColorDepth::Mono, ColorDepth::TrueColor] {
+                let environment = UiEnvironment {
+                    width,
+                    height: 10,
+                    color_depth,
+                    motion: MotionPreference::None,
+                    ..UiEnvironment::default()
+                };
+                let mut cx = PresentationCx::new(BuildCx::new(skins::VAPOR95, environment));
+                cx.focused = Some(Key::from("editor"));
+                let tree = panel("Window")
+                    .density(Density::Compact)
+                    .width(width)
+                    .child(
+                        text_input(&TextInputState::with_text("READY"))
+                            .key("editor")
+                            .on_edit(|_| ()),
+                    );
+                let mut node = compile_presented(&tree, &cx).unwrap().node;
+                compute_layout(&mut node, width, 10).unwrap();
+                let mut surface = Surface::new(width, 10);
+                let cursor = paint(&node, &mut surface)
+                    .cursor_position
+                    .expect("well lost editor cursor");
+                assert_eq!(surface.get(0, 0).unwrap().glyph.grapheme.as_str(), "╔");
+                assert_eq!(
+                    surface.get(width - 1, 0).unwrap().glyph.grapheme.as_str(),
+                    "╗"
+                );
+                assert_eq!(
+                    surface.get(width - 1, 3).unwrap().glyph.grapheme.as_str(),
+                    "╝"
+                );
+                assert_ne!(
+                    surface.get(0, 1).unwrap().style,
+                    surface.get(width - 1, 1).unwrap().style
+                );
+                assert!(cursor.0 > 1 && cursor.0 < width - 1);
+                assert_eq!(cursor.1, 2);
+            }
+        }
+    }
+
+    #[test]
+    fn stretched_vapor_window_fills_its_frame_instead_of_exposing_screen_background() {
+        let environment = UiEnvironment {
+            width: 60,
+            height: 20,
+            motion: MotionPreference::None,
+            ..UiEnvironment::default()
+        };
+        let cx = BuildCx::new(skins::VAPOR95, environment);
+        let tree: Element<()> = row()
+            .height(12)
+            .gap(1)
+            .child(
+                panel("Short")
+                    .density(Density::Normal)
+                    .grow(1.0)
+                    .child(label("Ready")),
+            )
+            .child(
+                panel("Long")
+                    .density(Density::Normal)
+                    .grow(1.0)
+                    .child(label("Work")),
+            );
+        let mut node = compile(&tree, &cx).unwrap().node;
+        compute_layout(&mut node, 60, 20).unwrap();
+        let mut surface = Surface::new(60, 20);
+        paint(&node, &mut surface);
+        assert_eq!(surface.get(3, 8).unwrap().style.bg, Some(cx.skin.surface));
+        assert_eq!(surface.get(35, 8).unwrap().style.bg, Some(cx.skin.surface));
+    }
 }

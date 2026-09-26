@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use crate::{clock, surface_fx::FxMask, Style, SurfaceFx};
+use crate::{clock, surface_fx::FxMask, Rect, Style, SurfaceFx};
 
 /// User preference, applied before any effect is constructed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -107,8 +107,21 @@ impl MotionPlan {
         if self.is_settled(elapsed) {
             return Vec::new();
         }
+        if self.role == MotionRole::Activate {
+            // Bold/underline/reverse may already describe a focused selection.
+            // A brief dim cue remains visible for those normal control states.
+            return if self.preference == MotionPreference::Full
+                && self.language == MotionLanguage::Physical
+            {
+                vec![SurfaceFx::Reverse, SurfaceFx::Dim]
+            } else {
+                vec![SurfaceFx::StyleOverlay(Style::new().dim())]
+            };
+        }
         if self.preference == MotionPreference::Reduced {
-            return vec![SurfaceFx::StyleOverlay(self.style)];
+            // Keep glyphs and established skin colors unchanged. A brief
+            // attribute cue carries the event without movement or concealment.
+            return vec![SurfaceFx::StyleOverlay(Style::new().bold())];
         }
         let t = (elapsed.as_secs_f64() / self.duration.as_secs_f64()) as f32;
         let eased = clock::ease_out(t);
@@ -144,27 +157,32 @@ impl MotionPlan {
             };
         }
         match (self.language, self.role) {
-            (MotionLanguage::Physical, MotionRole::Activate) => vec![SurfaceFx::Reverse],
             (MotionLanguage::Acquisition, MotionRole::Error) => vec![
-                // One short, deterministic displacement, only for an error.
-                SurfaceFx::RowShift {
-                    amount: if t < 0.3 { 1 } else { 0 },
-                    seed: 0,
-                },
-                SurfaceFx::StyleOverlay(self.style),
+                // Error emphasis stays on the semantic marker/rail. Body text
+                // never jitters merely because its status changed.
+                SurfaceFx::StyleOverlay(if t < 0.3 {
+                    self.style.reverse()
+                } else {
+                    self.style
+                })
+                .scoped(FxMask::Rect(Rect::new(0, 0, 2, u16::MAX))),
             ],
             (MotionLanguage::Acquisition, MotionRole::Focus | MotionRole::Busy) => {
-                vec![SurfaceFx::StyleMask {
-                    style: self.style,
-                    seed: 0x0046_4f43_5553,
-                    fraction: 1.0 - eased,
-                }]
+                vec![
+                    SurfaceFx::StyleOverlay(self.style).scoped(FxMask::Rect(Rect::new(
+                        0,
+                        0,
+                        1,
+                        u16::MAX,
+                    ))),
+                ]
             }
             (MotionLanguage::Editorial, MotionRole::Focus | MotionRole::Change) => {
-                vec![SurfaceFx::StyleOverlay(self.style).scoped(FxMask::Band {
-                    position: 1.0,
-                    width: (1.0 - eased) * 0.25,
-                })]
+                vec![SurfaceFx::StyleOverlay(Style::new().underline()).scoped(
+                    FxMask::HorizontalWipe {
+                        fraction: 1.0 - eased,
+                    },
+                )]
             }
             (_, MotionRole::Blur) => vec![SurfaceFx::Dim],
             _ => vec![SurfaceFx::StyleOverlay(self.style)],

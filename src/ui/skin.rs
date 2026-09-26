@@ -115,6 +115,22 @@ pub struct VizTokens {
     pub graph: GraphTreatment,
 }
 
+/// Presentation facts, independent of the action or selected domain object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ControlState {
+    pub focused: bool,
+    pub selected: bool,
+    pub disabled: bool,
+}
+
+/// Related controls share interaction routing but retain distinct chrome roles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ControlRole {
+    Button,
+    Choice,
+    Tab,
+}
+
 /// A complete design grammar. All fields are public for local customization.
 /// Theme remains a palette; it gains no new rendering or application semantics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,6 +138,8 @@ pub struct Skin {
     pub name: &'static str,
     pub palette: Theme,
     pub surface: Color,
+    /// Recessed instruments and editor surface.
+    pub well: Color,
     pub chrome: Chrome,
     pub density: Density,
     pub spacing: SpacingTokens,
@@ -131,8 +149,11 @@ pub struct Skin {
     pub border_type: BorderType,
     pub title: Style,
     pub selection: Style,
+    pub focus: Style,
+    pub disabled: Style,
     pub shadow: Style,
     pub highlight: Style,
+    pub lowlight: Style,
     pub motion: MotionTokens,
     pub viz: VizTokens,
 }
@@ -165,8 +186,11 @@ impl Skin {
         let surface = color(self.surface);
         // A skin selects its background explicitly, so its muted text must also
         // select the palette's foreground rather than inherit terminal defaults.
-        styles.muted = quantize_style(Style::new().fg(palette.text_muted).dim(), depth);
-        styles.faint = styles.muted;
+        styles.muted = quantize_style(Style::new().fg(palette.text_muted), depth);
+        if depth == ColorDepth::Mono {
+            styles.muted = styles.muted.dim();
+        }
+        styles.faint = styles.muted.dim();
         // Text cells replace their destination cells in the substrate painter;
         // carry the skin surface explicitly instead of relying on parent fill.
         for style in [
@@ -203,7 +227,7 @@ impl Skin {
         let selection = if mono {
             match self.chrome {
                 Chrome::Window | Chrome::Rail => Style::new().reverse().bold(),
-                Chrome::Editorial => Style::new().bold().underline(),
+                Chrome::Editorial => Style::new().bold(),
             }
         } else {
             quantize_style(
@@ -215,6 +239,16 @@ impl Skin {
             )
         };
         styles.selection = selection;
+        let focus = if mono {
+            Style::new().underline()
+        } else {
+            quantize_style(self.focus, depth)
+        };
+        let disabled = if mono {
+            Style::new().dim()
+        } else {
+            quantize_style(self.disabled, depth)
+        };
         let density = if environment.width < 48 || environment.height < 18 {
             Density::Compact
         } else {
@@ -229,6 +263,7 @@ impl Skin {
             chrome: self.chrome,
             background: palette.bg,
             surface,
+            well: color(self.well),
             title,
             border: if mono && self.chrome == Chrome::Window {
                 Style::new().bold()
@@ -236,6 +271,8 @@ impl Skin {
                 styles.border
             },
             selection,
+            focus,
+            disabled,
             shadow: if mono {
                 Style::new().reverse()
             } else {
@@ -244,7 +281,12 @@ impl Skin {
             highlight: if mono {
                 Style::new().bold()
             } else {
-                quantize_style(self.highlight, depth)
+                quantize_style(self.highlight.bg(surface), depth)
+            },
+            lowlight: if mono {
+                Style::new().dim()
+            } else {
+                quantize_style(self.lowlight.bg(surface), depth)
             },
             density,
             gap,
@@ -277,11 +319,15 @@ pub struct ResolvedSkin {
     pub chrome: Chrome,
     pub background: Color,
     pub surface: Color,
+    pub well: Color,
     pub title: Style,
     pub border: Style,
     pub selection: Style,
+    pub focus: Style,
+    pub disabled: Style,
     pub shadow: Style,
     pub highlight: Style,
+    pub lowlight: Style,
     pub density: Density,
     pub gap: u16,
     pub padding: u16,
@@ -298,7 +344,8 @@ impl ResolvedSkin {
     pub fn style(&self, tone: Tone, emphasis: Emphasis) -> Style {
         let style = match tone {
             Tone::Neutral => match emphasis {
-                Emphasis::Muted | Emphasis::Faint => self.styles.muted,
+                Emphasis::Muted => self.styles.muted,
+                Emphasis::Faint => self.styles.faint,
                 _ => self.styles.text,
             },
             Tone::Accent => self.styles.accent,
@@ -308,7 +355,9 @@ impl ResolvedSkin {
             Tone::Danger => self.styles.error,
         };
         match emphasis {
-            Emphasis::Faint | Emphasis::Muted => style.dim(),
+            Emphasis::Faint => style.dim(),
+            Emphasis::Muted if self.environment.color_depth == ColorDepth::Mono => style.dim(),
+            Emphasis::Muted => style,
             Emphasis::Normal => style,
             Emphasis::Strong => style.bold(),
         }
@@ -326,19 +375,168 @@ impl ResolvedSkin {
     }
 
     pub fn button_label(&self, label: &str, focused: bool, selected: bool) -> String {
-        let marker = if selected {
+        self.control_line(
+            label,
+            ControlRole::Button,
+            ControlState {
+                focused,
+                selected,
+                disabled: false,
+            },
+            self.styles.text,
+        )
+        .plain_text()
+    }
+
+    /// Focus and selection are independent attributes. Disabled chrome has
+    /// precedence without erasing the application's selected marker.
+    pub fn control_style(&self, base: Style, state: ControlState) -> Style {
+        if state.disabled {
+            return Style {
+                fg: self.disabled.fg.or(base.fg),
+                bg: self.disabled.bg.or(base.bg),
+                dim: true,
+                ..self.disabled
+            };
+        }
+        let selected = if state.selected {
+            base.overlay(self.selection)
+        } else {
+            base
+        };
+        if state.focused {
+            selected.overlay(self.focus)
+        } else {
+            selected
+        }
+    }
+
+    /// An inspectable ordinary rich line, also useful inside custom components.
+    /// The focus slot and selected slot are separate even in monochrome.
+    pub fn control_line(
+        &self,
+        label: &str,
+        role: ControlRole,
+        state: ControlState,
+        base: Style,
+    ) -> Line {
+        let style = self.control_style(base, state);
+        let focus = if state.disabled {
+            "x"
+        } else if state.focused {
+            self.glyphs.focus
+        } else {
+            " "
+        };
+        let selected = if state.selected {
             self.glyphs.selected
         } else {
-            self.glyphs.focus
+            " "
         };
-        match self.chrome {
-            Chrome::Window if focused || selected => format!("[{} {label} {}]", marker, marker),
-            Chrome::Window => format!("[ {label} ]"),
-            Chrome::Rail if focused || selected => format!("{} [{label}]", marker),
-            Chrome::Rail => format!("  [{label}]"),
-            Chrome::Editorial if focused || selected => format!("{} {label}", marker),
-            Chrome::Editorial => format!("  {label}"),
-        }
+        let marker_style = if state.disabled {
+            style
+        } else if state.focused {
+            base.overlay(self.focus).bold()
+        } else {
+            base
+        };
+        let (open, close) = match (self.chrome, role) {
+            (Chrome::Window, ControlRole::Tab)
+                if self.environment.glyph_mode == SubcellGlyphMode::Ascii =>
+            {
+                if state.selected {
+                    ("[", "]")
+                } else {
+                    ("/", "\\")
+                }
+            }
+            (Chrome::Window, ControlRole::Tab) => {
+                if state.selected {
+                    ("▏", "▕")
+                } else {
+                    ("╭", "╮")
+                }
+            }
+            (Chrome::Window, _) | (Chrome::Rail, ControlRole::Button) => ("[", "]"),
+            _ => ("", ""),
+        };
+        let (light, dark) = if state.disabled {
+            (style, style)
+        } else if state.selected && self.chrome == Chrome::Window {
+            (self.lowlight, self.highlight)
+        } else {
+            (self.highlight, self.lowlight)
+        };
+        Line::from_spans(vec![
+            Span::styled(focus, marker_style),
+            Span::styled(open, light),
+            Span::styled(
+                selected,
+                if state.disabled {
+                    style
+                } else if state.selected {
+                    base.overlay(self.selection)
+                } else {
+                    base
+                },
+            ),
+            Span::styled(format!("{label} "), style),
+            Span::styled(close, dark),
+        ])
+    }
+
+    /// Single-row control chrome; layout and painting remain ordinary Node work.
+    pub fn control(
+        &self,
+        label: &str,
+        role: ControlRole,
+        state: ControlState,
+        style: Style,
+    ) -> Node {
+        Node::rich_text_wrapped(
+            RichText::from_lines(vec![self.control_line(label, role, state, style)]),
+            crate::WrapMode::NoWrap,
+        )
+        .height(1.0)
+    }
+
+    /// Inset rails around one editor/instrument row. This never post-processes
+    /// the child, so a focused TextInput retains its hardware cursor.
+    pub(crate) fn instrument_well(&self, mut content: Node, focused: bool) -> Node {
+        let edge = if self.environment.glyph_mode == SubcellGlyphMode::Ascii {
+            "|"
+        } else {
+            "▏"
+        };
+        let far = if self.environment.glyph_mode == SubcellGlyphMode::Ascii {
+            "|"
+        } else {
+            "▕"
+        };
+        content.layout_style.width = crate::Dimension::Length(0.0);
+        Node::row()
+            .background(self.well)
+            .height(1.0)
+            .child(
+                Node::text(edge, self.lowlight)
+                    .width(1.0)
+                    .height(1.0)
+                    .flex_shrink(0.0),
+            )
+            .child(content.flex_grow(1.0).min_width(0.0))
+            .child(
+                Node::text(
+                    far,
+                    if focused {
+                        self.highlight.overlay(self.focus)
+                    } else {
+                        self.highlight
+                    },
+                )
+                .width(1.0)
+                .height(1.0)
+                .flex_shrink(0.0),
+            )
     }
 
     pub fn motion(&self, role: MotionRole) -> MotionPlan {
@@ -363,9 +561,11 @@ impl ResolvedSkin {
             return Node::col().width(0.0).height(0.0);
         }
         let fraction = unit(fraction);
+        let inset = self.chrome == Chrome::Window && width > 2;
+        let inner_width = if inset { width - 2 } else { width };
         let mut meter = show::progress(
             fraction,
-            usize::from(width),
+            usize::from(inner_width),
             self.palette.accent,
             self.palette.success,
             self.palette.border,
@@ -396,7 +596,10 @@ impl ResolvedSkin {
                 (ProgressTreatment::Rule, false, _, _) => "╸",
             };
             span.text = replacement.into();
-            span.style = quantize_style(span.style.bg(self.surface), self.environment.color_depth);
+            span.style = quantize_style(
+                span.style.bg(if inset { self.well } else { self.surface }),
+                self.environment.color_depth,
+            );
         }
         let heading = Line::from_spans(vec![
             Span::styled(
@@ -405,9 +608,24 @@ impl ResolvedSkin {
             ),
             Span::styled(format!("{:>3.0}%", fraction * 100.0), self.styles.accent),
         ]);
-        Node::rich_text(RichText::from_lines(vec![heading, meter]))
+        let meter =
+            Node::rich_text_wrapped(RichText::from_lines(vec![meter]), crate::WrapMode::NoWrap)
+                .height(1.0);
+        Node::col()
             .width(f32::from(width))
             .height(2.0)
+            .child(
+                Node::rich_text_wrapped(
+                    RichText::from_lines(vec![heading]),
+                    crate::WrapMode::NoWrap,
+                )
+                .height(1.0),
+            )
+            .child(if inset {
+                self.instrument_well(meter, false)
+            } else {
+                meter
+            })
     }
 
     /// One row of `show::sparkline` samples with capability-safe realization.
@@ -420,9 +638,11 @@ impl ResolvedSkin {
             .iter()
             .map(|v| if v.is_finite() { v.max(0.0) } else { 0.0 })
             .collect();
+        let inset = self.chrome == Chrome::Window && width > 2;
+        let inner_width = if inset { width - 2 } else { width };
         let mut line = show::sparkline(
             &clean,
-            usize::from(width),
+            usize::from(inner_width),
             self.palette.accent,
             self.palette.success,
         );
@@ -447,11 +667,20 @@ impl ResolvedSkin {
             if self.viz.graph == GraphTreatment::Editorial {
                 span.style = self.styles.text;
             }
-            span.style = quantize_style(span.style.bg(self.surface), self.environment.color_depth);
+            span.style = quantize_style(
+                span.style.bg(if inset { self.well } else { self.surface }),
+                self.environment.color_depth,
+            );
         }
-        Node::rich_text(RichText::from_lines(vec![line]))
-            .width(f32::from(width))
-            .height(1.0)
+        let graph =
+            Node::rich_text_wrapped(RichText::from_lines(vec![line]), crate::WrapMode::NoWrap)
+                .height(1.0);
+        (if inset {
+            self.instrument_well(graph, false)
+        } else {
+            graph
+        })
+        .width(f32::from(width))
     }
 }
 
@@ -508,6 +737,7 @@ pub mod skins {
             bg: Color::Rgb(61, 35, 79),
         },
         surface: Color::Rgb(207, 196, 217),
+        well: Color::Rgb(236, 227, 242),
         chrome: Chrome::Window,
         density: Density::Normal,
         spacing: SPACING,
@@ -546,10 +776,13 @@ pub mod skins {
             .fg(Color::Rgb(24, 40, 65))
             .bg(Color::Rgb(94, 222, 226))
             .bold(),
+        focus: Style::new().underline(),
+        disabled: Style::new().fg(Color::Rgb(118, 108, 127)).dim(),
         shadow: Style::new()
             .fg(Color::Rgb(31, 17, 45))
             .bg(Color::Rgb(31, 17, 45)),
         highlight: Style::new().fg(Color::Rgb(248, 236, 255)),
+        lowlight: Style::new().fg(Color::Rgb(83, 63, 103)),
         motion: MotionTokens {
             language: MotionLanguage::Physical,
             enter: Duration::from_millis(150),
@@ -581,6 +814,7 @@ pub mod skins {
             bg: Color::Rgb(8, 14, 19),
         },
         surface: Color::Rgb(12, 22, 29),
+        well: Color::Rgb(7, 15, 20),
         chrome: Chrome::Rail,
         density: Density::Compact,
         spacing: SPACING,
@@ -610,8 +844,11 @@ pub mod skins {
             .fg(Color::Rgb(224, 252, 249))
             .bg(Color::Rgb(22, 72, 81))
             .bold(),
+        focus: Style::new().underline(),
+        disabled: Style::new().fg(Color::Rgb(91, 113, 120)).dim(),
         shadow: Style::new().fg(Color::Black).bg(Color::Black),
         highlight: Style::new().fg(Color::Rgb(91, 225, 145)),
+        lowlight: Style::new().fg(Color::Rgb(49, 93, 103)),
         motion: MotionTokens {
             language: MotionLanguage::Acquisition,
             enter: Duration::from_millis(160),
@@ -643,6 +880,7 @@ pub mod skins {
             bg: Color::Rgb(245, 243, 234),
         },
         surface: Color::Rgb(245, 243, 234),
+        well: Color::Rgb(245, 243, 234),
         chrome: Chrome::Editorial,
         density: Density::Spacious,
         spacing: SPACING,
@@ -672,11 +910,14 @@ pub mod skins {
         },
         border_type: BorderType::Thick,
         title: Style::new().fg(Color::Rgb(30, 32, 35)).bold(),
-        selection: Style::new().fg(Color::Rgb(26, 63, 188)).bold().underline(),
+        selection: Style::new().fg(Color::Rgb(26, 63, 188)).bold(),
+        focus: Style::new().underline(),
+        disabled: Style::new().fg(Color::Rgb(133, 133, 126)).dim(),
         shadow: Style::new()
             .fg(Color::Rgb(191, 190, 181))
             .bg(Color::Rgb(191, 190, 181)),
         highlight: Style::new().fg(Color::Rgb(26, 63, 188)).bold(),
+        lowlight: Style::new().fg(Color::Rgb(99, 102, 105)),
         motion: MotionTokens {
             language: MotionLanguage::Editorial,
             enter: Duration::from_millis(140),
@@ -696,6 +937,40 @@ pub mod skins {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn muted_color_is_not_dimmed_twice_and_empty_selection_slots_are_neutral() {
+        for depth in [
+            ColorDepth::TrueColor,
+            ColorDepth::Ansi256,
+            ColorDepth::Ansi16,
+        ] {
+            let env = UiEnvironment {
+                color_depth: depth,
+                ..UiEnvironment::default()
+            };
+            for skin in [skins::VAPOR95, skins::BLACK_ICE, skins::SWISS_SIGNAL] {
+                let resolved = skin.resolve(&env);
+                assert!(!resolved.style(Tone::Neutral, Emphasis::Muted).dim);
+                assert!(resolved.style(Tone::Neutral, Emphasis::Faint).dim);
+                if resolved.selection.bg != resolved.styles.text.bg {
+                    let line = resolved.control_line(
+                        "Run",
+                        ControlRole::Button,
+                        ControlState::default(),
+                        resolved.styles.text,
+                    );
+                    assert!(
+                        line.spans
+                            .iter()
+                            .all(|span| span.style.bg != resolved.selection.bg),
+                        "inactive {} control painted selection into its blank marker",
+                        skin.name
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn mono_retains_structural_and_attribute_identity() {
