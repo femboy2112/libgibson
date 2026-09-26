@@ -2,7 +2,7 @@
 
 The full enumeration of implemented capabilities. Everything below is marked
 **TESTED on Linux x86_64** unless noted otherwise; `EXPERIMENTAL, Rust-only`
-marks the Scene/Story/FX surfaces that are outside the stable core and the C ABI.
+marks the UI/Scene/Story/FX surfaces that are outside the stable core and the C ABI.
 For the architecture and the core/experimental boundary see
 [`STATE_OF_LIBGIBSON.md`](STATE_OF_LIBGIBSON.md) and the API stability tiers in
 [`RELEASE_CONTRACT.md`](RELEASE_CONTRACT.md). For a tour rather than a catalog,
@@ -158,6 +158,17 @@ start from the [README](../README.md).
 
 ## Experimental (Rust-only)
 
+- **Semantic UI composition** (EXPERIMENTAL, Rust-only; branch validation in
+  [UI_LAYER_VALIDATION.md](UI_LAYER_VALIDATION.md)): `gibson::ui` lowers
+  `Element<Action>` trees to inspectable ordinary Nodes plus typed interaction
+  and key metadata. `App` is optional; `UiRuntime` works with caller-owned
+  Context loops. Controlled editor state, keyed focus continuity, modal
+  capture/restoration and finite semantic motion remain separate from business
+  state. Vapor95, BLACK_ICE and SWISS_SIGNAL layer structural design grammars
+  above existing Theme palettes, including capability-aware Mono treatment.
+  Local Node/Surface/custom-component/Scene/SurfaceFx routes remain open.
+  No exit ghosts, mouse router, virtualization or foreign ABI is added. See
+  [UI_LAYER.md](UI_LAYER.md); this module is not included in the v0.1.1 tag.
 - **Scene algebra** (TESTED, EXPERIMENTAL, Rust-only): `Scene`/`SceneEntity`/`SceneId`/
   `TagId` wrap ordinary `Node`s with identity; `Effect` provides `identity`, `sequence`
   (composition) and `parallel` (monoidal product) over presentation channels.

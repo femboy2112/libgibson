@@ -19,9 +19,9 @@ coherent thing to release under that classification; it is not a 1.0.
 ## 1. Versioning model
 
 There is **one** LibGibson version, canonical in `Cargo.toml` (`[package] version`).
-For the 0.1.x line the Rust crate, the native SDK, the Python wrapper, and the Go
-module all release in lockstep at that single version — no independent wrapper
-versioning until a real need forces it.
+While this policy is in force, the Rust crate, the native SDK, the Python wrapper,
+and the Go module all release in lockstep at that single version — no independent
+wrapper versioning until a real need forces it.
 
 The **C ABI version** (`GIBSON_ABI_VERSION`) is a *separate* integer and is **not**
 tied to the package version (see §5). A package release can advance without
@@ -42,6 +42,27 @@ writes `libgibson = "0.1"` accepts `>=0.1.0, <0.2.0`. Therefore:
 There is no 1.0 yet. 1.0 is when the CORE surface (§3) is frozen; that is out of
 scope for this round.
 
+**Deliberate minor milestones.** The table above sets the *minimum* bump a change
+requires. The project may also **elect** a `0.y` minor bump to mark a substantial new
+public subsystem or project milestone, even when the change is purely additive and
+would otherwise qualify as a patch. Pre-1.0 minor lines are the natural place for the
+public Rust API to evolve, so a milestone that introduces a large new (experimental)
+surface is versioned as a minor to signal its scope — not because anything broke.
+
+- **0.2.0** is such a milestone: it adds the experimental `gibson::ui` semantic
+  composition layer (skins, typed interaction, a keyed presentation runtime) on top of
+  the 0.1.x substrate. The change is additive and the **C ABI is unchanged
+  (`GIBSON_ABI_VERSION` stays 1)** — per §5 the package and ABI versions move
+  independently; the minor bump reflects the size of the new public Rust surface and
+  the milestone, not an ABI break. `gibson::ui` is EXPERIMENTAL (§2) and Rust-only: it
+  is not part of the C ABI or any language wrapper, and moving to 0.2.0 does not
+  promote it to CORE.
+
+The conceptual progression: `0.1.x` established the framebuffer / renderer / terminal
+substrate; `0.2.x` adds the semantic UI / design-system layer; later `0.x` milestones
+continue resolving architecture, portability and stability debt; `1.0` waits until the
+CORE public contract (§3) is genuinely stable and frozen.
+
 ---
 
 ## 2. Rust API stability (pre-1.0)
@@ -57,9 +78,9 @@ docs (`src/lib.rs`). This contract makes the tiers explicit.
 
 ### CORE (best-effort stability at 0.x)
 
-These modules are the load-bearing, C-ABI-adjacent surface. Within a `0.1.z` patch
-they receive no breaking changes; breaking changes to them bump the `0.y` slot and
-are recorded in the CHANGELOG:
+These modules are the load-bearing, C-ABI-adjacent surface. Within a given `0.y`
+patch line they receive no breaking changes; a breaking CORE change requires the
+next `0.y` minor and is recorded in the CHANGELOG:
 
 - `cell` — `Cell`, `Color`, `Style`, `Span`, `Line`, `RichText`, `Theme`, `TextAlign`
 - `surface` — `Surface`, `Rect`, `BorderType`
@@ -94,6 +115,17 @@ breaking them in a pure patch:
 - `story` — narrative beat/reaction director (`Story`, `StoryDirector`, `Beat`, `TraceRetention`, …)
 - `surface_fx` — ordered endomorphisms over a realized surface
 - `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack
+- `ui` — Rust-only semantic components, skins above `Theme`, typed interaction,
+  stable-key presentation and finite motion, lowered to ordinary `Node` trees.
+  This implementation branch adds it experimentally; it is not present in the
+  v0.1.1 tag. `Element`, `Skin`, `UiRuntime`, `App`, token types and lowering
+  sidecars all belong to this tier, not CORE. See [UI_LAYER.md](UI_LAYER.md).
+
+The experimental UI layer does not extend the C ABI or C++/Python/Go wrappers,
+change `GIBSON_ABI_VERSION`, raise the MSRV, or constitute a package release.
+Existing `Theme`, `Node`, `Context` and terminal-ownership contracts continue to
+apply. Its tests are scoped evidence, not a production-stability or human
+usability guarantee.
 
 ### `ffi` module
 

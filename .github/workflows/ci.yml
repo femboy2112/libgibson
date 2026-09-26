@@ -51,6 +51,11 @@ jobs:
       - name: FX Lab generator tests
         run: cargo test --example fx_lab
 
+      - name: Semantic UI example tests
+        # Example-local interaction and visible-control regressions are outside
+        # the default `cargo test` suite. Build-only coverage is insufficient.
+        run: cargo test --example skin_gallery --example polished_agent_ui --example ui_showcase
+
       - name: Documentation
         env:
           RUSTDOCFLAGS: -D warnings

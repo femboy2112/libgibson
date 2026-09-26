@@ -6,7 +6,7 @@
 //! painting, [`Surface`], differential updates and ANSI compilation remain
 //! separate layers.
 //!
-//! [`scene`], [`story`], [`surface_fx`], [`raster`], [`raster3d`] and [`raster_fx`]
+//! [`ui`], [`scene`], [`story`], [`surface_fx`], [`raster`], [`raster3d`] and [`raster_fx`]
 //! are experimental Rust-only composition/graphics APIs. They do not own terminal
 //! lifecycle. Experimental additions may require source changes between releases.
 //!
@@ -51,6 +51,8 @@ pub mod surface_fx;
 // not a standalone public API. See docs/RELEASE_CONTRACT.md §2.
 pub(crate) mod transaction;
 pub mod transition;
+/// Experimental Rust-only semantic components, skins, interaction, and motion.
+pub mod ui;
 pub mod viewport;
 
 pub use ansi::AnsiCompiler;

@@ -1,0 +1,13 @@
+
+
+  NEURAL OPERATIONS
+
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  01 / AGENTS                            02 / THROUGHPUT
+    + Connected                            context  62%
+                                           ━━━━━━━━━━━╸──────
+    →●Builder
+                                           ▂▂▂▅▅▅▃▃▃▆▆▆▅▅▅███
+      Approve
+
+  inspect build
