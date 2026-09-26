@@ -368,11 +368,22 @@ fn container(
                 Node::col().background(skin.surface).child(content)
             }
         }
-        Chrome::Editorial => Node::col()
-            .background(skin.surface)
-            .child(rule(cx, cx.build.environment.width))
-            .child(Node::text(title(cx, value, section), skin.title).height(1.0))
-            .child(body),
+        Chrome::Editorial => {
+            let content = Node::col()
+                .background(skin.surface)
+                .child(rule(cx, cx.build.environment.width))
+                .child(Node::text(title(cx, value, section), skin.title).height(1.0))
+                .child(body);
+            if elevated {
+                // A floating annotation needs a visible local boundary even in
+                // Mono, where its paper background matches the dimmed page.
+                Node::border_box(skin.border_type, skin.border)
+                    .background(skin.surface)
+                    .child(content)
+            } else {
+                content
+            }
+        }
     }
 }
 fn lower<A>(
@@ -828,8 +839,58 @@ fn lower_role<A>(
 #[cfg(test)]
 mod visual_tests {
     use super::*;
-    use crate::ui::{label, panel, row, skins, text_input, MotionPreference};
-    use crate::{compute_layout, paint, ColorDepth, Surface, TextInputState};
+    use crate::ui::{
+        button, label, modal, panel, row, screen, skins, text_input, MotionPreference,
+    };
+    use crate::{compute_layout, paint, ColorDepth, SubcellGlyphMode, Surface, TextInputState};
+
+    #[test]
+    fn narrow_editorial_modal_separates_its_ordinal_from_the_underlay() {
+        for glyph_mode in [SubcellGlyphMode::Braille2x4, SubcellGlyphMode::Ascii] {
+            let environment = UiEnvironment {
+                width: 36,
+                height: 18,
+                color_depth: ColorDepth::Mono,
+                glyph_mode,
+                motion: MotionPreference::None,
+            };
+            let cx = BuildCx::new(skins::SWISS_SIGNAL, environment);
+            let tree: Element<()> = screen()
+                .height(18)
+                .child(
+                    panel("Active mission")
+                        .number(2)
+                        .child(label("Underlay text")),
+                )
+                .overlay(
+                    modal("Review")
+                        .number(7)
+                        .child(label("Approve simulated patch?"))
+                        .child(button("Approve").on_press(())),
+                );
+            let mut node = compile(&tree, &cx).unwrap().node;
+            compute_layout(&mut node, 36, 18).unwrap();
+            let mut surface = Surface::new(36, 18);
+            paint(&node, &mut surface);
+            let title_row = (0..18)
+                .map(|y| {
+                    (0..36)
+                        .map(|x| surface.get(x, y).unwrap().glyph.grapheme.as_str())
+                        .collect::<String>()
+                })
+                .find(|row| row.contains("07 / REVIEW"))
+                .expect("dialog title must fit");
+            let prefix = title_row.split("07 / REVIEW").next().unwrap();
+            assert!(
+                prefix.ends_with(if glyph_mode == SubcellGlyphMode::Ascii {
+                    '|'
+                } else {
+                    '┃'
+                }),
+                "dialog ordinal must have a local edge, got {title_row:?}"
+            );
+        }
+    }
 
     #[test]
     fn vapor_bevel_keeps_corners_local_and_inset_editor_keeps_cursor() {
