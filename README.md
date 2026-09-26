@@ -228,6 +228,7 @@ cargo run --example polished_agent -- --auto        # restrained flagship produc
 cargo run --example glyph_capability_lab            # the glyph-realization axis, visually
 cargo run --example ui_quickstart                   # experimental semantic UI (this branch)
 cargo run --example skin_gallery -- --skin=vapor95  # one semantic view, three design grammars
+cargo run --example ui_showcase -- --skin=black-ice # operations workspace + deterministic motion/profile probes
 
 # ── Go deeper ────────────────────────────────────────────────
 cargo run --release --example acid_vs_crash         # maximalist RGB cinematic (release build!)

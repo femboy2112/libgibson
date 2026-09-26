@@ -65,6 +65,7 @@ restore the caller's context on return; the caller owns that lifecycle.
 | `ui_quickstart` | A short App/model/update/view application with no raw color values |
 | `ui_gallery` | Controlled selection/input, statuses, charts, table, command-menu modal, toast and custom canvas |
 | `skin_gallery` | The same gallery view and harness, with a different initial skin choice |
+| `ui_showcase` | One deterministic operations workspace, responsive composition, cached custom instrument, motion samples and transport measurements |
 | `polished_agent_ui` | Context scrollback, permission capture, simulated failure/recovery, editable prompt, code viewport and telemetry |
 
 The galleries and agent accept `--skin=vapor95|black-ice|swiss-signal`,
@@ -108,13 +109,14 @@ interaction metadata for children that would never become visible.
 | Controlled interaction | `button`, `choice`, `text_input`, `tabs` |
 | Visualization | `progress`, `sparkline`, `table` |
 | Floating presentation | `modal`, `toast`, `.overlay(...)` |
-| Substrate | `raw(Node)`, `surface(Arc<Surface>)`, `raster(Surface)` |
+| Substrate | `raw(Node)`, `presented(callback)`, `surface(Arc<Surface>)`, `raster(Surface)` |
 
 `stack()` follows ordinary `Node::stack` sizing: give it an explicit size or a
 bounded parent. For a floating layer over intrinsically sized content, prefer
 `.overlay(...)`.
 
-`tabs()` is a row of application-supplied choices, not a second selection model.
+`tabs()` groups application-supplied choices with skin-specific tab affordances;
+selection remains application-owned.
 Tables are small, equally allocated cell columns, not sortable/virtualized data
 grids. `list()` is a column, not a virtual collection. `viewport(x, y)` clips an
 already-created subtree using the existing camera primitive; it does not avoid
@@ -125,6 +127,11 @@ Semantic builders include `.tone(Tone::Success)`, `.emphasis(Emphasis::Strong)`,
 `.density(Density::Compact)`, `.elevation(Elevation::Raised)`, `.selected(bool)`
 and `.disabled(bool)`. Domain selection remains a value supplied by the view.
 Density inherits down the semantic tree; a component can override it locally.
+
+For stable authored section numbers, use `section("Review").number(24)` (also
+supported by panel/card/modal). Skins with numbered titles use that number
+through reordering or responsive omission. Without it, numbering is an automatic
+traversal ordinal, not persistent identity. Keys and numbers have distinct roles.
 
 Layout uses `.width(cells)`, `.height(cells)`, `.grow(weight)`, `.gap(cells)` and
 `.padding(cells)`. `row().responsive(72)` becomes a column below terminal width
@@ -147,6 +154,11 @@ ordinary Taffy constraints and toasts align to its bottom right. A screen with
 an overlay uses the environment height unless an explicit `.height(...)` sets
 its local extent.
 
+Place transient notifications on a local, noninteractive host when the screen's
+bottom edge contains command controls. The showcase mounts its toast over the
+mission panel's secondary details, leaving the editor and Send action visible.
+Raw/presented overlay Nodes retain their authored local offsets when mounted.
+
 ## Theme is a palette; Skin is a design grammar
 
 The existing `Theme` and `ThemeStyles` remain the semantic palette. `Skin`
@@ -158,13 +170,40 @@ and motion tokens. `skin.resolve(&UiEnvironment { ... })` produces a
 | Skin | Structure and controls | Motion language |
 | --- | --- | --- |
 | `VAPOR95` | Framed diagnostic windows, title bars, highlighted edges, physical button delimiters and chunky meters; gray/plum and cyan/lavender accents | Short physical reveal and activation feedback |
-| `BLACK_ICE` | Technical rails, compact spacing, geometric status marks and command-style controls; near-black field with cyan/green instrumentation | Acquisition dissolve/scanline, focus illumination, brief error displacement |
+| `BLACK_ICE` | Technical rails, compact spacing, geometric status marks and command-style controls; near-black field with cyan/green instrumentation | Acquisition dissolve/scanline, localized focus illumination and error emphasis |
 | `SWISS_SIGNAL` | Numbered sections, horizontal rules, restrained boxing and more negative space; ivory/charcoal/cobalt hierarchy | Editorial wipes and restrained rule emphasis |
 
 The same semantic gallery is used by `ui_gallery` and `skin_gallery`; skin
 selection does not choose a different application tree. Within a manual loop,
 `runtime.set_skin(skins::SWISS_SIGNAL)` changes it in one call. Focus and business
 state survive; active effects from the previous grammar are cleared.
+
+### Visual grammar, including monochrome
+
+The grammar is attached to semantic roles, never to a demo's labels. These are
+the built-in design intentions and implementation choices to inspect together:
+
+| Role | Vapor95 | Black Ice | Swiss Signal |
+| --- | --- | --- | --- |
+| Geometry | Workstation windows and inset wells | Open instrument panels and thin rails | Open report sections and strong rules |
+| Chrome | Light upper/left edges, dark lower/right edges | Compact technical headers | Numbered editorial headers |
+| Spacing | Physical control rhythm; compact mode removes shadow budget | Compact aligned information | Spacious default, explicit compact fallback |
+| Hierarchy | Title bars above information surfaces | Local accent above quiet surfaces | Weight, numbering and negative space |
+| Controls | Raised/depressed delimiters | Command brackets and acquisition marker | Minimal labels with directional marker |
+| Status | Small workstation indicators | Telemetry markers | Editorial signals |
+| Selection | Persistent filled marker | Persistent geometric marker | Persistent dot; focus remains separate |
+| Visualization | Segmented meters and inset graph treatment | Thin traces and instrument meters | Printed traces and progress rules |
+| Motion | Short physical reveal/activation | Acquisition and localized illumination | Clean reveals and rule emphasis |
+| Depth | Bevel and bounded shadow | Subtle surface hierarchy | Minimal boxing |
+| Background | Plum desktop and gray window surfaces | Near-black field | Ivory field |
+| Success/error | Indicator emphasis or one physical impulse | Trace lock / one brief error impulse | Restrained signal emphasis |
+| Modal/toast | Floating window / notification surface | Instrument interruption / local signal | Editorial interruption / marginal annotation |
+
+Focus, selection and disabled state use independent markers/attributes. Focused
+and selected together remains distinguishable from selection alone in Mono.
+Disabled controls retain readable labels with an explicit unavailable marker;
+they are not merely muted information. These finite rendered distinctions are
+tested, not a substitute for human usability evaluation.
 
 Choosing a skin opts into its designed surface/background treatment. This is
 an explicit high-level visual choice, including Swiss's ivory field, above the
@@ -239,6 +278,15 @@ events. Only the focused input requests the hardware cursor; inactive inputs
 lower to text. A caller-applied `SurfaceFx` on an ancestor can suppress the
 cursor under existing painter semantics.
 
+A semantic input participates in focus even without an edit callback. While
+focused it owns typing, paste, Backspace/Delete, all arrows, Home/End and the
+editor's Ctrl-A/E/U/K operations. Without `.on_edit(...)`, these events are
+consumed and the model stays unchanged. Up/Down are consumed no-ops in the
+single-line editor. This ownership precedes `.on_event(...)`; forgetting an edit
+binding cannot trigger a background shortcut. Unsupported shortcuts such as
+Ctrl-Q, function keys and Escape remain unconsumed unless an explicit custom
+handler or modal owns them. Enter still invokes `.on_press(...)` when bound.
+
 Toast existence and expiry remain application-owned. `toast(...)` supplies
 presentation; it does not create an invisible timer or mutate the model later.
 
@@ -263,6 +311,12 @@ At its deadline a plan returns the exact empty effect chain: it adds no residual
 style to the settled tree. Given the same ordered frames/events and explicit
 times, presentation is deterministic. Runtime times clamp backwards samples;
 create a fresh runtime for an independent replay.
+
+Modal and toast motion targets the visible dialog/card, not its parent-sized
+placement wrapper. The modal veil remains stationary; an entry effect must not
+recolor the background or turn a small notification into a viewport-sized
+transition. Local post-processing on these components follows the same visual
+target. Ordinary focus feedback should affect the control's own footprint.
 
 **Removal is immediate in this implementation.** Exit is reported, and departed
 keys/actions/effects are discarded. No exit ghosts are retained. Exit/ModalExit
@@ -325,10 +379,47 @@ impl Component<Action> for Instrument {
 let custom = component(Instrument, &build_cx);
 ```
 
-`BuildCx` carries resolved skin, environment, explicit time, focus and current
-motion chains. `ui_gallery` includes a custom canvas component beyond the
-built-in catalog. Raw nodes do not invent interaction metadata: bind actions or
-custom events on their semantic wrapper when keyboard routing is needed.
+`BuildCx` carries **only resolved skin, environment and explicit time**. Semantic
+construction happens before reconciliation, so it cannot read a previous frame's
+focus or motion as if they belonged to the new tree. This is an intentional
+source change from the first unpublished experimental branch revision.
+
+The phases are explicit:
+
+1. The view and `Component::build` construct `Element<A>` using `BuildCx`.
+2. The runtime collects and validates metadata once, then reconciles keys,
+   modal capture, focus and finite motion.
+3. Lowering receives `PresentationCx { build, focused, motions }` for that
+   reconciled frame and produces ordinary Nodes and public sidecars.
+
+Use `presented(...)` when a custom substrate node needs this third phase:
+
+```rust
+use gibson::{Node, Style};
+use gibson::ui::prelude::*;
+
+let instrument: Element<()> = presented(|cx| {
+    let focused = cx.focused.as_ref() == Some(&Key::named("instrument"));
+    Node::text(if focused { "ACQUIRED" } else { "STANDBY" }, Style::new())
+}).key("instrument").on_press(());
+```
+
+This callback runs once during lowering, after complete-tree validation. It
+returns a `Node`, so it cannot change the semantic tree or create a focus/build
+feedback loop. Semantic motion and `.post_process(...)` wrap its result
+automatically; do not apply `cx.motions` again. Use `cx.build.time` and immutable
+captured data for deterministic custom motion. Callback purity is the author's
+responsibility. Layout is preserved as for `raw(Node)`.
+
+Free `compile(&tree, &build_cx)` is settled and unfocused. For deliberately
+supplied presentation state, `compile_presented(&tree, &presentation_cx)` still
+validates structure but does not reconcile the caller's chosen focus.
+`UiRuntime::frame` is the normal reconciled path. Invalid semantic trees return
+before mutating runtime presentation state or invoking presentation callbacks.
+
+`ui_gallery` includes a custom canvas component beyond the built-in catalog.
+Raw nodes do not invent interaction metadata: bind actions or custom events on
+their semantic wrapper when keyboard routing is needed.
 
 Scene integration works in both directions: embed `raw(scene.to_node(...))`,
 or place a compiled `frame.node` inside an ordinary `SceneEntity`. Retain the
@@ -356,13 +447,17 @@ editorial.spacing.spacious_gap = 2;
    RGB. Respect the glyph policy and the established central color quantizer.
    Chrome/status glyph tokens should occupy one displayed cell; supply their
    ASCII alternatives. Application text is never automatically transliterated.
+   `ControlState` keeps focus, selection and disabled independent;
+   `ControlRole` distinguishes buttons, choices and tabs. Resolved control
+   helpers return ordinary lines/Nodes. Well, highlight, lowlight and focus
+   tokens are part of the grammar; blank marker slots must not look selected.
 4. Map motion to meaning. Effects must be deterministic, finite, exact at their
    settled endpoint, and sensible under Reduced/None. Avoid continuous noise.
 5. Exercise at least 80×24, 120×40 and a narrow case, with long labels, Unicode,
    active input, modal focus and raw/custom content. Do not infer font support
    or cross-platform behavior from an in-process capture.
 
-The first skin model exposes a small vocabulary of chrome/motion grammars.
+The skin model exposes a small vocabulary of chrome/motion grammars.
 Entirely new structural grammars may need an experimental lowering extension
 or a custom component; arbitrary skin plugins/configuration files are not promised.
 
@@ -390,3 +485,43 @@ palette, foreign-language bindings and human usability studies are deferred.
 The existing crossterm resize/input collision limitation still applies. Tests
 and visual inspection establish the recorded finite cases, not universal
 expressivity, universal ease, production stability or a new platform guarantee.
+
+## Reproduce the workspace, motion and transport probes
+
+`ui_showcase` uses one semantic workspace under all three skins. Its synthetic
+worker/status data never executes commands or edits files. Selection, draft,
+permission and notification lifetime belong to its model. One shared custom
+canvas Surface is rebuilt only when its actual style, glyph or size inputs
+change. The application explicitly fills its viewport and prioritizes controls
+at small sizes; ordinary `screen()` retains its natural-height contract.
+
+```sh
+cargo build --example ui_showcase
+cargo run --example ui_showcase -- --skin=vapor95 --fullscreen
+cargo run --example ui_showcase -- --dump --fullscreen --skin=swiss-signal --mono --width=36 --height=18
+cargo run --example ui_showcase -- --dump-ansi --fullscreen --transition=modal --at-ms=90 --truecolor
+cargo run --example ui_showcase -- --profile --fullscreen --skin=black-ice --width=80 --height=24 --truecolor
+```
+
+`--transition=initial|settled|focus|input|activate|modal|success|error|toast`
+primes a deterministic prior frame, applies the actual routing/model change and
+samples at `--at-ms=N` relative to that event. For Full motion, sample zero,
+one quarter, one half, three quarters and the skin plan's deadline. `--profile`
+does this automatically and includes an extra settled sample. Reduced and None
+use the same application state and obey the selected policy. The initial scene
+has no prior settled frame; all other transitions do.
+
+The TSV profile reports semantic element count, recursive ordinary Node count,
+emitted frame bytes, exact displayed cell differences (via the headless ANSI
+stream), renderer affected cells, active motions, retained keys, canvas builds,
+and separate view/lowering/render microseconds. Changed-cell counts include
+style changes. Timings are informational measurements of one process/build;
+they are not stable benchmark thresholds. Modal opening legitimately dims its
+underlay once; subsequent modal animation is local to the dialog. A settled
+frame should emit no bytes unless physical cursor state also changes.
+
+The comparison below is generated from real headless ANSI output, decoded by
+`pyte` and font-rendered with Pillow; it is not a UI mockup. Reproduction and
+font/capability limits are documented in [the asset notes](assets/README.md).
+
+![One semantic operations workspace rendered by three skins](assets/ui-skins-truecolor.png)
