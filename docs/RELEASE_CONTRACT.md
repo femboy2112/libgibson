@@ -94,6 +94,17 @@ breaking them in a pure patch:
 - `story` — narrative beat/reaction director (`Story`, `StoryDirector`, `Beat`, `TraceRetention`, …)
 - `surface_fx` — ordered endomorphisms over a realized surface
 - `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack
+- `ui` — Rust-only semantic components, skins above `Theme`, typed interaction,
+  stable-key presentation and finite motion, lowered to ordinary `Node` trees.
+  This implementation branch adds it experimentally; it is not present in the
+  v0.1.1 tag. `Element`, `Skin`, `UiRuntime`, `App`, token types and lowering
+  sidecars all belong to this tier, not CORE. See [UI_LAYER.md](UI_LAYER.md).
+
+The experimental UI layer does not extend the C ABI or C++/Python/Go wrappers,
+change `GIBSON_ABI_VERSION`, raise the MSRV, or constitute a package release.
+Existing `Theme`, `Node`, `Context` and terminal-ownership contracts continue to
+apply. Its tests are scoped evidence, not a production-stability or human
+usability guarantee.
 
 ### `ffi` module
 

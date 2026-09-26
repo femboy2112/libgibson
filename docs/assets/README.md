@@ -41,3 +41,35 @@ engine's own output, captured and reconstructed cell-for-cell.
 The colours, geometry, and glyphs are exactly what the engine produces; the only
 post-processing is font rasterization of the reconstructed grid and the one-row HUD
 crop above.
+
+## `ui-skins-truecolor.png`
+
+The experimental UI guide's comparison shows **the same deterministic
+`ui_showcase` semantic state** at 120×40 under Vapor95, Black Ice and Swiss
+Signal. Each panel comes from the example's real `Context::headless` ANSI output.
+No UI labels, colors, chrome or graphics are manually placed in the image.
+The outer skin captions and gutters are the capture tool's comparison frame.
+
+```sh
+cargo build --example ui_showcase
+python3 -m pip install pyte Pillow
+python3 docs/assets/render_ui_skins.py --width=120 --height=40 \
+    --depth=truecolor --transition=settled --at-ms=1000 \
+    --out=docs/assets/ui-skins-truecolor.png
+```
+
+`render_ui_skins.py` replays the ANSI stream with pyte, retains SGR faint/bold/
+reverse/underline, draws block/shade/Braille glyphs from their actual cell values,
+and uses DejaVu Sans Mono for text. Defaults are 10×20 pixels per terminal cell.
+These are virtual-terminal captures with an explicit default palette/font, not
+a guarantee about every real terminal's fonts, ANSI16 palette or cursor shape.
+The capture tool does not modify LibGibson's renderer or participate in runtime.
+DejaVu Sans Mono lacks some CJK glyphs; those may appear as missing-glyph boxes
+in PNGs even when the source ANSI stream and cell-width invariants are correct.
+
+For review, substitute `--depth=ansi16|mono`, `--width=80 --height=24`, or
+`--width=36 --height=18`. `--skin=black-ice` captures just one skin. Motion samples
+use the example's `--transition=modal|focus|activate|success|error` and `--at-ms`;
+`--transition=input|toast` supplies the corresponding inspection state.
+`--raw-dir=/tmp/ui-captures` also preserves source ANSI streams. Text goldens
+and rendered behavioral tests remain separate from this documentation asset.
