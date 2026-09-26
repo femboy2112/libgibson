@@ -416,13 +416,16 @@ fn view(model: &Model, cx: &BuildCx) -> Element<Action> {
             ),
         )
         .child(
-            label("Tab focus • Enter activate • Ctrl-C cancel / exit").emphasis(Emphasis::Muted),
+            label("Tab / Arrows focus • Enter activate • Ctrl-C cancel / exit")
+                .emphasis(Emphasis::Muted),
         );
     if model.stage == Stage::Permission {
         tree = tree.overlay(
             modal("PERMISSION / BEFORE MUTATION")
                 .key("permission")
-                .height(12)
+                // Never exceed the live viewport: a fixed height would clip the
+                // trailing actions off a short window instead of adapting to it.
+                .height(cx.environment.height.min(12))
                 .density(Density::Compact)
                 .on_dismiss(Action::Reject)
                 .child(text(
