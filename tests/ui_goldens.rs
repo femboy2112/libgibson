@@ -101,7 +101,8 @@ fn valid_cells(surface: &Surface) {
 
 #[test]
 fn one_semantic_tree_preserves_information_across_skin_capability_size_matrix() {
-    for (width, height) in [(80, 24), (120, 40), (32, 16)] {
+    let mut cases = 0;
+    for (width, height) in [(80, 24), (120, 40), (36, 18), (32, 16)] {
         for depth in [
             ColorDepth::TrueColor,
             ColorDepth::Ansi256,
@@ -109,6 +110,7 @@ fn one_semantic_tree_preserves_information_across_skin_capability_size_matrix() 
             ColorDepth::Mono,
         ] {
             for skin in [skins::VAPOR95, skins::BLACK_ICE, skins::SWISS_SIGNAL] {
+                cases += 1;
                 let env = environment(width, height, depth);
                 let (surface, terminal, ansi) = render(skin, env);
                 valid_cells(&surface);
@@ -153,6 +155,7 @@ fn one_semantic_tree_preserves_information_across_skin_capability_size_matrix() 
             }
         }
     }
+    assert_eq!(cases, 48, "keep the reported visual matrix count explicit");
 }
 
 #[test]
