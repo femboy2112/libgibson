@@ -2,11 +2,14 @@
 
 This document outlines completed work and the planned future milestones for LibGibson.
 
-> **Current status (2026-09-25):** v0.1.0 is released on GitHub (Engineering Alpha,
-> Linux x86_64; tag → `a3f1e29`, prerelease-flagged, `main` at `30a2dfa`). The full
-> suite is **657 tests (247 unit + 410 integration)**. Ecosystem-registry publication
-> (crates.io / PyPI / Go module proxy) remains deferred. The checkpoint counts and CI
-> run ids below are historical development evidence, preserved as measured.
+> **Current status (2026-09-26):** v0.1.1 is released on GitHub (Engineering Alpha,
+> Linux x86_64; tag → `v0.1.1` at `3789332`, prerelease-flagged) — a
+> backwards-compatible patch over the first release, v0.1.0 (2026-09-25), adding
+> headless render-to-buffer capture and a `RenderMode` re-export (issues #27/#28); the
+> C ABI is unchanged (`GIBSON_ABI_VERSION` 1). The full suite is **661 tests (247 unit
+> + 413 integration + 1 doctest)**. Ecosystem-registry publication (crates.io / PyPI /
+> Go module proxy) remains deferred. The checkpoint counts and CI run ids below are
+> historical development evidence, preserved as measured.
 
 ## Post-merge priorities
 
