@@ -293,6 +293,61 @@ fn editor_callbacks_cannot_steal_edit_keys_but_can_bind_unsupported_shortcuts() 
     assert_eq!(runtime.handle_event(&shortcut).actions, [shortcut]);
 }
 
+#[test]
+fn focused_editor_owns_supported_ctrl_line_shortcuts_and_leaves_others_routable() {
+    fn ctrl(c: char) -> Event {
+        Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL))
+    }
+    let env = environment(ColorDepth::Mono, MotionPreference::None);
+
+    // Without on_edit the editor still owns the supported line shortcuts
+    // (a/e/u/k): they are consumed, never leaked as an action, and never mutate
+    // the application-owned snapshot. An unsupported chord stays routable.
+    let state = TextInputState::with_text("hello");
+    let mut runtime = UiRuntime::new(skins::BLACK_ICE);
+    runtime
+        .frame(&text_input::<String>(&state).key("editor"), env, ms(0))
+        .unwrap();
+    assert_eq!(runtime.focus(), Some(&key("editor")));
+    for c in ['a', 'e', 'u', 'k'] {
+        let routed = runtime.handle_event(&ctrl(c));
+        assert!(routed.consumed, "editor leaked supported Ctrl-{c}");
+        assert!(
+            routed.actions.is_empty(),
+            "read-only editor fabricated an action"
+        );
+        assert_eq!(
+            state.text, "hello",
+            "read-only editor mutated its own snapshot"
+        );
+    }
+    assert!(
+        !runtime.handle_event(&ctrl('w')).consumed,
+        "unsupported Ctrl-w must remain routable to the application"
+    );
+
+    // With on_edit, a supported line-kill actually edits: Ctrl-u with the cursor
+    // at end clears the whole line before the cursor, so the edited value empties.
+    let state = TextInputState::with_text("erase me");
+    let mut runtime = UiRuntime::new(skins::BLACK_ICE);
+    runtime
+        .frame(
+            &text_input(&state)
+                .key("editor")
+                .on_edit(|s: TextInputState| s.text),
+            env,
+            ms(0),
+        )
+        .unwrap();
+    let routed = runtime.handle_event(&ctrl('u'));
+    assert!(routed.consumed);
+    assert_eq!(
+        routed.actions,
+        [String::new()],
+        "Ctrl-u did not clear the buffer before the cursor"
+    );
+}
+
 fn probe_node(cx: &PresentationCx) -> Node {
     let focus = cx
         .focused
