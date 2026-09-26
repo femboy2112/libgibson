@@ -4,7 +4,10 @@ All notable changes to LibGibson are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 the 0.x Semantic Versioning rules defined in
 [`docs/RELEASE_CONTRACT.md`](docs/RELEASE_CONTRACT.md) — pre-1.0, a breaking change
-bumps the minor slot (`0.y`) and a compatible change bumps the patch slot (`0.1.z`).
+bumps the minor slot (`0.y`) and a compatible change bumps the patch slot (`0.y.z`).
+The project may also deliberately elect a minor bump to mark a substantial additive
+public subsystem or milestone (see the contract's "deliberate minor milestones"); 0.2.0
+is such a milestone.
 
 LibGibson is **engineering alpha**. Version 0.1.0 was released on GitHub on
 2026-09-25 (Linux x86_64: source plus a native SDK archive). It is **not** published

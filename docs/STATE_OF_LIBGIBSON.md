@@ -74,12 +74,14 @@ shared Surface content, custom components, Scene composition and local SurfaceFx
 remain available. Choosing a skin explicitly opts into its designed background
 treatment; existing direct-Node/Theme defaults are unchanged.
 
-The layer is **EXPERIMENTAL**, absent from the v0.1.1 tag, with no version/ABI
-bump, release or merge implied. Exit removal is immediate (no ghosts); mouse
-hit testing, bubbling, virtualization and foreign bindings remain deferred.
-See [usage and boundaries](UI_LAYER.md) and
-[exact baseline/branch validation](UI_LAYER_VALIDATION.md). Historical counts
-and CI records below still describe their original checkpoints.
+The layer is **EXPERIMENTAL**. It is absent from the released v0.1.1 tag; the
+package is prepared as **0.2.0 (unreleased)** to mark this additive milestone,
+the **C ABI stays at version 1** (no ABI break), and 0.2.0 has not been tagged,
+released, or published — v0.1.1 remains the most recent published release. Exit
+removal is immediate (no ghosts); mouse hit testing, bubbling, virtualization
+and foreign bindings remain deferred. See [usage and boundaries](UI_LAYER.md)
+and [exact baseline/branch validation](UI_LAYER_VALIDATION.md). Historical
+counts and CI records below still describe their original checkpoints.
 
 ## Event delivery evidence
 

@@ -19,9 +19,9 @@ coherent thing to release under that classification; it is not a 1.0.
 ## 1. Versioning model
 
 There is **one** LibGibson version, canonical in `Cargo.toml` (`[package] version`).
-For the 0.1.x line the Rust crate, the native SDK, the Python wrapper, and the Go
-module all release in lockstep at that single version — no independent wrapper
-versioning until a real need forces it.
+While this policy is in force, the Rust crate, the native SDK, the Python wrapper,
+and the Go module all release in lockstep at that single version — no independent
+wrapper versioning until a real need forces it.
 
 The **C ABI version** (`GIBSON_ABI_VERSION`) is a *separate* integer and is **not**
 tied to the package version (see §5). A package release can advance without
@@ -78,9 +78,9 @@ docs (`src/lib.rs`). This contract makes the tiers explicit.
 
 ### CORE (best-effort stability at 0.x)
 
-These modules are the load-bearing, C-ABI-adjacent surface. Within a `0.1.z` patch
-they receive no breaking changes; breaking changes to them bump the `0.y` slot and
-are recorded in the CHANGELOG:
+These modules are the load-bearing, C-ABI-adjacent surface. Within a given `0.y`
+patch line they receive no breaking changes; a breaking CORE change requires the
+next `0.y` minor and is recorded in the CHANGELOG:
 
 - `cell` — `Cell`, `Color`, `Style`, `Span`, `Line`, `RichText`, `Theme`, `TextAlign`
 - `surface` — `Surface`, `Rect`, `BorderType`
