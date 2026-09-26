@@ -100,7 +100,10 @@ The core engine is **implemented and tested on Linux x86_64**. A few of the load
 - **Versioned C ABI** — `GIBSON_ABI_VERSION = 1`, ELF SONAME `libgibson.so.1`,
   validated inputs, with C / C++ / Python / Go wrappers.
 - **Experimental, Rust-only** — Scene algebra (`Render : SCENE → UI` functor), a Story
-  director with deterministic replay, and a software-graphics FX substrate.
+  director with deterministic replay, a software-graphics FX substrate, and
+  [`gibson::ui`](docs/UI_LAYER.md): semantic components, three design skins, typed
+  interaction and finite motion, lowering to ordinary Nodes. The UI layer is
+  branch work, not part of the v0.1.1 tag.
 
 📖 **Full tested-feature catalog: [`docs/FEATURES.md`](docs/FEATURES.md).**
 
@@ -223,6 +226,8 @@ int main(void) {
 cargo run --release --example libgibson_intro -- --auto --color=truecolor  # the short film
 cargo run --example polished_agent -- --auto        # restrained flagship product demo
 cargo run --example glyph_capability_lab            # the glyph-realization axis, visually
+cargo run --example ui_quickstart                   # experimental semantic UI (this branch)
+cargo run --example skin_gallery -- --skin=vapor95  # one semantic view, three design grammars
 
 # ── Go deeper ────────────────────────────────────────────────
 cargo run --release --example acid_vs_crash         # maximalist RGB cinematic (release build!)
@@ -249,13 +254,14 @@ Deep dives: [introductory cinema](docs/INTRODUCTORY_CINEMA.md) ·
 
 ## Status & support
 
-Core engine behaviour is **IMPLEMENTED + TESTED on Linux x86_64 only**. The suite is
-**661 tests** (247 library unit + 413 integration + 1 doctest); `cargo clippy --all-targets
+Core engine behaviour is **IMPLEMENTED + TESTED on Linux x86_64 only**. The v0.1.1
+baseline suite has **661 tests** (247 library unit + 413 integration + 1 doctest); `cargo clippy --all-targets
 --all-features -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean.
 C/C++ examples run under ASan + UBSan (LSan disabled); the Python `ctypes` example runs;
 the Go bindings pass local + public Linux build/vet/example smoke (no Go unit tests
 exist). Public CI exercises Rust, MSRV 1.85, C/C++/Python, native sanitizers, PTYs, and
 Go — see the [exact evidence and limits](docs/STATE_OF_LIBGIBSON.md#executed-public-ci-evidence).
+Experimental UI branch checks are recorded [separately](docs/UI_LAYER_VALIDATION.md).
 
 **Not verified / not implemented:** Windows / ConPTY · macOS · tmux / screen / SSH · a
 broad terminal matrix (xterm, Alacritty, Kitty, WezTerm, iTerm2, …) · terminal
@@ -286,6 +292,7 @@ experimental, blockers, priorities).
 | [CHANGELOG](CHANGELOG.md) | [ROADMAP](ROADMAP.md) | [RUNTIME_OBSERVATORY](docs/RUNTIME_OBSERVATORY.md) |
 | [SECURITY](SECURITY.md) | [VALIDATION_INDEX](docs/VALIDATION_INDEX.md) | [EVENT_PRESSURE_LAB](docs/EVENT_PRESSURE_LAB.md) |
 | [STATE_OF_LIBGIBSON](docs/STATE_OF_LIBGIBSON.md) | [third-party licenses](LICENSES-THIRD-PARTY.md) | [expressivity campaign](docs/research/AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md) |
+| [UI_LAYER](docs/UI_LAYER.md) | [UI validation](docs/UI_LAYER_VALIDATION.md) | |
 
 The [validation index](docs/VALIDATION_INDEX.md) preserves the historical evidence
 trail; the [expressivity campaign](docs/research/AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md)
@@ -297,11 +304,11 @@ expressivity or stable APIs).
 ```
 src/          engine: cell/surface/layout/node/diff/ansi/transaction/renderer/
               session/input/scheduler/context/ffi + canvas/glyph/capability/
-              scene/story/replication + raster & FX (geom/particles/field/…)
+              scene/story/replication + ui + raster & FX (geom/particles/field/…)
 include/      gibson.h (canonical C ABI) · gibson.hpp · termframe.h (compat aliases)
 bindings/     c/ · cpp/ · python/ · go/    (native-SDK consumers)
-examples/     13 runnable examples (see "Try the demos")
-tests/        44 integration suites (PTY, vt100, goldens, safety, FFI, …)
+examples/     runnable demos, semantic UI galleries and engineering probes
+tests/        integration suites (PTY, vt100, goldens, safety, FFI, UI, …)
 scripts/      release/ tooling (staging, ABI check, clean-room, preflight)
 docs/         design, release, validation, and research docs
 ```
@@ -310,7 +317,7 @@ docs/         design, release, validation, and research docs
 
 ```bash
 cargo build --release                                   # library + .so/.a
-cargo test                                              # 661 pass; one known-red acceptance is ignored
+cargo test                                              # one known-red upstream acceptance is ignored
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --check
 ```

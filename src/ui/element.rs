@@ -87,7 +87,7 @@ pub(crate) struct Layout {
 }
 
 /// A semantic component tree. Business state is supplied anew by the application.
-/// Lower it with [`super::compile`] or [`super::UiRuntime::frame`].
+/// Lower it with [`super::compile::compile()`] or [`super::runtime::UiRuntime::frame`].
 #[derive(Clone)]
 pub struct Element<A> {
     pub(crate) kind: ElementKind,

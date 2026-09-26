@@ -17,7 +17,7 @@ platform,” universal 60 FPS, or modern Rust/C feature parity.
 plus the Python wrapper wheel/sdist are attached to the release). It is a
 backwards-compatible patch over the first release, v0.1.0 (2026-09-25; tag → `a3f1e29`),
 adding headless render-to-buffer capture and a `RenderMode` re-export (issues #27/#28);
-the C ABI is unchanged (`GIBSON_ABI_VERSION` 1). The full suite is **661 tests (247 unit
+the C ABI is unchanged (`GIBSON_ABI_VERSION` 1). The release baseline suite is **661 tests (247 unit
 + 413 integration + 1 doctest)**, with one known-red collision acceptance ignored.
 Ecosystem-registry publication (crates.io / PyPI / Go module proxy) remains deferred. The
 per-checkpoint test counts and CI run ids below are historical development evidence,
@@ -57,6 +57,30 @@ showed ergonomic friction with a working public route; no core promotion was
 justified. This corroborates bounded expressivity, not arbitrary-UI universality,
 comparative ease, or a stable API. Its schema and domain tools remain external.
 
+## Experimental semantic UI branch
+
+`gibson::ui` adds an optional Rust-only facade above the existing substrate:
+human-readable semantic components lower to ordinary `Node`s with separate
+key/action metadata. Three skins compose palette, chrome, spacing, glyph,
+visualization and finite-motion choices. `UiRuntime` owns keyed presentation,
+focus and modal capture; the application owns domain selection, editor values,
+permissions, toast lifetimes and business outcomes. `App` is a small optional
+Context-based loop, not another terminal owner or rendering engine.
+
+This directly addresses the campaign's generic G1 interaction boilerplate
+without importing its external harness ontology. It does not retroactively
+change that campaign's conclusions or establish universal ease. `raw(Node)`,
+shared Surface content, custom components, Scene composition and local SurfaceFx
+remain available. Choosing a skin explicitly opts into its designed background
+treatment; existing direct-Node/Theme defaults are unchanged.
+
+The layer is **EXPERIMENTAL**, absent from the v0.1.1 tag, with no version/ABI
+bump, release or merge implied. Exit removal is immediate (no ghosts); mouse
+hit testing, bubbling, virtualization and foreign bindings remain deferred.
+See [usage and boundaries](UI_LAYER.md) and
+[exact baseline/branch validation](UI_LAYER_VALIDATION.md). Historical counts
+and CI records below still describe their original checkpoints.
+
 ## Event delivery evidence
 
 The event-pressure branch passes **591 tests = 226 unit + 365 integration**,
@@ -94,6 +118,7 @@ required for a minimal CLI.
 
 ```text
 Application state / input dispatch
+  ├─ optional ui: components + Skin + keyed actions/motion → Node + interaction map
   ├─ optional StoryDirector: facts, beats, reactions, exact update trace
   │    └─ mounted EffectBundles → Presentation
   ├─ optional Scene: entities + tags + time/effects → ordinary Node tree
@@ -172,6 +197,7 @@ contract. It does not include every hostile input or every emulator.
 
 | Layer | Status | Actual contract |
 | --- | --- | --- |
+| Semantic UI / Skin / UiRuntime / App | EXPERIMENTAL, Rust-only; [branch evidence](UI_LAYER_VALIDATION.md) | Adapter over Node/Theme/FocusRing/SurfaceFx/Context. Typed actions and bounded keyed presentation; no second renderer, no automatic business state or exit ghosts. |
 | SceneEntity, IDs/tags and targeting | EXPERIMENTAL + TESTED, Rust-only | Identity around ordinary Node, deterministic targeting/z-order. |
 | Effects, sequence/parallel, displacement, loops | EXPERIMENTAL + TESTED, Rust-only | Placement writes ordered; displacements add; finite/loop time deterministic. Independent channels can commute, arbitrary FX chains do not. |
 | Entity post-process / spatial masks | EXPERIMENTAL + TESTED, Rust-only | Transparent scratch only when active; ordered SurfaceFx, glyph-safe rect/wipe/radial/band/noise scopes. |
@@ -187,7 +213,7 @@ contract. It does not include every hostile input or every emulator.
 
 All modules are publicly exported in [lib.rs](../src/lib.rs); many Scene/Story
 symbols are re-exported at crate root. No feature gates separate maturity levels.
-Keep Scene, Story, SurfaceFx and RGB/3D/RasterFx **public + experimental**. Tests
+Keep UI, Scene, Story, SurfaceFx and RGB/3D/RasterFx **public + experimental**. Tests
 justify use and further iteration, not a stable ABI promise. Feature flags may
 later separate support tiers or build cost after measurement; they do not solve
 API stability by themselves, and these modules have no large graphics dependency.
