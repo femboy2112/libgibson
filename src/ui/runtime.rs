@@ -384,6 +384,30 @@ impl<A: Clone> UiRuntime<A> {
                 return outcome;
             }
         }
+        // Arrow keys traverse focus as a fallback, mirroring Tab / Shift-Tab.
+        // This is reached only when the focused control did not consume the
+        // arrow, so editors (Left/Right/Up/Down are edit events) and scroll
+        // viewports (`on_event`) keep their keys. Inert controls such as buttons
+        // gain directional navigation, including inside a modal whose capture
+        // would otherwise swallow the key. Down/Right advance, Up/Left retreat.
+        if let Event::Key(key) = event {
+            let forward = match key.code {
+                KeyCode::Down | KeyCode::Right => Some(true),
+                KeyCode::Up | KeyCode::Left => Some(false),
+                _ => None,
+            };
+            if let Some(forward) = forward {
+                if !self.focus_keys.is_empty() {
+                    if forward {
+                        self.focus_ring.focus_next();
+                    } else {
+                        self.focus_ring.focus_prev();
+                    }
+                    outcome.consumed = true;
+                    return outcome;
+                }
+            }
+        }
         outcome.consumed = modal_active && matches!(event, Event::Key(_) | Event::Paste(_));
         outcome
     }
@@ -771,5 +795,78 @@ mod tests {
         assert!(context.take_output().contains("READY"));
         context.commit_text("still owned by caller").unwrap();
         assert!(context.stats().commit_bytes > 0);
+    }
+
+    #[test]
+    fn arrow_keys_traverse_focus_inside_a_modal_and_wrap() {
+        let arrow = |rt: &mut UiRuntime<()>, code| {
+            rt.handle_event(&Event::Key(KeyEvent::new(code, KeyModifiers::empty())))
+        };
+        let tree = column()
+            .child(button("base").key("base").on_press(()))
+            .overlay(
+                modal("m")
+                    .key("m")
+                    .child(button("one").key("one").on_press(()))
+                    .child(button("two").key("two").on_press(()))
+                    .child(button("three").key("three").on_press(())),
+            );
+        let mut runtime = UiRuntime::new(skins::BLACK_ICE);
+        runtime
+            .frame(&tree, UiEnvironment::default(), Duration::ZERO)
+            .unwrap();
+        assert_eq!(runtime.focus(), Some(&Key::from("one")));
+
+        // Down and Right advance; the base layer never enters the ring.
+        let out = arrow(&mut runtime, KeyCode::Down);
+        assert!(out.consumed && out.actions.is_empty());
+        assert_eq!(runtime.focus(), Some(&Key::from("two")));
+        arrow(&mut runtime, KeyCode::Right);
+        assert_eq!(runtime.focus(), Some(&Key::from("three")));
+        // Wraparound in both directions.
+        arrow(&mut runtime, KeyCode::Down);
+        assert_eq!(runtime.focus(), Some(&Key::from("one")));
+        arrow(&mut runtime, KeyCode::Up);
+        assert_eq!(runtime.focus(), Some(&Key::from("three")));
+        arrow(&mut runtime, KeyCode::Left);
+        assert_eq!(runtime.focus(), Some(&Key::from("two")));
+        assert!(!runtime.focus_keys.contains(&Key::from("base")));
+
+        // Enter still activates the arrow-selected control.
+        let activated = arrow(&mut runtime, KeyCode::Enter);
+        assert_eq!(activated.actions.len(), 1);
+    }
+
+    #[test]
+    fn focus_traversal_yields_to_controls_that_consume_arrows() {
+        let tree = column()
+            .child(
+                text_input(&TextInputState::new())
+                    .key("editor")
+                    .on_edit(|state| state.text),
+            )
+            .child(button("next").key("next").on_press(String::new()));
+        let mut runtime = UiRuntime::new(skins::BLACK_ICE);
+        runtime
+            .frame(&tree, UiEnvironment::default(), Duration::ZERO)
+            .unwrap();
+        assert_eq!(runtime.focus(), Some(&Key::from("editor")));
+        // A focused editor owns the arrows (cursor movement), so they must not
+        // leak into focus traversal and jump off the field.
+        for code in [KeyCode::Down, KeyCode::Up, KeyCode::Left, KeyCode::Right] {
+            let out = runtime.handle_event(&Event::Key(KeyEvent::new(code, KeyModifiers::empty())));
+            assert!(out.consumed);
+            assert_eq!(
+                runtime.focus(),
+                Some(&Key::from("editor")),
+                "editor lost focus to arrow traversal on {code:?}"
+            );
+        }
+        // Tab, which the editor does not own, still advances focus.
+        runtime.handle_event(&Event::Key(KeyEvent::new(
+            KeyCode::Tab,
+            KeyModifiers::empty(),
+        )));
+        assert_eq!(runtime.focus(), Some(&Key::from("next")));
     }
 }
