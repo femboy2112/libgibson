@@ -250,7 +250,7 @@ Deep dives: [introductory cinema](docs/INTRODUCTORY_CINEMA.md) ·
 ## Status & support
 
 Core engine behaviour is **IMPLEMENTED + TESTED on Linux x86_64 only**. The suite is
-**657 tests** (247 library unit + 410 integration); `cargo clippy --all-targets
+**661 tests** (247 library unit + 413 integration + 1 doctest); `cargo clippy --all-targets
 --all-features -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean.
 C/C++ examples run under ASan + UBSan (LSan disabled); the Python `ctypes` example runs;
 the Go bindings pass local + public Linux build/vet/example smoke (no Go unit tests
@@ -301,7 +301,7 @@ src/          engine: cell/surface/layout/node/diff/ansi/transaction/renderer/
 include/      gibson.h (canonical C ABI) · gibson.hpp · termframe.h (compat aliases)
 bindings/     c/ · cpp/ · python/ · go/    (native-SDK consumers)
 examples/     13 runnable examples (see "Try the demos")
-tests/        43 integration suites (PTY, vt100, goldens, safety, FFI, …)
+tests/        44 integration suites (PTY, vt100, goldens, safety, FFI, …)
 scripts/      release/ tooling (staging, ABI check, clean-room, preflight)
 docs/         design, release, validation, and research docs
 ```
@@ -310,7 +310,7 @@ docs/         design, release, validation, and research docs
 
 ```bash
 cargo build --release                                   # library + .so/.a
-cargo test                                              # 657 pass; one known-red acceptance is ignored
+cargo test                                              # 661 pass; one known-red acceptance is ignored
 cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --check
 ```

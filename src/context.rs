@@ -1,11 +1,16 @@
 use crate::cell::RichText;
 use crate::input::{poll_event, Event};
 use crate::node::Node;
-use crate::renderer::{InsertStrategy, RenderMode, Renderer};
+use crate::renderer::{InsertStrategy, Renderer};
 use crate::scheduler::{FrameScheduler, RenderStats};
 use crate::session::TerminalSession;
-use std::io;
+use std::io::{self, Write};
 use std::time::{Duration, Instant};
+
+/// `RenderMode` is consumed by [`Context::new`] and [`Context::headless`], so it
+/// is re-exported here for ergonomic imports (`gibson::context::RenderMode`) in
+/// addition to the crate root (`gibson::RenderMode`).
+pub use crate::renderer::RenderMode;
 
 /// High-level engine coordinator managing session, rendering, input, and scheduling.
 pub struct Context {
@@ -13,6 +18,36 @@ pub struct Context {
     pub renderer: Renderer,
     pub scheduler: FrameScheduler,
     root: Option<Node>,
+    /// Where rendered bytes go: the process stdout for interactive contexts, or
+    /// an in-memory buffer for headless ones (see [`Context::rendered_bytes`]).
+    output: OutputSink,
+}
+
+/// Destination for a [`Context`]'s rendered bytes.
+///
+/// Interactive contexts write straight to the process stdout. A headless context
+/// captures into an in-memory buffer instead, so callers can read the exact bytes
+/// back for snapshot/assertion testing without any escape codes reaching a real
+/// terminal (issue #27).
+enum OutputSink {
+    Stdout,
+    Buffer(Vec<u8>),
+}
+
+impl Write for OutputSink {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            OutputSink::Stdout => io::stdout().write(buf),
+            OutputSink::Buffer(b) => b.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            OutputSink::Stdout => io::stdout().flush(),
+            OutputSink::Buffer(b) => b.flush(),
+        }
+    }
 }
 
 impl Context {
@@ -27,6 +62,7 @@ impl Context {
             renderer: Renderer::new(mode),
             scheduler: FrameScheduler::new(60),
             root: None,
+            output: OutputSink::Stdout,
         })
     }
 
@@ -40,12 +76,29 @@ impl Context {
 
     /// Creates a context backed by a headless, virtual terminal session of a
     /// fixed geometry. Intended for automation, snapshotting and tests.
+    ///
+    /// A headless context renders into an in-memory buffer instead of the process
+    /// stdout, so no escape codes reach a real terminal. Read the captured bytes
+    /// back with [`Context::rendered_bytes`] or drain them with
+    /// [`Context::take_output`]:
+    ///
+    /// ```
+    /// use gibson::cell::Style;
+    /// use gibson::context::{Context, RenderMode};
+    /// use gibson::node::Node;
+    ///
+    /// let mut ctx = Context::headless(RenderMode::Inline, 40, 8);
+    /// ctx.set_root(Node::col().child(Node::text("hello", Style::default())));
+    /// ctx.render().unwrap();
+    /// assert!(ctx.take_output().contains("hello"));
+    /// ```
     pub fn headless(mode: RenderMode, cols: u16, rows: u16) -> Self {
         Self {
             session: TerminalSession::headless(cols, rows),
             renderer: Renderer::new(mode),
             scheduler: FrameScheduler::new(60),
             root: None,
+            output: OutputSink::Buffer(Vec::new()),
         }
     }
 
@@ -141,6 +194,29 @@ impl Context {
         self.render_now()
     }
 
+    /// Bytes captured by a buffer-backed (headless) context since the last
+    /// [`Context::take_output`]. Always empty for an interactive context, whose
+    /// output goes straight to the process stdout.
+    pub fn rendered_bytes(&self) -> &[u8] {
+        match &self.output {
+            OutputSink::Buffer(b) => b.as_slice(),
+            OutputSink::Stdout => &[],
+        }
+    }
+
+    /// Drains the capture buffer and returns it as a `String` (lossy UTF-8).
+    /// Empty for an interactive, stdout-backed context. After this call the
+    /// buffer is empty until the next render.
+    pub fn take_output(&mut self) -> String {
+        match &mut self.output {
+            OutputSink::Buffer(b) => {
+                let bytes = std::mem::take(b);
+                String::from_utf8_lossy(&bytes).into_owned()
+            }
+            OutputSink::Stdout => String::new(),
+        }
+    }
+
     /// Minimal, non-async runtime step.
     ///
     /// Waits for at most `max_wait` (bounded by the next frame deadline), polls
@@ -178,7 +254,7 @@ impl Context {
         let start = Instant::now();
         let result = self
             .renderer
-            .render(&mut root, &mut self.session, &mut std::io::stdout());
+            .render(&mut root, &mut self.session, &mut self.output);
         let duration = start.elapsed();
 
         self.root = Some(root);
@@ -212,7 +288,7 @@ impl Context {
     /// cannot corrupt the terminal).
     pub fn commit_text(&mut self, text: &str) -> io::Result<()> {
         self.renderer
-            .commit_text(text, &mut self.session, &mut std::io::stdout())?;
+            .commit_text(text, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -220,7 +296,7 @@ impl Context {
     /// Raw ANSI escape hatch. The caller is responsible for the payload.
     pub fn commit_raw_ansi_unchecked(&mut self, text: &str) -> io::Result<()> {
         self.renderer
-            .commit_raw_ansi_unchecked(text, &mut self.session, &mut std::io::stdout())?;
+            .commit_raw_ansi_unchecked(text, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -233,7 +309,7 @@ impl Context {
     /// Commits a laid-out UI node directly to immutable scrollback.
     pub fn commit_node(&mut self, node: &mut Node) -> io::Result<()> {
         self.renderer
-            .commit_node(node, &mut self.session, &mut std::io::stdout())?;
+            .commit_node(node, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -242,7 +318,7 @@ impl Context {
     /// same wrapping/alignment engine as live nodes.
     pub fn commit_rich_text(&mut self, rich: &RichText) -> io::Result<()> {
         self.renderer
-            .commit_rich_text(rich, &mut self.session, &mut std::io::stdout())?;
+            .commit_rich_text(rich, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -254,7 +330,7 @@ impl Context {
         self.renderer.insert_raw_lines_before_live_unchecked(
             lines,
             &mut self.session,
-            &mut std::io::stdout(),
+            &mut self.output,
         )?;
         self.sync_renderer_metrics();
         Ok(())
@@ -264,7 +340,7 @@ impl Context {
     /// Control characters are neutralized by the cell model.
     pub fn insert_text_before_live(&mut self, text: &str) -> io::Result<()> {
         self.renderer
-            .insert_text_before_live(text, &mut self.session, &mut std::io::stdout())?;
+            .insert_text_before_live(text, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -272,7 +348,7 @@ impl Context {
     /// Inserts a laid-out UI node into scrollback ABOVE the active live region.
     pub fn insert_node_before_live(&mut self, node: &mut Node) -> io::Result<()> {
         self.renderer
-            .insert_node_before_live(node, &mut self.session, &mut std::io::stdout())?;
+            .insert_node_before_live(node, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -280,11 +356,8 @@ impl Context {
     /// Inserts safe rich text into scrollback ABOVE the active live region, using
     /// the width-aware layout engine.
     pub fn insert_rich_text_before_live(&mut self, rich: &RichText) -> io::Result<()> {
-        self.renderer.insert_rich_text_before_live(
-            rich,
-            &mut self.session,
-            &mut std::io::stdout(),
-        )?;
+        self.renderer
+            .insert_rich_text_before_live(rich, &mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
         Ok(())
     }
@@ -297,7 +370,7 @@ impl Context {
     /// Clears the live region from the terminal without leaving artifacts.
     pub fn clear_live_region(&mut self) -> io::Result<()> {
         self.renderer
-            .clear_live_region(&mut self.session, &mut std::io::stdout())?;
+            .clear_live_region(&mut self.session, &mut self.output)?;
         self.sync_renderer_metrics();
         Ok(())
     }
