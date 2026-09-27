@@ -15,8 +15,8 @@
 //! layout. Either composites through the one rendering pipeline, and viewport
 //! clipping is handled by the engine.
 //!
-//! [`ui`], [`scene`], [`story`], [`surface_fx`], [`raster`], [`raster3d`] and [`raster_fx`]
-//! are experimental Rust-only composition/graphics APIs. They do not own terminal
+//! [`ui`], [`scene`], [`story`], [`surface_fx`], [`raster`], [`raster3d`], [`raster_fx`]
+//! and [`temporal`] are experimental Rust-only composition/graphics APIs. They do not own terminal
 //! lifecycle. Experimental additions may require source changes between releases.
 //!
 //! Use one active terminal owner per process. Context/session rendering uses
@@ -55,6 +55,7 @@ pub mod show;
 pub mod story;
 pub mod surface;
 pub mod surface_fx;
+pub mod temporal;
 // Internal renderer plumbing (the atomic wire transaction). Crate-private: it has
 // no external consumers, is not re-exported, and its stability is the renderer's,
 // not a standalone public API. See docs/RELEASE_CONTRACT.md §2.
@@ -106,5 +107,6 @@ pub use story::{
 };
 pub use surface::{BorderType, Rect, Surface};
 pub use surface_fx::{FxMask, SurfaceFx};
+pub use temporal::{PresentationProfile, TemporalBrailleField, TemporalGate, TemporalSafetyPolicy};
 pub use transition::{dissolve, scramble, scramble_line, type_on, SCRAMBLE_GLYPHS};
 pub use viewport::ViewportState;
