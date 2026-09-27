@@ -137,13 +137,20 @@ pub struct TemporalCellProjection {
     pub style: Style,
     pub duty: [f32; 8],
     pub static_mask: u8,
-    /// RMSE of the best ordinary binary two-color realization, in linear RGB.
+    /// **Ideal** static RMSE (linear RGB) of the best binary two-color fit using
+    /// the *unquantized* centroids: an error floor, not what actually ships. For
+    /// acceptance claims use [`TemporalCellProjection::emitted_static_rmse`],
+    /// which measures the colors after 8-bit sRGB quantization.
     pub static_rmse: f32,
-    /// RMSE after allowing continuous mixture along the stable bg->fg segment.
-    ///
-    /// This is the ideal infinite-time error floor for this one-dimensional
-    /// color basis; finite temporal sequences may be worse.
+    /// **Ideal** RMSE after allowing continuous mixture along the *unquantized*
+    /// bg->fg segment: the infinite-time floor for this one-dimensional color
+    /// basis. Finite temporal sequences, and 8-bit color, may be worse.
     pub line_rmse: f32,
+    /// **Emitted** static RMSE (linear RGB) after the chosen fg/bg are quantized
+    /// to the 8-bit sRGB colors LibGibson actually emits. This is the honest
+    /// static-fidelity number for acceptance decisions; it is always
+    /// `>= static_rmse` because quantization can only add error.
+    pub emitted_static_rmse: f32,
 }
 
 /// Fits one logical Braille cell's eight RGB targets to a stable fg/bg basis.
@@ -211,14 +218,32 @@ pub fn project_rgb_subcells(target: [[u8; 3]; 8]) -> TemporalCellProjection {
         line_sse = best_sse;
     }
 
+    // Emitted error: re-linearize the fg/bg after the 8-bit sRGB quantization
+    // LibGibson actually emits, and measure the static realization against that.
+    // This is the honest number for acceptance claims (see `emitted_static_rmse`).
+    let emitted_fg8 = linear_to_rgb8(best_fg);
+    let emitted_bg8 = linear_to_rgb8(best_bg);
+    let emitted_fg = rgb8_to_linear(emitted_fg8);
+    let emitted_bg = rgb8_to_linear(emitted_bg8);
+    let mut emitted_sse = 0.0f32;
+    for (i, pixel) in linear.iter().enumerate() {
+        let centroid = if best_mask & (1u8 << i) != 0 {
+            emitted_fg
+        } else {
+            emitted_bg
+        };
+        emitted_sse += rgb_distance_squared(*pixel, centroid);
+    }
+
     TemporalCellProjection {
         style: Style::default()
-            .fg(linear_to_color(best_fg))
-            .bg(linear_to_color(best_bg)),
+            .fg(Color::Rgb(emitted_fg8[0], emitted_fg8[1], emitted_fg8[2]))
+            .bg(Color::Rgb(emitted_bg8[0], emitted_bg8[1], emitted_bg8[2])),
         duty,
         static_mask: best_mask,
         static_rmse: (best_sse / 24.0).sqrt(),
         line_rmse: (line_sse / 24.0).sqrt(),
+        emitted_static_rmse: (emitted_sse / 24.0).sqrt(),
     }
 }
 
@@ -258,8 +283,8 @@ fn rgb8_to_linear(rgb: [u8; 3]) -> [f32; 3] {
     })
 }
 
-fn linear_to_color(rgb: [f32; 3]) -> Color {
-    let [r, g, b] = rgb.map(|value| {
+fn linear_to_rgb8(rgb: [f32; 3]) -> [u8; 3] {
+    rgb.map(|value| {
         let value = value.clamp(0.0, 1.0);
         let srgb = if value <= 0.003_130_8 {
             value * 12.92
@@ -267,8 +292,7 @@ fn linear_to_color(rgb: [f32; 3]) -> Color {
             1.055 * value.powf(1.0 / 2.4) - 0.055
         };
         (srgb.clamp(0.0, 1.0) * 255.0).round() as u8
-    });
-    Color::Rgb(r, g, b)
+    })
 }
 
 fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
@@ -315,6 +339,12 @@ pub struct TemporalBrailleField {
     seed: u64,
     duty: Vec<[f32; 8]>,
     styles: Vec<Style>,
+    /// Authoritative per-cell static fallback mask. For a cell set from a
+    /// [`TemporalCellProjection`] this is the projector's SSE-optimal mask; for a
+    /// directly-set duty it is that duty thresholded at 0.5. Static surfaces emit
+    /// this exact mask so the fallback is deterministic and independent of the
+    /// (proven, but tie-fragile) equivalence between thresholding and the optimum.
+    static_mask: Vec<u8>,
     accumulator: Vec<[f32; 8]>,
     frame_index: u64,
 }
@@ -334,6 +364,7 @@ impl TemporalBrailleField {
             seed,
             duty: vec![[0.0; 8]; cells],
             styles: vec![Style::default(); cells],
+            static_mask: vec![0u8; cells],
             accumulator,
             frame_index: 0,
         }
@@ -359,6 +390,7 @@ impl TemporalBrailleField {
             return false;
         };
         self.duty[index] = duty.map(sanitize_duty);
+        self.static_mask[index] = threshold_mask(&self.duty[index]);
         true
     }
 
@@ -385,7 +417,17 @@ impl TemporalBrailleField {
         y: u16,
         projection: TemporalCellProjection,
     ) -> bool {
-        self.set_cell_target(x, y, projection.duty, projection.style)
+        let Some(index) = self.index(x, y) else {
+            return false;
+        };
+        self.duty[index] = projection.duty.map(sanitize_duty);
+        self.styles[index] = projection.style;
+        // Store the projector's SSE-optimal mask as the authoritative static
+        // fallback, rather than re-deriving it by thresholding duty at 0.5 (which
+        // is provably equal only away from exact ties, where the two break the
+        // tie in opposite directions).
+        self.static_mask[index] = projection.static_mask;
+        true
     }
 
     /// Sets both the target duty cycles and stable style for one cell, keeping
@@ -413,6 +455,7 @@ impl TemporalBrailleField {
         };
         self.duty[index] = duty.map(sanitize_duty);
         self.styles[index] = style;
+        self.static_mask[index] = threshold_mask(&self.duty[index]);
         if reset == ResetPolicy::Reset {
             self.reseed_accumulator(index);
         }
@@ -425,6 +468,7 @@ impl TemporalBrailleField {
 
     pub fn clear(&mut self) {
         self.duty.fill([0.0; 8]);
+        self.static_mask.fill(0);
     }
 
     /// Reseeds one cell's accumulator to its deterministic decorrelated phase,
@@ -506,18 +550,7 @@ impl TemporalBrailleField {
     }
 
     fn static_masks(&self) -> Vec<u8> {
-        self.duty
-            .iter()
-            .map(|dots| {
-                dots.iter().enumerate().fold(0u8, |mask, (bit, duty)| {
-                    if *duty >= 0.5 {
-                        mask | (1u8 << bit)
-                    } else {
-                        mask
-                    }
-                })
-            })
-            .collect()
+        self.static_mask.clone()
     }
 
     fn advance_masks(&mut self) -> Vec<u8> {
@@ -590,6 +623,21 @@ fn sanitize_duty(value: f32) -> f32 {
     } else {
         0.0
     }
+}
+
+/// Deterministic static mask for a duty array: dots at or above 50% are on.
+///
+/// This is the sensible fallback for directly-set duties. Projections instead
+/// store the SSE-optimal mask from [`project_rgb_subcells`], which coincides
+/// with this threshold except at exact 0.5 ties (see the projector's docs).
+fn threshold_mask(duty: &[f32; 8]) -> u8 {
+    duty.iter().enumerate().fold(0u8, |mask, (bit, d)| {
+        if *d >= 0.5 {
+            mask | (1u8 << bit)
+        } else {
+            mask
+        }
+    })
 }
 
 /// Deterministic SplitMix-style hash mapped to `[0, 1)`.
@@ -740,6 +788,72 @@ mod tests {
         assert_eq!(surface.height, 1);
         assert_ne!(surface.get(0, 0).unwrap().glyph.grapheme.as_str(), " ");
         assert_eq!(surface.get(1, 0).unwrap().glyph.grapheme.as_str(), " ");
+    }
+
+    #[test]
+    fn static_surface_uses_stored_optimal_mask_not_duty_threshold() {
+        use crate::cell::Color;
+        // A projection whose optimal static mask differs from thresholding its
+        // duty at 0.5: the field must emit the stored optimal mask, proving it
+        // keeps the authoritative fallback instead of re-deriving from duty.
+        let mut field = TemporalBrailleField::new(1, 1, 0);
+        let projection = TemporalCellProjection {
+            style: Style::default()
+                .fg(Color::Rgb(255, 255, 255))
+                .bg(Color::Rgb(0, 0, 0)),
+            duty: [0.0; 8],           // threshold@0.5 => blank mask 0
+            static_mask: 0b1111_0000, // but the optimal static mask is non-blank
+            static_rmse: 0.0,
+            line_rmse: 0.0,
+            emitted_static_rmse: 0.0,
+        };
+        assert!(field.set_cell_projection(0, 0, projection));
+
+        let surface = field.static_styled_surface(SubcellGlyphMode::Braille2x4);
+        let glyph = surface.get(0, 0).unwrap().glyph.grapheme.clone();
+        let expected = SubcellGlyphMode::Braille2x4
+            .subcell_glyph(0b1111_0000)
+            .expect("non-empty mask realizes a glyph");
+        assert_eq!(
+            glyph.as_str(),
+            expected.to_string(),
+            "static fallback must emit the stored optimal mask, not the duty@0.5 blank"
+        );
+    }
+
+    #[test]
+    fn projector_emitted_error_is_at_least_ideal_error() {
+        // Perfect binary black/white: ideal and emitted error are both ~0.
+        let mut bw = [[0u8; 3]; 8];
+        for (i, p) in bw.iter_mut().enumerate() {
+            if i % 2 == 1 {
+                *p = [255, 255, 255];
+            }
+        }
+        let proj = project_rgb_subcells(bw);
+        assert!(proj.static_rmse < 1e-6);
+        assert!(proj.emitted_static_rmse < 1e-6);
+
+        // Non-8-bit-representable centroids: quantization can only add error, so
+        // the emitted RMSE must be >= the ideal RMSE, and finite.
+        let target = [
+            [10, 20, 30],
+            [200, 130, 60],
+            [15, 240, 90],
+            [77, 88, 99],
+            [123, 45, 210],
+            [5, 5, 6],
+            [250, 249, 1],
+            [130, 131, 132],
+        ];
+        let proj = project_rgb_subcells(target);
+        assert!(proj.emitted_static_rmse.is_finite());
+        assert!(
+            proj.emitted_static_rmse >= proj.static_rmse - 1e-6,
+            "emitted {} must be >= ideal {}",
+            proj.emitted_static_rmse,
+            proj.static_rmse
+        );
     }
 
     #[test]
