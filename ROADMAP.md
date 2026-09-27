@@ -2,17 +2,18 @@
 
 This document outlines completed work and the planned future milestones for LibGibson.
 
-> **Current status (2026-09-27):** v0.2.3 is released on GitHub (Engineering Alpha,
-> Linux x86_64; tag → `v0.2.3` at `e219841`, prerelease-flagged) — a **layout &
-> custom-graphics-seam patch** (size-aware deferred `Node::canvas(|rect| -> Surface)`
-> built at the layout-resolved rect, `Element` percent sizing, clipped sub-surface
-> `Surface::clip`, `BrailleCanvas::blit_to_surface` + `Glyph::from_char`) on the
-> output/testability/observability patch v0.2.2 (tag → `0052dbe`) and the
+> **Current status (2026-09-27):** v0.2.4 is released on GitHub (Engineering Alpha,
+> Linux x86_64; tag → `v0.2.4` at `d991c93`, prerelease-flagged) — a **viewport &
+> focus foundations patch** (`ViewportState` item windowing —
+> `visible_range`/`ensure_visible`/`scroll_to_item`; `FocusRing::remove` incremental
+> eviction with focus transfer; responsive size-class layout documented) on the
+> layout & custom-graphics-seam patch v0.2.3 (tag → `e219841`), the
+> output/testability/observability patch v0.2.2 (tag → `0052dbe`), and the
 > consumer-correctness patch v0.2.1 (tag → `219a592`), over the **experimental semantic
 > UI milestone** v0.2.0 (2026-09-26; tag → `7a10e60`), itself a deliberate additive
 > minor over v0.1.1 (tag → `3789332`) and v0.1.0 (2026-09-25). The C ABI is unchanged
 > (`GIBSON_ABI_VERSION` 1) and `gibson::ui` is
-> EXPERIMENTAL, not CORE. The full suite is **739 tests (265 unit + 472 integration + 2 doctests)**.
+> EXPERIMENTAL, not CORE. The full suite is **748 tests (265 unit + 481 integration + 2 doctests)**.
 > Ecosystem-registry publication (crates.io / PyPI / Go module proxy) remains deferred.
 > The checkpoint counts and CI run ids below are historical development evidence,
 > preserved as measured.
