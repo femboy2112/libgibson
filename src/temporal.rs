@@ -405,8 +405,8 @@ impl BrailleImageProjection {
 /// `4*height` **logical** subpixels — these are logical Braille samples, not
 /// calibrated physical font pixels. `sample(lx, ly)` returns the 8-bit sRGB
 /// color at logical subpixel `(lx in 0..2*width, ly in 0..4*height)`; each cell's
-/// eight dots are gathered through [`BRAILLE_DOT_INDEX`] and fitted by
-/// [`project_rgb_subcells`].
+/// eight dots are gathered in the Unicode Braille dot order (matching
+/// [`SubcellGlyphMode::subcell_glyph`]) and fitted by [`project_rgb_subcells`].
 pub fn project_braille_image(
     width: u16,
     height: u16,
