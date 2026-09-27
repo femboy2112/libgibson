@@ -251,12 +251,70 @@ impl Context {
         self.empty_root_renders
     }
 
-    /// Minimal, non-async runtime step.
+    /// Exact semantic changed-cell count of the most recent [`Context::render`]
+    /// (issue #47): the number of cells whose final state actually changed on
+    /// that frame — distinct from the logical affected footprint in
+    /// [`RenderStats::dirty_cells`] and from emitted bytes. This reads a scalar
+    /// the renderer already computed, so a consumer needs no second
+    /// layout/paint/diff pass to observe it.
+    pub fn last_exact_changed_cells(&self) -> usize {
+        self.renderer.last_exact_changed()
+    }
+
+    /// Visible text of the most recently composed live frame, one `String` per
+    /// row (issue #48 E-02): "what the screen says", with wide-glyph continuation
+    /// cells collapsed and trailing blanks trimmed. Complements the raw wire
+    /// bytes from [`Context::rendered_bytes`] / [`Context::take_output`] and lets
+    /// headless tests assert on visible text without a private terminal emulator.
+    pub fn last_frame_lines(&self) -> Vec<String> {
+        self.renderer.last_frame_lines()
+    }
+
+    /// Minimal, non-async runtime step — the core of the **canonical interactive
+    /// loop** (issue #48 E-07).
     ///
     /// Waits for at most `max_wait` (bounded by the next frame deadline), polls
     /// for input, then renders if the scheduler permits. Input wakeups have
     /// priority over decorative animation: an arriving event shortens the wait
     /// immediately. Returns the input event, if any.
+    ///
+    /// The canonical loop a new consumer should copy — rebuild the tree on
+    /// change, then let `run_once` drive both input and frame pacing:
+    ///
+    /// ```no_run
+    /// # fn build_ui() -> gibson::node::Node { gibson::node::Node::col() }
+    /// use gibson::context::{Context, RenderMode};
+    /// use gibson::{Event, KeyCode};
+    /// use std::time::Duration;
+    ///
+    /// fn main() -> std::io::Result<()> {
+    ///     let mut ctx = Context::new(RenderMode::Inline)?;
+    ///     if !ctx.is_interactive() {
+    ///         // Non-TTY (issue #46): a live loop would render and receive nothing.
+    ///         // Fall back to a headless/`--dump` path instead of idling blank.
+    ///         return Ok(());
+    ///     }
+    ///     let mut dirty = true;
+    ///     loop {
+    ///         if dirty {
+    ///             ctx.set_root(build_ui()); // your view
+    ///             dirty = false;
+    ///         }
+    ///         match ctx.run_once(Duration::from_millis(100))? {
+    ///             Some(Event::Key(k)) if k.code == KeyCode::Char('q') => break,
+    ///             Some(_) => dirty = true, // handled input; rebuild next iteration
+    ///             None => {}               // timed out: any due animation frame already rendered
+    ///         }
+    ///     }
+    ///     ctx.restore()?;
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
+    /// `Event::Tick` is **not** emitted here — the loop is input-driven and
+    /// animation is paced by the scheduler (`animation_interval` + the internal
+    /// `render_if_due`). For a batteries-included loop that also delivers
+    /// per-iteration ticks (`AppEvent::Tick`), use `gibson::ui::App`.
     pub fn run_once(&mut self, max_wait: Duration) -> io::Result<Option<Event>> {
         let until_frame = self.scheduler.time_until_next_frame();
         let wait = max_wait.min(until_frame);
@@ -332,6 +390,22 @@ impl Context {
         Ok(())
     }
 
+    /// Commits plain text to immutable scrollback with an explicit wrap policy
+    /// (issue #45). `WrapMode::NoWrap` preserves preformatted content — aligned
+    /// tables, diffs, ledgers — at its natural column width instead of re-flowing
+    /// (`WordWrap`) or silently clipping it; embedded control sequences remain
+    /// neutralized by the cell model.
+    pub fn commit_text_with_mode(
+        &mut self,
+        text: &str,
+        wrap: crate::node::WrapMode,
+    ) -> io::Result<()> {
+        self.renderer
+            .commit_text_with_mode(text, wrap, &mut self.session, &mut self.output)?;
+        self.sync_renderer_metrics();
+        Ok(())
+    }
+
     /// Raw ANSI escape hatch. The caller is responsible for the payload.
     pub fn commit_raw_ansi_unchecked(&mut self, text: &str) -> io::Result<()> {
         self.renderer
@@ -380,6 +454,25 @@ impl Context {
     pub fn insert_text_before_live(&mut self, text: &str) -> io::Result<()> {
         self.renderer
             .insert_text_before_live(text, &mut self.session, &mut self.output)?;
+        self.sync_renderer_metrics();
+        Ok(())
+    }
+
+    /// Inserts safe plain text into scrollback above the live region with an
+    /// explicit wrap policy (issue #45). `WrapMode::NoWrap` preserves preformatted
+    /// aligned artifacts at their natural width (no re-flow, no silent clip);
+    /// control characters are neutralized by the cell model.
+    pub fn insert_text_before_live_with_mode(
+        &mut self,
+        text: &str,
+        wrap: crate::node::WrapMode,
+    ) -> io::Result<()> {
+        self.renderer.insert_text_before_live_with_mode(
+            text,
+            wrap,
+            &mut self.session,
+            &mut self.output,
+        )?;
         self.sync_renderer_metrics();
         Ok(())
     }
