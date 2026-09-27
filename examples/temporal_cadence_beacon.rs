@@ -62,6 +62,12 @@ fn main() -> io::Result<()> {
     let frames = fps as u64 * seconds as u64;
     let sync = !has("--no-sync");
 
+    eprintln!(
+        "temporal cadence beacon: {fps} fps for {seconds}s, sync_updates={sync}; film the {}x{}-cell Gray-code strip",
+        BITS as u16 * CELL_W,
+        CELL_H
+    );
+
     let mut ctx = Context::fullscreen()?;
     if !ctx.is_interactive() {
         return Err(io::Error::other(
@@ -72,12 +78,6 @@ fn main() -> io::Result<()> {
     ctx.set_sync_updates(sync);
     ctx.set_max_fps(fps);
     ctx.set_frame_pacing(FramePacing::PhaseLocked);
-
-    eprintln!(
-        "temporal cadence beacon: {fps} fps for {seconds}s, sync_updates={sync}; film the {}x{}-cell Gray-code strip",
-        BITS as u16 * CELL_W,
-        CELL_H
-    );
 
     for frame in 0..frames {
         ctx.set_root(Node::surface(Arc::new(beacon_surface(frame))));
