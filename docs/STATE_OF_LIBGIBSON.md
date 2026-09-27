@@ -12,21 +12,24 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
-**Current status (2026-09-27):** v0.2.5 is released on GitHub as an Engineering Alpha
-(tag → `v0.2.5` at `6b7096a`, prerelease-flagged, Linux x86_64; the native SDK archive
-plus the Python wrapper wheel/sdist are attached to the release). It is the **closing
-umbrella-cleanup patch** of the Europa v0.2.0 consumer campaign: `Context::stats()` now
-reads through `&self` (reachable via a shared borrow), and the remaining small sharp
-edges plus a pointer to the experimental `gibson::ui` ergonomic layer are documented —
-which closes the Palimpsest ergonomics umbrella (issue #48). It follows the viewport &
-focus foundations patch v0.2.4 (tag → `d991c93`), the layout & custom-graphics-seam patch
-v0.2.3 (tag → `e219841`), the output/testability/observability patch v0.2.2 (tag →
-`0052dbe`), and the consumer-correctness patch v0.2.1 (tag → `219a592`). v0.2.0 adds
-the Rust-only `gibson::ui` layer as a deliberate additive minor over the previous releases
+**Current status (2026-09-27):** v0.3.0 is released on GitHub as an Engineering Alpha
+(tag → `v0.3.0` at `e57cdb2`, prerelease-flagged, Linux x86_64; the native SDK archive
+plus the Python wrapper wheel/sdist are attached to the release). It is the **Temporal
+Rendering Milestone**: high-cadence phase-locked frame pacing (`FramePacing`) and split
+generation/write per-frame diagnostics (`FrameReport`) as CORE infrastructure, plus an
+experimental, Rust-only temporal cell realization axis (`gibson::temporal`) — a static
+two-color subcell projector with a bounded, safety-gated residual temporal modulator that
+is **static by default** and emits ordinary `Surface`s through the one existing renderer.
+The temporal feature's perceptual benefit is setup-dependent and **unproven** (the one
+physical experiment is in [TEMPORAL_DISPLAY_VALIDATION.md](TEMPORAL_DISPLAY_VALIDATION.md));
+a Vulkan-capable GPU was probed but no `wgpu` backend was built (left unmeasured). It
+follows the Europa v0.2.x patch train — v0.2.5 (tag → `6b7096a`), v0.2.4 (`d991c93`),
+v0.2.3 (`e219841`), v0.2.2 (`0052dbe`), v0.2.1 (`219a592`) — over the experimental semantic
+UI milestone v0.2.0 (2026-09-26; tag → `7a10e60`), itself a deliberate additive minor over
 v0.1.1 (2026-09-26; tag → `3789332`) and v0.1.0 (2026-09-25; tag → `a3f1e29`); the C ABI is
-unchanged (`GIBSON_ABI_VERSION` 1) and `gibson::ui` is EXPERIMENTAL and Rust-only, not CORE.
-The release baseline suite is **753 tests (265 unit + 486 integration + 2 doctests)**, with one
-known-red collision acceptance ignored.
+unchanged (`GIBSON_ABI_VERSION` 1) and `gibson::temporal`/`gibson::ui` are EXPERIMENTAL and
+Rust-only, not CORE. The release baseline suite is **792 tests (296 unit + 494 integration +
+2 doctests)**, with one known-red collision acceptance ignored.
 Ecosystem-registry publication (crates.io / PyPI / Go module proxy) remains deferred. The
 per-checkpoint test counts and CI run ids below are historical development evidence,
 preserved as measured (the historical command tables below preserve the checkpoint they

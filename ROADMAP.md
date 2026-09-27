@@ -2,19 +2,21 @@
 
 This document outlines completed work and the planned future milestones for LibGibson.
 
-> **Current status (2026-09-27):** v0.2.5 is released on GitHub (Engineering Alpha,
-> Linux x86_64; tag → `v0.2.5` at `6b7096a`, prerelease-flagged) — the **closing
-> umbrella-cleanup patch** of the Europa v0.2.0 consumer campaign (`Context::stats()`
-> now reads through `&self`; the remaining small sharp edges and a pointer to the
-> experimental `gibson::ui` layer documented — closing issue #48). It follows the
-> viewport & focus foundations patch v0.2.4 (tag → `d991c93`), the layout &
-> custom-graphics-seam patch v0.2.3 (tag → `e219841`), the
-> output/testability/observability patch v0.2.2 (tag → `0052dbe`), and the
-> consumer-correctness patch v0.2.1 (tag → `219a592`), over the **experimental semantic
-> UI milestone** v0.2.0 (2026-09-26; tag → `7a10e60`), itself a deliberate additive
-> minor over v0.1.1 (tag → `3789332`) and v0.1.0 (2026-09-25). The C ABI is unchanged
-> (`GIBSON_ABI_VERSION` 1) and `gibson::ui` is
-> EXPERIMENTAL, not CORE. The full suite is **753 tests (265 unit + 486 integration + 2 doctests)**.
+> **Current status (2026-09-27):** v0.3.0 is released on GitHub (Engineering Alpha,
+> Linux x86_64; tag → `v0.3.0` at `e57cdb2`, prerelease-flagged) — the **Temporal
+> Rendering Milestone**: high-cadence phase-locked frame pacing (`FramePacing`) and
+> split generation/write per-frame diagnostics (`FrameReport`) as CORE infrastructure,
+> plus an experimental, Rust-only temporal cell realization axis (`gibson::temporal`)
+> that is **static by default** and emits ordinary `Surface`s through the one existing
+> renderer. The temporal feature's perceptual benefit is setup-dependent and **unproven**
+> (see [docs/TEMPORAL_DISPLAY_VALIDATION.md](docs/TEMPORAL_DISPLAY_VALIDATION.md)); GPU
+> acceleration was probed but left unmeasured. It follows the Europa v0.2.x patch train —
+> v0.2.5 (tag → `6b7096a`), v0.2.4 (`d991c93`), v0.2.3 (`e219841`), v0.2.2 (`0052dbe`),
+> v0.2.1 (`219a592`) — over the experimental semantic UI milestone v0.2.0 (2026-09-26;
+> tag → `7a10e60`), itself a deliberate additive minor over v0.1.1 (tag → `3789332`) and
+> v0.1.0 (2026-09-25). The C ABI is unchanged (`GIBSON_ABI_VERSION` 1); `gibson::temporal`
+> and `gibson::ui` are EXPERIMENTAL, not CORE. The full suite is **792 tests (296 unit +
+> 494 integration + 2 doctests)**.
 > Ecosystem-registry publication (crates.io / PyPI / Go module proxy) remains deferred.
 > The checkpoint counts and CI run ids below are historical development evidence,
 > preserved as measured.
