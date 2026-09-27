@@ -87,6 +87,14 @@ pub enum Event {
     Key(KeyEvent),
     Paste(String),
     Resize(u16, u16),
+    /// Reserved animation/timer tick. It is **not** produced by [`poll_event`]:
+    /// the core loop is input-driven. A consumer paces animation itself with
+    /// `Context::animation_interval` + `Context::render_if_due` (see the
+    /// canonical-loop example on `Context::run_once`), or uses the
+    /// batteries-included `gibson::ui::App` loop, which delivers per-iteration
+    /// ticks as `AppEvent::Tick`. This variant exists so an application that
+    /// synthesizes its own ticks can route them through the same `Event`
+    /// channel. (Issue #48 E-07)
     Tick,
 }
 

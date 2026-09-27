@@ -17,6 +17,49 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 Nothing yet.
 
+## [0.2.2] - 2026-09-27
+
+Output, testability, and observability patch — the third release in the v0.2.x
+train, from the Europa v0.2.0 consumer campaign (#45, #47, #48 E-02, E-07). Makes
+finalized scrollback output intentional, the composed frame inspectable, and the
+renderer's exact changed-cell count observable. **No C ABI change**
+(`GIBSON_ABI_VERSION` stays 1); every change is additive with no CORE break.
+`gibson::ui` remains EXPERIMENTAL and Rust-only.
+
+### Added
+- **Wrap-policy-aware scrollback insertion** (#45):
+  `Context::commit_text_with_mode(text, WrapMode)` and
+  `Context::insert_text_before_live_with_mode(text, WrapMode)` (plus the
+  `Renderer` equivalents). `WrapMode::NoWrap` preserves preformatted content —
+  aligned tables, diffs, ledgers — at its natural column width instead of
+  re-flowing (`WordWrap`, the previous hard-coded behavior) or silently clipping
+  wide rows. A preformatted line wider than the terminal is inserted via the
+  always-correct repaint path so the live-region anchor never drifts. Control
+  characters stay neutralized at the cell-model boundary, so untrusted text still
+  cannot inject terminal controls. The existing `commit_text` /
+  `insert_text_before_live` are unchanged (word-wrap) and source-compatible.
+- **Visible-frame snapshot** (#48 E-02): `Context::last_frame_lines() -> Vec<String>`
+  (with `Renderer::last_frame_lines` and `Surface::to_visible_lines`) returns the
+  composed live frame as visible text — wide-glyph continuation cells collapsed,
+  trailing blanks trimmed — so headless tests can assert on what the screen says
+  without building a private terminal emulator. Raw wire bytes remain available
+  via `rendered_bytes` / `take_output`.
+- **Exact changed-cell observability** (#47): `Context::last_exact_changed_cells()
+  -> usize` exposes the renderer's precomputed
+  `SurfaceDiff::exact_changed_cell_count()` for the last frame — the exact
+  semantic delta, distinct from the logical affected footprint
+  (`RenderStats::dirty_cells`) and emitted bytes — with no second
+  layout/paint/diff pass in the consumer. Rust-only; the ABI-1 stats struct is
+  unchanged.
+
+### Documented
+- **Canonical interactive loop** (#48 E-07): `Context::run_once` now carries a
+  copy-paste canonical loop (poll → rebuild-on-change → frame-paced render, with
+  the non-TTY guard from #46), and `Event::Tick` documents that it is **not**
+  emitted by the core input-driven loop — animation is paced via
+  `animation_interval` + `render_if_due`, or the `gibson::ui::App` helper delivers
+  per-iteration `AppEvent::Tick`.
+
 ## [0.2.1] - 2026-09-27
 
 Consumer-correctness and honest-failure patch, driven by the Europa v0.2.0
@@ -268,7 +311,8 @@ The contents and exact cut procedure for a release are documented in
 [`docs/RELEASING.md`](docs/RELEASING.md). Ecosystem-registry publication
 (crates.io, PyPI, Go module proxy) remains a separate, later decision.
 
-[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.2
 [0.2.1]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.1
 [0.2.0]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.0
 [0.1.1]: https://github.com/femboy2112/libgibson/releases/tag/v0.1.1

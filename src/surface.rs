@@ -258,6 +258,32 @@ impl Surface {
         self.index(x, y).map(|i| &self.cells[i])
     }
 
+    /// Flattens the surface into visible text lines — one `String` per row, with
+    /// wide-glyph continuation cells collapsed into their lead grapheme, empty
+    /// cells rendered as spaces, and trailing blanks trimmed. Styles and wire
+    /// encoding are dropped: this is "what the screen says", for headless
+    /// snapshot assertions (issue #48 E-02).
+    pub fn to_visible_lines(&self) -> Vec<String> {
+        (0..self.height)
+            .map(|y| {
+                let mut line = String::new();
+                for x in 0..self.width {
+                    if let Some(cell) = self.get(x, y) {
+                        if cell.is_continuation {
+                            continue;
+                        }
+                        if cell.glyph.is_empty() {
+                            line.push(' ');
+                        } else {
+                            line.push_str(cell.glyph.grapheme.as_str());
+                        }
+                    }
+                }
+                line.trim_end().to_string()
+            })
+            .collect()
+    }
+
     #[inline]
     pub fn get_mut(&mut self, x: u16, y: u16) -> Option<&mut Cell> {
         if let Some(i) = self.index(x, y) {

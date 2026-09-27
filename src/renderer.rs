@@ -8,6 +8,7 @@ use crate::session::TerminalSession;
 use crate::surface::Surface;
 use crate::transaction::TerminalTransaction;
 use std::io::{self, Write};
+use unicode_width::UnicodeWidthStr;
 
 /// Operating mode of the renderer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -86,6 +87,11 @@ pub struct Renderer {
     /// dirty cells (for damage-map debug overlays). Off by default: it allocates.
     pub capture_damage: bool,
     last_dirty_cells: Vec<(u16, u16)>,
+    /// Exact semantic changed-cell count of the most recent rendered frame
+    /// (issue #47) — the precomputed `SurfaceDiff::exact_changed_cell_count()`,
+    /// distinct from the logical `last_dirty_cells` footprint. Always updated
+    /// (a single scalar, so no `capture_damage` gate).
+    last_exact_changed: usize,
 }
 
 impl Renderer {
@@ -112,6 +118,7 @@ impl Renderer {
             last_insert_strategy: None,
             capture_damage: false,
             last_dirty_cells: Vec::new(),
+            last_exact_changed: 0,
         }
     }
 
@@ -120,6 +127,25 @@ impl Renderer {
     /// Empty unless [`Renderer::capture_damage`] was enabled for that frame.
     pub fn last_dirty_cells(&self) -> &[(u16, u16)] {
         &self.last_dirty_cells
+    }
+
+    /// Exact semantic changed-cell count of the most recent rendered frame
+    /// (issue #47): the number of cells whose final state actually changed,
+    /// distinct from the logical affected footprint ([`Renderer::last_dirty_cells`]
+    /// / [`crate::RenderStats::dirty_cells`]) and from emitted bytes.
+    pub fn last_exact_changed(&self) -> usize {
+        self.last_exact_changed
+    }
+
+    /// Visible text of the most recently composed live frame, one `String` per
+    /// row (issue #48 E-02): continuation cells collapsed, empty cells rendered
+    /// as spaces, trailing blanks trimmed. Empty before the first render. Raw
+    /// wire bytes remain available via the owning [`crate::Context`].
+    pub fn last_frame_lines(&self) -> Vec<String> {
+        self.previous_surface
+            .as_ref()
+            .map(Surface::to_visible_lines)
+            .unwrap_or_default()
     }
 
     /// Marks the physical anchor as untrustworthy and discards diff state so the
@@ -194,6 +220,10 @@ impl Renderer {
 
         // 3. Diff pass
         let diff = compute_diff(self.previous_surface.as_ref(), &next_surface);
+        // Issue #47: expose the exact semantic changed-cell scalar the diff
+        // already computed, so a consumer need not rerun layout/paint/diff to
+        // observe it. Updated on every render, including settled/empty frames.
+        self.last_exact_changed = diff.exact_changed_cell_count();
 
         let total_cells = (surface_width as usize) * (surface_height as usize);
         // Report *logical* damage (runs + erase-to-EOL + cleared rows), not just
@@ -451,21 +481,40 @@ impl Renderer {
         self.commit_text(text, session, writer).map(|_| ())
     }
 
-    /// Commits plain structured text to immutable scrollback, routed through the
-    /// same width-aware wrapping engine as `Node::text`.
+    /// Commits plain structured text to immutable scrollback, word-wrapped to the
+    /// terminal width. For preformatted content use
+    /// [`Renderer::commit_text_with_mode`].
     pub fn commit_text(
         &mut self,
         text: &str,
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<usize> {
+        self.commit_text_with_mode(text, WrapMode::WordWrap, session, writer)
+    }
+
+    /// Commits plain text to immutable scrollback with an explicit wrap policy
+    /// (issue #45). `WrapMode::WordWrap` re-flows to the terminal width;
+    /// `WrapMode::NoWrap` preserves the text **preformatted** — rendered at its
+    /// natural column width (never clamped to the terminal), so aligned tables,
+    /// diffs and ledgers keep their columns and no cells are silently dropped.
+    /// Either way, control characters are neutralized at the cell-model boundary,
+    /// so untrusted text cannot inject terminal control sequences.
+    pub fn commit_text_with_mode(
+        &mut self,
+        text: &str,
+        wrap: WrapMode,
+        session: &mut TerminalSession,
+        writer: &mut dyn Write,
+    ) -> io::Result<usize> {
         let (term_cols, _) = session.terminal_size();
-        let mut node = Node::text_wrapped(text, Style::default(), WrapMode::WordWrap);
-        node.layout_style.width = crate::node::Dimension::Length(term_cols as f32);
+        let render_width = wrap_render_width(text, wrap, term_cols);
+        let mut node = Node::text_wrapped(text, Style::default(), wrap);
+        node.layout_style.width = crate::node::Dimension::Length(render_width as f32);
         let lines = render_node_to_lines_with_depth(
             &mut node,
             session.is_tty,
-            term_cols,
+            render_width,
             session.color_depth(),
         )?;
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
@@ -531,24 +580,40 @@ impl Renderer {
         self.insert_lines_before_live(lines, session, writer)
     }
 
-    /// Inserts **safe** plain text into scrollback above the live region.
-    ///
-    /// The text is wrapped width-aware by the same layout engine used for live
-    /// nodes, and control characters are neutralized at the cell model boundary,
-    /// so untrusted text cannot inject terminal controls.
+    /// Inserts **safe** plain text into scrollback above the live region,
+    /// word-wrapped to the terminal width. For preformatted content (aligned
+    /// tables, diffs) use [`Renderer::insert_text_before_live_with_mode`].
     pub fn insert_text_before_live(
         &mut self,
         text: &str,
         session: &mut TerminalSession,
         writer: &mut dyn Write,
     ) -> io::Result<(usize, InsertStrategy)> {
+        self.insert_text_before_live_with_mode(text, WrapMode::WordWrap, session, writer)
+    }
+
+    /// Inserts **safe** plain text into scrollback above the live region with an
+    /// explicit wrap policy (issue #45). `WrapMode::NoWrap` preserves the text
+    /// preformatted at its natural column width (never clamped to the terminal),
+    /// so aligned artifacts keep their columns and no cells are silently dropped;
+    /// `WrapMode::WordWrap` re-flows to the terminal width. Control characters are
+    /// neutralized at the cell-model boundary in both modes, so untrusted text
+    /// cannot inject terminal controls.
+    pub fn insert_text_before_live_with_mode(
+        &mut self,
+        text: &str,
+        wrap: WrapMode,
+        session: &mut TerminalSession,
+        writer: &mut dyn Write,
+    ) -> io::Result<(usize, InsertStrategy)> {
         let (term_cols, _) = session.terminal_size();
-        let mut node = Node::text_wrapped(text, Style::default(), WrapMode::WordWrap);
-        node.layout_style.width = crate::node::Dimension::Length(term_cols as f32);
+        let render_width = wrap_render_width(text, wrap, term_cols);
+        let mut node = Node::text_wrapped(text, Style::default(), wrap);
+        node.layout_style.width = crate::node::Dimension::Length(render_width as f32);
         let lines = render_node_to_lines_with_depth(
             &mut node,
             session.is_tty,
-            term_cols,
+            render_width,
             session.color_depth(),
         )?;
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
@@ -596,8 +661,17 @@ impl Renderer {
         }
 
         let m = lines.len() as u16;
-        let (_, term_rows) = session.terminal_size();
+        let (term_cols, term_rows) = session.terminal_size();
         let combined_height = m.saturating_add(self.live_region_height);
+
+        // A preformatted (NoWrap, issue #45) line wider than the terminal
+        // soft-wraps into extra physical rows that the one-row-per-line `CSI L`
+        // fast path cannot account for, which would drift the live region below.
+        // Force the always-correct repaint fallback for those. (WordWrap/CharWrap
+        // content is bounded to the terminal width, so this never fires for them.)
+        let any_line_exceeds_width = lines
+            .iter()
+            .any(|l| UnicodeWidthStr::width(strip_ansi_escapes(l).as_str()) > term_cols as usize);
 
         // The fast path relies on trustworthy relative cursor/region state and on
         // `CSI L` actually being supported. Unknown capability is NOT treated as
@@ -607,6 +681,7 @@ impl Renderer {
             && anchor_stable
             && session.insert_line_supported()
             && combined_height <= term_rows
+            && !any_line_exceeds_width
             && self.previous_surface.is_some();
 
         let mut tx = TerminalTransaction::new(writer, session.sync_updates());
@@ -807,6 +882,25 @@ pub fn strip_ansi_escapes(s: &str) -> String {
         out.push(c);
     }
     out
+}
+
+/// Render width for a wrap policy (issue #45): `WordWrap` wraps to the terminal
+/// width; `NoWrap` uses the content's widest line so preformatted rows are never
+/// clipped, and never narrower than the terminal.
+fn wrap_render_width(text: &str, wrap: WrapMode, term_cols: u16) -> u16 {
+    match wrap {
+        // Wrapping modes fit within the terminal width.
+        WrapMode::WordWrap | WrapMode::CharWrap => term_cols.max(1),
+        // Preformatted: render at the content's widest line so nothing is
+        // clipped, and never narrower than the terminal.
+        WrapMode::NoWrap => text
+            .split('\n')
+            .map(|line| UnicodeWidthStr::width(line) as u16)
+            .max()
+            .unwrap_or(0)
+            .max(term_cols)
+            .max(1),
+    }
 }
 
 /// Renders a UI node to lines of text.
