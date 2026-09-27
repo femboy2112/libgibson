@@ -75,11 +75,28 @@ impl RenderStats {
 /// spinner at 12.5 Hz is visually smooth and an order of magnitude cheaper.
 pub const DEFAULT_ANIMATION_INTERVAL: Duration = Duration::from_millis(80);
 
+/// How frame deadlines are derived from a requested maximum frame rate.
+///
+/// `CompletionRelative` preserves LibGibson's historical behavior: the next
+/// budget starts when the previous render completes. `PhaseLocked` keeps a
+/// cadence anchored to scheduled deadlines instead, so render/write time consumes
+/// part of the current period rather than silently stretching every period. This
+/// is useful for high-cadence animation and temporal-rendering experiments; it is
+/// still an application emission clock, **not** a claim of terminal/display vsync.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FramePacing {
+    #[default]
+    CompletionRelative,
+    PhaseLocked,
+}
+
 /// Throttles and coalesces rendering updates to a target frame rate.
 pub struct FrameScheduler {
     pub max_fps: u32,
     pub is_dirty: bool,
     last_frame_instant: Option<Instant>,
+    next_frame_deadline: Option<Instant>,
+    pacing: FramePacing,
     /// Recommended interval between decorative animation steps.
     pub animation_interval: Duration,
     pub stats: RenderStats,
@@ -91,6 +108,8 @@ impl FrameScheduler {
             max_fps: max_fps.max(1),
             is_dirty: false,
             last_frame_instant: None,
+            next_frame_deadline: None,
+            pacing: FramePacing::CompletionRelative,
             animation_interval: DEFAULT_ANIMATION_INTERVAL,
             stats: RenderStats::default(),
         }
@@ -103,6 +122,24 @@ impl FrameScheduler {
     /// Explicit request to schedule a frame render pass.
     pub fn request_render(&mut self) {
         self.is_dirty = true;
+    }
+
+    /// Returns the active frame-pacing policy.
+    pub fn pacing(&self) -> FramePacing {
+        self.pacing
+    }
+
+    /// Selects the frame-pacing policy and starts a fresh timing epoch.
+    ///
+    /// Switching policy deliberately resets only scheduler timing, not dirty state
+    /// or accumulated metrics. The next requested frame is therefore immediately
+    /// eligible and establishes the new phase.
+    pub fn set_pacing(&mut self, pacing: FramePacing) {
+        if self.pacing != pacing {
+            self.pacing = pacing;
+            self.last_frame_instant = None;
+            self.next_frame_deadline = None;
+        }
     }
 
     pub fn frame_budget(&self) -> Duration {
@@ -122,17 +159,27 @@ impl FrameScheduler {
 
     /// Time remaining until the next frame can be rendered under the FPS budget.
     pub fn time_until_next_frame(&self) -> Duration {
-        match self.last_frame_instant {
-            None => Duration::ZERO,
-            Some(last) => {
-                let budget = self.frame_budget();
-                let elapsed = last.elapsed();
-                if elapsed >= budget {
-                    Duration::ZERO
-                } else {
-                    budget - elapsed
+        self.time_until_next_frame_at(Instant::now())
+    }
+
+    fn time_until_next_frame_at(&self, now: Instant) -> Duration {
+        match self.pacing {
+            FramePacing::CompletionRelative => match self.last_frame_instant {
+                None => Duration::ZERO,
+                Some(last) => {
+                    let budget = self.frame_budget();
+                    let elapsed = now.saturating_duration_since(last);
+                    if elapsed >= budget {
+                        Duration::ZERO
+                    } else {
+                        budget - elapsed
+                    }
                 }
-            }
+            },
+            FramePacing::PhaseLocked => self
+                .next_frame_deadline
+                .map(|deadline| deadline.saturating_duration_since(now))
+                .unwrap_or(Duration::ZERO),
         }
     }
 
@@ -143,20 +190,27 @@ impl FrameScheduler {
 
     /// Checks if a frame should be rendered now, respecting the frame rate budget.
     pub fn should_render(&mut self) -> bool {
+        self.should_render_at(Instant::now())
+    }
+
+    fn should_render_at(&mut self, now: Instant) -> bool {
         if !self.is_dirty {
             return false;
         }
 
-        match self.last_frame_instant {
-            None => true,
-            Some(last) => {
-                if last.elapsed() >= self.frame_budget() {
-                    true
-                } else {
-                    self.stats.skipped_frames += 1;
-                    false
-                }
-            }
+        if self.pacing == FramePacing::PhaseLocked && self.next_frame_deadline.is_none() {
+            // Anchor the phase at the *start* of the first eligible frame. Its
+            // render/write cost therefore consumes this period instead of being
+            // added after it.
+            self.next_frame_deadline = Some(now);
+            return true;
+        }
+
+        if self.time_until_next_frame_at(now).is_zero() {
+            true
+        } else {
+            self.stats.skipped_frames += 1;
+            false
         }
     }
 
@@ -169,8 +223,54 @@ impl FrameScheduler {
         is_full_repaint: bool,
         duration: Duration,
     ) {
+        self.record_frame_at(
+            Instant::now(),
+            dirty_cells,
+            total_cells,
+            bytes_emitted,
+            is_full_repaint,
+            duration,
+        );
+    }
+
+    fn record_frame_at(
+        &mut self,
+        now: Instant,
+        dirty_cells: usize,
+        total_cells: usize,
+        bytes_emitted: usize,
+        is_full_repaint: bool,
+        duration: Duration,
+    ) {
         self.is_dirty = false;
-        self.last_frame_instant = Some(Instant::now());
+        self.last_frame_instant = Some(now);
+
+        if self.pacing == FramePacing::PhaseLocked {
+            let budget = self.frame_budget();
+            let scheduled = self.next_frame_deadline.unwrap_or(now);
+            let mut next = scheduled + budget;
+            if next <= now {
+                // Preserve the original phase while skipping every deadline we
+                // already missed. Use the remainder rather than a loop so a long
+                // process stall cannot turn catch-up into unbounded work.
+                let late = now.saturating_duration_since(next);
+                let budget_ns = budget.as_nanos();
+                if budget_ns > 0 {
+                    let rem_ns = late.as_nanos() % budget_ns;
+                    let until = if rem_ns == 0 {
+                        budget
+                    } else {
+                        budget - Duration::from_nanos(rem_ns as u64)
+                    };
+                    next = now + until;
+                } else {
+                    next = now;
+                }
+            }
+            self.next_frame_deadline = Some(next);
+        } else {
+            self.next_frame_deadline = None;
+        }
 
         self.stats.frames += 1;
         self.stats.dirty_cells += dirty_cells as u64;
@@ -205,6 +305,42 @@ mod tests {
         scheduler.request_render();
         assert!(!scheduler.should_render());
         assert_eq!(scheduler.stats.skipped_frames, 1);
+    }
+
+    #[test]
+    fn phase_locked_pacing_charges_render_time_to_the_current_period() {
+        let start = Instant::now();
+        let mut scheduler = FrameScheduler::new(100); // 10 ms budget
+        scheduler.set_pacing(FramePacing::PhaseLocked);
+        scheduler.request_render();
+        assert!(scheduler.should_render_at(start));
+
+        // A frame that completes 3 ms after its scheduled start leaves 7 ms,
+        // rather than historical completion-relative pacing's fresh 10 ms.
+        let completed = start + Duration::from_millis(3);
+        scheduler.record_frame_at(completed, 0, 0, 0, false, Duration::from_millis(3));
+        assert_eq!(
+            scheduler.time_until_next_frame_at(completed),
+            Duration::from_millis(7)
+        );
+    }
+
+    #[test]
+    fn phase_locked_pacing_skips_missed_deadlines_without_drifting() {
+        let start = Instant::now();
+        let mut scheduler = FrameScheduler::new(100); // 10 ms budget
+        scheduler.set_pacing(FramePacing::PhaseLocked);
+        scheduler.request_render();
+        assert!(scheduler.should_render_at(start));
+
+        // Completion at t=23 ms has missed t=10 and t=20. The next deadline
+        // remains on the original phase at t=30, i.e. 7 ms away.
+        let completed = start + Duration::from_millis(23);
+        scheduler.record_frame_at(completed, 0, 0, 0, false, Duration::from_millis(23));
+        assert_eq!(
+            scheduler.time_until_next_frame_at(completed),
+            Duration::from_millis(7)
+        );
     }
 
     #[test]
