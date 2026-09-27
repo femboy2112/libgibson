@@ -141,6 +141,7 @@ pub struct TemporalBrailleField {
     width: u16,
     height: u16,
     duty: Vec<[f32; 8]>,
+    styles: Vec<Style>,
     accumulator: Vec<[f32; 8]>,
     frame_index: u64,
 }
@@ -158,6 +159,7 @@ impl TemporalBrailleField {
             width,
             height,
             duty: vec![[0.0; 8]; cells],
+            styles: vec![Style::default(); cells],
             accumulator,
             frame_index: 0,
         }
@@ -190,14 +192,71 @@ impl TemporalBrailleField {
         self.index(x, y).map(|i| self.duty[i])
     }
 
+    /// Sets a stable foreground/background style for one temporal cell.
+    ///
+    /// The recommended residual path keeps this style unchanged across phases
+    /// and modulates only the glyph mask, minimizing ANSI style churn.
+    pub fn set_cell_style(&mut self, x: u16, y: u16, style: Style) -> bool {
+        let Some(index) = self.index(x, y) else {
+            return false;
+        };
+        self.styles[index] = style;
+        true
+    }
+
+    /// Sets both the target duty cycles and stable style for one cell.
+    pub fn set_cell_target(
+        &mut self,
+        x: u16,
+        y: u16,
+        duty: [f32; 8],
+        style: Style,
+    ) -> bool {
+        let Some(index) = self.index(x, y) else {
+            return false;
+        };
+        self.duty[index] = duty.map(sanitize_duty);
+        self.styles[index] = style;
+        true
+    }
+
+    pub fn cell_style(&self, x: u16, y: u16) -> Option<Style> {
+        self.index(x, y).map(|i| self.styles[i])
+    }
+
     pub fn clear(&mut self) {
         self.duty.fill([0.0; 8]);
     }
 
     /// A deterministic static control: dots at or above 50% duty are on.
     pub fn static_surface(&self, style: Style, mode: SubcellGlyphMode) -> Surface {
-        let masks = self
-            .duty
+        let masks = self.static_masks();
+        self.surface_from_masks_uniform(masks, style, mode)
+    }
+
+    /// Static control using each cell's stable foreground/background style.
+    pub fn static_styled_surface(&self, mode: SubcellGlyphMode) -> Surface {
+        self.surface_from_masks_styled(self.static_masks(), mode)
+    }
+
+    /// Advances one temporal phase and returns one ordinary LibGibson surface
+    /// using one uniform style.
+    pub fn advance(&mut self, style: Style, mode: SubcellGlyphMode) -> Surface {
+        let masks = self.advance_masks();
+        self.surface_from_masks_uniform(masks, style, mode)
+    }
+
+    /// Advances one temporal phase using each cell's stable style.
+    ///
+    /// This is the preferred path for image experiments: choose per-cell fg/bg
+    /// once, then let most frames change only the glyph mask.
+    pub fn advance_styled(&mut self, mode: SubcellGlyphMode) -> Surface {
+        let masks = self.advance_masks();
+        self.surface_from_masks_styled(masks, mode)
+    }
+
+    fn static_masks(&self) -> Vec<u8> {
+        self.duty
             .iter()
             .map(|dots| {
                 dots.iter().enumerate().fold(0u8, |mask, (bit, duty)| {
@@ -208,14 +267,7 @@ impl TemporalBrailleField {
                     }
                 })
             })
-            .collect();
-        self.surface_from_masks(masks, style, mode)
-    }
-
-    /// Advances one temporal phase and returns one ordinary LibGibson surface.
-    pub fn advance(&mut self, style: Style, mode: SubcellGlyphMode) -> Surface {
-        let masks = self.advance_masks();
-        self.surface_from_masks(masks, style, mode)
+            .collect()
     }
 
     fn advance_masks(&mut self) -> Vec<u8> {
@@ -237,7 +289,25 @@ impl TemporalBrailleField {
         masks
     }
 
-    fn surface_from_masks(&self, masks: Vec<u8>, style: Style, mode: SubcellGlyphMode) -> Surface {
+    fn surface_from_masks_uniform(
+        &self,
+        masks: Vec<u8>,
+        style: Style,
+        mode: SubcellGlyphMode,
+    ) -> Surface {
+        self.surface_from_masks_with(masks, mode, |_| style)
+    }
+
+    fn surface_from_masks_styled(&self, masks: Vec<u8>, mode: SubcellGlyphMode) -> Surface {
+        self.surface_from_masks_with(masks, mode, |index| self.styles[index])
+    }
+
+    fn surface_from_masks_with(
+        &self,
+        masks: Vec<u8>,
+        mode: SubcellGlyphMode,
+        style_at: impl Fn(usize) -> Style,
+    ) -> Surface {
         let mut surface = Surface::new(self.width, self.height);
         if self.width == 0 {
             return surface;
@@ -245,6 +315,7 @@ impl TemporalBrailleField {
         for (index, mask) in masks.into_iter().enumerate() {
             let x = (index % self.width as usize) as u16;
             let y = (index / self.width as usize) as u16;
+            let style = style_at(index);
             let cell = match mode.subcell_glyph(mask) {
                 Some(ch) => Cell::new(Glyph::from_char(ch), style),
                 None => Cell::space(style),
@@ -367,5 +438,22 @@ mod tests {
         assert_eq!(surface.height, 1);
         assert_ne!(surface.get(0, 0).unwrap().glyph.grapheme.as_str(), " ");
         assert_eq!(surface.get(1, 0).unwrap().glyph.grapheme.as_str(), " ");
+    }
+
+    #[test]
+    fn styled_path_preserves_per_cell_palette_while_masks_change() {
+        use crate::cell::Color;
+
+        let mut field = TemporalBrailleField::new(2, 1, 3);
+        let left = Style::default().fg(Color::Rgb(240, 240, 240)).bg(Color::Rgb(12, 12, 12));
+        let right = Style::default().fg(Color::Rgb(20, 180, 220)).bg(Color::Rgb(10, 20, 30));
+        assert!(field.set_cell_target(0, 0, [0.5; 8], left));
+        assert!(field.set_cell_target(1, 0, [0.5; 8], right));
+
+        for _ in 0..4 {
+            let surface = field.advance_styled(SubcellGlyphMode::Braille2x4);
+            assert_eq!(surface.get(0, 0).unwrap().style, left);
+            assert_eq!(surface.get(1, 0).unwrap().style, right);
+        }
     }
 }
