@@ -164,6 +164,24 @@ impl Context {
         self.scheduler.pacing()
     }
 
+    /// Scheduled emission deadlines the most recent phase-locked frame overran.
+    ///
+    /// Always `0` under [`FramePacing::CompletionRelative`]. A temporal
+    /// controller reads this alongside [`Context::last_frame_report`] to decide
+    /// whether local cadence is healthy enough to keep modulating, or whether to
+    /// fall back to static realization.
+    pub fn missed_periods_last_frame(&self) -> u32 {
+        self.scheduler.missed_periods_last_frame()
+    }
+
+    /// Cumulative phase-locked missed deadlines since construction (monotonic).
+    ///
+    /// A controller samples the delta over a window for cadence-health hysteresis
+    /// rather than reacting to a single late frame.
+    pub fn missed_periods_total(&self) -> u64 {
+        self.scheduler.missed_periods_total()
+    }
+
     /// Sets the recommended cadence for decorative animation (spinners etc.).
     pub fn set_animation_interval(&mut self, interval: Duration) {
         self.scheduler.set_animation_interval(interval);

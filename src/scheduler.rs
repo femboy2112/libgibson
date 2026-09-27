@@ -97,6 +97,11 @@ pub struct FrameScheduler {
     last_frame_instant: Option<Instant>,
     next_frame_deadline: Option<Instant>,
     pacing: FramePacing,
+    /// Scheduled emission deadlines the most recent phase-locked frame overran.
+    /// Rust-side observability only; deliberately not part of ABI-v1 RenderStats.
+    missed_periods_last_frame: u32,
+    /// Cumulative phase-locked missed deadlines since construction (monotonic).
+    missed_periods_total: u64,
     /// Recommended interval between decorative animation steps.
     pub animation_interval: Duration,
     pub stats: RenderStats,
@@ -110,6 +115,8 @@ impl FrameScheduler {
             last_frame_instant: None,
             next_frame_deadline: None,
             pacing: FramePacing::CompletionRelative,
+            missed_periods_last_frame: 0,
+            missed_periods_total: 0,
             animation_interval: DEFAULT_ANIMATION_INTERVAL,
             stats: RenderStats::default(),
         }
@@ -129,6 +136,26 @@ impl FrameScheduler {
         self.pacing
     }
 
+    /// Scheduled emission deadlines the most recent phase-locked frame overran.
+    ///
+    /// Under [`FramePacing::PhaseLocked`], a frame whose generation+write took
+    /// longer than one budget period causes the scheduler to skip the deadlines
+    /// it blew past (without drifting). This reports how many were skipped by the
+    /// last recorded frame; it is always `0` under `CompletionRelative` and `0`
+    /// immediately after a timing-epoch reset. A temporal controller can use a
+    /// nonzero value to reduce depth or fall back to static realization.
+    pub fn missed_periods_last_frame(&self) -> u32 {
+        self.missed_periods_last_frame
+    }
+
+    /// Cumulative phase-locked missed deadlines since construction (monotonic).
+    ///
+    /// Intended for hysteresis: a controller can sample the delta over a window
+    /// to decide whether local cadence is healthy enough to keep modulating.
+    pub fn missed_periods_total(&self) -> u64 {
+        self.missed_periods_total
+    }
+
     /// Selects the frame-pacing policy and starts a fresh timing epoch.
     ///
     /// Switching policy deliberately resets only scheduler timing, not dirty state
@@ -139,6 +166,7 @@ impl FrameScheduler {
             self.pacing = pacing;
             self.last_frame_instant = None;
             self.next_frame_deadline = None;
+            self.missed_periods_last_frame = 0;
         }
     }
 
@@ -152,6 +180,7 @@ impl FrameScheduler {
             self.max_fps = max_fps;
             self.last_frame_instant = None;
             self.next_frame_deadline = None;
+            self.missed_periods_last_frame = 0;
         }
     }
 
@@ -260,15 +289,15 @@ impl FrameScheduler {
 
         if self.pacing == FramePacing::PhaseLocked {
             let budget = self.frame_budget();
+            let budget_ns = budget.as_nanos();
             let scheduled = self.next_frame_deadline.unwrap_or(now);
             let mut next = scheduled + budget;
-            if next <= now {
-                // Preserve the original phase while skipping every deadline we
-                // already missed. Use the remainder rather than a loop so a long
-                // process stall cannot turn catch-up into unbounded work.
-                let late = now.saturating_duration_since(next);
-                let budget_ns = budget.as_nanos();
-                if budget_ns > 0 {
+            if budget_ns > 0 {
+                if next <= now {
+                    // Preserve the original phase while skipping every deadline we
+                    // already missed. Use the remainder rather than a loop so a long
+                    // process stall cannot turn catch-up into unbounded work.
+                    let late = now.saturating_duration_since(next);
                     let rem_ns = late.as_nanos() % budget_ns;
                     let until = if rem_ns == 0 {
                         budget
@@ -276,13 +305,23 @@ impl FrameScheduler {
                         budget - Duration::from_nanos(rem_ns as u64)
                     };
                     next = now + until;
-                } else {
-                    next = now;
                 }
+                // `next` is `scheduled + k*budget` for some `k >= 1`; the frame's
+                // generation+write skipped the `k - 1` deadlines in between.
+                let periods = next.saturating_duration_since(scheduled).as_nanos() / budget_ns;
+                self.missed_periods_last_frame = periods.saturating_sub(1) as u32;
+            } else {
+                // Degenerate ceiling (max_fps beyond ~1e9): no real period to miss.
+                next = now;
+                self.missed_periods_last_frame = 0;
             }
             self.next_frame_deadline = Some(next);
+            self.missed_periods_total = self
+                .missed_periods_total
+                .saturating_add(self.missed_periods_last_frame as u64);
         } else {
             self.next_frame_deadline = None;
+            self.missed_periods_last_frame = 0;
         }
 
         self.stats.frames += 1;
@@ -379,6 +418,80 @@ mod tests {
         scheduler.request_render();
         assert!(scheduler.should_render_at(start + Duration::from_millis(2)));
         assert_eq!(scheduler.frame_budget(), Duration::from_millis(20));
+    }
+
+    #[test]
+    fn phase_locked_reports_missed_periods_after_overrun() {
+        let start = Instant::now();
+        let mut scheduler = FrameScheduler::new(100); // 10 ms budget
+        scheduler.set_pacing(FramePacing::PhaseLocked);
+        scheduler.request_render();
+        assert!(scheduler.should_render_at(start));
+
+        // A frame that finishes at t=23 ms overran the t=10 and t=20 deadlines.
+        let completed = start + Duration::from_millis(23);
+        scheduler.record_frame_at(completed, 0, 0, 0, false, Duration::from_millis(23));
+        assert_eq!(scheduler.missed_periods_last_frame(), 2);
+        assert_eq!(scheduler.missed_periods_total(), 2);
+    }
+
+    #[test]
+    fn phase_locked_reports_zero_missed_within_budget() {
+        let start = Instant::now();
+        let mut scheduler = FrameScheduler::new(100);
+        scheduler.set_pacing(FramePacing::PhaseLocked);
+        scheduler.request_render();
+        assert!(scheduler.should_render_at(start));
+
+        let completed = start + Duration::from_millis(3);
+        scheduler.record_frame_at(completed, 0, 0, 0, false, Duration::from_millis(3));
+        assert_eq!(scheduler.missed_periods_last_frame(), 0);
+        assert_eq!(scheduler.missed_periods_total(), 0);
+    }
+
+    #[test]
+    fn completion_relative_never_reports_missed_periods() {
+        let start = Instant::now();
+        let mut scheduler = FrameScheduler::new(100); // default CompletionRelative
+        scheduler.request_render();
+        assert!(scheduler.should_render_at(start));
+
+        // Even a frame far longer than the budget reports nothing: completion-
+        // relative pacing has no scheduled deadlines to miss.
+        let completed = start + Duration::from_millis(85);
+        scheduler.record_frame_at(completed, 0, 0, 0, false, Duration::from_millis(85));
+        assert_eq!(scheduler.missed_periods_last_frame(), 0);
+        assert_eq!(scheduler.missed_periods_total(), 0);
+    }
+
+    #[test]
+    fn missed_periods_accumulate_and_last_frame_resets_on_epoch_change() {
+        let start = Instant::now();
+        let mut scheduler = FrameScheduler::new(100); // 10 ms budget
+        scheduler.set_pacing(FramePacing::PhaseLocked);
+        scheduler.request_render();
+        assert!(scheduler.should_render_at(start));
+
+        // First overrun finishes at t=23, missing t=10 and t=20 (2 periods).
+        let first = start + Duration::from_millis(23);
+        scheduler.record_frame_at(first, 0, 0, 0, false, Duration::from_millis(23));
+        assert_eq!(scheduler.missed_periods_last_frame(), 2);
+
+        // Next deadline is t=30; the second frame becomes due there and overruns
+        // to t=45, missing t=40 (1 period).
+        scheduler.request_render();
+        let due = start + Duration::from_millis(30);
+        assert!(scheduler.should_render_at(due));
+        let second = start + Duration::from_millis(45);
+        scheduler.record_frame_at(second, 0, 0, 0, false, Duration::from_millis(15));
+        assert_eq!(scheduler.missed_periods_last_frame(), 1);
+        assert_eq!(scheduler.missed_periods_total(), 3);
+
+        // A ceiling change resets the per-frame gauge but preserves the monotonic
+        // cumulative health counter a controller uses for hysteresis.
+        scheduler.set_max_fps(50);
+        assert_eq!(scheduler.missed_periods_last_frame(), 0);
+        assert_eq!(scheduler.missed_periods_total(), 3);
     }
 
     #[test]
