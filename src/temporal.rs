@@ -93,17 +93,14 @@ pub enum TemporalGate {
 }
 
 impl TemporalSafetyPolicy {
-    /// Evaluates whether residual luminance modulation should run.
+    /// Gates the **presentation** conditions only: reduced-motion preference, a
+    /// measured profile, adequate cadence and adequate frame survival. It does
+    /// **not** bound modulation depth.
     ///
-    /// `requested_depth` is a 0..=1 **linear-light** luminance swing relative to
-    /// the display's full range. Callers should pass `reduced_motion = true` for
-    /// any accessibility/static policy that forbids temporal noise.
-    pub fn gate_luminance(
-        self,
-        profile: PresentationProfile,
-        requested_depth: f32,
-        reduced_motion: bool,
-    ) -> TemporalGate {
+    /// This is the check [`TemporalDisplayProcessor`] applies before enforcing its
+    /// own per-cell bound computed from the actual emitted fg/bg luminance swing.
+    /// Profile-gating alone is *not* sufficient for safe output.
+    pub fn gate_profile(self, profile: PresentationProfile, reduced_motion: bool) -> TemporalGate {
         if reduced_motion {
             return TemporalGate::ReducedMotion;
         }
@@ -116,13 +113,38 @@ impl TemporalSafetyPolicy {
         if !profile.survival_rate.is_finite() || profile.survival_rate < self.min_survival_rate {
             return TemporalGate::SurvivalTooLow;
         }
-        if !requested_depth.is_finite()
-            || requested_depth < 0.0
-            || requested_depth > self.max_luminance_depth
-        {
-            return TemporalGate::DepthTooHigh;
-        }
         TemporalGate::Enabled
+    }
+
+    /// Evaluates the profile gate plus a caller-supplied scalar depth.
+    ///
+    /// **This depth check is only a lint.** `requested_depth` is a number the
+    /// caller asserts; it has no mechanical link to what is emitted. A small
+    /// requested depth does not imply a small *instantaneous* swing — if a cell's
+    /// foreground and background are far apart in luminance, a single dot flip is
+    /// a large step regardless of the requested duty. For real safety, drive
+    /// modulation through [`TemporalDisplayProcessor`], which computes the swing
+    /// from the actual cell colors it intends to emit and freezes cells that
+    /// exceed the cap. `requested_depth` is a 0..=1 linear-light swing.
+    pub fn gate_luminance(
+        self,
+        profile: PresentationProfile,
+        requested_depth: f32,
+        reduced_motion: bool,
+    ) -> TemporalGate {
+        match self.gate_profile(profile, reduced_motion) {
+            TemporalGate::Enabled => {
+                if !requested_depth.is_finite()
+                    || requested_depth < 0.0
+                    || requested_depth > self.max_luminance_depth
+                {
+                    TemporalGate::DepthTooHigh
+                } else {
+                    TemporalGate::Enabled
+                }
+            }
+            gated => gated,
+        }
     }
 }
 
@@ -592,6 +614,21 @@ impl TemporalBrailleField {
         true
     }
 
+    /// Snaps a cell's duty to its stored static-mask baseline, so residual
+    /// modulation produces zero flips and the cell holds its exact static frame.
+    /// Used by the safety controller to freeze cells whose emitted luminance swing
+    /// is too large to modulate. Returns `false` if `(x, y)` is out of bounds.
+    pub fn freeze_cell_to_static(&mut self, x: u16, y: u16) -> bool {
+        let Some(index) = self.index(x, y) else {
+            return false;
+        };
+        let mask = self.static_mask[index];
+        for (bit, d) in self.duty[index].iter_mut().enumerate() {
+            *d = if mask & (1u8 << bit) != 0 { 1.0 } else { 0.0 };
+        }
+        true
+    }
+
     pub fn cell_style(&self, x: u16, y: u16) -> Option<Style> {
         self.index(x, y).map(|i| self.styles[i])
     }
@@ -803,6 +840,228 @@ impl TemporalBrailleField {
         } else {
             None
         }
+    }
+}
+
+/// Rec.709 relative luminance of a color in linear light (`0..=1`), or `None`
+/// when the exact emitted luminance is not known here — any non-RGB color (named,
+/// indexed, or reset). Temporal cells produced by [`project_rgb_subcells`] always
+/// carry RGB colors, so the modulated path always has a defined luminance; `None`
+/// is treated conservatively (frozen to static) by [`TemporalDisplayProcessor`].
+fn color_linear_luminance(color: Color) -> Option<f32> {
+    match color {
+        Color::Rgb(r, g, b) => {
+            let lin = rgb8_to_linear([r, g, b]);
+            Some(0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2])
+        }
+        _ => None,
+    }
+}
+
+/// Worst-case instantaneous linear-light luminance swing when one dot of a cell
+/// with `style` flips between background and foreground. `None` means at least one
+/// color's emitted luminance is unknown (non-RGB or unset), which the processor
+/// treats as unbounded and freezes to static.
+fn style_luminance_swing(style: Style) -> Option<f32> {
+    let fg = color_linear_luminance(style.fg?)?;
+    let bg = color_linear_luminance(style.bg?)?;
+    Some((fg - bg).abs())
+}
+
+/// A snapshot of [`TemporalDisplayProcessor`]'s current realization decision.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TemporalDiagnostics {
+    /// The top-level profile/reduced-motion gate (independent of the cadence hold).
+    pub gate: TemporalGate,
+    /// Whether the most recent `advance` emitted temporal output (`true`) or the
+    /// static fallback (`false`).
+    pub modulating: bool,
+    /// Cells eligible to modulate (emitted swing within the depth cap).
+    pub modulatable_cells: usize,
+    /// Cells frozen to static because their emitted swing exceeds the cap or is
+    /// unknown.
+    pub frozen_cells: usize,
+    /// Worst per-cell emitted luminance swing over the target (`0` if none known).
+    pub worst_cell_swing: f32,
+    /// Mean emitted (post-quantization) static RMSE of the current target.
+    pub mean_emitted_static_rmse: f32,
+    /// Frames remaining in the cadence-degradation hysteresis hold (`0` = healthy).
+    pub degraded_hold_frames: u32,
+}
+
+/// Frames of forced-static hysteresis after any observed missed deadline, so a
+/// brief cadence stall cannot cause rapid temporal/static toggling (itself a
+/// luminance step).
+const CADENCE_HYSTERESIS_FRAMES: u32 = 30;
+
+/// Experimental high-level temporal realization: static-first, safety-gated and
+/// cadence-aware.
+///
+/// It owns a static projection and a residual modulator and emits ordinary
+/// [`Surface`] frames — there is **no** second renderer. The default and the
+/// fallback is the static two-color image. Residual temporal modulation runs only
+/// when all of the following hold: a credible measured [`PresentationProfile`]
+/// passes the profile gate, local cadence is healthy (no recent missed
+/// deadlines), reduced-motion is off, and — evaluated *per cell* — the emitted
+/// foreground/background luminance swing is within the policy depth cap. Cells
+/// exceeding the cap (or whose colors have unknown luminance) are frozen to their
+/// static frame, so a high-contrast cell can never strobe regardless of any
+/// requested depth.
+pub struct TemporalDisplayProcessor {
+    width: u16,
+    height: u16,
+    mode: SubcellGlyphMode,
+    field: TemporalBrailleField,
+    profile: PresentationProfile,
+    policy: TemporalSafetyPolicy,
+    reduced_motion: bool,
+    has_target: bool,
+    mean_emitted_static_rmse: f32,
+    worst_cell_swing: f32,
+    modulatable_cells: usize,
+    frozen_cells: usize,
+    degraded_hold: u32,
+    last_modulating: bool,
+    last_gate: TemporalGate,
+}
+
+impl TemporalDisplayProcessor {
+    pub fn new(width: u16, height: u16, mode: SubcellGlyphMode, seed: u64) -> Self {
+        Self {
+            width,
+            height,
+            mode,
+            field: TemporalBrailleField::new(width, height, seed),
+            profile: PresentationProfile::unmeasured(),
+            policy: TemporalSafetyPolicy::default(),
+            reduced_motion: false,
+            has_target: false,
+            mean_emitted_static_rmse: 0.0,
+            worst_cell_swing: 0.0,
+            modulatable_cells: 0,
+            frozen_cells: 0,
+            degraded_hold: 0,
+            last_modulating: false,
+            last_gate: TemporalGate::Unmeasured,
+        }
+    }
+
+    pub fn width(&self) -> u16 {
+        self.width
+    }
+
+    pub fn height(&self) -> u16 {
+        self.height
+    }
+
+    /// Sets the externally measured presentation profile. Takes effect on the next
+    /// [`Self::advance`].
+    pub fn set_profile(&mut self, profile: PresentationProfile) {
+        self.profile = profile;
+    }
+
+    /// Sets the safety policy. Per-cell freeze decisions are recomputed on the
+    /// next [`Self::set_target_image`], so set the policy before the target.
+    pub fn set_policy(&mut self, policy: TemporalSafetyPolicy) {
+        self.policy = policy;
+    }
+
+    /// Sets the accessibility reduced-motion preference. When `true`, output is
+    /// always the static fallback.
+    pub fn set_reduced_motion(&mut self, reduced: bool) {
+        self.reduced_motion = reduced;
+    }
+
+    /// Projects a logical Braille RGB image (`2*width` by `4*height` samples) as
+    /// the new target, installs it, and enforces the per-cell emitted-swing safety
+    /// bound: any cell whose fg/bg luminance swing exceeds the cap (or is unknown)
+    /// is snapped to its static baseline so it can only ever show its static frame.
+    /// `reset` controls whether accumulators are reseeded (use [`ResetPolicy::Reset`]
+    /// for genuinely new content).
+    pub fn set_target_image(&mut self, sample: impl Fn(u16, u16) -> [u8; 3], reset: ResetPolicy) {
+        let projection = project_braille_image(self.width, self.height, sample);
+        self.mean_emitted_static_rmse = projection.mean_emitted_static_rmse();
+        projection.install_into(&mut self.field, reset);
+
+        let cap = self.policy.max_luminance_depth;
+        let (mut modulatable, mut frozen, mut worst) = (0usize, 0usize, 0.0f32);
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let style = self.field.cell_style(x, y).unwrap_or_default();
+                let swing = style_luminance_swing(style);
+                if let Some(s) = swing {
+                    worst = worst.max(s);
+                }
+                if matches!(swing, Some(s) if s <= cap) {
+                    modulatable += 1;
+                } else {
+                    frozen += 1;
+                    self.field.freeze_cell_to_static(x, y);
+                }
+            }
+        }
+        self.modulatable_cells = modulatable;
+        self.frozen_cells = frozen;
+        self.worst_cell_swing = worst;
+        self.has_target = true;
+    }
+
+    /// The top-level profile/reduced-motion gate (independent of the cadence hold).
+    pub fn gate(&self) -> TemporalGate {
+        self.policy.gate_profile(self.profile, self.reduced_motion)
+    }
+
+    /// The always-valid static realization of the current target.
+    pub fn static_fallback(&self) -> Surface {
+        self.field.static_styled_surface(self.mode)
+    }
+
+    /// Produces the next frame.
+    ///
+    /// `missed_periods` is the scheduler's most recent phase-locked missed-deadline
+    /// count (`0` under completion-relative pacing). A nonzero value trips a
+    /// hysteresis hold that forces the static fallback for a fixed number of
+    /// frames (30), preventing rapid temporal/static toggling.
+    /// Returns the static fallback whenever the gate is not `Enabled`, the cadence
+    /// hold is active, or no cell is eligible to modulate; otherwise the
+    /// residual-modulated frame (in which frozen cells still render static).
+    pub fn advance(&mut self, missed_periods: u32) -> Surface {
+        if missed_periods > 0 {
+            self.degraded_hold = CADENCE_HYSTERESIS_FRAMES;
+        } else if self.degraded_hold > 0 {
+            self.degraded_hold -= 1;
+        }
+
+        let gate = self.policy.gate_profile(self.profile, self.reduced_motion);
+        self.last_gate = gate;
+        let modulate = gate == TemporalGate::Enabled
+            && self.has_target
+            && self.modulatable_cells > 0
+            && self.degraded_hold == 0;
+        self.last_modulating = modulate;
+        if modulate {
+            self.field.advance_residual_styled(self.mode)
+        } else {
+            self.static_fallback()
+        }
+    }
+
+    /// A snapshot of the current realization decision and target statistics.
+    pub fn diagnostics(&self) -> TemporalDiagnostics {
+        TemporalDiagnostics {
+            gate: self.last_gate,
+            modulating: self.last_modulating,
+            modulatable_cells: self.modulatable_cells,
+            frozen_cells: self.frozen_cells,
+            worst_cell_swing: self.worst_cell_swing,
+            mean_emitted_static_rmse: self.mean_emitted_static_rmse,
+            degraded_hold_frames: self.degraded_hold,
+        }
+    }
+
+    /// Reseeds all residual accumulators (e.g. after a discontinuity).
+    pub fn reset(&mut self) {
+        self.field.reset_all();
     }
 }
 
@@ -1131,6 +1390,141 @@ mod tests {
         // Dimension mismatch is rejected without modifying the field.
         let mut wrong = TemporalBrailleField::new(2, 2, 1);
         assert!(!proj.install_into(&mut wrong, ResetPolicy::Keep));
+    }
+
+    #[test]
+    fn processor_defaults_to_static_when_unmeasured() {
+        let mut p = TemporalDisplayProcessor::new(1, 1, SubcellGlyphMode::Braille2x4, 7);
+        p.set_target_image(
+            |_lx, ly| {
+                let v = 100u8 + 3 * ly as u8;
+                [v, v, v]
+            },
+            ResetPolicy::Reset,
+        );
+        let frame = p.advance(0);
+        let d = p.diagnostics();
+        assert_eq!(d.gate, TemporalGate::Unmeasured);
+        assert!(!d.modulating, "an unmeasured profile must stay static");
+        let stat = p.static_fallback();
+        assert_eq!(
+            frame.get(0, 0).unwrap().glyph.grapheme,
+            stat.get(0, 0).unwrap().glyph.grapheme
+        );
+    }
+
+    #[test]
+    fn processor_modulates_low_swing_cells_and_freezes_high_swing_cells() {
+        let mut p = TemporalDisplayProcessor::new(2, 1, SubcellGlyphMode::Braille2x4, 3);
+        p.set_profile(PresentationProfile::measured(120.0, 0.98, 0.2));
+        p.set_target_image(
+            |lx, ly| {
+                if lx < 2 {
+                    // cell 0: a low-contrast gray gradient -> small luminance swing
+                    // with fractional duty (so there is residual to modulate).
+                    let v = 100u8 + 3 * ly as u8;
+                    [v, v, v]
+                } else if lx == 2 {
+                    [255, 255, 255] // cell 1: white vs black column -> ~full swing
+                } else {
+                    [0, 0, 0]
+                }
+            },
+            ResetPolicy::Reset,
+        );
+        let d = p.diagnostics();
+        assert_eq!(d.modulatable_cells, 1, "low-swing cell is modulatable");
+        assert_eq!(d.frozen_cells, 1, "white/black cell is frozen");
+        assert!(
+            d.worst_cell_swing > 0.9,
+            "worst swing tracks the white/black cell, got {}",
+            d.worst_cell_swing
+        );
+        assert_eq!(p.gate(), TemporalGate::Enabled);
+
+        // The frozen high-contrast cell must NEVER strobe (evil-morty repro guard);
+        // the low-swing cell should actually vary across frames.
+        let frozen_glyph = p
+            .static_fallback()
+            .get(1, 0)
+            .unwrap()
+            .glyph
+            .grapheme
+            .clone();
+        let mut cell0_glyphs = std::collections::HashSet::new();
+        for _ in 0..200 {
+            let f = p.advance(0);
+            assert_eq!(
+                f.get(1, 0).unwrap().glyph.grapheme,
+                frozen_glyph,
+                "frozen high-contrast cell must hold static every frame"
+            );
+            cell0_glyphs.insert(f.get(0, 0).unwrap().glyph.grapheme.clone());
+        }
+        assert!(
+            cell0_glyphs.len() > 1,
+            "the low-swing cell should modulate (vary over frames)"
+        );
+    }
+
+    #[test]
+    fn processor_reduced_motion_forces_static() {
+        let mut p = TemporalDisplayProcessor::new(1, 1, SubcellGlyphMode::Braille2x4, 1);
+        p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.1));
+        p.set_reduced_motion(true);
+        p.set_target_image(
+            |_lx, ly| {
+                let v = 100u8 + 3 * ly as u8;
+                [v, v, v]
+            },
+            ResetPolicy::Reset,
+        );
+        assert_eq!(p.gate(), TemporalGate::ReducedMotion);
+        let f = p.advance(0);
+        assert!(!p.diagnostics().modulating);
+        let stat = p.static_fallback();
+        assert_eq!(
+            f.get(0, 0).unwrap().glyph.grapheme,
+            stat.get(0, 0).unwrap().glyph.grapheme
+        );
+    }
+
+    #[test]
+    fn processor_cadence_hysteresis_holds_static_after_missed_period() {
+        let mut p = TemporalDisplayProcessor::new(1, 1, SubcellGlyphMode::Braille2x4, 2);
+        p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.1));
+        p.set_target_image(
+            |_lx, ly| {
+                let v = 100u8 + 3 * ly as u8;
+                [v, v, v]
+            },
+            ResetPolicy::Reset,
+        );
+        p.advance(0);
+        assert!(
+            p.diagnostics().modulating,
+            "healthy cadence should modulate"
+        );
+
+        // A missed deadline trips the hold: static now and through the window.
+        p.advance(1);
+        assert!(
+            !p.diagnostics().modulating,
+            "missed period must force static"
+        );
+        assert!(p.diagnostics().degraded_hold_frames > 0);
+        p.advance(0);
+        assert!(!p.diagnostics().modulating, "hysteresis holds static");
+
+        // After enough clean frames the hold clears and modulation resumes.
+        for _ in 0..CADENCE_HYSTERESIS_FRAMES {
+            p.advance(0);
+        }
+        assert!(
+            p.diagnostics().modulating,
+            "cadence recovered => modulating again"
+        );
+        assert_eq!(p.diagnostics().degraded_hold_frames, 0);
     }
 
     #[test]

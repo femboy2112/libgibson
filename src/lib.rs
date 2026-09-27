@@ -108,7 +108,8 @@ pub use story::{
 pub use surface::{BorderType, Rect, Surface};
 pub use surface_fx::{FxMask, SurfaceFx};
 pub use temporal::{
-    PresentationProfile, ResetPolicy, TemporalBrailleField, TemporalGate, TemporalSafetyPolicy,
+    PresentationProfile, ResetPolicy, TemporalBrailleField, TemporalDiagnostics,
+    TemporalDisplayProcessor, TemporalGate, TemporalSafetyPolicy,
 };
 pub use transition::{dissolve, scramble, scramble_line, type_on, SCRAMBLE_GLYPHS};
 pub use viewport::ViewportState;
