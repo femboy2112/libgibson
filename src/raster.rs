@@ -169,7 +169,7 @@ impl RgbRaster {
                 surface.set_cell(
                     x,
                     y,
-                    Cell::new(Glyph::new(&glyph.to_string()), Style::new()),
+                    Cell::new(Glyph::from_char(glyph), Style::new()),
                 );
             }
         }
