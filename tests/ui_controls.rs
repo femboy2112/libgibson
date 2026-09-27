@@ -445,9 +445,15 @@ fn presented_custom_nodes_observe_current_skin_geometry_and_clamped_clock() {
 
 #[test]
 fn presented_custom_content_receives_the_same_automatic_motion_as_raw_content() {
+    // Motion is opt-in (issue #37): request the entrance effect explicitly on
+    // both boundaries. The subject under test is that `presented(...)` custom
+    // content receives the SAME motion treatment as `raw(...)` content, not the
+    // (removed) implicit entrance on a bare `.key(...)`.
     let primitive = || Node::text("CUSTOM界", Style::new()).width(20.0).height(2.0);
-    let raw_tree: Element<()> = raw(primitive()).key("visual");
-    let custom_tree: Element<()> = presented(move |_| primitive()).key("visual");
+    let raw_tree: Element<()> = raw(primitive()).key("visual").motion(MotionRole::Enter);
+    let custom_tree: Element<()> = presented(move |_| primitive())
+        .key("visual")
+        .motion(MotionRole::Enter);
     for skin in [skins::VAPOR95, skins::BLACK_ICE, skins::SWISS_SIGNAL] {
         let none = environment(ColorDepth::Mono, MotionPreference::None);
         let expected = compile(&raw_tree, &BuildCx::new(skin, none)).unwrap();
@@ -466,7 +472,10 @@ fn presented_custom_content_receives_the_same_automatic_motion_as_raw_content() 
                     "custom boundary changed motion at t={time}"
                 );
                 if time == 20 {
-                    assert_ne!(custom, expected, "custom content bypassed automatic motion");
+                    assert_ne!(
+                        custom, expected,
+                        "custom content bypassed the requested entrance motion"
+                    );
                 }
                 if time == 1000 {
                     assert_eq!(custom, expected);

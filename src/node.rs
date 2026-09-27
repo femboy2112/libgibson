@@ -379,6 +379,17 @@ impl Node {
         n
     }
 
+    /// Creates an untitled horizontal rule separator.
+    ///
+    /// Equivalent to [`Node::rule`] with no title, but without the turbofish
+    /// that the generic `Option<impl Into<String>>` parameter otherwise forces
+    /// at an untitled call site (`Node::rule(None::<String>, style)` — issue
+    /// #44). Prefer this for a plain separator; use [`Node::rule`] when a title
+    /// is present.
+    pub fn separator(style: Style) -> Self {
+        Self::rule(None::<String>, style)
+    }
+
     /// Creates a callout rail with a vertical line on the left margin.
     pub fn rail(style: Style) -> Self {
         let mut n = Self::new(NodeKind::Rail { style });

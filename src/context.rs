@@ -21,6 +21,11 @@ pub struct Context {
     /// Where rendered bytes go: the process stdout for interactive contexts, or
     /// an in-memory buffer for headless ones (see [`Context::rendered_bytes`]).
     output: OutputSink,
+    /// Count of `render`/`render_now` calls issued with no root set — the most
+    /// likely "forgot `set_root`" integration mistake (issue #48 E-01). A
+    /// rootless render is a silent wire-level no-op; this counter makes it
+    /// observable and distinct from a legitimately empty settled frame.
+    empty_root_renders: u64,
 }
 
 /// Destination for a [`Context`]'s rendered bytes.
@@ -63,6 +68,7 @@ impl Context {
             scheduler: FrameScheduler::new(60),
             root: None,
             output: OutputSink::Stdout,
+            empty_root_renders: 0,
         })
     }
 
@@ -99,6 +105,7 @@ impl Context {
             scheduler: FrameScheduler::new(60),
             root: None,
             output: OutputSink::Buffer(Vec::new()),
+            empty_root_renders: 0,
         }
     }
 
@@ -217,6 +224,33 @@ impl Context {
         }
     }
 
+    /// Whether this context drives a live, interactive terminal — a real TTY
+    /// that is not a headless capture session.
+    ///
+    /// When this is `false`, [`Context::render`] emits nothing to a live screen
+    /// and [`Context::poll_event`] never yields input, so an interactive loop
+    /// built on `render` + `poll_event` idles silently forever (issue #46).
+    /// Consumers of the interactive constructors ([`Context::inline`] /
+    /// [`Context::fullscreen`] / [`Context::new`]) should check this and fall
+    /// back to a headless/`--dump` path (or exit with a diagnostic) when it is
+    /// `false`. Headless contexts return `false`: they render to a buffer, not a
+    /// live screen, and have no interactive input source.
+    pub fn is_interactive(&self) -> bool {
+        self.session.is_tty && !self.session.is_headless()
+    }
+
+    /// Number of [`Context::render`]/[`Context::render_now`] calls issued while
+    /// no root was set (issue #48 E-01).
+    ///
+    /// Rendering without a root is a silent wire-level no-op — forgetting
+    /// [`Context::set_root`] is the most common new-consumer mistake and
+    /// otherwise produces the same (empty) observables as a legitimate settled
+    /// frame. A non-zero value here is a strong signal of that mistake; a
+    /// root-backed render (even of an empty tree) never increments it.
+    pub fn empty_root_renders(&self) -> u64 {
+        self.empty_root_renders
+    }
+
     /// Minimal, non-async runtime step.
     ///
     /// Waits for at most `max_wait` (bounded by the next frame deadline), polls
@@ -246,6 +280,11 @@ impl Context {
         let mut root = match self.root.take() {
             Some(r) => r,
             None => {
+                // Rendering with no root is almost always a forgotten
+                // `set_root` (issue #48 E-01). It is a wire-level no-op, so make
+                // it observable rather than silent — without panicking a valid
+                // production flow or changing the ABI-1 stats struct.
+                self.empty_root_renders += 1;
                 self.sync_renderer_metrics();
                 return Ok(crate::painter::PaintContext::default());
             }

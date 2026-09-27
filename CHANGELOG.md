@@ -17,6 +17,48 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 Nothing yet.
 
+## [0.2.1] - 2026-09-27
+
+Consumer-correctness and honest-failure patch, driven by the Europa v0.2.0
+external-consumer campaign (issues #35, #37, #44, #46, #48 E-01). Fixes narrow
+`gibson::ui` interaction defects and makes three silent failure modes
+observable. **No C ABI change** (`GIBSON_ABI_VERSION` stays 1); every change is a
+bug fix or additive with no CORE source break. `gibson::ui` remains EXPERIMENTAL
+and Rust-only.
+
+### Fixed
+- **`Alt`+`<char>` chords are no longer consumed as text input** (#35). A focused
+  `text_input` / `TextInputState` treated `Alt`-modified characters as printable
+  text — inserting a literal character and marking the event consumed — so an
+  application's global `Alt` accelerators never fired while an input was focused.
+  `Alt` chords are now left uninserted and unconsumed at both the
+  `TextInputState` and `UiRuntime::handle_event` layers, so outer hotkeys receive
+  them. Plain and `Shift`-modified text and the supported `Ctrl-a/e/u/k` line
+  editors are unchanged; unsupported chords remain routable.
+- **A stable identity key no longer forces an entrance animation** (#37).
+  `UiRuntime` attached `MotionRole::Enter` to every `Key::Named` element, which
+  under the `BLACK_ICE` acquisition grammar dissolved non-focused controls to
+  blank cells on their first frame — making keyed controls invisible in headless
+  captures, tests, and at `t = 0`. Entrance and reconciliation motion is now
+  opt-in via `.motion(role)` (or a modal); an identity key no longer implies
+  animation. Explicitly requested motion is unchanged.
+
+### Added
+- **`Node::separator(style)`** (#44): an untitled horizontal rule that needs no
+  turbofish, unlike `Node::rule(None::<String>, style)`, whose generic
+  `Option<impl Into<String>>` parameter cannot infer its payload type from a bare
+  `None` (E0283). `Node::rule` is unchanged and remains source-compatible.
+- **`Context::is_interactive(&self) -> bool`** (#46): reports whether the context
+  drives a live TTY that is not a headless capture. An interactive loop built on
+  `render` + `poll_event` renders nothing and receives no input on a non-TTY
+  stdout; consumers can now detect that and fall back to a headless/`--dump` path
+  (or exit with a diagnostic) instead of idling on a blank screen.
+- **`Context::empty_root_renders(&self) -> u64`** (#48 E-01): counts `render` /
+  `render_now` calls issued with no root set — the common "forgot `set_root`"
+  mistake, otherwise a silent no-op indistinguishable from a legitimate empty
+  frame. A root-backed render (even of an empty tree) never increments it.
+  Rust-only; the ABI-1 stats struct is unchanged.
+
 ## [0.2.0] - 2026-09-26
 
 The **experimental semantic UI milestone**. Adds `gibson::ui`, a Rust-only
@@ -226,7 +268,8 @@ The contents and exact cut procedure for a release are documented in
 [`docs/RELEASING.md`](docs/RELEASING.md). Ecosystem-registry publication
 (crates.io, PyPI, Go module proxy) remains a separate, later decision.
 
-[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.1
 [0.2.0]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.0
 [0.1.1]: https://github.com/femboy2112/libgibson/releases/tag/v0.1.1
 [0.1.0]: https://github.com/femboy2112/libgibson/releases/tag/v0.1.0

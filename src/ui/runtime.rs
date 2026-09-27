@@ -200,7 +200,12 @@ impl<A: Clone> UiRuntime<A> {
                 key: key.clone(),
                 kind,
             });
-            if matches!(key, Key::Named(_)) || state.motion.is_some() || state.modal {
+            // Motion is opt-in: an element animates only when it explicitly
+            // requests motion via `.motion(role)` or is a modal. Merely having a
+            // stable identity key must NOT imply an entrance/change transition —
+            // otherwise a keyed static control dissolves from nothing on its
+            // first frame (issue #37). Identity and animation intent are distinct.
+            if state.motion.is_some() || state.modal {
                 let role = match kind {
                     ChangeKind::Enter if state.modal => Some(MotionRole::ModalEnter),
                     ChangeKind::Enter => Some(state.motion.unwrap_or(MotionRole::Enter)),
@@ -418,7 +423,19 @@ fn is_edit_event(event: &Event) -> bool {
         Event::Paste(_) => true,
         Event::Key(key) => match key.code {
             KeyCode::Char(c) => {
-                !key.modifiers.contains(KeyModifiers::CONTROL) || matches!(c, 'a' | 'e' | 'u' | 'k')
+                let m = key.modifiers;
+                if m.contains(KeyModifiers::ALT) {
+                    // Alt+<char> is an application accelerator, never edit text
+                    // (issue #35): leave it unconsumed so outer hotkeys receive it.
+                    false
+                } else if m.contains(KeyModifiers::CONTROL) {
+                    // Only the supported editor chords are edit events; every
+                    // other Ctrl chord stays routable to the application.
+                    matches!(c, 'a' | 'e' | 'u' | 'k')
+                } else {
+                    // Plain or Shift-modified printable text.
+                    true
+                }
             }
             KeyCode::Backspace
             | KeyCode::Delete
@@ -540,7 +557,7 @@ impl App {
         // Headless sessions deliberately emulate TTY rendering, but have no
         // real input reader. Do not confuse renderer capability with ownership
         // of an interactive terminal.
-        let interactive = context.session.is_tty && !context.session.is_headless();
+        let interactive = context.is_interactive();
         loop {
             let now = start.elapsed();
             let (width, terminal_height) = context.session.terminal_size();
@@ -722,7 +739,11 @@ mod tests {
     #[test]
     fn changing_policy_restricts_already_running_motion() {
         let mut runtime = UiRuntime::<()>::new(skins::BLACK_ICE);
-        let tree = status("READY").key("state");
+        // Motion is opt-in (issue #37): request an entrance effect explicitly so
+        // this test still constructs a running animation. The subject under test
+        // is that a later policy change restricts it, not the (removed) implicit
+        // entrance on a bare `.key(...)`.
+        let tree = status("READY").key("state").motion(MotionRole::Enter);
         let mut environment = UiEnvironment::default();
         runtime.frame(&tree, environment, Duration::ZERO).unwrap();
         assert!(runtime.active_animation_count() > 0);
@@ -735,7 +756,10 @@ mod tests {
             .unwrap();
         assert_eq!(runtime.active_animation_count(), 0);
 
-        let changed = status("UPDATED").key("state").revision(1);
+        let changed = status("UPDATED")
+            .key("state")
+            .revision(1)
+            .motion(MotionRole::Change);
         runtime
             .frame(&changed, environment, Duration::from_millis(100))
             .unwrap();
