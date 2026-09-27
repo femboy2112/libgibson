@@ -15,6 +15,9 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Runners are ephemeral, so the incremental-compilation cache is never reused
+  # across runs — it is pure disk/IO overhead here. One-shot full builds only.
+  CARGO_INCREMENTAL: "0"
 
 jobs:
   rust:
