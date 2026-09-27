@@ -11,7 +11,7 @@
 //! measured [`PresentationProfile`] and fall back to static rendering when its
 //! safety/quality gate fails.
 
-use crate::cell::{Cell, Glyph, Style};
+use crate::cell::{Cell, Color, Glyph, Style};
 use crate::glyph::SubcellGlyphMode;
 use crate::surface::Surface;
 
@@ -126,6 +126,160 @@ impl TemporalSafetyPolicy {
     }
 }
 
+/// Result of projecting eight RGB subpixels onto one stable two-color cell basis.
+///
+/// `style.fg` and `style.bg` are selected once in linear light. `duty[i]` is
+/// the continuous coordinate of target subpixel `i` along the bg->fg segment.
+/// A temporal modulator can therefore improve the binary `static_mask` while
+/// leaving SGR color state unchanged across phases.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TemporalCellProjection {
+    pub style: Style,
+    pub duty: [f32; 8],
+    pub static_mask: u8,
+    /// RMSE of the best ordinary binary two-color realization, in linear RGB.
+    pub static_rmse: f32,
+    /// RMSE after allowing continuous mixture along the stable bg->fg segment.
+    ///
+    /// This is the ideal infinite-time error floor for this one-dimensional
+    /// color basis; finite temporal sequences may be worse.
+    pub line_rmse: f32,
+}
+
+/// Fits one logical Braille cell's eight RGB targets to a stable fg/bg basis.
+///
+/// The search is deliberately exact and tiny: all 254 non-empty binary
+/// partitions are evaluated, with optimal linear-light centroids for each
+/// partition. The chosen colors define the best static two-color cell under this
+/// model. Each target is then orthogonally projected onto the bg->fg segment to
+/// produce a temporal duty cycle.
+///
+/// This CPU reference is intentionally simple enough to serve as the correctness
+/// oracle for future SIMD/GPU batch projectors.
+pub fn project_rgb_subcells(target: [[u8; 3]; 8]) -> TemporalCellProjection {
+    let linear = target.map(rgb8_to_linear);
+    let mut best_mask = 0u8;
+    let mut best_fg = [0.0f32; 3];
+    let mut best_bg = [0.0f32; 3];
+    let mut best_sse = f32::INFINITY;
+
+    for mask in 1u16..255u16 {
+        let mask = mask as u8;
+        let (fg, bg) = partition_centroids(&linear, mask);
+        let mut sse = 0.0f32;
+        for (i, pixel) in linear.iter().enumerate() {
+            let centroid = if mask & (1u8 << i) != 0 { fg } else { bg };
+            sse += rgb_distance_squared(*pixel, centroid);
+        }
+        if sse < best_sse {
+            best_sse = sse;
+            best_mask = mask;
+            best_fg = fg;
+            best_bg = bg;
+        }
+    }
+
+    let delta = [
+        best_fg[0] - best_bg[0],
+        best_fg[1] - best_bg[1],
+        best_fg[2] - best_bg[2],
+    ];
+    let denom = dot3(delta, delta);
+
+    let mut duty = [0.0f32; 8];
+    let mut line_sse = 0.0f32;
+    if denom > 1.0e-12 {
+        for (i, pixel) in linear.iter().enumerate() {
+            let relative = [
+                pixel[0] - best_bg[0],
+                pixel[1] - best_bg[1],
+                pixel[2] - best_bg[2],
+            ];
+            let alpha = (dot3(relative, delta) / denom).clamp(0.0, 1.0);
+            duty[i] = alpha;
+            let reconstructed = [
+                best_bg[0] + delta[0] * alpha,
+                best_bg[1] + delta[1] * alpha,
+                best_bg[2] + delta[2] * alpha,
+            ];
+            line_sse += rgb_distance_squared(*pixel, reconstructed);
+        }
+    } else {
+        // Uniform/degenerate cell: the background alone already carries the
+        // color, so avoid pointless glyph churn.
+        best_mask = 0;
+        line_sse = best_sse;
+    }
+
+    TemporalCellProjection {
+        style: Style::default()
+            .fg(linear_to_color(best_fg))
+            .bg(linear_to_color(best_bg)),
+        duty,
+        static_mask: best_mask,
+        static_rmse: (best_sse / 24.0).sqrt(),
+        line_rmse: (line_sse / 24.0).sqrt(),
+    }
+}
+
+fn partition_centroids(target: &[[f32; 3]; 8], mask: u8) -> ([f32; 3], [f32; 3]) {
+    let mut fg = [0.0f32; 3];
+    let mut bg = [0.0f32; 3];
+    let mut fg_n = 0.0f32;
+    let mut bg_n = 0.0f32;
+    for (i, pixel) in target.iter().enumerate() {
+        if mask & (1u8 << i) != 0 {
+            for channel in 0..3 {
+                fg[channel] += pixel[channel];
+            }
+            fg_n += 1.0;
+        } else {
+            for channel in 0..3 {
+                bg[channel] += pixel[channel];
+            }
+            bg_n += 1.0;
+        }
+    }
+    for channel in 0..3 {
+        fg[channel] /= fg_n;
+        bg[channel] /= bg_n;
+    }
+    (fg, bg)
+}
+
+fn rgb8_to_linear(rgb: [u8; 3]) -> [f32; 3] {
+    rgb.map(|value| {
+        let value = value as f32 / 255.0;
+        if value <= 0.04045 {
+            value / 12.92
+        } else {
+            ((value + 0.055) / 1.055).powf(2.4)
+        }
+    })
+}
+
+fn linear_to_color(rgb: [f32; 3]) -> Color {
+    let [r, g, b] = rgb.map(|value| {
+        let value = value.clamp(0.0, 1.0);
+        let srgb = if value <= 0.003_130_8 {
+            value * 12.92
+        } else {
+            1.055 * value.powf(1.0 / 2.4) - 0.055
+        };
+        (srgb.clamp(0.0, 1.0) * 255.0).round() as u8
+    });
+    Color::Rgb(r, g, b)
+}
+
+fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn rgb_distance_squared(a: [f32; 3], b: [f32; 3]) -> f32 {
+    let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    dot3(d, d)
+}
+
 /// Stateful temporal modulation over a grid of logical 2x4 subcell masks.
 ///
 /// Each of the eight logical dots in each terminal cell stores a target duty
@@ -202,6 +356,16 @@ impl TemporalBrailleField {
         };
         self.styles[index] = style;
         true
+    }
+
+    /// Applies an RGB projection produced by `project_rgb_subcells`.
+    pub fn set_cell_projection(
+        &mut self,
+        x: u16,
+        y: u16,
+        projection: TemporalCellProjection,
+    ) -> bool {
+        self.set_cell_target(x, y, projection.duty, projection.style)
     }
 
     /// Sets both the target duty cycles and stable style for one cell.
@@ -349,6 +513,49 @@ fn unit_hash(seed: u64, cell: u64, dot: u64) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rgb_projector_exactly_handles_binary_black_white_pattern() {
+        let mut target = [[0u8; 3]; 8];
+        for (i, pixel) in target.iter_mut().enumerate() {
+            if i % 2 == 1 {
+                *pixel = [255, 255, 255];
+            }
+        }
+        let projection = project_rgb_subcells(target);
+        assert!(projection.static_rmse < 1.0e-6);
+        assert!(projection.line_rmse < 1.0e-6);
+        for (i, duty) in projection.duty.iter().enumerate() {
+            let expected = if i % 2 == 1 { 1.0 } else { 0.0 };
+            assert!((duty - expected).abs() < 1.0e-5);
+        }
+    }
+
+    #[test]
+    fn rgb_projector_temporal_line_never_worse_than_static_partition() {
+        let target = [
+            [0, 0, 0],
+            [32, 20, 10],
+            [64, 70, 80],
+            [96, 100, 110],
+            [128, 125, 120],
+            [160, 170, 180],
+            [210, 205, 200],
+            [255, 255, 255],
+        ];
+        let projection = project_rgb_subcells(target);
+        assert!(projection.line_rmse <= projection.static_rmse + 1.0e-6);
+        assert!(projection.duty.iter().all(|d| (0.0..=1.0).contains(d)));
+    }
+
+    #[test]
+    fn uniform_rgb_projector_uses_stable_background_without_temporal_churn() {
+        let projection = project_rgb_subcells([[73, 109, 181]; 8]);
+        assert_eq!(projection.static_mask, 0);
+        assert_eq!(projection.duty, [0.0; 8]);
+        assert!(projection.static_rmse < 1.0e-6);
+        assert!(projection.line_rmse < 1.0e-6);
+    }
 
     #[test]
     fn conservative_gate_rejects_unmeasured_low_rate_and_excess_depth() {
