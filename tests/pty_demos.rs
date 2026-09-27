@@ -180,7 +180,10 @@ fn hack_shell_commands_trigger_real_effects() {
         s.write(b"\r");
         std::thread::sleep(Duration::from_millis(150));
     }
-    let raw = s.raw_string();
+    // Poll for the first command's diagnostic rather than snapshotting after a
+    // fixed pause: under host load the type->PTY->render->capture round trip can
+    // exceed the per-command sleep (same de-flake pattern as the pool wait below).
+    let raw = s.wait_until_raw(Duration::from_secs(3), |r| r.contains("LIVE DAMAGE MAP"));
     assert!(
         raw.contains("LIVE DAMAGE MAP"),
         "damage command produced no diagnostic output"
