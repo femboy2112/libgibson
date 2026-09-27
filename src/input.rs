@@ -315,7 +315,14 @@ impl TextInputState {
         match event {
             Event::Key(k) => match k.code {
                 KeyCode::Char(c) => {
-                    if k.modifiers.contains(KeyModifiers::CONTROL) {
+                    let m = k.modifiers;
+                    if m.contains(KeyModifiers::ALT) {
+                        // Alt+<char> is an application accelerator, not text
+                        // (issue #35): do not insert it and do not claim the
+                        // event, so an outer handler (e.g. a global hotkey)
+                        // still receives it.
+                        false
+                    } else if m.contains(KeyModifiers::CONTROL) {
                         match c {
                             'a' => {
                                 self.move_to_start();
