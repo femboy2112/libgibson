@@ -525,9 +525,18 @@ mod tests {
         let projection = project_rgb_subcells(target);
         assert!(projection.static_rmse < 1.0e-6);
         assert!(projection.line_rmse < 1.0e-6);
+        let dark = projection.duty[0];
+        let light = projection.duty[1];
+        assert!(
+            (dark - light).abs() > 1.0 - 1.0e-5,
+            "the two binary colors must land on opposite segment endpoints"
+        );
         for (i, duty) in projection.duty.iter().enumerate() {
-            let expected = if i % 2 == 1 { 1.0 } else { 0.0 };
-            assert!((duty - expected).abs() < 1.0e-5);
+            let expected = if i % 2 == 1 { light } else { dark };
+            assert!(
+                (duty - expected).abs() < 1.0e-5,
+                "fg/bg labels are symmetric, but equal target colors must share an endpoint"
+            );
         }
     }
 
