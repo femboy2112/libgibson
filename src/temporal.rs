@@ -679,6 +679,23 @@ impl TemporalBrailleField {
         self.surface_from_masks_styled(masks, mode)
     }
 
+    /// Advances one temporal phase as a **bounded residual correction** over the
+    /// stored static masks, using each cell's stable style.
+    ///
+    /// Unlike [`Self::advance_styled`], which sigma-deltas the full duty from an all-off
+    /// baseline, this holds each dot at its static-mask value and only flips it to
+    /// nudge the time-average toward the continuous `duty` target. Most frames
+    /// therefore equal the static fallback, so the modulation is a small
+    /// correction over an already-good frame — the residual-dithering path Fable's
+    /// analysis favours. The time-average of each dot still converges to its duty.
+    ///
+    /// When the static mask is the duty thresholded at 0.5 (the default for
+    /// directly-set duties), each dot's per-frame flip probability is at most 50%.
+    pub fn advance_residual_styled(&mut self, mode: SubcellGlyphMode) -> Surface {
+        let masks = self.advance_residual_masks();
+        self.surface_from_masks_styled(masks, mode)
+    }
+
     fn static_masks(&self) -> Vec<u8> {
         self.static_mask.clone()
     }
@@ -694,6 +711,48 @@ impl TemporalBrailleField {
                 if *acc >= 1.0 {
                     mask |= 1u8 << bit;
                     *acc -= 1.0;
+                }
+            }
+            masks.push(mask);
+        }
+        self.frame_index = self.frame_index.wrapping_add(1);
+        masks
+    }
+
+    fn advance_residual_masks(&mut self) -> Vec<u8> {
+        let mut masks = Vec::with_capacity(self.duty.len());
+        for ((targets, &baseline), acc) in self
+            .duty
+            .iter()
+            .zip(self.static_mask.iter())
+            .zip(self.accumulator.iter_mut())
+        {
+            let mut mask = 0u8;
+            for bit in 0..8 {
+                let baseline_on = baseline & (1u8 << bit) != 0;
+                let residual = targets[bit] - if baseline_on { 1.0 } else { 0.0 };
+                acc[bit] += residual;
+                let on = if baseline_on {
+                    // Baseline on (residual <= 0): flip OFF when the accumulator
+                    // crosses -1, otherwise hold the static dot.
+                    if acc[bit] <= -1.0 {
+                        acc[bit] += 1.0;
+                        false
+                    } else {
+                        true
+                    }
+                } else {
+                    // Baseline off (residual >= 0): flip ON when the accumulator
+                    // crosses +1, otherwise hold the static dot.
+                    if acc[bit] >= 1.0 {
+                        acc[bit] -= 1.0;
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if on {
+                    mask |= 1u8 << bit;
                 }
             }
             masks.push(mask);
@@ -883,6 +942,53 @@ mod tests {
         assert!(
             (on as isize - 100).abs() <= 1,
             "25% duty should converge to 100/400 on frames, got {on}"
+        );
+    }
+
+    #[test]
+    fn residual_modulation_converges_to_duty_from_static_baseline() {
+        // Cell with dot0 ON in the static baseline (duty 0.8 => flip OFF ~20% of
+        // frames) and dot1 OFF in the baseline (duty 0.3 => flip ON ~30%).
+        let mut field = TemporalBrailleField::new(1, 1, 5);
+        let proj = TemporalCellProjection {
+            style: Style::default(),
+            duty: [0.8, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            static_mask: 0b0000_0001, // dot0 on, dot1 off
+            static_rmse: 0.0,
+            line_rmse: 0.0,
+            emitted_static_rmse: 0.0,
+        };
+        assert!(field.set_cell_projection(0, 0, proj));
+
+        let frames = 1000usize;
+        let (mut on0, mut on1) = (0usize, 0usize);
+        for _ in 0..frames {
+            let m = field.advance_residual_masks()[0];
+            if m & 0b0000_0001 != 0 {
+                on0 += 1;
+            }
+            if m & 0b0000_0010 != 0 {
+                on1 += 1;
+            }
+        }
+        let f = frames as f32;
+        assert!(
+            (on0 as f32 / f - 0.8).abs() < 0.02,
+            "dot0 time-average should converge to duty 0.8, got {on0}/{frames}"
+        );
+        assert!(
+            (on1 as f32 / f - 0.3).abs() < 0.02,
+            "dot1 time-average should converge to duty 0.3, got {on1}/{frames}"
+        );
+        // Residual path stays near the static baseline: dot0 is ON most frames
+        // (its baseline), dot1 is OFF most frames.
+        assert!(
+            on0 as f32 / f > 0.5,
+            "dot0 should hold its ON baseline most frames"
+        );
+        assert!(
+            (frames - on1) as f32 / f > 0.5,
+            "dot1 should hold its OFF baseline most frames"
         );
     }
 
