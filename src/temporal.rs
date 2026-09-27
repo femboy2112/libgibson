@@ -631,13 +631,16 @@ fn sanitize_duty(value: f32) -> f32 {
 /// store the SSE-optimal mask from [`project_rgb_subcells`], which coincides
 /// with this threshold except at exact 0.5 ties (see the projector's docs).
 fn threshold_mask(duty: &[f32; 8]) -> u8 {
-    duty.iter().enumerate().fold(0u8, |mask, (bit, d)| {
-        if *d >= 0.5 {
-            mask | (1u8 << bit)
-        } else {
-            mask
-        }
-    })
+    duty.iter().enumerate().fold(
+        0u8,
+        |mask, (bit, d)| {
+            if *d >= 0.5 {
+                mask | (1u8 << bit)
+            } else {
+                mask
+            }
+        },
+    )
 }
 
 /// Deterministic SplitMix-style hash mapped to `[0, 1)`.
@@ -926,10 +929,25 @@ mod tests {
     fn reset_region_clamps_to_bounds_and_counts() {
         let mut field = TemporalBrailleField::new(4, 3, 1);
         assert_eq!(field.reset_region(1, 1, 2, 2), 4, "2x2 block fully inside");
-        assert_eq!(field.reset_region(3, 2, 10, 10), 1, "overhang clamped to field");
-        assert_eq!(field.reset_region(9, 9, 2, 2), 0, "fully outside resets nothing");
-        assert_eq!(field.reset_region(0, 0, 0, 0), 0, "zero-size resets nothing");
-        assert!(!field.reset_cell(4, 0), "out-of-bounds reset_cell returns false");
+        assert_eq!(
+            field.reset_region(3, 2, 10, 10),
+            1,
+            "overhang clamped to field"
+        );
+        assert_eq!(
+            field.reset_region(9, 9, 2, 2),
+            0,
+            "fully outside resets nothing"
+        );
+        assert_eq!(
+            field.reset_region(0, 0, 0, 0),
+            0,
+            "zero-size resets nothing"
+        );
+        assert!(
+            !field.reset_cell(4, 0),
+            "out-of-bounds reset_cell returns false"
+        );
         assert!(field.reset_cell(3, 2), "in-bounds reset_cell returns true");
     }
 
