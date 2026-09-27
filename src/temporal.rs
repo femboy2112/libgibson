@@ -310,6 +310,130 @@ fn rgb_distance_squared(a: [f32; 3], b: [f32; 3]) -> f32 {
     dot3(d, d)
 }
 
+/// Maps a logical Braille subpixel `(dx in 0..2, dy in 0..4)` to its index in the
+/// 8-element subcell array (whose bit is `1 << index`). Matches the Unicode
+/// Braille dot bits used by [`SubcellGlyphMode::subcell_glyph`] and
+/// [`crate::BrailleCanvas`]: left column rows 0-3 -> 0x01/0x02/0x04/0x40, right
+/// column rows 0-3 -> 0x08/0x10/0x20/0x80.
+const BRAILLE_DOT_INDEX: [[usize; 2]; 4] = [[0, 3], [1, 4], [2, 5], [6, 7]];
+
+/// Per-cell two-color projections for a whole logical Braille image.
+///
+/// Produced by [`project_braille_image`]. The image is a grid of `width x height`
+/// terminal cells; each cell fits eight logical 2x4 subpixels to a stable fg/bg
+/// pair via [`project_rgb_subcells`]. The result can build the exact static
+/// [`Surface`] (the always-valid fallback), install temporal targets into a
+/// [`TemporalBrailleField`], and report emitted (post-quantization) fidelity.
+#[derive(Debug, Clone)]
+pub struct BrailleImageProjection {
+    width: u16,
+    height: u16,
+    cells: Vec<TemporalCellProjection>,
+}
+
+impl BrailleImageProjection {
+    pub fn width(&self) -> u16 {
+        self.width
+    }
+
+    pub fn height(&self) -> u16 {
+        self.height
+    }
+
+    /// The projection for cell `(x, y)`, or `None` if out of bounds.
+    pub fn cell(&self, x: u16, y: u16) -> Option<&TemporalCellProjection> {
+        if x < self.width && y < self.height {
+            Some(&self.cells[(y as usize) * self.width as usize + x as usize])
+        } else {
+            None
+        }
+    }
+
+    /// Builds the exact static two-color [`Surface`]: each cell's SSE-optimal mask
+    /// realized through `mode` with its stable fg/bg style. This is the image's
+    /// static fallback and is valid without any temporal modulation.
+    pub fn static_surface(&self, mode: SubcellGlyphMode) -> Surface {
+        let mut surface = Surface::new(self.width, self.height);
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let proj = &self.cells[(y as usize) * self.width as usize + x as usize];
+                let cell = match mode.subcell_glyph(proj.static_mask) {
+                    Some(ch) => Cell::new(Glyph::from_char(ch), proj.style),
+                    None => Cell::space(proj.style),
+                };
+                surface.set_cell(x, y, cell);
+            }
+        }
+        surface
+    }
+
+    /// Installs every cell's duty targets and stable style into a same-sized
+    /// [`TemporalBrailleField`] for temporal advancement, preserving each cell's
+    /// optimal static mask. With [`ResetPolicy::Reset`] the accumulators are
+    /// reseeded (use this when the image is new content). Returns `false` without
+    /// modifying the field if its dimensions differ from this projection.
+    pub fn install_into(&self, field: &mut TemporalBrailleField, reset: ResetPolicy) -> bool {
+        if field.width() != self.width || field.height() != self.height {
+            return false;
+        }
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let proj = self.cells[(y as usize) * self.width as usize + x as usize];
+                field.set_cell_projection(x, y, proj);
+                if reset == ResetPolicy::Reset {
+                    field.reset_cell(x, y);
+                }
+            }
+        }
+        true
+    }
+
+    /// Mean emitted (post-quantization) static RMSE over all cells: the honest
+    /// static-fidelity figure for the whole image (0 for an empty projection).
+    pub fn mean_emitted_static_rmse(&self) -> f32 {
+        if self.cells.is_empty() {
+            return 0.0;
+        }
+        let sum: f32 = self.cells.iter().map(|c| c.emitted_static_rmse).sum();
+        sum / self.cells.len() as f32
+    }
+}
+
+/// Projects a logical Braille RGB image into per-cell two-color projections.
+///
+/// The image has `width x height` terminal cells and therefore `2*width` by
+/// `4*height` **logical** subpixels — these are logical Braille samples, not
+/// calibrated physical font pixels. `sample(lx, ly)` returns the 8-bit sRGB
+/// color at logical subpixel `(lx in 0..2*width, ly in 0..4*height)`; each cell's
+/// eight dots are gathered through [`BRAILLE_DOT_INDEX`] and fitted by
+/// [`project_rgb_subcells`].
+pub fn project_braille_image(
+    width: u16,
+    height: u16,
+    sample: impl Fn(u16, u16) -> [u8; 3],
+) -> BrailleImageProjection {
+    let count = (width as usize) * (height as usize);
+    let mut cells = Vec::with_capacity(count);
+    for cy in 0..height {
+        for cx in 0..width {
+            let mut target = [[0u8; 3]; 8];
+            for dy in 0u16..4 {
+                for dx in 0u16..2 {
+                    let lx = cx * 2 + dx;
+                    let ly = cy * 4 + dy;
+                    target[BRAILLE_DOT_INDEX[dy as usize][dx as usize]] = sample(lx, ly);
+                }
+            }
+            cells.push(project_rgb_subcells(target));
+        }
+    }
+    BrailleImageProjection {
+        width,
+        height,
+        cells,
+    }
+}
+
 /// Stateful temporal modulation over a grid of logical 2x4 subcell masks.
 ///
 /// Each of the eight logical dots in each terminal cell stores a target duty
@@ -828,6 +952,79 @@ mod tests {
             expected.to_string(),
             "static fallback must emit the stored optimal mask, not the duty@0.5 blank"
         );
+    }
+
+    #[test]
+    fn batch_projects_logical_braille_image_with_exact_two_color_cell() {
+        // One cell: left column white, right column black — perfectly two-color.
+        let proj = project_braille_image(
+            1,
+            1,
+            |lx, _ly| {
+                if lx == 0 {
+                    [255, 255, 255]
+                } else {
+                    [0, 0, 0]
+                }
+            },
+        );
+        assert_eq!(proj.width(), 1);
+        assert_eq!(proj.height(), 1);
+        let cell = proj.cell(0, 0).expect("cell present");
+        assert!(
+            cell.emitted_static_rmse < 1e-6,
+            "perfectly two-color cell must have ~zero emitted error"
+        );
+        // Left column dots are indices {0,1,2,6}; right column {3,4,5,7}. The
+        // optimal mask groups the columns, so it is one of those two (complement
+        // pair), each with popcount 4.
+        assert!(
+            cell.static_mask == 0b1011_1000 || cell.static_mask == 0b0100_0111,
+            "mask must separate the two columns, got {:#010b}",
+            cell.static_mask
+        );
+        // Static surface renders the stored mask as a Braille glyph.
+        let surface = proj.static_surface(SubcellGlyphMode::Braille2x4);
+        let ch = surface
+            .get(0, 0)
+            .unwrap()
+            .glyph
+            .grapheme
+            .chars()
+            .next()
+            .unwrap();
+        let bits = ch as u32 - 0x2800;
+        assert_eq!(
+            bits, cell.static_mask as u32,
+            "surface must emit the stored mask"
+        );
+        assert_eq!(bits.count_ones(), 4, "four dots per color group");
+    }
+
+    #[test]
+    fn batch_install_into_field_round_trips_static_fallback() {
+        let proj = project_braille_image(3, 2, |lx, ly| [(lx * 20) as u8, (ly * 20) as u8, 128]);
+        let mut field = TemporalBrailleField::new(3, 2, 1);
+        assert!(proj.install_into(&mut field, ResetPolicy::Reset));
+
+        // The field's static fallback must match the projection's static surface
+        // exactly (glyph + style), proving install_into preserved the optimal
+        // masks and stable palettes.
+        let a = proj.static_surface(SubcellGlyphMode::Braille2x4);
+        let b = field.static_styled_surface(SubcellGlyphMode::Braille2x4);
+        for y in 0..2 {
+            for x in 0..3 {
+                assert_eq!(
+                    a.get(x, y).unwrap().glyph.grapheme,
+                    b.get(x, y).unwrap().glyph.grapheme
+                );
+                assert_eq!(a.get(x, y).unwrap().style, b.get(x, y).unwrap().style);
+            }
+        }
+
+        // Dimension mismatch is rejected without modifying the field.
+        let mut wrong = TemporalBrailleField::new(2, 2, 1);
+        assert!(!proj.install_into(&mut wrong, ResetPolicy::Keep));
     }
 
     #[test]
