@@ -205,13 +205,7 @@ impl TemporalBrailleField {
     }
 
     /// Sets both the target duty cycles and stable style for one cell.
-    pub fn set_cell_target(
-        &mut self,
-        x: u16,
-        y: u16,
-        duty: [f32; 8],
-        style: Style,
-    ) -> bool {
+    pub fn set_cell_target(&mut self, x: u16, y: u16, duty: [f32; 8], style: Style) -> bool {
         let Some(index) = self.index(x, y) else {
             return false;
         };
@@ -445,8 +439,12 @@ mod tests {
         use crate::cell::Color;
 
         let mut field = TemporalBrailleField::new(2, 1, 3);
-        let left = Style::default().fg(Color::Rgb(240, 240, 240)).bg(Color::Rgb(12, 12, 12));
-        let right = Style::default().fg(Color::Rgb(20, 180, 220)).bg(Color::Rgb(10, 20, 30));
+        let left = Style::default()
+            .fg(Color::Rgb(240, 240, 240))
+            .bg(Color::Rgb(12, 12, 12));
+        let right = Style::default()
+            .fg(Color::Rgb(20, 180, 220))
+            .bg(Color::Rgb(10, 20, 30));
         assert!(field.set_cell_target(0, 0, [0.5; 8], left));
         assert!(field.set_cell_target(1, 0, [0.5; 8], right));
 
