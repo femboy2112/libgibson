@@ -282,6 +282,15 @@ impl Context {
         self.renderer.last_exact_changed()
     }
 
+    /// Timing/accounting snapshot for the most recent live frame (#64).
+    ///
+    /// Generation covers layout/paint/diff/ANSI transaction construction;
+    /// write covers the blocking writer write/flush. Neither duration claims to
+    /// measure terminal-compositor or physical display presentation.
+    pub fn last_frame_report(&self) -> FrameReport {
+        self.renderer.last_frame_report()
+    }
+
     /// Visible text of the most recently composed live frame, one `String` per
     /// row (issue #48 E-02): "what the screen says", with wide-glyph continuation
     /// cells collapsed and trailing blanks trimmed. Complements the raw wire
