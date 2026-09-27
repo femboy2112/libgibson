@@ -62,6 +62,8 @@ Never infer this profile solely from monitor refresh rate.
 
 ### Cadence beacon
 
+The branch includes `examples/temporal_cadence_beacon.rs`, a bounded Gray-code presentation beacon. Sequential Gray codes change one bit at a time, deliberately keeping differential wire cost small so the measurement is less likely to perturb the cadence being measured. Run it with synchronized updates on and off, then decode the visible sequence from a high-speed capture.
+
 The first real-world experiment should be an external calibration program, not a library assumption:
 
 1. Emit a frame-counter / phase beacon in a bounded region.
@@ -141,6 +143,8 @@ GPU compute becomes interesting for the *projector/calibration* stage:
 On an integrated GPU/shared-memory system, `wgpu` may reduce transfer pain, but it still must win measured end-to-end latency over a CPU codebook/SIMD implementation. Do not add `wgpu` as a core dependency until that comparison exists.
 
 Recommended shape: an optional external `temporal-gpu-lab` or feature-gated research backend implementing the same projector trait as a CPU reference. The runtime modulator stays dependency-light.
+
+The concrete benchmark contract lives in [`../research/temporal_gpu/README.md`](../research/temporal_gpu/README.md).
 
 ## Experiments required before 0.3.0 promotion
 
