@@ -146,7 +146,7 @@ impl Context {
     }
 
     pub fn set_max_fps(&mut self, fps: u32) {
-        self.scheduler.max_fps = fps.max(1);
+        self.scheduler.set_max_fps(fps);
     }
 
     /// Selects how frame deadlines are derived from the configured FPS ceiling.
