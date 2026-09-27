@@ -110,14 +110,10 @@ impl TemporalSafetyPolicy {
         if !profile.measured {
             return TemporalGate::Unmeasured;
         }
-        if !profile.presentation_hz.is_finite()
-            || profile.presentation_hz < self.min_luminance_hz
-        {
+        if !profile.presentation_hz.is_finite() || profile.presentation_hz < self.min_luminance_hz {
             return TemporalGate::CadenceTooLow;
         }
-        if !profile.survival_rate.is_finite()
-            || profile.survival_rate < self.min_survival_rate
-        {
+        if !profile.survival_rate.is_finite() || profile.survival_rate < self.min_survival_rate {
             return TemporalGate::SurvivalTooLow;
         }
         if !requested_depth.is_finite()
@@ -204,15 +200,13 @@ impl TemporalBrailleField {
             .duty
             .iter()
             .map(|dots| {
-                dots.iter()
-                    .enumerate()
-                    .fold(0u8, |mask, (bit, duty)| {
-                        if *duty >= 0.5 {
-                            mask | (1u8 << bit)
-                        } else {
-                            mask
-                        }
-                    })
+                dots.iter().enumerate().fold(0u8, |mask, (bit, duty)| {
+                    if *duty >= 0.5 {
+                        mask | (1u8 << bit)
+                    } else {
+                        mask
+                    }
+                })
             })
             .collect();
         self.surface_from_masks(masks, style, mode)
@@ -243,12 +237,7 @@ impl TemporalBrailleField {
         masks
     }
 
-    fn surface_from_masks(
-        &self,
-        masks: Vec<u8>,
-        style: Style,
-        mode: SubcellGlyphMode,
-    ) -> Surface {
+    fn surface_from_masks(&self, masks: Vec<u8>, style: Style, mode: SubcellGlyphMode) -> Surface {
         let mut surface = Surface::new(self.width, self.height);
         if self.width == 0 {
             return surface;
@@ -284,9 +273,8 @@ fn sanitize_duty(value: f32) -> f32 {
 
 /// Deterministic SplitMix-style hash mapped to `[0, 1)`.
 fn unit_hash(seed: u64, cell: u64, dot: u64) -> f32 {
-    let mut z = seed
-        ^ cell.wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        ^ dot.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    let mut z =
+        seed ^ cell.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ dot.wrapping_mul(0xBF58_476D_1CE4_E5B9);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     z ^= z >> 31;
@@ -329,11 +317,7 @@ mod tests {
     #[test]
     fn sigma_delta_mean_converges_to_requested_duty() {
         let mut field = TemporalBrailleField::new(1, 1, 7);
-        assert!(field.set_cell_duty(
-            0,
-            0,
-            [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        ));
+        assert!(field.set_cell_duty(0, 0, [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]));
         let mut on = 0usize;
         let frames = 400usize;
         for _ in 0..frames {
@@ -351,11 +335,7 @@ mod tests {
     #[test]
     fn zero_and_full_duty_are_temporally_stable() {
         let mut field = TemporalBrailleField::new(1, 1, 11);
-        assert!(field.set_cell_duty(
-            0,
-            0,
-            [0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]
-        ));
+        assert!(field.set_cell_duty(0, 0, [0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]));
         for _ in 0..64 {
             let mask = field.advance_masks()[0];
             assert_eq!(mask, 0b1010_1010);
