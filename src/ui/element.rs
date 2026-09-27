@@ -82,6 +82,8 @@ pub(crate) enum ElementKind {
 pub(crate) struct Layout {
     pub width: Option<u16>,
     pub height: Option<u16>,
+    pub percent_width: Option<f32>,
+    pub percent_height: Option<f32>,
     pub grow: Option<f32>,
     pub gap: Option<u16>,
     pub padding: Option<u16>,
@@ -217,6 +219,29 @@ impl<A> Element<A> {
     }
     pub fn height(mut self, height: u16) -> Self {
         self.layout.height = Some(height);
+        self
+    }
+    /// Proportional width as a percentage of the parent's content box (issue #36),
+    /// lowering to Taffy's `Dimension::Percent` — the semantic counterpart of
+    /// `Node::percent_width`. Use for split panes (e.g. `.percent_width(60.0)`)
+    /// where a fixed cell width or `grow` share does not express the intent.
+    pub fn percent_width(mut self, percent: f32) -> Self {
+        self.layout.percent_width = Some(if percent.is_finite() {
+            percent.max(0.0)
+        } else {
+            0.0
+        });
+        self
+    }
+    /// Proportional height as a percentage of the parent's content box (issue #36),
+    /// lowering to Taffy's `Dimension::Percent` — the semantic counterpart of
+    /// `Node::percent_height`. Use for vertical splits (e.g. 70% stage / 30% log).
+    pub fn percent_height(mut self, percent: f32) -> Self {
+        self.layout.percent_height = Some(if percent.is_finite() {
+            percent.max(0.0)
+        } else {
+            0.0
+        });
         self
     }
     /// Relative width share inside a horizontal row; ordinary flex growth elsewhere.

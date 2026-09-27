@@ -386,6 +386,29 @@ impl BrailleCanvas {
         s
     }
 
+    /// Overlays this canvas's dots onto `dst` at matching cells, **preserving
+    /// each destination cell's background** (issue #43): a dot cell's glyph is
+    /// drawn with `style` but the underlying cell's `bg` is kept, so vector
+    /// geometry composites over a shaded raster without erasing it. Cells with no
+    /// dot are left untouched. Bounded to the overlap of the two surfaces.
+    pub fn blit_to_surface(&self, dst: &mut Surface, style: Style) {
+        let w = self.width.min(dst.width);
+        let h = self.height.min(dst.height);
+        for cy in 0..h {
+            for cx in 0..w {
+                if let Some(ch) = self.glyph_at(cx, cy) {
+                    if let Some(cell) = dst.get_mut(cx, cy) {
+                        let bg = cell.style.bg;
+                        cell.glyph = Glyph::from_char(ch);
+                        cell.style = style;
+                        cell.style.bg = bg;
+                        cell.is_continuation = false;
+                    }
+                }
+            }
+        }
+    }
+
     /// Plain text lines (blank cells become spaces).
     pub fn to_lines(&self) -> Vec<String> {
         (0..self.height)

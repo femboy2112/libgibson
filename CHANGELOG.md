@@ -17,6 +17,42 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 Nothing yet.
 
+## [0.2.3] - 2026-09-27
+
+Layout and custom-graphics-seam patch — the fourth release in the v0.2.x train,
+from the Europa v0.2.0 consumer campaign (#36, #43, #48 E-05/E-06). Closes the
+"size-blind Surface" gap: custom graphics can now be built at the size the layout
+engine assigns, composited through the one existing rendering pipeline. **No C ABI
+change** (`GIBSON_ABI_VERSION` stays 1); every change is additive with no CORE
+break. `gibson::ui` stays EXPERIMENTAL and Rust-only.
+
+### Added
+- **Size-aware deferred canvas** (#43): `Node::canvas(|rect| -> Surface)` builds
+  its surface **after** layout, receiving the node's resolved cell rectangle, so
+  consumers no longer replicate Taffy's math to guess a size before layout. Sized
+  by ordinary layout builders (`flex_grow` / `width` / `percent_width`); composited
+  and clipped exactly like a raster. The callback never runs during layout, so
+  there is no layout↔paint feedback loop and no second renderer.
+- **Percentage sizing on `Element<A>`** (#36): `.percent_width(f32)` /
+  `.percent_height(f32)`, lowering to Taffy `Dimension::Percent` — the semantic
+  counterpart of `Node::percent_width`, for proportional split panes.
+- **Clipped sub-surface view** (#48 E-06): `Surface::clip(Rect) -> SurfaceClip`,
+  a translated `&mut` handle whose `set_cell` / `print_str` use clip-local
+  coordinates and drop out-of-bounds writes — no per-call bounds guard, wide-glyph
+  invariants preserved.
+- **Braille compositing helpers** (#43): `BrailleCanvas::blit_to_surface(dst,
+  style)` overlays dots onto a surface while preserving each cell's background
+  (vector geometry over a shaded raster), and `Glyph::from_char(char)` builds a
+  glyph without the `String` allocation of `Glyph::new(&c.to_string())`.
+
+### Documented
+- **`Node::surface` flex behavior** (#48 E-05): documented that the preset
+  `Dimension::Length` overrides flex allocation (a full-width raster can silently
+  push a sibling off-screen) and how to make a raster elastic; `Node::canvas` is
+  the size-aware alternative.
+- **Dense / canvas UIs** (#48 E-03): a crate-doc note on the "`Node` for chrome,
+  `Surface` / `canvas` for the drawing" composition seam.
+
 ## [0.2.2] - 2026-09-27
 
 Output, testability, and observability patch — the third release in the v0.2.x
@@ -311,7 +347,8 @@ The contents and exact cut procedure for a release are documented in
 [`docs/RELEASING.md`](docs/RELEASING.md). Ecosystem-registry publication
 (crates.io, PyPI, Go module proxy) remains a separate, later decision.
 
-[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.3
 [0.2.2]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.2
 [0.2.1]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.1
 [0.2.0]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.0

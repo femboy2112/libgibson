@@ -372,6 +372,13 @@ fn measure_leaf(
             width: known_dimensions.width.unwrap_or(surface.width as f32),
             height: known_dimensions.height.unwrap_or(surface.height as f32),
         },
+        NodeKind::Canvas { .. } => Size {
+            // The paint callback never runs during layout (issue #43): size comes
+            // from constraints, not content, so there is no feedback loop. An
+            // unconstrained canvas collapses to 0, like Stack/Dim/Viewport.
+            width: known_dimensions.width.unwrap_or(0.0),
+            height: known_dimensions.height.unwrap_or(0.0),
+        },
         NodeKind::Box { border, .. } => {
             let min_s = if border.is_some() { 2.0 } else { 0.0 };
             Size {

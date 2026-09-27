@@ -480,7 +480,10 @@ fn lower_role<A>(
             .is_none_or(|b| cx.build.environment.width >= b)
     {
         for (child, semantic) in children.iter_mut().zip(&el.children) {
-            if semantic.layout.width.is_none() && semantic.layout.grow.is_some_and(|g| g > 0.0) {
+            if semantic.layout.width.is_none()
+                && semantic.layout.percent_width.is_none()
+                && semantic.layout.grow.is_some_and(|g| g > 0.0)
+            {
                 child.layout_style.width = Dimension::Length(0.0);
             }
         }
@@ -766,6 +769,13 @@ fn lower_role<A>(
         }
         if let Some(h) = el.layout.height {
             node = node.height(h as f32);
+        }
+        // Proportional sizing (issue #36) lowers to Taffy percent dimensions.
+        if let Some(pw) = el.layout.percent_width {
+            node = node.percent_width(pw);
+        }
+        if let Some(ph) = el.layout.percent_height {
+            node = node.percent_height(ph);
         }
     }
     if let Some(grow) = el.layout.grow {

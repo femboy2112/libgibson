@@ -110,6 +110,18 @@ pub const SPINNER_DOTS: &[&str] = &[".  ", ".. ", "...", " ..", "  .", "   "];
 
 /// Specific component visual and behavioral variant.
 ///
+/// A deferred, size-aware paint callback for [`NodeKind::Canvas`] (issue #43).
+/// Held behind an `Arc` so cloning a node never duplicates the closure, and
+/// wrapped in a newtype so `NodeKind` keeps its `Debug`/`Clone` derives.
+#[derive(Clone)]
+pub struct CanvasPaint(pub Arc<dyn Fn(Rect) -> Surface + Send + Sync>);
+
+impl std::fmt::Debug for CanvasPaint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CanvasPaint(..)")
+    }
+}
+
 /// `#[non_exhaustive]`: this is the primary extension point for new component
 /// kinds, so downstream `match`es must include a `_` arm; adding a variant here is
 /// then a non-breaking `0.1.z` change rather than a `0.y` bump.
@@ -181,6 +193,15 @@ pub enum NodeKind {
     /// Held behind an `Arc` so cloning a node never duplicates the buffer.
     Raster {
         surface: Arc<Surface>,
+    },
+    /// A custom surface painted **after layout resolves** (issue #43): the
+    /// callback receives this node's final cell rectangle (local `0,0` origin)
+    /// and returns a `Surface` composited at the node's rect and clipped to the
+    /// visible area. The size comes from ordinary layout constraints, not from
+    /// the callback, so there is no layout↔paint feedback loop. Construct with
+    /// [`Node::canvas`].
+    Canvas {
+        paint: CanvasPaint,
     },
 }
 
@@ -268,6 +289,13 @@ impl Node {
     /// The node defaults to the surface's own cell dimensions so a raster is
     /// visible without the caller having to repeat its size; callers may still
     /// override width/height for scaling or clipping.
+    ///
+    /// Note (issue #48 E-05): the preset `Dimension::Length` **overrides flex
+    /// allocation**. A full-width raster placed next to a fixed-width sibling in a
+    /// [`Node::row`] takes its own width and can push the sibling off-screen with
+    /// no warning. To make a raster elastic, give it an explicit `.width(...)` /
+    /// `.percent_width(...)` (e.g. paint the canvas at `total - panel_width`
+    /// before wrapping it) so the layout engine allocates the remaining space.
     pub fn surface(surface: Arc<Surface>) -> Self {
         let (w, h) = (surface.width as f32, surface.height as f32);
         let mut node = Self::new(NodeKind::Raster { surface });
@@ -279,6 +307,21 @@ impl Node {
     /// Creates a raster node owning a surface.
     pub fn raster(surface: Surface) -> Self {
         Self::surface(Arc::new(surface))
+    }
+
+    /// Creates a **size-aware deferred canvas** node (issue #43): unlike
+    /// [`Node::surface`], which needs a pre-built surface at a size guessed
+    /// *before* layout, `paint` is invoked *after* layout with this node's
+    /// resolved cell rectangle (local `0,0` origin), so it builds its surface at
+    /// exactly the size the layout engine assigned. The returned surface is
+    /// composited and clipped like a raster and does **not** affect layout —
+    /// there is no layout↔paint feedback loop. Size it with the ordinary layout
+    /// builders (`.flex_grow(..)`, `.width(..)`, `.percent_width(..)`, …); an
+    /// unsized canvas collapses to zero like any other leaf.
+    pub fn canvas(paint: impl Fn(Rect) -> Surface + Send + Sync + 'static) -> Self {
+        Self::new(NodeKind::Canvas {
+            paint: CanvasPaint(Arc::new(paint)),
+        })
     }
 
     /// Positions this node absolutely inside its parent by `(x, y)` cells.
