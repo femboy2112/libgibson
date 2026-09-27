@@ -17,6 +17,63 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 Nothing yet.
 
+## [0.3.0] - 2026-09-27
+
+**Temporal Rendering Milestone** — a deliberate minor bump (see the release
+contract's "deliberate minor milestones"): high-cadence frame-pacing and
+observability infrastructure plus an **experimental, Rust-only** temporal cell
+realization axis, all flowing through the one existing renderer. **No C ABI change**
+(`GIBSON_ABI_VERSION` stays 1); MSRV stays 1.85. The temporal feature is **off by
+default** and its perceptual benefit is setup-dependent and **unproven** — see
+[docs/TEMPORAL_DISPLAY_VALIDATION.md](docs/TEMPORAL_DISPLAY_VALIDATION.md).
+
+### Added (CORE)
+- **`FramePacing`** (`#[non_exhaustive]`, #62): opt-in `PhaseLocked` frame pacing
+  that anchors deadlines to the scheduled cadence and skips missed deadlines without
+  drifting; `CompletionRelative` remains the default (`Context::set_frame_pacing`).
+  Phase-locked missed-deadline observability via
+  `FrameScheduler::missed_periods_last_frame`/`missed_periods_total` and the matching
+  `Context` accessors.
+- **`FrameReport`** (`#[non_exhaustive]`, #64): a Rust-side per-frame snapshot
+  separating generation (layout/paint/diff/ANSI construction) from the blocking
+  write/flush, with exact/affected/total cells, bytes and full-repaint
+  (`Context::last_frame_report`). The ABI-v1 `RenderStats` layout is unchanged.
+
+### Added (EXPERIMENTAL, Rust-only — `gibson::temporal`, #63)
+- **`TemporalDisplayProcessor`**: static-first, safety-gated, cadence-aware temporal
+  realization emitting ordinary `Surface`s (no second renderer). Default static;
+  residual temporal luminance requires a caller-supplied measured `PresentationProfile`
+  and passes a per-cell **emitted luminance-swing** check that freezes any cell whose
+  real `|Y(fg)−Y(bg)|` exceeds the depth cap, with cadence hysteresis, reduced-motion
+  and content-motion overrides.
+- **Exact two-color subcell projector**: `project_rgb_subcells` (127 complement-pair
+  representatives, bit-identical to a full scan) and the batch `project_braille_image`
+  / `BrailleImageProjection`, with ideal and **emitted (post-quantization)** error.
+- **`TemporalBrailleField`**: a sigma-delta subcell modulator with a bounded
+  residual-over-static path, optional coherent-subsampling-robust dither, explicit
+  reset/invalidation, and an authoritative static fallback.
+- **`temporal_cadence_beacon`** and **`temporal_display_lab`** examples; the beacon
+  logs emission telemetry (`--csv`, `--photodiode`) for the external presentation
+  experiment.
+
+### Changed
+- `#61`: remaining single-character glyph realizations use `Glyph::from_char`
+  (behaviour-preserving allocation cleanup).
+- `FrameScheduler::max_fps` is now private; use `set_max_fps` (which resets the timing
+  epoch) and the `max_fps()` getter. Breaking for direct field access; no in-tree
+  consumer used the field.
+- New public 0.3 types are sealed `#[non_exhaustive]` (`FramePacing`, `FrameReport`,
+  `PresentationProfile`, `TemporalSafetyPolicy`, `TemporalGate`, `TemporalCellProjection`,
+  `TemporalDiagnostics`) so future fields/variants are additive; `ResetPolicy` stays
+  exhaustive.
+
+### Documented
+- Temporal display processor design; the GPU research contract with a probe + measured
+  CPU projector baseline (no `wgpu` in core; GPU left honestly unmeasured); the
+  validation report (evidence classes, the one physical experiment, the
+  accessibility/safety contract). Reconciled the synchronized-updates policy in the
+  release contract (requested, not negotiated; the detected capability is unused).
+
 ## [0.2.5] - 2026-09-27
 
 Umbrella-cleanup patch — the sixth release in the v0.2.x train, from the Europa
@@ -419,7 +476,8 @@ The contents and exact cut procedure for a release are documented in
 [`docs/RELEASING.md`](docs/RELEASING.md). Ecosystem-registry publication
 (crates.io, PyPI, Go module proxy) remains a separate, later decision.
 
-[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/femboy2112/libgibson/releases/tag/v0.3.0
 [0.2.5]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.5
 [0.2.4]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.4
 [0.2.3]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.3

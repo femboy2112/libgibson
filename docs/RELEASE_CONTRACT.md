@@ -87,7 +87,7 @@ next `0.y` minor and is recorded in the CHANGELOG:
 - `node` — `Node`, `NodeKind`, `LayoutStyle`, and the layout-style enums
 - `layout` — `compute_layout`, `wrap_text`, `wrap_rich_text`
 - `painter` — `paint`, `PaintContext`
-- `renderer` — `Renderer`, `RenderMode`, `InsertStrategy`, `AnchorState`
+- `renderer` — `Renderer`, `RenderMode`, `InsertStrategy`, `AnchorState`, and (0.3.0) `FrameReport`
 - `context` — `Context`
 - `session` — `TerminalSession`, `TerminalLease` (process-global terminal-ownership lease)
 - `input` — `Event`, `KeyCode`, `KeyEvent`, `poll_event`
@@ -103,6 +103,12 @@ helpers such as sparklines/gradients/progress) is core-intent but currently
 reachable only via its full path `gibson::show::…` (it is not re-exported at the
 crate root).
 
+New in 0.3.0 (CORE, `#[non_exhaustive]`): `scheduler::FramePacing` (opt-in
+phase-locked frame pacing) and `renderer::FrameReport` (split generation/write
+per-frame timing/accounting). These are stable-intent high-cadence rendering
+infrastructure; the ABI-v1 `RenderStats` layout is deliberately unchanged and
+`FrameReport` is a Rust-side addition only.
+
 ### EXPERIMENTAL (may change or be removed between minor releases)
 
 These are already marked "Experimental" in their own module docs and in the
@@ -115,6 +121,12 @@ breaking them in a pure patch:
 - `story` — narrative beat/reaction director (`Story`, `StoryDirector`, `Beat`, `TraceRetention`, …)
 - `surface_fx` — ordered endomorphisms over a realized surface
 - `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack
+- `temporal` — experimental temporal cell realization (`TemporalDisplayProcessor`,
+  `TemporalBrailleField`, the exact RGB subcell projector, `PresentationProfile`,
+  `TemporalSafetyPolicy`, `ResetPolicy`). Rust-only, introduced in the 0.3.0
+  milestone; default static, opt-in temporal, one renderer (emits ordinary
+  `Surface`). See [TEMPORAL_DISPLAY_PROCESSOR.md](TEMPORAL_DISPLAY_PROCESSOR.md) and
+  [TEMPORAL_DISPLAY_VALIDATION.md](TEMPORAL_DISPLAY_VALIDATION.md).
 - `ui` — Rust-only semantic components, skins above `Theme`, typed interaction,
   stable-key presentation and finite motion, lowered to ordinary `Node` trees.
   It is introduced experimentally in the 0.2.0 milestone. `Element`, `Skin`,
@@ -152,6 +164,15 @@ wildcard arm:
 - `input::KeyCode` — the terminal key repertoire grows (function keys, Insert, …).
 - `glyph::SubcellGlyphMode` — further sub-cell families are plausible (2×3 sextants,
   2×2 quadrants).
+- `scheduler::FramePacing` — further pacing policies are plausible (0.3.0, CORE).
+- `temporal::TemporalGate` — further static-fallback reasons are plausible (0.3.0,
+  experimental).
+
+Several new 0.3.0 **structs** are also `#[non_exhaustive]` so future fields are
+additive, not breaking: CORE `renderer::FrameReport`, and experimental
+`temporal::{PresentationProfile, TemporalSafetyPolicy, TemporalCellProjection,
+TemporalDiagnostics}`. `temporal::ResetPolicy` is left exhaustive (a closed
+`Keep`/`Reset` pair).
 
 The remaining public enums are **deliberately left exhaustive** because their value
 set is closed, so downstream exhaustive `match`es on them stay sound and adding a
@@ -293,8 +314,14 @@ fails CI early.
 
 - **Linux x86_64 (glibc)** is the only platform built and tested this round. The
   release artifact is labeled `linux-x86_64` engineering alpha accordingly.
-- Negotiated terminal capability axes: color depth (TrueColor / 256 / 16 / mono),
-  synchronized updates, insert-line support.
+- Negotiated terminal capability axes: color depth (TrueColor / 256 / 16 / mono)
+  and insert-line support. **Synchronized updates (CSI ?2026) are *requested*, not
+  negotiated:** LibGibson emits the wrappers by default (opt out via
+  `Context::set_sync_updates(false)`) and does not gate them on capability
+  detection, because unknown DEC private modes are ignored by conforming terminals.
+  The `TerminalCapabilities::synchronized_updates` field is currently
+  detected-but-unused; the cadence beacon treats sync on/off as a measured variable,
+  and `?2026` guarantees only a wire-atomic write, not atomic panel presentation.
 - **Glyph realization is an explicit policy/override axis — it is not font
   detection.** A terminal accepting UTF-8/Unicode does **not** imply its font can
   realize every glyph: the Linux kernel **virtual console** (TTY), for example, has a

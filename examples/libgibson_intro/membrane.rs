@@ -431,7 +431,7 @@ pub fn render(source: &Surface, seconds: f32, depth: ColorDepth) -> Surface {
                         style = style.dim();
                     }
                     let glyph = char::from_u32(0x2800 + u32::from(bits)).unwrap_or(' ');
-                    out.set_cell(x, y, Cell::new(Glyph::new(&glyph.to_string()), style));
+                    out.set_cell(x, y, Cell::new(Glyph::from_char(glyph), style));
                 }
             }
         }

@@ -166,11 +166,7 @@ impl RgbRaster {
                     }
                 }
                 let glyph = char::from_u32(0x2800 + bits as u32).unwrap_or(' ');
-                surface.set_cell(
-                    x,
-                    y,
-                    Cell::new(Glyph::new(&glyph.to_string()), Style::new()),
-                );
+                surface.set_cell(x, y, Cell::new(Glyph::from_char(glyph), Style::new()));
             }
         }
         surface

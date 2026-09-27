@@ -8,6 +8,7 @@ use crate::session::TerminalSession;
 use crate::surface::Surface;
 use crate::transaction::TerminalTransaction;
 use std::io::{self, Write};
+use std::time::{Duration, Instant};
 use unicode_width::UnicodeWidthStr;
 
 /// Operating mode of the renderer.
@@ -57,6 +58,30 @@ pub enum AnchorState {
     },
 }
 
+/// Rust-side timing/accounting snapshot for the most recent live frame.
+///
+/// This deliberately does not extend the ABI-v1 RenderStats layout. Generation
+/// covers layout, paint, diff and ANSI transaction construction; write covers the
+/// blocking writer write/flush. It measures only stages LibGibson owns and does
+/// not claim anything about compositor/display presentation time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
+pub struct FrameReport {
+    pub exact_changed_cells: usize,
+    pub affected_cells: usize,
+    pub total_cells: usize,
+    pub bytes_emitted: usize,
+    pub full_repaint: bool,
+    pub generation_duration: Duration,
+    pub write_duration: Duration,
+}
+
+impl FrameReport {
+    pub fn total_duration(&self) -> Duration {
+        self.generation_duration + self.write_duration
+    }
+}
+
 /// The core differential terminal renderer.
 pub struct Renderer {
     pub mode: RenderMode,
@@ -92,6 +117,7 @@ pub struct Renderer {
     /// distinct from the logical `last_dirty_cells` footprint. Always updated
     /// (a single scalar, so no `capture_damage` gate).
     last_exact_changed: usize,
+    last_frame_report: FrameReport,
 }
 
 impl Renderer {
@@ -119,6 +145,7 @@ impl Renderer {
             capture_damage: false,
             last_dirty_cells: Vec::new(),
             last_exact_changed: 0,
+            last_frame_report: FrameReport::default(),
         }
     }
 
@@ -135,6 +162,11 @@ impl Renderer {
     /// / [`crate::RenderStats::dirty_cells`]) and from emitted bytes.
     pub fn last_exact_changed(&self) -> usize {
         self.last_exact_changed
+    }
+
+    /// Timing/accounting snapshot of the most recent live render.
+    pub fn last_frame_report(&self) -> FrameReport {
+        self.last_frame_report
     }
 
     /// Visible text of the most recently composed live frame, one `String` per
@@ -189,10 +221,12 @@ impl Renderer {
         writer: &mut dyn Write,
     ) -> io::Result<(usize, usize, usize, bool, crate::painter::PaintContext)> {
         if !session.is_tty {
-            // Non-TTY / CI mode: suppress live interactive frames
+            // Non-TTY / CI mode: suppress live interactive frames.
+            self.last_frame_report = FrameReport::default();
             return Ok((0, 0, 0, false, crate::painter::PaintContext::default()));
         }
 
+        let frame_start = Instant::now();
         let (term_cols, term_rows) = session.terminal_size();
         // Color quality is decided centrally from the session's capabilities.
         self.compiler.color_depth = session.color_depth();
@@ -256,6 +290,15 @@ impl Renderer {
             || self.last_cursor_desired != paint_ctx.cursor_position;
 
         if diff.is_empty() && !is_full_repaint && !cursor_state_changed {
+            self.last_frame_report = FrameReport {
+                exact_changed_cells: self.last_exact_changed,
+                affected_cells: 0,
+                total_cells,
+                bytes_emitted: 0,
+                full_repaint: false,
+                generation_duration: frame_start.elapsed(),
+                write_duration: Duration::ZERO,
+            };
             return Ok((0, total_cells, 0, false, paint_ctx));
         }
 
@@ -368,10 +411,24 @@ impl Renderer {
 
         // Exact wire bytes, including the synchronized-update terminator that
         // `commit` appends. Do not sample `buffer.len()` before committing.
+        // Split CPU-side generation from the blocking write/flush (#64).
+        let generation_duration = frame_start.elapsed();
+        let write_start = Instant::now();
         let bytes_emitted = if tx.buffered_len() > 0 {
             tx.commit()?
         } else {
             0
+        };
+        let write_duration = write_start.elapsed();
+
+        self.last_frame_report = FrameReport {
+            exact_changed_cells: self.last_exact_changed,
+            affected_cells: dirty_cells,
+            total_cells,
+            bytes_emitted,
+            full_repaint: is_full_repaint,
+            generation_duration,
+            write_duration,
         };
 
         self.previous_surface = Some(next_surface);

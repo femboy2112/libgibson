@@ -1,8 +1,8 @@
 use crate::cell::RichText;
 use crate::input::{poll_event, Event};
 use crate::node::Node;
-use crate::renderer::{InsertStrategy, Renderer};
-use crate::scheduler::{FrameScheduler, RenderStats};
+use crate::renderer::{FrameReport, InsertStrategy, Renderer};
+use crate::scheduler::{FramePacing, FrameScheduler, RenderStats};
 use crate::session::TerminalSession;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
@@ -146,7 +146,40 @@ impl Context {
     }
 
     pub fn set_max_fps(&mut self, fps: u32) {
-        self.scheduler.max_fps = fps.max(1);
+        self.scheduler.set_max_fps(fps);
+    }
+
+    /// Selects how frame deadlines are derived from the configured FPS ceiling.
+    ///
+    /// The default [`FramePacing::CompletionRelative`] preserves historical
+    /// behavior. [`FramePacing::PhaseLocked`] anchors deadlines to the scheduled
+    /// cadence so render/write time consumes the current period instead of being
+    /// added after it. This improves high-cadence animation and temporal-rendering
+    /// experiments, but it is still an emission clock — not terminal/display vsync.
+    pub fn set_frame_pacing(&mut self, pacing: FramePacing) {
+        self.scheduler.set_pacing(pacing);
+    }
+
+    pub fn frame_pacing(&self) -> FramePacing {
+        self.scheduler.pacing()
+    }
+
+    /// Scheduled emission deadlines the most recent phase-locked frame overran.
+    ///
+    /// Always `0` under [`FramePacing::CompletionRelative`]. A temporal
+    /// controller reads this alongside [`Context::last_frame_report`] to decide
+    /// whether local cadence is healthy enough to keep modulating, or whether to
+    /// fall back to static realization.
+    pub fn missed_periods_last_frame(&self) -> u32 {
+        self.scheduler.missed_periods_last_frame()
+    }
+
+    /// Cumulative phase-locked missed deadlines since construction (monotonic).
+    ///
+    /// A controller samples the delta over a window for cadence-health hysteresis
+    /// rather than reacting to a single late frame.
+    pub fn missed_periods_total(&self) -> u64 {
+        self.scheduler.missed_periods_total()
     }
 
     /// Sets the recommended cadence for decorative animation (spinners etc.).
@@ -265,6 +298,15 @@ impl Context {
     /// layout/paint/diff pass to observe it.
     pub fn last_exact_changed_cells(&self) -> usize {
         self.renderer.last_exact_changed()
+    }
+
+    /// Timing/accounting snapshot for the most recent live frame (#64).
+    ///
+    /// Generation covers layout/paint/diff/ANSI transaction construction;
+    /// write covers the blocking writer write/flush. Neither duration claims to
+    /// measure terminal-compositor or physical display presentation.
+    pub fn last_frame_report(&self) -> FrameReport {
+        self.renderer.last_frame_report()
     }
 
     /// Visible text of the most recently composed live frame, one `String` per

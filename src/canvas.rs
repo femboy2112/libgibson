@@ -369,11 +369,7 @@ impl BrailleCanvas {
                 if let Some(ch) = self.glyph_at(cx, cy) {
                     let x = origin.0 + cx;
                     let y = origin.1 + cy;
-                    surface.set_cell(
-                        x,
-                        y,
-                        crate::cell::Cell::new(Glyph::new(&ch.to_string()), style),
-                    );
+                    surface.set_cell(x, y, crate::cell::Cell::new(Glyph::from_char(ch), style));
                 }
             }
         }
@@ -447,11 +443,7 @@ impl BrailleCanvas {
         for cy in 0..self.height {
             for cx in 0..self.width {
                 if let Some(ch) = self.glyph_at_mode(cx, cy, mode) {
-                    s.set_cell(
-                        cx,
-                        cy,
-                        crate::cell::Cell::new(Glyph::new(&ch.to_string()), style),
-                    );
+                    s.set_cell(cx, cy, crate::cell::Cell::new(Glyph::from_char(ch), style));
                 }
             }
         }

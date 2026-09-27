@@ -16,7 +16,7 @@ semantics — plus experimental compositional animation and software graphics.
 
 </div>
 
-> **Current release: [v0.2.5 — Engineering Alpha](https://github.com/femboy2112/libgibson/releases/tag/v0.2.5)** (2026-09-27).
+> **Current release: [v0.3.0 — Temporal Rendering Milestone](https://github.com/femboy2112/libgibson/releases/tag/v0.3.0)** (2026-09-27).
 > Linux x86_64. A native SDK archive is attached to the release. LibGibson is
 > distributed as **GitHub source + that SDK** — it is *not* on crates.io, PyPI, or
 > the Go module proxy. See the [changelog](CHANGELOG.md) and
@@ -130,7 +130,7 @@ of this film ([how it was captured](docs/assets/README.md)).
 ## Install & use
 
 LibGibson ships as **GitHub source plus a native SDK archive** on the
-[release](https://github.com/femboy2112/libgibson/releases/tag/v0.2.5). It is not
+[release](https://github.com/femboy2112/libgibson/releases/tag/v0.3.0). It is not
 published to any package registry.
 
 ### Rust
@@ -140,7 +140,7 @@ crate you `use` is `gibson`:
 
 ```toml
 [dependencies]
-libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.2.5" }
+libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.3.0" }
 ```
 
 ```rust
@@ -178,14 +178,14 @@ animation is throttled by `ctx.animation_interval()`.
 
 ### Native SDK (C / C++ / Python / Go)
 
-The release attaches `libgibson-0.2.5-linux-x86_64.tar.gz` (with a `.sha256`): headers,
+The release attaches `libgibson-0.3.0-linux-x86_64.tar.gz` (with a `.sha256`): headers,
 `libgibson.a`, the versioned shared object (`libgibson.so.1` + a `libgibson.so` dev
 symlink), and a relocatable `pkg-config` file.
 
 ```bash
-sha256sum -c libgibson-0.2.5-linux-x86_64.tar.gz.sha256
-tar -xzf libgibson-0.2.5-linux-x86_64.tar.gz          # -> ./libgibson-0.2.5-linux-x86_64/
-export PKG_CONFIG_PATH="$PWD/libgibson-0.2.5-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
+sha256sum -c libgibson-0.3.0-linux-x86_64.tar.gz.sha256
+tar -xzf libgibson-0.3.0-linux-x86_64.tar.gz          # -> ./libgibson-0.3.0-linux-x86_64/
+export PKG_CONFIG_PATH="$PWD/libgibson-0.3.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 cc app.c $(pkg-config --cflags --libs libgibson) -o app   # C consumer
 ```
@@ -255,8 +255,8 @@ Deep dives: [introductory cinema](docs/INTRODUCTORY_CINEMA.md) ·
 
 ## Status & support
 
-Core engine behaviour is **IMPLEMENTED + TESTED on Linux x86_64 only**. The v0.2.5
-baseline suite has **753 tests** (265 library unit + 486 integration + 2 doctests); `cargo clippy --all-targets
+Core engine behaviour is **IMPLEMENTED + TESTED on Linux x86_64 only**. The v0.3.0
+baseline suite has **792 tests** (296 library unit + 494 integration + 2 doctests); `cargo clippy --all-targets
 --all-features -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean.
 C/C++ examples run under ASan + UBSan (LSan disabled); the Python `ctypes` example runs;
 the Go bindings pass local + public Linux build/vet/example smoke (no Go unit tests
