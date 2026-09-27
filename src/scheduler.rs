@@ -142,6 +142,19 @@ impl FrameScheduler {
         }
     }
 
+    /// Changes the FPS ceiling and starts a fresh timing epoch when it changes.
+    ///
+    /// Resetting the epoch matters for phase-locked pacing: an old deadline was
+    /// derived from the old period and must not leak into the new cadence.
+    pub fn set_max_fps(&mut self, max_fps: u32) {
+        let max_fps = max_fps.max(1);
+        if self.max_fps != max_fps {
+            self.max_fps = max_fps;
+            self.last_frame_instant = None;
+            self.next_frame_deadline = None;
+        }
+    }
+
     pub fn frame_budget(&self) -> Duration {
         Duration::from_nanos((1_000_000_000u64) / (self.max_fps as u64))
     }
@@ -341,6 +354,29 @@ mod tests {
             scheduler.time_until_next_frame_at(completed),
             Duration::from_millis(7)
         );
+    }
+
+    #[test]
+    fn changing_fps_resets_phase_locked_epoch() {
+        let start = Instant::now();
+        let mut scheduler = FrameScheduler::new(100);
+        scheduler.set_pacing(FramePacing::PhaseLocked);
+        scheduler.request_render();
+        assert!(scheduler.should_render_at(start));
+        scheduler.record_frame_at(
+            start + Duration::from_millis(2),
+            0,
+            0,
+            0,
+            false,
+            Duration::from_millis(2),
+        );
+        assert!(scheduler.time_until_next_frame_at(start + Duration::from_millis(2)) > Duration::ZERO);
+
+        scheduler.set_max_fps(50);
+        scheduler.request_render();
+        assert!(scheduler.should_render_at(start + Duration::from_millis(2)));
+        assert_eq!(scheduler.frame_budget(), Duration::from_millis(20));
     }
 
     #[test]
