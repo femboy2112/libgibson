@@ -14,9 +14,7 @@
 //! bottleneck. This is still a high-contrast dynamic research stimulus; keep the
 //! region bounded and stop if it is uncomfortable.
 
-use gibson::{
-    Cell, Color, Context, FramePacing, Node, Style, Surface,
-};
+use gibson::{Cell, Color, Context, FramePacing, Node, Style, Surface};
 use std::io;
 use std::sync::Arc;
 use std::time::Duration;
