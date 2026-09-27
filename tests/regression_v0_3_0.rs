@@ -1,8 +1,8 @@
 use gibson::context::{Context, RenderMode};
 use gibson::node::Node;
 use gibson::{
-    FramePacing, PresentationProfile, Style, SubcellGlyphMode, TemporalBrailleField,
-    TemporalGate, TemporalSafetyPolicy,
+    FramePacing, PresentationProfile, Style, SubcellGlyphMode, TemporalBrailleField, TemporalGate,
+    TemporalSafetyPolicy,
 };
 
 #[test]
