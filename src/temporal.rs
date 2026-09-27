@@ -21,6 +21,7 @@ use crate::surface::Surface;
 /// LibGibson cannot infer them from PTY writes; use an external cadence beacon or
 /// other measurement process and store the result as a profile.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct PresentationProfile {
     /// Observed terminal presentation cadence.
     pub presentation_hz: f32,
@@ -65,6 +66,7 @@ impl Default for PresentationProfile {
 /// cap requested linear-light modulation depth to 10%. This is an engineering
 /// guardrail, not medical certification.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct TemporalSafetyPolicy {
     pub min_luminance_hz: f32,
     pub min_survival_rate: f32,
@@ -83,6 +85,7 @@ impl Default for TemporalSafetyPolicy {
 
 /// Why an application should fall back to its static realization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TemporalGate {
     Enabled,
     ReducedMotion,
@@ -155,6 +158,7 @@ impl TemporalSafetyPolicy {
 /// A temporal modulator can therefore improve the binary `static_mask` while
 /// leaving SGR color state unchanged across phases.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct TemporalCellProjection {
     pub style: Style,
     pub duty: [f32; 8],
@@ -903,6 +907,7 @@ fn style_luminance_swing(style: Style) -> Option<f32> {
 
 /// A snapshot of [`TemporalDisplayProcessor`]'s current realization decision.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct TemporalDiagnostics {
     /// The top-level profile/reduced-motion gate (independent of the cadence hold).
     pub gate: TemporalGate,

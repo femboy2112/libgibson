@@ -84,6 +84,7 @@ pub const DEFAULT_ANIMATION_INTERVAL: Duration = Duration::from_millis(80);
 /// is useful for high-cadence animation and temporal-rendering experiments; it is
 /// still an application emission clock, **not** a claim of terminal/display vsync.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum FramePacing {
     #[default]
     CompletionRelative,

@@ -65,6 +65,7 @@ pub enum AnchorState {
 /// blocking writer write/flush. It measures only stages LibGibson owns and does
 /// not claim anything about compositor/display presentation time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub struct FrameReport {
     pub exact_changed_cells: usize,
     pub affected_cells: usize,
