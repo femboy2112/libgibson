@@ -499,6 +499,12 @@ pub struct TemporalBrailleField {
     static_mask: Vec<u8>,
     accumulator: Vec<[f32; 8]>,
     frame_index: u64,
+    /// When true, the residual path perturbs each dot's fire threshold by a small
+    /// deterministic per-(cell, dot, frame) dither. This breaks the period-2 lock
+    /// that a coherent frame-subsampling presentation (e.g. 120 emitted shown as
+    /// 60) would otherwise alias into a large DC bias, without changing the
+    /// long-run mean. Off by default on the raw primitive.
+    dither: bool,
 }
 
 impl TemporalBrailleField {
@@ -519,7 +525,19 @@ impl TemporalBrailleField {
             static_mask: vec![0u8; cells],
             accumulator,
             frame_index: 0,
+            dither: false,
         }
+    }
+
+    /// Enables or disables residual threshold dither (see the `dither` field). Off
+    /// by default; [`TemporalDisplayProcessor`] turns it on for robustness.
+    pub fn set_dither(&mut self, enabled: bool) {
+        self.dither = enabled;
+    }
+
+    /// Whether residual threshold dither is enabled.
+    pub fn dither(&self) -> bool {
+        self.dither
     }
 
     pub fn width(&self) -> u16 {
@@ -626,6 +644,11 @@ impl TemporalBrailleField {
         for (bit, d) in self.duty[index].iter_mut().enumerate() {
             *d = if mask & (1u8 << bit) != 0 { 1.0 } else { 0.0 };
         }
+        // Zero the residual accumulator so it holds exactly at 0: with zero
+        // residual it stays there, and 0 can never cross a dithered fire threshold
+        // (which lies in [0.5, 1.5) or its negation). This guarantees a frozen cell
+        // NEVER flips, even with dither enabled.
+        self.accumulator[index] = [0.0; 8];
         true
     }
 
@@ -758,21 +781,31 @@ impl TemporalBrailleField {
 
     fn advance_residual_masks(&mut self) -> Vec<u8> {
         let mut masks = Vec::with_capacity(self.duty.len());
-        for ((targets, &baseline), acc) in self
+        let (seed, frame, dither) = (self.seed, self.frame_index, self.dither);
+        for (cell_index, ((targets, &baseline), acc)) in self
             .duty
             .iter()
             .zip(self.static_mask.iter())
             .zip(self.accumulator.iter_mut())
+            .enumerate()
         {
             let mut mask = 0u8;
             for bit in 0..8 {
                 let baseline_on = baseline & (1u8 << bit) != 0;
                 let residual = targets[bit] - if baseline_on { 1.0 } else { 0.0 };
                 acc[bit] += residual;
+                // Fire threshold, optionally dithered in [0.5, 1.5) to decorrelate
+                // firing from any fixed presentation-subsampling phase. Each fire
+                // still removes exactly 1.0, so the long-run mean is unchanged.
+                let threshold = if dither {
+                    0.5 + dither_unit(seed, cell_index as u64, bit as u64, frame)
+                } else {
+                    1.0
+                };
                 let on = if baseline_on {
                     // Baseline on (residual <= 0): flip OFF when the accumulator
-                    // crosses -1, otherwise hold the static dot.
-                    if acc[bit] <= -1.0 {
+                    // crosses -threshold, otherwise hold the static dot.
+                    if acc[bit] <= -threshold {
                         acc[bit] += 1.0;
                         false
                     } else {
@@ -780,8 +813,8 @@ impl TemporalBrailleField {
                     }
                 } else {
                     // Baseline off (residual >= 0): flip ON when the accumulator
-                    // crosses +1, otherwise hold the static dot.
-                    if acc[bit] >= 1.0 {
+                    // crosses +threshold, otherwise hold the static dot.
+                    if acc[bit] >= threshold {
                         acc[bit] -= 1.0;
                         true
                     } else {
@@ -927,11 +960,15 @@ pub struct TemporalDisplayProcessor {
 
 impl TemporalDisplayProcessor {
     pub fn new(width: u16, height: u16, mode: SubcellGlyphMode, seed: u64) -> Self {
+        let mut field = TemporalBrailleField::new(width, height, seed);
+        // Robust default for the user-facing path: dither the residual so a
+        // coherent presentation subsample cannot alias into a DC bias.
+        field.set_dither(true);
         Self {
             width,
             height,
             mode,
-            field: TemporalBrailleField::new(width, height, seed),
+            field,
             profile: PresentationProfile::unmeasured(),
             policy: TemporalSafetyPolicy::default(),
             reduced_motion: false,
@@ -970,6 +1007,12 @@ impl TemporalDisplayProcessor {
     /// always the static fallback.
     pub fn set_reduced_motion(&mut self, reduced: bool) {
         self.reduced_motion = reduced;
+    }
+
+    /// Enables or disables residual threshold dither (on by default). Dither keeps
+    /// the modulation robust to coherent presentation subsampling.
+    pub fn set_dither(&mut self, enabled: bool) {
+        self.field.set_dither(enabled);
     }
 
     /// Projects a logical Braille RGB image (`2*width` by `4*height` samples) as
@@ -1099,6 +1142,17 @@ fn unit_hash(seed: u64, cell: u64, dot: u64) -> f32 {
     z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     z ^= z >> 31;
     ((z >> 40) as f32) / ((1u32 << 24) as f32)
+}
+
+/// Deterministic per-(cell, dot, frame) dither in `[0, 1)` for the residual fire
+/// threshold, so firing does not lock to a fixed period that a coherent
+/// presentation subsample could alias into a DC bias.
+fn dither_unit(seed: u64, cell: u64, dot: u64, frame: u64) -> f32 {
+    unit_hash(
+        seed ^ 0x5A5A_5A5A_5A5A_5A5A,
+        cell.wrapping_mul(8).wrapping_add(dot),
+        frame,
+    )
 }
 
 #[cfg(test)]
@@ -1248,6 +1302,55 @@ mod tests {
         assert!(
             (frames - on1) as f32 / f > 0.5,
             "dot1 should hold its OFF baseline most frames"
+        );
+    }
+
+    #[test]
+    fn dither_survives_coherent_frame_subsampling_that_biases_plain_sigma_delta() {
+        // A 50%-duty dot is the worst case: plain first-order sigma-delta settles
+        // into a period-2 (0,1,0,1) pattern, so a coherent 2:1 presentation
+        // subsample (only every other emitted frame is shown) locks onto one
+        // parity and reads a ~0/1 DC bias. Threshold dither breaks that lock while
+        // preserving the mean. This reproduces Fable's coherent-subsampling result.
+        fn shown_mean_coherent_2to1(dither: bool) -> f32 {
+            let mut field = TemporalBrailleField::new(1, 1, 0xBEEF);
+            field.set_dither(dither);
+            // Baseline OFF, duty 0.5 => residual +0.5 on dot 0.
+            let proj = TemporalCellProjection {
+                style: Style::default(),
+                duty: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                static_mask: 0,
+                static_rmse: 0.0,
+                line_rmse: 0.0,
+                emitted_static_rmse: 0.0,
+            };
+            assert!(field.set_cell_projection(0, 0, proj));
+            let (mut shown_on, mut shown) = (0usize, 0usize);
+            for f in 0..2000usize {
+                let bit = field.advance_residual_masks()[0] & 1;
+                if f % 2 == 0 {
+                    shown += 1;
+                    if bit != 0 {
+                        shown_on += 1;
+                    }
+                }
+            }
+            shown_on as f32 / shown as f32
+        }
+
+        let plain_bias = (shown_mean_coherent_2to1(false) - 0.5).abs();
+        let dith_bias = (shown_mean_coherent_2to1(true) - 0.5).abs();
+        assert!(
+            plain_bias > 0.4,
+            "plain sigma-delta should alias hard under coherent 2:1 (bias {plain_bias})"
+        );
+        assert!(
+            dith_bias < 0.1,
+            "dithered residual should track true duty under coherent 2:1 (bias {dith_bias})"
+        );
+        assert!(
+            dith_bias < plain_bias - 0.2,
+            "dither must substantially reduce coherent-subsampling bias (plain {plain_bias}, dithered {dith_bias})"
         );
     }
 
