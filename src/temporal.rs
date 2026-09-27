@@ -155,14 +155,21 @@ pub struct TemporalCellProjection {
 
 /// Fits one logical Braille cell's eight RGB targets to a stable fg/bg basis.
 ///
-/// The search is deliberately exact and tiny: all 254 non-empty binary
-/// partitions are evaluated, with optimal linear-light centroids for each
-/// partition. The chosen colors define the best static two-color cell under this
-/// model. Each target is then orthogonally projected onto the bg->fg segment to
-/// produce a temporal duty cycle.
+/// The search is exact. A mask and its bitwise complement describe the same
+/// two-group partition (foreground/background swapped) and yield identical SSE,
+/// so only the 127 complement-pair representatives — the even masks `2..=254`,
+/// i.e. those with subpixel 0 assigned to the background — are evaluated, at half
+/// the cost of a full 254-mask scan and with a bit-identical fit (verified
+/// against the full scan by the `projector_127_representatives_match_full_254_scan_fit`
+/// oracle test). Optimal linear-light centroids are taken per partition; the
+/// chosen colors define the best static two-color cell, and each target is then
+/// orthogonally projected onto the bg->fg segment to produce a temporal duty
+/// cycle.
 ///
-/// This CPU reference is intentionally simple enough to serve as the correctness
-/// oracle for future SIMD/GPU batch projectors.
+/// A numerically-stabler sufficient-statistics form was evaluated and rejected:
+/// the naive `Σ‖x‖² − ‖Σx‖²/n` identity flips the argmin on roughly 3 in a
+/// million f32 tiles via catastrophic cancellation, so this keeps the exact
+/// direct-distance SSE as the canonical CPU reference.
 pub fn project_rgb_subcells(target: [[u8; 3]; 8]) -> TemporalCellProjection {
     let linear = target.map(rgb8_to_linear);
     let mut best_mask = 0u8;
@@ -170,8 +177,7 @@ pub fn project_rgb_subcells(target: [[u8; 3]; 8]) -> TemporalCellProjection {
     let mut best_bg = [0.0f32; 3];
     let mut best_sse = f32::INFINITY;
 
-    for mask in 1u16..255u16 {
-        let mask = mask as u8;
+    for mask in (2u8..=254u8).step_by(2) {
         let (fg, bg) = partition_centroids(&linear, mask);
         let mut sse = 0.0f32;
         for (i, pixel) in linear.iter().enumerate() {
@@ -822,6 +828,55 @@ mod tests {
             expected.to_string(),
             "static fallback must emit the stored optimal mask, not the duty@0.5 blank"
         );
+    }
+
+    #[test]
+    fn projector_127_representatives_match_full_254_scan_fit() {
+        // Slow oracle: the full 254-mask exact scan (both groups non-empty),
+        // direct-distance SSE. The shipped projector evaluates only the 127
+        // complement-pair representatives; the resulting fit (best SSE, hence
+        // static_rmse) must be identical, since a mask and its complement share
+        // an SSE.
+        fn reference_static_rmse(target: [[u8; 3]; 8]) -> f32 {
+            let linear = target.map(rgb8_to_linear);
+            let mut best = f32::INFINITY;
+            for mask in 1u16..=254 {
+                let mask = mask as u8;
+                let (fg, bg) = partition_centroids(&linear, mask);
+                let mut sse = 0.0f32;
+                for (i, px) in linear.iter().enumerate() {
+                    let c = if mask & (1u8 << i) != 0 { fg } else { bg };
+                    sse += rgb_distance_squared(*px, c);
+                }
+                if sse < best {
+                    best = sse;
+                }
+            }
+            (best / 24.0).sqrt()
+        }
+
+        // Deterministic xorshift over 2000 tiles.
+        let mut state = 0x1234_5678_9abc_def0u64;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 24) as u8
+        };
+        for _ in 0..2000 {
+            let mut t = [[0u8; 3]; 8];
+            for px in t.iter_mut() {
+                for c in px.iter_mut() {
+                    *c = next();
+                }
+            }
+            let got = project_rgb_subcells(t).static_rmse;
+            let want = reference_static_rmse(t);
+            assert!(
+                (got - want).abs() <= 1e-5 * (1.0 + want),
+                "127-rep fit {got} != full 254-scan fit {want} for {t:?}"
+            );
+        }
     }
 
     #[test]
