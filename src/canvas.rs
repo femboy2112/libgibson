@@ -372,7 +372,7 @@ impl BrailleCanvas {
                     surface.set_cell(
                         x,
                         y,
-                        crate::cell::Cell::new(Glyph::new(&ch.to_string()), style),
+                        crate::cell::Cell::new(Glyph::from_char(ch), style),
                     );
                 }
             }
@@ -450,7 +450,7 @@ impl BrailleCanvas {
                     s.set_cell(
                         cx,
                         cy,
-                        crate::cell::Cell::new(Glyph::new(&ch.to_string()), style),
+                        crate::cell::Cell::new(Glyph::from_char(ch), style),
                     );
                 }
             }
