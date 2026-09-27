@@ -24,6 +24,10 @@ concurrency:
   group: release-preflight-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Ephemeral runner: incremental cache is never reused, so disable it.
+  CARGO_INCREMENTAL: "0"
+
 jobs:
   preflight:
     name: Release preflight (publication-free)

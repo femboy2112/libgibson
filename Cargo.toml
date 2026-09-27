@@ -61,6 +61,16 @@ path = "examples/polished_agent.rs"
 name = "fx_lab"
 path = "examples/fx_lab.rs"
 
+# Dev/test builds keep line tables (so RUST_BACKTRACE still symbolicates file:line)
+# but drop full type/variable DWARF. With ~50 integration-test binaries + examples
+# each statically embedding the crate + a generics-heavy dep graph (taffy), full
+# DWARF (`debug = 2`, the stock default) bloats `target/debug` to tens of GiB;
+# line-tables-only cuts that dramatically at no cost to backtraces or test behavior.
+# `[profile.test]` inherits `debug` from here. Release artifacts are unaffected
+# (they build under `[profile.release]`).
+[profile.dev]
+debug = "line-tables-only"
+
 [profile.release]
 opt-level = 3
 lto = true

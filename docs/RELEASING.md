@@ -13,6 +13,9 @@ steps on its own. What a release promises is defined in
   the crossterm readiness-batch fix filed upstream as crossterm#1128).
 - You are **not** publishing until a human explicitly approves the final step for a
   specific version.
+- You have enough free disk. A full patch cycle builds several trees; run
+  `scripts/dev/reclaim.sh --guard 15` first to fail fast if space is short, and see
+  **Disk hygiene** below.
 
 ## 1. Update the changelog
 
@@ -71,6 +74,29 @@ to publish this specific version.
 5. **Go module:** create the module tag using Go's subdirectory-module convention
    (the module lives under `bindings/go`; the exact tag form is documented in
    `bindings/go/README.md`). Verify the tag form before pushing it.
+
+## Disk hygiene (local dev)
+
+The release scripts each trap-clean their own temp trees, so `preflight.sh`,
+`cleanroom.sh`, `bundle.sh`, and `msrv-consumer.sh` leave nothing behind. Two things
+are **not** auto-cleaned on a dev box and accumulate across a patch train:
+
+- **The consumer-acceptance lab clone.** When validating a candidate against the
+  external Europa consumers, clone the lab into the canonical throwaway location
+  `$LIBGIBSON_LAB_SCRATCH` (default `$TMPDIR/libgibson-lab-scratch`), repoint its
+  `libgibson` dependency at the candidate rev, run the consumer suites, then let
+  `reclaim.sh` wipe it — never keep a standing clone with a resident `target/`
+  (three coexisting ~3–4 GiB clones once filled the disk mid-release).
+- **The repo `target/`.** Under `[profile.dev]` the debug/test tree is kept lean
+  (`debug = "line-tables-only"`; see `Cargo.toml`), but it still grows over many
+  patches. `cargo clean` between patches when space is tight.
+
+Run `scripts/dev/reclaim.sh` to sweep the lab scratch and any orphaned
+`/tmp/libgibson-*` build dirs; add `RECLAIM_CARGO_CLEAN=1` to also `cargo clean` the
+repo `target/`. Use `scripts/dev/reclaim.sh --guard <GiB>` as a pre-build guard that
+fails loudly *before* a build starts, rather than as `No space left on device`
+several gates in. CI runners are ephemeral (`CARGO_INCREMENTAL=0` is set there to
+skip the never-reused incremental cache), so this is a local-dev concern only.
 
 ## Do NOT
 
