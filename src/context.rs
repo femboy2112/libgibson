@@ -98,6 +98,12 @@ impl Context {
     /// ctx.render().unwrap();
     /// assert!(ctx.take_output().contains("hello"));
     /// ```
+    ///
+    /// A headless session defaults to **truecolor** capabilities, unlike a real
+    /// terminal session, which detects color depth from the environment
+    /// (`$COLORTERM` / `$TERM`, often 256- or 16-color). To reproduce a
+    /// lower-depth terminal in a capture, override it with
+    /// [`Context::set_color_depth`] or [`Context::set_capabilities`].
     pub fn headless(mode: RenderMode, cols: u16, rows: u16) -> Self {
         Self {
             session: TerminalSession::headless(cols, rows),
@@ -367,10 +373,13 @@ impl Context {
         }
     }
 
-    /// Mirrors absolute renderer operation counters into the scheduler stats.
-    fn sync_renderer_metrics(&mut self) {
+    /// Overlays the renderer's absolute operation counters onto a copy of the
+    /// scheduler's accumulated frame stats, returning the result by value
+    /// without mutating anything. This is the read-only core shared by
+    /// [`Context::stats`] and [`Context::sync_renderer_metrics`].
+    fn overlaid_stats(&self) -> RenderStats {
         let r = &self.renderer;
-        let s = &mut self.scheduler.stats;
+        let mut s = self.scheduler.stats;
         s.anchor_resyncs = r.anchor_resyncs;
         s.history_insertions = r.history_insertions;
         s.fast_insertions = r.fast_insertions;
@@ -378,6 +387,12 @@ impl Context {
         s.insertion_bytes = r.total_insertion_bytes;
         s.commit_bytes = r.total_commit_bytes;
         s.control_bytes = r.total_control_bytes;
+        s
+    }
+
+    /// Mirrors absolute renderer operation counters into the scheduler stats.
+    fn sync_renderer_metrics(&mut self) {
+        self.scheduler.stats = self.overlaid_stats();
     }
 
     /// Commits structured plain text to immutable scrollback (width-aware
@@ -523,9 +538,16 @@ impl Context {
         Ok(ev)
     }
 
-    pub fn stats(&mut self) -> RenderStats {
-        self.sync_renderer_metrics();
-        self.scheduler.stats
+    /// Returns a snapshot of render statistics.
+    ///
+    /// Takes `&self`: it overlays the renderer's absolute operation counters
+    /// onto the scheduler's accumulated frame stats and returns the result by
+    /// value, without mutating the context, so it can be read through a shared
+    /// borrow. (Those same counters are mirrored into the scheduler on every
+    /// render/commit path, so reading never needs to write.) `RenderStats` is
+    /// `Copy`.
+    pub fn stats(&self) -> RenderStats {
+        self.overlaid_stats()
     }
 
     pub fn restore(&mut self) -> io::Result<()> {

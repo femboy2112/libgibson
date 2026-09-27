@@ -17,6 +17,43 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 Nothing yet.
 
+## [0.2.5] - 2026-09-27
+
+Umbrella-cleanup patch — the sixth release in the v0.2.x train, from the Europa
+v0.2.0 consumer campaign. Resolves the last open findings of the Palimpsest
+ergonomics umbrella (#48): a `&self` render-stats read (E-09), documentation of the
+remaining small sharp edges (E-09), and the experimental-layer pointer for
+raw-`Node` consumers (E-04). **No C ABI change** (`GIBSON_ABI_VERSION` stays 1); the
+one code change is an additive, source-compatible receiver relaxation
+(`&mut self` → `&self`) with no CORE break. `gibson::ui` stays EXPERIMENTAL and
+Rust-only.
+
+### Added
+- **`Context::stats()` reads through `&self`** (#48 E-09): render statistics can now
+  be read through a shared borrow rather than requiring `&mut`. The renderer's
+  absolute counters are already mirrored into the scheduler on every render/commit
+  path, so the read overlays them onto a copy of the accumulated stats and returns by
+  value without mutating the context. Source-compatible — existing `&mut`-receiver
+  call sites continue to compile unchanged.
+
+### Documented
+- **Kind-specific builders** (#48 E-09): `Node::background` and `Node::scroll_offset`
+  now document that they apply only to their supported node kinds (box/bordered, and
+  text-input, respectively) and are a silent no-op on any other kind, with the
+  supported alternative for giving text a background. A mis-attached doc comment on
+  `scroll_offset` (it described `rich_text`) is corrected.
+- **Headless color depth** (#48 E-09): `Context::headless` documents that it defaults
+  to truecolor — unlike an env-detected real terminal — and points at
+  `set_color_depth` / `set_capabilities` to reproduce a lower-depth terminal in a
+  capture. The default is intentionally left unchanged to keep captures stable.
+- **Narrow panel titles** (#48 E-09): `Node::panel` documents the ≥5-column threshold
+  below which no title is drawn, and that an over-long title is truncated without an
+  ellipsis above it.
+- **Experimental ergonomic layer** (#48 E-04): `docs/UI_LAYER.md` adds a pointer for
+  raw-`Node` consumers — keyed focus, lists/tables, design skins and finite motion
+  already exist ergonomically in the experimental `gibson::ui` layer — with the
+  "experimental, may change" framing and guidance on composing the two paths.
+
 ## [0.2.4] - 2026-09-27
 
 Viewport and focus foundations patch — the fifth release in the v0.2.x train, from
@@ -382,7 +419,8 @@ The contents and exact cut procedure for a release are documented in
 [`docs/RELEASING.md`](docs/RELEASING.md). Ecosystem-registry publication
 (crates.io, PyPI, Go module proxy) remains a separate, later decision.
 
-[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.5
 [0.2.4]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.4
 [0.2.3]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.3
 [0.2.2]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.2
