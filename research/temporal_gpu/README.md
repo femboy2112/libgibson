@@ -73,6 +73,32 @@ A future `wgpu` spike should print:
 Integrated GPUs can be attractive here because unified/shared memory reduces the
 host-device transfer penalty, but this must be measured.
 
+## Probe result and CPU baseline (developer machine, 2026-09-27)
+
+Measured facts (not inferred):
+
+- **Adapter:** AMD Radeon 610M integrated GPU (`radeonsi`, `raphael_mendocino`),
+  `amdgpu` kernel driver; **Vulkan 1.3.275** instance available; OpenGL 4.6,
+  direct rendering; ~512 MB reported video memory. Host CPU: AMD Ryzen 5,
+  8 threads. A `wgpu` adapter acquisition is therefore feasible here.
+- **CPU projector baseline** (the exact 127-representative, direct-distance
+  `project_braille_image`; release build, this machine): a full **160×50**
+  target (8,000 cells) projects in **~28.6 ms/frame**; debug ~507 ms/frame. An
+  80×24 target scales down proportionally (~7 ms release).
+
+Interpretation (stated honestly):
+
+- In the **primary use** — residual dithering of a *static* image — projection is
+  a **one-time** cost per target change; the per-frame `advance_residual` step is
+  cheap. ~28.6 ms once is not a bottleneck there.
+- Projection only becomes per-frame-critical for **large, fully-animated** content
+  reprojected every frame, which the safety model already steers toward static.
+- A `wgpu` GPU projector **was not built or benchmarked** in this milestone. The
+  GPU column below is therefore **UNMEASURED**: this is *not* a claim that the CPU
+  beats a GPU, only that (a) the CPU cost is adequate for the shipped use case and
+  (b) `wgpu` must not enter the core dependency graph without the head-to-head
+  evidence this contract requires. The prototype is deferred to this research lane.
+
 ## Benchmark matrix
 
 Compare **end-to-end**, not kernel-only time:
