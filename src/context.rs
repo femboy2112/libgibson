@@ -2,7 +2,7 @@ use crate::cell::RichText;
 use crate::input::{poll_event, Event};
 use crate::node::Node;
 use crate::renderer::{InsertStrategy, Renderer};
-use crate::scheduler::{FrameScheduler, RenderStats};
+use crate::scheduler::{FramePacing, FrameScheduler, RenderStats};
 use crate::session::TerminalSession;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
@@ -147,6 +147,21 @@ impl Context {
 
     pub fn set_max_fps(&mut self, fps: u32) {
         self.scheduler.max_fps = fps.max(1);
+    }
+
+    /// Selects how frame deadlines are derived from the configured FPS ceiling.
+    ///
+    /// The default [`FramePacing::CompletionRelative`] preserves historical
+    /// behavior. [`FramePacing::PhaseLocked`] anchors deadlines to the scheduled
+    /// cadence so render/write time consumes the current period instead of being
+    /// added after it. This improves high-cadence animation and temporal-rendering
+    /// experiments, but it is still an emission clock — not terminal/display vsync.
+    pub fn set_frame_pacing(&mut self, pacing: FramePacing) {
+        self.scheduler.set_pacing(pacing);
+    }
+
+    pub fn frame_pacing(&self) -> FramePacing {
+        self.scheduler.pacing()
     }
 
     /// Sets the recommended cadence for decorative animation (spinners etc.).
