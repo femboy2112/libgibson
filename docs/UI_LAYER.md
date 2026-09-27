@@ -146,6 +146,35 @@ available width by weight. Explicit widths retain their basis. When a responsive
 row becomes a column, children recover their intrinsic width. Other containers
 use ordinary substrate flex growth.
 
+Responsive layout across size classes is a view concern, not a separate
+breakpoint system. There is deliberately no built-in "size class" enum: how many
+classes exist and where they break are application policy, not layout mechanics,
+so the library does not name them for you. Because the runtime rebuilds the whole
+`Element` tree from your view function on every frame (a resize is just the next
+frame with a new `environment.width`), you express size classes by branching in
+the view and returning a different tree per class:
+
+```rust
+fn view(model: &Model, cx: &BuildCx) -> Element<Action> {
+    if cx.environment.width < 60 {
+        compact(model) // single lens
+    } else if cx.environment.width < 100 {
+        narrow(model)  // list + detail
+    } else {
+        wide(model)    // multi-pane
+    }
+}
+```
+
+Identity is preserved across a class change for free: give the controls that
+persist between variants the same `.key(...)`, and `UiRuntime`'s keyed
+reconciliation carries focus and in-flight motion across the swap — the same
+mechanism that already runs every frame, so a rebuild on resize is neither
+special-cased nor expensive. `examples/polished_agent_ui.rs` drives exactly this
+`cx.environment.width` branching. For the single most common case, prefer the
+built-in shortcut `row().responsive(below)` (row collapses to a column below a
+width) rather than hand-writing that one class boundary.
+
 Mount a dialog with `screen().child(base).overlay(modal(...))`. Overlays preserve
 an in-flow base and use ordinary absolutely positioned Node children, so they
 do not reflow the base or erase its intrinsic size. Placement resolves inside
