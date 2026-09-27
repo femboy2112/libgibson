@@ -948,6 +948,10 @@ pub struct TemporalDisplayProcessor {
     profile: PresentationProfile,
     policy: TemporalSafetyPolicy,
     reduced_motion: bool,
+    /// Content-motion override (distinct from the accessibility `reduced_motion`):
+    /// when the application knows the content is scrolling/animating, it forces
+    /// static output so moving content is never temporally modulated.
+    motion_static: bool,
     has_target: bool,
     mean_emitted_static_rmse: f32,
     worst_cell_swing: f32,
@@ -972,6 +976,7 @@ impl TemporalDisplayProcessor {
             profile: PresentationProfile::unmeasured(),
             policy: TemporalSafetyPolicy::default(),
             reduced_motion: false,
+            motion_static: false,
             has_target: false,
             mean_emitted_static_rmse: 0.0,
             worst_cell_swing: 0.0,
@@ -1013,6 +1018,16 @@ impl TemporalDisplayProcessor {
     /// the modulation robust to coherent presentation subsampling.
     pub fn set_dither(&mut self, enabled: bool) {
         self.field.set_dither(enabled);
+    }
+
+    /// Forces static output while the content is known to be moving/scrolling.
+    ///
+    /// Distinct from [`Self::set_reduced_motion`] (an accessibility preference);
+    /// both result in the static fallback. For animated content, prefer driving
+    /// [`Self::set_target_image`] with [`ResetPolicy::Reset`] each frame, which
+    /// reseeds residual state so fast motion degrades to static without trails.
+    pub fn set_motion_static(&mut self, motion_static: bool) {
+        self.motion_static = motion_static;
     }
 
     /// Projects a logical Braille RGB image (`2*width` by `4*height` samples) as
@@ -1080,7 +1095,8 @@ impl TemporalDisplayProcessor {
         let modulate = gate == TemporalGate::Enabled
             && self.has_target
             && self.modulatable_cells > 0
-            && self.degraded_hold == 0;
+            && self.degraded_hold == 0
+            && !self.motion_static;
         self.last_modulating = modulate;
         if modulate {
             self.field.advance_residual_styled(self.mode)
@@ -1589,6 +1605,42 @@ mod tests {
         assert_eq!(
             f.get(0, 0).unwrap().glyph.grapheme,
             stat.get(0, 0).unwrap().glyph.grapheme
+        );
+    }
+
+    #[test]
+    fn processor_motion_static_forces_static_despite_good_profile() {
+        let mut p = TemporalDisplayProcessor::new(1, 1, SubcellGlyphMode::Braille2x4, 4);
+        p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.1));
+        p.set_target_image(
+            |_lx, ly| {
+                let v = 100u8 + 3 * ly as u8;
+                [v, v, v]
+            },
+            ResetPolicy::Reset,
+        );
+        // Good profile + modulatable content: the gate itself is Enabled.
+        assert_eq!(p.gate(), TemporalGate::Enabled);
+
+        // But moving content forces static.
+        p.set_motion_static(true);
+        let f = p.advance(0);
+        assert!(
+            !p.diagnostics().modulating,
+            "moving content must render static"
+        );
+        let stat = p.static_fallback();
+        assert_eq!(
+            f.get(0, 0).unwrap().glyph.grapheme,
+            stat.get(0, 0).unwrap().glyph.grapheme
+        );
+
+        // Clearing the override resumes modulation.
+        p.set_motion_static(false);
+        p.advance(0);
+        assert!(
+            p.diagnostics().modulating,
+            "clearing motion_static resumes modulation"
         );
     }
 
