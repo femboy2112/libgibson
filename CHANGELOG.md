@@ -17,6 +17,41 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 Nothing yet.
 
+## [0.2.4] - 2026-09-27
+
+Viewport and focus foundations patch — the fifth release in the v0.2.x train, from
+the Europa v0.2.0 consumer campaign (#39, #40; #42 resolved by documentation). Adds
+the item-oriented viewport windowing and incremental focus-ring eviction that
+scrollable, filterable list UIs otherwise re-derive by hand. **No C ABI change**
+(`GIBSON_ABI_VERSION` stays 1); every change is an additive Rust method — no CORE
+break, no signature change, no new struct fields — and `ViewportState` / `FocusRing`
+are Rust-only (never on the C-ABI surface).
+
+### Added
+- **Viewport windowing helpers** (#39): `ViewportState::visible_range(total_items,
+  item_height, view_height) -> Range<usize>` returns the item indices at least
+  partially on screen (edge-clipped items included); `ensure_visible(index,
+  item_height, view_height)` scrolls only as far as needed to reveal an item (no-op
+  when already visible); `scroll_to_item(index, item_height)` pins an item to the
+  top. Zero-height inputs are guarded (no divide-by-zero); like the existing scroll
+  methods these do not self-clamp against the content end, so follow with `clamp`
+  where that invariant is needed.
+- **Incremental focus eviction** (#40): `FocusRing::remove(index) -> Option<FocusId>`
+  removes a member (e.g. a list item filtered out), shifts later members down, and
+  transfers focus to a surviving neighbour (the next survivor, or the new last), so
+  focus is never silently lost. Outstanding `capture` entries are reindexed the same
+  way, so a modal opened before the removal still restores the correct widget on
+  `release`. Replaces the rebuild-the-whole-ring workaround.
+
+### Documented
+- **Responsive layout across size classes** (#42): `docs/UI_LAYER.md` now documents
+  that size classes are a view concern — branch on `BuildCx.environment.width` and
+  share `.key(...)` across variants; keyed `UiRuntime` reconciliation preserves focus
+  and in-flight motion across the per-frame rebuild, so a resize is not special-cased
+  and not expensive. `row().responsive(below)` remains the shortcut for the common
+  row→column collapse. No "breakpoint framework" is added: how many size classes
+  exist and where they break are application policy, not layout mechanics.
+
 ## [0.2.3] - 2026-09-27
 
 Layout and custom-graphics-seam patch — the fourth release in the v0.2.x train,
@@ -348,6 +383,7 @@ The contents and exact cut procedure for a release are documented in
 (crates.io, PyPI, Go module proxy) remains a separate, later decision.
 
 [Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.2.3...HEAD
+[0.2.4]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.4
 [0.2.3]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.3
 [0.2.2]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.2
 [0.2.1]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.1

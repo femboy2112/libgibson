@@ -99,6 +99,44 @@ impl FocusRing {
     pub fn is_captured(&self) -> bool {
         !self.stack.is_empty()
     }
+
+    /// Removes the member at `index` (e.g. its backing list item was filtered
+    /// out), shifting every later member down one position, and returns the new
+    /// current owner if any.
+    ///
+    /// Focus transfers by the removed slot's position relative to the focused one:
+    /// * a member **before** the focused slot → the focused position shifts down
+    ///   by one, so the same widget stays focused;
+    /// * the focused slot **itself** → focus moves to the next surviving member,
+    ///   or to the new last member if the removed slot was last; if the ring
+    ///   becomes empty, [`FocusRing::current`] returns `None`;
+    /// * a member **after** the focused slot → focus is unchanged.
+    ///
+    /// Any outstanding [`FocusRing::capture`] entries are reindexed the same way,
+    /// so a modal opened before the removal still restores the correct widget on
+    /// [`FocusRing::release`] rather than a stale slot. An out-of-range `index`
+    /// is a no-op.
+    pub fn remove(&mut self, index: usize) -> Option<FocusId> {
+        if index >= self.ring.len() {
+            return self.current();
+        }
+        self.ring.remove(index);
+        let new_len = self.ring.len();
+        // Map an old position to its position after removing `index`.
+        let reindex = |pos: usize| -> usize {
+            use std::cmp::Ordering::{Equal, Greater, Less};
+            match index.cmp(&pos) {
+                Less => pos - 1,                               // was after the hole: slides down
+                Equal => index.min(new_len.saturating_sub(1)), // was the hole: next survivor
+                Greater => pos,                                // was before the hole: unaffected
+            }
+        };
+        self.current = reindex(self.current);
+        for saved in self.stack.iter_mut() {
+            *saved = reindex(*saved);
+        }
+        self.current()
+    }
 }
 
 #[cfg(test)]
