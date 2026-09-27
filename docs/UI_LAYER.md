@@ -455,6 +455,49 @@ or place a compiled `frame.node` inside an ordinary `SceneEntity`. Retain the
 runtime/interaction sidecar when you need typed keyboard actions. Scene visual
 transforms do not create mouse hit testing or a spatial event-routing contract.
 
+## Large collections: virtualization and list selection
+
+There is deliberately no `VirtualList`/`List`/`Table` *widget* that owns your
+data's lifecycle — that would be a retained-mode framework the library does not
+want to be. A scrollable, selectable, filterable list over an arbitrarily large
+dataset is instead a few lines of your own code over three primitives you already
+have. `examples/large_collection.rs` runs the whole composition headlessly over
+10,000 rows; the shape is:
+
+- **Windowing — build only what's on screen.** `ViewportState::visible_range(total,
+  item_height, view_height)` returns the item indices at least partially visible
+  (edge-clipped items included). Build *only that slice* into a `Node::col` each
+  frame, so the node tree holds `view_height` nodes, not `total`. With
+  `item_height == 1` the slice starts exactly at the scroll offset and renders
+  top-aligned; for taller rows wrap the slice in
+  `Node::viewport(0, offset_y - range.start as i32 * item_height)` to absorb a
+  partially-scrolled top row. `ensure_visible(index, item_height, view_height)`
+  scrolls the minimum needed to reveal an item; `scroll_to_item` pins one to the
+  top; `clamp` bounds the offset after the item count shrinks.
+- **Selection — reuse `FocusRing` as a list-scoped cursor.** `FocusRing` is not
+  only the app-wide Tab ring; a *local* ring over one list's rows is your selection
+  model. `focus_next`/`focus_prev` are down/up, `set` gives home/end/page (select
+  the row at a computed position), and `remove(pos)` deletes a filtered-out row
+  while transferring the cursor to a surviving neighbour — so the selection is
+  never silently lost when a search removes the selected item.
+- **Key the ring by a stable identity, not the row's index.** This is the one real
+  subtlety. Positions shift when you filter; identities do not. Build the ring as
+  `FocusId(row.id)` (a stable per-row id), so after `FocusRing::remove` the cursor
+  still names the right surviving row. Keying by `FocusId(position)` looks simpler
+  but silently selects the wrong row after the first deletion.
+
+Key dispatch (which `KeyCode` maps to down/page/etc.) stays in your app via
+`on_event` or your `Context` loop — bindings are application policy (vim `j`/`k`
+vs. arrows), not something the library should decide.
+
+If you build the visible slice as keyed `Element`s in the `gibson::ui` layer
+instead of a raw `Node` list, focus survives the window sliding automatically via
+keyed reconciliation (see *Actions, keys, focus*). Note that `UiRuntime` rebuilds
+its focus ring whenever the live keyed set changes, which for a scrolling window is
+most frames; this is cheap for ordinary focusable counts, but for a genuinely large
+keyed list prefer a raw list-scoped `FocusRing` as above rather than one key per
+row.
+
 ## Rules for skin authors
 
 Skin constants are ordinary editable values:
