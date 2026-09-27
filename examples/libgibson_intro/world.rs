@@ -997,7 +997,7 @@ fn wire_surface(width: u16, height: u16, seconds: f32, capability: ColorDepth) -
                     style = style.bold();
                 }
             }
-            surface.set_cell(x, y, Cell::new(Glyph::new(&glyph.to_string()), style));
+            surface.set_cell(x, y, Cell::new(Glyph::from_char(glyph), style));
         }
     }
     surface
