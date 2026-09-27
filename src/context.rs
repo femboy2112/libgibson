@@ -1,7 +1,7 @@
 use crate::cell::RichText;
 use crate::input::{poll_event, Event};
 use crate::node::Node;
-use crate::renderer::{InsertStrategy, Renderer};
+use crate::renderer::{FrameReport, InsertStrategy, Renderer};
 use crate::scheduler::{FramePacing, FrameScheduler, RenderStats};
 use crate::session::TerminalSession;
 use std::io::{self, Write};
