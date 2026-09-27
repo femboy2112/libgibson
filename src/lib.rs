@@ -98,7 +98,7 @@ pub use scene::{
     Channel, Easing, Effect, EffectBundle, Presentation, ResolvedEntity, Scene, SceneEntity,
     SceneError, SceneId, SceneTarget, TagId,
 };
-pub use scheduler::{FrameScheduler, RenderStats, DEFAULT_ANIMATION_INTERVAL};
+pub use scheduler::{FramePacing, FrameScheduler, RenderStats, DEFAULT_ANIMATION_INTERVAL};
 pub use session::{TerminalLease, TerminalSession};
 pub use story::{
     Beat, Condition, FactValue, Facts, Reaction, Story, StoryAction, StoryDirector, StoryError,
