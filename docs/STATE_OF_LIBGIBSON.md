@@ -12,13 +12,14 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
-**Current status (2026-09-26):** v0.1.1 is released on GitHub as an Engineering Alpha
-(tag → `v0.1.1` at `3789332`, prerelease-flagged, Linux x86_64; the native SDK archive
-plus the Python wrapper wheel/sdist are attached to the release). It is a
-backwards-compatible patch over the first release, v0.1.0 (2026-09-25; tag → `a3f1e29`),
-adding headless render-to-buffer capture and a `RenderMode` re-export (issues #27/#28);
-the C ABI is unchanged (`GIBSON_ABI_VERSION` 1). The release baseline suite is **661 tests (247 unit
-+ 413 integration + 1 doctest)**, with one known-red collision acceptance ignored.
+**Current status (2026-09-26):** v0.2.0 is released on GitHub as an Engineering Alpha
+(tag → `v0.2.0` at `7a10e60`, prerelease-flagged, Linux x86_64; the native SDK archive
+plus the Python wrapper wheel/sdist are attached to the release). It is the **experimental
+semantic UI milestone** — it adds the Rust-only `gibson::ui` layer as a deliberate additive
+minor over the previous releases v0.1.1 (2026-09-26; tag → `3789332`) and v0.1.0
+(2026-09-25; tag → `a3f1e29`); the C ABI is unchanged (`GIBSON_ABI_VERSION` 1) and
+`gibson::ui` is EXPERIMENTAL and Rust-only, not CORE. The release baseline suite is **719 tests (265 unit
++ 453 integration + 1 doctest)**, with one known-red collision acceptance ignored.
 Ecosystem-registry publication (crates.io / PyPI / Go module proxy) remains deferred. The
 per-checkpoint test counts and CI run ids below are historical development evidence,
 preserved as measured (the historical command tables below preserve the checkpoint they
@@ -74,10 +75,9 @@ shared Surface content, custom components, Scene composition and local SurfaceFx
 remain available. Choosing a skin explicitly opts into its designed background
 treatment; existing direct-Node/Theme defaults are unchanged.
 
-The layer is **EXPERIMENTAL** and is introduced in the **0.2.0** milestone. The
-package is prepared as **0.2.0** and the **C ABI stays at version 1** (no ABI
-break); 0.2.0 has not yet been tagged, released, or published, so v0.1.1 remains
-the most recent published release. Exit
+The layer is **EXPERIMENTAL** and is introduced in the **0.2.0** milestone, now
+released on GitHub (Engineering Alpha, prerelease; tag → `v0.2.0` at `7a10e60`).
+The **C ABI stays at version 1** (no ABI break). Exit
 removal is immediate (no ghosts); mouse hit testing, bubbling, virtualization
 and foreign bindings remain deferred. See [usage and boundaries](UI_LAYER.md)
 and [exact baseline/branch validation](UI_LAYER_VALIDATION.md). Historical
