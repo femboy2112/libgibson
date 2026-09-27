@@ -124,7 +124,7 @@ fn chart(index: usize, width: u16, height: u16, style: Style) -> Surface {
         if b > 0x2800 {
             dst.style = src.style;
         }
-        dst.glyph = gibson::Glyph::new(&char::from_u32(0x2800 + bits).unwrap_or('⠀').to_string());
+        dst.glyph = gibson::Glyph::from_char(char::from_u32(0x2800 + bits).unwrap_or('⠀'));
     }
     surface
 }
