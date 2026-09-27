@@ -11,6 +11,33 @@ CORE stability tier; it may change or be removed between minor releases. The exi
 valid. See [the release contract](RELEASE_CONTRACT.md) and
 [the measured validation record](UI_LAYER_VALIDATION.md).
 
+## If you are hand-rolling these over raw `Node`
+
+Several capabilities that consumers commonly reimplement over the lower-level
+`Node` / `FocusRing` / `Surface` substrate already exist, ergonomically, in this
+layer:
+
+- **Keyed focus and Tab traversal** — `button(...).key("id")`, focus-ring
+  management, and modal focus capture/restore (see [Actions, keys, focus and
+  editor ownership](#actions-keys-focus-and-editor-ownership)). Over raw `Node`
+  you would drive `FocusRing` yourself.
+- **Lists and tables** — `list(...)` and `table(...)` structural components, plus
+  the [large-collection virtualization pattern](#large-collections-virtualization-and-list-selection)
+  for datasets too large to build every frame.
+- **Design skins** — three cohesive design grammars (`VAPOR95`, `BLACK_ICE`,
+  `SWISS_SIGNAL`) with monochrome/ANSI fallbacks, instead of hand-picked raw
+  colors (see [Theme is a palette; Skin is a design
+  grammar](#theme-is-a-palette-skin-is-a-design-grammar)).
+- **Finite presentation motion** — settle-on-change animation keyed to semantic
+  identity (see [Finite semantic motion](#finite-semantic-motion)).
+
+Because this layer is **experimental and Rust-only** — it may change or be
+removed between minor releases — the lower-level `Node` / `Context` / `Surface`
+path remains fully supported for consumers who need a frozen surface today.
+The two compose: reach for `gibson::ui` for semantic chrome and interaction, and
+for raw `Node` / `Surface` where you need dense custom graphics. Both lower into
+the one rendering pipeline.
+
 ## Start with a small application
 
 ```rust

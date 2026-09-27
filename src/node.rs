@@ -383,7 +383,12 @@ impl Node {
         })
     }
 
-    /// Creates a rich text node.
+    /// Sets the horizontal scroll offset, in cells, of a
+    /// [text input](Node::text_input).
+    ///
+    /// This applies **only** to `TextInput` node kinds; calling it on any other
+    /// node kind has no effect (it is a silent no-op — the builder returns the
+    /// node unchanged).
     pub fn scroll_offset(mut self, offset: usize) -> Self {
         if let NodeKind::TextInput { scroll_offset, .. } = &mut self.kind {
             *scroll_offset = offset;
@@ -391,6 +396,7 @@ impl Node {
         self
     }
 
+    /// Creates a rich text node.
     pub fn rich_text(text: impl Into<RichText>) -> Self {
         Self::new(NodeKind::RichText {
             text: text.into(),
@@ -459,6 +465,11 @@ impl Node {
     ///
     /// Unlike [`Node::border_box`], the title is drawn into the top border with a
     /// bold emphasis, and children are inset by one cell of padding.
+    ///
+    /// The title is only drawn when the panel resolves to at least 5 columns
+    /// wide (it needs room for the corners plus a padded label); a narrower
+    /// panel renders the border alone, with no title. Above that width an
+    /// over-long title is truncated to fit, without an ellipsis.
     pub fn panel(title: impl Into<String>, border_type: BorderType, style: Style) -> Self {
         let mut n = Self::new(NodeKind::Border {
             border_type,
@@ -578,6 +589,14 @@ impl Node {
         self
     }
 
+    /// Sets the background fill color of a box ([`Node::col`] / [`Node::row`] /
+    /// [`Node::border_box`]) or a titled [`Node::panel`].
+    ///
+    /// This applies **only** to `Box` and `Border` node kinds; calling it on any
+    /// other node kind (for example a [`Node::text`]) has no effect — it is a
+    /// silent no-op that returns the node unchanged. To give text a background,
+    /// set it on the text's [`Style`], or wrap the text in a `Node::col` /
+    /// `Node::row` that carries the background.
     pub fn background(mut self, bg: Color) -> Self {
         match &mut self.kind {
             NodeKind::Box {
