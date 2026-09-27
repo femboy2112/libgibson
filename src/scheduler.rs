@@ -371,7 +371,9 @@ mod tests {
             false,
             Duration::from_millis(2),
         );
-        assert!(scheduler.time_until_next_frame_at(start + Duration::from_millis(2)) > Duration::ZERO);
+        assert!(
+            scheduler.time_until_next_frame_at(start + Duration::from_millis(2)) > Duration::ZERO
+        );
 
         scheduler.set_max_fps(50);
         scheduler.request_render();
