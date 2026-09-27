@@ -290,10 +290,29 @@ fn rgb_distance_squared(a: [f32; 3], b: [f32; 3]) -> f32 {
 /// Accumulators receive deterministic per-dot starting phases so a uniform field
 /// does not flash in perfect lockstep. This is phase decorrelation, not a claim
 /// of a perceptually optimal spatiotemporal blue-noise-sequence.
+/// Whether changing a cell's target keeps or discards its accumulated residual.
+///
+/// A first-order sigma-delta accumulator integrates error over time. When a cell
+/// keeps showing the *same* logical content, that history is exactly what makes
+/// the time-average converge, so it must be [`ResetPolicy::Keep`]. When the
+/// content *changes* (a new image, a moved viewport, a repainted region), the old
+/// accumulated error is stale and would smear the previous target into the new
+/// one, so the caller must ask for [`ResetPolicy::Reset`]. Motion is an explicit
+/// caller decision here, never inferred from incidental RGB differences.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResetPolicy {
+    /// Preserve the accumulator so an unchanged target keeps converging.
+    Keep,
+    /// Reseed the accumulator to its deterministic decorrelated phase, erasing
+    /// any residual from prior content.
+    Reset,
+}
+
 #[derive(Debug, Clone)]
 pub struct TemporalBrailleField {
     width: u16,
     height: u16,
+    seed: u64,
     duty: Vec<[f32; 8]>,
     styles: Vec<Style>,
     accumulator: Vec<[f32; 8]>,
@@ -312,6 +331,7 @@ impl TemporalBrailleField {
         Self {
             width,
             height,
+            seed,
             duty: vec![[0.0; 8]; cells],
             styles: vec![Style::default(); cells],
             accumulator,
@@ -368,13 +388,34 @@ impl TemporalBrailleField {
         self.set_cell_target(x, y, projection.duty, projection.style)
     }
 
-    /// Sets both the target duty cycles and stable style for one cell.
+    /// Sets both the target duty cycles and stable style for one cell, keeping
+    /// the accumulator (equivalent to [`ResetPolicy::Keep`]).
+    ///
+    /// Use [`TemporalBrailleField::set_cell_target_with`] with
+    /// [`ResetPolicy::Reset`] when the cell's underlying content changes, so the
+    /// previous target's accumulated sigma-delta error does not leak forward.
     pub fn set_cell_target(&mut self, x: u16, y: u16, duty: [f32; 8], style: Style) -> bool {
+        self.set_cell_target_with(x, y, duty, style, ResetPolicy::Keep)
+    }
+
+    /// Sets a cell's target and stable style, choosing whether to preserve or
+    /// reseed the accumulator via `reset`.
+    pub fn set_cell_target_with(
+        &mut self,
+        x: u16,
+        y: u16,
+        duty: [f32; 8],
+        style: Style,
+        reset: ResetPolicy,
+    ) -> bool {
         let Some(index) = self.index(x, y) else {
             return false;
         };
         self.duty[index] = duty.map(sanitize_duty);
         self.styles[index] = style;
+        if reset == ResetPolicy::Reset {
+            self.reseed_accumulator(index);
+        }
         true
     }
 
@@ -384,6 +425,57 @@ impl TemporalBrailleField {
 
     pub fn clear(&mut self) {
         self.duty.fill([0.0; 8]);
+    }
+
+    /// Reseeds one cell's accumulator to its deterministic decorrelated phase,
+    /// erasing accumulated residual without changing the cell's target or style.
+    ///
+    /// Call this when the cell's underlying content changes but the target values
+    /// happen to be reused, so stale sigma-delta error does not smear the old
+    /// content into the new one. Returns `false` if `(x, y)` is out of bounds.
+    pub fn reset_cell(&mut self, x: u16, y: u16) -> bool {
+        match self.index(x, y) {
+            Some(index) => {
+                self.reseed_accumulator(index);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Reseeds every cell overlapping the rectangle `(x, y, w, h)`, clamped to the
+    /// field, and returns how many cells were reset. Intended for invalidating a
+    /// moved or repainted region (e.g. a scrolled viewport) in one call.
+    pub fn reset_region(&mut self, x: u16, y: u16, w: u16, h: u16) -> usize {
+        let x1 = x.min(self.width);
+        let y1 = y.min(self.height);
+        let x2 = x.saturating_add(w).min(self.width);
+        let y2 = y.saturating_add(h).min(self.height);
+        let mut reset = 0;
+        for cy in y1..y2 {
+            for cx in x1..x2 {
+                if let Some(index) = self.index(cx, cy) {
+                    self.reseed_accumulator(index);
+                    reset += 1;
+                }
+            }
+        }
+        reset
+    }
+
+    /// Reseeds all accumulators, erasing residual across the whole field while
+    /// leaving targets, styles and the frame index untouched.
+    pub fn reset_all(&mut self) {
+        for index in 0..self.accumulator.len() {
+            self.reseed_accumulator(index);
+        }
+    }
+
+    fn reseed_accumulator(&mut self, index: usize) {
+        let seed = self.seed;
+        for (dot, phase) in self.accumulator[index].iter_mut().enumerate() {
+            *phase = unit_hash(seed, index as u64, dot as u64);
+        }
     }
 
     /// A deterministic static control: dots at or above 50% duty are on.
@@ -648,6 +740,83 @@ mod tests {
         assert_eq!(surface.height, 1);
         assert_ne!(surface.get(0, 0).unwrap().glyph.grapheme.as_str(), " ");
         assert_eq!(surface.get(1, 0).unwrap().glyph.grapheme.as_str(), " ");
+    }
+
+    #[test]
+    fn reset_erases_prior_residual_while_keep_retains_it() {
+        let seed = 42;
+        let new_target = [0.3; 8];
+        let old_target = [1.0, 0.0, 0.7, 0.0, 0.9, 0.0, 0.2, 0.0];
+
+        // Reference field showing the new target from a clean start.
+        let mut fresh = TemporalBrailleField::new(1, 1, seed);
+        fresh.set_cell_duty(0, 0, new_target);
+
+        // Showed different content, accumulated residual, then switched with Reset.
+        let mut reset = TemporalBrailleField::new(1, 1, seed);
+        reset.set_cell_duty(0, 0, old_target);
+        for _ in 0..5 {
+            reset.advance_masks();
+        }
+        assert!(reset.set_cell_target_with(0, 0, new_target, Style::default(), ResetPolicy::Reset));
+
+        // Same history, switched with Keep.
+        let mut keep = TemporalBrailleField::new(1, 1, seed);
+        keep.set_cell_duty(0, 0, old_target);
+        for _ in 0..5 {
+            keep.advance_masks();
+        }
+        assert!(keep.set_cell_target_with(0, 0, new_target, Style::default(), ResetPolicy::Keep));
+
+        // Structural: Reset restores exactly the fresh seeded phase; Keep drifted.
+        assert_eq!(
+            reset.accumulator, fresh.accumulator,
+            "Reset must restore the deterministic seeded phase"
+        );
+        assert_ne!(
+            keep.accumulator, fresh.accumulator,
+            "Keep must retain the drifted residual from the prior target"
+        );
+
+        // Observable: the Reset field emits exactly the clean-start sequence.
+        let fresh_seq: Vec<u8> = (0..12).map(|_| fresh.advance_masks()[0]).collect();
+        let reset_seq: Vec<u8> = (0..12).map(|_| reset.advance_masks()[0]).collect();
+        assert_eq!(
+            reset_seq, fresh_seq,
+            "a Reset target must reproduce a clean start, not smear old content"
+        );
+    }
+
+    #[test]
+    fn reset_all_restores_every_accumulator_to_fresh() {
+        let seed = 9;
+        let fresh = TemporalBrailleField::new(3, 2, seed);
+        let mut used = TemporalBrailleField::new(3, 2, seed);
+        for y in 0..2 {
+            for x in 0..3 {
+                used.set_cell_duty(x, y, [0.4; 8]);
+            }
+        }
+        for _ in 0..7 {
+            used.advance_masks();
+        }
+        assert_ne!(used.accumulator, fresh.accumulator);
+        used.reset_all();
+        assert_eq!(
+            used.accumulator, fresh.accumulator,
+            "reset_all must reseed every cell to its fresh phase"
+        );
+    }
+
+    #[test]
+    fn reset_region_clamps_to_bounds_and_counts() {
+        let mut field = TemporalBrailleField::new(4, 3, 1);
+        assert_eq!(field.reset_region(1, 1, 2, 2), 4, "2x2 block fully inside");
+        assert_eq!(field.reset_region(3, 2, 10, 10), 1, "overhang clamped to field");
+        assert_eq!(field.reset_region(9, 9, 2, 2), 0, "fully outside resets nothing");
+        assert_eq!(field.reset_region(0, 0, 0, 0), 0, "zero-size resets nothing");
+        assert!(!field.reset_cell(4, 0), "out-of-bounds reset_cell returns false");
+        assert!(field.reset_cell(3, 2), "in-bounds reset_cell returns true");
     }
 
     #[test]
