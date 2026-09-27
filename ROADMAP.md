@@ -2,12 +2,14 @@
 
 This document outlines completed work and the planned future milestones for LibGibson.
 
-> **Current status (2026-09-26):** v0.2.0 is released on GitHub (Engineering Alpha,
-> Linux x86_64; tag → `v0.2.0` at `7a10e60`, prerelease-flagged) — the **experimental
-> semantic UI milestone** (`gibson::ui`, Rust-only), a deliberate additive minor over
-> the previous releases v0.1.1 (2026-09-26; tag → `3789332`) and v0.1.0 (2026-09-25).
-> The C ABI is unchanged (`GIBSON_ABI_VERSION` 1) and `gibson::ui` is EXPERIMENTAL, not
-> CORE. The full suite is **719 tests (265 unit + 453 integration + 1 doctest)**.
+> **Current status (2026-09-27):** v0.2.1 is released on GitHub (Engineering Alpha,
+> Linux x86_64; tag → `v0.2.1` at `219a592`, prerelease-flagged) — a **consumer-correctness
+> patch** (Alt-chord routing through `text_input`, opt-in keyed-element entrance motion,
+> `Node::separator`, `Context::is_interactive`, `Context::empty_root_renders`) on the
+> **experimental semantic UI milestone** v0.2.0 (2026-09-26; tag → `7a10e60`), itself a
+> deliberate additive minor over v0.1.1 (2026-09-26; tag → `3789332`) and v0.1.0
+> (2026-09-25). The C ABI is unchanged (`GIBSON_ABI_VERSION` 1) and `gibson::ui` is
+> EXPERIMENTAL, not CORE. The full suite is **726 tests (265 unit + 460 integration + 1 doctest)**.
 > Ecosystem-registry publication (crates.io / PyPI / Go module proxy) remains deferred.
 > The checkpoint counts and CI run ids below are historical development evidence,
 > preserved as measured.

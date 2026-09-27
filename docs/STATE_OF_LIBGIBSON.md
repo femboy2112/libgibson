@@ -12,14 +12,18 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
-**Current status (2026-09-26):** v0.2.0 is released on GitHub as an Engineering Alpha
-(tag → `v0.2.0` at `7a10e60`, prerelease-flagged, Linux x86_64; the native SDK archive
-plus the Python wrapper wheel/sdist are attached to the release). It is the **experimental
-semantic UI milestone** — it adds the Rust-only `gibson::ui` layer as a deliberate additive
-minor over the previous releases v0.1.1 (2026-09-26; tag → `3789332`) and v0.1.0
-(2026-09-25; tag → `a3f1e29`); the C ABI is unchanged (`GIBSON_ABI_VERSION` 1) and
-`gibson::ui` is EXPERIMENTAL and Rust-only, not CORE. The release baseline suite is **719 tests (265 unit
-+ 453 integration + 1 doctest)**, with one known-red collision acceptance ignored.
+**Current status (2026-09-27):** v0.2.1 is released on GitHub as an Engineering Alpha
+(tag → `v0.2.1` at `219a592`, prerelease-flagged, Linux x86_64; the native SDK archive
+plus the Python wrapper wheel/sdist are attached to the release). It is a **consumer-correctness
+patch** on the experimental semantic UI milestone v0.2.0 (2026-09-26; tag → `7a10e60`): it
+stops `text_input` from consuming `Alt`+`<char>` chords, makes keyed-element entrance motion
+opt-in (a stable key no longer dissolves a control on its first frame), and adds
+`Node::separator`, `Context::is_interactive`, and `Context::empty_root_renders`. v0.2.0 adds
+the Rust-only `gibson::ui` layer as a deliberate additive minor over the previous releases
+v0.1.1 (2026-09-26; tag → `3789332`) and v0.1.0 (2026-09-25; tag → `a3f1e29`); the C ABI is
+unchanged (`GIBSON_ABI_VERSION` 1) and `gibson::ui` is EXPERIMENTAL and Rust-only, not CORE.
+The release baseline suite is **726 tests (265 unit + 460 integration + 1 doctest)**, with one
+known-red collision acceptance ignored.
 Ecosystem-registry publication (crates.io / PyPI / Go module proxy) remains deferred. The
 per-checkpoint test counts and CI run ids below are historical development evidence,
 preserved as measured (the historical command tables below preserve the checkpoint they
