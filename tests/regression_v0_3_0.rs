@@ -34,6 +34,35 @@ fn frame_report_exposes_exact_change_and_settled_zero_write() {
 }
 
 #[test]
+fn frame_report_distinguishes_full_repaint_from_partial_change() {
+    let mut ctx = Context::headless(RenderMode::Inline, 40, 3);
+    ctx.set_sync_updates(false);
+    ctx.set_root(Node::text("AAAAA", Style::default()));
+    ctx.render_now().unwrap();
+    let first = ctx.last_frame_report();
+    assert!(first.full_repaint, "the first render is a full repaint");
+    assert!(first.exact_changed_cells > 0);
+
+    // A one-character change is a partial update, not a full repaint, and touches
+    // far fewer cells than the whole frame.
+    ctx.set_root(Node::text("AAAAB", Style::default()));
+    ctx.render_now().unwrap();
+    let second = ctx.last_frame_report();
+    assert!(
+        !second.full_repaint,
+        "a small text change is not a full repaint"
+    );
+    assert!(
+        second.exact_changed_cells >= 1 && second.exact_changed_cells < first.total_cells,
+        "partial change touched {} of {} cells",
+        second.exact_changed_cells,
+        first.total_cells
+    );
+    assert!(second.bytes_emitted > 0);
+    assert!(second.total_duration() >= second.write_duration);
+}
+
+#[test]
 fn temporal_field_composes_as_an_ordinary_surface() {
     let mut field = TemporalBrailleField::new(3, 2, 0xA11CE);
     for y in 0..field.height() {
