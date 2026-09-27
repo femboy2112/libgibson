@@ -12,19 +12,21 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
-**Current status (2026-09-27):** v0.2.2 is released on GitHub as an Engineering Alpha
-(tag → `v0.2.2` at `0052dbe`, prerelease-flagged, Linux x86_64; the native SDK archive
-plus the Python wrapper wheel/sdist are attached to the release). It is an **output,
-testability & observability patch** on the v0.2.x line: it adds wrap-policy-aware safe
-scrollback insertion (`commit_text_with_mode` / `insert_text_before_live_with_mode`,
-`WrapMode::NoWrap` preserving preformatted artifacts), a visible-frame snapshot
-(`Context::last_frame_lines`), exact changed-cell observability
-(`Context::last_exact_changed_cells`), and a documented canonical interactive loop. It
-follows the consumer-correctness patch v0.2.1 (tag → `219a592`). v0.2.0 adds
+**Current status (2026-09-27):** v0.2.3 is released on GitHub as an Engineering Alpha
+(tag → `v0.2.3` at `e219841`, prerelease-flagged, Linux x86_64; the native SDK archive
+plus the Python wrapper wheel/sdist are attached to the release). It is a **layout &
+custom-graphics-seam patch** on the v0.2.x line: it adds a size-aware deferred canvas
+(`Node::canvas(|rect| -> Surface)`, whose callback runs after layout at the node's
+resolved cell rect — single-pass, no second renderer), percentage sizing on `Element`
+(`percent_width` / `percent_height` → `Dimension::Percent`), a clipped sub-surface view
+(`Surface::clip(Rect) -> SurfaceClip`), and Braille compositing helpers
+(`BrailleCanvas::blit_to_surface`, `Glyph::from_char`). It follows the
+output/testability/observability patch v0.2.2 (tag → `0052dbe`) and the
+consumer-correctness patch v0.2.1 (tag → `219a592`). v0.2.0 adds
 the Rust-only `gibson::ui` layer as a deliberate additive minor over the previous releases
 v0.1.1 (2026-09-26; tag → `3789332`) and v0.1.0 (2026-09-25; tag → `a3f1e29`); the C ABI is
 unchanged (`GIBSON_ABI_VERSION` 1) and `gibson::ui` is EXPERIMENTAL and Rust-only, not CORE.
-The release baseline suite is **734 tests (265 unit + 467 integration + 2 doctests)**, with one
+The release baseline suite is **739 tests (265 unit + 472 integration + 2 doctests)**, with one
 known-red collision acceptance ignored.
 Ecosystem-registry publication (crates.io / PyPI / Go module proxy) remains deferred. The
 per-checkpoint test counts and CI run ids below are historical development evidence,
