@@ -17,7 +17,7 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 Nothing yet.
 
-## [0.2.0] - unreleased
+## [0.2.0] - 2026-09-26
 
 The **experimental semantic UI milestone**. Adds `gibson::ui`, a Rust-only
 composition layer above the existing framebuffer / renderer / terminal substrate. The
@@ -226,5 +226,7 @@ The contents and exact cut procedure for a release are documented in
 [`docs/RELEASING.md`](docs/RELEASING.md). Ecosystem-registry publication
 (crates.io, PyPI, Go module proxy) remains a separate, later decision.
 
-[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.0
+[0.1.1]: https://github.com/femboy2112/libgibson/releases/tag/v0.1.1
 [0.1.0]: https://github.com/femboy2112/libgibson/releases/tag/v0.1.0

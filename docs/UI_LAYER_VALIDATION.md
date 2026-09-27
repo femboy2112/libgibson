@@ -1,7 +1,7 @@
 # Experimental UI layer — validation record
 
-This records the experimental UI implementation branch, not a release or a
-merge decision. Architecture and usage are in [UI_LAYER.md](UI_LAYER.md).
+This records the measured validation of the experimental UI work that became the
+**0.2.0** milestone. Architecture and usage are in [UI_LAYER.md](UI_LAYER.md).
 
 ## Original main provenance and baseline
 
@@ -12,8 +12,8 @@ merge decision. Architecture and usage are in [UI_LAYER.md](UI_LAYER.md).
   Cargo `1.98.1 (797e8a9bc 2026-08-05)`.
 - Declared library MSRV: 1.85; verified with
   `rustc 1.85.1 (4eb161250 2025-03-15)`.
-- Package prepared as 0.2.0 (unreleased); ABI remains 1. No release, tag, wrapper
-  expansion or new dependency is part of this branch.
+- Package prepared as 0.2.0; ABI remains 1 (no ABI break, no wrapper expansion,
+  and no new dependency).
 
 | Baseline command | Observed outcome |
 | --- | --- |

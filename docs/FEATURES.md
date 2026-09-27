@@ -168,7 +168,7 @@ start from the [README](../README.md).
   above existing Theme palettes, including capability-aware Mono treatment.
   Local Node/Surface/custom-component/Scene/SurfaceFx routes remain open.
   No exit ghosts, mouse router, virtualization or foreign ABI is added. See
-  [UI_LAYER.md](UI_LAYER.md); this module is not included in the v0.1.1 tag.
+  [UI_LAYER.md](UI_LAYER.md); this experimental module is introduced in v0.2.0.
 - **Scene algebra** (TESTED, EXPERIMENTAL, Rust-only): `Scene`/`SceneEntity`/`SceneId`/
   `TagId` wrap ordinary `Node`s with identity; `Effect` provides `identity`, `sequence`
   (composition) and `parallel` (monoidal product) over presentation channels.

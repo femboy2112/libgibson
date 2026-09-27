@@ -117,9 +117,9 @@ breaking them in a pure patch:
 - `raster`, `raster3d`, `raster_fx` — the software RGB/3D rasterizer stack
 - `ui` — Rust-only semantic components, skins above `Theme`, typed interaction,
   stable-key presentation and finite motion, lowered to ordinary `Node` trees.
-  This implementation branch adds it experimentally; it is not present in the
-  v0.1.1 tag. `Element`, `Skin`, `UiRuntime`, `App`, token types and lowering
-  sidecars all belong to this tier, not CORE. See [UI_LAYER.md](UI_LAYER.md).
+  It is introduced experimentally in the 0.2.0 milestone. `Element`, `Skin`,
+  `UiRuntime`, `App`, token types and lowering sidecars all belong to this tier,
+  not CORE. See [UI_LAYER.md](UI_LAYER.md).
 
 The experimental UI layer does not extend the C ABI or C++/Python/Go wrappers,
 change `GIBSON_ABI_VERSION`, raise the MSRV, or constitute a package release.
@@ -344,7 +344,7 @@ fails CI early.
   root carries the dual-license text (`LICENSE`, `LICENSE-MIT`, `LICENSE-APACHE`) so
   the tagged module zip ships it — a subdirectory module does not inherit the
   repository-root license.
-- **Release bundle**: `libgibson-0.1.1-linux-x86_64.tar.gz` (the staged native SDK)
+- **Release bundle**: `libgibson-0.2.0-linux-x86_64.tar.gz` (the staged native SDK)
   plus a checksums file.
 
 Artifact contents are made deterministic where practical (stable file manifest +

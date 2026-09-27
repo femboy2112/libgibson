@@ -16,7 +16,7 @@ semantics — plus experimental compositional animation and software graphics.
 
 </div>
 
-> **Current release: [v0.1.1 — Engineering Alpha](https://github.com/femboy2112/libgibson/releases/tag/v0.1.1)** (2026-09-26).
+> **Current release: [v0.2.0 — Engineering Alpha](https://github.com/femboy2112/libgibson/releases/tag/v0.2.0)** (2026-09-26).
 > Linux x86_64. A native SDK archive is attached to the release. LibGibson is
 > distributed as **GitHub source + that SDK** — it is *not* on crates.io, PyPI, or
 > the Go module proxy. See the [changelog](CHANGELOG.md) and
@@ -102,8 +102,8 @@ The core engine is **implemented and tested on Linux x86_64**. A few of the load
 - **Experimental, Rust-only** — Scene algebra (`Render : SCENE → UI` functor), a Story
   director with deterministic replay, a software-graphics FX substrate, and
   [`gibson::ui`](docs/UI_LAYER.md): semantic components, three design skins, typed
-  interaction and finite motion, lowering to ordinary Nodes. The UI layer is
-  branch work, not part of the v0.1.1 tag.
+  interaction and finite motion, lowering to ordinary Nodes. The UI layer is an
+  experimental, Rust-only API introduced in v0.2.0.
 
 📖 **Full tested-feature catalog: [`docs/FEATURES.md`](docs/FEATURES.md).**
 
@@ -130,7 +130,7 @@ of this film ([how it was captured](docs/assets/README.md)).
 ## Install & use
 
 LibGibson ships as **GitHub source plus a native SDK archive** on the
-[release](https://github.com/femboy2112/libgibson/releases/tag/v0.1.1). It is not
+[release](https://github.com/femboy2112/libgibson/releases/tag/v0.2.0). It is not
 published to any package registry.
 
 ### Rust
@@ -140,7 +140,7 @@ crate you `use` is `gibson`:
 
 ```toml
 [dependencies]
-libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.1.1" }
+libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.2.0" }
 ```
 
 ```rust
@@ -178,14 +178,14 @@ animation is throttled by `ctx.animation_interval()`.
 
 ### Native SDK (C / C++ / Python / Go)
 
-The release attaches `libgibson-0.1.1-linux-x86_64.tar.gz` (with a `.sha256`): headers,
+The release attaches `libgibson-0.2.0-linux-x86_64.tar.gz` (with a `.sha256`): headers,
 `libgibson.a`, the versioned shared object (`libgibson.so.1` + a `libgibson.so` dev
 symlink), and a relocatable `pkg-config` file.
 
 ```bash
-sha256sum -c libgibson-0.1.1-linux-x86_64.tar.gz.sha256
-tar -xzf libgibson-0.1.1-linux-x86_64.tar.gz          # -> ./libgibson-0.1.1-linux-x86_64/
-export PKG_CONFIG_PATH="$PWD/libgibson-0.1.1-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
+sha256sum -c libgibson-0.2.0-linux-x86_64.tar.gz.sha256
+tar -xzf libgibson-0.2.0-linux-x86_64.tar.gz          # -> ./libgibson-0.2.0-linux-x86_64/
+export PKG_CONFIG_PATH="$PWD/libgibson-0.2.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 cc app.c $(pkg-config --cflags --libs libgibson) -o app   # C consumer
 ```
@@ -255,8 +255,8 @@ Deep dives: [introductory cinema](docs/INTRODUCTORY_CINEMA.md) ·
 
 ## Status & support
 
-Core engine behaviour is **IMPLEMENTED + TESTED on Linux x86_64 only**. The v0.1.1
-baseline suite has **661 tests** (247 library unit + 413 integration + 1 doctest); `cargo clippy --all-targets
+Core engine behaviour is **IMPLEMENTED + TESTED on Linux x86_64 only**. The v0.2.0
+baseline suite has **719 tests** (265 library unit + 453 integration + 1 doctest); `cargo clippy --all-targets
 --all-features -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean.
 C/C++ examples run under ASan + UBSan (LSan disabled); the Python `ctypes` example runs;
 the Go bindings pass local + public Linux build/vet/example smoke (no Go unit tests

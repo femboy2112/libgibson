@@ -5,8 +5,8 @@ typed actions and finite presentation motion. It lowers into the existing
 `Node` / Taffy / `Surface` / differential renderer pipeline. It adds no terminal
 renderer, layout engine, terminal owner, dependency, or C ABI.
 
-This is an **experimental branch API**, not part of the tagged v0.1.1 release or
-the CORE stability tier. Use a reviewed branch revision to try it. The existing
+This is an **experimental, Rust-only API introduced in v0.2.0**, not part of the
+CORE stability tier; it may change or be removed between minor releases. The existing
 `Node`, `Context`, `Scene`, `Surface`, `Theme` and lower-level examples remain
 valid. See [the release contract](RELEASE_CONTRACT.md) and
 [the measured validation record](UI_LAYER_VALIDATION.md).
@@ -382,7 +382,7 @@ let custom = component(Instrument, &build_cx);
 `BuildCx` carries **only resolved skin, environment and explicit time**. Semantic
 construction happens before reconciliation, so it cannot read a previous frame's
 focus or motion as if they belonged to the new tree. This is an intentional
-source change from the first unpublished experimental branch revision.
+design choice in the experimental layer's phase separation.
 
 The phases are explicit:
 
