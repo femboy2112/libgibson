@@ -58,10 +58,11 @@ fn temporal_surface_composes_through_a_clipped_viewport() {
         field.set_cell_duty(x, 0, [1.0; 8]);
     }
     let surface = field.advance(Style::default(), SubcellGlyphMode::Braille2x4);
-    let root = Node::viewport(1, 0)
-        .width(2.0)
-        .height(1.0)
-        .child(Node::surface(std::sync::Arc::new(surface)).width(4.0).height(1.0));
+    let root = Node::viewport(1, 0).width(2.0).height(1.0).child(
+        Node::surface(std::sync::Arc::new(surface))
+            .width(4.0)
+            .height(1.0),
+    );
 
     let mut ctx = Context::headless(RenderMode::Inline, 2, 2);
     ctx.set_sync_updates(false);
