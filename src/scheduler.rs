@@ -92,7 +92,11 @@ pub enum FramePacing {
 
 /// Throttles and coalesces rendering updates to a target frame rate.
 pub struct FrameScheduler {
-    pub max_fps: u32,
+    /// FPS ceiling. Private since 0.3.0: mutate only through
+    /// [`FrameScheduler::set_max_fps`], which resets the timing epoch so a stale
+    /// phase-locked deadline cannot leak across a cadence change. Read it with
+    /// [`FrameScheduler::max_fps`].
+    max_fps: u32,
     pub is_dirty: bool,
     last_frame_instant: Option<Instant>,
     next_frame_deadline: Option<Instant>,
@@ -182,6 +186,11 @@ impl FrameScheduler {
             self.next_frame_deadline = None;
             self.missed_periods_last_frame = 0;
         }
+    }
+
+    /// The current FPS ceiling (always at least 1).
+    pub fn max_fps(&self) -> u32 {
+        self.max_fps
     }
 
     pub fn frame_budget(&self) -> Duration {
