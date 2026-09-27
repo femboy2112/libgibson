@@ -6,6 +6,15 @@
 //! painting, [`Surface`], differential updates and ANSI compilation remain
 //! separate layers.
 //!
+//! **Dense / canvas UIs.** For information-dense visuals, compose *chrome* from
+//! declarative [`Node`]s (`col`/`row`/`panel`/`rule`/`text`) and paint the
+//! *drawing* imperatively into a [`Surface`]: wrap a ready surface with
+//! [`Node::surface`] / [`Node::raster`], or — to build the surface at the size
+//! the layout engine assigns rather than guessing it up front — use
+//! [`Node::canvas`], whose callback receives its resolved cell rectangle after
+//! layout. Either composites through the one rendering pipeline, and viewport
+//! clipping is handled by the engine.
+//!
 //! [`ui`], [`scene`], [`story`], [`surface_fx`], [`raster`], [`raster3d`] and [`raster_fx`]
 //! are experimental Rust-only composition/graphics APIs. They do not own terminal
 //! lifecycle. Experimental additions may require source changes between releases.

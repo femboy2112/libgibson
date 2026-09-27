@@ -723,6 +723,19 @@ impl Glyph {
         }
     }
 
+    /// Builds a glyph from a single `char` without the intermediate `String`
+    /// heap allocation of `Glyph::new(&c.to_string())` (issue #43): the char is
+    /// encoded onto a stack buffer and inlined by `CompactString`. Suited to
+    /// high-frequency subcell compositing loops.
+    pub fn from_char(c: char) -> Self {
+        let mut buf = [0u8; 4];
+        let s: &str = c.encode_utf8(&mut buf);
+        Self {
+            grapheme: CompactString::new(s),
+            display_width: UnicodeWidthStr::width(s).min(2) as u8,
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.grapheme.is_empty()
     }

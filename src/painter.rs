@@ -344,6 +344,13 @@ fn paint_node_contents(
             // rectangle (supports partly/fully off-screen placement).
             surface.blit_transparent_clipped(raster.as_ref(), origin_x, origin_y, rect);
         }
+        NodeKind::Canvas { paint } => {
+            // Layout has resolved this node's rect; invoke the callback once with
+            // the node's own cell geometry (local 0,0 origin), then composite the
+            // returned surface exactly like a raster, clipped to the visible rect.
+            let generated = (paint.0)(Rect::new(0, 0, cr.width, cr.height));
+            surface.blit_transparent_clipped(&generated, origin_x, origin_y, rect);
+        }
     }
 
     // Bordered containers clip children to the *inside* of the border so content

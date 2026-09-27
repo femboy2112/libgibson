@@ -110,6 +110,55 @@ impl BorderType {
     }
 }
 
+/// A clipped, translated mutable view over a sub-rectangle of a [`Surface`]
+/// (issue #48 E-06). Drawing coordinates are **local** to the clip rect's
+/// origin, and any write falling outside the clip region (or the surface) is
+/// silently dropped — so dense painting into sub-regions (headers, strips,
+/// panels-within-canvas) needs no per-call bounds guard. Writes delegate to the
+/// surface's own `set_cell` / `print_str`, so wide-glyph and continuation
+/// invariants are preserved. Obtain one with [`Surface::clip`].
+pub struct SurfaceClip<'a> {
+    surface: &'a mut Surface,
+    clip: Rect,
+}
+
+impl SurfaceClip<'_> {
+    /// The clip region's cell width (the local x-coordinate bound).
+    pub fn width(&self) -> u16 {
+        self.clip.width
+    }
+    /// The clip region's cell height (the local y-coordinate bound).
+    pub fn height(&self) -> u16 {
+        self.clip.height
+    }
+
+    /// Sets a cell at clip-local `(x, y)`. Returns `false` (a no-op) if the
+    /// coordinate is outside the clip region or the underlying surface.
+    pub fn set_cell(&mut self, x: u16, y: u16, cell: Cell) -> bool {
+        if x >= self.clip.width || y >= self.clip.height {
+            return false;
+        }
+        match (self.clip.x.checked_add(x), self.clip.y.checked_add(y)) {
+            (Some(ax), Some(ay)) => self.surface.set_cell(ax, ay, cell),
+            _ => false,
+        }
+    }
+
+    /// Prints `text` at clip-local `(x, y)`, truncated to the clip region's
+    /// right edge. Returns the number of columns advanced.
+    pub fn print_str(&mut self, x: u16, y: u16, text: &str, style: Style) -> u16 {
+        if x >= self.clip.width || y >= self.clip.height {
+            return 0;
+        }
+        let (ax, ay) = match (self.clip.x.checked_add(x), self.clip.y.checked_add(y)) {
+            (Some(ax), Some(ay)) => (ax, ay),
+            _ => return 0,
+        };
+        let avail = self.clip.width - x;
+        self.surface.print_str(ax, ay, text, style, Some(avail))
+    }
+}
+
 /// A rectangular 2D framebuffer of cells.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Surface {
@@ -343,6 +392,16 @@ impl Surface {
         }
 
         true
+    }
+
+    /// Returns a [`SurfaceClip`] view restricted to `rect` (issue #48 E-06):
+    /// a clipped, translated `&mut` handle whose `set_cell` / `print_str` use
+    /// coordinates local to `rect` and drop anything outside it.
+    pub fn clip(&mut self, rect: Rect) -> SurfaceClip<'_> {
+        SurfaceClip {
+            surface: self,
+            clip: rect,
+        }
     }
 
     /// Prints a string at (x, y) respecting grapheme clusters, styles, and wide character boundaries.
