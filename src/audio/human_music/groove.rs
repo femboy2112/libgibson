@@ -6,6 +6,7 @@
 //! Density and energy come from the form, so the pattern thins in the intro and thickens
 //! into the climax without a new pattern being invented per bar.
 
+use super::discourse::DiscourseRole;
 use super::form::BEATS_PER_BAR;
 use super::rng::Rng;
 use super::score::{DrumHit, DrumVoice, Provenance};
@@ -83,15 +84,22 @@ impl GrooveEngine {
             let varied = bar % 2 == 1;
             // A fill lands because the next bar begins a new phrase.
             let is_fill_bar = targets.iter().any(|t| t.phrase.end_bar() == bar + 1) && energy > 0.4;
+            // Discourse departure/re-entry: a Withhold/Question phrase strips the kit back to a
+            // stark kick+snare backbone (no hats, ghosts or syncopated pushes), and the groove
+            // re-enters at the Answer/Return — so the pocket has a story, not just a pattern.
+            let stripped = matches!(
+                pt.goal.role,
+                DiscourseRole::Withhold | DiscourseRole::Question
+            );
 
-            // --- Kick: downbeat + beat 3; syncopations only on the cell's varied bar. ---
+            // --- Kick: downbeat + beat 3; syncopations only on the cell's varied, un-stripped bar. ---
             self.emit_kick(&mut hits, &mut kick_beats, bar_start, 0.0, 0.95, prov);
             self.emit_kick(&mut hits, &mut kick_beats, bar_start, 2.0, 0.8, prov);
-            if energy > 0.55 && varied {
+            if energy > 0.55 && varied && !stripped {
                 // Push kick to the "and of 3" — a syncopated anticipation.
                 self.emit_kick(&mut hits, &mut kick_beats, bar_start, 2.5, 0.6, prov);
             }
-            if energy > 0.78 && varied {
+            if energy > 0.78 && varied && !stripped {
                 self.emit_kick(&mut hits, &mut kick_beats, bar_start, 3.75, 0.55, prov);
             }
 
@@ -105,8 +113,8 @@ impl GrooveEngine {
             }
 
             // --- Ghost snares between backbeats (pocket) — placed on the varied bar in worlds
-            //     with a real ghost character, at a fixed low velocity. ---
-            if self.ghost_amount > 0.15 && energy > 0.45 && varied {
+            //     with a real ghost character, at a fixed low velocity (dropped when stripped). ---
+            if self.ghost_amount > 0.15 && energy > 0.45 && varied && !stripped {
                 for &b in &[1.75f64, 3.5] {
                     let v = (0.22 * self.dyn_scale(energy)).min(0.35);
                     hits.push(self.hit(DrumVoice::Snare, bar_start + self.swung(b), v, prov));
@@ -114,23 +122,26 @@ impl GrooveEngine {
             }
 
             // --- Hats: subdivisions with accent hierarchy + swing, thinned DETERMINISTICALLY
-            //     at low density (drop the same weak off-16ths every bar, not random ones). ---
-            let steps = (self.subdiv as f64 * bpb) as u32; // subdivisions per bar
-            for s in 0..steps {
-                let frac = s as f64 / self.subdiv as f64; // beat position within the bar
-                let on_beat = (frac.fract()).abs() < 1e-6;
-                if !on_beat && density < 0.5 && s % 2 == 1 {
-                    continue; // thin the "e"/"a" off-subdivisions, consistently
+            //     at low density (drop the same weak off-16ths every bar, not random ones). A
+            //     stripped (Withhold/Question) bar drops the hats entirely — the departure. ---
+            if !stripped {
+                let steps = (self.subdiv as f64 * bpb) as u32; // subdivisions per bar
+                for s in 0..steps {
+                    let frac = s as f64 / self.subdiv as f64; // beat position within the bar
+                    let on_beat = (frac.fract()).abs() < 1e-6;
+                    if !on_beat && density < 0.5 && s % 2 == 1 {
+                        continue; // thin the "e"/"a" off-subdivisions, consistently
+                    }
+                    let accent = if on_beat { 0.7 } else { 0.42 };
+                    let v = accent * self.dyn_scale(energy);
+                    let open = !on_beat && (frac - (bpb - 0.5)).abs() < 1e-6 && varied; // "& of 4"
+                    let voice = if open {
+                        DrumVoice::OpenHat
+                    } else {
+                        DrumVoice::ClosedHat
+                    };
+                    hits.push(self.hit(voice, bar_start + self.swung(frac), v, prov));
                 }
-                let accent = if on_beat { 0.7 } else { 0.42 };
-                let v = accent * self.dyn_scale(energy);
-                let open = !on_beat && (frac - (bpb - 0.5)).abs() < 1e-6 && varied; // "& of 4" lift
-                let voice = if open {
-                    DrumVoice::OpenHat
-                } else {
-                    DrumVoice::ClosedHat
-                };
-                hits.push(self.hit(voice, bar_start + self.swung(frac), v, prov));
             }
 
             // --- Phrase-end fill: extra snares on the last half-bar's 16ths, because the

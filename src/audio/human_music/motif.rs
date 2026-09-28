@@ -95,13 +95,24 @@ impl Motif {
         }
     }
 
-    /// Take the first `take` notes (a fragment).
+    /// Take the first `take` notes (a fragment) — the *question*: an incomplete gesture.
     pub fn fragment(&self, take: usize) -> Motif {
         let n = take.clamp(1, self.len().max(1));
         Motif {
             id: self.id,
             degrees: self.degrees.iter().take(n).copied().collect(),
             rhythm: self.rhythm.iter().take(n).copied().collect(),
+        }
+    }
+
+    /// Take the notes *after* the first `skip` (the withheld remainder) — the *answer* that
+    /// completes a `fragment(skip)` question. Clamped so at least one note always remains.
+    pub fn tail(&self, skip: usize) -> Motif {
+        let s = skip.min(self.len().saturating_sub(1));
+        Motif {
+            id: self.id,
+            degrees: self.degrees.iter().skip(s).copied().collect(),
+            rhythm: self.rhythm.iter().skip(s).copied().collect(),
         }
     }
 
@@ -581,6 +592,21 @@ mod tests {
         };
         // pivot 0: 0-> 0, 2-> -2, 4-> -4.
         assert_eq!(m.invert().degrees, vec![0, -2, -4]);
+    }
+
+    #[test]
+    fn fragment_then_tail_reconstructs_the_motif() {
+        // The question (fragment) and its answer (tail) partition the motif: a Question phrase
+        // states the first k notes, and the later Answer completes the withheld remainder.
+        let m = Motif::seed_a();
+        let k = 2;
+        let q = m.fragment(k);
+        let a = m.tail(k);
+        assert_eq!(q.degrees.len(), k);
+        assert_eq!([q.degrees.clone(), a.degrees.clone()].concat(), m.degrees);
+        assert_eq!([q.rhythm.clone(), a.rhythm.clone()].concat(), m.rhythm);
+        // tail always leaves at least one note, even for an over-long skip.
+        assert!(!m.tail(999).degrees.is_empty());
     }
 
     #[test]

@@ -9,13 +9,13 @@
 //! and local density, and their labels become event provenance. Skins are natural
 //! transformations: swap the world and the form/motif/resolutions stay; the dialect changes.
 
+use super::discourse::DiscourseRole;
 use super::form::{Section, SectionKind, BEATS_PER_BAR};
 use super::groove::GrooveEngine;
 use super::harmony::{ChordSpan, HarmonyEngine};
 use super::intent::{IntentMorphism, MusicIntent};
-use super::motif::{motif_similarity, Motif, MotifBank};
-use super::plan::{CompositionPlan, Phrase, PhraseObligation, SectionFamily};
-use super::rng::Rng;
+use super::motif::{Motif, MotifBank};
+use super::plan::CompositionPlan;
 use super::score::{Note, Provenance, Role, Score, SfxEvent, SfxKind};
 use super::semantic::{EventKind, SemanticTrace, Tone};
 use super::theory::{Midi, Scale};
@@ -292,16 +292,16 @@ fn push_bass(score: &mut Score, at: f64, dur: f32, pitch: Midi, energy: f32, not
     });
 }
 
-/// The lead voice: one developing melody threaded through the plan's phrases.
+/// The lead voice: the thesis motif transformed by each phrase's **discourse role**.
 ///
-/// Round I re-seeded a pristine motif every section, inserted random rests, and snapped each
-/// note to a chord tone in isolation — preserving a motif `id` while destroying the phrase
-/// identity. This threads the *developed* motif through the form (restating the germ at
-/// A-sections and whenever it has drifted past the contract's transform budget, developing
-/// the current object otherwise), enters statements grid-aligned (no random offset), reads
-/// register from the phrase's now-live elevation intent, and realizes each whole statement
-/// jointly against the harmony via [`super::motif::realize_phrase`] instead of per-note
-/// snapping. The lead plays only where the arrangement gives it a voice — so it breathes.
+/// Every statement is a recognizable transform *of the thesis germ* (not a drifting object), so
+/// the lead always relates to what was established. Establish/Restate/Return state the germ;
+/// Depart transposes it; Intensify compresses its rhythm; Culminate lands the hook an octave up;
+/// **Question** states an incomplete fragment and records where it broke off, and the matching
+/// **Answer** completes exactly that withheld remainder ([`super::motif::Motif::tail`]); Dissolve
+/// evaporates to a couple of notes. Statements enter grid-aligned and are realized jointly against
+/// the harmony via [`super::motif::realize_phrase`]. The lead plays only where the arrangement
+/// gives it a voice — so it breathes.
 fn add_melody(
     score: &mut Score,
     chords: &[ChordSpan],
@@ -309,58 +309,47 @@ fn add_melody(
     scale: &Scale,
     seed: u64,
 ) {
-    let mut rng = Rng::new(seed ^ 0x3E10_D1E5);
     let bank = MotifBank::generate(scale, seed ^ 0x3E10_D1E5);
-    let germ = bank.identity.identity();
-    // Restate once the developed object has drifted more than the contract permits.
-    let floor = (1.0 - plan.contract.max_transform).clamp(0.0, 1.0);
     let two_bar = 2.0 * BEATS_PER_BAR;
+    // Question/Answer coupling: a Question remembers where it fragmented the germ so the next
+    // Answer completes exactly that withheld remainder.
+    let mut question_take: Option<usize> = None;
 
-    let mut current = bank.identity.clone();
-    for phrase in &plan.form.phrases {
+    for t in plan.targets() {
+        let phrase = t.phrase;
         // The melody breathes: it sounds only where the arrangement gives the lead a voice.
         if !plan.arrangement.at(phrase.ix as usize).lead.is_audible() {
             continue;
         }
+        let (motif, morph) = motif_for_role(t.goal.role, &bank, &mut question_take);
 
-        // Restate the germ (or land the hook at the climax), else develop the CURRENT object.
-        let (next, morph) = if matches!(phrase.family, SectionFamily::Climax) {
-            (bank.hook.clone(), "hook")
-        } else if matches!(phrase.family, SectionFamily::A)
-            || motif_similarity(&current.identity(), &germ) < floor
-        {
-            (bank.identity.clone(), "statement")
-        } else {
-            develop_current(&current, phrase, &mut rng)
-        };
-        current = next;
-
-        // Register from the phrase's intent — elevation is finally live (see IntentTimeline).
-        let octave = if matches!(phrase.family, SectionFamily::Climax) {
-            5
-        } else {
-            4 + (phrase.intent.register > 0.65) as i32
+        // Register realizes the role: the culmination and intensification climb, the dissolve
+        // settles low, everything else follows the phrase's elevation target.
+        let octave = match t.goal.role {
+            DiscourseRole::Culminate | DiscourseRole::Intensify => 5,
+            DiscourseRole::Dissolve => 3,
+            _ => 4 + (t.goal.register_target > 0.65) as i32,
         };
 
-        let stmt_beats = current.total_beats() as f64;
+        let stmt_beats = motif.total_beats() as f64;
         if stmt_beats < 1e-6 {
             continue;
         }
         let phrase_end = phrase.end_beat();
-        let mut t = phrase.start_beat();
+        let mut at = phrase.start_beat();
         let mut guard = 0;
-        while t + stmt_beats <= phrase_end + 1e-6 && guard < 32 {
+        while at + stmt_beats <= phrase_end + 1e-6 && guard < 32 {
             for (nb, dur, pitch) in
-                super::motif::realize_phrase(&current, chords, scale, 0, octave, t, 4)
+                super::motif::realize_phrase(&motif, chords, scale, 0, octave, at, 4)
             {
                 score.notes.push(Note {
                     start_beat: nb,
                     dur_beats: (dur * 0.9).max(0.1),
                     pitch,
-                    velocity: (0.55 + 0.4 * phrase.intent.energy).clamp(0.1, 1.0),
+                    velocity: (0.55 + 0.4 * t.goal.energy_target).clamp(0.1, 1.0),
                     role: Role::Lead,
                     prov: Provenance {
-                        motif_id: Some(current.id),
+                        motif_id: Some(motif.id),
                         motif_xform: Some(morph),
                         anchor: Some("motif"),
                         role_note: "melody",
@@ -369,9 +358,9 @@ fn add_melody(
                 });
             }
             // Breathe to the next 2-bar boundary — grid-aligned rest, not a random gap.
-            let after = t + stmt_beats;
+            let after = at + stmt_beats;
             let boundary = (after / two_bar).ceil() * two_bar;
-            t = if boundary > after + 1e-6 {
+            at = if boundary > after + 1e-6 {
                 boundary
             } else {
                 after
@@ -381,21 +370,35 @@ fn add_melody(
     }
 }
 
-/// Transform the CURRENT developed motif by the phrase's obligation — bounded,
-/// length-preserving moves so the statement keeps fitting the phrase and stays recognizable
-/// as the same idea (the restate-on-drift check in `add_melody` bounds cumulative drift).
-fn develop_current(m: &Motif, phrase: &Phrase, rng: &mut Rng) -> (Motif, &'static str) {
-    match phrase.obligation {
-        PhraseObligation::Lift => (m.transpose(2), "sequence+2"),
-        PhraseObligation::Release => (m.scale_rhythm(0.75), "diminish"),
-        PhraseObligation::Continuation => (m.transpose(-1), "sequence-1"),
-        _ => {
-            if rng.chance(0.5) {
-                (m.transpose(1), "sequence+1")
-            } else {
-                (m.scale_rhythm(1.25), "augment")
-            }
+/// The thesis-relative motif a discourse role calls for. Every result is a recognizable transform
+/// of the germ, so the lead's shape tracks the piece's argument (sign-consistent with the role):
+/// a Question fragments the germ (an incomplete gesture) and records where via `question_take`, so
+/// the matching Answer completes exactly that remainder with [`super::motif::Motif::tail`].
+fn motif_for_role(
+    role: DiscourseRole,
+    bank: &MotifBank,
+    question_take: &mut Option<usize>,
+) -> (Motif, &'static str) {
+    let germ = &bank.identity;
+    let glen = germ.len().max(2);
+    let k = (glen / 2).max(1);
+    match role {
+        DiscourseRole::Establish | DiscourseRole::Restate | DiscourseRole::Return => {
+            (germ.clone(), "statement")
         }
+        DiscourseRole::Depart => (germ.transpose(2), "depart"),
+        DiscourseRole::Intensify => (germ.scale_rhythm(0.75), "intensify"),
+        DiscourseRole::Question => {
+            *question_take = Some(k);
+            (germ.fragment(k), "question")
+        }
+        DiscourseRole::Withhold => (germ.fragment(k), "withhold"),
+        DiscourseRole::Culminate => (bank.hook.clone(), "culminate"),
+        DiscourseRole::Answer => {
+            let s = question_take.take().unwrap_or(k);
+            (germ.tail(s), "answer")
+        }
+        DiscourseRole::Dissolve => (germ.fragment(2.min(glen)), "dissolve"),
     }
 }
 
