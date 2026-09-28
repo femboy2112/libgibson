@@ -502,26 +502,33 @@ pub fn realize_phrase(
 
     let mut pitches: Vec<Midi> = (0..n).map(|i| cands[i][chosen[i]]).collect();
 
-    // Classify note `i` against its actual harmonic context and its realized neighbours in time.
+    // Classify note `i` against its FULL harmonic context: real chord-change boundaries and this
+    // note's own timing, so a distant future chord cannot lend it legitimacy (anticipation has a
+    // deadline) and a note whose sustained body crosses into dissonance is caught.
     let classify_at = |pitches: &[Midi], i: usize| {
-        let prev = if i > 0 { Some(pitches[i - 1]) } else { None };
-        let next = if i + 1 < n {
-            Some(pitches[i + 1])
-        } else {
-            None
+        let onset = starts[i];
+        let next_boundary = next_boundary_after(chords, onset);
+        let ctx = super::pitch::PitchContext {
+            pitch: pitches[i],
+            onset,
+            duration: motif.rhythm[i] as f64,
+            prev: if i > 0 { Some(pitches[i - 1]) } else { None },
+            next: if i + 1 < n {
+                Some(pitches[i + 1])
+            } else {
+                None
+            },
+            // The chord sounding just before the current span (what a suspension is held from).
+            prev_chord: cur_span_start(chords, onset)
+                .filter(|&cs| cs > 1e-9)
+                .and_then(|cs| chord_at(chords, cs - 1e-3)),
+            cur: chord_here[i],
+            // The actual upcoming harmony, at the next real chord boundary.
+            next_chord: next_boundary.and_then(|b| chord_at(chords, b)),
+            next_boundary,
+            is_strong: strong[i],
         };
-        let prev_chord = if i > 0 { chord_here[i - 1] } else { None };
-        let next_chord = if i + 1 < n { chord_here[i + 1] } else { None };
-        super::pitch::classify(
-            pitches[i],
-            prev,
-            next,
-            prev_chord,
-            chord_here[i],
-            next_chord,
-            scale,
-            strong[i],
-        )
+        super::pitch::classify(&ctx, scale)
     };
 
     // Justify-or-snap repair (the jazz principle's negative side): a note that classifies to `None`
@@ -562,6 +569,25 @@ pub fn realize_phrase(
 /// True when `beat` sits on an integer-beat onset (a strong beat).
 fn is_strong_beat(beat: f64) -> bool {
     (beat - beat.round()).abs() < 1e-6
+}
+
+/// The start beat of the first chord span that begins strictly after `beat` — the next harmonic
+/// boundary — if any.
+fn next_boundary_after(chords: &[ChordSpan], beat: f64) -> Option<f64> {
+    chords
+        .iter()
+        .map(|s| s.start_beat)
+        .filter(|&b| b > beat + 1e-6)
+        .min_by(|a, b| a.total_cmp(b))
+}
+
+/// The start beat of the span sounding at `beat` (the last span starting at or before it).
+fn cur_span_start(chords: &[ChordSpan], beat: f64) -> Option<f64> {
+    chords
+        .iter()
+        .map(|s| s.start_beat)
+        .filter(|&b| b <= beat + 1e-9)
+        .max_by(|a, b| a.total_cmp(b))
 }
 
 /// The chord sounding at `beat`: the last span whose `start_beat <= beat`, else the first.
