@@ -471,15 +471,10 @@ pub fn realize_phrase(
         chosen[i - 1] = back[i][chosen[i]];
     }
 
-    let pitches: Vec<Midi> = (0..n).map(|i| cands[i][chosen[i]]).collect();
+    let mut pitches: Vec<Midi> = (0..n).map(|i| cands[i][chosen[i]]).collect();
 
-    // Classify each realized pitch against its actual harmonic context and its neighbours in time
-    // — the jazz principle: a non-chord tone is labelled by the justification it carries
-    // (approach / passing / neighbour / suspension / anticipation / appoggiatura), or `None` when
-    // nothing explains it. This populates `Note.function` for the Score IR; it does not yet change
-    // which pitch was chosen.
-    let mut out = Vec::with_capacity(n);
-    for i in 0..n {
+    // Classify note `i` against its actual harmonic context and its realized neighbours in time.
+    let classify_at = |pitches: &[Midi], i: usize| {
         let prev = if i > 0 { Some(pitches[i - 1]) } else { None };
         let next = if i + 1 < n {
             Some(pitches[i + 1])
@@ -488,7 +483,7 @@ pub fn realize_phrase(
         };
         let prev_chord = if i > 0 { chord_here[i - 1] } else { None };
         let next_chord = if i + 1 < n { chord_here[i + 1] } else { None };
-        let func = super::pitch::classify(
+        super::pitch::classify(
             pitches[i],
             prev,
             next,
@@ -497,8 +492,40 @@ pub fn realize_phrase(
             next_chord,
             scale,
             strong[i],
-        );
-        out.push((starts[i], motif.rhythm[i], pitches[i], func));
+        )
+    };
+
+    // Justify-or-snap repair (the jazz principle's negative side): a note that classifies to `None`
+    // is an unjustified "wrong note" — not a chord tone, and no stepwise path or held/borrowed tone
+    // explains it. Replace ONLY those with the nearest tone of the chord sounding under them; a note
+    // that already carries a reason (approach / passing / neighbour / suspension / anticipation /
+    // appoggiatura) is never touched — we remove unexplained tension, never tension itself. Iterated
+    // to a fixed point, since repairing one note can change a neighbour's classification.
+    for _ in 0..4 {
+        let mut changed = false;
+        for i in 0..n {
+            if classify_at(&pitches, i).is_none() {
+                let fixed = nearest_chord_tone(pitches[i], chord_here[i], scale);
+                if fixed != pitches[i] {
+                    pitches[i] = fixed;
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    // Emit with each note's final PitchFunction for the Score IR.
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        out.push((
+            starts[i],
+            motif.rhythm[i],
+            pitches[i],
+            classify_at(&pitches, i),
+        ));
     }
     out
 }
@@ -517,6 +544,21 @@ fn chord_at(chords: &[ChordSpan], beat: f64) -> Option<Chord> {
         }
     }
     best.or_else(|| chords.first()).map(|s| s.chord)
+}
+
+/// The pitch nearest `p` whose pitch-class belongs to `chord` (falling back to the nearest scale
+/// pitch when there is no chord). Used to repair an unjustified note to a consonant chord tone.
+fn nearest_chord_tone(p: Midi, chord: Option<Chord>, scale: &Scale) -> Midi {
+    match chord {
+        Some(c) => {
+            let pcs = c.pitch_classes();
+            (p - 6..=p + 6)
+                .filter(|m| pcs.contains(&pitch_class(*m)))
+                .min_by_key(|m| (m - p).abs())
+                .unwrap_or_else(|| scale.nearest_scale_pitch(p))
+        }
+        None => scale.nearest_scale_pitch(p),
+    }
 }
 
 /// Up to `cap` pitch candidates near `anchor`, closest-first: chord tones on strong beats,

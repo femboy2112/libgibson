@@ -498,6 +498,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_realizer_leaves_no_unjustified_lead_notes() {
+        // The jazz principle enforced: after the justify-or-snap repair, every lead note either is a
+        // chord tone or carries a concrete non-chord justification (approach / passing / neighbour /
+        // suspension / anticipation / appoggiatura). None is left `None` — no unjustified "wrong
+        // notes". (Before the repair, BLACK_ICE alone left 7 of 36 lead notes unexplained.)
+        let trace = demo_trace(120.0);
+        for world in MusicWorld::all() {
+            let score = compose(&trace, &world, 2112);
+            let unjustified = score
+                .notes
+                .iter()
+                .filter(|n| n.role == Role::Lead && n.function.is_none())
+                .count();
+            assert_eq!(
+                unjustified, 0,
+                "{}: {} lead notes have no pitch justification",
+                world.name, unjustified
+            );
+        }
+    }
+
+    #[test]
     fn compose_produces_a_valid_multivoice_score() {
         let trace = demo_trace(120.0);
         for world in MusicWorld::all() {
