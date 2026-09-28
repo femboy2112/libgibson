@@ -177,31 +177,30 @@ impl FormGraph {
         bounds.dedup();
         let n = bounds.len() - 1; // number of phrases (bounds always has >= 2 entries)
 
-        // The climax lands on the phrase holding the peak-energy transition, clamped into the
-        // interior so it is neither the intro nor the coda.
-        let climax_beat = timeline
-            .transitions
-            .iter()
-            .max_by(|a, b| a.next.energy.partial_cmp(&b.next.energy).unwrap())
-            .map(|t| t.at_beat)
-            .unwrap_or(total_bars as f64 * BEATS_PER_BAR * 0.6);
-        let climax_bar = (climax_beat / BEATS_PER_BAR) as u32;
-        let raw_climax_ix = bounds
-            .windows(2)
-            .position(|w| climax_bar >= w[0] && climax_bar < w[1])
-            .unwrap_or(0);
-        let climax_ix = if n >= 3 {
-            raw_climax_ix.clamp(1, n - 2) as u32
-        } else {
-            (n - 1) as u32
-        };
-
-        let mut phrases = Vec::with_capacity(n);
-        let mut first_a: Option<u32> = None;
+        // Pass 1: materialize each phrase's bar span and intent trajectory.
+        let mut raw: Vec<(u32, u32, IntentSpan)> = Vec::with_capacity(n);
         for i in 0..n {
-            let ix = i as u32;
             let start_bar = bounds[i];
             let bars = bounds[i + 1] - bounds[i];
+            let start_beat = start_bar as f64 * BEATS_PER_BAR;
+            let end_beat = (start_bar + bars) as f64 * BEATS_PER_BAR;
+            raw.push((start_bar, bars, timeline.span(start_beat, end_beat)));
+        }
+
+        // The climax lands on the peak phrase via the SINGLE shared definition of "the peak"
+        // ([`super::discourse::culmination_index`], peak energy+tension) that the discourse layer's
+        // Culminate role also uses — so the arrangement (keyed on the Climax family) and the melody
+        // (keyed on Culminate) never disagree about which phrase is the peak (the Round IV
+        // split-brain fix). The interior clamp inside `culmination_index` keeps it off the intro/coda
+        // for pieces of three or more phrases.
+        let spans: Vec<IntentSpan> = raw.iter().map(|(_, _, s)| *s).collect();
+        let climax_ix = super::discourse::culmination_index(&spans) as u32;
+
+        // Pass 2: assign a positional family and build each phrase.
+        let mut phrases = Vec::with_capacity(n);
+        let mut first_a: Option<u32> = None;
+        for (i, (start_bar, bars, span)) in raw.into_iter().enumerate() {
+            let ix = i as u32;
             let family = if i == 0 {
                 SectionFamily::Intro
             } else if i == n - 1 {
@@ -219,9 +218,6 @@ impl FormGraph {
             } else {
                 SectionFamily::B
             };
-            let start_beat = start_bar as f64 * BEATS_PER_BAR;
-            let end_beat = (start_bar + bars) as f64 * BEATS_PER_BAR;
-            let span = timeline.span(start_beat, end_beat);
             phrases.push(Phrase {
                 ix,
                 start_bar,

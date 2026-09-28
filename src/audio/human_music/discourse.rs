@@ -27,7 +27,7 @@
 
 use super::contract::{CoherenceAnchor, CoherenceContract};
 use super::plan::{FormGraph, SectionFamily};
-use super::timeline::IntentTimeline;
+use super::timeline::{IntentSpan, IntentTimeline};
 
 /// A phrase's rhetorical job in the piece-level argument. Derived from the intent trajectory and
 /// the piece's salient anchors, not from a positional label.
@@ -383,24 +383,11 @@ impl DiscoursePlan {
             };
         }
 
-        // Culmination = the phrase of maximum commitment: peak (energy + tension) across the span.
-        // "First strictly greater" wins ties toward the *earlier* peak (the impact, not a later
-        // echo of the same level), and we keep it in the interior when there is one.
-        let score = |ix: usize| -> f32 {
-            let s = &phrases[ix].span;
-            s.peak_energy.energy + s.peak_tension.tension
-        };
-        let mut culmination = 0usize;
-        let mut best = f32::MIN;
-        for i in 0..n {
-            if score(i) > best + 1e-6 {
-                best = score(i);
-                culmination = i;
-            }
-        }
-        if n >= 3 {
-            culmination = culmination.clamp(1, n - 2);
-        }
+        // Culmination = the phrase of maximum commitment, via the SINGLE shared definition of "the
+        // peak" the form graph also uses for its `Climax` family — so the arrangement and the melody
+        // agree on which phrase is the peak.
+        let spans: Vec<IntentSpan> = phrases.iter().map(|p| p.span).collect();
+        let culmination = culmination_index(&spans);
         let peak_tension = phrases[culmination].span.peak_tension.tension;
 
         // Answer = the first phrase after the culmination whose trajectory actually lands a release
@@ -484,6 +471,33 @@ impl DiscoursePlan {
             answer: answer.map(|a| a as u32),
         }
     }
+}
+
+/// The culmination phrase index — the phrase of maximum commitment: peak (energy + tension) across
+/// its [`IntentSpan`], with an interior clamp for pieces of three or more phrases. This is the
+/// **single definition of "the peak"**, shared by the form graph's positional `Climax` family and
+/// this layer's [`DiscourseRole::Culminate`], so the arrangement (keyed on the family) and the
+/// melody (keyed on the role) can never disagree about which phrase is the peak — the Round IV fix
+/// for the second split-brain. "First strictly greater" wins ties toward the earlier peak (the
+/// impact, not a later echo of the same level).
+pub(crate) fn culmination_index(spans: &[IntentSpan]) -> usize {
+    let n = spans.len();
+    if n == 0 {
+        return 0;
+    }
+    let score = |i: usize| spans[i].peak_energy.energy + spans[i].peak_tension.tension;
+    let mut culmination = 0usize;
+    let mut best = f32::MIN;
+    for i in 0..n {
+        if score(i) > best + 1e-6 {
+            best = score(i);
+            culmination = i;
+        }
+    }
+    if n >= 3 {
+        culmination = culmination.clamp(1, n - 2);
+    }
+    culmination
 }
 
 /// Settle the most recent open obligation matching `prefer` (or the most recent of any kind),
