@@ -22,11 +22,12 @@ pub struct LeadRealization {
 
 /// Realize every planned lead statement, connecting each to the previous statement's exit pitch.
 pub fn realize_lead(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadRealization {
-    let scale = perf.region;
     let mut notes = Vec::new();
     let mut repairs = 0usize;
     let mut prev_exit: Option<Midi> = None;
     for st in &perf.statements {
+        // The statement speaks in the region in force where it starts (a Modulate moves it).
+        let scale = perf.region_at(st.start_beat);
         let motif = &st.motif;
         // A statement that answers another player's figure enters where that figure LEFT OFF: the
         // figure's own projection (the same one its owner plays) gives the pitch the lead continues

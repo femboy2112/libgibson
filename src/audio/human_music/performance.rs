@@ -26,7 +26,7 @@
 
 use super::action::{ActionCause, ActionKind, ActionPlan, Agent, Deferral};
 use super::backbone::{DeflectWitness, HarmonicGesture};
-use super::context::{analyze, HarmonicContext};
+use super::context::{analyze_regions, HarmonicContext};
 use super::ensemble::{plan_ensemble, Stage};
 use super::form::BEATS_PER_BAR;
 use super::harmony::{ChordSpan, HarmonyEngine};
@@ -36,7 +36,7 @@ use super::language::MusicalLanguage;
 use super::material::{InteractionMaterial, MaterialSource};
 use super::motif::MotifBank;
 use super::plan::CompositionPlan;
-use super::region::apply_harmonic_actions;
+use super::region::{apply_harmonic_actions, HarmonicFrame, RegionTimeline};
 use super::rng::Rng;
 use super::theory::Scale;
 use super::timeline::IntentTimeline;
@@ -185,7 +185,11 @@ pub struct AdmissionRecord {
 #[derive(Debug, Clone)]
 pub struct PerformancePlan {
     pub language: MusicalLanguage,
+    /// The HOME region (the world's tonic + mode). The region in force at a beat is
+    /// [`Self::region_at`]: a Modulate moves it for a planned span.
     pub region: Scale,
+    /// The tonal-region timeline (home, and every pivot / modulated span / return).
+    pub regions: RegionTimeline,
     pub chords: Vec<ChordSpan>,
     pub contexts: Vec<HarmonicContext>,
     pub deflects: Vec<DeflectWitness>,
@@ -232,14 +236,15 @@ impl PerformancePlan {
         let targets = plan.targets();
 
         // 1. Harmony: the backbone realized in this world and language, or the phrase engine.
-        let (mut chords, mut deflects) = match &plan.backbone {
+        let (mut chords, mut deflects, home_chord) = match &plan.backbone {
             Some(tl) => {
                 let r = super::backbone::realize(tl, world, &lang, seed);
-                (r.spans, r.deflects)
+                (r.spans, r.deflects, Some(r.cell.reset))
             }
             None => (
                 HarmonyEngine::new(world, seed).generate(&targets, plan.contract.resolution),
                 Vec::new(),
+                None,
             ),
         };
         // The backbone tiles whole bars; a partial final bar's harmony ends with the piece.
@@ -273,9 +278,20 @@ impl PerformancePlan {
         let mut stage = Stage::from_arrangement(plan);
         let admissions = admit_actions(&mut actions, &mut stage);
 
-        // 3. Harmonic actions edit the harmony (so they are heard, not merely labelled).
-        let edits = apply_harmonic_actions(&mut chords, &actions, &region);
-        let contexts = analyze(&chords, &region);
+        // 3. Harmonic actions edit the harmony (so they are heard, not merely labelled) and a
+        //    Modulate moves the tonal region itself; every context is analysed in its own region,
+        //    and the misses are re-measured on the harmony that actually sounds.
+        let frame = HarmonicFrame::from_plan(plan, timeline, region, total_beats);
+        let (edits, regions) = apply_harmonic_actions(&mut chords, &mut actions, &frame);
+        let contexts = analyze_regions(&chords, &regions);
+        if let (Some(tl), Some(home_chord)) = (&plan.backbone, home_chord) {
+            deflects = super::backbone::deflect_witnesses(
+                tl,
+                &chords,
+                &|b| regions.region_at(b),
+                home_chord,
+            );
+        }
 
         // 4. The shared rhythmic field.
         let accent = build_accent_grid(plan, &actions, &lang, seed);
@@ -339,6 +355,7 @@ impl PerformancePlan {
         let mut perf = PerformancePlan {
             language: lang,
             region,
+            regions,
             chords,
             contexts,
             deflects,
@@ -477,6 +494,11 @@ impl PerformancePlan {
     /// The harmonic context sounding at `beat`.
     pub fn context_at(&self, beat: f64) -> Option<&HarmonicContext> {
         super::context::context_at(&self.contexts, beat)
+    }
+
+    /// The tonal region in force at `beat` (home outside every modulated span).
+    pub fn region_at(&self, beat: f64) -> Scale {
+        self.regions.region_at(beat)
     }
 
     /// The responses assigned to `agent`.
@@ -738,7 +760,11 @@ fn admit_actions(actions: &mut ActionPlan, stage: &mut Stage) -> Vec<AdmissionRe
                 stage.admit(agent, s, e, a.id);
                 record(Admission::Admitted { agent });
             }
-            ActionKind::Resolve | ActionKind::Tonicize | ActionKind::Reharmonize => {
+            ActionKind::Resolve
+            | ActionKind::Tonicize
+            | ActionKind::Modulate
+            | ActionKind::Reharmonize
+            | ActionKind::Recolor => {
                 // The harmony moves for everybody; the verb needs a pitched player who is there.
                 match stage
                     .present(

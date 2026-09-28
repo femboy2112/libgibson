@@ -21,9 +21,11 @@
 //!   context's targets. Several lawful chord-scales are considered and the one most continuous with
 //!   the previous palette is chosen — a palette is not "new chord, run its scale".
 //! - [`HarmonicContext`] — all of the above for one [`ChordSpan`], analysed over a whole
-//!   progression by [`analyze`].
+//!   progression by [`analyze_regions`] (each context in the region in force where it starts;
+//!   [`analyze`] is the one-region wrapper).
 
 use super::harmony::ChordSpan;
+use super::region::RegionTimeline;
 use super::theory::{Chord, Function, Mode, Quality, Scale};
 
 /// Concrete evidence that a chord pulls toward `target_root`. Pull is a property of pitch content
@@ -245,7 +247,8 @@ pub struct HarmonicContext {
     pub chord: Chord,
     /// The bass pitch class (the root, until inversions are generated).
     pub bass_pc: i32,
-    /// The tonal region in force (tonic + mode).
+    /// The tonal region in force where this harmony starts (tonic + mode) — read by the relation,
+    /// tension, palette and expectation above; a modulated span's contexts carry the new region.
     pub region: Scale,
     /// The relation this harmony bears to its region and neighbours.
     pub relation: HarmonicRelation,
@@ -585,11 +588,24 @@ pub fn tension_of(
     }
 }
 
-/// Analyse a progression in `region` into per-harmony contexts: relation, tension vector, palette
-/// (chosen for continuity with the previous one) and expectation.
+/// Analyse a progression in one `region` into per-harmony contexts — [`analyze_regions`] over a
+/// single home span.
 pub fn analyze(chords: &[ChordSpan], region: &Scale) -> Vec<HarmonicContext> {
+    let end = chords
+        .last()
+        .map(|c| c.start_beat + c.dur_beats as f64)
+        .unwrap_or(0.0);
+    analyze_regions(chords, &RegionTimeline::home(*region, end))
+}
+
+/// Analyse a progression into per-harmony contexts, each IN THE REGION IN FORCE WHERE IT STARTS
+/// (Round VIIb: a Modulate really moves the region): relation, tension vector, palette (chosen
+/// for continuity with the previous one) and expectation all read the context's own region.
+pub fn analyze_regions(chords: &[ChordSpan], regions: &RegionTimeline) -> Vec<HarmonicContext> {
     let mut out: Vec<HarmonicContext> = Vec::with_capacity(chords.len());
     for (i, span) in chords.iter().enumerate() {
+        let region = regions.region_at(span.start_beat);
+        let region = &region;
         let prev = i.checked_sub(1).map(|j| &chords[j].chord);
         let next = chords.get(i + 1).map(|c| &c.chord);
         let prev_expects = out.last().and_then(|c| c.expects);

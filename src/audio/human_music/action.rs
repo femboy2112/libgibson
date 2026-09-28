@@ -69,10 +69,14 @@ pub enum ActionKind {
     ReEntry,
     /// A sustained suspension carried across the barline.
     Hold,
-    /// A harmony is recoloured or substituted.
+    /// A harmony is substituted (a tritone or diatonic third substitute).
     Reharmonize,
-    /// A local tonal centre is tonicized by an applied dominant (a real region change).
+    /// A harmony is recoloured over its own root (a same-root colour change).
+    Recolor,
+    /// A brief applied dominant into a non-tonic chord; the tonal region is unchanged.
     Tonicize,
+    /// A true tonal-region change (pivot, new dominant, the path in the new key, a planned return).
+    Modulate,
     /// The backbone's miss: the expected arrival is withheld.
     Deflect,
     /// Arrival on an expected target.
@@ -110,7 +114,9 @@ impl ActionKind {
             ActionKind::ReEntry => "re-entry",
             ActionKind::Hold => "hold",
             ActionKind::Reharmonize => "reharmonize",
+            ActionKind::Recolor => "recolor",
             ActionKind::Tonicize => "tonicize",
+            ActionKind::Modulate => "modulate",
             ActionKind::Deflect => "deflect",
             ActionKind::Resolve => "resolve",
             ActionKind::Displace => "displace",
@@ -887,7 +893,11 @@ impl ActionPlan {
                         vec![Agent::Lead],
                     )),
                     Pivot | Modulate => Some((
-                        ActionKind::Tonicize,
+                        if m == Modulate {
+                            ActionKind::Modulate
+                        } else {
+                            ActionKind::Tonicize
+                        },
                         Agent::Keys,
                         at,
                         BEATS_PER_BAR.min(total_beats - at),

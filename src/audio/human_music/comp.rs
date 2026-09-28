@@ -368,7 +368,7 @@ pub fn unison_lines(perf: &PerformancePlan, lead: &[Note]) -> Vec<(ActionId, Vec
             let Some(ctx) = perf.context_at(at) else {
                 break;
             };
-            let p = nearest_stable(ctx, perf.region.degree_pitch(deg, 4));
+            let p = nearest_stable(ctx, perf.region_at(at).degree_pitch(deg, 4));
             line.push((at, (d * 0.85).max(0.15) as f32, p, function_over(ctx, p)));
             at += d.max(0.25);
         }

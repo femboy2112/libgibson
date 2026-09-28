@@ -282,34 +282,90 @@ fn audit_one(
             n,
             "a stamped keys/pad voicing sustained across the hold",
         ),
-        ActionKind::Reharmonize | ActionKind::Tonicize => {
-            // The edit changed the chord, and a note sounding in the edited span carries a pitch
-            // class the new chord has and the old did not.
-            let ok = perf.edits.iter().filter(|x| x.action == a.id).any(|x| {
-                let span = perf
-                    .chords
+        ActionKind::Reharmonize | ActionKind::Recolor | ActionKind::Tonicize => {
+            // An edit OF THE KIND THE VERB NAMES changed the chord (a substitution, a same-root
+            // colour, an applied dominant that leaves the region alone), and a note sounding in the
+            // edited span carries a pitch class the new chord has and the old did not.
+            use super::region::EditKind as K;
+            let (kinds, evidence): (&[K], &'static str) = match a.kind {
+                ActionKind::Reharmonize => (
+                    &[K::TritoneSub, K::ThirdSub],
+                    "a tritone/third substitution by this action whose new pitch class sounds in the substituted span",
+                ),
+                ActionKind::Recolor => (
+                    &[K::Recolor],
+                    "a same-root recolouring by this action whose new pitch class sounds in the recoloured span",
+                ),
+                _ => (
+                    &[K::AppliedDominant],
+                    "an applied dominant by this action, the region unchanged, whose new pitch class sounds in its span",
+                ),
+            };
+            let region_kept = !perf.regions.spans.iter().any(|r| r.cause == Some(a.id));
+            let ok = region_kept
+                && perf
+                    .edits
                     .iter()
-                    .find(|c| (c.start_beat - x.at_beat).abs() < 1e-6);
-                let (lo, hi) = span
-                    .map(|c| (c.start_beat, c.start_beat + c.dur_beats as f64))
-                    .unwrap_or((x.at_beat, x.at_beat + 1.0));
-                let new_pcs: Vec<i32> = x
-                    .after
-                    .pitch_classes()
-                    .into_iter()
-                    .filter(|pc| !x.before.contains_pc(*pc))
-                    .collect();
-                evs.iter().any(|v| {
-                    v.pitch.is_some_and(|p| new_pcs.contains(&pitch_class(p)))
-                        && v.beat < hi - 1e-6
-                        && v.beat + v.dur > lo + 1e-6
-                })
-            });
+                    .filter(|x| x.action == a.id && kinds.contains(&x.kind))
+                    .any(|x| {
+                        let span = perf
+                            .chords
+                            .iter()
+                            .find(|c| (c.start_beat - x.at_beat).abs() < 1e-6);
+                        let (lo, hi) = span
+                            .map(|c| (c.start_beat, c.start_beat + c.dur_beats as f64))
+                            .unwrap_or((x.at_beat, x.at_beat + 1.0));
+                        let new_pcs: Vec<i32> = x
+                            .after
+                            .pitch_classes()
+                            .into_iter()
+                            .filter(|pc| !x.before.contains_pc(*pc))
+                            .collect();
+                        evs.iter().any(|v| {
+                            v.pitch.is_some_and(|p| new_pcs.contains(&pitch_class(p)))
+                                && v.beat < hi - 1e-6
+                                && v.beat + v.dur > lo + 1e-6
+                        })
+                    });
+            (ok, Harmonic, n, evidence)
+        }
+        ActionKind::Modulate => {
+            // An ESTABLISHED modulated span caused by this action, every context inside it analysed
+            // in the new region, and a sounding note inside it carrying a pitch class of the new
+            // collection that home does not have.
+            use super::region::RegionKind;
+            let ok = perf
+                .regions
+                .modulations()
+                .filter(|r| r.cause == Some(a.id) && r.established)
+                .any(|r| {
+                    let RegionKind::Modulated { from } = r.kind else {
+                        return false;
+                    };
+                    let inside: Vec<_> = perf
+                        .contexts
+                        .iter()
+                        .filter(|c| {
+                            c.start_beat >= r.start_beat - 1e-6 && c.start_beat < r.end_beat - 1e-6
+                        })
+                        .collect();
+                    let new_pcs: Vec<i32> = (0..12)
+                        .filter(|&p| r.scale.contains_pc(p) && !from.contains_pc(p))
+                        .collect();
+                    !inside.is_empty()
+                        && inside.iter().all(|c| c.region == r.scale)
+                        && evs.iter().any(|v| {
+                            v.pitch.is_some_and(|p| new_pcs.contains(&pitch_class(p)))
+                                && v.beat >= r.start_beat - 1e-6
+                                && v.beat < r.end_beat - 1e-6
+                        })
+                });
             (
                 ok,
                 Harmonic,
                 n,
-                "an edit by this action whose new pitch class actually sounds in the edited span",
+                "an established modulated span caused by this action, its contexts in the new region, \
+                 sounding a pitch class the home collection lacks",
             )
         }
         ActionKind::Deflect => {

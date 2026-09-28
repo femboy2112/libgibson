@@ -780,7 +780,7 @@ fn slot_path(
                 out.push((half, total - half, pointer));
             } else {
                 // In the full-colour language a statement-length reach climbs through the pointer's
-                // own applied dominant (V/V -> V7): a real local region change on the way up.
+                // own applied dominant (V/V -> V7): a tonicization on the way up (the region stays).
                 let applied = Chord::new((pointer.root_pc + 7).rem_euclid(12), Quality::Dom7);
                 for i in 0..n - 1 {
                     let c = if lang.color_depth >= 2 && n >= 4 && i + 2 == n {
@@ -857,12 +857,31 @@ pub fn realize(
         }
     }
 
+    let deflects = deflect_witnesses(timeline, &spans, &|_| region, cell.reset);
+    BackboneRealization {
+        cell,
+        spans,
+        deflects,
+    }
+}
+
+/// Measure the miss at every Deflect slot of `timeline` over the harmony `spans`, each in the
+/// region `region_at` its slot start (`fallback_pointer` when the slot opens the piece). Called on
+/// the backbone's own spans by [`realize`], and again by the performance AFTER the harmonic
+/// actions edited them (Round VIIb), so a tonicized or modulated pointer is measured as it sounds.
+pub(super) fn deflect_witnesses(
+    timeline: &BackboneTimeline,
+    spans: &[ChordSpan],
+    region_at: &dyn Fn(f64) -> Scale,
+    fallback_pointer: Chord,
+) -> Vec<DeflectWitness> {
     let mut deflects = Vec::new();
     for (si, slot) in timeline.slots.iter().enumerate() {
         if slot.gesture != HarmonicGesture::Deflect {
             continue;
         }
         let at = slot.start_beat();
+        let region = region_at(at);
         let Some(ix) = spans.iter().position(|s| (s.start_beat - at).abs() < 1e-6) else {
             continue;
         };
@@ -870,7 +889,7 @@ pub fn realize(
         let pointer = ix
             .checked_sub(1)
             .map(|j| spans[j].chord)
-            .unwrap_or(cell.reset);
+            .unwrap_or(fallback_pointer);
         let target = expected_target(&pointer, &region);
         let expected = expected_chord(target.unwrap_or(region.tonic_pc), &region);
         let raw = (actual.root_pc - expected.root_pc).rem_euclid(12);
@@ -891,11 +910,7 @@ pub fn realize(
             rejoin_beats: rejoin,
         });
     }
-    BackboneRealization {
-        cell,
-        spans,
-        deflects,
-    }
+    deflects
 }
 
 #[cfg(test)]

@@ -891,7 +891,7 @@ impl LeadOutlineDiagnostics {
 // ---------------------------------------------------------------------------------------------
 
 /// Every [`ActionKind`], in declaration (= label) order, for fixed-order tallies.
-const ACTION_KINDS: [ActionKind; 21] = [
+const ACTION_KINDS: [ActionKind; 23] = [
     ActionKind::Pickup,
     ActionKind::Push,
     ActionKind::Pullback,
@@ -901,7 +901,9 @@ const ACTION_KINDS: [ActionKind; 21] = [
     ActionKind::ReEntry,
     ActionKind::Hold,
     ActionKind::Reharmonize,
+    ActionKind::Recolor,
     ActionKind::Tonicize,
+    ActionKind::Modulate,
     ActionKind::Deflect,
     ActionKind::Resolve,
     ActionKind::Displace,
@@ -1809,15 +1811,41 @@ const RELATION_LABELS: [&str; 10] = [
 ];
 
 /// **Harmony-context diagnostics** — is the harmony a sequence of *relations* moving through local
-/// palettes, or one key with chords stapled on? Measured on the [`PerformancePlan`]'s
-/// [`super::context::HarmonicContext`] timeline and deflect witnesses. NOT a quality score.
+/// palettes and real tonal regions, or one key with chords stapled on? Measured on the
+/// [`PerformancePlan`]'s [`super::context::HarmonicContext`] timeline, region timeline, harmonic
+/// edits and deflect witnesses. NOT a quality score.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HarmonyContextDiagnostics {
     /// Harmonic contexts analysed.
     pub contexts: usize,
-    /// Consecutive contexts whose palette chord-scale (`palette.scale`: tonic + mode) differs. Note
-    /// this is the *chord-scale*, so a Dorian ii after an Ionian I counts even inside one key.
+    /// TRUE tonal-region changes, read from the [`super::region::RegionTimeline`]: a modulation and
+    /// its return are two; an applied dominant or a new chord-scale is none.
     pub region_transitions: usize,
+    /// Consecutive contexts whose palette chord-scale (`palette.scale`: tonic + mode) differs — the
+    /// Round VII `region_transitions`, renamed: a Dorian ii after an Ionian I counts even inside
+    /// one key.
+    pub palette_scale_transitions: usize,
+    /// Consecutive contexts whose palette chord-scale has a different pitch COLLECTION (a modal
+    /// relabel of the same seven pitch classes does not count).
+    pub palette_collection_changes: usize,
+    /// Modulate actions: established modulated spans plus the ones refused and relabelled.
+    pub modulations: usize,
+    /// Modulated spans that established their region.
+    pub modulations_established: usize,
+    /// Planned returns home.
+    pub returns: usize,
+    /// Contexts related to their successor as a tonicization (an applied dominant heard).
+    pub tonicizations: usize,
+    /// Applied dominants inserted by Tonicize actions (edits).
+    pub tonicize_edits: usize,
+    /// Same-root colour changes (Recolor edits).
+    pub recolorings: usize,
+    /// Real substitutions (tritone / diatonic third) by Reharmonize actions.
+    pub reharmonizations: usize,
+    /// The region timeline itself, for the report.
+    pub region_spans: Vec<super::region::RegionSpan>,
+    /// Harmonic verbs renamed to what they did, with the reason.
+    pub relabels: Vec<super::region::Relabel>,
     /// Relations per [`super::context::HarmonicRelation`] label, in declaration order; only labels that occur.
     pub relations: Vec<(&'static str, usize)>,
     /// Fraction of consecutive context pairs where every guide tone of the first is held or moves
@@ -1843,17 +1871,33 @@ pub struct HarmonyContextDiagnostics {
 impl HarmonyContextDiagnostics {
     /// Measure the harmonic-context timeline of `perf`.
     pub fn measure(perf: &PerformancePlan) -> HarmonyContextDiagnostics {
-        let cx = &perf.contexts;
+        Self::of(&perf.contexts, &perf.deflects, &perf.regions, &perf.edits)
+    }
+
+    /// Measure from the parts: contexts, deflect witnesses, the region timeline (whose `home` is
+    /// the piece's global region) and the harmonic edits.
+    pub fn of(
+        cx: &[super::context::HarmonicContext],
+        deflects: &[super::backbone::DeflectWitness],
+        regions: &super::region::RegionTimeline,
+        edits: &[super::region::HarmonicEdit],
+    ) -> HarmonyContextDiagnostics {
+        use super::region::EditKind;
         let pairs = cx.len().saturating_sub(1);
         let pc_dist = |a: i32, b: i32| {
             let d = (a - b).rem_euclid(12);
             d.min(12 - d)
         };
-        let (mut region_transitions, mut palette_changes, mut stepwise, mut common) =
+        let collection =
+            |s: &super::theory::Scale| (0..12).filter(|&p| s.contains_pc(p)).collect::<Vec<_>>();
+        let (mut palette_scale_transitions, mut palette_changes, mut stepwise, mut common) =
             (0usize, 0usize, 0usize, 0usize);
+        let mut palette_collection_changes = 0usize;
         for w in cx.windows(2) {
             let (a, b) = (&w[0], &w[1]);
-            region_transitions += usize::from(a.palette.scale != b.palette.scale);
+            palette_scale_transitions += usize::from(a.palette.scale != b.palette.scale);
+            palette_collection_changes +=
+                usize::from(collection(&a.palette.scale) != collection(&b.palette.scale));
             palette_changes += usize::from(a.palette.all() != b.palette.all());
             let steps = a
                 .palette
@@ -1869,27 +1913,47 @@ impl HarmonyContextDiagnostics {
             .map(|&l| (l, labels.iter().filter(|&&x| x == l).count()))
             .filter(|&(_, c)| c > 0)
             .collect();
-        let dn = perf.deflects.len();
+        let dn = deflects.len();
         let mean = |f: &dyn Fn(&super::backbone::DeflectWitness) -> f32| {
             if dn == 0 {
                 0.0
             } else {
-                perf.deflects.iter().map(f).sum::<f32>() / dn as f32
+                deflects.iter().map(f).sum::<f32>() / dn as f32
             }
         };
+        let edits_of = |k: &[EditKind]| edits.iter().filter(|e| k.contains(&e.kind)).count();
+        let modulations_established = regions.modulations().filter(|r| r.established).count();
         HarmonyContextDiagnostics {
             contexts: cx.len(),
-            region_transitions,
+            region_transitions: regions.transitions(),
+            palette_scale_transitions,
+            palette_collection_changes,
+            modulations: regions.modulations().count()
+                + regions
+                    .relabels
+                    .iter()
+                    .filter(|r| r.from == ActionKind::Modulate)
+                    .count(),
+            modulations_established,
+            returns: regions.returns().count(),
+            tonicizations: labels.iter().filter(|&&l| l == "tonicize").count(),
+            tonicize_edits: edits_of(&[EditKind::AppliedDominant]),
+            recolorings: edits_of(&[EditKind::Recolor]),
+            reharmonizations: edits_of(&[EditKind::TritoneSub, EditKind::ThirdSub]),
+            region_spans: regions.spans.clone(),
+            relabels: regions.relabels.clone(),
             relations,
             guide_tone_step_motion: ratio(stepwise, pairs),
             mean_common_tones: ratio(common, pairs),
             deflects: dn,
             mean_deflect_common: mean(&|d| d.common_tones as f32),
             mean_deflect_root_distance: mean(&|d| d.root_distance as f32),
-            deflects_prepared: perf.deflects.iter().filter(|d| d.prepared).count(),
+            deflects_prepared: deflects.iter().filter(|d| d.prepared).count(),
             palette_changes,
             global_scale_only_share: ratio(
-                cx.iter().filter(|c| c.palette.scale == perf.region).count(),
+                cx.iter()
+                    .filter(|c| c.palette.scale == regions.home)
+                    .count(),
                 cx.len(),
             ),
         }
@@ -1911,12 +1975,40 @@ impl HarmonyContextDiagnostics {
         );
         let _ = writeln!(
             s,
-            "  contexts={} region_transitions={} palette_changes={} global_scale_only_share={:.2}",
+            "  contexts={} region_transitions={} palette_scale_transitions={} palette_collection_changes={} palette_changes={} global_scale_only_share={:.2}",
             self.contexts,
             self.region_transitions,
+            self.palette_scale_transitions,
+            self.palette_collection_changes,
             self.palette_changes,
             self.global_scale_only_share
         );
+        let _ = writeln!(
+            s,
+            "  regions: {}",
+            super::region::dump_spans(&self.region_spans)
+        );
+        let _ = writeln!(
+            s,
+            "  modulations={} established={} returns={} tonicizations={} (applied-dominant edits={}) recolorings={} reharmonizations={}",
+            self.modulations,
+            self.modulations_established,
+            self.returns,
+            self.tonicizations,
+            self.tonicize_edits,
+            self.recolorings,
+            self.reharmonizations
+        );
+        for r in &self.relabels {
+            let _ = writeln!(
+                s,
+                "  relabel {} {} -> {}: {}",
+                r.action,
+                r.from.label(),
+                r.to.label(),
+                r.reason
+            );
+        }
         let _ = writeln!(s, "  relations: {rel}");
         let _ = writeln!(
             s,
@@ -2781,6 +2873,82 @@ mod tests {
             assert!(h.deflects >= 3, "{}: {h:?}", world.name);
             assert_eq!(h.deflects_prepared, h.deflects, "{}: {h:?}", world.name);
             assert!(h.mean_deflect_common >= 1.0, "{}: {h:?}", world.name);
+            // The flagship never leaves home: the chord-scale changes are NOT region changes.
+            assert_eq!(h.region_transitions, 0, "{}: {h:?}", world.name);
+            assert_eq!(h.modulations, 0);
         }
+    }
+
+    // --- (g) regions: four applied dominants are four tonicizations, zero region changes. ---
+    #[test]
+    fn applied_dominants_raise_palette_transitions_but_not_region_transitions() {
+        use super::super::action::{ActionCause, ActionPlan, Agent, EffectVector, MusicalAction};
+        use super::super::context::analyze_regions;
+        use super::super::ids::ActionId;
+        use super::super::region::{apply_harmonic_actions, HarmonicFrame, RegionTimeline};
+        use super::super::theory::{Mode, Scale};
+        let c = Scale::new(0, Mode::Ionian);
+        let prog = [
+            (0, Quality::Maj),
+            (9, Quality::Min),
+            (5, Quality::Maj),
+            (2, Quality::Min),
+            (4, Quality::Min),
+            (9, Quality::Min),
+            (7, Quality::Maj),
+            (0, Quality::Maj),
+        ];
+        let mut chords: Vec<ChordSpan> = prog
+            .iter()
+            .enumerate()
+            .map(|(i, &(r, q))| ChordSpan::test(i as f64 * 4.0, 4.0, Chord::new(r, q)))
+            .collect();
+        let before = HarmonyContextDiagnostics::of(
+            &analyze_regions(&chords, &RegionTimeline::home(c, 32.0)),
+            &[],
+            &RegionTimeline::home(c, 32.0),
+            &[],
+        );
+        let tonicize = |id: u32, at: f64| MusicalAction {
+            id: ActionId(id),
+            cause: ActionCause::Statement { phrase: 0 },
+            initiator: Agent::Keys,
+            start_beat: at,
+            dur_beats: 4.0,
+            kind: ActionKind::Tonicize,
+            target_beat: Some(at),
+            responders: Vec::new(),
+            binding: None,
+            pays: None,
+            effect: EffectVector::NEUTRAL,
+        };
+        let mut actions = ActionPlan {
+            actions: vec![
+                tonicize(0, 4.0),
+                tonicize(1, 8.0),
+                tonicize(2, 12.0),
+                tonicize(3, 16.0),
+            ],
+            ..ActionPlan::default()
+        };
+        let (edits, regions) =
+            apply_harmonic_actions(&mut chords, &mut actions, &HarmonicFrame::bare(c, 32.0));
+        let after = HarmonyContextDiagnostics::of(
+            &analyze_regions(&chords, &regions),
+            &[],
+            &regions,
+            &edits,
+        );
+        assert_eq!(after.tonicize_edits, 4, "{after:?}");
+        assert!(after.tonicizations >= 4, "{after:?}");
+        assert_eq!(after.region_transitions, 0, "{after:?}");
+        assert_eq!(before.region_transitions, 0);
+        assert!(
+            after.palette_scale_transitions > before.palette_scale_transitions,
+            "{} vs {}",
+            after.palette_scale_transitions,
+            before.palette_scale_transitions
+        );
+        assert!(after.report().contains("region_transitions=0"));
     }
 }
