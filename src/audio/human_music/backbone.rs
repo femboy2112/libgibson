@@ -381,4 +381,54 @@ mod tests {
             "odd cycle did not transform the reset"
         );
     }
+
+    fn permutations_of_four() -> Vec<[usize; 4]> {
+        let mut out = Vec::new();
+        for a in 0..4 {
+            for b in 0..4 {
+                if b == a {
+                    continue;
+                }
+                for c in 0..4 {
+                    if c == a || c == b {
+                        continue;
+                    }
+                    for d in 0..4 {
+                        if d != a && d != b && d != c {
+                            out.push([a, b, c, d]);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_spine_order_beats_a_scrambled_gesture_assignment() {
+        // Broken-DeflectedLift adversarial: relabel the four gestures across the cell's slots. The
+        // composed order (each slot's degree chosen to fit its gesture's target tension) must fit no
+        // worse than the average scramble — the Lift/Deflect/Open/Reset order is load-bearing.
+        for world in MusicWorld::all() {
+            let cell = generate_deflected_lift_cell(&world, 2112);
+            let degs: [i32; 4] = std::array::from_fn(|i| cell.slots[i].degree);
+            let fit = |perm: &[usize; 4]| -> f32 {
+                (0..4)
+                    .map(|i| {
+                        (degree_implied_tension(degs[i])
+                            - HarmonicGesture::CELL[perm[i]].target_tension())
+                        .abs()
+                    })
+                    .sum()
+            };
+            let perms = permutations_of_four();
+            let identity = fit(&[0, 1, 2, 3]);
+            let mean: f32 = perms.iter().map(&fit).sum::<f32>() / perms.len() as f32;
+            assert!(
+                identity <= mean + 1e-6,
+                "{}: composed spine fit {identity} is worse than the scramble mean {mean}",
+                world.name
+            );
+        }
+    }
 }

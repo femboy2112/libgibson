@@ -581,6 +581,75 @@ tracks the recurring hook, are the follow-ups); moving pitch justification INTO 
 harmonic field; and the R4-carried debts (typed obligations, delta-aware semantic grounding, a Prelude
 role, real `HarmonicLoop`/`Riff` objects). The decisive human listen remains the gate.
 
+### 3.14 Round VI — the space-jazz round: spine, intro, mix, melodic language, ensemble
+
+Round V's listen: the music had reached "Jerry-level" — intros were a single repeated chord, the
+lead sat far in front of the band, the melody read as beginner major-triad noodling, and the
+"Swing & A Miss" spine was inaudible at the root. The target became "Rick-level": Casiopea-grade
+fusion mechanics without transcribing any recording. Round VI is a *language* round, six commits,
+built spine-to-surface. The measurement instrument was landed **first**, generation-neutral, so
+before/after is read by the same tool.
+
+- **Measurement instrument.** `semantic::deflected_lift_trace` is a bittersweet-bounce fixture: two
+  lift→deflect→open→reset cycles cresting at Accent/Warning and releasing, never reaching
+  `Danger`/`Overlay` (reserved for the cinematic `demo_trace`). It drops
+  `role_direction_contradictions` 2→0 — the story stops fighting the grammar's up/up/down/down role
+  cycle. `diagnostics::LeadOutlineDiagnostics` is the anti-triad-noodling meter: root/3rd/5th vs
+  guide-tone-7th vs extension %, strong-beat extension rate, interval diversity, pitch-class entropy,
+  exact-arpeggio recurrence, syncopation, internal rests, range, and a composite `triad_noodle` flag.
+  An adversarial `1 3 5 3` fixture trips it; a guide-tone/color/rest line does not. The lab prints it;
+  `--story={bounce|cinematic|calm|rise}` selects the story (flagship default = bounce).
+- **A real harmonic backbone (`backbone.rs`).** `HarmonicGesture {Lift, Deflect, Open, Reset}` is an
+  abstract harmonic axis ORTHOGONAL to the rhetorical `DiscourseRole` (Round V conflated the two, in
+  the wrong order — the root cause of the missing spine). A `HarmonicCell` is generated once per
+  composition by a bounded, deterministic constraint search over diatonic candidates (gesture-fit +
+  distinctness + interior-tonic penalty + cyclic smoothness); no real progression is transcribed, only
+  the relational geometry. It tiles bar-aligned as a small cyclic identity the ear can learn, and later
+  cycles transform it (a warm color deepens). `HarmonyEngine::generate_with_backbone` tiles the cell for
+  DeflectedLift; `generate` is a thin wrapper (other grammars unchanged). The Open/Reset windows finally
+  use the extended `Quality` vocabulary (Add9/Maj9/Maj6/Min9/Min6/Maj7/Min7) that had sat dead in the
+  type. The lab prints the spine per cycle so a listener can point to reach→miss→open→reset in the dump.
+- **Intro composer + backbone-aware arrangement.** `IntroArchetype` (BassPickup/ThemeFragment/
+  HarmonicTease/PedalWithUpperMotion) makes the intro a designed subtraction that foreshadows the next
+  phrase and exposes ≥2 identity axes over the backbone's already-moving cell — never a lone pad
+  (`ArrangementPlan::intro_axes`). `ArrangementPlan::build` now consumes the `DiscoursePlan` and routes
+  **every** recurring `Culminate` hook to a Foreground lead, so the hook sings at every cycle, not just
+  the one positional Climax. `deflected_lift_roles` fills a partial interior remainder with a
+  ledger-balanced `Culminate`+`Answer` mini-cycle, so the hook recurs (≥2) while
+  `abandoned_obligations` stays 0.
+- **The mix — foreground ≠ louder.** The lead sat +11.5 dB over the harmony bed via three
+  multiplicative gain stages; the keys bus was at 0.003 rms. The `ArrangementRole::gain()` spread is
+  shrunk (Foreground-vs-Texture 7.5→2.9 dB at the role stage), the harmony bed lifted and the lead
+  trimmed per world, and `synth.rs` gains a per-bus `BusLevels` meter tapped before the stem-mute gate
+  (a pure observer — bit-exactness untouched). Realized BLACK_ICE lead-vs-keys cliff: 23.3→5.0 dB;
+  full-mix peak 0.970→0.777.
+- **Fusion melodic seeds + a visible repair counter.** The seed germs are no longer triad arpeggios:
+  `seed_a` is a syncopated call leaping to the 5th and stepping back; `seed_b` climbs to the 7th and
+  folds down. `realize_phrase_reporting` counts `repairs_performed` (notes the DP produced unjustified
+  and the snap pass fixed), surfaced through `Score::melody_repairs` and the lead-outline diagnostic —
+  the repair *rate* is now visible, not hidden behind a residual of 0 unjustified notes.
+- **Keys as a conversing comp voice.** Keys play 2–3 note upper-structure shells (carrying the guide
+  tones and licensed color the backbone supplies) on syncopated positions with an anticipation push,
+  instead of a single-note arp — a comping voice under the lead, foregrounded in the B phrases where
+  the lead rests.
+
+Measured (bounce, seed 2112): the spine recurs and is distinct per world (BLACK_ICE
+`Bm7b5→Cmaj7→Fadd9→Am6`, VAPOR `Gm7→Am7→Dm9→F6`, SWISS `Dm→Em→Am9→C6`); intro exposes ≥2 axes over the
+moving cell; the hook sings at ≥2 Culminate phrases; `strong_beat_ext_rate` 0.00→0.35–0.50, extension
+color 0.02→0.16 (BLACK_ICE), seventh 0.27 (VAPOR); keys 52→208 notes at rms just under the lead;
+`unjustified=0`, `role_direction_contradictions=0`, `abandoned_obligations=0`, deterministic,
+full-mix peak safe. Adversarial probes: triad-student, dead-intro, kaleidoscope (octave-invariant
+contour similarity), and broken-DeflectedLift-permutation (the spine order beats a scrambled gesture
+assignment).
+
+**Honest, deferred (not half-built).** `repairs_performed` is instrumented but not yet 0
+(6/1/1 across the worlds) — moving justification INTO candidate generation (targets-then-connect, a
+`MelodicEvent` representation with first-class rests, licensed strong-beat extensions/suspensions) is
+the deeper melody rewrite for a later round. The full fusion **ensemble** — a shared `AccentGrid`, an
+`EnsemblePlan` with call/response, unison figures and a complexity budget, and a bass melodic engine
+beyond the R5 walk — is staged; Round VI delivers the keys step. SFX pitches relative to the local
+harmony, and the R4/R5-carried debts, remain. The decisive human listen is still the gate.
+
 ## 4. Engines carried over unchanged from Round I
 
 These pieces of the Round I vertical slice are still in place and were not part of the
