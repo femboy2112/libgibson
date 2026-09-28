@@ -21,21 +21,24 @@ pub struct Motif {
 }
 
 impl Motif {
-    /// The signature seed: a rising-then-turning four-note call.
+    /// The signature seed: a syncopated call that leaps to a guide tone and steps back — a theme
+    /// with an interval story, not a triad exercise. The eighth-note pickup and the reach up to the
+    /// 6th degree (degree 5) give it a hook the ear can catch.
     pub fn seed_a() -> Motif {
         Motif {
             id: 0,
-            degrees: vec![0, 2, 4, 3],
-            rhythm: vec![1.0, 1.0, 1.0, 1.0],
+            degrees: vec![0, 4, 3, 5, 2],
+            rhythm: vec![0.5, 0.5, 1.0, 1.0, 1.0],
         }
     }
 
-    /// A contrasting, more active seed.
+    /// A darker, more restless seed: a stepwise climb that reaches for the 7th (degree 6) and folds
+    /// back down, front-loaded with sixteenth-into-eighth momentum.
     pub fn seed_b() -> Motif {
         Motif {
             id: 1,
-            degrees: vec![4, 3, 1, 0, 1],
-            rhythm: vec![0.5, 0.5, 1.0, 0.5, 1.5],
+            degrees: vec![0, 3, 6, 4, 3, 1],
+            rhythm: vec![0.5, 0.5, 0.5, 0.5, 1.0, 1.0],
         }
     }
 
@@ -535,6 +538,9 @@ impl ThematicTrajectory {
 /// with the original motif's contour direction between successive notes. The shape survives;
 /// the harmony is satisfied; nothing is diced.
 ///
+/// A realized note: `(start_beat, dur_beats, pitch, pitch-function)`.
+pub type RealizedNote = (f64, f32, Midi, Option<PitchFunction>);
+
 /// Output mirrors [`Motif::render`]'s timing and pitch and adds a per-note [`PitchFunction`]
 /// classification (the jazz principle: chord tone, or the justification a non-chord tone carries,
 /// or `None` for an unjustified note). Durations come from `motif.rhythm`, start times accumulate
@@ -550,10 +556,39 @@ pub fn realize_phrase(
     start_beat: f64,
     prev_pitch: Option<Midi>,
     max_candidates: usize,
-) -> Vec<(f64, f32, Midi, Option<PitchFunction>)> {
+) -> Vec<RealizedNote> {
+    realize_phrase_reporting(
+        motif,
+        chords,
+        scale,
+        root_degree,
+        octave,
+        start_beat,
+        prev_pitch,
+        max_candidates,
+    )
+    .0
+}
+
+/// Like [`realize_phrase`], additionally returning `repairs_performed`: how many notes the snap pass
+/// had to fix because the forward DP produced an unjustified pitch. Target for the canonical demos:
+/// zero — the search should choose justified tension rather than manufacture a wrong note and repair
+/// it. The counter makes any nonzero repair rate visible (surfaced through the Score and the
+/// lead-outline diagnostics) instead of hiding behind a residual of 0 unjustified notes.
+#[allow(clippy::too_many_arguments)]
+pub fn realize_phrase_reporting(
+    motif: &Motif,
+    chords: &[ChordSpan],
+    scale: &Scale,
+    root_degree: i32,
+    octave: i32,
+    start_beat: f64,
+    prev_pitch: Option<Midi>,
+    max_candidates: usize,
+) -> (Vec<RealizedNote>, usize) {
     let n = motif.len();
     if n == 0 {
-        return Vec::new();
+        return (Vec::new(), 0);
     }
     let cap = max_candidates.max(1);
 
@@ -628,7 +663,8 @@ pub fn realize_phrase(
         chosen[i - 1] = back[i][chosen[i]];
     }
 
-    let mut pitches: Vec<Midi> = (0..n).map(|i| cands[i][chosen[i]]).collect();
+    let pitches_dp: Vec<Midi> = (0..n).map(|i| cands[i][chosen[i]]).collect();
+    let mut pitches = pitches_dp.clone();
 
     // Classify note `i` against its FULL harmonic context: real chord-change boundaries and this
     // note's own timing, so a distant future chord cannot lend it legitimacy (anticipation has a
@@ -691,7 +727,8 @@ pub fn realize_phrase(
             classify_at(&pitches, i),
         ));
     }
-    out
+    let repairs = (0..n).filter(|&i| pitches[i] != pitches_dp[i]).count();
+    (out, repairs)
 }
 
 /// True when `beat` sits on an integer-beat onset (a strong beat).
@@ -832,7 +869,7 @@ mod tests {
     fn transpose_shifts_all_degrees() {
         let m = Motif::seed_a();
         let t = m.transpose(2);
-        assert_eq!(t.degrees, vec![2, 4, 6, 5]);
+        assert_eq!(t.degrees, vec![2, 6, 5, 7, 4]);
         assert_eq!(t.rhythm, m.rhythm); // rhythm unchanged
     }
 
@@ -883,12 +920,12 @@ mod tests {
         let m = Motif::seed_a();
         let s = Scale::new(0, Mode::Ionian);
         let notes = m.render(&s, 0, 4, 8.0);
-        assert_eq!(notes.len(), 4);
+        assert_eq!(notes.len(), 5);
         assert_eq!(notes[0].0, 8.0); // first at start
         assert_eq!(notes[0].2, 60); // degree 0 -> C4
-        assert_eq!(notes[1].0, 9.0); // after 1 beat
-        assert_eq!(notes[1].2, 64); // degree 2 -> E4
-        assert_eq!(notes[2].2, 67); // degree 4 -> G4 (0-based scale degree 4 = 5th tone)
+        assert_eq!(notes[1].0, 8.5); // after an eighth-note pickup
+        assert_eq!(notes[1].2, 67); // degree 4 -> G4 (0-based scale degree 4 = 5th tone)
+        assert_eq!(notes[2].2, 65); // degree 3 -> F4
     }
 
     // --- Round II motif toolkit ---------------------------------------------
@@ -959,11 +996,13 @@ mod tests {
         let chords = [c_major_span()];
         let out = realize_phrase(&m, &chords, &s, 0, 4, 0.0, None, 4);
 
-        assert_eq!(out.len(), 4);
-        // Timings mirror Motif::render exactly.
+        assert_eq!(out.len(), 5);
+        // Timings mirror Motif::render exactly (accumulated from the syncopated rhythm).
+        let mut expect = 0.0;
         for (i, (start, dur, _, _)) in out.iter().enumerate() {
             assert_eq!(*dur, m.rhythm[i]);
-            assert_eq!(*start, i as f64); // 0, 1, 2, 3
+            assert!((*start - expect).abs() < 1e-9);
+            expect += m.rhythm[i] as f64;
         }
         // Every integer-beat onset lands on a C-major tone {0,4,7}.
         for (start, _, pitch, _) in &out {

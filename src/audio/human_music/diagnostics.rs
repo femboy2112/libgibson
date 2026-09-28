@@ -652,6 +652,9 @@ fn on_strong_beat(beat: f64, beats_per_bar: f64) -> bool {
 pub struct LeadOutlineDiagnostics {
     /// Lead notes that sound over a known chord (the denominator for the percentages below).
     pub lead_notes: usize,
+    /// How many lead notes the snap pass had to repair during generation (read from the Score).
+    /// Target 0 — justified tension chosen in the search, not manufactured then fixed.
+    pub repairs_performed: usize,
     /// Fraction of lead notes that are the chord root.
     pub root_pct: f32,
     /// Fraction that are the chord third.
@@ -813,6 +816,7 @@ impl LeadOutlineDiagnostics {
 
         LeadOutlineDiagnostics {
             lead_notes: with_chord,
+            repairs_performed: score.melody_repairs,
             root_pct,
             third_pct,
             fifth_pct,
@@ -838,8 +842,9 @@ impl LeadOutlineDiagnostics {
         let _ = writeln!(s, "lead outline (anti-noodle — NOT a quality score):");
         let _ = writeln!(
             s,
-            "  lead_notes={} root={:.2} third={:.2} fifth={:.2} seventh={:.2} ext={:.2} connective={:.2} unjustified={:.2}",
+            "  lead_notes={} repairs={} root={:.2} third={:.2} fifth={:.2} seventh={:.2} ext={:.2} connective={:.2} unjustified={:.2}",
             self.lead_notes,
+            self.repairs_performed,
             self.root_pct,
             self.third_pct,
             self.fifth_pct,

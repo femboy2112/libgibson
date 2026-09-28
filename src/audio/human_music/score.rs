@@ -299,6 +299,11 @@ pub struct Score {
     pub tempo_bpm: f32,
     pub beats_per_bar: f64,
     pub total_beats: f64,
+    /// How many lead notes the melodic snap pass had to repair (the forward DP produced an
+    /// unjustified pitch that was snapped to a chord tone). A generation-side honesty metric — the
+    /// residual `unjustified_nonchord_notes` says 0 wrong notes SURVIVE, this says how many the
+    /// search had to fix. Target 0: choose justified tension, do not manufacture then repair.
+    pub melody_repairs: usize,
 }
 
 impl Score {
@@ -313,6 +318,7 @@ impl Score {
             tempo_bpm,
             beats_per_bar,
             total_beats,
+            melody_repairs: 0,
         }
     }
 

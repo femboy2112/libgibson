@@ -504,8 +504,10 @@ fn add_melody(
         let mut at = phrase.start_beat();
         let mut guard = 0;
         while at + stmt_beats <= phrase_end + 1e-6 && guard < 32 {
-            let notes =
-                super::motif::realize_phrase(&motif, chords, scale, 0, octave, at, prev_exit, 4);
+            let (notes, reps) = super::motif::realize_phrase_reporting(
+                &motif, chords, scale, 0, octave, at, prev_exit, 4,
+            );
+            score.melody_repairs += reps;
             if let Some(&(_, _, last_pitch, _)) = notes.last() {
                 prev_exit = Some(last_pitch);
             }
