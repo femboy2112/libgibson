@@ -24,6 +24,7 @@ pub mod harmony;
 pub mod instrument;
 pub mod intent;
 pub mod motif;
+pub mod pitch;
 pub mod plan;
 pub mod rng;
 pub mod score;

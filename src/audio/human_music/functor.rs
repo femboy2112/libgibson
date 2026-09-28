@@ -368,10 +368,10 @@ fn add_melody(
         let mut at = phrase.start_beat();
         let mut guard = 0;
         while at + stmt_beats <= phrase_end + 1e-6 && guard < 32 {
-            for (nb, dur, pitch) in
+            for (nb, dur, pitch, function) in
                 super::motif::realize_phrase(&motif, chords, scale, 0, octave, at, 4)
             {
-                score.notes.push(Note::new(
+                let mut note = Note::new(
                     nb,
                     (dur * 0.9).max(0.1),
                     pitch,
@@ -384,7 +384,9 @@ fn add_melody(
                         role_note: "melody",
                         ..Provenance::new(phrase.family.to_section_kind())
                     },
-                ));
+                );
+                note.function = function;
+                score.notes.push(note);
             }
             // Breathe to the next 2-bar boundary — grid-aligned rest, not a random gap.
             let after = at + stmt_beats;

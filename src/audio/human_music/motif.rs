@@ -6,6 +6,7 @@
 
 use super::harmony::ChordSpan;
 use super::rng::Rng;
+use super::score::PitchFunction;
 use super::theory::{pitch_class, Chord, Midi, Mode, Scale};
 
 /// A motif: parallel scale-degree and rhythm vectors sharing an identity.
@@ -381,9 +382,11 @@ impl MotifBank {
 /// with the original motif's contour direction between successive notes. The shape survives;
 /// the harmony is satisfied; nothing is diced.
 ///
-/// Output matches [`Motif::render`] exactly in shape and length: durations come from
-/// `motif.rhythm`, start times accumulate from `start_beat`. Deterministic — no RNG, and ties
-/// resolve to the candidate nearest the intended pitch (candidate lists are closest-first).
+/// Output mirrors [`Motif::render`]'s timing and pitch and adds a per-note [`PitchFunction`]
+/// classification (the jazz principle: chord tone, or the justification a non-chord tone carries,
+/// or `None` for an unjustified note). Durations come from `motif.rhythm`, start times accumulate
+/// from `start_beat`. Deterministic — no RNG, and ties resolve to the candidate nearest the
+/// intended pitch (candidate lists are closest-first).
 pub fn realize_phrase(
     motif: &Motif,
     chords: &[ChordSpan],
@@ -392,7 +395,7 @@ pub fn realize_phrase(
     octave: i32,
     start_beat: f64,
     max_candidates: usize,
-) -> Vec<(f64, f32, Midi)> {
+) -> Vec<(f64, f32, Midi, Option<PitchFunction>)> {
     let n = motif.len();
     if n == 0 {
         return Vec::new();
@@ -468,9 +471,34 @@ pub fn realize_phrase(
         chosen[i - 1] = back[i][chosen[i]];
     }
 
+    let pitches: Vec<Midi> = (0..n).map(|i| cands[i][chosen[i]]).collect();
+
+    // Classify each realized pitch against its actual harmonic context and its neighbours in time
+    // — the jazz principle: a non-chord tone is labelled by the justification it carries
+    // (approach / passing / neighbour / suspension / anticipation / appoggiatura), or `None` when
+    // nothing explains it. This populates `Note.function` for the Score IR; it does not yet change
+    // which pitch was chosen.
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
-        out.push((starts[i], motif.rhythm[i], cands[i][chosen[i]]));
+        let prev = if i > 0 { Some(pitches[i - 1]) } else { None };
+        let next = if i + 1 < n {
+            Some(pitches[i + 1])
+        } else {
+            None
+        };
+        let prev_chord = if i > 0 { chord_here[i - 1] } else { None };
+        let next_chord = if i + 1 < n { chord_here[i + 1] } else { None };
+        let func = super::pitch::classify(
+            pitches[i],
+            prev,
+            next,
+            prev_chord,
+            chord_here[i],
+            next_chord,
+            scale,
+            strong[i],
+        );
+        out.push((starts[i], motif.rhythm[i], pitches[i], func));
     }
     out
 }
@@ -708,12 +736,12 @@ mod tests {
 
         assert_eq!(out.len(), 4);
         // Timings mirror Motif::render exactly.
-        for (i, (start, dur, _)) in out.iter().enumerate() {
+        for (i, (start, dur, _, _)) in out.iter().enumerate() {
             assert_eq!(*dur, m.rhythm[i]);
             assert_eq!(*start, i as f64); // 0, 1, 2, 3
         }
         // Every integer-beat onset lands on a C-major tone {0,4,7}.
-        for (start, _, pitch) in &out {
+        for (start, _, pitch, _) in &out {
             if (start - start.round()).abs() < 1e-6 {
                 let pc = pitch.rem_euclid(12);
                 assert!(pc == 0 || pc == 4 || pc == 7, "pc {pc} off the chord");
