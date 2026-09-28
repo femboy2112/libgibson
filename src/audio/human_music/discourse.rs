@@ -584,13 +584,13 @@ pub(crate) fn resolve_obligations(
 
 /// A reusable **song backbone** — the recurrent section identity a grammar imposes, expressed as a
 /// per-phrase [`DiscourseRole`] sequence. Most grammars derive roles positionally from the
-/// trajectory ([`role_for`]); a grammar that carries an explicit backbone overrides that with its
+/// trajectory (`role_for`); a grammar that carries an explicit backbone overrides that with its
 /// own shape. Today only [`CompositionGrammar::DeflectedLift`] does.
 pub struct SongBackbone;
 
 impl SongBackbone {
     /// The role sequence a `grammar` imposes over `n` phrases, or `None` to fall back to the
-    /// trajectory-positional [`role_for`].
+    /// trajectory-positional `role_for`.
     pub fn roles(grammar: CompositionGrammar, n: usize) -> Option<Vec<DiscourseRole>> {
         match grammar {
             CompositionGrammar::DeflectedLift => Some(deflected_lift_roles(n)),
