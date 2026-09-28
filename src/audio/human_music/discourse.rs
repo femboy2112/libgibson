@@ -296,6 +296,49 @@ impl DiscoursePlan {
             .unwrap_or_else(|| self.goals.last().expect("discourse plan has no goals"))
     }
 
+    /// The adversarial **"shuffle the sentences"**: reverse the rhetorical roles across phrases
+    /// while keeping every phrase's position and trajectory targets fixed, then recompute the
+    /// obligation ledger for that order. Each phrase is still a locally valid musical object, but
+    /// the argument now runs backwards — the discourse diagnostics must score it worse (abandoned
+    /// debts, wrong-sign role directions, a culmination landing after its answer). This is exactly
+    /// the maintainer's "grammatically correct song whose meaning has been scrambled", made into a
+    /// regression the machine can catch without an aesthetic oracle.
+    pub fn scrambled(&self) -> DiscoursePlan {
+        let n = self.goals.len();
+        if n == 0 {
+            return self.clone();
+        }
+        let roles: Vec<DiscourseRole> = self.goals.iter().rev().map(|g| g.role).collect();
+        let answer = self.answer.map(|a| n - 1 - a as usize);
+        let (ledger, creates, pays) = resolve_obligations(&roles, answer);
+        let goals: Vec<PhraseGoal> = self
+            .goals
+            .iter()
+            .enumerate()
+            .map(|(i, g)| {
+                let role = roles[i];
+                PhraseGoal {
+                    role,
+                    closure: closure_for(role),
+                    next_goal: None,
+                    thematic_distance: role_thematic_distance(role),
+                    harmonic_distance: role_harmonic_distance(role),
+                    creates: creates[i],
+                    pays: pays[i],
+                    // Each phrase KEEPS its own trajectory targets — only the rhetoric is permuted.
+                    ..*g
+                }
+            })
+            .collect();
+        DiscoursePlan {
+            thesis: self.thesis.clone(),
+            goals,
+            ledger,
+            culmination: (n as u32 - 1) - self.culmination,
+            answer: self.answer.map(|a| (n as u32 - 1) - a),
+        }
+    }
+
     /// Build the discourse plan from the causal timeline, the form graph and the contract.
     ///
     /// The plan is derived from the intent **trajectory** (each phrase's [`super::timeline::IntentSpan`]),
@@ -371,107 +414,58 @@ impl DiscoursePlan {
         // Establish/rise midpoint (for splitting Depart from Intensify in the run-in).
         let rise_mid = culmination / 2;
 
-        // --- Forward pass: assign roles and open/settle obligations. ---
-        let mut ledger = ObligationLedger::default();
-        let mut open: Vec<usize> = Vec::new(); // indices into ledger.obligations
-        let mut next_id = 0u32;
-        let mut goals: Vec<PhraseGoal> = Vec::with_capacity(n);
+        // Assign a rhetorical role to every phrase — a consequence of the trajectory and anchors.
+        let roles: Vec<DiscourseRole> = (0..n)
+            .map(|i| {
+                role_for(
+                    i,
+                    n,
+                    culmination,
+                    answer,
+                    rise_mid,
+                    matches!(
+                        phrases[i].family,
+                        SectionFamily::A | SectionFamily::APrime { .. }
+                    ),
+                )
+            })
+            .collect();
 
-        for (i, p) in phrases.iter().enumerate() {
-            let role = role_for(
-                i,
-                n,
-                culmination,
-                answer,
-                rise_mid,
-                matches!(p.family, SectionFamily::A | SectionFamily::APrime { .. }),
-            );
+        // Open and settle the cross-phrase obligation ledger for this ordering.
+        let (ledger, creates, pays) = resolve_obligations(&roles, answer);
 
-            // Referent: Restate/Return look home; Answer looks at the culmination it discharges.
-            let refers_to = match role {
-                DiscourseRole::Restate | DiscourseRole::Return => Some(established_by),
-                DiscourseRole::Answer => Some(culmination as u32),
-                _ => None,
-            };
-
-            // Obligations opened by this role.
-            let mut creates = None;
-            let mut open_new = |kind: ObligationKind, strength: f32, deferrable: bool| {
-                let id = next_id;
-                next_id += 1;
-                (id, kind, strength, deferrable)
-            };
-            let to_open = match role {
-                DiscourseRole::Question => {
-                    Some(open_new(ObligationKind::MotifQuestion, 0.7, false))
-                }
-                DiscourseRole::Withhold => {
-                    Some(open_new(ObligationKind::SuspendedCadence, 0.8, false))
-                }
-                DiscourseRole::Culminate => {
-                    Some(open_new(ObligationKind::SuspendedCadence, 1.0, false))
-                }
-                DiscourseRole::Depart => {
-                    Some(open_new(ObligationKind::HarmonicDeparture, 0.6, true))
-                }
-                DiscourseRole::Intensify => {
-                    Some(open_new(ObligationKind::RegisterAscent, 0.5, true))
-                }
-                _ => None,
-            };
-            if let Some((id, kind, strength, deferrable)) = to_open {
-                let deadline = match kind {
-                    ObligationKind::MotifQuestion | ObligationKind::SuspendedCadence => {
-                        answer.map(|a| a as u32).or(Some((n - 1) as u32))
-                    }
-                    _ => Some((n - 1) as u32),
+        // A goal per phrase: targets grounded in the phrase's own trajectory; closure, distances
+        // and novelty from its role; referents to earlier material.
+        let mut goals: Vec<PhraseGoal> = phrases
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let role = roles[i];
+                let refers_to = match role {
+                    DiscourseRole::Restate | DiscourseRole::Return => Some(established_by),
+                    DiscourseRole::Answer => Some(culmination as u32),
+                    _ => None,
                 };
-                ledger.obligations.push(Obligation {
-                    id,
-                    kind,
-                    source_phrase: i as u32,
-                    deadline,
-                    strength,
-                    deferrable,
-                    resolved_by: None,
-                });
-                open.push(ledger.obligations.len() - 1);
-                creates = Some(id);
-            }
-
-            // Obligations settled by this role.
-            let pays = match role {
-                DiscourseRole::Answer => pay(&mut ledger.obligations, &mut open, i as u32, None),
-                DiscourseRole::Return => pay(
-                    &mut ledger.obligations,
-                    &mut open,
-                    i as u32,
-                    Some(ObligationKind::HarmonicDeparture),
-                ),
-                DiscourseRole::Dissolve => pay(&mut ledger.obligations, &mut open, i as u32, None),
-                _ => None,
-            };
-
-            let closure = closure_for(role);
-            let (energy_target, tension_target, density_target, register_target) =
-                targets_for(role, p);
-            goals.push(PhraseGoal {
-                phrase_ix: i as u32,
-                role,
-                closure,
-                refers_to,
-                next_goal: None, // filled below
-                energy_target,
-                tension_target,
-                density_target,
-                register_target,
-                thematic_distance: role_thematic_distance(role),
-                harmonic_distance: role_harmonic_distance(role),
-                novelty_budget: role_novelty(role, contract.novelty_budget),
-                creates,
-                pays,
-            });
-        }
+                let (energy_target, tension_target, density_target, register_target) =
+                    targets_for(role, p);
+                PhraseGoal {
+                    phrase_ix: i as u32,
+                    role,
+                    closure: closure_for(role),
+                    refers_to,
+                    next_goal: None, // filled below
+                    energy_target,
+                    tension_target,
+                    density_target,
+                    register_target,
+                    thematic_distance: role_thematic_distance(role),
+                    harmonic_distance: role_harmonic_distance(role),
+                    novelty_budget: role_novelty(role, contract.novelty_budget),
+                    creates: creates[i],
+                    pays: pays[i],
+                }
+            })
+            .collect();
 
         // --- Backward pass: each phrase's next landing goal (what it leads toward). ---
         let mut next_landing: Option<u32> = None;
@@ -507,6 +501,66 @@ fn pay(
     let oi = open.remove(pos);
     obligations[oi].resolved_by = Some(payer);
     Some(obligations[oi].id)
+}
+
+/// Open and settle the cross-phrase obligation ledger for a role ordering, returning the ledger
+/// and, per phrase, the obligation id it opens and the id it settles. Shared by
+/// [`DiscoursePlan::build`] and the adversarial [`DiscoursePlan::scrambled`] probe, so both resolve
+/// debts by exactly the same rules — the scramble only changes the *order*, never the bookkeeping.
+pub(crate) fn resolve_obligations(
+    roles: &[DiscourseRole],
+    answer: Option<usize>,
+) -> (ObligationLedger, Vec<Option<u32>>, Vec<Option<u32>>) {
+    let n = roles.len();
+    let mut ledger = ObligationLedger::default();
+    let mut open: Vec<usize> = Vec::new(); // indices into ledger.obligations
+    let mut next_id = 0u32;
+    let mut creates = vec![None; n];
+    let mut pays = vec![None; n];
+
+    for (i, &role) in roles.iter().enumerate() {
+        let to_open = match role {
+            DiscourseRole::Question => Some((ObligationKind::MotifQuestion, 0.7, false)),
+            DiscourseRole::Withhold => Some((ObligationKind::SuspendedCadence, 0.8, false)),
+            DiscourseRole::Culminate => Some((ObligationKind::SuspendedCadence, 1.0, false)),
+            DiscourseRole::Depart => Some((ObligationKind::HarmonicDeparture, 0.6, true)),
+            DiscourseRole::Intensify => Some((ObligationKind::RegisterAscent, 0.5, true)),
+            _ => None,
+        };
+        if let Some((kind, strength, deferrable)) = to_open {
+            let id = next_id;
+            next_id += 1;
+            let deadline = match kind {
+                ObligationKind::MotifQuestion | ObligationKind::SuspendedCadence => {
+                    answer.map(|a| a as u32).or(Some((n - 1) as u32))
+                }
+                _ => Some((n - 1) as u32),
+            };
+            ledger.obligations.push(Obligation {
+                id,
+                kind,
+                source_phrase: i as u32,
+                deadline,
+                strength,
+                deferrable,
+                resolved_by: None,
+            });
+            open.push(ledger.obligations.len() - 1);
+            creates[i] = Some(id);
+        }
+        pays[i] = match role {
+            DiscourseRole::Answer => pay(&mut ledger.obligations, &mut open, i as u32, None),
+            DiscourseRole::Return => pay(
+                &mut ledger.obligations,
+                &mut open,
+                i as u32,
+                Some(ObligationKind::HarmonicDeparture),
+            ),
+            DiscourseRole::Dissolve => pay(&mut ledger.obligations, &mut open, i as u32, None),
+            _ => None,
+        };
+    }
+    (ledger, creates, pays)
 }
 
 /// The rhetorical role of phrase `i` given the piece's anchors. Roles are consequences of the

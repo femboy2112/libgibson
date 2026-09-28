@@ -16,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use gibson::audio::human_music::diagnostics::CoherenceDiagnostics;
+use gibson::audio::human_music::diagnostics::{CoherenceDiagnostics, DiscourseDiagnostics};
 use gibson::audio::human_music::functor::compose_with_plan;
 use gibson::audio::human_music::synth::HumanMusicSynth;
 use gibson::audio::human_music::{demo_trace, MusicWorld, WorldId};
@@ -86,7 +86,8 @@ fn main() -> std::io::Result<()> {
         );
         print!("{}", score.summary());
         print!("{}", plan.dump());
-        println!("{}", CoherenceDiagnostics::measure(&plan, &score).report());
+        print!("{}", CoherenceDiagnostics::measure(&plan, &score).report());
+        println!("{}", DiscourseDiagnostics::measure(&plan, &score).report());
         println!(
             "render: {real_secs:.1}s audio in {:.0}ms  ({:.1}x realtime)  peak={:.3} rms={:.3} dc=({:.4},{:.4})",
             render_wall.as_secs_f64() * 1000.0,

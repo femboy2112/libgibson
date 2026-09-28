@@ -10,6 +10,7 @@
 //! prove each measurement catches the exact failure it names (positive / null / mutation
 //! controls). A green diagnostic is evidence of structure, never of taste.
 
+use super::discourse::{Closure, DiscourseRole};
 use super::plan::CompositionPlan;
 use super::score::{Role, Score};
 use super::theory::{Function, Midi};
@@ -190,6 +191,177 @@ impl CoherenceDiagnostics {
     }
 }
 
+/// **Discourse diagnostics** — concrete measurements of musical DIRECTION (not taste, not quality).
+///
+/// Where [`CoherenceDiagnostics`] asks "is this recognizably itself?", these ask "does it know
+/// where it came from and where it's going?": are the cross-phrase debts paid, does the culmination
+/// precede its answer, do the phrase roles move tension the way they claim, is a salient event ever
+/// swallowed mid-phrase. Each field is an independent count; [`DiscourseDiagnostics::faults`] sums
+/// the defects *only* so the adversarial shuffle probe can assert "strictly worse", and every
+/// component stays separately inspectable. This is the layer that catches the Round III failure —
+/// grammatically valid phrases in an incoherent order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DiscourseDiagnostics {
+    pub phrases: usize,
+    /// Phrases with no discourse relation to past or future (should be ~0).
+    pub orphan_phrases: usize,
+    /// Non-deferrable obligations left open at the end — a raised expectation never paid.
+    pub abandoned_obligations: usize,
+    /// Strong terminal closures that settle nothing and are not the final dissolve — a full stop
+    /// that resolves no open expectation.
+    pub unearned_strong_closures: usize,
+    /// Phrases whose role claims one tension direction while the trajectory moves the other way
+    /// (e.g. an "intensify" where tension actually falls).
+    pub role_direction_contradictions: usize,
+    /// Phrases that swallow a salient semantic event strictly inside them (boundary latency).
+    pub swallowed_salient_events: usize,
+    /// Distinct closure strengths used (>1 means the closure hierarchy is actually in play).
+    pub distinct_closures: usize,
+    /// Motif questions posed and answers delivered (from lead provenance).
+    pub motif_questions: usize,
+    pub motif_answers: usize,
+    /// Whether the culmination precedes the answer (the core teleology invariant); `true` when the
+    /// piece is intentionally unresolved (no answer at all).
+    pub culmination_before_answer: bool,
+    /// Average strength of the return to the thesis at Return/Answer phrases, in `[0,1]`.
+    pub thesis_return_strength: f32,
+}
+
+impl DiscourseDiagnostics {
+    /// Measure the discourse direction of `score` against the `plan` it was realized from.
+    pub fn measure(plan: &CompositionPlan, score: &Score) -> DiscourseDiagnostics {
+        let d = &plan.discourse;
+        let goals = &d.goals;
+        let n = goals.len();
+
+        let orphan_phrases = goals
+            .iter()
+            .filter(|g| {
+                g.refers_to.is_none()
+                    && g.next_goal.is_none()
+                    && !matches!(g.role, DiscourseRole::Establish | DiscourseRole::Dissolve)
+            })
+            .count();
+
+        let abandoned_obligations = d.ledger.abandoned_count();
+
+        let unearned_strong_closures = goals
+            .iter()
+            .filter(|g| {
+                g.closure.is_terminal() && g.pays.is_none() && g.role != DiscourseRole::Dissolve
+            })
+            .count();
+
+        let mut role_direction_contradictions = 0usize;
+        for w in goals.windows(2) {
+            let dir = w[1].role.tension_direction();
+            let delta = w[1].tension_target - w[0].tension_target;
+            if (dir > 0 && delta < -0.05) || (dir < 0 && delta > 0.05) {
+                role_direction_contradictions += 1;
+            }
+        }
+
+        let swallowed_salient_events = plan
+            .form
+            .phrases
+            .iter()
+            .filter(|p| p.span.crosses_salient())
+            .count();
+
+        let mut seen: Vec<Closure> = Vec::new();
+        for g in goals {
+            if !seen.contains(&g.closure) {
+                seen.push(g.closure);
+            }
+        }
+        let distinct_closures = seen.len();
+
+        let motif_questions = score
+            .notes
+            .iter()
+            .filter(|nt| nt.prov.motif_xform == Some("question"))
+            .count();
+        let motif_answers = score
+            .notes
+            .iter()
+            .filter(|nt| nt.prov.motif_xform == Some("answer"))
+            .count();
+
+        let culmination_before_answer = d.answer.is_none_or(|a| d.culmination < a);
+
+        let returns: Vec<f32> = goals
+            .iter()
+            .filter(|g| matches!(g.role, DiscourseRole::Return | DiscourseRole::Answer))
+            .map(|g| (1.0 - g.thematic_distance).clamp(0.0, 1.0))
+            .collect();
+        let thesis_return_strength = if returns.is_empty() {
+            0.0
+        } else {
+            returns.iter().sum::<f32>() / returns.len() as f32
+        };
+
+        DiscourseDiagnostics {
+            phrases: n,
+            orphan_phrases,
+            abandoned_obligations,
+            unearned_strong_closures,
+            role_direction_contradictions,
+            swallowed_salient_events,
+            distinct_closures,
+            motif_questions,
+            motif_answers,
+            culmination_before_answer,
+            thesis_return_strength,
+        }
+    }
+
+    /// The total count of discourse defects — used *only* so the adversarial shuffle probe can
+    /// assert a scrambled ordering scores strictly worse. Not a quality score: every component
+    /// stays individually inspectable above.
+    pub fn faults(&self) -> usize {
+        self.orphan_phrases
+            + self.abandoned_obligations
+            + self.unearned_strong_closures
+            + self.role_direction_contradictions
+            + self.swallowed_salient_events
+            + usize::from(!self.culmination_before_answer)
+    }
+
+    /// A human-readable dump for the lab.
+    pub fn report(&self) -> String {
+        use std::fmt::Write;
+        let mut s = String::new();
+        let _ = writeln!(
+            s,
+            "discourse diagnostics (direction — NOT a quality score):"
+        );
+        let _ = writeln!(
+            s,
+            "  phrases={} orphans={} distinct_closures={}",
+            self.phrases, self.orphan_phrases, self.distinct_closures
+        );
+        let _ = writeln!(
+            s,
+            "  abandoned_obligations={} unearned_strong_closures={} role_direction_contradictions={}",
+            self.abandoned_obligations, self.unearned_strong_closures, self.role_direction_contradictions
+        );
+        let _ = writeln!(
+            s,
+            "  swallowed_salient_events={} culmination_before_answer={}",
+            self.swallowed_salient_events, self.culmination_before_answer
+        );
+        let _ = writeln!(
+            s,
+            "  motif_questions={} motif_answers={} thesis_return_strength={:.2}  faults={}",
+            self.motif_questions,
+            self.motif_answers,
+            self.thesis_return_strength,
+            self.faults()
+        );
+        s
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::functor::compose_with_plan;
@@ -297,5 +469,95 @@ mod tests {
             d.foreground_collisions >= 1,
             "a foreground-budget violation was not caught"
         );
+    }
+
+    // --- Positive control: a real composition reads as directed discourse. ---
+    #[test]
+    fn a_real_composition_is_directed() {
+        let trace = demo_trace(120.0);
+        let (score, plan) = compose_with_plan(&trace, &MusicWorld::black_ice(), 2112);
+        let d = DiscourseDiagnostics::measure(&plan, &score);
+        assert_eq!(
+            d.abandoned_obligations, 0,
+            "the resolving arc abandoned a debt"
+        );
+        assert!(
+            d.culmination_before_answer,
+            "the culmination did not precede the answer"
+        );
+        assert_eq!(
+            d.orphan_phrases, 0,
+            "an orphan phrase with no discourse relation"
+        );
+        assert_eq!(
+            d.swallowed_salient_events, 0,
+            "a salient event was swallowed mid-phrase"
+        );
+        assert!(
+            d.distinct_closures >= 3,
+            "the closure hierarchy is barely used: {} distinct",
+            d.distinct_closures
+        );
+        assert!(d.report().contains("discourse diagnostics"));
+    }
+
+    // --- The adversarial probe: shuffling the sentences must score STRICTLY worse. This is the
+    //     exact Round III regression — locally valid phrases in an incoherent order. ---
+    #[test]
+    fn shuffle_the_sentences_scores_strictly_worse() {
+        let trace = demo_trace(120.0);
+        let (score, plan) = compose_with_plan(&trace, &MusicWorld::black_ice(), 2112);
+        let good = DiscourseDiagnostics::measure(&plan, &score);
+
+        // Reverse the rhetorical order (each phrase keeps its own trajectory), re-measure.
+        let mut scrambled = plan.clone();
+        scrambled.discourse = plan.discourse.scrambled();
+        let bad = DiscourseDiagnostics::measure(&scrambled, &score);
+
+        assert_eq!(
+            good.faults(),
+            0,
+            "the correct arc already has faults: {good:?}"
+        );
+        assert!(
+            bad.faults() > good.faults(),
+            "scrambling the discourse did not raise measured faults: good {} vs scrambled {} ({bad:?})",
+            good.faults(),
+            bad.faults()
+        );
+        // Concretely: the scramble abandons debts and/or lands the culmination after its answer.
+        assert!(
+            bad.abandoned_obligations > 0 || !bad.culmination_before_answer,
+            "the scramble left the obligation/teleology structure intact"
+        );
+    }
+
+    // --- Mutation control: obligations that never resolve are flagged as abandoned. ---
+    #[test]
+    fn catches_abandoned_obligations() {
+        let trace = demo_trace(120.0);
+        let (score, mut plan) = compose_with_plan(&trace, &MusicWorld::black_ice(), 2112);
+        assert_eq!(
+            DiscourseDiagnostics::measure(&plan, &score).abandoned_obligations,
+            0
+        );
+        // As if every answer/return never came: un-resolve the whole ledger and re-measure.
+        for o in &mut plan.discourse.ledger.obligations {
+            o.resolved_by = None;
+        }
+        assert!(
+            DiscourseDiagnostics::measure(&plan, &score).abandoned_obligations >= 1,
+            "an abandoned obligation slipped past the diagnostic"
+        );
+    }
+
+    // --- Null control: a tiny piece measures without panicking. ---
+    #[test]
+    fn discourse_measures_a_tiny_piece_without_panicking() {
+        let trace = demo_trace(16.0);
+        let (score, plan) = compose_with_plan(&trace, &MusicWorld::black_ice(), 1);
+        let d = DiscourseDiagnostics::measure(&plan, &score);
+        assert!(d.phrases >= 1);
+        let _ = d.report();
     }
 }
