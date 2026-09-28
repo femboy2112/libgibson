@@ -5,8 +5,9 @@
 //! Events are pre-scheduled to sample-accurate positions; the render loop triggers them as
 //! its monotonic playhead crosses them, drives per-role voice pools and synthesized drums,
 //! applies world production (saturation → reverb → bus compression → limiter) and writes
-//! the master into the output block. It is designed for sequential offline rendering; call
-//! [`HumanMusicSynth::rewind`] before re-rendering from the top.
+//! the master into the output block. It is designed for sequential offline rendering start to
+//! finish; [`HumanMusicSynth::rewind`] rewinds the transport, but a *bit-exact* re-render
+//! should use a fresh synth (`rewind` does not zero DSP tails — see its docs).
 
 use super::super::dsp::drums::{Clap, Hat, Kick, Snare};
 use super::super::dsp::env::Adsr;
@@ -225,7 +226,11 @@ impl HumanMusicSynth {
     /// Build a synth for `score` under `world` at `sr`.
     pub fn new(score: &Score, world: &MusicWorld, sr: SampleRate) -> HumanMusicSynth {
         let srf = sr.as_f64() as f32;
-        let tempo = TempoMap::new(sr, world.tempo_bpm as f64, 4);
+        // Tempo is the SCORE's — the score IS the composition, the world is only the dialect.
+        // compose() sets score.tempo_bpm from world.tempo_bpm so they agree today, but the
+        // score is the single declared source of truth for realization (a score re-skinned
+        // under a different world would otherwise silently clock at the wrong tempo).
+        let tempo = TempoMap::new(sr, score.tempo_bpm as f64, 4);
         let scale = Scale::new(world.tonic_pc, world.mode);
 
         let mk_pool = |patch: &Patch, n: usize| -> Vec<SynthVoice> {
@@ -312,7 +317,13 @@ impl HumanMusicSynth {
         self.total_samples
     }
 
-    /// Reset all cursors/voices to render again from the top.
+    /// Rewind the scheduling cursors and playhead to the start of the score.
+    ///
+    /// This resets *scheduling* only — it does NOT zero the voice envelopes, the drum voices,
+    /// or the DSP effect tails (reverb / bus compressor / limiter all carry state). A render
+    /// resumed over a live tail would therefore not be bit-identical to one from a fresh
+    /// synth, so for a clean re-render construct a new [`HumanMusicSynth`] rather than relying
+    /// on this. Named honestly: it rewinds the transport, it is not a full DSP reset.
     pub fn rewind(&mut self) {
         self.ncur = 0;
         self.dcur = 0;
@@ -546,5 +557,25 @@ fn sfx_freqs(kind: SfxKind, scale: &Scale) -> [f32; 2] {
         SfxKind::Danger => [d(0, 2), d(1, 2)],
         SfxKind::Transition => [d(2, 4), d(4, 4)],
         SfxKind::Impact => [midi_to_hz(scale.degree_pitch(0, 1)), d(0, 2)],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tempo_comes_from_the_score_not_the_world() {
+        // A score clocked at 200 bpm, rendered against an 88 bpm world, must run at the
+        // SCORE's tempo. At 200 bpm, 16 beats is ~230k samples plus a ~2.5s tail (~350k);
+        // at the world's 88 bpm it would be ~523k + tail. The gap is unambiguous.
+        let score = Score::new(200.0, 4.0, 16.0);
+        let world = MusicWorld::black_ice(); // 88 bpm
+        let synth = HumanMusicSynth::new(&score, &world, SampleRate::STUDIO);
+        assert!(
+            synth.total_samples() < 450_000,
+            "total_samples {} implies the world tempo (88), not the score tempo (200)",
+            synth.total_samples()
+        );
     }
 }
