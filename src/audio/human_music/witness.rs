@@ -243,9 +243,17 @@ fn audit_one(perf: &PerformancePlan, score: &Score, a: &MusicalAction) -> (bool,
                 .interactions
                 .iter()
                 .any(|i| i.call.action == a.id && i.call.initiator != Agent::Lead);
+            // Before the thesis is stated the band carries the verb: a compressed-fragment answer.
+            let band = perf.interactions.iter().any(|i| {
+                i.call.start_beat >= s - 1e-6
+                    && i.call.start_beat < e
+                    && i.response
+                        .as_ref()
+                        .is_some_and(|r| r.transform == super::performance::Transform::Compress)
+            });
             (
-                lead_frag || figure,
-                "a fragmented lead statement or a figure stated by the initiator",
+                lead_frag || figure || band,
+                "a fragmented lead statement, a figure by the initiator, or the band's compressed-fragment answer",
             )
         }
         ActionKind::Thicken | ActionKind::Thin => {

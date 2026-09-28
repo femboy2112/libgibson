@@ -33,9 +33,22 @@ pub fn realize_lead(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadReal
         let octave = match prev_exit {
             Some(pe) if !st.is_rupture && st.role != DiscourseRole::Culminate => {
                 let first_deg = motif.degrees.first().copied().unwrap_or(0);
+                // The release after the hook (an answer, a dissolve) connects DOWNWARD: it enters at
+                // or below the previous exit rather than carrying the hook's altitude onward. Every
+                // other role — including a thesis restatement — connects to the nearest octave.
+                let releasing = matches!(st.role, DiscourseRole::Answer | DiscourseRole::Dissolve);
+                let cost = |o: i32| {
+                    let p = scale.degree_pitch(first_deg, o);
+                    let d = (p - pe).abs();
+                    if releasing && p > pe + 2 {
+                        d + 12
+                    } else {
+                        d
+                    }
+                };
                 [base_octave - 1, base_octave, base_octave + 1]
                     .into_iter()
-                    .min_by_key(|&o| (scale.degree_pitch(first_deg, o) - pe).abs())
+                    .min_by_key(|&o| cost(o))
                     .unwrap_or(base_octave)
             }
             _ => base_octave,

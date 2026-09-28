@@ -1525,7 +1525,7 @@ const RELATION_LABELS: [&str; 10] = [
 
 /// **Harmony-context diagnostics** — is the harmony a sequence of *relations* moving through local
 /// palettes, or one key with chords stapled on? Measured on the [`PerformancePlan`]'s
-/// [`HarmonicContext`] timeline and deflect witnesses. NOT a quality score.
+/// [`super::context::HarmonicContext`] timeline and deflect witnesses. NOT a quality score.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HarmonyContextDiagnostics {
     /// Harmonic contexts analysed.
@@ -1533,7 +1533,7 @@ pub struct HarmonyContextDiagnostics {
     /// Consecutive contexts whose palette chord-scale (`palette.scale`: tonic + mode) differs. Note
     /// this is the *chord-scale*, so a Dorian ii after an Ionian I counts even inside one key.
     pub region_transitions: usize,
-    /// Relations per [`HarmonicRelation`] label, in declaration order; only labels that occur.
+    /// Relations per [`super::context::HarmonicRelation`] label, in declaration order; only labels that occur.
     pub relations: Vec<(&'static str, usize)>,
     /// Fraction of consecutive context pairs where every guide tone of the first is held or moves
     /// to a guide tone of the second by at most 2 semitones (pitch-class distance).

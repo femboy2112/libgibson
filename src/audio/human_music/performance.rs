@@ -254,6 +254,20 @@ impl InteractionMemory {
         }
         p
     }
+    /// A bonus (negative cost) for a kind of timing the band has not used yet in this piece —
+    /// overlapping, immediate, or delayed — so memory seeks variety, not only avoids repeats.
+    fn novelty(&self, latency_q: i8) -> f32 {
+        let cat = |q: i8| match q {
+            q if q < 0 => 0u8,
+            0 | 1 => 1,
+            _ => 2,
+        };
+        if self.seen.iter().any(|o| cat(o.latency_q) == cat(latency_q)) {
+            0.0
+        } else {
+            -0.45
+        }
+    }
     fn record(&mut self, s: Signature) {
         self.seen.push(s);
     }
@@ -864,6 +878,9 @@ fn plan_interactions(
     // beginning on the phrase downbeat.
     let mut traj = ThematicTrajectory::new(bank);
     let mut offset_memory: Vec<i32> = Vec::new();
+    let mut thesis_stated = false;
+    // Statement starts whose Fragment verb passes to the band (before the thesis was stated).
+    let mut band_fragments: Vec<f64> = Vec::new();
     for t in plan.targets() {
         let phrase = t.phrase;
         if !plan.arrangement.at(phrase.ix as usize).lead.is_audible() {
@@ -921,15 +938,32 @@ fn plan_interactions(
             }
             // A lead-initiated Fragment action in force here fragments THIS statement: the verb
             // reaches the thematic material instead of only nudging a scalar.
-            let fragmenting = actions.actions.iter().any(|a| {
+            // Development presupposes exposition: the lead fragments only material it has already
+            // stated in full. A Fragment before that passes to the band — the answer to this
+            // statement is then a compressed fragment of it (see the response planner).
+            let fragment_here = actions.actions.iter().any(|a| {
                 a.kind == ActionKind::Fragment && a.initiator == Agent::Lead && a.covers(start)
             });
+            // ...and never the hook or a return of the thesis: those are the song's persistent
+            // identity, so the band carries the fragmentation around them instead.
+            let identity_role = matches!(
+                t.goal.role,
+                DiscourseRole::Culminate
+                    | DiscourseRole::Restate
+                    | DiscourseRole::Return
+                    | DiscourseRole::Establish
+            );
+            let fragmenting = fragment_here && thesis_stated && !identity_role;
+            if fragment_here && !fragmenting {
+                band_fragments.push(start);
+            }
             let motif = if fragmenting && motif.len() > 2 {
                 motif.fragment(motif.len().div_ceil(2).max(2))
             } else {
                 motif.clone()
             };
             let len = motif.total_beats() as f64;
+            let motif_is_full = motif.len() >= bank.identity.len();
             let call_id = if !interact {
                 u32::MAX
             } else {
@@ -988,6 +1022,9 @@ fn plan_interactions(
                 is_rupture: phrase.is_rupture,
                 call: call_id,
             });
+            if motif_is_full {
+                thesis_stated = true;
+            }
             let after = start + len;
             let boundary = (after / two_bar).ceil() * two_bar;
             at = if boundary > after + 1e-6 {
@@ -1077,7 +1114,16 @@ fn plan_interactions(
                 } else {
                     &[0.5, 1.0]
                 };
-                let transforms: &[Transform] = if lang.distributed_agency {
+                let band_fragment = call.statement.is_some()
+                    && band_fragments
+                        .iter()
+                        .any(|&b| (b - call.start_beat).abs() < 1e-6);
+                if band_fragment {
+                    cands.retain(|&a| a != Agent::Drums);
+                }
+                let transforms: &[Transform] = if band_fragment {
+                    &[Transform::Compress]
+                } else if lang.distributed_agency {
                     &[
                         Transform::Quote,
                         Transform::Complete,
@@ -1121,8 +1167,11 @@ fn plan_interactions(
                             let w = accent.at_beat(start);
                             let fit = -(w.syncopation + w.pickup) * 0.6;
                             let overlap_cost = if lat < 0.0 { 0.35 } else { 0.0 };
-                            let cost =
-                                memory.penalty(&sig) + fit + overlap_cost + rng.range_f32(0.0, 0.2);
+                            let cost = memory.penalty(&sig)
+                                + memory.novelty(sig.latency_q)
+                                + fit
+                                + overlap_cost
+                                + rng.range_f32(0.0, 0.2);
                             if best.as_ref().is_none_or(|b| cost < b.0) {
                                 best = Some((
                                     cost,
@@ -1143,7 +1192,7 @@ fn plan_interactions(
                     }
                 }
                 // Sometimes the right answer is to leave the space open.
-                let silent = ci > 0 && rng.chance(1.0 - answer_chance);
+                let silent = ci > 0 && !band_fragment && rng.chance(1.0 - answer_chance);
                 match best {
                     Some((_, r, sig)) if !silent => {
                         memory.record(sig);
