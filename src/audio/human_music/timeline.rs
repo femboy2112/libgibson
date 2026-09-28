@@ -271,7 +271,10 @@ mod tests {
         // exactly the change a start-of-phrase snapshot at beat 80 would have missed.
         let tl = IntentTimeline::walk(&demo_trace(120.0));
         let s = tl.span(80.0, 96.0);
-        assert!(s.crosses_salient(), "the Confirmation at 88 was not detected inside [80,96)");
+        assert!(
+            s.crosses_salient(),
+            "the Confirmation at 88 was not detected inside [80,96)"
+        );
         assert_eq!(s.salient_inside, 1);
         assert!(
             s.end.tension < s.start.tension,
@@ -287,8 +290,14 @@ mod tests {
         // [20,44) sits between the FocusAcquired(16) and the ModalEntered(48): a ToneShift(32)
         // fires inside, but nothing salient. The next salient event is the ModalEntered at 48.
         let s = tl.span(20.0, 44.0);
-        assert!(!s.crosses_salient(), "quiet region should cross no salient boundary");
-        assert!(s.events_inside >= 1, "the ToneShift at 32 should count as an interior event");
+        assert!(
+            !s.crosses_salient(),
+            "quiet region should cross no salient boundary"
+        );
+        assert!(
+            s.events_inside >= 1,
+            "the ToneShift at 32 should count as an interior event"
+        );
         assert_eq!(s.next_salient_beat, Some(48.0));
     }
 
