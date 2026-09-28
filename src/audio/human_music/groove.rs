@@ -43,7 +43,7 @@ impl GrooveEngine {
         }
     }
 
-    /// Generate the percussion track from the composition plan's [`PhraseTarget`]s.
+    /// Generate the percussion track from the composition plan's [`super::plan::PhraseTarget`]s.
     ///
     /// A base groove CELL — kick on 1 & 3, snare backbeat on 2 & 4, subdivided hats — is realized
     /// every bar; the variations (extra kick, ghosts, open-hat lift, fill) are a bounded, repeating

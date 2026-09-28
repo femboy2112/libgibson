@@ -9,6 +9,7 @@
 //! and local density, and their labels become event provenance. Skins are natural
 //! transformations: swap the world and the form/motif/resolutions stay; the dialect changes.
 
+use super::contract::{CoherenceContract, CompositionGrammar};
 use super::discourse::DiscourseRole;
 use super::form::{Section, SectionKind, BEATS_PER_BAR};
 use super::groove::GrooveEngine;
@@ -43,13 +44,39 @@ pub fn compose_with_plan(
     world: &MusicWorld,
     seed: u64,
 ) -> (Score, CompositionPlan) {
-    let scale = Scale::new(world.tonic_pc, world.mode);
-    // The bar budget comes straight from the trace — no legacy Form is built to size the piece.
     let total_bars = ((trace.total_beats / BEATS_PER_BAR).round() as u32).max(1);
-
-    // The causal spine and the ONE plan every realizer reads from.
     let timeline = IntentTimeline::walk(trace);
     let plan = CompositionPlan::build(&timeline, total_bars);
+    let score = realize(trace, world, seed, &plan);
+    (score, plan)
+}
+
+/// Like [`compose_with_plan`], but the grammar is **chosen**, not inferred — the calibration path.
+/// The plan is built under [`CoherenceContract::for_grammar`], so the piece exercises that grammar's
+/// `ResolutionPolicy` (Functional cadences vs a Loop's cyclic return vs a modal pedal), budgets and
+/// anchors, whatever the trace shape would otherwise infer.
+pub fn compose_with_grammar(
+    trace: &SemanticTrace,
+    world: &MusicWorld,
+    seed: u64,
+    grammar: CompositionGrammar,
+) -> (Score, CompositionPlan) {
+    let total_bars = ((trace.total_beats / BEATS_PER_BAR).round() as u32).max(1);
+    let timeline = IntentTimeline::walk(trace);
+    let plan = CompositionPlan::build_with_contract(
+        &timeline,
+        total_bars,
+        CoherenceContract::for_grammar(grammar),
+    );
+    let score = realize(trace, world, seed, &plan);
+    (score, plan)
+}
+
+/// Realize a score from a finished plan: every realizer reads the plan's per-phrase targets under
+/// `world`, then `apply_arrangement` gates the voices. Shared by the inferred and grammar-forced
+/// compose paths so both go through exactly the same realization.
+fn realize(trace: &SemanticTrace, world: &MusicWorld, seed: u64, plan: &CompositionPlan) -> Score {
+    let scale = Scale::new(world.tonic_pc, world.mode);
     let targets = plan.targets();
 
     let mut harmony = HarmonyEngine::new(world, seed);
@@ -60,27 +87,21 @@ pub fn compose_with_plan(
 
     let total_beats = plan.form.total_bars as f64 * BEATS_PER_BAR;
     let mut score = Score::new(world.tempo_bpm, BEATS_PER_BAR, total_beats);
-    score.sections = sections_from_plan(&plan);
+    score.sections = sections_from_plan(plan);
     score.chords = chords.clone();
     score.drums = gr.hits;
 
     // --- Comp: sustained pad bed + sparse groove-locked keys arpeggio. ---
     add_comp(&mut score, &chords, world);
-
     // --- Bass: persistent kick-locked figure. ---
-    add_bass(&mut score, &chords, &gr.kick_beats, &plan);
-
-    // --- Melody: one developing motif threaded through the plan's phrases. ---
-    add_melody(&mut score, &chords, &plan, &scale, seed);
-
+    add_bass(&mut score, &chords, &gr.kick_beats, plan);
+    // --- Melody: the thesis motif transformed by each phrase's discourse role. ---
+    add_melody(&mut score, &chords, plan, &scale, seed);
     // --- SFX + intent morphisms from significant semantic events. ---
-    add_sfx_and_provenance(&mut score, trace, &plan);
-
-    // --- Arrangement: gate every voice by its per-phrase role and stamp real provenance
-    //     from the plan (fixing the Round-I hardcoded SectionKind::A). ---
-    apply_arrangement(&mut score, &plan);
-
-    (score, plan)
+    add_sfx_and_provenance(&mut score, trace, plan);
+    // --- Arrangement: gate every voice by its per-phrase role and stamp real provenance. ---
+    apply_arrangement(&mut score, plan);
+    score
 }
 
 /// Project the legacy [`Section`] list (for the Score IR and `Score::summary`) FROM the plan.
@@ -526,5 +547,37 @@ mod tests {
         );
         // And it developed the motif along the way (Impact -> Modulate bumps development).
         assert!(intent.motif.development > 0);
+    }
+
+    #[test]
+    fn grammar_forces_the_resolution_policy_in_the_chords() {
+        let trace = demo_trace(120.0);
+        let world = MusicWorld::black_ice();
+        let hook = compose_with_grammar(&trace, &world, 7, CompositionGrammar::HookArc).0;
+        let loopy = compose_with_grammar(&trace, &world, 7, CompositionGrammar::LoopEvolution).0;
+        let riff = compose_with_grammar(&trace, &world, 7, CompositionGrammar::RiffDrive).0;
+        // Loop cycles home ("loop"), riff pedals ("pedal"), hook uses functional cadences (neither).
+        assert!(
+            loopy.chords.iter().any(|c| c.note == "loop"),
+            "loop grammar never cycled home"
+        );
+        assert!(
+            riff.chords.iter().any(|c| c.note == "pedal"),
+            "riff grammar never pedalled"
+        );
+        assert!(
+            hook.chords
+                .iter()
+                .all(|c| c.note != "loop" && c.note != "pedal"),
+            "hook grammar leaked a non-functional cadence tag"
+        );
+        // The three grammars are genuinely different progressions, not one relabelled.
+        assert!(
+            hook.chords
+                .iter()
+                .map(|c| c.chord)
+                .ne(loopy.chords.iter().map(|c| c.chord)),
+            "hook and loop produced identical chords"
+        );
     }
 }

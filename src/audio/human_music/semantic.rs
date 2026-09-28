@@ -301,6 +301,158 @@ pub fn demo_trace(total_beats: f64) -> SemanticTrace {
     )
 }
 
+/// Build a `SemanticEvent` compactly (used by the synthetic fixtures below).
+fn ev(
+    at_beat: f64,
+    tone: Tone,
+    emphasis: Emphasis,
+    density: Density,
+    elevation: Elevation,
+    kind: EventKind,
+) -> SemanticEvent {
+    SemanticEvent {
+        at_beat,
+        state: SemanticState {
+            tone,
+            emphasis,
+            density,
+            elevation,
+        },
+        kind,
+    }
+}
+
+/// Synthetic fixture — **rise then remain unresolved**: the trace builds to a danger impact and
+/// never releases. A directed planner should represent this honestly (no answer; the culmination's
+/// debt left open), not manufacture a resolution. Guards against overfitting the resolved demo.
+pub fn rise_unresolved(total_beats: f64) -> SemanticTrace {
+    let t = total_beats;
+    SemanticTrace::new(
+        vec![
+            ev(
+                0.0,
+                Tone::Neutral,
+                Emphasis::Muted,
+                Density::Spacious,
+                Elevation::Flat,
+                EventKind::ActChanged,
+            ),
+            ev(
+                t * 0.25,
+                Tone::Info,
+                Emphasis::Normal,
+                Density::Normal,
+                Elevation::Raised,
+                EventKind::FocusAcquired,
+            ),
+            ev(
+                t * 0.5,
+                Tone::Warning,
+                Emphasis::Strong,
+                Density::Compact,
+                Elevation::Raised,
+                EventKind::ModalEntered,
+            ),
+            ev(
+                t * 0.78,
+                Tone::Danger,
+                Emphasis::Strong,
+                Density::Compact,
+                Elevation::Overlay,
+                EventKind::Impact,
+            ),
+        ],
+        total_beats,
+    )
+}
+
+/// Synthetic fixture — **false climax then true resolution**: an early impact that partly settles,
+/// then a larger impact, then a real resolution. The culmination must land on the *true* (later,
+/// bigger) peak, not the first one to arrive.
+pub fn false_climax(total_beats: f64) -> SemanticTrace {
+    let t = total_beats;
+    SemanticTrace::new(
+        vec![
+            ev(
+                0.0,
+                Tone::Neutral,
+                Emphasis::Muted,
+                Density::Spacious,
+                Elevation::Flat,
+                EventKind::ActChanged,
+            ),
+            ev(
+                t * 0.22,
+                Tone::Warning,
+                Emphasis::Strong,
+                Density::Normal,
+                Elevation::Raised,
+                EventKind::Impact,
+            ),
+            ev(
+                t * 0.42,
+                Tone::Success,
+                Emphasis::Normal,
+                Density::Normal,
+                Elevation::Raised,
+                EventKind::Confirmation,
+            ),
+            ev(
+                t * 0.64,
+                Tone::Danger,
+                Emphasis::Strong,
+                Density::Compact,
+                Elevation::Overlay,
+                EventKind::Impact,
+            ),
+            ev(
+                t * 0.9,
+                Tone::Neutral,
+                Emphasis::Muted,
+                Density::Spacious,
+                Elevation::Flat,
+                EventKind::SectionResolved,
+            ),
+        ],
+        total_beats,
+    )
+}
+
+/// Synthetic fixture — **a calm loop with no dramatic arc**: low, steady tension throughout. There
+/// is no meaningful build; a directed planner should not invent a climax with real pressure.
+pub fn calm_loop(total_beats: f64) -> SemanticTrace {
+    let t = total_beats;
+    SemanticTrace::new(
+        vec![
+            ev(
+                0.0,
+                Tone::Neutral,
+                Emphasis::Muted,
+                Density::Normal,
+                Elevation::Flat,
+                EventKind::ActChanged,
+            ),
+            ev(
+                t * 0.34,
+                Tone::Info,
+                Emphasis::Normal,
+                Density::Normal,
+                Elevation::Flat,
+                EventKind::FocusAcquired,
+            ),
+            ev(
+                t * 0.67,
+                Tone::Info,
+                Emphasis::Normal,
+                Density::Normal,
+                Elevation::Raised,
+                EventKind::ToneShift,
+            ),
+        ],
+        total_beats,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

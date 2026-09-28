@@ -690,7 +690,7 @@ fn role_novelty(role: DiscourseRole, budget: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::super::semantic::demo_trace;
+    use super::super::semantic::{calm_loop, demo_trace, false_climax, rise_unresolved};
     use super::*;
 
     fn demo() -> (DiscoursePlan, FormGraph) {
@@ -802,5 +802,53 @@ mod tests {
         let rb: Vec<_> = b.goals.iter().map(|g| (g.role, g.closure)).collect();
         assert_eq!(ra, rb);
         assert_eq!(a.ledger.obligations.len(), b.ledger.obligations.len());
+    }
+
+    fn plan_for(trace: &super::super::semantic::SemanticTrace) -> (DiscoursePlan, FormGraph) {
+        let tl = IntentTimeline::walk(trace);
+        let total_bars = (trace.total_beats / super::super::form::BEATS_PER_BAR).round() as u32;
+        let contract = CoherenceContract::infer(&tl);
+        let form = FormGraph::build(&tl, total_bars, &contract);
+        let plan = DiscoursePlan::build(&tl, &form, &contract);
+        (plan, form)
+    }
+
+    // --- Anti-overfitting: the planner responds to the SHAPE, not the one canonical demo. ---
+    #[test]
+    fn an_unresolved_arc_has_no_answer_and_leaves_a_debt_open() {
+        let (plan, _) = plan_for(&rise_unresolved(120.0));
+        assert!(
+            plan.answer.is_none(),
+            "a rise-then-unresolved arc must not manufacture an answer"
+        );
+        assert!(
+            plan.ledger.abandoned_count() >= 1,
+            "the unresolved culmination's debt should be left open, not silently paid"
+        );
+    }
+
+    #[test]
+    fn false_climax_puts_the_culmination_on_the_true_peak() {
+        let (plan, form) = plan_for(&false_climax(120.0));
+        let cul_beat = form.phrases[plan.culmination as usize].start_beat();
+        // The true (larger) impact is at ~0.64*120 ≈ beat 77; the false one at ~beat 26. The
+        // culmination must land in the second half, not on the earlier, smaller peak.
+        assert!(
+            cul_beat > 48.0,
+            "culmination landed on the false climax at beat {cul_beat}, not the true peak"
+        );
+    }
+
+    #[test]
+    fn a_calm_loop_invents_no_high_pressure_culmination() {
+        let (plan, form) = plan_for(&calm_loop(120.0));
+        let peak = form.phrases[plan.culmination as usize]
+            .span
+            .peak_tension
+            .tension;
+        assert!(
+            peak < 0.5,
+            "a calm loop should not be given a high-tension climax: peak {peak}"
+        );
     }
 }

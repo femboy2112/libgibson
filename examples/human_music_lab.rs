@@ -16,8 +16,11 @@
 
 use std::path::PathBuf;
 
+use gibson::audio::buffer::StereoBlock;
+use gibson::audio::human_music::contract::CompositionGrammar;
 use gibson::audio::human_music::diagnostics::{CoherenceDiagnostics, DiscourseDiagnostics};
-use gibson::audio::human_music::functor::compose_with_plan;
+use gibson::audio::human_music::functor::{compose_with_grammar, compose_with_plan};
+use gibson::audio::human_music::semantic::{calm_loop, rise_unresolved};
 use gibson::audio::human_music::synth::HumanMusicSynth;
 use gibson::audio::human_music::{demo_trace, MusicWorld, WorldId};
 use gibson::audio::render::OfflineRenderer;
@@ -43,6 +46,13 @@ fn main() -> std::io::Result<()> {
 
     let sr = SampleRate::STUDIO;
     let block = 512;
+
+    // Calibration mode: render the four grammar probes, each exercising a different definition of
+    // musical direction, and dump their plan + coherence + discourse diagnostics.
+    if std::env::args().any(|a| a == "--calibrate") {
+        return calibrate(&out_dir, sr, block, seed);
+    }
+
     let trace = demo_trace(beats);
 
     let worlds: Vec<WorldId> = match which.as_str() {
@@ -108,5 +118,103 @@ fn main() -> std::io::Result<()> {
     }
 
     println!("Listen to the WAVs above. Same form + motif + resolutions, three dialects.");
+    Ok(())
+}
+
+/// Render the four grammar calibration probes. Each is a deterministic composition constructed to
+/// exercise a *different* definition of musical direction:
+///   - hook_arc: a directed arc with functional cadences (the resolved demo).
+///   - loop_evolution: a calm loop — meaning comes from evolution, not cadences (cyclic harmony).
+///   - riff_drive: a rising, unresolved trace over a modal pedal (harmonic stasis is allowed).
+///   - world_switch: two locally coherent regimes (two sonic dialects) of the SAME composition
+///     plan, joined — the transported identity is the form + discourse skeleton and the seed.
+fn calibrate(
+    out_dir: &std::path::Path,
+    sr: SampleRate,
+    block: usize,
+    seed: u64,
+) -> std::io::Result<()> {
+    println!(
+        "HumanMusic calibration — four grammar probes\nseed={seed}  out={}\n",
+        out_dir.display()
+    );
+
+    let cases = [
+        (
+            "hook_arc",
+            CompositionGrammar::HookArc,
+            demo_trace(120.0),
+            WorldId::BlackIce,
+        ),
+        (
+            "loop_evolution",
+            CompositionGrammar::LoopEvolution,
+            calm_loop(120.0),
+            WorldId::Vapor95,
+        ),
+        (
+            "riff_drive",
+            CompositionGrammar::RiffDrive,
+            rise_unresolved(120.0),
+            WorldId::SwissSignal,
+        ),
+    ];
+    for (name, grammar, trace, wid) in cases {
+        let world = MusicWorld::from_id(wid);
+        let (score, plan) = compose_with_grammar(&trace, &world, seed, grammar);
+        score.validate().expect("calibration score invariants");
+        let mut synth = HumanMusicSynth::new(&score, &world, sr);
+        let frames = synth.total_samples();
+        let out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
+        let path = out_dir.join(format!("calib_{name}.wav"));
+        write_wav_i16(&path, &out.audio, sr)?;
+
+        println!("=== {name}  ({grammar:?}, {}) ===", world.name);
+        print!("{}", plan.dump());
+        print!("{}", CoherenceDiagnostics::measure(&plan, &score).report());
+        println!("{}", DiscourseDiagnostics::measure(&plan, &score).report());
+        println!(
+            "safety: nonfinite={}  peak={:.3}  max_voices={}\nwav: {}\n",
+            out.audio.has_nonfinite(),
+            out.peak,
+            out.max_active_voices,
+            path.display(),
+        );
+    }
+
+    // world_switch: the same composition plan realized in TWO sonic dialects, joined. The
+    // transported identity across the switch is the form + discourse skeleton (world-independent)
+    // and the seed; regime A is BLACK_ICE, regime B is VAPOR95.
+    let trace = demo_trace(120.0);
+    let (a_world, b_world) = (MusicWorld::black_ice(), MusicWorld::vapor95());
+    let (a_score, plan) =
+        compose_with_grammar(&trace, &a_world, seed, CompositionGrammar::WorldSwitch);
+    let (b_score, _) =
+        compose_with_grammar(&trace, &b_world, seed, CompositionGrammar::WorldSwitch);
+    a_score.validate().expect("world-switch A invariants");
+    b_score.validate().expect("world-switch B invariants");
+
+    let mut sa = HumanMusicSynth::new(&a_score, &a_world, sr);
+    let fa = sa.total_samples();
+    let ra = OfflineRenderer::new(sr, block).render(&mut sa, fa);
+    let mut sb = HumanMusicSynth::new(&b_score, &b_world, sr);
+    let fb = sb.total_samples();
+    let rb = OfflineRenderer::new(sr, block).render(&mut sb, fb);
+
+    let mut combined = StereoBlock::new(0);
+    ra.audio.append_to(&mut combined);
+    rb.audio.append_to(&mut combined);
+    let path = out_dir.join("calib_world_switch.wav");
+    write_wav_i16(&path, &combined, sr)?;
+
+    println!("=== world_switch  (BLACK_ICE → VAPOR95, transported plan) ===");
+    print!("{}", plan.dump());
+    println!(
+        "transport: same discourse plan + seed, two dialects joined at the switch\nnonfinite={}  wav: {}\n",
+        combined.has_nonfinite(),
+        path.display(),
+    );
+
+    println!("Four probes rendered. Each exercises a different definition of musical direction.");
     Ok(())
 }

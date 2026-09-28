@@ -1,5 +1,6 @@
-//! The harmonic engine: generate a functional chord progression over a [`Form`], planned at
-//! **phrase scope** and steered by the form's tension curve and the world's vocabulary.
+//! The harmonic engine: generate a chord progression over the composition plan's phrase targets,
+//! planned at **phrase scope** and steered by each phrase's discourse targets and the world's
+//! vocabulary.
 //!
 //! Round I picked a function from a scalar tension, then rolled a degree, and a "cadence" just
 //! forced the final chord to tonic with no preparation — coherent only by coincidence. Round II
@@ -75,8 +76,9 @@ impl HarmonyEngine {
         Chord::new(root.rem_euclid(12), quality)
     }
 
-    /// Generate the full progression from the composition plan's [`PhraseTarget`]s, planned phrase
-    /// by phrase, realizing each phrase's discourse [`Closure`] under the piece's [`ResolutionPolicy`].
+    /// Generate the full progression from the composition plan's [`super::plan::PhraseTarget`]s,
+    /// planned phrase by phrase, realizing each phrase's discourse [`Closure`] under the piece's
+    /// [`ResolutionPolicy`].
     ///
     /// The targets tile `[0, total_beats)` contiguously; the phrase's discourse goal is the single
     /// authority for harmonic rhythm (its density target) and functional heat (its tension target).

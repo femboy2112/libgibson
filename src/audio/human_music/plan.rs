@@ -534,9 +534,20 @@ pub struct CompositionPlan {
 }
 
 impl CompositionPlan {
-    /// Build the plan from a semantic trace's timeline and a bar budget.
+    /// Build the plan from a semantic trace's timeline and a bar budget, inferring the grammar
+    /// from the trace's shape.
     pub fn build(timeline: &IntentTimeline, total_bars: u32) -> CompositionPlan {
-        let contract = CoherenceContract::infer(timeline);
+        Self::build_with_contract(timeline, total_bars, CoherenceContract::infer(timeline))
+    }
+
+    /// Build the plan under an explicitly chosen `contract` — the calibration path, where a piece
+    /// is constructed to exercise one grammar (its `ResolutionPolicy`, budgets and anchors) rather
+    /// than whatever the trace shape would infer.
+    pub fn build_with_contract(
+        timeline: &IntentTimeline,
+        total_bars: u32,
+        contract: CoherenceContract,
+    ) -> CompositionPlan {
         let form = FormGraph::build(timeline, total_bars, &contract);
         let arrangement = ArrangementPlan::build(&form, &contract);
         let discourse = DiscoursePlan::build(timeline, &form, &contract);
