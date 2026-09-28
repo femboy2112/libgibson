@@ -37,6 +37,80 @@ pub enum SfxKind {
     Impact,
 }
 
+/// The harmonic **function of a pitch** against the chord sounding beneath it — the vocabulary
+/// that lets the engine *justify* a note instead of forbidding it (the jazz principle: there are
+/// no forbidden pitches, only unjustified ones). A note consonant with the sounding chord is a
+/// `ChordTone`, a licensed `LicensedExtension`, or a `PedalTone`. A non-chord note must carry a
+/// concrete path-based justification: it is on its way somewhere (`DiatonicPassing`,
+/// `ChromaticPassing`, `Neighbor`, `ChromaticApproach`, `Enclosure`, `SlidePath`), it carries
+/// tension with a memory or a future (`Suspension`, `Retardation`, `Anticipation`,
+/// `Appoggiatura`), or it is a grammar/world-licensed color (`ModalColor`). A pitched note whose
+/// function is left unset (`None`) is *unclassified*, which realization diagnostics count as an
+/// unjustified note.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PitchFunction {
+    /// A member of the sounding chord — consonant, needs no further justification.
+    ChordTone,
+    /// A chord extension (7/9/11/13, …) the world/grammar licenses as consonant color.
+    LicensedExtension,
+    /// A sustained tone held under changing harmony (a pedal point).
+    PedalTone,
+    /// A weak-beat step between two chord tones along the scale.
+    DiatonicPassing,
+    /// A weak-beat chromatic step between two structural pitches.
+    ChromaticPassing,
+    /// A step away from and back to a chord tone (upper or lower neighbor).
+    Neighbor,
+    /// A step (usually a semitone) that leads directly into a target chord tone.
+    ChromaticApproach,
+    /// A two-sided approach surrounding a target from above and below.
+    Enclosure,
+    /// A tone held from the previous harmony that resolves down by step into the new chord.
+    Suspension,
+    /// Like a suspension, but resolving upward.
+    Retardation,
+    /// A tone belonging to the *upcoming* chord, sounded just before that chord arrives.
+    Anticipation,
+    /// A leaped-to non-chord tone on a strong beat that then resolves by step.
+    Appoggiatura,
+    /// A member of a linear passage from a source pitch to a target (the bassist's slide): every
+    /// intermediate pitch inherits its justification from the path, not from the local chord.
+    SlidePath,
+    /// A blue/modal characteristic tone licensed by the grammar or world.
+    ModalColor,
+}
+
+impl PitchFunction {
+    /// A short lowercase label for structural dumps and diagnostics.
+    pub fn label(self) -> &'static str {
+        match self {
+            PitchFunction::ChordTone => "chord",
+            PitchFunction::LicensedExtension => "ext",
+            PitchFunction::PedalTone => "pedal",
+            PitchFunction::DiatonicPassing => "pass",
+            PitchFunction::ChromaticPassing => "chr-pass",
+            PitchFunction::Neighbor => "neighbor",
+            PitchFunction::ChromaticApproach => "approach",
+            PitchFunction::Enclosure => "enclosure",
+            PitchFunction::Suspension => "susp",
+            PitchFunction::Retardation => "retard",
+            PitchFunction::Anticipation => "antic",
+            PitchFunction::Appoggiatura => "appog",
+            PitchFunction::SlidePath => "slide",
+            PitchFunction::ModalColor => "color",
+        }
+    }
+
+    /// Whether the function denotes a note consonant with the sounding chord (a chord tone,
+    /// licensed extension or pedal) — i.e. one that needs no path-based justification.
+    pub fn is_consonant(self) -> bool {
+        matches!(
+            self,
+            PitchFunction::ChordTone | PitchFunction::LicensedExtension | PitchFunction::PedalTone
+        )
+    }
+}
+
 /// Where an event came from — the provenance the whole IR carries. Round II makes this rich
 /// enough that a cold reader of the dump can answer *what is this piece repeating, what
 /// changed here, why is this instrument playing now, and what obligation is in force* — all
@@ -96,6 +170,33 @@ pub struct Note {
     pub velocity: f32,
     pub role: Role,
     pub prov: Provenance,
+    /// The pitch's harmonic function against the chord sounding beneath it, once classified by
+    /// the melodic/bass realizer. `None` means unclassified; realization diagnostics count a
+    /// pitched note left `None` as unjustified. Chord tones are `Some(PitchFunction::ChordTone)`.
+    pub function: Option<PitchFunction>,
+}
+
+impl Note {
+    /// A note with no pitch-function classification yet (`function: None`). The realizer sets
+    /// `function` once it has chosen the pitch against the sounding harmony.
+    pub fn new(
+        start_beat: f64,
+        dur_beats: f32,
+        pitch: Midi,
+        velocity: f32,
+        role: Role,
+        prov: Provenance,
+    ) -> Note {
+        Note {
+            start_beat,
+            dur_beats,
+            pitch,
+            velocity,
+            role,
+            prov,
+            function: None,
+        }
+    }
 }
 
 /// A drum hit.
@@ -278,14 +379,14 @@ mod tests {
     #[test]
     fn validate_rejects_bad_velocity() {
         let mut s = Score::new(120.0, 4.0, 64.0);
-        s.notes.push(Note {
-            start_beat: 0.0,
-            dur_beats: 1.0,
-            pitch: 60,
-            velocity: 2.0,
-            role: Role::Lead,
-            prov: Provenance::new(SectionKind::A),
-        });
+        s.notes.push(Note::new(
+            0.0,
+            1.0,
+            60,
+            2.0,
+            Role::Lead,
+            Provenance::new(SectionKind::A),
+        ));
         assert!(s.validate().is_err());
     }
 }

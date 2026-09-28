@@ -197,14 +197,14 @@ fn add_comp(score: &mut Score, chords: &[ChordSpan], world: &MusicWorld) {
         // Pad: hold the whole voicing for the chord's duration (the harmonic bed).
         let pad = pad_vl.lead(&span.chord, 4, 67);
         for &p in &pad.voices {
-            score.notes.push(Note {
-                start_beat: span.start_beat,
-                dur_beats: span.dur_beats * 0.98,
-                pitch: p,
-                velocity: (0.4 * world.base_dynamic).clamp(0.05, 1.0),
-                role: Role::Pad,
+            score.notes.push(Note::new(
+                span.start_beat,
+                span.dur_beats * 0.98,
+                p,
+                (0.4 * world.base_dynamic).clamp(0.05, 1.0),
+                Role::Pad,
                 prov,
-            });
+            ));
         }
         // Keys: single-voice offbeat pushes arpeggiated through the voicing — one every two
         // beats, starting on the "and of 1". The chord already sounds in the pad, so the keys
@@ -218,14 +218,14 @@ fn add_comp(score: &mut Score, chords: &[ChordSpan], world: &MusicWorld) {
         let mut off = 0.5f64;
         while off < dur - 1e-6 {
             let p = voicing.voices[idx % voicing.voices.len()];
-            score.notes.push(Note {
-                start_beat: span.start_beat + off,
-                dur_beats: 0.45,
-                pitch: p,
-                velocity: (0.35 * world.base_dynamic).clamp(0.05, 1.0),
-                role: Role::Keys,
+            score.notes.push(Note::new(
+                span.start_beat + off,
+                0.45,
+                p,
+                (0.35 * world.base_dynamic).clamp(0.05, 1.0),
+                Role::Keys,
                 prov,
-            });
+            ));
             idx += 1;
             off += 2.0;
         }
@@ -300,17 +300,17 @@ fn add_bass(score: &mut Score, chords: &[ChordSpan], kick_beats: &[f64], plan: &
 }
 
 fn push_bass(score: &mut Score, at: f64, dur: f32, pitch: Midi, energy: f32, note: &'static str) {
-    score.notes.push(Note {
-        start_beat: at,
-        dur_beats: dur.max(0.1),
+    score.notes.push(Note::new(
+        at,
+        dur.max(0.1),
         pitch,
-        velocity: (0.6 + 0.35 * energy).clamp(0.1, 1.0),
-        role: Role::Bass,
-        prov: Provenance {
+        (0.6 + 0.35 * energy).clamp(0.1, 1.0),
+        Role::Bass,
+        Provenance {
             role_note: note,
             ..Provenance::new(SectionKind::A)
         },
-    });
+    ));
 }
 
 /// The lead voice: the thesis motif transformed by each phrase's **discourse role**.
@@ -363,20 +363,20 @@ fn add_melody(
             for (nb, dur, pitch) in
                 super::motif::realize_phrase(&motif, chords, scale, 0, octave, at, 4)
             {
-                score.notes.push(Note {
-                    start_beat: nb,
-                    dur_beats: (dur * 0.9).max(0.1),
+                score.notes.push(Note::new(
+                    nb,
+                    (dur * 0.9).max(0.1),
                     pitch,
-                    velocity: (0.55 + 0.4 * t.goal.energy_target).clamp(0.1, 1.0),
-                    role: Role::Lead,
-                    prov: Provenance {
+                    (0.55 + 0.4 * t.goal.energy_target).clamp(0.1, 1.0),
+                    Role::Lead,
+                    Provenance {
                         motif_id: Some(motif.id),
                         motif_xform: Some(morph),
                         anchor: Some("motif"),
                         role_note: "melody",
                         ..Provenance::new(phrase.family.to_section_kind())
                     },
-                });
+                ));
             }
             // Breathe to the next 2-bar boundary — grid-aligned rest, not a random gap.
             let after = at + stmt_beats;
