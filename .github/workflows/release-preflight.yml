@@ -56,6 +56,11 @@ jobs:
           go-version: stable
           cache: false
 
+      # preflight.sh runs a `--all-features` clippy pass, which enables the optional
+      # audio-cpal backend (cpal -> alsa-sys, needs ALSA dev headers at build time).
+      - name: Install ALSA dev headers (for the optional audio-cpal feature)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
       - name: Release preflight
         env:
           STABLE_TOOLCHAIN: ""

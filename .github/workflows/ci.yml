@@ -39,6 +39,13 @@ jobs:
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
+      # The `--all-features` clippy pass below enables the OPTIONAL `audio-cpal` backend,
+      # which links ALSA on Linux (cpal -> alsa-sys, a pkg-config build script). The
+      # mandatory build and `cargo test` use default features and need none of this; only
+      # the all-features completeness check does, so the dev headers live here.
+      - name: Install ALSA dev headers (for the optional audio-cpal feature)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
       - name: Format check
         run: cargo fmt --check
 
