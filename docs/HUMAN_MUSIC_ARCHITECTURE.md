@@ -6,15 +6,38 @@ is a research/engineering-alpha subsystem, Rust-only, not yet part of the C ABI.
 this alongside the module docs in `src/audio/mod.rs` and
 `src/audio/human_music/mod.rs`, which this document expands on.
 
-This is the **Round II** revision of this document. Round I shipped a vertical slice
-that got the categorical vocabulary right and the causal wiring wrong: a running
-`MusicIntent` was computed and then thrown away, and the four voice generators
-(comp/bass/melody/SFX) each made local decisions with private RNGs off a shared `Form`
-and `HarmonyEngine` — "locally valid, globally incoherent," in the words of the
-maintainer's own ears. Round II inserts a real planning boundary between semantic
-meaning and note generation so the plan, not the generators, decides what recurs, who
-plays, what the melody develops, and where the band shuts up. That is what this document
-now describes.
+This is the **Round III** revision of this document. The three rounds are a layer
+progression, each fixing what the previous one didn't reach:
+
+- **Round I** shipped a vertical slice that got the categorical vocabulary right and the
+  causal wiring wrong: a running `MusicIntent` was computed and then thrown away, and the
+  four voice generators (comp/bass/melody/SFX) each made local decisions with private
+  RNGs off a shared `Form` and `HarmonyEngine`. The result had **local musical
+  plausibility without ensemble coherence** — "competent musicians noodling; music by
+  coincidence," in the maintainer's own words.
+- **Round II** inserted a real planning boundary between semantic meaning and note
+  generation (`IntentTimeline -> CoherenceContract -> CompositionPlan -> realizers ->
+  apply_arrangement`), so the plan, not the generators, decides what recurs, who plays,
+  what the melody develops, and where the band shuts up. That gave the piece
+  **ensemble/phrase grammar and identity coherence** — "one band playing one song," with
+  recurring material, a real arrangement, and musical sentences that individually hold
+  together.
+- **Round III** — this document — adds a **discourse** layer on top: long-range goals,
+  hierarchical expectation, cross-phrase obligations, directional transformation, and a
+  thesis the piece departs from and returns to. The precise claim, and the one this
+  document does not exceed: *HumanMusic now models an inspectable musical discourse —
+  relations among recurring material, future goals, unresolved obligations, hierarchical
+  closure, and directional transformations.* This is **not** a claim that philosophical
+  "meaning" has been solved; it is a claim that the causal/structural relationships a
+  listener tracks across a whole piece are now represented, computed, and testable, where
+  Round II modeled only within-phrase and identity coherence.
+
+Round II's own listening result was a concrete motivation for Round III: a piece could
+satisfy every Round-II identity/coherence check — a motif recurs, cadences prepare,
+silence is real — and still sound directionless, "a grammatically correct song whose
+meaning has been scrambled." Round III's `discourse.rs` module and its adversarial
+shuffle-the-sentences probe (§3.4) exist to make that failure a regression the machine
+can catch.
 
 ## 1. Overview & the orthogonal-axis principle
 
@@ -37,8 +60,9 @@ other's internals.
 ## 2. Layers
 
 `gibson::audio` is organized in two tiers: a general-purpose **substrate**, and the DSP
-layer it's built from. HumanMusic sits on top of both. (This section is unchanged from
-Round I — the substrate and DSP layers were not touched by the Round II rewrite.)
+layer it's built from. HumanMusic sits on top of both. (This section is unchanged since
+Round I — the substrate and DSP layers were not touched by the Round II or Round III
+rewrites.)
 
 ### Substrate
 
@@ -81,56 +105,79 @@ layer:
 The composition engine: turns a semantic trace into a full multi-voice `Score` and
 renders it through the DSP layer. This is the subject of the rest of this document.
 
-## 3. What actually happens: the Round II pipeline
+## 3. What actually happens: the Round III pipeline
 
 `gibson::audio::human_music` still uses categorical vocabulary in a few places
 (`MusicIntent`, `IntentMorphism`, `MorphismCost` in `intent.rs`), and those types are
 real and load-bearing — a `MorphismCost` vector genuinely drives the harmony engine's
-chord choices now (§3.4). But this document no longer frames the module as a grand
-functor construction: the causal pipeline below is what the code does, and it is a
-planning pipeline with an explicit boundary between "what the piece is" and "which notes
-get played," not a natural-transformation proof.
+chord choices (§3.5). But this document does not frame the module as a grand functor
+construction: the causal pipeline below is what the code does, and it is a planning
+pipeline with an explicit boundary between "what the piece is," "what it is arguing,"
+and "which notes get played," not a natural-transformation proof.
 
 The pipeline, end to end:
 
 ```text
 SemanticTrace
-  -> IntentTimeline        (causal walk; every transition inspectable)
+  -> IntentTimeline        (causal walk; every transition inspectable; phrases now read
+                             a full IntentSpan trajectory, not one start-of-phrase
+                             snapshot)
   -> CoherenceContract     (declared identity axes + budgets + a grammar family)
-  -> CompositionPlan       (FormGraph with recurring families + phrase obligations;
-                             ArrangementPlan with an enforced foreground budget and
-                             first-class silence)
-  -> realizers              (harmony trajectories; one threaded developing motif;
-                              a deterministic groove cell; a kick-locked bass figure;
-                              a sparse groove-locked comp)
-  -> apply_arrangement      (gates/scales every voice, stamps real provenance)
+  -> FormGraph             (phrase boundaries snapped to salient semantic events, so a
+                             structural event starts its own phrase)
+  -> MusicalThesis /
+     DiscoursePlan          (the piece's home; a DiscourseRole + Closure + target
+                             trajectory per phrase; an ObligationLedger of cross-phrase
+                             debts opened and paid)
+  -> CompositionPlan        (the FormGraph + ArrangementPlan + DiscoursePlan bundled;
+                             CompositionPlan::targets() is the one PhraseTarget stream
+                             every realizer reads)
+  -> realizers               (harmony realizes each phrase's Closure under a
+                              ResolutionPolicy; one motif threaded across the plan, each
+                              statement a DiscourseRole-consequent transform of the
+                              thesis germ; a deterministic groove cell that departs and
+                              re-enters; a kick-locked bass figure)
+  -> apply_arrangement       (gates/scales every voice, stamps real provenance;
+                              Score::sections projected FROM the plan)
   -> Score IR
-  -> HumanMusicSynth / DSP  (unchanged from Round I, see §2)
+  -> HumanMusicSynth / DSP  (unchanged since Round I, see §2)
 ```
 
-`CoherenceDiagnostics` (§3.7) then measures whether the realized `Score` actually
-honored the plan it was built from — a structural measurement, not a quality score.
+`CoherenceDiagnostics` (§3.9) measures whether the realized `Score` honored the identity
+contract it was built from. `DiscourseDiagnostics` (§3.10) measures whether it honored
+the *argument* — direction, not taste.
 
-### 3.1 `IntentTimeline` — the causal spine
+### 3.1 `IntentTimeline` — the causal spine, now a trajectory not a snapshot
 
 `timeline.rs`'s `IntentTimeline::walk` walks a `SemanticTrace` **once** and materializes
 a running `MusicIntent` over time as a sequence of `IntentTransition`s: the intent
 before the event, the `IntentMorphism`s the event applied (via `event_to_morphisms`,
-still the same category-level event→morphism mapping as Round I), the intent after, the
+the same category-level event→morphism mapping as Round I), the intent after, the
 step's `MorphismCost`, and the cost accumulated since the start of the trace. Every
 downstream planning stage reads its intent from `IntentTimeline::intent_at(beat)`, so
 the concrete score is derived from this spine instead of generators inventing structure
-independently — this is the fix for the Round I defect described above.
+independently.
 
 The walk also carries the semantic **elevation** axis into `MusicIntent::register`
 (`SemanticState::register_bias()`), which Round I computed but never consulted. Register
-now genuinely tracks elevation downstream (in phrase-level octave choice, §3.5).
+tracks elevation downstream (in phrase-level octave choice, §3.6).
 
 `MorphismCost::combine` sums two costs, and because `MusicIntent` accumulates
 `expectation` and `motif.development` along the walk, a round trip through several
 morphisms back to the same harmonic function is not the identity — a returning path
 leaves a different accumulated state behind (`intent.rs::holonomy_returning_is_not_identity`
 still tests this).
+
+**Round III addition — `IntentSpan` and `IntentTimeline::span()`.** Round II represented
+a phrase by a single `intent_at(start)` snapshot, so a phrase that began before a
+structural event and ended after it silently carried its *pre*-event intent for the
+whole phrase — the demo's `Confirmation@88` / `SectionResolved@104` used to land
+mid-phrase and be missed. `IntentSpan` (`start`, `end`, `peak_energy`, `peak_tension`,
+`events_inside`, `salient_inside`, `next_salient_beat`) sees the whole window a phrase
+covers, not just its opening instant, and `EventKind::is_salient()` (`semantic.rs`)
+marks which event kinds count as structural. `FormGraph::build` (§3.3) then snaps phrase
+boundaries to salient events on a 2-bar sub-grid instead of letting a phrase swallow
+one — the concrete fix for the one-snapshot defect.
 
 ### 3.2 `CoherenceContract` — the piece's declared identity
 
@@ -155,70 +202,161 @@ itself, a preferred phrase length, a `ResolutionPolicy` (`Functional` / `Loop` /
 `CoherenceContract::infer` picks a grammar from the *shape* of a trace's
 `IntentTimeline` (built-up-then-resolved → `HookArc`; built-up-and-stays-elevated →
 `RiffDrive`; never builds → `LoopEvolution`) — a classification, not a quality claim.
-**`infer` never selects `WorldSwitch`**; that grammar exists as a declared contract
-family (constructible via `for_grammar` and covered by its own unit tests) but nothing
-in the live `compose`/`compose_with_plan` pipeline currently reaches it — see the honest
-limits in §5.
+**`infer` never selects `WorldSwitch`**; that grammar is reached only by the explicit
+`CoherenceContract::for_grammar` / `compose_with_grammar` calibration path (§3.11), not
+by the live `compose`/`compose_with_plan` inference — see the honest limits in §7.
 
-### 3.3 `CompositionPlan` — the planning boundary
+### 3.3 `FormGraph` and `CompositionPlan` — the planning boundary and its sole authority
 
-`plan.rs` is where Round II's structural commitments live, built from the timeline and
-a bar budget (`CompositionPlan::build`):
+`plan.rs` is where the structural commitments live:
 
-- **`FormGraph`** — a hierarchy of `Phrase`s tiled on the contract's phrase grid (a
-  musically legible 2/4/8-bar grid), each with a `SectionFamily` (`Intro`, `A`,
-  `APrime { base }`, `B`, `Break`, `Climax`, `Coda`) and a `PhraseObligation` (`Arrival`,
-  `Continuation`, `Lift`, `Suspension`, `Breakdown`, `ReEntry`, `Release`). Recurrence is
-  explicit: interior odd phrases become the recurring `A` family, and every later
-  occurrence is `SectionFamily::APrime { base }`, carrying the index of the specific `A`
-  phrase it is a bounded transform of — not a new area that happens to share a label.
-  The climax lands on the phrase holding the peak-energy transition from the timeline,
-  clamped away from the intro/coda. Each phrase's representative `MusicIntent` is read
-  straight from `IntentTimeline::intent_at`, so the plan is derived from the semantic
-  walk rather than reinventing structure.
-- **`ArrangementPlan`** — a per-phrase assignment of every voice (pad/keys/bass/lead/
-  drums) to an `ArrangementRole` (`Foreground`/`Support`/`Foundation`/`Pulse`/`Texture`/
-  `Punctuation`/`Silent`), each with a fixed gain multiplier and `Silent` meaning
-  literally zero. `ArrangementPlan::build` assigns roles per section family (e.g. the
-  intro silences keys/bass/lead/drums and leaves only a textural pad; `A`-family phrases
-  put the lead in the foreground; `B` swaps the foreground to keys and silences the
-  lead so "the melody breathes"; the climax licenses more simultaneous foreground if the
-  contract's budget allows it), then enforces the contract's `foreground_budget` by
-  demoting any phrase's excess foreground voices to support (lead keeps priority), and
-  finally runs a coverage guard that promotes any voice that would otherwise never sound
-  anywhere into an audible role in the plan's highest-energy phrase.
+- **`FormGraph`** (`FormGraph::build`) — a hierarchy of `Phrase`s. Boundaries are the
+  contract's phrase grid (`phrase_bars`, `2*phrase_bars`, …) **union** every salient
+  event floored onto a 2-bar sub-grid, so a phrase never exceeds `phrase_bars` and a
+  structural event (Impact / Confirmation / SectionResolved / …) always starts its own
+  phrase instead of being swallowed mid-phrase — this is the concrete Round III fix
+  §3.1 introduces. Each `Phrase` now carries its full `IntentSpan` (not just a start
+  sample) alongside a `SectionFamily` (`Intro`, `A`, `APrime { base }`, `B`, `Break`,
+  `Climax`, `Coda`) and a `PhraseObligation` (`Arrival`, `Continuation`, `Lift`,
+  `Suspension`, `Breakdown`, `ReEntry`, `Release`). Recurrence is still explicit: interior
+  odd phrases become the recurring `A` family, and every later occurrence is
+  `SectionFamily::APrime { base }`, carrying the index of the specific `A` phrase it is a
+  bounded transform of. Families are assigned positionally in `FormGraph::build` itself
+  (intro first, coda last, the peak-energy interior phrase is `Climax`, odd/even interior
+  phrases split `A`/`B`); the discourse layer (§3.4) layers rhetorical *roles* derived
+  from the trajectory on top of this positional skeleton, it does not replace it.
+- **`ArrangementPlan`** — unchanged in mechanism since Round II: a per-phrase assignment
+  of every voice (pad/keys/bass/lead/drums) to an `ArrangementRole`
+  (`Foreground`/`Support`/`Foundation`/`Pulse`/`Texture`/`Punctuation`/`Silent`), each
+  with a fixed gain multiplier and `Silent` meaning literally zero, built per section
+  family and then constrained by the contract's `foreground_budget` and a coverage guard
+  that promotes any voice that would otherwise never sound anywhere.
+- **`DiscoursePlan`** (§3.4, new in Round III) — the piece's thesis, a rhetorical goal
+  per phrase, and the cross-phrase obligation ledger.
+- **`CompositionPlan`** bundles all three (`contract`, `form`, `arrangement`,
+  `discourse`). **Round III makes it the sole compositional authority.**
+  `CompositionPlan::build` infers the grammar from the trace; `build_with_contract`
+  takes an explicit contract (the calibration path, §3.11). `CompositionPlan::targets()`
+  returns one `PhraseTarget` per phrase — the phrase's timing/family bundled with its
+  discourse `PhraseGoal` — and this is the *single* object harmony, groove, bass and the
+  lead all read. Round II's two-form split-brain (harmony reading one form's tension
+  curve while the lead read a different form's phrase intent) is gone: `total_bars` is
+  computed once as `((trace.total_beats / BEATS_PER_BAR).round() as u32).max(1)`
+  (`functor.rs`), the legacy `Form::from_trace` is off the musical path entirely, and the
+  Score IR's `sections` list is *projected from the plan* (`sections_from_plan`) rather
+  than built independently — so `Score::summary` and each event's provenance finally
+  describe the same decomposition. `Form`/`Section`/`SectionKind` remain as dumb data
+  types the Score IR still carries (§4); they no longer carry independent structural
+  authority.
 - **`CompositionPlan::dump()`** renders a structural summary — contract, anchors,
-  budgets, and one line per phrase (bars, family, obligation, energy/tension/register,
-  rupture flag, and each voice's arrangement role) — for a cold reader (or the lab
-  example) to answer "what recurs, what changed, why is this instrument playing."
+  budgets, the discourse thesis/culmination/answer, one line per phrase (bars, family,
+  discourse role, closure, tension/register targets, the obligation it opens/pays, and
+  each voice's arrangement role), and the full obligation ledger with each debt's
+  resolution status — for a cold reader (or the lab example) to answer "what recurs,
+  what changed, why is this instrument playing, what is this phrase owed or owing."
 
-### 3.4 Harmony (`harmony.rs`) — phrase-scoped, cadence-prepared, cost-selected
+### 3.4 `discourse.rs` — the discourse layer (new in Round III)
 
-`HarmonyEngine::generate` now plans **per phrase**, not per scalar tension sample. Each
-phrase is carved into contiguous chord slots (`carve_slots`, sized from the form's local
-density) and closed with a genuinely prepared cadence: the last slot is a tonic triad,
-the second-to-last is the dominant that resolves into it, and (for phrases with three or
-more slots) the slot before that is a pre-dominant. A secondary dominant is a real
-obligation, not decoration: emitting a `V/x` (`note: "V/of"`) sets a `pending_resolve`
-that the *next* interior slot must pay off (tagged `note: "res"`), reset at each phrase
-boundary so cadences don't inherit debts. Interior diatonic degree choice
-(`choose_interior_degree`) minimizes a weighted `MorphismCost` — voice-leading (nearest
-semitone root motion), tension error against the form's target tension, and repetition —
-over the pool of degrees the current harmonic function allows; the RNG only breaks an
-exact tie. Borrowed/mixture (`bVI mix`) and chromatic-mediant colors can tint an
-already-chosen interior slot but are explicitly guarded off cadences, cadence prep, and
-resolutions. Diatonic chord quality is still classified from the actual stacked scale
-thirds (`classify`), so it comes out correct in any mode.
+`discourse.rs` sits between the `IntentTimeline`/`FormGraph` and the realizers, and is
+the module that answers the questions Round II's `CoherenceContract` could not: what did
+this piece establish, what is currently unresolved, what is this phrase preparing, what
+does the final return resolve that earlier arrivals did not.
 
-**This machinery is not yet grammar-differentiated.** `HarmonyEngine::generate` always
-produces the same prepared-cadence, functional-harmony shape described above, regardless
-of which `CompositionGrammar` the contract declares. `CoherenceContract::resolution` can
-be `Loop` or `ModalPedal` (declared for `LoopEvolution` and `RiffDrive` respectively),
-but nothing in `harmony.rs` reads `ResolutionPolicy` — the field is carried on the
-contract and asserted in `contract.rs`'s own tests, but the harmony engine has no branch
-on it. See §5.
+- **`MusicalThesis`** — the piece-level home: `home_energy`/`home_tension`/
+  `home_register`/`home_density` taken from the phrase's `IntentSpan` at the first
+  `A`-family phrase (or the opening, if none), the index of the phrase that establishes
+  it, and the contract's declared `CoherenceAnchor`s. It is an abstract home the planner
+  reasons about, not a note-level object — the concrete motif identity still lives in
+  `motif::MotifBank`.
+- **`DiscourseRole`** — a phrase's rhetorical job, a *consequence* of the intent
+  trajectory (not a parity/index label): `Establish`, `Restate`, `Depart`, `Intensify`,
+  `Question`, `Withhold`, `Culminate`, `Answer`, `Return`, `Dissolve`. Each role carries a
+  `tension_direction` (`+1`/`0`/`-1`) that diagnostics compare against the phrase's
+  actual trajectory (§3.10), and `is_referential()` marks the roles (`Restate`, `Return`,
+  `Answer`) that must carry a `refers_to` target.
+- **`Closure`** — the permitted cadential strength for a phrase's close: `Open` (no
+  cadence), `Half` (dominant, maximum pull), `Deferred` (an expected resolution evaded),
+  `Deceptive` (V→vi), `Weak` (plagal/inversion arrival), `Strong` (a full prepared
+  cadence). This is the mechanism that replaces "every phrase ends on a prepared tonic
+  cadence" (Round II's over-cadencing) with a graded hierarchy; `closure_for(role)` maps
+  each `DiscourseRole` to its permitted closure (only the discharge roles — `Answer`,
+  `Return`, `Dissolve` — get `Strong`; `Culminate` is deliberately capped at `Half`).
+- **`ObligationLedger`** — cross-phrase debts, the generalization of the local V/x
+  obligation (§3.5) to the whole form. `ObligationKind` is `HarmonicDeparture`,
+  `SuspendedCadence`, `MotifQuestion`, `RegisterAscent`, `OrchestrationSubtraction`, or
+  `GrooveDestabilization`. Each `Obligation` records the phrase that opened it, an
+  optional deadline, a strength, whether it is `deferrable`, and the phrase that settled
+  it (`resolved_by: None` = still open). `is_abandoned()` — open and non-deferrable, or
+  open past deadline — is exactly "the unresolved expectation a listener registers as
+  scrambled direction," and `abandoned_count()` is the number diagnostics want at zero.
+- **`DiscoursePlan::build(timeline, form, contract)`** derives everything from the
+  trajectory, planning from both directions. Forward: the thesis is established from the
+  first `A`-family phrase. Future-anchored: the **culmination** is the phrase of maximum
+  commitment — `peak_energy.energy + peak_tension.tension` across each phrase's span,
+  first-strictly-greater wins ties toward the earlier peak, clamped into the interior —
+  and the **answer** is the first phrase *after* the culmination whose span actually
+  lands a release (tension falls at least 0.2 below the culmination's peak and keeps
+  falling). If no later phrase lands a release, `answer` is `None` — a legitimate
+  rise-then-remain-open shape, not a bug papered over. `role_for` assigns every phrase's
+  `DiscourseRole` from its position relative to the culmination/answer anchors (opening →
+  `Establish`; the phrase immediately before the culmination → `Withhold`; between the
+  culmination and the answer (or to the end, if unresolved) → `Withhold`; after the
+  answer → `Return`; the tail → `Dissolve`; interior `A`-family phrases → `Restate`; the
+  phrase two before the culmination poses the `Question` (an incomplete gesture the later
+  `Answer` completes) when it is not a restatement; the rest of the run-in splits
+  `Depart`/`Intensify` at its midpoint). `resolve_obligations`
+  then opens and settles the ledger in role order: `Question`/`Withhold`/`Culminate`/
+  `Depart`/`Intensify` open debts; `Answer`/`Return`/`Dissolve` pay the most recent
+  matching one. Per-phrase `energy`/`tension`/`density`/`register` targets
+  (`targets_for`) are read straight from each phrase's own `IntentSpan` — the culmination
+  targets its *peak*, every other phrase targets the state it *concludes* in — so targets
+  stay causal, not invented.
+- **Culmination is explicitly separated from its discharge.** This is the fix for what
+  the module doc calls Round II's "Climax≡Release conflation": the point of maximum
+  pressure (`Culminate`) is not automatically the release. `Culminate`'s permitted
+  closure is `Half`, not `Strong`, and its debt (a `SuspendedCadence` obligation,
+  strength 1.0) stays open until a later `Answer` phrase pays it — proven by
+  `culmination_precedes_the_answer_and_is_not_resolved` in `discourse.rs`'s own tests.
+- **The adversarial "shuffle the sentences" probe** — `DiscoursePlan::scrambled()`
+  reverses the rhetorical role order across phrases (each phrase keeps its own bar
+  position and trajectory targets; only the assigned role, closure, and recomputed
+  ledger are permuted) and recomputes the obligation ledger for that reversed order,
+  sharing `resolve_obligations` with the real build so both use identical bookkeeping
+  rules. This turns "a grammatically correct song whose meaning has been scrambled" into
+  a regression `DiscourseDiagnostics::faults()` (§3.10) can assert scores strictly worse
+  than the real ordering, without needing an aesthetic oracle.
 
-### 3.5 Motif (`motif.rs`) — one developing idea, threaded jointly against harmony
+### 3.5 Harmony (`harmony.rs`) — phrase-scoped, closure-realized, grammar-branched
+
+`HarmonyEngine::generate` plans **per phrase**, not per scalar tension sample, and now
+takes a `ResolutionPolicy` and reads each phrase's `Closure` from its `PhraseTarget`.
+Each phrase is carved into contiguous chord slots (`carve_slots`, sized from the form's
+local density). Interior diatonic degree choice (`choose_interior_degree`) minimizes a
+weighted `MorphismCost` — voice-leading (nearest semitone root motion), tension error
+against the form's target tension, and repetition — over the pool of degrees the current
+harmonic function allows; the RNG only breaks an exact tie. Borrowed/mixture (`bVI mix`)
+and chromatic-mediant colors can tint an already-chosen interior slot but are explicitly
+guarded off cadences, cadence prep, and resolutions. Diatonic chord quality is still
+classified from the actual stacked scale thirds (`classify`).
+
+**Round III addition — the harmony engine now branches on `ResolutionPolicy` and on each
+phrase's `Closure`, where Round II declared these fields but never read them.** Under
+`ResolutionPolicy::Functional`, a `Closure::Strong` phrase gets the Round-II-style
+prepared cadence (predominant → dominant → tonic); `Closure::Weak` lands a weaker tonic
+arrival; `Closure::Half` stops on the dominant; `Closure::Deceptive` resolves V→vi rather
+than V→I; `Closure::Deferred` sets up the expected resolution and then evades it;
+`Closure::Open` closes on a plain continuation chord with no cadence at all. Under
+`ResolutionPolicy::Loop`, a phrase's close is instead a cyclic return into the loop's own
+harmony rather than a functional cadence. **Not every phrase cadences now** — the mix of
+closures a real piece exercises (per the maintainer's own measurement on the canonical
+demo) puts `cadence_preparation` (§3.9) at roughly 0.40 rather than Round II's 1.00 (every
+multi-chord phrase closing on a prepared cadence); *that drop is the fix*, not a
+regression, since not every phrase is entitled to a full stop. A secondary dominant
+remains a real obligation, not decoration: emitting a `V/x` (`note: "V/of"`) sets a
+`pending_resolve` that the *next* interior slot must pay off (tagged `note: "res"`),
+reset at each phrase boundary so cadences don't inherit debts.
+
+### 3.6 Motif (`motif.rs`) — one developing idea, now a discourse-consequent transform
 
 `motif::MotifBank::generate` grows a small, deterministic, related roster from a single
 germ (an `identity` motif, a `hook` fragment, a `rhythmic_cell` diminution, a `bass_cell`
@@ -227,75 +365,132 @@ costumes, generated once per composition from `(scale, seed)`.
 
 `MotifIdentity` is a transposition- and tempo-invariant fingerprint (interval contour,
 normalized rhythm profile, direction signature), and `motif_similarity` scores how
-related two statements are (weighted blend, length-mismatch penalized) — tested to be
-≥0.9 under transposition or tempo change and <0.6 against an unrelated contour.
+related two statements are — tested to be ≥0.9 under transposition or tempo change and
+<0.6 against an unrelated contour.
 
-In `functor.rs::add_melody`, the lead voice threads one *developing* motif object across
-the plan's phrases (not a fresh re-seed per section): at an `A`-family phrase, or
-whenever the current object's similarity to the germ has drifted below
-`1 - contract.max_transform`, it restates the identity (or, at the climax, states the
-`hook`); otherwise it develops the *current* object further, bounded by the phrase's
-`PhraseObligation` (`develop_current`: `Lift` transposes up, `Release` diminishes the
-rhythm, `Continuation` sequences down a step, other obligations pick transposition or
-augmentation). Statements enter grid-aligned (no random offset) and register comes from
-the phrase's live `intent.register` (elevation, finally consulted — see §3.1), except at
-the climax which is fixed to a higher octave. The lead only sounds in phrases where the
-arrangement gives it an audible role, so it breathes.
+**Round III addition — `Motif::tail(skip)`, the withheld remainder, and every lead
+statement is now chosen by the phrase's `DiscourseRole` rather than by drift/obligation
+alone.** In `functor.rs::add_melody`, `motif_for_role` (called once per phrase, from
+`plan.targets()`) is sign-consistent with the argument: `Establish`/`Restate`/`Return`
+state the germ unchanged; `Depart` transposes it; `Intensify` scales its rhythm tighter;
+`Culminate` states the bank's `hook`; `Dissolve` fragments it down to a short tail; and —
+the concrete Question→Answer coupling — `Question` fragments the germ at a take point `k`
+(`germ.fragment(k)`, tagged `"question"`) and records `question_take`, and a later
+`Answer` phrase completes *exactly that remainder* via `germ.tail(question_take)`
+(tagged `"answer"`), so the answer is provably the missing piece of the question that
+posed it, not an unrelated new idea. `Motif::tail`/`fragment` partitioning each other is
+directly unit-tested (`fragment_then_tail_reconstructs_the_motif`). Statements enter
+grid-aligned; register is realized per role (`Culminate`/`Intensify` climb to octave 5,
+`Dissolve` settles to octave 3, everything else follows the phrase's elevation-derived
+`register_target`). The lead only sounds in phrases where the arrangement gives it an
+audible role.
 
-Each whole statement is realized against the harmony **jointly**, not note by note:
-`motif::realize_phrase` runs a bounded dynamic program over a small per-note candidate
-set (chord tones on strong beats, scale tones on weak beats) that scores an entire
-path at once — anchor-pitch fit, voice-leading motion between successive notes, and
-(heavily weighted) agreement with the original motif's contour direction — so the
-realized line stays harmonically valid while keeping the motif's shape instead of
-snapping each note to the nearest chord tone in isolation.
+Each whole statement is still realized against the harmony **jointly**, not note by
+note: `motif::realize_phrase` runs a bounded dynamic program over a small per-note
+candidate set (chord tones on strong beats, scale tones on weak beats) that scores an
+entire path at once — anchor-pitch fit, voice-leading motion between successive notes,
+and (heavily weighted) agreement with the original motif's contour direction — unchanged
+in mechanism since Round II.
 
-### 3.6 Groove and bass (`groove.rs`, `functor.rs::add_bass`)
+### 3.7 Groove and bass (`groove.rs`, `functor.rs::add_bass`) — typed departure and re-entry
 
 `GrooveEngine::generate` realizes a deterministic 2-bar groove cell (bar 0 the plain
-statement, bar 1 the bounded variation — syncopated kick anticipations, ghost snares,
-an open-hat lift — gated by energy) instead of an independent per-bar coin flip per
-variation. Fills are driven by the plan: `is_fill_bar` checks whether the *next* bar is
-a `phrase_end_bar` (passed in from `plan.form.phrases`), so extra fill snares land
-because a phrase is ending, not because a die rolled. Micro-timing humanization stays
-the one deterministic-but-seeded stochastic element (±~6 ms). The engine exports
-`kick_beats` so the bass can lock onto it.
+statement, bar 1 the bounded variation — syncopated kick anticipations, ghost snares, an
+open-hat lift — gated by energy). Fills are driven by the plan: `is_fill_bar` checks
+whether the *next* bar is a `phrase_end_bar`, so extra fill snares land because a phrase
+is ending, not because a die rolled. Micro-timing humanization stays the one
+deterministic-but-seeded stochastic element (±~6 ms). The engine exports `kick_beats` so
+the bass can lock onto it.
+
+**Round III addition.** A phrase whose `DiscourseRole` is `Withhold` or `Question`
+strips the kit back to a stark kick+snare backbone — no hats, ghosts, or syncopated
+pushes — and the full groove re-enters at the following `Answer`/`Return` phrase, so the
+departure/re-entry is a typed consequence of the discourse role, not an independent coin
+flip.
 
 `add_bass` places a persistent, position-determined figure on every kick within a chord
 span: the root on the first kick, a fifth on offbeat kicks at high energy, and a
 chromatic/scale approach tone into the next chord's root on the last kick before a chord
-change — a repeatable shape rather than a re-rolled choice at every onset, still
-locked to the groove's real kick placements.
+change — locked to the groove's real kick placements, unchanged in mechanism since Round
+II.
 
-### 3.7 `apply_arrangement` and provenance
+### 3.8 `apply_arrangement` and provenance
 
 `functor.rs::apply_arrangement` is the pass that turns "everyone plays all the time"
 into a real arrangement: for every note and drum hit it looks up the phrase it falls in
 (`FormGraph::phrase_at`) and that phrase's `ArrangementRole` for its voice; a `Silent`
-role drops the event outright (`Vec::retain_mut`), an audible role scales its velocity
-by the role's fixed gain, and the event's provenance is restamped with the *real*
-section family, phrase index, family label, role label and obligation label from the
-plan — replacing a Round-I defect where provenance was hardcoded to a fixed
-`SectionKind::A`.
+role drops the event outright, an audible role scales its velocity by the role's fixed
+gain, and the event's provenance is restamped with the real section family, phrase
+index, family label, role label and obligation label from the plan. Unchanged in
+mechanism since Round II.
 
-### 3.8 `CoherenceDiagnostics` — structural measurement, not a quality score
+### 3.9 `CoherenceDiagnostics` — structural measurement, not a quality score
 
 `diagnostics.rs::CoherenceDiagnostics::measure(plan, score)` computes a vector of plain
-counts and ratios against a realized `(CompositionPlan, Score)` pair: number of
-recurring section families, foreground-budget collisions (should be 0), the fraction of
-phrases with at least one silent voice, the fraction of multi-chord phrases that close
-on a prepared Dominant→Tonic cadence, unresolved-secondary-dominant violations (should
-be 0) versus resolved ones, motif restatement count, lead-note count, sounding register,
-and total note/drum counts. The module's own tests include positive (a real composition
-measures clean), null (an empty score measures to zeros without panicking), and mutation
-controls (a hand-injected unresolved `V/x`, and a hand-built budget-violating
-arrangement are both caught). This is explicitly **not** a taste or "does it slap"
-metric — it cannot be, and the module doc says so directly.
+counts and ratios: number of recurring section families, foreground-budget collisions
+(should be 0), the fraction of phrases with at least one silent voice, the fraction of
+multi-chord phrases that close on a prepared Dominant→Tonic cadence
+(`cadence_preparation` — now deliberately *partial* under Round III's closure hierarchy,
+§3.5), unresolved-secondary-dominant violations (should be 0) versus resolved ones,
+motif restatement count, lead-note count, sounding register, and total note/drum counts.
+The module's own tests include positive, null, and mutation controls. This is explicitly
+**not** a taste metric — it measures whether the piece is recognizably *itself*, not
+whether it's going anywhere (that is §3.10).
+
+### 3.10 `DiscourseDiagnostics` — direction, not taste (new in Round III)
+
+`diagnostics.rs::DiscourseDiagnostics::measure(plan, score)` measures whether the piece
+knows where it came from and where it is going, as a vector of independent counts:
+`orphan_phrases` (no discourse relation to past or future), `abandoned_obligations`
+(`ObligationLedger::abandoned_count()`), `unearned_strong_closures` (a `Strong` terminal
+closure that settles no obligation and isn't the final `Dissolve`),
+`role_direction_contradictions` (a phrase's role claims one tension direction while its
+realized trajectory target moves the other way, compared window-by-window),
+`swallowed_salient_events` (phrases whose span still crosses a salient event — should be
+0 given §3.1/§3.3's boundary snapping), `distinct_closures` (how many closure strengths
+are actually in play — `>1` means the hierarchy is exercised, not degenerate),
+`motif_questions`/`motif_answers` (counted from lead note provenance),
+`culmination_before_answer` (the core teleology invariant; `true` when the piece is
+intentionally unresolved and has no answer at all), and `thesis_return_strength` (mean
+`1 - thematic_distance` over `Return`/`Answer` phrases, `[0,1]`).
+`DiscourseDiagnostics::faults()` sums the defect counts *only* so the shuffle-the-sentences
+probe (§3.4) can assert a scrambled ordering scores strictly worse — every component
+stays separately inspectable and the module doc is explicit that this is not a quality
+score. On the canonical demo (`demo_trace`, seed `2112`, `BLACK_ICE`):
+`faults() == 0`, `distinct_closures == 4`, `abandoned_obligations == 0`,
+`culmination_before_answer == true`, and `thesis_return_strength ≈ 0.82` — the numbers
+the module's own `a_real_composition_is_directed` test and the shuffle-probe regression
+pin.
+
+### 3.11 Calibration probes and synthetic traces — anti-overfitting
+
+`functor.rs::compose_with_grammar(trace, world, seed, grammar)` forces
+`CompositionPlan::build_with_contract` to use `CoherenceContract::for_grammar(grammar)`
+instead of inferring one from the trace's shape, so a piece can be constructed to
+exercise a specific grammar's `ResolutionPolicy`/budgets/anchors regardless of what
+`CoherenceContract::infer` would otherwise pick. `examples/human_music_lab.rs --calibrate`
+renders four probes through this path — `hook_arc` (the resolved demo trace under
+`HookArc`), `loop_evolution` (`calm_loop` under `LoopEvolution`), `riff_drive`
+(`rise_unresolved` under `RiffDrive`), and `world_switch` — each writing a WAV, the
+plan's structural dump, and both diagnostics reports. `semantic.rs` supplies synthetic
+traces built specifically to stress the planner's response to *shape*, not to overfit to
+the one canonical demo: `rise_unresolved` (a rising trace with no release, so
+`DiscoursePlan::build` must leave `answer: None` and an abandoned debt, not manufacture a
+false resolution), `false_climax` (an early smaller peak followed by a later larger one,
+so the culmination must land on the true peak, not the first one), and `calm_loop` (a
+trace that never builds significant tension, so no artificially high-pressure culmination
+should be invented). Each is asserted directly in `discourse.rs`'s own tests
+(`an_unresolved_arc_has_no_answer_and_leaves_a_debt_open`,
+`false_climax_puts_the_culmination_on_the_true_peak`,
+`a_calm_loop_invents_no_high_pressure_culmination`).
+
+`world_switch` is the weakest of the four probes and is described precisely, not
+oversold, in §7.
 
 ## 4. Engines carried over unchanged from Round I
 
-These pieces of the Round I vertical slice are still in place and are not part of the
-Round II rewrite:
+These pieces of the Round I vertical slice are still in place and were not part of the
+Round II or Round III rewrites:
 
 - **`world::MusicWorld`** — a skin's sonic world / local physics: harmonic vocabulary
   gates (`use_sevenths`, `allow_extensions`, `allow_chromatic_mediant`,
@@ -306,12 +501,13 @@ Round II rewrite:
   71 BPM), `SWISS_SIGNAL` (sparse clean C Ionian, straight, 118 BPM).
 - **`form::Form`** — the world-independent section skeleton (`Intro`/`A`/
   `Development`/`Climax`/`Contrast`/`Coda`) and piecewise-linear energy/tension/density
-  target curves, derived from the trace (`Form::from_trace`). `FormGraph` (§3.3) is a
-  finer-grained phrase structure built alongside `Form`, not a replacement for it — the
-  Score IR still carries `Form`'s section list.
+  target curves. `Form::from_trace` is no longer on the live musical path (§3.3); `Form`/
+  `Section`/`SectionKind` remain as the data types the Score IR carries, populated by
+  projecting the `CompositionPlan` rather than by an independent computation.
 - **`voicing::VoiceLeader`** — turns a chord symbol into a smoothly moving `Voicing` by
-  minimizing total semitone motion from the previous voicing across three octave
-  placements, clamped to a register window.
+  minimizing total semitone motion from the previous voicing across octave placements,
+  clamped to a register window. See §7 for exactly what this does and does not do as of
+  Round III.
 - **The Score IR (`score::Score`)** — notes (`Role::Pad/Bass/Lead/Keys`), drum hits, SFX
   events, chord spans and sections, each carrying a `Provenance` so a rendered piece's
   choices can be traced back to the plan and semantic events that produced them.
@@ -344,43 +540,70 @@ XORed with a per-engine constant, and every test that composes the same inputs t
 asserts identical output (`functor.rs::deterministic_for_seed`,
 `harmony.rs::deterministic_progression_for_seed`,
 `groove.rs::velocities_are_bounded_and_deterministic`,
-`motif.rs::realize_phrase_is_deterministic`).
+`motif.rs::realize_phrase_is_deterministic`, `discourse.rs::is_deterministic`).
 
 The test suite certifies **structure and safety**, not taste: no NaN/Inf in rendered
 audio, bounded peaks, exact sample counts, the category-level laws (identity-is-prolong,
 composition sums cost, holonomy), voice-leading register/motion bounds, score validity
-(`Score::validate`) across all three worlds, and the Round II structural invariants
-described in §3 (families recur with `A'` pointing at its base, the foreground budget is
-enforced, silence is present, every voice is heard somewhere, cadences prepare, secondary
-dominants resolve, motif restatement happens, register tracks elevation). It does not
-and cannot certify that a piece sounds good.
+(`Score::validate`) across all three worlds, the Round II structural invariants (families
+recur with `A'` pointing at its base, the foreground budget is enforced, silence is
+present, every voice is heard somewhere, cadences prepare where a phrase's closure calls
+for one, secondary dominants resolve, motif restatement happens, register tracks
+elevation), and the Round III discourse invariants (§3.4/§3.10: every phrase gets a goal,
+referential roles point somewhere, the culmination precedes its answer and stays
+unresolved, the resolving demo arc abandons no obligation, the canonical arc reads
+Establish→Culminate→Answer→Dissolve in order, the shuffle probe scores strictly worse,
+and the anti-overfitting synthetic-trace tests in §3.11). It does not and cannot certify
+that a piece sounds good.
 
-## 7. Honest limits (Engineering Alpha, Round II)
+## 7. Honest limits (Engineering Alpha, Round III)
 
-This is Round II of the intended v0.4.0 milestone. It fixed the causal-wiring defect
-Round I shipped with, but it is candid about what it still does not claim:
+This is Round III of the intended v0.4.0 milestone. It adds a discourse layer on top of
+Round II's identity coherence, but it is candid about what it still does not claim:
 
-- **Perceptual/aesthetic quality remains unproven.** Machine tests (§6, §3.8) can
-  certify structural and safety invariants; they cannot certify that the music "slaps."
-  That judgment is pending an actual human listen to the rendered WAVs — the decisive,
-  still-open gate for this round.
-- **Grammar-differentiated harmonic realization is not wired up.** The
-  `CoherenceContract` declares a `ResolutionPolicy` per grammar (`Loop` for
-  `LoopEvolution`, `ModalPedal` for `RiffDrive`, `Functional` for `HookArc` /
-  `WorldSwitch`), but `HarmonyEngine::generate` does not branch on it — it always
-  produces the same prepared functional-cadence shape described in §3.4, regardless of
-  the declared grammar. A `LoopEvolution` or `RiffDrive` piece is currently harmonized
-  identically to a `HookArc` piece.
-- **`WorldSwitch` has no transport implementation.** The grammar exists as a declared
-  `CompositionGrammar` variant with its own canonical contract and unit tests, but
-  `CoherenceContract::infer` never selects it, and nothing in the live
-  `compose`/`compose_with_plan` pipeline performs an explicit mid-piece world switch or
-  builds a two-regime piece from it. It is a designed-for-later type, not a running
-  feature.
-- **No calibration compositions exist yet.** There is no code in the tree (as of this
-  writing) that constructs dedicated `hook_arc` / `loop_evolution` / `riff_drive` /
-  `world_switch` calibration probes; the only composed material comes from the shared
-  `demo_trace` used by tests and the `human_music_lab` example.
+- **Perceptual/aesthetic quality remains unproven.** Machine tests (§6, §3.9, §3.10) can
+  certify structural, identity, and directional invariants; they cannot certify that the
+  music "slaps." That judgment is pending an actual human listen to the rendered WAVs —
+  the decisive, still-open gate for this milestone.
+- **Global voice-leading is not done.** `voicing::VoiceLeader` (§4) is still local and
+  greedy: for each chord it picks among a small set of octave-shifted candidate
+  placements by minimizing `voice_motion` — a symmetric, unsigned sum of per-voice
+  semitone distances (`(a - b).abs()` per voice, summed) — against the *immediately
+  previous* voicing only. There is no phrase- or section-scope progression optimizer
+  with a target-register or directional-motion cost, and only the pad and keys voices
+  are voice-led at all (`functor.rs` constructs a `VoiceLeader` for pad and for keys;
+  bass and lead are placed by their own register/contour logic, not by this module).
+  Deferred to a later round.
+- **`WorldSwitch` transport is minimal.** The `world_switch` calibration probe
+  (`examples/human_music_lab.rs --calibrate`) joins two sonic dialects (`BLACK_ICE` then
+  `VAPOR95`) of the *same* `CompositionPlan` and seed via `compose_with_grammar(..,
+  CompositionGrammar::WorldSwitch)` called once per world, then concatenates the two
+  offline renders into one WAV. The transported identity is the form/discourse skeleton
+  (and the seed), not a single motif germ carried byte-identical audio across two synth
+  worlds in one continuous render, and there is no mid-song timbral switch within a
+  single render — the two regimes are two separate renders joined end to end.
+  `CoherenceContract::infer` never selects `WorldSwitch`; only `for_grammar` and the
+  calibration path construct it.
+- **The role-assignment heuristic is deliberately a minimal skeleton.** `discourse::role_for`
+  derives one `Question` slot (two phrases before the culmination, when it is not a
+  restatement), one `Withhold` before the peak, one `Culminate`, one `Answer`, and so on,
+  from the culmination/answer anchors — a coherent minimal argument, not the full rhetorical
+  variety the `DiscourseRole` vocabulary could express. A trace whose entire run-in is
+  `A`-family, for instance, poses no `Question` at all; there are no nested departures or
+  multiple questions. The `Question`→`Answer` motif coupling is live on the canonical demo
+  (`motif_questions == 4`, `motif_answers == 3` at seed `2112`/`BLACK_ICE`) and is separately
+  unit-tested at the motif level (`motif.rs::fragment_then_tail_reconstructs_the_motif`);
+  richer, more evidence-driven role assignment is future work.
+- **`Modulate` still doesn't change tonal region.** `intent.rs`'s `IntentMorphism::Modulate`
+  bumps `MusicIntent::function` to `Function::Dominant` and advances
+  `motif.development`, but the harmonic key stays fixed per `MusicWorld` — there is no
+  mechanism that shifts the actual tonal center mid-piece.
+- **The obligation/motif diagnostics still key on string tags.** Secondary-dominant
+  resolution detection (`harmonic_obligation_violations`/`secondary_dominants_resolved`
+  in `CoherenceDiagnostics`) matches `ChordSpan::note` strings `"V/…"`/`"res"`; motif
+  question/answer/restatement counts (`DiscourseDiagnostics`, `CoherenceDiagnostics`)
+  match `Provenance::motif_xform` strings `"question"`/`"answer"`/`"statement"`. These
+  are load-bearing string comparisons, not a typed obligation-to-event link.
 - The model is experimental and expected to evolve between releases.
 - It is Rust-only and intentionally not exposed through the C ABI this milestone.
 - The package version stays `0.3.1` until this work is reviewed and a release is cut;
@@ -405,4 +628,16 @@ a `CoherenceDiagnostics` report, and render receipts printed to stdout. Flags:
 The point of the lab, per its own doc comment: the three WAVs should be recognizably the
 *same* music in form and meaning — same section skeleton, same motif identity, same
 resolutions — while sounding like three different dialects. Machines can certify the
-structure (§3.8, §6); only your ears can judge the rest.
+structure (§3.9, §6); only your ears can judge the rest.
+
+```
+cargo run --release --example human_music_lab -- --calibrate
+```
+
+Renders the four grammar/discourse calibration probes described in §3.11
+(`calib_hook_arc.wav`, `calib_loop_evolution.wav`, `calib_riff_drive.wav`,
+`calib_world_switch.wav`), each printed with its plan dump, `CoherenceDiagnostics`
+report, and `DiscourseDiagnostics` report — the fastest way to look at whether the
+discourse layer produced a legible argument (a culmination that precedes its answer, a
+non-degenerate closure hierarchy, zero abandoned obligations) for a piece under a
+*forced* grammar rather than an inferred one.
