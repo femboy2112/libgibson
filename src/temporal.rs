@@ -1216,6 +1216,15 @@ pub struct TemporalDisplayProcessor {
     /// Per-cell emitted (post-quantization) static RMSE, so the reported mean stays
     /// correct after an incremental regional reprojection touches only some cells.
     cell_rmse: Vec<f32>,
+    /// Per-cell emitted luminance swing at the current depth (`NaN` when unknown —
+    /// Mono, or an unset/`Reset` colour). Cached so a regional edit updates the
+    /// worst-swing aggregate incrementally: extending it upward is free, and a
+    /// bounded max-only rescan is needed only when a touched cell might have held
+    /// the previous maximum (issue #68).
+    cell_swing: Vec<f32>,
+    /// Running sum of `cell_rmse` (kept in `f64` to resist drift across many
+    /// incremental edits), so the reported mean needs no full-grid resum.
+    rmse_sum: f64,
     profile: PresentationProfile,
     policy: TemporalSafetyPolicy,
     reduced_motion: bool,
@@ -1251,6 +1260,8 @@ impl TemporalDisplayProcessor {
             active: vec![false; cells],
             active_cells: 0,
             cell_rmse: vec![0.0; cells],
+            cell_swing: vec![f32::NAN; cells],
+            rmse_sum: 0.0,
             profile: PresentationProfile::unmeasured(),
             policy: TemporalSafetyPolicy::default(),
             reduced_motion: false,
@@ -1346,15 +1357,29 @@ impl TemporalDisplayProcessor {
     pub fn set_motion_region(&mut self, x: u16, y: u16, w: u16, h: u16, motion: bool) -> usize {
         let x2 = x.saturating_add(w).min(self.width);
         let y2 = y.saturating_add(h).min(self.height);
+        let global_static = self.motion_static;
+        // Only the touched cells' motion flag changes, so only their active gate can
+        // move; update it locally (with the same false->true reseed as
+        // `refresh_active`) rather than rescanning the whole grid (issue #68).
+        let mut active_delta = 0i64;
         let mut count = 0;
         for cy in y.min(self.height)..y2 {
             for cx in x.min(self.width)..x2 {
                 let index = (cy as usize) * self.width as usize + cx as usize;
                 self.cell_motion[index] = motion;
+                let now_active = self.eligible[index] && !motion && !global_static;
+                let was_active = self.active[index];
+                if now_active && !was_active {
+                    self.field.reset_cell(cx, cy);
+                }
+                if now_active != was_active {
+                    active_delta += if now_active { 1 } else { -1 };
+                    self.active[index] = now_active;
+                }
                 count += 1;
             }
         }
-        self.refresh_active();
+        self.active_cells = (self.active_cells as i64 + active_delta).max(0) as usize;
         count
     }
 
@@ -1397,8 +1422,10 @@ impl TemporalDisplayProcessor {
     /// change costs a small reprojection instead of the whole frame. `sample` is
     /// evaluated over the same logical grid as [`Self::set_target_image`] (`2*width`
     /// by `4*height` subpixels); `reset` reseeds only the touched cells' residual
-    /// (use [`ResetPolicy::Reset`] when the region's content changed). Eligibility
-    /// is then reclassified (an O(cells) luminance pass, not a reprojection).
+    /// (use [`ResetPolicy::Reset`] when the region's content changed). Eligibility,
+    /// the active gate and the diagnostic aggregates are then updated incrementally
+    /// for the touched cells only — work proportional to the region, not the whole
+    /// grid (issue #68) — reproducing a full reclassification exactly.
     /// Requires a prior [`Self::set_target_image`]; returns the number of cells
     /// reprojected (`0` if there is no target yet).
     pub fn set_target_region(
@@ -1415,6 +1442,20 @@ impl TemporalDisplayProcessor {
         }
         let x2 = x.saturating_add(w).min(self.width);
         let y2 = y.saturating_add(h).min(self.height);
+        let cap = self.policy.max_luminance_depth;
+        let depth = self.color_depth;
+        let global_static = self.motion_static;
+        // Per-cell classification is a pure function of a cell's own style and the
+        // global depth/cap (no neighbour coupling), and this call changes only the
+        // touched cells' styles and none of the motion flags. So eligibility, the
+        // active gate, and every diagnostic aggregate can be maintained proportional
+        // to the region rather than rescanning the whole grid (issue #68). The full
+        // `reclassify()`/`refresh_active()` pair remains the oracle these must match.
+        let mut modulatable_delta = 0i64;
+        let mut frozen_delta = 0i64;
+        let mut active_delta = 0i64;
+        let mut touched_max = 0.0f32;
+        let mut maybe_dropped_max = false;
         let mut count = 0;
         for cy in y.min(self.height)..y2 {
             for cx in x.min(self.width)..x2 {
@@ -1427,15 +1468,70 @@ impl TemporalDisplayProcessor {
                 }
                 let proj = project_rgb_subcells(target);
                 let index = (cy as usize) * self.width as usize + cx as usize;
+
+                // RMSE running sum: swap this cell's old contribution for its new one.
+                self.rmse_sum += proj.emitted_static_rmse as f64 - self.cell_rmse[index] as f64;
                 self.cell_rmse[index] = proj.emitted_static_rmse;
                 self.field.set_cell_projection(cx, cy, proj);
                 if reset == ResetPolicy::Reset {
                     self.field.reset_cell(cx, cy);
                 }
+
+                let style = self.field.cell_style(cx, cy).unwrap_or_default();
+                let swing = style_luminance_swing_resolved(style, depth);
+                let old_swing = self.cell_swing[index];
+                // A touched cell whose old swing was at (within tolerance) the global
+                // maximum might have been the argmax; a decrease can only be found by
+                // the bounded rescan below. An increase is handled by `touched_max`.
+                if old_swing.is_finite() && old_swing + 1e-6 >= self.worst_cell_swing {
+                    maybe_dropped_max = true;
+                }
+                if let Some(s) = swing {
+                    touched_max = touched_max.max(s);
+                }
+                self.cell_swing[index] = swing.unwrap_or(f32::NAN);
+
+                let new_eligible = matches!(swing, Some(s) if s <= cap);
+                let old_eligible = self.eligible[index];
+                if new_eligible != old_eligible {
+                    if new_eligible {
+                        modulatable_delta += 1;
+                        frozen_delta -= 1;
+                    } else {
+                        modulatable_delta -= 1;
+                        frozen_delta += 1;
+                    }
+                    self.eligible[index] = new_eligible;
+                }
+
+                // Active gate: only `eligible` moved here (motion flags untouched), so
+                // only touched cells can transition. Reseed on a false->true edge,
+                // exactly as `refresh_active` does.
+                let now_active = new_eligible && !self.cell_motion[index] && !global_static;
+                let was_active = self.active[index];
+                if now_active && !was_active {
+                    self.field.reset_cell(cx, cy);
+                }
+                if now_active != was_active {
+                    active_delta += if now_active { 1 } else { -1 };
+                    self.active[index] = now_active;
+                }
                 count += 1;
             }
         }
-        self.reclassify();
+        self.modulatable_cells =
+            (self.modulatable_cells as i64 + modulatable_delta).max(0) as usize;
+        self.frozen_cells = (self.frozen_cells as i64 + frozen_delta).max(0) as usize;
+        self.active_cells = (self.active_cells as i64 + active_delta).max(0) as usize;
+        self.worst_cell_swing = if maybe_dropped_max {
+            // Bounded max-only fold over cached swings (NaN ignored by `f32::max`);
+            // no colour re-derivation. Runs only when a touched cell might have been
+            // the maximum, so the common small edit stays proportional to the region.
+            self.cell_swing.iter().fold(0.0f32, |acc, &s| acc.max(s))
+        } else {
+            self.worst_cell_swing.max(touched_max)
+        };
+        self.mean_emitted_static_rmse = (self.rmse_sum / self.eligible.len().max(1) as f64) as f32;
         count
     }
 
@@ -1535,16 +1631,17 @@ impl TemporalDisplayProcessor {
         let cap = self.policy.max_luminance_depth;
         let depth = self.color_depth;
         let (mut modulatable, mut frozen, mut worst) = (0usize, 0usize, 0.0f32);
-        let mut rmse_sum = 0.0f32;
+        let mut rmse_sum = 0.0f64;
         for y in 0..self.height {
             for x in 0..self.width {
                 let index = (y as usize) * self.width as usize + x as usize;
-                rmse_sum += self.cell_rmse[index];
+                rmse_sum += self.cell_rmse[index] as f64;
                 let style = self.field.cell_style(x, y).unwrap_or_default();
                 let swing = style_luminance_swing_resolved(style, depth);
                 if let Some(s) = swing {
                     worst = worst.max(s);
                 }
+                self.cell_swing[index] = swing.unwrap_or(f32::NAN);
                 let eligible = matches!(swing, Some(s) if s <= cap);
                 if eligible {
                     modulatable += 1;
@@ -1557,7 +1654,8 @@ impl TemporalDisplayProcessor {
         self.modulatable_cells = modulatable;
         self.frozen_cells = frozen;
         self.worst_cell_swing = worst;
-        self.mean_emitted_static_rmse = rmse_sum / self.eligible.len().max(1) as f32;
+        self.rmse_sum = rmse_sum;
+        self.mean_emitted_static_rmse = (rmse_sum / self.eligible.len().max(1) as f64) as f32;
         self.refresh_active();
     }
 
@@ -2615,6 +2713,202 @@ mod tests {
                 .abs()
                 < 1e-6,
             "mean emitted RMSE must match a full reprojection"
+        );
+    }
+
+    /// Asserts an incrementally-updated processor is indistinguishable from a full
+    /// reprojection oracle: every static cell, and every diagnostic aggregate.
+    fn assert_region_matches_oracle(
+        inc: &TemporalDisplayProcessor,
+        oracle: &TemporalDisplayProcessor,
+        cols: u16,
+        rows: u16,
+        tag: &str,
+    ) {
+        let si = inc.static_fallback();
+        let so = oracle.static_fallback();
+        for y in 0..rows {
+            for x in 0..cols {
+                assert_eq!(
+                    si.get(x, y).unwrap().glyph.grapheme,
+                    so.get(x, y).unwrap().glyph.grapheme,
+                    "{tag}: cell ({x},{y}) glyph must match full reprojection"
+                );
+                assert_eq!(
+                    si.get(x, y).unwrap().style,
+                    so.get(x, y).unwrap().style,
+                    "{tag}: cell ({x},{y}) style must match full reprojection"
+                );
+            }
+        }
+        let (di, doo) = (inc.diagnostics(), oracle.diagnostics());
+        assert_eq!(
+            di.modulatable_cells, doo.modulatable_cells,
+            "{tag}: modulatable"
+        );
+        assert_eq!(di.frozen_cells, doo.frozen_cells, "{tag}: frozen");
+        assert_eq!(di.active_cells, doo.active_cells, "{tag}: active");
+        assert!(
+            (di.worst_cell_swing - doo.worst_cell_swing).abs() < 1e-6,
+            "{tag}: worst_cell_swing {} vs {}",
+            di.worst_cell_swing,
+            doo.worst_cell_swing
+        );
+        assert!(
+            (di.mean_emitted_static_rmse - doo.mean_emitted_static_rmse).abs() < 1e-6,
+            "{tag}: mean {} vs {}",
+            di.mean_emitted_static_rmse,
+            doo.mean_emitted_static_rmse
+        );
+    }
+
+    #[test]
+    fn incremental_region_accounting_matches_full_oracle_across_many_edits() {
+        // Drive one processor through several `set_target_region` edits and, after
+        // each, compare every aggregate and static cell against a fresh processor
+        // built with `set_target_image` (the full O(total) recompute) on the same
+        // image. Exercises upward-max extension, an edit clear of the max, and the
+        // downward argmax-invalidation rescan — the branches issue #68's fix adds.
+        let (cols, rows) = (6u16, 6u16);
+        let (subw, subh) = (cols as usize * 2, rows as usize * 4);
+        let mut img = vec![[0u8; 3]; subw * subh];
+
+        let base = |lx: usize, ly: usize| -> [u8; 3] {
+            let v = 40 + ((lx + ly) % 8) as u8 * 2; // near-neutral, low swing -> eligible
+            [v, v, v + 8]
+        };
+        let checker = |lx: usize, ly: usize| -> [u8; 3] {
+            if (lx + ly) % 2 == 0 {
+                [0, 0, 0]
+            } else {
+                [255, 255, 255] // ~max swing -> frozen, and the global maximum
+            }
+        };
+        let gray = |_lx: usize, _ly: usize| -> [u8; 3] { [128, 128, 128] }; // ~0 swing -> eligible
+        let paint = |img: &mut [[u8; 3]],
+                     cx: u16,
+                     cy: u16,
+                     cw: u16,
+                     ch: u16,
+                     f: &dyn Fn(usize, usize) -> [u8; 3]| {
+            for ly in (cy as usize * 4)..((cy + ch) as usize * 4) {
+                for lx in (cx as usize * 2)..((cx + cw) as usize * 2) {
+                    img[ly * subw + lx] = f(lx, ly);
+                }
+            }
+        };
+        let oracle_of = |img: &[[u8; 3]]| {
+            let mut p = TemporalDisplayProcessor::new(cols, rows, SubcellGlyphMode::Braille2x4, 3);
+            p.set_target_image(
+                |lx: u16, ly: u16| img[ly as usize * subw + lx as usize],
+                ResetPolicy::Reset,
+            );
+            p
+        };
+
+        paint(&mut img, 0, 0, cols, rows, &base);
+        let mut inc = TemporalDisplayProcessor::new(cols, rows, SubcellGlyphMode::Braille2x4, 3);
+        inc.set_target_image(
+            |lx: u16, ly: u16| img[ly as usize * subw + lx as usize],
+            ResetPolicy::Reset,
+        );
+        assert_region_matches_oracle(&inc, &oracle_of(&img), cols, rows, "base");
+
+        // (1) A high-contrast block raises the global maximum (upward extension).
+        paint(&mut img, 1, 1, 2, 2, &checker);
+        inc.set_target_region(
+            1,
+            1,
+            2,
+            2,
+            |lx: u16, ly: u16| img[ly as usize * subw + lx as usize],
+            ResetPolicy::Reset,
+        );
+        assert!(
+            inc.diagnostics().worst_cell_swing > 0.9,
+            "checker block should raise worst swing, got {}",
+            inc.diagnostics().worst_cell_swing
+        );
+        assert_region_matches_oracle(&inc, &oracle_of(&img), cols, rows, "add-checker");
+
+        // (2) A far edit that does not touch the max needs no rescan.
+        paint(&mut img, 4, 4, 2, 2, &gray);
+        inc.set_target_region(
+            4,
+            4,
+            2,
+            2,
+            |lx: u16, ly: u16| img[ly as usize * subw + lx as usize],
+            ResetPolicy::Reset,
+        );
+        assert!(
+            inc.diagnostics().worst_cell_swing > 0.9,
+            "far edit must not drop the max"
+        );
+        assert_region_matches_oracle(&inc, &oracle_of(&img), cols, rows, "far-edit");
+
+        // (3) Overwriting the high-contrast block drops the argmax -> forces the
+        //     bounded downward rescan. The load-bearing branch.
+        paint(&mut img, 1, 1, 2, 2, &gray);
+        inc.set_target_region(
+            1,
+            1,
+            2,
+            2,
+            |lx: u16, ly: u16| img[ly as usize * subw + lx as usize],
+            ResetPolicy::Reset,
+        );
+        assert!(
+            inc.diagnostics().worst_cell_swing < 0.9,
+            "removing the checker must drop worst swing, got {}",
+            inc.diagnostics().worst_cell_swing
+        );
+        assert_region_matches_oracle(&inc, &oracle_of(&img), cols, rows, "drop-max");
+    }
+
+    #[test]
+    fn incremental_motion_region_matches_full_active_accounting() {
+        // A uniformly low-contrast target makes every cell eligible, so the active
+        // count after a motion edit is exactly (total - suppressed) and round-trips.
+        let (cols, rows) = (6u16, 6u16);
+        let (subw, subh) = (cols as usize * 2, rows as usize * 4);
+        let img = vec![[60u8, 60, 68]; subw * subh];
+        let mut p = TemporalDisplayProcessor::new(cols, rows, SubcellGlyphMode::Braille2x4, 5);
+        p.set_target_image(
+            |lx: u16, ly: u16| img[ly as usize * subw + lx as usize],
+            ResetPolicy::Reset,
+        );
+
+        let total = (cols as usize) * (rows as usize);
+        assert_eq!(
+            p.diagnostics().modulatable_cells,
+            total,
+            "flat low-contrast target: all cells eligible"
+        );
+        assert_eq!(p.diagnostics().active_cells, total, "no motion: all active");
+        let worst0 = p.diagnostics().worst_cell_swing;
+        let mean0 = p.diagnostics().mean_emitted_static_rmse;
+
+        let suppressed = 3usize * 2;
+        assert_eq!(p.set_motion_region(1, 1, 3, 2, true), suppressed);
+        assert_eq!(
+            p.diagnostics().active_cells,
+            total - suppressed,
+            "motion region suppresses exactly its cells"
+        );
+        assert_eq!(
+            p.diagnostics().modulatable_cells,
+            total,
+            "motion must not change eligibility"
+        );
+        assert!((p.diagnostics().worst_cell_swing - worst0).abs() < 1e-9);
+        assert!((p.diagnostics().mean_emitted_static_rmse - mean0).abs() < 1e-9);
+
+        assert_eq!(p.set_motion_region(1, 1, 3, 2, false), suppressed);
+        assert_eq!(
+            p.diagnostics().active_cells,
+            total,
+            "settled region resumes; active count round-trips"
         );
     }
 
