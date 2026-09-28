@@ -13,6 +13,8 @@
 //! Diatonic chords are still derived from the scale (quality classified from the actual stacked
 //! scale thirds, so it is correct in any mode).
 
+use super::contract::ResolutionPolicy;
+use super::discourse::Closure;
 use super::form::BEATS_PER_BAR;
 use super::intent::{CostWeights, MorphismCost};
 use super::rng::Rng;
@@ -74,17 +76,26 @@ impl HarmonyEngine {
     }
 
     /// Generate the full progression from the composition plan's [`PhraseTarget`]s, planned phrase
-    /// by phrase.
+    /// by phrase, realizing each phrase's discourse [`Closure`] under the piece's [`ResolutionPolicy`].
     ///
     /// The targets tile `[0, total_beats)` contiguously; the phrase's discourse goal is the single
-    /// authority for harmonic rhythm (its density target) and functional heat (its tension target)
-    /// — there is no parallel form curve. Each phrase is filled with contiguous chord slots and
-    /// closed with a prepared cadence.
-    pub fn generate(&mut self, targets: &[super::plan::PhraseTarget]) -> Vec<ChordSpan> {
+    /// authority for harmonic rhythm (its density target) and functional heat (its tension target).
+    /// **Not every phrase ends with a full stop.** Under `Functional` resolution the phrase's
+    /// closure decides the cadence — `Strong` = prepared PD→D→T, `Weak` = plagal IV→I, `Half` =
+    /// end on the dominant, `Deceptive` = V→vi, `Deferred` = V→IV (evaded), `Open` = no cadence at
+    /// all. Under `Loop`/`ModalPedal` there is no functional cadence: the phrase cycles or pedals
+    /// home. This is the closure hierarchy that lets long-range expectation accumulate instead of
+    /// being cashed out every four bars.
+    pub fn generate(
+        &mut self,
+        targets: &[super::plan::PhraseTarget],
+        resolution: ResolutionPolicy,
+    ) -> Vec<ChordSpan> {
         if targets.is_empty() {
             return Vec::new();
         }
         let total_beats = targets.last().map(|t| t.end_beat()).unwrap_or(0.0);
+        let functional = matches!(resolution, ResolutionPolicy::Functional);
 
         let mut spans = Vec::new();
         // Voice-leading memory threads across phrase boundaries — the line is continuous even
@@ -99,8 +110,9 @@ impl HarmonyEngine {
                 continue;
             }
             // The phrase's own discourse targets — constant across the phrase — drive both the
-            // harmonic rhythm and the functional heat.
+            // harmonic rhythm and the functional heat; its closure decides the cadence.
             let tension = t.goal.tension_target;
+            let closure = t.goal.closure;
             let slots = carve_slots(t.goal.density_target, ps, pe);
             let n = slots.len();
             // A V/x set here mandates the next interior slot resolve to `target` — an
@@ -109,91 +121,143 @@ impl HarmonyEngine {
 
             for (i, &(sb, dur)) in slots.iter().enumerate() {
                 let is_last = i == n - 1;
-                let is_dom_prep = n >= 2 && i == n - 2;
+                let is_prep = n >= 2 && i == n - 2; // penultimate (cadence approach)
                 let is_pd_prep = n >= 3 && i == n - 3;
+                let s7 = self.world_use_sevenths;
 
-                let (chord, function, degree, note) = if is_last {
-                    // Prepared cadence, arrival: the phrase closes on a clean tonic triad.
-                    (self.diatonic_chord(0, false), Function::Tonic, 0, "")
-                } else if is_dom_prep {
-                    // Real preparation: the dominant that pulls into the tonic.
-                    let seventh = self.world_use_sevenths;
-                    (self.diatonic_chord(4, seventh), Function::Dominant, 4, "")
-                } else if is_pd_prep {
-                    // Pre-dominant (degree 3 or 1) — the cost vector picks which reads smoother.
+                // A closure-specific cadence overrides the last one or two slots; every other slot
+                // (and every slot under a non-functional policy) is interior. `forced` is `Some`
+                // for an overridden slot, `None` for interior.
+                let forced: Option<(Chord, Function, i32, &'static str)> = if !functional {
+                    // Loop / modal-pedal: the phrase cycles or pedals home — no functional cadence.
+                    if is_last {
+                        let note = if matches!(resolution, ResolutionPolicy::Loop) {
+                            "loop"
+                        } else {
+                            "pedal"
+                        };
+                        Some((self.diatonic_chord(0, false), Function::Tonic, 0, note))
+                    } else {
+                        None
+                    }
+                } else if is_last {
+                    match closure {
+                        Closure::Strong => {
+                            Some((self.diatonic_chord(0, false), Function::Tonic, 0, ""))
+                        }
+                        Closure::Weak => {
+                            Some((self.diatonic_chord(0, false), Function::Tonic, 0, "plagal"))
+                        }
+                        Closure::Half => {
+                            Some((self.diatonic_chord(4, s7), Function::Dominant, 4, "half"))
+                        }
+                        // V→vi: prepared by the dominant at n-2, resolves deceptively to the
+                        // submediant (tonic-function, but not home).
+                        Closure::Deceptive => {
+                            Some((self.diatonic_chord(5, s7), Function::Tonic, 5, "dec"))
+                        }
+                        // The expected resolution is evaded — a V→IV retrogression that refuses
+                        // to close, leaving the dominant hanging.
+                        Closure::Deferred => Some((
+                            self.diatonic_chord(3, false),
+                            Function::Predominant,
+                            3,
+                            "defer",
+                        )),
+                        Closure::Open => None, // no cadence: interior continuation
+                    }
+                } else if is_prep {
+                    match closure {
+                        Closure::Strong | Closure::Deceptive | Closure::Deferred => {
+                            Some((self.diatonic_chord(4, s7), Function::Dominant, 4, ""))
+                        }
+                        // Half and plagal approach the final chord from the subdominant.
+                        Closure::Half | Closure::Weak => Some((
+                            self.diatonic_chord(3, s7 && tension > 0.4),
+                            Function::Predominant,
+                            3,
+                            "",
+                        )),
+                        Closure::Open => None,
+                    }
+                } else if is_pd_prep && matches!(closure, Closure::Strong) {
                     let d = self.choose_interior_degree(
                         Function::Predominant,
                         tension,
                         prev_root,
                         prev_degree,
                     );
-                    let seventh = self.world_use_sevenths && tension > 0.4;
-                    (
-                        self.diatonic_chord(d, seventh),
+                    Some((
+                        self.diatonic_chord(d, s7 && tension > 0.4),
                         Function::Predominant,
                         d,
                         "",
-                    )
+                    ))
                 } else {
-                    // Interior slot. A pending resolution outranks everything else here.
-                    if let Some(target) = pending_resolve.take() {
-                        let func = function_of_degree(target);
-                        let seventh = self.world_use_sevenths
-                            && (tension > 0.4 || func == Function::Dominant);
-                        (self.diatonic_chord(target, seventh), func, target, "res")
-                    } else {
-                        let func = function_for_tension(tension);
-                        // Interior slots run 0..(n-3); how many are left including this one.
-                        let interior_len = n.saturating_sub(3);
-                        let remaining_interior = interior_len.saturating_sub(i);
+                    None
+                };
 
-                        if self.allow_secondary
-                            && func == Function::Dominant
-                            && remaining_interior >= 2
-                            && self.rng.chance(0.5)
-                        {
-                            // A secondary dominant: Dom7 a perfect fifth above the target's
-                            // root. We take on the debt now; the next interior slot pays it.
-                            let target = self.pick_secondary_target(prev_degree);
-                            let target_root = self.scale.degree_pitch(target, 4).rem_euclid(12);
-                            let dom_root = (target_root + 7).rem_euclid(12);
-                            pending_resolve = Some(target);
-                            (
-                                Chord::new(dom_root, Quality::Dom7),
-                                Function::Dominant,
-                                -1,
-                                "V/of",
-                            )
+                let (chord, function, degree, note) = match forced {
+                    Some(x) => x,
+                    // Interior slot. A pending resolution outranks everything else here.
+                    None => {
+                        if let Some(target) = pending_resolve.take() {
+                            let func = function_of_degree(target);
+                            let seventh = s7 && (tension > 0.4 || func == Function::Dominant);
+                            (self.diatonic_chord(target, seventh), func, target, "res")
                         } else {
-                            // Cost-driven diatonic choice, then an optional color tint.
-                            let d =
-                                self.choose_interior_degree(func, tension, prev_root, prev_degree);
-                            let seventh = self.world_use_sevenths
-                                && (tension > 0.4 || func == Function::Dominant);
-                            let mut chord = self.diatonic_chord(d, seventh);
-                            let mut degree = d;
-                            let mut note = "";
-                            // Colors tint a coherent path; they never fabricate one. Guarded to
-                            // interior diatonic slots only — never a cadence, prep, or resolution.
-                            if self.allow_mixture && tension > 0.6 && self.rng.chance(0.2) {
-                                let bvi = (self.scale.tonic_pc + 8).rem_euclid(12);
-                                chord = Chord::new(
-                                    bvi,
-                                    if self.world_use_sevenths {
-                                        Quality::Maj7
-                                    } else {
-                                        Quality::Maj
-                                    },
+                            let func = function_for_tension(tension);
+                            // Interior slots run 0..(n-3); how many are left including this one.
+                            let interior_len = n.saturating_sub(3);
+                            let remaining_interior = interior_len.saturating_sub(i);
+
+                            if self.allow_secondary
+                                && func == Function::Dominant
+                                && remaining_interior >= 2
+                                && self.rng.chance(0.5)
+                            {
+                                // A secondary dominant: Dom7 a perfect fifth above the target's
+                                // root. We take on the debt now; the next interior slot pays it.
+                                let target = self.pick_secondary_target(prev_degree);
+                                let target_root = self.scale.degree_pitch(target, 4).rem_euclid(12);
+                                let dom_root = (target_root + 7).rem_euclid(12);
+                                pending_resolve = Some(target);
+                                (
+                                    Chord::new(dom_root, Quality::Dom7),
+                                    Function::Dominant,
+                                    -1,
+                                    "V/of",
+                                )
+                            } else {
+                                // Cost-driven diatonic choice, then an optional color tint.
+                                let d = self.choose_interior_degree(
+                                    func,
+                                    tension,
+                                    prev_root,
+                                    prev_degree,
                                 );
-                                degree = -1;
-                                note = "bVI mix";
-                            } else if self.allow_chromatic_mediant && self.rng.chance(0.12) {
-                                let cm = (self.scale.tonic_pc + 4).rem_euclid(12);
-                                chord = Chord::new(cm, Quality::Maj);
-                                degree = -1;
-                                note = "chr med";
+                                let seventh = s7 && (tension > 0.4 || func == Function::Dominant);
+                                let mut chord = self.diatonic_chord(d, seventh);
+                                let mut degree = d;
+                                let mut note = "";
+                                // Colors tint a coherent path; they never fabricate one. Guarded to
+                                // interior diatonic slots only — never a cadence, prep, or resolution.
+                                if self.allow_mixture && tension > 0.6 && self.rng.chance(0.2) {
+                                    let bvi = (self.scale.tonic_pc + 8).rem_euclid(12);
+                                    chord = Chord::new(
+                                        bvi,
+                                        if s7 { Quality::Maj7 } else { Quality::Maj },
+                                    );
+                                    degree = -1;
+                                    note = "bVI mix";
+                                } else if self.allow_chromatic_mediant && self.rng.chance(0.12) {
+                                    let cm = (self.scale.tonic_pc + 4).rem_euclid(12);
+                                    chord = Chord::new(cm, Quality::Maj);
+                                    degree = -1;
+                                    note = "chr med";
+                                }
+                                (chord, func, degree, note)
                             }
-                            (chord, func, degree, note)
                         }
                     }
                 };
@@ -410,13 +474,13 @@ mod tests {
     fn progression_covers_the_plan_and_ends_on_tonic() {
         let plan = demo_plan();
         let mut h = HarmonyEngine::new(&MusicWorld::black_ice(), 42);
-        let prog = h.generate(&plan.targets());
+        let prog = h.generate(&plan.targets(), ResolutionPolicy::Functional);
         assert!(!prog.is_empty());
         // Contiguous in time (across phrase boundaries too).
         for w in prog.windows(2) {
             assert!((w[1].start_beat - (w[0].start_beat + w[0].dur_beats as f64)).abs() < 1e-3);
         }
-        // The final chord is a tonic cadence.
+        // The whole piece still ends home: the final phrase (dissolve) is a strong tonic cadence.
         let last = prog.last().unwrap();
         assert_eq!(last.function, Function::Tonic);
         assert_eq!(last.chord.root_pc, 9); // A minor tonic
@@ -428,8 +492,8 @@ mod tests {
         let targets = plan.targets();
         let mut a = HarmonyEngine::new(&MusicWorld::vapor95(), 7);
         let mut b = HarmonyEngine::new(&MusicWorld::vapor95(), 7);
-        let pa = a.generate(&targets);
-        let pb = b.generate(&targets);
+        let pa = a.generate(&targets, ResolutionPolicy::Functional);
+        let pb = b.generate(&targets, ResolutionPolicy::Functional);
         assert_eq!(pa.len(), pb.len());
         for (x, y) in pa.iter().zip(pb.iter()) {
             assert_eq!(x.chord, y.chord);
@@ -438,43 +502,91 @@ mod tests {
     }
 
     #[test]
-    fn each_phrase_prepares_its_cadence() {
-        // Every phrase that holds >=2 chord spans closes …D -> T (prepared cadence). Round III's
-        // closure hierarchy relaxes this per discourse role; at this commit every phrase still
-        // cadences the same way — harmony just reads the plan's targets instead of a parallel form.
+    fn closure_hierarchy_is_realized_not_a_period_every_phrase() {
+        // Round III: the cadence realizes each phrase's discourse closure. Strong phrases still
+        // close …D→T; but Half phrases end on the dominant and Deferred phrases refuse to resolve,
+        // so NOT every phrase ends on a full stop — the whole point of the closure hierarchy.
         let plan = demo_plan();
+        let targets = plan.targets();
         let mut h = HarmonyEngine::new(&MusicWorld::black_ice(), 42);
-        let prog = h.generate(&plan.targets());
+        let prog = h.generate(&targets, ResolutionPolicy::Functional);
 
-        let mut checked = 0;
-        for p in &plan.form.phrases {
+        let mut strong_checked = 0;
+        let mut non_tonic_endings = 0;
+        for t in &targets {
             let in_phrase: Vec<&ChordSpan> = prog
                 .iter()
                 .filter(|s| {
-                    s.start_beat >= p.start_beat() - 1e-6 && s.start_beat < p.end_beat() - 1e-6
+                    s.start_beat >= t.start_beat() - 1e-6 && s.start_beat < t.end_beat() - 1e-6
                 })
                 .collect();
-            if in_phrase.len() >= 2 {
-                let last = in_phrase.last().unwrap();
-                let prep = in_phrase[in_phrase.len() - 2];
-                assert_eq!(
-                    last.function,
-                    Function::Tonic,
-                    "phrase {} last not tonic",
-                    p.ix
-                );
-                assert_eq!(
-                    prep.function,
-                    Function::Dominant,
-                    "phrase {} cadence not prepared by a dominant",
-                    p.ix
-                );
-                checked += 1;
+            if in_phrase.len() < 2 {
+                continue;
+            }
+            let last = in_phrase.last().unwrap();
+            match t.goal.closure {
+                Closure::Strong => {
+                    assert_eq!(
+                        last.function,
+                        Function::Tonic,
+                        "strong phrase {} not tonic",
+                        t.ix()
+                    );
+                    let prep = in_phrase[in_phrase.len() - 2];
+                    assert_eq!(
+                        prep.function,
+                        Function::Dominant,
+                        "strong phrase {} not dominant-prepared",
+                        t.ix()
+                    );
+                    strong_checked += 1;
+                }
+                Closure::Half => {
+                    assert_eq!(
+                        last.function,
+                        Function::Dominant,
+                        "half-closed phrase {} should end on the dominant",
+                        t.ix()
+                    );
+                    non_tonic_endings += 1;
+                }
+                Closure::Deferred => {
+                    assert_ne!(
+                        last.function,
+                        Function::Tonic,
+                        "deferred phrase {} should not resolve to tonic",
+                        t.ix()
+                    );
+                    non_tonic_endings += 1;
+                }
+                _ => {}
             }
         }
+        assert!(strong_checked > 0, "no strong cadence anywhere in the arc");
         assert!(
-            checked > 0,
-            "no phrase had >=2 spans — test would be vacuous"
+            non_tonic_endings > 0,
+            "every phrase still ends resolved — the closure hierarchy is not realized"
+        );
+    }
+
+    #[test]
+    fn loop_policy_cycles_home_without_functional_cadences() {
+        use super::super::plan::PhraseTarget;
+        // Under Loop the phrase cycles home (a tonic tagged "loop"), never a functional cadence.
+        let targets: Vec<PhraseTarget> = (0..4)
+            .map(|i| PhraseTarget::test_flat(i * 4, 4, 0.5, 0.5))
+            .collect();
+        let mut h = HarmonyEngine::new(&MusicWorld::black_ice(), 3);
+        let prog = h.generate(&targets, ResolutionPolicy::Loop);
+        let loops = prog.iter().filter(|s| s.note == "loop").count();
+        assert!(
+            loops >= 4,
+            "loop policy did not cycle each phrase home: {loops}"
+        );
+        assert!(
+            prog.iter()
+                .all(|s| !matches!(s.note, "half" | "dec" | "defer" | "plagal")),
+            "loop policy emitted a functional cadence tag"
         );
     }
 
@@ -488,7 +600,7 @@ mod tests {
         let mut found = false;
         for seed in 0..64u64 {
             let mut h = HarmonyEngine::new(&MusicWorld::black_ice(), seed);
-            let prog = h.generate(&targets);
+            let prog = h.generate(&targets, ResolutionPolicy::Functional);
             for w in prog.windows(2) {
                 if w[0].note.starts_with("V/") {
                     found = true;

@@ -53,7 +53,7 @@ pub fn compose_with_plan(
     let targets = plan.targets();
 
     let mut harmony = HarmonyEngine::new(world, seed);
-    let chords = harmony.generate(&targets);
+    let chords = harmony.generate(&targets, plan.contract.resolution);
 
     let mut groove = GrooveEngine::new(world, seed);
     let gr = groove.generate(&targets);

@@ -217,9 +217,13 @@ mod tests {
             d.harmonic_obligation_violations, 0,
             "a secondary dominant was left unresolved in a real composition"
         );
+        // Round III's closure hierarchy: some phrases close with a strong prepared cadence, but
+        // NOT every phrase (Half/Deferred/Open leave expectation open). So this sits strictly
+        // between "never resolves" and "a full stop every four bars" — the latter was the R2
+        // over-cadencing defect.
         assert!(
-            d.cadence_preparation > 0.5,
-            "fewer than half the phrases prepared their cadence: {}",
+            d.cadence_preparation > 0.0 && d.cadence_preparation < 1.0,
+            "cadence preparation should be partial (strong cadences exist but not everywhere): {}",
             d.cadence_preparation
         );
         assert!(d.motif_restatements >= 1, "the germ motif never restated");
