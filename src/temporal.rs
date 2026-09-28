@@ -548,6 +548,15 @@ pub struct TemporalBrailleField {
     /// 60) would otherwise alias into a large DC bias, without changing the
     /// long-run mean. Off by default on the raw primitive.
     dither: bool,
+    /// Last mask actually emitted per cell, seeded to the static baseline on reseed.
+    /// The transport-aware path prices a cell change against this: KEEP the shown
+    /// mask at zero wire cost, or CHANGE for exactly one changed cell.
+    emitted: Vec<u8>,
+    /// Transport-aware rate-distortion config: `Some((lambda, budget))` optimizes at
+    /// the cell level — a cell changes only when its accumulated visual benefit
+    /// exceeds `lambda`, and at most `budget` cells change per frame — while `None`
+    /// uses the per-dot residual sigma-delta. Off by default.
+    transport: Option<(f32, Option<usize>)>,
 }
 
 impl TemporalBrailleField {
@@ -569,7 +578,25 @@ impl TemporalBrailleField {
             accumulator,
             frame_index: 0,
             dither: false,
+            emitted: vec![0u8; cells],
+            transport: None,
         }
+    }
+
+    /// Configures transport-aware rate-distortion modulation. `Some(lambda)` enables
+    /// the cell-level KEEP/CHANGE decision (a cell changes only when the accumulated
+    /// visual benefit of changing exceeds `lambda`); `budget` optionally caps the
+    /// number of cells allowed to change per frame (highest-benefit first). `None`
+    /// restores the per-dot residual sigma-delta. The long-run per-dot mean is
+    /// preserved either way; a larger `lambda` trades temporal lag for fewer wire
+    /// changes.
+    pub fn set_transport(&mut self, lambda: Option<f32>, budget: Option<usize>) {
+        self.transport = lambda.map(|l| (l.max(0.0), budget));
+    }
+
+    /// The current transport config, if enabled.
+    pub fn transport(&self) -> Option<(f32, Option<usize>)> {
+        self.transport
     }
 
     /// Enables or disables residual threshold dither (see the `dither` field). Off
@@ -753,6 +780,10 @@ impl TemporalBrailleField {
         for (dot, phase) in self.accumulator[index].iter_mut().enumerate() {
             *phase = unit_hash(seed, index as u64, dot as u64);
         }
+        // The transport path's "previously shown" mask returns to the static
+        // baseline when content resets, so a re-activated cell never keeps a stale
+        // emitted mask from prior content.
+        self.emitted[index] = self.static_mask[index];
     }
 
     /// A deterministic static control: dots at or above 50% duty are on.
@@ -810,7 +841,7 @@ impl TemporalBrailleField {
         eligible: &[bool],
         mode: SubcellGlyphMode,
     ) -> Surface {
-        let masks = self.advance_residual_masks_gated(Some(eligible));
+        let masks = self.advance_gated_masks(eligible);
         self.surface_from_masks_styled(masks, mode)
     }
 
@@ -847,6 +878,87 @@ impl TemporalBrailleField {
     /// can be re-enabled later without carrying stale residual. `eligible` is
     /// indexed by cell (row-major); `None` treats every cell as eligible, and an
     /// out-of-range or missing entry is treated as eligible.
+    /// Dispatches the per-frame gated advance: transport-aware when configured,
+    /// otherwise the per-dot residual sigma-delta.
+    fn advance_gated_masks(&mut self, eligible: &[bool]) -> Vec<u8> {
+        match self.transport {
+            Some((lambda, budget)) => self.advance_transport_masks(eligible, lambda, budget),
+            None => self.advance_residual_masks_gated(Some(eligible)),
+        }
+    }
+
+    /// Transport-aware cell-level advance. Because the terminal transports a whole
+    /// cell glyph, flipping one dot costs the same as flipping eight: one changed
+    /// cell. This integrates each dot's debt (`acc += duty - emitted`) and, per
+    /// cell, compares KEEP (re-emit the shown mask, zero wire cost) against CHANGE
+    /// (emit the debt-ideal mask, one changed cell). A cell changes only when the
+    /// visual benefit `err_keep - err_ideal` exceeds `lambda`; an optional `budget`
+    /// admits only the highest-benefit changes each frame (the rest keep
+    /// integrating, so no unbounded backlog forms — the most-starved cell has the
+    /// largest benefit and is served first). Per-dot debt stays bounded, so the
+    /// long-run mean converges to `duty` exactly as the per-dot path does.
+    fn advance_transport_masks(
+        &mut self,
+        eligible: &[bool],
+        lambda: f32,
+        budget: Option<usize>,
+    ) -> Vec<u8> {
+        let mut masks = vec![0u8; self.duty.len()];
+        let mut desires: Vec<(usize, u8, f32)> = Vec::new();
+        for (index, acc) in self.accumulator.iter_mut().enumerate() {
+            if !eligible.get(index).copied().unwrap_or(true) {
+                masks[index] = self.static_mask[index];
+                continue;
+            }
+            let p = self.emitted[index];
+            let target = self.duty[index];
+            let mut m_ideal = 0u8;
+            let mut err_keep = 0.0f32;
+            let mut err_ideal = 0.0f32;
+            for (i, a) in acc.iter_mut().enumerate() {
+                *a += target[i];
+                let e = *a;
+                let ideal_on = e >= 0.5;
+                if ideal_on {
+                    m_ideal |= 1 << i;
+                }
+                let pb = if p & (1 << i) != 0 { 1.0 } else { 0.0 };
+                let ib = if ideal_on { 1.0 } else { 0.0 };
+                err_keep += (e - pb) * (e - pb);
+                err_ideal += (e - ib) * (e - ib);
+            }
+            masks[index] = p; // default: KEEP the shown mask (zero wire cost)
+            if m_ideal != p && err_keep - err_ideal > lambda {
+                desires.push((index, m_ideal, err_keep - err_ideal));
+            }
+        }
+        // Global dirty budget: admit only the highest-benefit changes this frame.
+        if let Some(n) = budget {
+            if desires.len() > n {
+                desires.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+                desires.truncate(n);
+            }
+        }
+        for &(index, m_ideal, _) in &desires {
+            masks[index] = m_ideal;
+        }
+        // Charge the emitted mask against the debt and record it (active cells).
+        for (index, acc) in self.accumulator.iter_mut().enumerate() {
+            if !eligible.get(index).copied().unwrap_or(true) {
+                continue;
+            }
+            let m = masks[index];
+            for (i, a) in acc.iter_mut().enumerate() {
+                if m & (1 << i) != 0 {
+                    *a -= 1.0;
+                }
+            }
+            self.emitted[index] = m;
+        }
+        self.frame_index = self.frame_index.wrapping_add(1);
+        masks
+    }
+
     fn advance_residual_masks_gated(&mut self, eligible: Option<&[bool]>) -> Vec<u8> {
         let mut masks = Vec::with_capacity(self.duty.len());
         let (seed, frame, dither) = (self.seed, self.frame_index, self.dither);
@@ -965,7 +1077,7 @@ impl TemporalBrailleField {
         mode: SubcellGlyphMode,
         out: &mut Surface,
     ) {
-        let masks = self.advance_residual_masks_gated(Some(eligible));
+        let masks = self.advance_gated_masks(eligible);
         self.fill_surface_from_masks_with(masks, mode, out, |index| self.styles[index]);
     }
 
@@ -1204,6 +1316,14 @@ impl TemporalDisplayProcessor {
     /// the modulation robust to coherent presentation subsampling.
     pub fn set_dither(&mut self, enabled: bool) {
         self.field.set_dither(enabled);
+    }
+
+    /// Enables transport-aware rate-distortion modulation (see
+    /// [`TemporalBrailleField::set_transport`]); `None` restores the per-dot
+    /// residual path. Experimental: trades a little temporal lag for materially
+    /// fewer changed cells on the wire, and preserves the long-run per-dot mean.
+    pub fn set_transport(&mut self, lambda: Option<f32>, budget: Option<usize>) {
+        self.field.set_transport(lambda, budget);
     }
 
     /// Forces static output while the content is known to be moving/scrolling.
@@ -2563,5 +2683,112 @@ mod tests {
             into.diagnostics().modulating,
             "this test must exercise the modulating path, not the static fallback"
         );
+    }
+
+    #[test]
+    fn transport_preserves_long_run_mean() {
+        // The transport-aware path must converge each dot's time-average to its
+        // duty, exactly like the per-dot sigma-delta — the change-batching only
+        // defers corrections, it never drops them.
+        let mut field = TemporalBrailleField::new(1, 1, 7);
+        let duty = [0.8, 0.3, 0.5, 0.1, 0.05, 0.95, 0.65, 0.2];
+        field.set_cell_duty(0, 0, duty);
+        let frames = 5000usize;
+        let mut on = [0usize; 8];
+        for _ in 0..frames {
+            let m = field.advance_transport_masks(&[true], 0.5, None)[0];
+            for (i, o) in on.iter_mut().enumerate() {
+                if m & (1 << i) != 0 {
+                    *o += 1;
+                }
+            }
+        }
+        for i in 0..8 {
+            let got = on[i] as f32 / frames as f32;
+            assert!(
+                (got - duty[i]).abs() < 0.02,
+                "dot {i}: transport mean {got} != duty {}",
+                duty[i]
+            );
+        }
+    }
+
+    #[test]
+    fn transport_reduces_changed_cells_on_projected_content() {
+        // On realistic projected imagery (structured per-cell duties with a good
+        // static baseline), the transport-aware path emits materially fewer changed
+        // cells than the per-dot residual. (On a pathological all-8-dots-fractional
+        // field the gain is small — the win is content-dependent, which is honest;
+        // temporal is used on projected images, which is the case measured here.)
+        fn changed_per_frame(lambda: Option<f32>) -> f32 {
+            let (w, h) = (24u16, 10u16);
+            let mut p = TemporalDisplayProcessor::new(w, h, SubcellGlyphMode::Braille2x4, 0x5A);
+            p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.5));
+            p.set_target_image(
+                |lx, ly| {
+                    let v = 60u8.wrapping_add(((lx as u32 + ly as u32) & 0x1f) as u8);
+                    [v, v, v]
+                },
+                ResetPolicy::Reset,
+            );
+            p.set_transport(lambda, None);
+            assert!(
+                p.diagnostics().active_cells > 0,
+                "fixture must have modulatable cells"
+            );
+            let frames = 400usize;
+            let mut prev: Vec<String> = Vec::new();
+            let mut changed = 0usize;
+            for f in 0..frames {
+                let s = p.advance(0);
+                let cur: Vec<String> = (0..h)
+                    .flat_map(|y| (0..w).map(move |x| (x, y)))
+                    .map(|(x, y)| s.get(x, y).unwrap().glyph.grapheme.to_string())
+                    .collect();
+                if f > 0 {
+                    changed += cur.iter().zip(prev.iter()).filter(|(a, b)| a != b).count();
+                }
+                prev = cur;
+            }
+            changed as f32 / (frames - 1) as f32
+        }
+        let per_dot = changed_per_frame(None);
+        let transport = changed_per_frame(Some(0.8));
+        assert!(
+            transport < per_dot * 0.9,
+            "transport (λ=0.8) should change materially fewer cells on projected \
+             content: per-dot {per_dot:.1}, transport {transport:.1}"
+        );
+    }
+
+    #[test]
+    fn transport_budget_caps_changed_cells_per_frame() {
+        // A worst-case 50%-duty field wants to change every cell every couple of
+        // frames; the budget must hard-cap changed cells per frame regardless.
+        let (w, h) = (10u16, 4u16);
+        let elig = vec![true; (w * h) as usize];
+        let budget = 5usize;
+        let mut field = TemporalBrailleField::new(w, h, 0x77);
+        for y in 0..h {
+            for x in 0..w {
+                field.set_cell_duty(x, y, [0.5; 8]);
+            }
+        }
+        let mut prev = vec![0u8; (w * h) as usize];
+        for f in 0..600 {
+            let masks = field.advance_transport_masks(&elig, 0.3, Some(budget));
+            if f > 0 {
+                let changed = masks
+                    .iter()
+                    .zip(prev.iter())
+                    .filter(|(m, p)| m != p)
+                    .count();
+                assert!(
+                    changed <= budget,
+                    "frame {f}: {changed} changed cells exceeds budget {budget}"
+                );
+            }
+            prev = masks;
+        }
     }
 }

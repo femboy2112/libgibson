@@ -13,7 +13,9 @@
 //! only measures CPU projection cost so optimization decisions are evidence-based.
 
 use gibson::temporal::project_braille_image;
-use gibson::{PresentationProfile, ResetPolicy, SubcellGlyphMode, TemporalDisplayProcessor};
+use gibson::{
+    PresentationProfile, ResetPolicy, SubcellGlyphMode, Surface, TemporalDisplayProcessor,
+};
 use std::time::Instant;
 
 /// A deterministic, non-degenerate per-subpixel sample: varied enough that the
@@ -104,6 +106,52 @@ fn bench_region(w: u16, h: u16, rw: u16, rh: u16, iters: u32) {
     println!("region {rw:>2}x{rh:<2} reproj in {w}x{h}:  {per_ms:8.4} ms/update");
 }
 
+/// Transport-aware modulation vs the per-dot residual: mean changed cells per
+/// frame (the wire-relevant metric — a changed glyph is one changed cell) on a
+/// settled low-swing gradient, for several lambda values.
+fn bench_transport(w: u16, h: u16) {
+    fn run(w: u16, h: u16, lambda: Option<f32>) -> f32 {
+        let mut p = TemporalDisplayProcessor::new(w, h, SubcellGlyphMode::Braille2x4, 0x5A);
+        p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.5));
+        p.set_target_image(smooth, ResetPolicy::Reset);
+        p.set_transport(lambda, None);
+        let frames = 600usize;
+        let mut prev: Option<Surface> = None;
+        let mut changed = 0usize;
+        for _ in 0..frames {
+            let s = p.advance(0);
+            if let Some(pv) = &prev {
+                for y in 0..h {
+                    for x in 0..w {
+                        if s.get(x, y).unwrap().glyph.grapheme
+                            != pv.get(x, y).unwrap().glyph.grapheme
+                        {
+                            changed += 1;
+                        }
+                    }
+                }
+            }
+            prev = Some(s);
+        }
+        changed as f32 / (frames - 1) as f32
+    }
+    let per_dot = run(w, h, None);
+    let t03 = run(w, h, Some(0.3));
+    let t08 = run(w, h, Some(0.8));
+    let pct = |v: f32| {
+        if per_dot > 0.0 {
+            (1.0 - v / per_dot) * 100.0
+        } else {
+            0.0
+        }
+    };
+    println!(
+        "changed cells/frame {w:>3}x{h:<3}: per-dot {per_dot:7.1}  |  transport λ=0.3 {t03:7.1} ({:+5.0}%)  |  λ=0.8 {t08:7.1} ({:+5.0}%)",
+        pct(t03),
+        pct(t08)
+    );
+}
+
 fn main() {
     let base_iters = std::env::args()
         .find_map(|a| {
@@ -136,4 +184,8 @@ fn main() {
     println!("\nincremental region reprojection (Phase 3 interactive-edit cost):");
     bench_region(160, 50, 32, 16, 2_000);
     bench_region(160, 50, 8, 4, 20_000);
+
+    println!("\ntransport-aware wire reduction (Phase 6; mean changed cells/frame):");
+    bench_transport(80, 24);
+    bench_transport(160, 50);
 }
