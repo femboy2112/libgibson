@@ -2,8 +2,13 @@
 
 This document outlines completed work and the planned future milestones for LibGibson.
 
-> **Current status (2026-09-27):** v0.3.0 is released on GitHub (Engineering Alpha,
-> Linux x86_64; tag → `v0.3.0` at `e57cdb2`, prerelease-flagged) — the **Temporal
+> **Current status (2026-09-28):** **v0.3.1** is released on GitHub (Engineering Alpha,
+> Linux x86_64; tag → `v0.3.1` at `1010209`, prerelease-flagged) — **Temporal hardening +
+> keyed compositing**: incremental region accounting (fixes #68), keyed greenscreen
+> compositing and a surface-local reaction-cut flagship that composites a keyed subject
+> into the existing intro film, all **additive** to the experimental Rust-only
+> `gibson::temporal` axis (C ABI unchanged at v1; MSRV 1.85; 850 tests). It builds on
+> **v0.3.0** (tag → `v0.3.0` at `e57cdb2`), the **Temporal
 > Rendering Milestone**: high-cadence phase-locked frame pacing (`FramePacing`) and
 > split generation/write per-frame diagnostics (`FrameReport`) as CORE infrastructure,
 > plus an experimental, Rust-only temporal cell realization axis (`gibson::temporal`)
