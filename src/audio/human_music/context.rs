@@ -452,15 +452,16 @@ pub fn relate(
             };
         }
     }
-    // Concrete dominant pull toward the actual next harmony.
+    // Concrete dominant pull toward the actual next harmony. Toward home a leading tone suffices
+    // (V→I); toward any other root the claim needs the resolving tritone of an applied dominant —
+    // every major triad sits a fifth above something, and I→IV is not a tonicization.
     if let Some(n) = next {
         let ev = PullEvidence::of(chord, n.root_pc);
-        if ev.is_dominant() {
-            return if n.root_pc == tonic {
-                HarmonicRelation::DominantTo { target: n.root_pc }
-            } else {
-                HarmonicRelation::Tonicize { target: n.root_pc }
-            };
+        if n.root_pc == tonic && ev.is_dominant() {
+            return HarmonicRelation::DominantTo { target: n.root_pc };
+        }
+        if n.root_pc != tonic && ev.is_dominant() && ev.resolving_tritone {
+            return HarmonicRelation::Tonicize { target: n.root_pc };
         }
     }
     if chord.root_pc == tonic {
@@ -511,17 +512,24 @@ pub fn expected_chord(root: i32, region: &Scale) -> Chord {
     Chord::new(root, if minor { Quality::Min } else { Quality::Maj })
 }
 
-/// The root a chord concretely pulls toward, if any: the region tonic first, then the root a fifth
-/// below (an applied dominant), then a semitone below (a tritone substitute).
+/// The root a chord concretely pulls toward, if any: the region tonic (a leading tone suffices),
+/// else — only for a chord carrying a resolving tritone — the root a fifth below (an applied
+/// dominant) or a semitone below (a tritone substitute). A bare major triad expects nothing away
+/// from home.
 pub fn expected_target(chord: &Chord, region: &Scale) -> Option<i32> {
-    let cands = [
-        region.tonic_pc,
+    if PullEvidence::of(chord, region.tonic_pc).is_dominant() {
+        return Some(region.tonic_pc);
+    }
+    // Away from home, only an applied dominant (with its resolving tritone) sets up an arrival.
+    [
         (chord.root_pc + 5).rem_euclid(12),
         (chord.root_pc + 11).rem_euclid(12),
-    ];
-    cands
-        .into_iter()
-        .find(|&t| PullEvidence::of(chord, t).is_dominant())
+    ]
+    .into_iter()
+    .find(|&t| {
+        let e = PullEvidence::of(chord, t);
+        e.is_dominant() && e.resolving_tritone
+    })
 }
 
 /// The contextual tension vector of `chord`.
@@ -795,6 +803,26 @@ mod tests {
             HarmonicRelation::DominantTo { target: 0 }
         ));
         assert_eq!(ok[1].tension.surprise, 0.0);
+    }
+
+    #[test]
+    fn a_bare_major_triad_is_not_an_applied_dominant() {
+        // C -> F in C major: C sits a fifth above F and contains F's leading tone (E), but I -> IV
+        // is not a tonicization and C sets no expectation of F. C7 -> F does (the Bb-E tritone).
+        let c = Scale::new(0, Mode::Ionian);
+        let i = Chord::new(0, Quality::Maj);
+        let iv = Chord::new(5, Quality::Maj);
+        assert!(!matches!(
+            relate(&i, &c, None, None, Some(&iv)),
+            HarmonicRelation::Tonicize { .. }
+        ));
+        assert_eq!(expected_target(&i, &c), None);
+        let i7 = Chord::new(0, Quality::Dom7);
+        assert_eq!(
+            relate(&i7, &c, None, None, Some(&iv)),
+            HarmonicRelation::Tonicize { target: 5 }
+        );
+        assert_eq!(expected_target(&i7, &c), Some(5));
     }
 
     #[test]

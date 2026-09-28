@@ -779,8 +779,13 @@ fn slot_path(
                 out.push((0.0, half, lift));
                 out.push((half, total - half, pointer));
             } else {
+                // In the full-colour language a statement-length reach climbs through the pointer's
+                // own applied dominant (V/V -> V7): a real local region change on the way up.
+                let applied = Chord::new((pointer.root_pc + 7).rem_euclid(12), Quality::Dom7);
                 for i in 0..n - 1 {
-                    let c = if i % 2 == 1 {
+                    let c = if lang.color_depth >= 2 && n >= 4 && i + 2 == n {
+                        applied
+                    } else if i % 2 == 1 {
                         colour(cell.lift_alt, HarmonicGesture::Lift, depth, true, s7)
                     } else {
                         colour(cell.lift, HarmonicGesture::Lift, depth, i > 0, s7)
