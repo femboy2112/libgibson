@@ -15,6 +15,7 @@
 //! and the `F_skin` functor tying them together.
 
 pub mod contract;
+pub mod diagnostics;
 pub mod form;
 pub mod functor;
 pub mod groove;

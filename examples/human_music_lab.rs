@@ -16,8 +16,10 @@
 
 use std::path::PathBuf;
 
+use gibson::audio::human_music::diagnostics::CoherenceDiagnostics;
+use gibson::audio::human_music::functor::compose_with_plan;
 use gibson::audio::human_music::synth::HumanMusicSynth;
-use gibson::audio::human_music::{compose, demo_trace, MusicWorld, WorldId};
+use gibson::audio::human_music::{demo_trace, MusicWorld, WorldId};
 use gibson::audio::render::OfflineRenderer;
 use gibson::audio::wav::write_wav_i16;
 use gibson::audio::SampleRate;
@@ -65,7 +67,7 @@ fn main() -> std::io::Result<()> {
         let file_stem = world.name.to_lowercase();
         let path = out_dir.join(format!("{file_stem}.wav"));
 
-        let score = compose(&trace, &world, seed);
+        let (score, plan) = compose_with_plan(&trace, &world, seed);
         score.validate().expect("score invariants");
 
         let mut synth = HumanMusicSynth::new(&score, &world, sr);
@@ -83,6 +85,8 @@ fn main() -> std::io::Result<()> {
             world.name
         );
         print!("{}", score.summary());
+        print!("{}", plan.dump());
+        println!("{}", CoherenceDiagnostics::measure(&plan, &score).report());
         println!(
             "render: {real_secs:.1}s audio in {:.0}ms  ({:.1}x realtime)  peak={:.3} rms={:.3} dc=({:.4},{:.4})",
             render_wall.as_secs_f64() * 1000.0,
