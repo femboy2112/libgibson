@@ -20,7 +20,7 @@
 //! summary.
 
 use super::contract::CoherenceContract;
-use super::discourse::{DiscoursePlan, PhraseGoal};
+use super::discourse::{DiscoursePlan, DiscourseRole, PhraseGoal};
 use super::form::{SectionKind, BEATS_PER_BAR};
 use super::intent::MusicIntent;
 use super::score::Role;
@@ -496,6 +496,20 @@ impl ArrangementPlan {
         }
     }
 
+    /// Give the lead a seat wherever the discourse poses a Question or delivers an Answer, so the
+    /// thematic question/answer gesture is actually heard even in a section family whose base
+    /// arrangement would silence the lead. Support (not Foreground) — it does not spend the budget.
+    pub fn voice_lead_for_discourse(&mut self, discourse: &DiscoursePlan) {
+        for (i, a) in self.phrases.iter_mut().enumerate() {
+            let role = discourse.goal(i).role;
+            if matches!(role, DiscourseRole::Question | DiscourseRole::Answer)
+                && !a.lead.is_audible()
+            {
+                a.lead = ArrangementRole::Support;
+            }
+        }
+    }
+
     /// The arrangement for phrase `ix` (clamped to the last).
     pub fn at(&self, ix: usize) -> PhraseArrangement {
         *self.phrases.get(ix).unwrap_or_else(|| {
@@ -549,8 +563,11 @@ impl CompositionPlan {
         contract: CoherenceContract,
     ) -> CompositionPlan {
         let form = FormGraph::build(timeline, total_bars, &contract);
-        let arrangement = ArrangementPlan::build(&form, &contract);
         let discourse = DiscoursePlan::build(timeline, &form, &contract);
+        let mut arrangement = ArrangementPlan::build(&form, &contract);
+        // The thematic question/answer must be audible: give the lead a seat on Question/Answer
+        // phrases even where the family-based arrangement would otherwise silence it.
+        arrangement.voice_lead_for_discourse(&discourse);
         CompositionPlan {
             contract,
             form,

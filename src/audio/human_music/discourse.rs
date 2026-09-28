@@ -600,9 +600,13 @@ fn role_for(
     if i > culmination {
         return DiscourseRole::Withhold;
     }
-    // The run-in to the culmination.
+    // The run-in to the culmination. A recurrence restates the thesis; otherwise the phrase two
+    // before the peak poses the open question (an incomplete gesture the later Answer completes),
+    // the earlier run-in departs from home, and the approach intensifies.
     if is_a_family {
         DiscourseRole::Restate
+    } else if culmination >= 2 && i == culmination - 2 {
+        DiscourseRole::Question
     } else if i >= rise_mid {
         DiscourseRole::Intensify
     } else {
