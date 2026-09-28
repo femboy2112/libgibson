@@ -134,6 +134,20 @@ impl Motif {
         }
     }
 
+    /// Append `other` after this motif (same identity) — a call and its response fused into one
+    /// statement, sharing both their DNA.
+    pub fn concat(&self, other: &Motif) -> Motif {
+        let mut degrees = self.degrees.clone();
+        degrees.extend_from_slice(&other.degrees);
+        let mut rhythm = self.rhythm.clone();
+        rhythm.extend_from_slice(&other.rhythm);
+        Motif {
+            id: self.id,
+            degrees,
+            rhythm,
+        }
+    }
+
     /// Realize the motif to `(start_beat, dur_beats, pitch)` notes on `scale`, with each
     /// degree offset from `root_degree` at `octave`, beginning at `start_beat`.
     pub fn render(
@@ -394,6 +408,120 @@ impl MotifBank {
             rhythmic_cell,
             bass_cell,
             countermotif,
+        }
+    }
+}
+
+/// A typed **handoff** — how one lead statement connects to the next, so phrases flow as one song
+/// rather than being spliced. Reported per lead-bearing boundary by the diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Handoff {
+    /// The thesis restated — the song comes home to M0.
+    Restatement,
+    /// A development of the previous statement under a named transform.
+    Develop,
+    /// A call posed (a fragment carried forward, awaiting its answer).
+    Call,
+    /// The answer completing a carried call (call/response).
+    Response,
+    /// The hook — the call+response DNA, the payoff.
+    Hook,
+    /// A closing evaporation.
+    Dissolve,
+}
+
+impl Handoff {
+    /// A short label for provenance and diagnostics.
+    pub fn label(self) -> &'static str {
+        match self {
+            Handoff::Restatement => "restate",
+            Handoff::Develop => "develop",
+            Handoff::Call => "call",
+            Handoff::Response => "response",
+            Handoff::Hook => "hook",
+            Handoff::Dissolve => "dissolve",
+        }
+    }
+}
+
+/// The whole-piece thematic line, developed with MEMORY.
+///
+/// Round IV re-read a fixed germ every phrase and applied an unrelated one-shot transform per role,
+/// so consecutive statements were different distortions of the same seed that did not flow into one
+/// another — the "kaleidoscope of coherent fragments spliced together." The trajectory instead
+/// carries the material it last produced and develops THAT (`M_{n+1} = develop(M_n)`), returns
+/// explicitly to the thesis `M0` on every Restate/Return (the song comes home), and derives its
+/// hook from the call+response DNA. Each step reports the [`Handoff`] connecting it to the previous
+/// statement, so no boundary is an accidental teleport.
+pub struct ThematicTrajectory {
+    /// `M0` — the stable call; every Return comes home to it.
+    thesis: Motif,
+    /// The hook — the call's head fused with the response's tail (call+response DNA).
+    hook: Motif,
+    /// The material last produced — the memory each development grows from.
+    current: Motif,
+    /// A fragment split point carried from a call to its answering phrase.
+    carry: Option<usize>,
+}
+
+impl ThematicTrajectory {
+    /// Build the trajectory from the germ `bank`. The call is the germ; the response is the call
+    /// transposed a step (same contour, its answering phrase); the hook fuses the call's head with
+    /// the response's tail — one compact idea sharing both their DNA.
+    pub fn new(bank: &MotifBank) -> ThematicTrajectory {
+        let thesis = bank.identity.clone();
+        let response = thesis.transpose(1);
+        let head = (thesis.len() / 2).max(1);
+        let hook = thesis.fragment(head).concat(&response.tail(head));
+        ThematicTrajectory {
+            current: thesis.clone(),
+            thesis,
+            hook,
+            carry: None,
+        }
+    }
+
+    /// The next statement for `role`, developed from the CURRENT material (not a fresh germ), and
+    /// the [`Handoff`] describing how it connects to the previous statement.
+    pub fn next_for(&mut self, role: super::discourse::DiscourseRole) -> (Motif, Handoff) {
+        use super::discourse::DiscourseRole as R;
+        let half = |m: &Motif| (m.len() / 2).max(1);
+        match role {
+            // The song comes home to the thesis — memory reset to M0.
+            R::Establish | R::Restate | R::Return => {
+                self.current = self.thesis.clone();
+                (self.current.clone(), Handoff::Restatement)
+            }
+            // Develop the CURRENT material a step further — the next phrase grows from the last.
+            R::Depart => {
+                self.current = self.current.transpose(2);
+                (self.current.clone(), Handoff::Develop)
+            }
+            R::Intensify => {
+                self.current = self.current.scale_rhythm(0.75);
+                (self.current.clone(), Handoff::Develop)
+            }
+            // Pose a call: a fragment of the current material, remembering where it broke off.
+            R::Question => {
+                let k = half(&self.current);
+                self.carry = Some(k);
+                (self.current.fragment(k), Handoff::Call)
+            }
+            R::Withhold => {
+                let k = half(&self.current);
+                (self.current.fragment(k), Handoff::Call)
+            }
+            // The payoff — the call+response hook.
+            R::Culminate => (self.hook.clone(), Handoff::Hook),
+            // Answer the carried call by completing exactly its withheld remainder.
+            R::Answer => {
+                let s = self.carry.take().unwrap_or_else(|| half(&self.current));
+                (self.current.tail(s), Handoff::Response)
+            }
+            R::Dissolve => {
+                let k = 2.min(self.current.len().max(1));
+                (self.current.fragment(k), Handoff::Dissolve)
+            }
         }
     }
 }

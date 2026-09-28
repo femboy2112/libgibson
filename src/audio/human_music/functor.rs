@@ -15,7 +15,7 @@ use super::form::{Section, SectionKind, BEATS_PER_BAR};
 use super::groove::GrooveEngine;
 use super::harmony::{ChordSpan, HarmonyEngine};
 use super::intent::{IntentMorphism, MusicIntent};
-use super::motif::{Motif, MotifBank};
+use super::motif::{MotifBank, ThematicTrajectory};
 use super::plan::CompositionPlan;
 use super::score::{Note, PitchFunction, Provenance, Role, Score, SfxEvent, SfxKind};
 use super::semantic::{EventKind, SemanticTrace, Tone};
@@ -426,16 +426,17 @@ fn push_bass(
     score.notes.push(n);
 }
 
-/// The lead voice: the thesis motif transformed by each phrase's **discourse role**.
+/// The lead voice, developed along a whole-piece [`ThematicTrajectory`].
 ///
-/// Every statement is a recognizable transform *of the thesis germ* (not a drifting object), so
-/// the lead always relates to what was established. Establish/Restate/Return state the germ;
-/// Depart transposes it; Intensify compresses its rhythm; Culminate lands the hook an octave up;
-/// **Question** states an incomplete fragment and records where it broke off, and the matching
-/// **Answer** completes exactly that withheld remainder ([`super::motif::Motif::tail`]); Dissolve
-/// evaporates to a couple of notes. Statements enter grid-aligned and are realized jointly against
-/// the harmony via [`super::motif::realize_phrase`]. The lead plays only where the arrangement
-/// gives it a voice — so it breathes.
+/// Each phrase's material is DEVELOPED from the previous statement rather than re-derived from a
+/// fixed germ, so consecutive phrases flow as one song instead of splicing (Round IV's
+/// "kaleidoscope"). Establish/Restate/Return come home to the thesis M0; Depart/Intensify develop
+/// the current material a step further; **Question** poses a call (a fragment, remembering where it
+/// broke off) and the matching **Answer** completes exactly that remainder; Culminate sounds the
+/// call+response hook; Dissolve evaporates. Every transition carries a typed [`super::motif::Handoff`].
+/// Statements enter grid-aligned and are realized jointly against the harmony via
+/// [`super::motif::realize_phrase`]. The lead plays only where the arrangement gives it a voice — so
+/// it breathes.
 fn add_melody(
     score: &mut Score,
     chords: &[ChordSpan],
@@ -444,10 +445,12 @@ fn add_melody(
     seed: u64,
 ) {
     let bank = MotifBank::generate(scale, seed ^ 0x3E10_D1E5);
+    // The whole-piece thematic line: each phrase's material is DEVELOPED from the previous
+    // statement (with explicit returns to the thesis), not re-derived afresh from a fixed germ — so
+    // consecutive phrases flow as one song instead of splicing. The trajectory owns the call/answer
+    // coupling internally and reports a typed handoff per statement.
+    let mut traj = ThematicTrajectory::new(&bank);
     let two_bar = 2.0 * BEATS_PER_BAR;
-    // Question/Answer coupling: a Question remembers where it fragmented the germ so the next
-    // Answer completes exactly that withheld remainder.
-    let mut question_take: Option<usize> = None;
     // The previous statement's exit pitch — carried across statements and phrases so each new
     // statement connects to where the last one ended (continuity, not teleportation).
     let mut prev_exit: Option<Midi> = None;
@@ -458,7 +461,8 @@ fn add_melody(
         if !plan.arrangement.at(phrase.ix as usize).lead.is_audible() {
             continue;
         }
-        let (motif, morph) = motif_for_role(t.goal.role, &bank, &mut question_take);
+        let (motif, handoff) = traj.next_for(t.goal.role);
+        let morph = handoff.label();
 
         // Register realizes the role: the culmination and intensification climb, the dissolve
         // settles low, everything else follows the phrase's elevation target. For ordinary roles we
@@ -522,38 +526,6 @@ fn add_melody(
             };
             guard += 1;
         }
-    }
-}
-
-/// The thesis-relative motif a discourse role calls for. Every result is a recognizable transform
-/// of the germ, so the lead's shape tracks the piece's argument (sign-consistent with the role):
-/// a Question fragments the germ (an incomplete gesture) and records where via `question_take`, so
-/// the matching Answer completes exactly that remainder with [`super::motif::Motif::tail`].
-fn motif_for_role(
-    role: DiscourseRole,
-    bank: &MotifBank,
-    question_take: &mut Option<usize>,
-) -> (Motif, &'static str) {
-    let germ = &bank.identity;
-    let glen = germ.len().max(2);
-    let k = (glen / 2).max(1);
-    match role {
-        DiscourseRole::Establish | DiscourseRole::Restate | DiscourseRole::Return => {
-            (germ.clone(), "statement")
-        }
-        DiscourseRole::Depart => (germ.transpose(2), "depart"),
-        DiscourseRole::Intensify => (germ.scale_rhythm(0.75), "intensify"),
-        DiscourseRole::Question => {
-            *question_take = Some(k);
-            (germ.fragment(k), "question")
-        }
-        DiscourseRole::Withhold => (germ.fragment(k), "withhold"),
-        DiscourseRole::Culminate => (bank.hook.clone(), "culminate"),
-        DiscourseRole::Answer => {
-            let s = question_take.take().unwrap_or(k);
-            (germ.tail(s), "answer")
-        }
-        DiscourseRole::Dissolve => (germ.fragment(2.min(glen)), "dissolve"),
     }
 }
 

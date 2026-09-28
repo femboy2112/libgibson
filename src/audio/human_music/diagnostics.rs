@@ -139,7 +139,7 @@ impl CoherenceDiagnostics {
         let motif_restatements = score
             .notes
             .iter()
-            .filter(|n| n.role == Role::Lead && n.prov.motif_xform == Some("statement"))
+            .filter(|n| n.role == Role::Lead && n.prov.motif_xform == Some("restate"))
             .count();
         let lead_notes = score.role_notes(Role::Lead).count();
 
@@ -280,12 +280,12 @@ impl DiscourseDiagnostics {
         let motif_questions = score
             .notes
             .iter()
-            .filter(|nt| nt.prov.motif_xform == Some("question"))
+            .filter(|nt| nt.prov.motif_xform == Some("call"))
             .count();
         let motif_answers = score
             .notes
             .iter()
-            .filter(|nt| nt.prov.motif_xform == Some("answer"))
+            .filter(|nt| nt.prov.motif_xform == Some("response"))
             .count();
 
         let culmination_before_answer = d.answer.is_none_or(|a| d.culmination < a);
