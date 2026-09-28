@@ -13,8 +13,8 @@
 use super::discourse::{Closure, DiscourseRole};
 use super::motif::{motif_similarity, MotifIdentity};
 use super::plan::CompositionPlan;
-use super::score::{Role, Score};
-use super::theory::{pitch_class, Function, Midi};
+use super::score::{Note, PitchFunction, Role, Score};
+use super::theory::{pitch_class, Chord, Function, Midi};
 
 /// A vector of structural measurements. Preserve the components — do not collapse to a scalar.
 #[derive(Debug, Clone, PartialEq)]
@@ -585,6 +585,285 @@ impl RealizationDiagnostics {
     }
 }
 
+/// Which scale-degree/tension role a lead pitch plays against the chord sounding beneath it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutlineBucket {
+    Root,
+    Third,
+    Fifth,
+    Seventh,
+    /// A chord-member color beyond the 7th (6/9/11/13), or a licensed color/tension tone.
+    Extension,
+    /// A justified non-chord tone in motion (passing/neighbor/approach/enclosure/slide/pedal).
+    Connective,
+    /// A pitched lead note with no pitch-function justification at all.
+    Unjustified,
+}
+
+/// Classify a lead pitch against the sounding chord by its position in the chord's stacked
+/// intervals (root/3rd/5th/7th by index, higher members as color); a non-member is bucketed by
+/// its declared `PitchFunction` into color, connective motion, or (if unset) unjustified.
+fn outline_bucket(pitch: Midi, chord: &Chord, func: Option<PitchFunction>) -> OutlineBucket {
+    let rel = (pitch - chord.root_pc).rem_euclid(12);
+    let ivs = chord.quality.intervals();
+    if let Some(idx) = ivs.iter().position(|iv| iv.rem_euclid(12) == rel) {
+        match idx {
+            0 => OutlineBucket::Root,
+            1 => OutlineBucket::Third,
+            2 => OutlineBucket::Fifth,
+            3 if rel == 10 || rel == 11 => OutlineBucket::Seventh,
+            _ => OutlineBucket::Extension,
+        }
+    } else {
+        match func {
+            Some(
+                PitchFunction::LicensedExtension
+                | PitchFunction::ModalColor
+                | PitchFunction::Suspension
+                | PitchFunction::Retardation
+                | PitchFunction::Anticipation
+                | PitchFunction::Appoggiatura,
+            ) => OutlineBucket::Extension,
+            Some(_) => OutlineBucket::Connective,
+            None => OutlineBucket::Unjustified,
+        }
+    }
+}
+
+/// A structurally strong beat: on the beat grid and on an even beat-in-bar (downbeat / mid-bar).
+fn on_strong_beat(beat: f64, beats_per_bar: f64) -> bool {
+    let b = beat.rem_euclid(beats_per_bar.max(1.0));
+    let nearest = b.round();
+    (b - nearest).abs() < 1e-3 && (nearest as i64).rem_euclid(2) == 0
+}
+
+/// Lead-line **outline** diagnostics — the anti-triad-noodling instrument.
+///
+/// `unjustified_nonchord_notes == 0` proves there are no *wrong* notes; it says nothing about
+/// whether the melody is *interesting*. A beginner improviser who only ever plays root/3rd/5th of
+/// the one chord they know produces zero wrong notes and a boring tune. This measures, for the LEAD
+/// only, the harmonic content and shape of the line: how much is plain triad tones vs guide tones
+/// (7ths) and licensed color (extensions), how varied the intervals and pitch classes are, how much
+/// it repeats a fixed arpeggio outline, and how much it breathes (syncopation, internal rests). None
+/// of this is a quality score — a rich melody may score low on one axis by design — but a line that
+/// is ~all root/3/5, no color, one repeated outline, no rests is the exact "major-triad exercise"
+/// the ear rejects, and [`LeadOutlineDiagnostics::triad_noodle`] flags precisely that shape.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LeadOutlineDiagnostics {
+    /// Lead notes that sound over a known chord (the denominator for the percentages below).
+    pub lead_notes: usize,
+    /// Fraction of lead notes that are the chord root.
+    pub root_pct: f32,
+    /// Fraction that are the chord third.
+    pub third_pct: f32,
+    /// Fraction that are the chord fifth.
+    pub fifth_pct: f32,
+    /// Fraction that are the chord seventh (a guide tone).
+    pub seventh_pct: f32,
+    /// Fraction that are extended color (6/9/11/13 chord members, or licensed color/tension tones).
+    pub extension_pct: f32,
+    /// Fraction that are justified non-chord tones in motion (passing/neighbor/approach/…).
+    pub connective_pct: f32,
+    /// Fraction with no pitch-function justification at all (should be 0 — mirrors realization).
+    pub unjustified_pct: f32,
+    /// Among strong-beat lead notes, the fraction that are a 7th or extended color rather than a
+    /// plain root/3rd/5th — the single clearest "is this more than a triad exercise" signal.
+    pub strong_beat_extension_rate: f32,
+    /// Distinct absolute interval sizes divided by the number of melodic intervals `[0,1]`.
+    pub interval_diversity: f32,
+    /// Shannon entropy of the pitch-class histogram, normalized by `log2(12)` `[0,1]`.
+    pub pitch_class_entropy: f32,
+    /// Fraction of length-3 interval-contour windows that duplicate an earlier window `[0,1)` —
+    /// high means the line keeps replaying one arpeggio shape.
+    pub exact_arpeggio_recurrence: f32,
+    /// Fraction of lead onsets that fall off the integer beat grid `[0,1]`.
+    pub syncopation_rate: f32,
+    /// Fraction of consecutive lead-note gaps that are real internal rests `[0,1]`.
+    pub internal_rest_rate: f32,
+    /// Melodic range in semitones (highest minus lowest lead pitch).
+    pub range_semitones: i32,
+    /// Composite red flag: the line is ~all root/3/5, essentially no color, and one repeated
+    /// arpeggio outline — a harmonically-legal but musically-empty triad exercise.
+    pub triad_noodle: bool,
+}
+
+impl LeadOutlineDiagnostics {
+    /// Measure the LEAD line's outline from the realized `score` alone (no plan needed).
+    pub fn measure(score: &Score) -> LeadOutlineDiagnostics {
+        let mut lead: Vec<&Note> = score
+            .notes
+            .iter()
+            .filter(|n| n.role == Role::Lead)
+            .collect();
+        lead.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+
+        // The chord sounding at a beat: the last span that has started by then.
+        let sounding = |beat: f64| -> Option<&Chord> {
+            score
+                .chords
+                .iter()
+                .rev()
+                .find(|c| c.start_beat <= beat + 1e-6)
+                .map(|c| &c.chord)
+        };
+
+        let mut counts = [0usize; 7]; // root, third, fifth, seventh, ext, connective, unjustified
+        let mut with_chord = 0usize;
+        let mut strong_total = 0usize;
+        let mut strong_color = 0usize;
+        let pitches: Vec<Midi> = lead.iter().map(|n| n.pitch).collect();
+        for n in &lead {
+            let Some(chord) = sounding(n.start_beat) else {
+                continue;
+            };
+            with_chord += 1;
+            let b = outline_bucket(n.pitch, chord, n.function);
+            counts[b as usize] += 1;
+            if on_strong_beat(n.start_beat, score.beats_per_bar) {
+                strong_total += 1;
+                if matches!(b, OutlineBucket::Seventh | OutlineBucket::Extension) {
+                    strong_color += 1;
+                }
+            }
+        }
+
+        let denom = with_chord.max(1) as f32;
+        let pct = |c: usize| c as f32 / denom;
+
+        // Melodic interval contour (signed), for diversity and arpeggio recurrence.
+        let contour: Vec<i32> = pitches.windows(2).map(|w| w[1] - w[0]).collect();
+        let interval_diversity = if contour.is_empty() {
+            0.0
+        } else {
+            let distinct: std::collections::BTreeSet<i32> =
+                contour.iter().map(|d| d.abs()).collect();
+            distinct.len() as f32 / contour.len() as f32
+        };
+        let exact_arpeggio_recurrence = if contour.len() >= 3 {
+            let windows: Vec<[i32; 3]> = contour.windows(3).map(|w| [w[0], w[1], w[2]]).collect();
+            let distinct: std::collections::BTreeSet<[i32; 3]> = windows.iter().copied().collect();
+            (windows.len() - distinct.len()) as f32 / windows.len() as f32
+        } else {
+            0.0
+        };
+
+        // Pitch-class entropy, normalized to [0,1].
+        let mut hist = [0u32; 12];
+        for &p in &pitches {
+            hist[pitch_class(p) as usize] += 1;
+        }
+        let total = pitches.len() as f32;
+        let pitch_class_entropy = if total > 0.0 {
+            let h: f32 = hist
+                .iter()
+                .filter(|&&c| c > 0)
+                .map(|&c| {
+                    let pr = c as f32 / total;
+                    -pr * pr.log2()
+                })
+                .sum();
+            h / 12f32.log2()
+        } else {
+            0.0
+        };
+
+        let syncopation_rate = if lead.is_empty() {
+            0.0
+        } else {
+            let off = lead
+                .iter()
+                .filter(|n| {
+                    let f = n.start_beat.fract().abs();
+                    f > 1e-3 && f < 1.0 - 1e-3
+                })
+                .count();
+            off as f32 / lead.len() as f32
+        };
+        let internal_rest_rate = if lead.len() < 2 {
+            0.0
+        } else {
+            let rests = lead
+                .windows(2)
+                .filter(|w| w[1].start_beat - (w[0].start_beat + w[0].dur_beats as f64) > 0.25)
+                .count();
+            rests as f32 / (lead.len() - 1) as f32
+        };
+        let range_semitones = match (pitches.iter().min(), pitches.iter().max()) {
+            (Some(&lo), Some(&hi)) => hi - lo,
+            _ => 0,
+        };
+
+        let root_pct = pct(counts[0]);
+        let third_pct = pct(counts[1]);
+        let fifth_pct = pct(counts[2]);
+        let seventh_pct = pct(counts[3]);
+        let extension_pct = pct(counts[4]);
+        let connective_pct = pct(counts[5]);
+        let unjustified_pct = pct(counts[6]);
+        let strong_beat_extension_rate = if strong_total == 0 {
+            0.0
+        } else {
+            strong_color as f32 / strong_total as f32
+        };
+
+        // The noodle flag: overwhelmingly plain triad tones, no color, one repeated outline.
+        let triad_noodle = (root_pct + third_pct + fifth_pct) >= 0.9
+            && extension_pct <= 0.05
+            && exact_arpeggio_recurrence >= 0.5;
+
+        LeadOutlineDiagnostics {
+            lead_notes: with_chord,
+            root_pct,
+            third_pct,
+            fifth_pct,
+            seventh_pct,
+            extension_pct,
+            connective_pct,
+            unjustified_pct,
+            strong_beat_extension_rate,
+            interval_diversity,
+            pitch_class_entropy,
+            exact_arpeggio_recurrence,
+            syncopation_rate,
+            internal_rest_rate,
+            range_semitones,
+            triad_noodle,
+        }
+    }
+
+    /// A compact, human-readable report. Measurements of the lead line, not a verdict on taste.
+    pub fn report(&self) -> String {
+        use std::fmt::Write;
+        let mut s = String::new();
+        let _ = writeln!(s, "lead outline (anti-noodle — NOT a quality score):");
+        let _ = writeln!(
+            s,
+            "  lead_notes={} root={:.2} third={:.2} fifth={:.2} seventh={:.2} ext={:.2} connective={:.2} unjustified={:.2}",
+            self.lead_notes,
+            self.root_pct,
+            self.third_pct,
+            self.fifth_pct,
+            self.seventh_pct,
+            self.extension_pct,
+            self.connective_pct,
+            self.unjustified_pct,
+        );
+        let _ = writeln!(
+            s,
+            "  strong_beat_ext_rate={:.2} interval_diversity={:.2} pc_entropy={:.2} arp_recurrence={:.2} syncopation={:.2} rests={:.2} range={} triad_noodle={}",
+            self.strong_beat_extension_rate,
+            self.interval_diversity,
+            self.pitch_class_entropy,
+            self.exact_arpeggio_recurrence,
+            self.syncopation_rate,
+            self.internal_rest_rate,
+            self.range_semitones,
+            self.triad_noodle,
+        );
+        s
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::functor::compose_with_plan;
@@ -594,6 +873,86 @@ mod tests {
     use super::super::theory::{Chord, Quality};
     use super::super::world::MusicWorld;
     use super::*;
+
+    // --- Anti-noodle: LeadOutlineDiagnostics (root/3/5 vs guide-tones + color) ---
+    fn c_root_span(total: f64, q: Quality) -> ChordSpan {
+        ChordSpan {
+            start_beat: 0.0,
+            dur_beats: total as f32,
+            chord: Chord::new(0, q),
+            function: Function::Tonic,
+            degree: 0,
+            note: "",
+        }
+    }
+    fn lead_note(beat: f64, dur: f32, pitch: i32, f: Option<PitchFunction>) -> Note {
+        use super::super::form::SectionKind;
+        use super::super::score::Provenance;
+        let mut n = Note::new(
+            beat,
+            dur,
+            pitch,
+            0.8,
+            Role::Lead,
+            Provenance::new(SectionKind::A),
+        );
+        n.function = f;
+        n
+    }
+
+    #[test]
+    fn a_repeated_root_third_fifth_arpeggio_trips_the_noodle_flag() {
+        // The exact failure the maintainer hears: "1 3 5 3 | 1 3 5 3", every note harmonically
+        // legal, the melody musically empty. No wrong notes != good melody.
+        let mut score = Score::new(120.0, 4.0, 16.0);
+        score.chords.push(c_root_span(16.0, Quality::Maj));
+        let cycle = [60, 64, 67, 64]; // C E G E over C major
+        for i in 0..16 {
+            score
+                .notes
+                .push(lead_note(i as f64, 1.0, cycle[i % 4], None));
+        }
+        let d = LeadOutlineDiagnostics::measure(&score);
+        assert!(
+            d.triad_noodle,
+            "a pure root/3/5 arpeggio must trip the noodle flag: {d:?}"
+        );
+        assert!(d.root_pct + d.third_pct + d.fifth_pct > 0.99);
+        assert_eq!(d.extension_pct, 0.0);
+        assert!(d.exact_arpeggio_recurrence >= 0.5);
+        assert_eq!(d.syncopation_rate, 0.0);
+    }
+
+    #[test]
+    fn a_line_with_guide_tones_color_and_rests_does_not_trip_the_flag() {
+        // A varied line over Cmaj7: a guide-tone 7th (B), a 9th color (D), off-beats and rests.
+        let mut score = Score::new(120.0, 4.0, 16.0);
+        score.chords.push(c_root_span(16.0, Quality::Maj7));
+        let notes = [
+            (0.0, 1.0, 60, Some(PitchFunction::ChordTone)), // C root
+            (1.5, 0.5, 71, Some(PitchFunction::ChordTone)), // B 7th (guide tone), off-beat
+            (2.0, 0.5, 62, Some(PitchFunction::LicensedExtension)), // D 9th color
+            (4.0, 1.0, 67, Some(PitchFunction::ChordTone)), // G 5th, after a rest
+            (5.5, 0.5, 69, Some(PitchFunction::Neighbor)),  // A neighbor, off-beat
+            (6.0, 1.0, 64, Some(PitchFunction::ChordTone)), // E 3rd
+            (8.0, 2.0, 72, Some(PitchFunction::ChordTone)), // C octave, held
+            (11.0, 0.5, 65, Some(PitchFunction::DiatonicPassing)), // F passing
+        ];
+        for (b, dur, p, f) in notes {
+            score.notes.push(lead_note(b, dur, p, f));
+        }
+        let d = LeadOutlineDiagnostics::measure(&score);
+        assert!(
+            !d.triad_noodle,
+            "a guide-tone/color/rest line must NOT trip the noodle flag: {d:?}"
+        );
+        assert!(d.extension_pct > 0.0, "the 9th should register as color");
+        assert!(d.seventh_pct > 0.0, "the B should register as a guide tone");
+        assert!(
+            d.internal_rest_rate > 0.0,
+            "the gaps should register as rests"
+        );
+    }
 
     // --- Positive control: a real composition measures as structurally coherent. ---
     #[test]

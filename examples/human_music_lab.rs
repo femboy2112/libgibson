@@ -19,10 +19,12 @@ use std::path::PathBuf;
 use gibson::audio::buffer::StereoBlock;
 use gibson::audio::human_music::contract::CompositionGrammar;
 use gibson::audio::human_music::diagnostics::{
-    CoherenceDiagnostics, DiscourseDiagnostics, RealizationDiagnostics,
+    CoherenceDiagnostics, DiscourseDiagnostics, LeadOutlineDiagnostics, RealizationDiagnostics,
 };
 use gibson::audio::human_music::functor::compose_with_grammar;
-use gibson::audio::human_music::semantic::{calm_loop, rise_unresolved};
+use gibson::audio::human_music::semantic::{
+    calm_loop, deflected_lift_trace, rise_unresolved, SemanticTrace,
+};
 use gibson::audio::human_music::synth::{HumanMusicSynth, StemMask};
 use gibson::audio::human_music::{demo_trace, MusicWorld, WorldId};
 use gibson::audio::render::OfflineRenderer;
@@ -33,6 +35,18 @@ fn arg(flag: &str) -> Option<String> {
     std::env::args()
         .skip(1)
         .find_map(|a| a.strip_prefix(flag).map(|s| s.to_string()))
+}
+
+/// Select the semantic story fixture by name. The flagship default is the DeflectedLift *bounce*
+/// (`deflected_lift_trace`), so the default listen finally matches the default grammar instead of
+/// fighting the old single-arc `demo_trace` — pass `--story=cinematic` for that stress test.
+fn story_trace(name: &str, beats: f64) -> SemanticTrace {
+    match name {
+        "cinematic" | "demo" | "arc" => demo_trace(beats),
+        "calm" => calm_loop(beats),
+        "rise" | "unresolved" => rise_unresolved(beats),
+        _ => deflected_lift_trace(beats),
+    }
 }
 
 fn main() -> std::io::Result<()> {
@@ -48,8 +62,14 @@ fn main() -> std::io::Result<()> {
         Some("hookarc") => CompositionGrammar::HookArc,
         Some("loop") | Some("loop_evolution") => CompositionGrammar::LoopEvolution,
         Some("riff") | Some("riff_drive") => CompositionGrammar::RiffDrive,
+        Some("deflected") | Some("deflected_lift") | Some("bounce") => {
+            CompositionGrammar::DeflectedLift
+        }
         _ => CompositionGrammar::DeflectedLift,
     };
+    // The semantic story fixture (default: the DeflectedLift bounce, so the flagship listen matches
+    // the flagship grammar). Pass --story=cinematic to render the old single-arc demo as a stress test.
+    let story = arg("--story=").unwrap_or_else(|| "bounce".into());
     let out_dir = arg("--out=")
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::temp_dir().join("libgibson_human_music"));
@@ -73,10 +93,10 @@ fn main() -> std::io::Result<()> {
             "swiss_signal" => WorldId::SwissSignal,
             _ => WorldId::BlackIce,
         };
-        return stems(&out_dir, sr, block, seed, wid, grammar);
+        return stems(&out_dir, sr, block, seed, wid, grammar, &story);
     }
 
-    let trace = demo_trace(beats);
+    let trace = story_trace(&story, beats);
 
     let worlds: Vec<WorldId> = match which.as_str() {
         "black_ice" => vec![WorldId::BlackIce],
@@ -86,7 +106,7 @@ fn main() -> std::io::Result<()> {
     };
 
     println!(
-        "HumanMusic lab — {grammar:?} — one semantic trace, {} events, {beats:.0} beats",
+        "HumanMusic lab — {grammar:?} / story={story} — {} events, {beats:.0} beats",
         trace.events.len()
     );
     println!(
@@ -125,6 +145,7 @@ fn main() -> std::io::Result<()> {
             "{}",
             RealizationDiagnostics::measure(&plan, &score).report()
         );
+        print!("{}", LeadOutlineDiagnostics::measure(&score).report());
         println!(
             "render: {real_secs:.1}s audio in {:.0}ms  ({:.1}x realtime)  peak={:.3} rms={:.3} dc=({:.4},{:.4})",
             render_wall.as_secs_f64() * 1000.0,
@@ -204,6 +225,7 @@ fn calibrate(
             "{}",
             RealizationDiagnostics::measure(&plan, &score).report()
         );
+        print!("{}", LeadOutlineDiagnostics::measure(&score).report());
         println!(
             "safety: nonfinite={}  peak={:.3}  max_voices={}\nwav: {}\n",
             out.audio.has_nonfinite(),
@@ -261,10 +283,11 @@ fn stems(
     seed: u64,
     wid: WorldId,
     grammar: CompositionGrammar,
+    story: &str,
 ) -> std::io::Result<()> {
     let world = MusicWorld::from_id(wid);
     let file_stem = world.name.to_lowercase();
-    let trace = demo_trace(120.0);
+    let trace = story_trace(story, 120.0);
     let (score, _plan) = compose_with_grammar(&trace, &world, seed, grammar);
     score.validate().expect("score invariants");
 

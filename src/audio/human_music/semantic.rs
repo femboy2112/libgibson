@@ -453,9 +453,144 @@ pub fn calm_loop(total_beats: f64) -> SemanticTrace {
     )
 }
 
+/// Synthetic fixture — **the bittersweet bounce**: a recurring lift → deflect → open → reset
+/// contour, stated twice. Unlike [`demo_trace`]'s single cinematic climb to a `Danger`/`Overlay`
+/// peak, this trace *bounces*: each cycle reaches only a modest Accent/Warning crest and settles
+/// back to warmth, so the story's tension rises into the grammar's Depart/Culminate phrases and
+/// falls into its Answer/Return phrases instead of fighting a monotone arc. It deliberately never
+/// reaches `Tone::Danger` or `Elevation::Overlay` — that catastrophic vocabulary is the cinematic
+/// stress test's alone. This is the flagship story for the DeflectedLift grammar: a song that keeps
+/// reaching, just missing, opening a warm window, and resetting to reach again.
+pub fn deflected_lift_trace(total_beats: f64) -> SemanticTrace {
+    let t = total_beats;
+    SemanticTrace::new(
+        vec![
+            // Establish — settle at home, low pressure, ready to reach.
+            ev(
+                0.0,
+                Tone::Neutral,
+                Emphasis::Muted,
+                Density::Normal,
+                Elevation::Flat,
+                EventKind::ActChanged,
+            ),
+            // Cycle 1 — lift (reach up), deflect (the crest that almost lands), open (warm
+            // release), reset (settle home, ready to go again).
+            ev(
+                t * 0.133,
+                Tone::Info,
+                Emphasis::Normal,
+                Density::Normal,
+                Elevation::Raised,
+                EventKind::FocusAcquired,
+            ),
+            ev(
+                t * 0.267,
+                Tone::Accent,
+                Emphasis::Strong,
+                Density::Compact,
+                Elevation::Raised,
+                EventKind::ModalEntered,
+            ),
+            ev(
+                t * 0.40,
+                Tone::Success,
+                Emphasis::Normal,
+                Density::Normal,
+                Elevation::Raised,
+                EventKind::Confirmation,
+            ),
+            ev(
+                t * 0.533,
+                Tone::Info,
+                Emphasis::Muted,
+                Density::Spacious,
+                Elevation::Flat,
+                EventKind::SectionResolved,
+            ),
+            // Cycle 2 — the same shape again, a touch higher at the crest (the second reach), then
+            // a warm opening and a final rounded reset. Recurrence is the point.
+            ev(
+                t * 0.667,
+                Tone::Accent,
+                Emphasis::Normal,
+                Density::Normal,
+                Elevation::Raised,
+                EventKind::FocusAcquired,
+            ),
+            ev(
+                t * 0.733,
+                Tone::Warning,
+                Emphasis::Normal,
+                Density::Normal,
+                Elevation::Raised,
+                EventKind::ModalEntered,
+            ),
+            ev(
+                t * 0.833,
+                Tone::Success,
+                Emphasis::Normal,
+                Density::Normal,
+                Elevation::Raised,
+                EventKind::Confirmation,
+            ),
+            ev(
+                t * 0.933,
+                Tone::Neutral,
+                Emphasis::Muted,
+                Density::Spacious,
+                Elevation::Flat,
+                EventKind::SectionResolved,
+            ),
+        ],
+        total_beats,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Count strict interior local maxima of the event pressure sequence — a proxy for "how many
+    /// times does this story reach and release". A single cinematic arc has exactly one; a bounce
+    /// has two or more.
+    fn local_pressure_maxima(tr: &SemanticTrace) -> usize {
+        let p: Vec<f32> = tr.events.iter().map(|e| e.state.pressure()).collect();
+        (1..p.len().saturating_sub(1))
+            .filter(|&i| p[i] > p[i - 1] && p[i] > p[i + 1])
+            .count()
+    }
+
+    #[test]
+    fn deflected_lift_trace_bounces_where_the_cinematic_arc_climbs_once() {
+        // The bounce fixture reaches and releases at least twice; the cinematic demo climbs to a
+        // single peak. This is the discriminating property that makes the bounce its own story.
+        let bounce = deflected_lift_trace(120.0);
+        let cinematic = demo_trace(120.0);
+        assert!(
+            local_pressure_maxima(&bounce) >= 2,
+            "bounce should have >=2 tension crests, got {}",
+            local_pressure_maxima(&bounce)
+        );
+        assert_eq!(
+            local_pressure_maxima(&cinematic),
+            1,
+            "the cinematic arc should climb to exactly one peak"
+        );
+    }
+
+    #[test]
+    fn deflected_lift_trace_never_reaches_catastrophe() {
+        // The bounce is bittersweet, not cinematic: no Danger tone, no Overlay elevation.
+        let bounce = deflected_lift_trace(120.0);
+        assert!(bounce.events.iter().all(|e| e.state.tone != Tone::Danger));
+        assert!(bounce
+            .events
+            .iter()
+            .all(|e| e.state.elevation != Elevation::Overlay));
+        // And it is genuinely bounded, like every fixture.
+        assert!(bounce.events.iter().all(|e| e.at_beat < 120.0));
+    }
 
     #[test]
     fn danger_has_more_pressure_than_success() {
