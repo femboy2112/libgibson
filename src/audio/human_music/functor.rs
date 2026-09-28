@@ -231,33 +231,52 @@ fn add_comp(score: &mut Score, chords: &[ChordSpan], world: &MusicWorld) {
                 .then_some(PitchFunction::ChordTone);
             score.notes.push(note);
         }
-        // Keys: single-voice offbeat pushes arpeggiated through the voicing — one every two
-        // beats, starting on the "and of 1". The chord already sounds in the pad, so the keys
-        // are pure rhythmic interlock, not another block of triads.
+        // Keys: a comping VOICE, not a single-note arp. Each stab is a 2-3 note upper-structure
+        // shell drawn from the top of the voicing — so it carries the chord's guide tones and any
+        // licensed color (the 7ths/9ths/6ths the backbone now supplies) rather than one bare pitch.
+        // Stabs land syncopated (the "and" of 1 and 3), alternating a fuller and a thinner voicing
+        // for rhythmic life, with an anticipation push into the next chord on longer spans. The pad
+        // holds the bed underneath; the arrangement pass gives keys the foreground in the B phrases
+        // where the lead rests, so the two converse rather than pile up.
         let voicing = keys_vl.lead(&span.chord, 4, 72);
         if voicing.voices.is_empty() {
             continue;
         }
         let dur = span.dur_beats as f64;
-        let mut idx = 0usize;
+        // The top three voices, high-to-low — an upper-structure shell.
+        let shell: Vec<Midi> = voicing.voices.iter().rev().take(3).copied().collect();
+        let mut positions: Vec<f64> = Vec::new();
         let mut off = 0.5f64;
         while off < dur - 1e-6 {
-            let p = voicing.voices[idx % voicing.voices.len()];
-            let mut note = Note::new(
-                span.start_beat + off,
-                0.45,
-                p,
-                (0.35 * world.base_dynamic).clamp(0.05, 1.0),
-                Role::Keys,
-                prov,
-            );
-            note.function = span
-                .chord
-                .contains_pc(pitch_class(p))
-                .then_some(PitchFunction::ChordTone);
-            score.notes.push(note);
-            idx += 1;
+            positions.push(off);
             off += 2.0;
+        }
+        // A syncopated push just before the chord change (an anticipation) on longer spans.
+        if dur >= 3.0 {
+            positions.push(dur - 0.5);
+        }
+        for (si, &pos) in positions.iter().enumerate() {
+            // Alternate a full shell and a thinner two-note stab so the comp breathes.
+            let take = if si % 2 == 0 {
+                shell.len()
+            } else {
+                2.min(shell.len())
+            };
+            for &p in shell.iter().take(take) {
+                let mut note = Note::new(
+                    span.start_beat + pos,
+                    0.4,
+                    p,
+                    (0.35 * world.base_dynamic).clamp(0.05, 1.0),
+                    Role::Keys,
+                    prov,
+                );
+                note.function = span
+                    .chord
+                    .contains_pc(pitch_class(p))
+                    .then_some(PitchFunction::ChordTone);
+                score.notes.push(note);
+            }
         }
     }
 }
@@ -747,6 +766,33 @@ mod tests {
             assert!(!score.drums.is_empty(), "{}: no drums", world.name);
             assert!(!score.sfx.is_empty(), "{}: no sfx", world.name);
         }
+    }
+
+    #[test]
+    fn keys_comp_in_voiced_stabs_not_single_notes() {
+        use super::super::contract::CompositionGrammar;
+        use super::super::semantic::deflected_lift_trace;
+        use std::collections::BTreeMap;
+        // Keys are a comping voice now: at some onsets they sound a 2-3 note shell, not a lone note.
+        let trace = deflected_lift_trace(120.0);
+        let (score, _) = compose_with_grammar(
+            &trace,
+            &MusicWorld::black_ice(),
+            2112,
+            CompositionGrammar::DeflectedLift,
+        );
+        let mut by_onset: BTreeMap<u64, usize> = BTreeMap::new();
+        for n in score.notes.iter().filter(|n| n.role == Role::Keys) {
+            *by_onset
+                .entry((n.start_beat * 1000.0).round() as u64)
+                .or_default() += 1;
+        }
+        assert!(!by_onset.is_empty(), "no keys notes at all");
+        let voiced = by_onset.values().filter(|&&c| c >= 2).count();
+        assert!(
+            voiced > 0,
+            "keys never play a voiced stab — still a single-note arp"
+        );
     }
 
     #[test]

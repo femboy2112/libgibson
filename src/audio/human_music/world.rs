@@ -147,7 +147,7 @@ impl MusicWorld {
                 cutoff_env: 1600.0,
                 resonance: 0.3,
                 adsr: (0.003, 0.14, 0.0, 0.1),
-                gain: 1.1,
+                gain: 0.72,
                 pan: -0.15,
             },
             kick: KickParams {
@@ -247,7 +247,7 @@ impl MusicWorld {
                 cutoff_env: 500.0,
                 resonance: 0.1,
                 adsr: (0.005, 0.5, 0.25, 0.5),
-                gain: 0.85,
+                gain: 0.58,
                 pan: 0.15,
             },
             kick: KickParams {
@@ -341,7 +341,7 @@ impl MusicWorld {
                 cutoff_env: 0.0,
                 resonance: 0.05,
                 adsr: (0.002, 0.18, 0.0, 0.1),
-                gain: 0.85,
+                gain: 0.58,
                 pan: -0.12,
             },
             kick: KickParams {
