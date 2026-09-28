@@ -24,14 +24,16 @@
 //!                     read the earlier players' notes (they listen).
 //! ```
 
-use super::action::{ActionKind, ActionPlan, Agent};
+use super::action::{ActionCause, ActionKind, ActionPlan, Agent, Deferral};
 use super::backbone::{DeflectWitness, HarmonicGesture};
 use super::context::{analyze, HarmonicContext};
-use super::ensemble::plan_ensemble;
+use super::ensemble::{plan_ensemble, Stage};
 use super::form::BEATS_PER_BAR;
 use super::harmony::{ChordSpan, HarmonyEngine};
+use super::ids::{ActionId, InteractionId, MaterialId};
 use super::interaction::plan_interactions;
 use super::language::MusicalLanguage;
+use super::material::{InteractionMaterial, MaterialSource};
 use super::motif::MotifBank;
 use super::plan::CompositionPlan;
 use super::region::apply_harmonic_actions;
@@ -42,7 +44,8 @@ use super::world::MusicWorld;
 
 pub use super::ensemble::{BassMode, DrumsMode, EnsembleBar, KeysMode, PadMode};
 pub use super::interaction::{
-    Call, Interaction, InteractionMemory, LeadStatement, Response, ResponseMode, Transform,
+    Call, CallPolicy, Interaction, InteractionMemory, InteractionOpportunity, LeadStatement,
+    OpportunitySource, Response, ResponseMode, Transform, Verdict,
 };
 pub use super::region::HarmonicEdit;
 
@@ -131,6 +134,8 @@ pub struct PerformanceOptions {
     /// Build the action plan (false = the mood-without-action probe).
     pub actions: bool,
     pub responses: ResponseMode,
+    /// When a lead statement becomes a call (`EveryStatement` = the saturation probe).
+    pub calls: CallPolicy,
 }
 
 impl Default for PerformanceOptions {
@@ -139,8 +144,38 @@ impl Default for PerformanceOptions {
             language: MusicalLanguage::default(),
             actions: true,
             responses: ResponseMode::Free,
+            calls: CallPolicy::Selective,
         }
     }
+}
+
+/// What the stage did with an action whose initiator the arrangement envelope had off stage —
+/// decided BEFORE realization, so no realized action is ever deleted afterwards.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Admission {
+    /// The player is brought on stage for the action's window (a pickup or fill from somebody
+    /// about to enter is idiomatic).
+    Admitted { agent: Agent },
+    /// The verb is carried by somebody who is there, or as the subtraction the arrangement
+    /// already plans.
+    Recast {
+        from_kind: ActionKind,
+        from: Agent,
+        to_kind: ActionKind,
+        to: Agent,
+    },
+    /// Nobody can perform it: removed before realization and deferred with the reason.
+    Rejected { reason: &'static str },
+}
+
+/// One admission decision.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AdmissionRecord {
+    /// The action's id after admission (`None` when it was rejected and removed).
+    pub action: Option<ActionId>,
+    pub kind: ActionKind,
+    pub start_beat: f64,
+    pub outcome: Admission,
 }
 
 /// The whole shared performance.
@@ -159,7 +194,17 @@ pub struct PerformancePlan {
     pub ensemble: Vec<EnsembleBar>,
     pub bank: MotifBank,
     pub response_mode: ResponseMode,
+    pub call_policy: CallPolicy,
     pub total_beats: f64,
+    /// Every piece of interaction material (index = [`MaterialId`]): statements, figures, and
+    /// the derived material of every response.
+    pub materials: Vec<InteractionMaterial>,
+    /// Every chance for a conversation the planner weighed, with its verdict.
+    pub opportunities: Vec<InteractionOpportunity>,
+    /// The single orchestration authority: who plays, where, how loud.
+    pub stage: Stage,
+    /// How actions were reconciled with the arrangement envelope before realization.
+    pub admissions: Vec<AdmissionRecord>,
 }
 
 impl PerformancePlan {
@@ -195,35 +240,11 @@ impl PerformancePlan {
             ActionPlan::none()
         };
 
-        // 2b. An ensemble push/hit needs an ensemble: where the arrangement leaves fewer than two
-        //     players on stage (the intro's pad+bass), the verb is carried by the one who is there —
-        //     it becomes that player's pickup, not a phantom tutti.
-        for a in actions.actions.iter_mut() {
-            if !matches!(a.kind, ActionKind::Push | ActionKind::Hit)
-                || a.initiator != Agent::Ensemble
-            {
-                continue;
-            }
-            let ph = plan.form.phrase_at(a.start_beat.min(total_beats - 1e-6)).ix as usize;
-            let arr = plan.arrangement.at(ph);
-            let on_stage: Vec<Agent> = [
-                (Agent::Bass, arr.bass),
-                (Agent::Keys, arr.keys),
-                (Agent::Drums, arr.drums),
-                (Agent::Lead, arr.lead),
-            ]
-            .into_iter()
-            .filter(|(_, r)| r.is_audible())
-            .map(|(g, _)| g)
-            .collect();
-            if on_stage.len() < 2 {
-                if let Some(&solo) = on_stage.first() {
-                    a.kind = ActionKind::Pickup;
-                    a.initiator = solo;
-                    a.target_beat = a.target_beat.or(Some(a.end_beat()));
-                }
-            }
-        }
+        // 2b. ONE orchestration authority: the stage is seeded from the arrangement envelope and
+        //     every action is reconciled with it NOW — admitted, recast or rejected — instead of
+        //     being realized and then deleted by a stale phrase role.
+        let mut stage = Stage::from_arrangement(plan);
+        let admissions = admit_actions(&mut actions, &mut stage);
 
         // 3. Harmonic actions edit the harmony (so they are heard, not merely labelled).
         let edits = apply_harmonic_actions(&mut chords, &actions, &region);
@@ -232,22 +253,45 @@ impl PerformancePlan {
         // 4. The shared rhythmic field.
         let accent = build_accent_grid(plan, &actions, &lang, seed);
 
-        // 5. Lead statements, calls, responses.
+        // 5. Lead statements, materials, opportunities, calls, responses.
         let bank = MotifBank::generate(&region, seed ^ 0x3E10_D1E5);
-        let (statements, interactions) = plan_interactions(
+        let ip = plan_interactions(
             plan,
             &mut actions,
             &accent,
             &chords,
             &bank,
             &lang,
-            opts.responses,
-            opts.actions,
+            &opts,
+            &stage,
             seed,
         );
+        let (statements, interactions) = (ip.statements, ip.interactions);
+        // 5b. A resolution is performed by whoever ARRIVES: the lead when a statement sounds at
+        //     the target, otherwise the bass (or keys) who are there — never a silent lead.
+        for a in actions
+            .actions
+            .iter_mut()
+            .filter(|a| a.kind == ActionKind::Resolve)
+        {
+            let t = a.target_beat.unwrap_or(a.start_beat);
+            let lead_sings = statements
+                .iter()
+                .any(|st| st.start_beat <= t + 0.5 && st.end_beat() > t + 0.25);
+            let by = if lead_sings && stage.on_stage(Agent::Lead, t) {
+                Some(Agent::Lead)
+            } else {
+                [Agent::Bass, Agent::Keys]
+                    .into_iter()
+                    .find(|&g| stage.on_stage(g, t))
+            };
+            if let Some(g) = by {
+                a.initiator = g;
+            }
+        }
 
         // 6. The ensemble per bar.
-        let ensemble = plan_ensemble(plan, &actions, &statements, &interactions, &lang);
+        let ensemble = plan_ensemble(plan, &actions, &statements, &interactions, &lang, &stage);
 
         PerformancePlan {
             language: lang,
@@ -263,8 +307,88 @@ impl PerformancePlan {
             ensemble,
             bank,
             response_mode: opts.responses,
+            call_policy: opts.calls,
             total_beats,
+            materials: ip.materials,
+            opportunities: ip.opportunities,
+            stage,
+            admissions,
         }
+    }
+
+    /// The material with id `id`.
+    pub fn material(&self, id: MaterialId) -> &InteractionMaterial {
+        &self.materials[id.index()]
+    }
+
+    /// The figures `agent` states (its call-or-not figure material), in time order.
+    pub fn figures_for(&self, agent: Agent) -> impl Iterator<Item = &InteractionMaterial> {
+        self.materials
+            .iter()
+            .filter(move |m| m.owner == agent && matches!(m.source, MaterialSource::Figure { .. }))
+    }
+
+    /// The figure material stated for action `id`, if any.
+    pub fn figure_of(&self, id: ActionId) -> Option<&InteractionMaterial> {
+        self.materials
+            .iter()
+            .find(|m| matches!(m.source, MaterialSource::Figure { action, .. } if action == id))
+    }
+
+    /// The actions of `kinds` that start within `tol` beats of `beat` (optionally only those
+    /// initiated by `by`) — the planned accents a realizer's event at `beat` realizes.
+    pub fn actions_starting(
+        &self,
+        kinds: &[ActionKind],
+        beat: f64,
+        tol: f64,
+        by: Option<Agent>,
+    ) -> impl Iterator<Item = ActionId> + '_ {
+        let kinds = kinds.to_vec();
+        self.actions
+            .actions
+            .iter()
+            .filter(move |a| {
+                kinds.contains(&a.kind)
+                    && (a.start_beat - beat).abs() <= tol + 1e-9
+                    && by.is_none_or(|g| a.initiator == g)
+            })
+            .map(|a| a.id)
+    }
+
+    /// The actions of `kinds` whose window covers `beat` (optionally only those initiated by `by`).
+    pub fn actions_covering(
+        &self,
+        kinds: &[ActionKind],
+        beat: f64,
+        by: Option<Agent>,
+    ) -> impl Iterator<Item = ActionId> + '_ {
+        let kinds = kinds.to_vec();
+        self.actions
+            .actions
+            .iter()
+            .filter(move |a| {
+                kinds.contains(&a.kind) && a.covers(beat) && by.is_none_or(|g| a.initiator == g)
+            })
+            .map(|a| a.id)
+    }
+
+    /// The interaction in which action `id` is the call or the response.
+    pub fn interaction_of(&self, id: ActionId) -> Option<InteractionId> {
+        self.interactions
+            .iter()
+            .find(|i| i.call.action == id || i.response.is_some_and(|r| r.action == Some(id)))
+            .map(|i| i.id)
+    }
+
+    /// Whether `agent` plays at `beat` (the stage is the single authority).
+    pub fn on_stage(&self, agent: Agent, beat: f64) -> bool {
+        self.stage.on_stage(agent, beat)
+    }
+
+    /// The level `agent` plays at `beat`.
+    pub fn level(&self, agent: Agent, beat: f64) -> f32 {
+        self.stage.level(agent, beat)
     }
 
     /// The ensemble plan for `bar`.
@@ -367,6 +491,158 @@ impl PerformancePlan {
         }
         s
     }
+}
+
+/// Reconcile every action with the stage before realization (Round VIIb). The arrangement is a
+/// coarse envelope; an action is the authority for its own short window:
+/// - an ensemble accent with one player on stage becomes that player's pickup, with none it is
+///   rejected;
+/// - a short entrance verb (pickup, fill, re-entry, fragment, accent, hold) by an off-stage player
+///   ADMITS that player for the window;
+/// - a relaxation by a player the arrangement takes out becomes the subtraction it plans
+///   (Pullback → Thin); a harmonic verb is carried by somebody present;
+/// - anything else nobody can perform is removed and deferred with its reason.
+fn admit_actions(actions: &mut ActionPlan, stage: &mut Stage) -> Vec<AdmissionRecord> {
+    let hitters = [Agent::Bass, Agent::Keys, Agent::Drums, Agent::Lead];
+    let mut records = Vec::new();
+    let mut reject: Vec<(ActionId, &'static str)> = Vec::new();
+    for a in actions.actions.iter_mut() {
+        let (s, e) = (a.start_beat, a.end_beat().max(a.start_beat + 0.25));
+        let mut record = |outcome: Admission| {
+            records.push(AdmissionRecord {
+                action: Some(a.id),
+                kind: a.kind,
+                start_beat: s,
+                outcome,
+            })
+        };
+        if a.initiator == Agent::Ensemble {
+            match a.kind {
+                ActionKind::Push | ActionKind::Hit => {
+                    let present = stage.present(&hitters, s, s + 0.25);
+                    if present.len() == 1 {
+                        // One player on stage: the accent is that player's own (Round VII turned
+                        // it into a "pickup" that began ON its target).
+                        let solo = present[0];
+                        record(Admission::Recast {
+                            from_kind: a.kind,
+                            from: Agent::Ensemble,
+                            to_kind: a.kind,
+                            to: solo,
+                        });
+                        a.initiator = solo;
+                    } else if present.is_empty() {
+                        reject.push((a.id, "nobody is on stage for an ensemble accent"));
+                    }
+                }
+                ActionKind::Unison => {
+                    let pair = [Agent::Keys, Agent::Bass];
+                    let present = stage.present(&pair, s, e);
+                    if present.is_empty() {
+                        reject.push((a.id, "neither keys nor bass is on stage for the unison"));
+                    } else {
+                        for g in pair.into_iter().filter(|g| !present.contains(g)) {
+                            stage.admit(g, s, e, a.id);
+                            record(Admission::Admitted { agent: g });
+                        }
+                    }
+                }
+                _ => {}
+            }
+            continue;
+        }
+        let agent = a.initiator;
+        if stage.on_stage_span(agent, s, e) {
+            continue;
+        }
+        match a.kind {
+            ActionKind::Pickup
+            | ActionKind::Fill
+            | ActionKind::ReEntry
+            | ActionKind::Fragment
+            | ActionKind::Hit
+            | ActionKind::Push
+            | ActionKind::Hold
+                if e - s <= BEATS_PER_BAR + 1e-6 =>
+            {
+                stage.admit(agent, s, e, a.id);
+                record(Admission::Admitted { agent });
+            }
+            ActionKind::Resolve | ActionKind::Tonicize | ActionKind::Reharmonize => {
+                // The harmony moves for everybody; the verb needs a pitched player who is there.
+                match stage
+                    .present(
+                        &[Agent::Bass, Agent::Keys, Agent::Pad, Agent::Lead],
+                        s,
+                        s + 0.5,
+                    )
+                    .first()
+                {
+                    Some(&to) => {
+                        record(Admission::Recast {
+                            from_kind: a.kind,
+                            from: agent,
+                            to_kind: a.kind,
+                            to,
+                        });
+                        a.initiator = to;
+                    }
+                    None => reject.push((a.id, "no pitched player is on stage to carry it")),
+                }
+            }
+            ActionKind::Pullback | ActionKind::Thin
+                if stage.on_stage(agent, s - 0.25) && !stage.on_stage(agent, s + 0.25) =>
+            {
+                // The arrangement takes this player out right here: that exit IS the relaxation.
+                record(Admission::Recast {
+                    from_kind: a.kind,
+                    from: agent,
+                    to_kind: ActionKind::Thin,
+                    to: agent,
+                });
+                a.kind = ActionKind::Thin;
+                a.dur_beats = a.dur_beats.min(BEATS_PER_BAR);
+            }
+            _ if stage.on_stage(agent, s) || stage.on_stage(agent, e - 0.25) => {
+                // Partly on stage: the verb happens where the player is.
+            }
+            _ => reject.push((a.id, "its player is off stage for the whole window")),
+        }
+    }
+    if !reject.is_empty() {
+        for &(id, reason) in &reject {
+            if let Some(a) = actions.get(id) {
+                records.push(AdmissionRecord {
+                    action: None,
+                    kind: a.kind,
+                    start_beat: a.start_beat,
+                    outcome: Admission::Rejected { reason },
+                });
+                if let ActionCause::Morphism {
+                    transition,
+                    morphism,
+                } = a.cause
+                {
+                    actions.deferred.push(Deferral {
+                        transition,
+                        morphism,
+                        reason,
+                    });
+                }
+            }
+        }
+        let gone: Vec<ActionId> = reject.iter().map(|r| r.0).collect();
+        let remap = actions.remove(&gone);
+        for r in &mut records {
+            r.action = r.action.and_then(&remap);
+        }
+        stage.windows.iter_mut().for_each(|w| {
+            if let Some(n) = remap(w.action) {
+                w.action = n;
+            }
+        });
+    }
+    records
 }
 
 /// Build the accent grid: meter, the piece's per-gesture rhythm cells (varied per bar by

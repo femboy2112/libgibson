@@ -32,6 +32,7 @@ pub mod instrument;
 pub mod intent;
 pub mod interaction;
 pub mod language;
+pub mod material;
 pub mod melody;
 pub mod motif;
 pub mod performance;

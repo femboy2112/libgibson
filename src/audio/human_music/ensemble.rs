@@ -5,9 +5,10 @@
 use super::action::{ActionKind, ActionPlan, Agent, MusicalAction};
 use super::backbone::{BackboneTimeline, HarmonicGesture};
 use super::form::BEATS_PER_BAR;
+use super::ids::ActionId;
 use super::interaction::{Interaction, LeadStatement, Transform};
 use super::language::MusicalLanguage;
-use super::plan::CompositionPlan;
+use super::plan::{ArrangementRole, CompositionPlan};
 
 /// Pad behaviour for a bar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +84,146 @@ pub struct EnsembleBar {
     pub kinetic: f32,
 }
 
+/// The players who can sit on the stage (the pitched roles plus the kit).
+pub const STAGE_AGENTS: [Agent; 5] = [
+    Agent::Lead,
+    Agent::Keys,
+    Agent::Pad,
+    Agent::Bass,
+    Agent::Drums,
+];
+
+/// The stage slot of `agent`, if it is a single player.
+pub fn seat_ix(agent: Agent) -> Option<usize> {
+    STAGE_AGENTS.iter().position(|&a| a == agent)
+}
+
+/// One player's seat in one bar: whether it plays, at what level, in which arrangement role.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Seat {
+    pub on: bool,
+    pub gain: f32,
+    pub role: ArrangementRole,
+}
+
+/// A window in which an otherwise off-stage player is ADMITTED to perform one action (a pickup
+/// from someone about to enter, a fill, an answer) — the action is the authority for its window.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StageWindow {
+    pub agent: Agent,
+    pub start_beat: f64,
+    pub end_beat: f64,
+    pub action: ActionId,
+}
+
+/// **The single orchestration authority** (Round VIIb). The phrase-level
+/// [`super::plan::ArrangementPlan`] is only the coarse envelope it is seeded from; actions are
+/// reconciled with it BEFORE realization (admitted, recast or rejected — see
+/// [`super::performance::Admission`]); every realizer asks the stage who plays and how loud, and
+/// nothing is deleted after the performance has been realized.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Stage {
+    /// Per bar, per [`STAGE_AGENTS`] slot.
+    pub seats: Vec<[Seat; 5]>,
+    pub windows: Vec<StageWindow>,
+}
+
+impl Stage {
+    /// Seed the stage from the arrangement envelope: each bar takes its phrase's roles.
+    pub fn from_arrangement(plan: &CompositionPlan) -> Stage {
+        let seats = (0..plan.form.total_bars)
+            .map(|bar| {
+                let beat = bar as f64 * BEATS_PER_BAR;
+                let arr = plan.arrangement.at(plan.form.phrase_at(beat).ix as usize);
+                let roles = [arr.lead, arr.keys, arr.pad, arr.bass, arr.drums];
+                roles.map(|role| Seat {
+                    on: role.is_audible(),
+                    gain: role.gain(),
+                    role,
+                })
+            })
+            .collect();
+        Stage {
+            seats,
+            windows: Vec::new(),
+        }
+    }
+
+    fn bar_of(&self, beat: f64) -> usize {
+        ((beat / BEATS_PER_BAR).floor().max(0.0) as usize).min(self.seats.len().saturating_sub(1))
+    }
+
+    /// `agent`'s seat in the bar holding `beat` (an ensemble "seat" is never on).
+    pub fn seat(&self, agent: Agent, beat: f64) -> Seat {
+        match (seat_ix(agent), self.seats.get(self.bar_of(beat))) {
+            (Some(i), Some(bar)) => bar[i],
+            _ => Seat {
+                on: false,
+                gain: 0.0,
+                role: ArrangementRole::Silent,
+            },
+        }
+    }
+
+    /// The admitted window covering `agent` at `beat`, if any.
+    pub fn window(&self, agent: Agent, beat: f64) -> Option<&StageWindow> {
+        self.windows
+            .iter()
+            .find(|w| w.agent == agent && beat >= w.start_beat - 1e-6 && beat < w.end_beat - 1e-6)
+    }
+
+    /// Whether `agent` plays at `beat` (its seat is on, or an action admitted it).
+    pub fn on_stage(&self, agent: Agent, beat: f64) -> bool {
+        self.seat(agent, beat).on || self.window(agent, beat).is_some()
+    }
+
+    /// Whether `agent` plays throughout `[a, b)`.
+    pub fn on_stage_span(&self, agent: Agent, a: f64, b: f64) -> bool {
+        let mut t = a;
+        while t < b - 1e-6 {
+            if !self.on_stage(agent, t) {
+                return false;
+            }
+            t += 0.25;
+        }
+        true
+    }
+
+    /// The level `agent` plays at `beat`: its seat's gain, the punctuation level inside an admitted
+    /// window, silence otherwise.
+    pub fn level(&self, agent: Agent, beat: f64) -> f32 {
+        let seat = self.seat(agent, beat);
+        if seat.on {
+            seat.gain
+        } else if self.window(agent, beat).is_some() {
+            ArrangementRole::Punctuation.gain()
+        } else {
+            0.0
+        }
+    }
+
+    /// Admit `agent` for `[start, end)` to perform `action`.
+    pub fn admit(&mut self, agent: Agent, start_beat: f64, end_beat: f64, action: ActionId) {
+        if seat_ix(agent).is_some() && end_beat > start_beat + 1e-6 {
+            self.windows.push(StageWindow {
+                agent,
+                start_beat,
+                end_beat,
+                action,
+            });
+        }
+    }
+
+    /// The players on stage throughout `[a, b)` among `among`.
+    pub fn present(&self, among: &[Agent], a: f64, b: f64) -> Vec<Agent> {
+        among
+            .iter()
+            .copied()
+            .filter(|&g| self.on_stage_span(g, a, b.max(a + 0.25)))
+            .collect()
+    }
+}
+
 /// Plan each bar's ensemble: foreground, player modes, budget and kinetic target.
 pub(super) fn plan_ensemble(
     plan: &CompositionPlan,
@@ -90,6 +231,7 @@ pub(super) fn plan_ensemble(
     statements: &[LeadStatement],
     interactions: &[Interaction],
     lang: &MusicalLanguage,
+    stage: &Stage,
 ) -> Vec<EnsembleBar> {
     let bb: Option<&BackboneTimeline> = plan.backbone.as_ref();
     let total_bars = plan.form.total_bars;
@@ -114,12 +256,30 @@ pub(super) fn plan_ensemble(
                     .then_some(r.responder)
             })
         });
-        let foreground = if lead_busy >= 2.0 {
+        // The foreground is somebody who is actually on stage (Round VII defaulted to the keys even
+        // in bars where the arrangement had the keys out).
+        let on = |g: Agent| stage.on_stage(g, s);
+        let foreground = if lead_busy >= 2.0 && on(Agent::Lead) {
             Agent::Lead
-        } else if let Some(r) = responder {
+        } else if let Some(r) = responder.filter(|&r| {
+            stage.on_stage_span(r, s, e)
+                || stage
+                    .windows
+                    .iter()
+                    .any(|w| w.agent == r && w.start_beat < e && w.end_beat > s)
+        }) {
             r
         } else {
-            Agent::Keys
+            [
+                Agent::Keys,
+                Agent::Bass,
+                Agent::Pad,
+                Agent::Drums,
+                Agent::Lead,
+            ]
+            .into_iter()
+            .find(|&g| on(g))
+            .unwrap_or(Agent::Keys)
         };
         let keys = if responder == Some(Agent::Keys) {
             KeysMode::Answer

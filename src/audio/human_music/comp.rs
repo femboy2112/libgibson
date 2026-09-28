@@ -8,9 +8,10 @@
 //! planned hits and pushes, hold suspensions, and leave space when the lead is busy. The pad picks
 //! a per-bar mode (sustain, guide-tone shell, common-tone carry, swell, upper structure, silence).
 
-use super::action::Agent;
+use super::action::{ActionKind, Agent};
 use super::context::HarmonicContext;
-use super::performance::{AccentGrid, KeysMode, PadMode, PerformancePlan, Transform, STEPS};
+use super::ids::{ActionId, ActionStamp};
+use super::performance::{AccentGrid, Call, KeysMode, PadMode, PerformancePlan, Response, STEPS};
 use super::plan::CompositionPlan;
 use super::rng::Rng;
 use super::score::{Note, PitchFunction, Provenance, Role};
@@ -107,17 +108,35 @@ pub fn realize_keys(
         .responses_for(Agent::Keys)
         .map(|(_, r)| (r.start_beat, r.start_beat + r.dur_beats))
         .collect();
+    // The keys' planned suspensions: realized for their own window whatever else the bar does
+    // (Round VII only held when the whole bar was in Sustain mode, and an answer elsewhere in the
+    // bar silently cancelled the hold).
+    let holds: Vec<(f64, f64, ActionId)> = perf
+        .actions
+        .actions
+        .iter()
+        .filter(|a| a.kind == ActionKind::Hold && a.initiator == Agent::Keys)
+        .map(|a| (a.start_beat, a.end_beat(), a.id))
+        .collect();
+    let in_hold = |b: f64| holds.iter().any(|&(s, e, _)| b >= s - 1e-6 && b < e - 1e-6);
+    let mut held_by_bar: Vec<ActionId> = Vec::new();
 
     for eb in &perf.ensemble {
         let bar = eb.bar;
         let bar_start = AccentGrid::beat_of(bar, 0);
+        // The stage is the single orchestration authority: out means out (Round VII realized the
+        // keys everywhere and let a later pass delete them).
+        if !perf.on_stage(Agent::Keys, bar_start) {
+            continue;
+        }
+        let level = perf.level(Agent::Keys, bar_start);
         let in_answer = |b: f64| answered.iter().any(|&(s, e)| b >= s - 1e-6 && b < e - 1e-6);
         // Candidate stab steps from the shared grid.
         let mut steps: Vec<(f32, usize)> = (0..STEPS)
             .filter_map(|s| {
                 let w = perf.accent.at(bar, s);
                 let beat = AccentGrid::beat_of(bar, s);
-                if w.hole >= 0.5 || in_answer(beat) {
+                if w.hole >= 0.5 || in_answer(beat) || in_hold(beat) {
                     return None;
                 }
                 if in_unison(beat) {
@@ -160,9 +179,31 @@ pub fn realize_keys(
             KeysMode::Sustain => {
                 if let Some(ctx) = perf.context_at(bar_start) {
                     let v = vl.lead(&ctx.chord, shell_n, 72);
+                    // The suspension(s) this bar holds.
+                    let hold_stamp = perf
+                        .actions_covering(&[ActionKind::Hold], bar_start + 0.5, Some(Agent::Keys))
+                        .chain(perf.actions_starting(
+                            &[ActionKind::Hold],
+                            bar_start,
+                            3.9,
+                            Some(Agent::Keys),
+                        ))
+                        .fold(ActionStamp::NONE, ActionStamp::with);
+                    held_by_bar.extend(
+                        holds
+                            .iter()
+                            .filter(|h| h.0 < bar_start + 4.0 - 1e-6 && h.1 > bar_start + 1e-6)
+                            .map(|h| h.2),
+                    );
                     for &p in v.voices.iter().rev().take(shell_n) {
-                        let mut n =
-                            Note::new(bar_start, 3.9, p, vel * 0.9, Role::Keys, prov("hold", None));
+                        let mut n = Note::new(
+                            bar_start,
+                            3.9,
+                            p,
+                            vel * 0.9 * level,
+                            Role::Keys,
+                            stamped(prov("hold", None), hold_stamp),
+                        );
                         n.function = function_over(ctx, p);
                         out.push(n);
                     }
@@ -184,14 +225,34 @@ pub fn realize_keys(
                         .clamp(0.2, 0.9) as f32;
                     let accent = perf.accent.at(bar, s);
                     let v_mult = if accent.hit >= 0.9 { 1.1 } else { 1.0 };
+                    // The planned accents this stab realizes: a push or hit on this step, the
+                    // keys' own re-entry, a displacement window it sits in off the beat.
+                    let mut st = perf
+                        .actions_starting(
+                            &[ActionKind::Push, ActionKind::Hit],
+                            beat,
+                            super::performance::STEP_BEATS * 0.5,
+                            None,
+                        )
+                        .chain(perf.actions_covering(
+                            &[ActionKind::ReEntry, ActionKind::Pickup],
+                            beat,
+                            Some(Agent::Keys),
+                        ))
+                        .fold(ActionStamp::NONE, ActionStamp::with);
+                    if s % 4 != 0 {
+                        st = perf
+                            .actions_covering(&[ActionKind::Displace], beat, None)
+                            .fold(st, ActionStamp::with);
+                    }
                     for &p in v.voices.iter().rev().take(take) {
                         let mut n = Note::new(
                             beat,
                             dur,
                             p,
-                            (vel * v_mult).min(1.0),
+                            (vel * v_mult * level).min(1.0),
                             Role::Keys,
-                            prov("comp", None),
+                            stamped(prov("comp", None), st),
                         );
                         n.function = function_over(ctx, p);
                         out.push(n);
@@ -201,30 +262,53 @@ pub fn realize_keys(
         }
     }
 
-    // Answers: the call's own material, transformed, in the keys' register.
+    // Suspensions the bar's mode did not already sustain: held for the action's own window.
+    for &(hs, he, id) in holds.iter().filter(|h| !held_by_bar.contains(&h.2)) {
+        if !perf.on_stage(Agent::Keys, hs) {
+            continue;
+        }
+        let Some(ctx) = perf.context_at(hs) else {
+            continue;
+        };
+        let v = vl.lead(&ctx.chord, shell_n, 72);
+        let level = perf.level(Agent::Keys, hs);
+        for &p in v.voices.iter().rev().take(shell_n) {
+            let mut n = Note::new(
+                hs,
+                ((he - hs) * 0.97).max(1.5) as f32,
+                p,
+                vel * 0.9 * level,
+                Role::Keys,
+                stamped(prov("hold", None), ActionStamp::of(id)),
+            );
+            n.function = function_over(ctx, p);
+            out.push(n);
+        }
+    }
+    // Answers: the CALL's material, transformed (derived in the plan), in the keys' register —
+    // whoever called. Round VII transformed whatever the lead happened to play in the window.
     for (call, r) in perf.responses_for(Agent::Keys) {
-        let src = lead_in(lead, call.start_beat, call.end_beat);
         out.extend(answer_notes(
             perf,
-            &src,
-            r.start_beat,
-            r.dur_beats,
-            r.transform,
-            72,
+            call,
+            r,
+            Agent::Keys,
             Role::Keys,
             vel * 1.05,
         ));
     }
+    // The figures the keys state (a keys-led pickup / fragment / re-entry): their own material.
+    out.extend(figure_notes(perf, Agent::Keys, Role::Keys, vel * 1.05));
     // Planned ensemble unison figures: the keys sound the shared line.
-    for line in unison_lines(perf, lead) {
+    for (id, line) in unison_lines(perf, lead) {
         for &(at, d, p, f) in &line {
             let mut n = Note::new(
                 at,
                 d,
                 octave_near(p, 74),
-                vel * 1.1,
+                vel * 1.1 * perf.level(Agent::Keys, at).max(0.85),
                 Role::Keys,
-                prov("unison", Some("unison")),
+                stamped(prov("unison", Some("unison")), ActionStamp::of(id)),
             );
             n.function = f;
             out.push(n);
@@ -252,16 +336,17 @@ pub fn octave_near(p: Midi, center: Midi) -> Midi {
 /// neutral register (each player transposes it by octaves into its own range). If the lead is
 /// sounding in the window, the unison DOUBLES THE LEAD'S ACTUAL LINE (so keys, bass and lead play
 /// one figure together); otherwise the band states the piece's rhythmic cell on stable tones.
-pub fn unison_lines(perf: &PerformancePlan, lead: &[Note]) -> Vec<Vec<LineNote>> {
+pub fn unison_lines(perf: &PerformancePlan, lead: &[Note]) -> Vec<(ActionId, Vec<LineNote>)> {
     let mut out = Vec::new();
     for a in perf.actions.of_kind(super::action::ActionKind::Unison) {
         let src = lead_in(lead, a.start_beat, a.end_beat());
         if src.len() >= 2 {
-            out.push(
+            out.push((
+                a.id,
                 src.iter()
                     .map(|n| (n.start_beat, n.dur_beats, n.pitch, n.function))
                     .collect(),
-            );
+            ));
             continue;
         }
         // The band's own figure: the bank's rhythmic cell (a diminished head of the identity).
@@ -288,92 +373,155 @@ pub fn unison_lines(perf: &PerformancePlan, lead: &[Note]) -> Vec<Vec<LineNote>>
             }
         }
         if !line.is_empty() {
-            out.push(line);
+            out.push((a.id, line));
         }
     }
     out
 }
 
-/// Build an answer from `src` (the call's notes) in the responder's register: the transform
-/// decides the relation; every pitch is made stable over the harmony it lands on, so an answer can
-/// cross a chord boundary and still belong to the new chord.
-#[allow(clippy::too_many_arguments)]
+/// A projected onset within a sixteenth of a planned push/hit step moves ONTO it and carries that
+/// accent's id: the ensemble verb changes the line (the figure or answer lands with the band),
+/// rather than a coincidence being counted as a witness afterwards.
+fn land_on_accents(perf: &PerformancePlan, at: f64) -> (f64, ActionStamp) {
+    let near: Vec<(f64, ActionId)> = perf
+        .actions
+        .actions
+        .iter()
+        .filter(|a| matches!(a.kind, ActionKind::Push | ActionKind::Hit))
+        .filter(|a| (a.start_beat - at).abs() <= super::performance::STEP_BEATS + 1e-6)
+        .map(|a| (a.start_beat, a.id))
+        .collect();
+    match near.first() {
+        Some(&(t, _)) => (
+            t,
+            near.iter()
+                .filter(|x| (x.0 - t).abs() < 1e-6)
+                .fold(ActionStamp::NONE, |s, x| s.with(x.1)),
+        ),
+        None => (at, ActionStamp::NONE),
+    }
+}
+
+/// `prov` additionally realizing every action in `stamp`.
+pub fn stamped(mut prov: Provenance, stamp: ActionStamp) -> Provenance {
+    for id in stamp.iter() {
+        prov = prov.realizing(id);
+    }
+    prov
+}
+
+/// The notes of `agent`'s answer `r` to `call`: a projection of the response's OWN material —
+/// derived in the plan from the CALL's material by the planned transform — in the responder's
+/// register, every pitch stable over the harmony it lands on (an answer may cross a chord
+/// boundary and still belong to the new chord). Stamped with the answer action, the interaction
+/// and the material, so a witness can follow the exact causal line call → response.
 pub fn answer_notes(
     perf: &PerformancePlan,
-    src: &[Note],
-    start: f64,
-    dur: f64,
-    transform: Transform,
-    center: Midi,
+    call: &Call,
+    r: &Response,
+    agent: Agent,
     role: Role,
     velocity: f32,
 ) -> Vec<Note> {
-    if src.is_empty() || dur <= 0.0 {
+    let Some(mid) = r.material else {
         return Vec::new();
-    }
-    let tail: Vec<Note> = src.iter().rev().take(4).rev().copied().collect();
-    let head: Vec<Note> = src.iter().take(3).copied().collect();
-    let (material, time_scale): (Vec<Note>, f64) = match transform {
-        Transform::Quote | Transform::Echo | Transform::Invert => (tail, 1.0),
-        Transform::Compress => (head, 0.5),
-        Transform::Complete => (tail, 1.0),
-        Transform::Silence => return Vec::new(),
     };
-    let t0 = material[0].start_beat;
-    let p0 = material[0].pitch;
-    // Transpose the material's centre into the responder's register.
-    let mean = material.iter().map(|n| n.pitch).sum::<Midi>() / material.len() as Midi;
-    let shift = ((center - mean) as f64 / 12.0).round() as Midi * 12;
-    let dir = material
-        .last()
-        .map(|l| (l.pitch - p0).signum())
-        .unwrap_or(1);
+    let m = perf.material(mid);
+    let interaction = perf
+        .interactions
+        .iter()
+        .find(|i| i.call.action == call.action)
+        .map(|i| i.id);
+    super::material::line_of(m, agent, r.start_beat, r.start_beat + r.dur_beats, perf)
+        .into_iter()
+        .filter_map(|(at, d, p, accent)| {
+            let p = p?;
+            let ctx = perf.context_at(at)?;
+            if !perf.on_stage(agent, at) {
+                return None;
+            }
+            let (at, accents) = land_on_accents(perf, at);
+            let mut prov = stamped(
+                prov("answer", Some(r.transform.label()))
+                    .realizing_opt(r.action)
+                    .realizing_opt(r.realizes),
+                accents,
+            );
+            prov.interaction = interaction;
+            prov.material = Some(mid);
+            let mut note = Note::new(
+                at,
+                d as f32,
+                p,
+                (velocity * (0.9 + 0.15 * accent) * perf.level(agent, at).max(0.85)).min(1.0),
+                role,
+                prov,
+            );
+            note.function = function_over(ctx, p);
+            Some(note)
+        })
+        .collect()
+}
+
+/// The figures `agent` states (its pickups, fragments, re-entries and fills), each a projection of
+/// the figure material the plan generated for the action — stamped with that action, its material
+/// and (when somebody answers it) its interaction.
+pub fn figure_notes(perf: &PerformancePlan, agent: Agent, role: Role, velocity: f32) -> Vec<Note> {
     let mut out = Vec::new();
-    for (i, n) in material.iter().enumerate() {
-        let at = start + (n.start_beat - t0) * time_scale;
-        if at >= start + dur - 1e-6 {
-            break;
-        }
-        let Some(ctx) = perf.context_at(at) else {
+    for m in perf.figures_for(agent) {
+        let super::material::MaterialSource::Figure { action, .. } = m.source else {
             continue;
         };
-        let raw = match transform {
-            Transform::Invert => p0 - (n.pitch - p0) + shift,
-            Transform::Echo => {
-                // Same rhythm, the responder's own pitches: the palette's guide tones.
-                let g = &ctx.palette.guide_tones;
-                let pc = g
-                    .get(i % g.len().max(1))
-                    .copied()
-                    .unwrap_or(ctx.chord.root_pc);
-                let base = (center / 12) * 12 + pc;
-                if base > center + 6 {
-                    base - 12
-                } else {
-                    base
-                }
-            }
-            Transform::Complete => {
-                // Continue past the call's end in its final direction.
-                let last = material.last().map(|l| l.pitch).unwrap_or(p0);
-                last + shift + dir * 2 * (i as Midi + 1)
-            }
-            _ => n.pitch + shift,
+        let Some(a) = perf.actions.get(action) else {
+            continue;
         };
-        let p = nearest_stable(ctx, raw);
-        let d = ((n.dur_beats as f64) * time_scale)
-            .min(start + dur - at)
-            .max(0.15) as f32;
-        let mut note = Note::new(
-            at,
-            d,
-            p,
-            velocity.min(1.0),
-            role,
-            prov("answer", Some(transform.label())),
-        );
-        note.function = function_over(ctx, p);
-        out.push(note);
+        let until = a.end_beat().max(a.start_beat + m.length());
+        let interaction = perf.interaction_of(action);
+        for (at, d, p, accent) in super::material::line_of(m, agent, m.start_beat, until, perf) {
+            let (Some(p), Some(ctx)) = (p, perf.context_at(at)) else {
+                continue;
+            };
+            if !perf.on_stage(agent, at) {
+                continue;
+            }
+            let (at, accents) = land_on_accents(perf, at);
+            // The figure also performs any other figure verb of the same player it covers (the
+            // Lift pickup inside the Reset fill), and the ensemble accents it lands on.
+            let covered = perf
+                .actions_covering(
+                    &[
+                        ActionKind::Pickup,
+                        ActionKind::Fill,
+                        ActionKind::Fragment,
+                        ActionKind::ReEntry,
+                    ],
+                    at,
+                    Some(agent),
+                )
+                .fold(accents, ActionStamp::with);
+            let mut prov = stamped(
+                prov("figure", Some(a.kind.label())).realizing(action),
+                covered,
+            );
+            prov.interaction = interaction;
+            prov.material = Some(m.id);
+            let mut n = Note::new(
+                at,
+                d as f32,
+                p,
+                (velocity * (0.9 + 0.15 * accent) * perf.level(agent, at)).clamp(0.05, 1.0),
+                role,
+                prov,
+            );
+            n.function = if agent == Agent::Bass {
+                ctx.chord
+                    .contains_pc(pitch_class(p))
+                    .then_some(PitchFunction::ChordTone)
+            } else {
+                function_over(ctx, p)
+            };
+            out.push(n);
+        }
     }
     out
 }
@@ -394,14 +542,28 @@ pub fn realize_pad(
         };
         let dur = ctx.dur_beats * 0.98;
         let v = vl.lead(&ctx.chord, 4, 67);
+        // The stage decides whether the pad sounds this harmony, and how loud; the pad's own
+        // re-entries and thickenings are stamped on the notes that perform them.
+        let on = perf.on_stage(Agent::Pad, ctx.start_beat);
+        let level = perf.level(Agent::Pad, ctx.start_beat);
+        let st = perf
+            .actions_covering(
+                &[ActionKind::ReEntry, ActionKind::Thicken],
+                ctx.start_beat + 1e-3,
+                Some(Agent::Pad),
+            )
+            .fold(ActionStamp::NONE, ActionStamp::with);
         let push = |p: Midi, at: f64, d: f32, vm: f32, out: &mut Vec<Note>| {
+            if !on {
+                return;
+            }
             let mut n = Note::new(
                 at,
                 d.max(0.1),
                 p,
-                (vel * vm).clamp(0.02, 1.0),
+                (vel * vm * level).clamp(0.02, 1.0),
                 Role::Pad,
-                prov("pad", None),
+                stamped(prov("pad", None), st),
             );
             n.function = function_over(ctx, p);
             out.push(n);

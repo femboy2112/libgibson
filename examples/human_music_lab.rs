@@ -29,7 +29,7 @@ use gibson::audio::human_music::diagnostics::{
 use gibson::audio::human_music::functor::{compose_full, compose_with_grammar};
 use gibson::audio::human_music::harmony::ChordSpan;
 use gibson::audio::human_music::language::MusicalLanguage;
-use gibson::audio::human_music::performance::{PerformanceOptions, ResponseMode};
+use gibson::audio::human_music::performance::{CallPolicy, PerformanceOptions, ResponseMode};
 use gibson::audio::human_music::semantic::{
     calm_loop, deflected_lift_trace, rise_unresolved, SemanticTrace,
 };
@@ -89,6 +89,10 @@ fn perf_options() -> PerformanceOptions {
         responses: match arg("--responses=").as_deref() {
             Some("clockwork") => ResponseMode::Clockwork,
             _ => ResponseMode::Free,
+        },
+        calls: match arg("--calls=").as_deref() {
+            Some("every") | Some("saturated") => CallPolicy::EveryStatement,
+            _ => CallPolicy::Selective,
         },
     }
 }

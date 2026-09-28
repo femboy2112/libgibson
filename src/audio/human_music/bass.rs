@@ -11,6 +11,7 @@
 
 use super::action::{ActionKind, Agent};
 use super::context::HarmonicContext;
+use super::ids::ActionStamp;
 use super::performance::{AccentGrid, BassMode, PerformancePlan, STEPS};
 use super::plan::CompositionPlan;
 use super::score::{Note, PitchFunction, Provenance, Role};
@@ -58,7 +59,9 @@ fn fifth_of(ctx: &HarmonicContext) -> i32 {
         .unwrap_or((r + 7).rem_euclid(12))
 }
 
-/// Realize the bass. `lead` and `keys` are already placed: the bass listens to both.
+/// Realize the bass. `lead` is already placed and the bass listens to it (its density, its gaps);
+/// what another player SAID reaches the bass as plan material, not as notes (see
+/// [`super::material`]), so `_keys` is only a hook for collision listening.
 pub fn realize_bass(
     perf: &PerformancePlan,
     _plan: &CompositionPlan,
@@ -73,8 +76,8 @@ pub fn realize_bass(
             .any(|n| n.start_beat < b - 1e-6 && n.start_beat + n.dur_beats as f64 > a + 1e-6)
     };
     let quoted: Vec<(f64, f64)> = perf
-        .figure_calls_for(Agent::Bass)
-        .map(|c| (c.start_beat, c.end_beat))
+        .figures_for(Agent::Bass)
+        .map(|m| (m.start_beat, m.start_beat + m.length()))
         .chain(
             perf.responses_for(Agent::Bass)
                 .map(|(_, r)| (r.start_beat, r.start_beat + r.dur_beats)),
@@ -83,7 +86,7 @@ pub fn realize_bass(
     let unisons = super::comp::unison_lines(perf, lead);
     let in_quote = |b: f64| {
         quoted.iter().any(|&(s, e)| b >= s - 1e-6 && b < e - 1e-6)
-            || unisons.iter().any(|l| {
+            || unisons.iter().any(|(_, l)| {
                 l.first().is_some_and(|f| b >= f.0 - 1e-6)
                     && l.last().is_some_and(|x| b < x.0 + x.1 as f64 + 0.25)
             })
@@ -93,7 +96,11 @@ pub fn realize_bass(
         let bar = eb.bar;
         let bs = AccentGrid::beat_of(bar, 0);
         let be = bs + 4.0;
-        let vel = base_vel * (0.85 + 0.25 * eb.kinetic);
+        // The stage decides whether the bass plays this bar, and how loud.
+        if !perf.on_stage(Agent::Bass, bs) {
+            continue;
+        }
+        let vel = base_vel * (0.85 + 0.25 * eb.kinetic) * perf.level(Agent::Bass, bs);
         // Onset steps this bar, by mode.
         let mut onsets: Vec<usize> = vec![0];
         match eb.bass {
@@ -222,68 +229,66 @@ pub fn realize_bass(
             } else {
                 dur
             };
-            out.push(note(
+            let mut n = note(
                 at,
                 dur,
                 pitch,
                 vel * if s == 0 { 1.0 } else { 0.85 },
                 f,
                 tag,
-            ));
+            );
+            // Exact provenance: the planned accents on this step, the bass's own pickups and
+            // resolutions, the Deflect it makes concrete (the missed root under the pointer's
+            // target), the displacement it sits in off the beat.
+            let tol = super::performance::STEP_BEATS * 0.5;
+            let mut st = perf
+                .actions_starting(&[ActionKind::Push, ActionKind::Hit], at, tol, None)
+                .chain(perf.actions_starting(
+                    &[ActionKind::Resolve, ActionKind::ReEntry],
+                    at,
+                    tol,
+                    Some(Agent::Bass),
+                ))
+                .fold(ActionStamp::NONE, ActionStamp::with);
+            if s == 0 || tag == "pedal" {
+                st = perf
+                    .actions_starting(&[ActionKind::Deflect], at, tol, None)
+                    .fold(st, ActionStamp::with);
+            }
+            if s % 4 != 0 {
+                st = perf
+                    .actions_covering(&[ActionKind::Displace], at, None)
+                    .fold(st, ActionStamp::with);
+            }
+            n.prov = super::comp::stamped(n.prov, st);
+            out.push(n);
         }
     }
 
-    // Figures the bass states (calls) and answers: motif material in the bass register.
-    for c in perf.figure_calls_for(Agent::Bass) {
-        let cell = &perf.bank.bass_cell;
-        let head = perf.bank.identity.fragment(3.min(perf.bank.identity.len()));
-        let figure = if cell.len() >= 2 { head } else { cell.clone() };
-        let mut at = c.start_beat;
-        for (i, &deg) in figure.degrees.iter().enumerate() {
-            if at >= c.end_beat - 1e-6 {
-                break;
-            }
-            let Some(ctx) = perf.context_at(at) else {
-                break;
-            };
-            let raw = perf.region.degree_pitch(deg, 2);
-            let p = nearest_stable_bass(ctx, raw);
-            let d = (figure.rhythm.get(i).copied().unwrap_or(0.5) as f64).min(c.end_beat - at);
-            let mut n = note(
-                at,
-                d * 0.9,
-                p,
-                base_vel * 1.05,
-                PitchFunction::ChordTone,
-                "quote",
-            );
-            n.prov.motif_xform = Some("figure");
-            n.function = stable_function(ctx, p);
-            out.push(n);
-            at += d.max(0.25);
-        }
+    // Figures the bass states (its pickups, fragments, fills — calls or not) and its answers:
+    // projections of plan material, in the bass register, on chord tones.
+    out.extend(super::comp::figure_notes(
+        perf,
+        Agent::Bass,
+        Role::Bass,
+        base_vel * 1.05,
+    ));
+    for n in out.iter_mut().filter(|n| n.prov.role_note == "figure") {
+        n.prov.role_note = "quote";
     }
     for (call, r) in perf.responses_for(Agent::Bass) {
-        let src: Vec<Note> = lead
-            .iter()
-            .filter(|n| {
-                n.start_beat >= call.start_beat - 1e-6 && n.start_beat < call.end_beat - 1e-6
-            })
-            .copied()
-            .collect();
-        out.extend(super::comp::answer_notes(
-            perf,
-            &src,
-            r.start_beat,
-            r.dur_beats,
-            r.transform,
-            CENTER + 5,
-            Role::Bass,
-            base_vel * 1.05,
-        ));
+        let mut ans =
+            super::comp::answer_notes(perf, call, r, Agent::Bass, Role::Bass, base_vel * 1.05);
+        // Bass answers sit on chord tones (the projection already chose them); type them.
+        for n in &mut ans {
+            if let Some(ctx) = perf.context_at(n.start_beat) {
+                n.function = stable_function(ctx, n.pitch);
+            }
+        }
+        out.extend(ans);
     }
     // The ensemble unison: the bass doubles the shared line two octaves down.
-    for line in &unisons {
+    for (id, line) in &unisons {
         for &(at, d, p, f) in line {
             let mut n = note(
                 at,
@@ -294,6 +299,7 @@ pub fn realize_bass(
                 "unison",
             );
             n.prov.motif_xform = Some("unison");
+            n.prov = n.prov.realizing(*id);
             n.function = f;
             out.push(n);
         }
@@ -351,13 +357,6 @@ pub fn realize_bass(
     out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
     super::comp::release_at_harmony_change(&mut out, &perf.chords);
     out
-}
-
-fn nearest_stable_bass(ctx: &HarmonicContext, target: Midi) -> Midi {
-    (0..=12)
-        .flat_map(|d| [target - d, target + d])
-        .find(|&p| ctx.chord.contains_pc(pitch_class(p)))
-        .unwrap_or(target)
 }
 
 fn stable_function(ctx: &HarmonicContext, p: Midi) -> Option<PitchFunction> {

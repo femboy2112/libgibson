@@ -233,6 +233,7 @@ pub fn realize_drums(
     lead: &[super::score::Note],
 ) -> Vec<DrumHit> {
     use super::action::{ActionKind, Agent};
+    use super::ids::{ActionId, ActionStamp};
     use super::performance::{AccentGrid, DrumsMode, STEPS, STEP_BEATS};
     let mut rng = Rng::new(seed ^ 0x6300_0E00_0000_0001);
     let subdiv_steps = match perf.language.surface_subdivision.max(world.subdiv) {
@@ -257,20 +258,30 @@ pub fn realize_drums(
         }
     };
     let mut hits: Vec<DrumHit> = Vec::new();
+    // Every stroke carries the exact actions it realizes; the level comes from the stage (the
+    // single orchestration authority), so nothing has to be deleted or rescaled afterwards.
     let hit = |hits: &mut Vec<DrumHit>,
                voice: DrumVoice,
                at: f64,
                vel: f32,
                tag: &'static str,
+               stamp: ActionStamp,
                rng: &mut Rng| {
+        if !perf.on_stage(Agent::Drums, at) {
+            return;
+        }
+        let level = perf.level(Agent::Drums, at);
         hits.push(DrumHit {
             start_beat: (at + rng.range_f32(-0.008, 0.008) as f64).max(0.0),
             voice,
-            velocity: vel.clamp(0.02, 1.0),
-            prov: Provenance {
-                groove_variation: Some(tag),
-                ..Provenance::new(super::form::SectionKind::A)
-            },
+            velocity: (vel * level).clamp(0.02, 1.0),
+            prov: super::comp::stamped(
+                Provenance {
+                    groove_variation: Some(tag),
+                    ..Provenance::new(super::form::SectionKind::A)
+                },
+                stamp,
+            ),
         });
     };
     let bass_steps = |bar: u32| -> Vec<usize> {
@@ -280,14 +291,34 @@ pub fn realize_drums(
             .map(|n| AccentGrid::step_of(n.start_beat).1)
             .collect()
     };
-    let drum_answers: Vec<(f64, f64, f64, f64)> = perf
-        .responses_for(Agent::Drums)
-        .map(|(c, r)| (c.start_beat, c.end_beat, r.start_beat, r.dur_beats))
+    // The drummer's own figures (a drum-led fill is a rhythm-only call the band can answer).
+    let drum_figures: Vec<(ActionId, ActionKind, Vec<f64>, Vec<f32>)> = perf
+        .figures_for(Agent::Drums)
+        .filter_map(|m| match m.source {
+            super::material::MaterialSource::Figure { action, kind } => Some((
+                action,
+                kind,
+                m.events.iter().map(|e| m.start_beat + e.onset).collect(),
+                m.events.iter().map(|e| e.accent).collect(),
+            )),
+            _ => None,
+        })
         .collect();
+    let in_drum_figure = |b: f64| {
+        drum_figures.iter().any(|(_, k, on, _)| {
+            *k == ActionKind::Fill
+                && on.first().is_some_and(|&f| b >= f - 1e-6)
+                && on.last().is_some_and(|&l| b < l + 0.5)
+        })
+    };
 
     for eb in &perf.ensemble {
         let bar = eb.bar;
         let bs = AccentGrid::beat_of(bar, 0);
+        // The stage decides: a bar the drums sit out is not played (and later deleted).
+        if !perf.on_stage(Agent::Drums, bs) {
+            continue;
+        }
         let pt = plan.form.phrase_at(bs);
         let energy = plan
             .discourse
@@ -300,14 +331,15 @@ pub fn realize_drums(
         let d = dyn_scale(energy.max(eb.kinetic * 0.8));
         let in_hole = |s: usize| perf.accent.at(bar, s).hole >= 0.5;
         let bsteps = bass_steps(bar);
-        let fill_start = perf
-            .actions
-            .actions
-            .iter()
-            .find(|a| {
-                a.kind == ActionKind::Fill && a.start_beat >= bs - 1e-6 && a.start_beat < bs + 4.0
-            })
-            .map(|a| AccentGrid::step_of(a.start_beat).1);
+        // The bar's surface verbs (a half-time pullback, a double-time acceleration) are realized
+        // by every stroke of the bar: stamp them.
+        let surface = perf
+            .actions_covering(
+                &[ActionKind::Pullback, ActionKind::Accelerate],
+                bs + 0.5,
+                Some(Agent::Drums),
+            )
+            .fold(ActionStamp::NONE, ActionStamp::with);
 
         for s in 0..STEPS {
             let w = perf.accent.at(bar, s);
@@ -315,7 +347,15 @@ pub fn realize_drums(
             if in_hole(s) && w.hit < 0.9 {
                 continue;
             }
-            let in_fill = fill_start.is_some_and(|f| s >= f);
+            let in_fill = in_drum_figure(at);
+            let accents = perf
+                .actions_starting(
+                    &[ActionKind::Push, ActionKind::Hit],
+                    at,
+                    STEP_BEATS * 0.5,
+                    None,
+                )
+                .fold(surface, ActionStamp::with);
             // --- Kick ---
             let kick = match eb.drums {
                 DrumsMode::HalfTime => s == 0 || (s == 10 && eb.kinetic > 0.5),
@@ -336,6 +376,7 @@ pub fn realize_drums(
                     at,
                     (0.95 - 0.1 * (s != 0) as u8 as f32) * world.base_dynamic,
                     "kick",
+                    accents,
                     &mut rng,
                 );
             }
@@ -352,6 +393,7 @@ pub fn realize_drums(
                     at,
                     0.85 * d,
                     "backbeat",
+                    surface,
                     &mut rng,
                 );
                 if use_clap {
@@ -361,12 +403,21 @@ pub fn realize_drums(
                         at,
                         0.6 * d,
                         "backbeat",
+                        surface,
                         &mut rng,
                     );
                 }
             }
             if w.hit >= 0.9 && !back {
-                hit(&mut hits, DrumVoice::Snare, at, 0.9 * d, "hit", &mut rng);
+                hit(
+                    &mut hits,
+                    DrumVoice::Snare,
+                    at,
+                    0.9 * d,
+                    "hit",
+                    accents,
+                    &mut rng,
+                );
             }
             // Ghosts on the weaker off-beats of the grid.
             if world.ghost_amount > 0.15
@@ -383,22 +434,11 @@ pub fn realize_drums(
                     at,
                     (0.22 * d).min(0.35),
                     "ghost",
+                    surface,
                     &mut rng,
                 );
             }
-            // --- Fill: an action, not a coin ---
-            if in_fill && s % 2 == 0 {
-                let f = fill_start.unwrap_or(0);
-                let k = (s - f) as f32;
-                hit(
-                    &mut hits,
-                    DrumVoice::Snare,
-                    at,
-                    (0.4 + 0.08 * k) * d,
-                    "fill",
-                    &mut rng,
-                );
-            }
+
             // --- Hats ---
             let hat_every = match eb.drums {
                 DrumsMode::HalfTime => 4,
@@ -423,43 +463,87 @@ pub fn realize_drums(
                     DrumVoice::ClosedHat
                 };
                 let frac = s as f64 * STEP_BEATS;
-                hit(&mut hits, voice, bs + swung(frac), acc * d, "hat", &mut rng);
+                let st = if open { accents } else { surface };
+                hit(
+                    &mut hits,
+                    voice,
+                    bs + swung(frac),
+                    acc * d,
+                    "hat",
+                    st,
+                    &mut rng,
+                );
             }
+        }
+    }
+    // The drummer's figures — fills (an action, not a coin) and drum-led pickups — from their
+    // plan material: a rhythm the band can hear and answer on the landing.
+    for (id, kind, onsets, accents) in &drum_figures {
+        let base = match kind {
+            ActionKind::Fill => 0.4,
+            _ => 0.5,
+        };
+        for (k, (&at, &acc)) in onsets.iter().zip(accents).enumerate() {
+            let ph = plan.form.phrase_at(at);
+            let energy = plan.discourse.goal(ph.ix as usize).energy_target.max(0.3);
+            let d = dyn_scale(energy);
+            hit(
+                &mut hits,
+                if *kind == ActionKind::Fill && k + 1 == onsets.len() && onsets.len() > 3 {
+                    DrumVoice::Kick
+                } else {
+                    DrumVoice::Snare
+                },
+                at,
+                (base + 0.5 * acc) * d,
+                "fill",
+                ActionStamp::of(*id),
+                &mut rng,
+            );
         }
     }
     // The ensemble unison: the kit accents the figure's onsets with everyone.
-    for line in super::comp::unison_lines(perf, lead) {
+    for (id, line) in super::comp::unison_lines(perf, lead) {
         for (i, &(at, _, _, _)) in line.iter().enumerate() {
             let v = if i == 0 { 0.8 } else { 0.6 } * world.base_dynamic;
-            hit(&mut hits, DrumVoice::Snare, at, v, "unison", &mut rng);
+            let st = ActionStamp::of(id);
+            hit(&mut hits, DrumVoice::Snare, at, v, "unison", st, &mut rng);
             if i == 0 || i + 1 == line.len() {
-                hit(&mut hits, DrumVoice::Kick, at, v, "unison", &mut rng);
+                hit(&mut hits, DrumVoice::Kick, at, v, "unison", st, &mut rng);
             }
         }
     }
-    // The drummer's answers: echo the call's rhythm on snare/hat, briefly.
-    for (cs, ce, rs, rd) in drum_answers {
-        let src: Vec<f64> = lead
-            .iter()
-            .filter(|n| n.start_beat >= cs - 1e-6 && n.start_beat < ce - 1e-6)
-            .map(|n| n.start_beat)
-            .collect();
-        let Some(&t0) = src.iter().rev().nth(2).or(src.first()) else {
+    // The drummer's answers: the RESPONSE's material (the call's rhythm, derived in the plan —
+    // whoever called), on snare, briefly.
+    for (call, r) in perf.responses_for(Agent::Drums) {
+        let Some(mid) = r.material else {
             continue;
         };
-        for &t in src.iter().filter(|&&t| t >= t0) {
-            let at = rs + (t - t0);
-            if at >= rs + rd - 1e-6 {
+        let m = perf.material(mid);
+        let interaction = perf
+            .interactions
+            .iter()
+            .find(|i| i.call.action == call.action)
+            .map(|i| i.id);
+        for e in &m.events {
+            let at = r.start_beat + e.onset;
+            if at >= r.start_beat + r.dur_beats - 1e-6 {
                 break;
             }
+            let before = hits.len();
             hit(
                 &mut hits,
                 DrumVoice::Snare,
                 at,
-                0.55 * world.base_dynamic,
+                (0.45 + 0.15 * e.accent) * world.base_dynamic,
                 "answer",
+                ActionStamp::NONE.with_opt(r.action),
                 &mut rng,
             );
+            for h in &mut hits[before..] {
+                h.prov.interaction = interaction;
+                h.prov.material = Some(mid);
+            }
         }
     }
     hits.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));

@@ -335,6 +335,10 @@ pub struct Score {
     /// residual `unjustified_nonchord_notes` says 0 wrong notes SURVIVE, this says how many the
     /// search had to fix. Target 0: choose justified tension, do not manufacture then repair.
     pub melody_repairs: usize,
+    /// Lead notes the search left unclassified only because their sustain crossed a harmony
+    /// change, re-judged as chord tones after being released there. Not a snap, but not free
+    /// either — reported next to `melody_repairs` so "0 repairs" hides nothing.
+    pub melody_rejudged: usize,
 }
 
 impl Score {
@@ -350,6 +354,7 @@ impl Score {
             beats_per_bar,
             total_beats,
             melody_repairs: 0,
+            melody_rejudged: 0,
         }
     }
 

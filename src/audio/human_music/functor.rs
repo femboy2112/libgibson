@@ -9,11 +9,12 @@
 //! and local density, and their labels become event provenance. Skins are natural
 //! transformations: swap the world and the form/motif/resolutions stay; the dialect changes.
 
+use super::action::Agent;
 use super::contract::{CoherenceContract, CompositionGrammar};
 use super::form::{Section, BEATS_PER_BAR};
 use super::intent::{IntentMorphism, MusicIntent};
 use super::performance::{PerformanceOptions, PerformancePlan};
-use super::plan::CompositionPlan;
+use super::plan::{ArrangementRole, CompositionPlan};
 use super::score::{Provenance, Score, SfxEvent, SfxKind};
 use super::semantic::{EventKind, SemanticTrace, Tone};
 use super::timeline::IntentTimeline;
@@ -110,6 +111,7 @@ fn realize(
 
     let lead = super::melody::realize_lead(perf, plan);
     score.melody_repairs = lead.repairs;
+    score.melody_rejudged = lead.rejudged;
     let keys = super::comp::realize_keys(perf, plan, world, &lead.notes, seed);
     let pad = super::comp::realize_pad(perf, plan, world);
     let bass = super::bass::realize_bass(perf, plan, world, &lead.notes, &keys);
@@ -121,9 +123,41 @@ fn realize(
 
     // --- SFX + intent morphisms from significant semantic events. ---
     add_sfx_and_provenance(&mut score, trace, plan);
-    // --- Arrangement: gate every voice by its per-phrase role and stamp real provenance. ---
-    apply_arrangement(&mut score, plan);
+    // --- Provenance only: the stage already decided who plays and how loud. ---
+    stamp_arrangement(&mut score, plan, perf);
+    debug_assert!(
+        orchestration_violations(perf, &score).is_empty(),
+        "a realizer played somebody the stage had out"
+    );
     score
+}
+
+/// Every Score event whose player the stage had OFF at its onset (neither seated nor admitted by
+/// an action) — `(agent, beat)`. Empty by construction: the realizers ask the stage first. Kept as
+/// an assertable invariant so a regression cannot sneak a second orchestration authority back in.
+pub fn orchestration_violations(perf: &PerformancePlan, score: &Score) -> Vec<(Agent, f64)> {
+    let mut v: Vec<(Agent, f64)> = score
+        .notes
+        .iter()
+        .filter_map(|n| {
+            let agent = match n.role {
+                super::score::Role::Lead => Agent::Lead,
+                super::score::Role::Keys => Agent::Keys,
+                super::score::Role::Pad => Agent::Pad,
+                super::score::Role::Bass => Agent::Bass,
+            };
+            (!perf.on_stage(agent, n.start_beat)).then_some((agent, n.start_beat))
+        })
+        .collect();
+    v.extend(
+        score
+            .drums
+            .iter()
+            // Micro-timing can nudge a stroke a few ms before its bar line.
+            .filter(|d| !perf.on_stage(Agent::Drums, d.start_beat + 0.01))
+            .map(|d| (Agent::Drums, d.start_beat)),
+    );
+    v
 }
 
 /// Project the legacy [`Section`] list (for the Score IR and `Score::summary`) FROM the plan.
@@ -144,59 +178,46 @@ fn sections_from_plan(plan: &CompositionPlan) -> Vec<Section> {
         .collect()
 }
 
-/// Realize the [`ArrangementPlan`] onto a generated score: drop voices that are silent in
-/// their phrase, scale surviving events by their arrangement role's dynamic, and stamp each
-/// event's real phrase/family/role/obligation provenance from the plan. This is the pass
-/// that turns "everyone plays all the time" into an arrangement with foreground, support and
-/// negative space.
-fn apply_arrangement(score: &mut Score, plan: &CompositionPlan) {
+/// Stamp every event's phrase / family / role / closure provenance from the plan, and its
+/// arrangement role from the STAGE seat it played in. Round VII's `apply_arrangement` also
+/// deleted the notes of voices a phrase role had silenced and rescaled the rest — a second
+/// orchestration authority acting after the performance was realized (it silently deleted a
+/// planned intro fill and a coda pullback and let the witness count the silence). The stage now
+/// decides before anybody plays; this pass only writes provenance.
+fn stamp_arrangement(score: &mut Score, plan: &CompositionPlan, perf: &PerformancePlan) {
     let form = &plan.form;
-    let arr = &plan.arrangement;
-
-    score.notes.retain_mut(|n| {
-        let phrase = *form.phrase_at(n.start_beat);
-        let role = arr.at(phrase.ix as usize).role_for(n.role);
-        if !role.is_audible() {
-            return false;
+    let stamp = |prov: &mut Provenance, beat: f64, agent: Option<Agent>| {
+        let phrase = *form.phrase_at(beat);
+        prov.section = phrase.family.to_section_kind();
+        prov.phrase = Some(phrase.ix);
+        prov.family = Some(phrase.family.label());
+        if let Some(a) = agent {
+            let seat = perf.stage.seat(a, beat);
+            prov.role_kind = Some(if seat.on {
+                seat.role.label()
+            } else {
+                ArrangementRole::Punctuation.label()
+            });
         }
-        n.velocity = (n.velocity * role.gain()).clamp(0.02, 1.0);
-        n.prov.section = phrase.family.to_section_kind();
-        n.prov.phrase = Some(phrase.ix);
-        n.prov.family = Some(phrase.family.label());
-        n.prov.role_kind = Some(role.label());
         let goal = plan.discourse.goal(phrase.ix as usize);
-        n.prov.role = Some(goal.role.label());
-        n.prov.closure = Some(goal.closure.label());
-        true
-    });
-
-    score.drums.retain_mut(|d| {
-        let phrase = *form.phrase_at(d.start_beat);
-        let role = arr.at(phrase.ix as usize).drums;
-        if !role.is_audible() {
-            return false;
-        }
-        d.velocity = (d.velocity * role.gain()).clamp(0.02, 1.0);
-        d.prov.section = phrase.family.to_section_kind();
-        d.prov.phrase = Some(phrase.ix);
-        d.prov.family = Some(phrase.family.label());
-        d.prov.role_kind = Some(role.label());
-        let goal = plan.discourse.goal(phrase.ix as usize);
-        d.prov.role = Some(goal.role.label());
-        d.prov.closure = Some(goal.closure.label());
-        true
-    });
-
-    // SFX are punctuation tied to semantic beats — keep them, but restamp section/phrase so
-    // the whole IR agrees with the plan.
+        prov.role = Some(goal.role.label());
+        prov.closure = Some(goal.closure.label());
+    };
+    for n in &mut score.notes {
+        let agent = match n.role {
+            super::score::Role::Lead => Agent::Lead,
+            super::score::Role::Keys => Agent::Keys,
+            super::score::Role::Pad => Agent::Pad,
+            super::score::Role::Bass => Agent::Bass,
+        };
+        stamp(&mut n.prov, n.start_beat, Some(agent));
+    }
+    for d in &mut score.drums {
+        stamp(&mut d.prov, d.start_beat, Some(Agent::Drums));
+    }
+    // SFX are punctuation tied to semantic beats: provenance only.
     for e in &mut score.sfx {
-        let phrase = *form.phrase_at(e.start_beat);
-        e.prov.section = phrase.family.to_section_kind();
-        e.prov.phrase = Some(phrase.ix);
-        e.prov.family = Some(phrase.family.label());
-        let goal = plan.discourse.goal(phrase.ix as usize);
-        e.prov.role = Some(goal.role.label());
-        e.prov.closure = Some(goal.closure.label());
+        stamp(&mut e.prov, e.start_beat, None);
     }
 }
 

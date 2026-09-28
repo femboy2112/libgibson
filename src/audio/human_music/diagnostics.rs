@@ -2201,8 +2201,11 @@ mod tests {
                 a.longest_actionless_span_beats
             );
             assert_eq!(b.semantic_witness_coverage, 0.0, "{}", world.name);
+            // Every live morphism is witnessed or DEFERRED with a reason (Round VIIb defers the
+            // piece-start Prepare: a pickup into the first downbeat has no time before it).
+            assert_eq!(a.unwitnessed_morphisms, 0, "{}", world.name);
             assert!(
-                a.semantic_witness_coverage > 0.9,
+                a.semantic_witness_coverage >= 0.85,
                 "{}: {:.2}",
                 world.name,
                 a.semantic_witness_coverage

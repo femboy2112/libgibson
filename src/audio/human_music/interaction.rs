@@ -5,18 +5,29 @@
 //! answer inside a free response window, chosen with [`InteractionMemory`] so the band does not
 //! repeat the same initiator / responder / latency / placement / transform. The
 //! [`ResponseMode::Clockwork`] probe is the lifeless control.
+//!
+//! Round VIIb makes the conversation causal and selective:
+//! - every call owns [`InteractionMaterial`] (built in the plan, before anybody plays), and every
+//!   response derives ITS material from the call's — a keys answer to a bass figure transforms the
+//!   bass figure, not whatever the lead happened to be playing;
+//! - not every statement is a call: an [`InteractionOpportunity`] weighs whether the statement is
+//!   rhetorically open, whether an action opened space, whether anybody is on stage and has room,
+//!   and whether the last exchange already said this ([`CallPolicy::EveryStatement`] is the
+//!   saturation probe);
+//! - drums have agency: a drum fill is a rhythm-only call the band can answer on the landing.
 
-use super::action::{ActionCause, ActionKind, ActionPlan, Agent, MusicalAction};
+use super::action::{ActionCause, ActionKind, ActionPlan, Agent, EffectVector, MusicalAction};
 use super::discourse::DiscourseRole;
+use super::ensemble::Stage;
 use super::form::BEATS_PER_BAR;
 use super::harmony::ChordSpan;
-use super::ids::ActionId;
+use super::ids::{ActionId, InteractionId, MaterialId};
 use super::language::MusicalLanguage;
+use super::material::{transform_material, InteractionMaterial, MaterialSource};
 use super::motif::{Handoff, Motif, MotifBank, ThematicTrajectory};
-use super::performance::AccentGrid;
-use super::plan::{ArrangementRole, CompositionPlan};
+use super::performance::{AccentGrid, PerformanceOptions};
+use super::plan::CompositionPlan;
 use super::rng::Rng;
-use super::score::Role;
 
 /// How responses are planned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,6 +70,15 @@ impl Transform {
     }
 }
 
+/// When a lead statement becomes a call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallPolicy {
+    /// A statement calls only when it opens conversational space (the real model).
+    Selective,
+    /// The saturation probe: every statement is a call (and the planner answers what it can).
+    EveryStatement,
+}
+
 /// A planned lead statement.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LeadStatement {
@@ -70,8 +90,15 @@ pub struct LeadStatement {
     pub energy: f32,
     pub register: f32,
     pub is_rupture: bool,
-    /// The call (or answer) action this statement is, when actions are planned.
+    /// The call or answer action this statement is — `None` when it stands alone (it closes its
+    /// own thought) or actions are off.
     pub call: Option<ActionId>,
+    /// The material the statement states.
+    pub material: MaterialId,
+    /// The figure call this statement answers: `(call action, call material)`.
+    pub answers: Option<(ActionId, MaterialId)>,
+    /// The lead Fragment action this statement realizes (it states the fragmented motif).
+    pub fragment: Option<ActionId>,
 }
 
 impl LeadStatement {
@@ -91,6 +118,8 @@ pub struct Call {
     pub end_beat: f64,
     /// The lead statement it is, when the lead called.
     pub statement: Option<usize>,
+    /// What the call says — the material every answer derives from.
+    pub material: MaterialId,
 }
 
 /// A planned response.
@@ -107,13 +136,57 @@ pub struct Response {
     pub transform: Transform,
     /// Whether the response window crosses into a new harmony.
     pub crosses_chord: bool,
+    /// The response's own material (derived from the call's by `transform`); `None` for silence
+    /// or for a lead statement that answers a figure (its material is the statement's).
+    pub material: Option<MaterialId>,
+    /// Another action this response performs — the lead Fragment the band carries before the
+    /// thesis has been stated (the compressed answer IS the fragmentation).
+    pub realizes: Option<ActionId>,
 }
 
-/// One call with its (possibly absent) response.
+/// One call with its response (a planned silence is a response too).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Interaction {
+    pub id: InteractionId,
     pub call: Call,
     pub response: Option<Response>,
+}
+
+/// What an opportunity came from.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OpportunitySource {
+    /// A lead statement (index into the statements).
+    Statement(usize),
+    /// A figure a player states for an action.
+    Figure(ActionId),
+}
+
+/// Whether an opportunity became a call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Verdict {
+    Call,
+    /// It stands alone, with the reason.
+    StandsAlone(&'static str),
+}
+
+/// One chance for a conversation, weighed before any call exists (Round VIIb): the planner no
+/// longer turns every lead statement into "lead speaks → somebody answers".
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct InteractionOpportunity {
+    pub source: OpportunitySource,
+    pub initiator: Agent,
+    pub start_beat: f64,
+    pub end_beat: f64,
+    /// How rhetorically open the statement is (a question wants an answer; a return closes).
+    pub openness: f32,
+    /// An action (a break, a hold, a thinning, a re-entry, a fill) opened space around its end.
+    pub space: f32,
+    /// Headroom: a sparse statement leaves the band room to talk.
+    pub headroom: f32,
+    /// The last exchange already said this.
+    pub redundancy: f32,
+    pub score: f32,
+    pub verdict: Verdict,
 }
 
 /// An interaction signature, for memory.
@@ -174,7 +247,77 @@ impl InteractionMemory {
     }
 }
 
-/// Plan the lead statements, the calls, and the responses.
+/// Everything the interaction planner produced.
+pub(super) struct InteractionPlan {
+    pub statements: Vec<LeadStatement>,
+    pub interactions: Vec<Interaction>,
+    pub materials: Vec<InteractionMaterial>,
+    pub opportunities: Vec<InteractionOpportunity>,
+}
+
+/// How open a discourse role leaves the floor.
+fn openness(role: DiscourseRole) -> f32 {
+    match role {
+        DiscourseRole::Question | DiscourseRole::Withhold => 0.9,
+        DiscourseRole::Depart | DiscourseRole::Establish => 0.65,
+        DiscourseRole::Culminate | DiscourseRole::Intensify => 0.55,
+        DiscourseRole::Restate => 0.35,
+        DiscourseRole::Answer | DiscourseRole::Return | DiscourseRole::Dissolve => 0.2,
+    }
+}
+
+/// Whether `[a, b)` crosses a chord boundary.
+pub(super) fn crosses(chords: &[ChordSpan], a: f64, b: f64) -> bool {
+    chords
+        .iter()
+        .any(|c| c.start_beat > a + 1e-6 && c.start_beat < b - 1e-6)
+}
+
+/// The response candidates for `call` (who, latency, duration), before transforms and memory.
+#[allow(clippy::too_many_arguments)]
+fn feasible(
+    call: &Call,
+    unpitched: bool,
+    next_start: f64,
+    total_beats: f64,
+    cands: &[Agent],
+    lang: &MusicalLanguage,
+    accent: &AccentGrid,
+    stage: &Stage,
+) -> Vec<(Agent, f64, f64)> {
+    let gap = next_start - call.end_beat;
+    let latencies: &[f64] = if unpitched {
+        // A drum figure is answered on (or just after) its landing.
+        &[0.0, 0.5, 1.0]
+    } else if lang.distributed_agency {
+        &[-1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 3.0]
+    } else {
+        &[0.5, 1.0]
+    };
+    let mut out = Vec::new();
+    for &who in cands {
+        for &lat in latencies {
+            let start = call.end_beat + lat;
+            if start < call.start_beat + 0.5 || start >= total_beats - 0.5 {
+                continue;
+            }
+            // Answers take up to two beats (a drum echo long enough to carry the call's rhythm).
+            let max_dur = 2.0;
+            // An overlapping answer starts inside the call, so it has that much more room.
+            let dur = (gap - lat).min(max_dur).min(total_beats - start);
+            if dur < 0.5 - 1e-6 || accent.is_hole(start) {
+                continue;
+            }
+            if !stage.on_stage_span(who, start, start + dur) {
+                continue;
+            }
+            out.push((who, lat, dur));
+        }
+    }
+    out
+}
+
+/// Plan the lead statements, their materials, the opportunities, the calls and the responses.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn plan_interactions(
     plan: &CompositionPlan,
@@ -183,51 +326,71 @@ pub(super) fn plan_interactions(
     chords: &[ChordSpan],
     bank: &MotifBank,
     lang: &MusicalLanguage,
-    mode: ResponseMode,
-    interact: bool,
+    opts: &PerformanceOptions,
+    stage: &Stage,
     seed: u64,
-) -> (Vec<LeadStatement>, Vec<Interaction>) {
+) -> InteractionPlan {
+    let mode = opts.responses;
+    let interact = opts.actions;
     let mut rng = Rng::new(seed ^ 0x1A7E_4C71);
     let mut memory = InteractionMemory::default();
+    let mut materials: Vec<InteractionMaterial> = Vec::new();
+    let mut opportunities: Vec<InteractionOpportunity> = Vec::new();
     let mut interactions: Vec<Interaction> = Vec::new();
     let mut statements: Vec<LeadStatement> = Vec::new();
     let total_beats = plan.form.total_bars as f64 * BEATS_PER_BAR;
     let two_bar = 2.0 * BEATS_PER_BAR;
+    let calls_open = lang.distributed_agency && interact && mode == ResponseMode::Free;
 
-    // Non-lead figure calls: pickups/fragments initiated by bass or keys (distributed agency).
+    // --- 1. Figures: every figure-bearing action gets its material, stated by its initiator
+    //        whether or not anybody answers it. Figures open calls only in the free model. ---
     let mut figure_calls: Vec<Call> = Vec::new();
-    if lang.distributed_agency && interact && mode == ResponseMode::Free {
-        for a in &actions.actions {
-            // Pickups, fragments and a keys-led re-entry are figures a player STATES — calls that
-            // open a response window (initiative is distributed, not the lead's alone).
-            if matches!(
-                a.kind,
-                ActionKind::Pickup | ActionKind::Fragment | ActionKind::ReEntry
-            ) && matches!(a.initiator, Agent::Bass | Agent::Keys)
-            {
-                let len = a.dur_beats.clamp(1.0, 2.0);
-                figure_calls.push(Call {
-                    action: a.id,
-                    initiator: a.initiator,
-                    start_beat: a.start_beat,
-                    end_beat: (a.start_beat + len).min(total_beats),
-                    statement: None,
-                });
-            }
+    let figure_actions: Vec<MusicalAction> = actions
+        .actions
+        .iter()
+        .filter(|a| matches!(a.initiator, Agent::Bass | Agent::Keys | Agent::Drums))
+        .cloned()
+        .collect();
+    for a in &figure_actions {
+        // One player, one line: a figure that begins inside a figure the same player is already
+        // stating (a Reset's fill and the Lift's pickup into the same downbeat) is performed BY
+        // that figure — its window is covered, so it gets no second, overlapping line.
+        if materials.iter().any(|m: &InteractionMaterial| {
+            m.owner == a.initiator
+                && a.start_beat >= m.start_beat - 1e-6
+                && a.start_beat < m.start_beat + m.length() - 1e-6
+        }) {
+            continue;
+        }
+        let id = MaterialId(materials.len() as u32);
+        let Some(m) = InteractionMaterial::figure(id, a, bank, a.effect.strength) else {
+            continue;
+        };
+        materials.push(m);
+        if calls_open {
+            let len = a.dur_beats.clamp(0.5, 2.0);
+            figure_calls.push(Call {
+                action: a.id,
+                initiator: a.initiator,
+                start_beat: a.start_beat,
+                end_beat: (a.start_beat + len).min(total_beats),
+                statement: None,
+                material: id,
+            });
         }
     }
 
-    // Lead statements along the audible line, developed by the thematic trajectory; start offsets
-    // vary lawfully (a pickup into the bar, on the beat, a displaced entry) instead of always
-    // beginning on the phrase downbeat.
+    // --- 2. Lead statements along the audible line, developed by the thematic trajectory; start
+    //        offsets vary lawfully (a pickup into the bar, on the beat, a displaced entry). ---
     let mut traj = ThematicTrajectory::new(bank);
     let mut offset_memory: Vec<i32> = Vec::new();
     let mut thesis_stated = false;
-    // Statement starts whose Fragment verb passes to the band (before the thesis was stated).
-    let mut band_fragments: Vec<f64> = Vec::new();
+    // Statement starts whose Fragment verb passes to the band (before the thesis was stated),
+    // with the Fragment action the band's compressed answer will perform.
+    let mut band_fragments: Vec<(f64, ActionId)> = Vec::new();
     for t in plan.targets() {
         let phrase = t.phrase;
-        if !plan.arrangement.at(phrase.ix as usize).lead.is_audible() {
+        if !stage.on_stage(Agent::Lead, phrase.start_beat()) {
             continue;
         }
         let (motif, handoff) = traj.next_for(t.goal.role);
@@ -239,7 +402,7 @@ pub(super) fn plan_interactions(
         let mut at = phrase.start_beat();
         let mut guard = 0;
         while at + len <= pe + 1e-6 && guard < 32 {
-            // A figure call from bass/keys just before this statement: the lead ANSWERS it.
+            // A figure call from bass/keys/drums just before this statement: the lead ANSWERS it.
             let answering = figure_calls
                 .iter()
                 .find(|c| c.end_beat > at - 2.0 && c.end_beat <= at + 1.0 + 1e-6)
@@ -252,12 +415,13 @@ pub(super) fn plan_interactions(
             } else if lang.id == super::language::LanguageId::Simple {
                 0.0
             } else {
-                // Choose among lawful entries by the grid's pickup/syncopation weight and memory.
+                // Choose among lawful entries by the grid's pickup/syncopation weight and memory —
+                // never an entry that would put the lead where the stage has it out.
                 let opts: [(f64, i32); 4] = [(0.0, 0), (-0.5, -1), (0.5, 1), (1.0, 2)];
                 let mut best = (f32::INFINITY, 0.0);
                 for (o, q) in opts {
                     let s = at + o;
-                    if s < 0.0 || s + len > pe + 0.5 + 1e-6 {
+                    if s < 0.0 || s + len > pe + 0.5 + 1e-6 || !stage.on_stage(Agent::Lead, s) {
                         continue;
                     }
                     let w = accent.at_beat(s);
@@ -281,15 +445,16 @@ pub(super) fn plan_interactions(
                 break;
             }
             // A lead-initiated Fragment action in force here fragments THIS statement: the verb
-            // reaches the thematic material instead of only nudging a scalar.
-            // Development presupposes exposition: the lead fragments only material it has already
-            // stated in full. A Fragment before that passes to the band — the answer to this
-            // statement is then a compressed fragment of it (see the response planner).
-            let fragment_here = actions.actions.iter().any(|a| {
-                a.kind == ActionKind::Fragment && a.initiator == Agent::Lead && a.covers(start)
-            });
-            // ...and never the hook or a return of the thesis: those are the song's persistent
-            // identity, so the band carries the fragmentation around them instead.
+            // reaches the thematic material instead of only nudging a scalar. Development
+            // presupposes exposition, and the hook and thesis returns are identity: before the
+            // thesis is stated (or on an identity role) the band carries the fragmentation.
+            let fragment_action = actions
+                .actions
+                .iter()
+                .find(|a| {
+                    a.kind == ActionKind::Fragment && a.initiator == Agent::Lead && a.covers(start)
+                })
+                .map(|a| a.id);
             let identity_role = matches!(
                 t.goal.role,
                 DiscourseRole::Culminate
@@ -297,9 +462,9 @@ pub(super) fn plan_interactions(
                     | DiscourseRole::Return
                     | DiscourseRole::Establish
             );
-            let fragmenting = fragment_here && thesis_stated && !identity_role;
-            if fragment_here && !fragmenting {
-                band_fragments.push(start);
+            let fragmenting = fragment_action.is_some() && thesis_stated && !identity_role;
+            if let (Some(f), false) = (fragment_action, fragmenting) {
+                band_fragments.push((start, f));
             }
             let motif = if fragmenting && motif.len() > 2 {
                 motif.fragment(motif.len().div_ceil(2).max(2))
@@ -308,53 +473,17 @@ pub(super) fn plan_interactions(
             };
             let len = motif.total_beats() as f64;
             let motif_is_full = motif.len() >= bank.identity.len();
-            let call_id = if !interact {
-                None
-            } else {
-                Some(actions.push(MusicalAction {
-                    id: ActionId(0),
-                    cause: match answering {
-                        Some(c) => ActionCause::Interaction { call: c.action },
-                        None => ActionCause::Statement { phrase: phrase.ix },
-                    },
-                    initiator: Agent::Lead,
-                    start_beat: start,
-                    dur_beats: len,
-                    kind: if answering.is_some() {
-                        ActionKind::Answer
-                    } else {
-                        ActionKind::Call
-                    },
-                    target_beat: None,
-                    responders: vec![Agent::Keys, Agent::Bass, Agent::Drums],
-                    binding: None,
-                    pays: answering.map(|c| c.action),
-                }))
-            };
-            if let Some(c) = answering {
-                // Record the figure call as answered by the lead.
-                let lat = start - c.end_beat;
-                interactions.push(Interaction {
-                    call: c,
-                    response: Some(Response {
-                        action: call_id,
-                        responder: Agent::Lead,
-                        start_beat: start,
-                        dur_beats: len,
-                        latency: lat,
-                        overlap: lat < 0.0,
-                        transform: Transform::Complete,
-                        crosses_chord: crosses(chords, c.end_beat, start + 1.0),
-                    }),
-                });
-                memory.record(Signature {
-                    initiator: c.initiator,
-                    responder: Agent::Lead,
-                    latency_q: (lat * 2.0).round() as i8,
-                    step: AccentGrid::step_of(start).1 as u8,
-                    transform: Transform::Complete,
-                });
-            }
+            let mid = MaterialId(materials.len() as u32);
+            materials.push(InteractionMaterial::from_motif(
+                mid,
+                Agent::Lead,
+                &motif,
+                start,
+                MaterialSource::Statement {
+                    statement: statements.len(),
+                    motif: motif.id,
+                },
+            ));
             statements.push(LeadStatement {
                 phrase: phrase.ix,
                 start_beat: start,
@@ -364,7 +493,10 @@ pub(super) fn plan_interactions(
                 energy: t.goal.energy_target,
                 register: t.goal.register_target,
                 is_rupture: phrase.is_rupture,
-                call: call_id,
+                call: None,
+                material: mid,
+                answers: answering.map(|c| (c.action, c.material)),
+                fragment: if fragmenting { fragment_action } else { None },
             });
             if motif_is_full {
                 thesis_stated = true;
@@ -379,24 +511,209 @@ pub(super) fn plan_interactions(
             guard += 1;
         }
     }
-    // Figure calls the lead did not answer still get planned responses below.
-    let answered: Vec<ActionId> = interactions.iter().map(|i| i.call.action).collect();
 
-    // Responses to the lead's statements (and to unanswered figures).
     if !interact {
         // The mood-without-action probe: the lead still sings, but nobody answers anybody.
-        return (statements, interactions);
+        return InteractionPlan {
+            statements,
+            interactions,
+            materials,
+            opportunities,
+        };
     }
+
+    let responder_pool = |initiator: Agent, declared: &[Agent]| -> Vec<Agent> {
+        let mut c: Vec<Agent> = vec![Agent::Keys];
+        if lang.distributed_agency {
+            c.extend([Agent::Bass, Agent::Drums]);
+        }
+        if initiator != Agent::Lead {
+            c.push(Agent::Lead);
+        }
+        for &d in declared {
+            if !c.contains(&d) && d != Agent::Ensemble && d != Agent::Pad {
+                c.push(d);
+            }
+        }
+        c.retain(|&a| a != initiator);
+        c
+    };
+    let next_statement_after = |b: f64, statements: &[LeadStatement]| -> f64 {
+        statements
+            .iter()
+            .map(|s| s.start_beat)
+            .filter(|&s| s > b + 1e-6)
+            .fold(total_beats, f64::min)
+    };
+
+    // --- 3. Statement actions: an answer to a figure is an Answer; a statement that opens
+    //        conversational space is a Call; the rest stand alone. ---
+    let theta = 0.9 - 0.4 * lang.interaction;
+    let mut last_call_motif: Option<Motif> = None;
+    let mut last_exchange_end = f64::NEG_INFINITY;
+    for si in 0..statements.len() {
+        let st = statements[si].clone();
+        let end = st.end_beat();
+        let band_fragment = band_fragments
+            .iter()
+            .any(|&(b, _)| (b - st.start_beat).abs() < 1e-6);
+        let space = if actions.actions.iter().any(|a| {
+            a.initiator != Agent::Lead
+                && matches!(
+                    a.kind,
+                    ActionKind::Break
+                        | ActionKind::Hold
+                        | ActionKind::Pullback
+                        | ActionKind::Thin
+                        | ActionKind::ReEntry
+                        | ActionKind::Fill
+                )
+                && a.start_beat < end + 2.0
+                && a.end_beat() > end - 0.5
+        }) {
+            0.3
+        } else {
+            0.0
+        };
+        let density = st.motif.len() as f32 / st.motif.total_beats().max(1.0);
+        let headroom = 0.3 * (1.0 - density / 2.0).clamp(0.0, 1.0);
+        let mut redundancy = 0.0;
+        if last_call_motif.as_ref() == Some(&st.motif) {
+            redundancy += 0.6;
+        }
+        if last_exchange_end > st.start_beat - 2.0 {
+            redundancy += 0.25;
+        }
+        let open = openness(st.role);
+        let score = open + space + headroom - redundancy;
+        let probe = Call {
+            action: ActionId(u32::MAX),
+            initiator: Agent::Lead,
+            start_beat: st.start_beat,
+            end_beat: end,
+            statement: Some(si),
+            material: st.material,
+        };
+        let cands = responder_pool(Agent::Lead, &[]);
+        let room = feasible(
+            &probe,
+            false,
+            next_statement_after(st.start_beat, &statements),
+            total_beats,
+            &cands,
+            lang,
+            accent,
+            stage,
+        );
+        let verdict = if room.is_empty() {
+            Verdict::StandsAlone("nobody on stage has room to answer")
+        } else if mode == ResponseMode::Clockwork
+            || opts.calls == CallPolicy::EveryStatement
+            || band_fragment
+            || score >= theta
+        {
+            Verdict::Call
+        } else {
+            Verdict::StandsAlone("it closes its own thought")
+        };
+        opportunities.push(InteractionOpportunity {
+            source: OpportunitySource::Statement(si),
+            initiator: Agent::Lead,
+            start_beat: st.start_beat,
+            end_beat: end,
+            openness: open,
+            space,
+            headroom,
+            redundancy,
+            score,
+            verdict,
+        });
+        let is_call = verdict == Verdict::Call;
+        if st.answers.is_none() && !is_call {
+            continue;
+        }
+        let id = actions.push(MusicalAction {
+            id: ActionId(0),
+            cause: match st.answers {
+                Some((c, _)) => ActionCause::Interaction { call: c },
+                None => ActionCause::Statement { phrase: st.phrase },
+            },
+            initiator: Agent::Lead,
+            start_beat: st.start_beat,
+            dur_beats: st.motif.total_beats() as f64,
+            kind: if st.answers.is_some() {
+                ActionKind::Answer
+            } else {
+                ActionKind::Call
+            },
+            target_beat: None,
+            responders: if is_call {
+                vec![Agent::Keys, Agent::Bass, Agent::Drums]
+            } else {
+                vec![]
+            },
+            binding: None,
+            pays: st.answers.map(|(c, _)| c),
+            effect: EffectVector::NEUTRAL,
+        });
+        statements[si].call = Some(id);
+        if is_call {
+            last_call_motif = Some(st.motif.clone());
+        }
+        if let Some((c_action, c_mat)) = st.answers {
+            let c = figure_calls
+                .iter()
+                .find(|c| c.action == c_action)
+                .copied()
+                .expect("an answered figure call exists");
+            let lat = st.start_beat - c.end_beat;
+            interactions.push(Interaction {
+                id: InteractionId(0),
+                call: Call {
+                    material: c_mat,
+                    ..c
+                },
+                response: Some(Response {
+                    action: Some(id),
+                    responder: Agent::Lead,
+                    start_beat: st.start_beat,
+                    dur_beats: st.motif.total_beats() as f64,
+                    latency: lat,
+                    overlap: lat < 0.0,
+                    transform: Transform::Complete,
+                    crosses_chord: crosses(chords, c.end_beat, st.start_beat + 1.0),
+                    material: None,
+                    realizes: None,
+                }),
+            });
+            memory.record(Signature {
+                initiator: c.initiator,
+                responder: Agent::Lead,
+                latency_q: (lat * 2.0).round() as i8,
+                step: AccentGrid::step_of(st.start_beat).1 as u8,
+                transform: Transform::Complete,
+            });
+            last_exchange_end = end;
+        }
+    }
+    // Figure calls the lead did not answer are opportunities for the band.
+    let answered: Vec<ActionId> = interactions.iter().map(|i| i.call.action).collect();
+
+    // --- 4. Responses to the statements that call, and to unanswered figures. ---
     let mut calls: Vec<Call> = statements
         .iter()
         .enumerate()
         .filter_map(|(si, s)| {
-            Some(Call {
-                action: s.call?,
+            let is_call = actions
+                .get(s.call?)
+                .is_some_and(|a| a.kind == ActionKind::Call || !a.responders.is_empty());
+            is_call.then(|| Call {
+                action: s.call.expect("checked"),
                 initiator: Agent::Lead,
                 start_beat: s.start_beat,
                 end_beat: s.end_beat(),
                 statement: Some(si),
+                material: s.material,
             })
         })
         .collect();
@@ -409,26 +726,64 @@ pub(super) fn plan_interactions(
     calls.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
 
     for (ci, call) in calls.iter().enumerate() {
-        // The room before the next lead statement begins (the answer must not trample it, unless
-        // it deliberately overlaps its tail).
-        let next_start = statements
+        let unpitched = !materials[call.material.index()].pitched();
+        let next_start = next_statement_after(call.start_beat, &statements);
+        let declared: Vec<Agent> = actions
+            .get(call.action)
+            .map(|a| a.responders.clone())
+            .unwrap_or_default();
+        let band_fragment_of = band_fragments
             .iter()
-            .map(|s| s.start_beat)
-            .filter(|&s| s > call.start_beat + 1e-6)
-            .fold(total_beats, f64::min);
-        let gap = next_start - call.end_beat;
-        let phrase_ix = plan
-            .form
-            .phrase_at(call.end_beat.min(total_beats - 1e-6))
-            .ix as usize;
-        let arr = plan.arrangement.at(phrase_ix);
-        let audible = |a: Agent| match a {
-            Agent::Keys => arr.role_for(Role::Keys) != ArrangementRole::Silent,
-            Agent::Bass => arr.role_for(Role::Bass) != ArrangementRole::Silent,
-            Agent::Drums => arr.drums != ArrangementRole::Silent,
-            Agent::Lead => arr.role_for(Role::Lead) != ArrangementRole::Silent,
-            _ => false,
-        };
+            .find(|&&(b, _)| call.statement.is_some() && (b - call.start_beat).abs() < 1e-6)
+            .map(|&(_, f)| f);
+        let band_fragment = band_fragment_of.is_some();
+        let mut cands = responder_pool(call.initiator, &declared);
+        if band_fragment {
+            cands.retain(|&a| a != Agent::Drums);
+        }
+        if unpitched {
+            // A drum figure is answered by a pitched player (the lead answers with its next entry).
+            cands.retain(|&a| a != Agent::Drums && a != Agent::Lead);
+        }
+        let room = feasible(
+            call,
+            unpitched,
+            next_start,
+            total_beats,
+            &cands,
+            lang,
+            accent,
+            stage,
+        );
+        if call.statement.is_none() && room.is_empty() {
+            opportunities.push(InteractionOpportunity {
+                source: OpportunitySource::Figure(call.action),
+                initiator: call.initiator,
+                start_beat: call.start_beat,
+                end_beat: call.end_beat,
+                openness: 0.0,
+                space: 0.0,
+                headroom: 0.0,
+                redundancy: 0.0,
+                score: 0.0,
+                verdict: Verdict::StandsAlone("nobody on stage has room to answer the figure"),
+            });
+            continue;
+        }
+        if call.statement.is_none() {
+            opportunities.push(InteractionOpportunity {
+                source: OpportunitySource::Figure(call.action),
+                initiator: call.initiator,
+                start_beat: call.start_beat,
+                end_beat: call.end_beat,
+                openness: 0.6,
+                space: 0.0,
+                headroom: 0.0,
+                redundancy: 0.0,
+                score: 0.6,
+                verdict: Verdict::Call,
+            });
+        }
         let response = match mode {
             ResponseMode::Clockwork => {
                 // Same responder, same metric offset (beat 3.5 of the call's last bar), same
@@ -444,31 +799,15 @@ pub(super) fn plan_interactions(
                     overlap: start < call.end_beat,
                     transform: Transform::Echo,
                     crosses_chord: crosses(chords, call.end_beat, start + 1.0),
+                    material: None,
+                    realizes: None,
                 })
             }
             ResponseMode::Free => {
-                let mut cands: Vec<Agent> = vec![Agent::Keys];
-                if lang.distributed_agency {
-                    cands.extend([Agent::Bass, Agent::Drums]);
-                }
-                if call.initiator != Agent::Lead {
-                    cands.push(Agent::Lead);
-                }
-                cands.retain(|&a| a != call.initiator && audible(a));
-                let latencies: &[f64] = if lang.distributed_agency {
-                    &[-1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 3.0]
-                } else {
-                    &[0.5, 1.0]
-                };
-                let band_fragment = call.statement.is_some()
-                    && band_fragments
-                        .iter()
-                        .any(|&b| (b - call.start_beat).abs() < 1e-6);
-                if band_fragment {
-                    cands.retain(|&a| a != Agent::Drums);
-                }
                 let transforms: &[Transform] = if band_fragment {
                     &[Transform::Compress]
+                } else if unpitched {
+                    &[Transform::Echo]
                 } else if lang.distributed_agency {
                     &[
                         Transform::Quote,
@@ -480,64 +819,55 @@ pub(super) fn plan_interactions(
                 } else {
                     &[Transform::Echo, Transform::Quote]
                 };
-                let answer_chance = lang.interaction;
                 let mut best: Option<(f32, Response, Signature)> = None;
-                for &who in &cands {
-                    for &lat in latencies {
-                        let start = call.end_beat + lat;
-                        if start < call.start_beat + 1.0 || start >= total_beats - 0.5 {
-                            continue;
+                for &(who, lat, dur) in &room {
+                    let start = call.end_beat + lat;
+                    for &tf in transforms {
+                        if who == Agent::Drums && tf != Transform::Echo {
+                            continue; // a drummer echoes the rhythm; it has no pitches
                         }
-                        // Drums answer briefly; pitched answers take up to two beats.
-                        let max_dur = if who == Agent::Drums { 1.0 } else { 2.0 };
-                        // An overlapping answer starts inside the call, so it has that much more room.
-                        let room = gap - lat;
-                        let dur = room.min(max_dur);
-                        if dur < 0.5 - 1e-6 {
-                            continue;
-                        }
-                        if accent.is_hole(start) {
-                            continue;
-                        }
-                        for &tf in transforms {
-                            if who == Agent::Drums && tf != Transform::Echo {
-                                continue; // a drummer echoes the rhythm; it has no pitches
-                            }
-                            let sig = Signature {
-                                initiator: call.initiator,
-                                responder: who,
-                                latency_q: (lat * 2.0).round() as i8,
-                                step: AccentGrid::step_of(start).1 as u8,
-                                transform: tf,
-                            };
-                            let w = accent.at_beat(start);
-                            let fit = -(w.syncopation + w.pickup) * 0.6;
-                            let overlap_cost = if lat < 0.0 { 0.35 } else { 0.0 };
-                            let cost = memory.penalty(&sig)
-                                + memory.novelty(sig.latency_q)
-                                + fit
-                                + overlap_cost
-                                + rng.range_f32(0.0, 0.2);
-                            if best.as_ref().is_none_or(|b| cost < b.0) {
-                                best = Some((
-                                    cost,
-                                    Response {
-                                        action: None,
-                                        responder: who,
-                                        start_beat: start,
-                                        dur_beats: dur,
-                                        latency: lat,
-                                        overlap: lat < 0.0,
-                                        transform: tf,
-                                        crosses_chord: crosses(chords, call.end_beat, start + dur),
-                                    },
-                                    sig,
-                                ));
-                            }
+                        let sig = Signature {
+                            initiator: call.initiator,
+                            responder: who,
+                            latency_q: (lat * 2.0).round() as i8,
+                            step: AccentGrid::step_of(start).1 as u8,
+                            transform: tf,
+                        };
+                        let w = accent.at_beat(start);
+                        let fit = -(w.syncopation + w.pickup) * 0.6;
+                        let overlap_cost = if lat < 0.0 { 0.35 } else { 0.0 };
+                        let cost = memory.penalty(&sig)
+                            + memory.novelty(sig.latency_q)
+                            + fit
+                            + overlap_cost
+                            + rng.range_f32(0.0, 0.2);
+                        if best.as_ref().is_none_or(|b| cost < b.0) {
+                            best = Some((
+                                cost,
+                                Response {
+                                    action: None,
+                                    responder: who,
+                                    start_beat: start,
+                                    dur_beats: dur,
+                                    latency: lat,
+                                    overlap: lat < 0.0,
+                                    transform: tf,
+                                    crosses_chord: crosses(chords, call.end_beat, start + dur),
+                                    material: None,
+                                    realizes: band_fragment_of,
+                                },
+                                sig,
+                            ));
                         }
                     }
                 }
-                // Sometimes the right answer is to leave the space open.
+                // Sometimes the right answer is to leave the space open — but a call that the
+                // planner kept because it opens space is usually answered.
+                let answer_chance = if opts.calls == CallPolicy::EveryStatement {
+                    1.0
+                } else {
+                    lang.interaction
+                };
                 let silent = ci > 0 && !band_fragment && rng.chance(1.0 - answer_chance);
                 match best {
                     Some((_, r, sig)) if !silent => {
@@ -552,35 +882,52 @@ pub(super) fn plan_interactions(
                 }
             }
         };
-        let response = response.map(|mut r| {
-            if r.transform != Transform::Silence {
-                r.action = Some(actions.push(MusicalAction {
-                    id: ActionId(0),
-                    cause: ActionCause::Interaction { call: call.action },
-                    initiator: r.responder,
-                    start_beat: r.start_beat,
-                    dur_beats: r.dur_beats,
-                    kind: ActionKind::Answer,
-                    target_beat: None,
-                    responders: vec![],
-                    binding: None,
-                    pays: Some(call.action),
-                }));
+        let response = response.and_then(|mut r| {
+            if r.transform == Transform::Silence {
+                return Some(r);
             }
-            r
+            // The response's own material, derived from the CALL's material.
+            let mid = MaterialId(materials.len() as u32);
+            let m = transform_material(
+                mid,
+                &materials[call.material.index()],
+                r.transform,
+                r.responder,
+                r.start_beat,
+                r.dur_beats,
+            )?;
+            materials.push(m);
+            r.material = Some(mid);
+            r.action = Some(actions.push(MusicalAction {
+                id: ActionId(0),
+                cause: ActionCause::Interaction { call: call.action },
+                initiator: r.responder,
+                start_beat: r.start_beat,
+                dur_beats: r.dur_beats,
+                kind: ActionKind::Answer,
+                target_beat: None,
+                responders: vec![],
+                binding: None,
+                pays: Some(call.action),
+                effect: EffectVector::NEUTRAL,
+            }));
+            Some(r)
         });
         interactions.push(Interaction {
+            id: InteractionId(0),
             call: *call,
             response,
         });
     }
     interactions.sort_by(|a, b| a.call.start_beat.total_cmp(&b.call.start_beat));
-    (statements, interactions)
-}
-
-/// Whether `[a, b)` crosses a chord boundary.
-pub(super) fn crosses(chords: &[ChordSpan], a: f64, b: f64) -> bool {
-    chords
-        .iter()
-        .any(|c| c.start_beat > a + 1e-6 && c.start_beat < b - 1e-6)
+    for (i, it) in interactions.iter_mut().enumerate() {
+        it.id = InteractionId(i as u32);
+    }
+    opportunities.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+    InteractionPlan {
+        statements,
+        interactions,
+        materials,
+        opportunities,
+    }
 }

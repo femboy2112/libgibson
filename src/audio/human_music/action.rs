@@ -146,6 +146,77 @@ pub enum ActionCause {
     Statement { phrase: u32 },
 }
 
+/// How much an action does — a small continuous effect vector derived from the semantic state
+/// delta that caused it (Round VIIb). A faint, spacious Impact and a strong, compact, dangerous
+/// Impact are the same *kind* of verb; they must not be the same *size* of verb.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct EffectVector {
+    /// Overall force in `[0, 1]`: half the arrival state's weight (dynamic + pressure), half the
+    /// size of the change (so a Danger→Danger impact still lands hard, and a big swing reads big).
+    pub strength: f32,
+    /// Change in semantic pressure (`next - prev`).
+    pub d_pressure: f32,
+    /// Change in dynamic weight.
+    pub d_dynamic: f32,
+    /// Change in density: Spacious = -1, Normal = 0, Compact = +1.
+    pub d_density: i8,
+    /// Change in elevation: Flat = 0, Raised = 1, Overlay = 2.
+    pub d_elevation: i8,
+    /// How compact the arrival is, in `[0, 1]` (Spacious 0, Normal 0.5, Compact 1).
+    pub compactness: f32,
+    /// How new the arrival is, in `[0, 1]` (a tone change is fully new).
+    pub novelty: f32,
+}
+
+impl EffectVector {
+    /// The neutral effect (actions the semantics did not size: gestures without a bound event,
+    /// interaction actions).
+    pub const NEUTRAL: EffectVector = EffectVector {
+        strength: 0.5,
+        d_pressure: 0.0,
+        d_dynamic: 0.0,
+        d_density: 0,
+        d_elevation: 0,
+        compactness: 0.5,
+        novelty: 0.0,
+    };
+
+    /// The effect of moving from semantic state `prev` to `next`.
+    pub fn between(
+        prev: &super::semantic::SemanticState,
+        next: &super::semantic::SemanticState,
+    ) -> EffectVector {
+        use super::semantic::{Density, Elevation};
+        let dens = |d: Density| match d {
+            Density::Spacious => -1i8,
+            Density::Normal => 0,
+            Density::Compact => 1,
+        };
+        let elev = |e: Elevation| match e {
+            Elevation::Flat => 0i8,
+            Elevation::Raised => 1,
+            Elevation::Overlay => 2,
+        };
+        let d_pressure = next.pressure() - prev.pressure();
+        let d_dynamic = next.dynamic() - prev.dynamic();
+        let d_density = dens(next.density) - dens(prev.density);
+        let d_elevation = elev(next.elevation) - elev(prev.elevation);
+        let arrival = 0.5 * next.dynamic() + 0.5 * next.pressure();
+        let delta =
+            (d_pressure.abs() + d_dynamic.abs() + 0.25 * d_density.unsigned_abs() as f32).min(1.0);
+        let novelty = if next.tone != prev.tone { 1.0 } else { delta };
+        EffectVector {
+            strength: (0.5 * arrival + 0.5 * delta).clamp(0.0, 1.0),
+            d_pressure,
+            d_dynamic,
+            d_density,
+            d_elevation,
+            compactness: (dens(next.density) as f32 + 1.0) / 2.0,
+            novelty,
+        }
+    }
+}
+
 /// One musical action.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MusicalAction {
@@ -167,6 +238,8 @@ pub struct MusicalAction {
     pub binding: Option<usize>,
     /// The action this one answers, pays or resolves, if any.
     pub pays: Option<ActionId>,
+    /// How much the action does (its semantic size).
+    pub effect: EffectVector,
 }
 
 impl MusicalAction {
@@ -370,14 +443,16 @@ impl ActionPlan {
                         None,
                         vec![Agent::Lead, Agent::Keys, Agent::Bass],
                     )),
-                    SequenceMotif => Some((
-                        ActionKind::Sequence,
-                        fam.lift_reach,
-                        at,
-                        window_end - at,
-                        None,
-                        vec![Agent::Lead, Agent::Keys],
-                    )),
+                    SequenceMotif => {
+                        // Honest deferral: no realizer states a sequence yet (Round VII emitted
+                        // the action and "witnessed" it from the plan alone).
+                        plan.deferred.push(Deferral {
+                            transition: ti,
+                            morphism: m,
+                            reason: "no realizer sequences motif material yet",
+                        });
+                        None
+                    }
                     Syncopate => Some((
                         ActionKind::Displace,
                         Agent::Ensemble,
@@ -406,6 +481,14 @@ impl ActionPlan {
                 let Some((kind, initiator, start, dur, target, responders)) = spec else {
                     continue;
                 };
+                if kind == ActionKind::Pickup && target.is_some_and(|t| t < 1.0 - 1e-6) {
+                    plan.deferred.push(Deferral {
+                        transition: ti,
+                        morphism: m,
+                        reason: "prepares the very first downbeat: there is no time before it for a pickup",
+                    });
+                    continue;
+                }
                 if dur <= 1e-6 {
                     plan.deferred.push(Deferral {
                         transition: ti,
@@ -438,6 +521,7 @@ impl ActionPlan {
                     responders,
                     binding,
                     pays,
+                    effect: EffectVector::NEUTRAL,
                 });
             }
         }
@@ -472,6 +556,7 @@ impl ActionPlan {
                         responders,
                         binding: slot.binding,
                         pays: None,
+                        effect: EffectVector::NEUTRAL,
                     });
                 };
                 let long = slot.bars >= 2;
@@ -598,6 +683,34 @@ impl ActionPlan {
         let id = a.id;
         self.actions.push(a);
         id
+    }
+
+    /// Remove the actions `gone` (before anything outside the plan references ids), re-number
+    /// the rest densely in their existing order, and remap `pays` (a reference to a removed action
+    /// becomes `None`). Returns the old-id → new-id map.
+    pub fn remove(&mut self, gone: &[ActionId]) -> impl Fn(ActionId) -> Option<ActionId> {
+        let mut map: Vec<Option<ActionId>> = Vec::with_capacity(self.actions.len());
+        let mut next = 0u32;
+        for a in &self.actions {
+            if gone.contains(&a.id) {
+                map.push(None);
+            } else {
+                map.push(Some(ActionId(next)));
+                next += 1;
+            }
+        }
+        self.actions.retain(|a| !gone.contains(&a.id));
+        let lookup = move |id: ActionId| map.get(id.index()).copied().flatten();
+        for a in &mut self.actions {
+            a.id = lookup(a.id).expect("kept actions have new ids");
+            a.pays = a.pays.and_then(&lookup);
+            if let ActionCause::Interaction { call } = a.cause {
+                if let Some(c) = lookup(call) {
+                    a.cause = ActionCause::Interaction { call: c };
+                }
+            }
+        }
+        lookup
     }
 
     /// The action with id `id`.
