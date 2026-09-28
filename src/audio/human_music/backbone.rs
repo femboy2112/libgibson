@@ -14,8 +14,9 @@
 //! bar-aligned across the piece so the ear can learn it, and later cycles TRANSFORM the frozen cell
 //! (a warm color deepens) so recurrence is recognizable without being static.
 
+use super::context::{contextual_function, degree_tension};
 use super::contract::CompositionGrammar;
-use super::harmony::{degree_implied_tension, diatonic_chord};
+use super::harmony::diatonic_chord;
 use super::rng::Rng;
 use super::theory::{Chord, Function, Quality, Scale};
 use super::world::MusicWorld;
@@ -143,15 +144,6 @@ pub fn plan_for(
     }
 }
 
-/// The functional role a diatonic degree carries.
-fn function_of_degree(degree: i32) -> Function {
-    match degree.rem_euclid(7) {
-        0 | 5 | 2 => Function::Tonic,
-        3 | 1 => Function::Predominant,
-        _ => Function::Dominant,
-    }
-}
-
 /// Whether a chord's third is major (used to pick major vs minor warm colors).
 fn is_major_third(q: Quality) -> bool {
     matches!(
@@ -225,7 +217,7 @@ fn cell_cost(scale: &Scale, degs: &[i32; 4]) -> f32 {
     let mut fit = 0.0;
     let mut interior_home = 0.0;
     for (i, &d) in degs.iter().enumerate() {
-        fit += (degree_implied_tension(d) - HarmonicGesture::CELL[i].target_tension()).abs();
+        fit += (degree_tension(scale, d) - HarmonicGesture::CELL[i].target_tension()).abs();
         if i < 3 && d.rem_euclid(7) == 0 {
             interior_home += 1.5; // a Lift/Deflect/Open that is really home defeats the bounce
         }
@@ -290,7 +282,7 @@ pub fn generate_deflected_lift_cell(world: &MusicWorld, seed: u64) -> HarmonicCe
             gesture,
             degree,
             chord: warm_color(base, gesture),
-            function: function_of_degree(degree),
+            function: contextual_function(&base, &scale),
         }
     });
     HarmonicCell { slots }
@@ -315,7 +307,8 @@ mod tests {
             let cell = generate_deflected_lift_cell(&world, 2112);
             let g: Vec<HarmonicGesture> = cell.slots.iter().map(|s| s.gesture).collect();
             assert_eq!(g, HarmonicGesture::CELL.to_vec(), "{}", world.name);
-            let ten = |i: usize| degree_implied_tension(cell.slots[i].degree);
+            let sc = Scale::new(world.tonic_pc, world.mode);
+            let ten = |i: usize| degree_tension(&sc, cell.slots[i].degree);
             assert!(
                 ten(0) > ten(3),
                 "{}: lift not tenser than reset",
@@ -412,10 +405,11 @@ mod tests {
         for world in MusicWorld::all() {
             let cell = generate_deflected_lift_cell(&world, 2112);
             let degs: [i32; 4] = std::array::from_fn(|i| cell.slots[i].degree);
+            let sc = Scale::new(world.tonic_pc, world.mode);
             let fit = |perm: &[usize; 4]| -> f32 {
                 (0..4)
                     .map(|i| {
-                        (degree_implied_tension(degs[i])
+                        (degree_tension(&sc, degs[i])
                             - HarmonicGesture::CELL[perm[i]].target_tension())
                         .abs()
                     })

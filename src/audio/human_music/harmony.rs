@@ -15,6 +15,7 @@
 //! scale thirds, so it is correct in any mode).
 
 use super::backbone::BackbonePlan;
+use super::context::{contextual_function, degree_tension, PullEvidence};
 use super::contract::ResolutionPolicy;
 use super::discourse::Closure;
 use super::form::BEATS_PER_BAR;
@@ -34,6 +35,22 @@ pub struct ChordSpan {
     pub degree: i32,
     /// A short provenance note (e.g. "V/of", "res", "bVI mix").
     pub note: &'static str,
+}
+
+impl ChordSpan {
+    /// A bare span for unit tests: `chord` at `start_beat` for `dur_beats`, with a placeholder
+    /// function (contextual analysis lives in [`super::context`], not in the span).
+    #[cfg(test)]
+    pub(crate) fn test(start_beat: f64, dur_beats: f32, chord: Chord) -> ChordSpan {
+        ChordSpan {
+            start_beat,
+            dur_beats,
+            chord,
+            function: Function::Tonic,
+            degree: -1,
+            note: "",
+        }
+    }
 }
 
 /// Generates progressions for a world.
@@ -67,6 +84,34 @@ impl HarmonyEngine {
     /// Build a diatonic chord on scale `degree` (0-based), a seventh if requested.
     pub fn diatonic_chord(&self, degree: i32, seventh: bool) -> Chord {
         diatonic_chord(&self.scale, degree, seventh)
+    }
+
+    /// The cadential dominant on degree 4, **mode-safe**. In Ionian the diatonic V already carries
+    /// the leading tone; in Aeolian/Dorian/Phrygian/Mixolydian the diatonic chord on degree 4 is a
+    /// minor `v` (or `v7`) with no leading tone and no tritone, so a *functional* cadence borrows the
+    /// raised third (the harmonic-minor V) rather than calling a departure a dominant. Returns the
+    /// chord and whether it was borrowed.
+    fn cadential_dominant(&self, seventh: bool) -> (Chord, bool) {
+        let v = self.diatonic_chord(4, seventh);
+        if PullEvidence::of(&v, self.scale.tonic_pc).is_dominant() {
+            (v, false)
+        } else {
+            let q = if seventh { Quality::Dom7 } else { Quality::Maj };
+            (Chord::new(v.root_pc, q), true)
+        }
+    }
+
+    /// The diatonic degrees whose chord behaves as `func` in this engine's region, classified from
+    /// pitch content in context ([`contextual_function`]) — not from a fixed Ionian degree table.
+    /// An Aeolian region has no diatonic dominant at all; callers fall back to departures.
+    pub(crate) fn degree_pool(&self, func: Function) -> Vec<i32> {
+        let pool: Vec<i32> = (0..7)
+            .filter(|&d| contextual_function(&self.diatonic_chord(d, false), &self.scale) == func)
+            .collect();
+        if pool.is_empty() && func == Function::Dominant {
+            return self.degree_pool(Function::Predominant);
+        }
+        pool
     }
 
     /// Generate the full progression from the composition plan's [`super::plan::PhraseTarget`]s,
@@ -160,7 +205,13 @@ impl HarmonyEngine {
                             Some((self.diatonic_chord(0, false), Function::Tonic, 0, "plagal"))
                         }
                         Closure::Half => {
-                            Some((self.diatonic_chord(4, s7), Function::Dominant, 4, "half"))
+                            let (v, borrowed) = self.cadential_dominant(s7);
+                            let (deg, note) = if borrowed {
+                                (-1, "half·hm")
+                            } else {
+                                (4, "half")
+                            };
+                            Some((v, Function::Dominant, deg, note))
                         }
                         // V→vi: prepared by the dominant at n-2, resolves deceptively to the
                         // submediant (tonic-function, but not home).
@@ -180,7 +231,9 @@ impl HarmonyEngine {
                 } else if is_prep {
                     match closure {
                         Closure::Strong | Closure::Deceptive | Closure::Deferred => {
-                            Some((self.diatonic_chord(4, s7), Function::Dominant, 4, ""))
+                            let (v, borrowed) = self.cadential_dominant(s7);
+                            let (deg, note) = if borrowed { (-1, "V(hm)") } else { (4, "") };
+                            Some((v, Function::Dominant, deg, note))
                         }
                         // Half and plagal approach the final chord from the subdominant.
                         Closure::Half | Closure::Weak => Some((
@@ -213,7 +266,10 @@ impl HarmonyEngine {
                     // Interior slot. A pending resolution outranks everything else here.
                     None => {
                         if let Some(target) = pending_resolve.take() {
-                            let func = function_of_degree(target);
+                            let func = contextual_function(
+                                &self.diatonic_chord(target, false),
+                                &self.scale,
+                            );
                             let seventh = s7 && (tension > 0.4 || func == Function::Dominant);
                             (self.diatonic_chord(target, seventh), func, target, "res")
                         } else {
@@ -299,17 +355,14 @@ impl HarmonyEngine {
         prev_root: i32,
         prev_degree: i32,
     ) -> i32 {
-        let pool: &[i32] = match func {
-            Function::Tonic => &[0, 5, 2],
-            Function::Predominant => &[3, 1],
-            Function::Dominant => &[4, 6],
-        };
+        let pool = self.degree_pool(func);
         let w = CostWeights::default();
         let mut best_score = f32::INFINITY;
         let mut best: Vec<i32> = Vec::new();
-        for &d in pool {
+        for &d in &pool {
             let root = self.scale.degree_pitch(d, 4).rem_euclid(12);
-            let score = degree_cost(root, d, target_tension, prev_root, prev_degree).weighted(&w);
+            let score = degree_cost(&self.scale, root, d, target_tension, prev_root, prev_degree)
+                .weighted(&w);
             if score < best_score - 1e-6 {
                 best_score = score;
                 best.clear();
@@ -382,25 +435,13 @@ fn generate_backbone_tiled(
     spans
 }
 
-/// The rough functional heat of a scale degree — tonic-ish degrees are calm, the leading-tone
-/// dominant is hot. This is what `tension_error` in [`degree_cost`] measures against the form.
-pub(crate) fn degree_implied_tension(degree: i32) -> f32 {
-    match degree.rem_euclid(7) {
-        0 => 0.10, // I
-        5 => 0.25, // vi
-        2 => 0.30, // iii
-        3 => 0.45, // IV
-        1 => 0.50, // ii
-        4 => 0.80, // V
-        _ => 0.90, // vii°
-    }
-}
-
 /// The enriched cost of choosing `candidate_root` / `degree` after `prev_root` / `prev_degree`,
-/// aiming at `target_tension`. Three live dimensions: voice-leading (nearest semitone root
-/// motion), tension error (functional heat vs. the form's target), and repetition. An
-/// inspectable vector — exactly what `choose_interior_degree` minimizes.
+/// aiming at `target_tension` in `scale`. Three live dimensions: voice-leading (nearest semitone
+/// root motion), tension error (the chord's *contextual* heat, [`degree_tension`], vs. the form's
+/// target — mode-safe, unlike the old fixed Ionian degree table), and repetition. An inspectable
+/// vector — exactly what `choose_interior_degree` minimizes.
 pub(crate) fn degree_cost(
+    scale: &Scale,
     candidate_root: i32,
     degree: i32,
     target_tension: f32,
@@ -409,21 +450,12 @@ pub(crate) fn degree_cost(
 ) -> MorphismCost {
     let raw = (candidate_root - prev_root).rem_euclid(12);
     let motion = raw.min(12 - raw) as f32; // nearest semitone root motion, 0..=6
-    let implied = degree_implied_tension(degree);
+    let implied = degree_tension(scale, degree);
     MorphismCost {
         voice_leading: motion,
         tension_error: (implied - target_tension).abs(),
         repetition: if degree == prev_degree { 1.0 } else { 0.0 },
         ..MorphismCost::default()
-    }
-}
-
-/// The harmonic function a diatonic degree carries (used when resolving a secondary dominant).
-fn function_of_degree(degree: i32) -> Function {
-    match degree.rem_euclid(7) {
-        0 | 5 | 2 => Function::Tonic,
-        3 | 1 => Function::Predominant,
-        _ => Function::Dominant, // 4, 6
     }
 }
 
@@ -678,8 +710,9 @@ mod tests {
         // T3: the scorer must rank a smoother root motion cheaper than a jumpier one, and
         // generate's interior selector must actually return the argmin of that vector.
         let w = CostWeights::default();
-        let smooth = degree_cost(7, 4, 0.8, 5, 3); // root motion 2
-        let jumpy = degree_cost(11, 6, 0.8, 5, 3); // root motion 6
+        let c = Scale::new(0, super::super::theory::Mode::Ionian);
+        let smooth = degree_cost(&c, 7, 4, 0.8, 5, 3); // root motion 2
+        let jumpy = degree_cost(&c, 11, 6, 0.8, 5, 3); // root motion 6
         assert!(
             smooth.weighted(&w) < jumpy.weighted(&w),
             "smoother candidate did not score cheaper"
@@ -690,9 +723,10 @@ mod tests {
         let (func, target_tension, prev_root, prev_degree) = (Function::Dominant, 0.8, 7, 0);
         let mut expect = 4;
         let mut best = f32::INFINITY;
-        for d in [4, 6] {
+        for d in h.degree_pool(func) {
             let root = h.scale().degree_pitch(d, 4).rem_euclid(12);
-            let s = degree_cost(root, d, target_tension, prev_root, prev_degree).weighted(&w);
+            let s = degree_cost(&h.scale(), root, d, target_tension, prev_root, prev_degree)
+                .weighted(&w);
             if s < best {
                 best = s;
                 expect = d;
