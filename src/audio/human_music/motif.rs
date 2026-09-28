@@ -4,7 +4,10 @@
 //! the melody engine can grow one idea across the whole piece instead of inventing a new
 //! tune every four bars.
 
+use super::context::HarmonicContext;
+use super::form::BEATS_PER_BAR;
 use super::harmony::ChordSpan;
+use super::language::MusicalLanguage;
 use super::rng::Rng;
 use super::score::PitchFunction;
 use super::theory::{pitch_class, Chord, Midi, Mode, Scale};
@@ -529,23 +532,786 @@ impl ThematicTrajectory {
     }
 }
 
-/// Realize a WHOLE motif statement JOINTLY against the harmony over its span.
-///
-/// This is the cure for Round I's per-note snapping. Instead of dragging each note to the
-/// nearest chord tone in isolation — which shreds the contour — we run a bounded DP (a beam of
-/// at most `max_candidates` pitch options per note) that scores the *whole* path at once:
-/// chord-tone fit on strong beats, small voice-leading motion, and — decisively — agreement
-/// with the original motif's contour direction between successive notes. The shape survives;
-/// the harmony is satisfied; nothing is diced.
-///
+// ---------------------------------------------------------------------------
+// Round VII line engine: targets first, then connectors, justification inside the search.
+//
+// Through Round VI the realizer ran one DP over "any scale tone near the anchor" and only
+// classified each note AFTER backtracking; whatever the classifier could not explain was snapped
+// to a chord tone and counted as a repair. That is justification as an afterthought. Here the
+// statement is first split into MelodicEvents — structural targets (strong beats, long notes, the
+// first and last note, the contour peak), connective notes between them, and articulated internal
+// rests. The targets are chosen jointly from each onset harmony's STABLE palette (chord tones and
+// licensed tensions), preferring guide tones and colour over roots, by a small DP that passes
+// through chord changes as one thought. Between each pair of candidate targets the connectors are
+// searched with the classifier INSIDE the search: a connector is only admissible when
+// `pitch::classify` justifies it against the exact neighbours it will actually have (passing,
+// neighbour, chromatic approach, enclosure, anticipation, suspension, appoggiatura, or a chord
+// tone/tension). A target pair whose gap no justified connector path can bridge is simply not a
+// path. The snap-repair pass remains only as a counted last resort.
+// ---------------------------------------------------------------------------
+
 /// A realized note: `(start_beat, dur_beats, pitch, pitch-function)`.
 pub type RealizedNote = (f64, f32, Midi, Option<PitchFunction>);
 
+/// Whether a melodic event carries the line's structure or connects it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TargetKind {
+    /// A structural target: strong-beat onset, long note, first/last note or the contour peak.
+    /// Its pitch is chosen from the stable palette of its onset harmony.
+    Structural,
+    /// A connective note between targets: its pitch must be justified by the targets around it.
+    Connective,
+}
+
+/// One event of a statement's melodic surface, derived from a [`Motif`] note.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MelodicEvent {
+    /// Onset in beats from the statement start (identical to the motif's cumulative rhythm).
+    pub onset: f64,
+    /// Sounding gate in beats (shorter than the rhythmic slot when the note breathes).
+    pub dur: f32,
+    /// A first-class internal rest: the slot is kept in time but nothing sounds.
+    pub rest: bool,
+    /// Structural target or connective note.
+    pub target: TargetKind,
+    /// Relative accent `[0, 1]` (structural events lean, connectives recede).
+    pub accent: f32,
+}
+
+/// How a line is spoken: the parts of the [`MusicalLanguage`] the line engine consumes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LineStyle {
+    /// Structural targets may land on licensed tensions (9/11/13), not only chord tones; the
+    /// classifier is told which tensions the local palette licenses.
+    pub tension_targets: bool,
+    /// Appetite for chromatic connectives (approach / chromatic passing / enclosure), `[0, 1]`.
+    pub chromatic_connectives: f32,
+    /// Fraction of a statement's interior gaps articulated as rests, `[0, 1]`.
+    pub internal_rest: f32,
+    /// Gate as a fraction of the rhythmic slot.
+    pub gate: f32,
+    /// `true`: a structural strong beat is an even beat of the bar (downbeat / mid-bar);
+    /// `false`: every integer beat is structural (the plain, pre-Round-VII grid).
+    pub bar_strong_beats: bool,
+}
+
+impl LineStyle {
+    /// The plain style behind [`realize_phrase`]: chord-tone targets on every integer beat, full
+    /// gates, no articulated rests, chromatic connectives allowed but expensive.
+    pub fn plain() -> LineStyle {
+        LineStyle {
+            tension_targets: false,
+            chromatic_connectives: 0.0,
+            internal_rest: 0.0,
+            gate: 1.0,
+            bar_strong_beats: false,
+        }
+    }
+
+    /// The style a [`MusicalLanguage`] speaks: tension targets from colour depth, chromatic
+    /// appetite and internal-rest rate from the language's melodic policy.
+    pub fn for_language(lang: &MusicalLanguage) -> LineStyle {
+        LineStyle {
+            tension_targets: lang.color_depth > 0,
+            chromatic_connectives: lang.chromatic_connectives.clamp(0.0, 1.0),
+            internal_rest: lang.internal_rest.clamp(0.0, 1.0),
+            gate: 0.9,
+            bar_strong_beats: true,
+        }
+    }
+}
+
+/// True when `beat` sits on an integer-beat onset (a strong beat for the classifier).
+fn is_strong_beat(beat: f64) -> bool {
+    (beat - beat.round()).abs() < 1e-6
+}
+
+/// True when `beat` is an even integer beat of a 4/4 bar (downbeat or mid-bar).
+fn is_bar_strong(beat: f64) -> bool {
+    let b = beat.rem_euclid(BEATS_PER_BAR);
+    let r = b.round();
+    (b - r).abs() < 1e-6 && (r as i64).rem_euclid(2) == 0
+}
+
+/// Derive a statement's [`MelodicEvent`]s from `motif` starting at absolute `start_beat`.
+///
+/// Onsets are exactly the motif's (so its rhythm and identity are kept). Structural events are
+/// the first and last note, strong-beat onsets, long notes (>= 1.5 beats) and the contour peak;
+/// the rest connect. Internal rests are articulated deterministically at a rate of
+/// `style.internal_rest` of the interior gaps: first by letting a long interior note breathe (its
+/// gate halves, its onset stays), then — for statements long enough to afford it — by resting in
+/// place of a short interior connective. Never the first or last event, never a structural target,
+/// never two rests side by side. The choice depends only on the motif, the onset grid and the
+/// style, so a restated thesis rests where the thesis rested.
+pub fn melodic_events(motif: &Motif, start_beat: f64, style: &LineStyle) -> Vec<MelodicEvent> {
+    let n = motif.len();
+    let mut out = Vec::with_capacity(n);
+    if n == 0 {
+        return out;
+    }
+    let peak = (0..n)
+        .max_by(|&a, &b| motif.degrees[a].cmp(&motif.degrees[b]).then(b.cmp(&a)))
+        .unwrap_or(0);
+    let mut t = 0.0f64;
+    for i in 0..n {
+        let r = motif.rhythm[i];
+        let abs = start_beat + t;
+        let strong = if style.bar_strong_beats {
+            is_bar_strong(abs)
+        } else {
+            is_strong_beat(abs)
+        };
+        let structural = i == 0 || i + 1 == n || strong || r >= 1.5 || i == peak;
+        out.push(MelodicEvent {
+            onset: t,
+            dur: (r * style.gate).max(0.1),
+            rest: false,
+            target: if structural {
+                TargetKind::Structural
+            } else {
+                TargetKind::Connective
+            },
+            accent: if structural { 1.0 } else { 0.8 },
+        });
+        t += r as f64;
+    }
+
+    let budget = (style.internal_rest * n.saturating_sub(1) as f32).round() as usize;
+    if n < 3 || budget == 0 {
+        return out;
+    }
+    let mut used = 0usize;
+    // 1. Breaths: long interior notes keep their onset and give back half their slot.
+    let mut long: Vec<usize> = (1..n - 1).filter(|&i| motif.rhythm[i] >= 1.0).collect();
+    long.sort_by(|&a, &b| motif.rhythm[b].total_cmp(&motif.rhythm[a]).then(a.cmp(&b)));
+    for i in long.into_iter().take(budget) {
+        out[i].dur = (motif.rhythm[i] * 0.5).max(0.5);
+        used += 1;
+    }
+    // 2. Rests in place of a short interior connective (long statements only).
+    if used < budget && n >= 6 {
+        for i in 1..n - 1 {
+            if used >= budget {
+                break;
+            }
+            let ok = out[i].target == TargetKind::Connective
+                && motif.rhythm[i] <= 0.5
+                && !out[i - 1].rest
+                && !out[i + 1].rest;
+            if ok {
+                out[i].rest = true;
+                used += 1;
+            }
+        }
+    }
+    out
+}
+
+/// One realized note of a line.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LineNote {
+    pub start: f64,
+    pub dur: f32,
+    pub pitch: Midi,
+    pub function: Option<PitchFunction>,
+    pub accent: f32,
+    pub structural: bool,
+}
+
+/// A realized line and how many notes the last-resort snap pass had to repair (target 0).
+#[derive(Debug, Clone, PartialEq)]
+pub struct LineRealization {
+    pub notes: Vec<LineNote>,
+    pub repairs: usize,
+}
+
+/// Everything the line engine needs to realize one statement.
+pub struct LineRequest<'a> {
+    pub motif: &'a Motif,
+    pub chords: &'a [ChordSpan],
+    /// The per-chord harmonic contexts (palettes) — parallel to `chords`.
+    pub contexts: &'a [HarmonicContext],
+    /// The tonal region the motif's degrees are read in.
+    pub scale: &'a Scale,
+    pub root_degree: i32,
+    pub octave: i32,
+    pub start_beat: f64,
+    /// The previous statement's exit pitch, for register continuity.
+    pub prev_pitch: Option<Midi>,
+    pub style: LineStyle,
+    /// Target candidates considered per structural event.
+    pub max_candidates: usize,
+}
+
+/// One sounding event with its full harmonic situation, precomputed once.
+struct Slot {
+    start: f64,
+    gate: f64,
+    anchor: Midi,
+    degree: i32,
+    structural: bool,
+    accent: f32,
+    /// Integer-beat onset (what the classifier calls strong).
+    strong: bool,
+    /// Even beat of the bar (where a guide tone / colour matters most).
+    bar_strong: bool,
+    cur: Option<Chord>,
+    prev_chord: Option<Chord>,
+    next_chord: Option<Chord>,
+    next_boundary: Option<f64>,
+    /// Licensed tensions over `cur` (a pitch-class mask; 0 when the style licenses none).
+    licensed: u16,
+    /// Pitch classes a connector may use here (palette ∪ chord ∪ imminent next chord).
+    allowed: u16,
+    /// Guide tones (3rd, 7th/6th) of the onset harmony.
+    guide: u16,
+}
+
+fn has_pc(mask: u16, p: Midi) -> bool {
+    mask & (1u16 << pitch_class(p)) != 0
+}
+
+fn chord_mask(c: Option<Chord>) -> u16 {
+    c.map_or(0, |c| super::pitch::pc_mask(&c.pitch_classes()))
+}
+
+const INF: f32 = f32::INFINITY;
+/// Target register fit (distance from the motif's anchor pitch).
+const T_ANCHOR_W: f32 = 0.3;
+/// Continuity from the previous statement's exit into the first target.
+const FIRST_VL_W: f32 = 0.3;
+/// Contradicting the motif's direction between two targets.
+const T_CONTOUR_PEN: f32 = 6.0;
+/// Deviation of a target-to-target interval from the motif's own interval.
+const T_FID_W: f32 = 0.1;
+/// Connector register fit.
+const C_ANCHOR_W: f32 = 0.15;
+/// Contradicting the motif's direction on one event-to-event step.
+const C_CONTOUR_PEN: f32 = 3.0;
+/// Deviation of one step from the motif's own interval.
+const C_FID_W: f32 = 0.08;
+/// Connector candidates per event.
+const CONN_CAP: usize = 12;
+
+impl<'a> LineRequest<'a> {
+    fn slots(&self, events: &[MelodicEvent]) -> Vec<Slot> {
+        let mut out = Vec::new();
+        for (i, ev) in events.iter().enumerate() {
+            if ev.rest {
+                continue;
+            }
+            let start = self.start_beat + ev.onset;
+            let deg = self.motif.degrees[i];
+            let cur = chord_at(self.chords, start);
+            let next_boundary = next_boundary_after(self.chords, start);
+            let next_chord = next_boundary.and_then(|b| chord_at(self.chords, b));
+            let prev_chord = cur_span_start(self.chords, start)
+                .filter(|&cs| cs > 1e-9)
+                .and_then(|cs| chord_at(self.chords, cs - 1e-3));
+            let ctx = super::context::context_at(self.contexts, start).or(self.contexts.first());
+            let cur_mask = chord_mask(cur);
+            let licensed = if self.style.tension_targets {
+                ctx.map_or(0, |c| super::pitch::pc_mask(&c.palette.tensions)) & !cur_mask
+            } else {
+                0
+            };
+            let palette_mask = ctx.map_or_else(
+                || {
+                    super::pitch::pc_mask(
+                        &(0..12)
+                            .filter(|&pc| self.scale.contains_pc(pc))
+                            .collect::<Vec<_>>(),
+                    )
+                },
+                |c| super::pitch::pc_mask(&c.palette.all()),
+            );
+            let imminent = match next_boundary {
+                Some(b) if b - start <= super::pitch::ANTICIPATION_WINDOW + 1e-6 => {
+                    chord_mask(next_chord)
+                }
+                _ => 0,
+            };
+            let guide = cur.map_or(0, |c| {
+                super::pitch::pc_mask(&super::context::guide_tones(&c))
+            });
+            out.push(Slot {
+                start,
+                gate: ev.dur as f64,
+                anchor: self.scale.degree_pitch(self.root_degree + deg, self.octave),
+                degree: deg,
+                structural: ev.target == TargetKind::Structural,
+                accent: ev.accent,
+                strong: is_strong_beat(start),
+                bar_strong: is_bar_strong(start),
+                cur,
+                prev_chord,
+                next_chord,
+                next_boundary,
+                licensed,
+                allowed: palette_mask | cur_mask | imminent,
+                guide,
+            });
+        }
+        out
+    }
+}
+
+/// The line engine over precomputed slots.
+struct Engine<'s> {
+    slots: &'s [Slot],
+    scale: Scale,
+    style: LineStyle,
+    prev_pitch: Option<Midi>,
+}
+
+impl Engine<'_> {
+    /// The sounding gate of pitch `p` at slot `s`: the event's gate, released at the next harmony
+    /// change when `p` does not belong to that harmony (a note lifts off rather than smearing).
+    fn gate_for(&self, s: usize, p: Midi) -> f64 {
+        let sl = &self.slots[s];
+        match (sl.next_boundary, sl.next_chord) {
+            (Some(b), Some(nc))
+                if sl.start + sl.gate > b + 1e-6 && !has_pc(chord_mask(Some(nc)), p) =>
+            {
+                ((b - sl.start) * 0.97).max(0.1)
+            }
+            _ => sl.gate,
+        }
+    }
+
+    /// Classify pitch `p` at slot `s` with the exact neighbours it will have.
+    fn classify(
+        &self,
+        s: usize,
+        p: Midi,
+        prev: Option<Midi>,
+        next: Option<Midi>,
+    ) -> Option<PitchFunction> {
+        let sl = &self.slots[s];
+        let ctx = super::pitch::PitchContext {
+            pitch: p,
+            onset: sl.start,
+            duration: self.gate_for(s, p),
+            prev,
+            next,
+            prev_chord: sl.prev_chord,
+            cur: sl.cur,
+            next_chord: sl.next_chord,
+            next_boundary: sl.next_boundary,
+            is_strong: sl.strong,
+            licensed: sl.licensed,
+        };
+        super::pitch::classify(&ctx, &self.scale)
+    }
+
+    fn is_stable(&self, s: usize, p: Midi) -> bool {
+        let sl = &self.slots[s];
+        has_pc(chord_mask(sl.cur), p) || has_pc(sl.licensed, p)
+    }
+
+    /// Up to `cap` stable target candidates near the anchor, closest first. Never empty.
+    fn target_cands(&self, s: usize, cap: usize) -> Vec<Midi> {
+        let a = self.slots[s].anchor;
+        let mut v = Vec::new();
+        'outer: for d in 0..=7 {
+            for m in [a - d, a + d] {
+                if !v.contains(&m)
+                    && self.is_stable(s, m)
+                    && self.classify(s, m, None, None).is_some()
+                {
+                    v.push(m);
+                    if v.len() >= cap {
+                        break 'outer;
+                    }
+                }
+            }
+        }
+        if v.is_empty() {
+            v.push(nearest_chord_tone(a, self.slots[s].cur, &self.scale));
+        }
+        v
+    }
+
+    /// Which chord member / tension a target is, as a preference cost (lower = preferred): guide
+    /// tones and colour over the plain root and fifth, most strongly on the bar's strong beats.
+    fn tone_pref(&self, s: usize, p: Midi, is_last: bool) -> f32 {
+        let sl = &self.slots[s];
+        let Some(ch) = sl.cur else {
+            return 0.0;
+        };
+        let rel = (pitch_class(p) - ch.root_pc).rem_euclid(12);
+        let base = if rel == 0 {
+            if is_last {
+                0.3
+            } else {
+                0.7
+            }
+        } else if has_pc(sl.guide, p) {
+            0.0
+        } else if has_pc(chord_mask(sl.cur), p) {
+            if rel == 7 {
+                0.4
+            } else {
+                0.1
+            }
+        } else {
+            0.12
+        };
+        base * if sl.bar_strong { 1.0 } else { 0.5 }
+    }
+
+    fn target_node(&self, s: usize, p: Midi, is_first: bool, is_last: bool) -> f32 {
+        let sl = &self.slots[s];
+        let mut c = T_ANCHOR_W * (p - sl.anchor).abs() as f32 + self.tone_pref(s, p, is_last);
+        if is_first {
+            if let Some(pp) = self.prev_pitch {
+                c += FIRST_VL_W * (p - pp).abs() as f32;
+            }
+        }
+        c
+    }
+
+    fn target_trans(&self, a: usize, pa: Midi, b: usize, pb: Midi) -> f32 {
+        let (sa, sb) = (&self.slots[a], &self.slots[b]);
+        let dir = (sb.degree - sa.degree).signum();
+        let mv = pb - pa;
+        let mut c = 0.0;
+        if dir == 0 {
+            if mv != 0 {
+                c += 1.0 + 0.1 * mv.abs() as f32;
+            }
+        } else if mv.signum() != dir {
+            c += T_CONTOUR_PEN;
+        }
+        c += T_FID_W * (mv - (sb.anchor - sa.anchor)).abs() as f32;
+        if mv.abs() > 9 {
+            c += 0.3 * (mv.abs() - 9) as f32;
+        }
+        c
+    }
+
+    /// Connector register fit, loosened by the language's connective appetite: a line that
+    /// decorates its approaches may stray further from the motif's literal pitch between targets
+    /// (the direction of every step is still held by the contour penalty).
+    fn c_anchor_w(&self) -> f32 {
+        C_ANCHOR_W * (1.0 - self.style.chromatic_connectives)
+    }
+
+    /// Connector interval fidelity, loosened the same way.
+    fn c_fid_w(&self) -> f32 {
+        C_FID_W * (1.0 - self.style.chromatic_connectives)
+    }
+
+    /// Cost of one event-to-event step `x -> y` against the motif's own step.
+    fn step(&self, x: usize, px: Midi, y: usize, py: Midi) -> f32 {
+        let (sx, sy) = (&self.slots[x], &self.slots[y]);
+        let dir = (sy.degree - sx.degree).signum();
+        let mv = py - px;
+        let mut c = 0.0;
+        if dir == 0 {
+            if mv != 0 {
+                c += 0.6 + 0.05 * mv.abs() as f32;
+            }
+        } else if mv.signum() != dir {
+            c += C_CONTOUR_PEN;
+        }
+        c + self.c_fid_w() * (mv - (sy.anchor - sx.anchor)).abs() as f32
+    }
+
+    /// The cost of a connector's justification. A connector's job is to connect: motion that
+    /// does (passing, neighbour, approach, enclosure) is preferred to re-arpeggiating a stable
+    /// tone, and the more connective the language, the stronger that preference; chromatic
+    /// motion is priced by the language's appetite for it.
+    fn func_cost(&self, f: PitchFunction) -> f32 {
+        let c = self.style.chromatic_connectives;
+        let arpeggiate = 0.4 + 0.8 * c;
+        let chroma = 0.55 - 0.6 * c;
+        match f {
+            PitchFunction::ChordTone => arpeggiate,
+            PitchFunction::LicensedExtension => arpeggiate - 0.1,
+            PitchFunction::DiatonicPassing => 0.0,
+            PitchFunction::Neighbor => 0.1,
+            PitchFunction::Suspension => 0.15,
+            PitchFunction::Anticipation => 0.2,
+            PitchFunction::Appoggiatura => 0.35,
+            PitchFunction::ChromaticPassing
+            | PitchFunction::ChromaticApproach
+            | PitchFunction::Enclosure => chroma,
+            _ => 0.4,
+        }
+    }
+
+    /// Connector candidates at slot `s` between targets `pa` and `pb`: palette tones in the
+    /// segment's window, plus the chromatic semitones next to either target.
+    fn connector_cands(&self, s: usize, pa: Midi, pb: Midi) -> Vec<Midi> {
+        let sl = &self.slots[s];
+        let lo = (pa.min(pb) - 3).min(sl.anchor - 2);
+        let hi = (pa.max(pb) + 3).max(sl.anchor + 2);
+        let mut v: Vec<Midi> = (lo..=hi)
+            .filter(|&p| has_pc(sl.allowed, p) || (p - pb).abs() == 1 || (p - pa).abs() == 1)
+            .collect();
+        v.sort_by_key(|&p| ((p - sl.anchor).abs(), p));
+        v.truncate(CONN_CAP);
+        v
+    }
+
+    /// The cheapest justified connector path between target `pa` at slot `ia` and `pb` at slot
+    /// `ib` (every connector classified against its real neighbours), or `None` if none exists.
+    fn connect(
+        &self,
+        ia: usize,
+        pa: Midi,
+        ib: usize,
+        pb: Midi,
+    ) -> Option<(f32, Vec<(Midi, PitchFunction)>)> {
+        let k = ib - ia - 1;
+        if k == 0 {
+            return Some((0.0, Vec::new()));
+        }
+        let mut cands: Vec<Vec<Midi>> = Vec::with_capacity(k + 2);
+        cands.push(vec![pa]);
+        for s in ia + 1..ib {
+            cands.push(self.connector_cands(s, pa, pb));
+        }
+        cands.push(vec![pb]);
+        let slot = |pos: usize| ia + pos;
+
+        // dp[pos][i * |cands[pos]| + j]: least cost with cands[pos-1][i] then cands[pos][j].
+        let mut dp: Vec<Vec<f32>> = vec![Vec::new(); k + 2];
+        let mut bp: Vec<Vec<usize>> = vec![Vec::new(); k + 2];
+        dp[1] = cands[1]
+            .iter()
+            .map(|&p| {
+                self.c_anchor_w() * (p - self.slots[slot(1)].anchor).abs() as f32
+                    + self.step(slot(0), pa, slot(1), p)
+            })
+            .collect();
+        bp[1] = vec![0; cands[1].len()];
+        for pos in 2..=k + 1 {
+            let (np, nc, nn) = (cands[pos - 2].len(), cands[pos - 1].len(), cands[pos].len());
+            let mut d = vec![INF; nc * nn];
+            let mut b = vec![0usize; nc * nn];
+            for j in 0..nc {
+                let pj = cands[pos - 1][j];
+                for l in 0..nn {
+                    let pl = cands[pos][l];
+                    let mut best = INF;
+                    let mut bi = 0;
+                    for i in 0..np {
+                        let prev_cost = dp[pos - 1][i * nc + j];
+                        if !prev_cost.is_finite() || prev_cost >= best {
+                            continue;
+                        }
+                        let pi = cands[pos - 2][i];
+                        let Some(f) = self.classify(slot(pos - 1), pj, Some(pi), Some(pl)) else {
+                            continue;
+                        };
+                        let tot = prev_cost + self.func_cost(f);
+                        if tot < best {
+                            best = tot;
+                            bi = i;
+                        }
+                    }
+                    if best.is_finite() {
+                        let node = if pos == k + 1 {
+                            0.0
+                        } else {
+                            self.c_anchor_w() * (pl - self.slots[slot(pos)].anchor).abs() as f32
+                        };
+                        d[j * nn + l] = best + node + self.step(slot(pos - 1), pj, slot(pos), pl);
+                        b[j * nn + l] = bi;
+                    }
+                }
+            }
+            dp[pos] = d;
+            bp[pos] = b;
+        }
+
+        // Best final pair (connector k, target b).
+        let last = k + 1;
+        let (mut j, mut best) = (0usize, INF);
+        for (jj, &v) in dp[last].iter().enumerate() {
+            if v < best {
+                best = v;
+                j = jj;
+            }
+        }
+        if !best.is_finite() {
+            return None;
+        }
+        // Backtrack indices: idx[pos] for pos in 0..=last.
+        let mut idx = vec![0usize; last + 1];
+        idx[last] = 0;
+        idx[last - 1] = j;
+        for pos in (2..=last).rev() {
+            let nn = cands[pos].len();
+            idx[pos - 2] = bp[pos][idx[pos - 1] * nn + idx[pos]];
+        }
+        let pitches: Vec<Midi> = (0..=last).map(|pos| cands[pos][idx[pos]]).collect();
+        let mut path = Vec::with_capacity(k);
+        for pos in 1..=k {
+            let f = self.classify(
+                slot(pos),
+                pitches[pos],
+                Some(pitches[pos - 1]),
+                Some(pitches[pos + 1]),
+            )?;
+            path.push((pitches[pos], f));
+        }
+        Some((best, path))
+    }
+}
+
+/// Realize one statement: targets first, then justified connectors. Deterministic — no RNG; ties
+/// resolve to the candidate nearest the motif's anchor.
+pub fn realize_line(req: &LineRequest) -> LineRealization {
+    let events = melodic_events(req.motif, req.start_beat, &req.style);
+    let slots = req.slots(&events);
+    let n = slots.len();
+    if n == 0 {
+        return LineRealization {
+            notes: Vec::new(),
+            repairs: 0,
+        };
+    }
+    let eng = Engine {
+        slots: &slots,
+        scale: *req.scale,
+        style: req.style,
+        prev_pitch: req.prev_pitch,
+    };
+    let cap = req.max_candidates.max(1);
+
+    // The structural targets (the first and last sounding events always are).
+    let mut tslots: Vec<usize> = (0..n).filter(|&s| slots[s].structural).collect();
+    if tslots.first() != Some(&0) {
+        tslots.insert(0, 0);
+    }
+    if tslots.last() != Some(&(n - 1)) {
+        tslots.push(n - 1);
+    }
+    let m = tslots.len();
+    let tc: Vec<Vec<Midi>> = tslots.iter().map(|&s| eng.target_cands(s, cap)).collect();
+
+    // Outer DP over targets; each transition carries its cheapest justified connector path.
+    type Conn = Vec<(Midi, PitchFunction)>;
+    let mut cost: Vec<Vec<f32>> = Vec::with_capacity(m);
+    let mut back: Vec<Vec<usize>> = Vec::with_capacity(m);
+    let mut conns: Vec<Vec<Conn>> = Vec::with_capacity(m);
+    for t in 0..m {
+        let s = tslots[t];
+        let is_last = t + 1 == m;
+        let mut ct = vec![INF; tc[t].len()];
+        let mut bt = vec![0usize; tc[t].len()];
+        let mut cn: Vec<Conn> = vec![Vec::new(); tc[t].len()];
+        for (c, &p) in tc[t].iter().enumerate() {
+            let node = eng.target_node(s, p, t == 0, is_last);
+            if t == 0 {
+                ct[c] = node;
+                continue;
+            }
+            let ps = tslots[t - 1];
+            for (pc, &pp) in tc[t - 1].iter().enumerate() {
+                let base = cost[t - 1][pc];
+                if !base.is_finite() {
+                    continue;
+                }
+                let tr = base + eng.target_trans(ps, pp, s, p);
+                if tr >= ct[c] {
+                    continue;
+                }
+                if let Some((cc, path)) = eng.connect(ps, pp, s, p) {
+                    let tot = tr + cc + node;
+                    if tot < ct[c] {
+                        ct[c] = tot;
+                        bt[c] = pc;
+                        cn[c] = path;
+                    }
+                }
+            }
+        }
+        cost.push(ct);
+        back.push(bt);
+        conns.push(cn);
+    }
+
+    let mut pitches: Vec<Midi> = slots.iter().map(|s| s.anchor).collect();
+    let mut idx = 0usize;
+    let mut best = INF;
+    for (c, &v) in cost[m - 1].iter().enumerate() {
+        if v < best {
+            best = v;
+            idx = c;
+        }
+    }
+    if best.is_finite() {
+        let mut c = idx;
+        for t in (0..m).rev() {
+            pitches[tslots[t]] = tc[t][c];
+            if t > 0 {
+                for (off, &(p, _)) in conns[t][c].iter().enumerate() {
+                    pitches[tslots[t - 1] + 1 + off] = p;
+                }
+                c = back[t][c];
+            }
+        }
+    } else {
+        // No justified path at all (should not happen: chord tones always bridge). Fall back to
+        // the nearest stable tone per event — every such note was placed outside the search, so
+        // each one counts as a repair.
+        for (s, p) in pitches.iter_mut().enumerate() {
+            *p = eng.target_cands(s, 1)[0];
+        }
+    }
+    let fallback = if best.is_finite() { 0 } else { n };
+    let searched = pitches.clone();
+
+    // Verify every note against its actual neighbours — the same classifier, the same context.
+    let judge = |pitches: &[Midi], s: usize| {
+        eng.classify(
+            s,
+            pitches[s],
+            s.checked_sub(1).map(|j| pitches[j]),
+            pitches.get(s + 1).copied(),
+        )
+    };
+    // Last resort only: snap an unjustified note to the nearest tone of its chord (counted).
+    for _ in 0..4 {
+        let mut changed = false;
+        for s in 0..n {
+            if judge(&pitches, s).is_none() {
+                let fixed = nearest_chord_tone(pitches[s], slots[s].cur, req.scale);
+                if fixed != pitches[s] {
+                    pitches[s] = fixed;
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let repairs = fallback.max((0..n).filter(|&s| pitches[s] != searched[s]).count());
+    let notes = (0..n)
+        .map(|s| LineNote {
+            start: slots[s].start,
+            dur: eng.gate_for(s, pitches[s]) as f32,
+            pitch: pitches[s],
+            function: judge(&pitches, s),
+            accent: slots[s].accent,
+            structural: slots[s].structural,
+        })
+        .collect();
+    LineRealization { notes, repairs }
+}
+
+/// Realize a WHOLE motif statement JOINTLY against the harmony over its span, in the plain
+/// [`LineStyle`]: chord-tone targets on every integer beat, justified connectors between them.
+///
 /// Output mirrors [`Motif::render`]'s timing and pitch and adds a per-note [`PitchFunction`]
-/// classification (the jazz principle: chord tone, or the justification a non-chord tone carries,
-/// or `None` for an unjustified note). Durations come from `motif.rhythm`, start times accumulate
-/// from `start_beat`. Deterministic — no RNG, and ties resolve to the candidate nearest the
-/// intended pitch (candidate lists are closest-first).
+/// classification. Durations come from `motif.rhythm` (released at a harmony change the pitch
+/// does not belong to), start times accumulate from `start_beat`. `max_candidates` bounds the
+/// target candidates per structural note. Deterministic — no RNG.
 #[allow(clippy::too_many_arguments)]
 pub fn realize_phrase(
     motif: &Motif,
@@ -570,11 +1336,9 @@ pub fn realize_phrase(
     .0
 }
 
-/// Like [`realize_phrase`], additionally returning `repairs_performed`: how many notes the snap pass
-/// had to fix because the forward DP produced an unjustified pitch. Target for the canonical demos:
-/// zero — the search should choose justified tension rather than manufacture a wrong note and repair
-/// it. The counter makes any nonzero repair rate visible (surfaced through the Score and the
-/// lead-outline diagnostics) instead of hiding behind a residual of 0 unjustified notes.
+/// Like [`realize_phrase`], additionally returning `repairs_performed`: how many notes the
+/// last-resort snap pass had to fix because no justified path was found. Target: zero — the
+/// search chooses justified tension instead of manufacturing a wrong note and repairing it.
 #[allow(clippy::too_many_arguments)]
 pub fn realize_phrase_reporting(
     motif: &Motif,
@@ -586,154 +1350,26 @@ pub fn realize_phrase_reporting(
     prev_pitch: Option<Midi>,
     max_candidates: usize,
 ) -> (Vec<RealizedNote>, usize) {
-    let n = motif.len();
-    if n == 0 {
-        return (Vec::new(), 0);
-    }
-    let cap = max_candidates.max(1);
-
-    // Timings — identical to Motif::render (durations from rhythm, cumulative from start).
-    let mut starts = Vec::with_capacity(n);
-    let mut t = start_beat;
-    for i in 0..n {
-        starts.push(t);
-        t += motif.rhythm[i] as f64;
-    }
-
-    // Per-note anchor (the intended contour pitch), strong-beat flag, and chord in force.
-    let mut anchors = Vec::with_capacity(n);
-    let mut strong = Vec::with_capacity(n);
-    let mut chord_here = Vec::with_capacity(n);
-    let mut cands: Vec<Vec<Midi>> = Vec::with_capacity(n);
-    for (&start, &deg) in starts.iter().zip(motif.degrees.iter()) {
-        let anchor = scale.degree_pitch(root_degree + deg, octave);
-        let is_strong = is_strong_beat(start);
-        let chord = chord_at(chords, start);
-        cands.push(candidate_pitches(anchor, is_strong, chord, scale, cap));
-        anchors.push(anchor);
-        strong.push(is_strong);
-        chord_here.push(chord);
-    }
-
-    // Forward DP: cost[i][c] = least cost to reach candidate c of note i.
-    let inf = f32::INFINITY;
-    let mut cost: Vec<Vec<f32>> = Vec::with_capacity(n);
-    let mut back: Vec<Vec<usize>> = Vec::with_capacity(n);
-    for i in 0..n {
-        let m = cands[i].len();
-        let mut ci = vec![inf; m];
-        let mut bi = vec![0usize; m];
-        for (c, &p) in cands[i].iter().enumerate() {
-            let node = node_cost(p, anchors[i], strong[i], chord_here[i]);
-            if i == 0 {
-                // Continuity: seed the first note toward the previous statement's exit pitch, so
-                // consecutive phrases connect in register instead of teleporting between them.
-                ci[c] = node + prev_pitch.map_or(0.0, |pp| VL_W * (p - pp).abs() as f32);
-            } else {
-                let dir_orig = (motif.degrees[i] - motif.degrees[i - 1]).signum();
-                let mut best = inf;
-                let mut bidx = 0;
-                for (pi, &pp) in cands[i - 1].iter().enumerate() {
-                    let tot = cost[i - 1][pi] + transition_cost(pp, p, dir_orig);
-                    if tot < best {
-                        best = tot;
-                        bidx = pi;
-                    }
-                }
-                ci[c] = best + node;
-                bi[c] = bidx;
-            }
-        }
-        cost.push(ci);
-        back.push(bi);
-    }
-
-    // Backtrack the minimal path; strict `<` keeps the first (closest) candidate on ties.
-    let mut idx = 0;
-    let mut best = inf;
-    for (c, &v) in cost[n - 1].iter().enumerate() {
-        if v < best {
-            best = v;
-            idx = c;
-        }
-    }
-    let mut chosen = vec![0usize; n];
-    chosen[n - 1] = idx;
-    for i in (1..n).rev() {
-        chosen[i - 1] = back[i][chosen[i]];
-    }
-
-    let pitches_dp: Vec<Midi> = (0..n).map(|i| cands[i][chosen[i]]).collect();
-    let mut pitches = pitches_dp.clone();
-
-    // Classify note `i` against its FULL harmonic context: real chord-change boundaries and this
-    // note's own timing, so a distant future chord cannot lend it legitimacy (anticipation has a
-    // deadline) and a note whose sustained body crosses into dissonance is caught.
-    let classify_at = |pitches: &[Midi], i: usize| {
-        let onset = starts[i];
-        let next_boundary = next_boundary_after(chords, onset);
-        let ctx = super::pitch::PitchContext {
-            pitch: pitches[i],
-            onset,
-            duration: motif.rhythm[i] as f64,
-            prev: if i > 0 { Some(pitches[i - 1]) } else { None },
-            next: if i + 1 < n {
-                Some(pitches[i + 1])
-            } else {
-                None
-            },
-            // The chord sounding just before the current span (what a suspension is held from).
-            prev_chord: cur_span_start(chords, onset)
-                .filter(|&cs| cs > 1e-9)
-                .and_then(|cs| chord_at(chords, cs - 1e-3)),
-            cur: chord_here[i],
-            // The actual upcoming harmony, at the next real chord boundary.
-            next_chord: next_boundary.and_then(|b| chord_at(chords, b)),
-            next_boundary,
-            is_strong: strong[i],
-        };
-        super::pitch::classify(&ctx, scale)
-    };
-
-    // Justify-or-snap repair (the jazz principle's negative side): a note that classifies to `None`
-    // is an unjustified "wrong note" — not a chord tone, and no stepwise path or held/borrowed tone
-    // explains it. Replace ONLY those with the nearest tone of the chord sounding under them; a note
-    // that already carries a reason (approach / passing / neighbour / suspension / anticipation /
-    // appoggiatura) is never touched — we remove unexplained tension, never tension itself. Iterated
-    // to a fixed point, since repairing one note can change a neighbour's classification.
-    for _ in 0..4 {
-        let mut changed = false;
-        for i in 0..n {
-            if classify_at(&pitches, i).is_none() {
-                let fixed = nearest_chord_tone(pitches[i], chord_here[i], scale);
-                if fixed != pitches[i] {
-                    pitches[i] = fixed;
-                    changed = true;
-                }
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
-
-    // Emit with each note's final PitchFunction for the Score IR.
-    let mut out = Vec::with_capacity(n);
-    for i in 0..n {
-        out.push((
-            starts[i],
-            motif.rhythm[i],
-            pitches[i],
-            classify_at(&pitches, i),
-        ));
-    }
-    let repairs = (0..n).filter(|&i| pitches[i] != pitches_dp[i]).count();
-    (out, repairs)
-}
-
-/// True when `beat` sits on an integer-beat onset (a strong beat).
-fn is_strong_beat(beat: f64) -> bool {
-    (beat - beat.round()).abs() < 1e-6
+    let contexts = super::context::analyze(chords, scale);
+    let r = realize_line(&LineRequest {
+        motif,
+        chords,
+        contexts: &contexts,
+        scale,
+        root_degree,
+        octave,
+        start_beat,
+        prev_pitch,
+        style: LineStyle::plain(),
+        max_candidates,
+    });
+    (
+        r.notes
+            .iter()
+            .map(|n| (n.start, n.dur, n.pitch, n.function))
+            .collect(),
+        r.repairs,
+    )
 }
 
 /// The start beat of the first chord span that begins strictly after `beat` — the next harmonic
@@ -779,74 +1415,6 @@ fn nearest_chord_tone(p: Midi, chord: Option<Chord>, scale: &Scale) -> Midi {
         }
         None => scale.nearest_scale_pitch(p),
     }
-}
-
-/// Up to `cap` pitch candidates near `anchor`, closest-first: chord tones on strong beats,
-/// scale tones on weak ones (chord tones fall out as a subset). Never empty.
-fn candidate_pitches(
-    anchor: Midi,
-    strong: bool,
-    chord: Option<Chord>,
-    scale: &Scale,
-    cap: usize,
-) -> Vec<Midi> {
-    let mut v: Vec<Midi> = Vec::new();
-    for d in 0..=12 {
-        for &m in &[anchor - d, anchor + d] {
-            let pc = pitch_class(m);
-            let ok = if strong {
-                match chord {
-                    Some(ch) => ch.contains_pc(pc),
-                    None => scale.contains_pc(pc),
-                }
-            } else {
-                scale.contains_pc(pc)
-            };
-            if ok && !v.contains(&m) {
-                v.push(m);
-                if v.len() >= cap {
-                    break;
-                }
-            }
-        }
-        if v.len() >= cap {
-            break;
-        }
-    }
-    if v.is_empty() {
-        v.push(scale.nearest_scale_pitch(anchor));
-    }
-    v
-}
-
-/// Weight on a note's distance from its intended (anchor) pitch.
-const ANCHOR_W: f32 = 0.5;
-/// Weight on voice-leading motion between successive realized notes.
-const VL_W: f32 = 0.1;
-/// Penalty for contradicting the original motif's contour direction — dominant on purpose.
-const CONTOUR_PEN: f32 = 10.0;
-/// Penalty for a weak-beat note that isn't a chord tone (passing/neighbor tolerance).
-const WEAK_NONCHORD: f32 = 0.3;
-
-/// Standalone cost of placing pitch `p` at a note (register fit + weak-beat non-chord tax).
-fn node_cost(p: Midi, anchor: Midi, strong: bool, chord: Option<Chord>) -> f32 {
-    let mut c = ANCHOR_W * (p - anchor).abs() as f32;
-    if !strong {
-        let is_chord_tone = chord.is_some_and(|ch| ch.contains_pc(pitch_class(p)));
-        if !is_chord_tone {
-            c += WEAK_NONCHORD;
-        }
-    }
-    c
-}
-
-/// Cost of moving from `pp` to `p` given the motif's intended direction `dir_orig`.
-fn transition_cost(pp: Midi, p: Midi, dir_orig: i32) -> f32 {
-    let mut c = VL_W * (p - pp).abs() as f32;
-    if (p - pp).signum() != dir_orig {
-        c += CONTOUR_PEN;
-    }
-    c
 }
 
 #[cfg(test)]
@@ -1038,5 +1606,134 @@ mod tests {
         let a = realize_phrase(&m, &chords, &s, 0, 4, 0.0, None, 4);
         let b = realize_phrase(&m, &chords, &s, 0, 4, 0.0, None, 4);
         assert_eq!(a, b);
+    }
+
+    // --- Round VII line engine ----------------------------------------------
+
+    fn span(start: f64, dur: f32, chord: Chord) -> ChordSpan {
+        ChordSpan {
+            start_beat: start,
+            dur_beats: dur,
+            chord,
+            function: Function::Tonic,
+            degree: 0,
+            note: "",
+        }
+    }
+
+    /// A ii–V–I in C, one chord per two beats, as spans + contexts.
+    fn two_five_one() -> (Vec<ChordSpan>, Vec<HarmonicContext>, Scale) {
+        let s = Scale::new(0, Mode::Ionian);
+        let chords = vec![
+            span(0.0, 2.0, Chord::new(2, Quality::Min7)),
+            span(2.0, 2.0, Chord::new(7, Quality::Dom7)),
+            span(4.0, 4.0, Chord::new(0, Quality::Maj7)),
+        ];
+        let ctx = super::super::context::analyze(&chords, &s);
+        (chords, ctx, s)
+    }
+
+    fn fusion_request<'a>(
+        motif: &'a Motif,
+        chords: &'a [ChordSpan],
+        contexts: &'a [HarmonicContext],
+        scale: &'a Scale,
+    ) -> LineRequest<'a> {
+        LineRequest {
+            motif,
+            chords,
+            contexts,
+            scale,
+            root_degree: 0,
+            octave: 4,
+            start_beat: 0.0,
+            prev_pitch: None,
+            style: LineStyle::for_language(&MusicalLanguage::fusion_conversation()),
+            max_candidates: 6,
+        }
+    }
+
+    #[test]
+    fn events_keep_the_motif_rhythm_and_rest_only_in_the_interior() {
+        let m = Motif::seed_b(); // six notes: 0.5 x4, 1.0 x2
+        let style = LineStyle::for_language(&MusicalLanguage::fusion_conversation());
+        let ev = melodic_events(&m, 0.0, &style);
+        assert_eq!(ev.len(), m.len());
+        let mut t = 0.0;
+        for (e, r) in ev.iter().zip(&m.rhythm) {
+            assert!((e.onset - t).abs() < 1e-9, "onsets are the motif's");
+            assert!(e.dur <= *r + 1e-6);
+            t += *r as f64;
+        }
+        assert_eq!(ev[0].target, TargetKind::Structural);
+        assert_eq!(ev[ev.len() - 1].target, TargetKind::Structural);
+        assert!(!ev[0].rest && !ev[ev.len() - 1].rest);
+        for e in &ev {
+            assert!(!(e.rest && e.target == TargetKind::Structural));
+        }
+        // At the fusion rate at least one interior gap is articulated (a breath or a rest).
+        let articulated = ev
+            .iter()
+            .zip(&m.rhythm)
+            .filter(|(e, r)| e.rest || (**r - e.dur) >= 0.25)
+            .count();
+        assert!(articulated >= 1, "no internal rest articulated: {ev:?}");
+        // The plain style articulates none and keeps full gates.
+        let plain = melodic_events(&m, 0.0, &LineStyle::plain());
+        assert!(plain
+            .iter()
+            .zip(&m.rhythm)
+            .all(|(e, r)| !e.rest && (e.dur - r).abs() < 1e-6));
+    }
+
+    #[test]
+    fn a_line_through_changes_needs_no_repairs_and_every_note_is_justified() {
+        let (chords, ctx, s) = two_five_one();
+        for motif in [
+            Motif::seed_a(),
+            Motif::seed_b(),
+            Motif::seed_b().transpose(2),
+        ] {
+            let motif = motif.sequence(1, 2);
+            let r = realize_line(&fusion_request(&motif, &chords, &ctx, &s));
+            assert_eq!(r.repairs, 0, "the search had to repair: {:?}", r.notes);
+            assert!(r.notes.iter().all(|n| n.function.is_some()));
+            // Structural targets are stable over their onset harmony.
+            for n in r.notes.iter().filter(|n| n.structural) {
+                let f = n.function.unwrap();
+                assert!(f.is_consonant(), "target {n:?} is not stable");
+            }
+            // No note sustains more than half a beat into a chord it does not belong to.
+            for n in &r.notes {
+                let end = n.start + n.dur as f64;
+                if let Some(next) = chords
+                    .iter()
+                    .find(|c| c.start_beat > n.start + 1e-6 && c.start_beat < end - 0.5)
+                {
+                    assert!(next.chord.contains_pc(pitch_class(n.pitch)), "{n:?} smears");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_fusion_line_uses_connective_motion_and_stays_deterministic() {
+        let (chords, ctx, s) = two_five_one();
+        let mut connective = 0usize;
+        for motif in [Motif::seed_a(), Motif::seed_b()] {
+            let motif = motif.sequence(1, 2);
+            let a = realize_line(&fusion_request(&motif, &chords, &ctx, &s));
+            let b = realize_line(&fusion_request(&motif, &chords, &ctx, &s));
+            assert_eq!(a, b);
+            connective += a
+                .notes
+                .iter()
+                .filter(|n| n.function.is_some_and(|f| !f.is_consonant()))
+                .count();
+        }
+        assert!(
+            connective > 0,
+            "no passing/approach/neighbour motion at all"
+        );
     }
 }

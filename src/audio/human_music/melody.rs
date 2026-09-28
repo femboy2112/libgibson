@@ -40,26 +40,31 @@ pub fn realize_lead(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadReal
             }
             _ => base_octave,
         };
-        let (realized, reps) = super::motif::realize_phrase_reporting(
+        // Targets first, then connectors justified inside the search, spoken in the
+        // performance's language (tension targets, chromatic appetite, internal rests).
+        let line = super::motif::realize_line(&super::motif::LineRequest {
             motif,
-            &perf.chords,
-            &scale,
-            0,
+            chords: &perf.chords,
+            contexts: &perf.contexts,
+            scale: &scale,
+            root_degree: 0,
             octave,
-            st.start_beat,
-            prev_exit,
-            4,
-        );
-        repairs += reps;
-        if let Some(&(_, _, last_pitch, _)) = realized.last() {
-            prev_exit = Some(last_pitch);
+            start_beat: st.start_beat,
+            prev_pitch: prev_exit,
+            style: super::motif::LineStyle::for_language(&perf.language),
+            max_candidates: 6,
+        });
+        repairs += line.repairs;
+        if let Some(last) = line.notes.last() {
+            prev_exit = Some(last.pitch);
         }
-        for (nb, dur, pitch, function) in realized {
+        let base_vel = (0.55 + 0.4 * st.energy).clamp(0.1, 1.0);
+        for ln in line.notes {
             let mut note = Note::new(
-                nb,
-                (dur * 0.9).max(0.1),
-                pitch,
-                (0.55 + 0.4 * st.energy).clamp(0.1, 1.0),
+                ln.start,
+                ln.dur.max(0.1),
+                ln.pitch,
+                (base_vel * (0.9 + 0.1 * ln.accent)).clamp(0.1, 1.0),
                 Role::Lead,
                 Provenance {
                     motif_id: Some(motif.id),
@@ -69,7 +74,7 @@ pub fn realize_lead(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadReal
                     ..Provenance::new(super::form::SectionKind::A)
                 },
             );
-            note.function = function;
+            note.function = ln.function;
             notes.push(note);
         }
     }

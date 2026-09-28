@@ -13,9 +13,27 @@
 use super::score::PitchFunction;
 use super::theory::{pitch_class, Chord, Midi, Scale};
 
-/// Whether `t`'s pitch-class is a tone of `chord` (false when there is no chord).
+/// Whether `t`'s pitch-class is a tone of `chord` (false when there is no chord). Allocation-free:
+/// the realizer's search calls the classifier inside its inner loop.
 fn in_chord(chord: Option<Chord>, t: Midi) -> bool {
-    chord.is_some_and(|c| c.contains_pc(pitch_class(t)))
+    let pc = pitch_class(t);
+    chord.is_some_and(|c| {
+        c.quality
+            .intervals()
+            .iter()
+            .any(|&i| (c.root_pc + i).rem_euclid(12) == pc)
+    })
+}
+
+/// A pitch-class set as a 12-bit mask (bit `pc` set), for [`PitchContext::licensed`].
+pub fn pc_mask(pcs: &[i32]) -> u16 {
+    pcs.iter()
+        .fold(0u16, |m, &pc| m | (1u16 << pc.rem_euclid(12)))
+}
+
+/// Whether `t`'s pitch class is in the 12-bit `mask`.
+fn in_mask(mask: u16, t: Midi) -> bool {
+    mask & (1u16 << pitch_class(t)) != 0
 }
 
 /// How close (in beats) a note must sit to the arrival of the upcoming harmony to read as an
@@ -49,6 +67,10 @@ pub struct PitchContext {
     pub next_boundary: Option<f64>,
     /// Whether the onset falls on a strong beat.
     pub is_strong: bool,
+    /// The tensions the local chord-scale licenses over `cur` (a [`pc_mask`]; `0` = none): a
+    /// 9th/11th/13th a whole step above a chord tone that clashes a semitone above none of them.
+    /// Such a tone is consonant colour over this harmony, not a path that needs neighbours.
+    pub licensed: u16,
 }
 
 impl PitchContext {
@@ -86,6 +108,16 @@ pub fn classify(ctx: &PitchContext, scale: &Scale) -> Option<PitchFunction> {
         return Some(PitchFunction::ChordTone);
     }
 
+    // 1b. A licensed tension of the local palette (the 9th over a minor 7th, the 13th over a
+    //     major chord): consonant colour, under the same sustain rule as a chord tone — its held
+    //     body may not smear into a following harmony it does not belong to.
+    if in_mask(ctx.licensed, pitch) {
+        if ctx.crosses_boundary() && ctx.next_chord.is_some() && !in_chord(ctx.next_chord, pitch) {
+            return None;
+        }
+        return Some(PitchFunction::LicensedExtension);
+    }
+
     // 2. Anticipation: a tone of the UPCOMING chord, sounded before it arrives — but only when that
     //    chord is close enough (within ANTICIPATION_WINDOW) to hear the note as anticipating it. A
     //    distant future chord cannot retroactively justify a note here.
@@ -110,7 +142,10 @@ pub fn classify(ctx: &PitchContext, scale: &Scale) -> Option<PitchFunction> {
 
     // The stepwise-path functions need both neighbours in time.
     if let (Some(pp), Some(np)) = (ctx.prev, ctx.next) {
-        let into_target = |t: Midi| in_chord(ctx.cur, t) || in_chord(ctx.next_chord, t);
+        // A structural pitch: a chord tone (now or of the arriving harmony) or a licensed tension.
+        let into_target = |t: Midi| {
+            in_chord(ctx.cur, t) || in_chord(ctx.next_chord, t) || in_mask(ctx.licensed, t)
+        };
         let d_in = pitch - pp; // motion into this note
         let d_out = np - pitch; // motion out of this note
 
@@ -144,6 +179,20 @@ pub fn classify(ctx: &PitchContext, scale: &Scale) -> Option<PitchFunction> {
             && in_chord(ctx.cur, np)
         {
             return Some(PitchFunction::Appoggiatura);
+        }
+
+        // 8. Enclosure: the previous note and this one bracket a target from opposite sides, each
+        //    within a step of it (above-then-below or below-then-above), and the line then lands on
+        //    the target — the bebop surround.
+        let side_prev = (pp - np).signum();
+        let side_here = (pitch - np).signum();
+        if into_target(np)
+            && side_prev != 0
+            && side_here == -side_prev
+            && (pp - np).abs() <= 2
+            && (pitch - np).abs() <= 2
+        {
+            return Some(PitchFunction::Enclosure);
         }
     }
 
@@ -180,6 +229,7 @@ mod tests {
             next_chord: None,
             next_boundary: None,
             is_strong: true,
+            licensed: 0,
         }
     }
 
@@ -336,6 +386,54 @@ mod tests {
             ..base(62, Some(c_major()))
         };
         assert_eq!(classify(&c, &cmaj_scale()), None);
+    }
+
+    #[test]
+    fn a_licensed_tension_is_colour_not_a_wrong_note() {
+        // D (62) over C major: not a chord tone, but when the local palette licenses the 9th it is
+        // consonant colour even on a strong beat with no stepwise path.
+        let unlicensed = PitchContext {
+            prev: Some(55),
+            next: Some(67),
+            ..base(62, Some(c_major()))
+        };
+        assert_eq!(classify(&unlicensed, &cmaj_scale()), None);
+        let licensed = PitchContext {
+            licensed: pc_mask(&[2, 9]),
+            ..unlicensed
+        };
+        assert_eq!(
+            classify(&licensed, &cmaj_scale()),
+            Some(PitchFunction::LicensedExtension)
+        );
+        // ...but it may not sustain into a harmony it does not belong to (Fmaj7 has no D).
+        let smeared = PitchContext {
+            duration: 2.0,
+            next_chord: Some(Chord::new(5, Quality::Maj7)),
+            next_boundary: Some(1.0),
+            ..licensed
+        };
+        assert_eq!(classify(&smeared, &cmaj_scale()), None);
+    }
+
+    #[test]
+    fn an_enclosure_surrounds_the_target() {
+        // F (65) -> D# (63) -> E (64): above-then-below the E, landing on it.
+        let c = PitchContext {
+            prev: Some(65),
+            next: Some(64),
+            is_strong: false,
+            ..base(63, Some(c_major()))
+        };
+        assert_eq!(classify(&c, &cmaj_scale()), Some(PitchFunction::Enclosure));
+        // A surround whose second note overshoots by more than a step is not an enclosure.
+        let wide = PitchContext {
+            prev: Some(65),
+            next: Some(64),
+            is_strong: false,
+            ..base(61, Some(c_major()))
+        };
+        assert_eq!(classify(&wide, &cmaj_scale()), None);
     }
 
     #[test]
