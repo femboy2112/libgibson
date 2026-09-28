@@ -487,15 +487,58 @@ should be invented). Each is asserted directly in `discourse.rs`'s own tests
 `world_switch` is the weakest of the four probes and is described precisely, not
 oversold, in §7.
 
+### 3.12 Round IV — pitch justification, phrase continuity, and honest measurement
+
+Round IV addresses the two defects the Round III listen exposed: a "kaleidoscope of coherent
+song-fragments spliced together" (motifs that do not flow into one another) and audible "wrong
+notes". It works on the note and the phrase boundary, not the discourse skeleton, and adds an
+independent measurement layer.
+
+- **`PitchFunction` and the jazz principle (`pitch.rs`, `score.rs`).** Every realized lead note now
+  carries a `PitchFunction` against the chord actually sounding beneath it: `ChordTone`, a licensed
+  colour, or the justification a non-chord tone earns — `ChromaticApproach`, `DiatonicPassing`/
+  `ChromaticPassing`, `Neighbor`, `Suspension`, `Anticipation`, `Appoggiatura`, `SlidePath`. A note
+  with no such justification classifies to `None` — an unjustified "wrong note". `realize_phrase`
+  repairs *only* those (snap to the nearest tone of the sounding chord); a note that already carries
+  a reason is never touched. There are no forbidden pitches, only unjustified ones — remove
+  unexplained tension, not tension itself. Measured on the demo, this took BLACK_ICE's lead line from
+  7 unjustified notes to 0; all three worlds are now at 0, enforced by a test.
+- **One definition of "the peak" (`discourse::culmination_index`).** Round III left a second
+  split-brain: the form graph chose its `Climax` family from peak *energy* while the discourse chose
+  `Culminate` from peak *energy+tension* — two different phrases, so the arrangement's "everyone in"
+  landed on one phrase while the melody's hook landed on another. Both now call one
+  `culmination_index`, so the peak is a single phrase and the voices agree on it.
+- **Register continuity (`functor::add_melody`).** Each lead statement carries its exit pitch to the
+  next; an ordinary phrase picks the octave (among its role's base ±1) that connects to the previous
+  statement, while the culmination and licensed ruptures keep their dramatic leap — flow between
+  phrases instead of teleportation.
+- **Honest config (`world.rs`, `synth.rs`).** The dead `allow_extensions` gate was removed; the
+  per-role mix knobs (`pad_mix`/`keys_mix`/`bass_mix`/`lead_mix`), previously declared per-world and
+  ignored, now scale each role's contribution to the music bus.
+- **`RealizationDiagnostics` (`diagnostics.rs`).** A target is not a receipt. Where the discourse
+  diagnostics read the plan's declarations (Round III's `thesis_return_strength` averaged
+  `1 - goal.thematic_distance`, auditing a declaration with itself), these read the notes the synth
+  actually plays: `unjustified_nonchord_notes`, non-rupture `boundary_leap`, `neighbor_similarity`,
+  and a `thesis_return_similarity` measured from realized pitches via `motif_similarity`. On the demo
+  (seed 2112): unjustified 0 across all worlds; neighbour similarity 0.28–0.41; boundary leap max
+  5–10 semitones — the objective picture of what the transport work has and has not yet achieved.
+
+**Still open after Round IV (see §7):** deeper neighbour-relative motif *development* (the measured
+neighbour similarity of ~0.3 shows consecutive statements are still only weakly related — the
+remaining "kaleidoscope"); typed many-to-many obligation settlement; delta-aware semantic grounding;
+a Prelude role so the first audible statement is not classified `Restate`; real `HarmonicLoop`/`Riff`
+grammar objects; and the full adversarial-probe suite. The decisive human listen is still the gate.
+
 ## 4. Engines carried over unchanged from Round I
 
 These pieces of the Round I vertical slice are still in place and were not part of the
 Round II or Round III rewrites:
 
 - **`world::MusicWorld`** — a skin's sonic world / local physics: harmonic vocabulary
-  gates (`use_sevenths`, `allow_extensions`, `allow_chromatic_mediant`,
-  `allow_modal_mixture`, `allow_secondary_dominant`), groove family (tempo, swing, hat
-  subdivision), voicing spread, timbral palette, drum character and production settings.
+  gates (`use_sevenths`, `allow_chromatic_mediant`, `allow_modal_mixture`,
+  `allow_secondary_dominant`), per-role bus mix (`pad_mix`/`keys_mix`/`bass_mix`/`lead_mix`,
+  wired into the synth in Round IV), groove family (tempo, swing, hat subdivision), voicing
+  spread, timbral palette, drum character and production settings.
   A world does not pick notes; it constrains the engines above. Three worlds ship:
   `BLACK_ICE` (dark A Aeolian, straight, 88 BPM), `VAPOR95` (lush F Ionian, swung,
   71 BPM), `SWISS_SIGNAL` (sparse clean C Ionian, straight, 118 BPM).
@@ -556,10 +599,13 @@ Establish→Culminate→Answer→Dissolve in order, the shuffle probe scores str
 and the anti-overfitting synthetic-trace tests in §3.11). It does not and cannot certify
 that a piece sounds good.
 
-## 7. Honest limits (Engineering Alpha, Round III)
+## 7. Honest limits (Engineering Alpha, Round III/IV)
 
-This is Round III of the intended v0.4.0 milestone. It adds a discourse layer on top of
-Round II's identity coherence, but it is candid about what it still does not claim:
+This is Round IV of the intended v0.4.0 milestone. Round IV (§3.12) added pitch justification (no
+unjustified lead notes), healed the second Culminate/Climax split-brain, gave phrases register
+continuity, made the dead `MusicWorld` config honest, and added a `RealizationDiagnostics` layer that
+measures the realized score rather than the plan's own targets. The limits below remain candid about
+what it still does not claim:
 
 - **Perceptual/aesthetic quality remains unproven.** Machine tests (§6, §3.9, §3.10) can
   certify structural, identity, and directional invariants; they cannot certify that the
