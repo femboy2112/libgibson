@@ -115,3 +115,71 @@ reprojects the whole frame each source frame — the contrast case for the spars
 > designed, temporally-stabilized background as ordinary two-colour Braille surfaces —
 > exploiting the greenscreen's ~80% transparency so only the subject's bounding box is
 > reprojected each frame, holding source cadence with ~7× CPU headroom and no GPU.
+
+## Reaction cut: compositing into an existing terminal-native Surface
+
+`temporal_video_compositor` keys a subject over a *designed* background. The second
+flagship, `libgibson_intro_reaction`, goes further: it composites the keyed subject
+**into the existing `libgibson_intro` short film** as though the subject is reacting
+to it while it unfolds — a directed edit, not a video in a box.
+
+The load-bearing property is that the original film is not degraded. The base intro
+`Surface` is generated exactly as `libgibson_intro` does (its `frame()` is reused
+verbatim — one renderer), and only the cells the transformed keyed subject actually
+covers are patched. Every other cell is byte-identical to the intro, so the crisp
+terminal-native text, wireframes and title survive untouched right up to the
+subject's silhouette, and a moving subject's vacated trail is the original film again
+the instant it leaves. Per touched cell the compositor reconstructs the underlying
+cell to a logical 2×4 RGB tile (Braille mask, half-block and space decoded exactly;
+ordinary text a documented conservative fallback used only *under* the subject),
+inverse-samples and keys the foreground, alpha-composites per subpixel (byte-space by
+default; opt-in linear-light and bilinear-on-premultiplied to suppress green edge
+halos when a beat zooms), and re-projects that one tile through the same subcell
+projector.
+
+Two clocks stay independent so the original film's determinism is preserved: an
+**edit clock** (what `--at`/`--stage` seek) and the **intro narrative clock**, which a
+cue may `Continue`, `Hold` or `Slow` — letting a reaction run past the film's 72 s
+over a held final frame without pretending the film became longer. Given an edit
+time, the active cue, base-intro time, source window and transform are all computed
+deterministically; nothing reads wall-clock time on the frame path.
+
+### Measured (release, `--profile`, base-intro generation vs the local patch)
+
+```
+120x36-ish grid (120x32 cells):
+  normal (city reveal) : base 3756 us + patch 1220 us = 4976 us   composited 257/3840 cells (6.7%)
+  punch  (escalate)    : base 6794 us + patch 3572 us = 10365 us  composited 831/3840 cells (21.6%)
+  quiet  (ascent)      : base 5310 us + patch  501 us = 5811 us   composited 111/3840 cells (2.9%)
+  full-grid reproject (avoided)                        = 13194 us/frame
+```
+
+The reaction layer adds a small local patch (~0.5–3.6 ms) on top of the intro's own
+native render; reprojecting the whole composited frame would cost ~13 ms. Because the
+subject touches only 3–22% of the grid, the projector runs on a small minority of
+cells — the same sparsity lever as the pure keyed-video path, here exploited against
+a *live* rendered Surface rather than a designed background.
+
+### Running it
+
+```
+cargo run --release --example libgibson_intro_reaction              # live, plays the edit
+cargo run --release --example libgibson_intro_reaction -- --at=14   # seek the edit clock
+cargo run --release --example libgibson_intro_reaction -- --stage=city_reveal --freeze
+cargo run --release --example libgibson_intro_reaction -- --profile # headless receipts
+cargo run --release --example libgibson_intro_reaction -- --no-reaction   # base intro only
+```
+
+It bakes only the ten short cue windows it uses (never the full clip) and discovers a
+greenscreen clip in `~/Downloads`, or takes `--clip=PATH`. `--smooth` (bilinear) and
+`--linear` (linear-light matte) trade cost for edge quality.
+
+### What it is and is not
+
+This is a genuine hardened capability — a keyed live-action reaction coherently edited
+into an existing terminal-native cinematic Surface without degrading it — not
+"terminal video playback". At terminal-cell resolution a smooth photographic region
+(a cheek, a flat shirt) collapses to near-uniform Braille cells; detail survives at
+edges and high-contrast features (hair, sunglasses, folds). The subject reads as a
+person built from terminal cells, which is the point. The source clip is a local
+stress-test asset and is **not** shipped.
