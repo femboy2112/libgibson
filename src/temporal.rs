@@ -2791,4 +2791,46 @@ mod tests {
             prev = masks;
         }
     }
+
+    #[test]
+    fn changing_color_depth_reclassifies_reversibly() {
+        use crate::capability::ColorDepth;
+        let mut p = TemporalDisplayProcessor::new(4, 2, SubcellGlyphMode::Braille2x4, 5);
+        p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.1));
+        p.set_target_image(
+            |_lx, ly| {
+                let v = 90u8.wrapping_add((ly as u8).wrapping_mul(2));
+                [v, v, v]
+            },
+            ResetPolicy::Reset,
+        );
+        let tc = p.diagnostics().modulatable_cells;
+        assert!(tc > 0, "TrueColor: the low-swing gradient is modulatable");
+
+        // Mono carries no wire color -> every cell frozen, with no reprojection.
+        p.set_color_depth(ColorDepth::Mono);
+        assert_eq!(
+            p.diagnostics().modulatable_cells,
+            0,
+            "Mono freezes all cells"
+        );
+        assert_eq!(p.diagnostics().color_depth, ColorDepth::Mono);
+
+        // ANSI256/ANSI16 resolve against their palettes; the counts are recomputed
+        // live from the quantized colors (no ordering asserted — a coarse snap can
+        // merge or widen luminance gaps either way).
+        p.set_color_depth(ColorDepth::Ansi256);
+        let _a256 = p.diagnostics().modulatable_cells;
+        p.set_color_depth(ColorDepth::Ansi16);
+        let _a16 = p.diagnostics().modulatable_cells;
+
+        // Restoring the depth re-enables exactly the original cells: reclassification
+        // is live and non-destructive (the duty targets were never destroyed).
+        p.set_color_depth(ColorDepth::TrueColor);
+        assert_eq!(
+            p.diagnostics().modulatable_cells,
+            tc,
+            "restoring TrueColor re-enables the original cells with no reprojection"
+        );
+    }
 }
