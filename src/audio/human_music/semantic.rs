@@ -184,8 +184,8 @@ impl SemanticTrace {
     pub fn state_at(&self, beat: f64) -> SemanticState {
         self.events
             .iter()
-            .filter(|e| e.at_beat <= beat)
-            .last()
+            .rev()
+            .find(|e| e.at_beat <= beat)
             .map(|e| e.state)
             .unwrap_or_default()
     }

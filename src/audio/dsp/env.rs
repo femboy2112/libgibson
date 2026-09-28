@@ -4,6 +4,9 @@
 //! envelope's shape is sample-rate independent. Outputs are click-safe (continuous) as
 //! long as the gate is toggled while the envelope is running.
 
+// `next()` is the deliberate per-sample generator idiom shared by every DSP voice.
+#![allow(clippy::should_implement_trait)]
+
 /// ADSR stage.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Stage {

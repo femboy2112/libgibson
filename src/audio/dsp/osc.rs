@@ -6,6 +6,10 @@
 //! All generators are pure per-sample state machines: construct once, then call
 //! [`Osc::next`] — no allocation on the audio path.
 
+// `next()` is the deliberate per-sample generator idiom shared by every DSP voice; it is
+// intentionally not `Iterator::next`.
+#![allow(clippy::should_implement_trait)]
+
 /// Oscillator waveform.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Wave {

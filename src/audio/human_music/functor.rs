@@ -164,7 +164,7 @@ fn add_bass(
                 // Chromatic/scale approach to the next root.
                 let next_root = pitch_near(next_root_pc, bass_center);
                 let dir = (next_root - root).signum();
-                (next_root - dir.max(-1).min(1), "approach")
+                (next_root - dir.clamp(-1, 1), "approach")
             } else if energy > 0.6 && rng.chance(0.3) {
                 // Fifth or octave displacement for drive.
                 (pitch_near((root_pc + 7).rem_euclid(12), bass_center), "fifth")

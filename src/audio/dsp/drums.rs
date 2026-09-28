@@ -6,6 +6,9 @@
 //! pull mono samples with `next()`; `is_active()` reports whether it still sounds. Voices
 //! are one-shot and retriggerable. World-specific character comes from the `*Params`.
 
+// `next()` is the deliberate per-sample generator idiom shared by every DSP voice.
+#![allow(clippy::should_implement_trait)]
+
 use super::env::ExpDecay;
 use super::filter::Svf;
 use super::osc::{Noise, Osc, Wave};

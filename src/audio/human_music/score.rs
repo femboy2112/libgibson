@@ -205,7 +205,7 @@ impl Score {
                 line = String::from("  ");
             }
         }
-        if line.trim().len() > 0 {
+        if !line.trim().is_empty() {
             let _ = writeln!(s, "{line}");
         }
         let (lo, hi) = self.pitch_range().unwrap_or((0, 0));

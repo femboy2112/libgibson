@@ -13,7 +13,7 @@
 use super::theory::Function;
 
 /// How developed the running motif is (path memory, not just "which motif").
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct MotifState {
     /// Stable motif identity index (which seed).
     pub id: u8,
@@ -21,16 +21,6 @@ pub struct MotifState {
     pub development: u8,
     /// Current transposition in scale degrees (path-accumulated).
     pub transpose: i8,
-}
-
-impl Default for MotifState {
-    fn default() -> Self {
-        MotifState {
-            id: 0,
-            development: 0,
-            transpose: 0,
-        }
-    }
 }
 
 /// An object of 𝓜.
@@ -121,7 +111,7 @@ pub struct MorphismCost {
 
 impl MorphismCost {
     /// Sum two costs (composition of morphisms adds their costs — the enriched structure).
-    pub fn add(self, o: MorphismCost) -> MorphismCost {
+    pub fn combine(self, o: MorphismCost) -> MorphismCost {
         MorphismCost {
             voice_leading: self.voice_leading + o.voice_leading,
             tension_error: self.tension_error + o.tension_error,
@@ -298,7 +288,7 @@ pub fn compose(intent: MusicIntent, seq: &[IntentMorphism]) -> (MusicIntent, Mor
     for &morph in seq {
         let (nm, nc) = morph.apply(m);
         m = nm;
-        c = c.add(nc);
+        c = c.combine(nc);
     }
     (m, c)
 }
@@ -325,7 +315,7 @@ mod tests {
         let (m1, c1) = IntentMorphism::Prepare.apply(a);
         let (m2, c2) = IntentMorphism::Resolve.apply(m1);
         assert_eq!(seq_state, m2);
-        assert_eq!(seq_cost, c1.add(c2));
+        assert_eq!(seq_cost, c1.combine(c2));
     }
 
     #[test]

@@ -201,14 +201,13 @@ impl Reverb {
     #[inline]
     pub fn process_stereo(&mut self, l: f32, r: f32) -> (f32, f32) {
         let input = (l + r) * 0.5;
-        let mut o = [0.0f32; 4];
         for i in 0..4 {
             let d = (self.base_ms[i] * 0.001 * self.sr * self.size).max(1.0);
             let raw = self.lines[i].tap(d);
             // One-pole lowpass damping in the feedback path.
             self.damp_state[i] += self.damp * (raw - self.damp_state[i]);
-            o[i] = self.damp_state[i];
         }
+        let o = self.damp_state;
         // Normalized Hadamard mix (0.5 factor keeps it orthonormal / energy-preserving).
         let m0 = 0.5 * (o[0] + o[1] + o[2] + o[3]);
         let m1 = 0.5 * (o[0] - o[1] + o[2] - o[3]);
