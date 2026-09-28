@@ -205,6 +205,9 @@ pub struct PerformancePlan {
     pub stage: Stage,
     /// How actions were reconciled with the arrangement envelope before realization.
     pub admissions: Vec<AdmissionRecord>,
+    /// The plan's discourse obligations with each settlement bound to the concrete action that
+    /// discharges it in THIS performance (a paid suspended cadence cites its resolution).
+    pub obligations: super::discourse::ObligationLedger,
 }
 
 impl PerformancePlan {
@@ -293,6 +296,16 @@ impl PerformancePlan {
         // 6. The ensemble per bar.
         let ensemble = plan_ensemble(plan, &actions, &statements, &interactions, &lang, &stage);
 
+        // 7. Bind every settled discourse debt to the action that discharges it here.
+        let mut obligations = plan.discourse.ledger.clone();
+        super::discourse::bind_settlement_witnesses(&mut obligations, &actions, |ix| {
+            plan.form
+                .phrases
+                .get(ix as usize)
+                .map(|p| (p.start_beat(), p.end_beat()))
+                .unwrap_or((0.0, 0.0))
+        });
+
         PerformancePlan {
             language: lang,
             region,
@@ -313,6 +326,7 @@ impl PerformancePlan {
             opportunities: ip.opportunities,
             stage,
             admissions,
+            obligations,
         }
     }
 

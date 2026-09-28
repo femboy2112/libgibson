@@ -186,7 +186,21 @@ fn sections_from_plan(plan: &CompositionPlan) -> Vec<Section> {
 /// decides before anybody plays; this pass only writes provenance.
 fn stamp_arrangement(score: &mut Score, plan: &CompositionPlan, perf: &PerformancePlan) {
     let form = &plan.form;
+    // The discourse debt an event helps settle: the obligation whose settlement witness is an
+    // action the event performs.
+    let owed: Vec<(super::ids::ActionId, super::ids::ObligationId)> = perf
+        .obligations
+        .obligations
+        .iter()
+        .filter_map(|o| Some((o.settlement?.witness?, o.id)))
+        .collect();
     let stamp = |prov: &mut Provenance, beat: f64, agent: Option<Agent>| {
+        if prov.obligation.is_none() {
+            prov.obligation = owed
+                .iter()
+                .find(|(a, _)| prov.actions.has(*a))
+                .map(|&(_, o)| o);
+        }
         let phrase = *form.phrase_at(beat);
         prov.section = phrase.family.to_section_kind();
         prov.phrase = Some(phrase.ix);
