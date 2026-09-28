@@ -497,6 +497,14 @@ struct SfxVoice {
     active: bool,
     pan: f32,
     vel: f32,
+    // Bounded one-shot lifecycle. Previously an SFX gated its envelope ON and NOTHING ever
+    // gated it off, so it parked in Stage::Sustain forever (a held tone that rang to the end of
+    // the render, and a permanently-occupied voice slot). Mirrors the melodic SynthVoice: count
+    // down to a note-off so attack+decay+hold+release is finite. `sr` lets trigger() turn the
+    // kind's declared hold seconds into a sample count.
+    remaining: i64,
+    gated_off: bool,
+    sr: f32,
 }
 
 impl SfxVoice {
@@ -511,6 +519,9 @@ impl SfxVoice {
             active: false,
             pan: 0.0,
             vel: 0.0,
+            remaining: 0,
+            gated_off: true,
+            sr,
         }
     }
 
@@ -521,14 +532,9 @@ impl SfxVoice {
     fn trigger(&mut self, kind: SfxKind, freqs: [f32; 2], vel: f32) {
         self.osc_a.set(freqs[0], 2.0, 1.5);
         self.osc_b.set_freq(freqs[1]);
-        let (a, d, s, r) = match kind {
-            SfxKind::Acquire => (0.002, 0.08, 0.0, 0.06),
-            SfxKind::Confirm => (0.003, 0.18, 0.2, 0.2),
-            SfxKind::Warning => (0.004, 0.25, 0.3, 0.15),
-            SfxKind::Danger => (0.001, 0.3, 0.0, 0.2),
-            SfxKind::Transition => (0.05, 0.3, 0.3, 0.3),
-            SfxKind::Impact => (0.0005, 0.2, 0.0, 0.12),
-        };
+        // The envelope is the kind's own declared property (score.rs) — the synth no longer keeps
+        // a private second copy that could drift from it.
+        let (a, d, s, r) = kind.envelope();
         self.amp.set(a, d, s, r);
         self.amp.gate_on();
         self.filt.set(
@@ -547,6 +553,10 @@ impl SfxVoice {
         };
         self.active = true;
         self.vel = vel;
+        // Arm the note-off: hold through attack + decay + the kind's declared hold, then gate off
+        // so the release tail carries it to silence. This is what makes the gesture finite.
+        self.remaining = (((a + d + kind.hold_secs()) * self.sr).round() as i64).max(1);
+        self.gated_off = false;
     }
 
     fn next(&mut self) -> (f32, f32) {
@@ -556,6 +566,13 @@ impl SfxVoice {
         }
         let raw = self.osc_a.next() * 0.6 + self.osc_b.next() * 0.4;
         let y = self.filt.process(raw) * a * self.vel * 0.5;
+        // Bounded lifecycle: when the hold expires, gate off exactly once; the ADSR release then
+        // brings the voice to Idle and frees the slot. No SFX can sustain indefinitely.
+        self.remaining -= 1;
+        if self.remaining <= 0 && !self.gated_off {
+            self.amp.gate_off();
+            self.gated_off = true;
+        }
         pan(y, self.pan)
     }
 }
@@ -577,6 +594,99 @@ fn sfx_freqs(kind: SfxKind, scale: &Scale) -> [f32; 2] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // P0 REGRESSION (written to FAIL on the pre-fix code): a triggered SFX voice must reach a
+    // bounded end. Pre-fix, SfxVoice::trigger() gates the ADSR on and NOTHING ever gates it off,
+    // so the envelope parks in Stage::Sustain forever (env.rs) — a Transition (sustain 0.3) rings
+    // to the end of the render (the maintainer's "background voice gets stuck on a chord and
+    // hangs"). Three seconds is far past any legitimate SFX lifetime.
+    #[test]
+    fn repro_sustained_sfx_hangs_forever() {
+        let sr = 48_000.0f32;
+        let mut v = SfxVoice::new(sr);
+        v.trigger(SfxKind::Transition, [440.0, 660.0], 1.0);
+        for _ in 0..(sr as usize * 3) {
+            v.next();
+        }
+        assert!(
+            !v.active(),
+            "Transition SFX voice still active after 3s — it hangs forever"
+        );
+    }
+
+    #[test]
+    fn every_sfx_kind_dies_within_its_declared_lifetime() {
+        // No SFX may outlive its declared bound. Render each kind for exactly its
+        // max_lifetime_secs and assert the voice is (a) inactive and (b) silent by then — this is
+        // what makes the Warning *tritone* and the Transition tone SHORT gestures rather than
+        // hanging chords. (The reverb bus may still be decaying a finite tail afterward; that is a
+        // shared effect, not this oscillator — the point is the oscillator has stopped feeding it.)
+        let sr = 48_000.0f32;
+        for kind in SfxKind::ALL {
+            let mut v = SfxVoice::new(sr);
+            v.trigger(kind, [440.0, 660.0], 1.0);
+            let bound = (kind.max_lifetime_secs() * sr).ceil() as usize;
+            let tail_start = bound - bound / 10; // last 10% is well past the release
+            let mut tail_peak = 0.0f32;
+            for i in 0..bound {
+                let (l, r) = v.next();
+                if i >= tail_start {
+                    tail_peak = tail_peak.max(l.abs()).max(r.abs());
+                }
+            }
+            assert!(
+                !v.active(),
+                "{kind:?}: still active at its declared max lifetime ({:.2}s) — SFX must be bounded",
+                kind.max_lifetime_secs()
+            );
+            assert!(
+                tail_peak < 1e-3,
+                "{kind:?}: still audible (peak {tail_peak}) at the end of its declared lifetime"
+            );
+        }
+    }
+
+    #[test]
+    fn four_sfx_voices_service_ten_sequential_events() {
+        // The pool is four voices. Ten SFX arriving 0.5s apart (longer than any kind's ~1.5s
+        // lifetime lets more than three overlap) must ALL find a free voice: pre-fix, the first
+        // four jammed active forever and events 5..10 were silently dropped. After the last event
+        // drains, the pool must be fully free again.
+        let sr = 48_000.0f32;
+        let mut pool: Vec<SfxVoice> = (0..4).map(|_| SfxVoice::new(sr)).collect();
+        let gap = (sr * 0.5) as usize;
+        let mut serviced = 0;
+        for i in 0..10usize {
+            if let Some(v) = pool.iter_mut().find(|v| !v.active()) {
+                v.trigger(SfxKind::ALL[i % SfxKind::ALL.len()], [440.0, 660.0], 1.0);
+                serviced += 1;
+            }
+            for _ in 0..gap {
+                for v in pool.iter_mut() {
+                    if v.active() {
+                        v.next();
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            serviced, 10,
+            "pool exhausted: only {serviced}/10 SFX events found a free voice"
+        );
+        // Drain past the longest possible release, then the pool must be completely idle.
+        for _ in 0..(sr as usize * 2) {
+            for v in pool.iter_mut() {
+                if v.active() {
+                    v.next();
+                }
+            }
+        }
+        assert_eq!(
+            pool.iter().filter(|v| v.active()).count(),
+            0,
+            "an SFX voice is still active after draining — a voice leaked/hung"
+        );
+    }
 
     #[test]
     fn tempo_comes_from_the_score_not_the_world() {

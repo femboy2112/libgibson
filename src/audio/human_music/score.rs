@@ -37,6 +37,56 @@ pub enum SfxKind {
     Impact,
 }
 
+impl SfxKind {
+    /// Every SFX gesture, in a fixed order — for exhaustive lifecycle tests.
+    pub const ALL: [SfxKind; 6] = [
+        SfxKind::Acquire,
+        SfxKind::Confirm,
+        SfxKind::Warning,
+        SfxKind::Danger,
+        SfxKind::Transition,
+        SfxKind::Impact,
+    ];
+
+    /// The voice envelope `(attack, decay, sustain_level, release)` in seconds. `sustain_level`
+    /// is a level in `[0, 1]` that is held only for [`SfxKind::hold_secs`] before the gesture is
+    /// gated off — an SFX is a bounded one-shot, never an indefinitely gated tone. This is the
+    /// single source of truth for the envelope; the synth reads it rather than keeping its own copy.
+    pub fn envelope(self) -> (f32, f32, f32, f32) {
+        match self {
+            SfxKind::Acquire => (0.002, 0.08, 0.0, 0.06),
+            SfxKind::Confirm => (0.003, 0.18, 0.2, 0.20),
+            SfxKind::Warning => (0.004, 0.25, 0.3, 0.15),
+            SfxKind::Danger => (0.001, 0.30, 0.0, 0.20),
+            SfxKind::Transition => (0.05, 0.30, 0.3, 0.30),
+            SfxKind::Impact => (0.0005, 0.20, 0.0, 0.12),
+        }
+    }
+
+    /// How long (seconds) the gesture is held at its sustain level *after* attack+decay, before
+    /// it is gated off. Short and bounded: an SFX is punctuation, not a pad. Kinds whose sustain
+    /// level is zero still get a small hold so the gate-off lands cleanly after the decay.
+    pub fn hold_secs(self) -> f32 {
+        match self {
+            SfxKind::Acquire => 0.02,
+            SfxKind::Confirm => 0.10,
+            SfxKind::Warning => 0.12,
+            SfxKind::Danger => 0.05,
+            SfxKind::Transition => 0.16,
+            SfxKind::Impact => 0.02,
+        }
+    }
+
+    /// A conservative upper bound on the audible lifetime (seconds): `attack + decay + hold` (the
+    /// point at which the voice is gated off) plus a generous release margin — the exponential
+    /// release settles to silence within ~2·release, and we allow 3·release + 50 ms of slack. A
+    /// voice that is not silent and idle by this time is a bug (see the synth's SFX regressions).
+    pub fn max_lifetime_secs(self) -> f32 {
+        let (a, d, _, r) = self.envelope();
+        a + d + self.hold_secs() + r * 3.0 + 0.05
+    }
+}
+
 /// The harmonic **function of a pitch** against the chord sounding beneath it — the vocabulary
 /// that lets the engine *justify* a note instead of forbidding it (the jazz principle: there are
 /// no forbidden pitches, only unjustified ones). A note consonant with the sounding chord is a
