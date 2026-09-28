@@ -45,6 +45,7 @@ pub mod buffer;
 pub mod dsp;
 pub mod graph;
 pub mod human_music;
+pub mod media;
 pub mod render;
 pub mod report;
 pub mod time;
