@@ -10,11 +10,17 @@
 //! prove each measurement catches the exact failure it names (positive / null / mutation
 //! controls). A green diagnostic is evidence of structure, never of taste.
 
+use super::action::{ActionCause, ActionKind, Agent};
+use super::context::common_tones;
 use super::discourse::{Closure, DiscourseRole};
+use super::form::BEATS_PER_BAR;
+use super::intent::IntentMorphism;
 use super::motif::{motif_similarity, MotifIdentity};
+use super::performance::{AccentGrid, PerformancePlan, Transform, STEPS};
 use super::plan::CompositionPlan;
-use super::score::{Note, PitchFunction, Role, Score};
+use super::score::{DrumVoice, Note, PitchFunction, Role, Score};
 use super::theory::{pitch_class, Chord, Function, Midi};
+use super::timeline::IntentTimeline;
 
 /// A vector of structural measurements. Preserve the components — do not collapse to a scalar.
 #[derive(Debug, Clone, PartialEq)]
@@ -869,6 +875,781 @@ impl LeadOutlineDiagnostics {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Round VII: actions, rigidity, contextual harmony. Same contract as everything above — plain
+// counts and ratios a cold reader can recompute, never a verdict on whether it grooves.
+// ---------------------------------------------------------------------------------------------
+
+/// Every [`ActionKind`], in declaration (= label) order, for fixed-order tallies.
+const ACTION_KINDS: [ActionKind; 21] = [
+    ActionKind::Pickup,
+    ActionKind::Push,
+    ActionKind::Pullback,
+    ActionKind::Accelerate,
+    ActionKind::Hit,
+    ActionKind::Break,
+    ActionKind::ReEntry,
+    ActionKind::Hold,
+    ActionKind::Reharmonize,
+    ActionKind::Tonicize,
+    ActionKind::Deflect,
+    ActionKind::Resolve,
+    ActionKind::Displace,
+    ActionKind::Fragment,
+    ActionKind::Sequence,
+    ActionKind::Thicken,
+    ActionKind::Thin,
+    ActionKind::Fill,
+    ActionKind::Call,
+    ActionKind::Answer,
+    ActionKind::Unison,
+];
+
+/// Every [`Agent`], in declaration order.
+const AGENTS: [Agent; 6] = [
+    Agent::Lead,
+    Agent::Keys,
+    Agent::Bass,
+    Agent::Drums,
+    Agent::Pad,
+    Agent::Ensemble,
+];
+
+/// Tally `items` against a fixed `order`, keeping only the entries that occur (so `.len()` of the
+/// result is the number of DISTINCT values seen).
+fn tally<T: Copy + PartialEq>(
+    order: &[T],
+    items: &[T],
+    label: fn(T) -> &'static str,
+) -> Vec<(&'static str, usize)> {
+    order
+        .iter()
+        .map(|&k| (label(k), items.iter().filter(|&&i| i == k).count()))
+        .filter(|&(_, c)| c > 0)
+        .collect()
+}
+
+/// Shannon entropy in bits of a histogram of counts (0 for an empty histogram).
+fn entropy_bits(counts: impl IntoIterator<Item = usize>) -> f32 {
+    let counts: Vec<usize> = counts.into_iter().filter(|&c| c > 0).collect();
+    let total: usize = counts.iter().sum();
+    if total == 0 {
+        return 0.0;
+    }
+    // `p * log2(1/p)` rather than `-p * log2(p)`: a one-bucket histogram is +0.0, not -0.0 —
+    // a perfectly rigid answer should not print as "-0.00 bits" and look like a sign error.
+    counts
+        .iter()
+        .map(|&c| {
+            let p = c as f32 / total as f32;
+            p * (1.0 / p).log2()
+        })
+        .sum()
+}
+
+/// `num / den`, 0 when the denominator is empty.
+fn ratio(num: usize, den: usize) -> f32 {
+    if den == 0 {
+        0.0
+    } else {
+        num as f32 / den as f32
+    }
+}
+
+/// Sorted onset times with near-duplicates (a voiced stab's simultaneous notes) collapsed.
+fn distinct_onsets(mut t: Vec<f64>) -> Vec<f64> {
+    t.sort_by(|a, b| a.total_cmp(b));
+    t.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+    t
+}
+
+/// Whether some time in sorted `ts` lies within `tol` of `t`.
+fn near_any(ts: &[f64], t: f64, tol: f64) -> bool {
+    ts.iter().any(|&x| (x - t).abs() <= tol + 1e-9)
+}
+
+/// **Action diagnostics** — does the music *do* things, and do the players *listen*? Measured on
+/// the [`PerformancePlan`]'s action plan and interactions, plus the realized [`Score`] for the
+/// events that only exist as notes (unisons, counterlines). NOT a quality score.
+///
+/// Round VI failed as "mood shifts and no action": every semantic verb collapsed into scalar
+/// energy/tension. These fields count the verbs directly — which morphisms have an action witness,
+/// how long the band goes without doing anything it did not declare as stasis, who answers whom,
+/// how late, and where in the bar — so the mood-without-action and clockwork-answer probes can be
+/// told apart from the real performance by numbers, not by adjectives.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActionDiagnostics {
+    /// Non-identity (non-`Prolong`) morphisms applied across all intent transitions.
+    pub live_morphisms: usize,
+    /// Live morphisms with neither an action witness nor a recorded deferral. Target 0.
+    pub unwitnessed_morphisms: usize,
+    /// Morphisms the action plan explicitly deferred (with a reason).
+    pub deferred_morphisms: usize,
+    /// Total actions in the plan (lifted morphisms, gesture verbs, calls and answers).
+    pub action_count: usize,
+    /// Actions per kind, in [`ActionKind`] declaration order; only kinds that occur are listed.
+    pub actions_by_kind: Vec<(&'static str, usize)>,
+    /// Actions per bar of the piece.
+    pub actions_per_bar: f32,
+    /// The longest span of `[0, total)` covered by no action window and no declared stasis, in
+    /// beats — accidental inactivity, not an intended still point.
+    pub longest_actionless_span_beats: f64,
+    /// Call initiators across every interaction (answered or not), in [`Agent`] order; only
+    /// agents that occur are listed (so `.len()` is the number of distinct initiators).
+    pub initiators: Vec<(&'static str, usize)>,
+    /// Responders across interactions with a sounding (non-`Silence`) response, same convention.
+    pub responders: Vec<(&'static str, usize)>,
+    /// Interactions whose planned response is a deliberate `Silence`.
+    pub silent_answers: usize,
+    /// Sounding-response latency (beats from the call's end, rounded to 0.5), ascending, with
+    /// counts. Negative latency = the answer overlaps the call.
+    pub latency_histogram: Vec<(f64, usize)>,
+    /// Shannon entropy (bits) of the sixteenth-step-in-bar where sounding responses start. 0 = every
+    /// answer on the same step; 4 = uniform over all sixteen.
+    pub response_placement_entropy: f32,
+    /// Fraction of sounding responses whose `(responder, step)` signature already occurred earlier.
+    pub same_slot_response_recurrence: f32,
+    /// Sounding responses that overlap their call (latency < 0).
+    pub overlapping_responses: usize,
+    /// Sounding responses whose window crosses into a new harmony.
+    pub chord_crossing_responses: usize,
+    /// `unison_actions + realized_unison_points`.
+    pub unison_events: usize,
+    /// Planned actions of kind `Unison`.
+    pub unison_actions: usize,
+    /// Realized ensemble coincidences: time points where at least three of {lead, keys, bass,
+    /// kick/snare} start within 1/32 beat of each other, inside an ensemble `Hit`/`Unison` window.
+    pub realized_unison_points: usize,
+    /// Bass notes realized as a counterline (`prov.role_note == "counter"`).
+    pub counterline_events: usize,
+    /// Of the transitions that apply at least one live morphism, the fraction with at least one
+    /// morphism actually witnessed by an action (a deferral is not a witness).
+    pub semantic_witness_coverage: f32,
+    /// Fraction of backbone gesture slots with at least one action caused by that slot's gesture
+    /// or starting inside the slot (0 when the plan has no backbone).
+    pub backbone_witness_coverage: f32,
+}
+
+impl ActionDiagnostics {
+    /// Measure the actions of `perf` against the intent `timeline` it was lifted from, the `plan`
+    /// (for its backbone slots) and the realized `score`.
+    ///
+    /// `plan` is needed because the backbone timeline lives on the [`CompositionPlan`], not on the
+    /// performance.
+    pub fn measure(
+        timeline: &IntentTimeline,
+        plan: &CompositionPlan,
+        perf: &PerformancePlan,
+        score: &Score,
+    ) -> ActionDiagnostics {
+        let ap = &perf.actions;
+        let total = perf.total_beats.max(0.0);
+
+        // --- The morphism ledger: witnessed, deferred, or neither. ---
+        let mut live_morphisms = 0usize;
+        let mut unwitnessed_morphisms = 0usize;
+        let mut live_transitions = 0usize;
+        let mut witnessed_transitions = 0usize;
+        for (ti, t) in timeline.transitions.iter().enumerate() {
+            let mut live_here = false;
+            let mut witnessed_here = false;
+            for &m in t.applied.iter().filter(|&&m| m != IntentMorphism::Prolong) {
+                live_morphisms += 1;
+                live_here = true;
+                let witnessed = ap.witnesses(ti, m);
+                let deferred = ap
+                    .deferred
+                    .iter()
+                    .any(|d| d.transition == ti && d.morphism == m);
+                witnessed_here |= witnessed;
+                if !witnessed && !deferred {
+                    unwitnessed_morphisms += 1;
+                }
+            }
+            live_transitions += usize::from(live_here);
+            witnessed_transitions += usize::from(witnessed_here);
+        }
+
+        // --- Volume and distribution of action. ---
+        let kinds: Vec<ActionKind> = ap.actions.iter().map(|a| a.kind).collect();
+        let actions_by_kind = tally(&ACTION_KINDS, &kinds, ActionKind::label);
+        let bars = (total / BEATS_PER_BAR).max(1.0);
+        let actions_per_bar = ap.actions.len() as f32 / bars as f32;
+
+        // Coverage sweep: action windows and declared stasis both count as "accounted for".
+        let mut windows: Vec<(f64, f64)> = ap
+            .actions
+            .iter()
+            .map(|a| (a.start_beat.max(0.0), a.end_beat().min(total)))
+            .chain(
+                ap.stasis
+                    .iter()
+                    .map(|s| (s.start_beat.max(0.0), s.end_beat.min(total))),
+            )
+            .filter(|(s, e)| e > s)
+            .collect();
+        windows.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut cursor = 0.0_f64;
+        let mut longest = 0.0_f64;
+        for (s, e) in windows {
+            if s > cursor {
+                longest = longest.max(s - cursor);
+            }
+            cursor = cursor.max(e);
+        }
+        let longest_actionless_span_beats = longest.max(total - cursor);
+
+        // --- Interactions: who calls, who answers, when, and where in the bar. ---
+        let initiators_raw: Vec<Agent> =
+            perf.interactions.iter().map(|i| i.call.initiator).collect();
+        let sounding: Vec<_> = perf
+            .interactions
+            .iter()
+            .filter_map(|i| i.response.as_ref())
+            .filter(|r| r.transform != Transform::Silence)
+            .collect();
+        let silent_answers = perf
+            .interactions
+            .iter()
+            .filter_map(|i| i.response.as_ref())
+            .filter(|r| r.transform == Transform::Silence)
+            .count();
+        let responders_raw: Vec<Agent> = sounding.iter().map(|r| r.responder).collect();
+
+        let mut lat_hist: std::collections::BTreeMap<i64, usize> = Default::default();
+        let mut step_hist = [0usize; STEPS];
+        let mut seen: Vec<(Agent, usize)> = Vec::new();
+        let mut recurring = 0usize;
+        for r in &sounding {
+            *lat_hist
+                .entry((r.latency * 2.0).round() as i64)
+                .or_default() += 1;
+            let step = AccentGrid::step_of(r.start_beat).1.min(STEPS - 1);
+            step_hist[step] += 1;
+            let sig = (r.responder, step);
+            if seen.contains(&sig) {
+                recurring += 1;
+            } else {
+                seen.push(sig);
+            }
+        }
+        let latency_histogram = lat_hist
+            .into_iter()
+            .map(|(q, c)| (q as f64 / 2.0, c))
+            .collect();
+
+        // --- Unisons: planned, and realized as ensemble coincidences inside a Hit/Unison. ---
+        let unison_actions = ap.of_kind(ActionKind::Unison).count();
+        const COINCIDE: f64 = 1.0 / 32.0;
+        let mut onsets: Vec<(f64, u8)> = score
+            .notes
+            .iter()
+            .filter_map(|n| match n.role {
+                Role::Lead => Some((n.start_beat, 0u8)),
+                Role::Keys => Some((n.start_beat, 1)),
+                Role::Bass => Some((n.start_beat, 2)),
+                Role::Pad => None,
+            })
+            .chain(
+                score
+                    .drums
+                    .iter()
+                    .filter(|d| matches!(d.voice, DrumVoice::Kick | DrumVoice::Snare))
+                    .map(|d| (d.start_beat, 3u8)),
+            )
+            .collect();
+        onsets.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let ensemble_window = |t: f64| {
+            ap.actions.iter().any(|a| {
+                a.initiator == Agent::Ensemble
+                    && matches!(a.kind, ActionKind::Hit | ActionKind::Unison)
+                    && t >= a.start_beat - COINCIDE
+                    && t < a.end_beat()
+            })
+        };
+        let mut realized_unison_points = 0usize;
+        let mut i = 0usize;
+        while i < onsets.len() {
+            // A greedy cluster: everything starting within 1/32 beat of the cluster's first onset.
+            let t0 = onsets[i].0;
+            let mut j = i;
+            let mut parts = [false; 4];
+            while j < onsets.len() && onsets[j].0 <= t0 + COINCIDE + 1e-9 {
+                parts[onsets[j].1 as usize] = true;
+                j += 1;
+            }
+            if parts.iter().filter(|&&p| p).count() >= 3 && ensemble_window(t0) {
+                realized_unison_points += 1;
+            }
+            i = j;
+        }
+
+        let counterline_events = score
+            .notes
+            .iter()
+            .filter(|n| n.role == Role::Bass && n.prov.role_note == "counter")
+            .count();
+
+        // --- Does every spine slot get a verb? ---
+        let backbone_witness_coverage = match &plan.backbone {
+            Some(bb) if !bb.slots.is_empty() => {
+                let covered = bb
+                    .slots
+                    .iter()
+                    .enumerate()
+                    .filter(|(si, slot)| {
+                        let (s, e) = (slot.start_beat(), slot.end_beat());
+                        ap.actions.iter().any(|a| {
+                            matches!(a.cause, ActionCause::Gesture { slot, gesture }
+                                if slot == *si && gesture == bb.slots[*si].gesture)
+                                || (a.start_beat >= s - 1e-6 && a.start_beat < e - 1e-6)
+                        })
+                    })
+                    .count();
+                ratio(covered, bb.slots.len())
+            }
+            _ => 0.0,
+        };
+
+        ActionDiagnostics {
+            live_morphisms,
+            unwitnessed_morphisms,
+            deferred_morphisms: ap.deferred.len(),
+            action_count: ap.actions.len(),
+            actions_by_kind,
+            actions_per_bar,
+            longest_actionless_span_beats,
+            initiators: tally(&AGENTS, &initiators_raw, Agent::label),
+            responders: tally(&AGENTS, &responders_raw, Agent::label),
+            silent_answers,
+            latency_histogram,
+            response_placement_entropy: entropy_bits(step_hist),
+            same_slot_response_recurrence: ratio(recurring, sounding.len()),
+            overlapping_responses: sounding.iter().filter(|r| r.latency < 0.0).count(),
+            chord_crossing_responses: sounding.iter().filter(|r| r.crosses_chord).count(),
+            unison_events: unison_actions + realized_unison_points,
+            unison_actions,
+            realized_unison_points,
+            counterline_events,
+            semantic_witness_coverage: ratio(witnessed_transitions, live_transitions),
+            backbone_witness_coverage,
+        }
+    }
+
+    /// A compact, human-readable report. Counts of verbs, not a verdict on the performance.
+    pub fn report(&self) -> String {
+        use std::fmt::Write;
+        let pairs = |v: &[(&'static str, usize)]| {
+            v.iter()
+                .map(|(k, c)| format!("{k}={c}"))
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let lat = self
+            .latency_histogram
+            .iter()
+            .map(|(l, c)| format!("{l:+.1}:{c}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut s = String::new();
+        let _ = writeln!(
+            s,
+            "action diagnostics (verbs + listening — NOT a quality score):"
+        );
+        let _ = writeln!(
+            s,
+            "  morphisms live={} unwitnessed={} deferred={}  semantic_witness_coverage={:.2} backbone_witness_coverage={:.2}",
+            self.live_morphisms,
+            self.unwitnessed_morphisms,
+            self.deferred_morphisms,
+            self.semantic_witness_coverage,
+            self.backbone_witness_coverage
+        );
+        let _ = writeln!(
+            s,
+            "  actions={} per_bar={:.2} longest_actionless_span={:.2}b  by_kind: {}",
+            self.action_count,
+            self.actions_per_bar,
+            self.longest_actionless_span_beats,
+            pairs(&self.actions_by_kind)
+        );
+        let _ = writeln!(
+            s,
+            "  initiators: {}  responders: {}  silent_answers={}",
+            pairs(&self.initiators),
+            pairs(&self.responders),
+            self.silent_answers
+        );
+        let _ = writeln!(
+            s,
+            "  latency[{lat}]  placement_entropy={:.2}b same_slot_recurrence={:.2} overlapping={} chord_crossing={}",
+            self.response_placement_entropy,
+            self.same_slot_response_recurrence,
+            self.overlapping_responses,
+            self.chord_crossing_responses
+        );
+        let _ = writeln!(
+            s,
+            "  unison_events={} (actions={} realized_points={})  counterline_events={}",
+            self.unison_events,
+            self.unison_actions,
+            self.realized_unison_points,
+            self.counterline_events
+        );
+        s
+    }
+}
+
+/// A part of the realized score whose per-bar onset pattern [`onset_vectors`] can extract.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnsetPart {
+    Keys,
+    Bass,
+    Lead,
+    Pad,
+    /// Kick hits with velocity `>= 0.3` (ghosts excluded).
+    Kick,
+    /// Snare hits with velocity `>= 0.3` (ghosts excluded).
+    Snare,
+    /// Every drum hit, any voice, any velocity.
+    DrumsAll,
+}
+
+/// The velocity below which a kick/snare hit counts as a ghost for [`OnsetPart::Kick`]/[`OnsetPart::Snare`].
+const GHOST_VELOCITY: f32 = 0.3;
+
+/// Per-bar 16-bit onset vectors for `part`: bit `k` of bar `b` is set iff an onset of that part
+/// starts in `[b*bar + k*step - step/2, b*bar + k*step + step/2)`, with `step = bar / 16`. The
+/// vector has one entry per bar of `score.total_beats` (rounded up).
+pub fn onset_vectors(score: &Score, part: OnsetPart) -> Vec<u16> {
+    let bpb = if score.beats_per_bar > 0.0 {
+        score.beats_per_bar
+    } else {
+        BEATS_PER_BAR
+    };
+    let step = bpb / STEPS as f64;
+    let bars = (score.total_beats / bpb).ceil().max(0.0) as usize;
+    let mut v = vec![0u16; bars];
+    let times: Vec<f64> = match part {
+        OnsetPart::Keys | OnsetPart::Bass | OnsetPart::Lead | OnsetPart::Pad => {
+            let role = match part {
+                OnsetPart::Keys => Role::Keys,
+                OnsetPart::Bass => Role::Bass,
+                OnsetPart::Lead => Role::Lead,
+                _ => Role::Pad,
+            };
+            score.role_notes(role).map(|n| n.start_beat).collect()
+        }
+        OnsetPart::Kick | OnsetPart::Snare => {
+            let voice = if part == OnsetPart::Kick {
+                DrumVoice::Kick
+            } else {
+                DrumVoice::Snare
+            };
+            score
+                .drums
+                .iter()
+                .filter(|d| d.voice == voice && d.velocity >= GHOST_VELOCITY)
+                .map(|d| d.start_beat)
+                .collect()
+        }
+        OnsetPart::DrumsAll => score.drums.iter().map(|d| d.start_beat).collect(),
+    };
+    for t in times {
+        let idx = ((t + step / 2.0) / step).floor();
+        if idx < 0.0 {
+            continue;
+        }
+        let idx = idx as usize;
+        let (bar, k) = (idx / STEPS, idx % STEPS);
+        if let Some(slot) = v.get_mut(bar) {
+            *slot |= 1 << k;
+        }
+    }
+    v
+}
+
+/// Recurrence and variety of per-bar patterns: `(fraction of non-empty bars equal to some earlier
+/// bar, distinct non-empty patterns)`.
+fn pattern_recurrence<T: Copy + Eq + Ord + Default>(bars: &[T]) -> (f32, usize) {
+    let mut seen: std::collections::BTreeSet<T> = Default::default();
+    let (mut nonempty, mut repeats) = (0usize, 0usize);
+    for &b in bars.iter().filter(|&&b| b != T::default()) {
+        nonempty += 1;
+        if !seen.insert(b) {
+            repeats += 1;
+        }
+    }
+    (ratio(repeats, nonempty), seen.len())
+}
+
+/// **Rigidity diagnostics** — how often each accompanying part replays the same bar. Measured
+/// from the realized [`Score`] alone. NOT a quality score: a groove is *supposed* to recur; these
+/// numbers say how much, so a form-locked accompaniment (every bar the same onset vector) can be
+/// told from one that breathes with the plan.
+///
+/// The Round VI rigidity witness is kept explicitly: `keys_fixed_offset_share` counts keys onsets
+/// landing at a fixed offset (0.5 or 2.5 beats) into their chord span, the exact stamp the old
+/// comping pattern left.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RigidityDiagnostics {
+    /// Fraction of non-empty keys bars whose onset vector equals an earlier bar's.
+    pub keys_onset_recurrence: f32,
+    /// Distinct non-empty keys onset vectors.
+    pub keys_distinct_patterns: usize,
+    /// Fraction of non-empty bass bars whose onset vector equals an earlier bar's.
+    pub bass_onset_recurrence: f32,
+    /// Distinct non-empty bass onset vectors.
+    pub bass_distinct_patterns: usize,
+    /// Fraction of non-empty drum bars whose (kick, snare) non-ghost vector pair equals an earlier
+    /// bar's.
+    pub drums_onset_recurrence: f32,
+    /// Distinct non-empty (kick, snare) vector pairs.
+    pub drums_distinct_patterns: usize,
+    /// Fraction of distinct keys onsets sitting exactly 0.5 or 2.5 beats into their chord span.
+    pub keys_fixed_offset_share: f32,
+    /// Fraction of distinct bass onsets within 1/16 beat of a kick onset (bass slaved to kick).
+    pub bass_kick_dependence: f32,
+    /// Fraction of distinct kick onsets with a bass onset within 1/16 beat (kick doubled by bass).
+    pub kick_bass_coverage: f32,
+}
+
+impl RigidityDiagnostics {
+    /// Measure the rigidity of the realized `score`.
+    pub fn measure(score: &Score) -> RigidityDiagnostics {
+        let keys = onset_vectors(score, OnsetPart::Keys);
+        let bass = onset_vectors(score, OnsetPart::Bass);
+        let kick = onset_vectors(score, OnsetPart::Kick);
+        let snare = onset_vectors(score, OnsetPart::Snare);
+        let drums: Vec<u32> = kick
+            .iter()
+            .zip(&snare)
+            .map(|(&k, &s)| ((k as u32) << 16) | s as u32)
+            .collect();
+        let (keys_onset_recurrence, keys_distinct_patterns) = pattern_recurrence(&keys);
+        let (bass_onset_recurrence, bass_distinct_patterns) = pattern_recurrence(&bass);
+        let (drums_onset_recurrence, drums_distinct_patterns) = pattern_recurrence(&drums);
+
+        let keys_t = distinct_onsets(score.role_notes(Role::Keys).map(|n| n.start_beat).collect());
+        let bass_t = distinct_onsets(score.role_notes(Role::Bass).map(|n| n.start_beat).collect());
+        let kick_t = distinct_onsets(
+            score
+                .drums
+                .iter()
+                .filter(|d| d.voice == DrumVoice::Kick)
+                .map(|d| d.start_beat)
+                .collect(),
+        );
+
+        // The R6 stamp: keys at +0.5 / +2.5 beats into the chord span, whatever the harmony did.
+        let (mut with_chord, mut fixed) = (0usize, 0usize);
+        for &t in &keys_t {
+            let Some(span) = score
+                .chords
+                .iter()
+                .filter(|c| c.start_beat <= t + 1e-6)
+                .max_by(|a, b| a.start_beat.total_cmp(&b.start_beat))
+            else {
+                continue;
+            };
+            with_chord += 1;
+            let off = t - span.start_beat;
+            if (off - 0.5).abs() < 0.02 || (off - 2.5).abs() < 0.02 {
+                fixed += 1;
+            }
+        }
+
+        const LOCK: f64 = 1.0 / 16.0;
+        let bass_on_kick = bass_t
+            .iter()
+            .filter(|&&t| near_any(&kick_t, t, LOCK))
+            .count();
+        let kick_with_bass = kick_t
+            .iter()
+            .filter(|&&t| near_any(&bass_t, t, LOCK))
+            .count();
+
+        RigidityDiagnostics {
+            keys_onset_recurrence,
+            keys_distinct_patterns,
+            bass_onset_recurrence,
+            bass_distinct_patterns,
+            drums_onset_recurrence,
+            drums_distinct_patterns,
+            keys_fixed_offset_share: ratio(fixed, with_chord),
+            bass_kick_dependence: ratio(bass_on_kick, bass_t.len()),
+            kick_bass_coverage: ratio(kick_with_bass, kick_t.len()),
+        }
+    }
+
+    /// A compact, human-readable report. How often bars repeat, not whether they should.
+    pub fn report(&self) -> String {
+        use std::fmt::Write;
+        let mut s = String::new();
+        let _ = writeln!(
+            s,
+            "rigidity diagnostics (bar recurrence — NOT a quality score):"
+        );
+        let _ = writeln!(
+            s,
+            "  onset_recurrence keys={:.2} bass={:.2} drums={:.2}  distinct_patterns keys={} bass={} drums={}",
+            self.keys_onset_recurrence,
+            self.bass_onset_recurrence,
+            self.drums_onset_recurrence,
+            self.keys_distinct_patterns,
+            self.bass_distinct_patterns,
+            self.drums_distinct_patterns
+        );
+        let _ = writeln!(
+            s,
+            "  keys_fixed_offset_share={:.2}  bass_kick_dependence={:.2} kick_bass_coverage={:.2}",
+            self.keys_fixed_offset_share, self.bass_kick_dependence, self.kick_bass_coverage
+        );
+        s
+    }
+}
+
+/// Every [`HarmonicRelation`] label, in declaration order (payloads ignored).
+const RELATION_LABELS: [&str; 10] = [
+    "arrival",
+    "prolong",
+    "depart",
+    "prepare",
+    "dominant-to",
+    "tonicize",
+    "deflected",
+    "modal-shift",
+    "pedal",
+    "chromatic",
+];
+
+/// **Harmony-context diagnostics** — is the harmony a sequence of *relations* moving through local
+/// palettes, or one key with chords stapled on? Measured on the [`PerformancePlan`]'s
+/// [`HarmonicContext`] timeline and deflect witnesses. NOT a quality score.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HarmonyContextDiagnostics {
+    /// Harmonic contexts analysed.
+    pub contexts: usize,
+    /// Consecutive contexts whose palette chord-scale (`palette.scale`: tonic + mode) differs. Note
+    /// this is the *chord-scale*, so a Dorian ii after an Ionian I counts even inside one key.
+    pub region_transitions: usize,
+    /// Relations per [`HarmonicRelation`] label, in declaration order; only labels that occur.
+    pub relations: Vec<(&'static str, usize)>,
+    /// Fraction of consecutive context pairs where every guide tone of the first is held or moves
+    /// to a guide tone of the second by at most 2 semitones (pitch-class distance).
+    pub guide_tone_step_motion: f32,
+    /// Mean common tones between consecutive chords.
+    pub mean_common_tones: f32,
+    /// Deflect witnesses (backbone misses) realized.
+    pub deflects: usize,
+    /// Mean common tones between each deflect's expected and actual arrival.
+    pub mean_deflect_common: f32,
+    /// Mean root distance (semitones, `0..=6`) expected → actual across deflects.
+    pub mean_deflect_root_distance: f32,
+    /// Deflects whose pointer concretely pulled toward the expected arrival.
+    pub deflects_prepared: usize,
+    /// Consecutive contexts whose full palette pitch set differs.
+    pub palette_changes: usize,
+    /// Fraction of contexts whose palette chord-scale IS the piece's global region scale — high
+    /// means one key explains everything.
+    pub global_scale_only_share: f32,
+}
+
+impl HarmonyContextDiagnostics {
+    /// Measure the harmonic-context timeline of `perf`.
+    pub fn measure(perf: &PerformancePlan) -> HarmonyContextDiagnostics {
+        let cx = &perf.contexts;
+        let pairs = cx.len().saturating_sub(1);
+        let pc_dist = |a: i32, b: i32| {
+            let d = (a - b).rem_euclid(12);
+            d.min(12 - d)
+        };
+        let (mut region_transitions, mut palette_changes, mut stepwise, mut common) =
+            (0usize, 0usize, 0usize, 0usize);
+        for w in cx.windows(2) {
+            let (a, b) = (&w[0], &w[1]);
+            region_transitions += usize::from(a.palette.scale != b.palette.scale);
+            palette_changes += usize::from(a.palette.all() != b.palette.all());
+            let steps = a
+                .palette
+                .guide_tones
+                .iter()
+                .all(|&g| b.palette.guide_tones.iter().any(|&h| pc_dist(g, h) <= 2));
+            stepwise += usize::from(steps);
+            common += common_tones(&a.chord, &b.chord) as usize;
+        }
+        let labels: Vec<&'static str> = cx.iter().map(|c| c.relation.label()).collect();
+        let relations = RELATION_LABELS
+            .iter()
+            .map(|&l| (l, labels.iter().filter(|&&x| x == l).count()))
+            .filter(|&(_, c)| c > 0)
+            .collect();
+        let dn = perf.deflects.len();
+        let mean = |f: &dyn Fn(&super::backbone::DeflectWitness) -> f32| {
+            if dn == 0 {
+                0.0
+            } else {
+                perf.deflects.iter().map(f).sum::<f32>() / dn as f32
+            }
+        };
+        HarmonyContextDiagnostics {
+            contexts: cx.len(),
+            region_transitions,
+            relations,
+            guide_tone_step_motion: ratio(stepwise, pairs),
+            mean_common_tones: ratio(common, pairs),
+            deflects: dn,
+            mean_deflect_common: mean(&|d| d.common_tones as f32),
+            mean_deflect_root_distance: mean(&|d| d.root_distance as f32),
+            deflects_prepared: perf.deflects.iter().filter(|d| d.prepared).count(),
+            palette_changes,
+            global_scale_only_share: ratio(
+                cx.iter().filter(|c| c.palette.scale == perf.region).count(),
+                cx.len(),
+            ),
+        }
+    }
+
+    /// A compact, human-readable report. Relations counted, not judged.
+    pub fn report(&self) -> String {
+        use std::fmt::Write;
+        let rel = self
+            .relations
+            .iter()
+            .map(|(k, c)| format!("{k}={c}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut s = String::new();
+        let _ = writeln!(
+            s,
+            "harmony-context diagnostics (relations — NOT a quality score):"
+        );
+        let _ = writeln!(
+            s,
+            "  contexts={} region_transitions={} palette_changes={} global_scale_only_share={:.2}",
+            self.contexts,
+            self.region_transitions,
+            self.palette_changes,
+            self.global_scale_only_share
+        );
+        let _ = writeln!(s, "  relations: {rel}");
+        let _ = writeln!(
+            s,
+            "  guide_tone_step_motion={:.2} mean_common_tones={:.2}",
+            self.guide_tone_step_motion, self.mean_common_tones
+        );
+        let _ = writeln!(
+            s,
+            "  deflects={} prepared={} mean_common={:.2} mean_root_distance={:.2}",
+            self.deflects,
+            self.deflects_prepared,
+            self.mean_deflect_common,
+            self.mean_deflect_root_distance
+        );
+        s
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::functor::compose_with_plan;
@@ -1271,5 +2052,433 @@ mod tests {
              than a shuffle of the same fragments ({scramble_sim:.2}) — the continuity metric is \
              not order-sensitive"
         );
+    }
+
+    // =========================================================================================
+    // Round VII probes — actions, listening, rigidity, contextual harmony. Every composition is
+    // the flagship: `deflected_lift_trace(120.0)` + DeflectedLift + seed 2112, varied only by the
+    // performance options, so any measured difference is the knob and nothing else.
+    // =========================================================================================
+
+    use super::super::contract::CompositionGrammar as R7Grammar;
+    use super::super::functor::{compose_full, Composition};
+    use super::super::performance::{PerformanceOptions, ResponseMode};
+    use super::super::semantic::deflected_lift_trace;
+
+    fn r7(world: &MusicWorld, opts: PerformanceOptions) -> (IntentTimeline, Composition) {
+        let trace = deflected_lift_trace(120.0);
+        let tl = IntentTimeline::walk(&trace);
+        let c = compose_full(&trace, world, 2112, Some(R7Grammar::DeflectedLift), opts);
+        (tl, c)
+    }
+
+    fn r7_actions(world: &MusicWorld, opts: PerformanceOptions) -> ActionDiagnostics {
+        let (tl, c) = r7(world, opts);
+        ActionDiagnostics::measure(&tl, &c.plan, &c.perf, &c.score)
+    }
+
+    fn actions_off() -> PerformanceOptions {
+        PerformanceOptions {
+            actions: false,
+            ..PerformanceOptions::default()
+        }
+    }
+
+    fn clockwork() -> PerformanceOptions {
+        PerformanceOptions {
+            responses: ResponseMode::Clockwork,
+            ..PerformanceOptions::default()
+        }
+    }
+
+    /// The vitals chart: every R7 number for every world and every probe, printed so a failing run
+    /// (or `--nocapture`) shows the whole picture instead of one assertion's worth of it.
+    #[test]
+    fn r7_flagship_values_are_reported() {
+        for world in MusicWorld::all() {
+            for (name, opts) in [
+                ("free", PerformanceOptions::default()),
+                ("actions_off", actions_off()),
+                ("clockwork", clockwork()),
+            ] {
+                let (tl, c) = r7(&world, opts);
+                let a = ActionDiagnostics::measure(&tl, &c.plan, &c.perf, &c.score);
+                let r = RigidityDiagnostics::measure(&c.score);
+                let h = HarmonyContextDiagnostics::measure(&c.perf);
+                eprintln!(
+                    "=== {} / {name} ===\n{}{}{}",
+                    world.name,
+                    a.report(),
+                    r.report(),
+                    h.report()
+                );
+                assert!(a.report().contains("action diagnostics"));
+                assert!(r.report().contains("rigidity diagnostics"));
+                assert!(h.report().contains("harmony-context diagnostics"));
+                // The fixed-order tallies drop nothing: the per-kind / per-relation counts sum to
+                // the totals (a label table drifting out of sync with its enum would show here).
+                assert_eq!(
+                    a.actions_by_kind.iter().map(|x| x.1).sum::<usize>(),
+                    a.action_count
+                );
+                assert_eq!(h.relations.iter().map(|x| x.1).sum::<usize>(), h.contexts);
+                assert_eq!(a.initiators.iter().map(|x| x.1).sum::<usize>(), {
+                    c.perf.interactions.len()
+                });
+            }
+        }
+    }
+
+    // --- (a) flagship: every verb has a witness, and the band actually does things. ---
+    #[test]
+    fn the_flagship_witnesses_every_morphism_and_acts() {
+        for world in MusicWorld::all() {
+            let d = r7_actions(&world, PerformanceOptions::default());
+            assert_eq!(d.unwitnessed_morphisms, 0, "{}: {d:?}", world.name);
+            assert!(d.live_morphisms > 0, "{}: no live morphisms", world.name);
+            assert!(
+                d.action_count >= 30,
+                "{}: only {} actions",
+                world.name,
+                d.action_count
+            );
+            assert!(
+                d.responders.len() >= 2,
+                "{}: one responder only: {:?}",
+                world.name,
+                d.responders
+            );
+            assert!(
+                d.latency_histogram.len() >= 3,
+                "{}: latencies too uniform: {:?}",
+                world.name,
+                d.latency_histogram
+            );
+            assert!(
+                d.response_placement_entropy > 1.0,
+                "{}: answers all land in one place: {:.2} bits",
+                world.name,
+                d.response_placement_entropy
+            );
+        }
+    }
+
+    // --- (b) ADVERSARIAL mood-without-action: identical scalar mood, measurably no verbs. ---
+    #[test]
+    fn mood_without_action_keeps_the_mood_and_loses_the_verbs() {
+        for world in MusicWorld::all() {
+            let (tl_on, on) = r7(&world, PerformanceOptions::default());
+            let (tl_off, off) = r7(&world, actions_off());
+            // The mood is the same patient: per-phrase energy/tension/density/register goals come
+            // from one CompositionPlan, untouched by the performance options.
+            let mood = |c: &Composition| -> Vec<[f32; 4]> {
+                c.plan
+                    .discourse
+                    .goals
+                    .iter()
+                    .map(|g| {
+                        [
+                            g.energy_target,
+                            g.tension_target,
+                            g.density_target,
+                            g.register_target,
+                        ]
+                    })
+                    .collect()
+            };
+            assert!(!mood(&on).is_empty());
+            assert_eq!(mood(&on), mood(&off), "{}: the mood changed", world.name);
+
+            let a = ActionDiagnostics::measure(&tl_on, &on.plan, &on.perf, &on.score);
+            let b = ActionDiagnostics::measure(&tl_off, &off.plan, &off.perf, &off.score);
+            assert_eq!(b.action_count, 0, "{}: {b:?}", world.name);
+            assert!(a.action_count >= 30, "{}: {}", world.name, a.action_count);
+            assert!(
+                b.longest_actionless_span_beats > a.longest_actionless_span_beats,
+                "{}: off {:.2} vs on {:.2}",
+                world.name,
+                b.longest_actionless_span_beats,
+                a.longest_actionless_span_beats
+            );
+            assert_eq!(b.semantic_witness_coverage, 0.0, "{}", world.name);
+            assert!(
+                a.semantic_witness_coverage > 0.9,
+                "{}: {:.2}",
+                world.name,
+                a.semantic_witness_coverage
+            );
+        }
+    }
+
+    // --- (c) ADVERSARIAL clockwork: one responder, one slot, every time — and it measures so. ---
+    #[test]
+    fn clockwork_answers_measure_rigid_and_free_answers_do_not() {
+        for world in MusicWorld::all() {
+            let free = r7_actions(&world, PerformanceOptions::default());
+            let cw = r7_actions(&world, clockwork());
+            assert_eq!(
+                cw.responders.len(),
+                1,
+                "{}: {:?}",
+                world.name,
+                cw.responders
+            );
+            assert!(
+                cw.response_placement_entropy < 0.2,
+                "{}: {:.2}",
+                world.name,
+                cw.response_placement_entropy
+            );
+            assert!(
+                cw.same_slot_response_recurrence > 0.8,
+                "{}: {:.2}",
+                world.name,
+                cw.same_slot_response_recurrence
+            );
+            assert!(
+                free.responders.len() > cw.responders.len(),
+                "{}",
+                world.name
+            );
+            assert!(
+                free.response_placement_entropy > cw.response_placement_entropy,
+                "{}: free {:.2} vs clockwork {:.2}",
+                world.name,
+                free.response_placement_entropy,
+                cw.response_placement_entropy
+            );
+            assert!(
+                free.same_slot_response_recurrence < cw.same_slot_response_recurrence,
+                "{}: free {:.2} vs clockwork {:.2}",
+                world.name,
+                free.same_slot_response_recurrence,
+                cw.same_slot_response_recurrence
+            );
+        }
+    }
+
+    // --- (d) POSITIVE CONTROL: variable answers that are really answers to THIS call. ---
+    #[test]
+    fn free_answers_vary_in_time_and_quote_the_call() {
+        for world in MusicWorld::all() {
+            let (tl, c) = r7(&world, PerformanceOptions::default());
+            let d = ActionDiagnostics::measure(&tl, &c.plan, &c.perf, &c.score);
+            assert!(
+                d.responders.len() >= 2,
+                "{}: {:?}",
+                world.name,
+                d.responders
+            );
+            let sounding: Vec<_> = c
+                .perf
+                .interactions
+                .iter()
+                .filter_map(|i| i.response.as_ref().map(|r| (i.call, *r)))
+                .filter(|(_, r)| r.transform != Transform::Silence)
+                .collect();
+            assert!(
+                sounding.iter().any(|(_, r)| r.latency < 0.0),
+                "{}: no answer ever overlaps its call",
+                world.name
+            );
+            assert!(
+                sounding.iter().any(|(_, r)| r.latency >= 1.0),
+                "{}: no answer ever waits a beat",
+                world.name
+            );
+            assert!(d.overlapping_responses >= 1);
+            assert!(
+                c.score.notes.iter().any(|n| n.prov.role_note == "answer"),
+                "{}: planned answers never became notes",
+                world.name
+            );
+            // Material relation: some keys/bass answer shares pitch classes with the lead's call.
+            let related = sounding.iter().any(|(call, r)| {
+                let role = match r.responder {
+                    Agent::Keys => Role::Keys,
+                    Agent::Bass => Role::Bass,
+                    _ => return false,
+                };
+                if call.initiator != Agent::Lead {
+                    return false;
+                }
+                let call_pcs: std::collections::BTreeSet<i32> = c
+                    .score
+                    .role_notes(Role::Lead)
+                    .filter(|n| {
+                        n.start_beat >= call.start_beat - 1e-6
+                            && n.start_beat < call.end_beat - 1e-6
+                    })
+                    .map(|n| pitch_class(n.pitch))
+                    .collect();
+                c.score
+                    .role_notes(role)
+                    .filter(|n| {
+                        n.prov.role_note == "answer"
+                            && n.start_beat >= r.start_beat - 1e-6
+                            && n.start_beat < r.start_beat + r.dur_beats - 1e-6
+                    })
+                    .any(|n| call_pcs.contains(&pitch_class(n.pitch)))
+            });
+            assert!(
+                related,
+                "{}: no keys/bass answer shares a pitch class with its call",
+                world.name
+            );
+        }
+    }
+
+    #[test]
+    fn onset_vectors_bin_on_the_sixteenth_grid() {
+        use super::super::form::SectionKind;
+        use super::super::score::{DrumHit, Provenance};
+        let mut s = Score::new(120.0, 4.0, 8.0);
+        let p = Provenance::new(SectionKind::A);
+        for t in [0.0, 0.5, 4.0 + 2.5, 3.9] {
+            s.notes.push(Note::new(t, 0.25, 60, 0.8, Role::Keys, p));
+        }
+        s.drums.push(DrumHit {
+            start_beat: 1.0,
+            voice: DrumVoice::Snare,
+            velocity: 0.1, // a ghost: excluded from Snare, kept in DrumsAll
+            prov: p,
+        });
+        let k = onset_vectors(&s, OnsetPart::Keys);
+        // 3.9 rounds onto step 16 of bar 0 = step 0 of bar 1.
+        assert_eq!(k, vec![(1 << 0) | (1 << 2), (1 << 0) | (1 << 10)]);
+        assert_eq!(onset_vectors(&s, OnsetPart::Snare), vec![0, 0]);
+        assert_eq!(onset_vectors(&s, OnsetPart::DrumsAll), vec![1 << 4, 0]);
+    }
+
+    /// Rebuild `score` with keys, bass and kick/snare stamped from ONE bar's onset vector across the
+    /// whole piece (the first non-empty bar of each part — bar 0 is an intro for some parts). Pitches
+    /// keep cycling through the sounding chord's tones, so only the RHYTHM is frozen: the metric
+    /// must catch the lock without leaning on pitch repetition.
+    fn form_locked(score: &Score) -> Score {
+        use super::super::score::DrumHit;
+        let template = |part: OnsetPart| {
+            onset_vectors(score, part)
+                .into_iter()
+                .find(|&v| v != 0)
+                .unwrap_or(1)
+        };
+        let (tk, tb, tkick, tsn) = (
+            template(OnsetPart::Keys),
+            template(OnsetPart::Bass),
+            template(OnsetPart::Kick),
+            template(OnsetPart::Snare),
+        );
+        let chord_at = |t: f64| {
+            score
+                .chords
+                .iter()
+                .filter(|c| c.start_beat <= t + 1e-6)
+                .max_by(|a, b| a.start_beat.total_cmp(&b.start_beat))
+                .map(|c| c.chord)
+                .unwrap_or(Chord::new(0, Quality::Maj))
+        };
+        let proto = |role: Role| {
+            score
+                .role_notes(role)
+                .next()
+                .copied()
+                .expect("part present")
+        };
+        let (pk, pb) = (proto(Role::Keys), proto(Role::Bass));
+        let pd = score.drums.first().copied().expect("drums present");
+        let mut s = score.clone();
+        s.notes
+            .retain(|n| !matches!(n.role, Role::Keys | Role::Bass));
+        s.drums
+            .retain(|d| !matches!(d.voice, DrumVoice::Kick | DrumVoice::Snare));
+        let bars = onset_vectors(score, OnsetPart::Keys).len();
+        let mut cyc = 0usize;
+        for bar in 0..bars {
+            for k in 0..STEPS {
+                let t = bar as f64 * 4.0 + k as f64 * 0.25;
+                if t >= score.total_beats - 1e-6 {
+                    break;
+                }
+                let pcs = chord_at(t).pitch_classes();
+                for (mask, proto, base) in [(tk, pk, 60), (tb, pb, 36)] {
+                    if mask & (1 << k) != 0 {
+                        let mut n = proto;
+                        n.start_beat = t;
+                        n.dur_beats = 0.25;
+                        n.pitch = base + pcs[cyc % pcs.len()];
+                        n.function = Some(PitchFunction::ChordTone);
+                        s.notes.push(n);
+                        cyc += 1;
+                    }
+                }
+                for (mask, voice) in [(tkick, DrumVoice::Kick), (tsn, DrumVoice::Snare)] {
+                    if mask & (1 << k) != 0 {
+                        s.drums.push(DrumHit {
+                            start_beat: t,
+                            voice,
+                            velocity: 0.8,
+                            ..pd
+                        });
+                    }
+                }
+            }
+        }
+        s
+    }
+
+    // --- (e) ADVERSARIAL form-lock: every bar the same rhythm must measure as rigid. ---
+    #[test]
+    fn a_form_locked_accompaniment_measures_rigid() {
+        for world in MusicWorld::all() {
+            let (_, c) = r7(&world, PerformanceOptions::default());
+            let real = RigidityDiagnostics::measure(&c.score);
+            let locked = RigidityDiagnostics::measure(&form_locked(&c.score));
+            eprintln!(
+                "{} real:\n{}{} locked:\n{}",
+                world.name,
+                real.report(),
+                world.name,
+                locked.report()
+            );
+            for (part, lk, rl) in [
+                (
+                    "keys",
+                    locked.keys_onset_recurrence,
+                    real.keys_onset_recurrence,
+                ),
+                (
+                    "bass",
+                    locked.bass_onset_recurrence,
+                    real.bass_onset_recurrence,
+                ),
+                (
+                    "drums",
+                    locked.drums_onset_recurrence,
+                    real.drums_onset_recurrence,
+                ),
+            ] {
+                assert!(lk > 0.9, "{}: locked {part} recurrence {lk:.2}", world.name);
+                assert!(
+                    rl < lk - 0.2,
+                    "{}: real {part} recurrence {rl:.2} is within 0.2 of the form-locked {lk:.2}",
+                    world.name
+                );
+            }
+            assert_eq!(locked.keys_distinct_patterns, 1);
+            assert_eq!(locked.bass_distinct_patterns, 1);
+            assert_eq!(locked.drums_distinct_patterns, 1);
+        }
+    }
+
+    // --- (f) contextual harmony: the misses are real, prepared, and keep common tones. ---
+    #[test]
+    fn the_flagship_harmony_deflects_with_prepared_common_tone_misses() {
+        for world in MusicWorld::all() {
+            let (_, c) = r7(&world, PerformanceOptions::default());
+            let h = HarmonyContextDiagnostics::measure(&c.perf);
+            assert!(h.deflects >= 3, "{}: {h:?}", world.name);
+            assert_eq!(h.deflects_prepared, h.deflects, "{}: {h:?}", world.name);
+            assert!(h.mean_deflect_common >= 1.0, "{}: {h:?}", world.name);
+        }
     }
 }

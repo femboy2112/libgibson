@@ -23,7 +23,8 @@ use std::path::PathBuf;
 use gibson::audio::buffer::StereoBlock;
 use gibson::audio::human_music::contract::CompositionGrammar;
 use gibson::audio::human_music::diagnostics::{
-    CoherenceDiagnostics, DiscourseDiagnostics, LeadOutlineDiagnostics, RealizationDiagnostics,
+    ActionDiagnostics, CoherenceDiagnostics, DiscourseDiagnostics, HarmonyContextDiagnostics,
+    LeadOutlineDiagnostics, RealizationDiagnostics, RigidityDiagnostics,
 };
 use gibson::audio::human_music::functor::{compose_full, compose_with_grammar};
 use gibson::audio::human_music::harmony::ChordSpan;
@@ -33,6 +34,7 @@ use gibson::audio::human_music::semantic::{
     calm_loop, deflected_lift_trace, rise_unresolved, SemanticTrace,
 };
 use gibson::audio::human_music::synth::{HumanMusicSynth, StemMask};
+use gibson::audio::human_music::timeline::IntentTimeline;
 use gibson::audio::human_music::{demo_trace, MusicWorld, WorldId};
 use gibson::audio::render::OfflineRenderer;
 use gibson::audio::wav::write_wav_i16;
@@ -203,6 +205,16 @@ fn main() -> std::io::Result<()> {
             RealizationDiagnostics::measure(&plan, &score).report()
         );
         print!("{}", LeadOutlineDiagnostics::measure(&score).report());
+        // Round VII: the verbs, the bar-to-bar rigidity, and the harmony as relations. The
+        // timeline is re-walked here (compose_full keeps its copy to itself); the walk is
+        // deterministic, so this is the same spine the actions were lifted from.
+        let timeline = IntentTimeline::walk(&trace);
+        print!(
+            "{}",
+            ActionDiagnostics::measure(&timeline, &plan, &perf, &score).report()
+        );
+        print!("{}", RigidityDiagnostics::measure(&score).report());
+        print!("{}", HarmonyContextDiagnostics::measure(&perf).report());
         println!(
             "render: {real_secs:.1}s audio in {:.0}ms  ({:.1}x realtime)  peak={:.3} rms={:.3} dc=({:.4},{:.4})",
             render_wall.as_secs_f64() * 1000.0,
@@ -448,6 +460,27 @@ fn ab(
             out.rms,
             out.audio.has_nonfinite(),
             path.display()
+        );
+        // The three R7 instruments on every case, so the A/B numbers sit next to the A/B ears.
+        let a =
+            ActionDiagnostics::measure(&IntentTimeline::walk(trace), &c.plan, &c.perf, &c.score);
+        let r = RigidityDiagnostics::measure(&c.score);
+        let h = HarmonyContextDiagnostics::measure(&c.perf);
+        println!(
+            "  {:12} unwitnessed={} witness_cov={:.2} longest_idle={:.1}b responders={} placement_entropy={:.2}b same_slot={:.2} | recurrence keys={:.2} bass={:.2} drums={:.2} | deflects={} prepared={} global_scale_share={:.2}",
+            "",
+            a.unwitnessed_morphisms,
+            a.semantic_witness_coverage,
+            a.longest_actionless_span_beats,
+            a.responders.len(),
+            a.response_placement_entropy,
+            a.same_slot_response_recurrence,
+            r.keys_onset_recurrence,
+            r.bass_onset_recurrence,
+            r.drums_onset_recurrence,
+            h.deflects,
+            h.deflects_prepared,
+            h.global_scale_only_share,
         );
     }
     println!(
