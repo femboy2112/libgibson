@@ -324,15 +324,34 @@ fn partition_centroids(target: &[[f32; 3]; 8], mask: u8) -> ([f32; 3], [f32; 3])
     (fg, bg)
 }
 
-fn rgb8_to_linear(rgb: [u8; 3]) -> [f32; 3] {
-    rgb.map(|value| {
-        let value = value as f32 / 255.0;
-        if value <= 0.04045 {
-            value / 12.92
-        } else {
-            ((value + 0.055) / 1.055).powf(2.4)
+/// 256-entry sRGB8 -> linear-light table, built once on first use. A `u8` channel
+/// has only 256 possible values, so this is **bit-identical** to evaluating the
+/// transfer function per sample (same expression, same order), but replaces the
+/// per-sample `powf` with a table load. The projector linearizes 8 subpixels x 3
+/// channels per cell, so this is its hottest arithmetic.
+fn srgb8_to_linear_table() -> &'static [f32; 256] {
+    static TABLE: std::sync::OnceLock<[f32; 256]> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut table = [0.0f32; 256];
+        for (i, entry) in table.iter_mut().enumerate() {
+            let value = i as f32 / 255.0;
+            *entry = if value <= 0.04045 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            };
         }
+        table
     })
+}
+
+fn rgb8_to_linear(rgb: [u8; 3]) -> [f32; 3] {
+    let table = srgb8_to_linear_table();
+    [
+        table[rgb[0] as usize],
+        table[rgb[1] as usize],
+        table[rgb[2] as usize],
+    ]
 }
 
 fn linear_to_rgb8(rgb: [f32; 3]) -> [u8; 3] {
@@ -2417,5 +2436,26 @@ mod tests {
                 < 1e-6,
             "mean emitted RMSE must match a full reprojection"
         );
+    }
+
+    #[test]
+    fn srgb8_linear_lut_is_bit_identical_to_the_transfer_function() {
+        // The LUT must reproduce the sRGB->linear transfer function exactly for
+        // every one of the 256 possible channel values, so the projector's SSE and
+        // argmin (hence its output) are provably unchanged by the optimization.
+        for v in 0u16..=255 {
+            let value = v as f32 / 255.0;
+            let direct = if value <= 0.04045 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            };
+            let lut = rgb8_to_linear([v as u8, v as u8, v as u8])[0];
+            assert_eq!(
+                lut.to_bits(),
+                direct.to_bits(),
+                "LUT entry {v} must be bit-identical to the transfer function"
+            );
+        }
     }
 }
