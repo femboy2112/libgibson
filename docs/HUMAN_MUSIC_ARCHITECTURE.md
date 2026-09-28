@@ -529,6 +529,58 @@ remaining "kaleidoscope"); typed many-to-many obligation settlement; delta-aware
 a Prelude role so the first audible statement is not classified `Restate`; real `HarmonicLoop`/`Riff`
 grammar objects; and the full adversarial-probe suite. The decisive human listen is still the gate.
 
+### 3.13 Round V — the hanging voice, honest pitch across the whole mix, and a new backbone
+
+Round V addresses a fresh listen: a background voice that "gets stuck on a chord and hangs", audible
+"wrong notes" still present, and a suspicion that the cinematic backbone itself is the wrong song.
+
+- **Bounded SFX lifecycle (`synth.rs`, `score.rs`) — the P0 bug.** `SfxVoice::trigger()` gated its
+  amplitude envelope on and nothing ever gated it off, so a triggered SFX parked in the ADSR
+  `Sustain` stage forever: a nonzero-sustain kind (Confirm/Warning/Transition) rang as a held tone to
+  the end of the render, and every kind kept its voice slot occupied, dropping later events. The
+  envelope and a per-kind hold are now declared properties of `SfxKind`; `SfxVoice` counts down
+  through attack+decay+hold, gates off once, and lets the release reach silence — every gesture is a
+  finite one-shot (the hanging Warning tritone becomes a short, bounded dissonance). Regressions prove
+  every kind decays within its declared lifetime and four voices service ten sequential events.
+- **Stem/bus isolation (`synth::StemMask`, lab `--stems`).** An experimental Rust-only debug surface
+  renders any one bus (pad/keys/bass/lead/drums/sfx) alone, so a bad tone can be pinned to a voice
+  family. A muted bus still advances its voices, so the full mask reproduces the normal mix exactly.
+- **Time-carrying `PitchContext` (`pitch.rs`).** `classify` now takes the note's onset, duration and
+  the real chord-change boundaries. Anticipation is accepted only within `ANTICIPATION_WINDOW` of the
+  upcoming harmony (a distant future chord no longer justifies a note), and a chord tone whose
+  sustained body crosses into dissonance (not a common-tone tie) is flagged — the onset-only blindness
+  is closed.
+- **Honest pitch across the whole mix (`functor.rs`, `diagnostics.rs`).** The jazz principle now
+  covers *every* audible role, not just the lead. Bass carries a real `PitchFunction`: root/fifth are
+  `ChordTone` (the fifth taken from the chord's actual tones — `root+7` was a wrong note on a
+  diminished chord), the approach is a bounded `ChromaticApproach`, and with room the bass *walks* a
+  stepwise `SlidePath` into the next root. Pad/keys are verified chord tones. `RealizationDiagnostics`
+  reports `unjustified_nonchord_notes` across all roles with an `unjustified_by_role` breakdown and a
+  `cross_boundary_dissonances` count — measured 0 everywhere on the demo.
+- **`ThematicTrajectory` (`motif.rs`).** The kaleidoscope root cause was that `add_melody` re-read a
+  fixed germ every phrase and applied an unrelated one-shot transform. The trajectory develops with
+  MEMORY (`M_{n+1} = develop(M_n)`), returns explicitly to the thesis on Restate/Return, derives its
+  hook from the call+response DNA, and reports a typed `Handoff` per statement. Register flow improved
+  measurably (max inter-phrase leap fell to ~5 semitones across worlds).
+- **`SongBackbone` + the `DeflectedLift` grammar (`contract.rs`, `discourse.rs`).** An additive
+  compositional strategy: instead of one cinematic arc, a bittersweet BOUNCE that recurs — verse, then
+  a cycle of lift → warm hook opening → soft landing → rounded reset, with the hook returning across
+  cycles and a small cyclic harmonic identity (`ResolutionPolicy::Loop`) the ear can learn. Each cycle
+  keeps the obligation ledger balanced. It reaches for the *relational contour* of a bittersweet-bounce
+  pop song without reproducing any specific one. The canonical lab audition renders it by default
+  (`--grammar=hookarc` A/Bs against the earlier song); the four existing grammars are untouched. It
+  raised `thesis_return_similarity` sharply (0.38→0.75 on BLACK_ICE) — the song returns to itself.
+- **Kaleidoscope adversarial probe (`diagnostics.rs`).** The R4-deferred test: permuting the composed
+  lead statements across slots measures worse (a larger mean inter-phrase leap) than the composed
+  order — proving the continuity metric is order-sensitive.
+
+**Still open after Round V (see §7):** the `DeflectedLift` bounce imposed on the *cinematic* demo
+trace leaves `role_direction_contradictions=2` (a bouncier trace, and a multi-peak arrangement that
+tracks the recurring hook, are the follow-ups); moving pitch justification INTO the search (so
+`repairs_performed` reaches 0 rather than repairing after the fact); SFX pitches relative to the local
+harmonic field; and the R4-carried debts (typed obligations, delta-aware semantic grounding, a Prelude
+role, real `HarmonicLoop`/`Riff` objects). The decisive human listen remains the gate.
+
 ## 4. Engines carried over unchanged from Round I
 
 These pieces of the Round I vertical slice are still in place and were not part of the
