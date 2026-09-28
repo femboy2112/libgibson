@@ -824,4 +824,74 @@ mod tests {
             assert!(d.report().contains("realization diagnostics"));
         }
     }
+
+    // --- Kaleidoscope adversarial probe: coherent statements spliced out of order measure worse. ---
+    #[test]
+    fn the_kaleidoscope_permutation_measures_worse() {
+        // Round III's complaint was "a kaleidoscope of coherent song-fragments spliced together."
+        // Take the composed lead, whose statements are register-connected (prev_exit flow), and
+        // PERMUTE those statements across slots — each phrase stays internally valid, only the ORDER
+        // changes. A shuffle of good fragments must read as worse: its mean inter-phrase leap (the
+        // teleport a splice creates) exceeds the composed order's. That is the kaleidoscope, measured.
+        use super::super::contract::CompositionGrammar;
+        use super::super::functor::compose_with_grammar;
+
+        let trace = demo_trace(120.0);
+        let world = MusicWorld::black_ice();
+        let (score, _plan) =
+            compose_with_grammar(&trace, &world, 2112, CompositionGrammar::DeflectedLift);
+
+        // Per-phrase realized lead fragment, in ix order: (first pitch, last pitch, identity).
+        let mut by_ix: std::collections::BTreeMap<u32, Vec<(f64, f32, Midi)>> =
+            std::collections::BTreeMap::new();
+        for n in &score.notes {
+            if n.role == Role::Lead {
+                if let Some(ix) = n.prov.phrase {
+                    by_ix
+                        .entry(ix)
+                        .or_default()
+                        .push((n.start_beat, n.dur_beats, n.pitch));
+                }
+            }
+        }
+        let frags: Vec<(Midi, Midi)> = by_ix
+            .into_values()
+            .filter_map(|mut ns| {
+                ns.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+                Some((ns.first()?.2, ns.last()?.2))
+            })
+            .collect();
+        let m = frags.len();
+        assert!(m >= 4, "need several lead phrases to permute, got {m}");
+
+        // Mean absolute boundary leap for a given visiting order (the splice teleport).
+        let mean_leap = |order: &[usize]| -> f32 {
+            let leaps: Vec<i32> = order
+                .windows(2)
+                .map(|w| (frags[w[1]].0 - frags[w[0]].1).abs())
+                .collect();
+            leaps.iter().sum::<i32>() as f32 / leaps.len().max(1) as f32
+        };
+
+        let composed: Vec<usize> = (0..m).collect();
+        let composed_leap = mean_leap(&composed);
+
+        // Deterministic non-trivial scrambles, each changing the adjacency structure.
+        let evens_then_odds: Vec<usize> = (0..m)
+            .filter(|i| i % 2 == 0)
+            .chain((0..m).filter(|i| i % 2 == 1))
+            .collect();
+        let swap_halves: Vec<usize> = (m / 2..m).chain(0..m / 2).collect();
+        let reversed: Vec<usize> = (0..m).rev().collect();
+        let scrambles = [evens_then_odds, swap_halves, reversed];
+        let scramble_leap: f32 =
+            scrambles.iter().map(|p| mean_leap(p)).sum::<f32>() / scrambles.len() as f32;
+
+        assert!(
+            composed_leap < scramble_leap,
+            "the composed order ({composed_leap:.2} mean semitone leap) did not flow better than a \
+             shuffle of the same fragments ({scramble_leap:.2}) — the continuity metric is not \
+             order-sensitive"
+        );
+    }
 }
