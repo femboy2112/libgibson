@@ -387,6 +387,7 @@ impl MotifBank {
 /// or `None` for an unjustified note). Durations come from `motif.rhythm`, start times accumulate
 /// from `start_beat`. Deterministic — no RNG, and ties resolve to the candidate nearest the
 /// intended pitch (candidate lists are closest-first).
+#[allow(clippy::too_many_arguments)]
 pub fn realize_phrase(
     motif: &Motif,
     chords: &[ChordSpan],
@@ -394,6 +395,7 @@ pub fn realize_phrase(
     root_degree: i32,
     octave: i32,
     start_beat: f64,
+    prev_pitch: Option<Midi>,
     max_candidates: usize,
 ) -> Vec<(f64, f32, Midi, Option<PitchFunction>)> {
     let n = motif.len();
@@ -436,7 +438,9 @@ pub fn realize_phrase(
         for (c, &p) in cands[i].iter().enumerate() {
             let node = node_cost(p, anchors[i], strong[i], chord_here[i]);
             if i == 0 {
-                ci[c] = node;
+                // Continuity: seed the first note toward the previous statement's exit pitch, so
+                // consecutive phrases connect in register instead of teleporting between them.
+                ci[c] = node + prev_pitch.map_or(0.0, |pp| VL_W * (p - pp).abs() as f32);
             } else {
                 let dir_orig = (motif.degrees[i] - motif.degrees[i - 1]).signum();
                 let mut best = inf;
@@ -774,7 +778,7 @@ mod tests {
         let m = Motif::seed_a();
         let s = Scale::new(0, Mode::Ionian);
         let chords = [c_major_span()];
-        let out = realize_phrase(&m, &chords, &s, 0, 4, 0.0, 4);
+        let out = realize_phrase(&m, &chords, &s, 0, 4, 0.0, None, 4);
 
         assert_eq!(out.len(), 4);
         // Timings mirror Motif::render exactly.
@@ -796,7 +800,7 @@ mod tests {
         let m = Motif::seed_a(); // degrees 0,2,4,3 -> directions +, +, -
         let s = Scale::new(0, Mode::Ionian);
         let chords = [c_major_span()];
-        let out = realize_phrase(&m, &chords, &s, 0, 4, 0.0, 4);
+        let out = realize_phrase(&m, &chords, &s, 0, 4, 0.0, None, 4);
 
         let want: Vec<i32> = m
             .degrees
@@ -813,8 +817,8 @@ mod tests {
         let m = Motif::seed_a();
         let s = Scale::new(0, Mode::Ionian);
         let chords = [c_major_span()];
-        let a = realize_phrase(&m, &chords, &s, 0, 4, 0.0, 4);
-        let b = realize_phrase(&m, &chords, &s, 0, 4, 0.0, 4);
+        let a = realize_phrase(&m, &chords, &s, 0, 4, 0.0, None, 4);
+        let b = realize_phrase(&m, &chords, &s, 0, 4, 0.0, None, 4);
         assert_eq!(a, b);
     }
 }

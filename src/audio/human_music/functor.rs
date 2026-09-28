@@ -343,6 +343,9 @@ fn add_melody(
     // Question/Answer coupling: a Question remembers where it fragmented the germ so the next
     // Answer completes exactly that withheld remainder.
     let mut question_take: Option<usize> = None;
+    // The previous statement's exit pitch — carried across statements and phrases so each new
+    // statement connects to where the last one ended (continuity, not teleportation).
+    let mut prev_exit: Option<Midi> = None;
 
     for t in plan.targets() {
         let phrase = t.phrase;
@@ -353,11 +356,24 @@ fn add_melody(
         let (motif, morph) = motif_for_role(t.goal.role, &bank, &mut question_take);
 
         // Register realizes the role: the culmination and intensification climb, the dissolve
-        // settles low, everything else follows the phrase's elevation target.
-        let octave = match t.goal.role {
+        // settles low, everything else follows the phrase's elevation target. For ordinary roles we
+        // then nudge the octave to CONNECT to the previous statement's exit (flow between phrases);
+        // the culmination and any licensed rupture keep their dramatic leap (Depart/Intensify/
+        // Question/Answer/Return must not sound like edits between unrelated songs — Culminate may).
+        let base_octave = match t.goal.role {
             DiscourseRole::Culminate | DiscourseRole::Intensify => 5,
             DiscourseRole::Dissolve => 3,
             _ => 4 + (t.goal.register_target > 0.65) as i32,
+        };
+        let octave = match prev_exit {
+            Some(pe) if !phrase.is_rupture && t.goal.role != DiscourseRole::Culminate => {
+                let first_deg = motif.degrees.first().copied().unwrap_or(0);
+                [base_octave - 1, base_octave, base_octave + 1]
+                    .into_iter()
+                    .min_by_key(|&o| (scale.degree_pitch(first_deg, o) - pe).abs())
+                    .unwrap_or(base_octave)
+            }
+            _ => base_octave,
         };
 
         let stmt_beats = motif.total_beats() as f64;
@@ -368,9 +384,12 @@ fn add_melody(
         let mut at = phrase.start_beat();
         let mut guard = 0;
         while at + stmt_beats <= phrase_end + 1e-6 && guard < 32 {
-            for (nb, dur, pitch, function) in
-                super::motif::realize_phrase(&motif, chords, scale, 0, octave, at, 4)
-            {
+            let notes =
+                super::motif::realize_phrase(&motif, chords, scale, 0, octave, at, prev_exit, 4);
+            if let Some(&(_, _, last_pitch, _)) = notes.last() {
+                prev_exit = Some(last_pitch);
+            }
+            for (nb, dur, pitch, function) in notes {
                 let mut note = Note::new(
                     nb,
                     (dur * 0.9).max(0.1),
