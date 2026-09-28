@@ -15,9 +15,10 @@
 //! layout. Either composites through the one rendering pipeline, and viewport
 //! clipping is handled by the engine.
 //!
-//! [`ui`], [`scene`], [`story`], [`surface_fx`], [`raster`], [`raster3d`], [`raster_fx`]
-//! and [`temporal`] are experimental Rust-only composition/graphics APIs. They do not own terminal
-//! lifecycle. Experimental additions may require source changes between releases.
+//! [`ui`], [`scene`], [`story`], [`surface_fx`], [`raster`], [`raster3d`], [`raster_fx`],
+//! [`temporal`] and [`audio`] are experimental Rust-only composition/graphics/audio APIs.
+//! They do not own terminal lifecycle. Experimental additions may require source changes
+//! between releases.
 //!
 //! Use one active terminal owner per process. Context/session rendering uses
 //! stdout and a process-global panic hook; nested/concurrent terminal contexts and
@@ -26,6 +27,10 @@
 //! abort, SIGKILL, OOM or a disconnected output stream.
 
 pub mod ansi;
+/// Experimental Rust-only audio realization axis: DSP synthesis, a deterministic offline
+/// renderer, and HumanMusic procedural scoring. Orthogonal to the visual pipeline; not
+/// exposed through the C ABI.
+pub mod audio;
 pub mod canvas;
 pub mod capability;
 pub mod cell;
