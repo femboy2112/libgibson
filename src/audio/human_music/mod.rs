@@ -41,6 +41,7 @@ pub mod synth;
 pub mod theory;
 pub mod timeline;
 pub mod voicing;
+pub mod witness;
 pub mod world;
 
 pub use functor::compose;

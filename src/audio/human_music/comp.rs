@@ -97,6 +97,12 @@ pub fn realize_keys(
     let mut rng = Rng::new(seed ^ 0x6E75_C0A9);
     let vel = (0.35 * world.base_dynamic).clamp(0.05, 1.0);
     let shell_n = if perf.language.shell_voicings { 3 } else { 4 };
+    let unisons: Vec<(f64, f64)> = perf
+        .actions
+        .of_kind(super::action::ActionKind::Unison)
+        .map(|a| (a.start_beat, a.end_beat()))
+        .collect();
+    let in_unison = |b: f64| unisons.iter().any(|&(s, e)| b >= s - 1e-6 && b < e - 1e-6);
     let answered: Vec<(f64, f64)> = perf
         .responses_for(Agent::Keys)
         .map(|(_, r)| (r.start_beat, r.start_beat + r.dur_beats))
@@ -114,12 +120,18 @@ pub fn realize_keys(
                 if w.hole >= 0.5 || in_answer(beat) {
                     return None;
                 }
+                if in_unison(beat) {
+                    return None;
+                }
                 let score = match eb.keys {
                     KeysMode::Stab => w.hit + w.push,
-                    KeysMode::Comp => w.syncopation + 0.6 * w.push + 0.5 * w.hit,
+                    // Answer bars still comp outside the answer window itself.
+                    KeysMode::Comp | KeysMode::Answer => {
+                        w.syncopation + 0.6 * w.push + 0.5 * w.hit + 0.15 * w.pickup
+                    }
                     _ => 0.0,
                 };
-                (score > 0.3).then_some((score + rng.range_f32(0.0, 0.05), s))
+                (score > 0.2).then_some((score + rng.range_f32(0.0, 0.05), s))
             })
             .collect();
         // Listen to the lead: never stab on top of its onsets.
@@ -127,7 +139,7 @@ pub fn realize_keys(
         steps.sort_by(|a, b| b.0.total_cmp(&a.0));
         let max_stabs = match eb.keys {
             KeysMode::Stab => 2,
-            KeysMode::Comp => {
+            KeysMode::Comp | KeysMode::Answer => {
                 // The complexity budget: fewer stabs when the lead is dense in this bar.
                 let lead_notes = lead_in(lead, bar_start, bar_start + 4.0).len();
                 let room = (eb.budget - lead_notes as f32).max(0.0);
@@ -150,8 +162,8 @@ pub fn realize_keys(
                     }
                 }
             }
-            KeysMode::Space | KeysMode::Answer => {}
-            KeysMode::Comp | KeysMode::Stab => {
+            KeysMode::Space => {}
+            KeysMode::Comp | KeysMode::Stab | KeysMode::Answer => {
                 for (k, &s) in chosen.iter().enumerate() {
                     let beat = AccentGrid::beat_of(bar, s);
                     let Some(ctx) = perf.context_at(beat) else {
@@ -165,7 +177,7 @@ pub fn realize_keys(
                         .unwrap_or(0.45)
                         .clamp(0.2, 0.9) as f32;
                     let accent = perf.accent.at(bar, s);
-                    let v_mult = if accent.hit >= 0.9 { 1.25 } else { 1.0 };
+                    let v_mult = if accent.hit >= 0.9 { 1.1 } else { 1.0 };
                     for &p in v.voices.iter().rev().take(take) {
                         let mut n = Note::new(
                             beat,
@@ -194,11 +206,85 @@ pub fn realize_keys(
             r.transform,
             72,
             Role::Keys,
-            vel * 1.15,
+            vel * 1.05,
         ));
+    }
+    // Planned ensemble unison figures: the keys sound the shared line.
+    for line in unison_lines(perf, lead) {
+        for &(at, d, p, f) in &line {
+            let mut n = Note::new(
+                at,
+                d,
+                octave_near(p, 74),
+                vel * 1.1,
+                Role::Keys,
+                prov("unison", Some("unison")),
+            );
+            n.function = f;
+            out.push(n);
+        }
     }
     out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
     release_at_harmony_change(&mut out, &perf.chords);
+    out
+}
+
+/// One note of a shared line: `(beat, dur, pitch, function)`.
+pub type LineNote = (f64, f32, Midi, Option<PitchFunction>);
+
+/// The pitch with `p`'s class nearest `center`.
+pub fn octave_near(p: Midi, center: Midi) -> Midi {
+    let pc = pitch_class(p);
+    let base = (center / 12) * 12 + pc;
+    [base - 12, base, base + 12]
+        .into_iter()
+        .min_by_key(|q| (q - center).abs())
+        .unwrap_or(p)
+}
+
+/// One realized line of a planned ensemble unison figure: `(beat, dur, pitch, function)`, in a
+/// neutral register (each player transposes it by octaves into its own range). If the lead is
+/// sounding in the window, the unison DOUBLES THE LEAD'S ACTUAL LINE (so keys, bass and lead play
+/// one figure together); otherwise the band states the piece's rhythmic cell on stable tones.
+pub fn unison_lines(perf: &PerformancePlan, lead: &[Note]) -> Vec<Vec<LineNote>> {
+    let mut out = Vec::new();
+    for a in perf.actions.of_kind(super::action::ActionKind::Unison) {
+        let src = lead_in(lead, a.start_beat, a.end_beat());
+        if src.len() >= 2 {
+            out.push(
+                src.iter()
+                    .map(|n| (n.start_beat, n.dur_beats, n.pitch, n.function))
+                    .collect(),
+            );
+            continue;
+        }
+        // The band's own figure: the bank's rhythmic cell (a diminished head of the identity).
+        let cell = &perf.bank.rhythmic_cell;
+        let mut line = Vec::new();
+        let mut at = a.start_beat;
+        for (i, &deg) in cell.degrees.iter().enumerate() {
+            let d = cell.rhythm.get(i).copied().unwrap_or(0.5) as f64;
+            if at >= a.end_beat() - 1e-6 {
+                break;
+            }
+            let Some(ctx) = perf.context_at(at) else {
+                break;
+            };
+            let p = nearest_stable(ctx, perf.region.degree_pitch(deg, 4));
+            line.push((at, (d * 0.85).max(0.15) as f32, p, function_over(ctx, p)));
+            at += d.max(0.25);
+        }
+        // Land on a chord tone of the harmony the figure arrives in.
+        if let Some(ctx) = perf.context_at(at.min(a.end_beat() - 0.25)) {
+            if at < a.end_beat() - 0.2 {
+                let p = nearest_stable(ctx, line.last().map(|l| l.2).unwrap_or(67));
+                line.push((at, 0.5, p, function_over(ctx, p)));
+            }
+        }
+        if !line.is_empty() {
+            out.push(line);
+        }
+    }
     out
 }
 

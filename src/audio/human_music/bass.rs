@@ -80,7 +80,14 @@ pub fn realize_bass(
                 .map(|(_, r)| (r.start_beat, r.start_beat + r.dur_beats)),
         )
         .collect();
-    let in_quote = |b: f64| quoted.iter().any(|&(s, e)| b >= s - 1e-6 && b < e - 1e-6);
+    let unisons = super::comp::unison_lines(perf, lead);
+    let in_quote = |b: f64| {
+        quoted.iter().any(|&(s, e)| b >= s - 1e-6 && b < e - 1e-6)
+            || unisons.iter().any(|l| {
+                l.first().is_some_and(|f| b >= f.0 - 1e-6)
+                    && l.last().is_some_and(|x| b < x.0 + x.1 as f64 + 0.25)
+            })
+    };
 
     for eb in &perf.ensemble {
         let bar = eb.bar;
@@ -265,6 +272,22 @@ pub fn realize_bass(
             Role::Bass,
             base_vel * 1.05,
         ));
+    }
+    // The ensemble unison: the bass doubles the shared line two octaves down.
+    for line in &unisons {
+        for &(at, d, p, f) in line {
+            let mut n = note(
+                at,
+                d as f64,
+                super::comp::octave_near(p, CENTER + 4),
+                base_vel * 1.05,
+                PitchFunction::ChordTone,
+                "unison",
+            );
+            n.prov.motif_xform = Some("unison");
+            n.function = f;
+            out.push(n);
+        }
     }
     out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
     // One bass voice: trim any note that runs into the next onset.

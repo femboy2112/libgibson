@@ -427,6 +427,16 @@ pub fn realize_drums(
             }
         }
     }
+    // The ensemble unison: the kit accents the figure's onsets with everyone.
+    for line in super::comp::unison_lines(perf, lead) {
+        for (i, &(at, _, _, _)) in line.iter().enumerate() {
+            let v = if i == 0 { 0.8 } else { 0.6 } * world.base_dynamic;
+            hit(&mut hits, DrumVoice::Snare, at, v, "unison", &mut rng);
+            if i == 0 || i + 1 == line.len() {
+                hit(&mut hits, DrumVoice::Kick, at, v, "unison", &mut rng);
+            }
+        }
+    }
     // The drummer's answers: echo the call's rhythm on snare/hat, briefly.
     for (cs, ce, rs, rd) in drum_answers {
         let src: Vec<f64> = lead

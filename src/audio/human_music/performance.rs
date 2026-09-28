@@ -413,6 +413,36 @@ impl PerformancePlan {
             ActionPlan::none()
         };
 
+        // 2b. An ensemble push/hit needs an ensemble: where the arrangement leaves fewer than two
+        //     players on stage (the intro's pad+bass), the verb is carried by the one who is there —
+        //     it becomes that player's pickup, not a phantom tutti.
+        for a in actions.actions.iter_mut() {
+            if !matches!(a.kind, ActionKind::Push | ActionKind::Hit)
+                || a.initiator != Agent::Ensemble
+            {
+                continue;
+            }
+            let ph = plan.form.phrase_at(a.start_beat.min(total_beats - 1e-6)).ix as usize;
+            let arr = plan.arrangement.at(ph);
+            let on_stage: Vec<Agent> = [
+                (Agent::Bass, arr.bass),
+                (Agent::Keys, arr.keys),
+                (Agent::Drums, arr.drums),
+                (Agent::Lead, arr.lead),
+            ]
+            .into_iter()
+            .filter(|(_, r)| r.is_audible())
+            .map(|(g, _)| g)
+            .collect();
+            if on_stage.len() < 2 {
+                if let Some(&solo) = on_stage.first() {
+                    a.kind = ActionKind::Pickup;
+                    a.initiator = solo;
+                    a.target_beat = a.target_beat.or(Some(a.end_beat()));
+                }
+            }
+        }
+
         // 3. Harmonic actions edit the harmony (so they are heard, not merely labelled).
         let edits = apply_harmonic_actions(&mut chords, &actions, &region);
         let contexts = analyze(&chords, &region);
@@ -885,6 +915,17 @@ fn plan_interactions(
             if start + len > total_beats + 1e-6 {
                 break;
             }
+            // A lead-initiated Fragment action in force here fragments THIS statement: the verb
+            // reaches the thematic material instead of only nudging a scalar.
+            let fragmenting = actions.actions.iter().any(|a| {
+                a.kind == ActionKind::Fragment && a.initiator == Agent::Lead && a.covers(start)
+            });
+            let motif = if fragmenting && motif.len() > 2 {
+                motif.fragment(motif.len().div_ceil(2).max(2))
+            } else {
+                motif.clone()
+            };
+            let len = motif.total_beats() as f64;
             let call_id = if !interact {
                 u32::MAX
             } else {
@@ -935,7 +976,7 @@ fn plan_interactions(
             statements.push(LeadStatement {
                 phrase: phrase.ix,
                 start_beat: start,
-                motif: motif.clone(),
+                motif,
                 handoff,
                 role: t.goal.role,
                 energy: t.goal.energy_target,
