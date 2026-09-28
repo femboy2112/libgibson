@@ -142,7 +142,9 @@ fn apply_arrangement(score: &mut Score, plan: &CompositionPlan) {
         n.prov.phrase = Some(phrase.ix);
         n.prov.family = Some(phrase.family.label());
         n.prov.role_kind = Some(role.label());
-        n.prov.obligation = Some(phrase.obligation.label());
+        let goal = plan.discourse.goal(phrase.ix as usize);
+        n.prov.role = Some(goal.role.label());
+        n.prov.closure = Some(goal.closure.label());
         true
     });
 
@@ -157,6 +159,9 @@ fn apply_arrangement(score: &mut Score, plan: &CompositionPlan) {
         d.prov.phrase = Some(phrase.ix);
         d.prov.family = Some(phrase.family.label());
         d.prov.role_kind = Some(role.label());
+        let goal = plan.discourse.goal(phrase.ix as usize);
+        d.prov.role = Some(goal.role.label());
+        d.prov.closure = Some(goal.closure.label());
         true
     });
 
@@ -167,6 +172,9 @@ fn apply_arrangement(score: &mut Score, plan: &CompositionPlan) {
         e.prov.section = phrase.family.to_section_kind();
         e.prov.phrase = Some(phrase.ix);
         e.prov.family = Some(phrase.family.label());
+        let goal = plan.discourse.goal(phrase.ix as usize);
+        e.prov.role = Some(goal.role.label());
+        e.prov.closure = Some(goal.closure.label());
     }
 }
 

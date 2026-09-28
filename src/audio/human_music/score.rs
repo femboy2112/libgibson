@@ -133,8 +133,13 @@ pub struct Provenance {
     pub motif_xform: Option<&'static str>,
     /// The groove variation label, if a rhythm event.
     pub groove_variation: Option<&'static str>,
-    /// The phrase/harmonic obligation this event serves: `"arrival"`, `"lift"`, `"release"`, …
-    pub obligation: Option<&'static str>,
+    /// The phrase's discourse role (Round III/IV): `"establish"`, `"culminate"`, `"answer"`, … —
+    /// the trajectory-derived rhetorical job, replacing the old positional section obligation. The
+    /// obligation ids this phrase opens/settles are reachable per phrase via `phrase` → the plan's
+    /// discourse ledger, so they are not duplicated on every note.
+    pub role: Option<&'static str>,
+    /// The phrase's permitted closure: `"open"`, `"half"`, `"deferred"`, `"strong"`, ….
+    pub closure: Option<&'static str>,
     /// The intent-morphism label that produced it.
     pub morphism: Option<&'static str>,
     /// A short human role note: `"comp"`, `"bass"`, `"melody"`, `"sfx"`.
@@ -154,7 +159,8 @@ impl Provenance {
             motif_id: None,
             motif_xform: None,
             groove_variation: None,
-            obligation: None,
+            role: None,
+            closure: None,
             morphism: None,
             role_note: "",
         }

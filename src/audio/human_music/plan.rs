@@ -8,8 +8,9 @@
 //!
 //! - [`FormGraph`] — a hierarchy of [`Phrase`]s in musical units (bars), with stable section
 //!   *families* where recurrence means something (an `A` recurs; an `A'` is an explicit
-//!   bounded transform of `A`, not a new random area that happens to share a label) and an
-//!   explicit [`PhraseObligation`] per phrase.
+//!   bounded transform of `A`, not a new random area that happens to share a label), each
+//!   carrying its full intent trajectory. Its rhetorical job is the discourse layer's
+//!   [`super::discourse::DiscourseRole`], not a positional label.
 //! - [`ArrangementPlan`] — a per-phrase assignment of every voice to an [`ArrangementRole`]
 //!   (foreground / support / foundation / pulse / texture / silent), with an enforced
 //!   foreground budget. This is what finally lets the band *shut up*: a pad can disappear,
@@ -90,41 +91,8 @@ impl SectionFamily {
     }
 }
 
-/// What a phrase owes the listener — its structural job.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PhraseObligation {
-    /// Establish / re-establish material.
-    Arrival,
-    /// Carry momentum without resolving.
-    Continuation,
-    /// Build toward something.
-    Lift,
-    /// Hold tension unresolved.
-    Suspension,
-    /// Strip back to negative space.
-    Breakdown,
-    /// Bring the material back after a subtraction.
-    ReEntry,
-    /// Discharge accumulated tension.
-    Release,
-}
-
-impl PhraseObligation {
-    /// A short provenance/dump label.
-    pub fn label(self) -> &'static str {
-        match self {
-            PhraseObligation::Arrival => "arrival",
-            PhraseObligation::Continuation => "continuation",
-            PhraseObligation::Lift => "lift",
-            PhraseObligation::Suspension => "suspension",
-            PhraseObligation::Breakdown => "breakdown",
-            PhraseObligation::ReEntry => "re-entry",
-            PhraseObligation::Release => "release",
-        }
-    }
-}
-
-/// One phrase: a bar span with a family identity, an obligation, and the intent in force.
+/// One phrase: a bar span with a family identity and the intent trajectory in force. Its
+/// rhetorical job lives in the discourse layer ([`super::discourse::PhraseGoal`]), not here.
 #[derive(Debug, Clone, Copy)]
 pub struct Phrase {
     /// Index within the [`FormGraph`].
@@ -135,8 +103,6 @@ pub struct Phrase {
     pub bars: u32,
     /// Section-family identity.
     pub family: SectionFamily,
-    /// What this phrase owes.
-    pub obligation: PhraseObligation,
     /// Representative running intent (the span's start; kept for dumps and back-compat).
     pub intent: MusicIntent,
     /// The intent *trajectory* across the phrase — start/end/peaks and whether a salient semantic
@@ -253,14 +219,6 @@ impl FormGraph {
             } else {
                 SectionFamily::B
             };
-            let obligation = match family {
-                SectionFamily::Intro => PhraseObligation::Continuation,
-                SectionFamily::A | SectionFamily::APrime { .. } => PhraseObligation::Arrival,
-                SectionFamily::B => PhraseObligation::Lift,
-                SectionFamily::Break => PhraseObligation::Breakdown,
-                SectionFamily::Climax => PhraseObligation::Release,
-                SectionFamily::Coda => PhraseObligation::Release,
-            };
             let start_beat = start_bar as f64 * BEATS_PER_BAR;
             let end_beat = (start_bar + bars) as f64 * BEATS_PER_BAR;
             let span = timeline.span(start_beat, end_beat);
@@ -269,7 +227,6 @@ impl FormGraph {
                 start_bar,
                 bars,
                 family,
-                obligation,
                 intent: span.start,
                 span,
                 is_rupture: matches!(family, SectionFamily::Climax),
@@ -747,7 +704,6 @@ impl PhraseTarget {
             start_bar,
             bars,
             family: SectionFamily::A,
-            obligation: PhraseObligation::Arrival,
             intent: mi,
             span,
             is_rupture: false,
