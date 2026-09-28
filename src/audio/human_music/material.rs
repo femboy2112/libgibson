@@ -422,7 +422,8 @@ pub fn stable_for(agent: Agent, ctx: &HarmonicContext, pc: i32) -> bool {
 /// The concrete line `m` becomes when its owner plays it at `at` (clipped at `until`) — the ONE
 /// projection both the owner and anybody who listens to it (a lead answering a bass figure) use.
 /// The line starts on the owner's stable pitch nearest its home register over the harmony at `at`.
-/// Unpitched material (a drum figure) projects onsets only.
+/// The drums project onsets only; a pitched player echoing unpitched material (a drum figure)
+/// puts its rhythm on the harmony's guide tones.
 pub fn line_of(
     m: &InteractionMaterial,
     owner: Agent,
@@ -430,7 +431,7 @@ pub fn line_of(
     until: f64,
     perf: &PerformancePlan,
 ) -> Vec<Projected> {
-    if !m.pitched() || owner == Agent::Drums {
+    if owner == Agent::Drums {
         return m
             .events
             .iter()

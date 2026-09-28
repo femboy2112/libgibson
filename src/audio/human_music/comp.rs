@@ -225,7 +225,7 @@ pub fn realize_keys(
                         .unwrap_or(0.45)
                         .clamp(0.2, 0.9) as f32;
                     let accent = perf.accent.at(bar, s);
-                    let v_mult = if accent.hit >= 0.9 { 1.1 } else { 1.0 };
+                    let mut v_mult = if accent.hit >= 0.9 { 1.1 } else { 1.0 };
                     // The planned accents this stab realizes: a push or hit on this step, the
                     // keys' own re-entry, a displacement window it sits in off the beat.
                     let mut st = perf
@@ -241,6 +241,14 @@ pub fn realize_keys(
                             Some(Agent::Keys),
                         ))
                         .fold(ActionStamp::NONE, ActionStamp::with);
+                    // The accent's semantic size: a faint arrival is left to bass and drums, a
+                    // big one gets a harder stab.
+                    if let Some(force) = perf.force_of(st) {
+                        if force < 0.35 {
+                            continue;
+                        }
+                        v_mult *= 0.9 + 0.3 * force;
+                    }
                     if s % 4 != 0 {
                         st = perf
                             .actions_covering(&[ActionKind::Displace], beat, None)

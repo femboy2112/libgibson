@@ -348,14 +348,17 @@ pub fn realize_drums(
                 continue;
             }
             let in_fill = in_drum_figure(at);
-            let accents = perf
+            let accents0 = perf
                 .actions_starting(
                     &[ActionKind::Push, ActionKind::Hit],
                     at,
                     STEP_BEATS * 0.5,
                     None,
                 )
-                .fold(surface, ActionStamp::with);
+                .fold(ActionStamp::NONE, ActionStamp::with);
+            // How hard the planned accent on this step lands: its semantic size (Round VIIb).
+            let force = perf.force_of(accents0).unwrap_or(0.5);
+            let accents = accents0.iter().fold(surface, ActionStamp::with);
             // --- Kick ---
             let kick = match eb.drums {
                 DrumsMode::HalfTime => s == 0 || (s == 10 && eb.kinetic > 0.5),
@@ -374,7 +377,13 @@ pub fn realize_drums(
                     &mut hits,
                     DrumVoice::Kick,
                     at,
-                    (0.95 - 0.1 * (s != 0) as u8 as f32) * world.base_dynamic,
+                    (0.95 - 0.1 * (s != 0) as u8 as f32)
+                        * world.base_dynamic
+                        * if accents0.is_empty() {
+                            1.0
+                        } else {
+                            0.85 + 0.3 * force
+                        },
                     "kick",
                     accents,
                     &mut rng,
@@ -413,11 +422,23 @@ pub fn realize_drums(
                     &mut hits,
                     DrumVoice::Snare,
                     at,
-                    0.9 * d,
+                    (0.6 + 0.4 * force) * d,
                     "hit",
                     accents,
                     &mut rng,
                 );
+                // A big, compact arrival gets the whole kit: a clap on top.
+                if force > 0.7 {
+                    hit(
+                        &mut hits,
+                        DrumVoice::Clap,
+                        at,
+                        (0.5 + 0.3 * force) * d,
+                        "hit",
+                        accents,
+                        &mut rng,
+                    );
+                }
             }
             // Ghosts on the weaker off-beats of the grid.
             if world.ghost_amount > 0.15

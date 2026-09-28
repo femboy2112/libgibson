@@ -20,7 +20,7 @@
 
 use super::functor::event_to_morphisms;
 use super::intent::{IntentMorphism, MorphismCost, MusicIntent};
-use super::semantic::{EventKind, SemanticTrace};
+use super::semantic::{EventKind, SemanticState, SemanticTrace};
 
 /// Map a semantic event's raw time onto musical time — the declared relation between the semantic
 /// timescale and the bar/groove timescale. An event within one beat of a bar line is attracted to
@@ -58,6 +58,13 @@ pub struct IntentTransition {
     /// The accumulated vector cost since the start of the trace — because
     /// [`MorphismCost::combine`] sums, this is where path dependence (holonomy) is visible.
     pub acc_cost: MorphismCost,
+    /// The semantic state the event arrived at.
+    pub state: SemanticState,
+    /// The semantic state before it (the neutral default before the first event).
+    pub prev_state: SemanticState,
+    /// How big a move the event is — derived from the state delta, not from its kind (Round
+    /// VIIb): the size every action lifted from this transition inherits.
+    pub effect: super::action::EffectVector,
 }
 
 /// The intent **trajectory** across a bar span — where it starts, where it ends, its peaks, and
@@ -117,6 +124,7 @@ impl IntentTimeline {
         let mut intent = initial;
         let mut acc = MorphismCost::default();
         let mut transitions = Vec::with_capacity(trace.events.len());
+        let mut prev_state = SemanticState::default();
 
         for ev in &trace.events {
             let prev = intent;
@@ -143,7 +151,11 @@ impl IntentTimeline {
                 next: intent,
                 step_cost: step,
                 acc_cost: acc,
+                state: ev.state,
+                prev_state,
+                effect: super::action::EffectVector::between(&prev_state, &ev.state),
             });
+            prev_state = ev.state;
         }
 
         IntentTimeline {

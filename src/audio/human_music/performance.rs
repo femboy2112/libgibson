@@ -136,6 +136,8 @@ pub struct PerformanceOptions {
     pub responses: ResponseMode,
     /// When a lead statement becomes a call (`EveryStatement` = the saturation probe).
     pub calls: CallPolicy,
+    /// How gesture manifestations vary across cycles (`Fixed` = the gesture-rigidity probe).
+    pub manifestations: super::action::ManifestationPolicy,
 }
 
 impl Default for PerformanceOptions {
@@ -145,6 +147,7 @@ impl Default for PerformanceOptions {
             actions: true,
             responses: ResponseMode::Free,
             calls: CallPolicy::Selective,
+            manifestations: super::action::ManifestationPolicy::Varied,
         }
     }
 }
@@ -238,7 +241,14 @@ impl PerformancePlan {
 
         // 2. Actions.
         let mut actions = if opts.actions {
-            ActionPlan::build(timeline, plan.backbone.as_ref(), &lang, total_beats, seed)
+            ActionPlan::build_with(
+                timeline,
+                plan.backbone.as_ref(),
+                &lang,
+                total_beats,
+                seed,
+                opts.manifestations,
+            )
         } else {
             ActionPlan::none()
         };
@@ -291,6 +301,12 @@ impl PerformancePlan {
             if let Some(g) = by {
                 a.initiator = g;
             }
+        }
+
+        // 5c. Intended stillness is declared (after every action, calls and answers included,
+        //     exists), so it is not mistaken for accidental inactivity.
+        if opts.actions {
+            actions.stasis = declare_stasis(timeline, plan, &actions, total_beats);
         }
 
         // 6. The ensemble per bar.
@@ -385,6 +401,16 @@ impl PerformancePlan {
                 kinds.contains(&a.kind) && a.covers(beat) && by.is_none_or(|g| a.initiator == g)
             })
             .map(|a| a.id)
+    }
+
+    /// The force of the actions in `stamp` (their largest semantic strength), or `None` when the
+    /// stamp names no action.
+    pub fn force_of(&self, stamp: super::ids::ActionStamp) -> Option<f32> {
+        stamp
+            .iter()
+            .filter_map(|id| self.actions.get(id))
+            .map(|a| a.effect.strength)
+            .reduce(f32::max)
     }
 
     /// The interaction in which action `id` is the call or the response.
@@ -505,6 +531,81 @@ impl PerformancePlan {
         }
         s
     }
+}
+
+/// Declare the piece's deliberate still points (Round VIIb; `StasisSpan` existed and nothing
+/// populated it). Two sources, both conservative:
+/// - a semantic event that applies only `Prolong` (nothing new happened) holds the music still
+///   until the next event, if no action starts in that span;
+/// - a low-energy `Dissolve` phrase comes to rest after its last action.
+///
+/// Never inside a Culminate phrase and never across a salient (non-Prolong) event — the
+/// diagnostics count any such span as `illegal_stasis`.
+pub fn declare_stasis(
+    timeline: &IntentTimeline,
+    plan: &CompositionPlan,
+    actions: &ActionPlan,
+    total_beats: f64,
+) -> Vec<super::action::StasisSpan> {
+    use super::discourse::DiscourseRole;
+    use super::intent::IntentMorphism;
+    let starts_in = |a: f64, b: f64| {
+        actions
+            .actions
+            .iter()
+            .any(|x| x.start_beat >= a - 1e-6 && x.start_beat < b - 1e-6)
+    };
+    let culminates = |a: f64, b: f64| {
+        plan.form.phrases.iter().any(|p| {
+            p.start_beat() < b - 1e-6
+                && p.end_beat() > a + 1e-6
+                && plan.discourse.goal(p.ix as usize).role == DiscourseRole::Culminate
+        })
+    };
+    let mut out = Vec::new();
+    for (i, t) in timeline.transitions.iter().enumerate() {
+        let quiet = t.applied.iter().all(|&m| m == IntentMorphism::Prolong);
+        if !quiet || t.effect.strength > 0.45 {
+            continue;
+        }
+        let end = timeline
+            .transitions
+            .get(i + 1)
+            .map(|n| n.at_beat)
+            .unwrap_or(total_beats)
+            .min(t.at_beat + 16.0)
+            .min(total_beats);
+        if end > t.at_beat + 1.0 && !starts_in(t.at_beat + 0.25, end) && !culminates(t.at_beat, end)
+        {
+            out.push(super::action::StasisSpan {
+                start_beat: t.at_beat,
+                end_beat: end,
+                reason: "a Prolong event: nothing new happened, the music holds still",
+            });
+        }
+    }
+    for p in &plan.form.phrases {
+        let g = plan.discourse.goal(p.ix as usize);
+        if g.role != DiscourseRole::Dissolve || g.energy_target > 0.45 {
+            continue;
+        }
+        let (ps, pe) = (p.start_beat(), p.end_beat().min(total_beats));
+        let last = actions
+            .actions
+            .iter()
+            .filter(|x| x.start_beat >= ps - 1e-6 && x.start_beat < pe - 1e-6)
+            .map(|x| x.start_beat + x.dur_beats.min(2.0))
+            .fold(ps, f64::max);
+        if pe - last >= 1.0 && !culminates(last, pe) {
+            out.push(super::action::StasisSpan {
+                start_beat: last,
+                end_beat: pe,
+                reason: "the dissolve lets the piece come to rest",
+            });
+        }
+    }
+    out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+    out
 }
 
 /// Reconcile every action with the stage before realization (Round VIIb). The arrangement is a

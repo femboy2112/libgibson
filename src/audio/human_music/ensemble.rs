@@ -324,7 +324,16 @@ pub(super) fn plan_ensemble(
                 _ => BassMode::Foundation,
             }
         };
-        let drums = if has(ActionKind::Break) {
+        // A break that owns most of the bar stops the kit for the bar; a short one is a hole in
+        // the grid the pocket already leaves empty (Round VII silenced the whole bar for a one-beat
+        // break, which flattened the compressed cycle's drive).
+        let break_beats: f64 = actions
+            .actions
+            .iter()
+            .filter(|a| a.kind == ActionKind::Break)
+            .map(|a| (a.end_beat().min(e) - a.start_beat.max(s)).max(0.0))
+            .sum();
+        let drums = if break_beats >= 2.0 {
             DrumsMode::Break
         } else if actions
             .actions
@@ -346,8 +355,15 @@ pub(super) fn plan_ensemble(
             Some(HarmonicGesture::Reset) => 0.5,
             None => 0.5,
         };
-        let acts = actions.actions.iter().filter(|a| in_bar(a)).count() as f32;
-        let kinetic = (base * (1.0 + 0.2 * cycle as f32) + 0.04 * acts).clamp(0.0, 1.0);
+        // Forward motion from what the bar DOES, weighted by how big each verb is (a neutral
+        // action counts as Round VII's flat 0.04).
+        let acts: f32 = actions
+            .actions
+            .iter()
+            .filter(|a| in_bar(a))
+            .map(|a| a.effect.strength)
+            .sum();
+        let kinetic = (base * (1.0 + 0.2 * cycle as f32) + 0.08 * acts).clamp(0.0, 1.0);
         out.push(EnsembleBar {
             bar,
             gesture,

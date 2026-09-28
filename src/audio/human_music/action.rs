@@ -306,6 +306,446 @@ impl ActionFamilies {
     }
 }
 
+/// How the gesture actions of a piece vary across its cycles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManifestationPolicy {
+    /// Each cycle performs its gesture through a different member of the gesture's family (the
+    /// real model): related, never mechanically identical.
+    Varied,
+    /// The gesture-rigidity probe: the piece's primary manifestation, every cycle.
+    Fixed,
+}
+
+/// One bounded way of performing a backbone gesture's EFFECT. These are constraints on the
+/// generated performance (they become actions the realizers perform), not canned licks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Manifestation {
+    /// Lift: a pickup into the reach and a push into the miss.
+    LiftPickup,
+    /// Lift: the same lead-in, the push displaced a beat earlier (an anticipation on 4).
+    LiftDisplacedPush,
+    /// Lift: a sequential reach — a band figure (the identity's head) climbing inside the slot.
+    LiftReach,
+    /// Deflect: the hit on the miss, then the band drops out for a moment.
+    DeflectBreak,
+    /// Deflect: the hit, then the keys suspend across the miss.
+    DeflectHold,
+    /// Deflect: the hit, then the pad subtracts under the miss.
+    DeflectSubtract,
+    /// Open: a player re-enters (and, in a long slot after the thesis, a band unison).
+    OpenReEntry,
+    /// Open: a staged re-entry — one player, then another.
+    OpenStaged,
+    /// Open: a re-entry and a widening upper layer.
+    OpenWiden,
+    /// Reset: a fill by the piece's fill player into the next attempt.
+    ResetFill,
+    /// Reset: the fill handed to the other rhythm player (bass ↔ drums).
+    ResetFillOther,
+    /// Reset: a dropout just before the next attempt (the pickup sounds alone).
+    ResetDropout,
+    /// Reset: a thematic tag — the identity's head from the band — into the next attempt.
+    ResetTag,
+}
+
+impl Manifestation {
+    /// A short label.
+    pub fn label(self) -> &'static str {
+        match self {
+            Manifestation::LiftPickup => "lift:pickup",
+            Manifestation::LiftDisplacedPush => "lift:displaced-push",
+            Manifestation::LiftReach => "lift:reach",
+            Manifestation::DeflectBreak => "deflect:break",
+            Manifestation::DeflectHold => "deflect:hold",
+            Manifestation::DeflectSubtract => "deflect:subtract",
+            Manifestation::OpenReEntry => "open:re-entry",
+            Manifestation::OpenStaged => "open:staged",
+            Manifestation::OpenWiden => "open:widen",
+            Manifestation::ResetFill => "reset:fill",
+            Manifestation::ResetFillOther => "reset:fill-other",
+            Manifestation::ResetDropout => "reset:dropout",
+            Manifestation::ResetTag => "reset:tag",
+        }
+    }
+
+    /// The gesture's family in `lang` (the plain language keeps one member per gesture).
+    pub fn family(g: HarmonicGesture, lang: &MusicalLanguage) -> &'static [Manifestation] {
+        use Manifestation::*;
+        if !lang.distributed_agency {
+            return match g {
+                HarmonicGesture::Lift => &[LiftPickup],
+                HarmonicGesture::Deflect => &[DeflectBreak],
+                HarmonicGesture::Open => &[OpenReEntry],
+                HarmonicGesture::Reset => &[ResetFill],
+            };
+        }
+        match g {
+            HarmonicGesture::Lift => &[LiftPickup, LiftDisplacedPush, LiftReach],
+            HarmonicGesture::Deflect => &[DeflectBreak, DeflectHold, DeflectSubtract],
+            HarmonicGesture::Open => &[OpenReEntry, OpenStaged, OpenWiden],
+            HarmonicGesture::Reset => &[ResetFill, ResetFillOther, ResetDropout, ResetTag],
+        }
+    }
+
+    /// The actions this manifestation performs in a slot.
+    fn actions(self, c: ManifestContext<'_>) -> Vec<GestureSpec> {
+        use Manifestation::*;
+        let (s, e) = (c.s, c.e);
+        let snap = |x: f64| (x * 2.0).round() / 2.0;
+        let mut v: Vec<GestureSpec> = Vec::new();
+        let pickup_len = snap(0.5 + c.effect.strength as f64).clamp(0.5, 2.0);
+        let pickup = |v: &mut Vec<GestureSpec>| {
+            if s > 0.0 {
+                let len = pickup_len.min(s);
+                v.push((
+                    ActionKind::Pickup,
+                    c.fam.lift_pickup,
+                    s - len,
+                    len,
+                    Some(s),
+                    vec![Agent::Lead, Agent::Keys],
+                    c.effect,
+                ));
+            }
+        };
+        let push_at = |v: &mut Vec<GestureSpec>, at: f64| {
+            if e < c.total_beats - 1e-6 {
+                v.push((
+                    ActionKind::Push,
+                    Agent::Ensemble,
+                    at,
+                    0.5,
+                    Some(e),
+                    vec![],
+                    c.effect,
+                ));
+            }
+        };
+        // The Deflect's identity recurs in every manifestation: the harmonic miss and its hit.
+        let deflect_core = |v: &mut Vec<GestureSpec>| {
+            v.push((
+                ActionKind::Deflect,
+                Agent::Ensemble,
+                s,
+                e - s,
+                None,
+                vec![],
+                c.effect,
+            ));
+            v.push((
+                ActionKind::Hit,
+                Agent::Ensemble,
+                s,
+                0.5,
+                Some(s),
+                vec![],
+                c.effect,
+            ));
+        };
+        let other_of =
+            |a: Agent, pool: &[Agent]| pool.iter().copied().find(|&p| p != a).unwrap_or(a);
+        match self {
+            LiftPickup => {
+                pickup(&mut v);
+                push_at(&mut v, e - 0.5);
+            }
+            LiftDisplacedPush => {
+                pickup(&mut v);
+                push_at(&mut v, e - 1.0);
+            }
+            LiftReach => {
+                pickup(&mut v);
+                if c.long {
+                    let reach = if c.fam.lift_reach == Agent::Lead {
+                        Agent::Bass
+                    } else {
+                        c.fam.lift_reach
+                    };
+                    let mid = s + ((e - s) / 2.0).floor();
+                    v.push((
+                        ActionKind::Fragment,
+                        reach,
+                        mid,
+                        2.0_f64.min(e - mid),
+                        None,
+                        vec![Agent::Lead, Agent::Keys],
+                        c.effect,
+                    ));
+                }
+                push_at(&mut v, e - 0.5);
+            }
+            DeflectBreak => {
+                deflect_core(&mut v);
+                if c.lang.unison_figures && c.long {
+                    let len = snap(0.5 + c.effect.strength as f64).clamp(0.5, 2.0);
+                    v.push((
+                        ActionKind::Break,
+                        Agent::Ensemble,
+                        s + 1.0,
+                        len,
+                        None,
+                        vec![Agent::Lead, Agent::Bass],
+                        c.effect,
+                    ));
+                }
+            }
+            DeflectHold => {
+                deflect_core(&mut v);
+                v.push((
+                    ActionKind::Hold,
+                    Agent::Keys,
+                    s,
+                    2.0_f64.min(e - s),
+                    None,
+                    vec![Agent::Lead],
+                    c.effect,
+                ));
+            }
+            DeflectSubtract => {
+                deflect_core(&mut v);
+                v.push((
+                    ActionKind::Thin,
+                    Agent::Pad,
+                    s,
+                    BEATS_PER_BAR.min(e - s),
+                    None,
+                    vec![],
+                    c.effect,
+                ));
+            }
+            OpenReEntry => {
+                v.push((
+                    ActionKind::ReEntry,
+                    c.fam.open_reentry,
+                    s,
+                    BEATS_PER_BAR.min(e - s),
+                    Some(s),
+                    vec![Agent::Lead],
+                    c.effect,
+                ));
+                if c.lang.unison_figures && c.long && c.cycle > 0 {
+                    // A short ensemble figure in the released window.
+                    v.push((
+                        ActionKind::Unison,
+                        Agent::Ensemble,
+                        e - BEATS_PER_BAR,
+                        2.0,
+                        None,
+                        vec![],
+                        c.effect,
+                    ));
+                }
+            }
+            OpenStaged => {
+                let first = c.fam.open_reentry;
+                v.push((
+                    ActionKind::ReEntry,
+                    first,
+                    s,
+                    2.0_f64.min(e - s),
+                    Some(s),
+                    vec![Agent::Lead],
+                    c.effect,
+                ));
+                if e - s >= BEATS_PER_BAR - 1e-6 {
+                    let second = other_of(first, &[Agent::Pad, Agent::Keys, Agent::Bass]);
+                    v.push((
+                        ActionKind::ReEntry,
+                        second,
+                        s + 2.0,
+                        2.0,
+                        Some(s + 2.0),
+                        vec![],
+                        c.effect,
+                    ));
+                }
+            }
+            OpenWiden => {
+                v.push((
+                    ActionKind::ReEntry,
+                    c.fam.open_reentry,
+                    s,
+                    BEATS_PER_BAR.min(e - s),
+                    Some(s),
+                    vec![Agent::Lead],
+                    c.effect,
+                ));
+                v.push((
+                    ActionKind::Thicken,
+                    Agent::Pad,
+                    s,
+                    e - s,
+                    None,
+                    vec![],
+                    c.effect,
+                ));
+            }
+            ResetFill | ResetFillOther => {
+                if e < c.total_beats - 1e-6 {
+                    let by = if self == ResetFill {
+                        c.fam.reset_fill
+                    } else {
+                        other_of(c.fam.reset_fill, &[Agent::Drums, Agent::Bass])
+                    };
+                    // A bigger next attempt gets a longer handover.
+                    let len = if c.long {
+                        (1.0 + 2.0 * c.next_effect.strength as f64).clamp(1.0, 2.0)
+                    } else {
+                        1.0
+                    };
+                    let len = snap(len);
+                    v.push((
+                        ActionKind::Fill,
+                        by,
+                        e - len,
+                        len,
+                        Some(e),
+                        vec![Agent::Keys, Agent::Bass, Agent::Lead],
+                        c.next_effect,
+                    ));
+                }
+            }
+            ResetDropout => {
+                if e < c.total_beats - 1e-6 {
+                    v.push((
+                        ActionKind::Break,
+                        Agent::Ensemble,
+                        e - 1.0,
+                        1.0,
+                        None,
+                        vec![Agent::Lead, Agent::Bass],
+                        c.next_effect,
+                    ));
+                }
+            }
+            ResetTag => {
+                if e < c.total_beats - 1e-6 && c.long {
+                    let tag = other_of(c.fam.lift_pickup, &[Agent::Keys, Agent::Bass]);
+                    v.push((
+                        ActionKind::Fragment,
+                        tag,
+                        e - 2.0,
+                        2.0,
+                        None,
+                        vec![Agent::Lead],
+                        c.next_effect,
+                    ));
+                }
+            }
+        }
+        v
+    }
+}
+
+/// A gesture action: `(kind, initiator, start, duration, target, responders, effect)`.
+type GestureSpec = (
+    ActionKind,
+    Agent,
+    f64,
+    f64,
+    Option<f64>,
+    Vec<Agent>,
+    EffectVector,
+);
+
+/// What a manifestation needs to know about its slot.
+#[derive(Clone, Copy)]
+struct ManifestContext<'a> {
+    s: f64,
+    e: f64,
+    total_beats: f64,
+    long: bool,
+    cycle: u32,
+    fam: &'a ActionFamilies,
+    lang: &'a MusicalLanguage,
+    effect: EffectVector,
+    next_effect: EffectVector,
+}
+
+/// The piece's manifestation identity: one primary member per gesture (seeded), and the policy.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ManifestationPlan {
+    primary: [usize; 4],
+    policy: ManifestationPolicy,
+    distributed: bool,
+}
+
+fn gesture_slot(g: HarmonicGesture) -> usize {
+    match g {
+        HarmonicGesture::Lift => 0,
+        HarmonicGesture::Deflect => 1,
+        HarmonicGesture::Open => 2,
+        HarmonicGesture::Reset => 3,
+    }
+}
+
+impl ManifestationPlan {
+    /// Choose the piece's primaries.
+    pub fn choose(lang: &MusicalLanguage, policy: ManifestationPolicy, seed: u64) -> Self {
+        let mut rng = Rng::new(seed ^ 0x4A11_F0E5);
+        let gs = [
+            HarmonicGesture::Lift,
+            HarmonicGesture::Deflect,
+            HarmonicGesture::Open,
+            HarmonicGesture::Reset,
+        ];
+        let primary = gs.map(|g| {
+            let n = Manifestation::family(g, lang).len();
+            // The Reset's primary is always the fill (the handover every cycle can count on).
+            if g == HarmonicGesture::Reset || n <= 1 {
+                0
+            } else {
+                (rng.range_f32(0.0, n as f32) as usize).min(n - 1)
+            }
+        });
+        ManifestationPlan {
+            primary,
+            policy,
+            distributed: lang.distributed_agency,
+        }
+    }
+
+    /// The manifestation of gesture `g` in `cycle`: the primary in the thesis; under
+    /// [`ManifestationPolicy::Varied`], each later cycle rotates to the next family member,
+    /// skipping one whose actions would repeat the previous cycle's exactly.
+    fn for_cycle(
+        &self,
+        g: HarmonicGesture,
+        cycle: u32,
+        memory: &ActionMemory,
+        lang: &MusicalLanguage,
+    ) -> Manifestation {
+        let fam = Manifestation::family(g, lang);
+        let p = self.primary[gesture_slot(g)].min(fam.len() - 1);
+        if self.policy == ManifestationPolicy::Fixed || fam.len() == 1 || !self.distributed {
+            return fam[p];
+        }
+        let mut k = (p + cycle as usize) % fam.len();
+        for _ in 0..fam.len() {
+            if memory.last(g) != Some(fam[k]) {
+                break;
+            }
+            k = (k + 1) % fam.len();
+        }
+        fam[k]
+    }
+}
+
+/// What the band has already done with each gesture (so a recurrence is related, not a copy).
+#[derive(Debug, Clone, Default)]
+struct ActionMemory {
+    seen: Vec<(HarmonicGesture, Manifestation)>,
+}
+
+impl ActionMemory {
+    fn last(&self, g: HarmonicGesture) -> Option<Manifestation> {
+        self.seen.iter().rev().find(|x| x.0 == g).map(|x| x.1)
+    }
+    fn record(&mut self, g: HarmonicGesture, m: Manifestation) {
+        self.seen.push((g, m));
+    }
+}
+
 /// The whole-piece action plan.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ActionPlan {
@@ -314,6 +754,8 @@ pub struct ActionPlan {
     pub stasis: Vec<StasisSpan>,
     /// The piece's gesture → player families (None for the null plan).
     pub families: Option<ActionFamilies>,
+    /// How each backbone slot performed its gesture: `(slot index, manifestation)`.
+    pub manifestations: Vec<(usize, Manifestation)>,
 }
 
 /// A lifted morphism's action: (kind, initiator, start, duration, target, responders).
@@ -337,6 +779,26 @@ impl ActionPlan {
         lang: &MusicalLanguage,
         total_beats: f64,
         seed: u64,
+    ) -> ActionPlan {
+        Self::build_with(
+            timeline,
+            backbone,
+            lang,
+            total_beats,
+            seed,
+            ManifestationPolicy::Varied,
+        )
+    }
+
+    /// [`ActionPlan::build`] with an explicit manifestation policy
+    /// ([`ManifestationPolicy::Fixed`] is the gesture-rigidity probe).
+    pub fn build_with(
+        timeline: &IntentTimeline,
+        backbone: Option<&BackboneTimeline>,
+        lang: &MusicalLanguage,
+        total_beats: f64,
+        seed: u64,
+        manifest: ManifestationPolicy,
     ) -> ActionPlan {
         let fam = ActionFamilies::choose(lang, seed);
         let mut plan = ActionPlan {
@@ -370,14 +832,18 @@ impl ActionPlan {
                 use IntentMorphism::*;
                 let spec: Option<ActionSpec> = match m {
                     Prolong => None, // identity: nothing to witness, by definition
-                    Prepare => Some((
-                        ActionKind::Pickup,
-                        fam.lift_pickup,
-                        (at - 1.0).max(0.0),
-                        1.0,
-                        Some(at),
-                        vec![Agent::Lead],
-                    )),
+                    Prepare => {
+                        // A bigger move gets a longer lead-in (half a beat .. two beats).
+                        let len = ((0.5 + t.effect.strength as f64) * 2.0).round() / 2.0;
+                        Some((
+                            ActionKind::Pickup,
+                            fam.lift_pickup,
+                            (at - len).max(0.0),
+                            len.min(at).max(0.5),
+                            Some(at),
+                            vec![Agent::Lead],
+                        ))
+                    }
                     Intensify => Some((
                         ActionKind::Push,
                         Agent::Ensemble,
@@ -521,13 +987,20 @@ impl ActionPlan {
                     responders,
                     binding,
                     pays,
-                    effect: EffectVector::NEUTRAL,
+                    effect: t.effect,
                 });
             }
         }
 
-        // --- 2. Gesture actions: the spine's own verbs, the same family every cycle. ---
+        // --- 2. Gesture actions: the spine's own verbs. The EFFECT of each gesture is stable
+        //        (Lift reaches, Deflect makes the miss perceptible, Open is its consequence,
+        //        Reset enables another attempt) and its identity invariants recur (the Deflect's
+        //        harmonic miss and its hit); HOW the effect is performed is a bounded
+        //        manifestation family, varied per cycle under memory (Round VIIb) — Round VII's
+        //        choreography was identical in every cycle. ---
         if let Some(bb) = backbone {
+            let mut memory = ActionMemory::default();
+            let piece = ManifestationPlan::choose(lang, manifest, seed);
             for (si, slot) in bb.slots.iter().enumerate() {
                 let s = slot.start_beat();
                 let e = slot.end_beat().min(total_beats);
@@ -538,12 +1011,37 @@ impl ActionPlan {
                     slot: si,
                     gesture: slot.gesture,
                 };
-                let mut push = |kind: ActionKind,
-                                initiator: Agent,
-                                start: f64,
-                                dur: f64,
-                                target: Option<f64>,
-                                responders: Vec<Agent>| {
+                // The size of the gesture comes from the semantic event bound to its slot.
+                let effect = slot
+                    .binding
+                    .and_then(|b| bb.bindings.get(b))
+                    .and_then(|b| timeline.transitions.get(b.transition))
+                    .map(|t| t.effect)
+                    .unwrap_or(EffectVector::NEUTRAL);
+                // The next slot's size (a Reset hands over INTO the next attempt).
+                let next_effect = bb
+                    .slots
+                    .get(si + 1)
+                    .and_then(|n| n.binding)
+                    .and_then(|b| bb.bindings.get(b))
+                    .and_then(|b| timeline.transitions.get(b.transition))
+                    .map(|t| t.effect)
+                    .unwrap_or(effect);
+                let long = slot.bars >= 2;
+                let m = piece.for_cycle(slot.gesture, slot.cycle, &memory, lang);
+                let specs = m.actions(ManifestContext {
+                    s,
+                    e,
+                    total_beats,
+                    long,
+                    cycle: slot.cycle,
+                    fam: &fam,
+                    lang,
+                    effect,
+                    next_effect,
+                });
+                memory.record(slot.gesture, m);
+                for (kind, initiator, start, dur, target, responders, eff) in specs {
                     let id = ActionId(plan.actions.len() as u32);
                     plan.actions.push(MusicalAction {
                         id,
@@ -556,85 +1054,10 @@ impl ActionPlan {
                         responders,
                         binding: slot.binding,
                         pays: None,
-                        effect: EffectVector::NEUTRAL,
+                        effect: eff,
                     });
-                };
-                let long = slot.bars >= 2;
-                match slot.gesture {
-                    HarmonicGesture::Lift => {
-                        // Lead the band into the reach, then push into the miss's downbeat.
-                        if s > 0.0 {
-                            push(
-                                ActionKind::Pickup,
-                                fam.lift_pickup,
-                                s - 1.0,
-                                1.0,
-                                Some(s),
-                                vec![Agent::Lead, Agent::Keys],
-                            );
-                        }
-                        if e < total_beats - 1e-6 {
-                            push(
-                                ActionKind::Push,
-                                Agent::Ensemble,
-                                e - 0.5,
-                                0.5,
-                                Some(e),
-                                vec![],
-                            );
-                        }
-                    }
-                    HarmonicGesture::Deflect => {
-                        // Everyone hits the deceptive arrival together; in the conversational
-                        // language the band then drops out for a beat — the miss has a consequence.
-                        push(ActionKind::Deflect, Agent::Ensemble, s, e - s, None, vec![]);
-                        push(ActionKind::Hit, Agent::Ensemble, s, 0.5, Some(s), vec![]);
-                        if lang.unison_figures && long {
-                            push(
-                                ActionKind::Break,
-                                Agent::Ensemble,
-                                s + 1.0,
-                                1.0,
-                                None,
-                                vec![Agent::Lead, Agent::Bass],
-                            );
-                        }
-                    }
-                    HarmonicGesture::Open => {
-                        push(
-                            ActionKind::ReEntry,
-                            fam.open_reentry,
-                            s,
-                            BEATS_PER_BAR.min(e - s),
-                            Some(s),
-                            vec![Agent::Lead],
-                        );
-                        if lang.unison_figures && long && slot.cycle > 0 {
-                            // A short ensemble figure in the released window.
-                            push(
-                                ActionKind::Unison,
-                                Agent::Ensemble,
-                                e - BEATS_PER_BAR,
-                                2.0,
-                                None,
-                                vec![],
-                            );
-                        }
-                    }
-                    HarmonicGesture::Reset => {
-                        if e < total_beats - 1e-6 {
-                            let fill_len = if long { 2.0 } else { 1.0 };
-                            push(
-                                ActionKind::Fill,
-                                fam.reset_fill,
-                                e - fill_len,
-                                fill_len,
-                                Some(e),
-                                vec![Agent::Drums],
-                            );
-                        }
-                    }
                 }
+                plan.manifestations.push((si, m));
             }
         }
         plan.actions.sort_by(|a, b| {
@@ -745,13 +1168,26 @@ impl ActionPlan {
         if let Some(f) = &self.families {
             let _ = writeln!(
                 s,
-                "  semantic binding plan (fixed for the piece): reach→Lift = pickup by {} + reach by {}; \
-                 miss→Deflect = ensemble hit + break; opening→Open = re-entry by {}; \
-                 reset→Reset = fill by {} into the next attempt",
+                "  piece families: lift pickup by {}, reach/fragment by {}, open re-entry by {}, reset fill by {}",
                 f.lift_pickup.label(),
                 f.lift_reach.label(),
                 f.open_reentry.label(),
                 f.reset_fill.label()
+            );
+        }
+        if !self.manifestations.is_empty() {
+            let m: Vec<String> = self
+                .manifestations
+                .iter()
+                .map(|(slot, m)| format!("slot{slot}={}", m.label()))
+                .collect();
+            let _ = writeln!(s, "  manifestations: {}", m.join(" "));
+        }
+        for st in &self.stasis {
+            let _ = writeln!(
+                s,
+                "  declared stasis {:.2}..{:.2} — {}",
+                st.start_beat, st.end_beat, st.reason
             );
         }
         for a in self.chronological() {

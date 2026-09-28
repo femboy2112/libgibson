@@ -21,6 +21,7 @@
 use std::path::PathBuf;
 
 use gibson::audio::buffer::StereoBlock;
+use gibson::audio::human_music::action::ManifestationPolicy;
 use gibson::audio::human_music::contract::CompositionGrammar;
 use gibson::audio::human_music::diagnostics::{
     ActionDiagnostics, CoherenceDiagnostics, DiscourseDiagnostics, HarmonyContextDiagnostics,
@@ -93,6 +94,10 @@ fn perf_options() -> PerformanceOptions {
         calls: match arg("--calls=").as_deref() {
             Some("every") | Some("saturated") => CallPolicy::EveryStatement,
             _ => CallPolicy::Selective,
+        },
+        manifestations: match arg("--manifest=").as_deref() {
+            Some("fixed") => ManifestationPolicy::Fixed,
+            _ => ManifestationPolicy::Varied,
         },
     }
 }
