@@ -613,7 +613,10 @@ impl SongBackbone {
 /// Each cycle opens exactly the obligations a later phrase in the SAME cycle settles (Depart's
 /// harmonic departure paid by its Return; Culminate's suspended cadence paid by its Answer), so the
 /// ledger stays balanced — no cinematic debt is left hanging. An interior remainder that does not
-/// fill a whole cycle is padded with `Restate` (a verse recurrence), which is ledger-neutral.
+/// fill a whole cycle is filled with a ledger-BALANCED mini-cycle so the hook still recurs: a
+/// `Culminate`+`Answer` pair (a self-closing bounce — the suspended cadence it opens is settled at
+/// once), with a lone leftover phrase a ledger-neutral `Restate`. This guarantees the hook recurs
+/// (>=2 `Culminate`) whenever there is room, without abandoning an obligation.
 fn deflected_lift_roles(n: usize) -> Vec<DiscourseRole> {
     use DiscourseRole::*;
     match n {
@@ -628,8 +631,13 @@ fn deflected_lift_roles(n: usize) -> Vec<DiscourseRole> {
             for _ in 0..(interior / cycle.len()) {
                 roles.extend_from_slice(&cycle);
             }
-            for _ in 0..(interior % cycle.len()) {
-                roles.push(Restate);
+            // A ledger-balanced remainder that still recurs the hook (Culminate+Answer self-closes;
+            // a lone leftover is a neutral Restate).
+            match interior % cycle.len() {
+                0 => {}
+                1 => roles.push(Restate),
+                2 => roles.extend_from_slice(&[Culminate, Answer]),
+                _ => roles.extend_from_slice(&[Culminate, Answer, Restate]),
             }
             roles.push(Dissolve);
             roles

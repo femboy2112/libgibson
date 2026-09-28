@@ -329,6 +329,67 @@ impl PhraseArrangement {
     }
 }
 
+/// A generic intro archetype: a designed subtraction that TEASES the song rather than hanging a
+/// lone pad. Each exposes at least two identity axes over the backbone's already-moving harmonic
+/// cell, and the choice foreshadows the phrase that follows the intro.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntroArchetype {
+    /// Bass states the cell's root motion under a texture pad — harmonic + bass identity.
+    BassPickup,
+    /// The lead exposes the theme over a texture pad — harmonic + thematic identity.
+    ThemeFragment,
+    /// Pad plus a sparse keys comp — harmonic identity with a rhythmic pulse.
+    HarmonicTease,
+    /// A held pad with upper keys motion and a bass anchor.
+    PedalWithUpperMotion,
+}
+
+impl IntroArchetype {
+    /// Choose an intro that foreshadows what the song does next (the phrase after the intro).
+    fn foreshadowing(next_role: DiscourseRole) -> IntroArchetype {
+        match next_role {
+            DiscourseRole::Depart | DiscourseRole::Intensify => IntroArchetype::BassPickup,
+            DiscourseRole::Question => IntroArchetype::ThemeFragment,
+            _ => IntroArchetype::HarmonicTease,
+        }
+    }
+
+    /// The intro phrase's arrangement.
+    fn arrangement(self) -> PhraseArrangement {
+        use ArrangementRole::*;
+        match self {
+            IntroArchetype::BassPickup => PhraseArrangement {
+                pad: Texture,
+                keys: Silent,
+                bass: Foundation,
+                lead: Silent,
+                drums: Silent,
+            },
+            IntroArchetype::ThemeFragment => PhraseArrangement {
+                pad: Texture,
+                keys: Silent,
+                bass: Silent,
+                lead: Support,
+                drums: Silent,
+            },
+            IntroArchetype::HarmonicTease => PhraseArrangement {
+                pad: Texture,
+                keys: Support,
+                bass: Silent,
+                lead: Silent,
+                drums: Silent,
+            },
+            IntroArchetype::PedalWithUpperMotion => PhraseArrangement {
+                pad: Texture,
+                keys: Support,
+                bass: Foundation,
+                lead: Silent,
+                drums: Silent,
+            },
+        }
+    }
+}
+
 /// A per-phrase orchestration plan with an enforced foreground budget and first-class silence.
 #[derive(Debug, Clone)]
 pub struct ArrangementPlan {
@@ -340,7 +401,11 @@ impl ArrangementPlan {
     /// Derive an arrangement from the form and contract. The foreground rotates so each voice
     /// gets airtime (lead states the hook in A-family phrases, keys carry B contrast), the
     /// intro and coda subtract, and the climax licenses a wider texture.
-    pub fn build(form: &FormGraph, contract: &CoherenceContract) -> ArrangementPlan {
+    pub fn build(
+        form: &FormGraph,
+        discourse: &DiscoursePlan,
+        contract: &CoherenceContract,
+    ) -> ArrangementPlan {
         use ArrangementRole::*;
         let budget = contract.foreground_budget.max(1);
 
@@ -392,6 +457,28 @@ impl ArrangementPlan {
                 },
             })
             .collect();
+
+        // Backbone-aware hook routing: every recurring Culminate hook SINGS, even where its
+        // positional family would silence the lead (the R5 bug — a hook that landed in a B-family
+        // phrase went mute). The budget pass below keeps the lead's priority over other voices.
+        for (i, a) in phrases.iter_mut().enumerate() {
+            if matches!(discourse.goal(i).role, DiscourseRole::Culminate) {
+                a.lead = Foreground;
+            }
+        }
+
+        // The intro TEASES the song instead of hanging a lone pad: an archetype chosen to
+        // foreshadow the phrase that follows, exposing >=2 identity axes over the backbone's
+        // already-moving harmonic cell.
+        if form
+            .phrases
+            .first()
+            .is_some_and(|p| matches!(p.family, SectionFamily::Intro))
+            && !phrases.is_empty()
+        {
+            let next = 1.min(form.phrases.len().saturating_sub(1));
+            phrases[0] = IntroArchetype::foreshadowing(discourse.goal(next).role).arrangement();
+        }
 
         // Enforce the foreground budget: if a phrase over-spends, demote extra foregrounds to
         // support (lead keeps priority as the melodic identity).
@@ -463,6 +550,20 @@ impl ArrangementPlan {
         }
     }
 
+    /// The number of melodic voices audible in the intro phrase (phrase 0). A live intro teases
+    /// with >=2 identity axes; a dead intro is a lone pad (1).
+    pub fn intro_axes(&self) -> u8 {
+        self.phrases
+            .first()
+            .map(|a| {
+                [a.pad, a.keys, a.bass, a.lead]
+                    .iter()
+                    .filter(|r| r.is_audible())
+                    .count() as u8
+            })
+            .unwrap_or(0)
+    }
+
     /// The arrangement for phrase `ix` (clamped to the last).
     pub fn at(&self, ix: usize) -> PhraseArrangement {
         *self.phrases.get(ix).unwrap_or_else(|| {
@@ -517,7 +618,7 @@ impl CompositionPlan {
     ) -> CompositionPlan {
         let form = FormGraph::build(timeline, total_bars, &contract);
         let discourse = DiscoursePlan::build(timeline, &form, &contract);
-        let mut arrangement = ArrangementPlan::build(&form, &contract);
+        let mut arrangement = ArrangementPlan::build(&form, &discourse, &contract);
         // The thematic question/answer must be audible: give the lead a seat on Question/Answer
         // phrases even where the family-based arrangement would otherwise silence it.
         arrangement.voice_lead_for_discourse(&discourse);
@@ -728,6 +829,61 @@ impl PhraseTarget {
 mod tests {
     use super::super::semantic::demo_trace;
     use super::*;
+
+    fn deflected_lift_plan() -> CompositionPlan {
+        use super::super::contract::{CoherenceContract, CompositionGrammar};
+        use super::super::semantic::deflected_lift_trace;
+        let tl = IntentTimeline::walk(&deflected_lift_trace(120.0));
+        CompositionPlan::build_with_contract(
+            &tl,
+            30,
+            CoherenceContract::for_grammar(CompositionGrammar::DeflectedLift),
+        )
+    }
+
+    #[test]
+    fn the_intro_teases_with_more_than_a_lonely_pad() {
+        let plan = deflected_lift_plan();
+        assert!(
+            plan.arrangement.intro_axes() >= 2,
+            "the intro is a lonely pad: {:?}",
+            plan.arrangement.phrases.first()
+        );
+        // Mutation control: a pad-only intro counts one axis — the dead-intro shape.
+        let mut dead = plan.arrangement.clone();
+        dead.phrases[0] = PhraseArrangement {
+            pad: ArrangementRole::Texture,
+            keys: ArrangementRole::Silent,
+            bass: ArrangementRole::Silent,
+            lead: ArrangementRole::Silent,
+            drums: ArrangementRole::Silent,
+        };
+        assert_eq!(
+            dead.intro_axes(),
+            1,
+            "a lone pad should count exactly one axis"
+        );
+    }
+
+    #[test]
+    fn every_recurring_hook_gets_a_foreground_lead() {
+        let plan = deflected_lift_plan();
+        let culm: Vec<usize> = (0..plan.form.phrases.len())
+            .filter(|&i| plan.discourse.goal(i).role == DiscourseRole::Culminate)
+            .collect();
+        assert!(
+            culm.len() >= 2,
+            "expected the hook to recur, found {} culminations",
+            culm.len()
+        );
+        for i in culm {
+            assert_eq!(
+                plan.arrangement.at(i).lead,
+                ArrangementRole::Foreground,
+                "hook phrase {i} did not put the lead in the foreground"
+            );
+        }
+    }
 
     fn demo_plan() -> CompositionPlan {
         // The demo arc is 30 bars (120 beats / 4).

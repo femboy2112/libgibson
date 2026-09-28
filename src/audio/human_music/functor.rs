@@ -466,7 +466,9 @@ fn add_melody(
 
     for t in plan.targets() {
         let phrase = t.phrase;
-        // The melody breathes: it sounds only where the arrangement gives the lead a voice.
+        // The melody breathes: it sounds only where the arrangement gives the lead a voice, and the
+        // thematic trajectory develops along that audible line (consecutive audible statements are
+        // adjacent development steps, which is what keeps the line coherent rather than drifting).
         if !plan.arrangement.at(phrase.ix as usize).lead.is_audible() {
             continue;
         }
