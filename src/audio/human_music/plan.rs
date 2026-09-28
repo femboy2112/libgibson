@@ -20,6 +20,7 @@
 //! summary.
 
 use super::contract::CoherenceContract;
+use super::discourse::DiscoursePlan;
 use super::form::{SectionKind, BEATS_PER_BAR};
 use super::intent::MusicIntent;
 use super::score::Role;
@@ -521,14 +522,15 @@ impl ArrangementPlan {
 
 /// The full composition plan — the commitments the score is realized *from*.
 ///
-/// Round II grows this incrementally: it currently carries the coherence contract, the form
-/// graph and the arrangement plan; the harmonic plan, motif bank and groove identity join it
-/// as later rounds replace the corresponding Round-I generators.
+/// It carries the coherence contract (what stays recognizable), the form graph, the arrangement
+/// plan, and — Round III — the [`DiscoursePlan`] (where the piece is going and what each phrase
+/// owes the future). The harmonic/motif/groove realizers consume these, not a parallel form.
 #[derive(Debug, Clone)]
 pub struct CompositionPlan {
     pub contract: CoherenceContract,
     pub form: FormGraph,
     pub arrangement: ArrangementPlan,
+    pub discourse: DiscoursePlan,
 }
 
 impl CompositionPlan {
@@ -537,10 +539,12 @@ impl CompositionPlan {
         let contract = CoherenceContract::infer(timeline);
         let form = FormGraph::build(timeline, total_bars, &contract);
         let arrangement = ArrangementPlan::build(&form, &contract);
+        let discourse = DiscoursePlan::build(timeline, &form, &contract);
         CompositionPlan {
             contract,
             form,
             arrangement,
+            discourse,
         }
     }
 
@@ -575,6 +579,20 @@ impl CompositionPlan {
             c.novelty_budget,
             c.resolution
         );
+        let d = &self.discourse;
+        let _ = writeln!(
+            s,
+            "discourse: thesis@A{} home(E={:.2} T={:.2} R={:.2} D={:.2})  culmination=phrase{}  answer={}",
+            d.thesis.established_by,
+            d.thesis.home_energy,
+            d.thesis.home_tension,
+            d.thesis.home_register,
+            d.thesis.home_density,
+            d.culmination,
+            d.answer
+                .map(|a| format!("phrase{a}"))
+                .unwrap_or_else(|| "none (unresolved)".into()),
+        );
         let _ = writeln!(s, "phrases ({}):", self.form.phrases.len());
         for (p, a) in self
             .form
@@ -582,29 +600,54 @@ impl CompositionPlan {
             .iter()
             .zip(self.arrangement.phrases.iter())
         {
-            let base = p
-                .family
-                .base()
-                .map(|b| format!("<-A{b}"))
-                .unwrap_or_default();
+            let g = self.discourse.goal(p.ix as usize);
+            let debt = match (g.creates, g.pays) {
+                (Some(c), Some(p)) => format!(" +ob{c} -ob{p}"),
+                (Some(c), None) => format!(" +ob{c}"),
+                (None, Some(p)) => format!(" -ob{p}"),
+                (None, None) => String::new(),
+            };
             let _ = writeln!(
                 s,
-                "  [{:>2}] bars {:>2}..{:<2} {:>6}{:<5} {:<12} E={:.2} T={:.2} R={:.2}{}  | pad:{} keys:{} bass:{} lead:{} drums:{}",
+                "  [{:>2}] bars {:>2}..{:<2} {:>9}/{:<8} {:>6} T→{:.2} R→{:.2}{}  | pad:{} keys:{} bass:{} lead:{} drums:{}",
                 p.ix,
                 p.start_bar,
                 p.end_bar(),
+                g.role.label(),
+                g.closure.label(),
                 p.family.label(),
-                base,
-                p.obligation.label(),
-                p.intent.energy,
-                p.intent.tension,
-                p.intent.register,
-                if p.is_rupture { " *rupture" } else { "" },
+                g.tension_target,
+                g.register_target,
+                debt,
                 a.pad.label(),
                 a.keys.label(),
                 a.bass.label(),
                 a.lead.label(),
                 a.drums.label(),
+            );
+        }
+        // Obligation ledger: what was owed, and whether it was paid, deferred or abandoned.
+        let led = &self.discourse.ledger;
+        let _ = writeln!(
+            s,
+            "obligations ({}): {} resolved, {} abandoned",
+            led.obligations.len(),
+            led.resolved_count(),
+            led.abandoned_count(),
+        );
+        for o in &led.obligations {
+            let status = match o.resolved_by {
+                Some(by) => format!("paid by phrase{by}"),
+                None if o.deferrable => "left open (deferred)".into(),
+                None => "ABANDONED".into(),
+            };
+            let _ = writeln!(
+                s,
+                "  ob{:<2} {:<24} opened@phrase{} → {}",
+                o.id,
+                o.kind.label(),
+                o.source_phrase,
+                status,
             );
         }
         s

@@ -16,6 +16,7 @@
 
 pub mod contract;
 pub mod diagnostics;
+pub mod discourse;
 pub mod form;
 pub mod functor;
 pub mod groove;
