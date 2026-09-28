@@ -14,7 +14,7 @@ use super::discourse::{Closure, DiscourseRole};
 use super::motif::{motif_similarity, MotifIdentity};
 use super::plan::CompositionPlan;
 use super::score::{Role, Score};
-use super::theory::{Function, Midi};
+use super::theory::{pitch_class, Function, Midi};
 
 /// A vector of structural measurements. Preserve the components — do not collapse to a scalar.
 #[derive(Debug, Clone, PartialEq)]
@@ -389,8 +389,15 @@ struct PhraseLead {
 pub struct RealizationDiagnostics {
     /// Phrases that actually sound a lead melody.
     pub lead_phrases: usize,
-    /// Lead notes with no pitch-function justification (an unjustified "wrong note"). Target 0.
+    /// Pitched notes across ALL audible roles (pad/keys/bass/lead) with no pitch-function
+    /// justification — unjustified "wrong notes". Target 0. The listener hears the background too.
     pub unjustified_nonchord_notes: usize,
+    /// The same count broken down per audible role, for localizing which voice a wrong note is in.
+    pub unjustified_by_role: Vec<(Role, usize)>,
+    /// Pitched notes whose nominal sounding body crosses a chord boundary into harmony where the
+    /// pitch is not a chord tone (an old-chord tone smearing under new harmony). Score-level; the
+    /// synth's release tail is a separate audible-lifetime concern.
+    pub cross_boundary_dissonances: usize,
     /// The largest melodic leap (semitones) across a NON-rupture phrase boundary — a teleport if big.
     pub max_boundary_leap: i32,
     /// The mean melodic leap (semitones) across non-rupture phrase boundaries.
@@ -406,22 +413,57 @@ pub struct RealizationDiagnostics {
 impl RealizationDiagnostics {
     /// Measure the realized `score` against the `plan` it came from — reading notes, not targets.
     pub fn measure(plan: &CompositionPlan, score: &Score) -> RealizationDiagnostics {
-        // Group lead notes by phrase, tallying unjustified notes as we go.
+        // Count unjustified notes across ALL pitched roles (not just the lead), tallied per role,
+        // and group the LEAD notes by phrase for the continuity fingerprints below.
         let mut by_ix: std::collections::BTreeMap<u32, Vec<(f64, f32, Midi)>> =
             std::collections::BTreeMap::new();
+        let mut per_role = [0usize; Role::ALL.len()];
         let mut unjustified_nonchord_notes = 0usize;
         for n in &score.notes {
-            if n.role != Role::Lead {
-                continue;
-            }
             if n.function.is_none() {
                 unjustified_nonchord_notes += 1;
+                if let Some(ri) = Role::ALL.iter().position(|&r| r == n.role) {
+                    per_role[ri] += 1;
+                }
             }
-            if let Some(ix) = n.prov.phrase {
-                by_ix
-                    .entry(ix)
-                    .or_default()
-                    .push((n.start_beat, n.dur_beats, n.pitch));
+            if n.role == Role::Lead {
+                if let Some(ix) = n.prov.phrase {
+                    by_ix
+                        .entry(ix)
+                        .or_default()
+                        .push((n.start_beat, n.dur_beats, n.pitch));
+                }
+            }
+        }
+        let unjustified_by_role: Vec<(Role, usize)> =
+            Role::ALL.iter().copied().zip(per_role).collect();
+
+        // Cross-boundary dissonance: a pitched note whose body sustains AUDIBLY past the next chord
+        // change (more than CROSS_OVERHANG_BEATS) into a chord it is not a tone of — an old-chord
+        // tone smearing beneath new harmony. A brief passing-tone tail that resolves at once is not
+        // a smear and is not counted; a held overhang is.
+        const CROSS_OVERHANG_BEATS: f64 = 0.5;
+        let mut cross_boundary_dissonances = 0usize;
+        for n in &score.notes {
+            let end = n.start_beat + n.dur_beats as f64;
+            let next_boundary = score
+                .chords
+                .iter()
+                .map(|c| c.start_beat)
+                .filter(|&b| b > n.start_beat + 1e-6)
+                .min_by(|a, b| a.total_cmp(b));
+            if let Some(b) = next_boundary {
+                if end > b + CROSS_OVERHANG_BEATS {
+                    if let Some(next_span) = score
+                        .chords
+                        .iter()
+                        .find(|c| (c.start_beat - b).abs() < 1e-6)
+                    {
+                        if !next_span.chord.contains_pc(pitch_class(n.pitch)) {
+                            cross_boundary_dissonances += 1;
+                        }
+                    }
+                }
             }
         }
 
@@ -498,6 +540,8 @@ impl RealizationDiagnostics {
         RealizationDiagnostics {
             lead_phrases: phrases.len(),
             unjustified_nonchord_notes,
+            unjustified_by_role,
+            cross_boundary_dissonances,
             max_boundary_leap,
             mean_boundary_leap,
             mean_neighbor_similarity,
@@ -517,6 +561,17 @@ impl RealizationDiagnostics {
             s,
             "  lead_phrases={} unjustified_nonchord_notes={}",
             self.lead_phrases, self.unjustified_nonchord_notes
+        );
+        let by_role = self
+            .unjustified_by_role
+            .iter()
+            .map(|(r, c)| format!("{}={}", r.label(), c))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let _ = writeln!(
+            s,
+            "  unjustified_by_role: {by_role}  cross_boundary_dissonances={}",
+            self.cross_boundary_dissonances
         );
         let _ = writeln!(
             s,
@@ -737,11 +792,23 @@ mod tests {
             let (score, plan) = compose_with_plan(&trace, &world, 2112);
             let d = RealizationDiagnostics::measure(&plan, &score);
             assert!(d.lead_phrases >= 1, "{}: no lead phrases", world.name);
-            // The jazz-principle invariant, verified on the realized score (independent witness to
-            // the functor test that also checks it).
+            // The jazz-principle invariant, verified on the realized score across EVERY audible
+            // role (not just the lead) — the listener hears pad, keys and bass too.
             assert_eq!(
                 d.unjustified_nonchord_notes, 0,
-                "{}: realized score has unjustified lead notes",
+                "{}: realized score has unjustified notes (by role: {:?})",
+                world.name, d.unjustified_by_role
+            );
+            for (role, count) in &d.unjustified_by_role {
+                assert_eq!(
+                    *count, 0,
+                    "{}: {:?} has unjustified notes",
+                    world.name, role
+                );
+            }
+            assert_eq!(
+                d.cross_boundary_dissonances, 0,
+                "{}: a note's sustained body smears into a chord it is not a tone of",
                 world.name
             );
             // Continuity: consecutive statements are transforms of one germ, so they share DNA —

@@ -324,4 +324,30 @@ mod tests {
         // A single F (65) over C major with no temporal neighbours cannot be justified as a path.
         assert_eq!(classify(&base(65, Some(c_major())), &cmaj_scale()), None);
     }
+
+    #[test]
+    fn a_broken_suspension_that_resolves_upward_is_rejected() {
+        // D (62, a G7 tone) held over C major but resolving UP to E (64) is not a suspension (those
+        // resolve down); we do not emit Retardation, and no stepwise path fits, so it is unjustified.
+        let c = PitchContext {
+            prev: Some(62),
+            next: Some(64),
+            prev_chord: Some(g_dom7()),
+            ..base(62, Some(c_major()))
+        };
+        assert_eq!(classify(&c, &cmaj_scale()), None);
+    }
+
+    #[test]
+    fn a_broken_slide_that_leaps_out_is_rejected() {
+        // D# (63) with a stepwise entry (from D) but a LEAP out to G (67) is not a contiguous path
+        // into a chord tone — an intentionally broken slide is not justified.
+        let c = PitchContext {
+            prev: Some(62),
+            next: Some(67),
+            is_strong: false,
+            ..base(63, Some(c_major()))
+        };
+        assert_eq!(classify(&c, &cmaj_scale()), None);
+    }
 }

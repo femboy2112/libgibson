@@ -16,6 +16,21 @@ pub enum Role {
     Keys,
 }
 
+impl Role {
+    /// Every pitched role, in a fixed order — for exhaustive per-role diagnostics.
+    pub const ALL: [Role; 4] = [Role::Pad, Role::Keys, Role::Bass, Role::Lead];
+
+    /// A short lowercase label for dumps and diagnostics.
+    pub fn label(self) -> &'static str {
+        match self {
+            Role::Pad => "pad",
+            Role::Bass => "bass",
+            Role::Lead => "lead",
+            Role::Keys => "keys",
+        }
+    }
+}
+
 /// A synthesized drum voice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DrumVoice {

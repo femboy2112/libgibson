@@ -17,9 +17,9 @@ use super::harmony::{ChordSpan, HarmonyEngine};
 use super::intent::{IntentMorphism, MusicIntent};
 use super::motif::{Motif, MotifBank};
 use super::plan::CompositionPlan;
-use super::score::{Note, Provenance, Role, Score, SfxEvent, SfxKind};
+use super::score::{Note, PitchFunction, Provenance, Role, Score, SfxEvent, SfxKind};
 use super::semantic::{EventKind, SemanticTrace, Tone};
-use super::theory::{Midi, Scale};
+use super::theory::{pitch_class, Midi, Scale};
 use super::timeline::IntentTimeline;
 use super::voicing::VoiceLeader;
 use super::world::MusicWorld;
@@ -94,7 +94,7 @@ fn realize(trace: &SemanticTrace, world: &MusicWorld, seed: u64, plan: &Composit
     // --- Comp: sustained pad bed + sparse groove-locked keys arpeggio. ---
     add_comp(&mut score, &chords, world);
     // --- Bass: persistent kick-locked figure. ---
-    add_bass(&mut score, &chords, &gr.kick_beats, plan);
+    add_bass(&mut score, &chords, &gr.kick_beats, plan, &scale);
     // --- Melody: the thesis motif transformed by each phrase's discourse role. ---
     add_melody(&mut score, &chords, plan, &scale, seed);
     // --- SFX + intent morphisms from significant semantic events. ---
@@ -205,14 +205,22 @@ fn add_comp(score: &mut Score, chords: &[ChordSpan], world: &MusicWorld) {
         // Pad: hold the whole voicing for the chord's duration (the harmonic bed).
         let pad = pad_vl.lead(&span.chord, 4, 67);
         for &p in &pad.voices {
-            score.notes.push(Note::new(
+            let mut note = Note::new(
                 span.start_beat,
                 span.dur_beats * 0.98,
                 p,
                 (0.4 * world.base_dynamic).clamp(0.05, 1.0),
                 Role::Pad,
                 prov,
-            ));
+            );
+            // Pad voices come strictly from the chord (the voice leader draws from its pitch
+            // classes) — verify rather than assume, so a future non-chord tone would surface as
+            // unjustified instead of hiding as "background".
+            note.function = span
+                .chord
+                .contains_pc(pitch_class(p))
+                .then_some(PitchFunction::ChordTone);
+            score.notes.push(note);
         }
         // Keys: single-voice offbeat pushes arpeggiated through the voicing — one every two
         // beats, starting on the "and of 1". The chord already sounds in the pad, so the keys
@@ -226,14 +234,19 @@ fn add_comp(score: &mut Score, chords: &[ChordSpan], world: &MusicWorld) {
         let mut off = 0.5f64;
         while off < dur - 1e-6 {
             let p = voicing.voices[idx % voicing.voices.len()];
-            score.notes.push(Note::new(
+            let mut note = Note::new(
                 span.start_beat + off,
                 0.45,
                 p,
                 (0.35 * world.base_dynamic).clamp(0.05, 1.0),
                 Role::Keys,
                 prov,
-            ));
+            );
+            note.function = span
+                .chord
+                .contains_pc(pitch_class(p))
+                .then_some(PitchFunction::ChordTone);
+            score.notes.push(note);
             idx += 1;
             off += 2.0;
         }
@@ -246,17 +259,42 @@ fn add_comp(score: &mut Score, chords: &[ChordSpan], world: &MusicWorld) {
 /// the span's first kick, a fifth drives the offbeat kicks at high energy, and the last kick
 /// before a chord change steps chromatically into the next root — a repeatable shape, not a
 /// dice roll, still onset-locked to the groove.
-fn add_bass(score: &mut Score, chords: &[ChordSpan], kick_beats: &[f64], plan: &CompositionPlan) {
+/// Max beats a single chromatic approach may sound before its target: beyond this it stops reading
+/// as a pickup and becomes a sustained chromatic tone under the old chord (the R4 defect).
+const BASS_APPROACH_MAX: f64 = 1.0;
+/// Room (beats) before a chord change at which the bass WALKS into it (a stepwise SlidePath line)
+/// rather than stating a single short approach.
+const BASS_WALK_MIN: f64 = 1.5;
+/// The step of a walking bass note (beats).
+const BASS_WALK_STEP: f64 = 0.5;
+
+fn add_bass(
+    score: &mut Score,
+    chords: &[ChordSpan],
+    kick_beats: &[f64],
+    plan: &CompositionPlan,
+    scale: &Scale,
+) {
     let bass_center = 40; // ~E2
     for (ci, span) in chords.iter().enumerate() {
         let span_end = span.start_beat + span.dur_beats as f64;
         let root_pc = span.chord.root_pc;
         let root = pitch_near(root_pc, bass_center);
-        let fifth = pitch_near((root_pc + 7).rem_euclid(12), bass_center);
+        // The chord's ACTUAL fifth: the chord tone nearest a perfect fifth above the root — 7
+        // semitones for major/minor, but 6 for a diminished chord. `root_pc + 7` played a
+        // NON-chord tone on vii°/dim (a wrong note the diagnostics never saw); take the real one.
+        let fifth_pc = span
+            .chord
+            .pitch_classes()
+            .into_iter()
+            .min_by_key(|&pc| ((pc - root_pc).rem_euclid(12) - 7).abs())
+            .unwrap_or((root_pc + 7).rem_euclid(12));
+        let fifth = pitch_near(fifth_pc, bass_center);
         let next_root_pc = chords
             .get(ci + 1)
             .map(|c| c.chord.root_pc)
             .unwrap_or(root_pc);
+        let next_root = pitch_near(next_root_pc, bass_center);
         let energy = {
             let ph = plan.form.phrase_at(span.start_beat);
             plan.discourse.goal(ph.ix as usize).energy_target
@@ -277,38 +315,103 @@ fn add_bass(score: &mut Score, chords: &[ChordSpan], kick_beats: &[f64], plan: &
                 root,
                 energy,
                 "root",
+                PitchFunction::ChordTone,
             );
             continue;
         }
         let n = kicks.len();
         for (i, &k) in kicks.iter().enumerate() {
             let is_last = i + 1 == n;
-            let approaching_change = is_last && span_end < score.total_beats - 1e-6;
-            let (pitch, note) = if approaching_change {
-                // Step chromatically into the next chord's root.
-                let next_root = pitch_near(next_root_pc, bass_center);
-                let dir = (next_root - root).signum();
-                (next_root - dir.clamp(-1, 1), "approach")
-            } else if i == 0 {
-                (root, "root")
-            } else if energy > 0.55 && i % 2 == 1 {
-                // Fifth on the offbeat kicks when there's drive.
-                (fifth, "fifth")
-            } else {
-                (root, "root")
-            };
-            let dur = kicks
+            let room = span_end - k; // beats from this kick to the chord change
+            let approaching = is_last && span_end < score.total_beats - 1e-6;
+
+            // Enough room to WALK into the next chord: a stepwise scale line resolving on a
+            // chromatic approach to the next root. This replaces the old single tone that could
+            // sustain most of a bar as static chromatic dissonance.
+            if approaching && room >= BASS_WALK_MIN {
+                push_bass_walk(score, scale, root, next_root, k, span_end, energy);
+                continue;
+            }
+
+            let default_dur = kicks
                 .get(i + 1)
                 .map(|&nx| (nx - k) as f32)
                 .unwrap_or((span_end - k) as f32)
                 .clamp(0.1, 2.0);
-            push_bass(score, k, dur * 0.9, pitch, energy, note);
+
+            let (pitch, note, func, dur) = if approaching && room <= BASS_APPROACH_MAX {
+                // A short chromatic pickup into the next root — bounded so it reads as an approach.
+                let dir = (next_root - root).signum().clamp(-1, 1);
+                let dir = if dir == 0 { -1 } else { dir };
+                (
+                    next_root - dir,
+                    "approach",
+                    PitchFunction::ChromaticApproach,
+                    room as f32,
+                )
+            } else if i == 0 {
+                (root, "root", PitchFunction::ChordTone, default_dur)
+            } else if energy > 0.55 && i % 2 == 1 {
+                // Fifth on the offbeat kicks when there's drive.
+                (fifth, "fifth", PitchFunction::ChordTone, default_dur)
+            } else {
+                (root, "root", PitchFunction::ChordTone, default_dur)
+            };
+            push_bass(score, k, dur * 0.9, pitch, energy, note, func);
         }
     }
 }
 
-fn push_bass(score: &mut Score, at: f64, dur: f32, pitch: Midi, energy: f32, note: &'static str) {
-    score.notes.push(Note::new(
+/// A stepwise walking bass from `from` toward `next_root`, filling `[start, end)`: scale-tone
+/// intermediates ([`PitchFunction::SlidePath`] — their justification is the path, not the local
+/// chord) resolving onto a final chromatic approach a semitone from the next root
+/// ([`PitchFunction::ChromaticApproach`]). Contiguous and bounded — an idiomatic lead-in, not a
+/// held dissonance.
+fn push_bass_walk(
+    score: &mut Score,
+    scale: &Scale,
+    from: Midi,
+    next_root: Midi,
+    start: f64,
+    end: f64,
+    energy: f32,
+) {
+    let dir = (next_root - from).signum();
+    let dir = if dir == 0 { -1 } else { dir };
+    let target = next_root - dir; // the chromatic approach pitch (a semitone off the next root)
+    let steps = (((end - start) / BASS_WALK_STEP).floor() as usize).max(2);
+    for s in 0..steps {
+        let t0 = start + s as f64 * BASS_WALK_STEP;
+        if t0 >= end - 1e-6 {
+            break;
+        }
+        let t1 = (t0 + BASS_WALK_STEP).min(end);
+        let last = s + 1 == steps;
+        let (pitch, note, func) = if last {
+            (target, "approach", PitchFunction::ChromaticApproach)
+        } else {
+            let frac = (s + 1) as f64 / steps as f64;
+            let interp = from as f64 + (target - from) as f64 * frac;
+            (
+                scale.nearest_scale_pitch(interp.round() as i32),
+                "walk",
+                PitchFunction::SlidePath,
+            )
+        };
+        push_bass(score, t0, (t1 - t0) as f32 * 0.9, pitch, energy, note, func);
+    }
+}
+
+fn push_bass(
+    score: &mut Score,
+    at: f64,
+    dur: f32,
+    pitch: Midi,
+    energy: f32,
+    note: &'static str,
+    func: PitchFunction,
+) {
+    let mut n = Note::new(
         at,
         dur.max(0.1),
         pitch,
@@ -318,7 +421,9 @@ fn push_bass(score: &mut Score, at: f64, dur: f32, pitch: Midi, energy: f32, not
             role_note: note,
             ..Provenance::new(SectionKind::A)
         },
-    ));
+    );
+    n.function = Some(func);
+    score.notes.push(n);
 }
 
 /// The lead voice: the thesis motif transformed by each phrase's **discourse role**.
@@ -535,6 +640,64 @@ mod tests {
                 "{}: {} lead notes have no pitch justification",
                 world.name, unjustified
             );
+        }
+    }
+
+    #[test]
+    fn every_bass_note_carries_a_justified_function() {
+        // Bass used to leave `function = None` on every note, invisible to diagnostics. Now every
+        // bass note is typed, and the line actually approaches or walks into a chord change — which
+        // also proves the formerly-dead SlidePath / ChromaticApproach variants are emitted.
+        let trace = demo_trace(120.0);
+        for world in MusicWorld::all() {
+            let score = compose(&trace, &world, 2112);
+            for n in score.notes.iter().filter(|n| n.role == Role::Bass) {
+                assert!(
+                    n.function.is_some(),
+                    "{}: a bass note carries no PitchFunction",
+                    world.name
+                );
+            }
+            let approaches = score.notes.iter().any(|n| {
+                n.role == Role::Bass
+                    && matches!(
+                        n.function,
+                        Some(PitchFunction::SlidePath) | Some(PitchFunction::ChromaticApproach)
+                    )
+            });
+            assert!(
+                approaches,
+                "{}: the bass never approaches or walks into a chord change",
+                world.name
+            );
+        }
+    }
+
+    #[test]
+    fn a_bass_chord_tone_is_really_a_chord_tone() {
+        // The old code played `root_pc + 7` as the "fifth" even on a diminished chord, whose real
+        // fifth is a semitone lower — a non-chord tone (a wrong note) no diagnostic ever saw. Every
+        // bass note typed as a ChordTone must actually belong to the chord sounding beneath it.
+        let trace = demo_trace(120.0);
+        for world in MusicWorld::all() {
+            let score = compose(&trace, &world, 2112);
+            for n in score.notes.iter().filter(|n| n.role == Role::Bass) {
+                if n.function != Some(PitchFunction::ChordTone) {
+                    continue; // approach / slide are justified by their path, not the local chord
+                }
+                let chord = score
+                    .chords
+                    .iter()
+                    .filter(|c| c.start_beat <= n.start_beat + 1e-6)
+                    .max_by(|a, b| a.start_beat.total_cmp(&b.start_beat))
+                    .map(|c| c.chord);
+                assert!(
+                    chord.is_some_and(|c| c.contains_pc(pitch_class(n.pitch))),
+                    "{}: bass ChordTone {} is not a tone of its sounding chord",
+                    world.name,
+                    n.pitch
+                );
+            }
         }
     }
 
