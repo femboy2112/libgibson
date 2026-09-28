@@ -13,12 +13,12 @@ use super::form::{Form, SectionKind, BEATS_PER_BAR};
 use super::groove::GrooveEngine;
 use super::harmony::{ChordSpan, HarmonyEngine};
 use super::intent::{IntentMorphism, MusicIntent};
-use super::motif::Motif;
-use super::plan::CompositionPlan;
+use super::motif::{motif_similarity, Motif, MotifBank};
+use super::plan::{CompositionPlan, Phrase, PhraseObligation, SectionFamily};
 use super::rng::Rng;
 use super::score::{Note, Provenance, Role, Score, SfxEvent, SfxKind};
 use super::semantic::{EventKind, SemanticTrace, Tone};
-use super::theory::{Chord, Midi, Scale};
+use super::theory::{Midi, Scale};
 use super::timeline::IntentTimeline;
 use super::voicing::VoiceLeader;
 use super::world::MusicWorld;
@@ -66,8 +66,8 @@ pub fn compose_with_plan(
     // --- Bass locked to the kick and the harmony. ---
     add_bass(&mut score, &chords, &gr.kick_beats, &form, seed);
 
-    // --- Melody: motif development across sections, harmony-aware. ---
-    add_melody(&mut score, &chords, &form, &scale, seed);
+    // --- Melody: one developing motif threaded through the plan's phrases. ---
+    add_melody(&mut score, &chords, &plan, &scale, seed);
 
     // --- SFX + intent morphisms from significant semantic events. ---
     add_sfx_and_provenance(&mut score, trace, &form);
@@ -125,21 +125,6 @@ fn apply_arrangement(score: &mut Score, plan: &CompositionPlan) {
         e.prov.phrase = Some(phrase.ix);
         e.prov.family = Some(phrase.family.label());
     }
-}
-
-/// The chord sounding at `beat`.
-fn chord_at(chords: &[ChordSpan], beat: f64) -> Chord {
-    chords
-        .iter()
-        .rev()
-        .find(|c| beat + 1e-6 >= c.start_beat)
-        .map(|c| c.chord)
-        .unwrap_or_else(|| {
-            chords
-                .first()
-                .map(|c| c.chord)
-                .unwrap_or(Chord::new(0, super::theory::Quality::Maj))
-        })
 }
 
 /// The pitch with class `pc` nearest to `center`.
@@ -285,84 +270,110 @@ fn push_bass(score: &mut Score, at: f64, dur: f32, pitch: Midi, energy: f32, not
     });
 }
 
-fn add_melody(score: &mut Score, chords: &[ChordSpan], form: &Form, scale: &Scale, seed: u64) {
+/// The lead voice: one developing melody threaded through the plan's phrases.
+///
+/// Round I re-seeded a pristine motif every section, inserted random rests, and snapped each
+/// note to a chord tone in isolation — preserving a motif `id` while destroying the phrase
+/// identity. This threads the *developed* motif through the form (restating the germ at
+/// A-sections and whenever it has drifted past the contract's transform budget, developing
+/// the current object otherwise), enters statements grid-aligned (no random offset), reads
+/// register from the phrase's now-live elevation intent, and realizes each whole statement
+/// jointly against the harmony via [`super::motif::realize_phrase`] instead of per-note
+/// snapping. The lead plays only where the arrangement gives it a voice — so it breathes.
+fn add_melody(
+    score: &mut Score,
+    chords: &[ChordSpan],
+    plan: &CompositionPlan,
+    scale: &Scale,
+    seed: u64,
+) {
     let mut rng = Rng::new(seed ^ 0x3E10_D1E5);
-    let seed_motif = Motif::seed_a();
+    let bank = MotifBank::generate(scale, seed ^ 0x3E10_D1E5);
+    let germ = bank.identity.identity();
+    // Restate once the developed object has drifted more than the contract permits.
+    let floor = (1.0 - plan.contract.max_transform).clamp(0.0, 1.0);
+    let two_bar = 2.0 * BEATS_PER_BAR;
 
-    for sec in &form.sections {
-        let sec_start = sec.start_bar as f64 * BEATS_PER_BAR;
-        let sec_beats = sec.bars as f64 * BEATS_PER_BAR;
-        let energy = sec.energy;
-
-        // Intro/coda: mostly rest — let the pad breathe.
-        if matches!(sec.kind, SectionKind::Intro) && energy < 0.3 {
+    let mut current = bank.identity.clone();
+    for phrase in &plan.form.phrases {
+        // The melody breathes: it sounds only where the arrangement gives the lead a voice.
+        if !plan.arrangement.at(phrase.ix as usize).lead.is_audible() {
             continue;
         }
 
-        // Develop the motif per section kind (identity preserved throughout).
-        let (motif, morph) = develop_motif(&seed_motif, sec.kind, &mut rng);
-        // Register from elevation/energy: climax rides higher.
-        let octave = match sec.kind {
-            SectionKind::Climax => 5,
-            SectionKind::Coda => 4,
-            _ => 4 + (energy > 0.65) as i32,
+        // Restate the germ (or land the hook at the climax), else develop the CURRENT object.
+        let (next, morph) = if matches!(phrase.family, SectionFamily::Climax) {
+            (bank.hook.clone(), "hook")
+        } else if matches!(phrase.family, SectionFamily::A)
+            || motif_similarity(&current.identity(), &germ) < floor
+        {
+            (bank.identity.clone(), "statement")
+        } else {
+            develop_current(&current, phrase, &mut rng)
         };
-        let root_degree = 0; // relative to scale tonic; motif degrees offset from here
+        current = next;
 
-        // Place statements across the section with breath (rests) between.
-        let phrase_beats = motif.total_beats() as f64;
-        let mut t = sec_start;
+        // Register from the phrase's intent — elevation is finally live (see IntentTimeline).
+        let octave = if matches!(phrase.family, SectionFamily::Climax) {
+            5
+        } else {
+            4 + (phrase.intent.register > 0.65) as i32
+        };
+
+        let stmt_beats = current.total_beats() as f64;
+        if stmt_beats < 1e-6 {
+            continue;
+        }
+        let phrase_end = phrase.end_beat();
+        let mut t = phrase.start_beat();
         let mut guard = 0;
-        while t + phrase_beats <= sec_start + sec_beats && guard < 64 {
-            let notes = motif.render(scale, root_degree, octave, t);
-            for (nb, dur, raw_pitch) in notes {
-                // Harmony-aware target tones: snap on-beat notes to chord tones; leave
-                // short off-beat notes as scale/passing tones.
-                let chord = chord_at(chords, nb);
-                let on_beat = (nb.fract()).abs() < 1e-6;
-                let pitch = if on_beat || dur >= 1.0 {
-                    chord.nearest_chord_tone(scale.nearest_scale_pitch(raw_pitch))
-                } else {
-                    scale.nearest_scale_pitch(raw_pitch)
-                };
+        while t + stmt_beats <= phrase_end + 1e-6 && guard < 32 {
+            for (nb, dur, pitch) in
+                super::motif::realize_phrase(&current, chords, scale, 0, octave, t, 4)
+            {
                 score.notes.push(Note {
                     start_beat: nb,
                     dur_beats: (dur * 0.9).max(0.1),
                     pitch,
-                    velocity: (0.55 + 0.4 * energy).clamp(0.1, 1.0),
+                    velocity: (0.55 + 0.4 * phrase.intent.energy).clamp(0.1, 1.0),
                     role: Role::Lead,
                     prov: Provenance {
-                        motif_id: Some(motif.id),
+                        motif_id: Some(current.id),
                         motif_xform: Some(morph),
+                        anchor: Some("motif"),
                         role_note: "melody",
-                        ..Provenance::new(sec.kind)
+                        ..Provenance::new(phrase.family.to_section_kind())
                     },
                 });
             }
-            // Breath between statements: a beat or two of rest.
-            t += phrase_beats + rng.range_f32(1.0, 2.0) as f64;
+            // Breathe to the next 2-bar boundary — grid-aligned rest, not a random gap.
+            let after = t + stmt_beats;
+            let boundary = (after / two_bar).ceil() * two_bar;
+            t = if boundary > after + 1e-6 {
+                boundary
+            } else {
+                after
+            };
             guard += 1;
         }
     }
 }
 
-/// Choose a motif development for a section (returns the developed motif and a label).
-fn develop_motif(seed: &Motif, kind: SectionKind, rng: &mut Rng) -> (Motif, &'static str) {
-    match kind {
-        SectionKind::Intro => (seed.fragment(2), "fragment"),
-        SectionKind::A => (seed.clone(), "statement"),
-        SectionKind::Development => {
+/// Transform the CURRENT developed motif by the phrase's obligation — bounded,
+/// length-preserving moves so the statement keeps fitting the phrase and stays recognizable
+/// as the same idea (the restate-on-drift check in `add_melody` bounds cumulative drift).
+fn develop_current(m: &Motif, phrase: &Phrase, rng: &mut Rng) -> (Motif, &'static str) {
+    match phrase.obligation {
+        PhraseObligation::Lift => (m.transpose(2), "sequence+2"),
+        PhraseObligation::Release => (m.scale_rhythm(0.75), "diminish"),
+        PhraseObligation::Continuation => (m.transpose(-1), "sequence-1"),
+        _ => {
             if rng.chance(0.5) {
-                (seed.sequence(1, 2), "sequence")
+                (m.transpose(1), "sequence+1")
             } else {
-                (seed.invert(), "invert")
+                (m.scale_rhythm(1.25), "augment")
             }
         }
-        // scale_rhythm(<1) shortens notes = DIMINUTION; scale_rhythm(>1) lengthens =
-        // AUGMENTATION (see motif.rs). Round I had both labels exactly backwards.
-        SectionKind::Climax => (seed.transpose(2).scale_rhythm(0.75), "diminish+up"),
-        SectionKind::Contrast => (seed.retrograde(), "retrograde"),
-        SectionKind::Coda => (seed.fragment(2).scale_rhythm(1.5), "augment-frag"),
     }
 }
 
