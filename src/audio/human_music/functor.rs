@@ -52,7 +52,9 @@ pub fn compose_with_plan(
     let chords = harmony.generate(&form);
 
     let mut groove = GrooveEngine::new(world, seed);
-    let gr = groove.generate(&form);
+    // Fills land at the plan's phrase boundaries, not the old Form's section edges.
+    let phrase_end_bars: Vec<u32> = plan.form.phrases.iter().map(|p| p.end_bar()).collect();
+    let gr = groove.generate(&form, &phrase_end_bars);
 
     let total_beats = form.total_bars as f64 * BEATS_PER_BAR;
     let mut score = Score::new(world.tempo_bpm, BEATS_PER_BAR, total_beats);

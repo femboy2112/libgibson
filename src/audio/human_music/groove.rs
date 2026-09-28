@@ -43,7 +43,16 @@ impl GrooveEngine {
     }
 
     /// Generate the percussion track over `form`.
-    pub fn generate(&mut self, form: &Form) -> Groove {
+    ///
+    /// A base groove CELL — kick on 1 & 3, snare backbeat on 2 & 4, subdivided hats — is
+    /// realized every bar. Round I decided each variation (extra kick, ghosts, open-hat lift,
+    /// fill) with an INDEPENDENT per-bar coin flip, so nothing repeated and the boundary was
+    /// unmarked 30% of the time. Round II makes the variations a bounded, repeating function
+    /// of a 2-bar cell position and the energy curve: the groove is recognizable and mutates
+    /// within bounds, and a fill lands because a *phrase* is ending (`phrase_end_bars`), not
+    /// because a die rolled. Only the micro-timing humanization stays stochastic — a tasteful,
+    /// seeded pocket, not structural noise.
+    pub fn generate(&mut self, form: &Form, phrase_end_bars: &[u32]) -> Groove {
         let bpb = BEATS_PER_BAR;
         let mut hits = Vec::new();
         let mut kick_beats = Vec::new();
@@ -60,16 +69,19 @@ impl GrooveEngine {
                 continue;
             }
 
-            let is_fill_bar = bar + 1 == sec.end_bar() && energy > 0.5 && self.rng.chance(0.7);
+            // 2-bar cell: bar 0 is the plain statement, bar 1 carries the variation. A
+            // recognizable groove that repeats with bounded mutation instead of re-rolling.
+            let varied = bar % 2 == 1;
+            let is_fill_bar = phrase_end_bars.contains(&(bar + 1)) && energy > 0.4;
 
-            // --- Kick: downbeat + beat 3, syncopations grow with energy. ---
+            // --- Kick: downbeat + beat 3; syncopations only on the cell's varied bar. ---
             self.emit_kick(&mut hits, &mut kick_beats, bar_start, 0.0, 0.95, prov);
             self.emit_kick(&mut hits, &mut kick_beats, bar_start, 2.0, 0.8, prov);
-            if energy > 0.55 && self.rng.chance(0.5) {
+            if energy > 0.55 && varied {
                 // Push kick to the "and of 3" — a syncopated anticipation.
                 self.emit_kick(&mut hits, &mut kick_beats, bar_start, 2.5, 0.6, prov);
             }
-            if energy > 0.75 && self.rng.chance(0.4) {
+            if energy > 0.78 && varied {
                 self.emit_kick(&mut hits, &mut kick_beats, bar_start, 3.75, 0.55, prov);
             }
 
@@ -82,28 +94,27 @@ impl GrooveEngine {
                 }
             }
 
-            // --- Ghost snares between backbeats (pocket). ---
-            if self.ghost_amount > 0.05 && energy > 0.45 {
+            // --- Ghost snares between backbeats (pocket) — placed on the varied bar in worlds
+            //     with a real ghost character, at a fixed low velocity. ---
+            if self.ghost_amount > 0.15 && energy > 0.45 && varied {
                 for &b in &[1.75f64, 3.5] {
-                    if self.rng.chance(self.ghost_amount) {
-                        let v = 0.25 * self.dyn_scale(energy);
-                        hits.push(self.hit(DrumVoice::Snare, bar_start + self.swung(b), v, prov));
-                    }
+                    let v = (0.22 * self.dyn_scale(energy)).min(0.35);
+                    hits.push(self.hit(DrumVoice::Snare, bar_start + self.swung(b), v, prov));
                 }
             }
 
-            // --- Hats: subdivisions with accent hierarchy + swing, thinned by density. ---
+            // --- Hats: subdivisions with accent hierarchy + swing, thinned DETERMINISTICALLY
+            //     at low density (drop the same weak off-16ths every bar, not random ones). ---
             let steps = (self.subdiv as f64 * bpb) as u32; // subdivisions per bar
             for s in 0..steps {
                 let frac = s as f64 / self.subdiv as f64; // beat position within the bar
-                                                          // Density gate: at low density drop some off-steps.
                 let on_beat = (frac.fract()).abs() < 1e-6;
-                if !on_beat && density < 0.5 && self.rng.chance(0.5) {
-                    continue;
+                if !on_beat && density < 0.5 && s % 2 == 1 {
+                    continue; // thin the "e"/"a" off-subdivisions, consistently
                 }
                 let accent = if on_beat { 0.7 } else { 0.42 };
                 let v = accent * self.dyn_scale(energy);
-                let open = !on_beat && (frac - (bpb - 0.5)).abs() < 1e-6 && self.rng.chance(0.4); // "& of 4" lift
+                let open = !on_beat && (frac - (bpb - 0.5)).abs() < 1e-6 && varied; // "& of 4" lift
                 let voice = if open {
                     DrumVoice::OpenHat
                 } else {
@@ -112,7 +123,8 @@ impl GrooveEngine {
                 hits.push(self.hit(voice, bar_start + self.swung(frac), v, prov));
             }
 
-            // --- Phrase-end fill: extra snares on the last half-bar's 16ths. ---
+            // --- Phrase-end fill: extra snares on the last half-bar's 16ths, because the
+            //     phrase is ending — not because a 70% coin fired. ---
             if is_fill_bar {
                 for k in 0..4 {
                     let b = 2.0 + k as f64 * 0.5;
@@ -191,7 +203,7 @@ mod tests {
     fn groove_interlocks_kick_and_backbeat() {
         let form = Form::from_trace(&demo_trace(120.0));
         let mut g = GrooveEngine::new(&MusicWorld::black_ice(), 3);
-        let gr = g.generate(&form);
+        let gr = g.generate(&form, &[]);
         assert!(!gr.hits.is_empty());
         assert!(!gr.kick_beats.is_empty());
         // Kicks recorded match kick hits.
@@ -215,8 +227,8 @@ mod tests {
         let form = Form::from_trace(&demo_trace(120.0));
         let mut a = GrooveEngine::new(&MusicWorld::vapor95(), 5);
         let mut b = GrooveEngine::new(&MusicWorld::vapor95(), 5);
-        let ga = a.generate(&form);
-        let gb = b.generate(&form);
+        let ga = a.generate(&form, &[]);
+        let gb = b.generate(&form, &[]);
         assert_eq!(ga.hits.len(), gb.hits.len());
         for h in &ga.hits {
             assert!((0.0..=1.0).contains(&h.velocity));
@@ -235,5 +247,30 @@ mod tests {
         assert!((straight.swung(0.5) - 0.5).abs() < 1e-9);
         // Vapor swings: the "and" is pushed later.
         assert!(swung.swung(0.5) > 0.5);
+    }
+
+    #[test]
+    fn fills_land_at_phrase_ends_not_by_coin_flip() {
+        let form = Form::from_trace(&demo_trace(120.0));
+        let all_ends: Vec<u32> = (1..=form.total_bars).collect();
+        let g_with = GrooveEngine::new(&MusicWorld::black_ice(), 9).generate(&form, &all_ends);
+        let g_without = GrooveEngine::new(&MusicWorld::black_ice(), 9).generate(&form, &[]);
+        let snares = |g: &Groove| {
+            g.hits
+                .iter()
+                .filter(|h| h.voice == DrumVoice::Snare)
+                .count()
+        };
+        // Marking phrase ends adds fill snares; with none marked there are strictly fewer.
+        // (Structural: fills follow the form, not a die.)
+        assert!(
+            snares(&g_with) > snares(&g_without),
+            "phrase-end fills added no snares: {} vs {}",
+            snares(&g_with),
+            snares(&g_without)
+        );
+        // Deterministic given the same seed and phrase ends.
+        let g_again = GrooveEngine::new(&MusicWorld::black_ice(), 9).generate(&form, &all_ends);
+        assert_eq!(g_with.hits.len(), g_again.hits.len());
     }
 }
