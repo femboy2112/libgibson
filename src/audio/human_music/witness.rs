@@ -20,7 +20,7 @@ const TOL: f64 = 0.125 + 1e-6;
 /// The audit result for one action.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Witness {
-    pub action: u32,
+    pub action: super::ids::ActionId,
     pub kind: ActionKind,
     pub witnessed: bool,
     /// What the audit looked for.

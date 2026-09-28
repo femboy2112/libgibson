@@ -5,6 +5,7 @@
 
 use super::form::{Section, SectionKind};
 use super::harmony::ChordSpan;
+use super::ids::{ActionId, ActionStamp, InteractionId, MaterialId, ObligationId};
 use super::theory::Midi;
 
 /// A melodic/harmonic instrument role (maps to a world [`super::instrument::Patch`]).
@@ -205,10 +206,20 @@ pub struct Provenance {
     pub role: Option<&'static str>,
     /// The phrase's permitted closure: `"open"`, `"half"`, `"deferred"`, `"strong"`, ….
     pub closure: Option<&'static str>,
-    /// The intent-morphism label that produced it.
+    /// The intent-morphism label that produced it (stamped from the action's cause when the
+    /// event realizes a morphism-lifted action).
     pub morphism: Option<&'static str>,
     /// A short human role note: `"comp"`, `"bass"`, `"melody"`, `"sfx"`.
     pub role_note: &'static str,
+    /// The exact planned actions this event realizes (Round VIIb). A witness is an event that
+    /// carries the action's id — not merely an event that happens to fall in its window.
+    pub actions: ActionStamp,
+    /// The interaction (call → response) this event belongs to, if any.
+    pub interaction: Option<InteractionId>,
+    /// The interaction material this event is a projection of, if any.
+    pub material: Option<MaterialId>,
+    /// The discourse obligation this event helps settle, if any.
+    pub obligation: Option<ObligationId>,
 }
 
 impl Provenance {
@@ -228,6 +239,26 @@ impl Provenance {
             closure: None,
             morphism: None,
             role_note: "",
+            actions: ActionStamp::NONE,
+            interaction: None,
+            material: None,
+            obligation: None,
+        }
+    }
+
+    /// This provenance additionally realizing action `id`.
+    #[must_use]
+    pub fn realizing(mut self, id: ActionId) -> Provenance {
+        self.actions = self.actions.with(id);
+        self
+    }
+
+    /// This provenance additionally realizing `id`, when there is one.
+    #[must_use]
+    pub fn realizing_opt(self, id: Option<ActionId>) -> Provenance {
+        match id {
+            Some(id) => self.realizing(id),
+            None => self,
         }
     }
 }

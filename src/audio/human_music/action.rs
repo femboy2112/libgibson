@@ -18,6 +18,7 @@
 
 use super::backbone::{BackboneTimeline, HarmonicGesture};
 use super::form::BEATS_PER_BAR;
+use super::ids::ActionId;
 use super::intent::IntentMorphism;
 use super::language::MusicalLanguage;
 use super::rng::Rng;
@@ -139,7 +140,7 @@ pub enum ActionCause {
         gesture: HarmonicGesture,
     },
     /// An interaction: a response to the call with action id `call`.
-    Interaction { call: u32 },
+    Interaction { call: ActionId },
     /// A planned lead statement in phrase `phrase` (the thematic line itself: a call others may
     /// answer).
     Statement { phrase: u32 },
@@ -148,8 +149,11 @@ pub enum ActionCause {
 /// One musical action.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MusicalAction {
-    /// Stable id (index order of creation).
-    pub id: u32,
+    /// The action's id: always its index in [`ActionPlan::actions`]. The base plan
+    /// ([`ActionPlan::build`]) is sorted by time before ids are assigned; actions the performance
+    /// planner appends later ([`ActionPlan::push`]: calls, answers) keep creation order, so the
+    /// vector is NOT chronological — iterate [`ActionPlan::chronological`] for time order.
+    pub id: ActionId,
     pub cause: ActionCause,
     pub initiator: Agent,
     pub start_beat: f64,
@@ -162,7 +166,7 @@ pub struct MusicalAction {
     /// The semantic binding (index into the backbone timeline's bindings) it realizes, if any.
     pub binding: Option<usize>,
     /// The action this one answers, pays or resolves, if any.
-    pub pays: Option<u32>,
+    pub pays: Option<ActionId>,
 }
 
 impl MusicalAction {
@@ -410,7 +414,7 @@ impl ActionPlan {
                     });
                     continue;
                 }
-                let id = plan.actions.len() as u32;
+                let id = ActionId(plan.actions.len() as u32);
                 // A cadence hit that coincides with a resolution pays that resolution.
                 let pays = if kind == ActionKind::Hit && has_resolve {
                     plan.actions
@@ -456,7 +460,7 @@ impl ActionPlan {
                                 dur: f64,
                                 target: Option<f64>,
                                 responders: Vec<Agent>| {
-                    let id = plan.actions.len() as u32;
+                    let id = ActionId(plan.actions.len() as u32);
                     plan.actions.push(MusicalAction {
                         id,
                         cause,
@@ -553,14 +557,17 @@ impl ActionPlan {
                 .total_cmp(&b.start_beat)
                 .then(a.kind.cmp(&b.kind))
         });
-        // Re-number after sorting so ids follow time; remap `pays` references.
-        let old_ids: Vec<u32> = plan.actions.iter().map(|a| a.id).collect();
+        // Re-number after sorting so the BASE plan's ids follow time; remap `pays` references.
+        let old_ids: Vec<ActionId> = plan.actions.iter().map(|a| a.id).collect();
         for (i, a) in plan.actions.iter_mut().enumerate() {
-            a.id = i as u32;
+            a.id = ActionId(i as u32);
         }
         for a in &mut plan.actions {
             if let Some(p) = a.pays {
-                a.pays = old_ids.iter().position(|&o| o == p).map(|i| i as u32);
+                a.pays = old_ids
+                    .iter()
+                    .position(|&o| o == p)
+                    .map(|i| ActionId(i as u32));
             }
         }
         plan
@@ -585,11 +592,30 @@ impl ActionPlan {
     }
 
     /// Append an action (the performance planner adds interaction actions), returning its id.
-    pub fn push(&mut self, mut a: MusicalAction) -> u32 {
-        a.id = self.actions.len() as u32;
+    /// Ids are creation ids (`id == index`); appended actions are not in time order.
+    pub fn push(&mut self, mut a: MusicalAction) -> ActionId {
+        a.id = ActionId(self.actions.len() as u32);
         let id = a.id;
         self.actions.push(a);
         id
+    }
+
+    /// The action with id `id`.
+    pub fn get(&self, id: ActionId) -> Option<&MusicalAction> {
+        self.actions.get(id.index()).filter(|a| a.id == id)
+    }
+
+    /// Every action in time order (start beat, then kind, then id) — the order a listener meets
+    /// them, whatever order they were created in.
+    pub fn chronological(&self) -> Vec<&MusicalAction> {
+        let mut v: Vec<&MusicalAction> = self.actions.iter().collect();
+        v.sort_by(|a, b| {
+            a.start_beat
+                .total_cmp(&b.start_beat)
+                .then(a.kind.cmp(&b.kind))
+                .then(a.id.cmp(&b.id))
+        });
+        v
     }
 
     /// A compact dump.
@@ -615,28 +641,28 @@ impl ActionPlan {
                 f.reset_fill.label()
             );
         }
-        for a in &self.actions {
+        for a in self.chronological() {
             let cause = match a.cause {
                 ActionCause::Morphism {
                     transition,
                     morphism,
                 } => format!("t{transition}:{}", morphism.label()),
                 ActionCause::Gesture { slot, gesture } => format!("slot{slot}:{}", gesture.label()),
-                ActionCause::Interaction { call } => format!("answers a{call}"),
+                ActionCause::Interaction { call } => format!("answers {call}"),
                 ActionCause::Statement { phrase } => format!("statement@phrase{phrase}"),
             };
             let resp: Vec<&str> = a.responders.iter().map(|r| r.label()).collect();
             let _ = writeln!(
                 s,
                 "  a{:<3} {:>6.2}+{:<4.2} {:<11} by {:<8} <- {:<20} resp=[{}]{}",
-                a.id,
+                a.id.0,
                 a.start_beat,
                 a.dur_beats,
                 a.kind.label(),
                 a.initiator.label(),
                 cause,
                 resp.join(","),
-                a.pays.map(|p| format!(" pays a{p}")).unwrap_or_default()
+                a.pays.map(|p| format!(" pays {p}")).unwrap_or_default()
             );
         }
         for d in &self.deferred {
@@ -711,9 +737,9 @@ mod tests {
         assert_eq!(hits_on_deflects, deflect_slots);
         assert!(plan.of_kind(ActionKind::Pickup).count() >= 2);
         assert!(plan.of_kind(ActionKind::Fill).count() >= 2);
-        // Ids follow time and are dense.
+        // The base plan's ids follow time and are dense.
         for (i, a) in plan.actions.iter().enumerate() {
-            assert_eq!(a.id as usize, i);
+            assert_eq!(a.id.index(), i);
         }
         for w in plan.actions.windows(2) {
             assert!(w[0].start_beat <= w[1].start_beat + 1e-9);
