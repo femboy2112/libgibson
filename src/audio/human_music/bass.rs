@@ -109,7 +109,16 @@ pub fn realize_bass(
                     .map(|(w, s)| (w.syncopation + 0.5 * w.pickup + 0.3 * w.push, s))
                     .collect();
                 extra.sort_by(|a, b| b.0.total_cmp(&a.0));
-                let n = if eb.kinetic > 0.6 { 3 } else { 2 };
+                // The complexity budget: a busy lead bar leaves the bass one extra onset fewer,
+                // unless the bass is the one in front.
+                let lead_notes = lead
+                    .iter()
+                    .filter(|n| n.start_beat >= bs - 1e-6 && n.start_beat < be - 1e-6)
+                    .count();
+                let mut n = if eb.kinetic > 0.6 { 3 } else { 2 };
+                if lead_notes >= 5 && eb.foreground != Agent::Bass {
+                    n -= 1;
+                }
                 onsets.extend(extra.iter().take(n).map(|x| x.1));
                 if eb.bass == BassMode::Foundation && eb.kinetic < 0.55 {
                     onsets.push(8);

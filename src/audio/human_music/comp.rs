@@ -142,7 +142,13 @@ pub fn realize_keys(
             KeysMode::Comp | KeysMode::Answer => {
                 // The complexity budget: fewer stabs when the lead is dense in this bar.
                 let lead_notes = lead_in(lead, bar_start, bar_start + 4.0).len();
-                let room = (eb.budget - lead_notes as f32).max(0.0);
+                // When the bass is quoting/countering (in front), the keys leave it room too.
+                let bass_front = matches!(
+                    eb.bass,
+                    super::performance::BassMode::Quote | super::performance::BassMode::Counter
+                );
+                let room =
+                    (eb.budget - lead_notes as f32 - if bass_front { 2.5 } else { 0.0 }).max(0.0);
                 ((room / 2.5).round() as usize)
                     .clamp(1, if perf.language.shell_voicings { 3 } else { 2 })
             }

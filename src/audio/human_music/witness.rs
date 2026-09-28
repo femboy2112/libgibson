@@ -376,6 +376,26 @@ pub fn drum_pattern_recurrence(score: &Score, total_bars: u32) -> f32 {
     }
 }
 
+/// The realized kinetic curve: onsets per beat per bar across every player (drums included) —
+/// forward motion read from the notes, independent of loudness.
+pub fn kinetic_curve(score: &Score) -> Vec<f32> {
+    let bars = (score.total_beats / score.beats_per_bar).round() as usize;
+    let mut v = vec![0f32; bars];
+    let mut add = |t: f64| {
+        let b = (t / score.beats_per_bar).floor() as usize;
+        if b < bars {
+            v[b] += 1.0;
+        }
+    };
+    for n in &score.notes {
+        add(n.start_beat);
+    }
+    for d in &score.drums {
+        add(d.start_beat);
+    }
+    v.iter().map(|c| c / score.beats_per_bar as f32).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::contract::CompositionGrammar;
@@ -398,6 +418,17 @@ mod tests {
             let r = audit(&c.perf, &c.score);
             eprintln!("{}: {}", world.name, r.report());
             assert!(r.total() >= 30, "{}: too few actions", world.name);
+            // The compressed second cycle is more urgent than the statement cycle, without being
+            // louder: more onsets per beat (the kinetic arc).
+            let k = kinetic_curve(&c.score);
+            let mean = |a: usize, b: usize| k[a..b].iter().sum::<f32>() / (b - a) as f32;
+            assert!(
+                mean(20, 28) > mean(4, 12),
+                "{}: no kinetic build ({:.2} vs {:.2})",
+                world.name,
+                mean(20, 28),
+                mean(4, 12)
+            );
             assert!(
                 r.witnessed() == r.total(),
                 "{}: only {}/{} actions audibly witnessed\n{}",

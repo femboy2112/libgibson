@@ -650,6 +650,94 @@ the deeper melody rewrite for a later round. The full fusion **ensemble** — a 
 beyond the R5 walk — is staged; Round VI delivers the keys step. SFX pitches relative to the local
 harmony, and the R4/R5-carried debts, remain. The decisive human listen is still the gate.
 
+### 3.15 Round VII — actions, one clock, contextual harmony, and players who listen
+
+Round VI's listen: "hints of continuity, but the song's meaning remains ambiguous"; "moods and mood
+shifts, but almost no ACTION"; instruments locked into characteristic forms whose placement stays
+predictable; call-and-response locked into structural slots. The working hypothesis — the engine
+generated musical *states* well but did not preserve or realize musical *actions* — was verified
+in the code before any edit:
+
+- `IntentTransition::applied` had **zero** readers outside `timeline.rs`. All seventeen morphisms
+  died at the timeline boundary; composition read only the scalar energy/tension/density/register.
+- Every part was realized blind from shared static inputs (keys at fixed +0.5/+2 offsets, bass on
+  every kick, drums generated first, the lead deaf to everyone); call/response was
+  `ThematicTrajectory::next_for`'s Question→Answer phrase slot.
+- The DeflectedLift backbone was generated privately inside realization and tiled one gesture per
+  bar (`bar % 4`) while the flagship story placed its semantic phases ~4 bars apart — two clocks.
+  The story's second release (a `Confirmation`) sounded over a harmonic *deflect*.
+- `degree_implied_tension` and `function_of_degree` were fixed Ionian tables (duplicated in two
+  files). In A Aeolian every Functional cadence prepared with Em7 labelled `Dominant`.
+
+**Contextual harmony (`context.rs`).** Function is a relation, not a degree. `PullEvidence`
+derives pull toward a *specific* target from pitch content (leading tone, resolving tritone, root a
+fifth/semitone above); a dominant claim needs evidence, so a natural-minor v and a modal ♭VII are
+departures. `HarmonicRelation` (Arrival, Prolong, Depart, Prepare, DominantTo, Tonicize, Deflected,
+ModalShift, Pedal, ChromaticConnector), a `TensionVector` (pull, distance, colour, strain, surprise,
+openness) and a per-harmony `PitchPalette` (chord tones, guide tones, licensed tensions, colour,
+expensive tones, next-context targets; the most continuous of several lawful chord-scales) make up
+each `HarmonicContext`. The legacy tables survive only as preserved failing witnesses in the tests.
+Functional cadences borrow the raised third where the diatonic v has no pull (`V(hm)`).
+
+**One clock (`backbone.rs`).** `BackboneTimeline` is world-independent and lives in
+`CompositionPlan`: per slot, the gesture, cycle, variation (thesis / statement / expanded /
+compressed / transformed) and the `SemanticBinding` that opened it. `gesture_for_morphisms` binds by
+*effect* (Resolve→Open, Relax/Cadence→Reset, Suspend/Modulate→Deflect, Intensify→Lift,
+Prepare→home). `TimeScales`/`ClockBinding` declare the relation between the semantic, gesture,
+phrase and bar timescales (`SemanticPhase`, or a declared `FixedTiling` fallback), and semantic
+events are quantized onto musical time (`timeline::quantize_event_beat`). A home-establishing
+opening states the cell in miniature (the thesis). World realization ends every Lift on a
+**pointer** with concrete pull; the Deflect lands elsewhere while keeping common tones with the
+expected arrival, recorded as a `DeflectWitness`; the Open is chosen as a consequence of the miss;
+longer slots alternate their anchor with a pull-free common-tone satellite.
+
+**Language (`language.rs`).** `MusicalLanguage {Simple, FusionConversation}` is how the band
+speaks, orthogonal to the song (plan) and the timbre (world): harmonic rhythm inside a gesture,
+colour depth, shell voicings, surface subdivision, syncopation weight, interaction readiness,
+distributed agency, unison figures, a simultaneous-information budget, chromatic-connective weight
+and internal-rest share.
+
+**Actions (`action.rs`).** `MusicalAction {id, cause, initiator, window, kind, target, responders,
+binding, pays}`. Every applied morphism is path-lifted (Prepare→Pickup, Intensify→Push,
+Suspend→Hold, Syncopate→Displace, Reharmonize, Modulate→Tonicize, Thicken/Thin, Fragment/Sequence,
+Resolve paid by a Cadence Hit, Relax→Pullback, …) or recorded as a `Deferral` with a reason. The
+backbone adds its own verbs each cycle (Lift: pickup + push into the miss; Deflect: ensemble hit +
+break; Open: re-entry + unison figure; Reset: fill into the next attempt); `ActionFamilies` choose
+once per piece who initiates each, so a recurring gesture has a recognizable consequence.
+
+**The performance (`performance.rs`).** `CompositionPlan → PerformancePlan → Score`. The
+performance owns the harmony and its `HarmonicContext` timeline (with harmonic actions applied as
+recorded edits), the `ActionPlan`, a shared 16th-note `AccentGrid` (structural, backbeat,
+syncopation, pickup, push, hole, hit) carrying a per-gesture rhythm cell rotated and thinned per
+bar and mutated by actions, the lead statement plan (lawfully varied entries, lead answers to
+bass/keys figures), calls → response windows chosen under an `InteractionMemory` that penalizes
+repeating (initiator, responder, latency, metric step, transform) — with overlapping, delayed,
+chord-crossing and deliberately silent answers — and an `EnsembleBar` per bar (foreground, each
+player's mode, the complexity budget, a kinetic target). An ensemble verb where the arrangement
+leaves one player on stage becomes that player's pickup.
+
+**Players who listen.** Realized in listening order, each a projection of the same plan: `melody`
+(the lead), `comp` (keys comp on the grid around the lead's real onsets, answer with the call's own
+material — quoted, echoed, inverted, compressed, completed — stab the hits, hold suspensions, leave
+space; the pad sustains, shells, carries common tones, swells, adds an upper structure or drops
+out), `bass` (its own subset of the gesture cell, a pedal re-struck under the Deflect, a walk
+through the Lift, a counterline in the lead's gaps, motif figures and answers, in on the hits) and
+the drums (`groove::realize_drums`: the pocket identity kept; the kick interlocks with the bass,
+ghosts on weak off-beats, open hats on pickups/pushes, action fills, breaks, half/double time, echo
+answers). Ensemble unison figures double the lead's line in keys and bass, accented by the kit. A
+held note lifts off when the harmony moves.
+
+**Audible witnesses (`witness.rs`).** Each action is audited against the realized score (a push
+needs two players on the step, a break an empty window, an answer its responder's notes, a unison
+keys and bass on the same onsets and pitch classes, …). The audit found and drove three fixes
+(unrealized unisons, phantom intro tutti, unfragmented Fragment actions). Flagship: 57/57 actions
+witnessed in all three worlds. `kinetic_curve` reads forward motion from onsets per beat; the
+compressed second cycle is measurably more urgent than the statement cycle without being louder.
+
+**Calibration A/Bs.** `human_music_lab -- --ab` renders one composition four ways: fusion,
+simple language, actions disabled (mood without action), and clockwork fixed-slot responses;
+`--language=`, `--actions=off` and `--responses=clockwork` select each on the normal path.
+
 ## 4. Engines carried over unchanged from Round I
 
 These pieces of the Round I vertical slice are still in place and were not part of the
