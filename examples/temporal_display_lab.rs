@@ -19,10 +19,18 @@
 //!   cargo run --release --example temporal_display_lab -- --temporal --measured-hz=120
 //!   cargo run --release --example temporal_display_lab -- --temporal --measured-hz=120 \
 //!       --survival=0.97 --region=40x12 --seconds=15
+//!
+//! Flags: `--hz`, `--seconds`, `--region=WxH`, `--temporal`, `--measured-hz`,
+//! `--survival`, `--jitter-p95` (measured p95 presentation jitter, ms),
+//! `--depth-cap` (emitted linear-luminance swing cap, `0..=1`; the forced-choice
+//! staircase varies this), `--reduced-motion`, `--sync`/`--no-sync` (synchronized
+//! update frames), `--dither`/`--no-dither` (residual threshold dither; on by
+//! default). Safety is resolved against the real terminal color depth.
 
 use gibson::{
     BorderType, Context, FramePacing, Node, PresentationProfile, ResetPolicy, Style,
     SubcellGlyphMode, TemporalDiagnostics, TemporalDisplayProcessor, TemporalGate,
+    TemporalSafetyPolicy,
 };
 use std::io;
 use std::sync::Arc;
@@ -63,9 +71,10 @@ fn sample(cols: u16, rows: u16, lx: u16, ly: u16) -> [u8; 3] {
 
 fn diagnostics_line(d: &TemporalDiagnostics) -> String {
     format!(
-        "gate={:?}  modulating={}  cells: {} modulatable / {} frozen  worst-swing={:.3}  \
-         static-RMSE={:.4}  missed-periods={}",
+        "gate={:?}  depth={:?}  modulating={}  cells: {} modulatable / {} frozen  \
+         worst-swing={:.3}  static-RMSE={:.4}  missed-periods={}",
         d.gate,
+        d.color_depth,
         d.modulating,
         d.modulatable_cells,
         d.frozen_cells,
@@ -90,18 +99,31 @@ fn main() -> io::Result<()> {
     let temporal = has("--temporal");
     let measured_hz = arg_f32("measured-hz");
     let survival = arg_f32("survival").unwrap_or(0.95);
+    let jitter_p95 = arg_f32("jitter-p95").unwrap_or(0.5);
+    let depth_cap = arg_f32("depth-cap");
     let reduced_motion = has("--reduced-motion");
+    let dither = !has("--no-dither");
+    let sync = !has("--no-sync");
 
     let mut processor =
         TemporalDisplayProcessor::new(cols, rows, SubcellGlyphMode::Braille2x4, 0x7E5);
+    processor.set_dither(dither);
     if reduced_motion {
         processor.set_reduced_motion(true);
+    }
+    // Optional custom emitted-swing depth cap for the forced-choice staircase.
+    // `TemporalSafetyPolicy` is #[non_exhaustive], so mutate fields off Default
+    // rather than a struct literal (the supported external idiom).
+    if let Some(cap) = depth_cap {
+        let mut policy = TemporalSafetyPolicy::default();
+        policy.max_luminance_depth = cap;
+        processor.set_policy(policy);
     }
     // Temporal luminance is only eligible with an explicitly supplied *measured*
     // profile. Without one the processor stays unmeasured and renders static.
     if temporal {
         if let Some(mhz) = measured_hz {
-            processor.set_profile(PresentationProfile::measured(mhz, survival, 0.5));
+            processor.set_profile(PresentationProfile::measured(mhz, survival, jitter_p95));
         } else {
             eprintln!(
                 "note: --temporal ignored without --measured-hz=<observed presentation Hz>; \
@@ -125,6 +147,11 @@ fn main() -> io::Result<()> {
     }
     ctx.set_max_fps(hz);
     ctx.set_frame_pacing(FramePacing::PhaseLocked);
+    ctx.set_sync_updates(sync);
+    // Resolve the emitted-swing safety against the terminal's real color depth, so
+    // ANSI256/ANSI16/Mono freeze exactly the cells whose *wire* colors would swing
+    // past the cap (reclassifies the installed target in place).
+    processor.set_color_depth(ctx.capabilities().color_depth);
 
     let header = if matches!(processor.gate(), TemporalGate::Enabled) {
         "TEMPORAL DISPLAY LAB  —  residual temporal dithering ENABLED (experimental, unproven)"

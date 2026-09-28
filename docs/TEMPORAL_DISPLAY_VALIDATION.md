@@ -93,12 +93,19 @@ updates on/off.
 
 ```sh
 cargo run --release --example temporal_display_lab -- \
-    --temporal --measured-hz=<measured presentation Hz> --survival=<measured>
+    --temporal --measured-hz=<measured presentation Hz> --survival=<measured> \
+    --jitter-p95=<measured p95 jitter ms>
 ```
 
 Compare the STATIC and TEMPORAL panels at equal mean luminance. Report: is the
 temporal panel visibly higher-fidelity, and is any flicker/shimmer objectionable?
-A forced-choice depth staircase (vary `--depth-cap`) gives a threshold.
+For the threshold, run a forced-choice **depth staircase**: repeat with
+`--depth-cap=0.02`, `0.04`, `0.06`, … and find the smallest cap at which you can
+still reliably pick the temporal panel. Feed the measured jitter via `--jitter-p95`;
+if it exceeds half the presentation period the safety gate reports `JitterTooHigh`
+and the lab stays static (by design). Safety is resolved against the terminal's
+**real color depth**, so on a non-TrueColor terminal more cells freeze, and Mono is
+always static.
 
 **Report back:** terminal + version, sync on/off, measured presentation Hz /
 survival / jitter, and the A/B perceptual verdict with comfort notes. Development

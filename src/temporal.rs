@@ -11,6 +11,7 @@
 //! measured [`PresentationProfile`] and fall back to static rendering when its
 //! safety/quality gate fails.
 
+use crate::capability::{quantize_color, ColorDepth};
 use crate::cell::{Cell, Color, Glyph, Style};
 use crate::glyph::SubcellGlyphMode;
 use crate::surface::Surface;
@@ -71,6 +72,11 @@ pub struct TemporalSafetyPolicy {
     pub min_luminance_hz: f32,
     pub min_survival_rate: f32,
     pub max_luminance_depth: f32,
+    /// Maximum tolerated 95th-percentile presentation jitter, expressed as a
+    /// fraction of the presentation period (`jitter_p95_ms / (1000/hz)`). A
+    /// normalized bound so a single policy is meaningful across cadences: at the
+    /// default `0.5`, p95 jitter must stay under half a frame period.
+    pub max_jitter_fraction: f32,
 }
 
 impl Default for TemporalSafetyPolicy {
@@ -79,6 +85,7 @@ impl Default for TemporalSafetyPolicy {
             min_luminance_hz: 100.0,
             min_survival_rate: 0.90,
             max_luminance_depth: 0.10,
+            max_jitter_fraction: 0.5,
         }
     }
 }
@@ -92,13 +99,14 @@ pub enum TemporalGate {
     Unmeasured,
     CadenceTooLow,
     SurvivalTooLow,
+    JitterTooHigh,
     DepthTooHigh,
 }
 
 impl TemporalSafetyPolicy {
     /// Gates the **presentation** conditions only: reduced-motion preference, a
-    /// measured profile, adequate cadence and adequate frame survival. It does
-    /// **not** bound modulation depth.
+    /// measured profile, adequate cadence, adequate frame survival, and bounded
+    /// presentation jitter. It does **not** bound modulation depth.
     ///
     /// This is the check [`TemporalDisplayProcessor`] applies before enforcing its
     /// own per-cell bound computed from the actual emitted fg/bg luminance swing.
@@ -115,6 +123,18 @@ impl TemporalSafetyPolicy {
         }
         if !profile.survival_rate.is_finite() || profile.survival_rate < self.min_survival_rate {
             return TemporalGate::SurvivalTooLow;
+        }
+        // Normalized jitter: p95 inter-presentation jitter as a fraction of the
+        // presentation period. Ragged timing smears the residual duty regardless
+        // of nominal cadence, so an otherwise-healthy high-Hz / high-survival path
+        // with jittery presentation is gated out. `presentation_hz` passed the
+        // cadence check above (>= min_luminance_hz), so the period is finite and
+        // positive whenever the default (or any positive) minimum is used.
+        let period_ms = 1000.0 / profile.presentation_hz;
+        if !profile.jitter_p95_ms.is_finite()
+            || profile.jitter_p95_ms > self.max_jitter_fraction * period_ms
+        {
+            return TemporalGate::JitterTooHigh;
         }
         TemporalGate::Enabled
     }
@@ -760,6 +780,21 @@ impl TemporalBrailleField {
         self.surface_from_masks_styled(masks, mode)
     }
 
+    /// Advances one residual phase like [`Self::advance_residual_styled`], but
+    /// applies a per-cell eligibility gate: cells marked ineligible emit their
+    /// exact static mask and keep their accumulator frozen, so a caller can
+    /// modulate low-swing cells while holding high-swing cells perfectly static in
+    /// the same frame. `eligible` is indexed by cell in row-major order; a missing
+    /// or out-of-range entry is treated as eligible.
+    pub fn advance_residual_styled_gated(
+        &mut self,
+        eligible: &[bool],
+        mode: SubcellGlyphMode,
+    ) -> Surface {
+        let masks = self.advance_residual_masks_gated(Some(eligible));
+        self.surface_from_masks_styled(masks, mode)
+    }
+
     fn static_masks(&self) -> Vec<u8> {
         self.static_mask.clone()
     }
@@ -784,6 +819,16 @@ impl TemporalBrailleField {
     }
 
     fn advance_residual_masks(&mut self) -> Vec<u8> {
+        self.advance_residual_masks_gated(None)
+    }
+
+    /// Residual advance with an optional per-cell eligibility gate. An ineligible
+    /// cell emits its static-mask baseline and its accumulator is left untouched
+    /// (frozen at its current phase), so the cell holds an exact static frame and
+    /// can be re-enabled later without carrying stale residual. `eligible` is
+    /// indexed by cell (row-major); `None` treats every cell as eligible, and an
+    /// out-of-range or missing entry is treated as eligible.
+    fn advance_residual_masks_gated(&mut self, eligible: Option<&[bool]>) -> Vec<u8> {
         let mut masks = Vec::with_capacity(self.duty.len());
         let (seed, frame, dither) = (self.seed, self.frame_index, self.dither);
         for (cell_index, ((targets, &baseline), acc)) in self
@@ -793,6 +838,12 @@ impl TemporalBrailleField {
             .zip(self.accumulator.iter_mut())
             .enumerate()
         {
+            let cell_eligible = eligible.is_none_or(|e| e.get(cell_index).copied().unwrap_or(true));
+            if !cell_eligible {
+                // Ineligible: emit the static baseline, do not integrate residual.
+                masks.push(baseline);
+                continue;
+            }
             let mut mask = 0u8;
             for bit in 0..8 {
                 let baseline_on = baseline & (1u8 << bit) != 0;
@@ -880,28 +931,48 @@ impl TemporalBrailleField {
     }
 }
 
-/// Rec.709 relative luminance of a color in linear light (`0..=1`), or `None`
-/// when the exact emitted luminance is not known here — any non-RGB color (named,
-/// indexed, or reset). Temporal cells produced by [`project_rgb_subcells`] always
-/// carry RGB colors, so the modulated path always has a defined luminance; `None`
-/// is treated conservatively (frozen to static) by [`TemporalDisplayProcessor`].
+/// Rec.709 relative luminance of a color in linear light (`0..=1`), or `None` for
+/// [`Color::Reset`], whose realized luminance (the terminal default) is unknown
+/// here. Named and indexed colors resolve through [`Color::to_rgb`], so once a
+/// style has been quantized to the wire palette its emitted luminance is defined;
+/// `None` is treated conservatively (frozen to static) by
+/// [`TemporalDisplayProcessor`].
 fn color_linear_luminance(color: Color) -> Option<f32> {
     match color {
-        Color::Rgb(r, g, b) => {
+        // Reset is "terminal default": its realized luminance is unknown here, so
+        // treat it conservatively (the caller freezes such cells to static).
+        Color::Reset => None,
+        // Every other color — RGB, indexed, or one of the 16 named — has a defined
+        // 8-bit realization via `to_rgb`, so its emitted luminance is known.
+        other => {
+            let (r, g, b) = other.to_rgb();
             let lin = rgb8_to_linear([r, g, b]);
             Some(0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2])
         }
-        _ => None,
     }
 }
 
 /// Worst-case instantaneous linear-light luminance swing when one dot of a cell
-/// with `style` flips between background and foreground. `None` means at least one
-/// color's emitted luminance is unknown (non-RGB or unset), which the processor
-/// treats as unbounded and freezes to static.
-fn style_luminance_swing(style: Style) -> Option<f32> {
-    let fg = color_linear_luminance(style.fg?)?;
-    let bg = color_linear_luminance(style.bg?)?;
+/// flips between background and foreground, evaluated on the colors **actually
+/// emitted** at `depth` — i.e. after the same [`quantize_color`] step the renderer
+/// applies on the wire. `None` means the swing is unbounded or unmodelled and the
+/// cell must be frozen to static:
+///
+/// * [`ColorDepth::Mono`] emits no color attribute at all, so fg and bg carry no
+///   luminance difference on the wire; the only modulation signal is glyph
+///   coverage, which this luminance model does not bound, so Mono is always frozen.
+/// * a color whose quantized realization has unknown luminance (e.g.
+///   [`Color::Reset`]) or an unset fg/bg also yields `None`.
+///
+/// In [`ColorDepth::TrueColor`] quantization is the identity on `Color::Rgb`, so
+/// this is exactly the pre-0.3.1 RGB swing; ANSI256/ANSI16 now measure the real
+/// palette-snapped luminance gap instead of the pre-quantization RGB gap.
+fn style_luminance_swing_resolved(style: Style, depth: ColorDepth) -> Option<f32> {
+    if depth == ColorDepth::Mono {
+        return None;
+    }
+    let fg = color_linear_luminance(quantize_color(style.fg?, depth)?)?;
+    let bg = color_linear_luminance(quantize_color(style.bg?, depth)?)?;
     Some((fg - bg).abs())
 }
 
@@ -925,6 +996,8 @@ pub struct TemporalDiagnostics {
     pub mean_emitted_static_rmse: f32,
     /// Frames remaining in the cadence-degradation hysteresis hold (`0` = healthy).
     pub degraded_hold_frames: u32,
+    /// The color depth used for the emitted-swing safety evaluation.
+    pub color_depth: ColorDepth,
 }
 
 /// Frames of forced-static hysteresis after any observed missed deadline, so a
@@ -949,7 +1022,15 @@ pub struct TemporalDisplayProcessor {
     width: u16,
     height: u16,
     mode: SubcellGlyphMode,
+    /// The color depth the renderer will quantize to on the wire. Safety is judged
+    /// on the colors emitted at this depth, not the raw RGB centroids.
+    color_depth: ColorDepth,
     field: TemporalBrailleField,
+    /// Per-cell modulation eligibility (row-major). A cell is eligible when its
+    /// emitted luminance swing at `color_depth` is within the policy cap. This is
+    /// non-destructive — the field keeps every cell's continuous duty — so raising
+    /// the cap or changing depth can re-enable a cell via `reclassify`.
+    eligible: Vec<bool>,
     profile: PresentationProfile,
     policy: TemporalSafetyPolicy,
     reduced_motion: bool,
@@ -973,11 +1054,14 @@ impl TemporalDisplayProcessor {
         // Robust default for the user-facing path: dither the residual so a
         // coherent presentation subsample cannot alias into a DC bias.
         field.set_dither(true);
+        let cells = (width as usize).saturating_mul(height as usize);
         Self {
             width,
             height,
             mode,
+            color_depth: ColorDepth::TrueColor,
             field,
+            eligible: vec![false; cells],
             profile: PresentationProfile::unmeasured(),
             policy: TemporalSafetyPolicy::default(),
             reduced_motion: false,
@@ -1007,10 +1091,30 @@ impl TemporalDisplayProcessor {
         self.profile = profile;
     }
 
-    /// Sets the safety policy. Per-cell freeze decisions are recomputed on the
-    /// next [`Self::set_target_image`], so set the policy before the target.
+    /// Sets the safety policy and immediately reclassifies the current target's
+    /// per-cell eligibility. Because eligibility is non-destructive (the field
+    /// retains every cell's continuous duty), raising `max_luminance_depth` can
+    /// re-enable cells a stricter policy had frozen, with no reprojection; a
+    /// newly-eligible cell has its residual accumulator reseeded.
     pub fn set_policy(&mut self, policy: TemporalSafetyPolicy) {
         self.policy = policy;
+        self.reclassify();
+    }
+
+    /// Sets the wire color depth used for the emitted-swing safety evaluation and
+    /// reclassifies immediately. Safety is judged on the colors the renderer will
+    /// actually emit at this depth: in [`ColorDepth::Mono`] no color reaches the
+    /// wire, so every cell is frozen to static; ANSI256/ANSI16 use the
+    /// palette-snapped luminance rather than the raw RGB. Defaults to
+    /// [`ColorDepth::TrueColor`]; typically fed from `ctx.capabilities().color_depth`.
+    pub fn set_color_depth(&mut self, depth: ColorDepth) {
+        self.color_depth = depth;
+        self.reclassify();
+    }
+
+    /// The color depth used for the emitted-swing safety evaluation.
+    pub fn color_depth(&self) -> ColorDepth {
+        self.color_depth
     }
 
     /// Sets the accessibility reduced-motion preference. When `true`, output is
@@ -1036,37 +1140,22 @@ impl TemporalDisplayProcessor {
     }
 
     /// Projects a logical Braille RGB image (`2*width` by `4*height` samples) as
-    /// the new target, installs it, and enforces the per-cell emitted-swing safety
-    /// bound: any cell whose fg/bg luminance swing exceeds the cap (or is unknown)
-    /// is snapped to its static baseline so it can only ever show its static frame.
-    /// `reset` controls whether accumulators are reseeded (use [`ResetPolicy::Reset`]
-    /// for genuinely new content).
+    /// the new target, installs it, then classifies per-cell modulation
+    /// eligibility from the emitted luminance swing at the current color depth.
+    ///
+    /// This is **non-destructive**: every cell keeps its continuous duty target. A
+    /// cell whose emitted swing exceeds the policy cap (or whose colors have unknown
+    /// luminance, or any cell in [`ColorDepth::Mono`]) is marked ineligible and
+    /// emits only its exact static frame — but its target is preserved, so a later
+    /// [`Self::set_policy`] or [`Self::set_color_depth`] can re-enable it without
+    /// reprojecting. `reset` controls whether accumulators are reseeded (use
+    /// [`ResetPolicy::Reset`] for genuinely new content).
     pub fn set_target_image(&mut self, sample: impl Fn(u16, u16) -> [u8; 3], reset: ResetPolicy) {
         let projection = project_braille_image(self.width, self.height, sample);
         self.mean_emitted_static_rmse = projection.mean_emitted_static_rmse();
         projection.install_into(&mut self.field, reset);
-
-        let cap = self.policy.max_luminance_depth;
-        let (mut modulatable, mut frozen, mut worst) = (0usize, 0usize, 0.0f32);
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let style = self.field.cell_style(x, y).unwrap_or_default();
-                let swing = style_luminance_swing(style);
-                if let Some(s) = swing {
-                    worst = worst.max(s);
-                }
-                if matches!(swing, Some(s) if s <= cap) {
-                    modulatable += 1;
-                } else {
-                    frozen += 1;
-                    self.field.freeze_cell_to_static(x, y);
-                }
-            }
-        }
-        self.modulatable_cells = modulatable;
-        self.frozen_cells = frozen;
-        self.worst_cell_swing = worst;
         self.has_target = true;
+        self.reclassify();
     }
 
     /// The top-level profile/reduced-motion gate (independent of the cadence hold).
@@ -1104,7 +1193,8 @@ impl TemporalDisplayProcessor {
             && !self.motion_static;
         self.last_modulating = modulate;
         if modulate {
-            self.field.advance_residual_styled(self.mode)
+            self.field
+                .advance_residual_styled_gated(&self.eligible, self.mode)
         } else {
             self.static_fallback()
         }
@@ -1120,12 +1210,48 @@ impl TemporalDisplayProcessor {
             worst_cell_swing: self.worst_cell_swing,
             mean_emitted_static_rmse: self.mean_emitted_static_rmse,
             degraded_hold_frames: self.degraded_hold,
+            color_depth: self.color_depth,
         }
     }
 
     /// Reseeds all residual accumulators (e.g. after a discontinuity).
     pub fn reset(&mut self) {
         self.field.reset_all();
+    }
+
+    /// Recomputes per-cell modulation eligibility from the current target's styles,
+    /// the policy depth cap and the color depth, and refreshes the diagnostic
+    /// counts. A cell transitioning from ineligible to eligible has its residual
+    /// accumulator reseeded (it was frozen while ineligible and would otherwise
+    /// carry stale residual). Non-destructive: never alters a cell's duty target.
+    fn reclassify(&mut self) {
+        let cap = self.policy.max_luminance_depth;
+        let depth = self.color_depth;
+        let (mut modulatable, mut frozen, mut worst) = (0usize, 0usize, 0.0f32);
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let index = (y as usize) * self.width as usize + x as usize;
+                let style = self.field.cell_style(x, y).unwrap_or_default();
+                let swing = style_luminance_swing_resolved(style, depth);
+                if let Some(s) = swing {
+                    worst = worst.max(s);
+                }
+                let eligible = matches!(swing, Some(s) if s <= cap);
+                if eligible {
+                    modulatable += 1;
+                    if !self.eligible[index] {
+                        // ineligible -> eligible: drop stale frozen residual.
+                        self.field.reset_cell(x, y);
+                    }
+                } else {
+                    frozen += 1;
+                }
+                self.eligible[index] = eligible;
+            }
+        }
+        self.modulatable_cells = modulatable;
+        self.frozen_cells = frozen;
+        self.worst_cell_swing = worst;
     }
 }
 
@@ -1882,5 +2008,170 @@ mod tests {
             assert_eq!(surface.get(0, 0).unwrap().style, left);
             assert_eq!(surface.get(1, 0).unwrap().style, right);
         }
+    }
+
+    #[test]
+    fn resolved_swing_is_capability_aware_not_raw_rgb() {
+        use crate::capability::{quantize_color, ColorDepth};
+        use crate::cell::Color;
+
+        let style = Style::default()
+            .fg(Color::Rgb(30, 200, 90))
+            .bg(Color::Rgb(60, 40, 210));
+
+        // TrueColor: quantization is the identity on RGB, so the resolved swing is
+        // exactly the raw linear-luminance swing (behavior unchanged from 0.3.0).
+        let tc = style_luminance_swing_resolved(style, ColorDepth::TrueColor).unwrap();
+        let raw = (color_linear_luminance(Color::Rgb(30, 200, 90)).unwrap()
+            - color_linear_luminance(Color::Rgb(60, 40, 210)).unwrap())
+        .abs();
+        assert!(
+            (tc - raw).abs() < 1e-6,
+            "TrueColor swing must equal the raw RGB swing"
+        );
+
+        // ANSI256/ANSI16: the swing is computed on the QUANTIZED colors, i.e. the
+        // exact colors the renderer emits on the wire (capability.rs quantize_color).
+        for depth in [ColorDepth::Ansi256, ColorDepth::Ansi16] {
+            let got = style_luminance_swing_resolved(style, depth).unwrap();
+            let qfg = quantize_color(Color::Rgb(30, 200, 90), depth).unwrap();
+            let qbg = quantize_color(Color::Rgb(60, 40, 210), depth).unwrap();
+            let want =
+                (color_linear_luminance(qfg).unwrap() - color_linear_luminance(qbg).unwrap()).abs();
+            assert!(
+                (got - want).abs() < 1e-6,
+                "{depth:?} swing must be measured on the quantized wire colors"
+            );
+        }
+
+        // Ironclad "not raw RGB": two DISTINCT RGB grays that both quantize to the
+        // same ANSI16 entry. Raw swing is > 0, but the emitted swing collapses to
+        // exactly 0 because the wire carries one color.
+        let near = Style::default()
+            .fg(Color::Rgb(95, 95, 95))
+            .bg(Color::Rgb(110, 110, 110));
+        assert!(
+            style_luminance_swing_resolved(near, ColorDepth::TrueColor).unwrap() > 0.0,
+            "distinct grays have a nonzero TrueColor swing"
+        );
+        assert_eq!(
+            style_luminance_swing_resolved(near, ColorDepth::Ansi16),
+            Some(0.0),
+            "both grays map to one ANSI16 entry, so the emitted swing is exactly 0"
+        );
+
+        // Mono emits no color at all -> the fg/bg luminance signal is not on the
+        // wire -> unmodellable -> None (the processor freezes such cells).
+        assert!(style_luminance_swing_resolved(style, ColorDepth::Mono).is_none());
+
+        // Color::Reset is the terminal default: unknown luminance -> None.
+        let reset_style = Style::default().fg(Color::Reset).bg(Color::Rgb(0, 0, 0));
+        assert!(style_luminance_swing_resolved(reset_style, ColorDepth::TrueColor).is_none());
+    }
+
+    #[test]
+    fn processor_mono_forces_static_everywhere() {
+        use crate::capability::ColorDepth;
+        let mut p = TemporalDisplayProcessor::new(2, 1, SubcellGlyphMode::Braille2x4, 7);
+        p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.1));
+        p.set_color_depth(ColorDepth::Mono);
+        p.set_target_image(
+            |_lx, ly| {
+                let v = 100u8 + 3 * ly as u8;
+                [v, v, v]
+            },
+            ResetPolicy::Reset,
+        );
+        let d = p.diagnostics();
+        assert_eq!(d.color_depth, ColorDepth::Mono);
+        assert_eq!(
+            d.modulatable_cells, 0,
+            "Mono has no wire color to bound: all frozen"
+        );
+        assert_eq!(d.frozen_cells, 2);
+        // The profile gate itself is Enabled, but no cell is eligible -> static.
+        assert_eq!(p.gate(), TemporalGate::Enabled);
+        p.advance(0);
+        assert!(!p.diagnostics().modulating, "Mono must never modulate");
+    }
+
+    #[test]
+    fn raising_depth_cap_reenables_target_without_reprojection() {
+        // A cell with a modest, fractional-duty gray gradient: it has a nonzero
+        // emitted swing AND interior duties, so when eligible it genuinely
+        // modulates. This proves eligibility is non-destructive: if freezing had
+        // overwritten the duty (the 0.3.0 behavior), re-enabling would leave the
+        // duty at its baseline endpoints and the cell could not modulate.
+        let mut p = TemporalDisplayProcessor::new(1, 1, SubcellGlyphMode::Braille2x4, 9);
+        p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.1));
+        p.set_target_image(
+            |_lx, ly| {
+                let v = [120u8, 127, 133, 140][ly as usize];
+                [v, v, v]
+            },
+            ResetPolicy::Reset,
+        );
+        let swing = p.diagnostics().worst_cell_swing;
+        assert!(
+            swing > 0.0,
+            "gradient cell must have a nonzero swing, got {swing}"
+        );
+
+        // Strict cap (half the measured swing) freezes the cell.
+        p.set_policy(TemporalSafetyPolicy {
+            max_luminance_depth: swing * 0.5,
+            ..Default::default()
+        });
+        assert_eq!(
+            p.diagnostics().modulatable_cells,
+            0,
+            "strict cap freezes the moderate-swing cell"
+        );
+
+        // Raising the cap (twice the swing) re-enables it WITHOUT set_target_image.
+        p.set_policy(TemporalSafetyPolicy {
+            max_luminance_depth: swing * 2.0,
+            ..Default::default()
+        });
+        assert_eq!(
+            p.diagnostics().modulatable_cells,
+            1,
+            "raising the cap must reclassify immediately and re-enable the cell"
+        );
+        assert_eq!(p.diagnostics().frozen_cells, 0);
+
+        // And the re-enabled cell actually modulates: proof the duty survived the
+        // freeze (nondestructive eligibility).
+        let mut glyphs = std::collections::HashSet::new();
+        for _ in 0..300 {
+            glyphs.insert(p.advance(0).get(0, 0).unwrap().glyph.grapheme.clone());
+        }
+        assert!(
+            glyphs.len() > 1,
+            "re-enabled cell must modulate; a destructive freeze would have flattened its duty"
+        );
+    }
+
+    #[test]
+    fn jitter_gate_rejects_ragged_presentation() {
+        let policy = TemporalSafetyPolicy::default(); // max_jitter_fraction = 0.5
+                                                      // 120 Hz => 8.333 ms period. p95 jitter 5 ms => fraction 0.6 > 0.5.
+        assert_eq!(
+            policy.gate_profile(PresentationProfile::measured(120.0, 0.99, 5.0), false),
+            TemporalGate::JitterTooHigh
+        );
+        // 3 ms => fraction 0.36 < 0.5: healthy.
+        assert_eq!(
+            policy.gate_profile(PresentationProfile::measured(120.0, 0.99, 3.0), false),
+            TemporalGate::Enabled
+        );
+        // Non-finite jitter is never trusted.
+        assert_eq!(
+            policy.gate_profile(
+                PresentationProfile::measured(120.0, 0.99, f32::INFINITY),
+                false
+            ),
+            TemporalGate::JitterTooHigh
+        );
     }
 }
