@@ -840,8 +840,12 @@ fn plan_interactions(
     let mut figure_calls: Vec<Call> = Vec::new();
     if lang.distributed_agency && interact && mode == ResponseMode::Free {
         for a in &actions.actions {
-            if matches!(a.kind, ActionKind::Pickup | ActionKind::Fragment)
-                && matches!(a.initiator, Agent::Bass | Agent::Keys)
+            // Pickups, fragments and a keys-led re-entry are figures a player STATES — calls that
+            // open a response window (initiative is distributed, not the lead's alone).
+            if matches!(
+                a.kind,
+                ActionKind::Pickup | ActionKind::Fragment | ActionKind::ReEntry
+            ) && matches!(a.initiator, Agent::Bass | Agent::Keys)
             {
                 let len = a.dur_beats.clamp(1.0, 2.0);
                 figure_calls.push(Call {
