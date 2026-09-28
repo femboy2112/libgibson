@@ -338,7 +338,7 @@ pub(super) fn plan_interactions(
     let mut opportunities: Vec<InteractionOpportunity> = Vec::new();
     let mut interactions: Vec<Interaction> = Vec::new();
     let mut statements: Vec<LeadStatement> = Vec::new();
-    let total_beats = plan.form.total_bars as f64 * BEATS_PER_BAR;
+    let total_beats = plan.form.total_beats;
     let two_bar = 2.0 * BEATS_PER_BAR;
     let calls_open = lang.distributed_agency && interact && mode == ResponseMode::Free;
 
