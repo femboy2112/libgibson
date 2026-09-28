@@ -212,8 +212,10 @@ pub struct DiscourseDiagnostics {
     pub phrases: usize,
     /// Phrases with no discourse relation to past or future (should be ~0).
     pub orphan_phrases: usize,
-    /// Non-deferrable obligations left open at the end — a raised expectation never paid.
+    /// Obligations never settled that outlived their deadline — a raised expectation never paid.
     pub abandoned_obligations: usize,
+    /// Obligations settled, but after their deadline — the expectation was kept waiting.
+    pub late_obligations: usize,
     /// Strong terminal closures that settle nothing and are not the final dissolve — a full stop
     /// that resolves no open expectation.
     pub unearned_strong_closures: usize,
@@ -251,11 +253,14 @@ impl DiscourseDiagnostics {
             .count();
 
         let abandoned_obligations = d.ledger.abandoned_count();
+        let late_obligations = d.ledger.late_count();
 
         let unearned_strong_closures = goals
             .iter()
             .filter(|g| {
-                g.closure.is_terminal() && g.pays.is_none() && g.role != DiscourseRole::Dissolve
+                g.closure.is_terminal()
+                    && d.ledger.settled_by(g.phrase_ix).next().is_none()
+                    && g.role != DiscourseRole::Dissolve
             })
             .count();
 
@@ -311,6 +316,7 @@ impl DiscourseDiagnostics {
             phrases: n,
             orphan_phrases,
             abandoned_obligations,
+            late_obligations,
             unearned_strong_closures,
             role_direction_contradictions,
             swallowed_salient_events,
@@ -328,6 +334,7 @@ impl DiscourseDiagnostics {
     pub fn faults(&self) -> usize {
         self.orphan_phrases
             + self.abandoned_obligations
+            + self.late_obligations
             + self.unearned_strong_closures
             + self.role_direction_contradictions
             + self.swallowed_salient_events
@@ -349,8 +356,11 @@ impl DiscourseDiagnostics {
         );
         let _ = writeln!(
             s,
-            "  abandoned_obligations={} unearned_strong_closures={} role_direction_contradictions={}",
-            self.abandoned_obligations, self.unearned_strong_closures, self.role_direction_contradictions
+            "  abandoned_obligations={} late_obligations={} unearned_strong_closures={} role_direction_contradictions={}",
+            self.abandoned_obligations,
+            self.late_obligations,
+            self.unearned_strong_closures,
+            self.role_direction_contradictions
         );
         let _ = writeln!(
             s,
@@ -1882,10 +1892,24 @@ mod tests {
         scrambled.discourse = plan.discourse.scrambled();
         let bad = DiscourseDiagnostics::measure(&scrambled, &score);
 
+        // The correct arc owes nothing and pays nothing late. Its one standing fault class is
+        // honest: the demo's Answer (phrase 6) now settles its whole cycle, so the two strong
+        // Returns after it (phrases 7, 8) discharge nothing. The old zero here was the LIFO ledger
+        // letting those Returns "pay" the culmination's and a withhold's debt — bookkeeping, not
+        // music.
+        assert_eq!(
+            (good.abandoned_obligations, good.late_obligations),
+            (0, 0),
+            "the correct arc left a debt unpaid or late: {good:?}"
+        );
         assert_eq!(
             good.faults(),
-            0,
-            "the correct arc already has faults: {good:?}"
+            good.unearned_strong_closures,
+            "the correct arc has faults beyond its post-answer returns: {good:?}"
+        );
+        assert_eq!(
+            good.unearned_strong_closures, 2,
+            "the HookArc demo's post-answer returns moved: {good:?}"
         );
         assert!(
             bad.faults() > good.faults(),
@@ -1911,7 +1935,7 @@ mod tests {
         );
         // As if every answer/return never came: un-resolve the whole ledger and re-measure.
         for o in &mut plan.discourse.ledger.obligations {
-            o.resolved_by = None;
+            o.settlement = None;
         }
         assert!(
             DiscourseDiagnostics::measure(&plan, &score).abandoned_obligations >= 1,

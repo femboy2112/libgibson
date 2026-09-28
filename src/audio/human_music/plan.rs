@@ -724,12 +724,13 @@ impl CompositionPlan {
             .zip(self.arrangement.phrases.iter())
         {
             let g = self.discourse.goal(p.ix as usize);
-            let debt = match (g.creates, g.pays) {
-                (Some(c), Some(p)) => format!(" +ob{c} -ob{p}"),
-                (Some(c), None) => format!(" +ob{c}"),
-                (None, Some(p)) => format!(" -ob{p}"),
-                (None, None) => String::new(),
-            };
+            // Every debt this phrase opens (+) and settles (-): the relation is many-to-many.
+            let led = &self.discourse.ledger;
+            let debt: String = led
+                .created_by(p.ix)
+                .map(|o| format!(" +{}", o.id))
+                .chain(led.settled_by(p.ix).map(|o| format!(" -{}", o.id)))
+                .collect();
             let _ = writeln!(
                 s,
                 "  [{:>2}] bars {:>2}..{:<2} {:>9}/{:<8} {:>6} T→{:.2} R→{:.2}{}  | pad:{} keys:{} bass:{} lead:{} drums:{}",
@@ -752,28 +753,48 @@ impl CompositionPlan {
         if let Some(bb) = &self.backbone {
             s.push_str(&bb.dump());
         }
-        // Obligation ledger: what was owed, and whether it was paid, deferred or abandoned.
+        // Obligation ledger: what was owed, when it fell due, and how (and whether on time) it was
+        // settled — paid, deflected, late, deferred or abandoned.
         let led = &self.discourse.ledger;
         let _ = writeln!(
             s,
-            "obligations ({}): {} resolved, {} abandoned",
+            "obligations ({}): {} resolved, {} late, {} abandoned, {} unwitnessed",
             led.obligations.len(),
             led.resolved_count(),
+            led.late_count(),
             led.abandoned_count(),
+            led.unwitnessed_settlements().count(),
         );
         for o in &led.obligations {
-            let status = match o.resolved_by {
-                Some(by) => format!("paid by phrase{by}"),
-                None if o.deferrable => "left open (deferred)".into(),
-                None => "ABANDONED".into(),
+            use super::discourse::ObligationStatus;
+            let due = o
+                .deadline
+                .map(|d| format!("phrase{d}"))
+                .unwrap_or_else(|| "none".into());
+            let status = match (led.final_status(o.id), o.settlement) {
+                (Some(ObligationStatus::Settled(how)), Some(st)) => {
+                    format!("{} by phrase{}", how.label(), st.by_phrase)
+                }
+                (Some(ObligationStatus::Late), Some(st)) => {
+                    format!("LATE: {} by phrase{}", st.how.label(), st.by_phrase)
+                }
+                (Some(ObligationStatus::Abandoned), _) => "ABANDONED".into(),
+                _ => "left open (deferred)".into(),
             };
+            let witness = o
+                .settlement
+                .and_then(|st| st.witness)
+                .map(|w| format!("  witness {w}"))
+                .unwrap_or_default();
             let _ = writeln!(
                 s,
-                "  ob{:<2} {:<24} opened@phrase{} → {}",
-                o.id,
+                "  {:<4} {:<24} opened@phrase{} due@{} → {}{}",
+                o.id.to_string(),
                 o.kind.label(),
                 o.source_phrase,
+                due,
                 status,
+                witness,
             );
         }
         s
@@ -848,8 +869,6 @@ impl PhraseTarget {
             thematic_distance: 0.5,
             harmonic_distance: 0.5,
             novelty_budget: 0.5,
-            creates: None,
-            pays: None,
         };
         PhraseTarget { phrase, goal }
     }

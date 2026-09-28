@@ -25,7 +25,9 @@
 //! later release. So [`DiscourseRole::Culminate`] carries maximum commitment and stays unresolved;
 //! a later [`DiscourseRole::Answer`] pays the debt it opened.
 
+use super::action::{ActionCause, ActionKind, ActionPlan, Agent, MusicalAction};
 use super::contract::{CoherenceAnchor, CoherenceContract, CompositionGrammar};
+use super::ids::{ActionId, ObligationId};
 use super::plan::{FormGraph, SectionFamily};
 use super::timeline::{IntentSpan, IntentTimeline};
 
@@ -164,9 +166,8 @@ pub enum ObligationKind {
     MotifQuestion,
     /// The register ascended and owes a descent / homecoming.
     RegisterAscent,
-    /// Orchestration was subtracted and owes a re-entry.
-    OrchestrationSubtraction,
-    /// The groove was destabilized and owes a restoration.
+    /// The groove was stripped back (the kit reduced to a bare backbone) and owes a restoration.
+    /// Opened where `groove.rs` really strips the kit: the first phrase of a Withhold/Question run.
     GrooveDestabilization,
 }
 
@@ -178,75 +179,401 @@ impl ObligationKind {
             ObligationKind::SuspendedCadence => "suspended-cadence",
             ObligationKind::MotifQuestion => "motif-question",
             ObligationKind::RegisterAscent => "register-ascent",
-            ObligationKind::OrchestrationSubtraction => "orchestration-subtraction",
             ObligationKind::GrooveDestabilization => "groove-destabilization",
         }
     }
 }
 
-/// One cross-phrase debt: opened by `source_phrase`, settled by `resolved_by` (or left open).
+/// How a debt was discharged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettleHow {
+    /// The debt was paid in kind: the question answered, the cadence arrived, home regained.
+    Paid,
+    /// The debt was acknowledged and turned aside, not paid: the motif question is dropped into a
+    /// return or a dissolve instead of being answered. Settled, but honestly labelled.
+    Deflected,
+}
+
+impl SettleHow {
+    /// A short dump label.
+    pub fn label(self) -> &'static str {
+        match self {
+            SettleHow::Paid => "paid",
+            SettleHow::Deflected => "deflected",
+        }
+    }
+}
+
+/// The receipt for a settled debt: which phrase discharged it, how, and (once bound by
+/// [`bind_settlement_witnesses`]) the concrete action that makes the discharge audible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Settlement {
+    /// The phrase that settled the debt.
+    pub by_phrase: u32,
+    /// Paid or deflected.
+    pub how: SettleHow,
+    /// The action inside the settling phrase that musically discharges the kind, if one exists.
+    pub witness: Option<ActionId>,
+}
+
+/// Where a debt stands at a given phrase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObligationStatus {
+    /// Open, and still inside its deadline (or legitimately deferred to the end).
+    Pending,
+    /// Settled on or before its deadline.
+    Settled(SettleHow),
+    /// Settled, but after its deadline — the debt was paid, the promise was not kept.
+    Late,
+    /// Unsettled past its deadline (as of the phrase asked about; a later settlement turns an
+    /// overdue debt `Late`, so at the end of the piece `Abandoned` means never settled at all).
+    Abandoned,
+}
+
+/// Why an attempted [`ObligationLedger::settle`] was refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettleError {
+    /// No obligation with this id is in the ledger.
+    Unknown(ObligationId),
+    /// The debt already has a settlement.
+    AlreadySettled { id: ObligationId, by_phrase: u32 },
+    /// The settling phrase does not come strictly after the phrase that opened the debt.
+    NotYetOpened {
+        id: ObligationId,
+        source_phrase: u32,
+        by_phrase: u32,
+    },
+    /// The settling role cannot discharge this kind of debt (or cannot discharge it the way the
+    /// caller claimed — a role that can only deflect may not be recorded as paying).
+    IncompatibleKind {
+        id: ObligationId,
+        kind: ObligationKind,
+        role: DiscourseRole,
+        how: SettleHow,
+    },
+}
+
+/// Whether a phrase's rhetorical `role` strips the kit back — mirrors the rule in `groove.rs`
+/// (`Withhold | Question` → a stark kick+snare backbone).
+fn strips_groove(role: DiscourseRole) -> bool {
+    matches!(role, DiscourseRole::Withhold | DiscourseRole::Question)
+}
+
+/// The settlement table: how (if at all) a phrase in `role` can lawfully settle a debt of `kind`.
+///
+/// - **MotifQuestion**: an `Answer` pays it; a `Return` or `Dissolve` can only deflect it (the
+///   question is dropped, not answered).
+/// - **SuspendedCadence**: an `Answer` or a `Return` pays it with a real arrival. A `Dissolve` does
+///   *not*: the coda's full stop is the end of the piece, not the discharge of a withheld arrival —
+///   letting it pay would let every intentionally unresolved arc balance its books in the last bar.
+/// - **HarmonicDeparture**: any homecoming — `Return`, `Restate` or `Dissolve`.
+/// - **RegisterAscent**: a descent or homecoming — `Answer`, `Return` or `Dissolve`. Not
+///   `Culminate`: the peak is the top of the ascent, not the way down the kind owes.
+/// - **GrooveDestabilization**: any phrase that runs the full kit again (anything but a
+///   `Withhold`/`Question`).
+pub fn compatible(kind: ObligationKind, role: DiscourseRole) -> Option<SettleHow> {
+    use DiscourseRole as R;
+    use ObligationKind as K;
+    match (kind, role) {
+        (K::MotifQuestion, R::Answer) => Some(SettleHow::Paid),
+        (K::MotifQuestion, R::Return | R::Dissolve) => Some(SettleHow::Deflected),
+        (K::SuspendedCadence, R::Answer | R::Return) => Some(SettleHow::Paid),
+        (K::HarmonicDeparture, R::Return | R::Restate | R::Dissolve) => Some(SettleHow::Paid),
+        (K::RegisterAscent, R::Answer | R::Return | R::Dissolve) => Some(SettleHow::Paid),
+        (K::GrooveDestabilization, r) if !strips_groove(r) => Some(SettleHow::Paid),
+        _ => None,
+    }
+}
+
+/// One cross-phrase debt: opened by `source_phrase`, due by `deadline`, and (once settled)
+/// carrying its [`Settlement`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Obligation {
-    /// Stable id within the ledger.
-    pub id: u32,
+    /// Stable id within the ledger (its index in [`ObligationLedger::obligations`]).
+    pub id: ObligationId,
     /// What kind of debt.
     pub kind: ObligationKind,
     /// The phrase that opened it.
     pub source_phrase: u32,
-    /// The phrase by which it ought to be settled, if any.
+    /// The last phrase that may settle it on time — always strictly after `source_phrase`.
+    /// `None` only when nothing follows the source (the debt was opened in the final phrase).
     pub deadline: Option<u32>,
     /// How load-bearing the debt is `[0,1]`.
     pub strength: f32,
-    /// Whether it may be deferred/left open without counting as abandoned.
+    /// Whether it may cross phrases (even ones that could settle it) up to its deadline, and — when
+    /// nothing at all follows its source — be left open at the end without counting as abandoned.
+    /// It may never outlive a deadline it has.
     pub deferrable: bool,
-    /// The phrase that settled it, if any (`None` = still open at the end).
-    pub resolved_by: Option<u32>,
+    /// How it was settled, if it was.
+    pub settlement: Option<Settlement>,
 }
 
 impl Obligation {
     /// Whether this debt is still open (never settled).
     pub fn is_open(&self) -> bool {
-        self.resolved_by.is_none()
+        self.settlement.is_none()
     }
 
-    /// Whether this debt was abandoned: open at the end and not deferrable, or open past its
-    /// deadline. An abandoned debt is exactly the "unresolved expectation" a listener registers as
-    /// scrambled direction.
-    pub fn is_abandoned(&self) -> bool {
-        self.is_open() && !self.deferrable
+    /// The phrase that settled it, if any.
+    pub fn resolved_by(&self) -> Option<u32> {
+        self.settlement.map(|s| s.by_phrase)
+    }
+
+    /// Where the debt stands at phrase `now`, in a piece of `end` phrases. Pass `now = end` for the
+    /// final verdict.
+    fn status(&self, now: u32, end: u32) -> ObligationStatus {
+        if let Some(s) = self.settlement.filter(|s| s.by_phrase <= now) {
+            return if self.deadline.is_some_and(|d| s.by_phrase > d) {
+                ObligationStatus::Late
+            } else {
+                ObligationStatus::Settled(s.how)
+            };
+        }
+        let overdue = match self.deadline {
+            Some(d) => now > d,
+            None => now >= end && !self.deferrable,
+        };
+        if overdue {
+            ObligationStatus::Abandoned
+        } else {
+            ObligationStatus::Pending
+        }
     }
 }
 
-/// The full set of cross-phrase debts a piece opened, and how each was settled.
+/// The full set of cross-phrase debts a piece opened, and how each was settled. The ledger — not
+/// the per-phrase goals — owns the opens/settles relation, which is many-to-many: one phrase may
+/// open several debts (a Question poses a motif question *and* strips the groove) and settle
+/// several (an Answer discharges its whole cycle).
 #[derive(Debug, Clone, Default)]
 pub struct ObligationLedger {
+    /// Every debt, indexed by its [`ObligationId`].
     pub obligations: Vec<Obligation>,
+    /// Phrases in the piece — the end against which the final status is judged.
+    pub phrases: u32,
 }
 
 impl ObligationLedger {
+    /// An empty ledger for a piece of `phrases` phrases.
+    pub fn new(phrases: u32) -> ObligationLedger {
+        ObligationLedger {
+            obligations: Vec::new(),
+            phrases,
+        }
+    }
+
+    /// Open a debt of `kind` at `source_phrase`, returning its id.
+    pub fn open_debt(
+        &mut self,
+        kind: ObligationKind,
+        source_phrase: u32,
+        deadline: Option<u32>,
+        strength: f32,
+        deferrable: bool,
+    ) -> ObligationId {
+        let id = ObligationId(self.obligations.len() as u32);
+        self.obligations.push(Obligation {
+            id,
+            kind,
+            source_phrase,
+            deadline,
+            strength,
+            deferrable,
+            settlement: None,
+        });
+        id
+    }
+
+    /// The obligation with id `id`.
+    pub fn get(&self, id: ObligationId) -> Option<&Obligation> {
+        self.obligations.get(id.index()).filter(|o| o.id == id)
+    }
+
+    /// Settle the named debt `id` at phrase `by_phrase`, whose rhetorical role is `role`, as `how`.
+    /// Refuses a debt that does not exist, is already settled, has not been opened yet, or that
+    /// `role` cannot lawfully settle `how` (see [`compatible`]; claiming `Deflected` where `Paid` is
+    /// lawful is allowed — understating is not lying).
+    pub fn settle(
+        &mut self,
+        id: ObligationId,
+        by_phrase: u32,
+        role: DiscourseRole,
+        how: SettleHow,
+    ) -> Result<(), SettleError> {
+        let o = self
+            .obligations
+            .get_mut(id.index())
+            .filter(|o| o.id == id)
+            .ok_or(SettleError::Unknown(id))?;
+        if let Some(s) = o.settlement {
+            return Err(SettleError::AlreadySettled {
+                id,
+                by_phrase: s.by_phrase,
+            });
+        }
+        if by_phrase <= o.source_phrase {
+            return Err(SettleError::NotYetOpened {
+                id,
+                source_phrase: o.source_phrase,
+                by_phrase,
+            });
+        }
+        let lawful = compatible(o.kind, role);
+        let ok = matches!(
+            (lawful, how),
+            (Some(SettleHow::Paid), _) | (Some(SettleHow::Deflected), SettleHow::Deflected)
+        );
+        if !ok {
+            return Err(SettleError::IncompatibleKind {
+                id,
+                kind: o.kind,
+                role,
+                how,
+            });
+        }
+        o.settlement = Some(Settlement {
+            by_phrase,
+            how,
+            witness: None,
+        });
+        Ok(())
+    }
+
+    /// Where debt `id` stands at phrase `now_phrase` (`None` for an unknown id). Use
+    /// [`ObligationLedger::final_status`] for the end-of-piece verdict.
+    pub fn status_at(&self, id: ObligationId, now_phrase: u32) -> Option<ObligationStatus> {
+        self.get(id).map(|o| o.status(now_phrase, self.phrases))
+    }
+
+    /// Where debt `id` stands once the piece is over.
+    pub fn final_status(&self, id: ObligationId) -> Option<ObligationStatus> {
+        self.status_at(id, self.phrases)
+    }
+
+    fn count_final(&self, want: ObligationStatus) -> usize {
+        self.obligations
+            .iter()
+            .filter(|o| o.status(self.phrases, self.phrases) == want)
+            .count()
+    }
+
     /// Debts still open at the end of the piece.
     pub fn open(&self) -> impl Iterator<Item = &Obligation> {
         self.obligations.iter().filter(|o| o.is_open())
     }
 
-    /// Count of debts abandoned (open and non-deferrable) — the number diagnostics want at zero
-    /// for a piece that resolves what it raised.
-    pub fn abandoned_count(&self) -> usize {
-        self.obligations.iter().filter(|o| o.is_abandoned()).count()
+    /// Debts opened by phrase `phrase`.
+    pub fn created_by(&self, phrase: u32) -> impl Iterator<Item = &Obligation> {
+        self.obligations
+            .iter()
+            .filter(move |o| o.source_phrase == phrase)
     }
 
-    /// Count of debts actually settled.
+    /// Debts settled by phrase `phrase`.
+    pub fn settled_by(&self, phrase: u32) -> impl Iterator<Item = &Obligation> {
+        self.obligations
+            .iter()
+            .filter(move |o| o.resolved_by() == Some(phrase))
+    }
+
+    /// Count of debts never settled that outlived their deadline (or, with no deadline, were not
+    /// deferrable) — the number diagnostics want at zero for a piece that resolves what it raised.
+    pub fn abandoned_count(&self) -> usize {
+        self.count_final(ObligationStatus::Abandoned)
+    }
+
+    /// Count of debts settled after their deadline.
+    pub fn late_count(&self) -> usize {
+        self.count_final(ObligationStatus::Late)
+    }
+
+    /// Count of debts actually settled (on time or late).
     pub fn resolved_count(&self) -> usize {
         self.obligations
             .iter()
-            .filter(|o| o.resolved_by.is_some())
+            .filter(|o| o.settlement.is_some())
             .count()
+    }
+
+    /// Settlements with no bound action witness — a discharge the plan claims but no concrete
+    /// action inside the settling phrase makes audible.
+    pub fn unwitnessed_settlements(&self) -> impl Iterator<Item = &Obligation> {
+        self.obligations
+            .iter()
+            .filter(|o| o.settlement.is_some_and(|s| s.witness.is_none()))
     }
 }
 
-/// A phrase's discourse commitment: its rhetorical role, permitted closure, the targets the
-/// realizers steer toward, and the obligation it opens or pays. This is the discourse half of what
-/// becomes a `PhraseTarget` once the realizers consume it.
+/// Whether `a` musically discharges a debt of `kind`:
+///
+/// - SuspendedCadence / HarmonicDeparture — a `Resolve`, or a cadence `Hit` that pays a `Resolve`.
+/// - MotifQuestion — an `Answer`, or a lead statement `Call` that some `Answer` answers.
+/// - GrooveDestabilization — a `ReEntry`, or a `Fill` aimed at a `ReEntry`.
+/// - RegisterAscent — nothing yet: no action family carries a register homecoming, so such a
+///   settlement stays honestly unwitnessed rather than borrowing an unrelated action.
+fn discharges(kind: ObligationKind, a: &MusicalAction, plan: &ActionPlan) -> bool {
+    match kind {
+        ObligationKind::SuspendedCadence | ObligationKind::HarmonicDeparture => {
+            a.kind == ActionKind::Resolve
+                || (a.kind == ActionKind::Hit
+                    && a.pays
+                        .and_then(|p| plan.get(p))
+                        .is_some_and(|p| p.kind == ActionKind::Resolve))
+        }
+        ObligationKind::MotifQuestion => {
+            a.kind == ActionKind::Answer
+                || (a.kind == ActionKind::Call
+                    && a.initiator == Agent::Lead
+                    && matches!(a.cause, ActionCause::Statement { .. })
+                    && plan
+                        .of_kind(ActionKind::Answer)
+                        .any(|b| b.pays == Some(a.id)))
+        }
+        ObligationKind::GrooveDestabilization => {
+            a.kind == ActionKind::ReEntry
+                || (a.kind == ActionKind::Fill
+                    && a.target_beat.is_some_and(|t| {
+                        plan.of_kind(ActionKind::ReEntry)
+                            .any(|r| (r.start_beat - t).abs() < 1e-6)
+                    }))
+        }
+        ObligationKind::RegisterAscent => false,
+    }
+}
+
+/// Bind each settlement to the first action (in time order) that starts inside the settling
+/// phrase's beat span `phrase_span(by_phrase) = [start, end)` and musically discharges the debt's
+/// kind (see `discharges`). A settlement with no such action has its witness cleared, so
+/// [`ObligationLedger::unwitnessed_settlements`] reports it. Pure: reads the actions, writes only
+/// the ledger's witnesses.
+pub fn bind_settlement_witnesses(
+    ledger: &mut ObligationLedger,
+    actions: &ActionPlan,
+    phrase_span: impl Fn(u32) -> (f64, f64),
+) {
+    let chrono = actions.chronological();
+    for o in &mut ledger.obligations {
+        let kind = o.kind;
+        let Some(s) = o.settlement.as_mut() else {
+            continue;
+        };
+        let (start, end) = phrase_span(s.by_phrase);
+        s.witness = chrono
+            .iter()
+            .find(|a| {
+                a.start_beat >= start - 1e-6
+                    && a.start_beat < end - 1e-6
+                    && discharges(kind, a, actions)
+            })
+            .map(|a| a.id);
+    }
+}
+
+/// A phrase's discourse commitment: its rhetorical role, permitted closure and the targets the
+/// realizers steer toward. This is the discourse half of what becomes a `PhraseTarget` once the
+/// realizers consume it. The debts a phrase opens and settles live in the [`ObligationLedger`]
+/// ([`ObligationLedger::created_by`] / [`ObligationLedger::settled_by`]) — the relation is
+/// many-to-many, and a `Copy` goal has no business pretending it is one-to-one.
 #[derive(Debug, Clone, Copy)]
 pub struct PhraseGoal {
     /// The phrase this goal governs.
@@ -255,7 +582,8 @@ pub struct PhraseGoal {
     pub role: DiscourseRole,
     /// How strongly it is permitted to close.
     pub closure: Closure,
-    /// Earlier phrase this refers to (thesis home for Restate/Return, the culmination for Answer).
+    /// Earlier phrase this refers to (thesis home for Restate/Return; for an Answer, the phrase
+    /// that opened the strongest debt it settles — its own cycle's culmination, not the global one).
     pub refers_to: Option<u32>,
     /// The next phrase carrying a landing role (Culminate/Answer/Return/Dissolve) — what this
     /// phrase is leading toward.
@@ -270,10 +598,6 @@ pub struct PhraseGoal {
     pub harmonic_distance: f32,
     /// The novelty this phrase may spend `[0,1]`.
     pub novelty_budget: f32,
-    /// The obligation id this phrase opens, if any.
-    pub creates: Option<u32>,
-    /// The obligation id this phrase settles, if any.
-    pub pays: Option<u32>,
 }
 
 /// The discourse plan for a whole piece: its thesis, a goal per phrase, and the obligation ledger.
@@ -309,8 +633,7 @@ impl DiscoursePlan {
             return self.clone();
         }
         let roles: Vec<DiscourseRole> = self.goals.iter().rev().map(|g| g.role).collect();
-        let answer = self.answer.map(|a| n - 1 - a as usize);
-        let (ledger, creates, pays) = resolve_obligations(&roles, answer);
+        let ledger = resolve_obligations(&roles);
         let goals: Vec<PhraseGoal> = self
             .goals
             .iter()
@@ -323,8 +646,6 @@ impl DiscoursePlan {
                     next_goal: None,
                     thematic_distance: role_thematic_distance(role),
                     harmonic_distance: role_harmonic_distance(role),
-                    creates: creates[i],
-                    pays: pays[i],
                     // Each phrase KEEPS its own trajectory targets — only the rhetoric is permuted.
                     ..*g
                 }
@@ -424,7 +745,7 @@ impl DiscoursePlan {
             });
 
         // Open and settle the cross-phrase obligation ledger for this ordering.
-        let (ledger, creates, pays) = resolve_obligations(&roles, answer);
+        let ledger = resolve_obligations(&roles);
 
         // A goal per phrase: targets grounded in the phrase's own trajectory; closure, distances
         // and novelty from its role; referents to earlier material.
@@ -435,7 +756,7 @@ impl DiscoursePlan {
                 let role = roles[i];
                 let refers_to = match role {
                     DiscourseRole::Restate | DiscourseRole::Return => Some(established_by),
-                    DiscourseRole::Answer => Some(culmination as u32),
+                    DiscourseRole::Answer => Some(answer_referent(&ledger, &roles, i, culmination)),
                     _ => None,
                 };
                 let (energy_target, tension_target, density_target, register_target) =
@@ -453,8 +774,6 @@ impl DiscoursePlan {
                     thematic_distance: role_thematic_distance(role),
                     harmonic_distance: role_harmonic_distance(role),
                     novelty_budget: role_novelty(role, contract.novelty_budget),
-                    creates: creates[i],
-                    pays: pays[i],
                 }
             })
             .collect();
@@ -505,81 +824,101 @@ pub(crate) fn culmination_index(spans: &[IntentSpan]) -> usize {
     culmination
 }
 
-/// Settle the most recent open obligation matching `prefer` (or the most recent of any kind),
-/// marking it resolved by `payer`. Returns the settled obligation's id.
-fn pay(
-    obligations: &mut [Obligation],
-    open: &mut Vec<usize>,
-    payer: u32,
-    prefer: Option<ObligationKind>,
+/// The deadline for a debt of `kind` opened at `source` under a role ordering: a non-deferrable
+/// debt is due at the FIRST later phrase whose role can lawfully settle it (else the last phrase);
+/// a deferrable one may run to the last phrase. Always strictly after `source` — `None` only when
+/// nothing follows it. (The old rule pinned every question/cadence to the piece's single global
+/// answer, so a debt opened at phrase 5 fell due at phrase 3: a bill dated before its purchase.)
+fn deadline_for(
+    kind: ObligationKind,
+    deferrable: bool,
+    source: usize,
+    roles: &[DiscourseRole],
 ) -> Option<u32> {
-    let pos = prefer
-        .and_then(|k| open.iter().rposition(|&oi| obligations[oi].kind == k))
-        .or_else(|| open.len().checked_sub(1));
-    let pos = pos?;
-    let oi = open.remove(pos);
-    obligations[oi].resolved_by = Some(payer);
-    Some(obligations[oi].id)
+    let n = roles.len();
+    if source + 1 >= n {
+        return None;
+    }
+    let last = (n - 1) as u32;
+    if deferrable {
+        return Some(last);
+    }
+    Some(
+        (source + 1..n)
+            .find(|&j| compatible(kind, roles[j]).is_some())
+            .map_or(last, |j| j as u32),
+    )
 }
 
-/// Open and settle the cross-phrase obligation ledger for a role ordering, returning the ledger
-/// and, per phrase, the obligation id it opens and the id it settles. Shared by
+/// Open and settle the cross-phrase obligation ledger for a role ordering. Shared by
 /// [`DiscoursePlan::build`] and the adversarial [`DiscoursePlan::scrambled`] probe, so both resolve
 /// debts by exactly the same rules — the scramble only changes the *order*, never the bookkeeping.
-pub(crate) fn resolve_obligations(
-    roles: &[DiscourseRole],
-    answer: Option<usize>,
-) -> (ObligationLedger, Vec<Option<u32>>, Vec<Option<u32>>) {
-    let n = roles.len();
-    let mut ledger = ObligationLedger::default();
-    let mut open: Vec<usize> = Vec::new(); // indices into ledger.obligations
-    let mut next_id = 0u32;
-    let mut creates = vec![None; n];
-    let mut pays = vec![None; n];
-
+///
+/// Each phrase first settles, by id and oldest first, every open debt its role can lawfully
+/// discharge ([`compatible`]) — so an Answer pays its own cycle's question, withheld cadences and
+/// culmination while a harmonic departure waits for a homecoming — then opens its own debts. No
+/// "most recent of any kind" fallback: a phrase that cannot pay a debt does not get to pretend.
+pub(crate) fn resolve_obligations(roles: &[DiscourseRole]) -> ObligationLedger {
+    let mut ledger = ObligationLedger::new(roles.len() as u32);
     for (i, &role) in roles.iter().enumerate() {
-        let to_open = match role {
-            DiscourseRole::Question => Some((ObligationKind::MotifQuestion, 0.7, false)),
-            DiscourseRole::Withhold => Some((ObligationKind::SuspendedCadence, 0.8, false)),
-            DiscourseRole::Culminate => Some((ObligationKind::SuspendedCadence, 1.0, false)),
-            DiscourseRole::Depart => Some((ObligationKind::HarmonicDeparture, 0.6, true)),
-            DiscourseRole::Intensify => Some((ObligationKind::RegisterAscent, 0.5, true)),
-            _ => None,
-        };
-        if let Some((kind, strength, deferrable)) = to_open {
-            let id = next_id;
-            next_id += 1;
-            let deadline = match kind {
-                ObligationKind::MotifQuestion | ObligationKind::SuspendedCadence => {
-                    answer.map(|a| a as u32).or(Some((n - 1) as u32))
-                }
-                _ => Some((n - 1) as u32),
-            };
-            ledger.obligations.push(Obligation {
-                id,
-                kind,
-                source_phrase: i as u32,
-                deadline,
-                strength,
-                deferrable,
-                resolved_by: None,
-            });
-            open.push(ledger.obligations.len() - 1);
-            creates[i] = Some(id);
+        let due: Vec<(ObligationId, SettleHow)> = ledger
+            .open()
+            .filter_map(|o| compatible(o.kind, role).map(|how| (o.id, how)))
+            .collect();
+        for (id, how) in due {
+            ledger
+                .settle(id, i as u32, role, how)
+                .expect("an open, earlier, compatible debt always settles");
         }
-        pays[i] = match role {
-            DiscourseRole::Answer => pay(&mut ledger.obligations, &mut open, i as u32, None),
-            DiscourseRole::Return => pay(
-                &mut ledger.obligations,
-                &mut open,
-                i as u32,
-                Some(ObligationKind::HarmonicDeparture),
-            ),
-            DiscourseRole::Dissolve => pay(&mut ledger.obligations, &mut open, i as u32, None),
-            _ => None,
-        };
+
+        let mut to_open: Vec<(ObligationKind, f32, bool)> = Vec::with_capacity(2);
+        match role {
+            DiscourseRole::Question => to_open.push((ObligationKind::MotifQuestion, 0.7, false)),
+            DiscourseRole::Withhold => to_open.push((ObligationKind::SuspendedCadence, 0.8, false)),
+            DiscourseRole::Culminate => {
+                to_open.push((ObligationKind::SuspendedCadence, 1.0, false))
+            }
+            DiscourseRole::Depart => to_open.push((ObligationKind::HarmonicDeparture, 0.6, true)),
+            DiscourseRole::Intensify => to_open.push((ObligationKind::RegisterAscent, 0.5, true)),
+            _ => {}
+        }
+        // The groove debt opens where the kit is actually stripped — once per stripped run, since a
+        // second Withhold does not strip a kit that is already bare.
+        if strips_groove(role) && !(i > 0 && strips_groove(roles[i - 1])) {
+            to_open.push((ObligationKind::GrooveDestabilization, 0.4, false));
+        }
+        for (kind, strength, deferrable) in to_open {
+            let deadline = deadline_for(kind, deferrable, i, roles);
+            ledger.open_debt(kind, i as u32, deadline, strength, deferrable);
+        }
     }
-    (ledger, creates, pays)
+    ledger
+}
+
+/// The phrase an Answer at `i` refers to: the source of the strongest debt it settled (latest on a
+/// tie) — its own cycle's culmination — else the nearest earlier Culminate, else the global one.
+fn answer_referent(
+    ledger: &ObligationLedger,
+    roles: &[DiscourseRole],
+    i: usize,
+    culmination: usize,
+) -> u32 {
+    let settled = ledger
+        .settled_by(i as u32)
+        .max_by(|a, b| {
+            a.strength
+                .total_cmp(&b.strength)
+                .then(a.source_phrase.cmp(&b.source_phrase))
+        })
+        .map(|o| o.source_phrase);
+    settled
+        .or_else(|| {
+            roles[..i]
+                .iter()
+                .rposition(|&r| r == DiscourseRole::Culminate)
+                .map(|j| j as u32)
+        })
+        .unwrap_or(culmination as u32)
 }
 
 /// A reusable **song backbone** — the recurrent section identity a grammar imposes, expressed as a
@@ -827,7 +1166,10 @@ mod tests {
         // The answer pays the debt the culmination opened.
         let ag = plan.goal(answer as usize);
         assert_eq!(ag.role, DiscourseRole::Answer);
-        assert!(ag.pays.is_some(), "the answer settles no obligation");
+        assert!(
+            plan.ledger.settled_by(answer).next().is_some(),
+            "the answer settles no obligation"
+        );
     }
 
     #[test]
@@ -862,21 +1204,20 @@ mod tests {
             plan.ledger
                 .obligations
                 .iter()
-                .filter(|o| o.is_abandoned())
+                .filter(|o| plan.ledger.final_status(o.id) == Some(ObligationStatus::Abandoned))
                 .collect::<Vec<_>>()
         );
-        // The culmination's debt in particular is settled.
-        let cg = plan.goal(plan.culmination as usize);
-        let cul_debt = cg.creates.expect("culmination opened no debt");
+        // The culmination's debt in particular is settled — and by the ANSWER, not whichever
+        // strong closure happened to be passing (the old LIFO had a Return pay it).
         let o = plan
             .ledger
-            .obligations
-            .iter()
-            .find(|o| o.id == cul_debt)
-            .unwrap();
-        assert!(
-            o.resolved_by.is_some(),
-            "the culmination's debt was never answered"
+            .created_by(plan.culmination)
+            .find(|o| o.kind == ObligationKind::SuspendedCadence)
+            .expect("culmination opened no debt");
+        assert_eq!(
+            o.resolved_by(),
+            plan.answer,
+            "the culmination's debt was not paid by the answer"
         );
     }
 
@@ -936,5 +1277,279 @@ mod tests {
             peak < 0.5,
             "a calm loop should not be given a high-tension climax: peak {peak}"
         );
+    }
+
+    // --- The ledger is deadline-honest. ---
+    #[test]
+    fn a_deferrable_debt_is_pending_before_its_deadline() {
+        let mut led = ObligationLedger::new(6);
+        let hd = led.open_debt(ObligationKind::HarmonicDeparture, 1, Some(5), 0.6, true);
+        let sc = led.open_debt(ObligationKind::SuspendedCadence, 1, Some(3), 0.8, false);
+        for now in 1..=3 {
+            assert_eq!(led.status_at(hd, now), Some(ObligationStatus::Pending));
+            assert_eq!(led.status_at(sc, now), Some(ObligationStatus::Pending));
+        }
+        // The deferrable one may cross phrase 4 (even a compatible one); the other may not.
+        assert_eq!(led.status_at(hd, 4), Some(ObligationStatus::Pending));
+        assert_eq!(led.status_at(sc, 4), Some(ObligationStatus::Abandoned));
+        assert_eq!(led.status_at(ObligationId(7), 0), None, "unknown id");
+    }
+
+    #[test]
+    fn a_debt_never_settled_past_its_deadline_is_abandoned() {
+        let mut led = ObligationLedger::new(6);
+        let sc = led.open_debt(ObligationKind::SuspendedCadence, 1, Some(2), 0.8, false);
+        // Deferrable is not a licence to outlive a deadline.
+        let hd = led.open_debt(ObligationKind::HarmonicDeparture, 1, Some(4), 0.6, true);
+        assert_eq!(led.status_at(sc, 2), Some(ObligationStatus::Pending));
+        assert_eq!(led.status_at(sc, 3), Some(ObligationStatus::Abandoned));
+        assert_eq!(led.final_status(hd), Some(ObligationStatus::Abandoned));
+        assert_eq!(led.abandoned_count(), 2);
+
+        // Through the builder: deferrable debts no role ever settles. The old ledger never read a
+        // deadline and forgave every deferrable debt, so this counted 0 abandoned.
+        use DiscourseRole::*;
+        let led = resolve_obligations(&[Establish, Depart, Intensify, Establish]);
+        assert_eq!(led.obligations.len(), 2);
+        assert!(led.obligations.iter().all(|o| o.deferrable));
+        assert_eq!(led.abandoned_count(), 2, "{:?}", led.obligations);
+    }
+
+    #[test]
+    fn a_debt_settled_after_its_deadline_is_late() {
+        let mut led = ObligationLedger::new(6);
+        let sc = led.open_debt(ObligationKind::SuspendedCadence, 1, Some(2), 0.8, false);
+        led.settle(sc, 4, DiscourseRole::Answer, SettleHow::Paid)
+            .unwrap();
+        // Overdue in the gap, late once paid — and never both late and abandoned at the end.
+        assert_eq!(led.status_at(sc, 3), Some(ObligationStatus::Abandoned));
+        assert_eq!(led.status_at(sc, 4), Some(ObligationStatus::Late));
+        assert_eq!(led.final_status(sc), Some(ObligationStatus::Late));
+        assert_eq!((led.late_count(), led.abandoned_count()), (1, 0));
+        // On time is Settled, carrying how.
+        let mq = led.open_debt(ObligationKind::MotifQuestion, 1, Some(4), 0.7, false);
+        led.settle(mq, 4, DiscourseRole::Return, SettleHow::Deflected)
+            .unwrap();
+        assert_eq!(
+            led.final_status(mq),
+            Some(ObligationStatus::Settled(SettleHow::Deflected))
+        );
+    }
+
+    // --- Settlement is specific: the answer pays the question it answers, nothing else. ---
+    #[test]
+    fn an_answer_settles_the_question_and_leaves_the_departure_for_a_homecoming() {
+        use DiscourseRole::*;
+        let led = resolve_obligations(&[Establish, Question, Depart, Answer, Dissolve]);
+        let kinds: Vec<(ObligationId, ObligationKind, u32)> = led
+            .obligations
+            .iter()
+            .map(|o| (o.id, o.kind, o.source_phrase))
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                (ObligationId(0), ObligationKind::MotifQuestion, 1),
+                (ObligationId(1), ObligationKind::GrooveDestabilization, 1),
+                (ObligationId(2), ObligationKind::HarmonicDeparture, 2),
+            ]
+        );
+        // The old LIFO had the Answer pay the most recent debt of ANY kind: the departure.
+        let by_answer: Vec<ObligationId> = led.settled_by(3).map(|o| o.id).collect();
+        assert_eq!(by_answer, vec![ObligationId(0)]);
+        assert_eq!(
+            led.final_status(ObligationId(0)),
+            Some(ObligationStatus::Settled(SettleHow::Paid))
+        );
+        // The stripped groove comes back with the Depart's full kit.
+        assert_eq!(led.get(ObligationId(1)).unwrap().resolved_by(), Some(2));
+        // The departure is still owed at the answer, and paid by the dissolve's homecoming.
+        assert_eq!(
+            led.status_at(ObligationId(2), 3),
+            Some(ObligationStatus::Pending)
+        );
+        assert_eq!(led.get(ObligationId(2)).unwrap().resolved_by(), Some(4));
+        assert_eq!((led.abandoned_count(), led.late_count()), (0, 0));
+    }
+
+    #[test]
+    fn settle_refuses_unknown_early_incompatible_and_double_settlement() {
+        let mut led = ObligationLedger::new(6);
+        let hd = led.open_debt(ObligationKind::HarmonicDeparture, 2, Some(5), 0.6, true);
+        let mq = led.open_debt(ObligationKind::MotifQuestion, 2, Some(4), 0.7, false);
+        let paid = SettleHow::Paid;
+        assert_eq!(
+            led.settle(ObligationId(9), 3, DiscourseRole::Return, paid),
+            Err(SettleError::Unknown(ObligationId(9)))
+        );
+        for by in [1, 2] {
+            assert_eq!(
+                led.settle(hd, by, DiscourseRole::Return, paid),
+                Err(SettleError::NotYetOpened {
+                    id: hd,
+                    source_phrase: 2,
+                    by_phrase: by
+                })
+            );
+        }
+        assert_eq!(
+            led.settle(hd, 3, DiscourseRole::Answer, paid),
+            Err(SettleError::IncompatibleKind {
+                id: hd,
+                kind: ObligationKind::HarmonicDeparture,
+                role: DiscourseRole::Answer,
+                how: paid
+            })
+        );
+        // A Return can only DEFLECT a motif question; recording it as paid is refused.
+        assert!(matches!(
+            led.settle(mq, 3, DiscourseRole::Return, paid),
+            Err(SettleError::IncompatibleKind { .. })
+        ));
+        assert_eq!(
+            led.resolved_count(),
+            0,
+            "a refused settlement wrote nothing"
+        );
+        assert_eq!(led.settle(hd, 3, DiscourseRole::Return, paid), Ok(()));
+        assert_eq!(
+            led.settle(hd, 4, DiscourseRole::Return, paid),
+            Err(SettleError::AlreadySettled {
+                id: hd,
+                by_phrase: 3
+            })
+        );
+    }
+
+    // --- The flagship: every deadline after its source; each cycle settles its own debt. ---
+    #[test]
+    fn the_deflected_lift_flagship_settles_each_cycle_on_time() {
+        use super::super::contract::CompositionGrammar;
+        use super::super::semantic::deflected_lift_trace;
+        use DiscourseRole::*;
+        let tl = IntentTimeline::walk(&deflected_lift_trace(120.0));
+        let contract = CoherenceContract::for_grammar(CompositionGrammar::DeflectedLift);
+        let form = FormGraph::build(&tl, 30, &contract);
+        let plan = DiscoursePlan::build(&tl, &form, &contract);
+        let roles: Vec<DiscourseRole> = plan.goals.iter().map(|g| g.role).collect();
+        assert_eq!(
+            roles,
+            vec![
+                Establish, Depart, Culminate, Answer, Return, Culminate, Answer, Restate, Dissolve
+            ]
+        );
+        let led = &plan.ledger;
+        for o in &led.obligations {
+            let d = o.deadline.expect("every flagship debt has a later phrase");
+            assert!(d > o.source_phrase, "{} due@{d} <= source", o.id);
+        }
+        // The second hook's debt: opened at 5, due at 6 (the old rule said 3), paid by 6 alone.
+        let second = led
+            .created_by(5)
+            .find(|o| o.kind == ObligationKind::SuspendedCadence)
+            .expect("the second culmination opened no debt");
+        assert_eq!(second.deadline, Some(6));
+        let by6: Vec<ObligationId> = led.settled_by(6).map(|o| o.id).collect();
+        assert_eq!(by6, vec![second.id]);
+        assert_eq!(plan.goal(6).refers_to, Some(5), "phrase 6 answers phrase 5");
+        assert_eq!(plan.goal(3).refers_to, Some(2), "phrase 3 answers phrase 2");
+        assert_eq!((led.abandoned_count(), led.late_count()), (0, 0));
+        assert!(
+            led.obligations
+                .iter()
+                .all(|o| matches!(led.final_status(o.id), Some(ObligationStatus::Settled(_)))),
+            "{:?}",
+            led.obligations
+        );
+    }
+
+    // --- Witnesses: a settlement cites the concrete action that makes it audible. ---
+    fn act(
+        id: u32,
+        kind: ActionKind,
+        initiator: Agent,
+        start: f64,
+        target: Option<f64>,
+        pays: Option<u32>,
+        cause: ActionCause,
+    ) -> MusicalAction {
+        MusicalAction {
+            id: ActionId(id),
+            cause,
+            initiator,
+            start_beat: start,
+            dur_beats: 1.0,
+            kind,
+            target_beat: target,
+            responders: Vec::new(),
+            binding: None,
+            pays: pays.map(ActionId),
+        }
+    }
+
+    #[test]
+    fn settlements_bind_to_the_action_that_discharges_them() {
+        use ActionKind as K;
+        use DiscourseRole::*;
+        // ob0 MQ@1, ob1 GD@1 → Answer@2; ob2 SC@3, ob3 GD@3 → Return@4; ob4 RA@5 → Dissolve@6.
+        let mut led = resolve_obligations(&[
+            Establish, Question, Answer, Withhold, Return, Intensify, Dissolve,
+        ]);
+        assert_eq!(led.resolved_count(), 5);
+        let st = ActionCause::Statement { phrase: 2 };
+        let actions = ActionPlan {
+            actions: vec![
+                // Phrase 2 (beats 16..24): an answered lead call, then a re-entry.
+                act(0, K::Call, Agent::Lead, 16.0, None, None, st),
+                act(1, K::Answer, Agent::Keys, 18.0, None, Some(0), st),
+                act(2, K::ReEntry, Agent::Keys, 17.0, None, None, st),
+                // Phrase 4 (beats 32..40): decoys first — a hit paying nothing, a fill aimed at no
+                // re-entry — then the real cadence hit (pays the resolve) and a fill into a re-entry.
+                act(3, K::Hit, Agent::Ensemble, 33.0, None, None, st),
+                act(4, K::Fill, Agent::Drums, 34.0, Some(35.0), None, st),
+                act(5, K::Resolve, Agent::Ensemble, 36.0, None, None, st),
+                act(6, K::Hit, Agent::Ensemble, 36.0, None, Some(5), st),
+                act(7, K::Fill, Agent::Drums, 38.0, Some(40.0), None, st),
+                act(8, K::ReEntry, Agent::Pad, 40.0, None, None, st),
+                // Phrase 6: a resolve — which does NOT witness a register homecoming.
+                act(9, K::Resolve, Agent::Ensemble, 50.0, None, None, st),
+            ],
+            ..ActionPlan::default()
+        };
+        let span = |p: u32| (p as f64 * 8.0, p as f64 * 8.0 + 8.0);
+        bind_settlement_witnesses(&mut led, &actions, span);
+        let w = |led: &ObligationLedger, i: u32| {
+            led.get(ObligationId(i))
+                .unwrap()
+                .settlement
+                .unwrap()
+                .witness
+        };
+        assert_eq!(w(&led, 0), Some(ActionId(0)), "the answered lead call");
+        assert_eq!(w(&led, 1), Some(ActionId(2)), "the re-entry");
+        assert_eq!(
+            w(&led, 2),
+            Some(ActionId(6)),
+            "the cadence hit, not the decoy"
+        );
+        assert_eq!(
+            w(&led, 3),
+            Some(ActionId(7)),
+            "the fill into a re-entry, not the stray"
+        );
+        assert_eq!(w(&led, 4), None, "nothing witnesses a register homecoming");
+        let unwitnessed: Vec<ObligationId> = led.unwitnessed_settlements().map(|o| o.id).collect();
+        assert_eq!(unwitnessed, vec![ObligationId(4)]);
+
+        // Negative control: no actions, no witnesses — every settlement is unwitnessed again.
+        bind_settlement_witnesses(&mut led, &ActionPlan::none(), span);
+        assert_eq!(led.unwitnessed_settlements().count(), led.resolved_count());
+        // And an unanswered call is not an answer.
+        let lonely = ActionPlan {
+            actions: vec![act(0, K::Call, Agent::Lead, 16.0, None, None, st)],
+            ..ActionPlan::default()
+        };
+        bind_settlement_witnesses(&mut led, &lonely, span);
+        assert_eq!(w(&led, 0), None);
     }
 }
