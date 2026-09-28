@@ -20,7 +20,7 @@ mod key;
 mod transform;
 
 use compositor::{composite_into, frame_index, reconstruct_tile, CompositeOpts};
-use director::{resolve, stage_index, total_edit_seconds, IntroTime, CUES};
+use director::{resolve, stage_index, total_edit_seconds, CUES};
 use film::KeyedFilm;
 use key::{Bbox, KeyParams};
 use transform::{resolve_effect, Beat, Effect, Fit, Framing, Transform};
@@ -209,128 +209,119 @@ fn contain_gives_uniform_scale_stretch_fills_independently() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn total_edit_seconds_is_the_sum_of_cue_durations() {
-    let expected: f32 = CUES.iter().map(|c| c.edit_dur).sum();
-    assert_eq!(total_edit_seconds(), expected);
-}
-
-#[test]
-fn cue_edit_start_is_monotonic_nondecreasing() {
-    let mut prev = director::cue_edit_start(0);
-    for i in 1..CUES.len() {
-        let cur = director::cue_edit_start(i);
+fn total_edit_seconds_is_the_edit_end_and_covers_every_cue() {
+    assert_eq!(total_edit_seconds(), director::EDIT_END);
+    const { assert!(director::EDIT_END >= director::INTRO_LAST) };
+    // Every reaction window fits within the cut.
+    for (i, c) in CUES.iter().enumerate() {
+        assert!(c.edit_start >= 0.0, "cue {i} starts before 0");
         assert!(
-            cur >= prev,
-            "cue_edit_start regressed at {i}: {cur} < {prev}"
+            c.edit_end <= director::EDIT_END,
+            "cue {i} ends past EDIT_END"
         );
-        prev = cur;
+        assert!(c.edit_end > c.edit_start, "cue {i} is not a forward window");
     }
 }
 
 #[test]
-fn cue_at_boundaries_land_on_the_right_side() {
-    for (i, cue) in CUES.iter().enumerate() {
-        let boundary = director::cue_edit_start(i) + cue.edit_dur;
-        // Just before the boundary: still cue i.
-        let just_before = (boundary - 1e-4).max(0.0);
-        assert_eq!(
-            director::cue_at(just_before),
-            i,
-            "just before boundary of cue {i} should still be cue {i}"
+fn cue_edit_start_is_monotonic_and_windows_do_not_overlap() {
+    for i in 1..CUES.len() {
+        assert!(
+            director::cue_edit_start(i) >= director::cue_edit_start(i - 1),
+            "cue_edit_start regressed at {i}"
         );
-        // Exactly at (or past) the boundary: the next cue, or the last cue if
-        // this was the final one.
-        let expected_at_boundary = if i + 1 < CUES.len() { i + 1 } else { i };
-        assert_eq!(
-            director::cue_at(boundary),
-            expected_at_boundary,
-            "at boundary of cue {i}"
+        // Windows are laid out in order and never overlap (gaps are allowed).
+        assert!(
+            CUES[i].edit_start >= CUES[i - 1].edit_end,
+            "cue {i} overlaps the previous window"
         );
     }
 }
 
 #[test]
-fn resolve_at_zero_starts_at_the_first_cues_intro_start() {
+fn active_cue_is_some_inside_a_window_and_none_in_the_gaps() {
+    for (i, c) in CUES.iter().enumerate() {
+        // Start is inclusive; a point mid-window is cue i.
+        assert_eq!(
+            director::active_cue(c.edit_start),
+            Some(i),
+            "start of cue {i}"
+        );
+        let mid = (c.edit_start + c.edit_end) * 0.5;
+        assert_eq!(director::active_cue(mid), Some(i), "mid of cue {i}");
+        // End is exclusive: the boundary belongs to the gap or the next window.
+        assert_ne!(
+            director::active_cue(c.edit_end),
+            Some(i),
+            "end of cue {i} must be exclusive"
+        );
+    }
+    // Before the first window the film plays alone (no reaction).
+    assert_eq!(director::active_cue(0.0), None);
+    assert!(
+        CUES[0].edit_start > 0.0,
+        "the film should open with no overlay"
+    );
+}
+
+#[test]
+fn resolve_at_zero_plays_the_film_from_the_top_with_no_reaction() {
     let r = resolve(0.0);
-    assert_eq!(r.cue_index, 0);
-    assert_eq!(r.intro_seconds, CUES[0].intro_start);
-    assert!((0.0..=1.0).contains(&r.src_progress));
+    assert_eq!(r.intro_seconds, 0.0, "the film starts at narrative time 0");
+    assert_eq!(r.cue_index, None, "no reaction beat at the very start");
+    assert_eq!(r.src_progress, 0.0);
 }
 
 #[test]
-fn hold_cue_freezes_intro_seconds_across_its_whole_window() {
-    let idx = CUES
-        .iter()
-        .position(|c| matches!(c.intro_time, IntroTime::Hold))
-        .expect("at least one Hold cue exists in the cut");
-    let start = director::cue_edit_start(idx);
-    let dur = CUES[idx].edit_dur;
-    // frac=1.0 would land exactly on the next cue's boundary (cue_at's own
-    // documented `<` semantics hand that instant to the next cue), so this
-    // stays strictly inside the window rather than testing a different cue.
-    for frac in [0.0, 0.25, 0.5, 0.75, 0.999] {
-        let t = start + dur * frac;
-        let r = resolve(t);
-        assert_eq!(r.cue_index, idx);
-        assert_eq!(
-            r.intro_seconds, CUES[idx].intro_start,
-            "Hold must freeze intro_seconds at frac={frac}"
+fn intro_plays_continuously_one_to_one_then_holds_for_the_sting() {
+    // 1:1 with the edit clock while the film plays.
+    for &t in &[0.0f32, 5.0, 12.0, 33.0, 60.0, 71.0] {
+        assert!(
+            (director::intro_seconds(t) - t).abs() < 1e-6,
+            "intro should play 1:1 at t={t}"
         );
+        assert!((resolve(t).intro_seconds - t).abs() < 1e-6);
+    }
+    // Held final frame once the film is over (the sting tail).
+    for &t in &[72.5f32, 75.0, director::EDIT_END] {
+        assert_eq!(
+            director::intro_seconds(t),
+            director::INTRO_LAST,
+            "intro must hold its final frame during the sting at t={t}"
+        );
+    }
+    assert_eq!(
+        director::intro_seconds(-3.0),
+        0.0,
+        "negative edit clamps to 0"
+    );
+    // Monotonic nondecreasing across the whole cut (no skips or rewinds).
+    let mut prev = director::intro_seconds(0.0);
+    let mut t = 0.0f32;
+    while t <= director::EDIT_END {
+        let cur = director::intro_seconds(t);
+        assert!(cur + 1e-6 >= prev, "intro_seconds regressed at t={t}");
+        prev = cur;
+        t += 0.25;
     }
 }
 
 #[test]
-fn continue_cue_advances_intro_seconds_with_edit_time() {
-    let idx = CUES
-        .iter()
-        .position(|c| matches!(c.intro_time, IntroTime::Continue))
-        .expect("at least one Continue cue exists in the cut");
-    let start = director::cue_edit_start(idx);
-    let dur = CUES[idx].edit_dur;
-    let early = resolve(start + dur * 0.1).intro_seconds;
-    let late = resolve(start + dur * 0.9).intro_seconds;
-    assert!(
-        late > early,
-        "Continue must advance intro_seconds: early={early} late={late}"
-    );
-    // 1:1 with edit time.
-    assert!((late - early - dur * 0.8).abs() < 1e-3);
-}
-
-#[test]
-fn slow_cue_advances_intro_seconds_at_its_factor() {
-    let (idx, factor) = CUES
-        .iter()
-        .enumerate()
-        .find_map(|(i, c)| match c.intro_time {
-            IntroTime::Slow(f) => Some((i, f)),
-            _ => None,
-        })
-        .expect("at least one Slow cue exists in the cut");
-    let start = director::cue_edit_start(idx);
-    let dur = CUES[idx].edit_dur;
-    let a = resolve(start + dur * 0.1).intro_seconds;
-    let b = resolve(start + dur * 0.9).intro_seconds;
-    let delta_edit = dur * 0.8;
-    assert!(
-        (b - a - factor * delta_edit).abs() < 1e-3,
-        "Slow({factor}) should advance at factor*edit_delta: got {} expected {}",
-        b - a,
-        factor * delta_edit
-    );
-}
-
-#[test]
-fn src_progress_always_in_unit_range_and_resolve_is_deterministic() {
+fn src_progress_in_range_gaps_are_zeroed_and_resolve_is_deterministic() {
     let total = total_edit_seconds();
     let mut t = 0.0f32;
     while t <= total {
         let r1 = resolve(t);
         assert!(
             (0.0..=1.0).contains(&r1.src_progress),
-            "t={t} src_progress={} out of range",
-            r1.src_progress
+            "t={t} src_progress out of range"
         );
+        // In a gap there is no active beat, and the cue fields are zeroed.
+        if r1.cue_index.is_none() {
+            assert_eq!(r1.cue_local, 0.0);
+            assert_eq!(r1.cue_dur, 0.0);
+            assert_eq!(r1.src_progress, 0.0);
+        }
         let r2 = resolve(t);
         assert_eq!(r1.intro_seconds, r2.intro_seconds);
         assert_eq!(r1.cue_index, r2.cue_index);

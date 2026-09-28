@@ -138,11 +138,16 @@ halos when a beat zooms), and re-projects that one tile through the same subcell
 projector.
 
 Two clocks stay independent so the original film's determinism is preserved: an
-**edit clock** (what `--at`/`--stage` seek) and the **intro narrative clock**, which a
-cue may `Continue`, `Hold` or `Slow` — letting a reaction run past the film's 72 s
-over a held final frame without pretending the film became longer. Given an edit
-time, the active cue, base-intro time, source window and transform are all computed
-deterministically; nothing reads wall-clock time on the frame path.
+**edit clock** (what `--at`/`--stage` seek) and the **intro narrative clock**. The
+intro plays as a *continuous spine* — for the length of the film the two clocks
+advance together, so the original short (bootup prologue, agent harness, membrane,
+city, ascent, title) plays through exactly as it always does — and reaction **beats**
+are windows on the edit clock during which the keyed subject is composited *over* it;
+outside a beat the film plays alone and stays fully readable. Once the film ends the
+edit clock runs a little longer over its **held final frame** so the closing sting
+can play without pretending the film became longer. Given an edit time, the active
+beat, base-intro time, source window and transform are all computed deterministically;
+nothing reads wall-clock time on the frame path.
 
 ### Measured (release, `--profile`, base-intro generation vs the local patch)
 

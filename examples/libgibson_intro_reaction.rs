@@ -41,6 +41,7 @@ use gibson::cell::Color;
 use gibson::input::{Event, KeyCode, KeyModifiers};
 use gibson::{ColorDepth, Context, Node, SubcellGlyphMode, Surface};
 use key::KeyParams;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -164,6 +165,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // First-contact bootup prologue — the same one the original film opens with,
+    // reused verbatim. It owns its own Context and releases the terminal before the
+    // fullscreen lease below. Skipped for direct-inspection / non-interactive paths
+    // (--stage/--at/--seconds already set an entry point, and a non-tty can't show it).
+    let run_prologue = !has("--no-prologue")
+        && value("--stage=").is_none()
+        && value("--at=").is_none()
+        && value("--seconds=").is_none()
+        && std::io::stdout().is_terminal();
+    if run_prologue {
+        match intro::prologue::run(depth, has("--deterministic"))? {
+            intro::prologue::Outcome::Quit => return Ok(()),
+            intro::prologue::Outcome::Proceed => {}
+        }
+    }
+
     // Live playback.
     let mut ctx = Context::fullscreen()?;
     if let Some(depth) = depth {
@@ -266,34 +283,32 @@ fn render_frame(
 
     let mut stats = CompositeStats::default();
     if reaction {
-        if let Some(film) = films.get(r.cue_index) {
-            if film.nframes > 0 {
-                let cue = &director::CUES[r.cue_index];
-                let p = if cue.edit_dur > 0.0 {
-                    r.cue_local / cue.edit_dur
-                } else {
-                    0.0
-                };
-                let beat = transform::resolve_effect(cue.effect, p);
-                let src_p = beat.src_progress.unwrap_or(r.src_progress);
-                let idx = compositor::frame_index(film.nframes, src_p);
-                let t = transform::Transform::resolve(
-                    &cue.framing,
-                    &beat,
-                    film.film_w,
-                    film.film_h,
-                    w as u32 * 2,
-                    h as u32 * 4,
-                );
-                stats = compositor::composite_into(
-                    &mut surface,
-                    film,
-                    film.frame(idx),
-                    &t,
-                    kp,
-                    glyph_mode,
-                    opts,
-                );
+        if let Some(ci) = r.cue_index {
+            if let Some(film) = films.get(ci) {
+                if film.nframes > 0 {
+                    let cue = &director::CUES[ci];
+                    let p = r.src_progress; // normalized cue progress
+                    let beat = transform::resolve_effect(cue.effect, p);
+                    let src_p = beat.src_progress.unwrap_or(p);
+                    let idx = compositor::frame_index(film.nframes, src_p);
+                    let t = transform::Transform::resolve(
+                        &cue.framing,
+                        &beat,
+                        film.film_w,
+                        film.film_h,
+                        w as u32 * 2,
+                        h as u32 * 4,
+                    );
+                    stats = compositor::composite_into(
+                        &mut surface,
+                        film,
+                        film.frame(idx),
+                        &t,
+                        kp,
+                        glyph_mode,
+                        opts,
+                    );
+                }
             }
         }
     }
@@ -430,12 +445,12 @@ fn run_profile(
                 let mut surface = intro::frame(&d, w, h, ColorDepth::TrueColor, false);
                 gibson::transcode_surface_glyphs(&mut surface, glyph_mode);
                 base_us += t0.elapsed().as_secs_f64() * 1e6;
-                if let Some(film) = films.get(r.cue_index) {
+                if let Some(film) = r.cue_index.and_then(|ci| films.get(ci)) {
                     if film.nframes > 0 {
-                        let cue = &director::CUES[r.cue_index];
-                        let p = r.cue_local / cue.edit_dur;
+                        let cue = &director::CUES[r.cue_index.unwrap()];
+                        let p = r.src_progress;
                         let beat = transform::resolve_effect(cue.effect, p);
-                        let src_p = beat.src_progress.unwrap_or(r.src_progress);
+                        let src_p = beat.src_progress.unwrap_or(p);
                         let idx = compositor::frame_index(film.nframes, src_p);
                         let tr = transform::Transform::resolve(
                             &cue.framing,
