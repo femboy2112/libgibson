@@ -210,6 +210,13 @@ pub struct HumanMusicSynth {
     limiter: Limiter,
     music_gain: f32,
     sfx_gain: f32,
+    // Per-role bus mix (the world's *_mix knobs — how loud each voice family sits
+    // relative to the others before the shared production chain; previously declared
+    // per-world and then completely ignored, which is a bit rude to whoever tuned them).
+    pad_mix: f32,
+    keys_mix: f32,
+    bass_mix: f32,
+    lead_mix: f32,
     // Scheduled events + cursors.
     notes: Vec<NoteEvent>,
     drums: Vec<DrumEvent>,
@@ -301,6 +308,10 @@ impl HumanMusicSynth {
             limiter,
             music_gain: world.base_dynamic.clamp(0.4, 1.0),
             sfx_gain: 0.8,
+            pad_mix: world.pad_mix,
+            keys_mix: world.keys_mix,
+            bass_mix: world.bass_mix,
+            lead_mix: world.lead_mix,
             notes,
             drums,
             sfx,
@@ -398,18 +409,21 @@ impl AudioSource for HumanMusicSynth {
             // --- Sum the music bus (melodic voices + drums). ---
             let mut ml = 0.0f32;
             let mut mr = 0.0f32;
-            for pool in [
-                &mut self.pads,
-                &mut self.keys,
-                &mut self.bass,
-                &mut self.lead,
+            // Each role pool gets the world's tuned *_mix before it joins the bus — this is
+            // the knob BLACK_ICE turns up on bass and VAPOR95 eases off on, not just four
+            // numbers that sat in the struct looking pretty.
+            for (pool, mix) in [
+                (&mut self.pads, self.pad_mix),
+                (&mut self.keys, self.keys_mix),
+                (&mut self.bass, self.bass_mix),
+                (&mut self.lead, self.lead_mix),
             ] {
                 for v in pool.iter_mut() {
                     if v.active() {
                         let s = v.next();
                         let (l, r) = pan(s, v.pan);
-                        ml += l;
-                        mr += r;
+                        ml += l * mix;
+                        mr += r * mix;
                     }
                 }
             }

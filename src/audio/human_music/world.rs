@@ -35,7 +35,6 @@ pub struct MusicWorld {
     pub subdiv: u32,
     // --- harmonic vocabulary (constrains harmony.rs) ---
     pub use_sevenths: bool,
-    pub allow_extensions: bool,
     pub allow_chromatic_mediant: bool,
     pub allow_modal_mixture: bool,
     pub allow_secondary_dominant: bool,
@@ -96,7 +95,6 @@ impl MusicWorld {
             swing: 0.0,
             subdiv: 4,
             use_sevenths: true,
-            allow_extensions: true,
             allow_chromatic_mediant: true,
             allow_modal_mixture: true,
             allow_secondary_dominant: true,
@@ -194,7 +192,6 @@ impl MusicWorld {
             swing: 0.16,
             subdiv: 2,
             use_sevenths: true,
-            allow_extensions: true,
             allow_chromatic_mediant: true,
             allow_modal_mixture: true,
             allow_secondary_dominant: true,
@@ -295,7 +292,6 @@ impl MusicWorld {
             swing: 0.0,
             subdiv: 4,
             use_sevenths: false,
-            allow_extensions: false,
             allow_chromatic_mediant: false,
             allow_modal_mixture: false,
             allow_secondary_dominant: true,
@@ -394,8 +390,6 @@ mod tests {
         // Vapor swings; the others are straight.
         assert!(w[1].swing > 0.1);
         assert_eq!(w[0].swing, 0.0);
-        // Swiss restrains its vocabulary; Black Ice does not.
-        assert!(!w[2].allow_extensions && w[0].allow_extensions);
         assert!(w[2].voicing_spread > w[0].voicing_spread); // open vs tighter
     }
 
