@@ -43,6 +43,40 @@ pub struct IntentTransition {
     pub acc_cost: MorphismCost,
 }
 
+/// The intent **trajectory** across a bar span — where it starts, where it ends, its peaks, and
+/// how many (and whether any *salient*) semantic events fire inside it.
+///
+/// Round II represented a phrase by a single `intent_at(start)` snapshot, so a phrase that began
+/// before a Confirmation and ended after it silently carried its *pre*-Confirmation intent for the
+/// whole phrase — a concrete mechanism for scrambled direction. An `IntentSpan` sees the whole
+/// window, so the planner can tell that something changed inside it (and phrase segmentation can
+/// avoid swallowing that change). Scalar-summary fields only, so it stays `Copy`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct IntentSpan {
+    /// The running intent in force at the span's first beat.
+    pub start: MusicIntent,
+    /// The running intent as the span concludes (the last event inside it, or `start`).
+    pub end: MusicIntent,
+    /// The highest-energy intent reached inside the span (≥ `start`).
+    pub peak_energy: MusicIntent,
+    /// The highest-tension intent reached inside the span (≥ `start`).
+    pub peak_tension: MusicIntent,
+    /// How many semantic events (of any kind) fired in `[start_beat, end_beat)`.
+    pub events_inside: u8,
+    /// How many *salient* events fired *strictly* inside (after the start boundary).
+    pub salient_inside: u8,
+    /// The beat of the first salient event at or after `end_beat` — what this span leads toward.
+    pub next_salient_beat: Option<f64>,
+}
+
+impl IntentSpan {
+    /// True when a salient structural event fires strictly inside the span — i.e. the span would
+    /// swallow a boundary if it carried only its start intent.
+    pub fn crosses_salient(&self) -> bool {
+        self.salient_inside > 0
+    }
+}
+
 /// The causal materialization of musical intent over an entire semantic trace.
 #[derive(Debug, Clone)]
 pub struct IntentTimeline {
@@ -116,6 +150,49 @@ impl IntentTimeline {
     pub fn step(&self, index: usize) -> Option<&IntentTransition> {
         self.transitions.get(index)
     }
+
+    /// The intent [`IntentSpan`] over `[start_beat, end_beat)` — the trajectory a phrase covering
+    /// that span actually experiences, not just its opening snapshot.
+    pub fn span(&self, start_beat: f64, end_beat: f64) -> IntentSpan {
+        let start = self.intent_at(start_beat);
+        let mut end = start;
+        let mut peak_energy = start;
+        let mut peak_tension = start;
+        let mut events_inside = 0u8;
+        let mut salient_inside = 0u8;
+        for t in &self.transitions {
+            if t.at_beat < start_beat - 1e-9 || t.at_beat >= end_beat - 1e-9 {
+                continue;
+            }
+            end = t.next; // the last event inside the span wins
+            events_inside = events_inside.saturating_add(1);
+            if t.next.energy > peak_energy.energy {
+                peak_energy = t.next;
+            }
+            if t.next.tension > peak_tension.tension {
+                peak_tension = t.next;
+            }
+            // "strictly inside" = after the span's start boundary (a salient event exactly on the
+            // start boundary belongs to this span's opening, not a swallowed mid-span change).
+            if t.at_beat > start_beat + 1e-9 && t.event_kind.is_salient() {
+                salient_inside = salient_inside.saturating_add(1);
+            }
+        }
+        let next_salient_beat = self
+            .transitions
+            .iter()
+            .find(|t| t.at_beat >= end_beat - 1e-9 && t.event_kind.is_salient())
+            .map(|t| t.at_beat);
+        IntentSpan {
+            start,
+            end,
+            peak_energy,
+            peak_tension,
+            events_inside,
+            salient_inside,
+            next_salient_beat,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -185,6 +262,34 @@ mod tests {
         assert_eq!(t.prev.energy, t.next.energy);
         assert_eq!(t.prev.tension, t.next.tension);
         assert_eq!(t.prev.function, t.next.function);
+    }
+
+    #[test]
+    fn span_sees_a_mid_span_confirmation_the_start_snapshot_misses() {
+        // The demo Confirmation fires at beat 88 (a release). A span [80,96) that straddles it
+        // must (a) know a salient event crossed it, and (b) end lower-tension than it started —
+        // exactly the change a start-of-phrase snapshot at beat 80 would have missed.
+        let tl = IntentTimeline::walk(&demo_trace(120.0));
+        let s = tl.span(80.0, 96.0);
+        assert!(s.crosses_salient(), "the Confirmation at 88 was not detected inside [80,96)");
+        assert_eq!(s.salient_inside, 1);
+        assert!(
+            s.end.tension < s.start.tension,
+            "span end should reflect the Confirmation's release: start {} end {}",
+            s.start.tension,
+            s.end.tension
+        );
+    }
+
+    #[test]
+    fn span_of_a_quiet_region_crosses_nothing_and_points_at_the_next_event() {
+        let tl = IntentTimeline::walk(&demo_trace(120.0));
+        // [20,44) sits between the FocusAcquired(16) and the ModalEntered(48): a ToneShift(32)
+        // fires inside, but nothing salient. The next salient event is the ModalEntered at 48.
+        let s = tl.span(20.0, 44.0);
+        assert!(!s.crosses_salient(), "quiet region should cross no salient boundary");
+        assert!(s.events_inside >= 1, "the ToneShift at 32 should count as an interior event");
+        assert_eq!(s.next_salient_beat, Some(48.0));
     }
 
     #[test]

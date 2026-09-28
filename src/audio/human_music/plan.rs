@@ -23,7 +23,7 @@ use super::contract::CoherenceContract;
 use super::form::{SectionKind, BEATS_PER_BAR};
 use super::intent::MusicIntent;
 use super::score::Role;
-use super::timeline::IntentTimeline;
+use super::timeline::{IntentSpan, IntentTimeline};
 
 /// A section family. Recurrence of a family is meaningful: two `A` phrases are the *same*
 /// idea returning; `APrime` is a deliberately bounded transformation of an earlier `A`.
@@ -136,8 +136,12 @@ pub struct Phrase {
     pub family: SectionFamily,
     /// What this phrase owes.
     pub obligation: PhraseObligation,
-    /// Representative running intent (read from the timeline at the phrase start).
+    /// Representative running intent (the span's start; kept for dumps and back-compat).
     pub intent: MusicIntent,
+    /// The intent *trajectory* across the phrase — start/end/peaks and whether a salient semantic
+    /// event fires inside it. Round III reads this instead of the single start snapshot, so a
+    /// phrase can react to a mid-piece Confirmation/resolution instead of carrying stale intent.
+    pub span: IntentSpan,
     /// Whether this phrase is a licensed rupture (climax / world-switch) where extra
     /// simultaneous novelty is permitted.
     pub is_rupture: bool,
@@ -166,13 +170,21 @@ pub struct FormGraph {
 }
 
 impl FormGraph {
-    /// Build a phrase graph over `total_bars`, tiling on the contract's phrase grid.
+    /// Build a phrase graph over `total_bars` on the contract's phrase grid, **with phrase
+    /// boundaries snapped to salient semantic events**.
     ///
-    /// Families are assigned so recurrence is real: odd interior phrases form the recurring
-    /// A-family (`A`, then `A'`…), even interior phrases are `B` contrast, the highest-energy
-    /// interior phrase becomes the `Climax`, the first is the `Intro` and the last the `Coda`.
-    /// The intent for each phrase is read from the causal timeline, so the plan is derived
-    /// from semantic evolution rather than reinventing structure.
+    /// Boundaries are the base grid (`phrase_bars`, `2·phrase_bars`, …) plus every salient event
+    /// ([`super::semantic::EventKind::is_salient`]) floored onto the 2-bar sub-grid. Because we
+    /// only ever *subdivide* the base grid, no phrase exceeds `phrase_bars`, the grid stays
+    /// musically legible, and a structural event (Impact / Confirmation / SectionResolved / …)
+    /// starts its own phrase instead of being swallowed mid-phrase — the Round III fix for the
+    /// one-snapshot defect. Each phrase then carries its full [`IntentSpan`], not just a start
+    /// sample.
+    ///
+    /// Families are still assigned positionally here (intro first, coda last, the peak-energy
+    /// interior phrase is the `Climax`, odd interior phrases form the recurring `A`-family, even
+    /// ones are `B`); the discourse layer replaces that with rhetorical roles derived from the
+    /// trajectory.
     pub fn build(
         timeline: &IntentTimeline,
         total_bars: u32,
@@ -180,7 +192,23 @@ impl FormGraph {
     ) -> FormGraph {
         let total_bars = total_bars.max(1);
         let phrase_bars = contract.phrase_bars.max(1);
-        let n = total_bars.div_ceil(phrase_bars).max(1);
+
+        // Phrase boundaries: the base grid ∪ salient events snapped onto the 2-bar sub-grid.
+        let mut bounds: Vec<u32> = (0..total_bars).step_by(phrase_bars as usize).collect();
+        bounds.push(total_bars);
+        for t in &timeline.transitions {
+            if !t.event_kind.is_salient() {
+                continue;
+            }
+            let bar = (t.at_beat / BEATS_PER_BAR).round() as u32;
+            let snapped = (bar / 2) * 2; // floor onto the 2-bar grid
+            if snapped > 0 && snapped < total_bars {
+                bounds.push(snapped);
+            }
+        }
+        bounds.sort_unstable();
+        bounds.dedup();
+        let n = bounds.len() - 1; // number of phrases (bounds always has >= 2 entries)
 
         // The climax lands on the phrase holding the peak-energy transition, clamped into the
         // interior so it is neither the intro nor the coda.
@@ -191,28 +219,32 @@ impl FormGraph {
             .map(|t| t.at_beat)
             .unwrap_or(total_bars as f64 * BEATS_PER_BAR * 0.6);
         let climax_bar = (climax_beat / BEATS_PER_BAR) as u32;
-        let raw_climax_ix = climax_bar / phrase_bars;
+        let raw_climax_ix = bounds
+            .windows(2)
+            .position(|w| climax_bar >= w[0] && climax_bar < w[1])
+            .unwrap_or(0);
         let climax_ix = if n >= 3 {
-            raw_climax_ix.clamp(1, n - 2)
+            raw_climax_ix.clamp(1, n - 2) as u32
         } else {
-            n.saturating_sub(1)
+            (n - 1) as u32
         };
 
-        let mut phrases = Vec::with_capacity(n as usize);
+        let mut phrases = Vec::with_capacity(n);
         let mut first_a: Option<u32> = None;
         for i in 0..n {
-            let start_bar = i * phrase_bars;
-            let bars = phrase_bars.min(total_bars - start_bar);
+            let ix = i as u32;
+            let start_bar = bounds[i];
+            let bars = bounds[i + 1] - bounds[i];
             let family = if i == 0 {
                 SectionFamily::Intro
             } else if i == n - 1 {
                 SectionFamily::Coda
-            } else if i == climax_ix {
+            } else if ix == climax_ix {
                 SectionFamily::Climax
             } else if i % 2 == 1 {
                 match first_a {
                     None => {
-                        first_a = Some(i);
+                        first_a = Some(ix);
                         SectionFamily::A
                     }
                     Some(base) => SectionFamily::APrime { base },
@@ -228,14 +260,17 @@ impl FormGraph {
                 SectionFamily::Climax => PhraseObligation::Release,
                 SectionFamily::Coda => PhraseObligation::Release,
             };
-            let intent = timeline.intent_at(start_bar as f64 * BEATS_PER_BAR);
+            let start_beat = start_bar as f64 * BEATS_PER_BAR;
+            let end_beat = (start_bar + bars) as f64 * BEATS_PER_BAR;
+            let span = timeline.span(start_beat, end_beat);
             phrases.push(Phrase {
-                ix: i,
+                ix,
                 start_bar,
                 bars,
                 family,
                 obligation,
-                intent,
+                intent: span.start,
+                span,
                 is_rupture: matches!(family, SectionFamily::Climax),
             });
         }
@@ -642,6 +677,33 @@ mod tests {
             plan.form.family_members(SectionFamily::A).len() >= 2,
             "the recurring anchor never recurs"
         );
+    }
+
+    #[test]
+    fn salient_semantic_events_align_to_phrase_boundaries() {
+        // Round III: the Confirmation at beat 88 (bar 22) and SectionResolved at beat 104 (bar 26)
+        // used to land mid-phrase on the 4-bar grid (…,20,24,…) and be swallowed by the phrase's
+        // start snapshot. They must now each *start* a phrase, and no phrase may cross a salient
+        // event strictly inside it (all demo salient bars are even, so snapping is exact).
+        let plan = demo_plan();
+        let starts: Vec<u32> = plan.form.phrases.iter().map(|p| p.start_bar).collect();
+        assert!(
+            starts.contains(&22),
+            "Confirmation (bar 22) does not start a phrase: {starts:?}"
+        );
+        assert!(
+            starts.contains(&26),
+            "SectionResolved (bar 26) does not start a phrase: {starts:?}"
+        );
+        for p in &plan.form.phrases {
+            assert!(
+                !p.span.crosses_salient(),
+                "phrase {} (bars {}..{}) swallows a salient event mid-phrase",
+                p.ix,
+                p.start_bar,
+                p.end_bar()
+            );
+        }
     }
 
     #[test]

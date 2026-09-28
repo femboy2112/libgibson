@@ -153,6 +153,21 @@ impl EventKind {
     pub fn requires_event(self) -> bool {
         self != EventKind::Prolong
     }
+
+    /// Whether this event marks a large-scale **structural** boundary that phrase segmentation
+    /// should try to align to, so it is never swallowed mid-phrase (Round III). Local recolorings
+    /// (`ToneShift`, `FocusAcquired`) and the identity (`Prolong`) do not; the act/section/impact/
+    /// resolution family does.
+    pub fn is_salient(self) -> bool {
+        matches!(
+            self,
+            EventKind::ActChanged
+                | EventKind::ModalEntered
+                | EventKind::Impact
+                | EventKind::Confirmation
+                | EventKind::SectionResolved
+        )
+    }
 }
 
 /// A morphism instance in 𝒮: at `at_beat` the presentation becomes `state` via `kind`.
