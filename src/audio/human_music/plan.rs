@@ -281,14 +281,22 @@ impl ArrangementRole {
 
     /// The velocity multiplier this role applies to a voice — the dynamic hierarchy that
     /// puts one voice forward and the rest behind it (silence is literal zero).
+    ///
+    /// Round VI narrows this spread deliberately. It used to run Foreground 1.0 down to
+    /// Texture 0.42 — a ~7.5 dB cliff that, stacked on top of the world's per-voice patch gain
+    /// and bus mix (both of which also favor the lead), let the melody sit ~11 dB over the
+    /// harmony bed: "pasted 3 dB in front of everybody." Semantic role decides *who leads*, not
+    /// *by how much* — that's the mix engineer's job downstream. So the non-foreground tiers are
+    /// pulled up close: Foreground↔Texture is now ~2.9 dB, not a canyon. Silence stays a literal
+    /// zero (that's meaning, not level), and Punctuation stays near the top — a stab should land.
     pub fn gain(self) -> f32 {
         match self {
             ArrangementRole::Foreground => 1.0,
-            ArrangementRole::Support => 0.68,
-            ArrangementRole::Foundation => 0.62,
-            ArrangementRole::Pulse => 0.72,
-            ArrangementRole::Texture => 0.42,
-            ArrangementRole::Punctuation => 0.85,
+            ArrangementRole::Support => 0.85,
+            ArrangementRole::Foundation => 0.82,
+            ArrangementRole::Pulse => 0.88,
+            ArrangementRole::Texture => 0.72,
+            ArrangementRole::Punctuation => 0.9,
             ArrangementRole::Silent => 0.0,
         }
     }
@@ -1001,6 +1009,41 @@ mod tests {
                     .iter()
                     .any(|a| a.role_for(role).is_audible()),
                 "{role:?} is silent in every phrase"
+            );
+        }
+    }
+
+    #[test]
+    fn foreground_is_not_a_loudness_cliff_over_texture() {
+        use super::super::world::MusicWorld;
+        // Round VI thesis: semantic role decides WHO leads, not BY HOW MUCH. Loudness is a mix
+        // decision downstream, not a synonym for "foreground." Three multiplicative gain stages —
+        // the role table (this file), the world's per-voice patch gain, and its bus mix — must not
+        // compound into a canyon. Baseline BLACK_ICE ran the lead ~11.5 dB over the pad ("pasted
+        // 3 dB in front of everybody"); this budget keeps every world well under that, and trips if
+        // a future world re-widens any stage.
+        const BUDGET_DB: f32 = 6.0;
+
+        // The role stage in isolation (world-independent): the Foreground↔Texture tier Task 1
+        // narrowed from a ~7.5 dB cliff. Pins the table in this file directly.
+        let role_db =
+            20.0 * (ArrangementRole::Foreground.gain() / ArrangementRole::Texture.gain()).log10();
+        assert!(
+            role_db <= 3.5,
+            "the role-gain Foreground↔Texture spread re-widened to {role_db:.2} dB"
+        );
+
+        // The full three-stage spread, per world: the lead at Foreground vs the pad at Texture —
+        // the exact pairing the A-family arrangement uses, and the exact comparison that measured
+        // the baseline cliff.
+        for w in MusicWorld::all() {
+            let fg = ArrangementRole::Foreground.gain() * w.lead.gain * w.lead_mix;
+            let tex = ArrangementRole::Texture.gain() * w.pad.gain * w.pad_mix;
+            let db = 20.0 * (fg / tex).log10();
+            assert!(
+                db <= BUDGET_DB,
+                "{}: Foreground lead sits {db:.2} dB over the Texture pad (budget {BUDGET_DB} dB)",
+                w.name
             );
         }
     }

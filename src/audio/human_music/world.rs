@@ -108,7 +108,7 @@ impl MusicWorld {
                 cutoff_env: 900.0,
                 resonance: 0.35,
                 adsr: (0.06, 0.4, 0.55, 0.6),
-                gain: 0.5,
+                gain: 0.6,
                 pan: 0.0,
             },
             bass: Patch {
@@ -147,7 +147,7 @@ impl MusicWorld {
                 cutoff_env: 1600.0,
                 resonance: 0.3,
                 adsr: (0.003, 0.14, 0.0, 0.1),
-                gain: 0.5,
+                gain: 1.1,
                 pan: -0.15,
             },
             kick: KickParams {
@@ -174,9 +174,9 @@ impl MusicWorld {
             saturation: 1.6,
             master_ceiling: 0.97,
             base_dynamic: 0.85,
-            pad_mix: 0.55,
-            lead_mix: 0.7,
-            keys_mix: 0.5,
+            pad_mix: 0.62,
+            lead_mix: 0.62,
+            keys_mix: 1.3,
             bass_mix: 0.9,
         }
     }
@@ -205,7 +205,7 @@ impl MusicWorld {
                 cutoff_env: 700.0,
                 resonance: 0.15,
                 adsr: (0.4, 0.8, 0.7, 1.2),
-                gain: 0.55,
+                gain: 0.6,
                 pan: 0.0,
             },
             bass: Patch {
@@ -247,7 +247,7 @@ impl MusicWorld {
                 cutoff_env: 500.0,
                 resonance: 0.1,
                 adsr: (0.005, 0.5, 0.25, 0.5),
-                gain: 0.5,
+                gain: 0.85,
                 pan: 0.15,
             },
             kick: KickParams {
@@ -276,7 +276,7 @@ impl MusicWorld {
             base_dynamic: 0.7,
             pad_mix: 0.8,
             lead_mix: 0.62,
-            keys_mix: 0.7,
+            keys_mix: 0.9,
             bass_mix: 0.82,
         }
     }
@@ -305,7 +305,7 @@ impl MusicWorld {
                 cutoff_env: 200.0,
                 resonance: 0.08,
                 adsr: (0.08, 0.5, 0.5, 0.5),
-                gain: 0.35,
+                gain: 0.42,
                 pan: 0.0,
             },
             bass: Patch {
@@ -341,7 +341,7 @@ impl MusicWorld {
                 cutoff_env: 0.0,
                 resonance: 0.05,
                 adsr: (0.002, 0.18, 0.0, 0.1),
-                gain: 0.5,
+                gain: 0.85,
                 pan: -0.12,
             },
             kick: KickParams {
@@ -368,9 +368,9 @@ impl MusicWorld {
             saturation: 1.15,
             master_ceiling: 0.98,
             base_dynamic: 0.75,
-            pad_mix: 0.4,
+            pad_mix: 0.6,
             lead_mix: 0.62,
-            keys_mix: 0.6,
+            keys_mix: 0.9,
             bass_mix: 0.85,
         }
     }

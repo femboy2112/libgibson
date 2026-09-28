@@ -253,6 +253,69 @@ impl StemMask {
     }
 }
 
+/// One bus's realized level over a render: RMS (of the mono mixdown) and peak (max channel
+/// magnitude). Both are the bus's *own* contribution, before the shared master chain.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct BusLevel {
+    pub rms: f32,
+    pub peak: f32,
+}
+
+/// Per-bus level readout for the six voice families. A lab/diagnostic surface (Rust-only, not in
+/// the C ABI): it answers "how loud does each bus *actually* sit?" so a mix can be balanced by
+/// reading one render instead of soloing every stem and eyeballing six files. The whole point of
+/// Round VI — decoupling semantic foreground from brute loudness — needs a truthful ruler, and a
+/// ruler that the StemMask could silence would be no ruler at all: the meter is fed regardless of
+/// the mute (see [`BusMeter::tap`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct BusLevels {
+    pub pad: BusLevel,
+    pub keys: BusLevel,
+    pub bass: BusLevel,
+    pub lead: BusLevel,
+    pub drums: BusLevel,
+    pub sfx: BusLevel,
+}
+
+/// The per-bus RMS+peak accumulator, folded every sample. Indices match [`StemMask::NAMES`]:
+/// 0 pad, 1 keys, 2 bass, 3 lead, 4 drums, 5 sfx. It is a pure observer — it never feeds back into
+/// the audio, so it cannot perturb bit-exactness.
+#[derive(Default)]
+struct BusMeter {
+    frames: u64,
+    sumsq: [f64; 6],
+    peak: [f32; 6],
+}
+
+impl BusMeter {
+    /// Fold one sample's stereo contribution for `bus` into the meter (mono energy + channel peak).
+    /// Called for every bus each sample, muted or not — the mute gate stops audio, never the meter.
+    fn tap(&mut self, bus: usize, l: f32, r: f32) {
+        let mono = 0.5 * (l + r);
+        self.sumsq[bus] += (mono as f64) * (mono as f64);
+        let p = l.abs().max(r.abs());
+        if p > self.peak[bus] {
+            self.peak[bus] = p;
+        }
+    }
+
+    fn levels(&self) -> BusLevels {
+        let n = self.frames.max(1) as f64;
+        let mk = |i: usize| BusLevel {
+            rms: (self.sumsq[i] / n).sqrt() as f32,
+            peak: self.peak[i],
+        };
+        BusLevels {
+            pad: mk(0),
+            keys: mk(1),
+            bass: mk(2),
+            lead: mk(3),
+            drums: mk(4),
+            sfx: mk(5),
+        }
+    }
+}
+
 /// The HumanMusic synthesizer.
 pub struct HumanMusicSynth {
     total_samples: u64,
@@ -294,6 +357,8 @@ pub struct HumanMusicSynth {
     duck: Option<Vec<f32>>,
     // Debug stem/bus mask (experimental lab surface); full by default = the normal mix.
     stems: StemMask,
+    // Per-bus level meter (lab/diagnostic), accumulated every sample independent of `stems`.
+    meter: BusMeter,
 }
 
 impl HumanMusicSynth {
@@ -388,6 +453,7 @@ impl HumanMusicSynth {
             playhead: 0,
             duck: None,
             stems: StemMask::full(),
+            meter: BusMeter::default(),
         }
     }
 
@@ -408,6 +474,9 @@ impl HumanMusicSynth {
         self.dcur = 0;
         self.scur = 0;
         self.playhead = 0;
+        // The meter measures the transport, so it rewinds with it — otherwise a resumed render
+        // would double-count. (A clean re-render still wants a fresh synth; see the doc above.)
+        self.meter = BusMeter::default();
     }
 
     /// Provide a per-sample music-bus duck gain (used by the reaction integrator to duck
@@ -422,6 +491,14 @@ impl HumanMusicSynth {
     /// [`StemMask::solo`] to isolate one bus for debugging a bad tone.
     pub fn set_stem_mask(&mut self, mask: StemMask) {
         self.stems = mask;
+    }
+
+    /// The realized per-bus levels (RMS + peak) accumulated over the render so far. This is the
+    /// Round VI mix ruler: read it after driving the synth to see how loud each voice family
+    /// actually sits, without soloing and re-rendering every stem. It is INDEPENDENT of the
+    /// [`StemMask`] — a muted bus still reports its true level, so isolation never lies to the meter.
+    pub fn bus_levels(&self) -> BusLevels {
+        self.meter.levels()
     }
 
     fn trigger_note(&mut self, ev: &NoteEvent) {
@@ -488,22 +565,33 @@ impl AudioSource for HumanMusicSynth {
             // Each role pool gets the world's tuned *_mix before it joins the bus — this is
             // the knob BLACK_ICE turns up on bass and VAPOR95 eases off on, not just four
             // numbers that sat in the struct looking pretty.
-            for (pool, mix, on) in [
+            for (bus, (pool, mix, on)) in [
                 (&mut self.pads, self.pad_mix, self.stems.pad),
                 (&mut self.keys, self.keys_mix, self.stems.keys),
                 (&mut self.bass, self.bass_mix, self.stems.bass),
                 (&mut self.lead, self.lead_mix, self.stems.lead),
-            ] {
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                // Sum the bus's own post-mix stereo contribution first, then meter it and only
+                // then decide whether it joins the master — so the meter sees the true level even
+                // when the mask has this bus muted.
+                let mut bl = 0.0f32;
+                let mut br = 0.0f32;
                 for v in pool.iter_mut() {
+                    // A muted bus still advances its voice (identical timeline); it just is not summed.
                     if v.active() {
                         let s = v.next();
-                        // A muted bus still advances its voice above; it just is not summed.
-                        if on {
-                            let (l, r) = pan(s, v.pan);
-                            ml += l * mix;
-                            mr += r * mix;
-                        }
+                        let (l, r) = pan(s, v.pan);
+                        bl += l * mix;
+                        br += r * mix;
                     }
+                }
+                self.meter.tap(bus, bl, br);
+                if on {
+                    ml += bl;
+                    mr += br;
                 }
             }
             // Drums (center-ish placement).
@@ -511,9 +599,12 @@ impl AudioSource for HumanMusicSynth {
             let sn = self.snare.next();
             let ht = self.hat.next();
             let cl = self.clap.next();
+            let dl = k + sn + ht * 0.85 + cl * 0.6;
+            let dr = k + sn + ht * 1.0 + cl * 0.8;
+            self.meter.tap(4, dl, dr);
             if self.stems.drums {
-                ml += k + sn + ht * 0.85 + cl * 0.6;
-                mr += k + sn + ht * 1.0 + cl * 0.8;
+                ml += dl;
+                mr += dr;
             }
 
             // Music production: saturation -> reverb send.
@@ -529,17 +620,23 @@ impl AudioSource for HumanMusicSynth {
                 .unwrap_or(1.0);
 
             // --- SFX bus. ---
-            let mut sl = 0.0f32;
-            let mut sr = 0.0f32;
+            let mut sfx_l = 0.0f32;
+            let mut sfx_r = 0.0f32;
             for v in self.sfx_voices.iter_mut() {
                 if v.active() {
                     let (l, r) = v.next();
-                    if self.stems.sfx {
-                        sl += l;
-                        sr += r;
-                    }
+                    sfx_l += l;
+                    sfx_r += r;
                 }
             }
+            self.meter.tap(5, sfx_l, sfx_r);
+            // One frame folded into every bus's meter — count it once, here, not six times.
+            self.meter.frames += 1;
+            let (sl, sr) = if self.stems.sfx {
+                (sfx_l, sfx_r)
+            } else {
+                (0.0, 0.0)
+            };
 
             // --- Master mix + bus comp + limiter. ---
             let mut lx = ml * self.music_gain * duck + sl * self.sfx_gain;
@@ -783,6 +880,76 @@ mod tests {
             synth.total_samples() < 450_000,
             "total_samples {} implies the world tempo (88), not the score tempo (200)",
             synth.total_samples()
+        );
+    }
+
+    #[test]
+    fn bus_levels_are_nonzero_for_every_audible_bus_in_a_real_bounce() {
+        // Round VI: the mix ruler must actually read the room. Render the flagship DeflectedLift
+        // bounce and confirm every voice family that plays reports a level — a silent bus here
+        // means a voice the arrangement scheduled never reached the meter.
+        use super::super::functor::compose;
+        use super::super::semantic::deflected_lift_trace;
+        use crate::audio::render::OfflineRenderer;
+
+        let world = MusicWorld::black_ice();
+        let score = compose(&deflected_lift_trace(120.0), &world, 2112);
+        let sr = SampleRate::STUDIO;
+        let mut synth = HumanMusicSynth::new(&score, &world, sr);
+        let frames = synth.total_samples();
+        let _ = OfflineRenderer::new(sr, 512).render(&mut synth, frames);
+
+        let bl = synth.bus_levels();
+        for (name, lvl) in [
+            ("pad", bl.pad),
+            ("keys", bl.keys),
+            ("bass", bl.bass),
+            ("lead", bl.lead),
+            ("drums", bl.drums),
+        ] {
+            assert!(
+                lvl.rms > 0.0,
+                "{name} bus reports zero rms in a real bounce render"
+            );
+            assert!(
+                lvl.peak >= lvl.rms,
+                "{name} bus peak {} is below its rms {} — meter is inconsistent",
+                lvl.peak,
+                lvl.rms
+            );
+        }
+    }
+
+    #[test]
+    fn bus_meter_is_independent_of_the_stem_mask() {
+        // The load-bearing property of the meter: muting a bus stops its AUDIO, never its METER.
+        // A ruler the mask could silence would lie precisely when you solo a bus to read it. So a
+        // fully-silent render must report the exact same per-bus levels as the full mix.
+        use super::super::functor::compose;
+        use super::super::semantic::deflected_lift_trace;
+        use crate::audio::render::OfflineRenderer;
+
+        let world = MusicWorld::black_ice();
+        let score = compose(&deflected_lift_trace(120.0), &world, 2112);
+        let sr = SampleRate::STUDIO;
+        let render = |mask: StemMask| {
+            let mut s = HumanMusicSynth::new(&score, &world, sr);
+            s.set_stem_mask(mask);
+            let frames = s.total_samples();
+            let _ = OfflineRenderer::new(sr, 512).render(&mut s, frames);
+            s.bus_levels()
+        };
+
+        let full = render(StemMask::full());
+        let muted = render(StemMask::silent());
+        assert_eq!(full, muted, "the stem mask leaked into the bus meter");
+        assert!(
+            muted.keys.rms > 0.0,
+            "keys meter was zeroed by the mute gate"
+        );
+        assert!(
+            muted.lead.rms > 0.0,
+            "lead meter was zeroed by the mute gate"
         );
     }
 }
