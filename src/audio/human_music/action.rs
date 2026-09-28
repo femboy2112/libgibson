@@ -235,6 +235,8 @@ pub struct ActionPlan {
     pub actions: Vec<MusicalAction>,
     pub deferred: Vec<Deferral>,
     pub stasis: Vec<StasisSpan>,
+    /// The piece's gesture → player families (None for the null plan).
+    pub families: Option<ActionFamilies>,
 }
 
 /// A lifted morphism's action: (kind, initiator, start, duration, target, responders).
@@ -260,7 +262,10 @@ impl ActionPlan {
         seed: u64,
     ) -> ActionPlan {
         let fam = ActionFamilies::choose(lang, seed);
-        let mut plan = ActionPlan::default();
+        let mut plan = ActionPlan {
+            families: Some(fam),
+            ..ActionPlan::default()
+        };
         let clamp = |b: f64| b.clamp(0.0, total_beats);
 
         // --- 1. Path-lift every applied morphism. ---
@@ -598,6 +603,18 @@ impl ActionPlan {
             self.deferred.len(),
             self.stasis.len()
         );
+        if let Some(f) = &self.families {
+            let _ = writeln!(
+                s,
+                "  semantic binding plan (fixed for the piece): reach→Lift = pickup by {} + reach by {}; \
+                 miss→Deflect = ensemble hit + break; opening→Open = re-entry by {}; \
+                 reset→Reset = fill by {} into the next attempt",
+                f.lift_pickup.label(),
+                f.lift_reach.label(),
+                f.open_reentry.label(),
+                f.reset_fill.label()
+            );
+        }
         for a in &self.actions {
             let cause = match a.cause {
                 ActionCause::Morphism {
