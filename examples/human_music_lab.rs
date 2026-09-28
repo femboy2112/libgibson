@@ -18,7 +18,9 @@ use std::path::PathBuf;
 
 use gibson::audio::buffer::StereoBlock;
 use gibson::audio::human_music::contract::CompositionGrammar;
-use gibson::audio::human_music::diagnostics::{CoherenceDiagnostics, DiscourseDiagnostics};
+use gibson::audio::human_music::diagnostics::{
+    CoherenceDiagnostics, DiscourseDiagnostics, RealizationDiagnostics,
+};
 use gibson::audio::human_music::functor::{compose_with_grammar, compose_with_plan};
 use gibson::audio::human_music::semantic::{calm_loop, rise_unresolved};
 use gibson::audio::human_music::synth::HumanMusicSynth;
@@ -97,7 +99,11 @@ fn main() -> std::io::Result<()> {
         print!("{}", score.summary());
         print!("{}", plan.dump());
         print!("{}", CoherenceDiagnostics::measure(&plan, &score).report());
-        println!("{}", DiscourseDiagnostics::measure(&plan, &score).report());
+        print!("{}", DiscourseDiagnostics::measure(&plan, &score).report());
+        println!(
+            "{}",
+            RealizationDiagnostics::measure(&plan, &score).report()
+        );
         println!(
             "render: {real_secs:.1}s audio in {:.0}ms  ({:.1}x realtime)  peak={:.3} rms={:.3} dc=({:.4},{:.4})",
             render_wall.as_secs_f64() * 1000.0,
@@ -172,7 +178,11 @@ fn calibrate(
         println!("=== {name}  ({grammar:?}, {}) ===", world.name);
         print!("{}", plan.dump());
         print!("{}", CoherenceDiagnostics::measure(&plan, &score).report());
-        println!("{}", DiscourseDiagnostics::measure(&plan, &score).report());
+        print!("{}", DiscourseDiagnostics::measure(&plan, &score).report());
+        println!(
+            "{}",
+            RealizationDiagnostics::measure(&plan, &score).report()
+        );
         println!(
             "safety: nonfinite={}  peak={:.3}  max_voices={}\nwav: {}\n",
             out.audio.has_nonfinite(),
