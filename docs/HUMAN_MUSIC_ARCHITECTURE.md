@@ -6,8 +6,11 @@ is a research/engineering-alpha subsystem, Rust-only, not yet part of the C ABI.
 this alongside the module docs in `src/audio/mod.rs` and
 `src/audio/human_music/mod.rs`, which this document expands on.
 
-This is the **Round III** revision of this document. The three rounds are a layer
-progression, each fixing what the previous one didn't reach:
+This is the **Round VIIb** revision of this document. The rounds are a layer progression,
+each fixing what the previous one didn't reach. Rounds I–III are summarized here; Rounds IV–VIIb
+in §3.12–§3.16, where **§3.16 is the current state** and §7 opens with the **current** limits.
+Sections §3.1–§3.11 describe the Round II/III planning layers; where a later round replaced a
+mechanism, the section is marked *historical* and points at its replacement.
 
 - **Round I** shipped a vertical slice that got the categorical vocabulary right and the
   causal wiring wrong: a running `MusicIntent` was computed and then thrown away, and the
@@ -105,7 +108,40 @@ layer:
 The composition engine: turns a semantic trace into a full multi-voice `Score` and
 renders it through the DSP layer. This is the subject of the rest of this document.
 
-## 3. What actually happens: the Round III pipeline
+## 3. What actually happens: the pipeline
+
+**Current (Round VIIb)** — what `functor::compose_full` does today:
+
+```text
+SemanticTrace
+  -> IntentTimeline      (causal walk; each transition carries prev/next SemanticState and an
+                          EffectVector — the SIZE of the move, not just its kind)
+  -> CompositionPlan     (contract, FormGraph with an exact requested length, discourse +
+                          typed ObligationLedger, the coarse ArrangementPlan envelope, and —
+                          for DeflectedLift — the world-independent BackboneTimeline: one clock)
+  -> PerformancePlan     (the shared performance, built before anybody plays:
+       ActionPlan          every morphism path-lifted (or deferred with a reason), gesture
+                           verbs as varied manifestation families, sized by the EffectVector
+       Stage               the SINGLE orchestration authority: seeded from the arrangement
+                           envelope; every action admitted / recast / rejected BEFORE realization
+       harmony             backbone or phrase engine + harmonic edits + HarmonicContext timeline
+       AccentGrid          the shared 16th-note field
+       interaction         InteractionOpportunity → Calls that OWN InteractionMaterial →
+                           Responses deriving their material from the call's (InteractionMemory)
+       stasis              declared stillness
+       ensemble            EnsembleBar per bar (modes, foreground on stage, kinetic target)
+       obligations         settled debts bound to the action that discharges them
+       budget              one ComplexityAllocation per bar, lead + answers + figures reserved)
+  -> realizers           (lead → keys → pad → bass → drums; each a projection of the same plan;
+                          every event stamped with the exact ActionIds / interaction / material it
+                          performs; the voice-path DP voices pad and keys)
+  -> stamp_arrangement   (provenance only — no deletion; orchestration_violations() == [])
+  -> Score IR            (exact total length; SFX pitched in the local harmony or owned)
+  -> HumanMusicSynth / DSP
+  witness::audit / interaction_receipts / diagnostics measure the realized Score, not the plan
+```
+
+**Historical (Round III)** — kept for the record; §3.8's post-hoc gate is gone (Round VIIb):
 
 `gibson::audio::human_music` still uses categorical vocabulary in a few places
 (`MusicIntent`, `IntentMorphism`, `MorphismCost` in `intent.rs`), and those types are
@@ -207,6 +243,11 @@ itself, a preferred phrase length, a `ResolutionPolicy` (`Functional` / `Loop` /
 by the live `compose`/`compose_with_plan` inference — see the honest limits in §7.
 
 ### 3.3 `FormGraph` and `CompositionPlan` — the planning boundary and its sole authority
+
+*Current authority (since Round VII/VIIb):* for DeflectedLift the harmony comes from the
+`BackboneTimeline` (not from `targets()`), the realizers read the `PerformancePlan`, and the
+`ensemble::Stage` inside it is the single orchestration authority (§3.16). `targets()` remains the
+phrase-level goal stream the discourse, the lead's statement plan and the phrase harmony engine read.
 
 `plan.rs` is where the structural commitments live:
 
@@ -358,6 +399,10 @@ reset at each phrase boundary so cadences don't inherit debts.
 
 ### 3.6 Motif (`motif.rs`) — one developing idea, now a discourse-consequent transform
 
+*Historical (Round III).* `functor.rs::add_melody`/`motif_for_role` no longer exist: the lead is
+planned in `interaction::plan_interactions` (the `ThematicTrajectory`) and realized by
+`melody::realize_lead` → `motif::realize_line`, Round VII's targets-then-connectors engine (§3.15).
+
 `motif::MotifBank::generate` grows a small, deterministic, related roster from a single
 germ (an `identity` motif, a `hook` fragment, a `rhythmic_cell` diminution, a `bass_cell`
 register-dropped opening, an optional inverted `countermotif`) — one idea in several
@@ -394,6 +439,10 @@ in mechanism since Round II.
 
 ### 3.7 Groove and bass (`groove.rs`, `functor.rs::add_bass`) — typed departure and re-entry
 
+*Historical (Round III).* The live path is `groove::realize_drums` and `bass::realize_bass`
+(§3.15/§3.16); `GrooveEngine::generate` remains only for its unit tests, and the kick now follows
+the bass rather than the bass the kick.
+
 `GrooveEngine::generate` realizes a deterministic 2-bar groove cell (bar 0 the plain
 statement, bar 1 the bounded variation — syncopated kick anticipations, ghost snares, an
 open-hat lift — gated by energy). Fills are driven by the plan: `is_fill_bar` checks
@@ -415,6 +464,11 @@ change — locked to the groove's real kick placements, unchanged in mechanism s
 II.
 
 ### 3.8 `apply_arrangement` and provenance
+
+*Historical (Round II–VII).* Round VIIb removed the post-performance gate: it deleted notes of
+phrase-silenced voices after the shared performance was realized, a second orchestration
+authority. The arrangement is now the envelope the `ensemble::Stage` is seeded from; actions are
+reconciled with it before realization and `functor::stamp_arrangement` only writes provenance.
 
 `functor.rs::apply_arrangement` is the pass that turns "everyone plays all the time"
 into a real arrangement: for every note and drum hit it looks up the phrase it falls in
@@ -642,7 +696,11 @@ full-mix peak safe. Adversarial probes: triad-student, dead-intro, kaleidoscope 
 contour similarity), and broken-DeflectedLift-permutation (the spine order beats a scrambled gesture
 assignment).
 
-**Honest, deferred (not half-built).** `repairs_performed` is instrumented but not yet 0
+**Honest, deferred at Round VI (historical — since delivered).** Round VII delivered
+justification inside the search (targets-then-connect, repairs 0/0/0), `MelodicEvent` with
+first-class rests, the `AccentGrid`/`EnsembleBar` ensemble and the bass engine; Round VIIb
+delivered a shared complexity budget, SFX in the local harmony and global voice leading. The
+Round VI text follows. `repairs_performed` is instrumented but not yet 0
 (6/1/1 across the worlds) — moving justification INTO candidate generation (targets-then-connect, a
 `MelodicEvent` representation with first-class rests, licensed strong-beat extensions/suspensions) is
 the deeper melody rewrite for a later round. The full fusion **ensemble** — a shared `AccentGrid`, an
@@ -699,7 +757,8 @@ and internal-rest share.
 
 **Actions (`action.rs`).** `MusicalAction {id, cause, initiator, window, kind, target, responders,
 binding, pays}`. Every applied morphism is path-lifted (Prepare→Pickup, Intensify→Push,
-Suspend→Hold, Syncopate→Displace, Reharmonize, Modulate→Tonicize, Thicken/Thin, Fragment/Sequence,
+Suspend→Hold, Syncopate→Displace, Reharmonize, Modulate→Tonicize *(Round VII realized Modulate
+as a tonicization; see §3.16)*, Thicken/Thin, Fragment/Sequence,
 Resolve paid by a Cadence Hit, Relax→Pullback, …) or recorded as a `Deferral` with a reason. The
 backbone adds its own verbs each cycle (Lift: pickup + push into the miss; Deflect: ensemble hit +
 break; Open: re-entry + unison figure; Reset: fill into the next attempt); `ActionFamilies` choose
@@ -717,8 +776,10 @@ player's mode, the complexity budget, a kinetic target). An ensemble verb where 
 leaves one player on stage becomes that player's pickup.
 
 **Players who listen.** Realized in listening order, each a projection of the same plan: `melody`
-(the lead), `comp` (keys comp on the grid around the lead's real onsets, answer with the call's own
-material — quoted, echoed, inverted, compressed, completed — stab the hits, hold suspensions, leave
+(the lead), `comp` (keys comp on the grid around the lead's real onsets, answer with the call's
+material — quoted, echoed, inverted, compressed, completed; *Round VIIb found that for a bass or
+keys call this "material" was the LEAD's coincident notes, and fixed it — §3.16* — stab the hits,
+hold suspensions, leave
 space; the pad sustains, shells, carries common tones, swells, adds an upper structure or drops
 out), `bass` (its own subset of the gesture cell, a pedal re-struck under the Deflect, a walk
 through the Lift, a counterline in the lead's gaps, motif figures and answers, in on the hits) and
@@ -730,18 +791,30 @@ held note lifts off when the harmony moves.
 **Audible witnesses (`witness.rs`).** Each action is audited against the realized score (a push
 needs two players on the step, a break an empty window, an answer its responder's notes, a unison
 keys and bass on the same onsets and pitch classes, …). The audit found and drove three fixes
-(unrealized unisons, phantom intro tutti, unfragmented Fragment actions). Flagship: 57/57 actions
-witnessed in all three worlds. `kinetic_curve` reads forward motion from onsets per beat; the
+(unrealized unisons, phantom intro tutti, unfragmented Fragment actions). *Round VII reported
+"57/57 witnessed"; at the Round VII tip the flagship had 53/54/54 actions, the audit ran only in its
+own unit test, and several of its checks were temporal proxies — Round VIIb replaced it with an
+exact, stamped audit (§3.16).* `kinetic_curve` reads forward motion from onsets per beat; the
 compressed second cycle is measurably more urgent than the statement cycle without being louder.
 
 **Calibration A/Bs.** `human_music_lab -- --ab` renders one composition four ways: fusion,
 simple language, actions disabled (mood without action), and clockwork fixed-slot responses;
-`--language=`, `--actions=off` and `--responses=clockwork` select each on the normal path.
+`--language=`, `--actions=off` and `--responses=clockwork` select each on the normal path
+(Round VIIb adds `--calls=every` and `--manifest=fixed`; `--ab` renders six cases).
 
-## 4. Engines carried over unchanged from Round I
+**Later Round VII commits** (after this section was first written): `dd4e048` — an expectation
+needs a resolving tritone unless it points home (Deflected over-tagging 13–16 → 3); `54ddc1e` — a
+keys-led re-entry is a call; `191c79f` — the lead is targets first, then justified connectors
+(`MelodicEvent`, `LicensedExtension`/`Enclosure`, classification inside the search); `79b47b5` —
+exposition and the hook protected from fragmentation, lawful release registers.
 
-These pieces of the Round I vertical slice are still in place and were not part of the
-Round II or Round III rewrites:
+## 4. Engines carried over from Round I
+
+These pieces of the Round I vertical slice are still in place. They were not part of the
+Round II/III rewrites; the synth, the Score IR and the worlds have since evolved (Round IV mix
+wiring, Round V finite SFX lifetime and stems, Round VI bus levels, Round VIIb exact length,
+typed provenance and pitched SFX) and `VoiceLeader` is now the legacy control of the voice-path
+DP (§3.16):
 
 - **`world::MusicWorld`** — a skin's sonic world / local physics: harmonic vocabulary
   gates (`use_sevenths`, `allow_chromatic_mediant`, `allow_modal_mixture`,
@@ -878,7 +951,22 @@ a `CoherenceDiagnostics` report, and render receipts printed to stdout. Flags:
 - `--out=PATH` — output directory (default: a `libgibson_human_music` folder under the
   system temp dir).
 - `--seed=N` — composition seed (default `2112`).
-- `--beats=N` — length of the demo semantic trace in beats (default `120`).
+- `--beats=N` — length of the semantic trace in beats (default `120`; any length — a partial
+  final bar is rendered exactly since Round VIIb).
+- `--story=bounce|cinematic|calm|rise` — the semantic fixture (default: the DeflectedLift
+  bounce); `--grammar=deflected|hookarc|loop|riff` — the composition grammar.
+- `--language=simple`, `--actions=off`, `--responses=clockwork`, `--calls=every`,
+  `--manifest=fixed` — the calibration probes (plain speech, mood without action, fixed-slot
+  answers, every statement a call, one gesture choreography every cycle).
+- `--ab` — the flagship six ways (fusion / simple / actions_off / clockwork / saturated /
+  fixed_gestures) with the receipts next to each WAV; `--stems` — one WAV per bus.
+
+The normal path prints, per world: the plan and backbone dumps, the action plan (with its
+manifestations, stasis and deferrals), the performance (calls, responses, ensemble), the
+coherence / discourse / realization / lead-outline / action / rigidity / harmony-context
+diagnostics, the exact causal witness audit, every interaction receipt, opportunity and
+admission, the complexity budget, the voice-path diagnostics, the lead's repair counts, and
+render safety receipts.
 
 The point of the lab, per its own doc comment: the three WAVs should be recognizably the
 *same* music in form and meaning — same section skeleton, same motif identity, same

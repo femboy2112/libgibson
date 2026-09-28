@@ -1,13 +1,11 @@
-//! `F_skin : 𝒮 → 𝓜` — the (lax-monoidal) functor that turns a semantic trace into a
-//! [`Score`], parameterized by a [`MusicWorld`]. This is where simultaneous semantic layers
-//! (tone + emphasis + density + elevation) become simultaneous musical voices (harmony +
-//! bass + drums + melody) via a shared coherence map (the form's energy/tension curve and
-//! the one progression), rather than independent sums.
+//! The composition entry points: a semantic trace becomes a [`Score`] under a [`MusicWorld`].
 //!
-//! Walking the trace, each semantic morphism maps to a sequence of intent morphisms that
-//! evolve a running [`MusicIntent`]; those choices drive motif development, SFX placement
-//! and local density, and their labels become event provenance. Skins are natural
-//! transformations: swap the world and the form/motif/resolutions stay; the dialect changes.
+//! [`compose_full`] walks the trace into a causal [`IntentTimeline`] (each semantic event maps to
+//! a sequence of intent morphisms evolving a running [`MusicIntent`]), builds one
+//! [`CompositionPlan`] and one [`PerformancePlan`], and realizes every player as a projection of
+//! that performance. Swapping the world keeps the world-independent plan (form, discourse,
+//! backbone timeline, obligations); the harmony's realization, the motif bank's colour and the
+//! action count follow the world and the language.
 
 use super::action::{ActionCause, ActionKind, Agent};
 use super::contract::{CoherenceContract, CompositionGrammar};

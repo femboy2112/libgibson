@@ -6,13 +6,14 @@
 //! production-quality dynamics — all generated programmatically with **no prerecorded
 //! musical assets**.
 //!
-//! The central construction is a lax-monoidal functor `F_skin : 𝒮 -> 𝓜` from a semantic
-//! style/story category to a musical-intent category, parameterized by a LibGibson
-//! [`world::MusicWorld`]. See `docs/HUMAN_MUSIC_ARCHITECTURE.md`.
-//!
-//! Round I builds the full vertical slice: semantic category, intent category, the three
-//! MusicWorlds, form/harmony/voicing/motif/groove engines, the Score IR, the synthesizer,
-//! and the `F_skin` functor tying them together.
+//! The pipeline is a planning pipeline, not a proof: a semantic trace becomes a causal
+//! [`timeline::IntentTimeline`], the timeline one [`plan::CompositionPlan`] (the song), the
+//! plan plus a [`world::MusicWorld`] (timbre) and a [`language::MusicalLanguage`] (idiom) one
+//! [`performance::PerformancePlan`] (the shared performance: actions, the stage, harmony,
+//! interaction material, the complexity budget), and every player realizes a projection of
+//! that performance into the [`score::Score`] IR, stamped with the exact actions it performs
+//! ([`witness`] audits them). See `docs/HUMAN_MUSIC_ARCHITECTURE.md` (§3.16 is the current
+//! state); the categorical vocabulary (`intent.rs`) survives where it is load-bearing.
 
 pub mod action;
 pub mod backbone;
