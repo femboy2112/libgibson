@@ -1,10 +1,20 @@
 # HumanMusic: the `gibson::audio` architecture (experimental)
 
-This documents LibGibson's new **audio realization axis** — `gibson::audio` and, on top
-of it, the **HumanMusic** procedural composition engine (`gibson::audio::human_music`).
-It is a research/engineering-alpha subsystem, Rust-only, not yet part of the C ABI. Read
-this alongside the module docs in `src/audio/mod.rs` and `src/audio/human_music/mod.rs`,
-which this document expands on.
+This documents LibGibson's **audio realization axis** — `gibson::audio` and, on top of
+it, the **HumanMusic** procedural composition engine (`gibson::audio::human_music`). It
+is a research/engineering-alpha subsystem, Rust-only, not yet part of the C ABI. Read
+this alongside the module docs in `src/audio/mod.rs` and
+`src/audio/human_music/mod.rs`, which this document expands on.
+
+This is the **Round II** revision of this document. Round I shipped a vertical slice
+that got the categorical vocabulary right and the causal wiring wrong: a running
+`MusicIntent` was computed and then thrown away, and the four voice generators
+(comp/bass/melody/SFX) each made local decisions with private RNGs off a shared `Form`
+and `HarmonyEngine` — "locally valid, globally incoherent," in the words of the
+maintainer's own ears. Round II inserts a real planning boundary between semantic
+meaning and note generation so the plan, not the generators, decides what recurs, who
+plays, what the melody develops, and where the band shuts up. That is what this document
+now describes.
 
 ## 1. Overview & the orthogonal-axis principle
 
@@ -27,7 +37,8 @@ other's internals.
 ## 2. Layers
 
 `gibson::audio` is organized in two tiers: a general-purpose **substrate**, and the DSP
-layer it's built from. HumanMusic sits on top of both.
+layer it's built from. HumanMusic sits on top of both. (This section is unchanged from
+Round I — the substrate and DSP layers were not touched by the Round II rewrite.)
 
 ### Substrate
 
@@ -70,171 +81,243 @@ layer:
 The composition engine: turns a semantic trace into a full multi-voice `Score` and
 renders it through the DSP layer. This is the subject of the rest of this document.
 
-## 3. The categorical model
+## 3. What actually happens: the Round II pipeline
 
-This is the heart of HumanMusic. It is not decorative category theory: the types and
-laws below are load-bearing and tested (`src/audio/human_music/intent.rs`,
-`src/audio/human_music/functor.rs`).
+`gibson::audio::human_music` still uses categorical vocabulary in a few places
+(`MusicIntent`, `IntentMorphism`, `MorphismCost` in `intent.rs`), and those types are
+real and load-bearing — a `MorphismCost` vector genuinely drives the harmony engine's
+chord choices now (§3.4). But this document no longer frames the module as a grand
+functor construction: the causal pipeline below is what the code does, and it is a
+planning pipeline with an explicit boundary between "what the piece is" and "which notes
+get played," not a natural-transformation proof.
 
-### The semantic category 𝒮
+The pipeline, end to end:
 
-Objects are LibGibson presentation/story states — locally, `SemanticState { tone,
-emphasis, density, elevation }` plus an event kind (`EventKind`) on the transitions
-between them (mirroring `gibson::ui`'s `Tone`/`Emphasis` axes, kept self-contained so the
-audio crate has no dependency on the UI layer). Morphisms are *meaningful* transitions,
-never frame ticks.
-
-**Identity morphism = prolongation.** A settled UI generates no musical novelty just
-because time passed; the module doc states this directly and `IntentMorphism::Prolong`
-(§ below) realizes it — applying it barely changes the running intent.
-
-### The musical-intent category 𝓜
-
-Objects are `MusicIntent`:
-
-```rust
-pub struct MusicIntent {
-    pub energy: f32,        // overall drive [0,1]
-    pub tension: f32,       // harmonic/melodic instability [0,1]
-    pub density: f32,       // event density [0,1]
-    pub register: f32,      // register bias [0,1]
-    pub function: Function, // current harmonic function
-    pub motif: MotifState,  // motif development (path memory)
-    pub expectation: f32,   // accumulated expectation / harmonic pull [0,1]
-}
+```text
+SemanticTrace
+  -> IntentTimeline        (causal walk; every transition inspectable)
+  -> CoherenceContract     (declared identity axes + budgets + a grammar family)
+  -> CompositionPlan       (FormGraph with recurring families + phrase obligations;
+                             ArrangementPlan with an enforced foreground budget and
+                             first-class silence)
+  -> realizers              (harmony trajectories; one threaded developing motif;
+                              a deterministic groove cell; a kick-locked bass figure;
+                              a sparse groove-locked comp)
+  -> apply_arrangement      (gates/scales every voice, stamps real provenance)
+  -> Score IR
+  -> HumanMusicSynth / DSP  (unchanged from Round I, see §2)
 ```
 
-This is deliberately far richer than "the current chord" — it carries accumulated
-expectation and motif development as first-class path memory, not just a snapshot.
+`CoherenceDiagnostics` (§3.7) then measures whether the realized `Score` actually
+honored the plan it was built from — a structural measurement, not a quality score.
 
-Morphisms are the typed transformations in `IntentMorphism`: `Prolong`, `Prepare`,
-`Intensify`, `Relax`, `Suspend`, `Pivot`, `Resolve`, `Modulate`, `Reharmonize`,
-`FragmentMotif`, `SequenceMotif`, `Augment`, `Diminish`, `Syncopate`, `ThinTexture`,
-`ThickenTexture`, `Cadence`.
+### 3.1 `IntentTimeline` — the causal spine
 
-Hom-sets are **enriched** over a `MorphismCost` vector, not a single opaque scalar:
+`timeline.rs`'s `IntentTimeline::walk` walks a `SemanticTrace` **once** and materializes
+a running `MusicIntent` over time as a sequence of `IntentTransition`s: the intent
+before the event, the `IntentMorphism`s the event applied (via `event_to_morphisms`,
+still the same category-level event→morphism mapping as Round I), the intent after, the
+step's `MorphismCost`, and the cost accumulated since the start of the trace. Every
+downstream planning stage reads its intent from `IntentTimeline::intent_at(beat)`, so
+the concrete score is derived from this spine instead of generators inventing structure
+independently — this is the fix for the Round I defect described above.
 
-```rust
-pub struct MorphismCost {
-    pub voice_leading: f32,
-    pub tension_error: f32,
-    pub register_violation: f32,
-    pub parallel_motion: f32,
-    pub groove_disruption: f32,
-    pub motif_loss: f32,
-    pub novelty: f32,
-    pub repetition: f32,
-}
-```
+The walk also carries the semantic **elevation** axis into `MusicIntent::register`
+(`SemanticState::register_bias()`), which Round I computed but never consulted. Register
+now genuinely tracks elevation downstream (in phrase-level octave choice, §3.5).
 
-`MorphismCost::combine` sums two costs — **composition of morphisms adds cost** — and
-`intent::compose()` threads a `MusicIntent` through a sequence of morphisms while
-accumulating that sum. A `CostWeights` struct collapses the vector to a scalar for greedy selection
-when a planner needs one.
+`MorphismCost::combine` sums two costs, and because `MusicIntent` accumulates
+`expectation` and `motif.development` along the walk, a round trip through several
+morphisms back to the same harmonic function is not the identity — a returning path
+leaves a different accumulated state behind (`intent.rs::holonomy_returning_is_not_identity`
+still tests this).
 
-### Path dependence / holonomy
+### 3.2 `CoherenceContract` — the piece's declared identity
 
-Because `MusicIntent` carries accumulated `expectation` and `motif.development`, a
-journey `A → B → C → A` is **not** `identity(A)`. Returning to the same harmonic
-function label after a journey leaves a different phenomenological state behind: more
-expectation released, more motif development accrued. This is a deliberate design
-property, not an artifact, and it is directly tested
-(`intent.rs::holonomy_returning_is_not_identity`): composing `Modulate → SequenceMotif →
-Modulate → Resolve` from the default intent returns to `Function::Tonic` (the same
-"chord label") but is `assert_ne!` to the starting `MusicIntent`, and its motif
-development is strictly greater.
+`contract.rs` states, before any note is generated, what kind of coherence the piece is
+going for. A `CompositionGrammar` names the strategy:
 
-### The functor F_skin : 𝒮 → 𝓜
+- `HookArc` — a directed song: a recurring motif over a directed harmonic contour.
+- `LoopEvolution` — production-driven: a short harmonic loop, interest from
+  groove/orchestration evolving under bounded mutation.
+- `RiffDrive` — rhythmically forceful, riff/bass/drum-locked, comparatively static
+  harmony.
+- `WorldSwitch` — two locally coherent regimes joined by an explicit transport that
+  preserves at least one declared identity axis across the switch.
 
-The central construction (`functor.rs`) is a (lax-monoidal) functor `F_skin`,
-parameterized by a `MusicWorld`, that turns a `SemanticTrace` into a `Score`. Walking the
-trace, each semantic event maps (via `event_to_morphisms`) to a sequence of
-`IntentMorphism`s that evolve a running `MusicIntent`; those choices drive motif
-development, SFX placement and local density.
+Each grammar has a canonical `CoherenceContract` (`CoherenceContract::for_grammar`):
+declared `CoherenceAnchor`s (what the listener is meant to track — motif, riff, groove,
+harmonic contour/loop, form, orchestration, bass figure), a recurrence period in bars, a
+`max_transform` bound on how far a recurring anchor may drift before it stops being
+itself, a preferred phrase length, a `ResolutionPolicy` (`Functional` / `Loop` /
+`ModalPedal`), a `foreground_budget`, and a `novelty_budget`.
 
-Concretely, `compose()` builds one `Form` (structural plan) and one `HarmonyEngine`
-progression, then derives *all four* simultaneous voices — comp (pad + keys), bass,
-melody, and SFX/provenance — from that shared form and progression. Simultaneous
-semantic layers (tone + emphasis + density + elevation) map to simultaneous musical
-voices (harmony + bass + drums + melody) through this one shared coherence map, not as
-independent sums per layer.
+`CoherenceContract::infer` picks a grammar from the *shape* of a trace's
+`IntentTimeline` (built-up-then-resolved → `HookArc`; built-up-and-stays-elevated →
+`RiffDrive`; never builds → `LoopEvolution`) — a classification, not a quality claim.
+**`infer` never selects `WorldSwitch`**; that grammar exists as a declared contract
+family (constructible via `for_grammar` and covered by its own unit tests) but nothing
+in the live `compose`/`compose_with_plan` pipeline currently reaches it — see the honest
+limits in §5.
 
-### Skins as natural transformations
+### 3.3 `CompositionPlan` — the planning boundary
 
-Swapping the `MusicWorld` is a natural transformation, not a new composition: the same
-semantic trace under BLACK_ICE / VAPOR95 / SWISS_SIGNAL preserves the same high-level
-structure — identical section skeleton, motif identity, resolutions — while sounding
-like three different dialects. This is verified directly:
-`functor.rs::same_trace_gives_same_form_across_worlds` asserts the three worlds' section
-kind sequences are pairwise equal while their tempos differ. The form skeleton itself is
-derived from the trace alone (`Form::from_trace` takes no `MusicWorld` argument), so it
-is world-independent by construction; only the harmonic/timbral/rhythmic realization on
-top of it differs per world.
+`plan.rs` is where Round II's structural commitments live, built from the timeline and
+a bar budget (`CompositionPlan::build`):
 
-## 4. The engines
+- **`FormGraph`** — a hierarchy of `Phrase`s tiled on the contract's phrase grid (a
+  musically legible 2/4/8-bar grid), each with a `SectionFamily` (`Intro`, `A`,
+  `APrime { base }`, `B`, `Break`, `Climax`, `Coda`) and a `PhraseObligation` (`Arrival`,
+  `Continuation`, `Lift`, `Suspension`, `Breakdown`, `ReEntry`, `Release`). Recurrence is
+  explicit: interior odd phrases become the recurring `A` family, and every later
+  occurrence is `SectionFamily::APrime { base }`, carrying the index of the specific `A`
+  phrase it is a bounded transform of — not a new area that happens to share a label.
+  The climax lands on the phrase holding the peak-energy transition from the timeline,
+  clamped away from the intro/coda. Each phrase's representative `MusicIntent` is read
+  straight from `IntentTimeline::intent_at`, so the plan is derived from the semantic
+  walk rather than reinventing structure.
+- **`ArrangementPlan`** — a per-phrase assignment of every voice (pad/keys/bass/lead/
+  drums) to an `ArrangementRole` (`Foreground`/`Support`/`Foundation`/`Pulse`/`Texture`/
+  `Punctuation`/`Silent`), each with a fixed gain multiplier and `Silent` meaning
+  literally zero. `ArrangementPlan::build` assigns roles per section family (e.g. the
+  intro silences keys/bass/lead/drums and leaves only a textural pad; `A`-family phrases
+  put the lead in the foreground; `B` swaps the foreground to keys and silences the
+  lead so "the melody breathes"; the climax licenses more simultaneous foreground if the
+  contract's budget allows it), then enforces the contract's `foreground_budget` by
+  demoting any phrase's excess foreground voices to support (lead keeps priority), and
+  finally runs a coverage guard that promotes any voice that would otherwise never sound
+  anywhere into an audible role in the plan's highest-energy phrase.
+- **`CompositionPlan::dump()`** renders a structural summary — contract, anchors,
+  budgets, and one line per phrase (bars, family, obligation, energy/tension/register,
+  rupture flag, and each voice's arrangement role) — for a cold reader (or the lab
+  example) to answer "what recurs, what changed, why is this instrument playing."
 
-Each engine below is deterministic given its inputs and a seed, and is unit-tested in
-its own module.
+### 3.4 Harmony (`harmony.rs`) — phrase-scoped, cadence-prepared, cost-selected
 
-- **`world::MusicWorld`** — a skin's sonic world / local physics. A world does **not**
-  pick notes; it *constrains* the composition engines: harmonic vocabulary
-  (`use_sevenths`, `allow_extensions`, `allow_chromatic_mediant`, `allow_modal_mixture`,
-  `allow_secondary_dominant`), groove family (tempo, swing, hat subdivision), voicing
-  spread, timbral palette (`Patch`es for pad/bass/lead/keys), drum character (kick/snare
-  params, hat cutoff, ghost amount, drum density) and production (reverb, saturation,
-  master ceiling, bus mix levels). Round I ships exactly three worlds: `BLACK_ICE` (dark
-  A Aeolian, straight, 88 BPM, full chromatic vocabulary), `VAPOR95` (lush F Ionian,
-  swung, 71 BPM, big reverb), and `SWISS_SIGNAL` (sparse clean C Ionian, straight,
-  118 BPM, restrained triadic vocabulary, open voicings).
-- **`form::Form`** — the global plan: world-independent sections (`Intro`, `A`,
-  `Development`, `Climax`, `Contrast`, `Coda`) plus piecewise-linear energy/tension/
-  density *target* curves, derived purely from the trace via `Form::from_trace`. Each region
-  between consecutive semantic events becomes a section; the section with the highest
-  semantic pressure (`SemanticState::pressure()`) becomes the Climax, the first region is
-  the Intro, the last is the Coda. This is the long-range plan that keeps local
-  reactivity from destroying structure — a warning event may perturb a phrase, but it
-  must not modulate the whole song.
-- **`harmony::HarmonyEngine`** — generates a functional chord progression over a `Form`.
-  Diatonic chord quality is classified from the actual stacked scale thirds (not a
-  fixed major/minor table), so it comes out correct in any mode. Harmonic function
-  (`Function::Tonic`/`Predominant`/`Dominant`) tracks the form's tension curve, and
-  phrase ends always cadence to tonic. World-gated embellishments — secondary dominants,
-  modal mixture (borrowed bVI), chromatic mediants — color richer worlds and never occur
-  at a cadence.
-- **`voicing::VoiceLeader`** — turns a bare chord symbol into an explicit, smoothly
-  moving `Voicing`. It builds a close-position voicing of chord tones near a target
-  center (preferring common tones with the previous chord), searches three octave
-  placements (down/same/up) and picks the one minimizing total semitone motion from the
-  previous voicing, clamps the result to a register window, and opens the spacing for
-  high-`voicing_spread` worlds.
-- **`motif::Motif`** — a scale-degree contour + parallel rhythm vector sharing a stable
-  `id`. Transformations (`transpose`, `invert`, `retrograde`, `scale_rhythm` for
-  augmentation/diminution, `fragment`, `sequence`) all preserve that identity while
-  developing the material, so the melody engine can grow one idea across a whole piece
-  instead of inventing a new tune every few bars.
-- **`groove::GrooveEngine`** — an interlocking kick/snare/hat pattern with an accent
-  hierarchy, deterministic microtiming (humanization, not jitter), ghost notes,
-  syncopation and phrase-end fills, all scaled by the form's energy/density curve so the
-  pattern thins in the intro and thickens into the climax without a new pattern being
-  invented per bar. World `swing` delays odd hat subdivisions. Crucially, the groove
-  engine exports `kick_beats` so the bass engine can lock its note onsets to the kick
-  (`add_bass` in `functor.rs`), giving a genuine rhythm-section interlock rather than
-  independently-generated bass and drums.
-- **Bass** (part of `functor.rs::add_bass`) — kick-locked: a bass note lands on every
-  kick within a chord span, choosing between the root, a fifth (for drive at high
-  energy), or a chromatic/scale approach tone into the next chord's root.
-- **The Score IR (`score::Score`)** — an inspectable, provenance-tagged intermediate
-  representation: notes (`Role::Pad/Bass/Lead/Keys`), drum hits, SFX events, chord spans
-  and sections, each carrying a `Provenance` (section kind, motif id, morphism label,
-  role note) so a rendered piece's choices can be traced back to the semantic events and
-  category-level morphisms that produced them.
+`HarmonyEngine::generate` now plans **per phrase**, not per scalar tension sample. Each
+phrase is carved into contiguous chord slots (`carve_slots`, sized from the form's local
+density) and closed with a genuinely prepared cadence: the last slot is a tonic triad,
+the second-to-last is the dominant that resolves into it, and (for phrases with three or
+more slots) the slot before that is a pre-dominant. A secondary dominant is a real
+obligation, not decoration: emitting a `V/x` (`note: "V/of"`) sets a `pending_resolve`
+that the *next* interior slot must pay off (tagged `note: "res"`), reset at each phrase
+boundary so cadences don't inherit debts. Interior diatonic degree choice
+(`choose_interior_degree`) minimizes a weighted `MorphismCost` — voice-leading (nearest
+semitone root motion), tension error against the form's target tension, and repetition —
+over the pool of degrees the current harmonic function allows; the RNG only breaks an
+exact tie. Borrowed/mixture (`bVI mix`) and chromatic-mediant colors can tint an
+already-chosen interior slot but are explicitly guarded off cadences, cadence prep, and
+resolutions. Diatonic chord quality is still classified from the actual stacked scale
+thirds (`classify`), so it comes out correct in any mode.
+
+**This machinery is not yet grammar-differentiated.** `HarmonyEngine::generate` always
+produces the same prepared-cadence, functional-harmony shape described above, regardless
+of which `CompositionGrammar` the contract declares. `CoherenceContract::resolution` can
+be `Loop` or `ModalPedal` (declared for `LoopEvolution` and `RiffDrive` respectively),
+but nothing in `harmony.rs` reads `ResolutionPolicy` — the field is carried on the
+contract and asserted in `contract.rs`'s own tests, but the harmony engine has no branch
+on it. See §5.
+
+### 3.5 Motif (`motif.rs`) — one developing idea, threaded jointly against harmony
+
+`motif::MotifBank::generate` grows a small, deterministic, related roster from a single
+germ (an `identity` motif, a `hook` fragment, a `rhythmic_cell` diminution, a `bass_cell`
+register-dropped opening, an optional inverted `countermotif`) — one idea in several
+costumes, generated once per composition from `(scale, seed)`.
+
+`MotifIdentity` is a transposition- and tempo-invariant fingerprint (interval contour,
+normalized rhythm profile, direction signature), and `motif_similarity` scores how
+related two statements are (weighted blend, length-mismatch penalized) — tested to be
+≥0.9 under transposition or tempo change and <0.6 against an unrelated contour.
+
+In `functor.rs::add_melody`, the lead voice threads one *developing* motif object across
+the plan's phrases (not a fresh re-seed per section): at an `A`-family phrase, or
+whenever the current object's similarity to the germ has drifted below
+`1 - contract.max_transform`, it restates the identity (or, at the climax, states the
+`hook`); otherwise it develops the *current* object further, bounded by the phrase's
+`PhraseObligation` (`develop_current`: `Lift` transposes up, `Release` diminishes the
+rhythm, `Continuation` sequences down a step, other obligations pick transposition or
+augmentation). Statements enter grid-aligned (no random offset) and register comes from
+the phrase's live `intent.register` (elevation, finally consulted — see §3.1), except at
+the climax which is fixed to a higher octave. The lead only sounds in phrases where the
+arrangement gives it an audible role, so it breathes.
+
+Each whole statement is realized against the harmony **jointly**, not note by note:
+`motif::realize_phrase` runs a bounded dynamic program over a small per-note candidate
+set (chord tones on strong beats, scale tones on weak beats) that scores an entire
+path at once — anchor-pitch fit, voice-leading motion between successive notes, and
+(heavily weighted) agreement with the original motif's contour direction — so the
+realized line stays harmonically valid while keeping the motif's shape instead of
+snapping each note to the nearest chord tone in isolation.
+
+### 3.6 Groove and bass (`groove.rs`, `functor.rs::add_bass`)
+
+`GrooveEngine::generate` realizes a deterministic 2-bar groove cell (bar 0 the plain
+statement, bar 1 the bounded variation — syncopated kick anticipations, ghost snares,
+an open-hat lift — gated by energy) instead of an independent per-bar coin flip per
+variation. Fills are driven by the plan: `is_fill_bar` checks whether the *next* bar is
+a `phrase_end_bar` (passed in from `plan.form.phrases`), so extra fill snares land
+because a phrase is ending, not because a die rolled. Micro-timing humanization stays
+the one deterministic-but-seeded stochastic element (±~6 ms). The engine exports
+`kick_beats` so the bass can lock onto it.
+
+`add_bass` places a persistent, position-determined figure on every kick within a chord
+span: the root on the first kick, a fifth on offbeat kicks at high energy, and a
+chromatic/scale approach tone into the next chord's root on the last kick before a chord
+change — a repeatable shape rather than a re-rolled choice at every onset, still
+locked to the groove's real kick placements.
+
+### 3.7 `apply_arrangement` and provenance
+
+`functor.rs::apply_arrangement` is the pass that turns "everyone plays all the time"
+into a real arrangement: for every note and drum hit it looks up the phrase it falls in
+(`FormGraph::phrase_at`) and that phrase's `ArrangementRole` for its voice; a `Silent`
+role drops the event outright (`Vec::retain_mut`), an audible role scales its velocity
+by the role's fixed gain, and the event's provenance is restamped with the *real*
+section family, phrase index, family label, role label and obligation label from the
+plan — replacing a Round-I defect where provenance was hardcoded to a fixed
+`SectionKind::A`.
+
+### 3.8 `CoherenceDiagnostics` — structural measurement, not a quality score
+
+`diagnostics.rs::CoherenceDiagnostics::measure(plan, score)` computes a vector of plain
+counts and ratios against a realized `(CompositionPlan, Score)` pair: number of
+recurring section families, foreground-budget collisions (should be 0), the fraction of
+phrases with at least one silent voice, the fraction of multi-chord phrases that close
+on a prepared Dominant→Tonic cadence, unresolved-secondary-dominant violations (should
+be 0) versus resolved ones, motif restatement count, lead-note count, sounding register,
+and total note/drum counts. The module's own tests include positive (a real composition
+measures clean), null (an empty score measures to zeros without panicking), and mutation
+controls (a hand-injected unresolved `V/x`, and a hand-built budget-violating
+arrangement are both caught). This is explicitly **not** a taste or "does it slap"
+metric — it cannot be, and the module doc says so directly.
+
+## 4. Engines carried over unchanged from Round I
+
+These pieces of the Round I vertical slice are still in place and are not part of the
+Round II rewrite:
+
+- **`world::MusicWorld`** — a skin's sonic world / local physics: harmonic vocabulary
+  gates (`use_sevenths`, `allow_extensions`, `allow_chromatic_mediant`,
+  `allow_modal_mixture`, `allow_secondary_dominant`), groove family (tempo, swing, hat
+  subdivision), voicing spread, timbral palette, drum character and production settings.
+  A world does not pick notes; it constrains the engines above. Three worlds ship:
+  `BLACK_ICE` (dark A Aeolian, straight, 88 BPM), `VAPOR95` (lush F Ionian, swung,
+  71 BPM), `SWISS_SIGNAL` (sparse clean C Ionian, straight, 118 BPM).
+- **`form::Form`** — the world-independent section skeleton (`Intro`/`A`/
+  `Development`/`Climax`/`Contrast`/`Coda`) and piecewise-linear energy/tension/density
+  target curves, derived from the trace (`Form::from_trace`). `FormGraph` (§3.3) is a
+  finer-grained phrase structure built alongside `Form`, not a replacement for it — the
+  Score IR still carries `Form`'s section list.
+- **`voicing::VoiceLeader`** — turns a chord symbol into a smoothly moving `Voicing` by
+  minimizing total semitone motion from the previous voicing across three octave
+  placements, clamped to a register window.
+- **The Score IR (`score::Score`)** — notes (`Role::Pad/Bass/Lead/Keys`), drum hits, SFX
+  events, chord spans and sections, each carrying a `Provenance` so a rendered piece's
+  choices can be traced back to the plan and semantic events that produced them.
 - **The Synthesizer (`synth::HumanMusicSynth`)** — realizes a `Score` to audio via the
-  DSP layer. It implements the `AudioSource` trait, so the deterministic offline
-  renderer and (under `audio-cpal`) a real device drive the *same* code — one
-  synthesizer, not a test double. Per-role voice pools plus synthesized drum voices
-  (`Kick`/`Snare`/`Hat`/`Clap`) are triggered as the render loop's monotonic playhead
-  crosses pre-scheduled event times; world production (saturation → reverb → bus
-  compression → limiter) is applied before writing the master block.
+  DSP layer, implementing `AudioSource` so the deterministic offline renderer and (under
+  `audio-cpal`) a real device drive the same code.
 
 ## 5. Backend strategy
 
@@ -258,34 +341,46 @@ libraries as a result.
 Given `(seed, trace, sample rate, block size)`, the render is deterministic end to end:
 every RNG in the composition engines (`rng::Rng`) is seeded from the caller's `seed`
 XORed with a per-engine constant, and every test that composes the same inputs twice
-asserts identical output (see `functor.rs::deterministic_for_seed`,
-`harmony.rs::deterministic_progression_for_seed`, `groove.rs::velocities_are_bounded_and_deterministic`).
+asserts identical output (`functor.rs::deterministic_for_seed`,
+`harmony.rs::deterministic_progression_for_seed`,
+`groove.rs::velocities_are_bounded_and_deterministic`,
+`motif.rs::realize_phrase_is_deterministic`).
 
 The test suite certifies **structure and safety**, not taste: no NaN/Inf in rendered
-audio, bounded peaks, exact sample counts, the category laws above (identity-is-prolong,
-composition sums cost, holonomy), voice-leading register/motion bounds, and score
-validity (`Score::validate`) across all three worlds. It does not and cannot certify
-that a piece sounds good.
+audio, bounded peaks, exact sample counts, the category-level laws (identity-is-prolong,
+composition sums cost, holonomy), voice-leading register/motion bounds, score validity
+(`Score::validate`) across all three worlds, and the Round II structural invariants
+described in §3 (families recur with `A'` pointing at its base, the foreground budget is
+enforced, silence is present, every voice is heard somewhere, cadences prepare, secondary
+dominants resolve, motif restatement happens, register tracks elevation). It does not
+and cannot certify that a piece sounds good.
 
-Measured receipts from the lab example, `examples/human_music_lab.rs` (one frozen
-`demo_trace`, three worlds, 48 kHz/16-bit stereo):
+## 7. Honest limits (Engineering Alpha, Round II)
 
-- All three renders produce valid WAVs with the same section skeleton but distinct
-  spectral centroids: VAPOR95 ≈ 3787 Hz < BLACK_ICE ≈ 5452 Hz < SWISS_SIGNAL ≈ 6321 Hz.
-- No clipping.
-- Roughly 20–23 simultaneous voices at peak density.
-- Offline render runs 27–42× realtime.
+This is Round II of the intended v0.4.0 milestone. It fixed the causal-wiring defect
+Round I shipped with, but it is candid about what it still does not claim:
 
-## 7. Honest limits (Engineering Alpha)
-
-This is Round I of the intended v0.4.0 milestone, and it is candid about what it does
-not yet claim:
-
-- **Perceptual/aesthetic quality is unproven.** Machine tests can certify structural and
-  safety invariants; they cannot certify that the music "slaps". That judgment is
-  pending an actual human listen to the rendered WAVs.
-- The harmony, groove and production choices are a first coherent pass — genuinely
-  functional and voice-led, not a finished, polished score.
+- **Perceptual/aesthetic quality remains unproven.** Machine tests (§6, §3.8) can
+  certify structural and safety invariants; they cannot certify that the music "slaps."
+  That judgment is pending an actual human listen to the rendered WAVs — the decisive,
+  still-open gate for this round.
+- **Grammar-differentiated harmonic realization is not wired up.** The
+  `CoherenceContract` declares a `ResolutionPolicy` per grammar (`Loop` for
+  `LoopEvolution`, `ModalPedal` for `RiffDrive`, `Functional` for `HookArc` /
+  `WorldSwitch`), but `HarmonyEngine::generate` does not branch on it — it always
+  produces the same prepared functional-cadence shape described in §3.4, regardless of
+  the declared grammar. A `LoopEvolution` or `RiffDrive` piece is currently harmonized
+  identically to a `HookArc` piece.
+- **`WorldSwitch` has no transport implementation.** The grammar exists as a declared
+  `CompositionGrammar` variant with its own canonical contract and unit tests, but
+  `CoherenceContract::infer` never selects it, and nothing in the live
+  `compose`/`compose_with_plan` pipeline performs an explicit mid-piece world switch or
+  builds a two-regime piece from it. It is a designed-for-later type, not a running
+  feature.
+- **No calibration compositions exist yet.** There is no code in the tree (as of this
+  writing) that constructs dedicated `hook_arc` / `loop_evolution` / `riff_drive` /
+  `world_switch` calibration probes; the only composed material comes from the shared
+  `demo_trace` used by tests and the `human_music_lab` example.
 - The model is experimental and expected to evolve between releases.
 - It is Rust-only and intentionally not exposed through the C ABI this milestone.
 - The package version stays `0.3.1` until this work is reviewed and a release is cut;
@@ -298,8 +393,8 @@ cargo run --release --example human_music_lab
 ```
 
 Writes `black_ice.wav`, `vapor95.wav` and `swiss_signal.wav` (one per world) to a temp
-directory by default, along with a structural summary and render receipts printed to
-stdout. Flags:
+directory by default, along with the plan's structural dump (`CompositionPlan::dump`),
+a `CoherenceDiagnostics` report, and render receipts printed to stdout. Flags:
 
 - `--world=black_ice|vapor95|swiss_signal` — render only one world (default: all three).
 - `--out=PATH` — output directory (default: a `libgibson_human_music` folder under the
@@ -310,4 +405,4 @@ stdout. Flags:
 The point of the lab, per its own doc comment: the three WAVs should be recognizably the
 *same* music in form and meaning — same section skeleton, same motif identity, same
 resolutions — while sounding like three different dialects. Machines can certify the
-structure; only your ears can judge the rest.
+structure (§3.8, §6); only your ears can judge the rest.
