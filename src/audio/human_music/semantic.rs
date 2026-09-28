@@ -171,8 +171,14 @@ pub struct SemanticTrace {
 }
 
 impl SemanticTrace {
-    /// A trace, sorted by beat and bounded by `total_beats`.
+    /// A trace, sorted by beat and genuinely bounded by `total_beats`.
+    ///
+    /// Events at or beyond `total_beats` (or before beat 0) are dropped, so a fixed fixture
+    /// like [`demo_trace`] rendered at a *short* requested length can never silently push the
+    /// generated form past the request. Round I only sorted here, which is why
+    /// `demo_trace(48.0)` produced a 27-bar form instead of a 12-bar one.
     pub fn new(mut events: Vec<SemanticEvent>, total_beats: f64) -> SemanticTrace {
+        events.retain(|e| e.at_beat >= 0.0 && e.at_beat < total_beats);
         events.sort_by(|a, b| a.at_beat.partial_cmp(&b.at_beat).unwrap());
         SemanticTrace {
             events,
@@ -332,6 +338,25 @@ mod tests {
                     ..Default::default()
                 }
                 .dynamic()
+        );
+    }
+
+    #[test]
+    fn trace_is_genuinely_bounded_by_total_beats() {
+        // A short budget must drop the fixed events that lie beyond it (the Round-I
+        // form-overrun bug: demo_trace(48.0) used to keep events at 64/88/104).
+        let short = demo_trace(48.0);
+        assert!(
+            short.events.iter().all(|e| e.at_beat < 48.0),
+            "events past the requested budget were not dropped"
+        );
+        assert!(!short.events.is_empty(), "clamp removed everything");
+        // The generous default keeps the whole arc intact.
+        let full = demo_trace(120.0);
+        assert_eq!(
+            full.events.len(),
+            7,
+            "120-beat arc should keep all 7 events"
         );
     }
 }

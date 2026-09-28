@@ -284,9 +284,11 @@ fn develop_motif(seed: &Motif, kind: SectionKind, rng: &mut Rng) -> (Motif, &'st
                 (seed.invert(), "invert")
             }
         }
-        SectionKind::Climax => (seed.transpose(2).scale_rhythm(0.75), "augment+up"),
+        // scale_rhythm(<1) shortens notes = DIMINUTION; scale_rhythm(>1) lengthens =
+        // AUGMENTATION (see motif.rs). Round I had both labels exactly backwards.
+        SectionKind::Climax => (seed.transpose(2).scale_rhythm(0.75), "diminish+up"),
         SectionKind::Contrast => (seed.retrograde(), "retrograde"),
-        SectionKind::Coda => (seed.fragment(2).scale_rhythm(1.5), "diminish-frag"),
+        SectionKind::Coda => (seed.fragment(2).scale_rhythm(1.5), "augment-frag"),
     }
 }
 
@@ -342,15 +344,11 @@ pub fn event_to_morphisms(kind: EventKind, state_tone: Tone) -> Vec<IntentMorphi
     }
 }
 
-/// Apply a trace's events as morphisms to an initial intent (for law tests / provenance).
+/// The endpoint intent of the causal walk — delegates to [`super::timeline::IntentTimeline`],
+/// the single source of truth for intent evolution. Kept for the category-law tests and any
+/// caller that only wants the final settled intent rather than the whole timeline.
 pub fn walk_intent(trace: &SemanticTrace) -> MusicIntent {
-    let mut intent = MusicIntent::default();
-    for ev in &trace.events {
-        for m in event_to_morphisms(ev.kind, ev.state.tone) {
-            intent = m.apply(intent).0;
-        }
-    }
-    intent
+    super::timeline::IntentTimeline::walk(trace).final_intent
 }
 
 #[cfg(test)]

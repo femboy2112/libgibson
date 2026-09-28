@@ -14,6 +14,7 @@
 //! MusicWorlds, form/harmony/voicing/motif/groove engines, the Score IR, the synthesizer,
 //! and the `F_skin` functor tying them together.
 
+pub mod contract;
 pub mod form;
 pub mod functor;
 pub mod groove;
@@ -26,6 +27,7 @@ pub mod score;
 pub mod semantic;
 pub mod synth;
 pub mod theory;
+pub mod timeline;
 pub mod voicing;
 pub mod world;
 
