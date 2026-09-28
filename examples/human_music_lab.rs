@@ -23,7 +23,7 @@ use gibson::audio::human_music::diagnostics::{
 };
 use gibson::audio::human_music::functor::{compose_with_grammar, compose_with_plan};
 use gibson::audio::human_music::semantic::{calm_loop, rise_unresolved};
-use gibson::audio::human_music::synth::HumanMusicSynth;
+use gibson::audio::human_music::synth::{HumanMusicSynth, StemMask};
 use gibson::audio::human_music::{demo_trace, MusicWorld, WorldId};
 use gibson::audio::render::OfflineRenderer;
 use gibson::audio::wav::write_wav_i16;
@@ -53,6 +53,18 @@ fn main() -> std::io::Result<()> {
     // musical direction, and dump their plan + coherence + discourse diagnostics.
     if std::env::args().any(|a| a == "--calibrate") {
         return calibrate(&out_dir, sr, block, seed);
+    }
+
+    // Stem-isolation mode: render each bus of ONE world alone (plus the full mix) so a bad tone
+    // can be pinned to a specific voice family — "the wrong pitch is in bass at bar N" instead of
+    // "something sounds fucky". Rust-only debug surface; defaults to BLACK_ICE.
+    if std::env::args().any(|a| a == "--stems") {
+        let wid = match which.as_str() {
+            "vapor95" => WorldId::Vapor95,
+            "swiss_signal" => WorldId::SwissSignal,
+            _ => WorldId::BlackIce,
+        };
+        return stems(&out_dir, sr, block, seed, wid);
     }
 
     let trace = demo_trace(beats);
@@ -226,5 +238,58 @@ fn calibrate(
     );
 
     println!("Four probes rendered. Each exercises a different definition of musical direction.");
+    Ok(())
+}
+
+/// Stem isolation: render one world's six buses (pad/keys/bass/lead/drums/sfx) each in isolation,
+/// plus the full mix, to `<world>.stem_<bus>.wav`. Each stem uses a fresh synth (clean DSP state)
+/// with the corresponding [`StemMask`]. The point is diagnostic: listen to one bus at a time to
+/// find which voice family a bad tone lives in.
+fn stems(
+    out_dir: &std::path::Path,
+    sr: SampleRate,
+    block: usize,
+    seed: u64,
+    wid: WorldId,
+) -> std::io::Result<()> {
+    let world = MusicWorld::from_id(wid);
+    let file_stem = world.name.to_lowercase();
+    let trace = demo_trace(120.0);
+    let (score, _plan) = compose_with_plan(&trace, &world, seed);
+    score.validate().expect("score invariants");
+
+    println!(
+        "HumanMusic stems — {} @ seed {seed}  ({} sfx, {} notes)\nout={}\n",
+        world.name,
+        score.sfx.len(),
+        score.notes.len(),
+        out_dir.display()
+    );
+
+    let mut masks: Vec<(String, StemMask)> = StemMask::NAMES
+        .iter()
+        .map(|n| ((*n).to_string(), StemMask::solo(n)))
+        .collect();
+    masks.push(("full".to_string(), StemMask::full()));
+
+    for (name, mask) in masks {
+        let mut synth = HumanMusicSynth::new(&score, &world, sr);
+        synth.set_stem_mask(mask);
+        let frames = synth.total_samples();
+        let out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
+        let path = out_dir.join(format!("{file_stem}.stem_{name}.wav"));
+        write_wav_i16(&path, &out.audio, sr)?;
+        println!(
+            "  {name:6}  peak={:.3} rms={:.3} nonfinite={}  {}",
+            out.peak,
+            out.rms,
+            out.audio.has_nonfinite(),
+            path.display()
+        );
+    }
+
+    println!(
+        "\nStems rendered. Solo each bus to localize a bad tone; `full` is the reference mix."
+    );
     Ok(())
 }

@@ -188,6 +188,71 @@ struct SfxEventS {
     freqs: [f32; 2],
 }
 
+/// A debug **stem/bus mask**: which voice families are routed into the render. This is an
+/// experimental lab/debug surface (Rust-only, not part of the C ABI) for stem isolation — render
+/// one bus at a time to answer "which voice is that bad tone in?" instead of guessing. A muted bus
+/// still advances its voices (so the event timeline is identical); it is simply not summed into the
+/// mix, so the full mask reproduces the normal render exactly.
+#[derive(Debug, Clone, Copy)]
+pub struct StemMask {
+    pub pad: bool,
+    pub keys: bool,
+    pub bass: bool,
+    pub lead: bool,
+    pub drums: bool,
+    pub sfx: bool,
+}
+
+impl Default for StemMask {
+    fn default() -> StemMask {
+        StemMask::full()
+    }
+}
+
+impl StemMask {
+    /// The bus names, in a fixed order — for `--stems` iteration and CLI parsing.
+    pub const NAMES: [&'static str; 6] = ["pad", "keys", "bass", "lead", "drums", "sfx"];
+
+    /// Every bus audible (the normal full mix).
+    pub const fn full() -> StemMask {
+        StemMask {
+            pad: true,
+            keys: true,
+            bass: true,
+            lead: true,
+            drums: true,
+            sfx: true,
+        }
+    }
+
+    /// Every bus muted.
+    pub const fn silent() -> StemMask {
+        StemMask {
+            pad: false,
+            keys: false,
+            bass: false,
+            lead: false,
+            drums: false,
+            sfx: false,
+        }
+    }
+
+    /// Solo exactly one named bus (all others muted). An unrecognized name solos nothing.
+    pub fn solo(name: &str) -> StemMask {
+        let mut m = StemMask::silent();
+        match name {
+            "pad" => m.pad = true,
+            "keys" => m.keys = true,
+            "bass" => m.bass = true,
+            "lead" => m.lead = true,
+            "drums" => m.drums = true,
+            "sfx" => m.sfx = true,
+            _ => {}
+        }
+        m
+    }
+}
+
 /// The HumanMusic synthesizer.
 pub struct HumanMusicSynth {
     total_samples: u64,
@@ -227,6 +292,8 @@ pub struct HumanMusicSynth {
     playhead: u64,
     // Optional per-sample music duck gain (set for reaction integration).
     duck: Option<Vec<f32>>,
+    // Debug stem/bus mask (experimental lab surface); full by default = the normal mix.
+    stems: StemMask,
 }
 
 impl HumanMusicSynth {
@@ -320,6 +387,7 @@ impl HumanMusicSynth {
             scur: 0,
             playhead: 0,
             duck: None,
+            stems: StemMask::full(),
         }
     }
 
@@ -346,6 +414,14 @@ impl HumanMusicSynth {
     /// the score under dialogue). Length should cover the render.
     pub fn set_duck(&mut self, duck: Vec<f32>) {
         self.duck = Some(duck);
+    }
+
+    /// Set the debug **stem mask** (experimental lab/debug surface). Muted buses still have their
+    /// voices advanced — so the event timeline is unchanged — they are just not summed into the
+    /// mix. [`StemMask::full`] (the default) reproduces the normal render exactly. Use
+    /// [`StemMask::solo`] to isolate one bus for debugging a bad tone.
+    pub fn set_stem_mask(&mut self, mask: StemMask) {
+        self.stems = mask;
     }
 
     fn trigger_note(&mut self, ev: &NoteEvent) {
@@ -412,18 +488,21 @@ impl AudioSource for HumanMusicSynth {
             // Each role pool gets the world's tuned *_mix before it joins the bus — this is
             // the knob BLACK_ICE turns up on bass and VAPOR95 eases off on, not just four
             // numbers that sat in the struct looking pretty.
-            for (pool, mix) in [
-                (&mut self.pads, self.pad_mix),
-                (&mut self.keys, self.keys_mix),
-                (&mut self.bass, self.bass_mix),
-                (&mut self.lead, self.lead_mix),
+            for (pool, mix, on) in [
+                (&mut self.pads, self.pad_mix, self.stems.pad),
+                (&mut self.keys, self.keys_mix, self.stems.keys),
+                (&mut self.bass, self.bass_mix, self.stems.bass),
+                (&mut self.lead, self.lead_mix, self.stems.lead),
             ] {
                 for v in pool.iter_mut() {
                     if v.active() {
                         let s = v.next();
-                        let (l, r) = pan(s, v.pan);
-                        ml += l * mix;
-                        mr += r * mix;
+                        // A muted bus still advances its voice above; it just is not summed.
+                        if on {
+                            let (l, r) = pan(s, v.pan);
+                            ml += l * mix;
+                            mr += r * mix;
+                        }
                     }
                 }
             }
@@ -432,8 +511,10 @@ impl AudioSource for HumanMusicSynth {
             let sn = self.snare.next();
             let ht = self.hat.next();
             let cl = self.clap.next();
-            ml += k + sn + ht * 0.85 + cl * 0.6;
-            mr += k + sn + ht * 1.0 + cl * 0.8;
+            if self.stems.drums {
+                ml += k + sn + ht * 0.85 + cl * 0.6;
+                mr += k + sn + ht * 1.0 + cl * 0.8;
+            }
 
             // Music production: saturation -> reverb send.
             ml = soft_saturate(ml * 0.6, self.sat_drive);
@@ -453,8 +534,10 @@ impl AudioSource for HumanMusicSynth {
             for v in self.sfx_voices.iter_mut() {
                 if v.active() {
                     let (l, r) = v.next();
-                    sl += l;
-                    sr += r;
+                    if self.stems.sfx {
+                        sl += l;
+                        sr += r;
+                    }
                 }
             }
 
