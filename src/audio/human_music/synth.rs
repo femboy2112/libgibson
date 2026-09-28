@@ -266,7 +266,7 @@ pub struct BusLevel {
 /// reading one render instead of soloing every stem and eyeballing six files. The whole point of
 /// Round VI — decoupling semantic foreground from brute loudness — needs a truthful ruler, and a
 /// ruler that the StemMask could silence would be no ruler at all: the meter is fed regardless of
-/// the mute (see [`BusMeter::tap`]).
+/// the mute (the internal `BusMeter` is tapped before the mute gate).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct BusLevels {
     pub pad: BusLevel,
