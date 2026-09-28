@@ -674,6 +674,47 @@ mod tests {
     }
 
     #[test]
+    fn deflected_lift_recurs_the_hook_with_a_clean_ledger() {
+        use super::super::contract::CompositionGrammar;
+        use super::super::diagnostics::{DiscourseDiagnostics, RealizationDiagnostics};
+        use super::super::discourse::DiscourseRole;
+        let trace = demo_trace(120.0);
+        for world in MusicWorld::all() {
+            let (score, plan) =
+                compose_with_grammar(&trace, &world, 2112, CompositionGrammar::DeflectedLift);
+            score
+                .validate()
+                .unwrap_or_else(|e| panic!("{}: {e}", world.name));
+            // The hook recurs — the bittersweet bounce, not one cinematic climax.
+            let hooks = plan
+                .discourse
+                .goals
+                .iter()
+                .filter(|g| g.role == DiscourseRole::Culminate)
+                .count();
+            assert!(
+                hooks >= 2,
+                "{}: the hook did not recur ({hooks} culminations)",
+                world.name
+            );
+            // Each cycle settles the debt it opens — no cinematic obligation left hanging.
+            assert_eq!(
+                DiscourseDiagnostics::measure(&plan, &score).abandoned_obligations,
+                0,
+                "{}: DeflectedLift abandoned an obligation",
+                world.name
+            );
+            // The jazz principle still holds across every audible role under the new backbone.
+            assert_eq!(
+                RealizationDiagnostics::measure(&plan, &score).unjustified_nonchord_notes,
+                0,
+                "{}: DeflectedLift left an unjustified note",
+                world.name
+            );
+        }
+    }
+
+    #[test]
     fn compose_produces_a_valid_multivoice_score() {
         let trace = demo_trace(120.0);
         for world in MusicWorld::all() {

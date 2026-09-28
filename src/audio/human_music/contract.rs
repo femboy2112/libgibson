@@ -58,6 +58,11 @@ pub enum CompositionGrammar {
     /// Two locally coherent regimes joined by an explicit transport that preserves at least
     /// one declared identity axis across the switch.
     WorldSwitch,
+    /// A bittersweet **bounce**: a small cyclic harmonic identity the ear learns, a hook that
+    /// keeps returning, and a lift → soft deflection → warm opening → rounded reset contour that
+    /// recurs instead of building to one cinematic climax. Failure/deflection becomes part of the
+    /// bounce; the song keeps reinterpreting a little material rather than inventing new.
+    DeflectedLift,
 }
 
 /// How phrases are expected to resolve — the coarse policy the harmonic planner refines into
@@ -152,6 +157,23 @@ impl CoherenceContract {
                 foreground_budget: 2,
                 novelty_budget: 0.70,
             },
+            CompositionGrammar::DeflectedLift => CoherenceContract {
+                grammar,
+                // Motif hook + a small cyclic harmonic loop the ear learns, over a steady groove.
+                anchors: vec![
+                    CoherenceAnchor::Motif,
+                    CoherenceAnchor::HarmonicLoop,
+                    CoherenceAnchor::Groove,
+                ],
+                // The hook recurs often; the harmonic cell repeats every few bars, deliberately
+                // small so prediction can build. Cyclic resolution, not cinematic cadence.
+                recurrence_bars: 4,
+                max_transform: 0.35,
+                phrase_bars: 4,
+                resolution: ResolutionPolicy::Loop,
+                foreground_budget: 1,
+                novelty_budget: 0.40,
+            },
         }
     }
 
@@ -215,6 +237,7 @@ mod tests {
             CompositionGrammar::LoopEvolution,
             CompositionGrammar::RiffDrive,
             CompositionGrammar::WorldSwitch,
+            CompositionGrammar::DeflectedLift,
         ] {
             let c = CoherenceContract::for_grammar(g);
             assert!(!c.anchors.is_empty(), "{g:?} has no anchor");

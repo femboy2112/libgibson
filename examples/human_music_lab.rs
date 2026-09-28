@@ -21,7 +21,7 @@ use gibson::audio::human_music::contract::CompositionGrammar;
 use gibson::audio::human_music::diagnostics::{
     CoherenceDiagnostics, DiscourseDiagnostics, RealizationDiagnostics,
 };
-use gibson::audio::human_music::functor::{compose_with_grammar, compose_with_plan};
+use gibson::audio::human_music::functor::compose_with_grammar;
 use gibson::audio::human_music::semantic::{calm_loop, rise_unresolved};
 use gibson::audio::human_music::synth::{HumanMusicSynth, StemMask};
 use gibson::audio::human_music::{demo_trace, MusicWorld, WorldId};
@@ -41,6 +41,15 @@ fn main() -> std::io::Result<()> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(120.0);
     let which = arg("--world=").unwrap_or_else(|| "all".into());
+    // The canonical audition now orbits the DeflectedLift bounce (a small cyclic harmonic identity
+    // and a recurring hook). Pass --grammar=hookarc (or loop / riff) to A/B against the earlier
+    // cinematic-arc song.
+    let grammar = match arg("--grammar=").as_deref() {
+        Some("hookarc") => CompositionGrammar::HookArc,
+        Some("loop") | Some("loop_evolution") => CompositionGrammar::LoopEvolution,
+        Some("riff") | Some("riff_drive") => CompositionGrammar::RiffDrive,
+        _ => CompositionGrammar::DeflectedLift,
+    };
     let out_dir = arg("--out=")
         .map(PathBuf::from)
         .unwrap_or_else(|| std::env::temp_dir().join("libgibson_human_music"));
@@ -64,7 +73,7 @@ fn main() -> std::io::Result<()> {
             "swiss_signal" => WorldId::SwissSignal,
             _ => WorldId::BlackIce,
         };
-        return stems(&out_dir, sr, block, seed, wid);
+        return stems(&out_dir, sr, block, seed, wid, grammar);
     }
 
     let trace = demo_trace(beats);
@@ -77,7 +86,7 @@ fn main() -> std::io::Result<()> {
     };
 
     println!(
-        "HumanMusic lab — one semantic trace, {} events, {beats:.0} beats",
+        "HumanMusic lab — {grammar:?} — one semantic trace, {} events, {beats:.0} beats",
         trace.events.len()
     );
     println!(
@@ -91,7 +100,7 @@ fn main() -> std::io::Result<()> {
         let file_stem = world.name.to_lowercase();
         let path = out_dir.join(format!("{file_stem}.wav"));
 
-        let (score, plan) = compose_with_plan(&trace, &world, seed);
+        let (score, plan) = compose_with_grammar(&trace, &world, seed, grammar);
         score.validate().expect("score invariants");
 
         let mut synth = HumanMusicSynth::new(&score, &world, sr);
@@ -251,11 +260,12 @@ fn stems(
     block: usize,
     seed: u64,
     wid: WorldId,
+    grammar: CompositionGrammar,
 ) -> std::io::Result<()> {
     let world = MusicWorld::from_id(wid);
     let file_stem = world.name.to_lowercase();
     let trace = demo_trace(120.0);
-    let (score, _plan) = compose_with_plan(&trace, &world, seed);
+    let (score, _plan) = compose_with_grammar(&trace, &world, seed, grammar);
     score.validate().expect("score invariants");
 
     println!(

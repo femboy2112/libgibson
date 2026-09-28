@@ -25,7 +25,7 @@
 //! later release. So [`DiscourseRole::Culminate`] carries maximum commitment and stays unresolved;
 //! a later [`DiscourseRole::Answer`] pays the debt it opened.
 
-use super::contract::{CoherenceAnchor, CoherenceContract};
+use super::contract::{CoherenceAnchor, CoherenceContract, CompositionGrammar};
 use super::plan::{FormGraph, SectionFamily};
 use super::timeline::{IntentSpan, IntentTimeline};
 
@@ -401,22 +401,27 @@ impl DiscoursePlan {
         // Establish/rise midpoint (for splitting Depart from Intensify in the run-in).
         let rise_mid = culmination / 2;
 
-        // Assign a rhetorical role to every phrase — a consequence of the trajectory and anchors.
-        let roles: Vec<DiscourseRole> = (0..n)
-            .map(|i| {
-                role_for(
-                    i,
-                    n,
-                    culmination,
-                    answer,
-                    rise_mid,
-                    matches!(
-                        phrases[i].family,
-                        SectionFamily::A | SectionFamily::APrime { .. }
-                    ),
-                )
-            })
-            .collect();
+        // Assign a rhetorical role to every phrase. Most grammars derive roles positionally from
+        // the trajectory (`role_for`); a grammar with an explicit SONG BACKBONE (DeflectedLift)
+        // imposes its own recurrent sequence instead.
+        let roles: Vec<DiscourseRole> =
+            SongBackbone::roles(contract.grammar, n).unwrap_or_else(|| {
+                (0..n)
+                    .map(|i| {
+                        role_for(
+                            i,
+                            n,
+                            culmination,
+                            answer,
+                            rise_mid,
+                            matches!(
+                                phrases[i].family,
+                                SectionFamily::A | SectionFamily::APrime { .. }
+                            ),
+                        )
+                    })
+                    .collect()
+            });
 
         // Open and settle the cross-phrase obligation ledger for this ordering.
         let (ledger, creates, pays) = resolve_obligations(&roles, answer);
@@ -575,6 +580,55 @@ pub(crate) fn resolve_obligations(
         };
     }
     (ledger, creates, pays)
+}
+
+/// A reusable **song backbone** — the recurrent section identity a grammar imposes, expressed as a
+/// per-phrase [`DiscourseRole`] sequence. Most grammars derive roles positionally from the
+/// trajectory ([`role_for`]); a grammar that carries an explicit backbone overrides that with its
+/// own shape. Today only [`CompositionGrammar::DeflectedLift`] does.
+pub struct SongBackbone;
+
+impl SongBackbone {
+    /// The role sequence a `grammar` imposes over `n` phrases, or `None` to fall back to the
+    /// trajectory-positional [`role_for`].
+    pub fn roles(grammar: CompositionGrammar, n: usize) -> Option<Vec<DiscourseRole>> {
+        match grammar {
+            CompositionGrammar::DeflectedLift => Some(deflected_lift_roles(n)),
+            _ => None,
+        }
+    }
+}
+
+/// The DeflectedLift bounce as a role sequence: `Establish` (the verse) opens; then a recurring
+/// cycle of `Depart` (the lift) → `Culminate` (the warm hook opening) → `Answer` (the soft landing)
+/// → `Return` (the rounded reset); and `Dissolve` (the tag) closes. The hook (`Culminate`) recurs
+/// across cycles — the song keeps becoming itself instead of building to one cinematic climax.
+///
+/// Each cycle opens exactly the obligations a later phrase in the SAME cycle settles (Depart's
+/// harmonic departure paid by its Return; Culminate's suspended cadence paid by its Answer), so the
+/// ledger stays balanced — no cinematic debt is left hanging. An interior remainder that does not
+/// fill a whole cycle is padded with `Restate` (a verse recurrence), which is ledger-neutral.
+fn deflected_lift_roles(n: usize) -> Vec<DiscourseRole> {
+    use DiscourseRole::*;
+    match n {
+        0 => Vec::new(),
+        1 => vec![Establish],
+        2 => vec![Establish, Dissolve],
+        _ => {
+            let mut roles = Vec::with_capacity(n);
+            roles.push(Establish);
+            let interior = n - 2;
+            let cycle = [Depart, Culminate, Answer, Return];
+            for _ in 0..(interior / cycle.len()) {
+                roles.extend_from_slice(&cycle);
+            }
+            for _ in 0..(interior % cycle.len()) {
+                roles.push(Restate);
+            }
+            roles.push(Dissolve);
+            roles
+        }
+    }
 }
 
 /// The rhetorical role of phrase `i` given the piece's anchors. Roles are consequences of the
