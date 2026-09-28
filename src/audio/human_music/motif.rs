@@ -208,6 +208,31 @@ impl Motif {
     }
 }
 
+impl MotifIdentity {
+    /// Build a fingerprint directly from a REALIZED pitch + rhythm sequence — for measuring what
+    /// the Score actually sounds, independent of any planned [`Motif`]. Mirrors [`Motif::identity`]
+    /// but over concrete pitches (semitone intervals) rather than scale degrees.
+    pub fn from_sequence(pitches: &[Midi], rhythms: &[f32]) -> MotifIdentity {
+        let interval_contour: Vec<i32> = pitches.windows(2).map(|w| w[1] - w[0]).collect();
+        let direction_signature: Vec<i8> =
+            interval_contour.iter().map(|&i| i.signum() as i8).collect();
+        let total: f32 = rhythms.iter().sum();
+        let rhythmic_profile: Vec<f32> = if total.abs() > f32::EPSILON {
+            rhythms.iter().map(|r| r / total).collect()
+        } else if rhythms.is_empty() {
+            Vec::new()
+        } else {
+            let even = 1.0 / rhythms.len() as f32;
+            rhythms.iter().map(|_| even).collect()
+        };
+        MotifIdentity {
+            interval_contour,
+            rhythmic_profile,
+            direction_signature,
+        }
+    }
+}
+
 /// Bounded `[0, 1]` perceptual relatedness of two motif identities: `1.0` = the same idea,
 /// `0.0` = unrelated.
 ///
