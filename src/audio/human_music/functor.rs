@@ -9,7 +9,7 @@
 //! and local density, and their labels become event provenance. Skins are natural
 //! transformations: swap the world and the form/motif/resolutions stay; the dialect changes.
 
-use super::form::{Form, SectionKind, BEATS_PER_BAR};
+use super::form::{Section, SectionKind, BEATS_PER_BAR};
 use super::groove::GrooveEngine;
 use super::harmony::{ChordSpan, HarmonyEngine};
 use super::intent::{IntentMorphism, MusicIntent};
@@ -31,35 +31,36 @@ pub fn compose(trace: &SemanticTrace, world: &MusicWorld, seed: u64) -> Score {
 /// Like [`compose`], but also returns the [`CompositionPlan`] the score was realized from —
 /// for structural dumps (`plan.dump()`) and coherence diagnostics.
 ///
-/// Round II inserts the planning boundary here: the semantic trace becomes a causal
-/// [`IntentTimeline`], the timeline yields a [`CompositionPlan`] (contract + form graph +
-/// arrangement), the Round-I engines still generate the raw material, and then
-/// `apply_arrangement` gates every voice by its per-phrase role — so the band finally has
-/// a bandleader deciding who plays, how loud, and when to shut up.
+/// Round III makes the [`CompositionPlan`] the **sole** compositional authority. The semantic
+/// trace becomes a causal [`IntentTimeline`]; the timeline yields one plan (contract, form graph,
+/// discourse and arrangement); and every realizer reads its per-phrase
+/// [`super::plan::PhraseTarget`] from that plan — harmony, groove and bass no longer consult a
+/// parallel `Form`. The legacy [`Section`] list is *projected* from the plan for the Score IR, so
+/// the summary and the per-event provenance finally describe the same decomposition;
+/// `apply_arrangement` then gates every voice by its per-phrase role.
 pub fn compose_with_plan(
     trace: &SemanticTrace,
     world: &MusicWorld,
     seed: u64,
 ) -> (Score, CompositionPlan) {
-    let form = Form::from_trace(trace);
     let scale = Scale::new(world.tonic_pc, world.mode);
+    // The bar budget comes straight from the trace — no legacy Form is built to size the piece.
+    let total_bars = ((trace.total_beats / BEATS_PER_BAR).round() as u32).max(1);
 
-    // The causal spine and the plan derived from it.
+    // The causal spine and the ONE plan every realizer reads from.
     let timeline = IntentTimeline::walk(trace);
-    let plan = CompositionPlan::build(&timeline, form.total_bars);
+    let plan = CompositionPlan::build(&timeline, total_bars);
+    let targets = plan.targets();
 
     let mut harmony = HarmonyEngine::new(world, seed);
-    // Harmony is planned at phrase scope: each phrase closes on a prepared cadence.
-    let chords = harmony.generate(&form, &plan.form.phrases);
+    let chords = harmony.generate(&targets);
 
     let mut groove = GrooveEngine::new(world, seed);
-    // Fills land at the plan's phrase boundaries, not the old Form's section edges.
-    let phrase_end_bars: Vec<u32> = plan.form.phrases.iter().map(|p| p.end_bar()).collect();
-    let gr = groove.generate(&form, &phrase_end_bars);
+    let gr = groove.generate(&targets);
 
-    let total_beats = form.total_bars as f64 * BEATS_PER_BAR;
+    let total_beats = plan.form.total_bars as f64 * BEATS_PER_BAR;
     let mut score = Score::new(world.tempo_bpm, BEATS_PER_BAR, total_beats);
-    score.sections = form.sections.clone();
+    score.sections = sections_from_plan(&plan);
     score.chords = chords.clone();
     score.drums = gr.hits;
 
@@ -67,19 +68,37 @@ pub fn compose_with_plan(
     add_comp(&mut score, &chords, world);
 
     // --- Bass: persistent kick-locked figure. ---
-    add_bass(&mut score, &chords, &gr.kick_beats, &form);
+    add_bass(&mut score, &chords, &gr.kick_beats, &plan);
 
     // --- Melody: one developing motif threaded through the plan's phrases. ---
     add_melody(&mut score, &chords, &plan, &scale, seed);
 
     // --- SFX + intent morphisms from significant semantic events. ---
-    add_sfx_and_provenance(&mut score, trace, &form);
+    add_sfx_and_provenance(&mut score, trace, &plan);
 
     // --- Arrangement: gate every voice by its per-phrase role and stamp real provenance
     //     from the plan (fixing the Round-I hardcoded SectionKind::A). ---
     apply_arrangement(&mut score, &plan);
 
     (score, plan)
+}
+
+/// Project the legacy [`Section`] list (for the Score IR and `Score::summary`) FROM the plan.
+/// There is no independent `Form::from_trace` on the musical path any more: the summary and the
+/// per-event provenance are two views of the *same* plan-derived decomposition.
+fn sections_from_plan(plan: &CompositionPlan) -> Vec<Section> {
+    plan.form
+        .phrases
+        .iter()
+        .map(|p| Section {
+            kind: p.family.to_section_kind(),
+            start_bar: p.start_bar,
+            bars: p.bars,
+            energy: p.span.peak_energy.energy,
+            tension: p.span.peak_tension.tension,
+            density: p.intent.density,
+        })
+        .collect()
 }
 
 /// Realize the [`ArrangementPlan`] onto a generated score: drop voices that are silent in
@@ -198,7 +217,7 @@ fn add_comp(score: &mut Score, chords: &[ChordSpan], world: &MusicWorld) {
 /// the span's first kick, a fifth drives the offbeat kicks at high energy, and the last kick
 /// before a chord change steps chromatically into the next root — a repeatable shape, not a
 /// dice roll, still onset-locked to the groove.
-fn add_bass(score: &mut Score, chords: &[ChordSpan], kick_beats: &[f64], form: &Form) {
+fn add_bass(score: &mut Score, chords: &[ChordSpan], kick_beats: &[f64], plan: &CompositionPlan) {
     let bass_center = 40; // ~E2
     for (ci, span) in chords.iter().enumerate() {
         let span_end = span.start_beat + span.dur_beats as f64;
@@ -209,7 +228,10 @@ fn add_bass(score: &mut Score, chords: &[ChordSpan], kick_beats: &[f64], form: &
             .get(ci + 1)
             .map(|c| c.chord.root_pc)
             .unwrap_or(root_pc);
-        let energy = form.energy_at(span.start_beat / BEATS_PER_BAR);
+        let energy = {
+            let ph = plan.form.phrase_at(span.start_beat);
+            plan.discourse.goal(ph.ix as usize).energy_target
+        };
 
         // Kick-locked bass: a bass note on each kick within the span.
         let kicks: Vec<f64> = kick_beats
@@ -377,7 +399,7 @@ fn develop_current(m: &Motif, phrase: &Phrase, rng: &mut Rng) -> (Motif, &'stati
     }
 }
 
-fn add_sfx_and_provenance(score: &mut Score, trace: &SemanticTrace, form: &Form) {
+fn add_sfx_and_provenance(score: &mut Score, trace: &SemanticTrace, plan: &CompositionPlan) {
     let mut prev = trace.events.first().map(|e| e.state);
     for ev in &trace.events {
         let significant = ev.kind.requires_event()
@@ -396,15 +418,15 @@ fn add_sfx_and_provenance(score: &mut Score, trace: &SemanticTrace, form: &Form)
             (EventKind::ActChanged, _) | (EventKind::SectionResolved, _) => SfxKind::Transition,
             _ => SfxKind::Acquire,
         };
-        let sec = form.section_at_bar((ev.at_beat / BEATS_PER_BAR) as u32);
+        let sec_kind = plan.form.phrase_at(ev.at_beat).family.to_section_kind();
         score.sfx.push(SfxEvent {
             start_beat: ev.at_beat,
             kind,
             velocity: ev.state.dynamic(),
             prov: Provenance {
-                section: sec.kind,
+                section: sec_kind,
                 role_note: "sfx",
-                ..Provenance::new(sec.kind)
+                ..Provenance::new(sec_kind)
             },
         });
     }

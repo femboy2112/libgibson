@@ -13,7 +13,7 @@
 //! Diatonic chords are still derived from the scale (quality classified from the actual stacked
 //! scale thirds, so it is correct in any mode).
 
-use super::form::{Form, BEATS_PER_BAR};
+use super::form::BEATS_PER_BAR;
 use super::intent::{CostWeights, MorphismCost};
 use super::rng::Rng;
 use super::theory::{Chord, Function, Quality, Scale};
@@ -73,27 +73,18 @@ impl HarmonyEngine {
         Chord::new(root.rem_euclid(12), quality)
     }
 
-    /// Generate the full progression over `form`, planned phrase by phrase.
+    /// Generate the full progression from the composition plan's [`PhraseTarget`]s, planned phrase
+    /// by phrase.
     ///
-    /// `phrases` tile `[0, form.total_bars]` contiguously. If they are empty, the whole piece
-    /// is treated as one phrase (the fallback). Each phrase is filled with contiguous chord
-    /// slots and closed with a prepared cadence; the concatenation covers `[0, total_beats)`.
-    pub fn generate(
-        &mut self,
-        form: &super::form::Form,
-        phrases: &[super::plan::Phrase],
-    ) -> Vec<ChordSpan> {
-        let total_beats = form.total_bars as f64 * BEATS_PER_BAR;
-
-        // Beat ranges to fill, one per phrase. No phrases -> the whole piece is one phrase.
-        let ranges: Vec<(f64, f64)> = if phrases.is_empty() {
-            vec![(0.0, total_beats)]
-        } else {
-            phrases
-                .iter()
-                .map(|p| (p.start_beat(), p.end_beat().min(total_beats)))
-                .collect()
-        };
+    /// The targets tile `[0, total_beats)` contiguously; the phrase's discourse goal is the single
+    /// authority for harmonic rhythm (its density target) and functional heat (its tension target)
+    /// — there is no parallel form curve. Each phrase is filled with contiguous chord slots and
+    /// closed with a prepared cadence.
+    pub fn generate(&mut self, targets: &[super::plan::PhraseTarget]) -> Vec<ChordSpan> {
+        if targets.is_empty() {
+            return Vec::new();
+        }
+        let total_beats = targets.last().map(|t| t.end_beat()).unwrap_or(0.0);
 
         let mut spans = Vec::new();
         // Voice-leading memory threads across phrase boundaries — the line is continuous even
@@ -101,20 +92,22 @@ impl HarmonyEngine {
         let mut prev_root: i32 = self.scale.tonic_pc;
         let mut prev_degree: i32 = 0;
 
-        for (ps, pe) in ranges {
+        for t in targets {
+            let ps = t.start_beat();
+            let pe = t.end_beat().min(total_beats);
             if pe <= ps + 1e-9 {
                 continue;
             }
-            let slots = self.carve_slots(form, ps, pe);
+            // The phrase's own discourse targets — constant across the phrase — drive both the
+            // harmonic rhythm and the functional heat.
+            let tension = t.goal.tension_target;
+            let slots = carve_slots(t.goal.density_target, ps, pe);
             let n = slots.len();
             // A V/x set here mandates the next interior slot resolve to `target` — an
             // obligation, not a suggestion. Reset at each phrase: cadences don't inherit debts.
             let mut pending_resolve: Option<i32> = None;
 
             for (i, &(sb, dur)) in slots.iter().enumerate() {
-                let bar_f = sb / BEATS_PER_BAR;
-                let tension = form.tension_at(bar_f);
-
                 let is_last = i == n - 1;
                 let is_dom_prep = n >= 2 && i == n - 2;
                 let is_pd_prep = n >= 3 && i == n - 3;
@@ -220,21 +213,6 @@ impl HarmonyEngine {
         spans
     }
 
-    /// Carve `[ps, pe)` into contiguous slots, each sized by `chord_dur(density)` and clamped
-    /// so the last one lands exactly on `pe`. `chord_dur` is bounded below, so this terminates.
-    fn carve_slots(&self, form: &Form, ps: f64, pe: f64) -> Vec<(f64, f32)> {
-        let mut slots = Vec::new();
-        let mut beat = ps;
-        while beat < pe - 1e-6 {
-            let bar_f = beat / BEATS_PER_BAR;
-            let density = form.density_at(bar_f);
-            let dur = chord_dur(density).min((pe - beat) as f32);
-            slots.push((beat, dur));
-            beat += dur as f64;
-        }
-        slots
-    }
-
     /// Choose an interior degree from `func`'s pool by minimizing the weighted [`MorphismCost`]
     /// against the previous chord and the form's target tension. The cost vector drives the
     /// choice; the RNG only splits an exact tie. This is the whole point of Round II harmony —
@@ -331,6 +309,19 @@ fn function_of_degree(degree: i32) -> Function {
     }
 }
 
+/// Carve `[ps, pe)` into contiguous slots, each sized by `chord_dur(density)` and clamped so the
+/// last one lands exactly on `pe`. `chord_dur` is bounded below, so this terminates.
+fn carve_slots(density: f32, ps: f64, pe: f64) -> Vec<(f64, f32)> {
+    let mut slots = Vec::new();
+    let mut beat = ps;
+    while beat < pe - 1e-6 {
+        let dur = chord_dur(density).min((pe - beat) as f32);
+        slots.push((beat, dur));
+        beat += dur as f64;
+    }
+    slots
+}
+
 /// Chord duration in beats from a density target.
 fn chord_dur(density: f32) -> f32 {
     if density < 0.4 {
@@ -408,14 +399,18 @@ mod tests {
         assert_eq!(h.diatonic_chord(4, true), Chord::new(7, Quality::Dom7));
     }
 
-    #[test]
-    fn progression_covers_form_and_ends_on_tonic() {
+    fn demo_plan() -> CompositionPlan {
         let trace = demo_trace(120.0);
-        let form = Form::from_trace(&trace);
         let tl = IntentTimeline::walk(&trace);
-        let plan = CompositionPlan::build(&tl, form.total_bars);
+        let total_bars = (trace.total_beats / BEATS_PER_BAR).round() as u32;
+        CompositionPlan::build(&tl, total_bars)
+    }
+
+    #[test]
+    fn progression_covers_the_plan_and_ends_on_tonic() {
+        let plan = demo_plan();
         let mut h = HarmonyEngine::new(&MusicWorld::black_ice(), 42);
-        let prog = h.generate(&form, &plan.form.phrases);
+        let prog = h.generate(&plan.targets());
         assert!(!prog.is_empty());
         // Contiguous in time (across phrase boundaries too).
         for w in prog.windows(2) {
@@ -429,14 +424,12 @@ mod tests {
 
     #[test]
     fn deterministic_progression_for_seed() {
-        let trace = demo_trace(120.0);
-        let form = Form::from_trace(&trace);
-        let tl = IntentTimeline::walk(&trace);
-        let plan = CompositionPlan::build(&tl, form.total_bars);
+        let plan = demo_plan();
+        let targets = plan.targets();
         let mut a = HarmonyEngine::new(&MusicWorld::vapor95(), 7);
         let mut b = HarmonyEngine::new(&MusicWorld::vapor95(), 7);
-        let pa = a.generate(&form, &plan.form.phrases);
-        let pb = b.generate(&form, &plan.form.phrases);
+        let pa = a.generate(&targets);
+        let pb = b.generate(&targets);
         assert_eq!(pa.len(), pb.len());
         for (x, y) in pa.iter().zip(pb.iter()) {
             assert_eq!(x.chord, y.chord);
@@ -446,13 +439,12 @@ mod tests {
 
     #[test]
     fn each_phrase_prepares_its_cadence() {
-        // T1: every phrase that holds >=2 chord spans closes …D -> T (prepared cadence).
-        let trace = demo_trace(120.0);
-        let form = Form::from_trace(&trace);
-        let tl = IntentTimeline::walk(&trace);
-        let plan = CompositionPlan::build(&tl, form.total_bars);
+        // Every phrase that holds >=2 chord spans closes …D -> T (prepared cadence). Round III's
+        // closure hierarchy relaxes this per discourse role; at this commit every phrase still
+        // cadences the same way — harmony just reads the plan's targets instead of a parallel form.
+        let plan = demo_plan();
         let mut h = HarmonyEngine::new(&MusicWorld::black_ice(), 42);
-        let prog = h.generate(&form, &plan.form.phrases);
+        let prog = h.generate(&plan.targets());
 
         let mut checked = 0;
         for p in &plan.form.phrases {
@@ -488,26 +480,15 @@ mod tests {
 
     #[test]
     fn secondary_dominants_resolve() {
-        use crate::audio::human_music::form::{Section, SectionKind};
-        // T2: a V/x is a real obligation — the next slot resolves to its target. To force one
-        // deterministically, run a long, hot, dense single "phrase" (the empty-phrases fallback)
-        // in a world that allows secondaries: many interior Dominant slots with room, so a V/x
-        // appears within a short seed sweep. target_root = (dom_root - 7) mod 12.
-        let form = Form {
-            sections: vec![Section {
-                kind: SectionKind::A,
-                start_bar: 0,
-                bars: 16,
-                energy: 0.9,
-                tension: 0.9,
-                density: 0.9,
-            }],
-            total_bars: 16,
-        };
+        use super::super::plan::PhraseTarget;
+        // A V/x is a real obligation — the next slot resolves to its target. Force many interior
+        // Dominant slots with a single long, hot, dense phrase target so a V/x appears within a
+        // short seed sweep. target_root = (dom_root - 7) mod 12.
+        let targets = [PhraseTarget::test_flat(0, 16, 0.9, 0.9)];
         let mut found = false;
         for seed in 0..64u64 {
             let mut h = HarmonyEngine::new(&MusicWorld::black_ice(), seed);
-            let prog = h.generate(&form, &[]); // empty -> whole-piece fallback
+            let prog = h.generate(&targets);
             for w in prog.windows(2) {
                 if w[0].note.starts_with("V/") {
                     found = true;

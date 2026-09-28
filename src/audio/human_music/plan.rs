@@ -20,7 +20,7 @@
 //! summary.
 
 use super::contract::CoherenceContract;
-use super::discourse::DiscoursePlan;
+use super::discourse::{DiscoursePlan, PhraseGoal};
 use super::form::{SectionKind, BEATS_PER_BAR};
 use super::intent::MusicIntent;
 use super::score::Role;
@@ -548,6 +548,20 @@ impl CompositionPlan {
         }
     }
 
+    /// The per-phrase [`PhraseTarget`]s the realizers consume — one per phrase, bundling its
+    /// timing/family with its discourse goal. This is the single authority: harmony, groove, bass
+    /// and the lead all steer from these, not from a parallel form.
+    pub fn targets(&self) -> Vec<PhraseTarget> {
+        self.form
+            .phrases
+            .iter()
+            .map(|p| PhraseTarget {
+                phrase: *p,
+                goal: *self.discourse.goal(p.ix as usize),
+            })
+            .collect()
+    }
+
     /// A structural dump a cold reader can use to answer *what recurs, what changed, why is
     /// this instrument playing, what obligation is in force*.
     pub fn dump(&self) -> String {
@@ -651,6 +665,82 @@ impl CompositionPlan {
             );
         }
         s
+    }
+}
+
+/// The single per-phrase target every realizer consumes — the phrase (timing, family, span) plus
+/// its discourse [`PhraseGoal`] (role, closure, and the energy/tension/density/register targets).
+/// This is what makes [`CompositionPlan`] the sole compositional authority: instead of harmony
+/// reading one form's tension curve while the lead reads a different form's phrase intent, every
+/// realizer projects *this* shared object into its own domain.
+#[derive(Debug, Clone, Copy)]
+pub struct PhraseTarget {
+    pub phrase: Phrase,
+    pub goal: PhraseGoal,
+}
+
+impl PhraseTarget {
+    /// The phrase index.
+    pub fn ix(&self) -> u32 {
+        self.phrase.ix
+    }
+    /// First beat of the phrase.
+    pub fn start_beat(&self) -> f64 {
+        self.phrase.start_beat()
+    }
+    /// One past the last beat of the phrase.
+    pub fn end_beat(&self) -> f64 {
+        self.phrase.end_beat()
+    }
+
+    /// A minimal flat target for unit tests: a single phrase spanning `bars` from `start_bar`
+    /// with constant tension/density targets (used to exercise harmony deterministically without
+    /// standing up a whole trace).
+    #[cfg(test)]
+    pub(crate) fn test_flat(start_bar: u32, bars: u32, tension: f32, density: f32) -> PhraseTarget {
+        use super::discourse::{Closure, DiscourseRole};
+        let mi = MusicIntent {
+            energy: tension,
+            tension,
+            density,
+            ..MusicIntent::default()
+        };
+        let span = IntentSpan {
+            start: mi,
+            end: mi,
+            peak_energy: mi,
+            peak_tension: mi,
+            events_inside: 0,
+            salient_inside: 0,
+            next_salient_beat: None,
+        };
+        let phrase = Phrase {
+            ix: 0,
+            start_bar,
+            bars,
+            family: SectionFamily::A,
+            obligation: PhraseObligation::Arrival,
+            intent: mi,
+            span,
+            is_rupture: false,
+        };
+        let goal = PhraseGoal {
+            phrase_ix: 0,
+            role: DiscourseRole::Intensify,
+            closure: Closure::Strong,
+            refers_to: None,
+            next_goal: None,
+            energy_target: tension,
+            tension_target: tension,
+            density_target: density,
+            register_target: 0.5,
+            thematic_distance: 0.5,
+            harmonic_distance: 0.5,
+            novelty_budget: 0.5,
+            creates: None,
+            pays: None,
+        };
+        PhraseTarget { phrase, goal }
     }
 }
 

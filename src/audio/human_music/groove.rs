@@ -6,7 +6,7 @@
 //! Density and energy come from the form, so the pattern thins in the intro and thickens
 //! into the climax without a new pattern being invented per bar.
 
-use super::form::{Form, BEATS_PER_BAR};
+use super::form::BEATS_PER_BAR;
 use super::rng::Rng;
 use super::score::{DrumHit, DrumVoice, Provenance};
 use super::world::MusicWorld;
@@ -42,29 +42,38 @@ impl GrooveEngine {
         }
     }
 
-    /// Generate the percussion track over `form`.
+    /// Generate the percussion track from the composition plan's [`PhraseTarget`]s.
     ///
-    /// A base groove CELL — kick on 1 & 3, snare backbeat on 2 & 4, subdivided hats — is
-    /// realized every bar. Round I decided each variation (extra kick, ghosts, open-hat lift,
-    /// fill) with an INDEPENDENT per-bar coin flip, so nothing repeated and the boundary was
-    /// unmarked 30% of the time. Round II makes the variations a bounded, repeating function
-    /// of a 2-bar cell position and the energy curve: the groove is recognizable and mutates
-    /// within bounds, and a fill lands because a *phrase* is ending (`phrase_end_bars`), not
-    /// because a die rolled. Only the micro-timing humanization stays stochastic — a tasteful,
-    /// seeded pocket, not structural noise.
-    pub fn generate(&mut self, form: &Form, phrase_end_bars: &[u32]) -> Groove {
+    /// A base groove CELL — kick on 1 & 3, snare backbeat on 2 & 4, subdivided hats — is realized
+    /// every bar; the variations (extra kick, ghosts, open-hat lift, fill) are a bounded, repeating
+    /// function of a 2-bar cell position and the phrase's energy/density targets, and a fill lands
+    /// because a *phrase* is ending — not because a die rolled. Energy, density and the section all
+    /// come from the phrase target holding each bar (the single authority), never a parallel form.
+    /// Only the micro-timing humanization stays stochastic — a tasteful, seeded pocket.
+    pub fn generate(&mut self, targets: &[super::plan::PhraseTarget]) -> Groove {
         let bpb = BEATS_PER_BAR;
         let mut hits = Vec::new();
         let mut kick_beats = Vec::new();
+        if targets.is_empty() {
+            return Groove { hits, kick_beats };
+        }
+        let total_bars = targets.last().map(|t| t.phrase.end_bar()).unwrap_or(0);
 
-        for bar in 0..form.total_bars {
+        for bar in 0..total_bars {
             let bar_start = bar as f64 * bpb;
-            let sec = *form.section_at_bar(bar);
-            let energy = form.energy_at(bar as f64 + 0.5);
-            let density = form.density_at(bar as f64 + 0.5);
-            let prov = Provenance::new(sec.kind);
+            // One authority: energy/density and the section come from the phrase target holding
+            // this bar — the plan decides a bar's job, not a parallel form curve.
+            let Some(pt) = targets
+                .iter()
+                .find(|t| bar >= t.phrase.start_bar && bar < t.phrase.end_bar())
+            else {
+                continue;
+            };
+            let energy = pt.goal.energy_target;
+            let density = pt.goal.density_target;
+            let prov = Provenance::new(pt.phrase.family.to_section_kind());
 
-            // The intro (very low energy) may run drumless — silence is a valid event.
+            // Very low energy phrases may run drumless — silence is a valid event.
             if energy < 0.24 {
                 continue;
             }
@@ -72,7 +81,8 @@ impl GrooveEngine {
             // 2-bar cell: bar 0 is the plain statement, bar 1 carries the variation. A
             // recognizable groove that repeats with bounded mutation instead of re-rolling.
             let varied = bar % 2 == 1;
-            let is_fill_bar = phrase_end_bars.contains(&(bar + 1)) && energy > 0.4;
+            // A fill lands because the next bar begins a new phrase.
+            let is_fill_bar = targets.iter().any(|t| t.phrase.end_bar() == bar + 1) && energy > 0.4;
 
             // --- Kick: downbeat + beat 3; syncopations only on the cell's varied bar. ---
             self.emit_kick(&mut hits, &mut kick_beats, bar_start, 0.0, 0.95, prov);
@@ -196,14 +206,20 @@ impl GrooveEngine {
 
 #[cfg(test)]
 mod tests {
+    use super::super::plan::{CompositionPlan, PhraseTarget};
     use super::super::semantic::demo_trace;
+    use super::super::timeline::IntentTimeline;
     use super::*;
+
+    fn demo_targets() -> Vec<PhraseTarget> {
+        let tl = IntentTimeline::walk(&demo_trace(120.0));
+        CompositionPlan::build(&tl, 30).targets()
+    }
 
     #[test]
     fn groove_interlocks_kick_and_backbeat() {
-        let form = Form::from_trace(&demo_trace(120.0));
         let mut g = GrooveEngine::new(&MusicWorld::black_ice(), 3);
-        let gr = g.generate(&form, &[]);
+        let gr = g.generate(&demo_targets());
         assert!(!gr.hits.is_empty());
         assert!(!gr.kick_beats.is_empty());
         // Kicks recorded match kick hits.
@@ -224,11 +240,11 @@ mod tests {
 
     #[test]
     fn velocities_are_bounded_and_deterministic() {
-        let form = Form::from_trace(&demo_trace(120.0));
+        let targets = demo_targets();
         let mut a = GrooveEngine::new(&MusicWorld::vapor95(), 5);
         let mut b = GrooveEngine::new(&MusicWorld::vapor95(), 5);
-        let ga = a.generate(&form, &[]);
-        let gb = b.generate(&form, &[]);
+        let ga = a.generate(&targets);
+        let gb = b.generate(&targets);
         assert_eq!(ga.hits.len(), gb.hits.len());
         for h in &ga.hits {
             assert!((0.0..=1.0).contains(&h.velocity));
@@ -251,26 +267,28 @@ mod tests {
 
     #[test]
     fn fills_land_at_phrase_ends_not_by_coin_flip() {
-        let form = Form::from_trace(&demo_trace(120.0));
-        let all_ends: Vec<u32> = (1..=form.total_bars).collect();
-        let g_with = GrooveEngine::new(&MusicWorld::black_ice(), 9).generate(&form, &all_ends);
-        let g_without = GrooveEngine::new(&MusicWorld::black_ice(), 9).generate(&form, &[]);
+        // More phrase boundaries -> more fills. Six 4-bar phrases vs one 24-bar phrase, same
+        // constant energy so only the number of phrase ends differs (fills follow structure).
+        let many: Vec<PhraseTarget> = (0..6)
+            .map(|i| PhraseTarget::test_flat(i * 4, 4, 0.6, 0.6))
+            .collect();
+        let one = [PhraseTarget::test_flat(0, 24, 0.6, 0.6)];
         let snares = |g: &Groove| {
             g.hits
                 .iter()
                 .filter(|h| h.voice == DrumVoice::Snare)
                 .count()
         };
-        // Marking phrase ends adds fill snares; with none marked there are strictly fewer.
-        // (Structural: fills follow the form, not a die.)
+        let g_many = GrooveEngine::new(&MusicWorld::black_ice(), 9).generate(&many);
+        let g_one = GrooveEngine::new(&MusicWorld::black_ice(), 9).generate(&one);
         assert!(
-            snares(&g_with) > snares(&g_without),
+            snares(&g_many) > snares(&g_one),
             "phrase-end fills added no snares: {} vs {}",
-            snares(&g_with),
-            snares(&g_without)
+            snares(&g_many),
+            snares(&g_one)
         );
-        // Deterministic given the same seed and phrase ends.
-        let g_again = GrooveEngine::new(&MusicWorld::black_ice(), 9).generate(&form, &all_ends);
-        assert_eq!(g_with.hits.len(), g_again.hits.len());
+        // Deterministic given the same targets and seed.
+        let g_again = GrooveEngine::new(&MusicWorld::black_ice(), 9).generate(&many);
+        assert_eq!(g_many.hits.len(), g_again.hits.len());
     }
 }
