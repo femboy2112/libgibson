@@ -607,6 +607,10 @@ pub struct CompositionPlan {
     pub form: FormGraph,
     pub arrangement: ArrangementPlan,
     pub discourse: DiscoursePlan,
+    /// The world-independent Lift/Deflect/Open/Reset spine (Round VII), when the grammar has one.
+    /// Every downstream planner and realizer reads the active gesture from here — the backbone is
+    /// no longer invented privately inside realization.
+    pub backbone: Option<super::backbone::BackboneTimeline>,
 }
 
 impl CompositionPlan {
@@ -630,11 +634,26 @@ impl CompositionPlan {
         // The thematic question/answer must be audible: give the lead a seat on Question/Answer
         // phrases even where the family-based arrangement would otherwise silence it.
         arrangement.voice_lead_for_discourse(&discourse);
+        let backbone = matches!(
+            contract.grammar,
+            super::contract::CompositionGrammar::DeflectedLift
+        )
+        .then(|| {
+            let starts: Vec<u32> = form.phrases.iter().map(|p| p.start_bar).collect();
+            super::backbone::BackboneTimeline::build(
+                timeline,
+                form.total_bars,
+                &starts,
+                contract.phrase_bars,
+                contract.recurrence_bars,
+            )
+        });
         CompositionPlan {
             contract,
             form,
             arrangement,
             discourse,
+            backbone,
         }
     }
 
@@ -729,6 +748,9 @@ impl CompositionPlan {
                 a.lead.label(),
                 a.drums.label(),
             );
+        }
+        if let Some(bb) = &self.backbone {
+            s.push_str(&bb.dump());
         }
         // Obligation ledger: what was owed, and whether it was paid, deferred or abandoned.
         let led = &self.discourse.ledger;

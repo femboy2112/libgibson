@@ -1,42 +1,64 @@
-//! The harmonic **backbone**: an abstract Lift → Deflect → Open → Reset gesture cell that recurs
-//! as the song's spine.
+//! The harmonic **backbone**: the song's Lift → Deflect → Open → Reset spine.
 //!
 //! This axis is deliberately ORTHOGONAL to the rhetorical [`super::discourse::DiscourseRole`]
 //! layer. A phrase can be `DiscourseRole::Answer` (why it exists in the argument) and
-//! `HarmonicGesture::Open` (what the harmony does under it) at the same time. Round V conflated the
-//! two — it encoded the harmonic contour by reusing discourse roles, in a muddled order — which is
-//! exactly why the "Swing & A Miss" spine was inaudible. Round VI separates them: `DiscoursePlan`
-//! says *why*, `BackbonePlan` says *what the harmony does*.
+//! `HarmonicGesture::Open` (what the harmony does under it) at the same time.
 //!
-//! The four-slot cell is generated ONCE per composition by a bounded, deterministic constraint
-//! search over diatonic candidates. No real progression is transcribed; only the relational
-//! geometry is fixed — a reach up, a soft miss, a warm window, a rounded reset. The cell then tiles
-//! bar-aligned across the piece so the ear can learn it, and later cycles TRANSFORM the frozen cell
-//! (a warm color deepens) so recurrence is recognizable without being static.
+//! Round VII splits the backbone in two, along the world boundary:
+//!
+//! - [`BackboneTimeline`] is **world-independent** and lives in the canonical
+//!   [`super::plan::CompositionPlan`]. It says, for every bar, which gesture is active, in which
+//!   cycle, with which variation, and which semantic event it is bound to — so arrangement, the
+//!   performance planner and every instrument know the spine before a single chord is chosen.
+//! - [`realize`] translates that abstract gesture path into world-specific harmony.
+//!
+//! **The two clocks are one clock now.** Round VI tiled the four gestures one per bar (`bar % 4`)
+//! while the flagship story placed its semantic lift/deflect/open/reset roughly four bars apart, so
+//! one semantic "lift" contained a whole harmonic Lift→Deflect→Open→Reset cycle — and the story's
+//! second release (a `Confirmation`) landed on a harmonic *deflect*. The relation between the
+//! semantic, gesture, phrase and bar timescales is now declared ([`TimeScales`], [`ClockBinding`]):
+//! each gesture-bearing semantic event opens a gesture slot, snapped to the phrase grid, so the
+//! semantic reach IS the harmonic Lift. A home-establishing opening slot states the whole cell in
+//! miniature (the *thesis*), so the ear learns the identity before the story expands it; later
+//! cycles are marked expanded or compressed relative to the first.
+//!
+//! **Deflect actually deflects.** A miss needs an expectation. Every Lift ends on a *pointer* — a
+//! chord with concrete dominant pull ([`super::context::PullEvidence`]) toward home — so the ear
+//! predicts the arrival; the Deflect then lands somewhere else that keeps common tones with the
+//! expected arrival (an evasion, not a non-sequitur). Each miss is recorded as a
+//! [`DeflectWitness`]: expected vs actual, common tones, voice-leading distance, and how long the
+//! path takes to rejoin home. The Open is chosen as a *consequence* of that miss (connected to the
+//! deflected chord), and the Reset restores home so another attempt is possible. No real
+//! progression is transcribed; only this relational geometry is fixed.
 
-use super::context::{contextual_function, degree_tension};
-use super::contract::CompositionGrammar;
-use super::harmony::diatonic_chord;
+use super::context::{
+    common_tones, contextual_function, expected_chord, expected_target, pc_motion, PullEvidence,
+};
+use super::form::BEATS_PER_BAR;
+use super::harmony::{diatonic_chord, ChordSpan};
+use super::intent::IntentMorphism;
+use super::language::MusicalLanguage;
 use super::rng::Rng;
-use super::theory::{Chord, Function, Quality, Scale};
+use super::semantic::EventKind;
+use super::theory::{Chord, Quality, Scale};
+use super::timeline::IntentTimeline;
 use super::world::MusicWorld;
 
 /// An abstract harmonic gesture — WHAT the harmony does, independent of WHY (the discourse role).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HarmonicGesture {
-    /// Reach up and away from home — increased brightness / forward pull.
+    /// Reach up and away from home, ending on a pointer that makes the ear expect an arrival.
     Lift,
-    /// The soft miss: a deceptive sidestep that refuses the obvious continuation ("almost… nope").
+    /// The miss: the expected arrival is withheld; the harmony lands on a related substitute.
     Deflect,
-    /// The warm window: a wide, colored opening that releases the pressure.
+    /// The warm window the miss opens: a coloured, released harmony connected to the deflection.
     Open,
-    /// Return near enough to home to restart the bounce — without a giant terminal cadence.
+    /// Return home, rounded — ready to reach again.
     Reset,
 }
 
 impl HarmonicGesture {
-    /// The cell, in canonical order: reach up, soft miss, warm opening, rounded reset. This exact
-    /// relational order is the DeflectedLift identity — permuting it is a different song.
+    /// The cell, in canonical order. This relational order is the DeflectedLift identity.
     pub const CELL: [HarmonicGesture; 4] = [
         HarmonicGesture::Lift,
         HarmonicGesture::Deflect,
@@ -53,342 +75,1007 @@ impl HarmonicGesture {
             HarmonicGesture::Reset => "reset",
         }
     }
+}
 
-    /// The relational tension `[0,1]` this gesture reaches for — the target the cell search fits
-    /// each slot's chord against. Lift reaches highest, Reset settles home.
-    fn target_tension(self) -> f32 {
+/// The gesture a semantic event's intent morphisms bind to, by their *effect* (not by event name):
+/// a release opens, a relaxation or cadence resets, a suspension or modulation is the miss, an
+/// intensification reaches, and a bare preparation establishes home. Pure recolourings
+/// (`Reharmonize`, motif work, syncopation) do not open a new gesture — they are actions *inside*
+/// the current one.
+pub fn gesture_for_morphisms(applied: &[IntentMorphism]) -> Option<HarmonicGesture> {
+    use IntentMorphism::*;
+    let has = |m: IntentMorphism| applied.contains(&m);
+    if has(Resolve) {
+        Some(HarmonicGesture::Open)
+    } else if has(Relax) || has(Cadence) {
+        Some(HarmonicGesture::Reset)
+    } else if has(Suspend) || has(Modulate) {
+        Some(HarmonicGesture::Deflect)
+    } else if has(Intensify) {
+        Some(HarmonicGesture::Lift)
+    } else if has(Prepare) {
+        Some(HarmonicGesture::Reset)
+    } else {
+        None
+    }
+}
+
+/// How gesture slots relate to the semantic trace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClockBinding {
+    /// Each gesture-bearing semantic event opens a gesture slot (snapped to the phrase grid): the
+    /// semantic phase and the backbone gesture are the same span.
+    SemanticPhase,
+    /// The trace carries too few gesture-bearing events to bind; the cell is tiled at a declared
+    /// fixed rate instead. Stated, not implied.
+    FixedTiling { bars_per_gesture: u32 },
+}
+
+/// The declared relationship between the piece's timescales.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TimeScales {
+    /// Beats per bar (the groove timescale).
+    pub beats_per_bar: f64,
+    /// The contract's phrase grid in bars (the phrase timescale).
+    pub phrase_bars: u32,
+    /// How gesture slots are bound to semantic time.
+    pub binding: ClockBinding,
+}
+
+/// How a cycle of the cell relates to the first full statement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CycleVariation {
+    /// The cell in miniature, inside the home-establishing opening (one short slot per gesture).
+    Thesis,
+    /// The first full cycle.
+    Statement,
+    /// Longer than the statement.
+    Expanded,
+    /// Shorter than the statement — the same identity, more urgent.
+    Compressed,
+    /// About as long as the statement, recoloured.
+    Transformed,
+}
+
+impl CycleVariation {
+    /// A short lowercase label for dumps.
+    pub fn label(self) -> &'static str {
         match self {
-            HarmonicGesture::Lift => 0.55,
-            HarmonicGesture::Deflect => 0.45,
-            HarmonicGesture::Open => 0.25,
-            HarmonicGesture::Reset => 0.10,
+            CycleVariation::Thesis => "thesis",
+            CycleVariation::Statement => "statement",
+            CycleVariation::Expanded => "expanded",
+            CycleVariation::Compressed => "compressed",
+            CycleVariation::Transformed => "transformed",
         }
     }
 }
 
-/// One realized slot of the frozen cell.
-#[derive(Debug, Clone, Copy)]
-pub struct CellSlot {
+/// A semantic event bound to a gesture.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SemanticBinding {
+    /// Index of the [`super::timeline::IntentTransition`] that fired it.
+    pub transition: usize,
+    pub at_beat: f64,
+    /// The bar its gesture slot starts on (snapped to the phrase grid).
+    pub bar: u32,
+    pub event: EventKind,
     pub gesture: HarmonicGesture,
-    /// The scale degree (0-based) the slot is built on.
-    pub degree: i32,
-    /// The realized chord (base color; per-cycle transforms are applied at tiling time).
-    pub chord: Chord,
-    /// The chord's harmonic function.
-    pub function: Function,
+    pub morphisms: Vec<IntentMorphism>,
 }
 
-/// A frozen four-slot harmonic identity — the song's spine. Later cycles transform it; the
-/// relational four-slot identity (roots + gesture order) stays audible.
-#[derive(Debug, Clone)]
-pub struct HarmonicCell {
-    pub slots: [CellSlot; 4],
+/// One gesture slot of the world-independent timeline.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GestureSlot {
+    pub gesture: HarmonicGesture,
+    /// Which pass through the cell (0 = the thesis when present).
+    pub cycle: u32,
+    pub start_bar: u32,
+    pub bars: u32,
+    /// The index into [`BackboneTimeline::bindings`] this slot realizes, if bound.
+    pub binding: Option<usize>,
+    pub variation: CycleVariation,
 }
 
-impl HarmonicCell {
-    /// The four root pitch-classes — the cell's audible signature.
-    pub fn signature(&self) -> [i32; 4] {
-        std::array::from_fn(|i| self.slots[i].chord.root_pc)
+impl GestureSlot {
+    /// One past the last bar.
+    pub fn end_bar(&self) -> u32 {
+        self.start_bar + self.bars
+    }
+    /// First beat.
+    pub fn start_beat(&self) -> f64 {
+        self.start_bar as f64 * BEATS_PER_BAR
+    }
+    /// One past the last beat.
+    pub fn end_beat(&self) -> f64 {
+        self.end_bar() as f64 * BEATS_PER_BAR
     }
 }
 
-/// The whole-piece backbone: the cell plus how many bars it spans before repeating.
-#[derive(Debug, Clone)]
-pub struct BackbonePlan {
-    pub cell: HarmonicCell,
-    /// The recurrence period in bars (from the contract). The cell's four slots are spread evenly
-    /// across it, so a 4-bar recurrence is one chord per bar; an 8-bar recurrence is two per slot.
-    pub recurrence_bars: u32,
+/// The world-independent backbone: every bar's gesture, cycle, variation and semantic binding.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackboneTimeline {
+    pub scales: TimeScales,
+    /// Contiguous slots tiling `[0, total_bars)`.
+    pub slots: Vec<GestureSlot>,
+    pub bindings: Vec<SemanticBinding>,
+    pub total_bars: u32,
 }
 
-impl BackbonePlan {
-    fn bars_per_slot(&self) -> u32 {
-        (self.recurrence_bars / 4).max(1)
-    }
-
-    /// The chord sounding in absolute `bar`: the cell slot for that bar, transformed for its cycle.
-    pub fn chord_at_bar(&self, bar: u32) -> (Chord, Function, HarmonicGesture, u32) {
-        let bps = self.bars_per_slot();
-        let slot_ix = ((bar / bps) % 4) as usize;
-        let cycle = bar / (bps * 4);
-        let slot = self.cell.slots[slot_ix];
-        (
-            transform_for_cycle(slot.chord, slot.gesture, cycle),
-            slot.function,
-            slot.gesture,
-            cycle,
-        )
-    }
-
-    /// The scale degree at absolute `bar` (for ChordSpan provenance).
-    pub fn degree_at_bar(&self, bar: u32) -> i32 {
-        let bps = self.bars_per_slot();
-        self.cell.slots[((bar / bps) % 4) as usize].degree
-    }
+/// Snap `bar_f` to the nearest phrase boundary within one bar, else to the nearest bar.
+fn snap_bar(bar_f: f64, phrase_starts: &[u32], total_bars: u32) -> u32 {
+    let near = phrase_starts
+        .iter()
+        .copied()
+        .filter(|&b| (b as f64 - bar_f).abs() <= 1.0 + 1e-9)
+        .min_by(|a, b| {
+            (*a as f64 - bar_f)
+                .abs()
+                .total_cmp(&(*b as f64 - bar_f).abs())
+        });
+    near.unwrap_or(bar_f.round() as u32)
+        .min(total_bars.saturating_sub(1))
 }
 
-/// The DeflectedLift backbone for a `world`, deterministic in `seed`. `None` for grammars whose
-/// coherence does not rest on a recurring harmonic cell (they use the phrase-scope harmony engine).
-pub fn plan_for(
-    grammar: CompositionGrammar,
-    world: &MusicWorld,
-    seed: u64,
-    recurrence_bars: u32,
-) -> Option<BackbonePlan> {
-    match grammar {
-        CompositionGrammar::DeflectedLift => Some(BackbonePlan {
-            cell: generate_deflected_lift_cell(world, seed),
-            recurrence_bars: recurrence_bars.max(4),
-        }),
-        _ => None,
-    }
-}
-
-/// Whether a chord's third is major (used to pick major vs minor warm colors).
-fn is_major_third(q: Quality) -> bool {
-    matches!(
-        q,
-        Quality::Maj
-            | Quality::Maj7
-            | Quality::Dom7
-            | Quality::Aug
-            | Quality::Maj6
-            | Quality::Maj9
-            | Quality::Add9
-            | Quality::Dom9
-            | Quality::Sus4
-            | Quality::Sus2
-    )
-}
-
-/// Apply each gesture's characteristic color to a diatonic base chord. Lift/Deflect keep their
-/// diatonic color (a 7th where the world uses them — a forward pull, a deceptive minor). Open opens
-/// a warm add9 window; Reset rings as a soft 6 that never slams the door — both draw on the extended
-/// `Quality` vocabulary that used to sit dead in the type.
-fn warm_color(base: Chord, gesture: HarmonicGesture) -> Chord {
-    let major = is_major_third(base.quality);
-    match gesture {
-        HarmonicGesture::Open => Chord::new(
-            base.root_pc,
-            if major { Quality::Add9 } else { Quality::Min9 },
-        ),
-        HarmonicGesture::Reset => Chord::new(
-            base.root_pc,
-            if major { Quality::Maj6 } else { Quality::Min6 },
-        ),
-        HarmonicGesture::Lift | HarmonicGesture::Deflect => base,
-    }
-}
-
-/// A bounded per-cycle transformation. Roots, functions and gesture order stay fixed (the cell's
-/// identity); on odd cycles a warm color deepens — the Open window gains its maj7 shimmer, the Reset
-/// rings as a 7th instead of a 6 — so a returning cycle is recognizably the same cell in a slightly
-/// different light. Even cycles are exact recurrences.
-fn transform_for_cycle(chord: Chord, gesture: HarmonicGesture, cycle: u32) -> Chord {
-    if cycle % 2 == 0 {
-        return chord;
-    }
-    match gesture {
-        HarmonicGesture::Open => Chord::new(
-            chord.root_pc,
-            match chord.quality {
-                Quality::Add9 => Quality::Maj9,
-                other => other,
-            },
-        ),
-        HarmonicGesture::Reset => Chord::new(
-            chord.root_pc,
-            match chord.quality {
-                Quality::Maj6 => Quality::Maj7,
-                Quality::Min6 => Quality::Min7,
-                other => other,
-            },
-        ),
-        _ => chord,
-    }
-}
-
-/// The total cost of a candidate degree assignment `[lift, deflect, open, reset]` — lower is
-/// better. Three inspectable terms: gesture fit (each slot's implied tension vs the gesture's
-/// target), distinctness (four different roots — never a trivial I-I-I-I), an interior-tonic
-/// penalty (only Reset should be home), plus a light preference for a smooth cyclic loop.
-fn cell_cost(scale: &Scale, degs: &[i32; 4]) -> f32 {
-    let roots: [i32; 4] = std::array::from_fn(|i| scale.degree_pitch(degs[i], 4).rem_euclid(12));
-    let mut fit = 0.0;
-    let mut interior_home = 0.0;
-    for (i, &d) in degs.iter().enumerate() {
-        fit += (degree_tension(scale, d) - HarmonicGesture::CELL[i].target_tension()).abs();
-        if i < 3 && d.rem_euclid(7) == 0 {
-            interior_home += 1.5; // a Lift/Deflect/Open that is really home defeats the bounce
+impl BackboneTimeline {
+    /// Build the timeline from the intent timeline and the plan's phrase grid.
+    ///
+    /// `phrase_starts` are the form's phrase start bars (for snapping); `recurrence_bars` is only
+    /// used by the declared fixed-tiling fallback.
+    pub fn build(
+        timeline: &IntentTimeline,
+        total_bars: u32,
+        phrase_starts: &[u32],
+        phrase_bars: u32,
+        recurrence_bars: u32,
+    ) -> BackboneTimeline {
+        let total_bars = total_bars.max(1);
+        let mut bindings: Vec<SemanticBinding> = Vec::new();
+        for (i, t) in timeline.transitions.iter().enumerate() {
+            let Some(g) = gesture_for_morphisms(&t.applied) else {
+                continue;
+            };
+            let bar = snap_bar(t.at_beat / BEATS_PER_BAR, phrase_starts, total_bars);
+            bindings.push(SemanticBinding {
+                transition: i,
+                at_beat: t.at_beat,
+                bar,
+                event: t.event_kind,
+                gesture: g,
+                morphisms: t.applied.clone(),
+            });
         }
-    }
-    let mut dup = 0.0;
-    for i in 0..4 {
-        for j in (i + 1)..4 {
-            if roots[i] == roots[j] {
-                dup += 2.0;
+        let distinct = {
+            let mut g: Vec<HarmonicGesture> = Vec::new();
+            for b in &bindings {
+                if !g.contains(&b.gesture) {
+                    g.push(b.gesture);
+                }
             }
+            g.len()
+        };
+        if distinct < 3 {
+            return Self::fixed_tiling(total_bars, phrase_bars, recurrence_bars, bindings);
+        }
+
+        // Raw segments: (gesture, start_bar, binding). A later event at the same bar wins; a repeat
+        // of the running gesture extends it rather than restarting it.
+        let mut segs: Vec<(HarmonicGesture, u32, Option<usize>)> = Vec::new();
+        for (bi, b) in bindings.iter().enumerate() {
+            if let Some(last) = segs.last_mut() {
+                if last.1 == b.bar {
+                    *last = (b.gesture, b.bar, Some(bi));
+                    continue;
+                }
+                if last.0 == b.gesture {
+                    continue;
+                }
+            }
+            segs.push((b.gesture, b.bar, Some(bi)));
+        }
+        // Collapse any repeat created by same-bar replacement.
+        segs.dedup_by(|b, a| a.0 == b.0);
+        if segs.first().is_none_or(|s| s.1 > 0) {
+            // Nothing bound at the downbeat: the opening is home, unbound.
+            segs.insert(0, (HarmonicGesture::Reset, 0, None));
+        }
+
+        let mut slots: Vec<GestureSlot> = Vec::new();
+        let mut cycle = 0u32;
+        for (k, &(g, start, bi)) in segs.iter().enumerate() {
+            let end = segs.get(k + 1).map(|s| s.1).unwrap_or(total_bars);
+            if end <= start {
+                continue;
+            }
+            let bars = end - start;
+            // A home-establishing opening at least a cell long states the cell in miniature: the
+            // thesis the rest of the piece develops.
+            if k == 0 && g == HarmonicGesture::Reset && bars >= 4 {
+                let each = bars / 4;
+                let mut at = start;
+                for (j, &cg) in HarmonicGesture::CELL.iter().enumerate() {
+                    let len = if j == 3 { end - at } else { each };
+                    slots.push(GestureSlot {
+                        gesture: cg,
+                        cycle: 0,
+                        start_bar: at,
+                        bars: len,
+                        binding: bi,
+                        variation: CycleVariation::Thesis,
+                    });
+                    at += len;
+                }
+                continue;
+            }
+            if g == HarmonicGesture::Lift && !slots.is_empty() {
+                cycle += 1;
+            }
+            slots.push(GestureSlot {
+                gesture: g,
+                cycle,
+                start_bar: start,
+                bars,
+                binding: bi,
+                variation: CycleVariation::Statement,
+            });
+        }
+        Self::mark_variations(&mut slots);
+        BackboneTimeline {
+            scales: TimeScales {
+                beats_per_bar: BEATS_PER_BAR,
+                phrase_bars,
+                binding: ClockBinding::SemanticPhase,
+            },
+            slots,
+            bindings,
+            total_bars,
         }
     }
-    let mut motion = 0.0;
-    for i in 0..4 {
-        let raw = (roots[(i + 1) % 4] - roots[i]).rem_euclid(12);
-        motion += raw.min(12 - raw) as f32;
+
+    /// The declared fallback: tile the cell at a fixed rate.
+    fn fixed_tiling(
+        total_bars: u32,
+        phrase_bars: u32,
+        recurrence_bars: u32,
+        bindings: Vec<SemanticBinding>,
+    ) -> BackboneTimeline {
+        let bpg = (recurrence_bars / 4).max(1);
+        let mut slots = Vec::new();
+        let mut bar = 0;
+        let mut i = 0usize;
+        while bar < total_bars {
+            let bars = bpg.min(total_bars - bar);
+            slots.push(GestureSlot {
+                gesture: HarmonicGesture::CELL[i % 4],
+                cycle: (i / 4) as u32,
+                start_bar: bar,
+                bars,
+                binding: None,
+                variation: if i < 4 {
+                    CycleVariation::Statement
+                } else {
+                    CycleVariation::Transformed
+                },
+            });
+            bar += bars;
+            i += 1;
+        }
+        BackboneTimeline {
+            scales: TimeScales {
+                beats_per_bar: BEATS_PER_BAR,
+                phrase_bars,
+                binding: ClockBinding::FixedTiling {
+                    bars_per_gesture: bpg,
+                },
+            },
+            slots,
+            bindings,
+            total_bars,
+        }
     }
-    fit + dup + interior_home + 0.08 * motion
-}
 
-/// Generate the frozen four-slot DeflectedLift cell for `world`, deterministic in `seed`. A bounded
-/// constraint search over per-gesture diatonic candidate pools; the RNG only breaks an exact tie.
-pub fn generate_deflected_lift_cell(world: &MusicWorld, seed: u64) -> HarmonicCell {
-    let scale = Scale::new(world.tonic_pc, world.mode);
-    let s7 = world.use_sevenths;
-    let mut rng = Rng::new(seed ^ 0xBACC_B0E1);
-
-    // Per-gesture diatonic degree pools (0-based). Lift pulls forward (ii/IV/V), Deflect sidesteps
-    // deceptively (vi/iii — the relative color), Open opens a warm subdominant/submediant window,
-    // Reset is home.
-    let lift_pool = [1, 3, 4];
-    let deflect_pool = [5, 2];
-    let open_pool = [3, 5];
-    let reset = 0;
-
-    let mut best_cost = f32::INFINITY;
-    let mut ties: Vec<[i32; 4]> = Vec::new();
-    for &lf in &lift_pool {
-        for &df in &deflect_pool {
-            for &op in &open_pool {
-                let degs = [lf, df, op, reset];
-                let cost = cell_cost(&scale, &degs);
-                if cost < best_cost - 1e-6 {
-                    best_cost = cost;
-                    ties.clear();
-                    ties.push(degs);
-                } else if (cost - best_cost).abs() <= 1e-6 {
-                    ties.push(degs);
+    /// Mark each post-thesis cycle relative to the first full statement's length.
+    fn mark_variations(slots: &mut [GestureSlot]) {
+        let cycle_len = |slots: &[GestureSlot], c: u32| -> u32 {
+            slots
+                .iter()
+                .filter(|s| s.cycle == c && s.variation != CycleVariation::Thesis)
+                .map(|s| s.bars)
+                .sum()
+        };
+        let first = slots
+            .iter()
+            .find(|s| s.variation != CycleVariation::Thesis)
+            .map(|s| s.cycle);
+        let Some(first) = first else {
+            return;
+        };
+        let base = cycle_len(slots, first).max(1) as f32;
+        let max_cycle = slots.iter().map(|s| s.cycle).max().unwrap_or(0);
+        for c in (first + 1)..=max_cycle {
+            let len = cycle_len(slots, c) as f32;
+            let v = if len < base * 0.85 {
+                CycleVariation::Compressed
+            } else if len > base * 1.15 {
+                CycleVariation::Expanded
+            } else {
+                CycleVariation::Transformed
+            };
+            for s in slots.iter_mut().filter(|s| s.cycle == c) {
+                if s.variation != CycleVariation::Thesis {
+                    s.variation = v;
                 }
             }
         }
     }
-    let degs = *rng.pick(&ties).unwrap_or(&[1, 5, 3, 0]);
 
-    let slots = std::array::from_fn(|i| {
-        let gesture = HarmonicGesture::CELL[i];
-        let degree = degs[i];
-        // Lift/Deflect take a 7th where the world uses them; Open/Reset are recolored warm below.
-        let seventh = s7 && matches!(gesture, HarmonicGesture::Lift | HarmonicGesture::Deflect);
-        let base = diatonic_chord(&scale, degree, seventh);
-        CellSlot {
-            gesture,
-            degree,
-            chord: warm_color(base, gesture),
-            function: contextual_function(&base, &scale),
+    /// The slot holding `bar`.
+    pub fn slot_at_bar(&self, bar: u32) -> Option<&GestureSlot> {
+        self.slots
+            .iter()
+            .find(|s| bar >= s.start_bar && bar < s.end_bar())
+    }
+
+    /// The slot sounding at `beat`.
+    pub fn slot_at_beat(&self, beat: f64) -> Option<&GestureSlot> {
+        self.slot_at_bar((beat / BEATS_PER_BAR).floor().max(0.0) as u32)
+    }
+
+    /// The index of the slot sounding at `beat`.
+    pub fn slot_index_at_beat(&self, beat: f64) -> Option<usize> {
+        let bar = (beat / BEATS_PER_BAR).floor().max(0.0) as u32;
+        self.slots
+            .iter()
+            .position(|s| bar >= s.start_bar && bar < s.end_bar())
+    }
+
+    /// The gesture active at `beat`.
+    pub fn gesture_at_beat(&self, beat: f64) -> Option<HarmonicGesture> {
+        self.slot_at_beat(beat).map(|s| s.gesture)
+    }
+
+    /// How many passes through the cell the timeline makes (including the thesis).
+    pub fn cycles(&self) -> u32 {
+        self.slots
+            .iter()
+            .map(|s| s.cycle)
+            .max()
+            .map_or(0, |c| c + 1)
+    }
+
+    /// A compact dump: one line per slot.
+    pub fn dump(&self) -> String {
+        use std::fmt::Write;
+        let mut s = String::new();
+        let binding = match self.scales.binding {
+            ClockBinding::SemanticPhase => "semantic-phase".to_string(),
+            ClockBinding::FixedTiling { bars_per_gesture } => {
+                format!("fixed-tiling({bars_per_gesture} bar/gesture)")
+            }
+        };
+        let _ = writeln!(
+            s,
+            "backbone timeline: binding={binding} phrase={}bar cycles={}",
+            self.scales.phrase_bars,
+            self.cycles()
+        );
+        for sl in &self.slots {
+            let bound = sl
+                .binding
+                .and_then(|b| self.bindings.get(b))
+                .map(|b| format!("{:?}@{:.0}", b.event, b.at_beat))
+                .unwrap_or_else(|| "-".into());
+            let _ = writeln!(
+                s,
+                "  bars {:>2}..{:<2} {:<8} cycle {} {:<11} <- {}",
+                sl.start_bar,
+                sl.end_bar(),
+                sl.gesture.label(),
+                sl.cycle,
+                sl.variation.label(),
+                bound
+            );
         }
-    });
-    HarmonicCell { slots }
+        s
+    }
+}
+
+/// The world-specific anchor chords of the cell.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HarmonicCell {
+    /// The Lift's reach (a departure that prepares the pointer).
+    pub lift: Chord,
+    /// A second reach for longer Lift slots (a sequence step).
+    pub lift_alt: Chord,
+    /// The chord that ends every Lift with concrete pull toward home — the expectation.
+    pub pointer: Chord,
+    /// What the pointer makes the ear expect.
+    pub expected: Chord,
+    /// The miss: the related substitute actually heard.
+    pub deflect: Chord,
+    /// The window the miss opens.
+    pub open: Chord,
+    /// Home, rounded.
+    pub reset: Chord,
+    /// Common-tone satellites of the Deflect, Open and Reset anchors: a longer slot alternates its
+    /// anchor with its satellite, so the gesture MOVES while keeping its function (a prolongation),
+    /// instead of sitting on one chord for four bars.
+    pub satellites: [Chord; 3],
+}
+
+impl HarmonicCell {
+    /// The four gesture anchor roots — the cell's audible signature.
+    pub fn signature(&self) -> [i32; 4] {
+        [
+            self.lift.root_pc,
+            self.deflect.root_pc,
+            self.open.root_pc,
+            self.reset.root_pc,
+        ]
+    }
+}
+
+/// The measured miss at one Deflect slot.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeflectWitness {
+    pub at_beat: f64,
+    /// The chord sounding just before the deflection (the pointer, when the Lift set one up).
+    pub pointer: Chord,
+    /// Whether that chord concretely pulled toward the expected arrival.
+    pub prepared: bool,
+    /// The arrival the pointer made the ear expect.
+    pub expected: Chord,
+    /// What was actually heard.
+    pub actual: Chord,
+    /// Common tones between expected and actual (an evasion keeps some).
+    pub common_tones: u8,
+    /// Root distance expected→actual in semitones (`0..=6`).
+    pub root_distance: i32,
+    /// Voice-leading distance pointer→actual (pitch-class motion).
+    pub voice_motion: i32,
+    /// Beats from the miss until the path is home again (the next Reset slot).
+    pub rejoin_beats: f64,
+}
+
+/// A realized backbone: the cell, the chord spans, and the witnessed misses.
+#[derive(Debug, Clone)]
+pub struct BackboneRealization {
+    pub cell: HarmonicCell,
+    pub spans: Vec<ChordSpan>,
+    pub deflects: Vec<DeflectWitness>,
+}
+
+fn has_major_third(c: &Chord) -> bool {
+    c.quality.intervals().contains(&4)
+}
+
+/// Recolour `base` for `gesture` at `depth` (0 plain, 1 warm, 2 deep); `alt` picks the second
+/// colour of a pair so a repeated chord inside a slot still moves.
+fn colour(base: Chord, gesture: HarmonicGesture, depth: u8, alt: bool, s7: bool) -> Chord {
+    let major = has_major_third(&base);
+    let minor = base.quality.intervals().contains(&3) && !major;
+    let dim = base.quality.intervals().contains(&6);
+    let q = match gesture {
+        HarmonicGesture::Lift | HarmonicGesture::Deflect => {
+            if dim {
+                Quality::Min7b5
+            } else if depth == 0 && !s7 {
+                base.quality
+            } else if depth >= 2 && alt {
+                if major {
+                    Quality::Maj9
+                } else {
+                    Quality::Min9
+                }
+            } else if major {
+                Quality::Maj7
+            } else if minor {
+                Quality::Min7
+            } else {
+                base.quality
+            }
+        }
+        HarmonicGesture::Open => match (depth, alt, major) {
+            (0, _, true) => Quality::Maj,
+            (0, _, false) => Quality::Min,
+            (1, _, true) | (_, false, true) => Quality::Add9,
+            (1, _, false) | (_, false, false) => Quality::Min9,
+            (_, true, true) => Quality::Maj9,
+            (_, true, false) => Quality::Min7,
+        },
+        HarmonicGesture::Reset => match (depth, alt, major) {
+            (0, _, true) => Quality::Maj,
+            (0, _, false) => Quality::Min,
+            (1, _, true) | (_, false, true) => Quality::Maj6,
+            (1, _, false) | (_, false, false) => Quality::Min6,
+            (_, true, true) => Quality::Maj7,
+            (_, true, false) => Quality::Min9,
+        },
+    };
+    if dim {
+        Chord::new(
+            base.root_pc,
+            if s7 { Quality::Min7b5 } else { Quality::Dim },
+        )
+    } else {
+        Chord::new(base.root_pc, q)
+    }
+}
+
+/// Search the world-specific cell: bounded, deterministic, the RNG only breaking exact ties.
+pub fn generate_cell(world: &MusicWorld, seed: u64) -> HarmonicCell {
+    let region = Scale::new(world.tonic_pc, world.mode);
+    let tonic = region.tonic_pc;
+    let mut rng = Rng::new(seed ^ 0xBACC_B0E1);
+    let triad = |d: i32| diatonic_chord(&region, d, false);
+
+    // The pointer: the cadential dominant with CONCRETE pull toward home. In a mode whose diatonic
+    // degree-4 chord has no leading tone, borrow the raised third — the expectation must be real.
+    // A dominant seventh on degree 4 is the diatonic V7 in Ionian and the borrowed harmonic-minor
+    // V7 elsewhere; either way it carries the leading tone and the resolving tritone.
+    let pointer = Chord::new(triad(4).root_pc, Quality::Dom7);
+    debug_assert!(PullEvidence::of(&pointer, tonic).is_dominant());
+    let expected = expected_chord(expected_target(&pointer, &region).unwrap_or(tonic), &region);
+
+    // Pick the minimum-cost candidate, collecting exact ties for the seeded tie-break.
+    fn argmin(cands: &[(Chord, f32)], rng: &mut Rng) -> Chord {
+        let best = cands.iter().map(|c| c.1).fold(f32::INFINITY, f32::min);
+        let ties: Vec<Chord> = cands
+            .iter()
+            .filter(|c| (c.1 - best).abs() <= 1e-6)
+            .map(|c| c.0)
+            .collect();
+        *rng.pick(&ties).unwrap_or(&cands[0].0)
+    }
+
+    // Lift: reach away from home toward the pointer — prefer the chord a fifth above the pointer
+    // (a preparation, the ii of a ii–V) or a step below it; never home, never the pointer itself.
+    let lift_cands: Vec<(Chord, f32)> = (1..7)
+        .map(&triad)
+        .filter(|c| c.root_pc != tonic && c.root_pc != pointer.root_pc)
+        .map(|c| {
+            let prepares = c.root_pc == (pointer.root_pc + 7).rem_euclid(12);
+            let mut cost = 0.18 * pc_motion(&c, &pointer) as f32;
+            if prepares {
+                cost -= 0.8;
+            }
+            cost += 0.6 * PullEvidence::of(&c, tonic).strength();
+            (c, cost)
+        })
+        .collect();
+    let lift = argmin(&lift_cands, &mut rng);
+
+    // Deflect: land somewhere other than the expected arrival, keeping common tones with it (an
+    // evasion), approached smoothly from the pointer, ideally with the bass stepping up (the
+    // deceptive geometry: the leading tone resolves while the root refuses home).
+    let mut defl_cands: Vec<Chord> = (1..7).map(&triad).collect();
+    let bvi = Chord::new((tonic + 8).rem_euclid(12), Quality::Maj);
+    if !defl_cands.contains(&bvi) {
+        defl_cands.push(bvi);
+    }
+    let defl_scored: Vec<(Chord, f32)> = defl_cands
+        .into_iter()
+        .filter(|c| c.root_pc != expected.root_pc && c.root_pc != pointer.root_pc)
+        .map(|c| {
+            let common = common_tones(&c, &expected) as f32;
+            let mut cost = -common + 0.15 * pc_motion(&pointer, &c) as f32;
+            if common == 0.0 {
+                cost += 3.0; // a non-sequitur, not a miss
+            }
+            let step = (c.root_pc - pointer.root_pc).rem_euclid(12);
+            if step == 1 || step == 2 {
+                cost -= 0.6;
+            }
+            if c.root_pc == lift.root_pc {
+                cost += 0.5;
+            }
+            (c, cost)
+        })
+        .collect();
+    let deflect = argmin(&defl_scored, &mut rng);
+
+    // Open: the window the miss opens — connected to the deflection, released (no pull home), a
+    // plagal/relative step away from it, bright where possible.
+    let open_scored: Vec<(Chord, f32)> = (1..7)
+        .map(&triad)
+        .filter(|c| {
+            c.root_pc != tonic
+                && c.root_pc != deflect.root_pc
+                && c.root_pc != lift.root_pc
+                && c.root_pc != pointer.root_pc
+        })
+        .map(|c| {
+            let mut cost = -0.6 * common_tones(&c, &deflect) as f32
+                + 0.8 * PullEvidence::of(&c, tonic).strength();
+            let step = (c.root_pc - deflect.root_pc).rem_euclid(12);
+            if step == 5 || step == 7 {
+                cost -= 0.4;
+            }
+            if has_major_third(&c) {
+                cost -= 0.3;
+            }
+            (c, cost)
+        })
+        .collect();
+    let open = if open_scored.is_empty() {
+        triad(3)
+    } else {
+        argmin(&open_scored, &mut rng)
+    };
+
+    // The second reach must not pre-empt a later gesture: never the deflection or the opening.
+    let lift_alt = {
+        let rest: Vec<(Chord, f32)> = lift_cands
+            .iter()
+            .copied()
+            .filter(|c| {
+                c.0.root_pc != lift.root_pc
+                    && c.0.root_pc != deflect.root_pc
+                    && c.0.root_pc != open.root_pc
+            })
+            .collect();
+        if rest.is_empty() {
+            lift
+        } else {
+            argmin(&rest, &mut rng)
+        }
+    };
+    let reset = triad(0);
+    let anchors = [lift, lift_alt, pointer, deflect, open, reset];
+    // A satellite shares two tones with its anchor and is not another gesture's anchor (so it
+    // prolongs rather than pre-empting the next gesture); home's satellite is its plagal neighbour.
+    let satellite = |anchor: Chord| -> Chord {
+        // Two common tones and no real pull home; if no such neighbour is free, the satellite is the
+        // anchor itself — the slot then moves by colour over a held root (a pedal), never by
+        // borrowing a chord that points home inside a release.
+        (1..7)
+            .map(&triad)
+            .filter(|c| {
+                c.root_pc != anchor.root_pc
+                    && !anchors.contains(c)
+                    && c.root_pc != tonic
+                    && common_tones(c, &anchor) >= 2
+                    && PullEvidence::of(c, tonic).strength() < 0.35
+            })
+            .min_by_key(|c| pc_motion(&anchor, c))
+            .unwrap_or(anchor)
+    };
+    let plagal = triad(3);
+    HarmonicCell {
+        lift,
+        lift_alt,
+        pointer,
+        expected,
+        deflect,
+        open,
+        reset,
+        satellites: [satellite(deflect), satellite(open), plagal],
+    }
+}
+
+/// The chord path of one slot: `(beats offset, beats length, chord)`.
+fn slot_path(
+    slot: &GestureSlot,
+    cell: &HarmonicCell,
+    lang: &MusicalLanguage,
+    s7: bool,
+) -> Vec<(f64, f64, Chord)> {
+    let total = slot.bars as f64 * BEATS_PER_BAR;
+    let hr = lang.harmonic_rhythm_bars.max(1) as f64 * BEATS_PER_BAR;
+    // Deeper colour on transformed/compressed returns; the thesis and statement keep the base.
+    let depth = match slot.variation {
+        CycleVariation::Thesis | CycleVariation::Statement => lang.color_depth.min(1),
+        _ => lang.color_depth,
+    };
+    let n = ((total / hr).floor() as usize).max(1);
+    let unit = total / n as f64;
+    let mut out: Vec<(f64, f64, Chord)> = Vec::new();
+    match slot.gesture {
+        HarmonicGesture::Lift => {
+            // Reach, (sequence), then the POINTER — always last, so the ear expects an arrival.
+            let pointer = cell.pointer;
+            let lift = colour(cell.lift, HarmonicGesture::Lift, depth, false, s7);
+            if n == 1 {
+                let half = total / 2.0;
+                out.push((0.0, half, lift));
+                out.push((half, total - half, pointer));
+            } else {
+                for i in 0..n - 1 {
+                    let c = if i % 2 == 1 {
+                        colour(cell.lift_alt, HarmonicGesture::Lift, depth, true, s7)
+                    } else {
+                        colour(cell.lift, HarmonicGesture::Lift, depth, i > 0, s7)
+                    };
+                    out.push((i as f64 * unit, unit, c));
+                }
+                out.push((
+                    (n - 1) as f64 * unit,
+                    total - (n - 1) as f64 * unit,
+                    pointer,
+                ));
+            }
+        }
+        g => {
+            let (base, sat) = match g {
+                HarmonicGesture::Deflect => (cell.deflect, cell.satellites[0]),
+                HarmonicGesture::Open => (cell.open, cell.satellites[1]),
+                _ => (cell.reset, cell.satellites[2]),
+            };
+            for i in 0..n {
+                // Anchor on the slot's downbeat and every other unit; the satellite between. A Reset
+                // of three or more units closes on its anchor, so the cycle ends at home.
+                let closes_home = g == HarmonicGesture::Reset && n >= 3 && i + 1 == n;
+                let use_sat = i % 2 == 1 && !closes_home;
+                let c = if use_sat && sat == base {
+                    // No free neighbour: move by colour over the held root (a pedal).
+                    colour(base, g, (depth + 1).min(2), true, s7)
+                } else if use_sat {
+                    colour(sat, g, depth, false, s7)
+                } else {
+                    colour(base, g, depth, i >= 2, s7)
+                };
+                let len = if i + 1 == n {
+                    total - i as f64 * unit
+                } else {
+                    unit
+                };
+                out.push((i as f64 * unit, len, c));
+            }
+        }
+    }
+    out
+}
+
+/// Realize the world-independent `timeline` as harmony for `world` under `lang`.
+pub fn realize(
+    timeline: &BackboneTimeline,
+    world: &MusicWorld,
+    lang: &MusicalLanguage,
+    seed: u64,
+) -> BackboneRealization {
+    let region = Scale::new(world.tonic_pc, world.mode);
+    let cell = generate_cell(world, seed);
+    let s7 = world.use_sevenths;
+    let mut spans: Vec<ChordSpan> = Vec::new();
+    for slot in &timeline.slots {
+        for (off, len, chord) in slot_path(slot, &cell, lang, s7) {
+            let degree = (0..7)
+                .find(|&d| region.degree_pitch(d, 4).rem_euclid(12) == chord.root_pc)
+                .unwrap_or(-1);
+            spans.push(ChordSpan {
+                start_beat: slot.start_beat() + off,
+                dur_beats: len as f32,
+                chord,
+                function: contextual_function(&chord, &region),
+                degree,
+                note: slot.gesture.label(),
+            });
+        }
+    }
+
+    let mut deflects = Vec::new();
+    for (si, slot) in timeline.slots.iter().enumerate() {
+        if slot.gesture != HarmonicGesture::Deflect {
+            continue;
+        }
+        let at = slot.start_beat();
+        let Some(ix) = spans.iter().position(|s| (s.start_beat - at).abs() < 1e-6) else {
+            continue;
+        };
+        let actual = spans[ix].chord;
+        let pointer = ix
+            .checked_sub(1)
+            .map(|j| spans[j].chord)
+            .unwrap_or(cell.reset);
+        let target = expected_target(&pointer, &region);
+        let expected = expected_chord(target.unwrap_or(region.tonic_pc), &region);
+        let raw = (actual.root_pc - expected.root_pc).rem_euclid(12);
+        let rejoin = timeline.slots[si..]
+            .iter()
+            .find(|s| s.gesture == HarmonicGesture::Reset)
+            .map(|s| s.start_beat() - at)
+            .unwrap_or(timeline.total_bars as f64 * BEATS_PER_BAR - at);
+        deflects.push(DeflectWitness {
+            at_beat: at,
+            pointer,
+            prepared: target.is_some(),
+            expected,
+            actual,
+            common_tones: common_tones(&actual, &expected),
+            root_distance: raw.min(12 - raw),
+            voice_motion: pc_motion(&pointer, &actual),
+            rejoin_beats: rejoin,
+        });
+    }
+    BackboneRealization {
+        cell,
+        spans,
+        deflects,
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::semantic::{calm_loop, deflected_lift_trace};
     use super::*;
 
-    #[test]
-    fn the_cell_is_deterministic_for_a_seed_and_world() {
-        let a = generate_deflected_lift_cell(&MusicWorld::black_ice(), 2112);
-        let b = generate_deflected_lift_cell(&MusicWorld::black_ice(), 2112);
-        assert_eq!(a.signature(), b.signature());
+    fn flagship() -> BackboneTimeline {
+        let trace = deflected_lift_trace(120.0);
+        let tl = IntentTimeline::walk(&trace);
+        // The flagship form's phrase starts (verified against the plan in the plan tests).
+        BackboneTimeline::build(&tl, 30, &[0, 4, 8, 12, 16, 20, 22, 24, 28], 4, 4)
     }
 
     #[test]
-    fn the_cell_reaches_up_and_settles_home_in_order() {
-        // Gestures are in canonical order, and the contour is honored: the Lift reaches for more
-        // tension than the Reset settles to, and the Open window is calmer than the Lift.
+    fn morphism_effects_bind_to_gestures() {
+        use IntentMorphism::*;
+        assert_eq!(
+            gesture_for_morphisms(&[Intensify, FragmentMotif]),
+            Some(HarmonicGesture::Lift)
+        );
+        assert_eq!(
+            gesture_for_morphisms(&[Suspend, ThickenTexture]),
+            Some(HarmonicGesture::Deflect)
+        );
+        assert_eq!(
+            gesture_for_morphisms(&[Resolve, Cadence]),
+            Some(HarmonicGesture::Open)
+        );
+        assert_eq!(
+            gesture_for_morphisms(&[Relax, Cadence]),
+            Some(HarmonicGesture::Reset)
+        );
+        assert_eq!(gesture_for_morphisms(&[Reharmonize]), None);
+    }
+
+    #[test]
+    fn the_two_clocks_are_one_clock() {
+        // Every semantic phase IS its backbone gesture: the gesture active at each bound event's
+        // (snapped) bar is exactly the gesture that event binds to. Round VI failed this — its
+        // bar-25 Confirmation (a release) sounded over a harmonic deflect.
+        let tl = flagship();
+        assert_eq!(tl.scales.binding, ClockBinding::SemanticPhase);
+        for b in &tl.bindings {
+            if b.bar == 0 {
+                continue; // the opening binds the thesis (home, stated as the cell in miniature)
+            }
+            let g = tl.slot_at_bar(b.bar).unwrap().gesture;
+            assert_eq!(
+                g, b.gesture,
+                "{:?} at bar {} bound to {:?} but the spine says {:?}",
+                b.event, b.bar, b.gesture, g
+            );
+        }
+        let release = tl
+            .bindings
+            .iter()
+            .rfind(|b| b.event == EventKind::Confirmation)
+            .unwrap();
+        assert_eq!(
+            tl.slot_at_bar(release.bar).unwrap().gesture,
+            HarmonicGesture::Open
+        );
+    }
+
+    #[test]
+    fn slots_tile_the_piece_and_the_thesis_states_the_cell() {
+        let tl = flagship();
+        let mut bar = 0;
+        for s in &tl.slots {
+            assert_eq!(s.start_bar, bar, "gap/overlap at bar {bar}");
+            assert!(s.bars >= 1);
+            bar = s.end_bar();
+        }
+        assert_eq!(bar, 30);
+        let thesis: Vec<HarmonicGesture> = tl
+            .slots
+            .iter()
+            .filter(|s| s.variation == CycleVariation::Thesis)
+            .map(|s| s.gesture)
+            .collect();
+        assert_eq!(thesis, HarmonicGesture::CELL.to_vec());
+        // Two story cycles after the thesis; the second is compressed (more urgent).
+        assert_eq!(tl.cycles(), 3);
+        assert!(tl
+            .slots
+            .iter()
+            .any(|s| s.cycle == 2 && s.variation == CycleVariation::Compressed));
+    }
+
+    #[test]
+    fn a_trace_without_gesture_events_declares_a_fixed_tiling() {
+        let tl = IntentTimeline::walk(&calm_loop(96.0));
+        let bt = BackboneTimeline::build(&tl, 24, &[0, 4, 8, 12, 16, 20], 4, 4);
+        if let ClockBinding::FixedTiling { bars_per_gesture } = bt.scales.binding {
+            assert_eq!(bars_per_gesture, 1);
+        }
+        // Either way the slots tile the piece.
+        assert_eq!(bt.slots.iter().map(|s| s.bars).sum::<u32>(), 24);
+    }
+
+    #[test]
+    fn every_deflect_is_a_prepared_miss() {
+        // The pointer concretely pulls toward the expected arrival; the actual arrival is not it but
+        // keeps common tones with it — in every world, at every Deflect slot.
+        let tl = flagship();
         for world in MusicWorld::all() {
-            let cell = generate_deflected_lift_cell(&world, 2112);
-            let g: Vec<HarmonicGesture> = cell.slots.iter().map(|s| s.gesture).collect();
-            assert_eq!(g, HarmonicGesture::CELL.to_vec(), "{}", world.name);
-            let sc = Scale::new(world.tonic_pc, world.mode);
-            let ten = |i: usize| degree_tension(&sc, cell.slots[i].degree);
-            assert!(
-                ten(0) > ten(3),
-                "{}: lift not tenser than reset",
-                world.name
-            );
-            assert!(ten(2) < ten(0), "{}: open not calmer than lift", world.name);
-            // Reset is home; the interior gestures are not.
-            assert_eq!(cell.slots[3].degree.rem_euclid(7), 0, "{}", world.name);
-            assert!(
-                cell.slots[..3].iter().all(|s| s.degree.rem_euclid(7) != 0),
-                "{}: an interior slot collapsed to home",
-                world.name
-            );
+            let r = realize(&tl, &world, &MusicalLanguage::default(), 2112);
+            assert!(r.deflects.len() >= 3, "{}: too few misses", world.name);
+            for w in &r.deflects {
+                assert!(
+                    w.prepared,
+                    "{}: unprepared miss at {}",
+                    world.name, w.at_beat
+                );
+                assert_ne!(w.actual.root_pc, w.expected.root_pc, "{}", world.name);
+                assert!(w.common_tones >= 1, "{}: a non-sequitur", world.name);
+                assert!(w.rejoin_beats > 0.0);
+            }
         }
     }
 
     #[test]
-    fn the_cell_is_not_a_single_repeated_chord() {
+    fn the_open_follows_from_the_miss_and_reset_is_home() {
         for world in MusicWorld::all() {
-            let sig = generate_deflected_lift_cell(&world, 2112).signature();
-            let distinct: std::collections::BTreeSet<i32> = sig.iter().copied().collect();
+            let c = generate_cell(&world, 2112);
             assert!(
-                distinct.len() >= 3,
-                "{}: cell is nearly one chord ({sig:?})",
+                common_tones(&c.open, &c.deflect) >= 1,
+                "{}: open unrelated to the deflection",
                 world.name
             );
+            assert_eq!(c.reset.root_pc, world.tonic_pc.rem_euclid(12));
+            let distinct: std::collections::BTreeSet<i32> = c.signature().into_iter().collect();
+            assert_eq!(distinct.len(), 4, "{}: {:?}", world.name, c.signature());
         }
     }
 
     #[test]
-    fn the_open_and_reset_windows_use_extended_color() {
-        // The whole point of finding the dead Quality vocabulary: Open opens a 9th, Reset a 6th.
-        let cell = generate_deflected_lift_cell(&MusicWorld::swiss_signal(), 2112);
-        let open = cell.slots[2].chord.quality;
-        let reset = cell.slots[3].chord.quality;
-        assert!(
-            matches!(open, Quality::Add9 | Quality::Min9),
-            "open is not a colored window: {open:?}"
-        );
-        assert!(
-            matches!(reset, Quality::Maj6 | Quality::Min6),
-            "reset is not a soft 6: {reset:?}"
-        );
+    fn realization_is_deterministic_and_world_specific() {
+        let tl = flagship();
+        let lang = MusicalLanguage::default();
+        let a = realize(&tl, &MusicWorld::black_ice(), &lang, 7);
+        let b = realize(&tl, &MusicWorld::black_ice(), &lang, 7);
+        assert_eq!(a.cell, b.cell);
+        assert_eq!(a.spans.len(), b.spans.len());
+        let v = realize(&tl, &MusicWorld::vapor95(), &lang, 7);
+        assert_ne!(a.cell.signature(), v.cell.signature());
+        // The spans cover the piece and carry the gesture of their slot.
+        let end = a
+            .spans
+            .last()
+            .map(|s| s.start_beat + s.dur_beats as f64)
+            .unwrap();
+        assert!((end - 120.0).abs() < 1e-6);
+        for s in &a.spans {
+            assert_eq!(s.note, tl.gesture_at_beat(s.start_beat).unwrap().label());
+        }
     }
 
     #[test]
-    fn the_cell_recurs_exactly_on_even_cycles_and_transforms_on_odd() {
-        let cell = generate_deflected_lift_cell(&MusicWorld::black_ice(), 2112);
-        let bb = BackbonePlan {
-            cell,
-            recurrence_bars: 4,
-        };
-        // Bar 0 (Lift, cycle 0) recurs exactly at bar 8 (Lift, cycle 2).
-        assert_eq!(bb.chord_at_bar(0).0, bb.chord_at_bar(8).0);
-        // The Reset at bar 3 (cycle 0) and bar 7 (cycle 1) share a root but differ in color.
-        let (r0, _, g0, _) = bb.chord_at_bar(3);
-        let (r1, _, g1, _) = bb.chord_at_bar(7);
-        assert_eq!(g0, HarmonicGesture::Reset);
-        assert_eq!(g1, HarmonicGesture::Reset);
-        assert_eq!(r0.root_pc, r1.root_pc);
-        assert_ne!(
-            r0.quality, r1.quality,
-            "odd cycle did not transform the reset"
+    fn the_simple_language_moves_slower_but_is_the_same_spine() {
+        let tl = flagship();
+        let f = realize(
+            &tl,
+            &MusicWorld::black_ice(),
+            &MusicalLanguage::fusion_conversation(),
+            1,
         );
+        let s = realize(&tl, &MusicWorld::black_ice(), &MusicalLanguage::simple(), 1);
+        assert!(s.spans.len() < f.spans.len());
+        assert_eq!(s.cell.signature(), f.cell.signature());
+        assert_eq!(s.deflects.len(), f.deflects.len());
     }
 
     fn permutations_of_four() -> Vec<[usize; 4]> {
         let mut out = Vec::new();
         for a in 0..4 {
             for b in 0..4 {
-                if b == a {
-                    continue;
-                }
                 for c in 0..4 {
-                    if c == a || c == b {
-                        continue;
-                    }
                     for d in 0..4 {
-                        if d != a && d != b && d != c {
-                            out.push([a, b, c, d]);
+                        let p = [a, b, c, d];
+                        let mut q = p;
+                        q.sort_unstable();
+                        if q == [0, 1, 2, 3] {
+                            out.push(p);
                         }
                     }
                 }
@@ -399,30 +1086,40 @@ mod tests {
 
     #[test]
     fn the_spine_order_beats_a_scrambled_gesture_assignment() {
-        // Broken-DeflectedLift adversarial: relabel the four gestures across the cell's slots. The
-        // composed order (each slot's degree chosen to fit its gesture's target tension) must fit no
-        // worse than the average scramble — the Lift/Deflect/Open/Reset order is load-bearing.
-        for world in MusicWorld::all() {
-            let cell = generate_deflected_lift_cell(&world, 2112);
-            let degs: [i32; 4] = std::array::from_fn(|i| cell.slots[i].degree);
-            let sc = Scale::new(world.tonic_pc, world.mode);
-            let fit = |perm: &[usize; 4]| -> f32 {
-                (0..4)
-                    .map(|i| {
-                        (degree_tension(&sc, degs[i])
-                            - HarmonicGesture::CELL[perm[i]].target_tension())
-                        .abs()
-                    })
-                    .sum()
-            };
-            let perms = permutations_of_four();
-            let identity = fit(&[0, 1, 2, 3]);
-            let mean: f32 = perms.iter().map(&fit).sum::<f32>() / perms.len() as f32;
-            assert!(
-                identity <= mean + 1e-6,
-                "{}: composed spine fit {identity} is worse than the scramble mean {mean}",
-                world.name
-            );
+        // Broken-DeflectedLift adversarial: relabel the gestures of every slot by a permutation and
+        // realize. The composed order makes every Deflect a prepared miss; a scramble mostly does
+        // not (the pointer no longer precedes the miss). The order is load-bearing.
+        let tl = flagship();
+        let world = MusicWorld::black_ice();
+        let lang = MusicalLanguage::default();
+        let prepared_misses = |t: &BackboneTimeline| {
+            realize(t, &world, &lang, 2112)
+                .deflects
+                .iter()
+                .filter(|w| w.prepared && w.actual.root_pc != w.expected.root_pc)
+                .count()
+        };
+        let identity = prepared_misses(&tl);
+        let perms: Vec<[usize; 4]> = permutations_of_four()
+            .into_iter()
+            .filter(|p| *p != [0, 1, 2, 3])
+            .collect();
+        let mut total = 0usize;
+        for p in &perms {
+            let mut t = tl.clone();
+            for s in &mut t.slots {
+                let i = HarmonicGesture::CELL
+                    .iter()
+                    .position(|g| *g == s.gesture)
+                    .unwrap();
+                s.gesture = HarmonicGesture::CELL[p[i]];
+            }
+            total += prepared_misses(&t);
         }
+        let mean = total as f32 / perms.len() as f32;
+        assert!(
+            identity as f32 > mean,
+            "composed spine ({identity} prepared misses) no better than scrambles ({mean})"
+        );
     }
 }

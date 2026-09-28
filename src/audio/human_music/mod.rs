@@ -25,6 +25,7 @@ pub mod groove;
 pub mod harmony;
 pub mod instrument;
 pub mod intent;
+pub mod language;
 pub mod motif;
 pub mod pitch;
 pub mod plan;

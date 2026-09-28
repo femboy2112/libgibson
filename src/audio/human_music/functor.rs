@@ -15,6 +15,7 @@ use super::form::{Section, SectionKind, BEATS_PER_BAR};
 use super::groove::GrooveEngine;
 use super::harmony::{ChordSpan, HarmonyEngine};
 use super::intent::{IntentMorphism, MusicIntent};
+use super::language::MusicalLanguage;
 use super::motif::{MotifBank, ThematicTrajectory};
 use super::plan::CompositionPlan;
 use super::score::{Note, PitchFunction, Provenance, Role, Score, SfxEvent, SfxKind};
@@ -79,17 +80,13 @@ fn realize(trace: &SemanticTrace, world: &MusicWorld, seed: u64, plan: &Composit
     let scale = Scale::new(world.tonic_pc, world.mode);
     let targets = plan.targets();
 
-    let mut harmony = HarmonyEngine::new(world, seed);
-    // Under DeflectedLift the harmony IS a recurring Lift->Deflect->Open->Reset cell (the audible
-    // spine); other grammars use the phrase-scope cadential engine (backbone = None).
-    let backbone = super::backbone::plan_for(
-        plan.contract.grammar,
-        world,
-        seed,
-        plan.contract.recurrence_bars,
-    );
-    let chords =
-        harmony.generate_with_backbone(&targets, plan.contract.resolution, backbone.as_ref());
+    // Under DeflectedLift the harmony IS the plan's world-independent backbone timeline, realized
+    // for this world (the audible Lift->Deflect->Open->Reset spine, bound to the story's phases);
+    // other grammars use the phrase-scope cadential engine.
+    let chords = match &plan.backbone {
+        Some(tl) => super::backbone::realize(tl, world, &MusicalLanguage::default(), seed).spans,
+        None => HarmonyEngine::new(world, seed).generate(&targets, plan.contract.resolution),
+    };
 
     let mut groove = GrooveEngine::new(world, seed);
     let gr = groove.generate(&targets);

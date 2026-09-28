@@ -14,7 +14,6 @@
 //! Diatonic chords are still derived from the scale (quality classified from the actual stacked
 //! scale thirds, so it is correct in any mode).
 
-use super::backbone::BackbonePlan;
 use super::context::{contextual_function, degree_tension, PullEvidence};
 use super::contract::ResolutionPolicy;
 use super::discourse::Closure;
@@ -131,24 +130,8 @@ impl HarmonyEngine {
         targets: &[super::plan::PhraseTarget],
         resolution: ResolutionPolicy,
     ) -> Vec<ChordSpan> {
-        self.generate_with_backbone(targets, resolution, None)
-    }
-
-    /// Like [`HarmonyEngine::generate`], but when a [`BackbonePlan`] is supplied the progression IS
-    /// that backbone: the frozen Lift → Deflect → Open → Reset cell, tiled bar-aligned across the
-    /// piece and transformed per cycle — a small cyclic harmonic identity the ear can learn. Without
-    /// a backbone this is the phrase-scope cadential engine, unchanged.
-    pub fn generate_with_backbone(
-        &mut self,
-        targets: &[super::plan::PhraseTarget],
-        resolution: ResolutionPolicy,
-        backbone: Option<&BackbonePlan>,
-    ) -> Vec<ChordSpan> {
         if targets.is_empty() {
             return Vec::new();
-        }
-        if let Some(bb) = backbone {
-            return generate_backbone_tiled(targets, bb);
         }
         let total_beats = targets.last().map(|t| t.end_beat()).unwrap_or(0.0);
         let functional = matches!(resolution, ResolutionPolicy::Functional);
@@ -404,35 +387,6 @@ pub(crate) fn diatonic_chord(scale: &Scale, degree: i32, use_seventh: bool) -> C
         root.rem_euclid(12),
         classify(third, fifth, seventh, use_seventh),
     )
-}
-
-/// Tile a [`BackbonePlan`]'s frozen cell bar-aligned across the targets' span — one chord per bar,
-/// each the cell's gesture chord for that bar (transformed per cycle). This makes the DeflectedLift
-/// harmony a recurring, learnable cyclic identity instead of per-slot degree roulette.
-fn generate_backbone_tiled(
-    targets: &[super::plan::PhraseTarget],
-    bb: &BackbonePlan,
-) -> Vec<ChordSpan> {
-    let total_beats = targets.last().map(|t| t.end_beat()).unwrap_or(0.0);
-    let n_bars = (total_beats / BEATS_PER_BAR).round() as u32;
-    let mut spans = Vec::with_capacity(n_bars as usize);
-    for bar in 0..n_bars {
-        let sb = bar as f64 * BEATS_PER_BAR;
-        let dur = (total_beats - sb).min(BEATS_PER_BAR) as f32;
-        if dur <= 1e-6 {
-            break;
-        }
-        let (chord, function, gesture, _cycle) = bb.chord_at_bar(bar);
-        spans.push(ChordSpan {
-            start_beat: sb,
-            dur_beats: dur,
-            chord,
-            function,
-            degree: bb.degree_at_bar(bar),
-            note: gesture.label(),
-        });
-    }
-    spans
 }
 
 /// The enriched cost of choosing `candidate_root` / `degree` after `prev_root` / `prev_degree`,

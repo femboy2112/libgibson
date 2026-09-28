@@ -605,7 +605,7 @@ impl SongBackbone {
 /// instead of building to one cinematic climax.
 ///
 /// This is deliberately ORTHOGONAL to the harmonic gesture cell (Lift → Deflect → Open → Reset),
-/// which lives in `backbone::BackbonePlan`: a role is *why* a phrase exists in the argument; a
+/// which lives in `backbone::BackboneTimeline`: a role is *why* a phrase exists in the argument; a
 /// gesture is *what the harmony does* under it. Round V conflated the two — encoding the harmonic
 /// contour with these roles, in a muddled order, which is why the spine was inaudible; Round VI
 /// keeps them separate.
