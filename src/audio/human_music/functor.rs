@@ -49,7 +49,8 @@ pub fn compose_with_plan(
     let plan = CompositionPlan::build(&timeline, form.total_bars);
 
     let mut harmony = HarmonyEngine::new(world, seed);
-    let chords = harmony.generate(&form);
+    // Harmony is planned at phrase scope: each phrase closes on a prepared cadence.
+    let chords = harmony.generate(&form, &plan.form.phrases);
 
     let mut groove = GrooveEngine::new(world, seed);
     // Fills land at the plan's phrase boundaries, not the old Form's section edges.

@@ -1,12 +1,20 @@
-//! The harmonic engine: generate a functional chord progression over a [`Form`],
-//! constrained by the world's vocabulary and steered by the form's tension curve.
+//! The harmonic engine: generate a functional chord progression over a [`Form`], planned at
+//! **phrase scope** and steered by the form's tension curve and the world's vocabulary.
 //!
-//! Diatonic chords are derived from the scale (quality classified from the actual stacked
-//! scale thirds, so it is correct in any mode). Function (tonic / pre-dominant / dominant)
-//! follows the tension target; phrase ends cadence to tonic. Richer worlds may colour a
-//! chord with a secondary dominant, modal mixture, or a chromatic mediant.
+//! Round I picked a function from a scalar tension, then rolled a degree, and a "cadence" just
+//! forced the final chord to tonic with no preparation — coherent only by coincidence. Round II
+//! plans each phrase as a unit: the phrase *ends* on a prepared cadence (…PD → D → T), the
+//! interior degrees are chosen to MINIMIZE an inspectable [`MorphismCost`] (voice-leading,
+//! tension error, repetition) rather than by dice, and a secondary dominant is a real
+//! obligation — if we emit a V/x, the next slot resolves to its target, no exceptions.
+//! Borrowed/mixture/mediant colors only *tint* an already-coherent interior slot; they never
+//! override a cadence, a cadence-prep, or a resolution.
+//!
+//! Diatonic chords are still derived from the scale (quality classified from the actual stacked
+//! scale thirds, so it is correct in any mode).
 
 use super::form::{Form, BEATS_PER_BAR};
+use super::intent::{CostWeights, MorphismCost};
 use super::rng::Rng;
 use super::theory::{Chord, Function, Quality, Scale};
 use super::world::MusicWorld;
@@ -20,7 +28,7 @@ pub struct ChordSpan {
     pub function: Function,
     /// The scale degree (0-based) the chord is built on, or -1 for a borrowed/applied chord.
     pub degree: i32,
-    /// A short provenance note (e.g. "V/ii", "bVI mix").
+    /// A short provenance note (e.g. "V/of", "res", "bVI mix").
     pub note: &'static str,
 }
 
@@ -65,94 +73,261 @@ impl HarmonyEngine {
         Chord::new(root.rem_euclid(12), quality)
     }
 
-    /// Generate the full progression over `form`.
-    pub fn generate(&mut self, form: &Form) -> Vec<ChordSpan> {
+    /// Generate the full progression over `form`, planned phrase by phrase.
+    ///
+    /// `phrases` tile `[0, form.total_bars]` contiguously. If they are empty, the whole piece
+    /// is treated as one phrase (the fallback). Each phrase is filled with contiguous chord
+    /// slots and closed with a prepared cadence; the concatenation covers `[0, total_beats)`.
+    pub fn generate(
+        &mut self,
+        form: &super::form::Form,
+        phrases: &[super::plan::Phrase],
+    ) -> Vec<ChordSpan> {
         let total_beats = form.total_bars as f64 * BEATS_PER_BAR;
+
+        // Beat ranges to fill, one per phrase. No phrases -> the whole piece is one phrase.
+        let ranges: Vec<(f64, f64)> = if phrases.is_empty() {
+            vec![(0.0, total_beats)]
+        } else {
+            phrases
+                .iter()
+                .map(|p| (p.start_beat(), p.end_beat().min(total_beats)))
+                .collect()
+        };
+
         let mut spans = Vec::new();
-        let mut beat = 0.0f64;
+        // Voice-leading memory threads across phrase boundaries — the line is continuous even
+        // where the structure isn't. The opening reference is the tonic.
+        let mut prev_root: i32 = self.scale.tonic_pc;
         let mut prev_degree: i32 = 0;
 
-        while beat < total_beats - 1e-6 {
-            let bar_f = beat / BEATS_PER_BAR;
-            let tension = form.tension_at(bar_f);
-            let density = form.density_at(bar_f);
-            // Never let the last chord spill past the end of the piece.
-            let dur = chord_dur(density).min((total_beats - beat) as f32);
-
-            // Is this the last chord of a section? -> cadence to tonic.
-            let sec = form.section_at_bar(bar_f as u32);
-            let sec_end_beat = sec.end_bar() as f64 * BEATS_PER_BAR;
-            let cadence = beat + dur as f64 >= sec_end_beat - 1e-6;
-
-            let (degree, function) = if cadence {
-                (0, Function::Tonic)
-            } else {
-                let func = function_for_tension(tension);
-                (self.pick_degree(func, prev_degree), func)
-            };
-
-            let seventh =
-                self.world_use_sevenths && (tension > 0.4 || function == Function::Dominant);
-            let mut chord = self.diatonic_chord(degree, seventh);
-            let mut note = "";
-
-            // Embellishments (world-gated), never at a cadence.
-            if !cadence {
-                if self.allow_secondary && function == Function::Dominant && self.rng.chance(0.25) {
-                    // Secondary dominant of the next tonic-ish target (V/target).
-                    let target = self.pick_degree(Function::Tonic, degree);
-                    let target_root = self.scale.degree_pitch(target, 4);
-                    let dom_root = (target_root + 7).rem_euclid(12);
-                    chord = Chord::new(dom_root, Quality::Dom7);
-                    note = "V/of";
-                } else if self.allow_mixture && tension > 0.6 && self.rng.chance(0.2) {
-                    // Borrowed bVI (modal mixture) for a dark lift.
-                    let bvi = (self.scale.tonic_pc + 8).rem_euclid(12);
-                    chord = Chord::new(
-                        bvi,
-                        if self.world_use_sevenths {
-                            Quality::Maj7
-                        } else {
-                            Quality::Maj
-                        },
-                    );
-                    note = "bVI mix";
-                } else if self.allow_chromatic_mediant && self.rng.chance(0.12) {
-                    // Chromatic mediant: major third above tonic.
-                    let cm = (self.scale.tonic_pc + 4).rem_euclid(12);
-                    chord = Chord::new(cm, Quality::Maj);
-                    note = "chr med";
-                }
+        for (ps, pe) in ranges {
+            if pe <= ps + 1e-9 {
+                continue;
             }
+            let slots = self.carve_slots(form, ps, pe);
+            let n = slots.len();
+            // A V/x set here mandates the next interior slot resolve to `target` — an
+            // obligation, not a suggestion. Reset at each phrase: cadences don't inherit debts.
+            let mut pending_resolve: Option<i32> = None;
 
-            spans.push(ChordSpan {
-                start_beat: beat,
-                dur_beats: dur,
-                chord,
-                function,
-                degree: if note.is_empty() { degree } else { -1 },
-                note,
-            });
-            prev_degree = degree;
-            beat += dur as f64;
+            for (i, &(sb, dur)) in slots.iter().enumerate() {
+                let bar_f = sb / BEATS_PER_BAR;
+                let tension = form.tension_at(bar_f);
+
+                let is_last = i == n - 1;
+                let is_dom_prep = n >= 2 && i == n - 2;
+                let is_pd_prep = n >= 3 && i == n - 3;
+
+                let (chord, function, degree, note) = if is_last {
+                    // Prepared cadence, arrival: the phrase closes on a clean tonic triad.
+                    (self.diatonic_chord(0, false), Function::Tonic, 0, "")
+                } else if is_dom_prep {
+                    // Real preparation: the dominant that pulls into the tonic.
+                    let seventh = self.world_use_sevenths;
+                    (self.diatonic_chord(4, seventh), Function::Dominant, 4, "")
+                } else if is_pd_prep {
+                    // Pre-dominant (degree 3 or 1) — the cost vector picks which reads smoother.
+                    let d = self.choose_interior_degree(
+                        Function::Predominant,
+                        tension,
+                        prev_root,
+                        prev_degree,
+                    );
+                    let seventh = self.world_use_sevenths && tension > 0.4;
+                    (
+                        self.diatonic_chord(d, seventh),
+                        Function::Predominant,
+                        d,
+                        "",
+                    )
+                } else {
+                    // Interior slot. A pending resolution outranks everything else here.
+                    if let Some(target) = pending_resolve.take() {
+                        let func = function_of_degree(target);
+                        let seventh = self.world_use_sevenths
+                            && (tension > 0.4 || func == Function::Dominant);
+                        (self.diatonic_chord(target, seventh), func, target, "res")
+                    } else {
+                        let func = function_for_tension(tension);
+                        // Interior slots run 0..(n-3); how many are left including this one.
+                        let interior_len = n.saturating_sub(3);
+                        let remaining_interior = interior_len.saturating_sub(i);
+
+                        if self.allow_secondary
+                            && func == Function::Dominant
+                            && remaining_interior >= 2
+                            && self.rng.chance(0.5)
+                        {
+                            // A secondary dominant: Dom7 a perfect fifth above the target's
+                            // root. We take on the debt now; the next interior slot pays it.
+                            let target = self.pick_secondary_target(prev_degree);
+                            let target_root = self.scale.degree_pitch(target, 4).rem_euclid(12);
+                            let dom_root = (target_root + 7).rem_euclid(12);
+                            pending_resolve = Some(target);
+                            (
+                                Chord::new(dom_root, Quality::Dom7),
+                                Function::Dominant,
+                                -1,
+                                "V/of",
+                            )
+                        } else {
+                            // Cost-driven diatonic choice, then an optional color tint.
+                            let d =
+                                self.choose_interior_degree(func, tension, prev_root, prev_degree);
+                            let seventh = self.world_use_sevenths
+                                && (tension > 0.4 || func == Function::Dominant);
+                            let mut chord = self.diatonic_chord(d, seventh);
+                            let mut degree = d;
+                            let mut note = "";
+                            // Colors tint a coherent path; they never fabricate one. Guarded to
+                            // interior diatonic slots only — never a cadence, prep, or resolution.
+                            if self.allow_mixture && tension > 0.6 && self.rng.chance(0.2) {
+                                let bvi = (self.scale.tonic_pc + 8).rem_euclid(12);
+                                chord = Chord::new(
+                                    bvi,
+                                    if self.world_use_sevenths {
+                                        Quality::Maj7
+                                    } else {
+                                        Quality::Maj
+                                    },
+                                );
+                                degree = -1;
+                                note = "bVI mix";
+                            } else if self.allow_chromatic_mediant && self.rng.chance(0.12) {
+                                let cm = (self.scale.tonic_pc + 4).rem_euclid(12);
+                                chord = Chord::new(cm, Quality::Maj);
+                                degree = -1;
+                                note = "chr med";
+                            }
+                            (chord, func, degree, note)
+                        }
+                    }
+                };
+
+                spans.push(ChordSpan {
+                    start_beat: sb,
+                    dur_beats: dur,
+                    chord,
+                    function,
+                    degree,
+                    note,
+                });
+                prev_root = chord.root_pc;
+                prev_degree = degree;
+            }
         }
         spans
     }
 
-    fn pick_degree(&mut self, func: Function, prev: i32) -> i32 {
-        let choices: &[i32] = match func {
+    /// Carve `[ps, pe)` into contiguous slots, each sized by `chord_dur(density)` and clamped
+    /// so the last one lands exactly on `pe`. `chord_dur` is bounded below, so this terminates.
+    fn carve_slots(&self, form: &Form, ps: f64, pe: f64) -> Vec<(f64, f32)> {
+        let mut slots = Vec::new();
+        let mut beat = ps;
+        while beat < pe - 1e-6 {
+            let bar_f = beat / BEATS_PER_BAR;
+            let density = form.density_at(bar_f);
+            let dur = chord_dur(density).min((pe - beat) as f32);
+            slots.push((beat, dur));
+            beat += dur as f64;
+        }
+        slots
+    }
+
+    /// Choose an interior degree from `func`'s pool by minimizing the weighted [`MorphismCost`]
+    /// against the previous chord and the form's target tension. The cost vector drives the
+    /// choice; the RNG only splits an exact tie. This is the whole point of Round II harmony —
+    /// the progression is *optimized*, not rolled.
+    pub(crate) fn choose_interior_degree(
+        &mut self,
+        func: Function,
+        target_tension: f32,
+        prev_root: i32,
+        prev_degree: i32,
+    ) -> i32 {
+        let pool: &[i32] = match func {
             Function::Tonic => &[0, 5, 2],
             Function::Predominant => &[3, 1],
             Function::Dominant => &[4, 6],
         };
-        // Prefer not to repeat the previous degree.
-        let filtered: Vec<i32> = choices.iter().copied().filter(|&d| d != prev).collect();
-        let pool = if filtered.is_empty() {
-            choices
+        let w = CostWeights::default();
+        let mut best_score = f32::INFINITY;
+        let mut best: Vec<i32> = Vec::new();
+        for &d in pool {
+            let root = self.scale.degree_pitch(d, 4).rem_euclid(12);
+            let score = degree_cost(root, d, target_tension, prev_root, prev_degree).weighted(&w);
+            if score < best_score - 1e-6 {
+                best_score = score;
+                best.clear();
+                best.push(d);
+            } else if (score - best_score).abs() <= 1e-6 {
+                best.push(d);
+            }
+        }
+        if best.len() == 1 {
+            best[0]
+        } else {
+            *self.rng.pick(&best).unwrap_or(&0)
+        }
+    }
+
+    /// Pick a diatonic target for a secondary dominant, avoiding an immediate repeat of the
+    /// previous degree. The idiomatic targets: V (V/V), ii (V/ii), vi (V/vi).
+    fn pick_secondary_target(&mut self, prev: i32) -> i32 {
+        let pool = [4, 1, 5];
+        let filtered: Vec<i32> = pool.iter().copied().filter(|&d| d != prev).collect();
+        let chosen: &[i32] = if filtered.is_empty() {
+            &pool
         } else {
             &filtered
         };
-        *self.rng.pick(pool).unwrap_or(&0)
+        *self.rng.pick(chosen).unwrap_or(&4)
+    }
+}
+
+/// The rough functional heat of a scale degree — tonic-ish degrees are calm, the leading-tone
+/// dominant is hot. This is what `tension_error` in [`degree_cost`] measures against the form.
+pub(crate) fn degree_implied_tension(degree: i32) -> f32 {
+    match degree.rem_euclid(7) {
+        0 => 0.10, // I
+        5 => 0.25, // vi
+        2 => 0.30, // iii
+        3 => 0.45, // IV
+        1 => 0.50, // ii
+        4 => 0.80, // V
+        _ => 0.90, // vii°
+    }
+}
+
+/// The enriched cost of choosing `candidate_root` / `degree` after `prev_root` / `prev_degree`,
+/// aiming at `target_tension`. Three live dimensions: voice-leading (nearest semitone root
+/// motion), tension error (functional heat vs. the form's target), and repetition. An
+/// inspectable vector — exactly what `choose_interior_degree` minimizes.
+pub(crate) fn degree_cost(
+    candidate_root: i32,
+    degree: i32,
+    target_tension: f32,
+    prev_root: i32,
+    prev_degree: i32,
+) -> MorphismCost {
+    let raw = (candidate_root - prev_root).rem_euclid(12);
+    let motion = raw.min(12 - raw) as f32; // nearest semitone root motion, 0..=6
+    let implied = degree_implied_tension(degree);
+    MorphismCost {
+        voice_leading: motion,
+        tension_error: (implied - target_tension).abs(),
+        repetition: if degree == prev_degree { 1.0 } else { 0.0 },
+        ..MorphismCost::default()
+    }
+}
+
+/// The harmonic function a diatonic degree carries (used when resolving a secondary dominant).
+fn function_of_degree(degree: i32) -> Function {
+    match degree.rem_euclid(7) {
+        0 | 5 | 2 => Function::Tonic,
+        3 | 1 => Function::Predominant,
+        _ => Function::Dominant, // 4, 6
     }
 }
 
@@ -206,6 +381,8 @@ fn classify(third: i32, fifth: i32, seventh: i32, use_seventh: bool) -> Quality 
 
 #[cfg(test)]
 mod tests {
+    use super::super::plan::CompositionPlan;
+    use super::super::timeline::IntentTimeline;
     use super::*;
     use crate::audio::human_music::semantic::demo_trace;
 
@@ -233,11 +410,14 @@ mod tests {
 
     #[test]
     fn progression_covers_form_and_ends_on_tonic() {
-        let form = Form::from_trace(&demo_trace(120.0));
+        let trace = demo_trace(120.0);
+        let form = Form::from_trace(&trace);
+        let tl = IntentTimeline::walk(&trace);
+        let plan = CompositionPlan::build(&tl, form.total_bars);
         let mut h = HarmonyEngine::new(&MusicWorld::black_ice(), 42);
-        let prog = h.generate(&form);
+        let prog = h.generate(&form, &plan.form.phrases);
         assert!(!prog.is_empty());
-        // Contiguous in time.
+        // Contiguous in time (across phrase boundaries too).
         for w in prog.windows(2) {
             assert!((w[1].start_beat - (w[0].start_beat + w[0].dur_beats as f64)).abs() < 1e-3);
         }
@@ -249,15 +429,129 @@ mod tests {
 
     #[test]
     fn deterministic_progression_for_seed() {
-        let form = Form::from_trace(&demo_trace(120.0));
+        let trace = demo_trace(120.0);
+        let form = Form::from_trace(&trace);
+        let tl = IntentTimeline::walk(&trace);
+        let plan = CompositionPlan::build(&tl, form.total_bars);
         let mut a = HarmonyEngine::new(&MusicWorld::vapor95(), 7);
         let mut b = HarmonyEngine::new(&MusicWorld::vapor95(), 7);
-        let pa = a.generate(&form);
-        let pb = b.generate(&form);
+        let pa = a.generate(&form, &plan.form.phrases);
+        let pb = b.generate(&form, &plan.form.phrases);
         assert_eq!(pa.len(), pb.len());
         for (x, y) in pa.iter().zip(pb.iter()) {
             assert_eq!(x.chord, y.chord);
             assert_eq!(x.start_beat, y.start_beat);
         }
+    }
+
+    #[test]
+    fn each_phrase_prepares_its_cadence() {
+        // T1: every phrase that holds >=2 chord spans closes …D -> T (prepared cadence).
+        let trace = demo_trace(120.0);
+        let form = Form::from_trace(&trace);
+        let tl = IntentTimeline::walk(&trace);
+        let plan = CompositionPlan::build(&tl, form.total_bars);
+        let mut h = HarmonyEngine::new(&MusicWorld::black_ice(), 42);
+        let prog = h.generate(&form, &plan.form.phrases);
+
+        let mut checked = 0;
+        for p in &plan.form.phrases {
+            let in_phrase: Vec<&ChordSpan> = prog
+                .iter()
+                .filter(|s| {
+                    s.start_beat >= p.start_beat() - 1e-6 && s.start_beat < p.end_beat() - 1e-6
+                })
+                .collect();
+            if in_phrase.len() >= 2 {
+                let last = in_phrase.last().unwrap();
+                let prep = in_phrase[in_phrase.len() - 2];
+                assert_eq!(
+                    last.function,
+                    Function::Tonic,
+                    "phrase {} last not tonic",
+                    p.ix
+                );
+                assert_eq!(
+                    prep.function,
+                    Function::Dominant,
+                    "phrase {} cadence not prepared by a dominant",
+                    p.ix
+                );
+                checked += 1;
+            }
+        }
+        assert!(
+            checked > 0,
+            "no phrase had >=2 spans — test would be vacuous"
+        );
+    }
+
+    #[test]
+    fn secondary_dominants_resolve() {
+        use crate::audio::human_music::form::{Section, SectionKind};
+        // T2: a V/x is a real obligation — the next slot resolves to its target. To force one
+        // deterministically, run a long, hot, dense single "phrase" (the empty-phrases fallback)
+        // in a world that allows secondaries: many interior Dominant slots with room, so a V/x
+        // appears within a short seed sweep. target_root = (dom_root - 7) mod 12.
+        let form = Form {
+            sections: vec![Section {
+                kind: SectionKind::A,
+                start_bar: 0,
+                bars: 16,
+                energy: 0.9,
+                tension: 0.9,
+                density: 0.9,
+            }],
+            total_bars: 16,
+        };
+        let mut found = false;
+        for seed in 0..64u64 {
+            let mut h = HarmonyEngine::new(&MusicWorld::black_ice(), seed);
+            let prog = h.generate(&form, &[]); // empty -> whole-piece fallback
+            for w in prog.windows(2) {
+                if w[0].note.starts_with("V/") {
+                    found = true;
+                    let dom_root = w[0].chord.root_pc;
+                    let target_root = (dom_root - 7).rem_euclid(12);
+                    assert_eq!(
+                        w[1].chord.root_pc, target_root,
+                        "secondary dominant at seed {seed} does not resolve to its target"
+                    );
+                }
+            }
+        }
+        assert!(
+            found,
+            "no secondary dominant produced across the seed sweep — test vacuous"
+        );
+    }
+
+    #[test]
+    fn interior_degree_minimizes_the_cost_vector() {
+        // T3: the scorer must rank a smoother root motion cheaper than a jumpier one, and
+        // generate's interior selector must actually return the argmin of that vector.
+        let w = CostWeights::default();
+        let smooth = degree_cost(7, 4, 0.8, 5, 3); // root motion 2
+        let jumpy = degree_cost(11, 6, 0.8, 5, 3); // root motion 6
+        assert!(
+            smooth.weighted(&w) < jumpy.weighted(&w),
+            "smoother candidate did not score cheaper"
+        );
+
+        // The live selector returns the hand-computed argmin (no tie here, so RNG is inert).
+        let mut h = HarmonyEngine::new(&MusicWorld::black_ice(), 3);
+        let (func, target_tension, prev_root, prev_degree) = (Function::Dominant, 0.8, 7, 0);
+        let mut expect = 4;
+        let mut best = f32::INFINITY;
+        for d in [4, 6] {
+            let root = h.scale().degree_pitch(d, 4).rem_euclid(12);
+            let s = degree_cost(root, d, target_tension, prev_root, prev_degree).weighted(&w);
+            if s < best {
+                best = s;
+                expect = d;
+            }
+        }
+        let got = h.choose_interior_degree(func, target_tension, prev_root, prev_degree);
+        assert_eq!(got, expect, "interior selection did not pick the argmin");
     }
 }
