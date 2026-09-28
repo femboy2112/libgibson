@@ -62,11 +62,11 @@ pub fn compose_with_plan(
     score.chords = chords.clone();
     score.drums = gr.hits;
 
-    // --- Comp (pad sustains + keys stabs) via voice leading. ---
-    add_comp(&mut score, &chords, world, seed);
+    // --- Comp: sustained pad bed + sparse groove-locked keys arpeggio. ---
+    add_comp(&mut score, &chords, world);
 
-    // --- Bass locked to the kick and the harmony. ---
-    add_bass(&mut score, &chords, &gr.kick_beats, &form, seed);
+    // --- Bass: persistent kick-locked figure. ---
+    add_bass(&mut score, &chords, &gr.kick_beats, &form);
 
     // --- Melody: one developing motif threaded through the plan's phrases. ---
     add_melody(&mut score, &chords, &plan, &scale, seed);
@@ -138,19 +138,22 @@ fn pitch_near(pc: i32, center: Midi) -> Midi {
         .unwrap()
 }
 
-fn add_comp(score: &mut Score, chords: &[ChordSpan], world: &MusicWorld, seed: u64) {
+/// Comp = a sustained harmonic bed (pad) plus a SPARSE, groove-locked rhythmic arpeggio
+/// (keys). Round I stabbed the keys on *every* beat and flipped a coin for single-vs-chord,
+/// so keys alone were ~300 events fighting everything else. Here the pad holds the chord and
+/// the keys play single voices on the offbeats ("and of 1", "and of 3") — an interlocking
+/// pattern derived from the bar grid, deterministic, roughly two hits a bar. The arrangement
+/// pass gates and dynamically scales all of it afterward.
+fn add_comp(score: &mut Score, chords: &[ChordSpan], world: &MusicWorld) {
     let mut pad_vl = VoiceLeader::new(52, 79, world.voicing_spread);
     let mut keys_vl = VoiceLeader::new(58, 84, world.voicing_spread);
-    let mut rng = Rng::new(seed ^ 0xC0AB_11ED);
-    let keys_stab_vapor = matches!(world.id, super::world::WorldId::Vapor95);
 
     for span in chords {
-        let sec_kind = SectionKind::A; // refined by provenance pass; comp is structural
         let prov = Provenance {
             role_note: "comp",
-            ..Provenance::new(sec_kind)
+            ..Provenance::new(SectionKind::A)
         };
-        // Pad: hold the whole voicing for the chord's duration.
+        // Pad: hold the whole voicing for the chord's duration (the harmonic bed).
         let pad = pad_vl.lead(&span.chord, 4, 67);
         for &p in &pad.voices {
             score.notes.push(Note {
@@ -162,51 +165,45 @@ fn add_comp(score: &mut Score, chords: &[ChordSpan], world: &MusicWorld, seed: u
                 prov,
             });
         }
-        // Keys: rhythmic stabs/arpeggio across the chord span.
+        // Keys: single-voice offbeat pushes arpeggiated through the voicing — one every two
+        // beats, starting on the "and of 1". The chord already sounds in the pad, so the keys
+        // are pure rhythmic interlock, not another block of triads.
         let voicing = keys_vl.lead(&span.chord, 4, 72);
-        let stab_positions: Vec<f64> = if keys_stab_vapor {
-            // Off-beat stabs (laid-back).
-            (0..(span.dur_beats as usize))
-                .map(|b| b as f64 + 0.5)
-                .collect()
-        } else {
-            // On-beat comps.
-            (0..(span.dur_beats.ceil() as usize))
-                .map(|b| b as f64)
-                .collect()
-        };
-        for (i, off) in stab_positions.iter().enumerate() {
-            if *off >= span.dur_beats as f64 {
-                break;
-            }
-            // Arpeggiate for variety: rotate which voice leads.
-            let arp = i % voicing.voices.len();
-            let pitches = if rng.chance(0.5) {
-                vec![voicing.voices[arp]]
-            } else {
-                voicing.voices.clone()
-            };
-            for &p in &pitches {
-                score.notes.push(Note {
-                    start_beat: span.start_beat + off,
-                    dur_beats: 0.45,
-                    pitch: p,
-                    velocity: (0.35 * world.base_dynamic).clamp(0.05, 1.0),
-                    role: Role::Keys,
-                    prov,
-                });
-            }
+        if voicing.voices.is_empty() {
+            continue;
+        }
+        let dur = span.dur_beats as f64;
+        let mut idx = 0usize;
+        let mut off = 0.5f64;
+        while off < dur - 1e-6 {
+            let p = voicing.voices[idx % voicing.voices.len()];
+            score.notes.push(Note {
+                start_beat: span.start_beat + off,
+                dur_beats: 0.45,
+                pitch: p,
+                velocity: (0.35 * world.base_dynamic).clamp(0.05, 1.0),
+                role: Role::Keys,
+                prov,
+            });
+            idx += 1;
+            off += 2.0;
         }
     }
 }
 
-fn add_bass(score: &mut Score, chords: &[ChordSpan], kick_beats: &[f64], form: &Form, seed: u64) {
-    let mut rng = Rng::new(seed ^ 0xBA55_0001);
+/// Bass = a persistent, deterministic figure locked to the kick and the harmony. Round I
+/// re-rolled root/fifth/approach with a coin at every kick, so the line never settled into a
+/// figure. Here the role of each kick is fixed by its position: the root states the chord on
+/// the span's first kick, a fifth drives the offbeat kicks at high energy, and the last kick
+/// before a chord change steps chromatically into the next root — a repeatable shape, not a
+/// dice roll, still onset-locked to the groove.
+fn add_bass(score: &mut Score, chords: &[ChordSpan], kick_beats: &[f64], form: &Form) {
     let bass_center = 40; // ~E2
     for (ci, span) in chords.iter().enumerate() {
         let span_end = span.start_beat + span.dur_beats as f64;
         let root_pc = span.chord.root_pc;
         let root = pitch_near(root_pc, bass_center);
+        let fifth = pitch_near((root_pc + 7).rem_euclid(12), bass_center);
         let next_root_pc = chords
             .get(ci + 1)
             .map(|c| c.chord.root_pc)
@@ -231,26 +228,26 @@ fn add_bass(score: &mut Score, chords: &[ChordSpan], kick_beats: &[f64], form: &
             );
             continue;
         }
+        let n = kicks.len();
         for (i, &k) in kicks.iter().enumerate() {
-            let is_last = i + 1 == kicks.len();
+            let is_last = i + 1 == n;
             let approaching_change = is_last && span_end < score.total_beats - 1e-6;
-            let (pitch, note) = if approaching_change && rng.chance(0.6) {
-                // Chromatic/scale approach to the next root.
+            let (pitch, note) = if approaching_change {
+                // Step chromatically into the next chord's root.
                 let next_root = pitch_near(next_root_pc, bass_center);
                 let dir = (next_root - root).signum();
                 (next_root - dir.clamp(-1, 1), "approach")
-            } else if energy > 0.6 && rng.chance(0.3) {
-                // Fifth or octave displacement for drive.
-                (
-                    pitch_near((root_pc + 7).rem_euclid(12), bass_center),
-                    "fifth",
-                )
+            } else if i == 0 {
+                (root, "root")
+            } else if energy > 0.55 && i % 2 == 1 {
+                // Fifth on the offbeat kicks when there's drive.
+                (fifth, "fifth")
             } else {
                 (root, "root")
             };
             let dur = kicks
                 .get(i + 1)
-                .map(|&n| (n - k) as f32)
+                .map(|&nx| (nx - k) as f32)
                 .unwrap_or((span_end - k) as f32)
                 .clamp(0.1, 2.0);
             push_bass(score, k, dur * 0.9, pitch, energy, note);
