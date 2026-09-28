@@ -11,6 +11,7 @@
 //! measured [`PresentationProfile`] and fall back to static rendering when its
 //! safety/quality gate fails.
 
+use crate::capability::{quantize_color, ColorDepth};
 use crate::cell::{Cell, Color, Glyph, Style};
 use crate::glyph::SubcellGlyphMode;
 use crate::surface::Surface;
@@ -71,6 +72,11 @@ pub struct TemporalSafetyPolicy {
     pub min_luminance_hz: f32,
     pub min_survival_rate: f32,
     pub max_luminance_depth: f32,
+    /// Maximum tolerated 95th-percentile presentation jitter, expressed as a
+    /// fraction of the presentation period (`jitter_p95_ms / (1000/hz)`). A
+    /// normalized bound so a single policy is meaningful across cadences: at the
+    /// default `0.5`, p95 jitter must stay under half a frame period.
+    pub max_jitter_fraction: f32,
 }
 
 impl Default for TemporalSafetyPolicy {
@@ -79,6 +85,7 @@ impl Default for TemporalSafetyPolicy {
             min_luminance_hz: 100.0,
             min_survival_rate: 0.90,
             max_luminance_depth: 0.10,
+            max_jitter_fraction: 0.5,
         }
     }
 }
@@ -92,13 +99,14 @@ pub enum TemporalGate {
     Unmeasured,
     CadenceTooLow,
     SurvivalTooLow,
+    JitterTooHigh,
     DepthTooHigh,
 }
 
 impl TemporalSafetyPolicy {
     /// Gates the **presentation** conditions only: reduced-motion preference, a
-    /// measured profile, adequate cadence and adequate frame survival. It does
-    /// **not** bound modulation depth.
+    /// measured profile, adequate cadence, adequate frame survival, and bounded
+    /// presentation jitter. It does **not** bound modulation depth.
     ///
     /// This is the check [`TemporalDisplayProcessor`] applies before enforcing its
     /// own per-cell bound computed from the actual emitted fg/bg luminance swing.
@@ -115,6 +123,18 @@ impl TemporalSafetyPolicy {
         }
         if !profile.survival_rate.is_finite() || profile.survival_rate < self.min_survival_rate {
             return TemporalGate::SurvivalTooLow;
+        }
+        // Normalized jitter: p95 inter-presentation jitter as a fraction of the
+        // presentation period. Ragged timing smears the residual duty regardless
+        // of nominal cadence, so an otherwise-healthy high-Hz / high-survival path
+        // with jittery presentation is gated out. `presentation_hz` passed the
+        // cadence check above (>= min_luminance_hz), so the period is finite and
+        // positive whenever the default (or any positive) minimum is used.
+        let period_ms = 1000.0 / profile.presentation_hz;
+        if !profile.jitter_p95_ms.is_finite()
+            || profile.jitter_p95_ms > self.max_jitter_fraction * period_ms
+        {
+            return TemporalGate::JitterTooHigh;
         }
         TemporalGate::Enabled
     }
@@ -304,15 +324,34 @@ fn partition_centroids(target: &[[f32; 3]; 8], mask: u8) -> ([f32; 3], [f32; 3])
     (fg, bg)
 }
 
-fn rgb8_to_linear(rgb: [u8; 3]) -> [f32; 3] {
-    rgb.map(|value| {
-        let value = value as f32 / 255.0;
-        if value <= 0.04045 {
-            value / 12.92
-        } else {
-            ((value + 0.055) / 1.055).powf(2.4)
+/// 256-entry sRGB8 -> linear-light table, built once on first use. A `u8` channel
+/// has only 256 possible values, so this is **bit-identical** to evaluating the
+/// transfer function per sample (same expression, same order), but replaces the
+/// per-sample `powf` with a table load. The projector linearizes 8 subpixels x 3
+/// channels per cell, so this is its hottest arithmetic.
+fn srgb8_to_linear_table() -> &'static [f32; 256] {
+    static TABLE: std::sync::OnceLock<[f32; 256]> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let mut table = [0.0f32; 256];
+        for (i, entry) in table.iter_mut().enumerate() {
+            let value = i as f32 / 255.0;
+            *entry = if value <= 0.04045 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            };
         }
+        table
     })
+}
+
+fn rgb8_to_linear(rgb: [u8; 3]) -> [f32; 3] {
+    let table = srgb8_to_linear_table();
+    [
+        table[rgb[0] as usize],
+        table[rgb[1] as usize],
+        table[rgb[2] as usize],
+    ]
 }
 
 fn linear_to_rgb8(rgb: [f32; 3]) -> [u8; 3] {
@@ -509,6 +548,15 @@ pub struct TemporalBrailleField {
     /// 60) would otherwise alias into a large DC bias, without changing the
     /// long-run mean. Off by default on the raw primitive.
     dither: bool,
+    /// Last mask actually emitted per cell, seeded to the static baseline on reseed.
+    /// The transport-aware path prices a cell change against this: KEEP the shown
+    /// mask at zero wire cost, or CHANGE for exactly one changed cell.
+    emitted: Vec<u8>,
+    /// Transport-aware rate-distortion config: `Some((lambda, budget))` optimizes at
+    /// the cell level — a cell changes only when its accumulated visual benefit
+    /// exceeds `lambda`, and at most `budget` cells change per frame — while `None`
+    /// uses the per-dot residual sigma-delta. Off by default.
+    transport: Option<(f32, Option<usize>)>,
 }
 
 impl TemporalBrailleField {
@@ -530,7 +578,25 @@ impl TemporalBrailleField {
             accumulator,
             frame_index: 0,
             dither: false,
+            emitted: vec![0u8; cells],
+            transport: None,
         }
+    }
+
+    /// Configures transport-aware rate-distortion modulation. `Some(lambda)` enables
+    /// the cell-level KEEP/CHANGE decision (a cell changes only when the accumulated
+    /// visual benefit of changing exceeds `lambda`); `budget` optionally caps the
+    /// number of cells allowed to change per frame (highest-benefit first). `None`
+    /// restores the per-dot residual sigma-delta. The long-run per-dot mean is
+    /// preserved either way; a larger `lambda` trades temporal lag for fewer wire
+    /// changes.
+    pub fn set_transport(&mut self, lambda: Option<f32>, budget: Option<usize>) {
+        self.transport = lambda.map(|l| (l.max(0.0), budget));
+    }
+
+    /// The current transport config, if enabled.
+    pub fn transport(&self) -> Option<(f32, Option<usize>)> {
+        self.transport
     }
 
     /// Enables or disables residual threshold dither (see the `dither` field). Off
@@ -714,6 +780,10 @@ impl TemporalBrailleField {
         for (dot, phase) in self.accumulator[index].iter_mut().enumerate() {
             *phase = unit_hash(seed, index as u64, dot as u64);
         }
+        // The transport path's "previously shown" mask returns to the static
+        // baseline when content resets, so a re-activated cell never keeps a stale
+        // emitted mask from prior content.
+        self.emitted[index] = self.static_mask[index];
     }
 
     /// A deterministic static control: dots at or above 50% duty are on.
@@ -760,6 +830,21 @@ impl TemporalBrailleField {
         self.surface_from_masks_styled(masks, mode)
     }
 
+    /// Advances one residual phase like [`Self::advance_residual_styled`], but
+    /// applies a per-cell eligibility gate: cells marked ineligible emit their
+    /// exact static mask and keep their accumulator frozen, so a caller can
+    /// modulate low-swing cells while holding high-swing cells perfectly static in
+    /// the same frame. `eligible` is indexed by cell in row-major order; a missing
+    /// or out-of-range entry is treated as eligible.
+    pub fn advance_residual_styled_gated(
+        &mut self,
+        eligible: &[bool],
+        mode: SubcellGlyphMode,
+    ) -> Surface {
+        let masks = self.advance_gated_masks(eligible);
+        self.surface_from_masks_styled(masks, mode)
+    }
+
     fn static_masks(&self) -> Vec<u8> {
         self.static_mask.clone()
     }
@@ -784,6 +869,97 @@ impl TemporalBrailleField {
     }
 
     fn advance_residual_masks(&mut self) -> Vec<u8> {
+        self.advance_residual_masks_gated(None)
+    }
+
+    /// Residual advance with an optional per-cell eligibility gate. An ineligible
+    /// cell emits its static-mask baseline and its accumulator is left untouched
+    /// (frozen at its current phase), so the cell holds an exact static frame and
+    /// can be re-enabled later without carrying stale residual. `eligible` is
+    /// indexed by cell (row-major); `None` treats every cell as eligible, and an
+    /// out-of-range or missing entry is treated as eligible.
+    /// Dispatches the per-frame gated advance: transport-aware when configured,
+    /// otherwise the per-dot residual sigma-delta.
+    fn advance_gated_masks(&mut self, eligible: &[bool]) -> Vec<u8> {
+        match self.transport {
+            Some((lambda, budget)) => self.advance_transport_masks(eligible, lambda, budget),
+            None => self.advance_residual_masks_gated(Some(eligible)),
+        }
+    }
+
+    /// Transport-aware cell-level advance. Because the terminal transports a whole
+    /// cell glyph, flipping one dot costs the same as flipping eight: one changed
+    /// cell. This integrates each dot's debt (`acc += duty - emitted`) and, per
+    /// cell, compares KEEP (re-emit the shown mask, zero wire cost) against CHANGE
+    /// (emit the debt-ideal mask, one changed cell). A cell changes only when the
+    /// visual benefit `err_keep - err_ideal` exceeds `lambda`; an optional `budget`
+    /// admits only the highest-benefit changes each frame (the rest keep
+    /// integrating, so no unbounded backlog forms — the most-starved cell has the
+    /// largest benefit and is served first). Per-dot debt stays bounded, so the
+    /// long-run mean converges to `duty` exactly as the per-dot path does.
+    fn advance_transport_masks(
+        &mut self,
+        eligible: &[bool],
+        lambda: f32,
+        budget: Option<usize>,
+    ) -> Vec<u8> {
+        let mut masks = vec![0u8; self.duty.len()];
+        let mut desires: Vec<(usize, u8, f32)> = Vec::new();
+        for (index, acc) in self.accumulator.iter_mut().enumerate() {
+            if !eligible.get(index).copied().unwrap_or(true) {
+                masks[index] = self.static_mask[index];
+                continue;
+            }
+            let p = self.emitted[index];
+            let target = self.duty[index];
+            let mut m_ideal = 0u8;
+            let mut err_keep = 0.0f32;
+            let mut err_ideal = 0.0f32;
+            for (i, a) in acc.iter_mut().enumerate() {
+                *a += target[i];
+                let e = *a;
+                let ideal_on = e >= 0.5;
+                if ideal_on {
+                    m_ideal |= 1 << i;
+                }
+                let pb = if p & (1 << i) != 0 { 1.0 } else { 0.0 };
+                let ib = if ideal_on { 1.0 } else { 0.0 };
+                err_keep += (e - pb) * (e - pb);
+                err_ideal += (e - ib) * (e - ib);
+            }
+            masks[index] = p; // default: KEEP the shown mask (zero wire cost)
+            if m_ideal != p && err_keep - err_ideal > lambda {
+                desires.push((index, m_ideal, err_keep - err_ideal));
+            }
+        }
+        // Global dirty budget: admit only the highest-benefit changes this frame.
+        if let Some(n) = budget {
+            if desires.len() > n {
+                desires.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+                desires.truncate(n);
+            }
+        }
+        for &(index, m_ideal, _) in &desires {
+            masks[index] = m_ideal;
+        }
+        // Charge the emitted mask against the debt and record it (active cells).
+        for (index, acc) in self.accumulator.iter_mut().enumerate() {
+            if !eligible.get(index).copied().unwrap_or(true) {
+                continue;
+            }
+            let m = masks[index];
+            for (i, a) in acc.iter_mut().enumerate() {
+                if m & (1 << i) != 0 {
+                    *a -= 1.0;
+                }
+            }
+            self.emitted[index] = m;
+        }
+        self.frame_index = self.frame_index.wrapping_add(1);
+        masks
+    }
+
+    fn advance_residual_masks_gated(&mut self, eligible: Option<&[bool]>) -> Vec<u8> {
         let mut masks = Vec::with_capacity(self.duty.len());
         let (seed, frame, dither) = (self.seed, self.frame_index, self.dither);
         for (cell_index, ((targets, &baseline), acc)) in self
@@ -793,6 +969,12 @@ impl TemporalBrailleField {
             .zip(self.accumulator.iter_mut())
             .enumerate()
         {
+            let cell_eligible = eligible.is_none_or(|e| e.get(cell_index).copied().unwrap_or(true));
+            if !cell_eligible {
+                // Ineligible: emit the static baseline, do not integrate residual.
+                masks.push(baseline);
+                continue;
+            }
             let mut mask = 0u8;
             for bit in 0..8 {
                 let baseline_on = baseline & (1u8 << bit) != 0;
@@ -855,8 +1037,24 @@ impl TemporalBrailleField {
         style_at: impl Fn(usize) -> Style,
     ) -> Surface {
         let mut surface = Surface::new(self.width, self.height);
+        self.fill_surface_from_masks_with(masks, mode, &mut surface, style_at);
+        surface
+    }
+
+    /// Writes the masks into an existing surface, reusing its allocation. The
+    /// surface is reallocated only if its dimensions do not match the field.
+    fn fill_surface_from_masks_with(
+        &self,
+        masks: Vec<u8>,
+        mode: SubcellGlyphMode,
+        out: &mut Surface,
+        style_at: impl Fn(usize) -> Style,
+    ) {
+        if out.width != self.width || out.height != self.height {
+            *out = Surface::new(self.width, self.height);
+        }
         if self.width == 0 {
-            return surface;
+            return;
         }
         for (index, mask) in masks.into_iter().enumerate() {
             let x = (index % self.width as usize) as u16;
@@ -866,9 +1064,28 @@ impl TemporalBrailleField {
                 Some(ch) => Cell::new(Glyph::from_char(ch), style),
                 None => Cell::space(style),
             };
-            surface.set_cell(x, y, cell);
+            out.set_cell(x, y, cell);
         }
-        surface
+    }
+
+    /// Residual-gated advance that fills `out` in place (reusing its allocation)
+    /// instead of returning a fresh [`Surface`]; see
+    /// [`Self::advance_residual_styled_gated`].
+    pub fn advance_residual_styled_gated_into(
+        &mut self,
+        eligible: &[bool],
+        mode: SubcellGlyphMode,
+        out: &mut Surface,
+    ) {
+        let masks = self.advance_gated_masks(eligible);
+        self.fill_surface_from_masks_with(masks, mode, out, |index| self.styles[index]);
+    }
+
+    /// Fills `out` with the styled static realization, reusing its allocation; see
+    /// [`Self::static_styled_surface`].
+    pub fn static_styled_surface_into(&self, mode: SubcellGlyphMode, out: &mut Surface) {
+        let masks = self.static_masks();
+        self.fill_surface_from_masks_with(masks, mode, out, |index| self.styles[index]);
     }
 
     fn index(&self, x: u16, y: u16) -> Option<usize> {
@@ -880,28 +1097,48 @@ impl TemporalBrailleField {
     }
 }
 
-/// Rec.709 relative luminance of a color in linear light (`0..=1`), or `None`
-/// when the exact emitted luminance is not known here — any non-RGB color (named,
-/// indexed, or reset). Temporal cells produced by [`project_rgb_subcells`] always
-/// carry RGB colors, so the modulated path always has a defined luminance; `None`
-/// is treated conservatively (frozen to static) by [`TemporalDisplayProcessor`].
+/// Rec.709 relative luminance of a color in linear light (`0..=1`), or `None` for
+/// [`Color::Reset`], whose realized luminance (the terminal default) is unknown
+/// here. Named and indexed colors resolve through [`Color::to_rgb`], so once a
+/// style has been quantized to the wire palette its emitted luminance is defined;
+/// `None` is treated conservatively (frozen to static) by
+/// [`TemporalDisplayProcessor`].
 fn color_linear_luminance(color: Color) -> Option<f32> {
     match color {
-        Color::Rgb(r, g, b) => {
+        // Reset is "terminal default": its realized luminance is unknown here, so
+        // treat it conservatively (the caller freezes such cells to static).
+        Color::Reset => None,
+        // Every other color — RGB, indexed, or one of the 16 named — has a defined
+        // 8-bit realization via `to_rgb`, so its emitted luminance is known.
+        other => {
+            let (r, g, b) = other.to_rgb();
             let lin = rgb8_to_linear([r, g, b]);
             Some(0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2])
         }
-        _ => None,
     }
 }
 
 /// Worst-case instantaneous linear-light luminance swing when one dot of a cell
-/// with `style` flips between background and foreground. `None` means at least one
-/// color's emitted luminance is unknown (non-RGB or unset), which the processor
-/// treats as unbounded and freezes to static.
-fn style_luminance_swing(style: Style) -> Option<f32> {
-    let fg = color_linear_luminance(style.fg?)?;
-    let bg = color_linear_luminance(style.bg?)?;
+/// flips between background and foreground, evaluated on the colors **actually
+/// emitted** at `depth` — i.e. after the same [`quantize_color`] step the renderer
+/// applies on the wire. `None` means the swing is unbounded or unmodelled and the
+/// cell must be frozen to static:
+///
+/// * [`ColorDepth::Mono`] emits no color attribute at all, so fg and bg carry no
+///   luminance difference on the wire; the only modulation signal is glyph
+///   coverage, which this luminance model does not bound, so Mono is always frozen.
+/// * a color whose quantized realization has unknown luminance (e.g.
+///   [`Color::Reset`]) or an unset fg/bg also yields `None`.
+///
+/// In [`ColorDepth::TrueColor`] quantization is the identity on `Color::Rgb`, so
+/// this is exactly the pre-0.3.1 RGB swing; ANSI256/ANSI16 now measure the real
+/// palette-snapped luminance gap instead of the pre-quantization RGB gap.
+fn style_luminance_swing_resolved(style: Style, depth: ColorDepth) -> Option<f32> {
+    if depth == ColorDepth::Mono {
+        return None;
+    }
+    let fg = color_linear_luminance(quantize_color(style.fg?, depth)?)?;
+    let bg = color_linear_luminance(quantize_color(style.bg?, depth)?)?;
     Some((fg - bg).abs())
 }
 
@@ -919,12 +1156,19 @@ pub struct TemporalDiagnostics {
     /// Cells frozen to static because their emitted swing exceeds the cap or is
     /// unknown.
     pub frozen_cells: usize,
+    /// Eligible cells currently held static by content motion (region or global).
+    pub motion_static_cells: usize,
+    /// Cells that actually modulate when the frame gate is open (eligible and not
+    /// motion-held).
+    pub active_cells: usize,
     /// Worst per-cell emitted luminance swing over the target (`0` if none known).
     pub worst_cell_swing: f32,
     /// Mean emitted (post-quantization) static RMSE of the current target.
     pub mean_emitted_static_rmse: f32,
     /// Frames remaining in the cadence-degradation hysteresis hold (`0` = healthy).
     pub degraded_hold_frames: u32,
+    /// The color depth used for the emitted-swing safety evaluation.
+    pub color_depth: ColorDepth,
 }
 
 /// Frames of forced-static hysteresis after any observed missed deadline, so a
@@ -949,7 +1193,38 @@ pub struct TemporalDisplayProcessor {
     width: u16,
     height: u16,
     mode: SubcellGlyphMode,
+    /// The color depth the renderer will quantize to on the wire. Safety is judged
+    /// on the colors emitted at this depth, not the raw RGB centroids.
+    color_depth: ColorDepth,
     field: TemporalBrailleField,
+    /// Per-cell modulation eligibility (row-major). A cell is eligible when its
+    /// emitted luminance swing at `color_depth` is within the policy cap. This is
+    /// non-destructive — the field keeps every cell's continuous duty — so raising
+    /// the cap or changing depth can re-enable a cell via `reclassify`.
+    eligible: Vec<bool>,
+    /// Per-cell content-motion suppression (row-major). A cell marked here is held
+    /// static regardless of eligibility, so a moving region (reticle, scan line,
+    /// scrolling label) never temporally modulates while a stationary region can.
+    cell_motion: Vec<bool>,
+    /// Derived per-cell emission gate: `eligible && !cell_motion && !motion_static`.
+    /// This is what the residual advance actually reads; a cell transitioning into
+    /// the active set reseeds its accumulator so it never resumes with stale
+    /// residual from a frozen/moving phase.
+    active: Vec<bool>,
+    /// Count of `active` cells, so the per-frame modulate decision needs no scan.
+    active_cells: usize,
+    /// Per-cell emitted (post-quantization) static RMSE, so the reported mean stays
+    /// correct after an incremental regional reprojection touches only some cells.
+    cell_rmse: Vec<f32>,
+    /// Per-cell emitted luminance swing at the current depth (`NaN` when unknown —
+    /// Mono, or an unset/`Reset` colour). Cached so a regional edit updates the
+    /// worst-swing aggregate incrementally: extending it upward is free, and a
+    /// bounded max-only rescan is needed only when a touched cell might have held
+    /// the previous maximum (issue #68).
+    cell_swing: Vec<f32>,
+    /// Running sum of `cell_rmse` (kept in `f64` to resist drift across many
+    /// incremental edits), so the reported mean needs no full-grid resum.
+    rmse_sum: f64,
     profile: PresentationProfile,
     policy: TemporalSafetyPolicy,
     reduced_motion: bool,
@@ -973,11 +1248,20 @@ impl TemporalDisplayProcessor {
         // Robust default for the user-facing path: dither the residual so a
         // coherent presentation subsample cannot alias into a DC bias.
         field.set_dither(true);
+        let cells = (width as usize).saturating_mul(height as usize);
         Self {
             width,
             height,
             mode,
+            color_depth: ColorDepth::TrueColor,
             field,
+            eligible: vec![false; cells],
+            cell_motion: vec![false; cells],
+            active: vec![false; cells],
+            active_cells: 0,
+            cell_rmse: vec![0.0; cells],
+            cell_swing: vec![f32::NAN; cells],
+            rmse_sum: 0.0,
             profile: PresentationProfile::unmeasured(),
             policy: TemporalSafetyPolicy::default(),
             reduced_motion: false,
@@ -1007,10 +1291,30 @@ impl TemporalDisplayProcessor {
         self.profile = profile;
     }
 
-    /// Sets the safety policy. Per-cell freeze decisions are recomputed on the
-    /// next [`Self::set_target_image`], so set the policy before the target.
+    /// Sets the safety policy and immediately reclassifies the current target's
+    /// per-cell eligibility. Because eligibility is non-destructive (the field
+    /// retains every cell's continuous duty), raising `max_luminance_depth` can
+    /// re-enable cells a stricter policy had frozen, with no reprojection; a
+    /// newly-eligible cell has its residual accumulator reseeded.
     pub fn set_policy(&mut self, policy: TemporalSafetyPolicy) {
         self.policy = policy;
+        self.reclassify();
+    }
+
+    /// Sets the wire color depth used for the emitted-swing safety evaluation and
+    /// reclassifies immediately. Safety is judged on the colors the renderer will
+    /// actually emit at this depth: in [`ColorDepth::Mono`] no color reaches the
+    /// wire, so every cell is frozen to static; ANSI256/ANSI16 use the
+    /// palette-snapped luminance rather than the raw RGB. Defaults to
+    /// [`ColorDepth::TrueColor`]; typically fed from `ctx.capabilities().color_depth`.
+    pub fn set_color_depth(&mut self, depth: ColorDepth) {
+        self.color_depth = depth;
+        self.reclassify();
+    }
+
+    /// The color depth used for the emitted-swing safety evaluation.
+    pub fn color_depth(&self) -> ColorDepth {
+        self.color_depth
     }
 
     /// Sets the accessibility reduced-motion preference. When `true`, output is
@@ -1025,6 +1329,14 @@ impl TemporalDisplayProcessor {
         self.field.set_dither(enabled);
     }
 
+    /// Enables transport-aware rate-distortion modulation (see
+    /// [`TemporalBrailleField::set_transport`]); `None` restores the per-dot
+    /// residual path. Experimental: trades a little temporal lag for materially
+    /// fewer changed cells on the wire, and preserves the long-run per-dot mean.
+    pub fn set_transport(&mut self, lambda: Option<f32>, budget: Option<usize>) {
+        self.field.set_transport(lambda, budget);
+    }
+
     /// Forces static output while the content is known to be moving/scrolling.
     ///
     /// Distinct from [`Self::set_reduced_motion`] (an accessibility preference);
@@ -1033,40 +1345,194 @@ impl TemporalDisplayProcessor {
     /// reseeds residual state so fast motion degrades to static without trails.
     pub fn set_motion_static(&mut self, motion_static: bool) {
         self.motion_static = motion_static;
+        self.refresh_active();
+    }
+
+    /// Marks a rectangular region (in cells, clamped to the field) as moving or
+    /// settled. Cells in a moving region are held static regardless of safety
+    /// eligibility, so a moving reticle/scan line/label stays static while the rest
+    /// of the field temporally refines. When a region settles (`motion=false`), its
+    /// cells resume modulating with freshly reseeded accumulators, so no residual
+    /// from the moving phase leaks in. Returns the number of cells updated.
+    pub fn set_motion_region(&mut self, x: u16, y: u16, w: u16, h: u16, motion: bool) -> usize {
+        let x2 = x.saturating_add(w).min(self.width);
+        let y2 = y.saturating_add(h).min(self.height);
+        let global_static = self.motion_static;
+        // Only the touched cells' motion flag changes, so only their active gate can
+        // move; update it locally (with the same false->true reseed as
+        // `refresh_active`) rather than rescanning the whole grid (issue #68).
+        let mut active_delta = 0i64;
+        let mut count = 0;
+        for cy in y.min(self.height)..y2 {
+            for cx in x.min(self.width)..x2 {
+                let index = (cy as usize) * self.width as usize + cx as usize;
+                self.cell_motion[index] = motion;
+                let now_active = self.eligible[index] && !motion && !global_static;
+                let was_active = self.active[index];
+                if now_active && !was_active {
+                    self.field.reset_cell(cx, cy);
+                }
+                if now_active != was_active {
+                    active_delta += if now_active { 1 } else { -1 };
+                    self.active[index] = now_active;
+                }
+                count += 1;
+            }
+        }
+        self.active_cells = (self.active_cells as i64 + active_delta).max(0) as usize;
+        count
+    }
+
+    /// Clears all content-motion suppression (marks the whole field settled), so
+    /// every safety-eligible cell may modulate again.
+    pub fn clear_motion(&mut self) {
+        self.cell_motion.iter_mut().for_each(|m| *m = false);
+        self.refresh_active();
     }
 
     /// Projects a logical Braille RGB image (`2*width` by `4*height` samples) as
-    /// the new target, installs it, and enforces the per-cell emitted-swing safety
-    /// bound: any cell whose fg/bg luminance swing exceeds the cap (or is unknown)
-    /// is snapped to its static baseline so it can only ever show its static frame.
-    /// `reset` controls whether accumulators are reseeded (use [`ResetPolicy::Reset`]
-    /// for genuinely new content).
+    /// the new target, installs it, then classifies per-cell modulation
+    /// eligibility from the emitted luminance swing at the current color depth.
+    ///
+    /// This is **non-destructive**: every cell keeps its continuous duty target. A
+    /// cell whose emitted swing exceeds the policy cap (or whose colors have unknown
+    /// luminance, or any cell in [`ColorDepth::Mono`]) is marked ineligible and
+    /// emits only its exact static frame — but its target is preserved, so a later
+    /// [`Self::set_policy`] or [`Self::set_color_depth`] can re-enable it without
+    /// reprojecting. `reset` controls whether accumulators are reseeded (use
+    /// [`ResetPolicy::Reset`] for genuinely new content).
     pub fn set_target_image(&mut self, sample: impl Fn(u16, u16) -> [u8; 3], reset: ResetPolicy) {
         let projection = project_braille_image(self.width, self.height, sample);
-        self.mean_emitted_static_rmse = projection.mean_emitted_static_rmse();
         projection.install_into(&mut self.field, reset);
-
-        let cap = self.policy.max_luminance_depth;
-        let (mut modulatable, mut frozen, mut worst) = (0usize, 0usize, 0.0f32);
         for y in 0..self.height {
             for x in 0..self.width {
-                let style = self.field.cell_style(x, y).unwrap_or_default();
-                let swing = style_luminance_swing(style);
-                if let Some(s) = swing {
-                    worst = worst.max(s);
-                }
-                if matches!(swing, Some(s) if s <= cap) {
-                    modulatable += 1;
-                } else {
-                    frozen += 1;
-                    self.field.freeze_cell_to_static(x, y);
+                if let Some(cell) = projection.cell(x, y) {
+                    let index = (y as usize) * self.width as usize + x as usize;
+                    self.cell_rmse[index] = cell.emitted_static_rmse;
                 }
             }
         }
-        self.modulatable_cells = modulatable;
-        self.frozen_cells = frozen;
-        self.worst_cell_swing = worst;
         self.has_target = true;
+        self.reclassify();
+    }
+
+    /// Reprojects only the cells overlapping the rectangle `(x, y, w, h)` (in cells,
+    /// clamped to the field), preserving every other cell's projection and residual
+    /// accumulator. This is the incremental path for interactive imagery: a small
+    /// change costs a small reprojection instead of the whole frame. `sample` is
+    /// evaluated over the same logical grid as [`Self::set_target_image`] (`2*width`
+    /// by `4*height` subpixels); `reset` reseeds only the touched cells' residual
+    /// (use [`ResetPolicy::Reset`] when the region's content changed). Eligibility,
+    /// the active gate and the diagnostic aggregates are then updated incrementally
+    /// for the touched cells only — work proportional to the region, not the whole
+    /// grid (issue #68) — reproducing a full reclassification exactly.
+    /// Requires a prior [`Self::set_target_image`]; returns the number of cells
+    /// reprojected (`0` if there is no target yet).
+    pub fn set_target_region(
+        &mut self,
+        x: u16,
+        y: u16,
+        w: u16,
+        h: u16,
+        sample: impl Fn(u16, u16) -> [u8; 3],
+        reset: ResetPolicy,
+    ) -> usize {
+        if !self.has_target {
+            return 0;
+        }
+        let x2 = x.saturating_add(w).min(self.width);
+        let y2 = y.saturating_add(h).min(self.height);
+        let cap = self.policy.max_luminance_depth;
+        let depth = self.color_depth;
+        let global_static = self.motion_static;
+        // Per-cell classification is a pure function of a cell's own style and the
+        // global depth/cap (no neighbour coupling), and this call changes only the
+        // touched cells' styles and none of the motion flags. So eligibility, the
+        // active gate, and every diagnostic aggregate can be maintained proportional
+        // to the region rather than rescanning the whole grid (issue #68). The full
+        // `reclassify()`/`refresh_active()` pair remains the oracle these must match.
+        let mut modulatable_delta = 0i64;
+        let mut frozen_delta = 0i64;
+        let mut active_delta = 0i64;
+        let mut touched_max = 0.0f32;
+        let mut maybe_dropped_max = false;
+        let mut count = 0;
+        for cy in y.min(self.height)..y2 {
+            for cx in x.min(self.width)..x2 {
+                let mut target = [[0u8; 3]; 8];
+                for dy in 0u16..4 {
+                    for dx in 0u16..2 {
+                        target[BRAILLE_DOT_INDEX[dy as usize][dx as usize]] =
+                            sample(cx * 2 + dx, cy * 4 + dy);
+                    }
+                }
+                let proj = project_rgb_subcells(target);
+                let index = (cy as usize) * self.width as usize + cx as usize;
+
+                // RMSE running sum: swap this cell's old contribution for its new one.
+                self.rmse_sum += proj.emitted_static_rmse as f64 - self.cell_rmse[index] as f64;
+                self.cell_rmse[index] = proj.emitted_static_rmse;
+                self.field.set_cell_projection(cx, cy, proj);
+                if reset == ResetPolicy::Reset {
+                    self.field.reset_cell(cx, cy);
+                }
+
+                let style = self.field.cell_style(cx, cy).unwrap_or_default();
+                let swing = style_luminance_swing_resolved(style, depth);
+                let old_swing = self.cell_swing[index];
+                // A touched cell whose old swing was at (within tolerance) the global
+                // maximum might have been the argmax; a decrease can only be found by
+                // the bounded rescan below. An increase is handled by `touched_max`.
+                if old_swing.is_finite() && old_swing + 1e-6 >= self.worst_cell_swing {
+                    maybe_dropped_max = true;
+                }
+                if let Some(s) = swing {
+                    touched_max = touched_max.max(s);
+                }
+                self.cell_swing[index] = swing.unwrap_or(f32::NAN);
+
+                let new_eligible = matches!(swing, Some(s) if s <= cap);
+                let old_eligible = self.eligible[index];
+                if new_eligible != old_eligible {
+                    if new_eligible {
+                        modulatable_delta += 1;
+                        frozen_delta -= 1;
+                    } else {
+                        modulatable_delta -= 1;
+                        frozen_delta += 1;
+                    }
+                    self.eligible[index] = new_eligible;
+                }
+
+                // Active gate: only `eligible` moved here (motion flags untouched), so
+                // only touched cells can transition. Reseed on a false->true edge,
+                // exactly as `refresh_active` does.
+                let now_active = new_eligible && !self.cell_motion[index] && !global_static;
+                let was_active = self.active[index];
+                if now_active && !was_active {
+                    self.field.reset_cell(cx, cy);
+                }
+                if now_active != was_active {
+                    active_delta += if now_active { 1 } else { -1 };
+                    self.active[index] = now_active;
+                }
+                count += 1;
+            }
+        }
+        self.modulatable_cells =
+            (self.modulatable_cells as i64 + modulatable_delta).max(0) as usize;
+        self.frozen_cells = (self.frozen_cells as i64 + frozen_delta).max(0) as usize;
+        self.active_cells = (self.active_cells as i64 + active_delta).max(0) as usize;
+        self.worst_cell_swing = if maybe_dropped_max {
+            // Bounded max-only fold over cached swings (NaN ignored by `f32::max`);
+            // no colour re-derivation. Runs only when a touched cell might have been
+            // the maximum, so the common small edit stays proportional to the region.
+            self.cell_swing.iter().fold(0.0f32, |acc, &s| acc.max(s))
+        } else {
+            self.worst_cell_swing.max(touched_max)
+        };
+        self.mean_emitted_static_rmse = (self.rmse_sum / self.eligible.len().max(1) as f64) as f32;
+        count
     }
 
     /// The top-level profile/reduced-motion gate (independent of the cadence hold).
@@ -1079,6 +1545,12 @@ impl TemporalDisplayProcessor {
         self.field.static_styled_surface(self.mode)
     }
 
+    /// Writes the always-valid static realization into `out`, reusing its
+    /// allocation (resizing to the processor's dimensions if needed).
+    pub fn static_fallback_into(&self, out: &mut Surface) {
+        self.field.static_styled_surface_into(self.mode, out);
+    }
+
     /// Produces the next frame.
     ///
     /// `missed_periods` is the scheduler's most recent phase-locked missed-deadline
@@ -1089,25 +1561,44 @@ impl TemporalDisplayProcessor {
     /// hold is active, or no cell is eligible to modulate; otherwise the
     /// residual-modulated frame (in which frozen cells still render static).
     pub fn advance(&mut self, missed_periods: u32) -> Surface {
+        if self.step(missed_periods) {
+            self.field
+                .advance_residual_styled_gated(&self.active, self.mode)
+        } else {
+            self.static_fallback()
+        }
+    }
+
+    /// Like [`Self::advance`], but writes the next frame into `out`, reusing its
+    /// allocation instead of returning a fresh [`Surface`] each frame. `out` is
+    /// resized to the processor's dimensions if it does not already match. Prefer
+    /// this in a high-cadence loop to avoid a per-frame Surface allocation.
+    pub fn advance_into(&mut self, missed_periods: u32, out: &mut Surface) {
+        if self.step(missed_periods) {
+            self.field
+                .advance_residual_styled_gated_into(&self.active, self.mode, out);
+        } else {
+            self.field.static_styled_surface_into(self.mode, out);
+        }
+    }
+
+    /// Advances the modulation/hysteresis state for one frame and returns whether
+    /// this frame should modulate (vs. emit the static fallback). Shared by
+    /// [`Self::advance`] and [`Self::advance_into`].
+    fn step(&mut self, missed_periods: u32) -> bool {
         if missed_periods > 0 {
             self.degraded_hold = CADENCE_HYSTERESIS_FRAMES;
         } else if self.degraded_hold > 0 {
             self.degraded_hold -= 1;
         }
-
         let gate = self.policy.gate_profile(self.profile, self.reduced_motion);
         self.last_gate = gate;
         let modulate = gate == TemporalGate::Enabled
             && self.has_target
-            && self.modulatable_cells > 0
-            && self.degraded_hold == 0
-            && !self.motion_static;
+            && self.active_cells > 0
+            && self.degraded_hold == 0;
         self.last_modulating = modulate;
-        if modulate {
-            self.field.advance_residual_styled(self.mode)
-        } else {
-            self.static_fallback()
-        }
+        modulate
     }
 
     /// A snapshot of the current realization decision and target statistics.
@@ -1117,15 +1608,78 @@ impl TemporalDisplayProcessor {
             modulating: self.last_modulating,
             modulatable_cells: self.modulatable_cells,
             frozen_cells: self.frozen_cells,
+            motion_static_cells: self.modulatable_cells - self.active_cells,
+            active_cells: self.active_cells,
             worst_cell_swing: self.worst_cell_swing,
             mean_emitted_static_rmse: self.mean_emitted_static_rmse,
             degraded_hold_frames: self.degraded_hold,
+            color_depth: self.color_depth,
         }
     }
 
     /// Reseeds all residual accumulators (e.g. after a discontinuity).
     pub fn reset(&mut self) {
         self.field.reset_all();
+    }
+
+    /// Recomputes per-cell modulation eligibility from the current target's styles,
+    /// the policy depth cap and the color depth, and refreshes the diagnostic
+    /// counts. A cell transitioning from ineligible to eligible has its residual
+    /// accumulator reseeded (it was frozen while ineligible and would otherwise
+    /// carry stale residual). Non-destructive: never alters a cell's duty target.
+    fn reclassify(&mut self) {
+        let cap = self.policy.max_luminance_depth;
+        let depth = self.color_depth;
+        let (mut modulatable, mut frozen, mut worst) = (0usize, 0usize, 0.0f32);
+        let mut rmse_sum = 0.0f64;
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let index = (y as usize) * self.width as usize + x as usize;
+                rmse_sum += self.cell_rmse[index] as f64;
+                let style = self.field.cell_style(x, y).unwrap_or_default();
+                let swing = style_luminance_swing_resolved(style, depth);
+                if let Some(s) = swing {
+                    worst = worst.max(s);
+                }
+                self.cell_swing[index] = swing.unwrap_or(f32::NAN);
+                let eligible = matches!(swing, Some(s) if s <= cap);
+                if eligible {
+                    modulatable += 1;
+                } else {
+                    frozen += 1;
+                }
+                self.eligible[index] = eligible;
+            }
+        }
+        self.modulatable_cells = modulatable;
+        self.frozen_cells = frozen;
+        self.worst_cell_swing = worst;
+        self.rmse_sum = rmse_sum;
+        self.mean_emitted_static_rmse = (rmse_sum / self.eligible.len().max(1) as f64) as f32;
+        self.refresh_active();
+    }
+
+    /// Recomputes the derived per-cell emission gate
+    /// `active = eligible && !cell_motion && !motion_static`, reseeding any cell
+    /// that transitions into the active set (it was held static and would otherwise
+    /// resume with stale residual), and updates the active-cell count.
+    fn refresh_active(&mut self) {
+        let global_static = self.motion_static;
+        let width = self.width as usize;
+        let mut active_cells = 0;
+        for index in 0..self.active.len() {
+            let now = self.eligible[index] && !self.cell_motion[index] && !global_static;
+            if now {
+                active_cells += 1;
+                if !self.active[index] {
+                    let x = (index % width) as u16;
+                    let y = (index / width) as u16;
+                    self.field.reset_cell(x, y);
+                }
+            }
+            self.active[index] = now;
+        }
+        self.active_cells = active_cells;
     }
 }
 
@@ -1882,5 +2436,695 @@ mod tests {
             assert_eq!(surface.get(0, 0).unwrap().style, left);
             assert_eq!(surface.get(1, 0).unwrap().style, right);
         }
+    }
+
+    #[test]
+    fn resolved_swing_is_capability_aware_not_raw_rgb() {
+        use crate::capability::{quantize_color, ColorDepth};
+        use crate::cell::Color;
+
+        let style = Style::default()
+            .fg(Color::Rgb(30, 200, 90))
+            .bg(Color::Rgb(60, 40, 210));
+
+        // TrueColor: quantization is the identity on RGB, so the resolved swing is
+        // exactly the raw linear-luminance swing (behavior unchanged from 0.3.0).
+        let tc = style_luminance_swing_resolved(style, ColorDepth::TrueColor).unwrap();
+        let raw = (color_linear_luminance(Color::Rgb(30, 200, 90)).unwrap()
+            - color_linear_luminance(Color::Rgb(60, 40, 210)).unwrap())
+        .abs();
+        assert!(
+            (tc - raw).abs() < 1e-6,
+            "TrueColor swing must equal the raw RGB swing"
+        );
+
+        // ANSI256/ANSI16: the swing is computed on the QUANTIZED colors, i.e. the
+        // exact colors the renderer emits on the wire (capability.rs quantize_color).
+        for depth in [ColorDepth::Ansi256, ColorDepth::Ansi16] {
+            let got = style_luminance_swing_resolved(style, depth).unwrap();
+            let qfg = quantize_color(Color::Rgb(30, 200, 90), depth).unwrap();
+            let qbg = quantize_color(Color::Rgb(60, 40, 210), depth).unwrap();
+            let want =
+                (color_linear_luminance(qfg).unwrap() - color_linear_luminance(qbg).unwrap()).abs();
+            assert!(
+                (got - want).abs() < 1e-6,
+                "{depth:?} swing must be measured on the quantized wire colors"
+            );
+        }
+
+        // Ironclad "not raw RGB": two DISTINCT RGB grays that both quantize to the
+        // same ANSI16 entry. Raw swing is > 0, but the emitted swing collapses to
+        // exactly 0 because the wire carries one color.
+        let near = Style::default()
+            .fg(Color::Rgb(95, 95, 95))
+            .bg(Color::Rgb(110, 110, 110));
+        assert!(
+            style_luminance_swing_resolved(near, ColorDepth::TrueColor).unwrap() > 0.0,
+            "distinct grays have a nonzero TrueColor swing"
+        );
+        assert_eq!(
+            style_luminance_swing_resolved(near, ColorDepth::Ansi16),
+            Some(0.0),
+            "both grays map to one ANSI16 entry, so the emitted swing is exactly 0"
+        );
+
+        // Mono emits no color at all -> the fg/bg luminance signal is not on the
+        // wire -> unmodellable -> None (the processor freezes such cells).
+        assert!(style_luminance_swing_resolved(style, ColorDepth::Mono).is_none());
+
+        // Color::Reset is the terminal default: unknown luminance -> None.
+        let reset_style = Style::default().fg(Color::Reset).bg(Color::Rgb(0, 0, 0));
+        assert!(style_luminance_swing_resolved(reset_style, ColorDepth::TrueColor).is_none());
+    }
+
+    #[test]
+    fn processor_mono_forces_static_everywhere() {
+        use crate::capability::ColorDepth;
+        let mut p = TemporalDisplayProcessor::new(2, 1, SubcellGlyphMode::Braille2x4, 7);
+        p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.1));
+        p.set_color_depth(ColorDepth::Mono);
+        p.set_target_image(
+            |_lx, ly| {
+                let v = 100u8 + 3 * ly as u8;
+                [v, v, v]
+            },
+            ResetPolicy::Reset,
+        );
+        let d = p.diagnostics();
+        assert_eq!(d.color_depth, ColorDepth::Mono);
+        assert_eq!(
+            d.modulatable_cells, 0,
+            "Mono has no wire color to bound: all frozen"
+        );
+        assert_eq!(d.frozen_cells, 2);
+        // The profile gate itself is Enabled, but no cell is eligible -> static.
+        assert_eq!(p.gate(), TemporalGate::Enabled);
+        p.advance(0);
+        assert!(!p.diagnostics().modulating, "Mono must never modulate");
+    }
+
+    #[test]
+    fn raising_depth_cap_reenables_target_without_reprojection() {
+        // A cell with a modest, fractional-duty gray gradient: it has a nonzero
+        // emitted swing AND interior duties, so when eligible it genuinely
+        // modulates. This proves eligibility is non-destructive: if freezing had
+        // overwritten the duty (the 0.3.0 behavior), re-enabling would leave the
+        // duty at its baseline endpoints and the cell could not modulate.
+        let mut p = TemporalDisplayProcessor::new(1, 1, SubcellGlyphMode::Braille2x4, 9);
+        p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.1));
+        p.set_target_image(
+            |_lx, ly| {
+                let v = [120u8, 127, 133, 140][ly as usize];
+                [v, v, v]
+            },
+            ResetPolicy::Reset,
+        );
+        let swing = p.diagnostics().worst_cell_swing;
+        assert!(
+            swing > 0.0,
+            "gradient cell must have a nonzero swing, got {swing}"
+        );
+
+        // Strict cap (half the measured swing) freezes the cell.
+        p.set_policy(TemporalSafetyPolicy {
+            max_luminance_depth: swing * 0.5,
+            ..Default::default()
+        });
+        assert_eq!(
+            p.diagnostics().modulatable_cells,
+            0,
+            "strict cap freezes the moderate-swing cell"
+        );
+
+        // Raising the cap (twice the swing) re-enables it WITHOUT set_target_image.
+        p.set_policy(TemporalSafetyPolicy {
+            max_luminance_depth: swing * 2.0,
+            ..Default::default()
+        });
+        assert_eq!(
+            p.diagnostics().modulatable_cells,
+            1,
+            "raising the cap must reclassify immediately and re-enable the cell"
+        );
+        assert_eq!(p.diagnostics().frozen_cells, 0);
+
+        // And the re-enabled cell actually modulates: proof the duty survived the
+        // freeze (nondestructive eligibility).
+        let mut glyphs = std::collections::HashSet::new();
+        for _ in 0..300 {
+            glyphs.insert(p.advance(0).get(0, 0).unwrap().glyph.grapheme.clone());
+        }
+        assert!(
+            glyphs.len() > 1,
+            "re-enabled cell must modulate; a destructive freeze would have flattened its duty"
+        );
+    }
+
+    #[test]
+    fn jitter_gate_rejects_ragged_presentation() {
+        let policy = TemporalSafetyPolicy::default(); // max_jitter_fraction = 0.5
+                                                      // 120 Hz => 8.333 ms period. p95 jitter 5 ms => fraction 0.6 > 0.5.
+        assert_eq!(
+            policy.gate_profile(PresentationProfile::measured(120.0, 0.99, 5.0), false),
+            TemporalGate::JitterTooHigh
+        );
+        // 3 ms => fraction 0.36 < 0.5: healthy.
+        assert_eq!(
+            policy.gate_profile(PresentationProfile::measured(120.0, 0.99, 3.0), false),
+            TemporalGate::Enabled
+        );
+        // Non-finite jitter is never trusted.
+        assert_eq!(
+            policy.gate_profile(
+                PresentationProfile::measured(120.0, 0.99, f32::INFINITY),
+                false
+            ),
+            TemporalGate::JitterTooHigh
+        );
+    }
+
+    #[test]
+    fn motion_region_holds_static_while_neighbor_modulates() {
+        let mut p = TemporalDisplayProcessor::new(2, 1, SubcellGlyphMode::Braille2x4, 3);
+        p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.1));
+        p.set_target_image(
+            |_lx, ly| {
+                let v = 120u8 + [0, 7, 13, 20][ly as usize];
+                [v, v, v]
+            },
+            ResetPolicy::Reset,
+        );
+        assert_eq!(
+            p.diagnostics().modulatable_cells,
+            2,
+            "both gradient cells are eligible"
+        );
+        assert_eq!(p.diagnostics().active_cells, 2);
+
+        // Mark the left cell as moving: it must hold static; the right cell keeps
+        // modulating.
+        assert_eq!(p.set_motion_region(0, 0, 1, 1, true), 1);
+        assert_eq!(
+            p.diagnostics().active_cells,
+            1,
+            "the moving cell is suppressed"
+        );
+        assert_eq!(p.diagnostics().motion_static_cells, 1);
+
+        let left_static = p
+            .static_fallback()
+            .get(0, 0)
+            .unwrap()
+            .glyph
+            .grapheme
+            .clone();
+        let mut right = std::collections::HashSet::new();
+        for _ in 0..200 {
+            let f = p.advance(0);
+            assert_eq!(
+                f.get(0, 0).unwrap().glyph.grapheme,
+                left_static,
+                "a moving cell must stay static every frame"
+            );
+            right.insert(f.get(1, 0).unwrap().glyph.grapheme.clone());
+        }
+        assert!(
+            right.len() > 1,
+            "the settled neighbor keeps temporally refining"
+        );
+
+        // Settling the region resumes modulation.
+        p.set_motion_region(0, 0, 1, 1, false);
+        assert_eq!(
+            p.diagnostics().active_cells,
+            2,
+            "settled region resumes modulating"
+        );
+    }
+
+    #[test]
+    fn incremental_region_matches_full_reprojection() {
+        // `full` and `base` agree everywhere except the cell rect (1,1)-(2,2);
+        // updating that rect incrementally from a `base` target must reproduce a
+        // full projection of `full`, cell-for-cell (glyph, style, eligibility, mean).
+        let base = |lx: u16, ly: u16| -> [u8; 3] { [(lx * 10) as u8, (ly * 10) as u8, 100] };
+        let full = |lx: u16, ly: u16| -> [u8; 3] {
+            let (cx, cy) = (lx / 2, ly / 4);
+            if (1..3).contains(&cx) && (1..3).contains(&cy) {
+                [200, (lx * 5) as u8, 50]
+            } else {
+                base(lx, ly)
+            }
+        };
+
+        let mut pf = TemporalDisplayProcessor::new(4, 4, SubcellGlyphMode::Braille2x4, 1);
+        pf.set_target_image(full, ResetPolicy::Reset);
+
+        let mut pi = TemporalDisplayProcessor::new(4, 4, SubcellGlyphMode::Braille2x4, 1);
+        pi.set_target_image(base, ResetPolicy::Reset);
+        assert_eq!(
+            pi.set_target_region(1, 1, 2, 2, full, ResetPolicy::Reset),
+            4
+        );
+
+        let sf = pf.static_fallback();
+        let si = pi.static_fallback();
+        for y in 0..4 {
+            for x in 0..4 {
+                assert_eq!(
+                    sf.get(x, y).unwrap().glyph.grapheme,
+                    si.get(x, y).unwrap().glyph.grapheme,
+                    "cell ({x},{y}) glyph must match a full reprojection"
+                );
+                assert_eq!(
+                    sf.get(x, y).unwrap().style,
+                    si.get(x, y).unwrap().style,
+                    "cell ({x},{y}) style must match a full reprojection"
+                );
+            }
+        }
+        assert_eq!(
+            pf.diagnostics().modulatable_cells,
+            pi.diagnostics().modulatable_cells,
+            "eligibility must match a full reprojection"
+        );
+        assert!(
+            (pf.diagnostics().mean_emitted_static_rmse - pi.diagnostics().mean_emitted_static_rmse)
+                .abs()
+                < 1e-6,
+            "mean emitted RMSE must match a full reprojection"
+        );
+    }
+
+    /// Asserts an incrementally-updated processor is indistinguishable from a full
+    /// reprojection oracle: every static cell, and every diagnostic aggregate.
+    fn assert_region_matches_oracle(
+        inc: &TemporalDisplayProcessor,
+        oracle: &TemporalDisplayProcessor,
+        cols: u16,
+        rows: u16,
+        tag: &str,
+    ) {
+        let si = inc.static_fallback();
+        let so = oracle.static_fallback();
+        for y in 0..rows {
+            for x in 0..cols {
+                assert_eq!(
+                    si.get(x, y).unwrap().glyph.grapheme,
+                    so.get(x, y).unwrap().glyph.grapheme,
+                    "{tag}: cell ({x},{y}) glyph must match full reprojection"
+                );
+                assert_eq!(
+                    si.get(x, y).unwrap().style,
+                    so.get(x, y).unwrap().style,
+                    "{tag}: cell ({x},{y}) style must match full reprojection"
+                );
+            }
+        }
+        let (di, doo) = (inc.diagnostics(), oracle.diagnostics());
+        assert_eq!(
+            di.modulatable_cells, doo.modulatable_cells,
+            "{tag}: modulatable"
+        );
+        assert_eq!(di.frozen_cells, doo.frozen_cells, "{tag}: frozen");
+        assert_eq!(di.active_cells, doo.active_cells, "{tag}: active");
+        assert!(
+            (di.worst_cell_swing - doo.worst_cell_swing).abs() < 1e-6,
+            "{tag}: worst_cell_swing {} vs {}",
+            di.worst_cell_swing,
+            doo.worst_cell_swing
+        );
+        assert!(
+            (di.mean_emitted_static_rmse - doo.mean_emitted_static_rmse).abs() < 1e-6,
+            "{tag}: mean {} vs {}",
+            di.mean_emitted_static_rmse,
+            doo.mean_emitted_static_rmse
+        );
+    }
+
+    #[test]
+    fn incremental_region_accounting_matches_full_oracle_across_many_edits() {
+        // Drive one processor through several `set_target_region` edits and, after
+        // each, compare every aggregate and static cell against a fresh processor
+        // built with `set_target_image` (the full O(total) recompute) on the same
+        // image. Exercises upward-max extension, an edit clear of the max, and the
+        // downward argmax-invalidation rescan — the branches issue #68's fix adds.
+        let (cols, rows) = (6u16, 6u16);
+        let (subw, subh) = (cols as usize * 2, rows as usize * 4);
+        let mut img = vec![[0u8; 3]; subw * subh];
+
+        let base = |lx: usize, ly: usize| -> [u8; 3] {
+            let v = 40 + ((lx + ly) % 8) as u8 * 2; // near-neutral, low swing -> eligible
+            [v, v, v + 8]
+        };
+        let checker = |lx: usize, ly: usize| -> [u8; 3] {
+            if (lx + ly) % 2 == 0 {
+                [0, 0, 0]
+            } else {
+                [255, 255, 255] // ~max swing -> frozen, and the global maximum
+            }
+        };
+        let gray = |_lx: usize, _ly: usize| -> [u8; 3] { [128, 128, 128] }; // ~0 swing -> eligible
+        let paint = |img: &mut [[u8; 3]],
+                     cx: u16,
+                     cy: u16,
+                     cw: u16,
+                     ch: u16,
+                     f: &dyn Fn(usize, usize) -> [u8; 3]| {
+            for ly in (cy as usize * 4)..((cy + ch) as usize * 4) {
+                for lx in (cx as usize * 2)..((cx + cw) as usize * 2) {
+                    img[ly * subw + lx] = f(lx, ly);
+                }
+            }
+        };
+        let oracle_of = |img: &[[u8; 3]]| {
+            let mut p = TemporalDisplayProcessor::new(cols, rows, SubcellGlyphMode::Braille2x4, 3);
+            p.set_target_image(
+                |lx: u16, ly: u16| img[ly as usize * subw + lx as usize],
+                ResetPolicy::Reset,
+            );
+            p
+        };
+
+        paint(&mut img, 0, 0, cols, rows, &base);
+        let mut inc = TemporalDisplayProcessor::new(cols, rows, SubcellGlyphMode::Braille2x4, 3);
+        inc.set_target_image(
+            |lx: u16, ly: u16| img[ly as usize * subw + lx as usize],
+            ResetPolicy::Reset,
+        );
+        assert_region_matches_oracle(&inc, &oracle_of(&img), cols, rows, "base");
+
+        // (1) A high-contrast block raises the global maximum (upward extension).
+        paint(&mut img, 1, 1, 2, 2, &checker);
+        inc.set_target_region(
+            1,
+            1,
+            2,
+            2,
+            |lx: u16, ly: u16| img[ly as usize * subw + lx as usize],
+            ResetPolicy::Reset,
+        );
+        assert!(
+            inc.diagnostics().worst_cell_swing > 0.9,
+            "checker block should raise worst swing, got {}",
+            inc.diagnostics().worst_cell_swing
+        );
+        assert_region_matches_oracle(&inc, &oracle_of(&img), cols, rows, "add-checker");
+
+        // (2) A far edit that does not touch the max needs no rescan.
+        paint(&mut img, 4, 4, 2, 2, &gray);
+        inc.set_target_region(
+            4,
+            4,
+            2,
+            2,
+            |lx: u16, ly: u16| img[ly as usize * subw + lx as usize],
+            ResetPolicy::Reset,
+        );
+        assert!(
+            inc.diagnostics().worst_cell_swing > 0.9,
+            "far edit must not drop the max"
+        );
+        assert_region_matches_oracle(&inc, &oracle_of(&img), cols, rows, "far-edit");
+
+        // (3) Overwriting the high-contrast block drops the argmax -> forces the
+        //     bounded downward rescan. The load-bearing branch.
+        paint(&mut img, 1, 1, 2, 2, &gray);
+        inc.set_target_region(
+            1,
+            1,
+            2,
+            2,
+            |lx: u16, ly: u16| img[ly as usize * subw + lx as usize],
+            ResetPolicy::Reset,
+        );
+        assert!(
+            inc.diagnostics().worst_cell_swing < 0.9,
+            "removing the checker must drop worst swing, got {}",
+            inc.diagnostics().worst_cell_swing
+        );
+        assert_region_matches_oracle(&inc, &oracle_of(&img), cols, rows, "drop-max");
+    }
+
+    #[test]
+    fn incremental_motion_region_matches_full_active_accounting() {
+        // A uniformly low-contrast target makes every cell eligible, so the active
+        // count after a motion edit is exactly (total - suppressed) and round-trips.
+        let (cols, rows) = (6u16, 6u16);
+        let (subw, subh) = (cols as usize * 2, rows as usize * 4);
+        let img = vec![[60u8, 60, 68]; subw * subh];
+        let mut p = TemporalDisplayProcessor::new(cols, rows, SubcellGlyphMode::Braille2x4, 5);
+        p.set_target_image(
+            |lx: u16, ly: u16| img[ly as usize * subw + lx as usize],
+            ResetPolicy::Reset,
+        );
+
+        let total = (cols as usize) * (rows as usize);
+        assert_eq!(
+            p.diagnostics().modulatable_cells,
+            total,
+            "flat low-contrast target: all cells eligible"
+        );
+        assert_eq!(p.diagnostics().active_cells, total, "no motion: all active");
+        let worst0 = p.diagnostics().worst_cell_swing;
+        let mean0 = p.diagnostics().mean_emitted_static_rmse;
+
+        let suppressed = 3usize * 2;
+        assert_eq!(p.set_motion_region(1, 1, 3, 2, true), suppressed);
+        assert_eq!(
+            p.diagnostics().active_cells,
+            total - suppressed,
+            "motion region suppresses exactly its cells"
+        );
+        assert_eq!(
+            p.diagnostics().modulatable_cells,
+            total,
+            "motion must not change eligibility"
+        );
+        assert!((p.diagnostics().worst_cell_swing - worst0).abs() < 1e-9);
+        assert!((p.diagnostics().mean_emitted_static_rmse - mean0).abs() < 1e-9);
+
+        assert_eq!(p.set_motion_region(1, 1, 3, 2, false), suppressed);
+        assert_eq!(
+            p.diagnostics().active_cells,
+            total,
+            "settled region resumes; active count round-trips"
+        );
+    }
+
+    #[test]
+    fn srgb8_linear_lut_is_bit_identical_to_the_transfer_function() {
+        // The LUT must reproduce the sRGB->linear transfer function exactly for
+        // every one of the 256 possible channel values, so the projector's SSE and
+        // argmin (hence its output) are provably unchanged by the optimization.
+        for v in 0u16..=255 {
+            let value = v as f32 / 255.0;
+            let direct = if value <= 0.04045 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            };
+            let lut = rgb8_to_linear([v as u8, v as u8, v as u8])[0];
+            assert_eq!(
+                lut.to_bits(),
+                direct.to_bits(),
+                "LUT entry {v} must be bit-identical to the transfer function"
+            );
+        }
+    }
+
+    #[test]
+    fn advance_into_matches_owned_advance() {
+        let mk = || {
+            let mut p = TemporalDisplayProcessor::new(6, 3, SubcellGlyphMode::Braille2x4, 0x1234);
+            p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.1));
+            p.set_target_image(
+                // A low-swing vertical gradient (ly spans 0..4*height): eligible,
+                // with fractional per-cell duty so the modulating path is exercised.
+                |_lx, ly| {
+                    let v = 70u8.wrapping_add((ly as u8).wrapping_mul(3));
+                    [v, v, v]
+                },
+                ResetPolicy::Reset,
+            );
+            p
+        };
+        let mut owned = mk();
+        let mut into = mk();
+        // A wrong-sized buffer must be resized transparently.
+        let mut buf = Surface::new(1, 1);
+        for frame in 0..64 {
+            let a = owned.advance(0);
+            into.advance_into(0, &mut buf);
+            assert_eq!(buf.width, 6, "advance_into resizes a mismatched buffer");
+            assert_eq!(buf.height, 3);
+            for y in 0..3 {
+                for x in 0..6 {
+                    assert_eq!(
+                        a.get(x, y).unwrap().glyph.grapheme,
+                        buf.get(x, y).unwrap().glyph.grapheme,
+                        "frame {frame} cell ({x},{y}) glyph must match the owned path"
+                    );
+                    assert_eq!(
+                        a.get(x, y).unwrap().style,
+                        buf.get(x, y).unwrap().style,
+                        "frame {frame} cell ({x},{y}) style must match the owned path"
+                    );
+                }
+            }
+        }
+        assert!(
+            into.diagnostics().modulating,
+            "this test must exercise the modulating path, not the static fallback"
+        );
+    }
+
+    #[test]
+    fn transport_preserves_long_run_mean() {
+        // The transport-aware path must converge each dot's time-average to its
+        // duty, exactly like the per-dot sigma-delta — the change-batching only
+        // defers corrections, it never drops them.
+        let mut field = TemporalBrailleField::new(1, 1, 7);
+        let duty = [0.8, 0.3, 0.5, 0.1, 0.05, 0.95, 0.65, 0.2];
+        field.set_cell_duty(0, 0, duty);
+        let frames = 5000usize;
+        let mut on = [0usize; 8];
+        for _ in 0..frames {
+            let m = field.advance_transport_masks(&[true], 0.5, None)[0];
+            for (i, o) in on.iter_mut().enumerate() {
+                if m & (1 << i) != 0 {
+                    *o += 1;
+                }
+            }
+        }
+        for i in 0..8 {
+            let got = on[i] as f32 / frames as f32;
+            assert!(
+                (got - duty[i]).abs() < 0.02,
+                "dot {i}: transport mean {got} != duty {}",
+                duty[i]
+            );
+        }
+    }
+
+    #[test]
+    fn transport_reduces_changed_cells_on_projected_content() {
+        // On realistic projected imagery (structured per-cell duties with a good
+        // static baseline), the transport-aware path emits materially fewer changed
+        // cells than the per-dot residual. (On a pathological all-8-dots-fractional
+        // field the gain is small — the win is content-dependent, which is honest;
+        // temporal is used on projected images, which is the case measured here.)
+        fn changed_per_frame(lambda: Option<f32>) -> f32 {
+            let (w, h) = (24u16, 10u16);
+            let mut p = TemporalDisplayProcessor::new(w, h, SubcellGlyphMode::Braille2x4, 0x5A);
+            p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.5));
+            p.set_target_image(
+                |lx, ly| {
+                    let v = 60u8.wrapping_add(((lx as u32 + ly as u32) & 0x1f) as u8);
+                    [v, v, v]
+                },
+                ResetPolicy::Reset,
+            );
+            p.set_transport(lambda, None);
+            assert!(
+                p.diagnostics().active_cells > 0,
+                "fixture must have modulatable cells"
+            );
+            let frames = 400usize;
+            let mut prev: Vec<String> = Vec::new();
+            let mut changed = 0usize;
+            for f in 0..frames {
+                let s = p.advance(0);
+                let cur: Vec<String> = (0..h)
+                    .flat_map(|y| (0..w).map(move |x| (x, y)))
+                    .map(|(x, y)| s.get(x, y).unwrap().glyph.grapheme.to_string())
+                    .collect();
+                if f > 0 {
+                    changed += cur.iter().zip(prev.iter()).filter(|(a, b)| a != b).count();
+                }
+                prev = cur;
+            }
+            changed as f32 / (frames - 1) as f32
+        }
+        let per_dot = changed_per_frame(None);
+        let transport = changed_per_frame(Some(0.8));
+        assert!(
+            transport < per_dot * 0.9,
+            "transport (λ=0.8) should change materially fewer cells on projected \
+             content: per-dot {per_dot:.1}, transport {transport:.1}"
+        );
+    }
+
+    #[test]
+    fn transport_budget_caps_changed_cells_per_frame() {
+        // A worst-case 50%-duty field wants to change every cell every couple of
+        // frames; the budget must hard-cap changed cells per frame regardless.
+        let (w, h) = (10u16, 4u16);
+        let elig = vec![true; (w * h) as usize];
+        let budget = 5usize;
+        let mut field = TemporalBrailleField::new(w, h, 0x77);
+        for y in 0..h {
+            for x in 0..w {
+                field.set_cell_duty(x, y, [0.5; 8]);
+            }
+        }
+        let mut prev = vec![0u8; (w * h) as usize];
+        for f in 0..600 {
+            let masks = field.advance_transport_masks(&elig, 0.3, Some(budget));
+            if f > 0 {
+                let changed = masks
+                    .iter()
+                    .zip(prev.iter())
+                    .filter(|(m, p)| m != p)
+                    .count();
+                assert!(
+                    changed <= budget,
+                    "frame {f}: {changed} changed cells exceeds budget {budget}"
+                );
+            }
+            prev = masks;
+        }
+    }
+
+    #[test]
+    fn changing_color_depth_reclassifies_reversibly() {
+        use crate::capability::ColorDepth;
+        let mut p = TemporalDisplayProcessor::new(4, 2, SubcellGlyphMode::Braille2x4, 5);
+        p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.1));
+        p.set_target_image(
+            |_lx, ly| {
+                let v = 90u8.wrapping_add((ly as u8).wrapping_mul(2));
+                [v, v, v]
+            },
+            ResetPolicy::Reset,
+        );
+        let tc = p.diagnostics().modulatable_cells;
+        assert!(tc > 0, "TrueColor: the low-swing gradient is modulatable");
+
+        // Mono carries no wire color -> every cell frozen, with no reprojection.
+        p.set_color_depth(ColorDepth::Mono);
+        assert_eq!(
+            p.diagnostics().modulatable_cells,
+            0,
+            "Mono freezes all cells"
+        );
+        assert_eq!(p.diagnostics().color_depth, ColorDepth::Mono);
+
+        // ANSI256/ANSI16 resolve against their palettes; the counts are recomputed
+        // live from the quantized colors (no ordering asserted — a coarse snap can
+        // merge or widen luminance gaps either way).
+        p.set_color_depth(ColorDepth::Ansi256);
+        let _a256 = p.diagnostics().modulatable_cells;
+        p.set_color_depth(ColorDepth::Ansi16);
+        let _a16 = p.diagnostics().modulatable_cells;
+
+        // Restoring the depth re-enables exactly the original cells: reclassification
+        // is live and non-destructive (the duty targets were never destroyed).
+        p.set_color_depth(ColorDepth::TrueColor);
+        assert_eq!(
+            p.diagnostics().modulatable_cells,
+            tc,
+            "restoring TrueColor re-enables the original cells with no reprojection"
+        );
     }
 }
