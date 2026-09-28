@@ -80,7 +80,16 @@ fn realize(trace: &SemanticTrace, world: &MusicWorld, seed: u64, plan: &Composit
     let targets = plan.targets();
 
     let mut harmony = HarmonyEngine::new(world, seed);
-    let chords = harmony.generate(&targets, plan.contract.resolution);
+    // Under DeflectedLift the harmony IS a recurring Lift->Deflect->Open->Reset cell (the audible
+    // spine); other grammars use the phrase-scope cadential engine (backbone = None).
+    let backbone = super::backbone::plan_for(
+        plan.contract.grammar,
+        world,
+        seed,
+        plan.contract.recurrence_bars,
+    );
+    let chords =
+        harmony.generate_with_backbone(&targets, plan.contract.resolution, backbone.as_ref());
 
     let mut groove = GrooveEngine::new(world, seed);
     let gr = groove.generate(&targets);

@@ -14,6 +14,7 @@
 //! Diatonic chords are still derived from the scale (quality classified from the actual stacked
 //! scale thirds, so it is correct in any mode).
 
+use super::backbone::BackbonePlan;
 use super::contract::ResolutionPolicy;
 use super::discourse::Closure;
 use super::form::BEATS_PER_BAR;
@@ -65,15 +66,7 @@ impl HarmonyEngine {
 
     /// Build a diatonic chord on scale `degree` (0-based), a seventh if requested.
     pub fn diatonic_chord(&self, degree: i32, seventh: bool) -> Chord {
-        let root = self.scale.degree_pitch(degree, 4);
-        let third = self.scale.degree_pitch(degree + 2, 4);
-        let fifth = self.scale.degree_pitch(degree + 4, 4);
-        let seventh_p = self.scale.degree_pitch(degree + 6, 4);
-        let t = third - root;
-        let f = fifth - root;
-        let s = seventh_p - root;
-        let quality = classify(t, f, s, seventh);
-        Chord::new(root.rem_euclid(12), quality)
+        diatonic_chord(&self.scale, degree, seventh)
     }
 
     /// Generate the full progression from the composition plan's [`super::plan::PhraseTarget`]s,
@@ -93,8 +86,24 @@ impl HarmonyEngine {
         targets: &[super::plan::PhraseTarget],
         resolution: ResolutionPolicy,
     ) -> Vec<ChordSpan> {
+        self.generate_with_backbone(targets, resolution, None)
+    }
+
+    /// Like [`HarmonyEngine::generate`], but when a [`BackbonePlan`] is supplied the progression IS
+    /// that backbone: the frozen Lift → Deflect → Open → Reset cell, tiled bar-aligned across the
+    /// piece and transformed per cycle — a small cyclic harmonic identity the ear can learn. Without
+    /// a backbone this is the phrase-scope cadential engine, unchanged.
+    pub fn generate_with_backbone(
+        &mut self,
+        targets: &[super::plan::PhraseTarget],
+        resolution: ResolutionPolicy,
+        backbone: Option<&BackbonePlan>,
+    ) -> Vec<ChordSpan> {
         if targets.is_empty() {
             return Vec::new();
+        }
+        if let Some(bb) = backbone {
+            return generate_backbone_tiled(targets, bb);
         }
         let total_beats = targets.last().map(|t| t.end_beat()).unwrap_or(0.0);
         let functional = matches!(resolution, ResolutionPolicy::Functional);
@@ -328,6 +337,49 @@ impl HarmonyEngine {
         };
         *self.rng.pick(chosen).unwrap_or(&4)
     }
+}
+
+/// Build a diatonic chord on scale `degree` (0-based), classified from the actual stacked scale
+/// thirds so the quality is correct in any mode; a seventh is added when `use_seventh` is set.
+/// Shared by [`HarmonyEngine::diatonic_chord`] and the harmonic backbone cell generator.
+pub(crate) fn diatonic_chord(scale: &Scale, degree: i32, use_seventh: bool) -> Chord {
+    let root = scale.degree_pitch(degree, 4);
+    let third = scale.degree_pitch(degree + 2, 4) - root;
+    let fifth = scale.degree_pitch(degree + 4, 4) - root;
+    let seventh = scale.degree_pitch(degree + 6, 4) - root;
+    Chord::new(
+        root.rem_euclid(12),
+        classify(third, fifth, seventh, use_seventh),
+    )
+}
+
+/// Tile a [`BackbonePlan`]'s frozen cell bar-aligned across the targets' span — one chord per bar,
+/// each the cell's gesture chord for that bar (transformed per cycle). This makes the DeflectedLift
+/// harmony a recurring, learnable cyclic identity instead of per-slot degree roulette.
+fn generate_backbone_tiled(
+    targets: &[super::plan::PhraseTarget],
+    bb: &BackbonePlan,
+) -> Vec<ChordSpan> {
+    let total_beats = targets.last().map(|t| t.end_beat()).unwrap_or(0.0);
+    let n_bars = (total_beats / BEATS_PER_BAR).round() as u32;
+    let mut spans = Vec::with_capacity(n_bars as usize);
+    for bar in 0..n_bars {
+        let sb = bar as f64 * BEATS_PER_BAR;
+        let dur = (total_beats - sb).min(BEATS_PER_BAR) as f32;
+        if dur <= 1e-6 {
+            break;
+        }
+        let (chord, function, gesture, _cycle) = bb.chord_at_bar(bar);
+        spans.push(ChordSpan {
+            start_beat: sb,
+            dur_beats: dur,
+            chord,
+            function,
+            degree: bb.degree_at_bar(bar),
+            note: gesture.label(),
+        });
+    }
+    spans
 }
 
 /// The rough functional heat of a scale degree — tonic-ish degrees are calm, the leading-tone

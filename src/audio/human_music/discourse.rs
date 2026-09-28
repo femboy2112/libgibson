@@ -599,10 +599,16 @@ impl SongBackbone {
     }
 }
 
-/// The DeflectedLift bounce as a role sequence: `Establish` (the verse) opens; then a recurring
-/// cycle of `Depart` (the lift) → `Culminate` (the warm hook opening) → `Answer` (the soft landing)
-/// → `Return` (the rounded reset); and `Dissolve` (the tag) closes. The hook (`Culminate`) recurs
-/// across cycles — the song keeps becoming itself instead of building to one cinematic climax.
+/// The DeflectedLift bounce as a RHETORICAL role sequence (the "why" layer): `Establish` (the verse)
+/// opens; then a recurring cycle of `Depart` → `Culminate` → `Answer` → `Return`; and `Dissolve`
+/// (the tag) closes. The hook (`Culminate`) recurs across cycles — the song keeps becoming itself
+/// instead of building to one cinematic climax.
+///
+/// This is deliberately ORTHOGONAL to the harmonic gesture cell (Lift → Deflect → Open → Reset),
+/// which lives in `backbone::BackbonePlan`: a role is *why* a phrase exists in the argument; a
+/// gesture is *what the harmony does* under it. Round V conflated the two — encoding the harmonic
+/// contour with these roles, in a muddled order, which is why the spine was inaudible; Round VI
+/// keeps them separate.
 ///
 /// Each cycle opens exactly the obligations a later phrase in the SAME cycle settles (Depart's
 /// harmonic departure paid by its Return; Culminate's suspended cadence paid by its Answer), so the

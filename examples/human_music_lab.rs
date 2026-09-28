@@ -22,6 +22,7 @@ use gibson::audio::human_music::diagnostics::{
     CoherenceDiagnostics, DiscourseDiagnostics, LeadOutlineDiagnostics, RealizationDiagnostics,
 };
 use gibson::audio::human_music::functor::compose_with_grammar;
+use gibson::audio::human_music::harmony::ChordSpan;
 use gibson::audio::human_music::semantic::{
     calm_loop, deflected_lift_trace, rise_unresolved, SemanticTrace,
 };
@@ -46,6 +47,26 @@ fn story_trace(name: &str, beats: f64) -> SemanticTrace {
         "calm" => calm_loop(beats),
         "rise" | "unresolved" => rise_unresolved(beats),
         _ => deflected_lift_trace(beats),
+    }
+}
+
+/// Print the DeflectedLift harmonic spine from the realized chords, grouped into cycles, so a
+/// listener can point to reach -> miss -> open -> reset directly in the Score dump.
+fn print_spine(chords: &[ChordSpan]) {
+    let tagged: Vec<&ChordSpan> = chords
+        .iter()
+        .filter(|c| matches!(c.note, "lift" | "deflect" | "open" | "reset"))
+        .collect();
+    if tagged.is_empty() {
+        return;
+    }
+    println!("harmonic spine (DeflectedLift cell — reach -> miss -> open -> reset):");
+    for (cyc, chunk) in tagged.chunks(4).enumerate().take(3) {
+        let parts: Vec<String> = chunk
+            .iter()
+            .map(|c| format!("{}={}", c.note, c.chord.label()))
+            .collect();
+        println!("  cycle {cyc}: {}", parts.join("  "));
     }
 }
 
@@ -138,6 +159,7 @@ fn main() -> std::io::Result<()> {
             world.name
         );
         print!("{}", score.summary());
+        print_spine(&score.chords);
         print!("{}", plan.dump());
         print!("{}", CoherenceDiagnostics::measure(&plan, &score).report());
         print!("{}", DiscourseDiagnostics::measure(&plan, &score).report());
