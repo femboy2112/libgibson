@@ -340,6 +340,11 @@ pub fn realize_drums(
                 Some(Agent::Drums),
             )
             .fold(ActionStamp::NONE, ActionStamp::with);
+        // The shared budget: the kit's free allowance this bar. The pocket (kick, backbeat,
+        // accents) is the floor; ghosts spend what is left, and a tight bar thins the hats.
+        let free = perf.free_allowance(Agent::Drums, bar);
+        let mut spent = 0.0f32;
+        let tight = free < 4.0;
 
         for s in 0..STEPS {
             let w = perf.accent.at(bar, s);
@@ -448,7 +453,9 @@ pub fn realize_drums(
                 && s % 2 == 1
                 && (0.12..0.5).contains(&w.syncopation)
                 && rng.chance(0.35 + 0.4 * eb.kinetic)
+                && spent + 0.2 <= free
             {
+                spent += 0.2;
                 hit(
                     &mut hits,
                     DrumVoice::Snare,
@@ -465,8 +472,15 @@ pub fn realize_drums(
                 DrumsMode::HalfTime => 4,
                 DrumsMode::DoubleTime => 1,
                 DrumsMode::Break => 99,
+                _ if tight => subdiv_steps.max(2),
                 _ => subdiv_steps,
             };
+            if kick {
+                spent += 0.4;
+            }
+            if back {
+                spent += 0.4;
+            }
             if s % hat_every == 0 && !in_fill {
                 let open =
                     (w.pickup >= 0.8 && s % 2 == 0 && s >= 12) || w.push >= 0.9 || w.hit >= 0.9;

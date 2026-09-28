@@ -211,6 +211,9 @@ pub struct PerformancePlan {
     /// The plan's discourse obligations with each settlement bound to the concrete action that
     /// discharges it in THIS performance (a paid suspended cadence cites its resolution).
     pub obligations: super::discourse::ObligationLedger,
+    /// The shared complexity allocation per bar (planned before anybody plays; every realizer
+    /// consumes its share).
+    pub budget: Vec<super::budget::ComplexityAllocation>,
 }
 
 impl PerformancePlan {
@@ -322,7 +325,7 @@ impl PerformancePlan {
                 .unwrap_or((0.0, 0.0))
         });
 
-        PerformancePlan {
+        let mut perf = PerformancePlan {
             language: lang,
             region,
             chords,
@@ -343,7 +346,26 @@ impl PerformancePlan {
             stage,
             admissions,
             obligations,
+            budget: Vec::new(),
+        };
+        // 8. The shared complexity budget: the lead's statements and the planned answers and
+        //    figures are reserved, the rest is shared out to the accompanists.
+        perf.budget = super::budget::allocate(&perf);
+        for (eb, a) in perf.ensemble.iter_mut().zip(&perf.budget) {
+            eb.budget = a.total;
         }
+        perf
+    }
+
+    /// `agent`'s complexity allowance in `bar` minus what the plan already reserved for it (its
+    /// answers, its figures): what its free playing may still spend.
+    pub fn free_allowance(&self, agent: Agent, bar: u32) -> f32 {
+        let Some(a) = self.budget.get(bar as usize) else {
+            return f32::INFINITY;
+        };
+        let i = super::ensemble::seat_ix(agent).unwrap_or(0);
+        let burst = if a.burst.is_some() { 1.25 } else { 1.0 };
+        (a.allowance[i] * burst - a.reserved[i]).max(0.0)
     }
 
     /// The material with id `id`.

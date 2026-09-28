@@ -93,6 +93,19 @@ pub fn compose_full(
     Composition { score, plan, perf }
 }
 
+/// Realize a score from an explicit (possibly hand-mutated) plan and performance — the entry the
+/// adversarial probes use to inject a call, veto an arrangement, or license a burst and watch what
+/// the players do with it.
+pub fn realize_performance(
+    trace: &SemanticTrace,
+    world: &MusicWorld,
+    seed: u64,
+    plan: &CompositionPlan,
+    perf: &PerformancePlan,
+) -> Score {
+    realize(trace, world, seed, plan, perf)
+}
+
 /// Realize a score from a finished plan and its performance. The players are realized in
 /// listening order — the lead first, then the keys (who hear the lead), the bass (who hears both)
 /// and the drums (who hear the bass) — each reading the same [`PerformancePlan`]; then

@@ -17,6 +17,7 @@
 pub mod action;
 pub mod backbone;
 pub mod bass;
+pub mod budget;
 pub mod comp;
 pub mod context;
 pub mod contract;

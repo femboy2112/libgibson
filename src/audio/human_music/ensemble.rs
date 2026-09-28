@@ -78,7 +78,7 @@ pub struct EnsembleBar {
     pub keys: KeysMode,
     pub bass: BassMode,
     pub drums: DrumsMode,
-    /// Simultaneous-information budget for the bar (capped per-role onsets per beat, summed).
+    /// The bar's total complexity allowance (weighted onsets per bar; see [`super::budget`]).
     pub budget: f32,
     /// The kinetic target in `[0, 1]`: forward motion independent of loudness.
     pub kinetic: f32,
@@ -287,7 +287,8 @@ pub(super) fn plan_ensemble(
             KeysMode::Sustain
         } else if has(ActionKind::Hit) || has(ActionKind::Push) {
             KeysMode::Stab
-        } else if lead_busy >= 3.0 && lang.complexity_budget < 8.0 {
+        } else if lead_busy >= 3.0 && lang.id == super::language::LanguageId::Simple {
+            // The plain language leaves a busy lead alone.
             KeysMode::Space
         } else {
             KeysMode::Comp

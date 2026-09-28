@@ -160,17 +160,15 @@ pub fn realize_keys(
         let max_stabs = match eb.keys {
             KeysMode::Stab => 2,
             KeysMode::Comp | KeysMode::Answer => {
-                // The complexity budget: fewer stabs when the lead is dense in this bar.
-                let lead_notes = lead_in(lead, bar_start, bar_start + 4.0).len();
-                // When the bass is quoting/countering (in front), the keys leave it room too.
-                let bass_front = matches!(
-                    eb.bass,
-                    super::performance::BassMode::Quote | super::performance::BassMode::Counter
-                );
-                let room =
-                    (eb.budget - lead_notes as f32 - if bass_front { 2.5 } else { 0.0 }).max(0.0);
-                ((room / 2.5).round() as usize)
-                    .clamp(1, if perf.language.shell_voicings { 3 } else { 2 })
+                // The shared complexity budget: the keys spend only their own allowance (the lead's
+                // statements and every planned answer and figure were reserved first). A stab
+                // costs about one weighted onset.
+                let free = perf.free_allowance(Agent::Keys, bar);
+                ((free / 1.1).floor() as usize).min(if perf.language.shell_voicings {
+                    3
+                } else {
+                    2
+                })
             }
             _ => 0,
         };

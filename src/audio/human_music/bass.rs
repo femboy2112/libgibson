@@ -105,6 +105,8 @@ pub fn realize_bass(
         let mut onsets: Vec<usize> = vec![0];
         match eb.bass {
             BassMode::Pedal => {}
+            // A walk costs four onsets; when the allowance cannot pay for them it walks in halves.
+            BassMode::Walk if perf.free_allowance(Agent::Bass, bar) < 3.2 => onsets = vec![0, 8],
             BassMode::Walk => onsets = vec![0, 4, 8, 12],
             BassMode::Foundation | BassMode::Counter | BassMode::Quote => {
                 // The bass's own subset of the grid: strong eighth off-beats of the gesture cell
@@ -126,6 +128,11 @@ pub fn realize_bass(
                 if lead_notes >= 5 && eb.foreground != Agent::Bass {
                     n -= 1;
                 }
+                // The shared budget: the downbeat is the floor; extra onsets are what the bass's
+                // allowance still pays for.
+                let free = perf.free_allowance(Agent::Bass, bar);
+                let affordable = ((free - 0.8) / 0.8).floor().max(0.0) as usize;
+                n = n.min(affordable);
                 onsets.extend(extra.iter().take(n).map(|x| x.1));
                 if eb.bass == BassMode::Foundation && eb.kinetic < 0.55 {
                     onsets.push(8);
