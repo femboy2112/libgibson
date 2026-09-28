@@ -8,7 +8,7 @@
 //!
 //! The central construction is a lax-monoidal functor `F_skin : 𝒮 -> 𝓜` from a semantic
 //! style/story category to a musical-intent category, parameterized by a LibGibson
-//! [`world::MusicWorld`]. See [`docs/HUMAN_MUSIC_ARCHITECTURE.md`].
+//! [`world::MusicWorld`]. See `docs/HUMAN_MUSIC_ARCHITECTURE.md`.
 //!
 //! Round I builds the full vertical slice: semantic category, intent category, the three
 //! MusicWorlds, form/harmony/voicing/motif/groove engines, the Score IR, the synthesizer,

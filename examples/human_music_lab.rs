@@ -16,8 +16,8 @@
 
 use std::path::PathBuf;
 
-use gibson::audio::human_music::{compose, demo_trace, MusicWorld, WorldId};
 use gibson::audio::human_music::synth::HumanMusicSynth;
+use gibson::audio::human_music::{compose, demo_trace, MusicWorld, WorldId};
 use gibson::audio::render::OfflineRenderer;
 use gibson::audio::wav::write_wav_i16;
 use gibson::audio::SampleRate;
@@ -30,7 +30,9 @@ fn arg(flag: &str) -> Option<String> {
 
 fn main() -> std::io::Result<()> {
     let seed: u64 = arg("--seed=").and_then(|s| s.parse().ok()).unwrap_or(2112);
-    let beats: f64 = arg("--beats=").and_then(|s| s.parse().ok()).unwrap_or(120.0);
+    let beats: f64 = arg("--beats=")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(120.0);
     let which = arg("--world=").unwrap_or_else(|| "all".into());
     let out_dir = arg("--out=")
         .map(PathBuf::from)
@@ -48,8 +50,15 @@ fn main() -> std::io::Result<()> {
         _ => vec![WorldId::BlackIce, WorldId::Vapor95, WorldId::SwissSignal],
     };
 
-    println!("HumanMusic lab — one semantic trace, {} events, {beats:.0} beats", trace.events.len());
-    println!("seed={seed}  sr={} Hz  out={}\n", sr.get(), out_dir.display());
+    println!(
+        "HumanMusic lab — one semantic trace, {} events, {beats:.0} beats",
+        trace.events.len()
+    );
+    println!(
+        "seed={seed}  sr={} Hz  out={}\n",
+        sr.get(),
+        out_dir.display()
+    );
 
     for id in worlds {
         let world = MusicWorld::from_id(id);
@@ -69,7 +78,10 @@ fn main() -> std::io::Result<()> {
 
         let real_secs = out.duration().as_secs_f64();
         let (ldc, rdc) = out.audio.dc_offset();
-        println!("=== {} =========================================", world.name);
+        println!(
+            "=== {} =========================================",
+            world.name
+        );
         print!("{}", score.summary());
         println!(
             "render: {real_secs:.1}s audio in {:.0}ms  ({:.1}x realtime)  peak={:.3} rms={:.3} dc=({:.4},{:.4})",

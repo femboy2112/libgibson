@@ -336,7 +336,10 @@ mod tests {
         let mut h2 = Hat::new(SR);
         h2.trigger(0.8, true);
         let (_v, hf_open) = play(|| (h2.next(), h2.is_active()), SR as usize);
-        assert!(hf_open > hf_closed, "open hat should ring longer than closed");
+        assert!(
+            hf_open > hf_closed,
+            "open hat should ring longer than closed"
+        );
 
         let mut c = Clap::new(SR);
         c.trigger(0.9);

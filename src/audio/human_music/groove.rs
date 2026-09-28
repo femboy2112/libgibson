@@ -96,16 +96,14 @@ impl GrooveEngine {
             let steps = (self.subdiv as f64 * bpb) as u32; // subdivisions per bar
             for s in 0..steps {
                 let frac = s as f64 / self.subdiv as f64; // beat position within the bar
-                // Density gate: at low density drop some off-steps.
+                                                          // Density gate: at low density drop some off-steps.
                 let on_beat = (frac.fract()).abs() < 1e-6;
                 if !on_beat && density < 0.5 && self.rng.chance(0.5) {
                     continue;
                 }
                 let accent = if on_beat { 0.7 } else { 0.42 };
                 let v = accent * self.dyn_scale(energy);
-                let open = !on_beat
-                    && (frac - (bpb - 0.5)).abs() < 1e-6
-                    && self.rng.chance(0.4); // "& of 4" lift
+                let open = !on_beat && (frac - (bpb - 0.5)).abs() < 1e-6 && self.rng.chance(0.4); // "& of 4" lift
                 let voice = if open {
                     DrumVoice::OpenHat
                 } else {
@@ -131,7 +129,8 @@ impl GrooveEngine {
     }
 
     fn dyn_scale(&self, energy: f32) -> f32 {
-        (self.base_dynamic * (0.55 + 0.45 * energy) * (0.6 + 0.4 * self.drum_density)).clamp(0.0, 1.0)
+        (self.base_dynamic * (0.55 + 0.45 * energy) * (0.6 + 0.4 * self.drum_density))
+            .clamp(0.0, 1.0)
     }
 
     /// Apply swing to an off-subdivision position (delays every odd subdivision — the
@@ -196,7 +195,11 @@ mod tests {
         assert!(!gr.hits.is_empty());
         assert!(!gr.kick_beats.is_empty());
         // Kicks recorded match kick hits.
-        let kick_hits = gr.hits.iter().filter(|h| h.voice == DrumVoice::Kick).count();
+        let kick_hits = gr
+            .hits
+            .iter()
+            .filter(|h| h.voice == DrumVoice::Kick)
+            .count();
         assert_eq!(kick_hits, gr.kick_beats.len());
         // There are snares on backbeats and hats subdividing.
         assert!(gr.hits.iter().any(|h| h.voice == DrumVoice::Snare));

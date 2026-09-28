@@ -153,7 +153,10 @@ mod tests {
     fn resonance_boosts_energy_near_cutoff() {
         let flat = rms_of_sine_through(1000.0, 0.05, 1000.0);
         let resonant = rms_of_sine_through(1000.0, 0.9, 1000.0);
-        assert!(resonant > flat, "resonance should boost at cutoff: {resonant} vs {flat}");
+        assert!(
+            resonant > flat,
+            "resonance should boost at cutoff: {resonant} vs {flat}"
+        );
         assert!(resonant.is_finite());
     }
 }

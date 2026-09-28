@@ -309,8 +309,7 @@ mod tests {
     #[test]
     fn composition_threads_state_and_sums_cost() {
         let a = MusicIntent::default();
-        let (seq_state, seq_cost) =
-            compose(a, &[IntentMorphism::Prepare, IntentMorphism::Resolve]);
+        let (seq_state, seq_cost) = compose(a, &[IntentMorphism::Prepare, IntentMorphism::Resolve]);
         // Manually compose.
         let (m1, c1) = IntentMorphism::Prepare.apply(a);
         let (m2, c2) = IntentMorphism::Resolve.apply(m1);

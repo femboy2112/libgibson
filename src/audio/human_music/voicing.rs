@@ -58,11 +58,7 @@ impl VoiceLeader {
         let n = n.clamp(2, 6);
         let base = self.close_voicing(chord, n, center);
         // Candidate octave placements of the whole voicing.
-        let candidates = [
-            shift(&base, -12),
-            base.clone(),
-            shift(&base, 12),
-        ];
+        let candidates = [shift(&base, -12), base.clone(), shift(&base, 12)];
         let chosen = match &self.prev {
             None => {
                 // No history: choose the placement whose mean pitch is nearest `center`.
@@ -170,7 +166,10 @@ mod tests {
         let c = vl.lead(&Chord::new(0, Quality::Maj), 4, 67);
         let a = vl.lead(&Chord::new(9, Quality::Min), 4, 67);
         let motion = c.motion_to(&a);
-        assert!(motion <= 6, "Cmaj->Amin motion {motion} too large for related chords");
+        assert!(
+            motion <= 6,
+            "Cmaj->Amin motion {motion} too large for related chords"
+        );
     }
 
     #[test]
@@ -179,7 +178,7 @@ mod tests {
         for root in [0, 5, 7, 2, 9] {
             let v = vl.lead(&Chord::new(root, Quality::Maj7), 4, 67);
             for &p in &v.voices {
-                assert!(p >= 55 && p <= 79 + 12, "voice {p} out of register");
+                assert!((55..=79 + 12).contains(&p), "voice {p} out of register");
             }
             assert!(v.voices.windows(2).all(|w| w[0] <= w[1]), "not sorted");
         }
@@ -193,7 +192,11 @@ mod tests {
             v.voices.iter().map(|p| p.rem_euclid(12)).collect();
         // Root, third, seventh must all be present in a 4-voice maj7 voicing.
         for tone in [0, 4, 11] {
-            assert!(pcs.contains(&tone), "maj7 voicing missing pc {tone}: {:?}", v.voices);
+            assert!(
+                pcs.contains(&tone),
+                "maj7 voicing missing pc {tone}: {:?}",
+                v.voices
+            );
         }
     }
 
@@ -204,6 +207,11 @@ mod tests {
         let vt = tight.lead(&Chord::new(0, Quality::Maj), 4, 67);
         let vo = open.lead(&Chord::new(0, Quality::Maj), 4, 67);
         let span = |v: &Voicing| v.voices.last().unwrap() - v.voices.first().unwrap();
-        assert!(span(&vo) >= span(&vt), "open span {} !>= tight span {}", span(&vo), span(&vt));
+        assert!(
+            span(&vo) >= span(&vt),
+            "open span {} !>= tight span {}",
+            span(&vo),
+            span(&vt)
+        );
     }
 }

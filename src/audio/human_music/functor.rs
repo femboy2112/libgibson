@@ -60,7 +60,12 @@ fn chord_at(chords: &[ChordSpan], beat: f64) -> Chord {
         .rev()
         .find(|c| beat + 1e-6 >= c.start_beat)
         .map(|c| c.chord)
-        .unwrap_or_else(|| chords.first().map(|c| c.chord).unwrap_or(Chord::new(0, super::theory::Quality::Maj)))
+        .unwrap_or_else(|| {
+            chords
+                .first()
+                .map(|c| c.chord)
+                .unwrap_or(Chord::new(0, super::theory::Quality::Maj))
+        })
 }
 
 /// The pitch with class `pc` nearest to `center`.
@@ -100,10 +105,14 @@ fn add_comp(score: &mut Score, chords: &[ChordSpan], world: &MusicWorld, seed: u
         let voicing = keys_vl.lead(&span.chord, 4, 72);
         let stab_positions: Vec<f64> = if keys_stab_vapor {
             // Off-beat stabs (laid-back).
-            (0..(span.dur_beats as usize)).map(|b| b as f64 + 0.5).collect()
+            (0..(span.dur_beats as usize))
+                .map(|b| b as f64 + 0.5)
+                .collect()
         } else {
             // On-beat comps.
-            (0..(span.dur_beats.ceil() as usize)).map(|b| b as f64).collect()
+            (0..(span.dur_beats.ceil() as usize))
+                .map(|b| b as f64)
+                .collect()
         };
         for (i, off) in stab_positions.iter().enumerate() {
             if *off >= span.dur_beats as f64 {
@@ -130,20 +139,17 @@ fn add_comp(score: &mut Score, chords: &[ChordSpan], world: &MusicWorld, seed: u
     }
 }
 
-fn add_bass(
-    score: &mut Score,
-    chords: &[ChordSpan],
-    kick_beats: &[f64],
-    form: &Form,
-    seed: u64,
-) {
+fn add_bass(score: &mut Score, chords: &[ChordSpan], kick_beats: &[f64], form: &Form, seed: u64) {
     let mut rng = Rng::new(seed ^ 0xBA55_0001);
     let bass_center = 40; // ~E2
     for (ci, span) in chords.iter().enumerate() {
         let span_end = span.start_beat + span.dur_beats as f64;
         let root_pc = span.chord.root_pc;
         let root = pitch_near(root_pc, bass_center);
-        let next_root_pc = chords.get(ci + 1).map(|c| c.chord.root_pc).unwrap_or(root_pc);
+        let next_root_pc = chords
+            .get(ci + 1)
+            .map(|c| c.chord.root_pc)
+            .unwrap_or(root_pc);
         let energy = form.energy_at(span.start_beat / BEATS_PER_BAR);
 
         // Kick-locked bass: a bass note on each kick within the span.
@@ -154,7 +160,14 @@ fn add_bass(
             .collect();
         if kicks.is_empty() {
             // Fallback: at least the downbeat root.
-            push_bass(score, span.start_beat, span.dur_beats.min(2.0), root, energy, "root");
+            push_bass(
+                score,
+                span.start_beat,
+                span.dur_beats.min(2.0),
+                root,
+                energy,
+                "root",
+            );
             continue;
         }
         for (i, &k) in kicks.iter().enumerate() {
@@ -167,7 +180,10 @@ fn add_bass(
                 (next_root - dir.clamp(-1, 1), "approach")
             } else if energy > 0.6 && rng.chance(0.3) {
                 // Fifth or octave displacement for drive.
-                (pitch_near((root_pc + 7).rem_euclid(12), bass_center), "fifth")
+                (
+                    pitch_near((root_pc + 7).rem_euclid(12), bass_center),
+                    "fifth",
+                )
             } else {
                 (root, "root")
             };
@@ -278,7 +294,9 @@ fn add_sfx_and_provenance(score: &mut Score, trace: &SemanticTrace, form: &Form)
     let mut prev = trace.events.first().map(|e| e.state);
     for ev in &trace.events {
         let significant = ev.kind.requires_event()
-            && prev.map(|p| p.is_significant_change(&ev.state)).unwrap_or(true);
+            && prev
+                .map(|p| p.is_significant_change(&ev.state))
+                .unwrap_or(true);
         prev = Some(ev.state);
         if !significant {
             continue;
@@ -345,7 +363,9 @@ mod tests {
         let trace = demo_trace(120.0);
         for world in MusicWorld::all() {
             let score = compose(&trace, &world, 2112);
-            score.validate().unwrap_or_else(|e| panic!("{}: {e}", world.name));
+            score
+                .validate()
+                .unwrap_or_else(|e| panic!("{}: {e}", world.name));
             // All four roles present.
             for role in [Role::Pad, Role::Bass, Role::Lead, Role::Keys] {
                 assert!(
@@ -391,7 +411,11 @@ mod tests {
     fn walk_intent_resolves_at_the_end() {
         // The demo arc ends in resolution (SectionResolved -> Relax, Cadence).
         let intent = walk_intent(&demo_trace(120.0));
-        assert!(intent.tension < 0.5, "ends unresolved: tension {}", intent.tension);
+        assert!(
+            intent.tension < 0.5,
+            "ends unresolved: tension {}",
+            intent.tension
+        );
         // And it developed the motif along the way (Impact -> Modulate bumps development).
         assert!(intent.motif.development > 0);
     }

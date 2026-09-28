@@ -11,7 +11,11 @@ impl Rng {
     /// A generator seeded by `seed` (0 remapped so it never sticks).
     pub fn new(seed: u64) -> Rng {
         Rng {
-            state: if seed == 0 { 0x1234_5678_9abc_def1 } else { seed },
+            state: if seed == 0 {
+                0x1234_5678_9abc_def1
+            } else {
+                seed
+            },
         }
     }
 

@@ -255,7 +255,14 @@ impl Compressor {
     }
 
     /// Set threshold (dBFS), ratio, attack/release (ms) and makeup gain (dB).
-    pub fn set(&mut self, threshold_db: f32, ratio: f32, attack_ms: f32, release_ms: f32, makeup_db: f32) {
+    pub fn set(
+        &mut self,
+        threshold_db: f32,
+        ratio: f32,
+        attack_ms: f32,
+        release_ms: f32,
+        makeup_db: f32,
+    ) {
         self.threshold_db = threshold_db;
         self.ratio = ratio.max(1.0);
         self.atk_coef = coef_ms(attack_ms, self.sr);
@@ -267,7 +274,11 @@ impl Compressor {
     #[inline]
     pub fn process_stereo(&mut self, l: f32, r: f32) -> (f32, f32) {
         let level = l.abs().max(r.abs());
-        let coef = if level > self.env { self.atk_coef } else { self.rel_coef };
+        let coef = if level > self.env {
+            self.atk_coef
+        } else {
+            self.rel_coef
+        };
         self.env += coef * (level - self.env);
         let level_db = 20.0 * (self.env.max(1e-6)).log10();
         let over = level_db - self.threshold_db;
@@ -377,7 +388,7 @@ mod tests {
     fn reverb_tail_decays_and_never_diverges() {
         let mut rv = Reverb::new(SR);
         rv.set(1.0, 0.4, 1.0); // full wet
-        // Impulse in, then silence for 3s: the tail must decay, never blow up.
+                               // Impulse in, then silence for 3s: the tail must decay, never blow up.
         let (mut l, mut r) = rv.process_stereo(1.0, 1.0);
         let mut peak_early = l.abs().max(r.abs());
         for i in 0..(SR as usize * 3) {
@@ -390,7 +401,10 @@ mod tests {
             }
         }
         let late = l.abs().max(r.abs());
-        assert!(late < peak_early * 0.5 + 1e-4, "tail did not decay: {late} vs {peak_early}");
+        assert!(
+            late < peak_early * 0.5 + 1e-4,
+            "tail did not decay: {late} vs {peak_early}"
+        );
     }
 
     #[test]
@@ -422,7 +436,10 @@ mod tests {
                 out_peak = out_peak.max(l.abs());
             }
         }
-        assert!(out_peak < in_peak, "comp did not reduce: {out_peak} vs {in_peak}");
+        assert!(
+            out_peak < in_peak,
+            "comp did not reduce: {out_peak} vs {in_peak}"
+        );
     }
 
     #[test]
@@ -432,7 +449,10 @@ mod tests {
         for i in 0..SR as usize {
             let x = 3.0 * (i as f32 * 0.03).sin(); // way over full scale
             let (l, r) = lim.process_stereo(x, x);
-            assert!(l.abs() <= 0.9 + 1e-6 && r.abs() <= 0.9 + 1e-6, "limiter overshoot {l}");
+            assert!(
+                l.abs() <= 0.9 + 1e-6 && r.abs() <= 0.9 + 1e-6,
+                "limiter overshoot {l}"
+            );
         }
     }
 }

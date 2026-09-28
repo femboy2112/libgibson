@@ -146,7 +146,10 @@ impl Score {
                 return Err("non-finite note time".into());
             }
             if n.start_beat < -1e-6 || n.start_beat > self.total_beats + 1e-6 {
-                return Err(format!("note start {} out of [0,{}]", n.start_beat, self.total_beats));
+                return Err(format!(
+                    "note start {} out of [0,{}]",
+                    n.start_beat, self.total_beats
+                ));
             }
             if n.dur_beats <= 0.0 {
                 return Err("non-positive note duration".into());
@@ -191,14 +194,14 @@ impl Score {
                 sec.density
             );
         }
-        let _ = writeln!(
-            s,
-            "chords ({}):",
-            self.chords.len()
-        );
+        let _ = writeln!(s, "chords ({}):", self.chords.len());
         let mut line = String::from("  ");
         for (i, c) in self.chords.iter().enumerate() {
-            let tag = if c.note.is_empty() { c.chord.label() } else { format!("{}[{}]", c.chord.label(), c.note) };
+            let tag = if c.note.is_empty() {
+                c.chord.label()
+            } else {
+                format!("{}[{}]", c.chord.label(), c.note)
+            };
             let _ = write!(line, "{tag} ");
             if (i + 1) % 8 == 0 {
                 let _ = writeln!(s, "{line}");

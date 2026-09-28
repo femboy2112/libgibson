@@ -93,7 +93,15 @@ pub fn extract_clip_audio(
 ) -> io::Result<ClipAudio> {
     // Decode to raw f32le stereo on stdout: fast, dependency-free to parse.
     let out = Command::new("ffmpeg")
-        .args(["-v", "error", "-ss", &format!("{start_s}"), "-t", &format!("{dur_s}"), "-i"])
+        .args([
+            "-v",
+            "error",
+            "-ss",
+            &format!("{start_s}"),
+            "-t",
+            &format!("{dur_s}"),
+            "-i",
+        ])
         .arg(clip)
         .args([
             "-vn",

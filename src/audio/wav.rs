@@ -16,7 +16,11 @@ use crate::audio::time::SampleRate;
 const CH: u16 = 2;
 
 /// Write `block` as 16-bit PCM stereo WAV at `sr`.
-pub fn write_wav_i16(path: impl AsRef<Path>, block: &StereoBlock, sr: SampleRate) -> io::Result<()> {
+pub fn write_wav_i16(
+    path: impl AsRef<Path>,
+    block: &StereoBlock,
+    sr: SampleRate,
+) -> io::Result<()> {
     let frames = block.frames();
     let bits = 16u16;
     let data_bytes = (frames * CH as usize * (bits as usize / 8)) as u32;
@@ -30,7 +34,11 @@ pub fn write_wav_i16(path: impl AsRef<Path>, block: &StereoBlock, sr: SampleRate
 }
 
 /// Write `block` as 32-bit float stereo WAV at `sr` (lossless).
-pub fn write_wav_f32(path: impl AsRef<Path>, block: &StereoBlock, sr: SampleRate) -> io::Result<()> {
+pub fn write_wav_f32(
+    path: impl AsRef<Path>,
+    block: &StereoBlock,
+    sr: SampleRate,
+) -> io::Result<()> {
     let frames = block.frames();
     let bits = 32u16;
     let data_bytes = (frames * CH as usize * (bits as usize / 8)) as u32;
@@ -88,7 +96,11 @@ mod tests {
 
     fn tmp(name: &str) -> std::path::PathBuf {
         let mut p = std::env::temp_dir();
-        p.push(format!("libgibson_wavtest_{}_{}.wav", std::process::id(), name));
+        p.push(format!(
+            "libgibson_wavtest_{}_{}.wav",
+            std::process::id(),
+            name
+        ));
         p
     }
 

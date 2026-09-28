@@ -276,8 +276,8 @@ impl HumanMusicSynth {
         let mut limiter = Limiter::new(srf);
         limiter.set_ceiling(world.master_ceiling);
 
-        let total_samples = (score.total_beats * tempo.samples_per_beat()).round() as u64
-            + (srf * 2.5) as u64; // tail for reverb/release
+        let total_samples =
+            (score.total_beats * tempo.samples_per_beat()).round() as u64 + (srf * 2.5) as u64; // tail for reverb/release
 
         HumanMusicSynth {
             total_samples,
@@ -334,16 +334,13 @@ impl HumanMusicSynth {
             Role::Lead => &mut self.lead,
         };
         // Find an inactive voice, else steal the oldest.
-        let idx = pool
-            .iter()
-            .position(|v| !v.active())
-            .unwrap_or_else(|| {
-                pool.iter()
-                    .enumerate()
-                    .max_by_key(|(_, v)| v.age)
-                    .map(|(i, _)| i)
-                    .unwrap_or(0)
-            });
+        let idx = pool.iter().position(|v| !v.active()).unwrap_or_else(|| {
+            pool.iter()
+                .enumerate()
+                .max_by_key(|(_, v)| v.age)
+                .map(|(i, _)| i)
+                .unwrap_or(0)
+        });
         pool[idx].trigger(ev.freq, ev.velocity, ev.dur);
     }
 }
@@ -390,7 +387,12 @@ impl AudioSource for HumanMusicSynth {
             // --- Sum the music bus (melodic voices + drums). ---
             let mut ml = 0.0f32;
             let mut mr = 0.0f32;
-            for pool in [&mut self.pads, &mut self.keys, &mut self.bass, &mut self.lead] {
+            for pool in [
+                &mut self.pads,
+                &mut self.keys,
+                &mut self.bass,
+                &mut self.lead,
+            ] {
                 for v in pool.iter_mut() {
                     if v.active() {
                         let s = v.next();
@@ -504,7 +506,14 @@ impl SfxVoice {
         };
         self.amp.set(a, d, s, r);
         self.amp.gate_on();
-        self.filt.set(if matches!(kind, SfxKind::Danger | SfxKind::Impact) { 1800.0 } else { 5000.0 }, 0.3);
+        self.filt.set(
+            if matches!(kind, SfxKind::Danger | SfxKind::Impact) {
+                1800.0
+            } else {
+                5000.0
+            },
+            0.3,
+        );
         self.filt.reset();
         self.pan = match kind {
             SfxKind::Acquire => 0.2,

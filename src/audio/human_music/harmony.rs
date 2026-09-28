@@ -91,7 +91,8 @@ impl HarmonyEngine {
                 (self.pick_degree(func, prev_degree), func)
             };
 
-            let seventh = self.world_use_sevenths && (tension > 0.4 || function == Function::Dominant);
+            let seventh =
+                self.world_use_sevenths && (tension > 0.4 || function == Function::Dominant);
             let mut chord = self.diatonic_chord(degree, seventh);
             let mut note = "";
 
@@ -107,7 +108,14 @@ impl HarmonyEngine {
                 } else if self.allow_mixture && tension > 0.6 && self.rng.chance(0.2) {
                     // Borrowed bVI (modal mixture) for a dark lift.
                     let bvi = (self.scale.tonic_pc + 8).rem_euclid(12);
-                    chord = Chord::new(bvi, if self.world_use_sevenths { Quality::Maj7 } else { Quality::Maj });
+                    chord = Chord::new(
+                        bvi,
+                        if self.world_use_sevenths {
+                            Quality::Maj7
+                        } else {
+                            Quality::Maj
+                        },
+                    );
                     note = "bVI mix";
                 } else if self.allow_chromatic_mediant && self.rng.chance(0.12) {
                     // Chromatic mediant: major third above tonic.
@@ -139,7 +147,11 @@ impl HarmonyEngine {
         };
         // Prefer not to repeat the previous degree.
         let filtered: Vec<i32> = choices.iter().copied().filter(|&d| d != prev).collect();
-        let pool = if filtered.is_empty() { choices } else { &filtered };
+        let pool = if filtered.is_empty() {
+            choices
+        } else {
+            &filtered
+        };
         *self.rng.pick(pool).unwrap_or(&0)
     }
 }

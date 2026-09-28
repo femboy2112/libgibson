@@ -156,7 +156,9 @@ impl AudioDevice {
         };
 
         // Pre-buffer is already filling; open the tap.
-        stream.play().map_err(|e| DeviceError::Build(e.to_string()))?;
+        stream
+            .play()
+            .map_err(|e| DeviceError::Build(e.to_string()))?;
 
         Ok(AudioDevice {
             stream,
@@ -425,7 +427,10 @@ mod tests {
     fn ring_capacity_math_is_bounded_and_stereo_even() {
         let capacity = BLOCK_FRAMES * CHANNELS * RING_BLOCKS;
         assert_eq!(capacity % CHANNELS, 0, "ring must hold whole stereo frames");
-        assert!(capacity >= BLOCK_FRAMES * CHANNELS, "must hold at least one block");
+        assert!(
+            capacity >= BLOCK_FRAMES * CHANNELS,
+            "must hold at least one block"
+        );
     }
 
     #[test]

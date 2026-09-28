@@ -207,37 +207,72 @@ pub fn demo_trace(total_beats: f64) -> SemanticTrace {
         vec![
             SemanticEvent {
                 at_beat: 0.0,
-                state: st(Tone::Neutral, Emphasis::Muted, Density::Spacious, Elevation::Flat),
+                state: st(
+                    Tone::Neutral,
+                    Emphasis::Muted,
+                    Density::Spacious,
+                    Elevation::Flat,
+                ),
                 kind: EventKind::ActChanged,
             },
             SemanticEvent {
                 at_beat: 16.0,
-                state: st(Tone::Info, Emphasis::Normal, Density::Normal, Elevation::Raised),
+                state: st(
+                    Tone::Info,
+                    Emphasis::Normal,
+                    Density::Normal,
+                    Elevation::Raised,
+                ),
                 kind: EventKind::FocusAcquired,
             },
             SemanticEvent {
                 at_beat: 32.0,
-                state: st(Tone::Accent, Emphasis::Normal, Density::Normal, Elevation::Raised),
+                state: st(
+                    Tone::Accent,
+                    Emphasis::Normal,
+                    Density::Normal,
+                    Elevation::Raised,
+                ),
                 kind: EventKind::ToneShift,
             },
             SemanticEvent {
                 at_beat: 48.0,
-                state: st(Tone::Warning, Emphasis::Strong, Density::Compact, Elevation::Raised),
+                state: st(
+                    Tone::Warning,
+                    Emphasis::Strong,
+                    Density::Compact,
+                    Elevation::Raised,
+                ),
                 kind: EventKind::ModalEntered,
             },
             SemanticEvent {
                 at_beat: 64.0,
-                state: st(Tone::Danger, Emphasis::Strong, Density::Compact, Elevation::Overlay),
+                state: st(
+                    Tone::Danger,
+                    Emphasis::Strong,
+                    Density::Compact,
+                    Elevation::Overlay,
+                ),
                 kind: EventKind::Impact,
             },
             SemanticEvent {
                 at_beat: 88.0,
-                state: st(Tone::Success, Emphasis::Normal, Density::Normal, Elevation::Raised),
+                state: st(
+                    Tone::Success,
+                    Emphasis::Normal,
+                    Density::Normal,
+                    Elevation::Raised,
+                ),
                 kind: EventKind::Confirmation,
             },
             SemanticEvent {
                 at_beat: 104.0,
-                state: st(Tone::Neutral, Emphasis::Muted, Density::Spacious, Elevation::Flat),
+                state: st(
+                    Tone::Neutral,
+                    Emphasis::Muted,
+                    Density::Spacious,
+                    Elevation::Flat,
+                ),
                 kind: EventKind::SectionResolved,
             },
         ],

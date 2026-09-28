@@ -56,20 +56,86 @@ struct MediaCue {
 // A src_start of 6.28s is a source timestamp, not an approximation of TAU.
 #[allow(clippy::approx_constant)]
 const CUES: &[MediaCue] = &[
-    MediaCue { name: "welcome",     edit_start: 4.0,  src_start: 6.28,   src_dur: 8.91,  gain: 0.85, tone: Tone::Info,    kind: EventKind::FocusAcquired },
-    MediaCue { name: "prank_smash", edit_start: 16.0, src_start: 47.75,  src_dur: 1.76,  gain: 0.9,  tone: Tone::Danger,  kind: EventKind::Impact },
-    MediaCue { name: "escalate",    edit_start: 22.0, src_start: 61.66,  src_dur: 5.58,  gain: 0.88, tone: Tone::Warning, kind: EventKind::ModalEntered },
-    MediaCue { name: "city_reveal", edit_start: 34.0, src_start: 99.54,  src_dur: 5.09,  gain: 0.85, tone: Tone::Accent,  kind: EventKind::ToneShift },
-    MediaCue { name: "couriers",    edit_start: 46.0, src_start: 202.90, src_dur: 6.50,  gain: 0.85, tone: Tone::Info,    kind: EventKind::FocusAcquired },
-    MediaCue { name: "ascent",      edit_start: 58.0, src_start: 243.83, src_dur: 13.38, gain: 0.85, tone: Tone::Success, kind: EventKind::Confirmation },
-    MediaCue { name: "earth_title", edit_start: 74.0, src_start: 275.91, src_dur: 10.04, gain: 0.85, tone: Tone::Accent,  kind: EventKind::ActChanged },
-    MediaCue { name: "final_sting", edit_start: 90.0, src_start: 295.11, src_dur: 6.59,  gain: 0.9,  tone: Tone::Success, kind: EventKind::Confirmation },
+    MediaCue {
+        name: "welcome",
+        edit_start: 4.0,
+        src_start: 6.28,
+        src_dur: 8.91,
+        gain: 0.85,
+        tone: Tone::Info,
+        kind: EventKind::FocusAcquired,
+    },
+    MediaCue {
+        name: "prank_smash",
+        edit_start: 16.0,
+        src_start: 47.75,
+        src_dur: 1.76,
+        gain: 0.9,
+        tone: Tone::Danger,
+        kind: EventKind::Impact,
+    },
+    MediaCue {
+        name: "escalate",
+        edit_start: 22.0,
+        src_start: 61.66,
+        src_dur: 5.58,
+        gain: 0.88,
+        tone: Tone::Warning,
+        kind: EventKind::ModalEntered,
+    },
+    MediaCue {
+        name: "city_reveal",
+        edit_start: 34.0,
+        src_start: 99.54,
+        src_dur: 5.09,
+        gain: 0.85,
+        tone: Tone::Accent,
+        kind: EventKind::ToneShift,
+    },
+    MediaCue {
+        name: "couriers",
+        edit_start: 46.0,
+        src_start: 202.90,
+        src_dur: 6.50,
+        gain: 0.85,
+        tone: Tone::Info,
+        kind: EventKind::FocusAcquired,
+    },
+    MediaCue {
+        name: "ascent",
+        edit_start: 58.0,
+        src_start: 243.83,
+        src_dur: 13.38,
+        gain: 0.85,
+        tone: Tone::Success,
+        kind: EventKind::Confirmation,
+    },
+    MediaCue {
+        name: "earth_title",
+        edit_start: 74.0,
+        src_start: 275.91,
+        src_dur: 10.04,
+        gain: 0.85,
+        tone: Tone::Accent,
+        kind: EventKind::ActChanged,
+    },
+    MediaCue {
+        name: "final_sting",
+        edit_start: 90.0,
+        src_start: 295.11,
+        src_dur: 6.59,
+        gain: 0.9,
+        tone: Tone::Success,
+        kind: EventKind::Confirmation,
+    },
 ];
 
 const TAIL_SECS: f64 = 2.5;
 
 fn arg(flag: &str) -> Option<String> {
-    std::env::args().skip(1).find_map(|a| a.strip_prefix(flag).map(|s| s.to_string()))
+    std::env::args()
+        .skip(1)
+        .find_map(|a| a.strip_prefix(flag).map(|s| s.to_string()))
 }
 
 /// Glob ~/Downloads for the reaction source (prefers a webm containing "frank"+"stop").
@@ -85,7 +151,11 @@ fn default_clip() -> Option<PathBuf> {
     webms
         .iter()
         .find(|p| {
-            let n = p.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+            let n = p
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_lowercase();
             n.contains("frank") && n.contains("stop")
         })
         .cloned()
@@ -114,7 +184,12 @@ fn build_trace(bpm: f64, total_edit_secs: f64) -> SemanticTrace {
         };
         events.push(SemanticEvent {
             at_beat: to_beats(c.edit_start),
-            state: SemanticState { tone: c.tone, emphasis, density, elevation },
+            state: SemanticState {
+                tone: c.tone,
+                emphasis,
+                density,
+                elevation,
+            },
             kind: c.kind,
         });
     }
@@ -123,7 +198,9 @@ fn build_trace(bpm: f64, total_edit_secs: f64) -> SemanticTrace {
 
 fn main() -> std::io::Result<()> {
     let seed: u64 = arg("--seed=").and_then(|s| s.parse().ok()).unwrap_or(2112);
-    let out_dir = arg("--out=").map(PathBuf::from).unwrap_or_else(|| std::env::temp_dir().join("libgibson_reaction_audio"));
+    let out_dir = arg("--out=")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("libgibson_reaction_audio"));
     std::fs::create_dir_all(&out_dir)?;
     let world_id = match arg("--world=").as_deref() {
         Some("vapor95") => WorldId::Vapor95,
@@ -135,10 +212,21 @@ fn main() -> std::io::Result<()> {
     let block = 512;
 
     let clip = arg("--clip=").map(PathBuf::from).or_else(default_clip);
-    let total_edit_secs = CUES.iter().map(|c| c.edit_start + c.src_dur).fold(0.0f64, f64::max) + TAIL_SECS;
+    let total_edit_secs = CUES
+        .iter()
+        .map(|c| c.edit_start + c.src_dur)
+        .fold(0.0f64, f64::max)
+        + TAIL_SECS;
 
-    println!("Reaction soundtrack — world={} seed={seed} sr={} Hz", world.name, sr.get());
-    println!("edit duration: {total_edit_secs:.1}s  ({} cues)\n", CUES.len());
+    println!(
+        "Reaction soundtrack — world={} seed={seed} sr={} Hz",
+        world.name,
+        sr.get()
+    );
+    println!(
+        "edit duration: {total_edit_secs:.1}s  ({} cues)\n",
+        CUES.len()
+    );
 
     // --- HumanMusic underscore for the whole film. ---
     let trace = build_trace(world.tempo_bpm as f64, total_edit_secs);
@@ -203,12 +291,24 @@ fn main() -> std::io::Result<()> {
         master.right[i] = r;
     }
 
-    let path = out_dir.join(format!("reaction_soundtrack_{}.wav", world.name.to_lowercase()));
+    let path = out_dir.join(format!(
+        "reaction_soundtrack_{}.wav",
+        world.name.to_lowercase()
+    ));
     write_wav_i16(&path, &master, sr)?;
 
-    println!("mix: {:.1}s  dialogue_clips={placed}  music_peak={:.2}  master_peak={:.3} rms={:.3}",
-        master.frames() as f64 / sr.as_f64(), music.peak, master.peak(), master.rms());
-    println!("safety: nonfinite={}  music_max_voices={}", master.has_nonfinite(), music.max_active_voices);
+    println!(
+        "mix: {:.1}s  dialogue_clips={placed}  music_peak={:.2}  master_peak={:.3} rms={:.3}",
+        master.frames() as f64 / sr.as_f64(),
+        music.peak,
+        master.peak(),
+        master.rms()
+    );
+    println!(
+        "safety: nonfinite={}  music_max_voices={}",
+        master.has_nonfinite(),
+        music.max_active_voices
+    );
     println!("wav: {}", path.display());
     println!("\nA/V: this render shares the visual director's edit_seconds clock.");
     println!("Play alongside `cargo run --example libgibson_intro_reaction` for synced A/V.");

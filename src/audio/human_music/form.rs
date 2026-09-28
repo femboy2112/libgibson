@@ -79,14 +79,23 @@ impl Form {
         }
 
         // Region boundaries in beats -> bars.
-        let mut anchors: Vec<(f64, usize)> = evs.iter().enumerate().map(|(i, e)| (e.at_beat, i)).collect();
+        let mut anchors: Vec<(f64, usize)> = evs
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (e.at_beat, i))
+            .collect();
         anchors.push((trace.total_beats, evs.len()));
 
         // Which region has the greatest semantic pressure -> Climax.
         let climax_idx = evs
             .iter()
             .enumerate()
-            .max_by(|a, b| a.1.state.pressure().partial_cmp(&b.1.state.pressure()).unwrap())
+            .max_by(|a, b| {
+                a.1.state
+                    .pressure()
+                    .partial_cmp(&b.1.state.pressure())
+                    .unwrap()
+            })
             .map(|(i, _)| i)
             .unwrap_or(0);
 
@@ -96,7 +105,9 @@ impl Form {
             let start_beat = anchors[i].0;
             let end_beat = anchors[i + 1].0;
             let start_bar = (start_beat / BEATS_PER_BAR).round() as u32;
-            let end_bar = (end_beat / BEATS_PER_BAR).round().max((start_bar + 1) as f64) as u32;
+            let end_bar = (end_beat / BEATS_PER_BAR)
+                .round()
+                .max((start_bar + 1) as f64) as u32;
             let st = evs[i].state;
             let density = match st.density {
                 super::semantic::Density::Compact => 0.8,
@@ -160,7 +171,11 @@ impl Form {
             let (b0, v0) = w[0];
             let (b1, v1) = w[1];
             if bar_f >= b0 && bar_f <= b1 {
-                let t = if b1 > b0 { (bar_f - b0) / (b1 - b0) } else { 0.0 };
+                let t = if b1 > b0 {
+                    (bar_f - b0) / (b1 - b0)
+                } else {
+                    0.0
+                };
                 return v0 + (v1 - v0) * t as f32;
             }
         }
@@ -202,8 +217,16 @@ mod tests {
     #[test]
     fn climax_has_the_highest_tension() {
         let form = Form::from_trace(&demo_trace(120.0));
-        let climax = form.sections.iter().find(|s| s.kind == SectionKind::Climax).unwrap();
-        let max_tension = form.sections.iter().map(|s| s.tension).fold(0.0f32, f32::max);
+        let climax = form
+            .sections
+            .iter()
+            .find(|s| s.kind == SectionKind::Climax)
+            .unwrap();
+        let max_tension = form
+            .sections
+            .iter()
+            .map(|s| s.tension)
+            .fold(0.0f32, f32::max);
         assert!((climax.tension - max_tension).abs() < 1e-6);
     }
 

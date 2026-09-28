@@ -126,7 +126,10 @@ impl MusicWorld {
                 pan: 0.0,
             },
             lead: Patch {
-                osc: OscKind::Fm { ratio: 2.0, index: 2.2 },
+                osc: OscKind::Fm {
+                    ratio: 2.0,
+                    index: 2.2,
+                },
                 sub: false,
                 unison: 1,
                 detune_cents: 0.0,
@@ -221,7 +224,10 @@ impl MusicWorld {
                 pan: 0.0,
             },
             lead: Patch {
-                osc: OscKind::Fm { ratio: 1.0, index: 1.4 },
+                osc: OscKind::Fm {
+                    ratio: 1.0,
+                    index: 1.4,
+                },
                 sub: false,
                 unison: 1,
                 detune_cents: 0.0,
@@ -233,7 +239,10 @@ impl MusicWorld {
                 pan: -0.1,
             },
             keys: Patch {
-                osc: OscKind::Fm { ratio: 2.0, index: 1.0 },
+                osc: OscKind::Fm {
+                    ratio: 2.0,
+                    index: 1.0,
+                },
                 sub: false,
                 unison: 1,
                 detune_cents: 0.0,

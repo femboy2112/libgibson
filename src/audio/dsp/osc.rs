@@ -161,7 +161,11 @@ impl Noise {
     /// A noise source seeded by `seed` (0 is remapped so the PRNG never sticks at zero).
     pub fn new(seed: u64) -> Noise {
         Noise {
-            state: if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed },
+            state: if seed == 0 {
+                0x9E37_79B9_7F4A_7C15
+            } else {
+                seed
+            },
         }
     }
 
@@ -216,7 +220,10 @@ mod tests {
             o.set_shape(shape);
             o.set_freq(440.0);
             let v = render(|| o.next(), 48_000);
-            assert!(v.iter().all(|s| s.is_finite()), "{shape:?} produced non-finite");
+            assert!(
+                v.iter().all(|s| s.is_finite()),
+                "{shape:?} produced non-finite"
+            );
             let peak = v.iter().fold(0.0f32, |a, &s| a.max(s.abs()));
             assert!(peak <= 1.05, "{shape:?} peak {peak} exceeded full scale");
             assert!(peak > 0.3, "{shape:?} peak {peak} suspiciously silent");
@@ -230,13 +237,13 @@ mod tests {
         o.set_freq(1000.0);
         let v = render(|| o.next(), 48_000);
         // Count positive-going zero crossings over 1s ~= frequency.
-        let mut crossings = 0;
+        let mut crossings: i32 = 0;
         for w in v.windows(2) {
             if w[0] <= 0.0 && w[1] > 0.0 {
                 crossings += 1;
             }
         }
-        assert!((crossings as i32 - 1000).abs() <= 2, "got {crossings} crossings");
+        assert!((crossings - 1000).abs() <= 2, "got {crossings} crossings");
     }
 
     #[test]
