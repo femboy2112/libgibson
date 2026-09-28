@@ -37,20 +37,50 @@ pub enum SfxKind {
     Impact,
 }
 
-/// Where an event came from — the provenance the whole IR carries.
+/// Where an event came from — the provenance the whole IR carries. Round II makes this rich
+/// enough that a cold reader of the dump can answer *what is this piece repeating, what
+/// changed here, why is this instrument playing now, and what obligation is in force* — all
+/// stamped from the [`super::plan::CompositionPlan`], never hardcoded.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Provenance {
+    /// The real section this event belongs to (Round I hardcoded this to `A` for comp/bass).
     pub section: SectionKind,
+    /// Phrase index within the plan's `FormGraph`, if placed by the plan.
+    pub phrase: Option<u32>,
+    /// Section-family label from the plan: `"A"`, `"A'"`, `"B"`, `"climax"`, …
+    pub family: Option<&'static str>,
+    /// The coherence anchor this event realizes: `"motif"`, `"groove"`, `"riff"`, …
+    pub anchor: Option<&'static str>,
+    /// The arrangement role this event was voiced as: `"foreground"`, `"support"`, `"silent"`, …
+    pub role_kind: Option<&'static str>,
+    /// Stable motif identity index, if melodic.
     pub motif_id: Option<u8>,
+    /// The motif transformation-chain label, if melodic.
+    pub motif_xform: Option<&'static str>,
+    /// The groove variation label, if a rhythm event.
+    pub groove_variation: Option<&'static str>,
+    /// The phrase/harmonic obligation this event serves: `"arrival"`, `"lift"`, `"release"`, …
+    pub obligation: Option<&'static str>,
+    /// The intent-morphism label that produced it.
     pub morphism: Option<&'static str>,
+    /// A short human role note: `"comp"`, `"bass"`, `"melody"`, `"sfx"`.
     pub role_note: &'static str,
 }
 
 impl Provenance {
+    /// A provenance stamped only with its section; every richer field empty until the plan
+    /// fills it.
     pub fn new(section: SectionKind) -> Provenance {
         Provenance {
             section,
+            phrase: None,
+            family: None,
+            anchor: None,
+            role_kind: None,
             motif_id: None,
+            motif_xform: None,
+            groove_variation: None,
+            obligation: None,
             morphism: None,
             role_note: "",
         }

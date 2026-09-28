@@ -14,17 +14,39 @@ use super::groove::GrooveEngine;
 use super::harmony::{ChordSpan, HarmonyEngine};
 use super::intent::{IntentMorphism, MusicIntent};
 use super::motif::Motif;
+use super::plan::CompositionPlan;
 use super::rng::Rng;
 use super::score::{Note, Provenance, Role, Score, SfxEvent, SfxKind};
 use super::semantic::{EventKind, SemanticTrace, Tone};
 use super::theory::{Chord, Midi, Scale};
+use super::timeline::IntentTimeline;
 use super::voicing::VoiceLeader;
 use super::world::MusicWorld;
 
 /// Compose a full score for `trace` under `world`, deterministic in `seed`.
 pub fn compose(trace: &SemanticTrace, world: &MusicWorld, seed: u64) -> Score {
+    compose_with_plan(trace, world, seed).0
+}
+
+/// Like [`compose`], but also returns the [`CompositionPlan`] the score was realized from —
+/// for structural dumps (`plan.dump()`) and coherence diagnostics.
+///
+/// Round II inserts the planning boundary here: the semantic trace becomes a causal
+/// [`IntentTimeline`], the timeline yields a [`CompositionPlan`] (contract + form graph +
+/// arrangement), the Round-I engines still generate the raw material, and then
+/// `apply_arrangement` gates every voice by its per-phrase role — so the band finally has
+/// a bandleader deciding who plays, how loud, and when to shut up.
+pub fn compose_with_plan(
+    trace: &SemanticTrace,
+    world: &MusicWorld,
+    seed: u64,
+) -> (Score, CompositionPlan) {
     let form = Form::from_trace(trace);
     let scale = Scale::new(world.tonic_pc, world.mode);
+
+    // The causal spine and the plan derived from it.
+    let timeline = IntentTimeline::walk(trace);
+    let plan = CompositionPlan::build(&timeline, form.total_bars);
 
     let mut harmony = HarmonyEngine::new(world, seed);
     let chords = harmony.generate(&form);
@@ -50,7 +72,59 @@ pub fn compose(trace: &SemanticTrace, world: &MusicWorld, seed: u64) -> Score {
     // --- SFX + intent morphisms from significant semantic events. ---
     add_sfx_and_provenance(&mut score, trace, &form);
 
-    score
+    // --- Arrangement: gate every voice by its per-phrase role and stamp real provenance
+    //     from the plan (fixing the Round-I hardcoded SectionKind::A). ---
+    apply_arrangement(&mut score, &plan);
+
+    (score, plan)
+}
+
+/// Realize the [`ArrangementPlan`] onto a generated score: drop voices that are silent in
+/// their phrase, scale surviving events by their arrangement role's dynamic, and stamp each
+/// event's real phrase/family/role/obligation provenance from the plan. This is the pass
+/// that turns "everyone plays all the time" into an arrangement with foreground, support and
+/// negative space.
+fn apply_arrangement(score: &mut Score, plan: &CompositionPlan) {
+    let form = &plan.form;
+    let arr = &plan.arrangement;
+
+    score.notes.retain_mut(|n| {
+        let phrase = *form.phrase_at(n.start_beat);
+        let role = arr.at(phrase.ix as usize).role_for(n.role);
+        if !role.is_audible() {
+            return false;
+        }
+        n.velocity = (n.velocity * role.gain()).clamp(0.02, 1.0);
+        n.prov.section = phrase.family.to_section_kind();
+        n.prov.phrase = Some(phrase.ix);
+        n.prov.family = Some(phrase.family.label());
+        n.prov.role_kind = Some(role.label());
+        n.prov.obligation = Some(phrase.obligation.label());
+        true
+    });
+
+    score.drums.retain_mut(|d| {
+        let phrase = *form.phrase_at(d.start_beat);
+        let role = arr.at(phrase.ix as usize).drums;
+        if !role.is_audible() {
+            return false;
+        }
+        d.velocity = (d.velocity * role.gain()).clamp(0.02, 1.0);
+        d.prov.section = phrase.family.to_section_kind();
+        d.prov.phrase = Some(phrase.ix);
+        d.prov.family = Some(phrase.family.label());
+        d.prov.role_kind = Some(role.label());
+        true
+    });
+
+    // SFX are punctuation tied to semantic beats — keep them, but restamp section/phrase so
+    // the whole IR agrees with the plan.
+    for e in &mut score.sfx {
+        let phrase = *form.phrase_at(e.start_beat);
+        e.prov.section = phrase.family.to_section_kind();
+        e.prov.phrase = Some(phrase.ix);
+        e.prov.family = Some(phrase.family.label());
+    }
 }
 
 /// The chord sounding at `beat`.
@@ -258,10 +332,10 @@ fn add_melody(score: &mut Score, chords: &[ChordSpan], form: &Form, scale: &Scal
                     velocity: (0.55 + 0.4 * energy).clamp(0.1, 1.0),
                     role: Role::Lead,
                     prov: Provenance {
-                        section: sec.kind,
                         motif_id: Some(motif.id),
-                        morphism: Some(morph),
+                        motif_xform: Some(morph),
                         role_note: "melody",
+                        ..Provenance::new(sec.kind)
                     },
                 });
             }
