@@ -9,6 +9,23 @@ use super::semantic::SemanticTrace;
 /// The fixed meter for Round I (4/4). Form bars are counted in these beats.
 pub const BEATS_PER_BAR: f64 = 4.0;
 
+/// The number of bars a piece of `total_beats` occupies — **the partial-bar rule**, the one bar
+/// count every layer uses (form, plan, summary, diagnostics). A final partial bar is a bar: 9 beats
+/// is 3 bars (two whole bars and one of a single beat), never 2 (which would drop the last beat) or
+/// a rounded 2 or 3 depending on where the fraction falls. Never 0: even an empty request occupies
+/// one bar. A hair of float slack keeps an exact multiple (120 beats) at exactly 30 bars.
+pub fn bars_spanning(total_beats: f64, beats_per_bar: f64) -> u32 {
+    let bpb = if beats_per_bar > 0.0 {
+        beats_per_bar
+    } else {
+        BEATS_PER_BAR
+    };
+    if !total_beats.is_finite() || total_beats <= 0.0 {
+        return 1;
+    }
+    ((total_beats / bpb - 1e-9).ceil().max(1.0)) as u32
+}
+
 /// A structural section kind (provenance / diagnostics).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SectionKind {
@@ -64,17 +81,19 @@ impl Form {
     /// Intro, the last is the Coda.
     pub fn from_trace(trace: &SemanticTrace) -> Form {
         let evs = &trace.events;
+        // The partial-bar rule: the form spans every bar the trace touches, the last one partial.
+        let piece_bars = bars_spanning(trace.total_beats, BEATS_PER_BAR);
         if evs.is_empty() {
             return Form {
                 sections: vec![Section {
                     kind: SectionKind::A,
                     start_bar: 0,
-                    bars: (trace.total_beats / BEATS_PER_BAR).ceil().max(1.0) as u32,
+                    bars: piece_bars,
                     energy: 0.5,
                     tension: 0.3,
                     density: 0.5,
                 }],
-                total_bars: (trace.total_beats / BEATS_PER_BAR).ceil().max(1.0) as u32,
+                total_bars: piece_bars,
             };
         }
 
@@ -105,9 +124,14 @@ impl Form {
             let start_beat = anchors[i].0;
             let end_beat = anchors[i + 1].0;
             let start_bar = (start_beat / BEATS_PER_BAR).round() as u32;
-            let end_bar = (end_beat / BEATS_PER_BAR)
-                .round()
-                .max((start_bar + 1) as f64) as u32;
+            // Interior boundaries snap to the nearest bar; the final one is the piece's own end
+            // under the partial-bar rule (so a 9-beat trace keeps its ninth beat).
+            let end_bar = if i + 1 == n {
+                piece_bars as f64
+            } else {
+                (end_beat / BEATS_PER_BAR).round()
+            }
+            .max((start_bar + 1) as f64) as u32;
             let st = evs[i].state;
             let density = match st.density {
                 super::semantic::Density::Compact => 0.8,
@@ -200,6 +224,29 @@ impl Form {
 mod tests {
     use super::super::semantic::demo_trace;
     use super::*;
+
+    #[test]
+    fn the_partial_bar_rule_counts_every_bar_a_piece_touches() {
+        // 9 beats is two whole bars and one of a single beat — three bars, not a rounded two that
+        // drops the ninth beat; 10.5 and 17 likewise round UP; an exact multiple stays exact.
+        for (beats, bars) in [
+            (9.0, 3),
+            (10.5, 3),
+            (17.0, 5),
+            (120.0, 30),
+            (8.0, 2),
+            (12.0, 3),
+            (0.5, 1),
+        ] {
+            assert_eq!(bars_spanning(beats, BEATS_PER_BAR), bars, "{beats} beats");
+        }
+        // Never zero bars, even for a degenerate request.
+        assert_eq!(bars_spanning(0.0, BEATS_PER_BAR), 1);
+        assert_eq!(bars_spanning(f64::NAN, BEATS_PER_BAR), 1);
+        // The legacy trace form obeys the same rule at its final boundary.
+        assert_eq!(Form::from_trace(&demo_trace(9.0)).total_bars, 3);
+        assert_eq!(Form::from_trace(&demo_trace(120.0)).total_bars, 30);
+    }
 
     #[test]
     fn form_covers_the_trace_and_has_a_climax() {

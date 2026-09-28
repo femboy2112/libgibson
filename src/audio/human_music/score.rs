@@ -101,6 +101,12 @@ impl SfxKind {
         let (a, d, _, r) = self.envelope();
         a + d + self.hold_secs() + r * 3.0 + 0.05
     }
+
+    /// [`SfxKind::max_lifetime_secs`] in beats at `tempo_bpm` — how long, musically, the gesture
+    /// can sound (the span an owned dissonance must fit inside its owner's window).
+    pub fn max_lifetime_beats(self, tempo_bpm: f32) -> f32 {
+        self.max_lifetime_secs() * tempo_bpm.max(1.0) / 60.0
+    }
 }
 
 /// The harmonic **function of a pitch** against the chord sounding beneath it — the vocabulary
@@ -310,13 +316,40 @@ pub struct DrumHit {
     pub prov: Provenance,
 }
 
-/// An SFX event.
+/// An SFX event: a short punctuation gesture pitched in the **local** harmony (Round VIIb). Until
+/// VIIb an SFX carried no pitch and the synth drew it from the world scale, so the Warning was a
+/// fixed tonic+tritone whatever chord it landed on (a D# over the flagship's Fmaj7 Deflect). Now
+/// the composer chooses both pitches against the chord sounding at `start_beat`, labels each, and
+/// any pitch that is not a chord tone must be *owned*: bounded by a planned action the same
+/// semantic event produced.
 #[derive(Debug, Clone, Copy)]
 pub struct SfxEvent {
     pub start_beat: f64,
     pub kind: SfxKind,
     pub velocity: f32,
     pub prov: Provenance,
+    /// The two pitches the gesture sounds (its FM voice, then its triangle voice).
+    /// [`SfxEvent::UNPITCHED`] asks the synth for its world-scale fallback.
+    pub pitches: [Midi; 2],
+    /// Each pitch's function against the local chord; `None` marks a dissonance, which must be
+    /// owned (`owned_by`) for no longer than its owner lasts.
+    pub function: [Option<PitchFunction>; 2],
+    /// The planned action that owns this gesture's dissonance — produced by the same semantic
+    /// event (the Hold a Suspend lifted, the Deflect bound to it) — if the gesture carries one.
+    pub owned_by: Option<ActionId>,
+    /// How long (beats) the owned dissonance can sound: the SFX voice's bounded lifetime
+    /// ([`SfxKind::max_lifetime_beats`]), which must fit inside the owner's window.
+    pub dissonance_beats: Option<f32>,
+}
+
+impl SfxEvent {
+    /// No pitch chosen: the synth falls back to the world scale.
+    pub const UNPITCHED: [Midi; 2] = [0, 0];
+
+    /// Whether the composer chose this gesture's pitches (vs the world-scale fallback).
+    pub fn is_pitched(&self) -> bool {
+        self.pitches.iter().all(|&p| p > 0)
+    }
 }
 
 /// A complete, deterministic score.
@@ -383,31 +416,71 @@ impl Score {
         }
     }
 
-    /// Validate structural invariants: finite, in-range times, sane velocities, sorted-able.
+    /// Validate structural invariants: finite times, sane velocities, and the **end of the piece**
+    /// — every note, drum stroke, SFX and chord span starts inside `[0, total_beats)`, and every
+    /// note and chord ends by `total_beats` (a hair of float slack allowed). A score is exactly as
+    /// long as it says it is.
     pub fn validate(&self) -> Result<(), String> {
+        const EPS: f64 = 1e-6;
+        let end = self.total_beats;
+        if !end.is_finite() || end < 0.0 {
+            return Err(format!("total_beats {end} is not a length"));
+        }
+        let starts_inside = |beat: f64| beat >= -EPS && beat < end;
         for n in &self.notes {
             if !n.start_beat.is_finite() || !n.dur_beats.is_finite() {
                 return Err("non-finite note time".into());
             }
-            if n.start_beat < -1e-6 || n.start_beat > self.total_beats + 1e-6 {
-                return Err(format!(
-                    "note start {} out of [0,{}]",
-                    n.start_beat, self.total_beats
-                ));
+            if !starts_inside(n.start_beat) {
+                return Err(format!("note start {} out of [0,{end})", n.start_beat));
             }
             if n.dur_beats <= 0.0 {
                 return Err("non-positive note duration".into());
+            }
+            if n.start_beat + n.dur_beats as f64 > end + EPS {
+                return Err(format!(
+                    "note at {} ({} beats) rings past the end ({end})",
+                    n.start_beat, n.dur_beats
+                ));
             }
             if !(0.0..=1.0).contains(&n.velocity) {
                 return Err(format!("note velocity {} out of range", n.velocity));
             }
         }
         for d in &self.drums {
-            if !d.start_beat.is_finite() || d.start_beat < -1e-6 {
-                return Err("bad drum time".into());
+            if !d.start_beat.is_finite() || !starts_inside(d.start_beat) {
+                return Err(format!("drum time {} out of [0,{end})", d.start_beat));
             }
             if !(0.0..=1.0).contains(&d.velocity) {
                 return Err("drum velocity out of range".into());
+            }
+        }
+        for e in &self.sfx {
+            if !e.start_beat.is_finite() || !starts_inside(e.start_beat) {
+                return Err(format!("sfx time {} out of [0,{end})", e.start_beat));
+            }
+            if !(0.0..=1.0).contains(&e.velocity) {
+                return Err("sfx velocity out of range".into());
+            }
+            if e.pitches != SfxEvent::UNPITCHED && !e.pitches.iter().all(|p| (1..=127).contains(p))
+            {
+                return Err(format!("sfx pitches {:?} out of MIDI range", e.pitches));
+            }
+            if e.dissonance_beats
+                .is_some_and(|d| !d.is_finite() || d <= 0.0)
+            {
+                return Err("sfx dissonance span is not a positive length".into());
+            }
+        }
+        for c in &self.chords {
+            if !c.start_beat.is_finite() || !c.dur_beats.is_finite() {
+                return Err("non-finite chord span".into());
+            }
+            if !starts_inside(c.start_beat) || c.start_beat + c.dur_beats as f64 > end + EPS {
+                return Err(format!(
+                    "chord span {}+{} outside [0,{end}]",
+                    c.start_beat, c.dur_beats
+                ));
             }
         }
         Ok(())
@@ -419,11 +492,11 @@ impl Score {
         let mut s = String::new();
         let _ = writeln!(
             s,
-            "tempo={:.0}bpm meter={}/4 total_beats={:.0} ({} bars)",
+            "tempo={:.0}bpm meter={}/4 total_beats={} ({} bars)",
             self.tempo_bpm,
             self.beats_per_bar as u32,
             self.total_beats,
-            (self.total_beats / self.beats_per_bar).round() as u32
+            super::form::bars_spanning(self.total_beats, self.beats_per_bar)
         );
         let _ = writeln!(s, "sections:");
         for sec in &self.sections {
@@ -487,6 +560,61 @@ mod tests {
         let s = Score::new(120.0, 4.0, 64.0);
         assert!(s.validate().is_ok());
         assert!(s.summary().contains("tempo=120bpm"));
+    }
+
+    #[test]
+    fn validate_holds_the_score_to_its_exact_end() {
+        let note = |start: f64, dur: f32| {
+            Note::new(
+                start,
+                dur,
+                60,
+                0.5,
+                Role::Keys,
+                Provenance::new(SectionKind::A),
+            )
+        };
+        let drum = |start: f64| DrumHit {
+            start_beat: start,
+            voice: DrumVoice::Kick,
+            velocity: 0.5,
+            prov: Provenance::new(SectionKind::A),
+        };
+        // A 9-beat score: a note may ring right up to beat 9, but not start there or ring past it.
+        let mut s = Score::new(120.0, 4.0, 9.0);
+        s.notes.push(note(8.5, 0.5));
+        s.drums.push(drum(8.75));
+        assert!(s.validate().is_ok(), "{:?}", s.validate());
+        let mut late = s.clone();
+        late.notes.push(note(9.0, 0.25));
+        assert!(
+            late.validate().is_err(),
+            "a note starting at the end passed"
+        );
+        let mut long = s.clone();
+        long.notes.push(note(8.75, 0.5));
+        assert!(
+            long.validate().is_err(),
+            "a note ringing past the end passed"
+        );
+        let mut drum_late = s.clone();
+        drum_late.drums.push(drum(9.0));
+        assert!(drum_late.validate().is_err(), "a stroke at the end passed");
+        let sfx = |start: f64| SfxEvent {
+            start_beat: start,
+            kind: SfxKind::Acquire,
+            velocity: 0.5,
+            prov: Provenance::new(SectionKind::A),
+            pitches: [72, 79],
+            function: [Some(PitchFunction::ChordTone); 2],
+            owned_by: None,
+            dissonance_beats: None,
+        };
+        let mut sting = s.clone();
+        sting.sfx.push(sfx(8.0));
+        assert!(sting.validate().is_ok());
+        sting.sfx.push(sfx(9.0));
+        assert!(sting.validate().is_err(), "a sting at the end passed");
     }
 
     #[test]

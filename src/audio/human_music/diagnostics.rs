@@ -1613,7 +1613,7 @@ pub fn onset_vectors(score: &Score, part: OnsetPart) -> Vec<u16> {
         BEATS_PER_BAR
     };
     let step = bpb / STEPS as f64;
-    let bars = (score.total_beats / bpb).ceil().max(0.0) as usize;
+    let bars = super::form::bars_spanning(score.total_beats, bpb) as usize;
     let mut v = vec![0u16; bars];
     let times: Vec<f64> = match part {
         OnsetPart::Keys | OnsetPart::Bass | OnsetPart::Lead | OnsetPart::Pad => {

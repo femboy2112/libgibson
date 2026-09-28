@@ -811,6 +811,16 @@ impl ActionPlan {
         for (ti, t) in timeline.transitions.iter().enumerate() {
             let at = clamp(t.at_beat);
             if at >= total_beats - 1e-6 {
+                // The event quantizes onto (or past) the end of the piece: there is no time left
+                // to perform anything. Every live morphism is still accounted for — deferred with
+                // the reason, never silently dropped.
+                for &m in t.applied.iter().filter(|&&m| m != IntentMorphism::Prolong) {
+                    plan.deferred.push(Deferral {
+                        transition: ti,
+                        morphism: m,
+                        reason: "the event quantizes onto the end of the piece: no time left to perform it",
+                    });
+                }
                 continue;
             }
             let binding =

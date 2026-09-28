@@ -267,7 +267,9 @@ pub fn realize_drums(
                tag: &'static str,
                stamp: ActionStamp,
                rng: &mut Rng| {
-        if !perf.on_stage(Agent::Drums, at) {
+        // A partial final bar: the drummer stops where the piece does (checked before the
+        // humanization draw, so a piece that fits its bars keeps its exact random stream).
+        if at >= perf.total_beats - 1e-9 || !perf.on_stage(Agent::Drums, at) {
             return;
         }
         let level = perf.level(Agent::Drums, at);

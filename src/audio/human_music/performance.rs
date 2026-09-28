@@ -227,11 +227,12 @@ impl PerformancePlan {
     ) -> PerformancePlan {
         let lang = opts.language;
         let region = Scale::new(world.tonic_pc, world.mode);
-        let total_beats = plan.form.total_bars as f64 * BEATS_PER_BAR;
+        // The exact requested length — a final partial bar ends here, not on the next bar line.
+        let total_beats = plan.form.total_beats;
         let targets = plan.targets();
 
         // 1. Harmony: the backbone realized in this world and language, or the phrase engine.
-        let (mut chords, deflects) = match &plan.backbone {
+        let (mut chords, mut deflects) = match &plan.backbone {
             Some(tl) => {
                 let r = super::backbone::realize(tl, world, &lang, seed);
                 (r.spans, r.deflects)
@@ -241,6 +242,16 @@ impl PerformancePlan {
                 Vec::new(),
             ),
         };
+        // The backbone tiles whole bars; a partial final bar's harmony ends with the piece.
+        chords.retain(|c| c.start_beat < total_beats - 1e-9);
+        for c in &mut chords {
+            if c.start_beat + c.dur_beats as f64 > total_beats + 1e-9 {
+                c.dur_beats = (total_beats - c.start_beat) as f32;
+            }
+        }
+        for d in &mut deflects {
+            d.rejoin_beats = d.rejoin_beats.min(total_beats - d.at_beat);
+        }
 
         // 2. Actions.
         let mut actions = if opts.actions {
@@ -942,6 +953,18 @@ fn build_accent_grid(
                 w.pickup = w.pickup.max(0.9);
             }),
             _ => {}
+        }
+    }
+    // A partial final bar: every step at or after the piece's exact end is a planned hole.
+    let end = plan.form.total_beats;
+    for (bar, w) in bars.iter_mut().enumerate() {
+        for (s, sw) in w.iter_mut().enumerate() {
+            if AccentGrid::beat_of(bar as u32, s) >= end - 1e-9 {
+                *sw = StepWeight {
+                    hole: 1.0,
+                    ..StepWeight::default()
+                };
+            }
         }
     }
     AccentGrid { bars, cells }

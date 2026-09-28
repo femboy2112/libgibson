@@ -676,11 +676,15 @@ pub fn drum_pattern_recurrence(score: &Score, total_bars: u32) -> f32 {
 
 /// The realized kinetic curve: onsets per beat per bar across every player (drums included) —
 /// forward motion read from the notes, independent of loudness.
+///
+/// One entry per bar under the partial-bar rule ([`super::form::bars_spanning`]); a partial final
+/// bar is normalized by the beats it actually has, so a short last bar is not read as a slowdown.
 pub fn kinetic_curve(score: &Score) -> Vec<f32> {
-    let bars = (score.total_beats / score.beats_per_bar).round() as usize;
+    let bpb = score.beats_per_bar;
+    let bars = super::form::bars_spanning(score.total_beats, bpb) as usize;
     let mut v = vec![0f32; bars];
     let mut add = |t: f64| {
-        let b = (t / score.beats_per_bar).floor() as usize;
+        let b = (t / bpb).floor() as usize;
         if b < bars {
             v[b] += 1.0;
         }
@@ -691,7 +695,17 @@ pub fn kinetic_curve(score: &Score) -> Vec<f32> {
     for d in &score.drums {
         add(d.start_beat);
     }
-    v.iter().map(|c| c / score.beats_per_bar as f32).collect()
+    v.iter()
+        .enumerate()
+        .map(|(b, c)| {
+            let len = (score.total_beats - b as f64 * bpb).clamp(0.0, bpb);
+            if len > 1e-9 {
+                c / len as f32
+            } else {
+                0.0
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]

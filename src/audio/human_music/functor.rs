@@ -9,14 +9,16 @@
 //! and local density, and their labels become event provenance. Skins are natural
 //! transformations: swap the world and the form/motif/resolutions stay; the dialect changes.
 
-use super::action::Agent;
+use super::action::{ActionCause, ActionKind, Agent};
 use super::contract::{CoherenceContract, CompositionGrammar};
 use super::form::{Section, BEATS_PER_BAR};
+use super::ids::ActionId;
 use super::intent::{IntentMorphism, MusicIntent};
 use super::performance::{PerformanceOptions, PerformancePlan};
 use super::plan::{ArrangementRole, CompositionPlan};
-use super::score::{Provenance, Score, SfxEvent, SfxKind};
+use super::score::{PitchFunction, Provenance, Score, SfxEvent, SfxKind};
 use super::semantic::{EventKind, SemanticTrace, Tone};
+use super::theory::{pitch_class, Chord, Midi};
 use super::timeline::IntentTimeline;
 use super::world::MusicWorld;
 
@@ -78,15 +80,16 @@ pub fn compose_full(
     grammar: Option<CompositionGrammar>,
     opts: PerformanceOptions,
 ) -> Composition {
-    let total_bars = ((trace.total_beats / BEATS_PER_BAR).round() as u32).max(1);
+    // The piece is exactly as long as the request: a partial final bar is represented, not rounded
+    // away (9 beats used to render 8, 10.5 → 12, 17 → 16).
     let timeline = IntentTimeline::walk(trace);
     let plan = match grammar {
-        Some(g) => CompositionPlan::build_with_contract(
+        Some(g) => CompositionPlan::build_with_contract_for_beats(
             &timeline,
-            total_bars,
+            trace.total_beats,
             CoherenceContract::for_grammar(g),
         ),
-        None => CompositionPlan::build(&timeline, total_bars),
+        None => CompositionPlan::build_for_beats(&timeline, trace.total_beats),
     };
     let perf = PerformancePlan::build(&timeline, &plan, world, seed, opts);
     let score = realize(trace, world, seed, &plan, &perf);
@@ -117,7 +120,7 @@ fn realize(
     plan: &CompositionPlan,
     perf: &PerformancePlan,
 ) -> Score {
-    let total_beats = plan.form.total_bars as f64 * BEATS_PER_BAR;
+    let total_beats = plan.form.total_beats;
     let mut score = Score::new(world.tempo_bpm, BEATS_PER_BAR, total_beats);
     score.sections = sections_from_plan(plan);
     score.chords = perf.chords.clone();
@@ -134,8 +137,11 @@ fn realize(
     score.notes.extend(bass);
     score.notes.extend(lead.notes);
 
-    // --- SFX + intent morphisms from significant semantic events. ---
-    add_sfx_and_provenance(&mut score, trace, plan);
+    // --- SFX from significant semantic events, pitched in the local harmony. ---
+    add_sfx_and_provenance(&mut score, trace, plan, perf);
+    // --- The piece ends where it was asked to: nothing starts at or after the end, nothing rings
+    //     past it. ---
+    clip_to_end(&mut score);
     // --- Provenance only: the stage already decided who plays and how loud. ---
     stamp_arrangement(&mut score, plan, perf);
     debug_assert!(
@@ -143,6 +149,36 @@ fn realize(
         "a realizer played somebody the stage had out"
     );
     score
+}
+
+/// The final end-of-piece safety pass: no note, drum stroke, SFX or chord span starts at or after
+/// `score.total_beats`, and every note and chord that would ring past it is clipped to end there.
+/// The planners already bound their windows by the exact total; this pass makes the invariant
+/// unconditional (a keys stab on the last sixteenth, or a realizer whose horizon is still the bar
+/// grid, cannot leak past the requested end). A piece that fits inside its request is untouched.
+fn clip_to_end(score: &mut Score) {
+    let end = score.total_beats;
+    let starts_in = |beat: f64| beat < end - 1e-9;
+    score.notes.retain_mut(|n| {
+        if !starts_in(n.start_beat) {
+            return false;
+        }
+        if n.start_beat + n.dur_beats as f64 > end + 1e-9 {
+            n.dur_beats = (end - n.start_beat) as f32;
+        }
+        n.dur_beats > 0.0
+    });
+    score.drums.retain(|d| starts_in(d.start_beat));
+    score.sfx.retain(|e| starts_in(e.start_beat));
+    score.chords.retain_mut(|c| {
+        if !starts_in(c.start_beat) {
+            return false;
+        }
+        if c.start_beat + c.dur_beats as f64 > end + 1e-9 {
+            c.dur_beats = (end - c.start_beat) as f32;
+        }
+        c.dur_beats > 0.0
+    });
 }
 
 /// Every Score event whose player the stage had OFF at its onset (neither seated nor admitted by
@@ -248,9 +284,21 @@ fn stamp_arrangement(score: &mut Score, plan: &CompositionPlan, perf: &Performan
     }
 }
 
-fn add_sfx_and_provenance(score: &mut Score, trace: &SemanticTrace, plan: &CompositionPlan) {
+/// One sting per significant semantic event, placed on the event's MUSICAL beat and pitched in the
+/// harmony sounding there.
+///
+/// The beat is the event's quantized beat ([`super::timeline::quantize_event_beat`], the same map
+/// the intent timeline — and so every action — uses); the raw semantic beat used to flam the sting
+/// a few tens of milliseconds against the ensemble hit the same event produced.
+fn add_sfx_and_provenance(
+    score: &mut Score,
+    trace: &SemanticTrace,
+    plan: &CompositionPlan,
+    perf: &PerformancePlan,
+) {
     let mut prev = trace.events.first().map(|e| e.state);
-    for ev in &trace.events {
+    // `ti` is the event's intent-timeline transition: the walk emits exactly one per event.
+    for (ti, ev) in trace.events.iter().enumerate() {
         let significant = ev.kind.requires_event()
             && prev
                 .map(|p| p.is_significant_change(&ev.state))
@@ -267,9 +315,14 @@ fn add_sfx_and_provenance(score: &mut Score, trace: &SemanticTrace, plan: &Compo
             (EventKind::ActChanged, _) | (EventKind::SectionResolved, _) => SfxKind::Transition,
             _ => SfxKind::Acquire,
         };
-        let sec_kind = plan.form.phrase_at(ev.at_beat).family.to_section_kind();
+        let at = super::timeline::quantize_event_beat(ev.at_beat);
+        if at >= score.total_beats - 1e-9 {
+            continue; // the event lands on the end of the piece: no time left to sound it
+        }
+        let sec_kind = plan.form.phrase_at(at).family.to_section_kind();
+        let v = voice_sfx(kind, at, ti, score.tempo_bpm, plan, perf);
         score.sfx.push(SfxEvent {
-            start_beat: ev.at_beat,
+            start_beat: at,
             kind,
             velocity: ev.state.dynamic(),
             prov: Provenance {
@@ -277,7 +330,274 @@ fn add_sfx_and_provenance(score: &mut Score, trace: &SemanticTrace, plan: &Compo
                 role_note: "sfx",
                 ..Provenance::new(sec_kind)
             },
+            pitches: v.pitches,
+            function: v.function,
+            owned_by: v.owned_by,
+            dissonance_beats: v.dissonance_beats,
         });
+    }
+}
+
+/// An SFX gesture's pitches and their justification.
+struct SfxVoicing {
+    pitches: [Midi; 2],
+    function: [Option<PitchFunction>; 2],
+    owned_by: Option<ActionId>,
+    dissonance_beats: Option<f32>,
+}
+
+impl SfxVoicing {
+    fn chord_tones(pitches: [Midi; 2]) -> SfxVoicing {
+        SfxVoicing {
+            pitches,
+            function: [Some(PitchFunction::ChordTone); 2],
+            owned_by: None,
+            dissonance_beats: None,
+        }
+    }
+}
+
+/// The lower pitch class of a tritone the chord itself contains (Dom7 3–b7, m7b5 1–b5, dim 1–b5),
+/// if it has one.
+fn own_tritone(chord: &Chord) -> Option<i32> {
+    let iv = chord.quality.intervals();
+    iv.iter().enumerate().find_map(|(k, &a)| {
+        iv[k + 1..]
+            .iter()
+            .any(|&b| (b - a).rem_euclid(12) == 6)
+            .then_some((chord.root_pc + a).rem_euclid(12))
+    })
+}
+
+/// Pitch one SFX gesture against the harmony sounding at `at`, in the register the world-scale
+/// version used (so a sting whose local chord IS the tonic sounds exactly as before):
+///
+/// - Acquire: the chord's root high, its fifth just below.
+/// - Confirm: fifth → root, rising.
+/// - Transition: the guide tones (3rd, 7th/6th — the 5th for a triad) above the root.
+/// - Impact: the bass pitch class, low, doubled at the octave.
+/// - Warning: the chord's OWN tritone when it has one (both chord tones). Otherwise the alarm
+///   tritone is kept on the chord's root as an OWNED dissonance: owned by the planned action the
+///   same semantic event produced (the Hold a Suspend lifted, the Deflect bound to it) whose window
+///   holds the voice's whole bounded lifetime. With no such owner the Warning sounds the guide
+///   tones instead — a dissonance nobody owns is not played.
+/// - Danger (not produced by the functor today): root and fifth, low.
+///
+/// With no harmony at all (an empty chord plan) the gesture is left unpitched: the synth's
+/// world-scale fallback.
+fn voice_sfx(
+    kind: SfxKind,
+    at: f64,
+    transition: usize,
+    tempo_bpm: f32,
+    plan: &CompositionPlan,
+    perf: &PerformancePlan,
+) -> SfxVoicing {
+    let Some(ctx) = perf.context_at(at) else {
+        return SfxVoicing {
+            pitches: SfxEvent::UNPITCHED,
+            function: [None; 2],
+            owned_by: None,
+            dissonance_beats: None,
+        };
+    };
+    let chord = ctx.chord;
+    let root = chord.root_pc;
+    let iv = chord.quality.intervals();
+    let fifth = iv
+        .iter()
+        .find(|&&i| i == 7)
+        .or_else(|| iv.iter().find(|&&i| i == 6 || i == 8))
+        .map(|&i| (root + i).rem_euclid(12))
+        .unwrap_or(root);
+    // The lowest pitch of class `pc` at or above `floor`.
+    let place = |pc: i32, floor: Midi| floor + (pc - floor).rem_euclid(12);
+    let guides = |base: Midi| {
+        let g = super::context::guide_tones(&chord);
+        let lo = g.first().copied().unwrap_or(fifth);
+        let hi = g.get(1).copied().unwrap_or(fifth);
+        [place(lo, base), place(hi, base)]
+    };
+    match kind {
+        SfxKind::Acquire => {
+            let r = place(root, 84);
+            SfxVoicing::chord_tones([r, place(fifth, r - 12)])
+        }
+        SfxKind::Confirm => {
+            let r = place(root, 84);
+            SfxVoicing::chord_tones([place(fifth, r - 12), r])
+        }
+        SfxKind::Transition => SfxVoicing::chord_tones(guides(place(root, 60))),
+        SfxKind::Impact => {
+            let b = if chord.contains_pc(ctx.bass_pc) {
+                ctx.bass_pc
+            } else {
+                root
+            };
+            SfxVoicing::chord_tones([place(b, 24), place(b, 36)])
+        }
+        SfxKind::Danger => {
+            let r = place(root, 36);
+            SfxVoicing::chord_tones([r, place(fifth, r)])
+        }
+        SfxKind::Warning => {
+            if let Some(lo) = own_tritone(&chord) {
+                let p = place(lo, 60);
+                return SfxVoicing::chord_tones([p, p + 6]);
+            }
+            let life = kind.max_lifetime_beats(tempo_bpm);
+            match sfx_owner(perf, plan, transition, at, life) {
+                Some(owner) => {
+                    let p = place(root, 60);
+                    SfxVoicing {
+                        pitches: [p, p + 6],
+                        function: [Some(PitchFunction::ChordTone), None],
+                        owned_by: Some(owner),
+                        dissonance_beats: Some(life),
+                    }
+                }
+                None => SfxVoicing::chord_tones(guides(place(root, 60))),
+            }
+        }
+    }
+}
+
+/// The planned action that owns an SFX dissonance: one the SAME semantic event produced (a
+/// morphism its transition applied, or a backbone gesture bound to it) whose window holds
+/// `[at, at + span]`. The Hold a Suspend lifted is preferred (the alarm is the held tension), then
+/// the event's own morphisms over its gesture, then the longest window.
+fn sfx_owner(
+    perf: &PerformancePlan,
+    plan: &CompositionPlan,
+    transition: usize,
+    at: f64,
+    span: f32,
+) -> Option<ActionId> {
+    let binding = plan
+        .backbone
+        .as_ref()
+        .and_then(|bb| bb.bindings.iter().position(|b| b.transition == transition));
+    perf.actions
+        .actions
+        .iter()
+        .filter_map(|a| {
+            let tier = match a.cause {
+                ActionCause::Morphism { transition: t, .. } if t == transition => 0u8,
+                ActionCause::Gesture { .. } if binding.is_some() && a.binding == binding => 1,
+                _ => return None,
+            };
+            let holds = a.start_beat <= at + 1e-6 && at + span as f64 <= a.end_beat() + 1e-6;
+            holds.then_some((a.kind != ActionKind::Hold, tier, a.end_beat(), a.id))
+        })
+        .min_by(|x, y| {
+            x.0.cmp(&y.0)
+                .then(x.1.cmp(&y.1))
+                .then(y.2.total_cmp(&x.2))
+                .then(x.3.cmp(&y.3))
+        })
+        .map(|c| c.3)
+}
+
+/// How one SFX gesture stands against the harmony under it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SfxVerdict {
+    /// Every pitch is a tone of the chord sounding under it.
+    Chord,
+    /// A dissonant pitch, owned by a planned action whose window holds the voice's whole
+    /// lifetime (the payload is the owned span in beats).
+    Owned(f32),
+    /// An unowned or outliving dissonance, a pitch whose consonant label is false, no harmony to
+    /// judge against, or an unpitched (world-scale) gesture.
+    Unjustified,
+}
+
+/// The **SFX audit** (Round VIIb): is every sting in the local harmony, or honestly owned? Judged
+/// from the realized Score's own chords and the performance's actions — not from the labels the
+/// composer wrote, which it only cross-checks.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct SfxAudit {
+    pub total: usize,
+    /// Gestures whose every pitch is a chord tone of its context.
+    pub chord: usize,
+    /// Gestures carrying an owned dissonance that fits inside its owner.
+    pub owned: usize,
+    /// Everything else (target 0).
+    pub unjustified: usize,
+    /// The longest owned dissonance, in beats.
+    pub max_owned_beats: f32,
+}
+
+impl SfxAudit {
+    /// Audit every SFX of `score` against its chords and `perf`'s actions.
+    pub fn measure(perf: &PerformancePlan, score: &Score) -> SfxAudit {
+        let mut a = SfxAudit {
+            total: score.sfx.len(),
+            ..SfxAudit::default()
+        };
+        for e in &score.sfx {
+            match SfxAudit::verdict(e, perf, score) {
+                SfxVerdict::Chord => a.chord += 1,
+                SfxVerdict::Owned(d) => {
+                    a.owned += 1;
+                    a.max_owned_beats = a.max_owned_beats.max(d);
+                }
+                SfxVerdict::Unjustified => a.unjustified += 1,
+            }
+        }
+        a
+    }
+
+    /// The verdict on one gesture `e` of `score`.
+    pub fn verdict(e: &SfxEvent, perf: &PerformancePlan, score: &Score) -> SfxVerdict {
+        if !e.is_pitched() {
+            return SfxVerdict::Unjustified;
+        }
+        let b = e.start_beat;
+        let Some(chord) = score
+            .chords
+            .iter()
+            .filter(|c| c.start_beat <= b + 1e-6 && b < c.start_beat + c.dur_beats as f64)
+            .max_by(|x, y| x.start_beat.total_cmp(&y.start_beat))
+            .map(|c| c.chord)
+        else {
+            return SfxVerdict::Unjustified;
+        };
+        let mut dissonant = false;
+        for (p, f) in e.pitches.iter().zip(e.function) {
+            let tone = chord.contains_pc(pitch_class(*p));
+            if f.is_some_and(PitchFunction::is_consonant) && !tone {
+                return SfxVerdict::Unjustified; // labelled consonant, but it is not
+            }
+            dissonant |= !tone;
+        }
+        if !dissonant {
+            return SfxVerdict::Chord;
+        }
+        // An owned dissonance: an existing action whose window holds the whole voice lifetime,
+        // and a claimed span no shorter than that lifetime.
+        let life = e.kind.max_lifetime_beats(score.tempo_bpm);
+        match (
+            e.owned_by.and_then(|id| perf.actions.get(id)),
+            e.dissonance_beats,
+        ) {
+            (Some(owner), Some(d))
+                if d + 1e-4 >= life
+                    && d as f64 <= owner.dur_beats + 1e-6
+                    && owner.start_beat <= b + 1e-6
+                    && b + d as f64 <= owner.end_beat() + 1e-6 =>
+            {
+                SfxVerdict::Owned(d)
+            }
+            _ => SfxVerdict::Unjustified,
+        }
+    }
+
+    /// A one-line receipt.
+    pub fn report(&self) -> String {
+        format!(
+            "sfx: total={} chord={} owned={} unjustified={} max_owned_beats={:.2}\n",
+            self.total, self.chord, self.owned, self.unjustified, self.max_owned_beats
+        )
     }
 }
 
@@ -313,6 +633,269 @@ mod tests {
     use super::super::semantic::demo_trace;
     use super::super::theory::pitch_class;
     use super::*;
+
+    /// The duration probes: the bounce under its own grammar and forced onto HookArc (no
+    /// backbone), the cinematic demo under the grammar it infers and forced onto DeflectedLift.
+    fn duration_probes(
+        beats: f64,
+    ) -> Vec<(&'static str, SemanticTrace, Option<CompositionGrammar>)> {
+        use super::super::semantic::deflected_lift_trace;
+        vec![
+            (
+                "bounce/deflected",
+                deflected_lift_trace(beats),
+                Some(CompositionGrammar::DeflectedLift),
+            ),
+            ("demo/inferred", demo_trace(beats), None),
+            (
+                "demo/deflected",
+                demo_trace(beats),
+                Some(CompositionGrammar::DeflectedLift),
+            ),
+            (
+                "bounce/hookarc",
+                deflected_lift_trace(beats),
+                Some(CompositionGrammar::HookArc),
+            ),
+        ]
+    }
+
+    #[test]
+    fn a_request_of_any_length_renders_exactly_that_length() {
+        use super::super::diagnostics::ActionDiagnostics;
+        use super::super::synth::HumanMusicSynth;
+        use crate::audio::SampleRate;
+        // compose_full used to round `total_beats / 4` to whole bars: 9 beats rendered 8, 10.5
+        // rendered 12, 17 rendered 16. The partial final bar is now represented exactly.
+        for beats in [9.0, 10.5, 17.0, 120.0] {
+            for (name, trace, grammar) in duration_probes(beats) {
+                for world in MusicWorld::all() {
+                    let tag = format!("{name} {beats} {}", world.name);
+                    let c =
+                        compose_full(&trace, &world, 2112, grammar, PerformanceOptions::default());
+                    let s = &c.score;
+                    assert_eq!(s.total_beats, beats, "{tag}: score length");
+                    assert_eq!(c.plan.form.total_beats, beats, "{tag}: form length");
+                    assert_eq!(c.perf.total_beats, beats, "{tag}: performance length");
+                    s.validate().unwrap_or_else(|e| panic!("{tag}: {e}"));
+                    for n in &s.notes {
+                        assert!(
+                            n.start_beat < beats,
+                            "{tag}: note starts at {}",
+                            n.start_beat
+                        );
+                        assert!(
+                            n.start_beat + n.dur_beats as f64 <= beats + 1e-6,
+                            "{tag}: note {}+{} rings past the end",
+                            n.start_beat,
+                            n.dur_beats
+                        );
+                    }
+                    for d in &s.drums {
+                        assert!(d.start_beat < beats, "{tag}: drum at {}", d.start_beat);
+                    }
+                    for e in &s.sfx {
+                        assert!(e.start_beat < beats, "{tag}: sfx at {}", e.start_beat);
+                    }
+                    for ch in &s.chords {
+                        assert!(ch.start_beat + ch.dur_beats as f64 <= beats + 1e-6, "{tag}");
+                    }
+                    // The synth renders the requested length plus its fixed release tail.
+                    let synth = HumanMusicSynth::new(s, &world, SampleRate::STUDIO);
+                    let spb = SampleRate::STUDIO.as_f64() * 60.0 / s.tempo_bpm as f64;
+                    let tail = (SampleRate::STUDIO.as_f64() as f32 * 2.5) as u64;
+                    assert_eq!(
+                        synth.total_samples(),
+                        (beats * spb).round() as u64 + tail,
+                        "{tag}: rendered length"
+                    );
+                    // Every sting is in its local harmony or owned, whatever the length.
+                    let sfx = SfxAudit::measure(&c.perf, s);
+                    assert_eq!(sfx.unjustified, 0, "{tag}: {}", sfx.report());
+                    // Every live morphism is witnessed by an action or deferred with a reason.
+                    let tl = IntentTimeline::walk(&trace);
+                    let d = ActionDiagnostics::measure(&tl, &c.plan, &c.perf, s);
+                    assert_eq!(d.unwitnessed_morphisms, 0, "{tag}: {d:?}");
+                    // The accent grid leaves every step at/after the end empty.
+                    for bar in 0..c.plan.form.total_bars {
+                        for step in 0..super::super::performance::STEPS {
+                            let at = super::super::performance::AccentGrid::beat_of(bar, step);
+                            if at >= beats {
+                                let w = c.perf.accent.at(bar, step);
+                                assert!(w.hole >= 1.0 && w.hit == 0.0 && w.push == 0.0, "{tag}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_event_that_quantizes_onto_the_end_is_deferred_not_dropped() {
+        use super::super::action::ActionCause;
+        use super::super::diagnostics::ActionDiagnostics;
+        use super::super::semantic::{Density, Elevation, Emphasis, SemanticEvent, SemanticState};
+        // A FocusAcquired fired at raw beat 10.3 of a 10.5-beat piece snaps to the eighth at 10.5
+        // — exactly the end. Its morphisms (Intensify, FragmentMotif) have no time left to be
+        // performed; they used to vanish without a Deferral, breaking "witnessed or deferred".
+        let st = |tone| SemanticState {
+            tone,
+            emphasis: Emphasis::Normal,
+            density: Density::Normal,
+            elevation: Elevation::Raised,
+        };
+        let trace = SemanticTrace::new(
+            vec![
+                SemanticEvent {
+                    at_beat: 0.0,
+                    state: st(Tone::Neutral),
+                    kind: EventKind::ActChanged,
+                },
+                SemanticEvent {
+                    at_beat: 10.3,
+                    state: st(Tone::Info),
+                    kind: EventKind::FocusAcquired,
+                },
+            ],
+            10.5,
+        );
+        let tl = IntentTimeline::walk(&trace);
+        assert_eq!(
+            tl.transitions[1].at_beat, 10.5,
+            "fixture no longer lands on the end"
+        );
+        let c = compose_full(
+            &trace,
+            &MusicWorld::black_ice(),
+            7,
+            None,
+            PerformanceOptions::default(),
+        );
+        let ap = &c.perf.actions;
+        for m in [IntentMorphism::Intensify, IntentMorphism::FragmentMotif] {
+            assert!(
+                ap.deferred
+                    .iter()
+                    .any(|d| d.transition == 1 && d.morphism == m),
+                "{m:?} at the end was dropped without a deferral"
+            );
+            assert!(!ap.actions.iter().any(|a| matches!(
+                a.cause,
+                ActionCause::Morphism { transition: 1, morphism } if morphism == m
+            )));
+        }
+        let d = ActionDiagnostics::measure(&tl, &c.plan, &c.perf, &c.score);
+        assert_eq!(d.unwitnessed_morphisms, 0, "{d:?}");
+        c.score.validate().expect("end-of-piece score");
+    }
+
+    #[test]
+    fn every_sting_sounds_in_its_local_harmony_or_is_owned() {
+        use super::super::semantic::deflected_lift_trace;
+        for (name, trace, grammar) in [
+            (
+                "bounce",
+                deflected_lift_trace(120.0),
+                Some(CompositionGrammar::DeflectedLift),
+            ),
+            ("demo", demo_trace(120.0), None),
+        ] {
+            for world in MusicWorld::all() {
+                let tag = format!("{name} {}", world.name);
+                let c = compose_full(&trace, &world, 2112, grammar, PerformanceOptions::default());
+                let audit = SfxAudit::measure(&c.perf, &c.score);
+                eprintln!("{tag}: {}", audit.report().trim_end());
+                assert!(audit.total > 0, "{tag}: no stings");
+                assert_eq!(audit.unjustified, 0, "{tag}: {}", audit.report());
+                assert_eq!(audit.chord + audit.owned, audit.total, "{tag}");
+                let mut warnings = 0;
+                for e in c.score.sfx.iter().filter(|e| e.kind == SfxKind::Warning) {
+                    warnings += 1;
+                    let ctx = c
+                        .perf
+                        .context_at(e.start_beat)
+                        .expect("a Warning with no harmony");
+                    let in_chord = e
+                        .pitches
+                        .iter()
+                        .all(|&p| ctx.chord.contains_pc(pitch_class(p)));
+                    if in_chord {
+                        assert_eq!(e.function, [Some(PitchFunction::ChordTone); 2], "{tag}");
+                        continue;
+                    }
+                    // An owned alarm: the owner exists, came from the same event, and outlasts it.
+                    let owner = e
+                        .owned_by
+                        .and_then(|id| c.perf.actions.get(id))
+                        .unwrap_or_else(|| panic!("{tag}: an unowned dissonant Warning"));
+                    let d = e.dissonance_beats.expect("an owned dissonance has a span");
+                    assert!(d as f64 <= owner.dur_beats + 1e-6, "{tag}: {d} > {owner:?}");
+                    assert!(d + 1e-4 >= SfxKind::Warning.max_lifetime_beats(c.score.tempo_bpm));
+                    assert!(owner.covers(e.start_beat), "{tag}: owner is elsewhere");
+                }
+                if name == "bounce" {
+                    assert_eq!(warnings, 2, "{tag}: the flagship has two Warnings");
+                }
+                // Stings land on the musical (quantized) beat, like every action, not the raw one.
+                for e in &c.score.sfx {
+                    let eighths = e.start_beat * 2.0;
+                    assert!(
+                        (eighths - eighths.round()).abs() < 1e-9,
+                        "{tag}: {}",
+                        e.start_beat
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn negative_control_the_world_scale_stings_ignore_the_harmony() {
+        use super::super::semantic::deflected_lift_trace;
+        use super::super::synth::world_scale_sfx_pitches;
+        // The pre-VIIb path over the flagship: world-scale pitches (the Warning a fixed tonic +
+        // tritone), no owner. The audit must catch at least one out-of-context, unowned Warning —
+        // or it is not measuring anything.
+        for world in MusicWorld::all() {
+            let c = compose_full(
+                &deflected_lift_trace(120.0),
+                &world,
+                2112,
+                Some(CompositionGrammar::DeflectedLift),
+                PerformanceOptions::default(),
+            );
+            let mut old = c.score.clone();
+            for e in &mut old.sfx {
+                e.pitches = world_scale_sfx_pitches(e.kind, &c.perf.region);
+                e.function = [None; 2];
+                e.owned_by = None;
+                e.dissonance_beats = None;
+            }
+            let lost = old
+                .sfx
+                .iter()
+                .filter(|e| {
+                    e.kind == SfxKind::Warning
+                        && SfxAudit::verdict(e, &c.perf, &old) == SfxVerdict::Unjustified
+                })
+                .count();
+            let audit = SfxAudit::measure(&c.perf, &old);
+            eprintln!("{} world-scale: {}", world.name, audit.report().trim_end());
+            assert!(lost >= 1, "{}: the old Warnings all fit", world.name);
+            assert!(audit.unjustified >= lost);
+        }
+    }
+
+    #[test]
+    fn a_chord_names_its_own_tritone() {
+        use super::super::theory::Quality;
+        // Dom7: 3–b7 (E–Bb over C7); m7b5: 1–b5 (B–F over Bm7b5); Maj7 and a triad have none.
+        assert_eq!(own_tritone(&Chord::new(0, Quality::Dom7)), Some(4));
+        assert_eq!(own_tritone(&Chord::new(11, Quality::Min7b5)), Some(11));
+        assert_eq!(own_tritone(&Chord::new(5, Quality::Maj7)), None);
+        assert_eq!(own_tritone(&Chord::new(9, Quality::Min)), None);
+    }
 
     #[test]
     fn the_realizer_leaves_no_unjustified_lead_notes() {

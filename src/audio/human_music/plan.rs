@@ -112,10 +112,13 @@ pub struct Phrase {
     /// Whether this phrase is a licensed rupture (climax / world-switch) where extra
     /// simultaneous novelty is permitted.
     pub is_rupture: bool,
+    /// The exact end of the whole piece (its requested `total_beats`). [`Phrase::end_beat`] never
+    /// runs past it, so a final phrase whose last bar is partial ends where the piece does.
+    pub piece_end: f64,
 }
 
 impl Phrase {
-    /// One past the last bar.
+    /// One past the last bar (the partial final bar counts as a bar).
     pub fn end_bar(&self) -> u32 {
         self.start_bar + self.bars
     }
@@ -123,17 +126,24 @@ impl Phrase {
     pub fn start_beat(&self) -> f64 {
         self.start_bar as f64 * BEATS_PER_BAR
     }
-    /// One past the last beat.
+    /// One past the last beat: the bar line after the phrase, or the piece's exact end when the
+    /// phrase's last bar is partial.
     pub fn end_beat(&self) -> f64 {
-        self.end_bar() as f64 * BEATS_PER_BAR
+        (self.end_bar() as f64 * BEATS_PER_BAR).min(self.piece_end)
     }
 }
 
 /// A hierarchy of phrases in musical units, with recurring families.
+///
+/// `total_bars` counts every bar the piece touches under the partial-bar rule
+/// ([`super::form::bars_spanning`]); `total_beats` is the exact requested length, which may end
+/// inside the last bar (9 beats = 3 bars, the third one beat long).
 #[derive(Debug, Clone)]
 pub struct FormGraph {
     pub phrases: Vec<Phrase>,
     pub total_bars: u32,
+    /// The exact length of the piece in beats (`<= total_bars * BEATS_PER_BAR`).
+    pub total_beats: f64,
 }
 
 impl FormGraph {
@@ -157,7 +167,23 @@ impl FormGraph {
         total_bars: u32,
         contract: &CoherenceContract,
     ) -> FormGraph {
-        let total_bars = total_bars.max(1);
+        Self::build_for_beats(timeline, total_bars.max(1) as f64 * BEATS_PER_BAR, contract)
+    }
+
+    /// Like [`FormGraph::build`], but over an exact `total_beats` that may end inside a bar: the
+    /// graph spans [`super::form::bars_spanning`] bars and its final phrase ends at `total_beats`.
+    /// A degenerate request (not finite, or not positive) is one bar long.
+    pub fn build_for_beats(
+        timeline: &IntentTimeline,
+        total_beats: f64,
+        contract: &CoherenceContract,
+    ) -> FormGraph {
+        let total_beats = if total_beats.is_finite() && total_beats > 0.0 {
+            total_beats
+        } else {
+            BEATS_PER_BAR
+        };
+        let total_bars = super::form::bars_spanning(total_beats, BEATS_PER_BAR);
         let phrase_bars = contract.phrase_bars.max(1);
 
         // Phrase boundaries: the base grid ∪ salient events snapped onto the 2-bar sub-grid.
@@ -183,7 +209,7 @@ impl FormGraph {
             let start_bar = bounds[i];
             let bars = bounds[i + 1] - bounds[i];
             let start_beat = start_bar as f64 * BEATS_PER_BAR;
-            let end_beat = (start_bar + bars) as f64 * BEATS_PER_BAR;
+            let end_beat = ((start_bar + bars) as f64 * BEATS_PER_BAR).min(total_beats);
             raw.push((start_bar, bars, timeline.span(start_beat, end_beat)));
         }
 
@@ -226,12 +252,14 @@ impl FormGraph {
                 intent: span.start,
                 span,
                 is_rupture: matches!(family, SectionFamily::Climax),
+                piece_end: total_beats,
             });
         }
 
         FormGraph {
             phrases,
             total_bars,
+            total_beats,
         }
     }
 
@@ -628,7 +656,33 @@ impl CompositionPlan {
         total_bars: u32,
         contract: CoherenceContract,
     ) -> CompositionPlan {
-        let form = FormGraph::build(timeline, total_bars, &contract);
+        Self::build_with_contract_for_beats(
+            timeline,
+            total_bars.max(1) as f64 * BEATS_PER_BAR,
+            contract,
+        )
+    }
+
+    /// Build the plan for an exact length in beats (which may end inside a bar), inferring the
+    /// grammar from the trace's shape — the path [`super::functor::compose_full`] takes, so a
+    /// request of 9 beats is a 9-beat piece, not a rounded 8 or 12.
+    pub fn build_for_beats(timeline: &IntentTimeline, total_beats: f64) -> CompositionPlan {
+        Self::build_with_contract_for_beats(
+            timeline,
+            total_beats,
+            CoherenceContract::infer(timeline),
+        )
+    }
+
+    /// [`CompositionPlan::build_with_contract`] over an exact `total_beats`: the form spans every bar
+    /// the piece touches (the last may be partial) and carries the exact end; the backbone tiles
+    /// the same bars (its last slot's end is clamped to the piece by every reader).
+    pub fn build_with_contract_for_beats(
+        timeline: &IntentTimeline,
+        total_beats: f64,
+        contract: CoherenceContract,
+    ) -> CompositionPlan {
+        let form = FormGraph::build_for_beats(timeline, total_beats, &contract);
         let discourse = DiscoursePlan::build(timeline, &form, &contract);
         let mut arrangement = ArrangementPlan::build(&form, &discourse, &contract);
         // The thematic question/answer must be audible: give the lead a seat on Question/Answer
@@ -855,6 +909,7 @@ impl PhraseTarget {
             intent: mi,
             span,
             is_rupture: false,
+            piece_end: (start_bar + bars) as f64 * BEATS_PER_BAR,
         };
         let goal = PhraseGoal {
             phrase_ix: 0,
@@ -938,6 +993,38 @@ mod tests {
         // The demo arc is 30 bars (120 beats / 4).
         let tl = IntentTimeline::walk(&demo_trace(120.0));
         CompositionPlan::build(&tl, 30)
+    }
+
+    #[test]
+    fn a_partial_final_bar_is_a_bar_and_the_piece_ends_where_it_was_asked_to() {
+        use super::super::semantic::deflected_lift_trace;
+        for beats in [9.0, 10.5, 17.0] {
+            let tl = IntentTimeline::walk(&deflected_lift_trace(beats));
+            let plan = CompositionPlan::build_for_beats(&tl, beats);
+            let form = &plan.form;
+            assert_eq!(form.total_beats, beats);
+            assert_eq!(
+                form.total_bars,
+                super::super::form::bars_spanning(beats, BEATS_PER_BAR)
+            );
+            // Phrases tile every bar, and the last one ends at the exact request, not a bar line.
+            let mut expect = 0u32;
+            for p in &form.phrases {
+                assert_eq!(p.start_bar, expect, "{beats}: phrase {} has a gap", p.ix);
+                assert!(
+                    p.end_beat() <= beats + 1e-9,
+                    "{beats}: phrase runs past the end"
+                );
+                expect = p.end_bar();
+            }
+            assert_eq!(expect, form.total_bars);
+            assert_eq!(form.phrases.last().unwrap().end_beat(), beats);
+        }
+        // An exact multiple of the bar is unchanged by the rule: 30 bars, ending on bar 30's line.
+        let tl = IntentTimeline::walk(&demo_trace(120.0));
+        let exact = CompositionPlan::build_for_beats(&tl, 120.0);
+        assert_eq!(exact.form.total_bars, 30);
+        assert_eq!(exact.form.phrases.last().unwrap().end_beat(), 120.0);
     }
 
     #[test]

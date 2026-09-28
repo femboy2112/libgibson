@@ -19,7 +19,7 @@ use super::super::time::{SampleRate, SampleTime, TempoMap};
 use super::super::StereoBlock;
 use super::instrument::{OscKind, Patch};
 use super::score::{DrumVoice, Role, Score, SfxKind};
-use super::theory::{midi_to_hz, Scale};
+use super::theory::{midi_to_hz, Midi, Scale};
 use super::world::MusicWorld;
 
 /// A single polyphonic synth voice built from a [`Patch`].
@@ -408,7 +408,13 @@ impl HumanMusicSynth {
                 at: tempo.beat_to_sample(s.start_beat).0,
                 kind: s.kind,
                 velocity: s.velocity,
-                freqs: sfx_freqs(s.kind, &scale),
+                // The composer's pitches, chosen in the local harmony; the world scale only when
+                // an event arrives unpitched.
+                freqs: if s.is_pitched() {
+                    s.pitches.map(midi_to_hz)
+                } else {
+                    sfx_freqs(s.kind, &scale)
+                },
             })
             .collect();
         sfx.sort_by_key(|e| e.at);
@@ -668,7 +674,8 @@ impl AudioSource for HumanMusicSynth {
     }
 }
 
-/// A short synthesized SFX gesture (two detuned FM/osc blips + noise, world-tuned pitches).
+/// A short synthesized SFX gesture (an FM blip over a triangle, at the two pitches the composer
+/// chose in the local harmony — or the world-scale fallback for an unpitched event).
 struct SfxVoice {
     osc_a: FmOsc,
     osc_b: Osc,
@@ -757,17 +764,24 @@ impl SfxVoice {
     }
 }
 
-/// Two frequencies for an SFX gesture, drawn from the world scale so a sting belongs to the
-/// score rather than sounding like a foreign notification.
+/// The fallback for an unpitched SFX: two frequencies from the WORLD scale (see
+/// [`world_scale_sfx_pitches`]). Kept only for events the composer did not pitch.
 fn sfx_freqs(kind: SfxKind, scale: &Scale) -> [f32; 2] {
-    let d = |deg: i32, oct: i32| midi_to_hz(scale.degree_pitch(deg, oct));
+    world_scale_sfx_pitches(kind, scale).map(midi_to_hz)
+}
+
+/// The pre-VIIb SFX pitches: drawn from the world scale, blind to the chord actually sounding —
+/// so the Warning is always the world tonic + a tritone. This is the synth's fallback for an
+/// unpitched event and the negative control the SFX audit is calibrated against.
+pub fn world_scale_sfx_pitches(kind: SfxKind, scale: &Scale) -> [Midi; 2] {
+    let d = |deg: i32, oct: i32| scale.degree_pitch(deg, oct);
     match kind {
         SfxKind::Acquire => [d(0, 6), d(4, 5)],
         SfxKind::Confirm => [d(4, 5), d(0, 6)], // rising to the tonic
-        SfxKind::Warning => [d(0, 4), midi_to_hz(scale.degree_pitch(0, 4) + 6)], // tritone
+        SfxKind::Warning => [d(0, 4), d(0, 4) + 6], // tritone
         SfxKind::Danger => [d(0, 2), d(1, 2)],
         SfxKind::Transition => [d(2, 4), d(4, 4)],
-        SfxKind::Impact => [midi_to_hz(scale.degree_pitch(0, 1)), d(0, 2)],
+        SfxKind::Impact => [d(0, 1), d(0, 2)],
     }
 }
 
