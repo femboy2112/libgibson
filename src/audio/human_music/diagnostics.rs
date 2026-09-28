@@ -1038,6 +1038,44 @@ pub struct ActionDiagnostics {
     /// Fraction of backbone gesture slots with at least one action caused by that slot's gesture
     /// or starting inside the slot (0 when the plan has no backbone).
     pub backbone_witness_coverage: f32,
+    /// Round VIIb causal receipt: actions whose Score events carry their id AND satisfy their
+    /// contract (see [`super::witness::audit`]), of all actions.
+    pub causal_witnessed: usize,
+    pub causal_total: usize,
+    /// Of the causal witnesses, those proved by stamped events (the rest are absences or
+    /// harmonic changes).
+    pub causal_stamped: usize,
+    /// Beats of declared stasis (deliberate stillness).
+    pub declared_stasis_beats: f64,
+    /// Declared stasis overlapping a Culminate phrase or a salient (non-Prolong) event.
+    pub illegal_stasis: usize,
+    /// The longest span covered by no action and no declared stasis, where a durative action
+    /// (a Deflect, a Fragment, a Pullback, a Thicken, a Thin, a Displace, an Accelerate, a Hold)
+    /// only covers its first two beats — a long window must not hide an idle band.
+    pub longest_undeclared_idle_beats: f64,
+    /// Lead statements, and how many of them became calls (the rest stand alone).
+    pub statements: usize,
+    pub statement_calls: usize,
+    /// `statement_calls / statements` — 1.0 is the "lead speaks → somebody answers" template.
+    pub selective_call_rate: f32,
+    /// Statements whose call received a sounding answer, over all statements.
+    pub answered_statement_rate: f32,
+    /// Calls by a non-lead player (figures), and of those, drum calls.
+    pub figure_calls: usize,
+    pub drum_calls: usize,
+    /// Per gesture, the mean Jaccard of consecutive cycles' `(kind, initiator, anchored offset)`
+    /// sets of that gesture's own actions: 1.0 = identical choreography every cycle.
+    pub manifestation_recurrence: Vec<(&'static str, f32)>,
+    /// Realized material-relation receipts (see [`super::witness::interaction_receipts`]):
+    /// informative receipts, how many relate more to their real caller than to anything else
+    /// sounding, and the smallest margin.
+    pub informative_receipts: usize,
+    pub caller_related_receipts: usize,
+    pub min_caller_margin: f32,
+    /// Admission ledger: actions admitted onto the stage, recast, rejected before realization.
+    pub admitted: usize,
+    pub recast: usize,
+    pub rejected: usize,
 }
 
 impl ActionDiagnostics {
@@ -1108,6 +1146,120 @@ impl ActionDiagnostics {
             cursor = cursor.max(e);
         }
         let longest_actionless_span_beats = longest.max(total - cursor);
+
+        // --- Round VIIb: causal receipts, stasis vs idleness, selective calls, manifestations. ---
+        let causal = super::witness::audit(perf, score);
+        let declared_stasis_beats: f64 = ap
+            .stasis
+            .iter()
+            .map(|s| (s.end_beat - s.start_beat).max(0.0))
+            .sum();
+        let illegal_stasis = ap
+            .stasis
+            .iter()
+            .filter(|st| {
+                let salient = timeline.transitions.iter().any(|t| {
+                    t.at_beat > st.start_beat + 1e-6
+                        && t.at_beat < st.end_beat - 1e-6
+                        && t.applied.iter().any(|&m| m != IntentMorphism::Prolong)
+                });
+                let culminate = plan.form.phrases.iter().any(|p| {
+                    p.start_beat() < st.end_beat - 1e-6
+                        && p.end_beat() > st.start_beat + 1e-6
+                        && plan.discourse.goal(p.ix as usize).role
+                            == super::discourse::DiscourseRole::Culminate
+                });
+                salient || culminate
+            })
+            .count();
+        let durative = |k: ActionKind| {
+            matches!(
+                k,
+                ActionKind::Deflect
+                    | ActionKind::Fragment
+                    | ActionKind::Pullback
+                    | ActionKind::Thicken
+                    | ActionKind::Thin
+                    | ActionKind::Displace
+                    | ActionKind::Accelerate
+                    | ActionKind::Hold
+            )
+        };
+        let mut strict: Vec<(f64, f64)> = ap
+            .actions
+            .iter()
+            .map(|a| {
+                let e = if durative(a.kind) {
+                    a.end_beat().min(a.start_beat + 2.0)
+                } else {
+                    a.end_beat()
+                };
+                (a.start_beat.max(0.0), e.min(total))
+            })
+            .chain(
+                ap.stasis
+                    .iter()
+                    .map(|s| (s.start_beat.max(0.0), s.end_beat.min(total))),
+            )
+            .filter(|(s, e)| e > s)
+            .collect();
+        strict.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let (mut cur, mut worst) = (0.0_f64, 0.0_f64);
+        for (s0, e0) in strict {
+            if s0 > cur {
+                worst = worst.max(s0 - cur);
+            }
+            cur = cur.max(e0);
+        }
+        let longest_undeclared_idle_beats = worst.max(total - cur);
+        let statement_calls = perf
+            .statements
+            .iter()
+            .filter(|st| {
+                st.call
+                    .and_then(|c| ap.get(c))
+                    .is_some_and(|a| !a.responders.is_empty())
+            })
+            .count();
+        let answered_statements = perf
+            .statements
+            .iter()
+            .filter(|st| {
+                st.call.is_some_and(|c| {
+                    perf.interactions.iter().any(|i| {
+                        i.call.action == c
+                            && i.response
+                                .is_some_and(|r| r.transform != Transform::Silence)
+                    })
+                })
+            })
+            .count();
+        let figure_calls = perf
+            .interactions
+            .iter()
+            .filter(|i| i.call.initiator != Agent::Lead)
+            .count();
+        let drum_calls = perf
+            .interactions
+            .iter()
+            .filter(|i| i.call.initiator == Agent::Drums)
+            .count();
+        let manifestation_recurrence = match plan.backbone.as_ref() {
+            Some(bb) => manifestation_recurrence(ap, bb),
+            None => Vec::new(),
+        };
+        let receipts: Vec<_> = super::witness::interaction_receipts(perf, score)
+            .into_iter()
+            .filter(|r| r.informative())
+            .collect();
+        let (mut admitted, mut recast, mut rejected) = (0, 0, 0);
+        for r in &perf.admissions {
+            match r.outcome {
+                super::performance::Admission::Admitted { .. } => admitted += 1,
+                super::performance::Admission::Recast { .. } => recast += 1,
+                super::performance::Admission::Rejected { .. } => rejected += 1,
+            }
+        }
 
         // --- Interactions: who calls, who answers, when, and where in the bar. ---
         let initiators_raw: Vec<Agent> =
@@ -1243,6 +1395,29 @@ impl ActionDiagnostics {
             counterline_events,
             semantic_witness_coverage: ratio(witnessed_transitions, live_transitions),
             backbone_witness_coverage,
+            causal_witnessed: causal.witnessed(),
+            causal_total: causal.total(),
+            causal_stamped: causal.witnessed_stamped(),
+            declared_stasis_beats,
+            illegal_stasis,
+            longest_undeclared_idle_beats,
+            statements: perf.statements.len(),
+            statement_calls,
+            selective_call_rate: ratio(statement_calls, perf.statements.len()),
+            answered_statement_rate: ratio(answered_statements, perf.statements.len()),
+            figure_calls,
+            drum_calls,
+            manifestation_recurrence,
+            informative_receipts: receipts.len(),
+            caller_related_receipts: receipts.iter().filter(|r| r.margin() > 0.0).count(),
+            min_caller_margin: receipts
+                .iter()
+                .map(|r| r.margin())
+                .reduce(f32::min)
+                .unwrap_or(0.0),
+            admitted,
+            recast,
+            rejected,
         }
     }
 
@@ -1306,8 +1481,108 @@ impl ActionDiagnostics {
             self.realized_unison_points,
             self.counterline_events
         );
+        let _ = writeln!(
+            s,
+            "  causal witnesses {}/{} (stamped {})  admissions: admitted={} recast={} rejected={}",
+            self.causal_witnessed,
+            self.causal_total,
+            self.causal_stamped,
+            self.admitted,
+            self.recast,
+            self.rejected
+        );
+        let _ = writeln!(
+            s,
+            "  declared_stasis={:.1}b illegal_stasis={} longest_undeclared_idle={:.2}b",
+            self.declared_stasis_beats, self.illegal_stasis, self.longest_undeclared_idle_beats
+        );
+        let _ = writeln!(
+            s,
+            "  statements={} calls={} selective_call_rate={:.2} answered_rate={:.2} figure_calls={} drum_calls={}",
+            self.statements,
+            self.statement_calls,
+            self.selective_call_rate,
+            self.answered_statement_rate,
+            self.figure_calls,
+            self.drum_calls
+        );
+        let rec: Vec<String> = self
+            .manifestation_recurrence
+            .iter()
+            .map(|(g, r)| format!("{g}={r:.2}"))
+            .collect();
+        let _ = writeln!(
+            s,
+            "  manifestation_recurrence(cycle→cycle Jaccard, 1.0 = identical choreography): {}",
+            rec.join(" ")
+        );
+        let _ = writeln!(
+            s,
+            "  material receipts: informative={} related_to_real_caller={} min_margin={:+.2}",
+            self.informative_receipts, self.caller_related_receipts, self.min_caller_margin
+        );
         s
     }
+}
+
+/// Per gesture, the mean Jaccard of consecutive cycles' `(kind, initiator, offset)` sets of the
+/// gesture's own actions (offsets in half-beats, anchored to the nearer slot edge). Pairs where
+/// both cycles are empty are skipped.
+pub fn manifestation_recurrence(
+    ap: &super::action::ActionPlan,
+    bb: &super::backbone::BackboneTimeline,
+) -> Vec<(&'static str, f32)> {
+    use super::action::ActionCause;
+    use super::backbone::HarmonicGesture;
+    let mut out = Vec::new();
+    for g in [
+        HarmonicGesture::Lift,
+        HarmonicGesture::Deflect,
+        HarmonicGesture::Open,
+        HarmonicGesture::Reset,
+    ] {
+        let cycles: Vec<Vec<(ActionKind, Agent, i32)>> = bb
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|(_, sl)| sl.gesture == g)
+            .map(|(si, sl)| {
+                let (s0, e0) = (sl.start_beat(), sl.end_beat());
+                let mut v: Vec<(ActionKind, Agent, i32)> = ap
+                    .actions
+                    .iter()
+                    .filter(|a| matches!(a.cause, ActionCause::Gesture { slot, .. } if slot == si))
+                    .map(|a| {
+                        let from_start = a.start_beat - s0;
+                        let from_end = a.start_beat - e0;
+                        let off = if from_start.abs() <= from_end.abs() {
+                            from_start
+                        } else {
+                            100.0 + from_end
+                        };
+                        (a.kind, a.initiator, (off * 2.0).round() as i32)
+                    })
+                    .collect();
+                v.sort();
+                v.dedup();
+                v
+            })
+            .collect();
+        let mut js = Vec::new();
+        for w in cycles.windows(2) {
+            let (a, b) = (&w[0], &w[1]);
+            if a.is_empty() && b.is_empty() {
+                continue;
+            }
+            let inter = a.iter().filter(|x| b.contains(x)).count();
+            let uni = a.len() + b.len() - inter;
+            js.push(inter as f32 / uni.max(1) as f32);
+        }
+        if !js.is_empty() {
+            out.push((g.label(), js.iter().sum::<f32>() / js.len() as f32));
+        }
+    }
+    out
 }
 
 /// A part of the realized score whose per-bar onset pattern [`onset_vectors`] can extract.

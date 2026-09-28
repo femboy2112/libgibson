@@ -527,15 +527,18 @@ pub(super) fn plan_interactions(
         if lang.distributed_agency {
             c.extend([Agent::Bass, Agent::Drums]);
         }
-        if initiator != Agent::Lead {
-            c.push(Agent::Lead);
-        }
-        for &d in declared {
-            if !c.contains(&d) && d != Agent::Ensemble && d != Agent::Pad {
-                c.push(d);
+        // Declared responders widen the pool only in a language with distributed agency (the
+        // plain language keeps its keys-only answers).
+        if lang.distributed_agency {
+            for &d in declared {
+                if !c.contains(&d) && d != Agent::Ensemble && d != Agent::Pad {
+                    c.push(d);
+                }
             }
         }
-        c.retain(|&a| a != initiator);
+        // The lead answers a figure through its own next statement (see the statement pass),
+        // never with a free response: the lead realizer plays statements.
+        c.retain(|&a| a != initiator && a != Agent::Lead);
         c
     };
     let next_statement_after = |b: f64, statements: &[LeadStatement]| -> f64 {

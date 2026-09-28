@@ -16,12 +16,15 @@
 //!   cargo run --release --example human_music_lab -- --language=simple      # same song, plain speech
 //!   cargo run --release --example human_music_lab -- --actions=off          # mood without action
 //!   cargo run --release --example human_music_lab -- --responses=clockwork  # fixed-slot answers
-//!   cargo run --release --example human_music_lab -- --ab                   # all four A/Bs, BLACK_ICE
+//!   cargo run --release --example human_music_lab -- --calls=every          # every statement calls
+//!   cargo run --release --example human_music_lab -- --manifest=fixed       # one choreography
+//!   cargo run --release --example human_music_lab -- --ab                   # all six A/Bs, BLACK_ICE
 
 use std::path::PathBuf;
 
 use gibson::audio::buffer::StereoBlock;
 use gibson::audio::human_music::action::ManifestationPolicy;
+use gibson::audio::human_music::budget::ComplexityReport;
 use gibson::audio::human_music::contract::CompositionGrammar;
 use gibson::audio::human_music::diagnostics::{
     ActionDiagnostics, CoherenceDiagnostics, DiscourseDiagnostics, HarmonyContextDiagnostics,
@@ -36,6 +39,8 @@ use gibson::audio::human_music::semantic::{
 };
 use gibson::audio::human_music::synth::{HumanMusicSynth, StemMask};
 use gibson::audio::human_music::timeline::IntentTimeline;
+use gibson::audio::human_music::voicing::VoicingDiagnostics;
+use gibson::audio::human_music::witness;
 use gibson::audio::human_music::{demo_trace, MusicWorld, WorldId};
 use gibson::audio::render::OfflineRenderer;
 use gibson::audio::wav::write_wav_i16;
@@ -59,21 +64,28 @@ fn story_trace(name: &str, beats: f64) -> SemanticTrace {
     }
 }
 
-/// Print the DeflectedLift harmonic spine from the realized chords, grouped into cycles, so a
-/// listener can point to reach -> miss -> open -> reset directly in the Score dump.
-fn print_spine(chords: &[ChordSpan]) {
-    let tagged: Vec<&ChordSpan> = chords
-        .iter()
-        .filter(|c| matches!(c.note, "lift" | "deflect" | "open" | "reset"))
-        .collect();
-    if tagged.is_empty() {
+/// Print the DeflectedLift harmonic spine grouped by the backbone's REAL cycles and slots (Round
+/// VII chunked the tagged chords in fours, which misattributed chords to cycles once a slot held
+/// one to four chords).
+fn print_spine(plan: &gibson::audio::human_music::plan::CompositionPlan, chords: &[ChordSpan]) {
+    let Some(bb) = plan.backbone.as_ref() else {
         return;
-    }
-    println!("harmonic spine (DeflectedLift cell — reach -> miss -> open -> reset):");
-    for (cyc, chunk) in tagged.chunks(4).enumerate().take(3) {
-        let parts: Vec<String> = chunk
+    };
+    println!("harmonic spine (DeflectedLift cell — reach -> miss -> open -> reset), by cycle:");
+    for cyc in 0..=bb.slots.iter().map(|s| s.cycle).max().unwrap_or(0) {
+        let parts: Vec<String> = bb
+            .slots
             .iter()
-            .map(|c| format!("{}={}", c.note, c.chord.label()))
+            .filter(|s| s.cycle == cyc)
+            .map(|s| {
+                let (a, b) = (s.start_beat(), s.end_beat());
+                let names: Vec<String> = chords
+                    .iter()
+                    .filter(|c| c.start_beat >= a - 1e-6 && c.start_beat < b - 1e-6)
+                    .map(|c| c.chord.label())
+                    .collect();
+                format!("{}=[{}]", s.gesture.label(), names.join(" "))
+            })
             .collect();
         println!("  cycle {cyc}: {}", parts.join("  "));
     }
@@ -203,7 +215,7 @@ fn main() -> std::io::Result<()> {
             world.name
         );
         print!("{}", score.summary());
-        print_spine(&score.chords);
+        print_spine(&plan, &score.chords);
         print!("{}", plan.dump());
         print!("{}", perf.actions.dump());
         print!("{}", perf.dump());
@@ -224,6 +236,53 @@ fn main() -> std::io::Result<()> {
         );
         print!("{}", RigidityDiagnostics::measure(&score).report());
         print!("{}", HarmonyContextDiagnostics::measure(&perf).report());
+        // Round VIIb: the exact causal receipts, the material relations, the shared budget, the
+        // voicing path, and the stage's admission ledger.
+        print!("{}", witness::audit(&perf, &score).report());
+        for r in witness::interaction_receipts(&perf, &score) {
+            println!(
+                "  receipt {} {}->{} {:<8} call_ev={} answer_ev={} to_caller={:.2} to_other={:.2} margin={:+.2}{}",
+                r.interaction,
+                r.initiator.label(),
+                r.responder.label(),
+                r.transform.label(),
+                r.call_events,
+                r.answer_events,
+                r.to_caller,
+                r.to_other,
+                r.margin(),
+                if r.informative() { "" } else { " (uninformative)" }
+            );
+        }
+        for o in &perf.opportunities {
+            println!(
+                "  opportunity {:?} {} @{:.2} open={:.2} space={:.2} head={:.2} redund={:.2} score={:+.2} -> {:?}",
+                o.source,
+                o.initiator.label(),
+                o.start_beat,
+                o.openness,
+                o.space,
+                o.headroom,
+                o.redundancy,
+                o.score,
+                o.verdict
+            );
+        }
+        for a in &perf.admissions {
+            println!(
+                "  admission {:?} {:?} @{:.2}: {:?}",
+                a.action, a.kind, a.start_beat, a.outcome
+            );
+        }
+        print!("{}", ComplexityReport::measure(&perf, &score).report());
+        print!(
+            "{}",
+            VoicingDiagnostics::measure(&score, &perf.contexts).report()
+        );
+        println!(
+            "lead: melody_repairs={} rejudged_at_release={}",
+            score.melody_repairs, score.melody_rejudged
+        );
         println!(
             "render: {real_secs:.1}s audio in {:.0}ms  ({:.1}x realtime)  peak={:.3} rms={:.3} dc=({:.4},{:.4})",
             render_wall.as_secs_f64() * 1000.0,
@@ -405,9 +464,10 @@ fn stems(
     Ok(())
 }
 
-/// The four flagship A/Bs of ONE composition (BLACK_ICE, DeflectedLift): the conversational-fusion
+/// The flagship A/Bs of ONE composition (BLACK_ICE, DeflectedLift): the conversational-fusion
 /// language, the simple language, the same composition with the action plan disabled (mood without
-/// action), and with clockwork fixed-slot responses. Writes `ab_<case>.wav`.
+/// action), clockwork fixed-slot responses, every statement forced to call (saturation), and one
+/// fixed gesture choreography every cycle (rigidity). Writes `ab_<case>.wav`.
 fn ab(
     out_dir: &std::path::Path,
     sr: SampleRate,
@@ -437,6 +497,20 @@ fn ab(
             "clockwork",
             PerformanceOptions {
                 responses: ResponseMode::Clockwork,
+                ..fusion
+            },
+        ),
+        (
+            "saturated",
+            PerformanceOptions {
+                calls: CallPolicy::EveryStatement,
+                ..fusion
+            },
+        ),
+        (
+            "fixed_gestures",
+            PerformanceOptions {
+                manifestations: ManifestationPolicy::Fixed,
                 ..fusion
             },
         ),
@@ -475,6 +549,32 @@ fn ab(
             ActionDiagnostics::measure(&IntentTimeline::walk(trace), &c.plan, &c.perf, &c.score);
         let r = RigidityDiagnostics::measure(&c.score);
         let h = HarmonyContextDiagnostics::measure(&c.perf);
+        let budget = ComplexityReport::measure(&c.perf, &c.score);
+        let rec: Vec<String> = a
+            .manifestation_recurrence
+            .iter()
+            .map(|(g, x)| format!("{g}={x:.2}"))
+            .collect();
+        println!(
+            "  {:12} causal={}/{} calls={}/{} answered={:.2} figure_calls={} drum_calls={} receipts={}/{} min_margin={:+.2} stasis={:.1}b undeclared_idle={:.1}b budget_violations={} manifest[{}] repairs={} rejudged={}",
+            "",
+            a.causal_witnessed,
+            a.causal_total,
+            a.statement_calls,
+            a.statements,
+            a.answered_statement_rate,
+            a.figure_calls,
+            a.drum_calls,
+            a.caller_related_receipts,
+            a.informative_receipts,
+            a.min_caller_margin,
+            a.declared_stasis_beats,
+            a.longest_undeclared_idle_beats,
+            budget.violations.len(),
+            rec.join(" "),
+            c.score.melody_repairs,
+            c.score.melody_rejudged,
+        );
         println!(
             "  {:12} unwitnessed={} witness_cov={:.2} longest_idle={:.1}b responders={} placement_entropy={:.2}b same_slot={:.2} | recurrence keys={:.2} bass={:.2} drums={:.2} | deflects={} prepared={} global_scale_share={:.2}",
             "",

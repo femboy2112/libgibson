@@ -518,7 +518,23 @@ pub fn realize_drums(
             ActionKind::Fill => 0.4,
             _ => 0.5,
         };
-        for (k, (&at, &acc)) in onsets.iter().zip(accents).enumerate() {
+        let mut landed: Vec<f64> = Vec::new();
+        for (k, (&at0, &acc)) in onsets.iter().zip(accents).enumerate() {
+            // The stroke also performs any same-player figure verb it covers (a drum pickup
+            // inside the drum fill), and lands — once — on a planned push/hit step.
+            let (at, accent_ids) = super::comp::land_once(perf, at0, &mut landed);
+            let stamp = perf
+                .actions_covering(
+                    &[
+                        ActionKind::Pickup,
+                        ActionKind::Fill,
+                        ActionKind::Fragment,
+                        ActionKind::ReEntry,
+                    ],
+                    at,
+                    Some(Agent::Drums),
+                )
+                .fold(accent_ids.with(*id), ActionStamp::with);
             let ph = plan.form.phrase_at(at);
             let energy = plan.discourse.goal(ph.ix as usize).energy_target.max(0.3);
             let d = dyn_scale(energy);
@@ -532,7 +548,7 @@ pub fn realize_drums(
                 at,
                 (base + 0.5 * acc) * d,
                 "fill",
-                ActionStamp::of(*id),
+                stamp,
                 &mut rng,
             );
         }

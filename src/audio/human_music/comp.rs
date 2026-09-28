@@ -389,7 +389,7 @@ pub fn unison_lines(perf: &PerformancePlan, lead: &[Note]) -> Vec<(ActionId, Vec
 /// A projected onset within a sixteenth of a planned push/hit step moves ONTO it and carries that
 /// accent's id: the ensemble verb changes the line (the figure or answer lands with the band),
 /// rather than a coincidence being counted as a witness afterwards.
-fn land_on_accents(perf: &PerformancePlan, at: f64) -> (f64, ActionStamp) {
+pub fn land_on_accents(perf: &PerformancePlan, at: f64) -> (f64, ActionStamp) {
     let near: Vec<(f64, ActionId)> = perf
         .actions
         .actions
@@ -406,6 +406,19 @@ fn land_on_accents(perf: &PerformancePlan, at: f64) -> (f64, ActionStamp) {
                 .fold(ActionStamp::NONE, |s, x| s.with(x.1)),
         ),
         None => (at, ActionStamp::NONE),
+    }
+}
+
+/// [`land_on_accents`], at most once per accent step: a second event near an already-landed step
+/// keeps its own onset (a line's rhythm is never collapsed onto one beat).
+pub fn land_once(perf: &PerformancePlan, at: f64, landed: &mut Vec<f64>) -> (f64, ActionStamp) {
+    match land_on_accents(perf, at) {
+        (t, st) if !st.is_empty() && !landed.iter().any(|&l| (l - t).abs() < 1e-6) => {
+            landed.push(t);
+            (t, st)
+        }
+        (_, st) if !st.is_empty() => (at, ActionStamp::NONE),
+        other => other,
     }
 }
 
@@ -439,6 +452,7 @@ pub fn answer_notes(
         .iter()
         .find(|i| i.call.action == call.action)
         .map(|i| i.id);
+    let mut landed: Vec<f64> = Vec::new();
     super::material::line_of(m, agent, r.start_beat, r.start_beat + r.dur_beats, perf)
         .into_iter()
         .filter_map(|(at, d, p, accent)| {
@@ -447,7 +461,7 @@ pub fn answer_notes(
             if !perf.on_stage(agent, at) {
                 return None;
             }
-            let (at, accents) = land_on_accents(perf, at);
+            let (at, accents) = land_once(perf, at, &mut landed);
             let mut prov = stamped(
                 prov("answer", Some(r.transform.label()))
                     .realizing_opt(r.action)
@@ -484,6 +498,7 @@ pub fn figure_notes(perf: &PerformancePlan, agent: Agent, role: Role, velocity: 
         };
         let until = a.end_beat().max(a.start_beat + m.length());
         let interaction = perf.interaction_of(action);
+        let mut landed: Vec<f64> = Vec::new();
         for (at, d, p, accent) in super::material::line_of(m, agent, m.start_beat, until, perf) {
             let (Some(p), Some(ctx)) = (p, perf.context_at(at)) else {
                 continue;
@@ -491,7 +506,9 @@ pub fn figure_notes(perf: &PerformancePlan, agent: Agent, role: Role, velocity: 
             if !perf.on_stage(agent, at) {
                 continue;
             }
-            let (at, accents) = land_on_accents(perf, at);
+            // Land on a planned accent — once: a second event near the same step keeps its own
+            // onset, so the figure's rhythm is never collapsed.
+            let (at, accents) = land_once(perf, at, &mut landed);
             // The figure also performs any other figure verb of the same player it covers (the
             // Lift pickup inside the Reset fill), and the ensemble accents it lands on.
             let covered = perf

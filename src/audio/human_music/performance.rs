@@ -606,6 +606,28 @@ pub fn declare_stasis(
             });
         }
     }
+    // A relaxation (a Pullback after a resolution) is itself a declared stillness beyond its
+    // onset: the band settles into it on purpose, as long as nothing else starts meanwhile.
+    for a in actions
+        .actions
+        .iter()
+        .filter(|a| a.kind == ActionKind::Pullback)
+    {
+        let (s0, e0) = (a.start_beat + 2.0, a.end_beat().min(total_beats));
+        let next = actions
+            .actions
+            .iter()
+            .filter(|x| x.id != a.id && x.start_beat > s0 - 1e-6 && x.start_beat < e0)
+            .map(|x| x.start_beat)
+            .fold(e0, f64::min);
+        if next - s0 >= 1.0 && !culminates(s0, next) {
+            out.push(super::action::StasisSpan {
+                start_beat: s0,
+                end_beat: next,
+                reason: "the relaxation after a resolution holds",
+            });
+        }
+    }
     for p in &plan.form.phrases {
         let g = plan.discourse.goal(p.ix as usize);
         if g.role != DiscourseRole::Dissolve || g.energy_target > 0.45 {
