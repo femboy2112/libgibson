@@ -31,10 +31,13 @@ pub struct KeyedFilm {
 impl KeyedFilm {
     /// Wrap a raw RGB24 buffer. Returns `None` if the length is not a whole number
     /// of `film_w * film_h * 3`-byte frames (a truncated bake is a bug, not silent
-    /// garbage).
+    /// garbage). Empty input is rejected too: a 0-frame film is a corpse that only
+    /// panics later in `frame(0)`, so success here guarantees `nframes >= 1`.
     pub fn from_raw(data: Vec<u8>, film_w: u32, film_h: u32, fps: f32) -> Option<Self> {
         let stride = (film_w as usize) * (film_h as usize) * 3;
-        if stride == 0 || data.len() % stride != 0 {
+        // Empty data slips past the modulo check (0 % stride == 0); refuse it up
+        // front so no caller ever holds a film with nothing to show.
+        if stride == 0 || data.is_empty() || data.len() % stride != 0 {
             return None;
         }
         let nframes = data.len() / stride;
