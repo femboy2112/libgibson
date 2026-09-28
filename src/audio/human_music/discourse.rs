@@ -1484,6 +1484,7 @@ mod tests {
             responders: Vec::new(),
             binding: None,
             pays: pays.map(ActionId),
+            effect: super::super::action::EffectVector::NEUTRAL,
         }
     }
 

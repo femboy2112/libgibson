@@ -16,7 +16,7 @@ use super::plan::CompositionPlan;
 use super::rng::Rng;
 use super::score::{Note, PitchFunction, Provenance, Role};
 use super::theory::{pitch_class, Midi};
-use super::voicing::VoiceLeader;
+use super::voicing::{keys_path, pad_path, stab_voices};
 use super::world::MusicWorld;
 
 /// The function of `pitch` over `ctx`: a chord tone, a licensed tension, or `None`.
@@ -94,10 +94,11 @@ pub fn realize_keys(
     seed: u64,
 ) -> Vec<Note> {
     let mut out = Vec::new();
-    let mut vl = VoiceLeader::new(58, 84, world.voicing_spread);
     let mut rng = Rng::new(seed ^ 0x6E75_C0A9);
     let vel = (0.35 * world.base_dynamic).clamp(0.05, 1.0);
     let shell_n = if perf.language.shell_voicings { 3 } else { 4 };
+    // One global voice path over every harmony the keys play in, listening to the lead.
+    let kp = keys_path(perf, world.voicing_spread, lead, shell_n);
     let unisons: Vec<(f64, f64)> = perf
         .actions
         .of_kind(super::action::ActionKind::Unison)
@@ -178,7 +179,7 @@ pub fn realize_keys(
         match eb.keys {
             KeysMode::Sustain => {
                 if let Some(ctx) = perf.context_at(bar_start) {
-                    let v = vl.lead(&ctx.chord, shell_n, 72);
+                    let v = kp.voicing_at(perf, bar_start);
                     // The suspension(s) this bar holds.
                     let hold_stamp = perf
                         .actions_covering(&[ActionKind::Hold], bar_start + 0.5, Some(Agent::Keys))
@@ -216,7 +217,7 @@ pub fn realize_keys(
                     let Some(ctx) = perf.context_at(beat) else {
                         continue;
                     };
-                    let v = vl.lead(&ctx.chord, shell_n.max(3), 72);
+                    let v = kp.voicing_at(perf, beat);
                     let take = if k % 2 == 0 { 3 } else { 2 }.min(v.voices.len());
                     let next = chosen.get(k + 1).map(|&n| AccentGrid::beat_of(bar, n));
                     let dur = next
@@ -245,7 +246,7 @@ pub fn realize_keys(
                             .actions_covering(&[ActionKind::Displace], beat, None)
                             .fold(st, ActionStamp::with);
                     }
-                    for &p in v.voices.iter().rev().take(take) {
+                    for p in stab_voices(&v, ctx, take) {
                         let mut n = Note::new(
                             beat,
                             dur,
@@ -270,7 +271,7 @@ pub fn realize_keys(
         let Some(ctx) = perf.context_at(hs) else {
             continue;
         };
-        let v = vl.lead(&ctx.chord, shell_n, 72);
+        let v = kp.voicing_at(perf, hs);
         let level = perf.level(Agent::Keys, hs);
         for &p in v.voices.iter().rev().take(shell_n) {
             let mut n = Note::new(
@@ -533,15 +534,15 @@ pub fn realize_pad(
     world: &MusicWorld,
 ) -> Vec<Note> {
     let mut out = Vec::new();
-    let mut vl = VoiceLeader::new(52, 79, world.voicing_spread);
+    // One global voice path over the sounding harmonies; each bar's mode picks its shape family.
+    let pp = pad_path(perf, world.voicing_spread);
     let vel = (0.4 * world.base_dynamic).clamp(0.05, 1.0);
-    let mut prev_voices: Vec<Midi> = Vec::new();
     for (ci, ctx) in perf.contexts.iter().enumerate() {
         let Some(eb) = perf.bar_at(ctx.start_beat) else {
             continue;
         };
         let dur = ctx.dur_beats * 0.98;
-        let v = vl.lead(&ctx.chord, 4, 67);
+        let v = pp.voicing(ci, ctx);
         // The stage decides whether the pad sounds this harmony, and how loud; the pad's own
         // re-entries and thickenings are stamped on the notes that perform them.
         let on = perf.on_stage(Agent::Pad, ctx.start_beat);
@@ -576,31 +577,19 @@ pub fn realize_pad(
                 }
             }
             PadMode::Shell => {
-                // Guide tones only (the 3rd and 7th/6th), voiced from the leader's choice.
-                for &p in v
-                    .voices
-                    .iter()
-                    .filter(|&&p| ctx.palette.guide_tones.contains(&pitch_class(p)))
-                {
+                // The path's guide-tone shell (3–7 / 7–3 + at most one licensed extension; over a
+                // single-guide chord the 3rd + 9th + 5th).
+                for &p in &v.voices {
                     push(p, ctx.start_beat, dur, 1.0, &mut out);
                 }
             }
             PadMode::CommonToneCarry => {
-                // Hold what the previous harmony shares; add the new guide tones.
-                let prev_pcs: Vec<i32> = if ci > 0 {
-                    perf.contexts[ci - 1].chord.pitch_classes()
-                } else {
-                    Vec::new()
-                };
+                // Hold, at the exact same pitch, what the previous voicing shares; add the new
+                // guide tones.
+                let prev = pp.previous(ci).map(|p| p.voices).unwrap_or_default();
                 for &p in &v.voices {
-                    let pc = pitch_class(p);
-                    if prev_pcs.contains(&pc) || ctx.palette.guide_tones.contains(&pc) {
-                        let carried = prev_voices
-                            .iter()
-                            .copied()
-                            .find(|&q| pitch_class(q) == pc)
-                            .unwrap_or(p);
-                        push(carried, ctx.start_beat, dur, 0.9, &mut out);
+                    if prev.contains(&p) || ctx.palette.guide_tones.contains(&pitch_class(p)) {
+                        push(p, ctx.start_beat, dur, 0.9, &mut out);
                     }
                 }
             }
@@ -622,21 +611,18 @@ pub fn realize_pad(
                 }
             }
             PadMode::UpperStructure => {
-                // Wide: the voicing's upper three voices lifted an octave, plus a licensed tension.
-                for &p in v.voices.iter().rev().take(3) {
-                    push(p + 12, ctx.start_beat, dur, 0.75, &mut out);
-                }
-                if let Some(&t) = ctx.palette.tensions.first() {
-                    let top = v.voices.last().copied().unwrap_or(72) + 12;
-                    let p = (top / 12) * 12 + t;
-                    let p = if p < top { p + 12 } else { p };
-                    if p <= 96 {
-                        push(p, ctx.start_beat, dur, 0.6, &mut out);
-                    }
+                // Wide: the path's upper-window voicing (a voice at MIDI 79 or above), its
+                // licensed tensions a little softer.
+                for &p in &v.voices {
+                    let vm = if ctx.palette.tensions.contains(&pitch_class(p)) {
+                        0.6
+                    } else {
+                        0.75
+                    };
+                    push(p, ctx.start_beat, dur, vm, &mut out);
                 }
             }
         }
-        prev_voices = v.voices.clone();
     }
     out
 }
