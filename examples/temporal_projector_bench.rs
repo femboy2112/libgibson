@@ -56,18 +56,33 @@ fn bench_advance(w: u16, h: u16, iters: u32) {
     let mut p = TemporalDisplayProcessor::new(w, h, SubcellGlyphMode::Braille2x4, 0xB0A);
     p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.5));
     p.set_target_image(smooth, ResetPolicy::Reset);
-    std::hint::black_box(&p.advance(0));
 
-    let start = Instant::now();
+    // Owned-return path: allocates a fresh Surface per frame.
+    std::hint::black_box(&p.advance(0));
+    let t1 = Instant::now();
     for _ in 0..iters {
         std::hint::black_box(&p.advance(0));
     }
-    let elapsed = start.elapsed();
-    let per_us = elapsed.as_secs_f64() * 1e6 / iters as f64;
-    let modulating = p.diagnostics().modulating;
+    let owned_us = t1.elapsed().as_secs_f64() * 1e6 / iters as f64;
+
+    // Reused-Surface path: advance_into writes into a retained buffer.
+    let mut out = p.static_fallback();
+    p.advance_into(0, &mut out);
+    let t2 = Instant::now();
+    for _ in 0..iters {
+        p.advance_into(0, &mut out);
+        std::hint::black_box(&out);
+    }
+    let into_us = t2.elapsed().as_secs_f64() * 1e6 / iters as f64;
+
+    let saved = if owned_us > 0.0 {
+        (1.0 - into_us / owned_us) * 100.0
+    } else {
+        0.0
+    };
     println!(
-        "advance  {w:>3}x{h:<3} (modulating={modulating}):  {per_us:8.3} us/frame   ({:>7.0} fps ceiling)",
-        1e6 / per_us
+        "advance {w:>3}x{h:<3} (modulating={}): owned {owned_us:8.2} us/frame  |  into {into_us:8.2} us/frame  ({saved:+5.1}%)",
+        p.diagnostics().modulating
     );
 }
 

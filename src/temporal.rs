@@ -925,8 +925,24 @@ impl TemporalBrailleField {
         style_at: impl Fn(usize) -> Style,
     ) -> Surface {
         let mut surface = Surface::new(self.width, self.height);
+        self.fill_surface_from_masks_with(masks, mode, &mut surface, style_at);
+        surface
+    }
+
+    /// Writes the masks into an existing surface, reusing its allocation. The
+    /// surface is reallocated only if its dimensions do not match the field.
+    fn fill_surface_from_masks_with(
+        &self,
+        masks: Vec<u8>,
+        mode: SubcellGlyphMode,
+        out: &mut Surface,
+        style_at: impl Fn(usize) -> Style,
+    ) {
+        if out.width != self.width || out.height != self.height {
+            *out = Surface::new(self.width, self.height);
+        }
         if self.width == 0 {
-            return surface;
+            return;
         }
         for (index, mask) in masks.into_iter().enumerate() {
             let x = (index % self.width as usize) as u16;
@@ -936,9 +952,28 @@ impl TemporalBrailleField {
                 Some(ch) => Cell::new(Glyph::from_char(ch), style),
                 None => Cell::space(style),
             };
-            surface.set_cell(x, y, cell);
+            out.set_cell(x, y, cell);
         }
-        surface
+    }
+
+    /// Residual-gated advance that fills `out` in place (reusing its allocation)
+    /// instead of returning a fresh [`Surface`]; see
+    /// [`Self::advance_residual_styled_gated`].
+    pub fn advance_residual_styled_gated_into(
+        &mut self,
+        eligible: &[bool],
+        mode: SubcellGlyphMode,
+        out: &mut Surface,
+    ) {
+        let masks = self.advance_residual_masks_gated(Some(eligible));
+        self.fill_surface_from_masks_with(masks, mode, out, |index| self.styles[index]);
+    }
+
+    /// Fills `out` with the styled static realization, reusing its allocation; see
+    /// [`Self::static_styled_surface`].
+    pub fn static_styled_surface_into(&self, mode: SubcellGlyphMode, out: &mut Surface) {
+        let masks = self.static_masks();
+        self.fill_surface_from_masks_with(masks, mode, out, |index| self.styles[index]);
     }
 
     fn index(&self, x: u16, y: u16) -> Option<usize> {
@@ -1294,6 +1329,12 @@ impl TemporalDisplayProcessor {
         self.field.static_styled_surface(self.mode)
     }
 
+    /// Writes the always-valid static realization into `out`, reusing its
+    /// allocation (resizing to the processor's dimensions if needed).
+    pub fn static_fallback_into(&self, out: &mut Surface) {
+        self.field.static_styled_surface_into(self.mode, out);
+    }
+
     /// Produces the next frame.
     ///
     /// `missed_periods` is the scheduler's most recent phase-locked missed-deadline
@@ -1304,12 +1345,36 @@ impl TemporalDisplayProcessor {
     /// hold is active, or no cell is eligible to modulate; otherwise the
     /// residual-modulated frame (in which frozen cells still render static).
     pub fn advance(&mut self, missed_periods: u32) -> Surface {
+        if self.step(missed_periods) {
+            self.field
+                .advance_residual_styled_gated(&self.active, self.mode)
+        } else {
+            self.static_fallback()
+        }
+    }
+
+    /// Like [`Self::advance`], but writes the next frame into `out`, reusing its
+    /// allocation instead of returning a fresh [`Surface`] each frame. `out` is
+    /// resized to the processor's dimensions if it does not already match. Prefer
+    /// this in a high-cadence loop to avoid a per-frame Surface allocation.
+    pub fn advance_into(&mut self, missed_periods: u32, out: &mut Surface) {
+        if self.step(missed_periods) {
+            self.field
+                .advance_residual_styled_gated_into(&self.active, self.mode, out);
+        } else {
+            self.field.static_styled_surface_into(self.mode, out);
+        }
+    }
+
+    /// Advances the modulation/hysteresis state for one frame and returns whether
+    /// this frame should modulate (vs. emit the static fallback). Shared by
+    /// [`Self::advance`] and [`Self::advance_into`].
+    fn step(&mut self, missed_periods: u32) -> bool {
         if missed_periods > 0 {
             self.degraded_hold = CADENCE_HYSTERESIS_FRAMES;
         } else if self.degraded_hold > 0 {
             self.degraded_hold -= 1;
         }
-
         let gate = self.policy.gate_profile(self.profile, self.reduced_motion);
         self.last_gate = gate;
         let modulate = gate == TemporalGate::Enabled
@@ -1317,12 +1382,7 @@ impl TemporalDisplayProcessor {
             && self.active_cells > 0
             && self.degraded_hold == 0;
         self.last_modulating = modulate;
-        if modulate {
-            self.field
-                .advance_residual_styled_gated(&self.active, self.mode)
-        } else {
-            self.static_fallback()
-        }
+        modulate
     }
 
     /// A snapshot of the current realization decision and target statistics.
@@ -2457,5 +2517,51 @@ mod tests {
                 "LUT entry {v} must be bit-identical to the transfer function"
             );
         }
+    }
+
+    #[test]
+    fn advance_into_matches_owned_advance() {
+        let mk = || {
+            let mut p = TemporalDisplayProcessor::new(6, 3, SubcellGlyphMode::Braille2x4, 0x1234);
+            p.set_profile(PresentationProfile::measured(120.0, 0.99, 0.1));
+            p.set_target_image(
+                // A low-swing vertical gradient (ly spans 0..4*height): eligible,
+                // with fractional per-cell duty so the modulating path is exercised.
+                |_lx, ly| {
+                    let v = 70u8.wrapping_add((ly as u8).wrapping_mul(3));
+                    [v, v, v]
+                },
+                ResetPolicy::Reset,
+            );
+            p
+        };
+        let mut owned = mk();
+        let mut into = mk();
+        // A wrong-sized buffer must be resized transparently.
+        let mut buf = Surface::new(1, 1);
+        for frame in 0..64 {
+            let a = owned.advance(0);
+            into.advance_into(0, &mut buf);
+            assert_eq!(buf.width, 6, "advance_into resizes a mismatched buffer");
+            assert_eq!(buf.height, 3);
+            for y in 0..3 {
+                for x in 0..6 {
+                    assert_eq!(
+                        a.get(x, y).unwrap().glyph.grapheme,
+                        buf.get(x, y).unwrap().glyph.grapheme,
+                        "frame {frame} cell ({x},{y}) glyph must match the owned path"
+                    );
+                    assert_eq!(
+                        a.get(x, y).unwrap().style,
+                        buf.get(x, y).unwrap().style,
+                        "frame {frame} cell ({x},{y}) style must match the owned path"
+                    );
+                }
+            }
+        }
+        assert!(
+            into.diagnostics().modulating,
+            "this test must exercise the modulating path, not the static fallback"
+        );
     }
 }
