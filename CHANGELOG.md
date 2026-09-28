@@ -17,6 +17,61 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 Nothing yet.
 
+## [0.3.1] - 2026-09-28
+
+**Temporal hardening + keyed compositing** — a compatible patch release. All work
+is additive: the **experimental, Rust-only** `gibson::temporal` axis is extended and
+hardened, and two research examples demonstrate keyed-video compositing through the
+one existing renderer. **No C ABI change** (`GIBSON_ABI_VERSION` stays 1); MSRV stays
+1.85. The temporal feature remains **off by default** and its perceptual benefit is
+still setup-dependent and **unproven** (see
+[docs/TEMPORAL_DISPLAY_VALIDATION.md](docs/TEMPORAL_DISPLAY_VALIDATION.md)). No new
+spatial resolution, no video-playback claim, and no source media is shipped.
+
+### Added (experimental, Rust-only `gibson::temporal`)
+- **Regional motion gating** (`set_motion_region`/`clear_motion`): a moving region is
+  held static while settled regions may refine; re-activated cells reseed so no stale
+  residual leaks in.
+- **Incremental regional reprojection** (`set_target_region`): reprojects only the
+  overlapping cells and, as of this release, maintains eligibility and every
+  diagnostic aggregate **incrementally** — work proportional to the touched region,
+  not the whole grid (fixes #68).
+- **`advance_into(&mut Surface)`**: reuses the caller's `Surface` allocation, bit-for-bit
+  identical to `advance`.
+- **Opt-in transport-aware rate-distortion** (`set_transport`): a cell-level
+  keep/change decision by a λ benefit with an optional per-frame dirty budget;
+  mean-preserving. The default remains the per-dot residual.
+- **Capability-resolved emitted-swing safety**, a **jitter gate**, **nondestructive**
+  target eligibility, and **live reclassification** on policy/color-depth change;
+  Mono is always static.
+- Exact sRGB8→linear **LUT** (bit-identical to the transfer function).
+
+### Added (research examples)
+- **`temporal_observatory`**: a procedurally-lensed black-hole flagship whose acquire-
+  lock state machine drives region motion gating.
+- **`temporal_projector_bench`**: projector/runtime microbenchmarks.
+- **`temporal_video_compositor`**: chroma-keys a greenscreen clip and composites the
+  keyed subject over a designed, temporally-stabilized LibGibson background, exploiting
+  the greenscreen's ~80% transparency to reproject only the subject's bbox. Offline
+  ffmpeg bake into a cached raw-RGB film with a **source-identity cache fingerprint**
+  and atomic writes; the runtime never touches the codec.
+- **`libgibson_intro_reaction`**: a directed "reaction cut" that composites a keyed
+  subject **into** the existing `libgibson_intro` film via a **surface-local**
+  compositor — the base film is reused verbatim and stays byte-identical outside the
+  subject — with a deterministic two-clock (edit vs. narrative) director. See
+  [docs/TEMPORAL_VIDEO_COMPOSITING.md](docs/TEMPORAL_VIDEO_COMPOSITING.md) and
+  [docs/FRANK_REACTION_CUT_PLAN.md](docs/FRANK_REACTION_CUT_PLAN.md).
+
+### Fixed
+- **#68**: `set_target_region` no longer performs an O(total-cells) reclassification on
+  every call; the accounting is incremental with a bounded worst-swing fallback, proven
+  cell-for-cell against the retained full-recompute oracle.
+
+### Unchanged
+- C ABI (`GIBSON_ABI_VERSION` = 1, 52/52 symbols), MSRV 1.85, the single rendering
+  pipeline (all temporal output is an ordinary `Surface`). The `libgibson_intro`
+  example is behaviorally unchanged.
+
 ## [0.3.0] - 2026-09-27
 
 **Temporal Rendering Milestone** — a deliberate minor bump (see the release
@@ -476,7 +531,8 @@ The contents and exact cut procedure for a release are documented in
 [`docs/RELEASING.md`](docs/RELEASING.md). Ecosystem-registry publication
 (crates.io, PyPI, Go module proxy) remains a separate, later decision.
 
-[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/femboy2112/libgibson/releases/tag/v0.3.1
 [0.3.0]: https://github.com/femboy2112/libgibson/releases/tag/v0.3.0
 [0.2.5]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.5
 [0.2.4]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.4
