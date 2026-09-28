@@ -13,6 +13,10 @@
 //!   cargo run --release --example human_music_lab
 //!   cargo run --release --example human_music_lab -- --world=vapor95 --out=/tmp/hm
 //!   cargo run --release --example human_music_lab -- --beats=96 --seed=2112
+//!   cargo run --release --example human_music_lab -- --language=simple      # same song, plain speech
+//!   cargo run --release --example human_music_lab -- --actions=off          # mood without action
+//!   cargo run --release --example human_music_lab -- --responses=clockwork  # fixed-slot answers
+//!   cargo run --release --example human_music_lab -- --ab                   # all four A/Bs, BLACK_ICE
 
 use std::path::PathBuf;
 
@@ -21,8 +25,10 @@ use gibson::audio::human_music::contract::CompositionGrammar;
 use gibson::audio::human_music::diagnostics::{
     CoherenceDiagnostics, DiscourseDiagnostics, LeadOutlineDiagnostics, RealizationDiagnostics,
 };
-use gibson::audio::human_music::functor::compose_with_grammar;
+use gibson::audio::human_music::functor::{compose_full, compose_with_grammar};
 use gibson::audio::human_music::harmony::ChordSpan;
+use gibson::audio::human_music::language::MusicalLanguage;
+use gibson::audio::human_music::performance::{PerformanceOptions, ResponseMode};
 use gibson::audio::human_music::semantic::{
     calm_loop, deflected_lift_trace, rise_unresolved, SemanticTrace,
 };
@@ -70,6 +76,21 @@ fn print_spine(chords: &[ChordSpan]) {
     }
 }
 
+/// The performance options selected on the command line (the calibration A/B knobs).
+fn perf_options() -> PerformanceOptions {
+    PerformanceOptions {
+        language: match arg("--language=").as_deref() {
+            Some("simple") => MusicalLanguage::simple(),
+            _ => MusicalLanguage::fusion_conversation(),
+        },
+        actions: arg("--actions=").as_deref() != Some("off"),
+        responses: match arg("--responses=").as_deref() {
+            Some("clockwork") => ResponseMode::Clockwork,
+            _ => ResponseMode::Free,
+        },
+    }
+}
+
 fn main() -> std::io::Result<()> {
     let seed: u64 = arg("--seed=").and_then(|s| s.parse().ok()).unwrap_or(2112);
     let beats: f64 = arg("--beats=")
@@ -103,6 +124,17 @@ fn main() -> std::io::Result<()> {
     // musical direction, and dump their plan + coherence + discourse diagnostics.
     if std::env::args().any(|a| a == "--calibrate") {
         return calibrate(&out_dir, sr, block, seed);
+    }
+    // The four flagship A/Bs on ONE composition, so the ear can isolate backbone, language,
+    // action and interaction timing instead of judging everything at once.
+    if std::env::args().any(|a| a == "--ab") {
+        return ab(
+            &out_dir,
+            sr,
+            block,
+            seed,
+            &story_trace(&arg("--story=").unwrap_or_default(), beats),
+        );
     }
 
     // Stem-isolation mode: render each bus of ONE world alone (plus the full mix) so a bad tone
@@ -141,7 +173,8 @@ fn main() -> std::io::Result<()> {
         let file_stem = world.name.to_lowercase();
         let path = out_dir.join(format!("{file_stem}.wav"));
 
-        let (score, plan) = compose_with_grammar(&trace, &world, seed, grammar);
+        let comp = compose_full(&trace, &world, seed, Some(grammar), perf_options());
+        let (score, plan, perf) = (comp.score, comp.plan, comp.perf);
         score.validate().expect("score invariants");
 
         let mut synth = HumanMusicSynth::new(&score, &world, sr);
@@ -161,6 +194,8 @@ fn main() -> std::io::Result<()> {
         print!("{}", score.summary());
         print_spine(&score.chords);
         print!("{}", plan.dump());
+        print!("{}", perf.actions.dump());
+        print!("{}", perf.dump());
         print!("{}", CoherenceDiagnostics::measure(&plan, &score).report());
         print!("{}", DiscourseDiagnostics::measure(&plan, &score).report());
         println!(
@@ -310,7 +345,7 @@ fn stems(
     let world = MusicWorld::from_id(wid);
     let file_stem = world.name.to_lowercase();
     let trace = story_trace(story, 120.0);
-    let (score, _plan) = compose_with_grammar(&trace, &world, seed, grammar);
+    let score = compose_full(&trace, &world, seed, Some(grammar), perf_options()).score;
     score.validate().expect("score invariants");
 
     println!(
@@ -345,6 +380,78 @@ fn stems(
 
     println!(
         "\nStems rendered. Solo each bus to localize a bad tone; `full` is the reference mix."
+    );
+    Ok(())
+}
+
+/// The four flagship A/Bs of ONE composition (BLACK_ICE, DeflectedLift): the conversational-fusion
+/// language, the simple language, the same composition with the action plan disabled (mood without
+/// action), and with clockwork fixed-slot responses. Writes `ab_<case>.wav`.
+fn ab(
+    out_dir: &std::path::Path,
+    sr: SampleRate,
+    block: usize,
+    seed: u64,
+    trace: &SemanticTrace,
+) -> std::io::Result<()> {
+    let world = MusicWorld::black_ice();
+    let fusion = PerformanceOptions::default();
+    let cases = [
+        ("fusion", fusion),
+        (
+            "simple",
+            PerformanceOptions {
+                language: MusicalLanguage::simple(),
+                ..fusion
+            },
+        ),
+        (
+            "actions_off",
+            PerformanceOptions {
+                actions: false,
+                ..fusion
+            },
+        ),
+        (
+            "clockwork",
+            PerformanceOptions {
+                responses: ResponseMode::Clockwork,
+                ..fusion
+            },
+        ),
+    ];
+    println!(
+        "HumanMusic A/B — {} DeflectedLift, seed={seed}\n",
+        world.name
+    );
+    for (name, opts) in cases {
+        let c = compose_full(
+            trace,
+            &world,
+            seed,
+            Some(CompositionGrammar::DeflectedLift),
+            opts,
+        );
+        c.score.validate().expect("A/B score invariants");
+        let mut synth = HumanMusicSynth::new(&c.score, &world, sr);
+        let frames = synth.total_samples();
+        let out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
+        let path = out_dir.join(format!("ab_{name}.wav"));
+        write_wav_i16(&path, &out.audio, sr)?;
+        println!(
+            "  {name:12} actions={:<3} interactions={:<3} notes={:<4} drums={:<4} peak={:.3} rms={:.3} nonfinite={}  {}",
+            c.perf.actions.actions.len(),
+            c.perf.interactions.len(),
+            c.score.notes.len(),
+            c.score.drums.len(),
+            out.peak,
+            out.rms,
+            out.audio.has_nonfinite(),
+            path.display()
+        );
+    }
+    println!(
+        "\nSame song four ways: language, action and interaction timing isolated for the ear."
     );
     Ok(())
 }

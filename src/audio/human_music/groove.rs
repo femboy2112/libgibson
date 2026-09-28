@@ -215,6 +215,247 @@ impl GrooveEngine {
     }
 }
 
+/// Realize the drums as one projection of the [`super::performance::PerformancePlan`].
+///
+/// The pocket keeps its identity (kick on the downbeat, the backbeat on 2 and 4, subdivided hats
+/// with an accent contour) but everything around it is read from the shared plan: the kick
+/// interlocks with the bass's own syncopations (it doubles some of them and leaves the rest),
+/// ghost notes fall on the grid's weaker off-beats, open hats mark pickups and pushes, the planned
+/// ensemble hits land with everyone, planned breaks are left empty, fills fire because a Reset is
+/// handing over to the next attempt (an action), half-time/double-time surfaces follow Pullback /
+/// Accelerate, and when the drummer is the chosen responder it echoes the call's rhythm.
+pub fn realize_drums(
+    perf: &super::performance::PerformancePlan,
+    plan: &super::plan::CompositionPlan,
+    world: &MusicWorld,
+    seed: u64,
+    bass: &[super::score::Note],
+    lead: &[super::score::Note],
+) -> Vec<DrumHit> {
+    use super::action::{ActionKind, Agent};
+    use super::performance::{AccentGrid, DrumsMode, STEPS, STEP_BEATS};
+    let mut rng = Rng::new(seed ^ 0x6300_0E00_0000_0001);
+    let subdiv_steps = match perf.language.surface_subdivision.max(world.subdiv) {
+        s if s >= 4 => 1usize,
+        2 | 3 => 2,
+        _ => 4,
+    };
+    let use_clap = matches!(world.id, super::world::WorldId::Vapor95);
+    let dyn_scale = |energy: f32| {
+        (world.base_dynamic * (0.55 + 0.45 * energy) * (0.6 + 0.4 * world.drum_density))
+            .clamp(0.0, 1.0)
+    };
+    let swung = |frac: f64| -> f64 {
+        if world.swing <= 0.0 {
+            return frac;
+        }
+        let idx = (frac / 0.5).round() as i64;
+        if (frac * 2.0 - idx as f64).abs() < 1e-6 && idx % 2 != 0 {
+            frac + world.swing as f64 * 0.25
+        } else {
+            frac
+        }
+    };
+    let mut hits: Vec<DrumHit> = Vec::new();
+    let hit = |hits: &mut Vec<DrumHit>,
+               voice: DrumVoice,
+               at: f64,
+               vel: f32,
+               tag: &'static str,
+               rng: &mut Rng| {
+        hits.push(DrumHit {
+            start_beat: (at + rng.range_f32(-0.008, 0.008) as f64).max(0.0),
+            voice,
+            velocity: vel.clamp(0.02, 1.0),
+            prov: Provenance {
+                groove_variation: Some(tag),
+                ..Provenance::new(super::form::SectionKind::A)
+            },
+        });
+    };
+    let bass_steps = |bar: u32| -> Vec<usize> {
+        let bs = AccentGrid::beat_of(bar, 0);
+        bass.iter()
+            .filter(|n| n.start_beat >= bs - 1e-6 && n.start_beat < bs + 4.0 - 1e-6)
+            .map(|n| AccentGrid::step_of(n.start_beat).1)
+            .collect()
+    };
+    let drum_answers: Vec<(f64, f64, f64, f64)> = perf
+        .responses_for(Agent::Drums)
+        .map(|(c, r)| (c.start_beat, c.end_beat, r.start_beat, r.dur_beats))
+        .collect();
+
+    for eb in &perf.ensemble {
+        let bar = eb.bar;
+        let bs = AccentGrid::beat_of(bar, 0);
+        let pt = plan.form.phrase_at(bs);
+        let energy = plan
+            .discourse
+            .goal(pt.ix as usize)
+            .energy_target
+            .max(0.3 * eb.kinetic);
+        if energy < 0.24 && eb.drums != DrumsMode::Fill {
+            continue; // very low energy may run drumless — silence is an event
+        }
+        let d = dyn_scale(energy.max(eb.kinetic * 0.8));
+        let in_hole = |s: usize| perf.accent.at(bar, s).hole >= 0.5;
+        let bsteps = bass_steps(bar);
+        let fill_start = perf
+            .actions
+            .actions
+            .iter()
+            .find(|a| {
+                a.kind == ActionKind::Fill && a.start_beat >= bs - 1e-6 && a.start_beat < bs + 4.0
+            })
+            .map(|a| AccentGrid::step_of(a.start_beat).1);
+
+        for s in 0..STEPS {
+            let w = perf.accent.at(bar, s);
+            let at = AccentGrid::beat_of(bar, s);
+            if in_hole(s) && w.hit < 0.9 {
+                continue;
+            }
+            let in_fill = fill_start.is_some_and(|f| s >= f);
+            // --- Kick ---
+            let kick = match eb.drums {
+                DrumsMode::HalfTime => s == 0 || (s == 10 && eb.kinetic > 0.5),
+                DrumsMode::Break => w.hit >= 0.9,
+                _ => {
+                    s == 0
+                        || (s == 8 && !bsteps.iter().any(|&b| b == 6 || b == 10))
+                        || w.push >= 0.9
+                        || w.hit >= 0.9
+                        // Interlock: double the bass on its strong eighth syncopations, alternate bars.
+                        || (s % 2 == 0 && s % 4 != 0 && bsteps.contains(&s) && (bar + s as u32 / 2) % 2 == 0)
+                }
+            };
+            if kick {
+                hit(
+                    &mut hits,
+                    DrumVoice::Kick,
+                    at,
+                    (0.95 - 0.1 * (s != 0) as u8 as f32) * world.base_dynamic,
+                    "kick",
+                    &mut rng,
+                );
+            }
+            // --- Snare / backbeat ---
+            let back = match eb.drums {
+                DrumsMode::HalfTime => s == 8,
+                DrumsMode::Break => false,
+                _ => w.backbeat >= 0.9,
+            };
+            if back && !in_fill {
+                hit(
+                    &mut hits,
+                    DrumVoice::Snare,
+                    at,
+                    0.85 * d,
+                    "backbeat",
+                    &mut rng,
+                );
+                if use_clap {
+                    hit(
+                        &mut hits,
+                        DrumVoice::Clap,
+                        at,
+                        0.6 * d,
+                        "backbeat",
+                        &mut rng,
+                    );
+                }
+            }
+            if w.hit >= 0.9 && !back {
+                hit(&mut hits, DrumVoice::Snare, at, 0.9 * d, "hit", &mut rng);
+            }
+            // Ghosts on the weaker off-beats of the grid.
+            if world.ghost_amount > 0.15
+                && !back
+                && !in_fill
+                && eb.drums != DrumsMode::Break
+                && s % 2 == 1
+                && (0.12..0.5).contains(&w.syncopation)
+                && rng.chance(0.35 + 0.4 * eb.kinetic)
+            {
+                hit(
+                    &mut hits,
+                    DrumVoice::Snare,
+                    at,
+                    (0.22 * d).min(0.35),
+                    "ghost",
+                    &mut rng,
+                );
+            }
+            // --- Fill: an action, not a coin ---
+            if in_fill && s % 2 == 0 {
+                let f = fill_start.unwrap_or(0);
+                let k = (s - f) as f32;
+                hit(
+                    &mut hits,
+                    DrumVoice::Snare,
+                    at,
+                    (0.4 + 0.08 * k) * d,
+                    "fill",
+                    &mut rng,
+                );
+            }
+            // --- Hats ---
+            let hat_every = match eb.drums {
+                DrumsMode::HalfTime => 4,
+                DrumsMode::DoubleTime => 1,
+                DrumsMode::Break => 99,
+                _ => subdiv_steps,
+            };
+            if s % hat_every == 0 && !in_fill {
+                let open =
+                    (w.pickup >= 0.8 && s % 2 == 0 && s >= 12) || w.push >= 0.9 || w.hit >= 0.9;
+                let contour = if s % 4 == 0 {
+                    0.7
+                } else if s % 2 == 0 {
+                    0.5
+                } else {
+                    0.34
+                };
+                let acc = contour + 0.2 * w.syncopation;
+                let voice = if open {
+                    DrumVoice::OpenHat
+                } else {
+                    DrumVoice::ClosedHat
+                };
+                let frac = s as f64 * STEP_BEATS;
+                hit(&mut hits, voice, bs + swung(frac), acc * d, "hat", &mut rng);
+            }
+        }
+    }
+    // The drummer's answers: echo the call's rhythm on snare/hat, briefly.
+    for (cs, ce, rs, rd) in drum_answers {
+        let src: Vec<f64> = lead
+            .iter()
+            .filter(|n| n.start_beat >= cs - 1e-6 && n.start_beat < ce - 1e-6)
+            .map(|n| n.start_beat)
+            .collect();
+        let Some(&t0) = src.iter().rev().nth(2).or(src.first()) else {
+            continue;
+        };
+        for &t in src.iter().filter(|&&t| t >= t0) {
+            let at = rs + (t - t0);
+            if at >= rs + rd - 1e-6 {
+                break;
+            }
+            hit(
+                &mut hits,
+                DrumVoice::Snare,
+                at,
+                0.55 * world.base_dynamic,
+                "answer",
+                &mut rng,
+            );
+        }
+    }
+    hits.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+    hits
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::plan::{CompositionPlan, PhraseTarget};

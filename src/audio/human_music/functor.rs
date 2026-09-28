@@ -10,19 +10,13 @@
 //! transformations: swap the world and the form/motif/resolutions stay; the dialect changes.
 
 use super::contract::{CoherenceContract, CompositionGrammar};
-use super::discourse::DiscourseRole;
-use super::form::{Section, SectionKind, BEATS_PER_BAR};
-use super::groove::GrooveEngine;
-use super::harmony::{ChordSpan, HarmonyEngine};
+use super::form::{Section, BEATS_PER_BAR};
 use super::intent::{IntentMorphism, MusicIntent};
-use super::language::MusicalLanguage;
-use super::motif::{MotifBank, ThematicTrajectory};
+use super::performance::{PerformanceOptions, PerformancePlan};
 use super::plan::CompositionPlan;
-use super::score::{Note, PitchFunction, Provenance, Role, Score, SfxEvent, SfxKind};
+use super::score::{Provenance, Score, SfxEvent, SfxKind};
 use super::semantic::{EventKind, SemanticTrace, Tone};
-use super::theory::{pitch_class, Midi, Scale};
 use super::timeline::IntentTimeline;
-use super::voicing::VoiceLeader;
 use super::world::MusicWorld;
 
 /// Compose a full score for `trace` under `world`, deterministic in `seed`.
@@ -30,26 +24,28 @@ pub fn compose(trace: &SemanticTrace, world: &MusicWorld, seed: u64) -> Score {
     compose_with_plan(trace, world, seed).0
 }
 
+/// Everything one composition produced: the realized [`Score`], the [`CompositionPlan`] (the song)
+/// and the [`PerformancePlan`] (the shared performance every instrument realized a projection of).
+pub struct Composition {
+    pub score: Score,
+    pub plan: CompositionPlan,
+    pub perf: PerformancePlan,
+}
+
 /// Like [`compose`], but also returns the [`CompositionPlan`] the score was realized from —
 /// for structural dumps (`plan.dump()`) and coherence diagnostics.
 ///
-/// Round III makes the [`CompositionPlan`] the **sole** compositional authority. The semantic
-/// trace becomes a causal [`IntentTimeline`]; the timeline yields one plan (contract, form graph,
-/// discourse and arrangement); and every realizer reads its per-phrase
-/// [`super::plan::PhraseTarget`] from that plan — harmony, groove and bass no longer consult a
-/// parallel `Form`. The legacy [`Section`] list is *projected* from the plan for the Score IR, so
-/// the summary and the per-event provenance finally describe the same decomposition;
-/// `apply_arrangement` then gates every voice by its per-phrase role.
+/// The semantic trace becomes a causal [`IntentTimeline`]; the timeline yields one plan (contract,
+/// form graph, discourse, arrangement and — for DeflectedLift — the world-independent backbone
+/// timeline); the plan plus a world and a language yields one [`PerformancePlan`]; and every
+/// instrument realizes its projection of that performance.
 pub fn compose_with_plan(
     trace: &SemanticTrace,
     world: &MusicWorld,
     seed: u64,
 ) -> (Score, CompositionPlan) {
-    let total_bars = ((trace.total_beats / BEATS_PER_BAR).round() as u32).max(1);
-    let timeline = IntentTimeline::walk(trace);
-    let plan = CompositionPlan::build(&timeline, total_bars);
-    let score = realize(trace, world, seed, &plan);
-    (score, plan)
+    let c = compose_full(trace, world, seed, None, PerformanceOptions::default());
+    (c.score, c.plan)
 }
 
 /// Like [`compose_with_plan`], but the grammar is **chosen**, not inferred — the calibration path.
@@ -62,47 +58,67 @@ pub fn compose_with_grammar(
     seed: u64,
     grammar: CompositionGrammar,
 ) -> (Score, CompositionPlan) {
-    let total_bars = ((trace.total_beats / BEATS_PER_BAR).round() as u32).max(1);
-    let timeline = IntentTimeline::walk(trace);
-    let plan = CompositionPlan::build_with_contract(
-        &timeline,
-        total_bars,
-        CoherenceContract::for_grammar(grammar),
+    let c = compose_full(
+        trace,
+        world,
+        seed,
+        Some(grammar),
+        PerformanceOptions::default(),
     );
-    let score = realize(trace, world, seed, &plan);
-    (score, plan)
+    (c.score, c.plan)
 }
 
-/// Realize a score from a finished plan: every realizer reads the plan's per-phrase targets under
-/// `world`, then `apply_arrangement` gates the voices. Shared by the inferred and grammar-forced
-/// compose paths so both go through exactly the same realization.
-fn realize(trace: &SemanticTrace, world: &MusicWorld, seed: u64, plan: &CompositionPlan) -> Score {
-    let scale = Scale::new(world.tonic_pc, world.mode);
-    let targets = plan.targets();
-
-    // Under DeflectedLift the harmony IS the plan's world-independent backbone timeline, realized
-    // for this world (the audible Lift->Deflect->Open->Reset spine, bound to the story's phases);
-    // other grammars use the phrase-scope cadential engine.
-    let chords = match &plan.backbone {
-        Some(tl) => super::backbone::realize(tl, world, &MusicalLanguage::default(), seed).spans,
-        None => HarmonyEngine::new(world, seed).generate(&targets, plan.contract.resolution),
+/// The full composition path with every calibration knob: an optional forced grammar and the
+/// performance options (language, actions on/off, free vs clockwork responses).
+pub fn compose_full(
+    trace: &SemanticTrace,
+    world: &MusicWorld,
+    seed: u64,
+    grammar: Option<CompositionGrammar>,
+    opts: PerformanceOptions,
+) -> Composition {
+    let total_bars = ((trace.total_beats / BEATS_PER_BAR).round() as u32).max(1);
+    let timeline = IntentTimeline::walk(trace);
+    let plan = match grammar {
+        Some(g) => CompositionPlan::build_with_contract(
+            &timeline,
+            total_bars,
+            CoherenceContract::for_grammar(g),
+        ),
+        None => CompositionPlan::build(&timeline, total_bars),
     };
+    let perf = PerformancePlan::build(&timeline, &plan, world, seed, opts);
+    let score = realize(trace, world, seed, &plan, &perf);
+    Composition { score, plan, perf }
+}
 
-    let mut groove = GrooveEngine::new(world, seed);
-    let gr = groove.generate(&targets);
-
+/// Realize a score from a finished plan and its performance. The players are realized in
+/// listening order — the lead first, then the keys (who hear the lead), the bass (who hears both)
+/// and the drums (who hear the bass) — each reading the same [`PerformancePlan`]; then
+/// `apply_arrangement` gates the voices.
+fn realize(
+    trace: &SemanticTrace,
+    world: &MusicWorld,
+    seed: u64,
+    plan: &CompositionPlan,
+    perf: &PerformancePlan,
+) -> Score {
     let total_beats = plan.form.total_bars as f64 * BEATS_PER_BAR;
     let mut score = Score::new(world.tempo_bpm, BEATS_PER_BAR, total_beats);
     score.sections = sections_from_plan(plan);
-    score.chords = chords.clone();
-    score.drums = gr.hits;
+    score.chords = perf.chords.clone();
 
-    // --- Comp: sustained pad bed + sparse groove-locked keys arpeggio. ---
-    add_comp(&mut score, &chords, world);
-    // --- Bass: persistent kick-locked figure. ---
-    add_bass(&mut score, &chords, &gr.kick_beats, plan, &scale);
-    // --- Melody: the thesis motif transformed by each phrase's discourse role. ---
-    add_melody(&mut score, &chords, plan, &scale, seed);
+    let lead = super::melody::realize_lead(perf, plan);
+    score.melody_repairs = lead.repairs;
+    let keys = super::comp::realize_keys(perf, plan, world, &lead.notes, seed);
+    let pad = super::comp::realize_pad(perf, plan, world);
+    let bass = super::bass::realize_bass(perf, plan, world, &lead.notes, &keys);
+    score.drums = super::groove::realize_drums(perf, plan, world, seed, &bass, &lead.notes);
+    score.notes.extend(pad);
+    score.notes.extend(keys);
+    score.notes.extend(bass);
+    score.notes.extend(lead.notes);
+
     // --- SFX + intent morphisms from significant semantic events. ---
     add_sfx_and_provenance(&mut score, trace, plan);
     // --- Arrangement: gate every voice by its per-phrase role and stamp real provenance. ---
@@ -184,380 +200,6 @@ fn apply_arrangement(score: &mut Score, plan: &CompositionPlan) {
     }
 }
 
-/// The pitch with class `pc` nearest to `center`.
-fn pitch_near(pc: i32, center: Midi) -> Midi {
-    let base = (center / 12) * 12 + pc.rem_euclid(12);
-    [base - 12, base, base + 12]
-        .into_iter()
-        .min_by_key(|p| (p - center).abs())
-        .unwrap()
-}
-
-/// Comp = a sustained harmonic bed (pad) plus a SPARSE, groove-locked rhythmic arpeggio
-/// (keys). Round I stabbed the keys on *every* beat and flipped a coin for single-vs-chord,
-/// so keys alone were ~300 events fighting everything else. Here the pad holds the chord and
-/// the keys play single voices on the offbeats ("and of 1", "and of 3") — an interlocking
-/// pattern derived from the bar grid, deterministic, roughly two hits a bar. The arrangement
-/// pass gates and dynamically scales all of it afterward.
-fn add_comp(score: &mut Score, chords: &[ChordSpan], world: &MusicWorld) {
-    let mut pad_vl = VoiceLeader::new(52, 79, world.voicing_spread);
-    let mut keys_vl = VoiceLeader::new(58, 84, world.voicing_spread);
-
-    for span in chords {
-        let prov = Provenance {
-            role_note: "comp",
-            ..Provenance::new(SectionKind::A)
-        };
-        // Pad: hold the whole voicing for the chord's duration (the harmonic bed).
-        let pad = pad_vl.lead(&span.chord, 4, 67);
-        for &p in &pad.voices {
-            let mut note = Note::new(
-                span.start_beat,
-                span.dur_beats * 0.98,
-                p,
-                (0.4 * world.base_dynamic).clamp(0.05, 1.0),
-                Role::Pad,
-                prov,
-            );
-            // Pad voices come strictly from the chord (the voice leader draws from its pitch
-            // classes) — verify rather than assume, so a future non-chord tone would surface as
-            // unjustified instead of hiding as "background".
-            note.function = span
-                .chord
-                .contains_pc(pitch_class(p))
-                .then_some(PitchFunction::ChordTone);
-            score.notes.push(note);
-        }
-        // Keys: a comping VOICE, not a single-note arp. Each stab is a 2-3 note upper-structure
-        // shell drawn from the top of the voicing — so it carries the chord's guide tones and any
-        // licensed color (the 7ths/9ths/6ths the backbone now supplies) rather than one bare pitch.
-        // Stabs land syncopated (the "and" of 1 and 3), alternating a fuller and a thinner voicing
-        // for rhythmic life, with an anticipation push into the next chord on longer spans. The pad
-        // holds the bed underneath; the arrangement pass gives keys the foreground in the B phrases
-        // where the lead rests, so the two converse rather than pile up.
-        let voicing = keys_vl.lead(&span.chord, 4, 72);
-        if voicing.voices.is_empty() {
-            continue;
-        }
-        let dur = span.dur_beats as f64;
-        // The top three voices, high-to-low — an upper-structure shell.
-        let shell: Vec<Midi> = voicing.voices.iter().rev().take(3).copied().collect();
-        let mut positions: Vec<f64> = Vec::new();
-        let mut off = 0.5f64;
-        while off < dur - 1e-6 {
-            positions.push(off);
-            off += 2.0;
-        }
-        // A syncopated push just before the chord change (an anticipation) on longer spans.
-        if dur >= 3.0 {
-            positions.push(dur - 0.5);
-        }
-        for (si, &pos) in positions.iter().enumerate() {
-            // Alternate a full shell and a thinner two-note stab so the comp breathes.
-            let take = if si % 2 == 0 {
-                shell.len()
-            } else {
-                2.min(shell.len())
-            };
-            for &p in shell.iter().take(take) {
-                let mut note = Note::new(
-                    span.start_beat + pos,
-                    0.4,
-                    p,
-                    (0.35 * world.base_dynamic).clamp(0.05, 1.0),
-                    Role::Keys,
-                    prov,
-                );
-                note.function = span
-                    .chord
-                    .contains_pc(pitch_class(p))
-                    .then_some(PitchFunction::ChordTone);
-                score.notes.push(note);
-            }
-        }
-    }
-}
-
-/// Bass = a persistent, deterministic figure locked to the kick and the harmony. Round I
-/// re-rolled root/fifth/approach with a coin at every kick, so the line never settled into a
-/// figure. Here the role of each kick is fixed by its position: the root states the chord on
-/// the span's first kick, a fifth drives the offbeat kicks at high energy, and the last kick
-/// before a chord change steps chromatically into the next root — a repeatable shape, not a
-/// dice roll, still onset-locked to the groove.
-/// Max beats a single chromatic approach may sound before its target: beyond this it stops reading
-/// as a pickup and becomes a sustained chromatic tone under the old chord (the R4 defect).
-const BASS_APPROACH_MAX: f64 = 1.0;
-/// Room (beats) before a chord change at which the bass WALKS into it (a stepwise SlidePath line)
-/// rather than stating a single short approach.
-const BASS_WALK_MIN: f64 = 1.5;
-/// The step of a walking bass note (beats).
-const BASS_WALK_STEP: f64 = 0.5;
-
-fn add_bass(
-    score: &mut Score,
-    chords: &[ChordSpan],
-    kick_beats: &[f64],
-    plan: &CompositionPlan,
-    scale: &Scale,
-) {
-    let bass_center = 40; // ~E2
-    for (ci, span) in chords.iter().enumerate() {
-        let span_end = span.start_beat + span.dur_beats as f64;
-        let root_pc = span.chord.root_pc;
-        let root = pitch_near(root_pc, bass_center);
-        // The chord's ACTUAL fifth: the chord tone nearest a perfect fifth above the root — 7
-        // semitones for major/minor, but 6 for a diminished chord. `root_pc + 7` played a
-        // NON-chord tone on vii°/dim (a wrong note the diagnostics never saw); take the real one.
-        let fifth_pc = span
-            .chord
-            .pitch_classes()
-            .into_iter()
-            .min_by_key(|&pc| ((pc - root_pc).rem_euclid(12) - 7).abs())
-            .unwrap_or((root_pc + 7).rem_euclid(12));
-        let fifth = pitch_near(fifth_pc, bass_center);
-        let next_root_pc = chords
-            .get(ci + 1)
-            .map(|c| c.chord.root_pc)
-            .unwrap_or(root_pc);
-        let next_root = pitch_near(next_root_pc, bass_center);
-        let energy = {
-            let ph = plan.form.phrase_at(span.start_beat);
-            plan.discourse.goal(ph.ix as usize).energy_target
-        };
-
-        // Kick-locked bass: a bass note on each kick within the span.
-        let kicks: Vec<f64> = kick_beats
-            .iter()
-            .copied()
-            .filter(|&k| k >= span.start_beat - 1e-6 && k < span_end - 1e-6)
-            .collect();
-        if kicks.is_empty() {
-            // Fallback: at least the downbeat root.
-            push_bass(
-                score,
-                span.start_beat,
-                span.dur_beats.min(2.0),
-                root,
-                energy,
-                "root",
-                PitchFunction::ChordTone,
-            );
-            continue;
-        }
-        let n = kicks.len();
-        for (i, &k) in kicks.iter().enumerate() {
-            let is_last = i + 1 == n;
-            let room = span_end - k; // beats from this kick to the chord change
-            let approaching = is_last && span_end < score.total_beats - 1e-6;
-
-            // Enough room to WALK into the next chord: a stepwise scale line resolving on a
-            // chromatic approach to the next root. This replaces the old single tone that could
-            // sustain most of a bar as static chromatic dissonance.
-            if approaching && room >= BASS_WALK_MIN {
-                push_bass_walk(score, scale, root, next_root, k, span_end, energy);
-                continue;
-            }
-
-            let default_dur = kicks
-                .get(i + 1)
-                .map(|&nx| (nx - k) as f32)
-                .unwrap_or((span_end - k) as f32)
-                .clamp(0.1, 2.0);
-
-            let (pitch, note, func, dur) = if approaching && room <= BASS_APPROACH_MAX {
-                // A short chromatic pickup into the next root — bounded so it reads as an approach.
-                let dir = (next_root - root).signum().clamp(-1, 1);
-                let dir = if dir == 0 { -1 } else { dir };
-                (
-                    next_root - dir,
-                    "approach",
-                    PitchFunction::ChromaticApproach,
-                    room as f32,
-                )
-            } else if i == 0 {
-                (root, "root", PitchFunction::ChordTone, default_dur)
-            } else if energy > 0.55 && i % 2 == 1 {
-                // Fifth on the offbeat kicks when there's drive.
-                (fifth, "fifth", PitchFunction::ChordTone, default_dur)
-            } else {
-                (root, "root", PitchFunction::ChordTone, default_dur)
-            };
-            push_bass(score, k, dur * 0.9, pitch, energy, note, func);
-        }
-    }
-}
-
-/// A stepwise walking bass from `from` toward `next_root`, filling `[start, end)`: scale-tone
-/// intermediates ([`PitchFunction::SlidePath`] — their justification is the path, not the local
-/// chord) resolving onto a final chromatic approach a semitone from the next root
-/// ([`PitchFunction::ChromaticApproach`]). Contiguous and bounded — an idiomatic lead-in, not a
-/// held dissonance.
-fn push_bass_walk(
-    score: &mut Score,
-    scale: &Scale,
-    from: Midi,
-    next_root: Midi,
-    start: f64,
-    end: f64,
-    energy: f32,
-) {
-    let dir = (next_root - from).signum();
-    let dir = if dir == 0 { -1 } else { dir };
-    let target = next_root - dir; // the chromatic approach pitch (a semitone off the next root)
-    let steps = (((end - start) / BASS_WALK_STEP).floor() as usize).max(2);
-    for s in 0..steps {
-        let t0 = start + s as f64 * BASS_WALK_STEP;
-        if t0 >= end - 1e-6 {
-            break;
-        }
-        let t1 = (t0 + BASS_WALK_STEP).min(end);
-        let last = s + 1 == steps;
-        let (pitch, note, func) = if last {
-            (target, "approach", PitchFunction::ChromaticApproach)
-        } else {
-            let frac = (s + 1) as f64 / steps as f64;
-            let interp = from as f64 + (target - from) as f64 * frac;
-            (
-                scale.nearest_scale_pitch(interp.round() as i32),
-                "walk",
-                PitchFunction::SlidePath,
-            )
-        };
-        push_bass(score, t0, (t1 - t0) as f32 * 0.9, pitch, energy, note, func);
-    }
-}
-
-fn push_bass(
-    score: &mut Score,
-    at: f64,
-    dur: f32,
-    pitch: Midi,
-    energy: f32,
-    note: &'static str,
-    func: PitchFunction,
-) {
-    let mut n = Note::new(
-        at,
-        dur.max(0.1),
-        pitch,
-        (0.6 + 0.35 * energy).clamp(0.1, 1.0),
-        Role::Bass,
-        Provenance {
-            role_note: note,
-            ..Provenance::new(SectionKind::A)
-        },
-    );
-    n.function = Some(func);
-    score.notes.push(n);
-}
-
-/// The lead voice, developed along a whole-piece [`ThematicTrajectory`].
-///
-/// Each phrase's material is DEVELOPED from the previous statement rather than re-derived from a
-/// fixed germ, so consecutive phrases flow as one song instead of splicing (Round IV's
-/// "kaleidoscope"). Establish/Restate/Return come home to the thesis M0; Depart/Intensify develop
-/// the current material a step further; **Question** poses a call (a fragment, remembering where it
-/// broke off) and the matching **Answer** completes exactly that remainder; Culminate sounds the
-/// call+response hook; Dissolve evaporates. Every transition carries a typed [`super::motif::Handoff`].
-/// Statements enter grid-aligned and are realized jointly against the harmony via
-/// [`super::motif::realize_phrase`]. The lead plays only where the arrangement gives it a voice — so
-/// it breathes.
-fn add_melody(
-    score: &mut Score,
-    chords: &[ChordSpan],
-    plan: &CompositionPlan,
-    scale: &Scale,
-    seed: u64,
-) {
-    let bank = MotifBank::generate(scale, seed ^ 0x3E10_D1E5);
-    // The whole-piece thematic line: each phrase's material is DEVELOPED from the previous
-    // statement (with explicit returns to the thesis), not re-derived afresh from a fixed germ — so
-    // consecutive phrases flow as one song instead of splicing. The trajectory owns the call/answer
-    // coupling internally and reports a typed handoff per statement.
-    let mut traj = ThematicTrajectory::new(&bank);
-    let two_bar = 2.0 * BEATS_PER_BAR;
-    // The previous statement's exit pitch — carried across statements and phrases so each new
-    // statement connects to where the last one ended (continuity, not teleportation).
-    let mut prev_exit: Option<Midi> = None;
-
-    for t in plan.targets() {
-        let phrase = t.phrase;
-        // The melody breathes: it sounds only where the arrangement gives the lead a voice, and the
-        // thematic trajectory develops along that audible line (consecutive audible statements are
-        // adjacent development steps, which is what keeps the line coherent rather than drifting).
-        if !plan.arrangement.at(phrase.ix as usize).lead.is_audible() {
-            continue;
-        }
-        let (motif, handoff) = traj.next_for(t.goal.role);
-        let morph = handoff.label();
-
-        // Register realizes the role: the culmination and intensification climb, the dissolve
-        // settles low, everything else follows the phrase's elevation target. For ordinary roles we
-        // then nudge the octave to CONNECT to the previous statement's exit (flow between phrases);
-        // the culmination and any licensed rupture keep their dramatic leap (Depart/Intensify/
-        // Question/Answer/Return must not sound like edits between unrelated songs — Culminate may).
-        let base_octave = match t.goal.role {
-            DiscourseRole::Culminate | DiscourseRole::Intensify => 5,
-            DiscourseRole::Dissolve => 3,
-            _ => 4 + (t.goal.register_target > 0.65) as i32,
-        };
-        let octave = match prev_exit {
-            Some(pe) if !phrase.is_rupture && t.goal.role != DiscourseRole::Culminate => {
-                let first_deg = motif.degrees.first().copied().unwrap_or(0);
-                [base_octave - 1, base_octave, base_octave + 1]
-                    .into_iter()
-                    .min_by_key(|&o| (scale.degree_pitch(first_deg, o) - pe).abs())
-                    .unwrap_or(base_octave)
-            }
-            _ => base_octave,
-        };
-
-        let stmt_beats = motif.total_beats() as f64;
-        if stmt_beats < 1e-6 {
-            continue;
-        }
-        let phrase_end = phrase.end_beat();
-        let mut at = phrase.start_beat();
-        let mut guard = 0;
-        while at + stmt_beats <= phrase_end + 1e-6 && guard < 32 {
-            let (notes, reps) = super::motif::realize_phrase_reporting(
-                &motif, chords, scale, 0, octave, at, prev_exit, 4,
-            );
-            score.melody_repairs += reps;
-            if let Some(&(_, _, last_pitch, _)) = notes.last() {
-                prev_exit = Some(last_pitch);
-            }
-            for (nb, dur, pitch, function) in notes {
-                let mut note = Note::new(
-                    nb,
-                    (dur * 0.9).max(0.1),
-                    pitch,
-                    (0.55 + 0.4 * t.goal.energy_target).clamp(0.1, 1.0),
-                    Role::Lead,
-                    Provenance {
-                        motif_id: Some(motif.id),
-                        motif_xform: Some(morph),
-                        anchor: Some("motif"),
-                        role_note: "melody",
-                        ..Provenance::new(phrase.family.to_section_kind())
-                    },
-                );
-                note.function = function;
-                score.notes.push(note);
-            }
-            // Breathe to the next 2-bar boundary — grid-aligned rest, not a random gap.
-            let after = at + stmt_beats;
-            let boundary = (after / two_bar).ceil() * two_bar;
-            at = if boundary > after + 1e-6 {
-                boundary
-            } else {
-                after
-            };
-            guard += 1;
-        }
-    }
-}
-
 fn add_sfx_and_provenance(score: &mut Score, trace: &SemanticTrace, plan: &CompositionPlan) {
     let mut prev = trace.events.first().map(|e| e.state);
     for ev in &trace.events {
@@ -619,7 +261,9 @@ pub fn walk_intent(trace: &SemanticTrace) -> MusicIntent {
 
 #[cfg(test)]
 mod tests {
+    use super::super::score::{PitchFunction, Role};
     use super::super::semantic::demo_trace;
+    use super::super::theory::pitch_class;
     use super::*;
 
     #[test]

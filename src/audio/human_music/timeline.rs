@@ -22,12 +22,29 @@ use super::functor::event_to_morphisms;
 use super::intent::{IntentMorphism, MorphismCost, MusicIntent};
 use super::semantic::{EventKind, SemanticTrace};
 
+/// Map a semantic event's raw time onto musical time — the declared relation between the semantic
+/// timescale and the bar/groove timescale. An event within one beat of a bar line is attracted to
+/// that bar line (a story beat that fires a hair early or late still starts its bar, instead of
+/// being swallowed by the previous phrase); any other event snaps to the nearest eighth note.
+pub fn quantize_event_beat(raw: f64) -> f64 {
+    let bpb = super::form::BEATS_PER_BAR;
+    let bar_line = (raw / bpb).round() * bpb;
+    if (raw - bar_line).abs() <= 1.0 + 1e-9 {
+        bar_line.max(0.0)
+    } else {
+        ((raw * 2.0).round() / 2.0).max(0.0)
+    }
+}
+
 /// One inspectable step of the intent walk: everything needed to explain *why* the running
 /// intent is what it is at a given beat.
 #[derive(Debug, Clone)]
 pub struct IntentTransition {
-    /// Beat at which the semantic event fired.
+    /// The MUSICAL beat of the event: its raw time quantized onto the groove grid
+    /// ([`quantize_event_beat`]). Everything downstream reads this.
     pub at_beat: f64,
+    /// The beat at which the semantic event actually fired (unquantized).
+    pub raw_beat: f64,
     /// The semantic event kind that drove this transition.
     pub event_kind: EventKind,
     /// The running intent *before* this event.
@@ -118,7 +135,8 @@ impl IntentTimeline {
 
             acc = acc.combine(step);
             transitions.push(IntentTransition {
-                at_beat: ev.at_beat,
+                at_beat: quantize_event_beat(ev.at_beat),
+                raw_beat: ev.at_beat,
                 event_kind: ev.kind,
                 prev,
                 applied,
