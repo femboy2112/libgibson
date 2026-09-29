@@ -149,7 +149,7 @@ fn classify_inner(ctx: &PitchContext, scale: &Scale, r11: bool) -> Option<PitchF
         if let Some(beats) = ctx.beats_until_next() {
             if (-1e-6..=ANTICIPATION_WINDOW).contains(&beats) {
                 let boundary = ctx.onset + beats;
-                let connects = ctx.crosses_boundary()
+                let connects = ctx.onset + ctx.duration >= boundary - 1e-6
                     || matches!((ctx.next, ctx.next_onset), (Some(p), Some(at))
                         if at >= boundary - 1e-6
                             && at <= boundary + ANTICIPATION_WINDOW
@@ -297,6 +297,32 @@ mod tests {
     }
 
     #[test]
+    fn anticipation_can_end_exactly_at_the_actual_harmonic_arrival() {
+        let c = PitchContext {
+            onset: 3.5,
+            duration: 0.5,
+            next_chord: Some(g_dom7()),
+            next_boundary: Some(4.0),
+            is_strong: false,
+            ..base(62, Some(c_major()))
+        };
+        assert_eq!(
+            classify(&c, &cmaj_scale()),
+            Some(PitchFunction::Anticipation)
+        );
+        assert_eq!(
+            classify(
+                &PitchContext {
+                    duration: 0.25,
+                    ..c
+                },
+                &cmaj_scale()
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn anticipation_needs_the_harmony_to_be_close() {
         // Same D, but G7 does not arrive for FOUR beats. Too far to hear as anticipation — and with
         // no stepwise path to justify it, it is an unjustified note, not a free pass.
@@ -374,6 +400,9 @@ mod tests {
     fn anticipation_must_connect_to_the_actual_arrival() {
         let c = PitchContext {
             onset: 3.5,
+            // Release before the boundary; the distant successor cannot supply
+            // the missing connection. An exact-boundary gate is tested above.
+            duration: 0.25,
             next: Some(67),
             next_onset: Some(4.0),
             next_chord: Some(g_dom7()),

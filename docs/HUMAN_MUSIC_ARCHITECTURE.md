@@ -1,5 +1,7 @@
 # HumanMusic: the `gibson::audio` architecture (experimental)
 
+Round XII temporal pitch audit and matched realization: [HUMAN_MUSIC_TEMPORAL_PITCH.md](HUMAN_MUSIC_TEMPORAL_PITCH.md).
+
 **Round XI experiment:** [Phenomenal regimes](HUMAN_MUSIC_PHENOMENAL_REGIMES.md) adds an
 opt-in StablePropulsion target and one PropulsiveReturn grammar, preserving the Round IX/X
 controls below. It records the matched A/B, independent musical witnesses and listening limits.

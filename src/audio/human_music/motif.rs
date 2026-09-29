@@ -1046,7 +1046,13 @@ impl Engine<'_> {
         let mut c = T_ANCHOR_W * (p - sl.anchor).abs() as f32 + self.tone_pref(s, p, is_last);
         if self.legacy.is_some() {
             c += self.edit_cost(s, p);
-            if is_last && !has_pc(chord_mask(sl.cur), p) {
+            let anticipates_arrival = sl.next_boundary.is_some_and(|boundary| {
+                boundary > sl.start + 1e-6
+                    && boundary - sl.start <= super::pitch::ANTICIPATION_WINDOW + 1e-6
+                    && sl.start + self.gate_for(s, p) >= boundary - 1e-6
+                    && has_pc(chord_mask(sl.next_chord), p)
+            });
+            if is_last && !has_pc(chord_mask(sl.cur), p) && !anticipates_arrival {
                 c += 1.1;
             }
             if sl.next_boundary.is_some_and(|b| b - sl.start <= 2.0 + 1e-6) && sl.next_targets != 0
@@ -1999,5 +2005,42 @@ mod tests {
             Some(PitchFunction::LicensedExtension)
         );
         assert_eq!(line.notes[1].function, Some(PitchFunction::ChordTone));
+    }
+
+    #[test]
+    fn temporal_terminal_color_earns_ownership_only_when_its_gate_reaches_arrival() {
+        let scale = Scale::new(0, Mode::Ionian);
+        let chords = vec![
+            span(0.0, 2.0, Chord::new(0, Quality::Maj7)),
+            span(2.0, 2.0, Chord::new(5, Quality::Maj7)),
+        ];
+        let contexts = super::super::context::analyze(&chords, &scale);
+        let motif = Motif {
+            id: 0,
+            degrees: vec![5],
+            rhythm: vec![0.5],
+        };
+        let mut request = fusion_request(&motif, &chords, &contexts, &scale);
+        request.start_beat = 1.5;
+        request.style.gate = 1.0;
+        let events = melodic_events(&motif, request.start_beat, &request.style);
+        let mut slots = request.slots(&events);
+        let legacy = realize_line(&request);
+        let cost = |slots: &[Slot]| {
+            Engine {
+                slots,
+                scale,
+                style: request.style,
+                prev_pitch: None,
+                legacy: Some(&legacy.notes),
+            }
+            .target_node(0, 69, true, true)
+        };
+        let reaches = cost(&slots);
+        // The same licensed A, harmony, anchor and future guide targets; only the
+        // audible connection changes. A released colour has no arrival ownership.
+        slots[0].gate = 0.25;
+        let released = cost(&slots);
+        assert!((released - reaches - 1.1).abs() < 1e-6);
     }
 }

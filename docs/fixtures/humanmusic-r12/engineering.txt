@@ -1,0 +1,14 @@
+Round XII final engineering receipts
+
+PASS: RUSTUP_TOOLCHAIN=1.98.1 STABLE_TOOLCHAIN=+1.98.1 MSRV_TOOLCHAIN=+1.85 RUST_TEST_THREADS=1 scripts/release/preflight.sh
+PASS: RUST_TEST_THREADS=1 cargo +1.98.1 test --all-features (1242 passed, 0 failed, 4 ignored)
+PASS: cargo +1.85 check --locked --lib --all-features
+PASS: RUST_TEST_THREADS=1 cargo +1.98.1 test --release --lib fuzz_the_ -- --ignored --nocapture (2 passed; 1152 compositions per sweep)
+PASS: RUST_TEST_THREADS=1 cargo +1.98.1 test --example fx_lab --example skin_gallery --example polished_agent_ui --example ui_showcase --example large_collection (19 passed)
+PASS: cargo +1.98.1 test --lib temporal_ (31 passed)
+PASS: RUST_TEST_THREADS=1 cargo +1.98.1 test --lib audio::human_music::pitch::tests (18 passed)
+PASS: cargo +1.98.1 run --release --example temporal_pitch_lab -- --compare --render --out=target/humanmusic-r12/final
+
+The full all-feature run's two ignored HumanMusic sweeps were explicitly run in release mode above. Real output-device playback and the pre-existing known-red issue #15 input-delivery acceptance remain ignored/unverified.
+The first final preflight failed an outdated negative anticipation fixture. Its failure is retained; the fixture was corrected to end before the arrival while exact-boundary acceptance has a separate positive control. Final full tests and preflight pass. No production behavior changed after rendering.
+No merge, tag, release, version or ABI change. Audio remains Rust-only. Protected source and artifact hashes are in final-manifest.json. No human audition is claimed.

@@ -1,0 +1,216 @@
+beat 2.0000 role pad pitch A4 (69) duration 1.9600
+  current G7 @ 2.00 previous Cmaj7 @ 0.00 next Am7 @ 4.00 next_structural Am7 @ 4.00 destination Fadd9 @ 8.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved Some(CommonTone)
+  previous note A4 @ 0.00 dur 1.96; next note A4 @ 4.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [0, 7]
+beat 68.0000 role pad pitch G5 (79) duration 3.9200
+  current F6 @ 68.00 previous C6 @ 64.00 next C6 @ 72.00 next_structural C6 @ 72.00 destination G7 @ 84.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved Some(CommonTone)
+  previous note G5 @ 64.00 dur 3.92; next note G5 @ 72.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [4, 9]
+beat 10.2500 role keys pitch D5 (74) duration 0.2250
+  current Fadd9 @ 8.00 previous Am7 @ 4.00 next C6 @ 12.00 next_structural C6 @ 12.00 destination Dm7 @ 20.00
+  declared Some(LicensedExtension); local [LicensedExtension, Neighbor, SlidePath]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved Some(OwnedTendency)
+  previous note C5 @ 10.00 dur 0.22; next note C5 @ 10.50 dur 0.22; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [4, 9]
+beat 32.0000 role keys pitch D5 (74) duration 3.9000
+  current Am7 @ 32.00 previous G7 @ 28.00 next Dm7 @ 36.00 next_structural Dm7 @ 36.00 destination Am7 @ 40.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"owned-tension", "stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved Some(CommonTone)
+  previous note none; next note D5 @ 36.25 dur 0.90; structural_proxy=true ambiguous_voice=true
+  reason: observed path supports the claim
+  next guide targets: [5, 0]
+beat 43.7500 role keys pitch D5 (74) duration 0.4500
+  current Am7 @ 40.00 previous Dm7 @ 36.00 next Dm7 @ 44.00 next_structural Dm7 @ 44.00 destination Fadd9 @ 48.00
+  declared Some(LicensedExtension); local [LicensedExtension, Anticipation]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved Some(CommonTone)
+  previous note none; next note D5 @ 44.50 dur 0.80; structural_proxy=false ambiguous_voice=true
+  reason: observed path supports the claim
+  next guide targets: [5, 0]
+beat 79.8333 role keys pitch B4 (71) duration 0.3000
+  current C6 @ 76.00 previous F6 @ 68.00 next Cmaj7 @ 80.00 next_structural G7 @ 84.00 destination Am7 @ 88.00
+  declared Some(LicensedExtension); local [LicensedExtension, Anticipation]; vertical: {"UNOWNED", "stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved Some(CommonTone)
+  previous note C5 @ 79.50 dur 0.30; next note B4 @ 80.17 dur 0.30; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [4, 11]
+beat 87.7500 role keys pitch A4 (69) duration 0.4500
+  current G7 @ 84.00 previous Cmaj7 @ 80.00 next Am7 @ 88.00 next_structural Am7 @ 88.00 destination Dm7 @ 92.00
+  declared Some(LicensedExtension); local [LicensedExtension, Anticipation]; vertical: {"UNOWNED", "owned-tension", "stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved Some(CommonTone)
+  previous note none; next note A4 @ 88.00 dur 3.90; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [0, 7]
+beat 87.7500 role keys pitch A4 (69) duration 0.4500
+  current G7 @ 84.00 previous Cmaj7 @ 80.00 next Am7 @ 88.00 next_structural Am7 @ 88.00 destination Dm7 @ 92.00
+  declared Some(LicensedExtension); local [LicensedExtension, Anticipation]; vertical: {"UNOWNED", "owned-tension", "stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved Some(CommonTone)
+  previous note none; next note C5 @ 88.00 dur 3.90; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [0, 7]
+beat 87.7500 role keys pitch E4 (64) duration 0.4500
+  current G7 @ 84.00 previous Cmaj7 @ 80.00 next Am7 @ 88.00 next_structural Am7 @ 88.00 destination Dm7 @ 92.00
+  declared Some(LicensedExtension); local [LicensedExtension, Anticipation]; vertical: {"UNOWNED", "owned-tension", "stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved Some(CommonTone)
+  previous note none; next note G4 @ 88.00 dur 3.90; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [0, 7]
+beat 108.2500 role keys pitch D5 (74) duration 0.2125
+  current Fmaj9 @ 108.00 previous Dm7 @ 92.00 next C6 @ 112.00 next_structural C6 @ 112.00 destination F6 @ 116.00
+  declared Some(LicensedExtension); local [LicensedExtension, Neighbor, SlidePath]; vertical: {"UNOWNED"} (written ensemble slices; world-free lenient color budget); path Resolved Some(OwnedTendency)
+  previous note C5 @ 108.00 dur 0.21; next note C5 @ 108.50 dur 0.21; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [4, 9]
+beat 3.5000 role bass pitch G#2 (44) duration 0.4500
+  current G7 @ 2.00 previous Cmaj7 @ 0.00 next Am7 @ 4.00 next_structural Am7 @ 4.00 destination Fadd9 @ 8.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, SlidePath]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note F3 @ 3.00 dur 0.45; next note A2 @ 4.00 dur 3.60; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [0, 7]
+beat 19.5000 role bass pitch C#2 (37) duration 0.4500
+  current Cmaj7 @ 16.00 previous Fadd9 @ 8.00 next Dm7 @ 20.00 next_structural Dm7 @ 20.00 destination D7 @ 24.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, ChromaticPassing, SlidePath]; vertical: {"structural"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note C2 @ 17.50 dur 1.80; next note D2 @ 20.00 dur 0.90; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [5, 0]
+beat 23.0000 role bass pitch C#2 (37) duration 0.9000
+  current Dm7 @ 20.00 previous Cmaj7 @ 16.00 next D7 @ 24.00 next_structural D7 @ 24.00 destination G7 @ 28.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, Appoggiatura, SlidePath]; vertical: {"structural"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note A2 @ 22.00 dur 0.90; next note D2 @ 24.00 dur 1.80; structural_proxy=true ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [6, 0]
+beat 26.0000 role bass pitch F#2 (42) duration 1.0000
+  current D7 @ 24.00 previous Dm7 @ 20.00 next G7 @ 28.00 next_structural G7 @ 28.00 destination Am7 @ 32.00
+  declared Some(ChromaticApproach); local [ChordTone, ChromaticApproach, Appoggiatura, PedalTone, SlidePath]; vertical: {"structural"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note D2 @ 24.00 dur 1.80; next note G2 @ 28.00 dur 0.90; structural_proxy=true ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [11, 5]
+beat 31.0000 role bass pitch G#2 (44) duration 0.9000
+  current G7 @ 28.00 previous D7 @ 24.00 next Am7 @ 32.00 next_structural Am7 @ 32.00 destination Dm7 @ 36.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, Appoggiatura, SlidePath]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note D3 @ 30.00 dur 0.90; next note A2 @ 32.00 dur 3.60; structural_proxy=true ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [0, 7]
+beat 63.5000 role bass pitch C#2 (37) duration 0.4500
+  current Fmaj9 @ 60.00 previous Dm7 @ 44.00 next C6 @ 64.00 next_structural C6 @ 64.00 destination F6 @ 68.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, Neighbor, SlidePath]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note C2 @ 62.25 dur 1.12; next note C2 @ 64.00 dur 3.60; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [4, 9]
+beat 75.5000 role bass pitch B1 (35) duration 0.4500
+  current C6 @ 72.00 previous F6 @ 68.00 next C6 @ 76.00 next_structural G7 @ 84.00 destination Am7 @ 88.00
+  declared Some(ChromaticApproach); local [LicensedExtension, ChromaticApproach, SlidePath]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved Some(ForwardLeading)
+  previous note G2 @ 74.25 dur 1.12; next note C2 @ 76.00 dur 2.47; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [4, 9]
+beat 83.0000 role bass pitch F#2 (42) duration 0.9000
+  current Cmaj7 @ 80.00 previous F6 @ 68.00 next G7 @ 84.00 next_structural G7 @ 84.00 destination Am7 @ 88.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, ChromaticPassing, SlidePath]; vertical: {"structural"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note G2 @ 82.00 dur 0.90; next note F2 @ 84.00 dur 0.45; structural_proxy=true ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [11, 5]
+beat 103.7500 role bass pitch E2 (40) duration 0.2250
+  current Fmaj9 @ 100.00 previous Dm7 @ 92.00 next Fmaj9 @ 104.00 next_structural C6 @ 112.00 destination F6 @ 116.00
+  declared Some(ChromaticApproach); local [ChordTone, Anticipation, ChromaticApproach, PedalTone, SlidePath]; vertical: {"stable-color", "structural"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note C2 @ 102.25 dur 1.35; next note F2 @ 104.00 dur 1.58; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [9, 4]
+beat 111.5000 role bass pitch C#2 (37) duration 0.4500
+  current Fmaj9 @ 108.00 previous Dm7 @ 92.00 next C6 @ 112.00 next_structural C6 @ 112.00 destination F6 @ 116.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, SlidePath]; vertical: {"UNOWNED", "stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note F2 @ 110.25 dur 1.12; next note C2 @ 112.00 dur 2.03; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [4, 9]
+beat 115.5000 role bass pitch E2 (40) duration 0.4500
+  current C6 @ 112.00 previous Fmaj9 @ 108.00 next F6 @ 116.00 next_structural F6 @ 116.00 destination none
+  declared Some(ChromaticApproach); local [ChordTone, ChromaticApproach, PedalTone, SlidePath]; vertical: {"structural"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note C2 @ 114.50 dur 0.90; next note F2 @ 116.00 dur 2.47; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [9, 2]
+beat 19.5000 role lead pitch F#4 (66) duration 0.4500
+  current Cmaj7 @ 16.00 previous Fadd9 @ 8.00 next Dm7 @ 20.00 next_structural Dm7 @ 20.00 destination D7 @ 24.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, ChromaticPassing, SlidePath]; vertical: {"structural"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note G4 @ 18.50 dur 0.50; next note F4 @ 20.00 dur 2.25; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [5, 0]
+beat 25.5000 role lead pitch F4 (65) duration 0.4500
+  current D7 @ 24.00 previous Dm7 @ 20.00 next G7 @ 28.00 next_structural G7 @ 28.00 destination Am7 @ 32.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, SlidePath]; vertical: {"linear"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note C4 @ 25.00 dur 0.45; next note F#4 @ 26.00 dur 0.50; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [11, 5]
+beat 32.0000 role lead pitch D5 (74) duration 0.4500
+  current Am7 @ 32.00 previous G7 @ 28.00 next Dm7 @ 36.00 next_structural Dm7 @ 36.00 destination Am7 @ 40.00
+  declared Some(LicensedExtension); local [LicensedExtension, Appoggiatura, Enclosure, SlidePath]; vertical: {"owned-tension"} (written ensemble slices; world-free lenient color budget); path Resolved Some(OwnedTendency)
+  previous note B4 @ 31.50 dur 0.45; next note C5 @ 33.00 dur 0.45; structural_proxy=true ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [5, 0]
+beat 34.5000 role lead pitch F5 (77) duration 0.4500
+  current Am7 @ 32.00 previous G7 @ 28.00 next Dm7 @ 36.00 next_structural Dm7 @ 36.00 destination Am7 @ 40.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, DiatonicPassing, SlidePath]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note G5 @ 33.50 dur 0.50; next note E5 @ 35.00 dur 0.97; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [5, 0]
+beat 43.0000 role lead pitch F5 (77) duration 0.4500
+  current Am7 @ 40.00 previous Dm7 @ 36.00 next Dm7 @ 44.00 next_structural Dm7 @ 44.00 destination Fadd9 @ 48.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, DiatonicPassing, SlidePath]; vertical: {"linear"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note G5 @ 42.00 dur 0.50; next note E5 @ 43.50 dur 0.49; structural_proxy=true ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [5, 0]
+beat 47.5000 role lead pitch B4 (71) duration 0.4500
+  current Dm7 @ 44.00 previous Am7 @ 40.00 next Fadd9 @ 48.00 next_structural Fadd9 @ 48.00 destination C6 @ 64.00
+  declared Some(LicensedExtension); local [LicensedExtension, ChromaticApproach, SlidePath]; vertical: {"UNOWNED", "stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved Some(ForwardLeading)
+  previous note none; next note C5 @ 48.00 dur 0.45; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [9]
+beat 50.5000 role lead pitch C#5 (73) duration 0.4500
+  current Fadd9 @ 48.00 previous Dm7 @ 44.00 next Fmaj9 @ 52.00 next_structural C6 @ 64.00 destination F6 @ 68.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, SlidePath]; vertical: {"linear"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note F5 @ 49.50 dur 0.50; next note C5 @ 51.00 dur 2.25; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [9, 4]
+beat 58.5000 role lead pitch E5 (76) duration 0.4500
+  current Fadd9 @ 56.00 previous Dm7 @ 44.00 next Fmaj9 @ 60.00 next_structural C6 @ 64.00 destination F6 @ 68.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, SlidePath]; vertical: {"linear"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note C5 @ 58.00 dur 0.45; next note F5 @ 59.00 dur 0.50; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [9, 4]
+beat 60.0000 role lead pitch D5 (74) duration 0.4500
+  current Fmaj9 @ 60.00 previous Dm7 @ 44.00 next C6 @ 64.00 next_structural C6 @ 64.00 destination F6 @ 68.00
+  declared Some(LicensedExtension); local [LicensedExtension, Appoggiatura, SlidePath]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Resolved Some(OwnedTendency)
+  previous note F5 @ 59.00 dur 0.50; next note C5 @ 60.50 dur 2.25; structural_proxy=true ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [4, 9]
+beat 83.5000 role lead pitch F#5 (78) duration 0.4500
+  current Cmaj7 @ 80.00 previous F6 @ 68.00 next G7 @ 84.00 next_structural G7 @ 84.00 destination Am7 @ 88.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, ChromaticPassing, SlidePath]; vertical: {"structural"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note G5 @ 82.50 dur 0.50; next note F5 @ 84.00 dur 2.25; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [11, 5]
+beat 88.0000 role lead pitch D5 (74) duration 0.4500
+  current Am7 @ 88.00 previous G7 @ 84.00 next Dm7 @ 92.00 next_structural Dm7 @ 92.00 destination Fadd9 @ 96.00
+  declared Some(LicensedExtension); local [LicensedExtension, Appoggiatura, Enclosure, SlidePath]; vertical: {"owned-tension"} (written ensemble slices; world-free lenient color budget); path Resolved Some(OwnedTendency)
+  previous note B4 @ 87.50 dur 0.45; next note C5 @ 89.00 dur 0.45; structural_proxy=true ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [5, 0]
+beat 90.5000 role lead pitch C#5 (73) duration 0.4500
+  current Am7 @ 88.00 previous G7 @ 84.00 next Dm7 @ 92.00 next_structural Dm7 @ 92.00 destination Fadd9 @ 96.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, SlidePath]; vertical: {"linear"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note E5 @ 89.50 dur 0.50; next note C5 @ 91.00 dur 2.25; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [5, 0]
+beat 99.0000 role lead pitch F#5 (78) duration 0.4500
+  current Fadd9 @ 96.00 previous Dm7 @ 92.00 next Fmaj9 @ 100.00 next_structural C6 @ 112.00 destination F6 @ 116.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, ChromaticPassing, SlidePath]; vertical: {"linear"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note G5 @ 98.00 dur 0.50; next note F5 @ 99.50 dur 2.25; structural_proxy=true ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [9, 4]
+beat 105.5000 role lead pitch F#5 (78) duration 0.4500
+  current Fmaj9 @ 104.00 previous Dm7 @ 92.00 next Fmaj9 @ 108.00 next_structural C6 @ 112.00 destination F6 @ 116.00
+  declared Some(ChromaticApproach); local [ChromaticApproach, SlidePath]; vertical: {"UNOWNED", "linear"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note C5 @ 105.00 dur 0.45; next note G5 @ 106.00 dur 0.50; structural_proxy=false ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [9, 4]
+beat 107.0000 role lead pitch F#5 (78) duration 0.4500
+  current Fmaj9 @ 104.00 previous Dm7 @ 92.00 next Fmaj9 @ 108.00 next_structural C6 @ 112.00 destination F6 @ 116.00
+  declared Some(ChromaticPassing); local [ChromaticPassing, SlidePath]; vertical: {"UNOWNED", "linear"} (written ensemble slices; world-free lenient color budget); path Resolved None
+  previous note G5 @ 106.00 dur 0.50; next note E5 @ 107.50 dur 2.25; structural_proxy=true ambiguous_voice=false
+  reason: observed path supports the claim
+  next guide targets: [9, 4]
