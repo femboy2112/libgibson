@@ -34,19 +34,27 @@ milestone. **Not released**: the package version stays **0.3.1**, `GIBSON_ABI_VE
   gestures vary their manifestation per cycle, semantic state deltas size the actions, quiet is
   declared, obligations settle named debts by deadline, pad and keys are voiced by a bounded
   voice-path DP, SFX sit in the local harmony, and a requested length is rendered exactly.
-  The current round (VIII) makes the band hear the same chord: one vertical theory
-  (`sonority.rs` — owned vs unowned minor 2nds/9ths, tension specs, bass function, a per-world
-  colour budget, audible lifetimes, `EnsembleSonorityDiagnostics`), one harmonic ledger the
-  players are realized against in rigidity order (`harmonic_state.rs`), a bass that never
-  octave-copies an upper tension into the floor, keys lines placed against lead and bass, and the
-  pad and keys voiced as one joint decision (`support.rs`). `EnsembleCoupling::Independent`
-  keeps the Round VIIb realization as a pinned control. On the flagship, unowned minor 2nds/9ths
-  drop from 24/28/43 to 0/0/0 per world with every action still witnessed.
+  Round VIII built one vertical theory (`sonority.rs` — owned vs unowned minor 2nds/9ths,
+  tension specs, bass function, a per-world colour budget, audible lifetimes,
+  `EnsembleSonorityDiagnostics`), a harmonic ledger (`harmonic_state.rs`) and a coupled band
+  whose pad and keys are voiced as one joint decision (`support.rs`). The listen rejected that
+  coupled bed as the default — it revoiced most of the pad to satisfy the collision count — so
+  Round VIIIb restores the R7b band as the default (`EnsembleCoupling::Independent`), keeps the
+  Round VIII band as the pinned negative control (`EnsembleCoupling::CoupledR8`), and adds
+  `EnsembleCoupling::Surgical`: the R7b realization with only its real hard vertical defects
+  (measured over actual audible overlap) repaired, one note each, every edit on a ledger
+  (`surgical.rs`, `Score::vertical_repairs`). On the flagship the surgical arm clears 22/49/29
+  hard defects to 0/1/1 per world while editing 3.5–6.7 % of the notes and leaving the pad's
+  motion and common tones at R7b's; every action is still witnessed. `voicing::HarmonicStability`
+  reports bed motion beside the collision numbers.
 - `examples/human_music_lab.rs` — renders the flagship (and A/B probes, stems, pitched-role pair
   stems, a neutral harmonic reference, calibration grammars) with every receipt printed next to
   the WAV paths.
 
 ### Fixed (experimental audio)
+
+- The vertical audit (`sonority::classify_heard`) no longer calls the rootless "B-form" — a minor
+  chord's 9th a semitone under its minor 3rd in the pad/keys — a collision.
 
 - The FM oscillator (`dsp::osc::FmOsc`) clamps its modulation index to the alias-free bound, so
   a high note no longer folds sidebands back under Nyquist as inharmonic partials (BLACK_ICE's

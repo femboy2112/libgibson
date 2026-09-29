@@ -929,7 +929,11 @@ duration) on the quantized beat, and sit under the band's own accent.
 The cinematic story now modulates in every world (e.g. BLACK_ICE: A aeolian → pivot → B aeolian
 62–84 → return → home) and is fully witnessed (34/34, 35/35, 35/35).
 
-### 3.17 Round VIII — one harmony: the band hears the same chord (current state)
+### 3.17 Round VIII — one harmony: the band hears the same chord
+
+> **Verdict (Round VIIIb, §3.18):** the listen rejected this coupled bed as the default — it sounded
+> worse than Round VIIb. It survives as `EnsembleCoupling::CoupledR8`, pinned byte-for-byte as the
+> negative control; the default is the R7b band again. The theory below stays: as a ruler.
 
 Round VIIb's listen: the song "may have meaning and may be going somewhere, but we have LOST
 SONIC/HARMONIC COHERENCE … harmonically out of tune / wrong despite the individual notes being
@@ -1059,6 +1063,87 @@ tones (the vertical tier outranks motion), SWISS_SIGNAL sounds six pitch classes
 its budget of five, and VAPOR95/SWISS_SIGNAL leave a little more of a beat without every identity
 tone than the control did.
 
+### 3.18 Round VIIIb — surgical: R7b minus its real harmonic garbage (current state)
+
+**The listen.** Round VIIb sounded substantially better than Round VIII's coupled default: "trash",
+the band had lost its harmonic coherence. The ear outranks the ruler Round VIII optimized.
+
+**Why Round VIII sounded worse** (four read-only audits of 5644c96, reconciled):
+- *Confirmed, primary — the solver ranked audit survival above continuity.* The joint pad+keys
+  Viterbi (`support.rs`) orders witness and vertical collisions lexicographically before ALL
+  voice-leading (motion, common tones and register live in the last, weighted tier), and its beam
+  prunes with no previous voicing, so it is blind to motion. One avoided clash buys any amount of
+  motion: 76 / 59 / 79 % of the pad voicings were revoiced (two or more voices each), pad motion
+  went 4.71 → 7.55 semitones on BLACK_ICE, common tones 1.32 → 0.86, guide-tone breaks 15 → 21.
+  The Open-gesture span rule then locks the wide voicings in for the slot. The clashes it chased
+  were real — but local, one note each.
+- *Confirmed defect, minor cause — fictional simultaneity.* `union_cost` models every keys comp
+  stab as ringing the whole harmony window (a real stab covers ~31 % of it), so a lead or bass note
+  elsewhere in the chord "collides". On the flagship only 1 of 24 revoiced harmonies was
+  fictional-only. `surgical.rs`'s first test pins the negative control: that scorer counts a clash
+  between a stab on beat 3 and a melody note on beat 1 that never sound together.
+- *Structural, not the proximate cause:* the lead-first rigidity order (the lead dictates; the bed
+  contorts around it).
+
+**The default.** `PerformanceOptions::default()` is `EnsembleCoupling::Independent` — the R7b band,
+pinned (`the_default_is_the_r7b_band_again`). `CoupledR8` is the rejected control, pinned at the
+composition the listen heard (`the_r8_control_is_the_composition_the_listen_rejected`). The FM
+anti-alias clamp stays (synth-side, shared by every arm, not implicated).
+
+**The surgical arm (`EnsembleCoupling::Surgical`, `surgical.rs`).** Realize the R7b score note for
+note, then repair only what is actually wrong, and leave everything else alone:
+- *Real time only.* Every note sounds to its AUDIBLE end at the masking floor (−20 dB), so a
+  0.45-beat stab is judged only against what sounds while it sounds. The score is cut at every
+  onset, end and chord boundary by the audit's own `slices`.
+- *Hard defects only.* An unowned m2/m9 that lasts ≥ 0.125 beat, a floor naming a tension nothing
+  owns, a held identity flip, a linear note that never resolves. A doubled colour, a crowded slice,
+  a guide tone missing in a transient: measurements, not rewrite commands.
+- *One note per defect, by a ladder.* Release it before the collision (articulation before pitch);
+  leave it out when the harmony is carried without it; an octave; a nearby tone of the same
+  sonority (a chord tone, or a colour the band already sounds); for the bass, the harmony's root or
+  fifth — and the bass re-places a line note before it drops one. Never the lead; never above the
+  melody; within the realizers' registers. An edit must strictly reduce the hard defects in one
+  shared window. Then comes an edit that keeps the harmony's identity: the melody's yield — Fmaj7
+  under a melody F drops its 7th and sounds F6/9 — is only the fallback. Then a support player
+  before the bass, the earliest rung, the least displacement.
+- *Sound before paperwork.* A receipt is a constraint only while it stays realizable: a clean edit
+  that keeps every witness wins its tier; if none does, the repair happens and the action is
+  reported deferred on the ledger. A bad note is never kept to keep an audit green.
+- *Nothing silent.* `Score::vertical_repairs` records every edit (beat, role, pitch, what it
+  became, the defect named by its notes, the rung, any deferred receipt). The lab prints the ledger,
+  a perturbation report DIFFED from the R7b score (not taken from the ledger), the stability ruler
+  against R7b, and the hard defects each arm still sounds.
+
+**The ruler, corrected once.** `sonority::classify_heard` is `classify_clash` plus the single class a
+synthetic witness proved wrong: a minor chord's licensed 9th a semitone under its minor 3rd in the
+chordal support — the rootless "B-form" (Dm7 as C E F A), whether one player or the pad and the keys
+together hold it. The 9th under the MELODY, the minor-9th version and root over major 7th stay
+unowned. The frozen R8 generator keeps calling `classify_clash`.
+
+**The bed has a ruler too.** `voicing::HarmonicStability` — per role, mean / median / max motion
+between voicings, common-tone retention, and the share of voicings that differ from a reference
+realization — prints beside the vertical numbers, so a collision count can never again be bought
+with an unseen doubling of bed motion.
+
+**Receipts (flagship: bounce, DeflectedLift, seed 2112; R7b / R8 / surgical):**
+
+| | BLACK_ICE | VAPOR95 | SWISS_SIGNAL |
+|---|---|---|---|
+| hard vertical defects sounding (audible, −20 dB) | 22 / 0 / **0** | 49 / 4 / **1** | 29 / 0 / **1** |
+| surgical edits (diffed; 0 lead, 0 added) | **14 (3.5 %)** | **28 (6.7 %)** | **16 (3.9 %)** |
+| pad mean motion (semitones) | 4.71 / 7.55 / **4.38** | 3.98 / 7.95 / **4.28** | 4.45 / 7.30 / **4.39** |
+| pad common tones | 1.32 / 0.86 / **1.32** | 2.00 / 1.54 / **1.85** | 1.96 / 1.64 / **1.86** |
+| pad voicings changed vs R7b | 76 % / **10 %** | 59 % / **25 %** | 79 % / **14 %** |
+| keys voicings changed vs R7b | 43 % / **0 %** | 58 % / **10 %** | 63 % / **2 %** |
+| receipts witnessed / deferred | 54 / 54, 0 | 54 / 54, 0 | 54 / 54, 0 |
+
+The two surgical survivors are the lead against a sting (neither is editable) and a pad E6 against
+a sting where every repair would cost Fmaj9 its 7th. Across the 1152-composition sweep
+(`fuzz_the_surgical_band_never_loses_a_receipt_silently`) the pass edits 4.25 % of the notes and
+loses no receipt silently (9 deferred, all on the ledger). Every piece that edits more than a tenth
+of its notes is printed with its ledger — these are the short 24-beat pieces and the dirtiest R7b
+realizations, each edit a real clash against the melody or between support players, or a floor.
+
 ## 4. Engines carried over from Round I
 
 These pieces of the Round I vertical slice are still in place. They were not part of the
@@ -1136,12 +1221,40 @@ version, a passing collision, a suspension and a broken one, a planned altered d
 `ensemble_probes.rs` (the Independent control pinned to its R7b fingerprint; the coupled band
 against it on every world; the joint bed against the solo paths; the review's counterexamples),
 and the ignored release sweep `fuzz_the_coupled_band_keeps_every_receipt_the_control_keeps`
-(`cargo test --release --lib fuzz_the_coupled -- --ignored`). It does not and cannot certify
-that a piece sounds good.
+(`cargo test --release --lib fuzz_the_coupled -- --ignored`). Round VIIIb (§3.18) pins the default
+to the R7b composition and the R8 control to the one the listen rejected, adds the surgical
+controls in `surgical.rs` (a stab judged only while it sounds, one clash → one edit, silence beats a
+worse replacement, a receipt never keeps a bad note, one collision does not move the bed, a unison
+bass never floors the lead's 9th, owned tension is not sterilized, the perturbation report diffs
+the scores), the B-form / avoid controls in `sonority.rs`, the flagship acceptance probe
+`the_surgical_band_is_r7b_minus_its_garbage`, and the release sweep
+`fuzz_the_surgical_band_never_loses_a_receipt_silently`. It does not and cannot certify that a
+piece sounds good.
 
 ## 7. Honest limits
 
-### Current (Round VIII)
+### Current (Round VIIIb)
+
+- **The ear is the gate, and it has not heard this arm.** The surgical numbers say R7b's hard
+  defects are gone while its bed barely moved; only the listen can say whether it sounds like the
+  good version with the wrong moments removed. The default stays R7b until it does.
+- **"Actual sounding" is modelled.** Lifetimes come from each patch's ADSR at the −20 dB masking
+  floor, not from rendered samples; reverb is not modelled. A plucked keys attack struck against
+  the melody (BLACK_ICE's keys decay to −20 dB in ~0.11 beat at 88 bpm) falls under the
+  0.125-beat overlap floor, so these short crunches stay (at −30 dB the surgical BLACK_ICE still
+  shows 12 m2 / 2 m9 totalling 1.4 beats, against 15 / 10 over 12.0 beats for R7b).
+- **Repairs subtract more than they add.** Omission is the ladder's second rung for the pad and the
+  keys, so the bed thins where it collided (BLACK_ICE: 3 pad voices left out; VAPOR95: 15 notes
+  removed). Fmaj7 under a melody F becomes F6/9 by design — and missing-guide-tone time rises a
+  little (BLACK_ICE 8.85 → 10.79 beats).
+- **The pass cannot revoice.** It edits single notes; a voicing that is wrong as a whole (the ladder's
+  "revoice one local voicing" rung) is not implemented. A defect no single-note edit cleans stays,
+  and is listed.
+- **R8's generator is frozen, not fixed.** Its whole-window keys model and its tier order are
+  documented here and left as they were heard.
+- The model is experimental; Rust-only; not in the C ABI; version 0.3.1; nothing here is released.
+
+### Round VIII
 
 - **The decisive gate is still the ear.** Every number in §3.17 is a model of vertical coherence
   measured on the Score (and on envelope-approximated lifetimes); none says the band now sounds
@@ -1282,10 +1395,14 @@ a `CoherenceDiagnostics` report, and render receipts printed to stdout. Flags:
   `--manifest=fixed` — the calibration probes (plain speech, mood without action, fixed-slot
   answers, every statement a call, one gesture choreography every cycle).
 - `--ab` — the flagship six ways (fusion / simple / actions_off / clockwork / saturated /
-  fixed_gestures) with the receipts next to each WAV, then every world realized by the
-  independent control and by the coupled band (`ab_coupling_<world>_{independent,coupled}.wav`)
+  fixed_gestures) with the receipts next to each WAV, then every world realized by the R7b band,
+  the rejected R8 coupled bed and the surgical arm (`ab_coupling_<world>_{r7b,r8,surgical}.wav`)
   with the vertical numbers beside each; `--stems` — one WAV per bus.
-- Round VIII: `--coupling=independent` (the Round VIIb realization); `--pair-stems` (the six
+- Round VIIIb: `--coupling=r7b|r8|surgical` (default `r7b`, the Round VIIb band; `independent`
+  and `coupled` are accepted aliases). Every arm prints the harmonic-stability ruler (against the
+  R7b realization off the default) and the hard vertical defects it still sounds; `surgical` adds
+  the repair ledger and the perturbation report diffed from R7b.
+- Round VIII: `--pair-stems` (the six
   pitched-role pairs); `--harmonic-reference` (the same Score on clean, dry, zero-detune,
   short-release voices, stings included, drums out, peak-normalized) or `--production=`
   `clean,nodetune,nosat,dry,nocomp,shortrel` (single factors); `--dump-notes`
