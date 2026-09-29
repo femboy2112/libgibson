@@ -1,0 +1,23 @@
+# pitched_notes=449 pitch_changed=4 duration_changed=0 omitted=17 added=0 changed_events=21 affected=4.677%
+beat	seconds	role	role_note	chord	old	action	new	old_mass	old_class	old_verdict	new_mass	new_verdict
+16.0000	10.909	pad	pad	Dm9	G4 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+20.0000	13.636	pad	pad	Dm7	E5 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+20.0000	13.636	pad	pad	Dm7	G5 3.92	Moved(77)	F5 3.92	7.091	Asserted	UnownedAssertedColor	7.091	Carried
+24.0000	16.364	pad	pad	Am6	B4 3.92	Omitted	-	4.091	Asserted	UnownedAssertedColor	-	-
+36.0000	24.545	pad	pad	Am9	F#5 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+48.0000	32.727	pad	pad	Dm9	G4 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+52.0000	35.455	pad	pad	Dm7	E5 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+52.0000	35.455	pad	pad	Dm7	G5 3.92	Moved(77)	F5 3.92	7.091	Asserted	UnownedAssertedColor	7.091	Carried
+56.0000	38.182	pad	pad	Am6	B4 3.92	Omitted	-	4.091	Asserted	UnownedAssertedColor	-	-
+64.0000	43.636	pad	pad	Am6	B4 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+72.0000	49.091	pad	pad	Am6	B4 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+72.0000	49.091	pad	pad	Am6	D5 3.92	Moved(76)	E5 3.92	4.091	Asserted	UnownedAssertedColor	7.091	Carried
+80.0000	54.545	pad	pad	Dm9	G4 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+84.0000	57.273	pad	pad	Dm7	E5 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+92.0000	62.727	pad	pad	Am9	F#5 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+104.0000	70.909	pad	pad	Am6	B4 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+104.0000	70.909	pad	pad	Am6	D5 3.92	Moved(76)	E5 3.92	4.091	Asserted	UnownedAssertedColor	7.091	Carried
+116.0000	79.091	pad	pad	Am9	F#5 3.92	Omitted	-	4.567	Asserted	UnownedAssertedColor	-	-
+32.0000	21.818	keys	hold	Am6	B4 1.94	Omitted	-	0.324	Asserted	UnownedAssertedColor	-	-
+88.0000	60.000	keys	hold	Am6	B4 3.90	Omitted	-	0.486	Asserted	UnownedAssertedColor	-	-
+112.0000	76.364	keys	comp	Am6	B4 0.90	Omitted	-	0.486	Asserted	UnownedAssertedColor	-	-

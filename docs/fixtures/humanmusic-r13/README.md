@@ -177,3 +177,18 @@ such a note it takes the first action that works:
 Written extensions, material lines (answers, figures, unison) and non-asserted colours are
 never touched. The gate returns its own ledger (`SupportMassEdit`). The lab replays it and
 checks that its counts equal an independent diff of the two finished scores.
+
+## Commits 4–6
+
+- **Commit 4 (bass) was skipped** because the diagnostics did not implicate the bass. Every bass
+  approach is a single 0.45-beat semitone into a written root: 0.254 s (SWISS) and 0.341 s
+  (BLACK_ICE), Gestural, Local ownership, Carried. No bass row is non-carried in any of the four
+  scores.
+- **Commit 5 was skipped**: no human witness or diagnostic required another production fix. The
+  two BLACK_ICE lead C#5 overdrawn gestures are medium mass, and the lead is last. They are
+  parked.
+- **Commit 6** holds the matched A/B receipts. `final/` has the mass reports for both arms, the
+  gate-ledger `*.changes.tsv`, the before/after `*.around-16s.txt` / `*.around-44s.txt` windows
+  and the phenomenal trajectories, which are identical to Round XII's. Also in this commit:
+  `render.txt`, the engineering logs, `engineering.txt` and `final-manifest.json`. The round
+  document is [HUMAN_MUSIC_TEMPORAL_MASS.md](../../HUMAN_MUSIC_TEMPORAL_MASS.md).

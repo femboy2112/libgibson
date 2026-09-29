@@ -1,0 +1,20 @@
+swiss/stable r12: unowned_asserted_colors=6 accidental_reharmonizations=6 overdrawn_gestures=0 soft_orphans=20 asserted_events=184
+swiss/stable mass: unowned_asserted_colors=0 accidental_reharmonizations=0 overdrawn_gestures=0 soft_orphans=20 asserted_events=178
+swiss/stable pitched_notes=449 pitch_changed=0 duration_changed=0 omitted=6 added=0 changed_events=6 affected=1.336%
+SongMapConformance: PASS (song 0xaf5360442b9b6729, performed 0xaf5360442b9b6729; 6 identity sites, 15 landmarks, 30 chord changes checked)
+wav=target/humanmusic-r13/final/swiss_r12.wav frames=3048814 peak=0.7252635 rms=0.067076035
+wav=target/humanmusic-r13/final/swiss_mass.wav frames=3048814 peak=0.71410376 rms=0.0670787
+black_ice/stable r12: unowned_asserted_colors=21 accidental_reharmonizations=21 overdrawn_gestures=2 soft_orphans=15 asserted_events=210
+black_ice/stable mass: unowned_asserted_colors=0 accidental_reharmonizations=0 overdrawn_gestures=2 soft_orphans=13 asserted_events=193
+black_ice/stable pitched_notes=449 pitch_changed=4 duration_changed=0 omitted=17 added=0 changed_events=21 affected=4.677%
+SongMapConformance: PASS (song 0xaf5360442b9b6729, performed 0xaf5360442b9b6729; 6 identity sites, 15 landmarks, 30 chord changes checked)
+wav=target/humanmusic-r13/final/black_ice_r12.wav frames=4047273 peak=0.86481947 rms=0.119601846
+wav=target/humanmusic-r13/final/black_ice_mass.wav frames=4047273 peak=0.97 rms=0.11931102
+swiss/deflected r12: unowned_asserted_colors=20 accidental_reharmonizations=20 overdrawn_gestures=0 soft_orphans=8 asserted_events=173
+swiss/deflected mass: unowned_asserted_colors=0 accidental_reharmonizations=0 overdrawn_gestures=0 soft_orphans=8 asserted_events=157
+swiss/deflected pitched_notes=403 pitch_changed=4 duration_changed=0 omitted=16 added=0 changed_events=20 affected=4.963%
+SongMapConformance: PASS (song 0x8d901e3de29190a2, performed 0x8d901e3de29190a2; 6 identity sites, 15 landmarks, 31 chord changes checked)
+black_ice/deflected r12: unowned_asserted_colors=25 accidental_reharmonizations=25 overdrawn_gestures=0 soft_orphans=11 asserted_events=190
+black_ice/deflected mass: unowned_asserted_colors=0 accidental_reharmonizations=0 overdrawn_gestures=0 soft_orphans=11 asserted_events=171
+black_ice/deflected pitched_notes=401 pitch_changed=6 duration_changed=0 omitted=19 added=0 changed_events=25 affected=6.234%
+SongMapConformance: PASS (song 0x8d901e3de29190a2, performed 0x8d901e3de29190a2; 6 identity sites, 15 landmarks, 31 chord changes checked)

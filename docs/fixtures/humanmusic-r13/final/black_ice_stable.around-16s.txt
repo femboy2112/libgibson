@@ -1,0 +1,74 @@
+regime=stable world=black_ice seed=2112 beats=120 tempo=88 arm=r12-temporal
+song=0xaf5360442b9b6729 performance=0xdd68e9d7339daba4 score=0x06446ebcbbd14038
+regime=stable world=black_ice seed=2112 beats=120 tempo=88 arm=r13-mass
+song=0xaf5360442b9b6729 performance=0xdd68e9d7339daba4 score=0x25bd8016f915e19a
+before -> after, every A note sounding within 1.5 s of 16 s
+  beat 20.000 (13.636 s) pad pad
+    before: F4 3.92 beats, audible 2.727 s, mass 7.091 Asserted (fused), ownership Harmonic, verdict Carried
+    after:  unchanged: F4 3.92 beats, audible 2.727 s, mass 7.091 Asserted (fused), ownership Harmonic, verdict Carried
+  beat 20.000 (13.636 s) pad pad
+    before: C5 3.92 beats, audible 2.727 s, mass 7.091 Asserted (fused), ownership Harmonic, verdict Carried
+    after:  unchanged: C5 3.92 beats, audible 2.727 s, mass 7.091 Asserted (fused), ownership Harmonic, verdict Carried
+* beat 20.000 (13.636 s) pad pad
+    before: E5 3.92 beats, audible 2.727 s, mass 7.091 Asserted (fused), ownership Licensed, verdict UnownedAssertedColor
+    after:  OMITTED
+* beat 20.000 (13.636 s) pad pad
+    before: G5 3.92 beats, audible 2.727 s, mass 7.091 Asserted (fused), ownership Licensed, verdict UnownedAssertedColor
+    after:  MOVED to F5 3.92 beats, audible 2.727 s, mass 7.091 Asserted (fused), ownership Harmonic, verdict Carried
+  beat 20.000 (13.636 s) bass root
+    before: D2 1.42 beats, audible 1.023 s, mass 4.240 Asserted (fused), ownership Harmonic, verdict Carried
+    after:  unchanged: D2 1.42 beats, audible 1.023 s, mass 4.240 Asserted (fused), ownership Harmonic, verdict Carried
+  beat 21.000 (14.318 s) lead melody
+    before: A4 1.35 beats, audible 1.020 s, mass 1.020 Asserted, ownership Harmonic, verdict Carried
+    after:  unchanged: A4 1.35 beats, audible 1.020 s, mass 1.020 Asserted, ownership Harmonic, verdict Carried
+  beat 21.500 (14.659 s) keys comp
+    before: B4 0.60 beats, audible 0.108 s, mass 0.108 Fleeting, ownership Licensed, verdict Carried
+    after:  unchanged: B4 0.60 beats, audible 0.108 s, mass 0.108 Fleeting, ownership Licensed, verdict Carried
+  beat 21.500 (14.659 s) keys comp
+    before: F4 0.60 beats, audible 0.108 s, mass 0.108 Fleeting, ownership Harmonic, verdict Carried
+    after:  unchanged: F4 0.60 beats, audible 0.108 s, mass 0.108 Fleeting, ownership Harmonic, verdict Carried
+  beat 21.500 (14.659 s) keys comp
+    before: C4 0.60 beats, audible 0.108 s, mass 0.108 Fleeting, ownership Harmonic, verdict Carried
+    after:  unchanged: C4 0.60 beats, audible 0.108 s, mass 0.108 Fleeting, ownership Harmonic, verdict Carried
+  beat 21.500 (14.659 s) bass answer
+    before: F2 0.24 beats, audible 0.170 s, mass 0.170 Fleeting, ownership Harmonic, verdict Carried
+    after:  unchanged: F2 0.24 beats, audible 0.170 s, mass 0.170 Fleeting, ownership Harmonic, verdict Carried
+  beat 21.750 (14.830 s) bass answer
+    before: A2 0.24 beats, audible 0.170 s, mass 0.170 Fleeting, ownership Harmonic, verdict Carried
+    after:  unchanged: A2 0.24 beats, audible 0.170 s, mass 0.170 Fleeting, ownership Harmonic, verdict Carried
+  beat 22.000 (15.000 s) bass answer
+    before: C3 0.50 beats, audible 0.418 s, mass 0.522 Gestural, ownership Harmonic, verdict Carried
+    after:  unchanged: C3 0.50 beats, audible 0.418 s, mass 0.522 Gestural, ownership Harmonic, verdict Carried
+  beat 22.250 (15.170 s) keys comp
+    before: F4 0.45 beats, audible 0.108 s, mass 0.216 Gestural, ownership Harmonic, verdict Carried
+    after:  unchanged: F4 0.45 beats, audible 0.108 s, mass 0.216 Gestural, ownership Harmonic, verdict Carried
+  beat 22.250 (15.170 s) keys comp
+    before: C4 0.45 beats, audible 0.108 s, mass 0.216 Gestural, ownership Harmonic, verdict Carried
+    after:  unchanged: C4 0.45 beats, audible 0.108 s, mass 0.216 Gestural, ownership Harmonic, verdict Carried
+  beat 23.500 (16.023 s) lead melody
+    before: A4 0.45 beats, audible 0.341 s, mass 1.361 Asserted, ownership Harmonic, verdict Carried
+    after:  unchanged: A4 0.45 beats, audible 0.341 s, mass 1.361 Asserted, ownership Harmonic, verdict Carried
+  beat 24.000 (16.364 s) pad pad
+    before: F#4 3.92 beats, audible 2.727 s, mass 4.091 Asserted (fused), ownership Harmonic, verdict Carried
+    after:  unchanged: F#4 3.92 beats, audible 2.727 s, mass 4.091 Asserted (fused), ownership Harmonic, verdict Carried
+* beat 24.000 (16.364 s) pad pad
+    before: B4 3.92 beats, audible 2.727 s, mass 4.091 Asserted (fused), ownership Local, verdict UnownedAssertedColor
+    after:  OMITTED
+  beat 24.000 (16.364 s) pad pad
+    before: C5 3.92 beats, audible 2.727 s, mass 7.091 Asserted (fused), ownership Harmonic, verdict Carried
+    after:  unchanged: C5 3.92 beats, audible 2.727 s, mass 7.091 Asserted (fused), ownership Harmonic, verdict Carried
+  beat 24.000 (16.364 s) pad pad
+    before: E5 3.92 beats, audible 2.727 s, mass 7.091 Asserted (fused), ownership Harmonic, verdict Carried
+    after:  unchanged: E5 3.92 beats, audible 2.727 s, mass 4.091 Asserted (fused), ownership Harmonic, verdict Carried
+  beat 24.000 (16.364 s) bass root
+    before: A2 1.80 beats, audible 1.304 s, mass 2.212 Asserted (fused), ownership Harmonic, verdict Carried
+    after:  unchanged: A2 1.80 beats, audible 1.304 s, mass 2.212 Asserted (fused), ownership Harmonic, verdict Carried
+  beat 24.000 (16.364 s) lead melody
+    before: C5 0.45 beats, audible 0.341 s, mass 0.511 Gestural, ownership Harmonic, verdict Carried
+    after:  unchanged: C5 0.45 beats, audible 0.341 s, mass 0.511 Gestural, ownership Harmonic, verdict Carried
+  beat 24.500 (16.705 s) lead melody
+    before: C#5 0.50 beats, audible 0.440 s, mass 0.440 Gestural, ownership Local, verdict Carried
+    after:  unchanged: C#5 0.50 beats, audible 0.440 s, mass 0.440 Gestural, ownership Local, verdict Carried
+  beat 25.500 (17.386 s) lead melody
+    before: C5 0.45 beats, audible 0.341 s, mass 0.682 Gestural, ownership Harmonic, verdict Carried
+    after:  unchanged: C5 0.45 beats, audible 0.341 s, mass 0.682 Gestural, ownership Harmonic, verdict Carried

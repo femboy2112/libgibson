@@ -1,0 +1,109 @@
+regime=deflected world=swiss seed=2112 beats=120 tempo=118 arm=r13-mass
+song=0x8d901e3de29190a2 performance=0x2abc19f43612a85c score=0xf5370c7d2f1c7bd4
+unowned_asserted_colors=0
+accidental_reharmonizations=0
+overdrawn_gestures=0
+soft_orphans=8
+unsupported=0
+asserted_events=157
+r12_false_function_claims=0
+r12_false_suspensions=0
+r12_broken_anticipations=0
+r12_bad_arrivals=0
+r12_unresolved_tendencies=0
+r12_orphan_extensions=18
+beat 18.2500 (9.280 s) role keys pitch D5 (74)
+  written 0.450 beats = 0.229 s; audible 0.137 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.137 weighted-s -> Fleeting
+  current Cmaj7 @ 16.00 next Dm7 @ 20.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict Carried: ownership meets the exposure's demand
+beat 31.0000 (15.763 s) role keys pitch E5 (76)
+  written 0.200 beats = 0.102 s; audible 0.127 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.233; mass 0.127 weighted-s -> Fleeting
+  current G7 @ 28.00 next Am7 @ 32.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict Carried: ownership meets the exposure's demand
+beat 40.5000 (20.593 s) role keys pitch D5 (74)
+  written 0.900 beats = 0.458 s; audible 0.137 s; recurrence 0.137 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.274 weighted-s -> Gestural
+  current Am7 @ 40.00 next Dm7 @ 44.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict SoftOrphan: gestural orphan colour: a soft suspect, not asserted
+beat 61.5000 (31.271 s) role keys pitch D5 (74)
+  written 0.600 beats = 0.305 s; audible 0.137 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.137 weighted-s -> Fleeting
+  current Fmaj9 @ 60.00 next C6 @ 64.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict Carried: ownership meets the exposure's demand
+beat 63.5000 (32.288 s) role keys pitch D5 (74)
+  written 0.450 beats = 0.229 s; audible 0.137 s; recurrence 0.137 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.274 weighted-s -> Gestural
+  current Fmaj9 @ 60.00 next C6 @ 64.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict SoftOrphan: gestural orphan colour: a soft suspect, not asserted
+beat 74.2500 (37.754 s) role keys pitch B4 (71)
+  written 0.200 beats = 0.102 s; audible 0.127 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.262; mass 0.127 weighted-s -> Fleeting
+  current C6 @ 72.00 next C6 @ 76.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict Carried: ownership meets the exposure's demand
+beat 75.5000 (38.390 s) role keys pitch B4 (71)
+  written 0.450 beats = 0.229 s; audible 0.137 s; recurrence 0.127 s; accent Weak (x1.00); fused no; velocity 0.262; mass 0.264 weighted-s -> Gestural
+  current C6 @ 72.00 next C6 @ 76.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict SoftOrphan: gestural orphan colour: a soft suspect, not asserted
+beat 78.2500 (39.788 s) role keys pitch B4 (71)
+  written 0.200 beats = 0.102 s; audible 0.127 s; recurrence 0.230 s; accent Weak (x1.00); fused no; velocity 0.262; mass 0.357 weighted-s -> Gestural
+  current C6 @ 76.00 next Cmaj7 @ 80.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict SoftOrphan: gestural orphan colour: a soft suspect, not asserted
+beat 78.7500 (40.042 s) role keys pitch B4 (71)
+  written 0.450 beats = 0.229 s; audible 0.137 s; recurrence 0.264 s; accent Weak (x1.00); fused no; velocity 0.262; mass 0.401 weighted-s -> Gestural
+  current C6 @ 76.00 next Cmaj7 @ 80.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict SoftOrphan: gestural orphan colour: a soft suspect, not asserted
+beat 105.7500 (53.771 s) role keys pitch D5 (74)
+  written 0.900 beats = 0.458 s; audible 0.137 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.137 weighted-s -> Fleeting
+  current Fmaj9 @ 104.00 next Fmaj9 @ 108.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict Carried: ownership meets the exposure's demand
+beat 110.2500 (56.059 s) role keys pitch D5 (74)
+  written 0.200 beats = 0.102 s; audible 0.127 s; recurrence 0.127 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.254 weighted-s -> Gestural
+  current Fmaj9 @ 108.00 next C6 @ 112.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict SoftOrphan: gestural orphan colour: a soft suspect, not asserted
+beat 111.5000 (56.695 s) role keys pitch D5 (74)
+  written 0.450 beats = 0.229 s; audible 0.137 s; recurrence 0.254 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.391 weighted-s -> Gestural
+  current Fmaj9 @ 108.00 next C6 @ 112.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict SoftOrphan: gestural orphan colour: a soft suspect, not asserted
+beat 116.5000 (59.237 s) role keys pitch B4 (71)
+  written 0.900 beats = 0.458 s; audible 0.137 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.137 weighted-s -> Fleeting
+  current F6 @ 116.00 next none
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict Carried: ownership meets the exposure's demand
+beat 119.5000 (60.763 s) role keys pitch B4 (71)
+  written 0.450 beats = 0.229 s; audible 0.137 s; recurrence 0.137 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.274 weighted-s -> Gestural
+  current F6 @ 116.00 next none
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict SoftOrphan: gestural orphan colour: a soft suspect, not asserted
+beat 108.2500 (55.042 s) role bass pitch D2 (38)
+  written 0.213 beats = 0.108 s; audible 0.127 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.488; mass 0.127 weighted-s -> Fleeting
+  current Fmaj9 @ 108.00 next C6 @ 112.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict Carried: ownership meets the exposure's demand
+beat 27.0000 (13.729 s) role lead pitch F4 (65)
+  written 0.450 beats = 0.229 s; audible 0.093 s; recurrence 0.093 s; accent Weak (x1.00); fused no; velocity 0.774; mass 0.186 weighted-s -> Fleeting
+  current D7 @ 24.00 next G7 @ 28.00
+  declared Some(ChromaticApproach); Round XII path Orphaned None; supported [ChromaticApproach, ChromaticPassing]
+  ownership Path; mass verdict Carried: ownership meets the exposure's demand
+beat 27.5000 (13.983 s) role lead pitch E4 (64)
+  written 0.485 beats = 0.247 s; audible 0.093 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.790; mass 0.093 weighted-s -> Fleeting
+  current D7 @ 24.00 next G7 @ 28.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict Carried: ownership meets the exposure's demand
+beat 41.5000 (21.102 s) role lead pitch D5 (74)
+  written 0.450 beats = 0.229 s; audible 0.093 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.774; mass 0.093 weighted-s -> Fleeting
+  current Am7 @ 40.00 next Dm7 @ 44.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict Carried: ownership meets the exposure's demand
+beat 97.5000 (49.576 s) role lead pitch D5 (74)
+  written 0.450 beats = 0.229 s; audible 0.093 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.774; mass 0.093 weighted-s -> Fleeting
+  current Fadd9 @ 96.00 next Fmaj9 @ 100.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict Carried: ownership meets the exposure's demand

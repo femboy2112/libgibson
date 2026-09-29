@@ -1,5 +1,7 @@
 # HumanMusic: the `gibson::audio` architecture (experimental)
 
+Round XIII temporal mass (pitch ownership scaled by perceptual exposure): [HUMAN_MUSIC_TEMPORAL_MASS.md](HUMAN_MUSIC_TEMPORAL_MASS.md).
+
 Round XII temporal pitch audit and matched realization: [HUMAN_MUSIC_TEMPORAL_PITCH.md](HUMAN_MUSIC_TEMPORAL_PITCH.md).
 
 **Round XI experiment:** [Phenomenal regimes](HUMAN_MUSIC_PHENOMENAL_REGIMES.md) adds an
