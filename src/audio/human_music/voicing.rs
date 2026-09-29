@@ -2280,7 +2280,7 @@ mod tests {
         use super::super::witness::audit;
         for world in MusicWorld::all() {
             let c = flagship(&world);
-            let r = RealizationDiagnostics::measure(&c.plan, &c.score);
+            let r = RealizationDiagnostics::measure(&c.song.plan, &c.score);
             for (role, count) in &r.unjustified_by_role {
                 if matches!(role, Role::Pad | Role::Keys) {
                     assert_eq!(*count, 0, "{}: unjustified {:?} notes", world.name, role);

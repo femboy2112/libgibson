@@ -9,7 +9,8 @@
 //! The pipeline is now
 //!
 //! ```text
-//! CompositionPlan (form, discourse, backbone timeline)   — the SONG
+//! SongMap (contract, form, discourse, arrangement envelope,
+//!          backbone timeline)                             — the SONG (Round IX: super::song)
 //!        │  + MusicWorld (timbre)  + MusicalLanguage (idiom)
 //!        ▼
 //! PerformancePlan                                         — the shared PERFORMANCE
@@ -249,14 +250,15 @@ pub struct PerformancePlan {
 }
 
 impl PerformancePlan {
-    /// Build the performance of `plan` under `world`.
-    pub fn build(
-        timeline: &IntentTimeline,
-        plan: &CompositionPlan,
+    /// The one place a performance is generated: `song` played in `world`'s room, spoken in
+    /// `opts.language`. Everything the song fixes is read from it; everything decided here is the
+    /// fiber (see [`super::song`]).
+    pub fn from_song(
+        song: &super::song::SongMap,
         world: &MusicWorld,
-        seed: u64,
         opts: PerformanceOptions,
     ) -> PerformancePlan {
+        let (timeline, plan, seed) = (&song.timeline, &song.plan, song.seed);
         let lang = opts.language;
         let region = Scale::new(world.tonic_pc, world.mode);
         // The exact requested length — a final partial bar ends here, not on the next bar line.
@@ -1119,16 +1121,12 @@ mod tests {
     use super::*;
 
     fn flagship(opts: PerformanceOptions) -> PerformancePlan {
-        let trace = deflected_lift_trace(120.0);
-        let tl = IntentTimeline::walk(&trace);
-        let plan = CompositionPlan::build_with_contract(
-            &tl,
-            30,
-            super::super::contract::CoherenceContract::for_grammar(
-                super::super::contract::CompositionGrammar::DeflectedLift,
-            ),
+        let song = super::super::song::SongMap::build(
+            &deflected_lift_trace(120.0),
+            2112,
+            Some(super::super::contract::CompositionGrammar::DeflectedLift),
         );
-        PerformancePlan::build(&tl, &plan, &MusicWorld::black_ice(), 2112, opts)
+        PerformancePlan::from_song(&song, &MusicWorld::black_ice(), opts)
     }
 
     #[test]

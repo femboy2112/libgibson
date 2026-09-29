@@ -160,7 +160,7 @@ fn the_surgical_band_is_r7b_minus_its_garbage() {
         assert!(reps.iter().all(|r| r.role != Role::Lead));
         // No new unjustified note.
         let unjustified = |c: &Composition| {
-            RealizationDiagnostics::measure(&c.plan, &c.score).unjustified_nonchord_notes
+            RealizationDiagnostics::measure(&c.song.plan, &c.score).unjustified_nonchord_notes
         };
         assert!(unjustified(&sur) <= unjustified(&r7b), "{}", world.name);
         // Receipts: every one R7b keeps is kept, or its loss is on the ledger.

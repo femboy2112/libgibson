@@ -45,8 +45,16 @@ fn degree_of(pc: i32, region: &Scale) -> Option<i32> {
 fn witness_the_world_picks_the_theme() {
     let fusion = MusicalLanguage::fusion_conversation();
     let [bi, v95, sw] = MusicWorld::all().map(|w| flagship(&w, fusion));
-    assert_eq!(bi.plan.dump(), v95.plan.dump(), "the plan is world-free");
-    assert_eq!(bi.plan.dump(), sw.plan.dump(), "the plan is world-free");
+    assert_eq!(
+        bi.song.plan.dump(),
+        v95.song.plan.dump(),
+        "the plan is world-free"
+    );
+    assert_eq!(
+        bi.song.plan.dump(),
+        sw.song.plan.dump(),
+        "the plan is world-free"
+    );
     let germ = |c: &Composition| c.perf.bank.identity.clone();
     eprintln!("BLACK_ICE germ {:?}", germ(&bi));
     eprintln!("VAPOR95   germ {:?}", germ(&v95));
@@ -73,6 +81,7 @@ fn witness_the_world_picks_the_chart() {
     let fusion = MusicalLanguage::fusion_conversation();
     let bi = flagship(&MusicWorld::black_ice(), fusion);
     let tl = bi
+        .song
         .plan
         .backbone
         .clone()
@@ -107,8 +116,13 @@ fn witness_the_language_rewrites_the_chart_rhythm() {
     let fusion = MusicalLanguage::fusion_conversation();
     let s = flagship(&world, simple);
     let f = flagship(&world, fusion);
-    assert_eq!(s.plan.dump(), f.plan.dump(), "the plan is language-free");
+    assert_eq!(
+        s.song.plan.dump(),
+        f.song.plan.dump(),
+        "the plan is language-free"
+    );
     let tl = s
+        .song
         .plan
         .backbone
         .clone()

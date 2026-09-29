@@ -1,14 +1,13 @@
 //! The composition entry points: a semantic trace becomes a [`Score`] under a [`MusicWorld`].
 //!
-//! [`compose_full`] walks the trace into a causal [`IntentTimeline`] (each semantic event maps to
-//! a sequence of intent morphisms evolving a running [`MusicIntent`]), builds one
-//! [`CompositionPlan`] and one [`PerformancePlan`], and realizes every player as a projection of
-//! that performance. Swapping the world keeps the world-independent plan (form, discourse,
-//! backbone timeline, obligations); the harmony's realization, the motif bank's colour and the
-//! action count follow the world and the language.
+//! [`compose_full`] composes one [`SongMap`] ([`SongMap::build`]: the trace walked into a causal
+//! [`IntentTimeline`](super::timeline::IntentTimeline) — each semantic event a sequence of intent morphisms evolving a running
+//! [`MusicIntent`] — and the [`CompositionPlan`]) and [`perform`]s it: one [`PerformancePlan`], every
+//! player a projection of that performance. Swapping the world keeps the song; what the song does
+//! not yet own (Round IX moves it) still follows the world and the language.
 
 use super::action::{ActionCause, ActionKind, Agent};
-use super::contract::{CoherenceContract, CompositionGrammar};
+use super::contract::CompositionGrammar;
 use super::form::{Section, BEATS_PER_BAR};
 use super::harmonic_state::HarmonicEnsembleState;
 use super::ids::ActionId;
@@ -17,9 +16,9 @@ use super::performance::{EnsembleCoupling, PerformanceOptions, PerformancePlan};
 use super::plan::{ArrangementRole, CompositionPlan};
 use super::score::{Note, PitchFunction, Provenance, Score, SfxEvent, SfxKind};
 use super::semantic::{EventKind, SemanticTrace, Tone};
+use super::song::SongMap;
 use super::sonority::{plan_sonority, ColorPolicy};
 use super::theory::{pitch_class, Chord, Midi};
-use super::timeline::IntentTimeline;
 use super::world::MusicWorld;
 
 /// Compose a full score for `trace` under `world`, deterministic in `seed`.
@@ -27,32 +26,28 @@ pub fn compose(trace: &SemanticTrace, world: &MusicWorld, seed: u64) -> Score {
     compose_with_plan(trace, world, seed).0
 }
 
-/// Everything one composition produced: the realized [`Score`], the [`CompositionPlan`] (the song)
-/// and the [`PerformancePlan`] (the shared performance every instrument realized a projection of).
+/// Everything one performance of a song produced: the realized [`Score`], the [`SongMap`] it
+/// performs (the song) and the [`PerformancePlan`] (the shared performance every instrument
+/// realized a projection of).
 pub struct Composition {
     pub score: Score,
-    pub plan: CompositionPlan,
+    pub song: SongMap,
     pub perf: PerformancePlan,
 }
 
 /// Like [`compose`], but also returns the [`CompositionPlan`] the score was realized from —
 /// for structural dumps (`plan.dump()`) and coherence diagnostics.
-///
-/// The semantic trace becomes a causal [`IntentTimeline`]; the timeline yields one plan (contract,
-/// form graph, discourse, arrangement and — for DeflectedLift — the world-independent backbone
-/// timeline); the plan plus a world and a language yields one [`PerformancePlan`]; and every
-/// instrument realizes its projection of that performance.
 pub fn compose_with_plan(
     trace: &SemanticTrace,
     world: &MusicWorld,
     seed: u64,
 ) -> (Score, CompositionPlan) {
     let c = compose_full(trace, world, seed, None, PerformanceOptions::default());
-    (c.score, c.plan)
+    (c.score, c.song.plan)
 }
 
 /// Like [`compose_with_plan`], but the grammar is **chosen**, not inferred — the calibration path.
-/// The plan is built under [`CoherenceContract::for_grammar`], so the piece exercises that grammar's
+/// The plan is built under [`CoherenceContract::for_grammar`](super::contract::CoherenceContract::for_grammar), so the piece exercises that grammar's
 /// `ResolutionPolicy` (Functional cadences vs a Loop's cyclic return vs a modal pedal), budgets and
 /// anchors, whatever the trace shape would otherwise infer.
 pub fn compose_with_grammar(
@@ -68,11 +63,12 @@ pub fn compose_with_grammar(
         Some(grammar),
         PerformanceOptions::default(),
     );
-    (c.score, c.plan)
+    (c.score, c.song.plan)
 }
 
 /// The full composition path with every calibration knob: an optional forced grammar and the
-/// performance options (language, actions on/off, free vs clockwork responses).
+/// performance options (language, actions on/off, free vs clockwork responses). Composes the
+/// song ([`SongMap::build`]) and performs it once ([`perform`]).
 pub fn compose_full(
     trace: &SemanticTrace,
     world: &MusicWorld,
@@ -80,46 +76,35 @@ pub fn compose_full(
     grammar: Option<CompositionGrammar>,
     opts: PerformanceOptions,
 ) -> Composition {
-    // The piece is exactly as long as the request: a partial final bar is represented, not rounded
-    // away (9 beats used to render 8, 10.5 → 12, 17 → 16).
-    let timeline = IntentTimeline::walk(trace);
-    let plan = match grammar {
-        Some(g) => CompositionPlan::build_with_contract_for_beats(
-            &timeline,
-            trace.total_beats,
-            CoherenceContract::for_grammar(g),
-        ),
-        None => CompositionPlan::build_for_beats(&timeline, trace.total_beats),
-    };
-    let perf = PerformancePlan::build(&timeline, &plan, world, seed, opts);
-    let score = realize(trace, world, seed, &plan, &perf);
-    Composition { score, plan, perf }
+    perform(&SongMap::build(trace, seed, grammar), world, opts)
 }
 
-/// Realize a score from an explicit (possibly hand-mutated) plan and performance — the entry the
+/// Perform `song` in `world`'s room under `opts`: the one performance boundary. The song is read,
+/// never re-derived; the performance plan is built from it and every player realizes a projection
+/// of that performance.
+pub fn perform(song: &SongMap, world: &MusicWorld, opts: PerformanceOptions) -> Composition {
+    let perf = PerformancePlan::from_song(song, world, opts);
+    let score = realize(song, world, &perf);
+    Composition {
+        score,
+        song: song.clone(),
+        perf,
+    }
+}
+
+/// Realize a score from an explicit (possibly hand-mutated) song and performance — the entry the
 /// adversarial probes use to inject a call, veto an arrangement, or license a burst and watch what
 /// the players do with it.
-pub fn realize_performance(
-    trace: &SemanticTrace,
-    world: &MusicWorld,
-    seed: u64,
-    plan: &CompositionPlan,
-    perf: &PerformancePlan,
-) -> Score {
-    realize(trace, world, seed, plan, perf)
+pub fn realize_performance(song: &SongMap, world: &MusicWorld, perf: &PerformancePlan) -> Score {
+    realize(song, world, perf)
 }
 
 /// Realize a score from a finished plan and its performance. The players are realized in
 /// listening order — the lead first, then the keys (who hear the lead), the bass (who hears both)
 /// and the drums (who hear the bass) — each reading the same [`PerformancePlan`]; then
 /// `apply_arrangement` gates the voices.
-fn realize(
-    trace: &SemanticTrace,
-    world: &MusicWorld,
-    seed: u64,
-    plan: &CompositionPlan,
-    perf: &PerformancePlan,
-) -> Score {
+fn realize(song: &SongMap, world: &MusicWorld, perf: &PerformancePlan) -> Score {
+    let (trace, seed, plan) = (&song.trace, song.seed, &song.plan);
     let total_beats = plan.form.total_beats;
     let mut score = Score::new(world.tempo_bpm, BEATS_PER_BAR, total_beats);
     score.sections = sections_from_plan(plan);
@@ -840,6 +825,7 @@ mod tests {
     use super::super::score::{PitchFunction, Role};
     use super::super::semantic::demo_trace;
     use super::super::theory::pitch_class;
+    use super::super::timeline::IntentTimeline;
     use super::*;
 
     /// The duration probes: the bounce under its own grammar and forced onto HookArc (no
@@ -883,7 +869,7 @@ mod tests {
                         compose_full(&trace, &world, 2112, grammar, PerformanceOptions::default());
                     let s = &c.score;
                     assert_eq!(s.total_beats, beats, "{tag}: score length");
-                    assert_eq!(c.plan.form.total_beats, beats, "{tag}: form length");
+                    assert_eq!(c.song.plan.form.total_beats, beats, "{tag}: form length");
                     assert_eq!(c.perf.total_beats, beats, "{tag}: performance length");
                     s.validate().unwrap_or_else(|e| panic!("{tag}: {e}"));
                     for n in &s.notes {
@@ -922,10 +908,10 @@ mod tests {
                     assert_eq!(sfx.unjustified, 0, "{tag}: {}", sfx.report());
                     // Every live morphism is witnessed by an action or deferred with a reason.
                     let tl = IntentTimeline::walk(&trace);
-                    let d = ActionDiagnostics::measure(&tl, &c.plan, &c.perf, s);
+                    let d = ActionDiagnostics::measure(&tl, &c.song.plan, &c.perf, s);
                     assert_eq!(d.unwitnessed_morphisms, 0, "{tag}: {d:?}");
                     // The accent grid leaves every step at/after the end empty.
-                    for bar in 0..c.plan.form.total_bars {
+                    for bar in 0..c.song.plan.form.total_bars {
                         for step in 0..super::super::performance::STEPS {
                             let at = super::super::performance::AccentGrid::beat_of(bar, step);
                             if at >= beats {
@@ -993,7 +979,7 @@ mod tests {
                 ActionCause::Morphism { transition: 1, morphism } if morphism == m
             )));
         }
-        let d = ActionDiagnostics::measure(&tl, &c.plan, &c.perf, &c.score);
+        let d = ActionDiagnostics::measure(&tl, &c.song.plan, &c.perf, &c.score);
         assert_eq!(d.unwitnessed_morphisms, 0, "{d:?}");
         c.score.validate().expect("end-of-piece score");
     }

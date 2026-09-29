@@ -347,7 +347,7 @@ fn main() -> std::io::Result<()> {
         let path = out_dir.join(format!("{file_stem}{}.wav", production_suffix(prod)));
 
         let comp = compose_full(&trace, &world, seed, Some(grammar), perf_options());
-        let (score, plan, perf) = (comp.score, comp.plan, comp.perf);
+        let (score, plan, perf) = (comp.score, comp.song.plan, comp.perf);
         score.validate().expect("score invariants");
         if std::env::args().any(|a| a == "--dump-notes") {
             let tsv = out_dir.join(format!("{file_stem}.notes.tsv"));
@@ -880,8 +880,12 @@ fn ab(
             path.display()
         );
         // The three R7 instruments on every case, so the A/B numbers sit next to the A/B ears.
-        let a =
-            ActionDiagnostics::measure(&IntentTimeline::walk(trace), &c.plan, &c.perf, &c.score);
+        let a = ActionDiagnostics::measure(
+            &IntentTimeline::walk(trace),
+            &c.song.plan,
+            &c.perf,
+            &c.score,
+        );
         let r = RigidityDiagnostics::measure(&c.score);
         let h = HarmonyContextDiagnostics::measure(&c.perf);
         let budget = ComplexityReport::measure(&c.perf, &c.score);

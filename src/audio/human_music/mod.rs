@@ -49,6 +49,7 @@ pub mod region;
 pub mod rng;
 pub mod score;
 pub mod semantic;
+pub mod song;
 #[cfg(test)]
 mod song_probes;
 pub mod sonority;
@@ -61,9 +62,10 @@ pub mod voicing;
 pub mod witness;
 pub mod world;
 
-pub use functor::compose;
+pub use functor::{compose, perform};
 pub use score::Score;
 pub use semantic::{demo_trace, SemanticTrace};
+pub use song::SongMap;
 pub use synth::HumanMusicSynth;
 pub use world::{MusicWorld, WorldId};
 

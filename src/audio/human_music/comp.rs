@@ -1359,12 +1359,11 @@ mod tests {
             &[0, 1, 3],
             &[0, -1, -3],
         ];
-        let trace = deflected_lift_trace(120.0);
         let mut exercised = 0;
         for world in MusicWorld::all() {
             let c = flagship(&world, EnsembleCoupling::CoupledR8);
-            let lead = realize_lead(&c.perf, &c.plan).notes;
-            let state = ledger(&world, &c.plan, &c.perf, &lead);
+            let lead = realize_lead(&c.perf, &c.song.plan).notes;
+            let state = ledger(&world, &c.song.plan, &c.perf, &lead);
             let vel = keys_velocity(&world);
             let clash_on = |n: &Note, held: Midi| {
                 state.hard_hazards(&voice_of(n)).iter().any(|h| {
@@ -1408,7 +1407,7 @@ mod tests {
             };
             // The lead and the ledger do not depend on the keys' answer.
             assert_eq!(
-                onsets(&realize_lead(&q, &c.plan).notes),
+                onsets(&realize_lead(&q, &c.song.plan).notes),
                 onsets(&lead),
                 "{}",
                 world.name
@@ -1460,7 +1459,7 @@ mod tests {
                 world.name
             );
             // The whole realized score, both arms: the audit's own theory on the injected notes.
-            let score_c = realize_performance(&trace, &world, SEED, &c.plan, &q);
+            let score_c = realize_performance(&c.song, &world, &q);
             let realized: Vec<Midi> = injected(&score_c, mid).iter().map(|n| n.pitch).collect();
             assert_eq!(
                 realized,
@@ -1473,7 +1472,7 @@ mod tests {
                 pair(&measure(&score_c, &q, &world), "keys/lead"),
             );
             q.coupling = EnsembleCoupling::Independent;
-            let score_i = realize_performance(&trace, &world, SEED, &c.plan, &q);
+            let score_i = realize_performance(&c.song, &world, &q);
             let (on_i, on_c) = (
                 unowned_against_lead(&score_i, &q, mid),
                 unowned_against_lead(&score_c, &q, mid),

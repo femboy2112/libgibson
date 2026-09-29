@@ -883,13 +883,7 @@ mod tests {
             let mut floors = Vec::new();
             for coupling in [EnsembleCoupling::Independent, EnsembleCoupling::CoupledR8] {
                 injected.coupling = coupling;
-                let score = realize_performance(
-                    &deflected_lift_trace(120.0),
-                    &world,
-                    SEED,
-                    &c.plan,
-                    &injected,
-                );
+                let score = realize_performance(&c.song, &world, &injected);
                 // The same lead extension is there to be doubled, in both arms.
                 if !score.notes.iter().any(|n| {
                     n.role == Role::Lead

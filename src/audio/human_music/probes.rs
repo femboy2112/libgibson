@@ -33,6 +33,7 @@ use super::semantic::{
     deflected_lift_trace, Density, Elevation, Emphasis, EventKind, SemanticEvent, SemanticState,
     SemanticTrace, Tone,
 };
+use super::song::SongMap;
 use super::theory::pitch_class;
 use super::timeline::IntentTimeline;
 use super::witness::{audit, interaction_receipts};
@@ -305,7 +306,6 @@ fn exchange_relations(
 
 #[test]
 fn a_bass_call_is_answered_from_the_bass_not_the_coincident_lead() {
-    let trace = flagship_trace();
     for world in MusicWorld::all() {
         let c = flagship(&world);
         for (caller, responder) in [(Agent::Bass, Agent::Keys), (Agent::Keys, Agent::Bass)] {
@@ -313,8 +313,9 @@ fn a_bass_call_is_answered_from_the_bass_not_the_coincident_lead() {
             let st = &c.perf.statements[si];
             // Positive: the answer derives from the CALL's material.
             let mut perf = c.perf.clone();
-            let (cm, rm, ans) = inject_exchange(&c.plan, &mut perf, caller, responder, t, None);
-            let score = realize_performance(&trace, &world, SEED, &c.plan, &perf);
+            let (cm, rm, ans) =
+                inject_exchange(&c.song.plan, &mut perf, caller, responder, t, None);
+            let score = realize_performance(&c.song, &world, &perf);
             assert!(
                 orchestration_violations(&perf, &score).is_empty(),
                 "{}: the injection put somebody off stage on stage",
@@ -352,9 +353,15 @@ fn a_bass_call_is_answered_from_the_bass_not_the_coincident_lead() {
                 .events
                 .retain(|e| s0 + e.onset >= t - 1e-9 && s0 + e.onset < t + 2.0 - 1e-9);
             let mut cf = c.perf.clone();
-            let (cm2, rm2, _) =
-                inject_exchange(&c.plan, &mut cf, caller, responder, t, Some(&lead_says));
-            let score2 = realize_performance(&trace, &world, SEED, &c.plan, &cf);
+            let (cm2, rm2, _) = inject_exchange(
+                &c.song.plan,
+                &mut cf,
+                caller,
+                responder,
+                t,
+                Some(&lead_says),
+            );
+            let score2 = realize_performance(&c.song, &world, &cf);
             let (cf_caller, cf_lead, _) =
                 exchange_relations(&score2, caller, responder, cm2, rm2, t);
             eprintln!(
@@ -696,12 +703,11 @@ fn undecided_intro_actions(
 
 fn vetoed_intro(world: &MusicWorld) -> (Composition, CompositionPlan, PerformancePlan, Score) {
     let c = flagship(world);
-    let tl = IntentTimeline::walk(&flagship_trace());
-    let mut plan = c.plan.clone();
-    plan.arrangement.phrases[0].bass = ArrangementRole::Silent;
-    let perf = PerformancePlan::build(&tl, &plan, world, SEED, PerformanceOptions::default());
-    let score = realize_performance(&flagship_trace(), world, SEED, &plan, &perf);
-    (c, plan, perf, score)
+    let mut song = c.song.clone();
+    song.plan.arrangement.phrases[0].bass = ArrangementRole::Silent;
+    let perf = PerformancePlan::from_song(&song, world, PerformanceOptions::default());
+    let score = realize_performance(&song, world, &perf);
+    (c, song.plan, perf, score)
 }
 
 #[test]
@@ -1036,8 +1042,8 @@ fn fixed_choreography_measures_rigid_and_varied_does_not() {
                 ..PerformanceOptions::default()
             },
         );
-        let dv = ActionDiagnostics::measure(&tl, &varied.plan, &varied.perf, &varied.score);
-        let df = ActionDiagnostics::measure(&tl, &fixed.plan, &fixed.perf, &fixed.score);
+        let dv = ActionDiagnostics::measure(&tl, &varied.song.plan, &varied.perf, &varied.score);
+        let df = ActionDiagnostics::measure(&tl, &fixed.song.plan, &fixed.perf, &fixed.score);
         eprintln!(
             "{}: recurrence fixed {:?} varied {:?}",
             world.name, df.manifestation_recurrence, dv.manifestation_recurrence
@@ -1070,7 +1076,12 @@ fn fixed_choreography_measures_rigid_and_varied_does_not() {
         );
         // The policy is what it says: one manifestation per gesture when Fixed, a family when not.
         let distinct = |c: &Composition, g: HarmonicGesture| {
-            let bb = c.plan.backbone.as_ref().expect("DeflectedLift has a spine");
+            let bb = c
+                .song
+                .plan
+                .backbone
+                .as_ref()
+                .expect("DeflectedLift has a spine");
             let mut ms: Vec<_> = c
                 .perf
                 .actions
@@ -1101,7 +1112,7 @@ fn fixed_choreography_measures_rigid_and_varied_does_not() {
         // Identity is preserved under BOTH policies: the Deflect's miss and hit every cycle, a
         // pickup into every Lift that has time before it, and every action audibly witnessed.
         for (label, c) in [("varied", &varied), ("fixed", &fixed)] {
-            let bb = c.plan.backbone.as_ref().expect("spine");
+            let bb = c.song.plan.backbone.as_ref().expect("spine");
             for (si, slot) in bb.slots.iter().enumerate() {
                 let own = |k: ActionKind| {
                     c.perf.actions.actions.iter().any(|a| {
@@ -1151,8 +1162,8 @@ fn every_statement_calling_is_saturation() {
                 ..PerformanceOptions::default()
             },
         );
-        let ds = ActionDiagnostics::measure(&tl, &sel.plan, &sel.perf, &sel.score);
-        let dt = ActionDiagnostics::measure(&tl, &sat.plan, &sat.perf, &sat.score);
+        let ds = ActionDiagnostics::measure(&tl, &sel.song.plan, &sel.perf, &sel.score);
+        let dt = ActionDiagnostics::measure(&tl, &sat.song.plan, &sat.perf, &sat.score);
         eprintln!(
             "{}: selective_call_rate selective={:.2} every-statement={:.2}",
             world.name, ds.selective_call_rate, dt.selective_call_rate
@@ -1537,10 +1548,10 @@ fn declared_stasis_is_not_idleness() {
         span.reason
     );
     let len = span.end_beat - span.start_beat;
-    let with = ActionDiagnostics::measure(&tl, &c.plan, &c.perf, &c.score);
+    let with = ActionDiagnostics::measure(&tl, &c.song.plan, &c.perf, &c.score);
     let mut cleared = c.perf.clone();
     cleared.actions.stasis.clear();
-    let without = ActionDiagnostics::measure(&tl, &c.plan, &cleared, &c.score);
+    let without = ActionDiagnostics::measure(&tl, &c.song.plan, &cleared, &c.score);
     eprintln!(
         "stasis {:.1}..{:.1} ({len:.1} beats): longest undeclared idle with {:.2}, without {:.2}; declared {:.1}",
         span.start_beat,
@@ -1567,14 +1578,15 @@ fn declared_stasis_is_not_idleness() {
     let ftl = IntentTimeline::walk(&flagship_trace());
     for world in MusicWorld::all() {
         let f = flagship(&world);
-        let d = ActionDiagnostics::measure(&ftl, &f.plan, &f.perf, &f.score);
+        let d = ActionDiagnostics::measure(&ftl, &f.song.plan, &f.perf, &f.score);
         assert_eq!(d.illegal_stasis, 0, "{}: illegal stasis", world.name);
         let culm = f
+            .song
             .plan
             .form
             .phrases
             .iter()
-            .find(|p| f.plan.discourse.goal(p.ix as usize).role == DiscourseRole::Culminate)
+            .find(|p| f.song.plan.discourse.goal(p.ix as usize).role == DiscourseRole::Culminate)
             .expect("the flagship culminates");
         let (s0, e0) = (culm.start_beat(), culm.start_beat() + 4.0);
         // Only the Culminate can make this span illegal: no salient event fires inside it.
@@ -1591,7 +1603,7 @@ fn declared_stasis_is_not_idleness() {
             end_beat: e0,
             reason: "probe: a still point forced over the hook",
         });
-        let d = ActionDiagnostics::measure(&ftl, &f.plan, &forced, &f.score);
+        let d = ActionDiagnostics::measure(&ftl, &f.song.plan, &forced, &f.score);
         assert_eq!(
             d.illegal_stasis,
             1,
@@ -1779,11 +1791,10 @@ fn reference_faults(perf: &PerformancePlan) -> Vec<String> {
 
 #[test]
 fn action_ids_are_dense_and_every_reference_resolves() {
-    let tl = IntentTimeline::walk(&flagship_trace());
-    let plan = CompositionPlan::build_with_contract(
-        &tl,
-        30,
-        super::contract::CoherenceContract::for_grammar(CompositionGrammar::DeflectedLift),
+    let song = SongMap::build(
+        &flagship_trace(),
+        SEED,
+        Some(CompositionGrammar::DeflectedLift),
     );
     let d = PerformanceOptions::default();
     let probes = [
@@ -1827,7 +1838,7 @@ fn action_ids_are_dense_and_every_reference_resolves() {
     let mut checked = 0;
     for world in MusicWorld::all() {
         for (label, opts) in probes {
-            let perf = PerformancePlan::build(&tl, &plan, &world, SEED, opts);
+            let perf = PerformancePlan::from_song(&song, &world, opts);
             let faults = reference_faults(&perf);
             assert!(
                 faults.is_empty(),
@@ -1846,7 +1857,7 @@ fn action_ids_are_dense_and_every_reference_resolves() {
 
     // Negative control: renumbering the actions under the interactions' feet (a removal that does
     // not remap the other id spaces) must be caught.
-    let mut broken = PerformancePlan::build(&tl, &plan, &MusicWorld::black_ice(), SEED, d);
+    let mut broken = PerformancePlan::from_song(&song, &MusicWorld::black_ice(), d);
     let victim = broken
         .interactions
         .iter()
@@ -1873,7 +1884,7 @@ fn action_ids_are_dense_and_every_reference_resolves() {
 fn the_flagship_lead_holds_its_receipts() {
     for world in MusicWorld::all() {
         let c = flagship(&world);
-        let r = RealizationDiagnostics::measure(&c.plan, &c.score);
+        let r = RealizationDiagnostics::measure(&c.song.plan, &c.score);
         let l = LeadOutlineDiagnostics::measure(&c.score);
         eprintln!(
             "{}: repairs={} rejudged={} unjustified={:?} cross={} max_leap={} thesis_return={:.2} \
@@ -2126,8 +2137,13 @@ fn every_flagship_obligation_cites_the_action_that_settles_it() {
         let led = &c.perf.obligations;
         assert!(!led.obligations.is_empty(), "{}: no debts", world.name);
         assert_eq!(
-            c.plan.discourse.ledger.unwitnessed_settlements().count(),
-            c.plan.discourse.ledger.resolved_count(),
+            c.song
+                .plan
+                .discourse
+                .ledger
+                .unwitnessed_settlements()
+                .count(),
+            c.song.plan.discourse.ledger.resolved_count(),
             "{}: the plan's ledger is unbound by construction",
             world.name
         );

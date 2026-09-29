@@ -2469,7 +2469,7 @@ mod tests {
 
     fn r7_actions(world: &MusicWorld, opts: PerformanceOptions) -> ActionDiagnostics {
         let (tl, c) = r7(world, opts);
-        ActionDiagnostics::measure(&tl, &c.plan, &c.perf, &c.score)
+        ActionDiagnostics::measure(&tl, &c.song.plan, &c.perf, &c.score)
     }
 
     fn actions_off() -> PerformanceOptions {
@@ -2497,7 +2497,7 @@ mod tests {
                 ("clockwork", clockwork()),
             ] {
                 let (tl, c) = r7(&world, opts);
-                let a = ActionDiagnostics::measure(&tl, &c.plan, &c.perf, &c.score);
+                let a = ActionDiagnostics::measure(&tl, &c.song.plan, &c.perf, &c.score);
                 let r = RigidityDiagnostics::measure(&c.score);
                 let h = HarmonyContextDiagnostics::measure(&c.perf);
                 eprintln!(
@@ -2567,7 +2567,8 @@ mod tests {
             // The mood is the same patient: per-phrase energy/tension/density/register goals come
             // from one CompositionPlan, untouched by the performance options.
             let mood = |c: &Composition| -> Vec<[f32; 4]> {
-                c.plan
+                c.song
+                    .plan
                     .discourse
                     .goals
                     .iter()
@@ -2584,8 +2585,8 @@ mod tests {
             assert!(!mood(&on).is_empty());
             assert_eq!(mood(&on), mood(&off), "{}: the mood changed", world.name);
 
-            let a = ActionDiagnostics::measure(&tl_on, &on.plan, &on.perf, &on.score);
-            let b = ActionDiagnostics::measure(&tl_off, &off.plan, &off.perf, &off.score);
+            let a = ActionDiagnostics::measure(&tl_on, &on.song.plan, &on.perf, &on.score);
+            let b = ActionDiagnostics::measure(&tl_off, &off.song.plan, &off.perf, &off.score);
             assert_eq!(b.action_count, 0, "{}: {b:?}", world.name);
             assert!(a.action_count >= 30, "{}: {}", world.name, a.action_count);
             assert!(
@@ -2660,7 +2661,7 @@ mod tests {
     fn free_answers_vary_in_time_and_quote_the_call() {
         for world in MusicWorld::all() {
             let (tl, c) = r7(&world, PerformanceOptions::default());
-            let d = ActionDiagnostics::measure(&tl, &c.plan, &c.perf, &c.score);
+            let d = ActionDiagnostics::measure(&tl, &c.song.plan, &c.perf, &c.score);
             assert!(
                 d.responders.len() >= 2,
                 "{}: {:?}",

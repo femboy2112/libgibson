@@ -1287,7 +1287,7 @@ mod tests {
             assert_eq!(perf.regions.transitions(), 2, "{name}");
             // Every note stays justified, the line needs no repair, and the lead inside the span
             // really sings the new key (a pitch class home does not have).
-            let d = RealizationDiagnostics::measure(&c.plan, &c.score);
+            let d = RealizationDiagnostics::measure(&c.song.plan, &c.score);
             assert!(
                 d.unjustified_by_role.iter().all(|r| r.1 == 0),
                 "{name}: {d:?}"
