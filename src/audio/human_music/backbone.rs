@@ -222,6 +222,45 @@ fn snap_bar(bar_f: f64, phrase_starts: &[u32], total_bars: u32) -> u32 {
 }
 
 impl BackboneTimeline {
+    /// PropulsiveReturn: home → repeat → neighbor → home, two bars per phase.
+    /// Open/Reset are existing performance gestures, used literally. No Lift or Deflect is
+    /// smuggled in under another label. The final partial cell closes at home.
+    pub fn propulsive_return(total_bars: u32, phrase_bars: u32) -> Self {
+        let total_bars = total_bars.max(1);
+        let mut slots = Vec::new();
+        for bar in (0..total_bars).step_by(2) {
+            let phase = (bar / 2) % 4;
+            let neighbor = phase == 2 && bar + 2 < total_bars;
+            slots.push(GestureSlot {
+                gesture: if neighbor {
+                    HarmonicGesture::Open
+                } else {
+                    HarmonicGesture::Reset
+                },
+                cycle: bar / 8,
+                start_bar: bar,
+                bars: 2.min(total_bars - bar),
+                binding: None,
+                variation: if bar < 8 {
+                    CycleVariation::Statement
+                } else {
+                    CycleVariation::Transformed
+                },
+            });
+        }
+        Self {
+            scales: TimeScales {
+                beats_per_bar: BEATS_PER_BAR,
+                phrase_bars,
+                binding: ClockBinding::FixedTiling {
+                    bars_per_gesture: 2,
+                },
+            },
+            slots,
+            bindings: Vec::new(),
+            total_bars,
+        }
+    }
     /// Build the timeline from the intent timeline and the plan's phrase grid.
     ///
     /// `phrase_starts` are the form's phrase start bars (for snapping); `recurrence_bars` is only
@@ -826,6 +865,23 @@ pub struct ChartCell {
 }
 
 impl ChartCell {
+    /// I–I–IV–I tonic prolongation (i–i–iv–i when re-moded to minor). The unused Lift and
+    /// Deflect coordinates remain for the existing chart representation; the new timeline
+    /// never schedules them. Satellites hold roots, leaving motion to the written theme/bass.
+    pub fn propulsive_return() -> Self {
+        let home = ChartRoot::Degree(0);
+        let neighbor = ChartRoot::Degree(3);
+        Self {
+            lift: home,
+            lift_alt: neighbor,
+            pointer: ChartRoot::Degree(4),
+            expected: home,
+            deflect: home,
+            open: neighbor,
+            reset: home,
+            satellites: [home, neighbor, home],
+        }
+    }
     /// Chart the cell: the search run once in `frame` (tonic C — the chart is transposition-free),
     /// every chord converted to its relative root.
     pub fn chart(frame: super::theory::Mode, seed: u64) -> ChartCell {

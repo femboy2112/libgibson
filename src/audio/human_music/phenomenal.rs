@@ -38,6 +38,17 @@ pub struct PhenomenalTarget {
 }
 
 impl PhenomenalTarget {
+    /// One factorization per regime; a deflection slot never has to mean confirmation.
+    pub fn grammar(&self) -> super::contract::CompositionGrammar {
+        match self.regime {
+            PhenomenalRegime::StablePropulsion => {
+                super::contract::CompositionGrammar::PropulsiveReturn
+            }
+            PhenomenalRegime::SuspendedDeflection => {
+                super::contract::CompositionGrammar::DeflectedLift
+            }
+        }
+    }
     pub fn from_trace(trace: &SemanticTrace, regime: PhenomenalRegime) -> Self {
         use Level::*;
         let state = match regime {

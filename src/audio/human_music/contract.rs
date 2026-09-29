@@ -63,6 +63,9 @@ pub enum CompositionGrammar {
     /// recurs instead of building to one cinematic climax. Failure/deflection becomes part of the
     /// bounce; the song keeps reinterpreting a little material rather than inventing new.
     DeflectedLift,
+    /// Tonic prolongation, literal recurrence and a plagal neighbor that returns as expected.
+    /// Complexity is performed over a stable center; no denied cadence is required.
+    PropulsiveReturn,
 }
 
 /// How phrases are expected to resolve — the coarse policy the harmonic planner refines into
@@ -168,6 +171,20 @@ impl CoherenceContract {
                 // The hook recurs often; the harmonic cell repeats every few bars, deliberately
                 // small so prediction can build. Cyclic resolution, not cinematic cadence.
                 recurrence_bars: 4,
+                max_transform: 0.35,
+                phrase_bars: 4,
+                resolution: ResolutionPolicy::Loop,
+                foreground_budget: 1,
+                novelty_budget: 0.40,
+            },
+            CompositionGrammar::PropulsiveReturn => CoherenceContract {
+                grammar,
+                anchors: vec![
+                    CoherenceAnchor::Motif,
+                    CoherenceAnchor::HarmonicLoop,
+                    CoherenceAnchor::Groove,
+                ],
+                recurrence_bars: 8,
                 max_transform: 0.35,
                 phrase_bars: 4,
                 resolution: ResolutionPolicy::Loop,

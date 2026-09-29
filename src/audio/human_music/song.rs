@@ -35,6 +35,7 @@ use super::contract::{CoherenceContract, CompositionGrammar};
 use super::discourse::DiscourseRole;
 use super::meaning::MeaningPlan;
 use super::motif::{Handoff, Motif, MotifBank, ThematicTrajectory};
+use super::phenomenal::{PhenomenalRegime, PhenomenalTarget};
 use super::plan::CompositionPlan;
 use super::semantic::SemanticTrace;
 use super::theory::Mode;
@@ -150,6 +151,8 @@ pub struct SongMap {
     /// The listener plan the song was composed toward (Round X, [`Composer::MeaningDirected`]);
     /// `None` for the Round IX composer, which composed toward none.
     pub meaning: Option<MeaningPlan>,
+    /// Optional Round XI meaning request. Kept separate to preserve the R10 compatibility hash.
+    pub phenomenal: Option<PhenomenalTarget>,
 }
 
 impl SongMap {
@@ -168,10 +171,35 @@ impl SongMap {
             None => CompositionPlan::build_for_beats(&timeline, trace.total_beats),
         };
         let frame = REFERENCE_FRAME;
-        let thematic = ThematicMap::build(&plan, frame, seed);
+        let mut thematic = ThematicMap::build(&plan, frame, seed);
+        let stable = plan.contract.grammar == CompositionGrammar::PropulsiveReturn;
+        if stable {
+            // A rhythmic cell, its octave expansion and a tonic landing. Literal recognition
+            // precedes any performance development. No question or miss is a prerequisite.
+            let thesis = Motif {
+                id: 0,
+                degrees: vec![0, 2, 4, 2, 7, 4, 2, 0],
+                rhythm: vec![0.5, 0.5, 1.0, 0.5, 0.5, 1.0, 0.5, 1.5],
+            };
+            thematic.bank = MotifBank {
+                identity: thesis.clone(),
+                hook: thesis.clone(),
+                rhythmic_cell: thesis.fragment(4),
+                bass_cell: thesis.fragment(4).transpose(-7),
+                countermotif: Some(thesis.invert()),
+            };
+            for site in &mut thematic.sites {
+                site.motif = thesis.clone();
+                site.handoff = Handoff::Restatement;
+            }
+        }
         let harmonic = plan.backbone.as_ref().map(|_| HarmonicMap {
-            cell: ChartCell::chart(frame, seed),
-            bars_per_chord: CHART_BARS_PER_CHORD,
+            cell: if stable {
+                ChartCell::propulsive_return()
+            } else {
+                ChartCell::chart(frame, seed)
+            },
+            bars_per_chord: if stable { 1 } else { CHART_BARS_PER_CHORD },
         });
         SongMap {
             trace: trace.clone(),
@@ -182,6 +210,8 @@ impl SongMap {
             thematic,
             harmonic,
             meaning: None,
+            phenomenal: stable
+                .then(|| PhenomenalTarget::from_trace(trace, PhenomenalRegime::StablePropulsion)),
         }
     }
 
@@ -195,16 +225,24 @@ impl SongMap {
         grammar: Option<CompositionGrammar>,
         composer: Composer,
     ) -> SongMap {
+        if composer == Composer::StablePropulsion {
+            // F selects the grammar. The legacy grammar argument applies only to R9/R10.
+            let target = PhenomenalTarget::from_trace(trace, PhenomenalRegime::StablePropulsion);
+            return SongMap::build(trace, seed, Some(target.grammar()));
+        }
         let song = SongMap::build(trace, seed, grammar);
         match composer {
             Composer::StructuralR9 => song,
             Composer::MeaningDirected => compose_meaning(song, &CompositionalPrior::HOOKY_FUSION).0,
+            Composer::StablePropulsion => unreachable!("handled before the legacy composers"),
         }
     }
 
     /// Which composer chose this song's content.
     pub fn composer(&self) -> Composer {
-        if self.meaning.is_some() {
+        if self.phenomenal.is_some() {
+            Composer::StablePropulsion
+        } else if self.meaning.is_some() {
             Composer::MeaningDirected
         } else {
             Composer::StructuralR9
@@ -262,6 +300,9 @@ impl SongMap {
         // too. Appended only when present, so a Round IX song hashes exactly as it always did.
         if let Some(m) = &self.meaning {
             text.push_str(&format!("|meaning={m:?}"));
+        }
+        if let Some(p) = &self.phenomenal {
+            text.push_str(&format!("|phenomenal={p:?}"));
         }
         fnv1a(&text)
     }

@@ -35,6 +35,8 @@ pub enum Composer {
     /// Round X: content selected against the story's [`MeaningPlan`] under a
     /// [`CompositionalPrior`]. Experimental; NOT the default before the human listen accepts it.
     MeaningDirected,
+    /// Round XI: an explicit StablePropulsion target selects PropulsiveReturn. Experimental.
+    StablePropulsion,
 }
 
 /// **What kinds of SONG a composer and its listeners find syntactically familiar** — separate

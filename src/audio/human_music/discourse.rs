@@ -961,6 +961,19 @@ impl SongBackbone {
     pub fn roles(grammar: CompositionGrammar, n: usize) -> Option<Vec<DiscourseRole>> {
         match grammar {
             CompositionGrammar::DeflectedLift => Some(deflected_lift_roles(n)),
+            CompositionGrammar::PropulsiveReturn => Some(
+                (0..n)
+                    .map(|i| {
+                        if i == 0 {
+                            DiscourseRole::Establish
+                        } else if i % 2 == 0 || i + 1 == n {
+                            DiscourseRole::Return
+                        } else {
+                            DiscourseRole::Restate
+                        }
+                    })
+                    .collect(),
+            ),
             _ => None,
         }
     }

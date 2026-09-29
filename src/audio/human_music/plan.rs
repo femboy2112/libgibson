@@ -688,7 +688,7 @@ impl CompositionPlan {
         // The thematic question/answer must be audible: give the lead a seat on Question/Answer
         // phrases even where the family-based arrangement would otherwise silence it.
         arrangement.voice_lead_for_discourse(&discourse);
-        let backbone = matches!(
+        let mut backbone = matches!(
             contract.grammar,
             super::contract::CompositionGrammar::DeflectedLift
         )
@@ -702,6 +702,12 @@ impl CompositionPlan {
                 contract.recurrence_bars,
             )
         });
+        if contract.grammar == super::contract::CompositionGrammar::PropulsiveReturn {
+            backbone = Some(super::backbone::BackboneTimeline::propulsive_return(
+                form.total_bars,
+                contract.phrase_bars,
+            ));
+        }
         CompositionPlan {
             contract,
             form,
