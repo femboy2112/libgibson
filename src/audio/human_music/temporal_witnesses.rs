@@ -72,7 +72,6 @@ fn r12_local_license_cannot_distinguish_orphan_from_owned_color() {
 }
 
 #[test]
-#[ignore = "R12 pre-intervention falsifier: next-target intervention cannot affect search"]
 fn r12_next_targets_have_no_live_reader_at_baseline() {
     use super::harmony::ChordSpan;
     use super::motif::{realize_line, LineRequest, LineStyle, Motif};
@@ -103,5 +102,6 @@ fn r12_next_targets_have_no_live_reader_at_baseline() {
         contexts: &changed,
         ..req
     });
-    assert_ne!(format!("{:?}", a.notes), format!("{:?}", b.notes));
+    // The explicit R11 control remains insensitive; temporal_search tests prove the new map reads it.
+    assert_eq!(format!("{:?}", a.notes), format!("{:?}", b.notes));
 }

@@ -73,7 +73,19 @@ pub fn realize_bass(
     lead: &[Note],
     keys: &[Note],
 ) -> Vec<Note> {
-    realize(perf, plan, world, lead, keys, None)
+    realize(perf, plan, world, lead, keys, None, false)
+}
+
+/// The same bass rhythm with approaches aimed at the destination's actual root register.
+/// The R11 control retains its old source-relative octave choice in [`realize_bass`].
+pub fn realize_bass_temporal(
+    perf: &PerformancePlan,
+    plan: &CompositionPlan,
+    world: &MusicWorld,
+    lead: &[Note],
+    keys: &[Note],
+) -> Vec<Note> {
+    realize(perf, plan, world, lead, keys, None, true)
 }
 
 /// Realize the bass as the FLOOR of the coupled ensemble (Round VIII, `EnsembleCoupling::CoupledR8`
@@ -91,7 +103,7 @@ pub fn realize_bass_coupled(
     lead: &[Note],
     state: &mut HarmonicEnsembleState<'_>,
 ) -> Vec<Note> {
-    realize(perf, plan, world, lead, &[], Some(state))
+    realize(perf, plan, world, lead, &[], Some(state), false)
 }
 
 /// The one bass realizer. `floor` is `None` for the R7b control (byte-identical to Round VIIb) and
@@ -103,6 +115,7 @@ fn realize(
     lead: &[Note],
     _keys: &[Note],
     mut floor: Option<&mut HarmonicEnsembleState<'_>>,
+    temporal: bool,
 ) -> Vec<Note> {
     let coupled = floor.is_some();
     let mut out: Vec<Note> = Vec::new();
@@ -119,7 +132,11 @@ fn realize(
                 .map(|(_, r)| (r.start_beat, r.start_beat + r.dur_beats)),
         )
         .collect();
-    let unisons = super::comp::unison_lines(perf, lead);
+    let unisons = if temporal {
+        super::comp::unison_lines_temporal(perf, lead)
+    } else {
+        super::comp::unison_lines(perf, lead)
+    };
     let in_quote = |b: f64| {
         quoted.iter().any(|&(s, e)| b >= s - 1e-6 && b < e - 1e-6)
             || unisons.iter().any(|(_, l)| {
@@ -234,7 +251,10 @@ fn realize(
                 }
                 BassMode::Walk if last_in_bar && next_ctx.is_some() => {
                     // Step into the next root by a semitone: a bounded chromatic approach.
-                    let nr = near(next_ctx.unwrap().chord.root_pc, root);
+                    let nr = near(
+                        next_ctx.unwrap().chord.root_pc,
+                        if temporal { CENTER } else { root },
+                    );
                     let dir = if nr >= root { 1 } else { -1 };
                     (nr - dir, PitchFunction::ChromaticApproach, "approach")
                 }
@@ -269,7 +289,10 @@ fn realize(
                     }
                 }
                 _ if k > 0 && last_in_bar && s >= 14 && next_ctx.is_some() => {
-                    let nr = near(next_ctx.unwrap().chord.root_pc, root);
+                    let nr = near(
+                        next_ctx.unwrap().chord.root_pc,
+                        if temporal { CENTER } else { root },
+                    );
                     let dir = if nr >= root { 1 } else { -1 };
                     (nr - dir, PitchFunction::ChromaticApproach, "approach")
                 }

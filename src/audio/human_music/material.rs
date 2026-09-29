@@ -497,6 +497,231 @@ pub fn line_of(
     )
 }
 
+/// Opt-in temporal projection of an explicitly bounded response. The original greedy line
+/// supplies pitch anchors; structural events are solved jointly before the connectors are fitted.
+/// `arrival` is an authored destination contract, or `None` for a figure without an endpoint claim.
+#[allow(clippy::too_many_arguments)]
+pub fn project_pitched_temporal(
+    m: &InteractionMaterial,
+    at: f64,
+    until: f64,
+    anchor: Midi,
+    perf: &PerformancePlan,
+    stable: &dyn Fn(&HarmonicContext, i32) -> bool,
+    arrival: Option<ArrivalContract<'_>>,
+) -> Vec<Projected> {
+    temporal_projection(
+        project_pitched(m, at, until, anchor, perf, stable),
+        perf,
+        stable,
+        arrival,
+    )
+}
+
+/// The opt-in path-aware counterpart of [`line_of`]. Time, duration, accent, material identity
+/// and the independent control remain unchanged. A derived response promises a closed arrival;
+/// callers with an explicitly selected open destination use [`project_pitched_temporal`].
+pub fn line_of_temporal(
+    m: &InteractionMaterial,
+    owner: Agent,
+    at: f64,
+    until: f64,
+    perf: &PerformancePlan,
+) -> Vec<Projected> {
+    let old = line_of(m, owner, at, until, perf);
+    if owner == Agent::Drums || owner == Agent::Bass {
+        return old;
+    }
+    let arrival =
+        matches!(m.source, MaterialSource::Derived { .. }).then_some(ArrivalContract::Closed);
+    temporal_projection(old, perf, &|c, pc| stable_for(owner, c, pc), arrival)
+}
+
+fn temporal_projection(
+    old: Vec<Projected>,
+    perf: &PerformancePlan,
+    stable: &dyn Fn(&HarmonicContext, i32) -> bool,
+    arrival: Option<ArrivalContract<'_>>,
+) -> Vec<Projected> {
+    if old.is_empty() || old.iter().any(|e| e.2.is_none()) {
+        return old;
+    }
+    let structural: Vec<usize> = old
+        .iter()
+        .enumerate()
+        .filter_map(|(i, e)| {
+            (i == 0
+                || i + 1 == old.len()
+                || (e.0 - e.0.round()).abs() < 1e-6
+                || e.1 >= 1.0
+                || perf
+                    .contexts
+                    .iter()
+                    .any(|c| c.start_beat > e.0 + 1e-6 && c.start_beat < e.0 + e.1 - 1e-6))
+            .then_some(i)
+        })
+        .collect();
+    let candidates: Vec<Vec<Midi>> = structural
+        .iter()
+        .map(|&i| {
+            let e = old[i];
+            let anchor = e.2.unwrap();
+            let Some(c) = perf.context_at(e.0) else {
+                return vec![anchor];
+            };
+            let mut pitches: Vec<Midi> = (anchor - 4..=anchor + 4)
+                .filter(|&p| {
+                    stable(c, pitch_class(p))
+                        && (i + 1 != old.len() || arrival.is_none_or(|a| a.accepts(p, c)))
+                        && perf
+                            .contexts
+                            .iter()
+                            .filter(|next| {
+                                next.start_beat > e.0 + 1e-6 && next.start_beat < e.0 + e.1 - 1e-6
+                            })
+                            .all(|next| next.chord.contains_pc(pitch_class(p)))
+                })
+                .collect();
+            // Written chord destinations always have a representative within four semitones.
+            // A hostile caller-supplied stable predicate may not; preserve that explicit limitation.
+            if pitches.is_empty() {
+                pitches.push(anchor);
+            }
+            pitches.sort_by_key(|&p| ((p - anchor).abs(), p));
+            pitches
+        })
+        .collect();
+    let mut costs: Vec<Vec<f32>> = candidates
+        .iter()
+        .map(|ps| vec![f32::INFINITY; ps.len()])
+        .collect();
+    let mut from: Vec<Vec<usize>> = candidates.iter().map(|ps| vec![0; ps.len()]).collect();
+    for (j, ps) in candidates.iter().enumerate() {
+        let i = structural[j];
+        let anchor = old[i].2.unwrap();
+        for (k, &p) in ps.iter().enumerate() {
+            // Preserve the existing phrase unless path evidence pays for a local pitch edit.
+            let mut unary = (p - anchor).abs() as f32 * 1.4;
+            if j + 1 == candidates.len() && arrival.is_none() {
+                if let Some(c) = perf.context_at(old[i].0) {
+                    if !c.chord.contains_pc(pitch_class(p)) {
+                        unary += 1.0;
+                    }
+                }
+            }
+            if j == 0 {
+                costs[j][k] = unary;
+                continue;
+            }
+            let before = structural[j - 1];
+            let wanted = anchor - old[before].2.unwrap();
+            for (pk, &q) in candidates[j - 1].iter().enumerate() {
+                let actual = p - q;
+                let contour = (actual - wanted).abs() as f32 * 0.3
+                    + if wanted != 0 && actual.signum() != wanted.signum() {
+                        2.0
+                    } else {
+                        0.0
+                    };
+                let path = material_path_cost(perf, &old, before, i, q, p);
+                let cost = costs[j - 1][pk] + unary + contour + path;
+                if cost < costs[j][k] - 1e-6 {
+                    costs[j][k] = cost;
+                    from[j][k] = pk;
+                }
+            }
+        }
+    }
+    let last = candidates.len() - 1;
+    let mut k = costs[last]
+        .iter()
+        .enumerate()
+        .min_by(|a, b| a.1.total_cmp(b.1))
+        .map_or(0, |x| x.0);
+    let mut out = old.clone();
+    for j in (0..candidates.len()).rev() {
+        out[structural[j]].2 = Some(candidates[j][k]);
+        k = from[j][k];
+    }
+    // Fit an interior connector only when its structural anchors changed. Stable available
+    // colours remain candidates; the cost balances its original pitch with its new local path.
+    for pair in structural.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        if out[a].2 == old[a].2 && out[b].2 == old[b].2 {
+            continue;
+        }
+        let (left, right) = (out[a].2.unwrap(), out[b].2.unwrap());
+        for i in a + 1..b {
+            let Some(c) = perf.context_at(old[i].0) else {
+                continue;
+            };
+            let p = old[i].2.unwrap();
+            let ideal = left as f32
+                + (right - left) as f32 * (old[i].0 - old[a].0) as f32
+                    / (old[b].0 - old[a].0) as f32;
+            let best = (p - 3..=p + 3)
+                .filter(|&q| stable(c, pitch_class(q)))
+                .min_by(|&x, &y| {
+                    let cost = |q: Midi| (q - p).abs() as f32 + 0.6 * (q as f32 - ideal).abs();
+                    cost(x)
+                        .total_cmp(&cost(y))
+                        .then((x - p).abs().cmp(&(y - p).abs()))
+                        .then(x.cmp(&y))
+                })
+                .unwrap_or(p);
+            out[i].2 = Some(best);
+        }
+    }
+    out
+}
+
+// Bounded edge evidence: local availability is free syntax, while an extension must either
+// resolve through an actual intervening connector or continue to the next selected target.
+fn material_path_cost(
+    perf: &PerformancePlan,
+    old: &[Projected],
+    a: usize,
+    b: usize,
+    from: Midi,
+    to: Midi,
+) -> f32 {
+    let (Some(c), Some(next)) = (perf.context_at(old[a].0), perf.context_at(old[b].0)) else {
+        return 0.0;
+    };
+    let member = c.chord.contains_pc(pitch_class(from));
+    let target = next.chord.contains_pc(pitch_class(to));
+    let smooth = (from - to).abs() <= 2;
+    let immediate = old.get(a + 1).filter(|_| a + 1 < b).is_some_and(|e| {
+        e.2.is_some_and(|p| {
+            (p - from).abs() <= 2
+                && perf
+                    .context_at(e.0)
+                    .is_some_and(|ctx| ctx.chord.contains_pc(pitch_class(p)))
+        })
+    });
+    let retained = from == to && target && old[b].0 - (old[a].0 + old[a].1) <= 1.0 + 1e-6;
+    let mut cost = if immediate || retained {
+        0.0
+    } else {
+        // Same small harmonic edge predicate used by lead targets, with an explicit material
+        // weight against the fixed greedy anchor rather than a second melodic engine.
+        3.5 * super::motif::extension_path_cost(c.chord, from, next.chord, to, old[b].0 - old[a].0)
+    };
+    if c.chord != next.chord {
+        let guide = next.palette.guide_tones.contains(&pitch_class(to));
+        if (from - to).abs() > 5 {
+            cost += ((from - to).abs() - 5) as f32 * 0.15;
+        }
+        if !member && !(target && smooth) {
+            cost += 1.0;
+        }
+        if !guide && !smooth {
+            cost += 0.4;
+        }
+    }
+    cost
+}
+
 /// What a pitched material event IS, harmonically, where it sounds (Round VIII) — so a transformed
 /// or re-placed response can preserve MEANING (it still lands on the guide tone, still arrives),
 /// not only the step silhouette. A label computed at realization over the harmony each event lands
@@ -793,6 +1018,130 @@ mod tests {
             resolve_roles(&[(ctx.start_beat, None, None)], &perf)[0],
             MaterialRole::Arrival
         );
+    }
+
+    fn temporal_test_perf(next: super::super::theory::Chord) -> PerformancePlan {
+        use super::super::{
+            composer::Composer,
+            harmony::ChordSpan,
+            performance::PerformanceOptions,
+            semantic::deflected_lift_trace,
+            song::SongMap,
+            theory::{Chord, Quality},
+            world::MusicWorld,
+        };
+        let song = SongMap::compose(
+            &deflected_lift_trace(24.0),
+            2112,
+            None,
+            Composer::StablePropulsion,
+        );
+        let mut perf = PerformancePlan::from_song(
+            &song,
+            &MusicWorld::swiss_signal(),
+            PerformanceOptions::default(),
+        );
+        perf.chords = vec![
+            ChordSpan::test(0.0, 4.0, Chord::new(0, Quality::Maj7)),
+            ChordSpan::test(4.0, 4.0, next),
+            ChordSpan::test(8.0, 4.0, Chord::new(0, Quality::Maj7)),
+        ];
+        perf.contexts = super::super::context::analyze(&perf.chords, &Scale::new(0, Mode::Ionian));
+        perf
+    }
+
+    #[test]
+    fn temporal_projection_joint_search_observes_future_harmony() {
+        use super::super::theory::{Chord, Quality};
+        let stable = |c: &HarmonicContext, pc| c.palette.is_stable(pc);
+        let m = mat(&[Some(0), Some(1), Some(1)], &[0.0, 1.0, 2.0]);
+        let a = temporal_test_perf(Chord::new(0, Quality::Maj7));
+        let b = temporal_test_perf(Chord::new(5, Quality::Maj7));
+        let old_a = project_pitched(&m, 3.0, 7.0, 69, &a, &stable);
+        let old_b = project_pitched(&m, 3.0, 7.0, 69, &b, &stable);
+        let new_a =
+            project_pitched_temporal(&m, 3.0, 7.0, 69, &a, &stable, Some(ArrivalContract::Closed));
+        let new_b =
+            project_pitched_temporal(&m, 3.0, 7.0, 69, &b, &stable, Some(ArrivalContract::Closed));
+        // The original greedy source A4 cannot see which harmony will arrive at beat four.
+        assert_eq!((old_a[0].2, old_b[0].2), (Some(69), Some(69)));
+        // Only the future harmony changes; the joint structural choice responds before it.
+        assert_eq!((new_a[0].2, new_b[0].2), (Some(69), Some(67)));
+        for (old, new) in [(&old_a, &new_a), (&old_b, &new_b)] {
+            assert_eq!(
+                old.iter().map(|e| (e.0, e.1, e.3)).collect::<Vec<_>>(),
+                new.iter().map(|e| (e.0, e.1, e.3)).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn temporal_weak_connector_crossing_harmony_is_a_joint_gate_target() {
+        use super::super::theory::{Chord, Quality};
+        let perf = temporal_test_perf(Chord::new(5, Quality::Maj));
+        let m = mat(&[Some(0), Some(1), Some(2)], &[0.0, 1.833333, 2.166667]);
+        let stable = |c: &HarmonicContext, pc| c.palette.is_stable(pc);
+        let old = project_pitched(&m, 2.0, 6.0, 60, &perf, &stable);
+        assert_eq!(old[1].2, Some(62));
+        assert!(!perf.context_at(4.0).unwrap().chord.contains_pc(2));
+        let new = project_pitched_temporal(
+            &m,
+            2.0,
+            6.0,
+            60,
+            &perf,
+            &stable,
+            Some(ArrivalContract::Closed),
+        );
+        assert!(perf
+            .context_at(4.0)
+            .unwrap()
+            .chord
+            .contains_pc(pitch_class(new[1].2.unwrap())));
+        assert_eq!(
+            old.iter().map(|e| (e.0, e.1, e.3)).collect::<Vec<_>>(),
+            new.iter().map(|e| (e.0, e.1, e.3)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn temporal_closed_endpoint_earns_arrival_without_time_edits() {
+        use super::super::theory::{Chord, Quality};
+        let perf = temporal_test_perf(Chord::new(0, Quality::Maj7));
+        let m = mat(&[Some(0)], &[0.0]);
+        let stable = |c: &HarmonicContext, pc| c.palette.is_stable(pc);
+        let old = project_pitched(&m, 1.0, 2.0, 69, &perf, &stable);
+        assert_eq!(old[0].2, Some(69));
+        let closed = project_pitched_temporal(
+            &m,
+            1.0,
+            2.0,
+            69,
+            &perf,
+            &stable,
+            Some(ArrivalContract::Closed),
+        );
+        assert!(perf
+            .context_at(1.0)
+            .unwrap()
+            .chord
+            .contains_pc(pitch_class(closed[0].2.unwrap())));
+        assert_eq!(
+            (old[0].0, old[0].1, old[0].3),
+            (closed[0].0, closed[0].1, closed[0].3)
+        );
+        let open = project_pitched_temporal(
+            &m,
+            1.0,
+            2.0,
+            69,
+            &perf,
+            &stable,
+            Some(ArrivalContract::Open {
+                selected_colors: &[9],
+            }),
+        );
+        assert_eq!(open, old, "an explicitly selected open color must survive");
     }
 
     fn mat(steps: &[Option<i32>], onsets: &[f64]) -> InteractionMaterial {

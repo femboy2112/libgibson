@@ -275,3 +275,109 @@ fn approach_cannot_resolve_by_pitch_class_across_an_octave_jump() {
     ];
     assert_eq!(Audit::measure(&p, &s).false_function_claims, 1);
 }
+
+#[test]
+fn a_monophonic_approach_can_resolve_into_the_next_material() {
+    let (p, mut s) = fixture(&[(0.0, Quality::Maj, 0), (4.0, Quality::Dom7, 7)]);
+    let mut a = note(3.0, 0.9, 42, F::ChromaticApproach);
+    a.role = Role::Bass;
+    let mut b = note(4.0, 0.5, 41, F::ChordTone);
+    b.role = Role::Bass;
+    b.prov.material = Some(MaterialId(0));
+    s.notes = vec![a, b];
+    let d = Audit::measure(&p, &s);
+    assert_eq!(d.rows[0].next_note, Some(1));
+    assert_eq!(d.false_function_claims, 0, "{}", d.report());
+    s.notes[1].pitch += 12;
+    assert_eq!(Audit::measure(&p, &s).false_function_claims, 1);
+}
+
+#[test]
+fn repeated_attacks_are_not_a_physical_suspension() {
+    let (p, mut s) = fixture(&[(0.0, Quality::Dom7, 7), (4.0, Quality::Maj, 0)]);
+    s.notes = vec![
+        note(3.0, 1.0, 62, F::ChordTone),
+        note(4.0, 0.9, 62, F::Suspension),
+        note(5.0, 0.5, 60, F::ChordTone),
+    ];
+    let d = Audit::measure(&p, &s);
+    assert_eq!(d.false_suspensions, 1);
+    assert!(!d.rows[1].supported.contains(&F::Suspension));
+}
+
+#[test]
+fn r12_matched_scores_preserve_identity_and_reduce_path_defects() {
+    use super::contract::CompositionGrammar;
+    use super::diagnostics::RealizationDiagnostics;
+    use super::functor::{perform, perform_temporal};
+    use super::song::SongMapConformance;
+    for (composer, grammar, fingerprints) in [
+        (
+            Composer::StablePropulsion,
+            None,
+            [0xdaa35c0fd38738a9, 0x493297b10781a271],
+        ),
+        (
+            Composer::MeaningDirected,
+            Some(CompositionGrammar::DeflectedLift),
+            [0x81436232f8f637db, 0x9d335353c4458c48],
+        ),
+    ] {
+        let song = SongMap::compose(&deflected_lift_trace(120.0), 2112, grammar, composer);
+        for (wi, world) in [MusicWorld::swiss_signal(), MusicWorld::black_ice()]
+            .iter()
+            .enumerate()
+        {
+            let a = perform(&song, world, PerformanceOptions::default());
+            let b = perform_temporal(&song, world, PerformanceOptions::default());
+            assert_eq!(a.score.fingerprint(), fingerprints[wi], "R11 control drift");
+            assert_eq!(a.perf.fingerprint(), b.perf.fingerprint());
+            assert!(SongMapConformance::check(&song, &b.perf, &b.score).passes());
+            assert_eq!(a.score.notes.len(), b.score.notes.len());
+            let mut changes = 0;
+            for (old, new) in a.score.notes.iter().zip(&b.score.notes) {
+                assert_eq!(
+                    (old.start_beat, old.dur_beats, old.role, old.velocity),
+                    (new.start_beat, new.dur_beats, new.role, new.velocity)
+                );
+                assert_eq!(format!("{:?}", old.prov), format!("{:?}", new.prov));
+                changes += usize::from(old.pitch != new.pitch);
+            }
+            assert!(
+                changes > 0 && changes * 10 < a.score.notes.len(),
+                "unbounded perturbation {changes}"
+            );
+            let da = Audit::measure(&a.perf, &a.score);
+            let db = Audit::measure(&b.perf, &b.score);
+            assert_eq!(
+                db.false_function_claims
+                    + db.false_suspensions
+                    + db.broken_anticipations
+                    + db.unresolved_tendencies
+                    + db.bad_arrivals,
+                0,
+                "{}",
+                db.report()
+            );
+            assert!(db.orphan_structural_extensions < da.orphan_structural_extensions);
+            assert!(db.path_breaks_at_harmony_changes <= da.path_breaks_at_harmony_changes);
+            assert_eq!(
+                RealizationDiagnostics::measure(&song.plan, &b.score).unjustified_nonchord_notes,
+                0
+            );
+            assert!(b
+                .score
+                .notes
+                .iter()
+                .any(|n| n.function == Some(F::ChromaticApproach)));
+            assert!(db.rows.iter().any(|r| matches!(
+                r.extension,
+                Some(
+                    ExtensionPath::OwnedTendency
+                        | ExtensionPath::CommonTone
+                        | ExtensionPath::ForwardLeading
+                )
+            )));
+        }
+    }
+}

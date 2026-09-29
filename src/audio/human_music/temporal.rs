@@ -115,13 +115,12 @@ fn next_structure(perf: &PerformancePlan, i: usize) -> Option<usize> {
 
 // Material identity partitions independent figures. Ordinary mono playing remains one voice;
 // its next event, not an arbitrary later convenient event, must supply a claimed resolution.
+fn same_material(a: &Note, b: &Note) -> bool {
+    a.role == b.role && a.prov.material == b.prov.material
+}
+
 fn same_line(a: &Note, b: &Note) -> bool {
-    a.role == b.role
-        && match (a.prov.material, b.prov.material) {
-            (Some(x), Some(y)) => x == y,
-            (None, None) => true,
-            _ => false,
-        }
+    a.role == b.role && (matches!(a.role, Role::Lead | Role::Bass) || same_material(a, b))
 }
 
 /// Neighbour edges from onset bundles. Equal-cardinality polyphonic bundles pair in register
@@ -217,7 +216,7 @@ impl TemporalPitchDiagnostics {
                 && !score
                     .notes
                     .iter()
-                    .any(|x| same_line(n, x) && x.start_beat > n.start_beat + EPS);
+                    .any(|x| same_material(n, x) && x.start_beat > n.start_beat + EPS);
             row.structural |= material_last;
             if let Some(ci) = ci {
                 let c = &perf.contexts[ci];
@@ -264,22 +263,13 @@ impl TemporalPitchDiagnostics {
                         && !chord(nc, n.pitch)
                         && q.is_some_and(|x| {
                             x.start_beat >= nc.start_beat - EPS
+                                && x.start_beat >= end(n) - EPS
                                 && chord(nc, x.pitch)
                                 && step(n.pitch, x.pitch)
                         })
                 });
-                let tied = ci > 0
-                    && p.is_some_and(|x| {
-                        x.pitch == n.pitch
-                            && x.start_beat < c.start_beat - EPS
-                            && end(x) >= c.start_beat - EPS
-                            && n.start_beat <= c.start_beat + EPS
-                            && chord(&perf.contexts[ci - 1], x.pitch)
-                    })
-                    && !chord(c, n.pitch)
-                    && step_target;
-                let suspension = (held || tied) && q.is_some_and(|x| x.pitch < n.pitch);
-                let retardation = (held || tied) && q.is_some_and(|x| x.pitch > n.pitch);
+                let suspension = held && q.is_some_and(|x| x.pitch < n.pitch);
+                let retardation = held && q.is_some_and(|x| x.pitch > n.pitch);
                 let illegal_sustain = perf.contexts.iter().any(|cx| {
                     cx.start_beat > n.start_beat + EPS
                         && cx.start_beat < end(n) - EPS
@@ -343,7 +333,10 @@ impl TemporalPitchDiagnostics {
                                 },
                             );
                         }
-                        if row.structural && a.abs() > 2 && step_target {
+                        if (n.start_beat - n.start_beat.round()).abs() < EPS
+                            && a.abs() > 2
+                            && step_target
+                        {
                             row.supported.push(F::Appoggiatura);
                         }
                         if (p.pitch - q.pitch).signum() == -(n.pitch - q.pitch).signum()

@@ -113,7 +113,7 @@ fn classify_inner(ctx: &PitchContext, scale: &Scale, r11: bool) -> Option<PitchF
                 && pitch - next <= 2
                 && in_chord(ctx.next_chord, next)
                 && next_onset >= boundary
-                && next_onset >= end - 0.26
+                && next_onset >= end - 1e-6
                 && next_onset <= end + 1.0
             {
                 return Some(PitchFunction::Suspension);

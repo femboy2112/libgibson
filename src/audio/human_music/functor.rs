@@ -85,7 +85,23 @@ pub fn compose_full(
 /// of that performance.
 pub fn perform(song: &SongMap, world: &MusicWorld, opts: PerformanceOptions) -> Composition {
     let perf = PerformancePlan::from_song(song, world, opts);
-    let score = realize(song, world, &perf);
+    let score = realize(song, world, &perf, false);
+    Composition {
+        score,
+        song: song.clone(),
+        perf,
+    }
+}
+
+/// Round XII opt-in pitch-path realization of the same song and performance plan.
+/// The default [`perform`] remains the exact Round XI listening control.
+pub fn perform_temporal(
+    song: &SongMap,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+) -> Composition {
+    let perf = PerformancePlan::from_song(song, world, opts);
+    let score = realize(song, world, &perf, true);
     Composition {
         score,
         song: song.clone(),
@@ -97,29 +113,41 @@ pub fn perform(song: &SongMap, world: &MusicWorld, opts: PerformanceOptions) -> 
 /// adversarial probes use to inject a call, veto an arrangement, or license a burst and watch what
 /// the players do with it.
 pub fn realize_performance(song: &SongMap, world: &MusicWorld, perf: &PerformancePlan) -> Score {
-    realize(song, world, perf)
+    realize(song, world, perf, false)
 }
 
 /// Realize a score from a finished plan and its performance. The players are realized in
 /// listening order — the lead first, then the keys (who hear the lead), the bass (who hears both)
 /// and the drums (who hear the bass) — each reading the same [`PerformancePlan`]; then
 /// `apply_arrangement` gates the voices.
-fn realize(song: &SongMap, world: &MusicWorld, perf: &PerformancePlan) -> Score {
+fn realize(song: &SongMap, world: &MusicWorld, perf: &PerformancePlan, temporal: bool) -> Score {
     let (trace, seed, plan) = (&song.trace, song.seed, &song.plan);
     let total_beats = plan.form.total_beats;
     let mut score = Score::new(world.tempo_bpm, BEATS_PER_BAR, total_beats);
     score.sections = sections_from_plan(plan);
     score.chords = perf.chords.clone();
 
-    let lead = super::melody::realize_lead(perf, plan);
+    let lead = if temporal {
+        super::melody::realize_lead_temporal(perf, plan)
+    } else {
+        super::melody::realize_lead(perf, plan)
+    };
     score.melody_repairs = lead.repairs;
     score.melody_rejudged = lead.rejudged;
     let (pad, keys, bass) = match perf.coupling {
         // The surgical arm realizes the R7b band first, note for note; it repairs afterwards.
         EnsembleCoupling::Independent | EnsembleCoupling::Surgical => {
-            let keys = super::comp::realize_keys(perf, plan, world, &lead.notes, seed);
+            let keys = if temporal {
+                super::comp::realize_keys_temporal(perf, plan, world, &lead.notes, seed)
+            } else {
+                super::comp::realize_keys(perf, plan, world, &lead.notes, seed)
+            };
             let pad = super::comp::realize_pad(perf, plan, world);
-            let bass = super::bass::realize_bass(perf, plan, world, &lead.notes, &keys);
+            let bass = if temporal {
+                super::bass::realize_bass_temporal(perf, plan, world, &lead.notes, &keys)
+            } else {
+                super::bass::realize_bass(perf, plan, world, &lead.notes, &keys)
+            };
             (pad, keys, bass)
         }
         EnsembleCoupling::CoupledR8 => {

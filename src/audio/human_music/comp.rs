@@ -134,6 +134,45 @@ pub fn realize_keys(
     finish_keys(out, perf)
 }
 
+/// Round XII keys: unchanged voicing machinery, path-aware material, and boundary-safe stabs.
+pub fn realize_keys_temporal(
+    perf: &PerformancePlan,
+    _plan: &CompositionPlan,
+    world: &MusicWorld,
+    lead: &[Note],
+    seed: u64,
+) -> Vec<Note> {
+    let kp = keys_path(perf, world.voicing_spread, lead, keys_shell_n(perf));
+    let mut out = keys_comp_impl(perf, world, lead, seed, &kp, true);
+    out.extend(keys_lines_impl(perf, lead, keys_velocity(world), true));
+    finish_keys(out, perf)
+}
+
+/// Choose a pitch for the complete written gate. Only stabs whose original pitch would
+/// cross into foreign harmony change; select the nearest available common tone before emission.
+fn gate_pitch(perf: &PerformancePlan, beat: f64, dur: f32, pitch: Midi) -> Midi {
+    let Some(ctx) = perf.context_at(beat) else {
+        return pitch;
+    };
+    let legal = |p: Midi| {
+        ctx.palette.is_stable(pitch_class(p))
+            && perf
+                .contexts
+                .iter()
+                .filter(|c| {
+                    c.start_beat > beat + 1e-6 && c.start_beat < beat + f64::from(dur) - 1e-6
+                })
+                .all(|c| c.chord.contains_pc(pitch_class(p)))
+    };
+    if legal(pitch) {
+        return pitch;
+    }
+    (1..=12)
+        .flat_map(|d| [pitch - d, pitch + d])
+        .find(|&p| legal(p))
+        .unwrap_or(pitch)
+}
+
 /// The keys' final pass: onset order (stable), then lift off at harmony changes.
 pub fn finish_keys(mut out: Vec<Note>, perf: &PerformancePlan) -> Vec<Note> {
     out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
@@ -171,6 +210,17 @@ pub fn keys_comp(
     lead: &[Note],
     seed: u64,
     kp: &super::voicing::RolePath,
+) -> Vec<Note> {
+    keys_comp_impl(perf, world, lead, seed, kp, false)
+}
+
+fn keys_comp_impl(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    lead: &[Note],
+    seed: u64,
+    kp: &super::voicing::RolePath,
+    temporal: bool,
 ) -> Vec<Note> {
     let mut out = Vec::new();
     let mut rng = Rng::new(seed ^ 0x6E75_C0A9);
@@ -333,6 +383,11 @@ pub fn keys_comp(
                             .fold(st, ActionStamp::with);
                     }
                     for p in stab_voices(&v, ctx, take) {
+                        let p = if temporal {
+                            gate_pitch(perf, beat, dur, p)
+                        } else {
+                            p
+                        };
                         let mut n = Note::new(
                             beat,
                             dur,
@@ -378,22 +433,33 @@ pub fn keys_comp(
 /// The keys' material lines, each projected alone (the R7b control): answers to calls, the keys'
 /// own figures, and the planned ensemble unison.
 pub fn keys_lines(perf: &PerformancePlan, lead: &[Note], vel: f32) -> Vec<Note> {
+    keys_lines_impl(perf, lead, vel, false)
+}
+
+fn keys_lines_impl(perf: &PerformancePlan, lead: &[Note], vel: f32, temporal: bool) -> Vec<Note> {
     let mut out = Vec::new();
     // Answers: the CALL's material, transformed (derived in the plan), in the keys' register —
     // whoever called. Round VII transformed whatever the lead happened to play in the window.
     for (call, r) in perf.responses_for(Agent::Keys) {
-        out.extend(answer_notes(
+        out.extend(answer_notes_impl(
             perf,
             call,
             r,
             Agent::Keys,
             Role::Keys,
             vel * 1.05,
+            temporal,
         ));
     }
     // The figures the keys state (a keys-led pickup / fragment / re-entry): their own material.
-    out.extend(figure_notes(perf, Agent::Keys, Role::Keys, vel * 1.05));
-    out.extend(keys_unison_notes(perf, lead, vel));
+    out.extend(figure_notes_impl(
+        perf,
+        Agent::Keys,
+        Role::Keys,
+        vel * 1.05,
+        temporal,
+    ));
+    out.extend(keys_unison_notes_impl(perf, lead, vel, temporal));
     out
 }
 
@@ -658,9 +724,22 @@ fn place_line(
 
 /// The keys' part of the planned ensemble unison figures: the shared line, at the keys' octave.
 fn keys_unison_notes(perf: &PerformancePlan, lead: &[Note], vel: f32) -> Vec<Note> {
+    keys_unison_notes_impl(perf, lead, vel, false)
+}
+
+fn keys_unison_notes_impl(
+    perf: &PerformancePlan,
+    lead: &[Note],
+    vel: f32,
+    temporal: bool,
+) -> Vec<Note> {
     let mut out = Vec::new();
     // Planned ensemble unison figures: the keys sound the shared line.
-    for (id, line) in unison_lines(perf, lead) {
+    for (id, line) in if temporal {
+        unison_lines_temporal(perf, lead)
+    } else {
+        unison_lines(perf, lead)
+    } {
         for &(at, d, p, f) in &line {
             let mut n = Note::new(
                 at,
@@ -815,6 +894,18 @@ pub fn answer_notes(
     role: Role,
     velocity: f32,
 ) -> Vec<Note> {
+    answer_notes_impl(perf, call, r, agent, role, velocity, false)
+}
+
+fn answer_notes_impl(
+    perf: &PerformancePlan,
+    call: &Call,
+    r: &Response,
+    agent: Agent,
+    role: Role,
+    velocity: f32,
+    temporal: bool,
+) -> Vec<Note> {
     let Some(mid) = r.material else {
         return Vec::new();
     };
@@ -825,41 +916,55 @@ pub fn answer_notes(
         .find(|i| i.call.action == call.action)
         .map(|i| i.id);
     let mut landed: Vec<f64> = Vec::new();
-    super::material::line_of(m, agent, r.start_beat, r.start_beat + r.dur_beats, perf)
-        .into_iter()
-        .filter_map(|(at, d, p, accent)| {
-            let p = p?;
-            let ctx = perf.context_at(at)?;
-            if !perf.on_stage(agent, at) {
-                return None;
-            }
-            let (at, accents) = land_once(perf, at, &mut landed);
-            let mut prov = stamped(
-                prov("answer", Some(r.transform.label()))
-                    .realizing_opt(r.action)
-                    .realizing_opt(r.realizes),
-                accents,
-            );
-            prov.interaction = interaction;
-            prov.material = Some(mid);
-            let mut note = Note::new(
-                at,
-                d as f32,
-                p,
-                (velocity * (0.9 + 0.15 * accent) * perf.level(agent, at).max(0.85)).min(1.0),
-                role,
-                prov,
-            );
-            note.function = function_over(ctx, p);
-            Some(note)
-        })
-        .collect()
+    (if temporal {
+        super::material::line_of_temporal(m, agent, r.start_beat, r.start_beat + r.dur_beats, perf)
+    } else {
+        super::material::line_of(m, agent, r.start_beat, r.start_beat + r.dur_beats, perf)
+    })
+    .into_iter()
+    .filter_map(|(at, d, p, accent)| {
+        let p = p?;
+        let ctx = perf.context_at(at)?;
+        if !perf.on_stage(agent, at) {
+            return None;
+        }
+        let (at, accents) = land_once(perf, at, &mut landed);
+        let mut prov = stamped(
+            prov("answer", Some(r.transform.label()))
+                .realizing_opt(r.action)
+                .realizing_opt(r.realizes),
+            accents,
+        );
+        prov.interaction = interaction;
+        prov.material = Some(mid);
+        let mut note = Note::new(
+            at,
+            d as f32,
+            p,
+            (velocity * (0.9 + 0.15 * accent) * perf.level(agent, at).max(0.85)).min(1.0),
+            role,
+            prov,
+        );
+        note.function = function_over(ctx, p);
+        Some(note)
+    })
+    .collect()
 }
 
 /// The figures `agent` states (its pickups, fragments, re-entries and fills), each a projection of
 /// the figure material the plan generated for the action — stamped with that action, its material
 /// and (when somebody answers it) its interaction.
 pub fn figure_notes(perf: &PerformancePlan, agent: Agent, role: Role, velocity: f32) -> Vec<Note> {
+    figure_notes_impl(perf, agent, role, velocity, false)
+}
+
+fn figure_notes_impl(
+    perf: &PerformancePlan,
+    agent: Agent,
+    role: Role,
+    velocity: f32,
+    temporal: bool,
+) -> Vec<Note> {
     let mut out = Vec::new();
     for m in perf.figures_for(agent) {
         let super::material::MaterialSource::Figure { action, .. } = m.source else {
@@ -871,7 +976,11 @@ pub fn figure_notes(perf: &PerformancePlan, agent: Agent, role: Role, velocity: 
         let until = a.end_beat().max(a.start_beat + m.length());
         let interaction = perf.interaction_of(action);
         let mut landed: Vec<f64> = Vec::new();
-        for (at, d, p, accent) in super::material::line_of(m, agent, m.start_beat, until, perf) {
+        for (at, d, p, accent) in if temporal {
+            super::material::line_of_temporal(m, agent, m.start_beat, until, perf)
+        } else {
+            super::material::line_of(m, agent, m.start_beat, until, perf)
+        } {
             let (Some(p), Some(ctx)) = (p, perf.context_at(at)) else {
                 continue;
             };
