@@ -22,6 +22,7 @@
 
 use super::action::{ActionKind, Agent};
 use super::context::HarmonicContext;
+use super::form::BEATS_PER_BAR;
 use super::harmonic_state::HarmonicEnsembleState;
 use super::performance::{KeysMode, PadMode, PerformancePlan};
 use super::score::{Note, PitchFunction, Role};
@@ -32,8 +33,9 @@ use super::sonority::{
 };
 use super::theory::{pitch_class, Midi};
 use super::voicing::{
-    allowed, evaluate_path, gesture_tier, keys_steps_with, pad_steps_with, step_cost, voice_path,
-    weigh, PathStep, PathWeights, RolePath, VoiceRange, VoicingCandidate, VoicingShape,
+    allowed, evaluate_path, gesture_tier, keys_steps, keys_steps_with, pad_steps, pad_steps_with,
+    step_cost, voice_path, weigh, PathStep, PathWeights, RolePath, VoiceRange, VoicingCandidate,
+    VoicingShape,
 };
 
 /// The share of a harmony's window a committed voice must cover to carry a pitch class.
@@ -486,9 +488,12 @@ fn complements(
     let mut offer = |mut v: Vec<Midi>, origin: &[Midi], out: &mut Vec<(u32, i32, Vec<Midi>)>| {
         v.sort_unstable();
         v.dedup();
-        if v.len() < 2
+        // The role's own floor holds for a complement too: its voice count, and the upper layer's
+        // top (the pad's `pad_upper` range is the audible witness of a Thicken).
+        if v.len() < range.min_voices.max(2)
             || v[0] < range.low
             || v[v.len() - 1] > range.high + LIFT_HEADROOM
+            || range.min_top.is_some_and(|t| v[v.len() - 1] < t)
             || seen.contains(&v)
         {
             return;
@@ -602,11 +607,50 @@ fn edit_pcs(perf: &PerformancePlan, a: f64) -> Vec<i32> {
 
 /// One harmony of the joint solve.
 struct Joint {
+    /// The harmony (index into the contexts).
+    ci: usize,
     /// Index into the pad's / the keys' own step list, when that player sounds this harmony.
     pad: Option<usize>,
     keys: Option<usize>,
     /// Surviving candidate pairs `(pad candidate, keys candidate)` with their union cost.
     pairs: Vec<(Option<usize>, Option<usize>, UnionCost)>,
+    /// The keys STRUCK in the previous harmony (a Hold, a Sustain downbeat) ring into this one:
+    /// their common tones with this chord sound here, whatever this step chooses.
+    ring_in: bool,
+    /// The committed voices over this harmony (what a ringing keys tone meets besides the bed).
+    others: Vec<Voice>,
+}
+
+/// Where the keys STRIKE a sustained voicing in `[a, b)`: a keys Hold's start, or a Sustain bar's
+/// downbeat (the voicing of the harmony sounding there), with how long the struck notes are
+/// written to last and whether a Hold stamps them (mirrors `comp::keys_comp`).
+fn keys_strikes(perf: &PerformancePlan, a: f64, b: f64) -> Vec<(f64, f64, bool)> {
+    let holds: Vec<(f64, f64)> = perf
+        .actions
+        .of_kind(ActionKind::Hold)
+        .filter(|h| h.initiator == Agent::Keys)
+        .map(|h| (h.start_beat, h.end_beat()))
+        .collect();
+    let mut out = Vec::new();
+    let first_bar = (a / BEATS_PER_BAR).ceil().max(0.0) as u32;
+    for (bar, s) in (first_bar..)
+        .map(|bar| (bar, bar as f64 * BEATS_PER_BAR))
+        .take_while(|&(_, s)| s < b - 1e-6)
+    {
+        if s >= a - 1e-6 && perf.bar(bar).is_some_and(|eb| eb.keys == KeysMode::Sustain) {
+            let stamped = holds.iter().any(|&(hs, he)| hs < s + 3.9 && he > s + 1e-6);
+            out.push((s, 3.9, stamped));
+        }
+    }
+    for &(hs, he) in &holds {
+        let in_sustain_bar = perf
+            .bar_at(hs)
+            .is_some_and(|eb| eb.keys == KeysMode::Sustain);
+        if hs >= a - 1e-6 && hs < b - 1e-6 && !in_sustain_bar && perf.on_stage(Agent::Keys, hs) {
+            out.push((hs, ((he - hs) * 0.97).max(1.5), true));
+        }
+    }
+    out
 }
 
 fn role_key(
@@ -639,14 +683,29 @@ pub fn joint_support_paths(
 ) -> SupportPaths {
     let w = PathWeights::default();
     let uw = UnionWeights::default();
-    // The world/language decides whether a plain triad's support must carry an unwritten 9th
-    // (R7b forced it everywhere): required means the harmony NEEDS it, not that it sounds jazzy.
-    let triad_color = state.policy().triad_color;
-    let (pix, mut psteps) = pad_steps_with(perf, spread, triad_color);
-    let (kix, mut ksteps) = keys_steps_with(perf, spread, lead, n, triad_color);
-    // The control: each player's own path, on the voicing engine's own candidates.
+    // The control: each player's own R7b path, on the voicing engine's R7b candidates — exactly
+    // the independent band, so "no worse than the control" (the witness tier) means no worse than
+    // what the band played before it listened.
+    let (pix, mut psteps) = pad_steps(perf, spread);
+    let (kix, mut ksteps) = keys_steps(perf, spread, lead, n);
     let pind = voice_path(&psteps, &w);
     let kind = voice_path(&ksteps, &w);
+    // The world/language decides whether a plain triad's support must carry an unwritten 9th
+    // (R7b forced it everywhere): required means the harmony NEEDS it, not that it sounds jazzy.
+    // Where it need not, the plainer candidates join the options (after the control's indices).
+    if !state.policy().triad_color {
+        let (_, pplain) = pad_steps_with(perf, spread, false);
+        let (_, kplain) = keys_steps_with(perf, spread, lead, n, false);
+        for (steps, plain) in [(&mut psteps, pplain), (&mut ksteps, kplain)] {
+            for (st, pl) in steps.iter_mut().zip(plain) {
+                for c in pl.candidates {
+                    if !st.candidates.iter().any(|x| x.voices == c.voices) {
+                        st.candidates.push(c);
+                    }
+                }
+            }
+        }
+    }
     // The complements, appended AFTER the base candidates (the control's indices stay valid).
     for (steps, ix, role) in [
         (&mut psteps, &pix, Role::Pad),
@@ -686,14 +745,28 @@ pub fn joint_support_paths(
         let others: Vec<Voice> = state.sounding(a, b).copied().collect();
         let plan = state.plan_at(a);
         let specs = tension_specs(ctx);
-        let keys_hold = perf
-            .bar_at(a)
-            .is_some_and(|eb| eb.keys == KeysMode::Sustain)
+        // The keys carry THIS harmony only where they strike its voicing and hold it: a Sustain bar
+        // strikes the voicing of the harmony at its downbeat (a later harmony in that bar hears
+        // only held common tones, never its own path voicing); a Hold strikes at its start.
+        let first_bar = (a / BEATS_PER_BAR).ceil().max(0.0) as u32;
+        let sustained = (first_bar..)
+            .map(|bar| (bar, bar as f64 * BEATS_PER_BAR))
+            .take_while(|&(_, s)| s < b - 1e-6)
+            .any(|(bar, s)| {
+                s >= a - 1e-6
+                    && perf.bar(bar).is_some_and(|eb| eb.keys == KeysMode::Sustain)
+                    && (s + 3.9).min(b) - s >= 0.5 * (b - a)
+            });
+        let keys_hold = sustained
             || perf
                 .actions
                 .of_kind(ActionKind::Hold)
                 .filter(|h| h.initiator == Agent::Keys)
-                .any(|h| h.end_beat().min(b) - h.start_beat.max(a) >= 0.5 * (b - a));
+                .any(|h| {
+                    h.start_beat >= a - 1e-6
+                        && h.start_beat < b - 1e-6
+                        && h.end_beat().min(b) - h.start_beat >= 0.5 * (b - a)
+                });
         let pad_on = pad.is_some() && perf.on_stage(Agent::Pad, a);
         let keys_on = keys.is_some() && perf.on_stage(Agent::Keys, a);
         let carriers = Carriers {
@@ -722,14 +795,60 @@ pub fn joint_support_paths(
                 _ => Vec::new(),
             }
         };
+        let ind = (pad.map(|t| pind.choice[t]), keys.map(|t| kind.choice[t]));
+        // A Thicken over this harmony is witnessed by an upper layer (a pad pitch >= 79) or more
+        // simultaneous pad+keys voices than before: the joint choice may not be thinner, or lower,
+        // than the control pair that already witnesses it.
+        let thickens: Vec<(f64, f64)> = perf
+            .actions
+            .of_kind(ActionKind::Thicken)
+            .map(|x| (x.start_beat, x.end_beat()))
+            .collect();
+        let thicken = thickens.iter().any(|&(s, e)| s < b - 1e-6 && e > a + 1e-6);
+        // ...and it is heard against the 8 beats before it: the joint may not thicken those either.
+        let before_thicken = !thicken
+            && thickens
+                .iter()
+                .any(|&(s, _)| (s - 8.0) < b - 1e-6 && s > a + 1e-6);
+        let (cpv, ckv) = (
+            voices_of(pad, ind.0, &psteps),
+            voices_of(keys, ind.1, &ksteps),
+        );
+        let top = |v: &[Midi]| v.iter().copied().max().unwrap_or(0);
+        let thinner = |pv: &[Midi], kv: &[Midi]| {
+            pv.len() + kv.len() < cpv.len() + ckv.len() || (top(&cpv) >= 79 && top(pv) < 79)
+        };
+        let thicker = |pv: &[Midi], kv: &[Midi]| pv.len() + kv.len() > cpv.len() + ckv.len();
+        // A stamped Hold struck here that the next change cuts short of its witness (1.4 beats)
+        // survives only through a tone common to the next chord: keep one if the control did.
+        let next_chord = perf
+            .contexts
+            .get(ci + 1)
+            .filter(|n| (n.start_beat - b).abs() < 1e-6)
+            .map(|n| n.chord);
+        let hold_needs_common = next_chord.filter(|_| {
+            keys_strikes(perf, a, b)
+                .iter()
+                .any(|&(s, d, stamped)| stamped && s + d > b + 0.02 && b - s < 1.4 / 0.97 + 1e-6)
+        });
+        let has_common = |kv: &[Midi]| {
+            hold_needs_common.is_some_and(|c| kv.iter().any(|&p| c.contains_pc(pitch_class(p))))
+        };
+        let control_common = has_common(&ckv);
         let mut scored: Vec<(Option<usize>, Option<usize>, UnionCost, f64)> = Vec::new();
         for &pj in &pad_opts {
             for &kj in &keys_opts {
                 let pv = voices_of(pad, pj, &psteps);
                 let kv = voices_of(keys, kj, &ksteps);
-                let u = union_cost(
+                let mut u = union_cost(
                     ctx, a, b, &pv, &kv, &others, plan, &policy, &specs, carriers, &must,
                 );
+                if (thicken && thinner(&pv, &kv)) || (before_thicken && thicker(&pv, &kv)) {
+                    u.witness_missing += 1;
+                }
+                if control_common && !has_common(&kv) {
+                    u.witness_missing += 1;
+                }
                 // Static per-role terms, for pruning only.
                 let stat = pad
                     .zip(pj)
@@ -750,7 +869,6 @@ pub fn joint_support_paths(
                 .then(x.0.cmp(&y.0))
                 .then(x.1.cmp(&y.1))
         });
-        let ind = (pad.map(|t| pind.choice[t]), keys.map(|t| kind.choice[t]));
         let mut pairs: Vec<(Option<usize>, Option<usize>, UnionCost)> = scored
             .iter()
             .take(JOINT_BEAM)
@@ -763,7 +881,21 @@ pub fn joint_support_paths(
         }
         report.steps += 1;
         report.both += (pad.is_some() && keys.is_some()) as usize;
-        joints.push(Joint { pad, keys, pairs });
+        // Keys struck in the previous harmony and written past this one's start ring into it.
+        let ring_in = ci > 0 && {
+            let p = &perf.contexts[ci - 1];
+            keys_strikes(perf, p.start_beat, a)
+                .iter()
+                .any(|&(s, d, _)| s + d > a + 0.02)
+        };
+        joints.push(Joint {
+            ci,
+            pad,
+            keys,
+            pairs,
+            ring_in,
+            others,
+        });
     }
 
     // The Viterbi over pairs. The per-role transition exists only between contiguous harmonies the
@@ -792,6 +924,34 @@ pub fn joint_support_paths(
             weighted: jt.pairs[k].2.soft(&uw),
         };
         let prev_voices = prev.map(|(pj, pk)| pair_voices(pj, pk));
+        // Keys struck in the previous harmony ring into this one on their common tones: this pad
+        // (and the committed band) must not meet them a semitone away.
+        if let Some(((pj, _), (_, prev_keys))) = prev.zip(prev_voices.as_ref()) {
+            if jt.ring_in && pj.ci + 1 == jt.ci && pj.keys.is_some() {
+                let ctx = &perf.contexts[jt.ci];
+                let (a, b) = (ctx.start_beat, ctx.start_beat + ctx.dur_beats as f64);
+                let held: Vec<Voice> = prev_keys
+                    .iter()
+                    .filter(|&&h| ctx.chord.contains_pc(pitch_class(h)))
+                    .map(|&h| support_voice(ctx, Role::Keys, h, a, b, "hold"))
+                    .collect();
+                let now: Vec<Voice> = pv
+                    .iter()
+                    .map(|&p| support_voice(ctx, Role::Pad, p, a, b, "pad"))
+                    .chain(jt.others.iter().copied())
+                    .collect();
+                let plan = state.plan_at(a);
+                key.vertical += held
+                    .iter()
+                    .flat_map(|h| now.iter().map(move |x| (h, x)))
+                    .filter(|(h, x)| {
+                        h.pitch != x.pitch
+                            && Clash::of(h.pitch, x.pitch).is_some()
+                            && classify_clash(ctx, h, x, plan) == VerticalClass::UnownedCollision
+                    })
+                    .count() as u32;
+            }
+        }
         if let Some(t) = jt.pad {
             let pp = prev
                 .zip(prev_voices.as_ref())

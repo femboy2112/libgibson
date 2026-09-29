@@ -149,7 +149,7 @@ fn realize(
     score.notes.extend(lead.notes);
 
     // --- SFX from significant semantic events, pitched in the local harmony. ---
-    add_sfx_and_provenance(&mut score, trace, plan, perf);
+    add_sfx_and_provenance(&mut score, trace, plan, perf, world);
     // --- The piece ends where it was asked to: nothing starts at or after the end, nothing rings
     //     past it. ---
     clip_to_end(&mut score);
@@ -199,24 +199,25 @@ fn realize_coupled(
     // The bed: the pad and the keys' comping voiced as ONE decision against everything above.
     let n = super::comp::keys_shell_n(perf);
     let sp = super::support::joint_support_paths(perf, world.voicing_spread, lead, n, &state);
+    // The keys' comping and holds on the joint path, then their material lines: realized BEFORE
+    // the pad, so the pad's tails hear what the keys actually play at the next change.
+    let mut keys = super::comp::keys_comp(perf, world, lead, seed, &sp.keys);
+    keys.extend(lines);
+    let keys = super::comp::finish_keys_coupled(keys, perf);
     // A pad tail that would meet another player a minor 2nd / 9th away at the next harmony (the
-    // ledger's lead, bass and keys lines, or the keys' next voicing) lifts early.
+    // ledger's lead, bass and keys lines, and every keys note realized there) lifts early.
     let guard = |a: f64, b: f64, p: Midi| -> bool {
         let semi = |q: Midi| matches!((q - p).abs(), 1 | 13);
         state
             .sounding(a, b)
             .any(|v| v.role != super::score::Role::Pad && semi(v.pitch))
-            || sp
-                .keys
-                .voicing_at(perf, a + 1e-3)
-                .voices
-                .into_iter()
-                .any(semi)
+            || keys.iter().any(|n| {
+                n.start_beat < b - 1e-6
+                    && n.start_beat + n.dur_beats as f64 > a + 1e-6
+                    && semi(n.pitch)
+            })
     };
     let pad = super::comp::realize_pad_on(perf, world, &sp.pad, Some(&guard));
-    let mut keys = super::comp::keys_comp(perf, world, lead, seed, &sp.keys);
-    keys.extend(lines);
-    let keys = super::comp::finish_keys_coupled(keys, perf);
     Coupled {
         pad,
         keys,
@@ -370,6 +371,7 @@ fn add_sfx_and_provenance(
     trace: &SemanticTrace,
     plan: &CompositionPlan,
     perf: &PerformancePlan,
+    world: &MusicWorld,
 ) {
     let mut prev = trace.events.first().map(|e| e.state);
     // `ti` is the event's intent-timeline transition: the walk emits exactly one per event.
@@ -400,7 +402,7 @@ fn add_sfx_and_provenance(
         // its shape and pitch classes (the chord verdict and an owned tritone are untouched) and moves
         // by whole octaves to the placement with the fewest unowned clashes against what sounds.
         if perf.coupling == EnsembleCoupling::Coupled && v.pitches != SfxEvent::UNPITCHED {
-            if let Some((shift, reason)) = sfx_octave(score, perf, kind, at, &v) {
+            if let Some((shift, reason)) = sfx_octave(score, perf, world, kind, at, &v) {
                 v.pitches = v.pitches.map(|p| p + shift);
                 score
                     .vertical_decisions
@@ -449,6 +451,7 @@ fn add_sfx_and_provenance(
 fn sfx_octave(
     score: &Score,
     perf: &PerformancePlan,
+    world: &MusicWorld,
     kind: SfxKind,
     at: f64,
     v: &SfxVoicing,
@@ -457,11 +460,29 @@ fn sfx_octave(
     let (a, d, _, _) = kind.envelope();
     let end = at + (a + d + kind.hold_secs()) as f64 * score.tempo_bpm.max(1.0) as f64 / 60.0;
     let ctx = perf.context_at(at)?;
+    // What actually rings under the sting: each note to its audible end at the masking floor (a
+    // pad tail from the last chord is still there).
+    let world_patch = |r: super::score::Role| match r {
+        super::score::Role::Pad => &world.pad,
+        super::score::Role::Keys => &world.keys,
+        super::score::Role::Bass => &world.bass,
+        super::score::Role::Lead => &world.lead,
+    };
     let sounding: Vec<Voice> = score
         .notes
         .iter()
-        .filter(|n| n.start_beat < end - 1e-6 && n.start_beat + n.dur_beats as f64 > at + 1e-6)
-        .map(super::harmonic_state::voice_of)
+        .map(|n| {
+            let mut v = super::harmonic_state::voice_of(n);
+            v.end = super::sonority::audible_end_at(
+                v.start,
+                n.dur_beats as f64,
+                world_patch(n.role),
+                score.tempo_bpm,
+                super::sonority::MASKING_FLOOR_DB,
+            );
+            v
+        })
+        .filter(|v| v.start < end - 1e-6 && v.end > at + 1e-6)
         .collect();
     let clashes = |shift: Midi| -> (u32, Vec<String>) {
         let mut n = 0;
@@ -490,7 +511,7 @@ fn sfx_octave(
     }
     let lo = v.pitches.iter().min().copied().unwrap_or(60);
     let hi = v.pitches.iter().max().copied().unwrap_or(60);
-    let best = [12, -12, 24, -24]
+    let best = [12, -12, 24, -24, 36, -36]
         .into_iter()
         .filter(|s| lo + s >= 24 && hi + s <= 96)
         .map(|s| (clashes(s).0, s.abs(), s))

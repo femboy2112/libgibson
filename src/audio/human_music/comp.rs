@@ -140,10 +140,9 @@ pub fn finish_keys(mut out: Vec<Note>, perf: &PerformancePlan) -> Vec<Note> {
 pub fn finish_keys_coupled(mut out: Vec<Note>, perf: &PerformancePlan) -> Vec<Note> {
     out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
     release_with_overhang(&mut out, &perf.chords, 0.02);
-    for n in out
-        .iter_mut()
-        .filter(|n| matches!(n.prov.role_note, "comp" | "hold"))
-    {
+    // A comping stab stops at the change; a HOLD is a suspension — its common tones ring across
+    // (the release above already lifted the rest), which is what its witness hears.
+    for n in out.iter_mut().filter(|n| n.prov.role_note == "comp") {
         let end = n.start_beat + n.dur_beats as f64;
         if let Some(next) = perf
             .chords
@@ -926,9 +925,10 @@ pub fn realize_pad_on(
         let dur = ctx.dur_beats * 0.98;
         let v = pp.voicing(ci, ctx);
         // Round VIII (coupled): a pad voice whose release tail would ring a minor 2nd / 9th against
-        // ANOTHER player at the next harmony starts its release early by that tail (to the masking
-        // floor), so it has faded under the next chord's attack. Held common tones, and tails that
-        // only meet the pad's own next voicing (a legato crossfade), keep their full length.
+        // ANOTHER player at the next harmony — or a minor 9th against the pad's OWN next voicing (a
+        // semitone step into it is a legato crossfade; a 9th away is a smear) — starts its release
+        // early by that tail (to the masking floor), so it has faded under the next chord's attack.
+        // Held common tones keep their full length.
         let next = perf
             .contexts
             .get(ci + 1)
@@ -943,8 +943,10 @@ pub fn realize_pad_on(
                 return d;
             };
             let held = next_voicing.as_ref().is_some_and(|nv| nv.contains(&p));
-            // Only a tail that would meet ANOTHER player a minor 2nd / 9th away lifts early.
-            if held || !guard(n.start_beat, n.start_beat + tail as f64, p) {
+            let smear = next_voicing
+                .as_ref()
+                .is_some_and(|nv| nv.iter().any(|&q| (q - p).abs() == 13));
+            if held || !(smear || guard(n.start_beat, n.start_beat + tail as f64, p)) {
                 return d;
             }
             (d - tail).max(0.5 * d)
