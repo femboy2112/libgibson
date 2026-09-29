@@ -1,0 +1,22 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.96s
+     Running unittests src/lib.rs (target/debug/deps/gibson-bb7570885a984e62)
+
+running 14 tests
+test audio::human_music::temporal_probes::approach_cannot_resolve_by_pitch_class_across_an_octave_jump ... ok
+test audio::human_music::temporal_probes::chromatic_approach_and_passing_controls_keep_good_wrong_notes ... ok
+test audio::human_music::temporal_probes::endpoint_position_does_not_prove_closed_arrival ... ok
+test audio::human_music::temporal_probes::historical_membership_cannot_make_a_new_attack_a_suspension ... ok
+test audio::human_music::temporal_probes::anticipation_requires_actual_arrival_and_continuation ... ok
+test audio::human_music::temporal_probes::approach_to_orphan_color_is_locally_true_but_globally_unexplained ... ok
+test audio::human_music::temporal_probes::actual_common_tone_and_forward_step_own_the_same_color ... ok
+test audio::human_music::temporal_probes::genuine_held_suspension_is_observed_across_boundary ... ok
+test audio::human_music::temporal_probes::labels_cannot_make_a_nonmember_into_a_chord_tone ... ok
+test audio::human_music::temporal_probes::open_closure_annotation_alone_does_not_select_a_color ... ok
+test audio::human_music::temporal_probes::ii_v_i_retains_and_resolves_guide_path ... ok
+test audio::human_music::temporal_probes::locally_licensed_thirteenth_can_be_orphaned ... ok
+test audio::human_music::temporal_probes::polyphonic_voice_cannot_borrow_convenient_nonadjacent_resolution ... ok
+test audio::human_music::temporal_probes::unrelated_legal_extensions_differ_from_smooth_i_iv_i_voice ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 657 filtered out; finished in 0.00s
+
