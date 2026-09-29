@@ -48,6 +48,7 @@ pub mod rng;
 pub mod score;
 pub mod semantic;
 pub mod sonority;
+pub mod support;
 pub mod synth;
 pub mod theory;
 pub mod timeline;

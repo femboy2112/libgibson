@@ -68,12 +68,23 @@ pub fn release_at_harmony_change(
     notes: &mut [Note],
     chords: &[super::harmony::ChordSpan],
 ) -> usize {
+    release_with_overhang(notes, chords, 0.5)
+}
+
+/// [`release_at_harmony_change`] with an explicit tolerated overhang (beats): a note may carry at
+/// most `overhang` into a harmony it does not belong to. The coupled keys use a near-zero overhang —
+/// a stab's written tail a quarter beat into the next chord is a real vertical collision there.
+pub fn release_with_overhang(
+    notes: &mut [Note],
+    chords: &[super::harmony::ChordSpan],
+    overhang: f64,
+) -> usize {
     let mut released = 0;
     for n in notes.iter_mut() {
         let end = n.start_beat + n.dur_beats as f64;
         let Some(next) = chords
             .iter()
-            .find(|c| c.start_beat > n.start_beat + 1e-6 && c.start_beat < end - 0.5)
+            .find(|c| c.start_beat > n.start_beat + 1e-6 && c.start_beat < end - overhang)
         else {
             continue;
         };
@@ -118,6 +129,14 @@ pub fn realize_keys(
 pub fn finish_keys(mut out: Vec<Note>, perf: &PerformancePlan) -> Vec<Note> {
     out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
     release_at_harmony_change(&mut out, &perf.chords);
+    out
+}
+
+/// The coupled keys' final pass: as [`finish_keys`], but a note lifts off AT the next harmony when
+/// it does not belong there (no half-beat of tolerated overhang).
+pub fn finish_keys_coupled(mut out: Vec<Note>, perf: &PerformancePlan) -> Vec<Note> {
+    out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+    release_with_overhang(&mut out, &perf.chords, 0.02);
     out
 }
 

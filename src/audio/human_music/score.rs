@@ -376,6 +376,9 @@ pub struct Score {
     /// note re-pitched to the floor, a material line moved an octave, a candidate refused) — so
     /// "zero unowned collisions" is never a hidden repair either. Empty under the independent control.
     pub vertical_decisions: Vec<super::harmonic_state::VerticalDecision>,
+    /// Round VIII: what the joint pad+keys solve did (the union cost along the independent control's
+    /// choice vs the joint choice). `None` under the independent control.
+    pub support_report: Option<super::support::JointReport>,
 }
 
 impl Score {
@@ -393,6 +396,7 @@ impl Score {
             melody_repairs: 0,
             melody_rejudged: 0,
             vertical_decisions: Vec::new(),
+            support_report: None,
         }
     }
 

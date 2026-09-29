@@ -204,6 +204,11 @@ pub enum VoicingShape {
     GuideExtensions,
     /// A triad of licensed tones (at least one a tension) stacked over the guide tone(s).
     UpperStructure,
+    /// Round VIII: a variant of another candidate that COMPLEMENTS the band rather than respelling
+    /// the whole chord — one voice moved an octave, dropped (another player supplies it), or a guide
+    /// tone swapped for a non-guide neighbour. Offered only by the joint support solve, which
+    /// requires the BAND (not each player) to hold every identity tone.
+    Complement,
 }
 
 impl VoicingShape {
@@ -227,6 +232,7 @@ impl VoicingShape {
             VoicingShape::Rootless => "rootless",
             VoicingShape::GuideExtensions => "guide+ext",
             VoicingShape::UpperStructure => "upper-structure",
+            VoicingShape::Complement => "complement",
         }
     }
 }
@@ -331,7 +337,8 @@ impl VoiceRange {
     }
 }
 
-fn allowed(ctx: &HarmonicContext, pc: i32) -> bool {
+/// Whether `pc` may sound in a support voicing over `ctx` (a chord tone or a licensed tension).
+pub fn allowed(ctx: &HarmonicContext, pc: i32) -> bool {
     let pc = pc.rem_euclid(12);
     ctx.chord.contains_pc(pc) || ctx.palette.tensions.contains(&pc)
 }
@@ -1259,6 +1266,22 @@ pub struct RolePath {
 }
 
 impl RolePath {
+    /// A role path from an already-chosen path over `steps` (context index per step) — the joint
+    /// support solve ([`super::support`]) builds the pad's and the keys' paths this way.
+    pub fn from_steps(
+        ix: Vec<usize>,
+        steps: &[PathStep],
+        path: VoicePath,
+        range: VoiceRange,
+    ) -> RolePath {
+        RolePath {
+            re_entry: steps.iter().map(|s| s.re_entry).collect(),
+            path,
+            context_ix: ix,
+            range,
+        }
+    }
+
     fn solve(ix: Vec<usize>, steps: &[PathStep], range: VoiceRange) -> RolePath {
         RolePath {
             re_entry: steps.iter().map(|s| s.re_entry).collect(),

@@ -138,6 +138,7 @@ fn realize(
         EnsembleCoupling::Coupled => {
             let r = realize_coupled(world, seed, plan, perf, &lead.notes);
             score.vertical_decisions = r.decisions;
+            score.support_report = Some(r.support);
             (r.pad, r.keys, r.bass)
         }
     };
@@ -167,6 +168,7 @@ struct Coupled {
     keys: Vec<Note>,
     bass: Vec<Note>,
     decisions: Vec<super::harmonic_state::VerticalDecision>,
+    support: super::support::JointReport,
 }
 
 /// Realize bass, keys and pad against one [`HarmonicEnsembleState`], in RIGIDITY order: the lead is
@@ -188,18 +190,19 @@ fn realize_coupled(
     state.commit(&bass);
     let lines = super::comp::keys_lines(perf, lead, super::comp::keys_velocity(world));
     state.commit(&lines);
-    let spread = world.voicing_spread;
-    let kp = super::voicing::keys_path(perf, spread, lead, super::comp::keys_shell_n(perf));
-    let pp = super::voicing::pad_path(perf, spread);
-    let pad = super::comp::realize_pad_on(perf, world, &pp);
-    let mut keys = super::comp::keys_comp(perf, world, lead, seed, &kp);
+    // The bed: the pad and the keys' comping voiced as ONE decision against everything above.
+    let n = super::comp::keys_shell_n(perf);
+    let sp = super::support::joint_support_paths(perf, world.voicing_spread, lead, n, &state);
+    let pad = super::comp::realize_pad_on(perf, world, &sp.pad);
+    let mut keys = super::comp::keys_comp(perf, world, lead, seed, &sp.keys);
     keys.extend(lines);
-    let keys = super::comp::finish_keys(keys, perf);
+    let keys = super::comp::finish_keys_coupled(keys, perf);
     Coupled {
         pad,
         keys,
         bass,
         decisions: state.log().to_vec(),
+        support: sp.report,
     }
 }
 

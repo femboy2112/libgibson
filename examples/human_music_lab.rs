@@ -441,6 +441,40 @@ fn main() -> std::io::Result<()> {
             &policy,
             &[],
         );
+        if let Some(r) = &score.support_report {
+            print!("{}", r.report());
+        }
+        // --sonority-detail=unowned|missing|flip|bass|all: every problem slice of that class, spelled.
+        if let Some(which) = arg("--sonority-detail=") {
+            use gibson::audio::human_music::sonority::{describe, slices, voices_of, Problem};
+            let voices = voices_of(&score, &perf.contexts);
+            for sl in slices(&voices, &perf.contexts, &policy, &[]) {
+                let hit = sl.problems.iter().any(|p| match (which.as_str(), p) {
+                    ("unowned", Problem::Unowned { .. }) => true,
+                    ("missing", Problem::MissingCore { .. }) => sl.end - sl.start >= 0.25,
+                    ("flip", Problem::IdentityFlip { .. }) => true,
+                    ("bass", Problem::BassFunction { .. }) => true,
+                    ("all", _) => true,
+                    _ => false,
+                });
+                if hit {
+                    print!("{}", describe(&sl, &voices, &perf.contexts));
+                }
+            }
+        }
+        println!(
+            "vertical decisions (coupled realization, explained): {}",
+            score.vertical_decisions.len()
+        );
+        for d in &score.vertical_decisions {
+            println!(
+                "  {:>7.2} {:5} {:11} {}",
+                d.beat,
+                d.role.label(),
+                d.what,
+                d.reason
+            );
+        }
         println!(
             "ensemble sonority (AUDIBLE lifetimes): unowned m2={} m9={} ({:.2} beats) identity_flips={} bass_function={} crowded={} mean_pcs={:.2}",
             audible.unowned_m2,
