@@ -2,8 +2,8 @@
 //!
 //! Three axes stay separate:
 //!
-//! - the **composition** ([`super::plan::CompositionPlan`]: form, discourse, the DeflectedLift
-//!   backbone timeline) is the song's identity;
+//! - the **composition** ([`super::song::SongMap`]: form, discourse, the backbone timeline, the
+//!   thematic and harmonic maps) is the song's identity;
 //! - the **world** ([`super::world::MusicWorld`]) is timbre, production and local physics;
 //! - the **language** (this module) is the performance idiom: a declared transform of the song's
 //!   harmonic rhythm ([`HarmonicRhythm`]), colour depth, voicing and melodic-connective policy,
@@ -16,15 +16,19 @@
 /// How an idiom treats the song's harmonic rhythm: a declared, typed transform of the chart's
 /// canonical rhythm ([`super::song::HarmonicMap::bars_per_chord`]) — never a private number (Round
 /// IX: `harmonic_rhythm_bars` used to move the chart's change points with no song coordinate
-/// owning them). Both transforms preserve the chart's landmarks: every slot's anchor on its
-/// downbeat and the pointer closing every Lift.
+/// owning them). Both transforms preserve the chart's landmarks — every slot's anchor on its
+/// downbeat and the pointer closing every Lift — and their interior changes are prolongations.
+/// `Diminished` is NOT a strict refinement of every charted interior change: a slot whose length
+/// is not a multiple of the chart unit is re-tiled (a 5-bar slot charted at beats {0, 10} is
+/// diminished to {0, 4, 8, 12, 16}); only the landmarks are held invariant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HarmonicRhythm {
     /// One chord per chart unit, as charted.
     AsCharted,
-    /// Diminution: every chart unit split in two. The added changes are prolongations — an
-    /// anchor's satellite or colour pedal, the reach's sequence step, the pointer's own applied
-    /// dominant — and the pointer moves to the Lift's last (shorter) unit, still closing it.
+    /// Diminution to half the chart's bars per chord (for the canonical two, one chord per bar). The
+    /// added changes are prolongations — an anchor's satellite or colour pedal, the reach's sequence
+    /// step, the pointer's own applied dominant — and the pointer moves to the Lift's last (shorter)
+    /// unit, still closing it.
     Diminished,
 }
 

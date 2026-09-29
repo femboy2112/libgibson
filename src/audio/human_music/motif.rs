@@ -745,7 +745,9 @@ pub struct LineRequest<'a> {
     pub max_candidates: usize,
     /// A beat the line must ARRIVE at: the first sounding event within `[t - 0.25, t + 1)` may
     /// only be a chord tone of its onset harmony (a lead Resolve the plan handed this statement).
-    /// A feasibility constraint, not a cost: a line that already arrives is unchanged.
+    /// A feasibility filter over the unconstrained candidates, not a cost: a line that already
+    /// arrives is unchanged. One arrival per statement (the first Resolve whose window it sounds
+    /// in); a second would go unconstrained — the witness audit reports it if it ever fails.
     pub arrival: Option<f64>,
 }
 
@@ -771,7 +773,8 @@ struct Slot {
     allowed: u16,
     /// Guide tones (3rd, 7th/6th) of the onset harmony.
     guide: u16,
-    /// The line's required arrival ([`LineRequest::arrival`]): chord tones of `cur` only.
+    /// The line's required arrival ([`LineRequest::arrival`]): chord tones of `cur` only, filtered
+    /// from the unconstrained candidates.
     arrive: bool,
 }
 
@@ -823,7 +826,7 @@ impl<'a> LineRequest<'a> {
                 .and_then(|cs| chord_at(self.chords, cs - 1e-3));
             let ctx = super::context::context_at(self.contexts, start).or(self.contexts.first());
             let cur_mask = chord_mask(cur);
-            let licensed = if self.style.tension_targets && !arrive {
+            let licensed = if self.style.tension_targets {
                 ctx.map_or(0, |c| super::pitch::pc_mask(&c.palette.tensions)) & !cur_mask
             } else {
                 0
@@ -923,7 +926,11 @@ impl Engine<'_> {
         has_pc(chord_mask(sl.cur), p) || has_pc(sl.licensed, p)
     }
 
-    /// Up to `cap` stable target candidates near the anchor, closest first. Never empty.
+    /// Up to `cap` stable target candidates near the anchor, closest first. Never empty. At the
+    /// line's required arrival (`Slot::arrive`) only the chord tones AMONG those candidates stay:
+    /// a filter over the unconstrained set, so a line whose optimum already arrives is unchanged
+    /// (its choice survives the filter and nothing new enters). Only when no candidate is a chord
+    /// tone does the arrival fall back to its harmony's nearest chord tone.
     fn target_cands(&self, s: usize, cap: usize) -> Vec<Midi> {
         let a = self.slots[s].anchor;
         let mut v = Vec::new();
@@ -940,8 +947,12 @@ impl Engine<'_> {
                 }
             }
         }
+        let sl = &self.slots[s];
+        if sl.arrive {
+            v.retain(|&m| has_pc(chord_mask(sl.cur), m));
+        }
         if v.is_empty() {
-            v.push(nearest_chord_tone(a, self.slots[s].cur, &self.scale));
+            v.push(nearest_chord_tone(a, sl.cur, &self.scale));
         }
         v
     }
@@ -1063,10 +1074,21 @@ impl Engine<'_> {
         let hi = (pa.max(pb) + 3).max(sl.anchor + 2);
         let mut v: Vec<Midi> = (lo..=hi)
             .filter(|&p| has_pc(sl.allowed, p) || (p - pb).abs() == 1 || (p - pa).abs() == 1)
-            .filter(|&p| !sl.arrive || has_pc(chord_mask(sl.cur), p))
             .collect();
         v.sort_by_key(|&p| ((p - sl.anchor).abs(), p));
         v.truncate(CONN_CAP);
+        // The required arrival keeps only the chord tones among the (capped) candidates — a filter
+        // over the unconstrained set, never a door for candidates the cap excluded. Only when none
+        // of them is a chord tone does it reach for the harmony's chord tones in the window.
+        if sl.arrive {
+            let chord = chord_mask(sl.cur);
+            v.retain(|&p| has_pc(chord, p));
+            if v.is_empty() {
+                v = (lo..=hi).filter(|&p| has_pc(chord, p)).collect();
+                v.sort_by_key(|&p| ((p - sl.anchor).abs(), p));
+                v.truncate(CONN_CAP);
+            }
+        }
         v
     }
 

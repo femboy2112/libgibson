@@ -252,7 +252,7 @@ fn one_song_four_performances() {
 /// **Negative controls: a real song coordinate moves the map; the check sees it.** Mutating the
 /// thesis contour, a harmonic arrival or a landmark changes the song's fingerprint, and a
 /// performance of the ORIGINAL song fails conformance against the mutated one with the exact
-/// reason — while nothing a performance decides (room, idiom) moves the fingerprint at all.
+/// reason. (That no room or idiom moves it is structural: `SongMap::build` takes neither.)
 #[test]
 fn real_mutations_move_the_song() {
     let song = flagship_song();
@@ -321,6 +321,14 @@ fn real_mutations_move_the_song() {
     let r = SongMapConformance::check(&landmark, &c.perf, &c.score);
     assert!(!r.wrong_harmonic_landmarks.is_empty(), "{}", r.report());
 
+    // A planned key excursion in the song's causal timeline (the performance lifts its Modulate
+    // actions from it): song data, so it moves the fingerprint.
+    let mut excursion = song.clone();
+    excursion.timeline.transitions[1]
+        .applied
+        .push(super::intent::IntentMorphism::Modulate);
+    assert_ne!(excursion.fingerprint(), fp);
+
     // The R8b defect, re-enacted: the Aeolian room searching its OWN mode for the cell (on
     // 0b4483d it found degree journey [1,5,2,0], opening on bIII). Performed, and checked against
     // the song: caught at the Open landmarks and as chords outside the chart's vocabulary.
@@ -334,6 +342,12 @@ fn real_mutations_move_the_song() {
         &MusicWorld::black_ice(),
         PerformanceOptions::default(),
     );
+    // (This is also the configuration the Resolve-arrival constraint was built for — the song's
+    // answer over the Aeolian room's own C add9 — and it arrives: every action witnessed, nothing
+    // snapped.)
+    let w = super::witness::audit(&old.perf, &old.score);
+    assert_eq!(w.witnessed(), w.total(), "{}", w.report());
+    assert_eq!(old.score.melody_repairs, 0);
     let r = SongMapConformance::check(&song, &old.perf, &old.score);
     eprintln!("{}", r.report());
     assert!(
@@ -351,22 +365,77 @@ fn real_mutations_move_the_song() {
         "{}",
         r.report()
     );
+}
 
-    // The fiber does not move it.
-    for world in MusicWorld::all() {
-        for language in [
-            MusicalLanguage::simple(),
-            MusicalLanguage::fusion_conversation(),
-        ] {
-            let p = perform(
-                &song,
-                &world,
-                PerformanceOptions {
-                    language,
-                    ..PerformanceOptions::default()
-                },
-            );
-            assert_eq!(p.perf.song_fingerprint, fp);
+/// **The law beyond the flagship.** Every stock story (and a trace whose danger impact asks for a
+/// modulation), forced onto DeflectedLift, at three lengths, performed four ways: every
+/// performance states the song's theme, sounds its chart's landmarks, changes chords only as the
+/// chart and its idiom's declared transform license (or a recorded action explains), and keeps its
+/// form. Before the landmarks were protected from harmonic actions and the checker knew an
+/// action's split remainder, 32 of a 288-performance release sweep of this shape passed.
+///
+/// Song obligations are the exception, and an inherited one: the R8b tip left a settled
+/// obligation unwitnessed in 208 of 240 performances of the five stock stories, and Round IX in
+/// exactly as many. Pinned exactly here (a known defect's anchor, not a pass): fewer is progress
+/// to re-pin, more fails.
+#[test]
+fn the_law_holds_across_songs() {
+    use super::semantic::{
+        calm_loop, demo_trace, false_climax, rise_unresolved, Density, Elevation, Emphasis,
+        EventKind, SemanticEvent, SemanticState, SemanticTrace, Tone,
+    };
+    let e = |at: f64, tone: Tone, kind: EventKind| SemanticEvent {
+        at_beat: at,
+        state: SemanticState {
+            tone,
+            emphasis: Emphasis::Normal,
+            density: Density::Normal,
+            elevation: Elevation::Raised,
+        },
+        kind,
+    };
+    let impact = |beats: f64| {
+        SemanticTrace::new(
+            vec![
+                e(16.0, Tone::Info, EventKind::FocusAcquired),
+                e(32.0, Tone::Danger, EventKind::Impact),
+                e(48.0, Tone::Success, EventKind::Confirmation),
+                e(64.0, Tone::Neutral, EventKind::SectionResolved),
+            ],
+            beats,
+        )
+    };
+    let stories: [(&str, &dyn Fn(f64) -> SemanticTrace); 6] = [
+        ("bounce", &deflected_lift_trace),
+        ("demo", &demo_trace),
+        ("rise", &rise_unresolved),
+        ("false_climax", &false_climax),
+        ("calm", &calm_loop),
+        ("impact", &impact),
+    ];
+    let (mut checked, mut unwitnessed) = (0, 0);
+    for (name, story) in stories {
+        for beats in [80.0, 120.0, 160.0] {
+            let song = SongMap::build(&story(beats), SEED, Some(CompositionGrammar::DeflectedLift));
+            for (label, c) in acceptance(&song) {
+                let r = SongMapConformance::check(&song, &c.perf, &c.score);
+                let identity = r.song == r.performed
+                    && !r.bank_mismatch
+                    && r.missing_theme_sites.is_empty()
+                    && r.wrong_harmonic_landmarks.is_empty()
+                    && r.illegal_harmonic_transforms.is_empty()
+                    && r.form_mismatch.is_empty();
+                assert!(identity, "{name} {beats} {label}: {}", r.report());
+                checked += 1;
+                unwitnessed += usize::from(r.unwitnessed_song_obligations > 0);
+            }
         }
     }
+    eprintln!("{checked} performances conform on theme, chart, rhythm and form; {unwitnessed} leave a song obligation unwitnessed (inherited)");
+    assert_eq!(checked, 72);
+    assert_eq!(unwitnessed, UNWITNESSED_OBLIGATION_PERFORMANCES);
 }
+
+/// Performances in [`the_law_holds_across_songs`] that leave a settled song obligation with no
+/// witnessing action — the inherited R7b binding gap (see its doc), measured on 301278e+.
+const UNWITNESSED_OBLIGATION_PERFORMANCES: usize = 60;

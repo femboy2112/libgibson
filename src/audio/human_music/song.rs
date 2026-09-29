@@ -131,8 +131,9 @@ pub struct SongMap {
     pub timeline: IntentTimeline,
     /// Contract, form, discourse, arrangement envelope and (DeflectedLift) the backbone timeline.
     pub plan: CompositionPlan,
-    /// The composition seed. Every song-level choice draws from it; performances reuse it for
-    /// their own (fiber) randomness.
+    /// The composition seed. The song-level draws take it (the germ's transposition, hook and cells;
+    /// the chart search's exact-tie breaks — with the frame fixed, few seeds differ in the chart);
+    /// performances reuse it for their own (fiber) randomness.
     pub seed: u64,
     /// The reference frame the song's relative coordinates are charted in ([`REFERENCE_FRAME`]).
     pub frame: Mode,
@@ -199,32 +200,26 @@ impl HarmonicMap {
 }
 
 impl SongMap {
-    /// The song's fingerprint, over SONG-DEFINING data only: the reference frame, the contract,
-    /// the form (phrases, families, exact length), the discourse (thesis, goals, culmination,
-    /// answer, obligation ledger), the arrangement envelope (who is seated per phrase — roles, not
-    /// gains), the backbone's slot grid (gesture, cycle, start, length, variation) and the thematic
-    /// and harmonic maps. Not the trace, the seed, a world, a language, a patch, a mix, a voicing,
-    /// or anything a performance decides. An implementation receipt, not a proof of sameness: the
-    /// listen decides whether two performances are one song.
+    /// The song's fingerprint, over SONG-DEFINING data only: the reference frame, the causal intent
+    /// timeline (every performance lifts its actions — and so its key excursions — from it), the
+    /// contract, the form (phrases, families, exact length), the discourse (thesis, goals,
+    /// culmination, answer, obligation ledger), the arrangement envelope (who is seated per phrase
+    /// — roles, not gains), the whole backbone (slot grid, bindings, clocks) and the thematic and
+    /// harmonic maps. Not the raw trace or seed (their song-level consequences are all hashed; what
+    /// else the seed drives is the performance's own randomness), and never a world, a language, a
+    /// patch, a mix, a voicing, or anything a performance decides. An implementation receipt, not a
+    /// proof of sameness: the listen decides whether two performances are one song.
     pub fn fingerprint(&self) -> u64 {
         let p = &self.plan;
-        let slots: Vec<_> = p
-            .backbone
-            .iter()
-            .flat_map(|b| {
-                b.slots
-                    .iter()
-                    .map(|s| (s.gesture, s.cycle, s.start_bar, s.bars, s.variation))
-            })
-            .collect();
         fnv1a(&format!(
-            "frame={:?}|contract={:?}|form={:?}|discourse={:?}|arrangement={:?}|slots={:?}|thematic={:#x}|harmonic={:?}",
+            "frame={:?}|timeline={:?}|contract={:?}|form={:?}|discourse={:?}|arrangement={:?}|backbone={:?}|thematic={:#x}|harmonic={:?}",
             self.frame,
+            self.timeline,
             p.contract,
             p.form,
             p.discourse,
             p.arrangement,
-            slots,
+            p.backbone,
             self.thematic.fingerprint(),
             self.harmonic.map(|h| h.fingerprint()),
         ))
@@ -287,6 +282,14 @@ pub struct TransformMiss {
 /// **π, checked.** Whether a performance (its plan and its realized score) preserves the song's
 /// coordinates — exact structural checks, no weighted total, no similarity score. Every list names
 /// its failures; the `*_checked` counts make a pass over nothing visible.
+///
+/// What it reads: the performance's plan (bank, statements, edits, declared regions, obligations)
+/// and the score's chord spans — the harmony every pitched realizer is justified against
+/// (`RealizationDiagnostics::unjustified_by_role` is that separate receipt). It does not audit
+/// realized pitch content. Some fields hold by construction for a [`super::functor::perform`]
+/// output — the bank, the form, the performance's song claim, a site "stated otherwise" — and
+/// guard hand-built or mutated performances; the landmarks, the chord changes and the obligations
+/// are where engine output can and did fail.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SongMapConformance {
     /// The song's fingerprint, and the one the performance says it performs.
@@ -294,9 +297,11 @@ pub struct SongMapConformance {
     pub performed: u64,
     /// The performance's motif bank is not the song's.
     pub bank_mismatch: bool,
-    /// Identity sites (the thesis coming home, the hook) not stated as written, or not heard.
+    /// Identity sites (the thesis coming home, the hook) not stated as written, or with no lead
+    /// note stamped with the statement's material.
     pub missing_theme_sites: Vec<ThemeMiss>,
-    /// Chart landmarks sounding another root (read in the region in force there).
+    /// Chart landmarks whose chord span has another root (read in the region the performance
+    /// declares in force there).
     pub wrong_harmonic_landmarks: Vec<LandmarkMiss>,
     /// Chord changes outside the chart's vocabulary for their gesture, or off the declared rhythm
     /// transform's grid, that no recorded harmonic action (a typed, logged edit) explains.
@@ -387,7 +392,8 @@ impl SongMapConformance {
                 .language
                 .harmonic_rhythm
                 .bars_per_chord(hm.bars_per_chord);
-            for sp in &score.chords {
+            let edited_at = |at: f64| perf.edits.iter().any(|e| (e.at_beat - at).abs() < 1e-6);
+            for (i, sp) in score.chords.iter().enumerate() {
                 let Some(sl) = tl.slot_at_beat(sp.start_beat) else {
                     continue;
                 };
@@ -401,6 +407,12 @@ impl SongMapConformance {
                 if edited {
                     continue;
                 }
+                // The remainder of a span a recorded action split (a modulation's tonic head, an
+                // applied dominant's half) starts where that action's edit ends: the action
+                // explains the change point; the root is still held to the chart's vocabulary.
+                let split = i.checked_sub(1).map(|j| &score.chords[j]).is_some_and(|p| {
+                    edited_at(p.start_beat) && (p.start_beat + p.dur_beats as f64 - at).abs() < 1e-6
+                });
                 let region = perf.region_at(at);
                 let vocab: Vec<ChartRoot> = match sl.gesture {
                     G::Lift => vec![c.lift, c.lift_alt, c.pointer],
@@ -425,7 +437,8 @@ impl SongMapConformance {
                 let n = ((total / hr).floor() as usize).max(1);
                 let unit = total / n as f64;
                 let off = at - sl.start_beat();
-                let on_grid = (0..n).any(|k| (off - k as f64 * unit).abs() < 1e-6)
+                let on_grid = split
+                    || (0..n).any(|k| (off - k as f64 * unit).abs() < 1e-6)
                     || (sl.gesture == G::Lift && n == 1 && (off - total / 2.0).abs() < 1e-6);
                 if !on_grid {
                     illegal_harmonic_transforms.push(TransformMiss {

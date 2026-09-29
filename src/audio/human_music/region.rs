@@ -475,21 +475,21 @@ impl HarmonicFrame {
         }
     }
 
-    /// Whether a Deflect slot starts at `beat` (a planned miss must stay a miss).
-    fn is_deflect_start(&self, beat: f64) -> bool {
-        self.slots
-            .iter()
-            .any(|&(b, g)| g == HarmonicGesture::Deflect && (b - beat).abs() < EPS)
+    /// Whether a backbone gesture slot starts at `beat` (its downbeat chord is the chart's anchor).
+    fn is_anchor_start(&self, beat: f64) -> bool {
+        self.slots.iter().any(|&(b, _)| (b - beat).abs() < EPS)
+    }
+
+    /// Whether a span ending at `end` closes a Lift (its harmony is the chart's pointer).
+    fn closes_lift(&self, end: f64) -> bool {
+        self.lift_ends.iter().any(|&e| (e - end).abs() < EPS)
     }
 
     /// Whether `c` is a backbone gesture anchor (the chord on a slot's downbeat — including every
-    /// Deflect slot start) or a pointer (the chord that ends a Lift).
+    /// Deflect slot start) or a pointer (the chord that ends a Lift). These are the song's chart
+    /// landmarks (Round IX: `SongMap::landmarks`): no harmonic action may replace their root.
     fn protected(&self, c: &ChordSpan) -> bool {
-        let end = c.start_beat + c.dur_beats as f64;
-        self.slots
-            .iter()
-            .any(|&(b, _)| (b - c.start_beat).abs() < EPS)
-            || self.lift_ends.iter().any(|&e| (e - end).abs() < EPS)
+        self.is_anchor_start(c.start_beat) || self.closes_lift(c.start_beat + c.dur_beats as f64)
     }
 
     /// **The return rule.** A modulated region persists from its pivot until the FIRST of: the next
@@ -617,6 +617,9 @@ fn plan_modulation(
     } else {
         common_chord(&from, &to, &p.chord, None).ok_or("no chord is diatonic to both regions")?
     };
+    if pivot != p.chord && frame.is_anchor_start(p.start_beat) {
+        return Err("the pivot would replace a chart anchor");
+    }
     out.push(span(&p, p.start_beat, p.dur_beats - half, pivot, &from));
     if pivot != p.chord {
         edits.push(edit(p.start_beat, p.chord, pivot, EditKind::PivotIn));
@@ -632,12 +635,13 @@ fn plan_modulation(
 
     // 2. The same functional path, transposed into the new region. The dominant resolves into the
     //    tonic: when the path's first chord is not the new tonic, its first half becomes it —
-    //    except on a Deflect slot start, where the planned miss must stay a miss.
+    //    except on a chart anchor (a slot's downbeat): the song's journey, transposed, stays the
+    //    song's (a Deflect's planned miss stays a miss, a Lift stays a reach).
     let iv = (to.tonic_pc - from.tonic_pc).rem_euclid(12);
     for (j, c) in chords[k..r].iter().enumerate() {
         let t = Chord::new(c.chord.root_pc + iv, c.chord.quality);
         let moved = ChordSpan { chord: t, ..*c };
-        if j == 0 && t.root_pc != to.tonic_pc && !frame.is_deflect_start(c.start_beat) {
+        if j == 0 && t.root_pc != to.tonic_pc && !frame.is_anchor_start(c.start_beat) {
             let tonic = diatonic_chord(&to, 0, has_seventh(&t));
             let head = if c.dur_beats >= 2.0 - 1e-6 {
                 (c.dur_beats / 2.0).max(1.0)
@@ -689,6 +693,9 @@ fn plan_modulation(
                     last.dur_beats
                 };
                 let at = last.start_beat + (last.dur_beats - tail) as f64;
+                if frame.is_anchor_start(at) {
+                    return Err("the return pivot would replace a chart anchor");
+                }
                 if overlaps(
                     &locked_new,
                     &ChordSpan {
@@ -787,10 +794,12 @@ fn plan_modulation(
 }
 
 /// Insert an applied dominant before the non-tonic harmony arriving at (or after) `a`: the second
-/// half of the preceding span becomes V7/x. The region is unchanged.
+/// half of the preceding span becomes V7/x. The region is unchanged. Never the second half of a
+/// chart pointer: the harmony closing a Lift is the song's expectation, not a tonicization's.
 fn tonicize(
     chords: &mut Vec<ChordSpan>,
     a: &MusicalAction,
+    frame: &HarmonicFrame,
     regions: &RegionTimeline,
     locked: &[(f64, f64)],
 ) -> Option<HarmonicEdit> {
@@ -805,7 +814,10 @@ fn tonicize(
         return None; // a dominant to the local tonic is an arrival, not a tonicization
     }
     let prev = chords[ix - 1];
-    if prev.dur_beats < 2.0 - 1e-6 || overlaps(locked, &prev) {
+    if prev.dur_beats < 2.0 - 1e-6
+        || overlaps(locked, &prev)
+        || frame.closes_lift(prev.start_beat + prev.dur_beats as f64)
+    {
         return None;
     }
     let half = (prev.dur_beats / 2.0).max(1.0);
@@ -863,11 +875,14 @@ fn reharmonize(
     };
     let mut choice: Option<(usize, Chord, EditKind, ActionKind)> = None;
     if a.kind == ActionKind::Reharmonize {
-        choice = cands.iter().find_map(|&ix| {
-            let (_, next) = neighbours(ix);
-            tritone_sub(&chords[ix].chord, next.as_ref(), &at(ix))
-                .map(|s| (ix, s, EditKind::TritoneSub, ActionKind::Reharmonize))
-        });
+        choice = cands
+            .iter()
+            .filter(|&&ix| !frame.protected(&chords[ix]))
+            .find_map(|&ix| {
+                let (_, next) = neighbours(ix);
+                tritone_sub(&chords[ix].chord, next.as_ref(), &at(ix))
+                    .map(|s| (ix, s, EditKind::TritoneSub, ActionKind::Reharmonize))
+            });
         choice = choice.or_else(|| {
             cands
                 .iter()
@@ -982,7 +997,7 @@ fn apply_with_targets(
             continue;
         };
         if a.kind == ActionKind::Tonicize {
-            edits.extend(tonicize(chords, a, &regions, &locked));
+            edits.extend(tonicize(chords, a, frame, &regions, &locked));
             continue;
         }
         if let Some((e, verb)) = reharmonize(chords, a, frame, &regions, &locked) {
