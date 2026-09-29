@@ -438,4 +438,4 @@ fn the_law_holds_across_songs() {
 
 /// Performances in [`the_law_holds_across_songs`] that leave a settled song obligation with no
 /// witnessing action — the inherited R7b binding gap (see its doc), measured on 301278e+.
-const UNWITNESSED_OBLIGATION_PERFORMANCES: usize = 60;
+pub(super) const UNWITNESSED_OBLIGATION_PERFORMANCES: usize = 60;

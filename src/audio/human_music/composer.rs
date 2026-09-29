@@ -156,7 +156,7 @@ enum Ending {
     /// The thesis: reach, step back, land on the third or fifth — stable, not final.
     Antecedent,
     /// The consequent: rise only a step, step back, and settle ([`Close::Home`]: the tonic) or
-    /// hang ([`Close::Open`]: the fifth).
+    /// hang ([`Close::Open`]: the fifth or the second).
     Consequent(Close),
 }
 
@@ -184,7 +184,8 @@ fn build_line(p: &ThemeParams, ending: Ending, beats: f32) -> Motif {
     let land = match ending {
         Ending::Antecedent => nearest_of(x - 1, &[2, 4]),
         Ending::Consequent(Close::Home) => nearest_of(x - 1, &[0]),
-        Ending::Consequent(Close::Open) => nearest_of(x - 1, &[4]),
+        // Hanging: the fifth or the second (a half cadence), whichever is nearer.
+        Ending::Consequent(Close::Open) => nearest_of(x - 1, &[4, 1]),
     };
     d.push(land);
     r.push(beats - r.iter().sum::<f32>());
@@ -365,6 +366,9 @@ pub struct ThemeCandidate {
     /// every statement of the thesis and its consequent (mode-safe: a dominant's leading tone
     /// never counts, since a minor room raises it).
     pub fit: f32,
+    /// Theme-lane divergences from the MeaningPlan when this thesis and consequent are scheduled
+    /// into the song (the law, run on the candidate — not assumed from its construction).
+    pub divergences: usize,
     /// `None` if it survived every filter it met; else the first filter that removed it.
     pub dropped_by: Option<&'static str>,
 }
@@ -629,7 +633,7 @@ pub fn compose_meaning(
             })
             .collect();
         let mut live: Vec<usize> = (0..charts.len()).collect();
-        chart_stages.push(("lawful journeys", live.len()));
+        chart_stages.push(("journeys (lawful by construction)", live.len()));
         let mark = |c: &mut ChartCandidate, why| c.dropped_by = Some(why);
         stage(
             &mut live,
@@ -737,12 +741,20 @@ pub fn compose_meaning(
                 Ending::Consequent(target.resolution),
                 prior.theme_beats,
             );
+            let mut trial = song.clone();
+            trial.thematic = schedule(&song, &target, &thesis, &answer);
+            let divergences = Commutation::against(target.clone(), &trial)
+                .divergences
+                .iter()
+                .filter(|d| d.lane == Lane::Theme && d.owner == Owner::Composer)
+                .count();
             ThemeCandidate {
                 params,
                 profile: ThemeProfile::of(&thesis),
                 fit: fit_of(&thesis, &answer),
                 thesis,
                 answer,
+                divergences,
                 dropped_by: None,
             }
         })
@@ -762,27 +774,29 @@ pub fn compose_meaning(
         mark,
         &mut theme_stages,
     );
+    // The law: scheduled into the song, the thesis reaches as far as the story's arc, is taught
+    // before it is developed, and its consequent settles as the story does (μ = F, theme lane).
     stage(
         &mut live,
         &mut themes,
-        "reaches as far as the arc",
-        |c| c.profile.reach == target.arc,
+        "means the plan (μ = F)",
+        |c| c.divergences == 0,
         mark,
         &mut theme_stages,
     );
-    stage(
-        &mut live,
-        &mut themes,
-        "settles as the story does",
-        |c| landing(&c.answer) == target.resolution,
-        mark,
-        &mut theme_stages,
-    );
+    // Typical: the thesis inside every soft band; its consequent too, except where it lands —
+    // the story decides that (a hanging answer lands off the tonic triad on purpose).
     stage(
         &mut live,
         &mut themes,
         "typical for the prior",
-        |c| c.profile.unusual(prior).is_empty(),
+        |c| {
+            c.profile.unusual(prior).is_empty()
+                && ThemeProfile::of(&c.answer)
+                    .unusual(prior)
+                    .iter()
+                    .all(|&why| why == "lands off the tonic triad")
+        },
         mark,
         &mut theme_stages,
     );
@@ -846,7 +860,7 @@ fn schedule(song: &SongMap, target: &MeaningPlan, thesis: &Motif, answer: &Motif
         };
         let (motif, handoff) = match e.kind {
             K::Payoff => (thesis.clone(), Handoff::Hook),
-            K::Answer(_) => (answer.clone(), Handoff::Response),
+            K::Answer(_) => (answer.clone(), Handoff::Consequent),
             K::Develop => traj.next_for(t.goal.role),
             _ => {
                 traj.next_for(DiscourseRole::Restate);

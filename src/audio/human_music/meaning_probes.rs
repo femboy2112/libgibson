@@ -17,7 +17,8 @@ use super::discourse::DiscourseRole;
 use super::functor::perform;
 use super::language::MusicalLanguage;
 use super::meaning::{
-    Close, Commutation, Lane, Level, MeaningKind as K, MeaningPlan, Owner, Witness,
+    story_arc, Close, Commutation, Lane, Level, MeaningKind as K, MeaningPlan, Owner,
+    ThemeRelation, Witness,
 };
 use super::motif::{Handoff, Motif, MotifBank};
 use super::performance::PerformanceOptions;
@@ -36,14 +37,14 @@ fn r9_song(trace: &SemanticTrace) -> SongMap {
 }
 
 /// The story's peak semantic pressure and whether a release (a confirmation or a resolved
-/// section) follows that peak — the two things the stock traces most plainly disagree on.
+/// section) follows that peak (the last one, if it is reached more than once) — the two things the stock traces most plainly disagree on.
 fn peak_and_release(trace: &SemanticTrace) -> (f32, bool) {
     let (i, peak) = trace
         .events
         .iter()
         .enumerate()
         .map(|(i, e)| (i, e.state.pressure()))
-        .fold((0, 0.0f32), |a, b| if b.1 > a.1 { b } else { a });
+        .fold((0, 0.0f32), |a, b| if b.1 >= a.1 { b } else { a });
     let released = trace.events[i + 1..]
         .iter()
         .any(|e| matches!(e.kind, EventKind::Confirmation | EventKind::SectionResolved));
@@ -276,7 +277,8 @@ fn plays(song: &SongMap) -> bool {
 
 /// The Round IX flagship does not mean its story, and for exactly the reasons the witnesses name:
 /// every theme site hears material before it was taught (the thesis is first LEARNED at the
-/// return that was meant to be recognized), and the first pointer sounds before home. The miss
+/// return that was meant to be recognized; the culminating "hook" is no derivation of the thesis
+/// at all — a splice of two fragments, heard as FOREIGN), and the first pointer sounds before home. The miss
 /// itself is right — V7 to vi, the textbook deceptive arrival, a mid surprise for a mid arc.
 #[test]
 fn the_r9_song_does_not_mean_its_story() {
@@ -290,9 +292,9 @@ fn the_r9_song_does_not_mean_its_story() {
         divergent(&c),
         vec![
             (Theme, 1, Some(K::Learn), Some(K::Premature)),
-            (Theme, 2, Some(K::Payoff), Some(K::Premature)),
+            (Theme, 2, Some(K::Payoff), Some(K::Foreign)),
             (Theme, 3, Some(K::Answer(Close::Home)), Some(K::Premature)),
-            (Theme, 5, Some(K::Payoff), Some(K::Premature)),
+            (Theme, 5, Some(K::Payoff), Some(K::Foreign)),
             (Theme, 6, Some(K::Answer(Close::Home)), Some(K::Premature)),
             (Theme, 7, Some(K::Recognize), Some(K::Learn)),
             (Harmony, 0, Some(K::Establish), Some(K::Unestablished)),
@@ -518,7 +520,7 @@ fn the_control_is_untouched_and_shares_the_form() {
 fn the_meaning_directed_flagship() {
     let r9 = r9_song(&deflected_lift_trace(120.0));
     let (song, report) = compose_meaning(r9, &CompositionalPrior::HOOKY_FUSION);
-    assert_eq!(song.fingerprint(), 0x5e87_e2a6_128a_a984);
+    assert_eq!(song.fingerprint(), 0x8d90_1e3d_e291_90a2);
 
     // The chart: home first; V7; the textbook miss (vi) moving to ii; the open window (IV);
     // home with its plagal neighbour. Chosen from 117 lawful journeys: 6 mean the plan.
@@ -538,9 +540,9 @@ fn the_meaning_directed_flagship() {
     );
 
     // The theme: a two-note cell stated twice in place, one reach of a fourth, a step back, a
-    // landing on the third; its consequent settles on the tonic. 72 lawful lines; 24 reach as far
-    // as the arc; 8 are typical for the prior (in the octave over home, even cells); 3 sit best on
-    // the chart; the seed picks.
+    // landing on the third; its consequent settles on the tonic. 72 lawful lines; scheduled into
+    // the song, 24 mean the plan; 4 are typical for the prior (thesis AND consequent: in the
+    // octave over home, even cells); 2 sit best on the chart; the seed picks.
     let chosen = &report.themes[report.theme];
     assert_eq!(chosen.thesis.degrees, vec![0, 1, 0, 1, 4, 3, 2]);
     assert_eq!(
@@ -551,7 +553,7 @@ fn the_meaning_directed_flagship() {
     let survivors: Vec<usize> = report.theme_stages.iter().map(|s| s.1).collect();
     assert_eq!(
         survivors,
-        vec![72, 72, 24, 24, 8, 3, 1],
+        vec![72, 72, 24, 4, 2, 1],
         "{:?}",
         report.theme_stages
     );
@@ -597,6 +599,19 @@ fn the_meaning_directed_flagship() {
         let r = SongMapConformance::check(&song, &p.perf, &p.score);
         assert!(r.passes(), "{}", r.report());
         assert_eq!(r.song, song.fingerprint());
+        // Every lead site is identity — taught, paid off, answered, recognized — so the band states
+        // each as written (the consequent's landing is never fragmented away) and π checks all six.
+        assert_eq!(r.sites_checked, 6);
+        for st in p.perf.statements.iter() {
+            let site = song.thematic.site(st.phrase).unwrap();
+            assert!(site.is_identity());
+            assert_eq!(
+                (&st.motif, st.fragment),
+                (&site.motif, None),
+                "p{}",
+                st.phrase
+            );
+        }
         assert_eq!((p.score.melody_repairs, p.score.melody_rejudged), (0, 0));
         let rd = RealizationDiagnostics::measure(&song.plan, &p.score);
         assert!(rd.unjustified_by_role.iter().all(|x| x.1 == 0));
@@ -724,11 +739,12 @@ fn groove_extremes_are_lawful_and_the_prior_aims_between() {
         && c.dropped_by == Some("typical for the prior")));
 }
 
-/// Across songs: every stock story (and the modulating impact trace) at three lengths, composed
-/// toward its plan — every song means it wherever its form lets it (no composer-owned divergence;
-/// the form-owned ones are the Round IX form's, identical to the control's), every performance plays the song (π identity),
-/// nothing repaired, re-judged or unjustified. The inherited obligation-witness gap is unchanged:
-/// the same 60 of 72 performances as the Round IX control (a performance-side defect, PARKED).
+/// Across songs: every stock story (and the modulating impact trace) at three lengths and four
+/// seeds, composed toward its plan — every song means it wherever its form lets it (no
+/// composer-owned divergence; the form-owned ones are the Round IX form's, identical to the
+/// control's, song by song), every performance plays the song (π identity), nothing repaired,
+/// re-judged or unjustified. The inherited obligation-witness gap is unchanged: at the control's
+/// own seed, exactly the control's pinned count (a performance-side defect, PARKED).
 #[test]
 fn the_meaning_composer_across_songs() {
     use super::semantic::{Density, Elevation, Emphasis, SemanticEvent, SemanticState, Tone};
@@ -768,8 +784,16 @@ fn the_meaning_composer_across_songs() {
     };
     let (mut performances, mut unwitnessed, mut form_owned) = (0, 0, 0);
     for (name, story) in stories {
-        for beats in [80.0, 120.0, 160.0] {
-            let song = r10_song(&story(beats));
+        for (beats, seed) in [80.0, 120.0, 160.0]
+            .into_iter()
+            .flat_map(|b| [1u64, 7, 99, SEED].map(|s| (b, s)))
+        {
+            let song = SongMap::compose(
+                &story(beats),
+                seed,
+                Some(CompositionGrammar::DeflectedLift),
+                Composer::MeaningDirected,
+            );
             let c = Commutation::check(&song);
             assert_eq!(
                 c.composer_divergences(),
@@ -785,7 +809,9 @@ fn the_meaning_composer_across_songs() {
                     .map(|d| (d.at, d.wanted, d.heard))
                     .collect::<Vec<_>>()
             };
-            assert_eq!(form(&c), form(&Commutation::check(&r9_song(&story(beats)))));
+            let control =
+                SongMap::build(&story(beats), seed, Some(CompositionGrammar::DeflectedLift));
+            assert_eq!(form(&c), form(&Commutation::check(&control)));
             form_owned += c.divergences.len();
             for (w, o) in [
                 (MusicWorld::black_ice(), fusion),
@@ -809,18 +835,22 @@ fn the_meaning_composer_across_songs() {
                     "{name} {beats}"
                 );
                 performances += 1;
-                unwitnessed += usize::from(r.unwitnessed_song_obligations > 0);
+                if seed == SEED {
+                    unwitnessed += usize::from(r.unwitnessed_song_obligations > 0);
+                }
             }
         }
     }
-    assert_eq!(performances, 72);
+    assert_eq!(performances, 288);
+    // At the control's own configuration (seed 2112), exactly the control's pinned count.
     assert_eq!(
-        unwitnessed, 60,
+        unwitnessed,
+        super::song_probes::UNWITNESSED_OBLIGATION_PERFORMANCES,
         "the inherited gap, exactly as the control has it"
     );
     assert_eq!(
-        form_owned, 7,
-        "false_climax's two unliftable deflects at every length; one in the 80-beat bounce"
+        form_owned, 28,
+        "every one also the control's (asserted per song above)"
     );
 }
 
@@ -871,4 +901,187 @@ fn a_return_pivot_is_read_in_the_region_it_leaves() {
             .collect::<Vec<_>>(),
         vec![at]
     );
+
+    // Only the RETURN pivot is read in the region it leaves. At the modulation's ENTRY (home →
+    // away), strip the recorded edit and sound a chord lawful only in the region being left: it
+    // is still off-chart.
+    let mut p = perform(&song, &MusicWorld::black_ice(), simple);
+    let entry = p
+        .score
+        .chords
+        .iter()
+        .map(|c| c.start_beat)
+        .find(|&b| {
+            p.perf.region_at(b) != p.perf.region_at(b - 1e-3)
+                && p.perf.region_at(b - 1e-3) == p.perf.region_at(0.0)
+        })
+        .expect("the demo modulates");
+    let (away, home) = (p.perf.region_at(entry), p.perf.region_at(entry - 1e-3));
+    p.perf.edits.retain(|e| (e.at_beat - entry).abs() > 1e-6);
+    let only_home = [cell.deflect, cell.satellites[0]]
+        .iter()
+        .map(|r| r.root_pc(&home))
+        .find(|pc| {
+            [cell.deflect, cell.satellites[0]]
+                .iter()
+                .all(|r| r.root_pc(&away) != *pc)
+        })
+        .unwrap();
+    let e = p
+        .score
+        .chords
+        .iter()
+        .position(|c| (c.start_beat - entry).abs() < 1e-9)
+        .unwrap();
+    p.score.chords[e].chord.root_pc = only_home;
+    let r = SongMapConformance::check(&song, &p.perf, &p.score);
+    assert!(
+        r.illegal_harmonic_transforms
+            .iter()
+            .any(|t| (t.beat - entry).abs() < 1e-9),
+        "{}",
+        r.report()
+    );
+}
+
+/// The review's controls: the listener model is not blind where it used to be.
+#[test]
+fn the_listener_model_sees_what_it_used_to_miss() {
+    // A foreign tune where a development was promised: no derivation of the thesis, not "Develop".
+    let song = r10_song(&demo_trace(120.0));
+    let (develop_at, thesis) = (
+        song.thematic
+            .sites
+            .iter()
+            .find(|x| x.handoff == Handoff::Develop)
+            .map(|x| x.phrase)
+            .expect("the demo develops once learned"),
+        song.thematic.bank.identity.clone(),
+    );
+    let mut foreign = song.clone();
+    foreign
+        .thematic
+        .sites
+        .iter_mut()
+        .find(|x| x.phrase == develop_at)
+        .unwrap()
+        .motif = Motif::seed_b();
+    let c = Commutation::against(MeaningPlan::target(&foreign.trace, &foreign.plan), &foreign);
+    assert!(divergent(&c).contains(&(Lane::Theme, develop_at, Some(K::Develop), Some(K::Foreign))));
+    // …while a real derivation (inverted, moved) is heard as the development it is.
+    let mut derived = song.clone();
+    derived
+        .thematic
+        .sites
+        .iter_mut()
+        .find(|x| x.phrase == develop_at)
+        .unwrap()
+        .motif = thesis.invert().transpose(2);
+    assert!(
+        Commutation::against(MeaningPlan::target(&derived.trace, &derived.plan), &derived)
+            .divergences
+            .is_empty()
+    );
+
+    // A malformed motif relates as foreign; it does not panic the model.
+    let broken = Motif {
+        id: 0,
+        degrees: vec![0, 1, 2],
+        rhythm: vec![1.0, 1.0],
+    };
+    assert_eq!(ThemeRelation::of(&thesis, &broken), ThemeRelation::Foreign);
+
+    // Tied peaks (pressure saturates at 1.0): the LAST one must be released, and here it is not.
+    let ev = |at: f64, e: super::semantic::Emphasis, d: super::semantic::Density, k: EventKind| {
+        super::semantic::SemanticEvent {
+            at_beat: at,
+            state: super::semantic::SemanticState {
+                tone: super::semantic::Tone::Danger,
+                emphasis: e,
+                density: d,
+                elevation: super::semantic::Elevation::Raised,
+            },
+            kind: k,
+        }
+    };
+    use super::semantic::{Density as D, Emphasis as E};
+    let mut events = vec![
+        ev(16.0, E::Strong, D::Normal, EventKind::Impact),
+        ev(64.0, E::Strong, D::Compact, EventKind::Impact),
+    ];
+    events.insert(
+        1,
+        super::semantic::SemanticEvent {
+            at_beat: 32.0,
+            state: super::semantic::SemanticState::toned(super::semantic::Tone::Success),
+            kind: EventKind::Confirmation,
+        },
+    );
+    let t = SemanticTrace::new(events, 96.0);
+    assert_eq!(story_arc(&t), (Level::High, Close::Open));
+
+    // Surprise spent leaving the miss: a tritone move from the deflection into its neighbour.
+    let mut s = hand_song();
+    let cell = &mut s.harmonic.as_mut().unwrap().cell;
+    cell.deflect = ChartRoot::Degree(3);
+    cell.satellites[0] = ChartRoot::Degree(6);
+    assert!(MeaningPlan::observe(&s).count(K::Stray) > 0);
+
+    // A stored plan the story no longer asks for is stale — the law cannot hold of it.
+    let mut stale = r10_song(&deflected_lift_trace(120.0));
+    assert!(Commutation::check(&stale).commutes());
+    stale.trace = calm_loop(120.0);
+    let c = Commutation::check(&stale);
+    assert!(c.stale && !c.commutes());
+
+    // A Lift the form's end cuts off before its pointer is the form's, not the composer's.
+    let clipped = r10_song(&calm_loop(81.0));
+    let c = Commutation::check(&clipped);
+    assert_eq!(c.composer_divergences(), 0, "{}", c.report());
+    assert!(c
+        .divergences
+        .iter()
+        .any(|d| matches!(d.heard, Some(K::Prepare(Level::Low))) && d.owner == Owner::Form));
+}
+
+/// A hanging consequent hangs NEARBY: for a mid, unresolved story every candidate answer comes to
+/// rest on the fifth or the second within a fourth of where it was — no plunge — and the chosen
+/// thesis and answer are typical for the prior (the answer's hanging landing excepted).
+#[test]
+fn a_hanging_answer_hangs_nearby() {
+    use super::semantic::{Density, Elevation, Emphasis, SemanticEvent, SemanticState, Tone};
+    let e = |at: f64, tone: Tone, kind: EventKind| SemanticEvent {
+        at_beat: at,
+        state: SemanticState {
+            tone,
+            emphasis: Emphasis::Normal,
+            density: Density::Normal,
+            elevation: Elevation::Raised,
+        },
+        kind,
+    };
+    let t = SemanticTrace::new(
+        vec![
+            e(0.0, Tone::Neutral, EventKind::ActChanged),
+            e(40.0, Tone::Info, EventKind::FocusAcquired),
+            e(80.0, Tone::Warning, EventKind::ModalEntered),
+        ],
+        120.0,
+    );
+    assert_eq!(story_arc(&t), (Level::Mid, Close::Open));
+    let (song, report) = compose_meaning(r9_song(&t), &CompositionalPrior::HOOKY_FUSION);
+    for c in &report.themes {
+        let a = &c.answer;
+        assert!([1, 4].contains(&a.degrees.last().unwrap().rem_euclid(7)));
+        let widest = a
+            .degrees
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .max()
+            .unwrap();
+        assert!(widest <= 3, "{:?}", a.degrees);
+    }
+    let chosen = &report.themes[report.theme];
+    assert!(chosen.profile.unusual(&report.prior).is_empty());
+    assert_eq!(Commutation::check(&song).composer_divergences(), 0);
 }

@@ -109,6 +109,9 @@ pub enum MeaningKind {
     NoHome,
     /// Observed only: surprise spent outside the designated miss (a borrowed or remote relation).
     Stray,
+    /// Observed only: material that is no derivation of the thesis at all — a new tune where the
+    /// listener was promised the development of one they know.
+    Foreign,
 }
 
 /// The place an event answers for — the key the law compares on.
@@ -135,7 +138,8 @@ impl MeaningKind {
             | K::Answer(_)
             | K::Develop
             | K::Recognize
-            | K::Premature => Class::Site,
+            | K::Premature
+            | K::Foreign => Class::Site,
             K::Establish | K::Unestablished => Class::Establish,
             K::Prepare(_) => Class::Prepare,
             K::Miss(_) | K::Unprepared | K::Unrelated | K::Arrive => Class::Deflect,
@@ -188,14 +192,16 @@ fn live_slots<'a>(
 }
 
 /// The story's arc (its peak semantic pressure: below 0.5 low, below 0.85 mid, else high) and
-/// resolution (settled when the peak is low or a confirmation / resolved section follows it).
+/// resolution (settled when the peak is low or a confirmation / resolved section follows it). When
+/// the peak is reached more than once (pressure saturates at 1.0) the LAST peak is the one that
+/// must be released: a story that ends on an unreleased catastrophe is unresolved.
 pub fn story_arc(trace: &SemanticTrace) -> (Level, Close) {
     let (i, peak) = trace
         .events
         .iter()
         .enumerate()
         .map(|(i, e)| (i, e.state.pressure()))
-        .fold((0, 0.0f32), |a, b| if b.1 > a.1 { b } else { a });
+        .fold((0, 0.0f32), |a, b| if b.1 >= a.1 { b } else { a });
     let arc = if peak < 0.5 {
         Level::Low
     } else if peak < 0.85 {
@@ -309,22 +315,52 @@ pub enum ThemeRelation {
     Literal,
     /// The thesis's rhythm and head (its first half), continued otherwise: recognizably it.
     Variant,
-    /// Anything else: transposed, inverted, fragmented, re-rhythmed.
-    Transformed,
+    /// A derivation of the thesis: a contiguous stretch of it (all of it, a fragment, a tail),
+    /// transposed and/or inverted, its rhythm kept or uniformly scaled.
+    Derived,
+    /// No derivation of the thesis: a different tune.
+    Foreign,
 }
 
 impl ThemeRelation {
-    /// The relation of `m` to `thesis`.
+    /// The relation of `m` to `thesis` (a motif whose degrees and rhythm disagree in length is
+    /// malformed, and relates as `Foreign`).
     pub fn of(thesis: &Motif, m: &Motif) -> ThemeRelation {
         let head = thesis.len().div_ceil(2);
-        if m.degrees == thesis.degrees && m.rhythm == thesis.rhythm {
+        if m.degrees.len() != m.rhythm.len() || m.degrees.is_empty() {
+            ThemeRelation::Foreign
+        } else if m.degrees == thesis.degrees && m.rhythm == thesis.rhythm {
             ThemeRelation::Literal
         } else if m.rhythm == thesis.rhythm && m.degrees[..head] == thesis.degrees[..head] {
             ThemeRelation::Variant
+        } else if derives(thesis, m) {
+            ThemeRelation::Derived
         } else {
-            ThemeRelation::Transformed
+            ThemeRelation::Foreign
         }
     }
+}
+
+/// Whether `m` is a contiguous stretch of `thesis`, moved (transposed, optionally inverted) and
+/// with its rhythm kept or scaled by one common factor.
+fn derives(thesis: &Motif, m: &Motif) -> bool {
+    let n = m.len();
+    if n < 2 || n > thesis.len() || thesis.degrees.len() != thesis.rhythm.len() {
+        return false;
+    }
+    (0..=thesis.len() - n).any(|s| {
+        let (td, tr) = (&thesis.degrees[s..s + n], &thesis.rhythm[s..s + n]);
+        let factor = m.rhythm[0] / tr[0];
+        let rhythm = factor > 0.0
+            && m.rhythm
+                .iter()
+                .zip(tr)
+                .all(|(a, b)| (a - factor * b).abs() < 1e-4);
+        rhythm
+            && [1, -1]
+                .iter()
+                .any(|&sign| (0..n).all(|i| m.degrees[i] - m.degrees[0] == sign * (td[i] - td[0])))
+    })
 }
 
 /// Where a line comes to rest: on the tonic (any octave) it settles, anywhere else it hangs.
@@ -506,6 +542,7 @@ fn observe_theme(song: &SongMap) -> Vec<Witnessed> {
             ThemeRelation::Variant if known >= 1 && site.role == R::Answer => {
                 K::Answer(landing(&site.motif))
             }
+            ThemeRelation::Foreign => K::Foreign,
             _ if known >= LEARNED_AFTER => K::Develop,
             _ => K::Premature,
         };
@@ -691,8 +728,8 @@ fn observe_harmony(song: &SongMap) -> Vec<Witnessed> {
         }
     }
 
-    // Surprise outside the designated miss: every chart move not into a deflection and not out of
-    // the deflecting chord itself, that is borrowed or remote.
+    // Surprise outside the designated miss: every chart move that is borrowed or remote, except the
+    // move into a deflection and a borrowed chord's step out of it.
     for pair in sheet.windows(2) {
         let (a, b) = (&pair[0], &pair[1]);
         let into_miss = deflect_starts
@@ -702,7 +739,10 @@ fn observe_harmony(song: &SongMap) -> Vec<Witnessed> {
             .iter()
             .any(|&d| (a.start_beat - d).abs() < 1e-6);
         let family = Family::of(&a.chord, &b.chord, &region);
-        if into_miss || out_of_miss || family.is_familiar() {
+        // The move into the miss IS the designated surprise; leaving a borrowed miss by a shared
+        // tone is its resolution. Anything else borrowed or remote is surprise nobody planned.
+        let resolves_miss = out_of_miss && family == Family::Borrowed;
+        if into_miss || resolves_miss || family.is_familiar() {
             continue;
         }
         let at = slots
@@ -754,26 +794,39 @@ pub struct Commutation {
     pub divergences: Vec<Divergence>,
     /// Target events compared (a pass over nothing is visible).
     pub checked: usize,
+    /// The plan the song says it was composed toward is not the plan its story and form ask for
+    /// now (the song was edited after composition): the law cannot hold of a stale target.
+    pub stale: bool,
 }
 
 impl Commutation {
     /// Check `song` against the plan its own story and form ask for.
     pub fn check(song: &SongMap) -> Commutation {
-        Commutation::against(MeaningPlan::target(&song.trace, &song.plan), song)
+        let target = MeaningPlan::target(&song.trace, &song.plan);
+        let stale = song.meaning.as_ref().is_some_and(|m| *m != target);
+        Commutation {
+            stale,
+            ..Commutation::against(target, song)
+        }
     }
 
     /// Check `song` against an explicit `target` (a control can hand it another story's plan).
     pub fn against(target: MeaningPlan, song: &SongMap) -> Commutation {
         let observed = MeaningPlan::observe(song);
         let slots = song.plan.backbone.as_ref().map(|b| b.slots.as_slice());
+        let end = song.plan.form.total_beats;
         let owner = |lane: Lane, at: u32, heard: Option<MeaningKind>| {
-            // A deflection the form placed with no Lift before it cannot be prepared by any chart.
+            // A deflection the form placed with no Lift before it cannot be prepared by any chart;
+            // a Lift the form's end cuts off before its pointer cannot sound one.
             let unliftable = lane == Lane::Harmony
                 && heard == Some(MeaningKind::Unprepared)
                 && slots.is_some_and(|s| {
                     at == 0 || s[at as usize - 1].gesture != HarmonicGesture::Lift
                 });
-            if unliftable {
+            let clipped = lane == Lane::Harmony
+                && matches!(heard, Some(MeaningKind::Prepare(l)) if l != Level::High)
+                && slots.is_some_and(|s| s[at as usize].end_beat() > end + 1e-9);
+            if unliftable || clipped {
                 Owner::Form
             } else {
                 Owner::Composer
@@ -814,12 +867,13 @@ impl Commutation {
             target,
             observed,
             divergences,
+            stale: false,
         }
     }
 
     /// Whether μ(song) = F(trace) on every modelled event.
     pub fn commutes(&self) -> bool {
-        self.divergences.is_empty()
+        self.divergences.is_empty() && !self.stale
     }
 
     /// Divergences the composer owns (its theme and chart could have met the plan).
@@ -833,12 +887,13 @@ impl Commutation {
     /// The expectation receipt: every target event beside what was heard there, with the evidence.
     pub fn report(&self) -> String {
         let mut s = format!(
-            "MeaningPlan: arc {:?}, resolution {:?} — {} events checked, {} divergent ({} composer-owned)\n",
+            "MeaningPlan: arc {:?}, resolution {:?} — {} events checked, {} divergent ({} composer-owned){}\n",
             self.target.arc,
             self.target.resolution,
             self.checked,
             self.divergences.len(),
-            self.composer_divergences()
+            self.composer_divergences(),
+            if self.stale { " — STALE: the song's stored plan is not its story's" } else { "" }
         );
         for e in &self.target.events {
             let seen = self.observed.kind_at(e.lane, e.at, e.kind.class());

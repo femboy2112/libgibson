@@ -1338,9 +1338,12 @@ deflection sounds at beat 4 and the tonic at beat 12; the deflect and open satel
   Deflect; `Open`; `Reset`; and no surprise anywhere else.
 - **μ** (`MeaningPlan::observe(song)`) reads the theme sites and `backbone::lead_sheet` — the chart
   as charted, in the reference frame, at its canonical rhythm, no colour — on the same grid, in the
-  same vocabulary plus the events no plan asks for (`Premature`, `Unestablished`, `Unprepared`,
-  `Unrelated`, `Arrive`, `NoRelief`, `NoHome`, `Stray`). The listener model is small and stated:
-  familiarity = literal statements heard; expectation = the pointer's dominant pull home;
+  same vocabulary plus the events no plan asks for (`Premature`, `Foreign`, `Unestablished`,
+  `Unprepared`, `Unrelated`, `Arrive`, `NoRelief`, `NoHome`, `Stray`). The listener model is small
+  and stated: familiarity = literal statements heard; a statement is the thesis as written, a
+  *variant* (its rhythm and head), a *derivation* (a contiguous stretch of it, moved and/or
+  inverted, rhythm kept or uniformly scaled) or *foreign* (a different tune — never heard as a
+  development); expectation = the pointer's dominant pull home;
   **surprise at a miss** = what it keeps of the expected arrival (two tones and a prolongation of
   the pointer — V7→iii — barely registers; two tones — V7→vi — is the textbook miss; one tone —
   V7→IV, V7→bVI — lands hard; none is `Unrelated`); **certainty before it** = home already heard +
@@ -1350,12 +1353,14 @@ deflection sounds at beat 4 and the tonic at beat 12; the deflect and open satel
 - **The law** (`Commutation::check(song)`): exact categorical equality per (lane, place, class),
   and no unasked `Stray`. Every divergence is owned by the **Composer** (its theme and chart could
   have met the plan) or the **Form** it was handed (a Deflect the form placed with no Lift before
-  it — no chart can prepare it).
+  it, or a Lift the form's end cuts off before its pointer — no chart can fix either). A song whose
+  stored plan is no longer the one its story asks for is `stale`, and the law does not hold of it.
 
 The instrument was calibrated before any composer existed (commit `1d2fee0`): the Round IX flagship
 diverges in exactly 7 places (six theme sites hear material before it was taught — the thesis is
-first *learned* at the return meant to be *recognized* — and the first pointer sounds before home;
-its V7→vi miss is right); a hand-written song on the same form commutes 20/20 and every band plays
+first *learned* at the return meant to be *recognized*, and both culminating "hooks" are no
+derivation of the thesis at all, `Foreign` — and the first pointer sounds before home; its V7→vi
+miss is right); a hand-written song on the same form commutes 20/20 and every band plays
 it; premature development, a payoff with no setup, the return of the never-learned, no miss, and a
 mid song under a calm story each break it for their own reason; **surprise everywhere** (every slot
 remote) is a valid song all four bands play that the model refuses.
@@ -1376,43 +1381,66 @@ total: **chart** — 117 lawful DeflectedLift journeys (lift {I, ii, IV} × defl
 × open × the Reset's neighbour; the pointer V7, home I; the lift's partner and the deflect/open
 neighbours by rule) → μ agrees with F → the prior's chart filters → the seed; **thesis** — a
 72-point grammar (`[pickup] cell cell' reach recovery landing`, 6 beats, and its consequent) →
-lawful → reaches as far as the arc → settles as the story does → typical for the prior → sits best
+lawful → means the plan (μ = F: it reaches as far as the arc, is taught before it is developed,
+and its consequent settles — or hangs on the fifth or second — as the story does) → typical for
+the prior → sits best
 on the lead sheet (structural notes on chord tones, the line engine's own structural rule, mode-safe;
-fits within 0.1 are equals) → the seed. **Schedule** — the thesis as written wherever the listener is
+fits within 0.1 are equals) → the seed. (The chart space is lawful by construction; the thesis
+grammar drops nothing at "lawful"; "means the plan" for a thesis RUNS the law on the candidate
+scheduled into the song, and "typical" judges the consequent too, bar its story-given landing.) **Schedule** — the thesis as written wherever the listener is
 taught, reminded, paid off or recognizes it (a `Restatement` handoff is identity on ANY role; the
-performance now reads identity from the site); its consequent at every answer; a development
-(Round IX's trajectory) only once learned. The bank is one idea: identity = hook = the thesis.
+performance now reads identity from the site); its consequent at every answer, as a new
+`Handoff::Consequent` — identity too, so no Fragment verb cuts its landing away (it keeps the
+`response` provenance label every answer-counting diagnostic reads); a development (Round IX's
+trajectory) only once learned. The bank is one idea: identity = hook = the thesis.
 
-**The flagship A/B song** (bounce, seed 2112): SongMap `0x5e87e2a6128aa984`. Chart `I V7 | vi ii |
+**The flagship A/B song** (bounce, seed 2112): SongMap `0x8d901e3de29190a2`. Chart `I V7 | vi ii |
 IV IV | I IV` (home first; the textbook miss moving to ii; the open window; home with its plagal
 neighbour) — 117 → 6 mean the plan → 5 → 5 → 2 → the seed. Thesis `[0,1,0,1,4,3,2]` on
 `[½,½,½,½,1,½,2½]` (a two-note cell stated twice in place, one reach of a fourth, a stepwise fall to
-the third), consequent `[0,1,0,1,2,1,0]` settling on the tonic — 72 → 24 → 24 → 8 → 3 → the seed.
+the third), consequent `[0,1,0,1,2,1,0]` settling on the tonic — 72 → 72 → 24 mean the plan → 4
+typical → 2 on the chart → the seed.
 Learned at phrase 1, paid off at 2 and 5, answered at 3 and 6, recognized at 7; every miss heard
 with HIGH certainty (home and a strong pointer before it; the control's first miss is MID). All
-four bands conform, 0 melody repairs / re-judged, 0 unjustified, exact length.
+four bands conform with every one of the six lead sites identity-checked and stated as written,
+0 melody repairs / re-judged, 0 unjustified, exact length.
 
 **Witness 1, flipped:** calm gets a stepwise thesis and a soft miss (V7→iii); the unresolved rise a
 wide reach, a hard miss (V7→IV) and a consequent left hanging; each commutes with its own story
-and not with the other's. **Across songs** (6 stories × 3 lengths × 4 bands, and a 4-seed sweep of
-288): 0 composer-owned divergences (the form-owned ones are identical to the control's), π identity
-everywhere, 0 repaired / re-judged / unjustified.
+and not with the other's. **Across songs** (`the_meaning_composer_across_songs`: 6 stories × 3
+lengths × 4 seeds × 4 bands = 288 performances): 0 composer-owned divergences (the 28 form-owned
+ones are the control's, song by song), π identity everywhere, 0 repaired / re-judged /
+unjustified; at the control's own seed the inherited obligation gap is exactly the control's pin
+(60 of 72). A scratch scan of 5 stories at every length from 70 to 170 beats found no
+composer-owned divergence (12 form-owned: a final Lift clipped by the form's end).
 
 **Claim discipline.** *New capability:* the listener plan (F), its observation (μ), the law, the
 explicit prior, and a composer that selects content against them. *Inherited defect repaired:* the
 Round IX conformance checker read a modulation's return pivot — the span's last chord kept because
 it is diatonic to both keys, home starting ON it — in the home region, calling the chart's own
-transposed satellite off-chart (18/288 R10 performances; unreachable with the control's pedal
-satellites); it is now also read in the region it leaves, with a negative control. *Current-round
-regressions repaired:* the first composer pick (`[3,4,5,4,5,8,7,9]`) sat a fourth above home, which
-the band's culmination register placed at C7 in BLACK_ICE — the prior gained its octave band before
-any render was offered; a home-salience filter ("home the most-heard root") that the form's long
-Open slot made unsatisfiable was restated as "home over the miss" (the witness's actual defect).
+transposed satellite off-chart (18 of 288 R10 performances in a scratch sweep before the fix;
+unreachable with the control's pedal satellites); a chord that starts a `Return` span is now also
+read in the region it leaves — only there — with negative controls on both sides (another root at
+the return; a home-only root at the modulation's entry). *Current-round regressions repaired:* the
+first composer pick (`[3,4,5,4,5,8,7,9]`) sat a fourth above home, which the band's culmination
+register placed at C7 in BLACK_ICE — the prior gained its octave band before any render was
+offered; a home-salience filter ("home the most-heard root") that the form's long Open slot made
+unsatisfiable was restated as "home over the miss" (the witness's actual defect). From a blind
+review of the four commits: μ called ANY material "Develop" once the thesis was learned (now
+derivation vs `Foreign`); F read the FIRST of tied saturated peaks (now the last); the band's
+Fragment verb cut the flagship's phrase-6 consequent to its head in BLACK_ICE and VAPOR95 (now
+`Consequent` identity); a hanging consequent could plunge a seventh (now the fifth or the second,
+and the consequent is judged typical too); the thesis's "law" stage was a construction, not a
+check (now run); μ exempted every move out of the miss from `Stray` (now only a borrowed chord's
+step out); a clipped final Lift was blamed on the composer; a malformed motif could panic μ; a
+stored plan could go stale unnoticed.
 
 **PARKED:** a learned statistical prior (corpus, MIDI, ML); style inference; affect → open colour
 (the trace's tone could carry warm/tense; not used); a final cycle that finally PAYS the expectation
-(needs a form change); the form-owned divergences (false_climax's Lift-less deflects, rise's strong
-dissolve over an unresolved story, calm's eight misses) — the form is Round IX's and shared; charts
+(needs a form change); the form-owned divergences (false_climax's Lift-less deflects at every
+length, one in the 80-beat bounce, clipped final Lifts) and the form-level meaning the model does
+not yet read at all (rise's strong dissolve over an unresolved story; eight misses in a story with
+no surprise in it) — the form is Round IX's and shared; charts
 for the phrase-engine grammars; the inherited obligation-witness gap; register/voicing of the lead
 (the band's); any performance, solver, vertical or language work.
 

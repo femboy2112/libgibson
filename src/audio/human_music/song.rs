@@ -60,10 +60,11 @@ pub struct ThemeSite {
 
 impl ThemeSite {
     /// Whether the site states the song's IDENTITY — the thesis coming home (Establish, Restate,
-    /// Return), its hook (Culminate), or the thesis restated wherever the song teaches it (Round X:
-    /// a [`Handoff::Restatement`] on any role — the first statement a listener hears, before it
-    /// can be developed). A performance may develop other sites (a Fragment verb); these it must
-    /// state as written.
+    /// Return), its hook (Culminate), or — Round X — the thesis restated wherever the song teaches
+    /// it (a [`Handoff::Restatement`] on any role: the first statement a listener hears, before it
+    /// can be developed) and the thesis's consequent ([`Handoff::Consequent`]: its landing is the
+    /// answer the listener is promised). A performance may develop other sites (a Fragment verb);
+    /// these it must state as written.
     pub fn is_identity(&self) -> bool {
         matches!(
             self.role,
@@ -71,7 +72,7 @@ impl ThemeSite {
                 | DiscourseRole::Restate
                 | DiscourseRole::Return
                 | DiscourseRole::Culminate
-        ) || self.handoff == Handoff::Restatement
+        ) || matches!(self.handoff, Handoff::Restatement | Handoff::Consequent)
     }
 }
 
@@ -467,11 +468,16 @@ impl SongMapConformance {
                         || (sl.gesture == G::Lift && root == applied)
                 };
                 // A modulation's return pivot may be the span's last chord itself, kept because it
-                // is diatonic to both regions — and the planner starts home ON it. It is the chart's
-                // chord as the region it LEAVES transposed it, so it is read there too (Round X: a
-                // diatonic satellite made this path reachable; the gap is the Round IX checker's).
+                // is diatonic to both regions — and the planner starts the Return span ON it. It is
+                // the chart's chord as the region it LEAVES transposed it, so it is read there too
+                // (Round X: a diatonic satellite made this path reachable; the gap is the Round IX
+                // checker's). Only there: every other region boundary is read in its own region.
+                let return_pivot = perf.regions.span_at(at).is_some_and(|sp| {
+                    matches!(sp.kind, super::region::RegionKind::Return { .. })
+                        && (sp.start_beat - at).abs() < 1e-6
+                });
                 let left = perf.region_at(at - 1e-3);
-                let lawful_root = lawful_in(&region) || (left != region && lawful_in(&left));
+                let lawful_root = lawful_in(&region) || (return_pivot && lawful_in(&left));
                 if !lawful_root {
                     illegal_harmonic_transforms.push(TransformMiss {
                         beat: at,

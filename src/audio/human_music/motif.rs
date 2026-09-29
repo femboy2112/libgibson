@@ -436,6 +436,9 @@ pub enum Handoff {
     Hook,
     /// A closing evaporation.
     Dissolve,
+    /// The thesis's consequent (Round X): its head and rhythm, coming to rest — an answer the song
+    /// states AS WRITTEN (its landing is the listener event), so no performance fragments it.
+    Consequent,
 }
 
 impl Handoff {
@@ -448,6 +451,8 @@ impl Handoff {
             Handoff::Response => "response",
             Handoff::Hook => "hook",
             Handoff::Dissolve => "dissolve",
+            // An answer, to every diagnostic that counts answers.
+            Handoff::Consequent => "response",
         }
     }
 }
