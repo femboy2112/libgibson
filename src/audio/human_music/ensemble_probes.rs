@@ -407,3 +407,47 @@ fn the_reviews_counterexamples_keep_their_receipts() {
     });
     assert!(f, "Dm's 3rd sounds under the Sustain bar's second harmony");
 }
+
+/// A sting's audible life is its OWN envelope (attack + decay + hold, then its release), not the
+/// lead patch it is filed under: SWISS_SIGNAL's lead is a pluck (sustain 0), which would cut every
+/// sting to a blip; VAPOR95's lead releases for 0.6 s, which would stretch them.
+#[test]
+fn a_stings_audible_life_is_its_own_envelope() {
+    use super::instrument::Patch;
+    use super::sonority::{audible_end_at, audible_voices, AUDIBLE_FLOOR_DB};
+    let mut differs = 0;
+    for world in MusicWorld::all() {
+        let c = flagship(&world, EnsembleCoupling::Coupled);
+        let s = &c.score;
+        let voices = audible_voices(s, &c.perf.contexts, &world, AUDIBLE_FLOOR_DB);
+        let bps = s.tempo_bpm as f64 / 60.0;
+        for e in s.sfx.iter().filter(|e| e.is_pitched()) {
+            let (a, d, _, _) = e.kind.envelope();
+            let gated = (a + d + e.kind.hold_secs()) as f64 * bps;
+            let own = Patch {
+                adsr: e.kind.envelope(),
+                ..world.lead
+            };
+            let want = audible_end_at(e.start_beat, gated, &own, s.tempo_bpm, AUDIBLE_FLOOR_DB);
+            let as_lead = audible_end_at(
+                e.start_beat,
+                gated,
+                &world.lead,
+                s.tempo_bpm,
+                AUDIBLE_FLOOR_DB,
+            );
+            for &p in &e.pitches {
+                let v = voices
+                    .iter()
+                    .find(|v| v.sfx && v.pitch == p && (v.start - e.start_beat).abs() < 1e-9)
+                    .expect("every pitched sting is a voice");
+                assert!((v.end - want).abs() < 1e-9, "{}: {:?}", world.name, e.kind);
+            }
+            differs += usize::from((want - as_lead).abs() > 0.05);
+        }
+    }
+    assert!(
+        differs > 0,
+        "the lead patch would have given different lifetimes"
+    );
+}

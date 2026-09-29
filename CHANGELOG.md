@@ -26,17 +26,31 @@ milestone. **Not released**: the package version stays **0.3.1**, `GIBSON_ABI_VE
   backend (feature-gated; no new mandatory dependencies).
 - **HumanMusic** (`gibson::audio::human_music`) — a procedural composer driven by LibGibson's
   semantic style/story state, with three sonic worlds (BLACK_ICE, VAPOR95, SWISS_SIGNAL), no
-  prerecorded musical assets, and a structural/causal diagnostics suite. Rounds I–VIIb are
-  documented in [docs/HUMAN_MUSIC_ARCHITECTURE.md](docs/HUMAN_MUSIC_ARCHITECTURE.md); the
-  current round (VIIb) makes the performance causal: calls own their material and answers
-  derive from it, one stage decides who plays before anybody plays, every event is stamped
-  with the exact actions it performs, Modulate really changes the tonal region, the band
-  shares one complexity budget, gestures vary their manifestation per cycle, semantic state
-  deltas size the actions, quiet is declared, obligations settle named debts by deadline,
-  pad and keys are voiced by a bounded voice-path DP, SFX sit in the local harmony, and a
-  requested length is rendered exactly.
-- `examples/human_music_lab.rs` — renders the flagship (and A/B probes, stems, calibration
-  grammars) with every receipt printed next to the WAV paths.
+  prerecorded musical assets, and a structural/causal diagnostics suite. Rounds I–VIII are
+  documented in [docs/HUMAN_MUSIC_ARCHITECTURE.md](docs/HUMAN_MUSIC_ARCHITECTURE.md). Round VIIb
+  made the performance causal: calls own their material and answers derive from it, one stage
+  decides who plays before anybody plays, every event is stamped with the exact actions it
+  performs, Modulate really changes the tonal region, the band shares one complexity budget,
+  gestures vary their manifestation per cycle, semantic state deltas size the actions, quiet is
+  declared, obligations settle named debts by deadline, pad and keys are voiced by a bounded
+  voice-path DP, SFX sit in the local harmony, and a requested length is rendered exactly.
+  The current round (VIII) makes the band hear the same chord: one vertical theory
+  (`sonority.rs` — owned vs unowned minor 2nds/9ths, tension specs, bass function, a per-world
+  colour budget, audible lifetimes, `EnsembleSonorityDiagnostics`), one harmonic ledger the
+  players are realized against in rigidity order (`harmonic_state.rs`), a bass that never
+  octave-copies an upper tension into the floor, keys lines placed against lead and bass, and the
+  pad and keys voiced as one joint decision (`support.rs`). `EnsembleCoupling::Independent`
+  keeps the Round VIIb realization as a pinned control. On the flagship, unowned minor 2nds/9ths
+  drop from 24/28/43 to 0/0/0 per world with every action still witnessed.
+- `examples/human_music_lab.rs` — renders the flagship (and A/B probes, stems, pitched-role pair
+  stems, a neutral harmonic reference, calibration grammars) with every receipt printed next to
+  the WAV paths.
+
+### Fixed (experimental audio)
+
+- The FM oscillator (`dsp::osc::FmOsc`) clamps its modulation index to the alias-free bound, so
+  a high note no longer folds sidebands back under Nyquist as inharmonic partials (BLACK_ICE's
+  lead climax carried one at −14.5 dB).
 
 Perceptual quality is **unverified** until the maintainer's listening gate.
 

@@ -6,9 +6,9 @@ is a research/engineering-alpha subsystem, Rust-only, not yet part of the C ABI.
 this alongside the module docs in `src/audio/mod.rs` and
 `src/audio/human_music/mod.rs`, which this document expands on.
 
-This is the **Round VIIb** revision of this document. The rounds are a layer progression,
-each fixing what the previous one didn't reach. Rounds I–III are summarized here; Rounds IV–VIIb
-in §3.12–§3.16, where **§3.16 is the current state** and §7 opens with the **current** limits.
+This is the **Round VIII** revision of this document. The rounds are a layer progression,
+each fixing what the previous one didn't reach. Rounds I–III are summarized here; Rounds IV–VIII
+in §3.12–§3.17, where **§3.17 is the current state** and §7 opens with the **current** limits.
 Sections §3.1–§3.11 describe the Round II/III planning layers; where a later round replaced a
 mechanism, the section is marked *historical* and points at its replacement.
 
@@ -808,7 +808,7 @@ keys-led re-entry is a call; `191c79f` — the lead is targets first, then justi
 (`MelodicEvent`, `LicensedExtension`/`Enclosure`, classification inside the search); `79b47b5` —
 exposition and the hook protected from fragmentation, lawful release registers.
 
-### 3.16 Round VIIb — closing the causal gaps (current state)
+### 3.16 Round VIIb — closing the causal gaps
 
 Round VII built the nervous system — actions, one clock, contextual harmony, an ensemble — and ended
 mid-integration. Round VIIb is an integration/closure round: it verified, with nine read-only
@@ -929,6 +929,136 @@ duration) on the quantized beat, and sit under the band's own accent.
 The cinematic story now modulates in every world (e.g. BLACK_ICE: A aeolian → pivot → B aeolian
 62–84 → return → home) and is fully witnessed (34/34, 35/35, 35/35).
 
+### 3.17 Round VIII — one harmony: the band hears the same chord (current state)
+
+Round VIIb's listen: the song "may have meaning and may be going somewhere, but we have LOST
+SONIC/HARMONIC COHERENCE … harmonically out of tune / wrong despite the individual notes being
+supposedly justified … the members of the band are all playing the same song in different styles."
+Every note had a reason (`unjustified == 0` since Round IV); nothing asked why THESE notes coexist.
+A lawful 9th in the lead, a lawful 13th in the keys, lawful guide tones in the pad and a chord tone
+in the bass can sum to garbage. Round VIII adds the vertical layer: one harmonic state the whole
+band is realized against.
+
+**Phase 0 — separate the score from the synth (`synth.rs`, lab).** `ProductionControl` toggles one
+production factor each (clean waves, zero detune, no saturation, dry, no bus compressor, short
+releases) while the Score stays bit-identical; `HARMONIC_REFERENCE` removes them all and renders
+`StemMask::harmonic()` (the four pitched buses and the pitched stings, no drums). The lab adds
+`--harmonic-reference`, `--production=`, `--pair-stems` (the six pitched-role pairs),
+`--dump-notes` (every note and sting, with function and action), `--coupling=independent`,
+`--sonority-detail=unowned|missing|flip|bass|nonroot|all`, `--audible-floor=<dB>`; non-NORMAL
+renders are peak-normalized for comparison and their receipts describe the written file. Nine
+read-only scouts separated the defects: tanh intermodulation (−53 dB) and voice stealing were
+refuted; the BLACK_ICE lead's FM aliasing was confirmed — at the hook's G6 the 14th sideband folded
+to 2528 Hz (≈ D#7 +28 cents) at −14.5 dB re the fundamental, an out-of-tune partial on the note
+the discourse plan calls the culmination. `FmOsc::alias_free_index` now clamps every FM index
+(Carson's rule plus one sideband under 0.45·sr): on the real lead stem those partials are
+≤ −97 dB. That is the one change to NORMAL production this round.
+
+**The vertical theory (`sonority.rs`) — the ONE definition, used by audit and generator alike.**
+- *Owned vs unowned dissonance.* A minor 2nd / minor 9th between two sounding notes is owned, in
+  this order, by: a short resolving linear note; a resolving suspension (never against its own
+  resolution tone, save the 9–8 over a bass an octave or more below); a bass pedal; a sting's
+  planned dissonance (only the pitch with no function — never its chord tone); a planned altered
+  package, against the dominant's root, resolving; a one-player chord-tone cluster (≥ MIDI 55); a
+  one-player semitone release crossfade. Anything else is `UnownedCollision`.
+- *Available is not stable anywhere.* `TensionSpec` gives each available tension its register
+  floor (55; 60 for an alteration), owner limit, whether it may be the floor (never, unplanned),
+  whether it must resolve, and the chord tone it must sit above (Dorian 13 above the ♭7).
+- *The floor.* `BassFunction` names what the bass is over the chord (root, 5th, inversion,
+  tension, non-chord); a tension or non-chord floor that is not short, stepwise and resolving (or
+  a pedal, or planned) is a violation. A release tail under `MIN_OVERLAP_BEATS` is contact, not
+  the next chord's floor. `IdentityFlip`: a non-root floor under a chordal band with no root heard
+  within `ROOT_MEMORY_BEATS` (2) — judged per slice, with a cut where the memory runs out.
+- *Register.* The conventional low-interval limits apply to every pair, across roles.
+- *Colour is a budget.* `ColorPolicy` per world × language (BLACK_ICE 2 / 7 voices / 6 pcs,
+  VAPOR95 3 / 8 / 7, SWISS_SIGNAL 1 / 6 / 5; the plain-speech language tightens each). The budget
+  counts SELECTED colour — tones the chord symbol does not spell (`is_selected_color`); a written
+  9th is the song. Every extension still counts for doubling, contradiction, expense and register.
+- *One core sound.* Where a chordal player sounds, the BAND carries the identity tones (guide
+  tones plus an altered 5th) — no single player has to.
+- *Audible lifetimes.* `audible_voices` re-ends every note on its patch's envelope (40 dB per
+  decay/release time constant) and every sting on its own kind's envelope, at −30 dB (default)
+  and −20 dB (masking). `EnsembleSonorityDiagnostics` slices the realized Score at every onset,
+  end and chord boundary and reports hard classes (unowned m2/m9, bass function, unresolved,
+  held flips) apart from soft ones — never one scalar — with the worst slices spelled note by
+  note, role-pair counts, and every non-root bass note with its function and reason.
+
+**One ledger, one order (`harmonic_state.rs`, `functor::realize_coupled`).**
+`HarmonicEnsembleState` holds the contexts, a `SonorityPlan` per harmony (floor, identity core,
+the lead's selected colours, room left), the policy and every committed voice; `hazards` asks the
+theory above about a candidate. Realization runs in rigidity order — lead, bass, the keys'
+material lines, the joint pad+keys bed, the SFX — each committing to the ledger before the next
+chooses. Every re-pitch, octave move and refusal lands in `Score::vertical_decisions` with its
+reason. `EnsembleCoupling::Independent` keeps the R7b realization as the control; its composition
+is pinned to the fingerprint computed on the R7b tip (`ensemble_probes.rs`).
+
+**The players.**
+- *Bass (`bass::realize_bass_coupled`).* The unison P0 is fixed: a unison doubles the lead only
+  where the pitch class is a safe floor (root or 5th); anything else becomes the root, a linear
+  note is held, and one inversion may be owned by the unison action for at most a beat. Figures
+  anchor on the root, lift off at a change unless they land on the new root, and a hazardous
+  approach is refused (the bass plays less rather than snapping).
+- *Keys lines (`comp::keys_lines_coupled`).* Answers and figures are heard against lead and bass:
+  each takes the whole-line octave with the fewest hard hazards, then the least counterpoint
+  friction (parallel m2/m9 penalized), then home register; an answer's cornered connector may step
+  to a stable neighbour that keeps its contour. `MaterialRole` labels each realized event.
+- *The bed (`support::joint_support_paths`).* The pad and the keys are voiced as ONE decision: a
+  bounded Viterbi over (pad, keys) candidate pairs per harmony, keyed lexicographically by
+  witness (a harmonic edit's new tone sounds; a Hold keeps a tone common to the next chord; a
+  Thicken is not thinner, lower, or preceded by something thicker than the control), vertical
+  (unowned collisions + identity tones nobody carries + keys struck in the previous harmony that
+  ring into this one), the backbone gesture, guide-tone breaks, then weighted soft costs. The
+  candidates are R7b's plus complements (octave moves, drops to the role's own floor, guide swaps,
+  identity completions) and — where the world does not colour triads — plain-triad voicings
+  (`required_pcs_with`). The per-role R7b paths are the control carried in the solve; the keys
+  count as carrying a harmony only where they strike its voicing and hold it.
+- *Tails and stings.* A pad voice whose −20 dB tail would meet another player's semitone
+  neighbour (or its own next voicing a minor 9th away) starts its release early; comping stabs
+  stop at the change, a Hold's common tones ring on; a sting moves by whole octaves (±36) to the
+  placement with the fewest unowned clashes against what AUDIBLY sounds.
+
+**Adversarial review and fuzz.** Four read-only reviewers (theory, coupled pipeline, synth/lab,
+test discrimination), each finding re-attacked by an independent verifier, confirmed 16 findings
+— the ruler flattering the band (a sting owning its chord tone, stings on the lead's envelope,
+tails judged as the next floor, root memory judged once, a lead-sourced unison counted twice), the
+coupled path spending R7b's receipts off the flagship (Holds cut at the change, Thickens voiced
+thinner, a keys voicing credited that nobody played, a pad tail lifted for an off-stage keys
+step), the harmonic reference muting the stings the audit counts, and tests that could not fail.
+Fifteen are fixed — every theory and receipt defect but the pad-tail gating with a test that
+fails on the old code, the lab and doc ones in place, the weak tests strengthened; the sixteenth
+(a flagship keys-line test that passes with placement disabled) stands, because the
+discriminating keys-line tests beside it fail when placement is removed (the verifier's own
+mutation run). The ignored release sweep
+`fuzz_the_coupled_band_keeps_every_receipt_the_control_keeps` (two stories × six lengths × eight
+seeds × two grammars × two languages × three worlds = 1152 compositions per arm) now reads:
+**receipts lost 0** (gained 50), unowned pitched-pair collisions 11 200 → 75, missing-core beats
+1609.6 → 940.7.
+
+**Receipts (flagship bounce, seed 2112; Independent control → Coupled):**
+
+| | BLACK_ICE | VAPOR95 | SWISS_SIGNAL |
+|---|---|---|---|
+| unowned m2/m9, written durations (beats) | 17/7 (14.53) → **0/0** | 19/9 (12.50) → **0/0** | 29/14 (20.46) → **0/0** |
+| unowned m2/m9, audible −20 dB (beats) | 9/6 (14.45) → **0/0** | 25/19 (18.41) → **1/0 (0.18)** | 23/17 (9.90) → **0/0** |
+| unowned m2/m9, audible −30 dB (beats) | 25/10 (16.47) → 9/8 (1.56) | 31/25 (23.68) → 12/2 (2.65) | 30/18 (14.19) → 4/3 (1.16) |
+| unowned keys/pad · keys/lead · lead/pad (bass pairs 0 both) | 13 · 4 · 3 → 0 · 0 · 0 | 15 · 5 · 5 → 0 · 0 · 0 | 28 · 4 · 8 → 0 · 0 · 0 |
+| bass-function violations | 5 → 0 | 5 → 0 | 5 → 0 |
+| identity flips (beats) | 5 (2.27) → 2 (1.35) | 8 (3.70) → 3 (1.56) | 4 (2.25) → 3 (1.56) |
+| missing-core slices (beats) | 20 (8.85) → 12 (5.46) | 3 (1.15) → 5 (1.85) | 2 (1.40) → 3 (1.84) |
+| duplicate-tension / over-colour / unresolved slices | 39 / 1 / 3 → 31 / 0 / 0 | 42 / 0 / 2 → 42 / 0 / 2 | 45 / 18 / 0 → 41 / 15 / 0 |
+| max voices / max pcs / mean pcs | 14 / 8 / 3.90 → 11 / 6 / 4.00 | 14 / 8 / 4.00 → 11 / 6 / 4.05 | 14 / 8 / 3.99 → 11 / 6 / 4.02 |
+| crowded / too-many-pcs slices | 46 / 3 → 43 / 0 | 17 / 1 → 12 / 0 | 88 / 9 → 81 / 19 |
+| non-root bass notes (tension/non-chord among them) | 51 (8) → 44 (3, all chromatic approaches) | 53 (8) → 45 (3) | 55 (8) → 45 (3) |
+| pad mean motion / common tones kept | 4.71 / 1.32 → 7.55 / 0.86 | 3.98 / 2.00 → 7.95 / 1.54 | 4.45 / 1.96 → 7.30 / 1.64 |
+| joint solve: the solo pad+keys paths' union → joint (unowned) | 15 → 0 | 17 → 0 | 25 → 0 |
+| notes | 401 → 399 | 415 → 411 | 414 → 409 |
+| witnesses / melody repairs / informative answers to their caller | 54/54 · 0 · 7/7 (both) | 54/54 · 0 · 6/6 (both) | 54/54 · 0 · 6/6 (both) |
+
+The costs are in the table on purpose: the joint bed moves the pad further and keeps fewer common
+tones (the vertical tier outranks motion), SWISS_SIGNAL sounds six pitch classes more often than
+its budget of five, and VAPOR95/SWISS_SIGNAL leave a little more of a beat without every identity
+tone than the control did.
+
 ## 4. Engines carried over from Round I
 
 These pieces of the Round I vertical slice are still in place. They were not part of the
@@ -999,12 +1129,53 @@ elevation), and the Round III discourse invariants (§3.4/§3.10: every phrase g
 referential roles point somewhere, the culmination precedes its answer and stays
 unresolved, the resolving demo arc abandons no obligation, the canonical arc reads
 Establish→Culminate→Answer→Dissolve in order, the shuffle probe scores strictly worse,
-and the anti-overfitting synthetic-trace tests in §3.11). It does not and cannot certify
+and the anti-overfitting synthetic-trace tests in §3.11). Round VIII adds the vertical
+controls and probes (§3.17): the brief's synthetic theory controls in `sonority.rs` (individually
+legal / collectively garbage, a lead 9th in the bass, the tension pile and its coordinated
+version, a passing collision, a suspension and a broken one, a planned altered dominant),
+`ensemble_probes.rs` (the Independent control pinned to its R7b fingerprint; the coupled band
+against it on every world; the joint bed against the solo paths; the review's counterexamples),
+and the ignored release sweep `fuzz_the_coupled_band_keeps_every_receipt_the_control_keeps`
+(`cargo test --release --lib fuzz_the_coupled -- --ignored`). It does not and cannot certify
 that a piece sounds good.
 
 ## 7. Honest limits
 
-### Current (Round VIIb)
+### Current (Round VIII)
+
+- **The decisive gate is still the ear.** Every number in §3.17 is a model of vertical coherence
+  measured on the Score (and on envelope-approximated lifetimes); none says the band now sounds
+  like one harmonic organism. The listening questions are in the Round VIII PR text: does the
+  accompaniment make room when the lead takes a colour; does the pad complement the keys rather
+  than respell the chord; does the chord react to the bass; do overlapping lines sound like
+  conversation; can you hear who owns a dissonance and where it goes.
+- **The theory is deliberately narrow.** Clashes are minor 2nds and minor 9ths; a semitone two
+  octaves apart (25) is not counted, nor is a tritone outside a sting; detune beating and timbral
+  roughness are not modelled. Audible lifetimes come from each patch's ADSR (40 dB per time
+  constant), not from rendered samples; reverb tails are not modelled.
+- **The sonority plan is only partly authored.** `plan_sonority` always plans a ROOT floor, no
+  omissions, no altered package and no shared upper structure: the fields exist and the audit
+  honours them (the controls plan them by hand), but generation does not yet decide an inversion,
+  a slash bass, an alteration package or an upper-structure triad for the band. `ColorPolicy::
+  upper_structures` is reported, not consumed.
+- **The lead is not negotiated with.** It is realized first and never moved (its colour choices
+  are Round VI/VII listening wins); the rest of the band makes room for it.
+- **Two layers are inert on the flagship.** The coupled keys lines (no answer or figure met a
+  hazard) and the plain-triad requirement (every flagship triad is an add9, which writes its 9th)
+  change nothing at seed 2112; they are exercised by their synthetic tests and the fuzz.
+- **Costs the listener may hear.** The pad's voice-leading is rougher under the joint bed (mean
+  motion ~4 → ~7.5 semitones, fewer retained common tones); SWISS_SIGNAL exceeds its five-pc
+  budget in 19 slices (9 before); identity tones are missing a little longer in VAPOR95 and
+  SWISS_SIGNAL. 75 unowned pitched-pair collisions remain across the 1152-composition sweep.
+- **Harmony the round did not touch.** BLACK_ICE's home chord is a Dorian Am6 (F♯) in an Aeolian
+  world that uses F♮ elsewhere (a cross-relation by design of the spine); SWISS_SIGNAL's
+  `use_sevenths` is dead. Both are flagged for the listen, not changed.
+- **NORMAL production changed once.** The FM band-limit makes the BLACK_ICE lead's top notes (and
+  high stings, and VAPOR95's highest keys) less bright; that is the removal of aliasing, not a
+  mix decision.
+- The model is experimental; Rust-only; not in the C ABI; version 0.3.1; nothing here is released.
+
+### Round VIIb
 
 - **Perceptual quality is unverified.** Every receipt above is structural/causal; none says the
   music is good. The decisive gate is the maintainer's listen to the Round VIIb renders: can you
@@ -1111,14 +1282,25 @@ a `CoherenceDiagnostics` report, and render receipts printed to stdout. Flags:
   `--manifest=fixed` — the calibration probes (plain speech, mood without action, fixed-slot
   answers, every statement a call, one gesture choreography every cycle).
 - `--ab` — the flagship six ways (fusion / simple / actions_off / clockwork / saturated /
-  fixed_gestures) with the receipts next to each WAV; `--stems` — one WAV per bus.
+  fixed_gestures) with the receipts next to each WAV, then every world realized by the
+  independent control and by the coupled band (`ab_coupling_<world>_{independent,coupled}.wav`)
+  with the vertical numbers beside each; `--stems` — one WAV per bus.
+- Round VIII: `--coupling=independent` (the Round VIIb realization); `--pair-stems` (the six
+  pitched-role pairs); `--harmonic-reference` (the same Score on clean, dry, zero-detune,
+  short-release voices, stings included, drums out, peak-normalized) or `--production=`
+  `clean,nodetune,nosat,dry,nocomp,shortrel` (single factors); `--dump-notes`
+  (`<world>.notes.tsv`: every note and sting with its function, tag, chord and actions);
+  `--sonority-detail=unowned|missing|flip|bass|nonroot|all` (every offending slice spelled note
+  by note, or every non-root bass note with its reason), with `--audible-floor=<dB>` to slice the
+  audible lifetimes instead of the written ones.
 
 The normal path prints, per world: the plan and backbone dumps, the action plan (with its
 manifestations, stasis and deferrals), the performance (calls, responses, ensemble), the
 coherence / discourse / realization / lead-outline / action / rigidity / harmony-context
 diagnostics, the exact causal witness audit, every interaction receipt, opportunity and
-admission, the complexity budget, the voice-path diagnostics, the lead's repair counts, and
-render safety receipts.
+admission, the complexity budget, the voice-path diagnostics, the ensemble sonority (written and
+audible), the joint solve's report and every explained vertical decision, the lead's repair
+counts, and render safety receipts.
 
 The point of the lab, per its own doc comment: the three WAVs should be recognizably the
 *same* music in form and meaning — same section skeleton, same motif identity, same

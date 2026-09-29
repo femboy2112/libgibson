@@ -1206,6 +1206,16 @@ mod tests {
     }
 
     #[test]
+    fn the_harmonic_mask_is_every_voice_the_audit_counts() {
+        // The vertical audit counts the four pitched buses and the pitched stings; the harmonic
+        // reference must render exactly those (a muted sting would hide a composition clash).
+        let h = StemMask::harmonic();
+        assert!(h.pad && h.keys && h.bass && h.lead && h.sfx && !h.drums);
+        let p = StemMask::pitched();
+        assert!(!p.sfx && !p.drums);
+    }
+
+    #[test]
     fn production_toggles_parse_and_label_round_trip() {
         assert_eq!(
             ProductionControl::parse("normal").unwrap(),
