@@ -748,20 +748,13 @@ pub fn voices_of(score: &Score, contexts: &[HarmonicContext]) -> Vec<Voice> {
         let (a, d, _, _) = e.kind.envelope();
         let end = e.start_beat + (a + d + e.kind.hold_secs()) as f64 * bps;
         for (k, &p) in e.pitches.iter().enumerate() {
-            v.push(Voice {
-                role: Role::Lead,
-                pitch: p,
-                start: e.start_beat,
+            v.push(sfx_voice(
+                p,
+                e.function[k],
+                e.start_beat,
                 end,
-                function: e.function[k],
-                tag: "sfx",
-                resolves: true,
-                resolves_to: None,
-                unison: false,
-                written_end: end,
-                sfx: true,
-                owned: e.owned_by.is_some(),
-            });
+                e.owned_by.is_some(),
+            ));
         }
     }
     v.sort_by(|a, b| {
@@ -771,6 +764,83 @@ pub fn voices_of(score: &Score, contexts: &[HarmonicContext]) -> Vec<Voice> {
             .then(a.pitch.cmp(&b.pitch))
     });
     settle_resolutions(&mut v, contexts);
+    v
+}
+
+/// One pitch of a pitched SFX gesture as a vertical voice, sounding `[start, end)` (its gated
+/// lifetime). A planned action owns the gesture's DISSONANCE — the pitch that carries no function
+/// over the harmony (a Warning's tritone) — never its chord tone: the sting's root against another
+/// player's semitone neighbour is an ordinary clash like any other.
+pub fn sfx_voice(
+    pitch: Midi,
+    function: Option<PitchFunction>,
+    start: f64,
+    end: f64,
+    owned_by_action: bool,
+) -> Voice {
+    Voice {
+        role: Role::Lead,
+        pitch,
+        start,
+        end,
+        function,
+        tag: "sfx",
+        resolves: true,
+        resolves_to: None,
+        unison: false,
+        written_end: end,
+        sfx: true,
+        owned: owned_by_action && function.is_none(),
+    }
+}
+
+/// The voices of `score` with their AUDIBLE lifetimes at `floor_db` below peak on `world`'s
+/// envelopes: a note on its role's patch, a pitched SFX on its own kind's envelope (released after
+/// its hold). Linearity and resolution stay judged on the written durations. The ONE audible voice
+/// list: the audible measure and the lab's detail listing both read it.
+pub fn audible_voices(
+    score: &Score,
+    contexts: &[HarmonicContext],
+    world: &MusicWorld,
+    floor_db: f64,
+) -> Vec<Voice> {
+    let mut v = voices_of(score, contexts);
+    for x in &mut v {
+        let patch = if x.sfx {
+            // The SFX voice's own envelope, found by its onset (gestures never share a beat and a
+            // pitch across kinds).
+            let kind = score
+                .sfx
+                .iter()
+                .find(|e| {
+                    e.is_pitched()
+                        && (e.start_beat - x.start).abs() < 1e-9
+                        && e.pitches.contains(&x.pitch)
+                })
+                .map(|e| e.kind);
+            match kind {
+                Some(k) => Patch {
+                    adsr: k.envelope(),
+                    ..world.lead
+                },
+                None => continue,
+            }
+        } else {
+            *match x.role {
+                Role::Pad => &world.pad,
+                Role::Keys => &world.keys,
+                Role::Bass => &world.bass,
+                Role::Lead => &world.lead,
+            }
+        };
+        x.end = audible_end_at(
+            x.start,
+            x.written_end - x.start,
+            &patch,
+            score.tempo_bpm,
+            floor_db,
+        );
+    }
     v
 }
 
@@ -867,17 +937,24 @@ pub struct Slice {
     pub class: VerticalClass,
 }
 
-/// Evaluate one set of simultaneously sounding voices over `ctx` — the SAME function the planner
-/// calls on a candidate. `sounding` indexes `voices`; `dur` is how long this set sounds together.
+/// Evaluate one set of simultaneously sounding voices over `ctx`, as heard from beat `at` (the
+/// slice's start: the moment the ear's root memory is judged at). `sounding` indexes `voices`.
 pub fn evaluate(
     ctx: &HarmonicContext,
     voices: &[Voice],
     sounding: &[usize],
     policy: &ColorPolicy,
     plan: Option<&SonorityPlan>,
+    at: f64,
 ) -> (Vec<Problem>, VerticalClass) {
     let mut problems = Vec::new();
     let mut class = VerticalClass::StructuralChord;
+    let specs = tension_specs(ctx);
+    let spec_of = |pc: i32| specs.iter().find(|t| t.pc == pc);
+    let ctx_end = ctx.start_beat + ctx.dur_beats as f64;
+    // How long a voice sounds under THIS harmony (a release tail crossing into it is contact, not
+    // a floor, below MIN_OVERLAP_BEATS — the same rule the pair count applies).
+    let under = |v: &Voice| v.end.min(ctx_end) - v.start.max(ctx.start_beat);
     let core = core_pcs(&ctx.chord);
     let raise = |c: &mut VerticalClass, to: VerticalClass| {
         if to > *c {
@@ -916,10 +993,10 @@ pub fn evaluate(
             }
         }
     }
-    // The floor.
+    // The floor: the lowest bass voice that sounds under this harmony for more than contact.
     if let Some(&bass) = sounding
         .iter()
-        .filter(|&&i| voices[i].role == Role::Bass)
+        .filter(|&&i| voices[i].role == Role::Bass && under(&voices[i]) >= MIN_OVERLAP_BEATS - 1e-9)
         .min_by_key(|&&i| voices[i].pitch)
     {
         let v = &voices[bass];
@@ -928,13 +1005,14 @@ pub fn evaluate(
             (v.is_linear() && v.written_end - v.start <= LINEAR_MAX_BEATS + 1e-9 && v.resolves)
                 || v.function == Some(PitchFunction::PedalTone)
                 || v.tag == "pedal"
-                || plan.is_some_and(|p| p.bass_pc == pitch_class(v.pitch));
+                || plan.is_some_and(|p| p.bass_pc == pitch_class(v.pitch))
+                || spec_of(pitch_class(v.pitch)).is_some_and(|t| t.over_bass_ok);
         if matches!(f, BassFunction::Tension(_) | BassFunction::NonChord) && !owned {
             problems.push(Problem::BassFunction { bass, function: f });
         }
         // The identity: a non-root floor under a band that has no root anywhere — and has not had
         // one, in this harmony, within the ear's memory.
-        let now = voices[bass].start.max(ctx.start_beat);
+        let now = at.max(ctx.start_beat);
         let root_sounds = voices.iter().any(|x| {
             pitch_class(x.pitch) == ctx.chord.root_pc
                 && !x.is_linear()
@@ -952,7 +1030,7 @@ pub fn evaluate(
             if !planned && !pedal {
                 problems.push(Problem::IdentityFlip {
                     bass,
-                    held: v.dur() >= 1.0 - 1e-9,
+                    held: under(v) >= 1.0 - 1e-9,
                 });
             }
         }
@@ -981,14 +1059,19 @@ pub fn evaluate(
     }
     for &pc in &extensions {
         let mut owners: Vec<Role> = Vec::new();
+        // A planned unison is one owner in several roles: every non-lead owner doubles the line
+        // (the lead is the unison's source; its own notes carry no unison tag).
         let mut unison_only = true;
+        let mut any_unison = false;
         for &i in &resting {
             if pitch_class(voices[i].pitch) == pc && !owners.contains(&voices[i].role) {
                 owners.push(voices[i].role);
-                unison_only &= voices[i].unison;
+                unison_only &= voices[i].unison || voices[i].role == Role::Lead;
+                any_unison |= voices[i].unison;
             }
         }
-        if owners.len() > 1 && !unison_only {
+        let limit = spec_of(pc).map_or(1, |t| t.max_owners as usize);
+        if owners.len() > limit && !(unison_only && any_unison) {
             problems.push(Problem::DuplicateTension { pc, owners });
         }
         if ctx.palette.expensive.contains(&pc) {
@@ -1001,7 +1084,6 @@ pub fn evaluate(
         }
     }
     // Available is not stable anywhere: a resting colour below its spec's register muddies the floor.
-    let specs = tension_specs(ctx);
     for &i in &resting {
         let pc = pitch_class(voices[i].pitch);
         if voices[i].role != Role::Bass
@@ -1092,6 +1174,33 @@ pub fn slices(
         .flat_map(|v| [v.start, v.end])
         .chain(contexts.iter().map(|c| c.start_beat))
         .collect();
+    // Where the ear's memory of the root runs out under a non-root floor that is still held (and
+    // no root sounds), cut: the flip starts there, not at the next note boundary.
+    for x in voices.iter().filter(|x| !x.is_linear()) {
+        let t = x.end + ROOT_MEMORY_BEATS;
+        let Some(c) = context_at(contexts, x.end - 1e-6) else {
+            continue;
+        };
+        if pitch_class(x.pitch) != c.chord.root_pc || t >= c.start_beat + c.dur_beats as f64 - 1e-6
+        {
+            continue;
+        }
+        let across = |y: &Voice| y.start < t - 1e-6 && y.end > t + 1e-6;
+        let floor_held = voices.iter().any(|b| {
+            b.role == Role::Bass
+                && across(b)
+                && BassFunction::of(&c.chord, b.pitch) != BassFunction::Root
+        });
+        let root_on = voices.iter().any(|y| {
+            pitch_class(y.pitch) == c.chord.root_pc
+                && !y.is_linear()
+                && y.start <= t + 1e-6
+                && y.end > t + 1e-6
+        });
+        if floor_held && !root_on {
+            cuts.push(t);
+        }
+    }
     cuts.sort_by(f64::total_cmp);
     cuts.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
     let mut out = Vec::new();
@@ -1117,7 +1226,7 @@ pub fn slices(
             .rposition(|c| c.start_beat <= s + 1e-6)
             .unwrap_or(0);
         let plan = plans.iter().find(|p| p.context == ci);
-        let (problems, class) = evaluate(ctx, voices, &sounding, policy, plan);
+        let (problems, class) = evaluate(ctx, voices, &sounding, policy, plan, s);
         let pcs: BTreeSet<i32> = sounding
             .iter()
             .map(|&i| pitch_class(voices[i].pitch))
@@ -1250,16 +1359,7 @@ impl EnsembleSonorityDiagnostics {
         plans: &[SonorityPlan],
         floor_db: f64,
     ) -> EnsembleSonorityDiagnostics {
-        let mut voices = voices_of(score, contexts);
-        for v in &mut voices {
-            let patch = match v.role {
-                Role::Pad => &world.pad,
-                Role::Keys => &world.keys,
-                Role::Bass => &world.bass,
-                Role::Lead => &world.lead,
-            };
-            v.end = audible_end_at(v.start, v.end - v.start, patch, score.tempo_bpm, floor_db);
-        }
+        let voices = audible_voices(score, contexts, world, floor_db);
         EnsembleSonorityDiagnostics::measure_voices(&voices, contexts, policy, plans)
     }
 
@@ -1753,13 +1853,22 @@ mod tests {
             .find(|s| s.degree == Degree::Nine)
             .expect("9 available");
         assert!(!nine.over_bass_ok && nine.max_owners == 1);
-        // Every tension that sits a semitone under a core tone names that tone in `voice_above`
-        // (it is colour only voiced a major 7th above it).
-        for s in &specs {
-            for &c in &s.voice_above {
-                assert_eq!((c - s.pc).rem_euclid(12), 1);
-            }
-        }
+        assert_eq!((nine.class, nine.min_register), (TensionClass::Natural, 55));
+        assert!(nine.voice_above.is_empty() && !nine.requires_resolution);
+        // Dm7 (Dorian in C): the 13th (B) sits a semitone under the b7 (C) — the mode's
+        // characteristic colour, only colour when voiced ABOVE the C.
+        let dm7 = ctx_of(&[(0.0, 4.0, Chord::new(2, Quality::Min7))]);
+        let dspecs = tension_specs(&dm7[0]);
+        let thirteen = dspecs
+            .iter()
+            .find(|s| s.degree == Degree::Thirteen)
+            .expect("the Dorian 13 is available over Dm7");
+        assert_eq!(thirteen.pc, 11);
+        assert_eq!(thirteen.class, TensionClass::Characteristic);
+        assert_eq!(thirteen.voice_above, vec![0]);
+        // And the 9th (E) sits a semitone under the minor 3rd (F): voiced below it, E-F is a m2.
+        let dnine = dspecs.iter().find(|s| s.degree == Degree::Nine).unwrap();
+        assert_eq!(dnine.voice_above, vec![5]);
     }
 
     #[test]
@@ -1876,6 +1985,116 @@ mod tests {
             d.bass_function_violations, 0,
             "a planned slash bass is owned"
         );
+    }
+
+    #[test]
+    fn a_sting_owns_its_dissonance_not_its_chord_tone() {
+        // A Warning over Fmaj7: F4 (its chord tone) + B4 (the owned tritone). The keys hold E4. The
+        // action owns the tritone; the sting's F4 against the keys' E4 is an ordinary m2 nobody owns.
+        let fmaj7 = Chord::new(5, Quality::Maj7);
+        let c = ctx_of(&[(0.0, 4.0, fmaj7)]);
+        let voices = vec![
+            v(Role::Bass, 41, 0.0, 4.0, PitchFunction::ChordTone, "root"),
+            v(Role::Keys, 64, 0.0, 2.0, PitchFunction::ChordTone, "hold"),
+            sfx_voice(65, Some(PitchFunction::ChordTone), 0.0, 0.6, true),
+            sfx_voice(71, None, 0.0, 0.6, true),
+        ];
+        assert!(!voices[2].owned && voices[3].owned);
+        let d = measure(voices, &c);
+        assert_eq!((d.unowned_m2, d.unowned_m9), (1, 0), "{d:?}");
+        assert_eq!(d.role_pairs.get("keys/sfx").copied(), Some(1));
+    }
+
+    #[test]
+    fn a_release_tail_is_contact_not_the_next_floor() {
+        // Dm7 then Cmaj7. The bass D2 rings 0.06 beats into Cmaj7 (a release tail) before the C2:
+        // contact, not a 9th in the bass. Held 0.3 beats into Cmaj7 it IS the floor there.
+        let dm7 = Chord::new(2, Quality::Min7);
+        let c = ctx_of(&[(0.0, 4.0, dm7), (4.0, 4.0, CMAJ7)]);
+        let band = |tail_end: f64| {
+            vec![
+                v(
+                    Role::Bass,
+                    38,
+                    3.0,
+                    tail_end,
+                    PitchFunction::ChordTone,
+                    "root",
+                ),
+                v(Role::Bass, 36, 4.3, 8.0, PitchFunction::ChordTone, "root"),
+                v(Role::Pad, 64, 4.0, 8.0, PitchFunction::ChordTone, "pad"),
+                v(Role::Pad, 71, 4.0, 8.0, PitchFunction::ChordTone, "pad"),
+            ]
+        };
+        let tail = measure(band(4.06), &c);
+        assert_eq!(tail.bass_function_violations, 0, "{tail:?}");
+        assert_eq!(tail.identity_flips_held, 0);
+        let held = measure(band(4.3), &c);
+        assert_eq!(held.bass_function_violations, 1, "{held:?}");
+    }
+
+    #[test]
+    fn the_roots_memory_runs_out_under_a_held_non_root_floor() {
+        // Dm7 for 8 beats: bass D2 (0-2) then A2 held to 8 under a rootless F3 C4 E4. Two beats
+        // after the D stops the ear has lost the root: F-A-C-E is heard as Fmaj7/A.
+        let dm7 = Chord::new(2, Quality::Min7);
+        let c = ctx_of(&[(0.0, 8.0, dm7)]);
+        let band = |a_end: f64| {
+            vec![
+                v(Role::Bass, 38, 0.0, 2.0, PitchFunction::ChordTone, "root"),
+                v(
+                    Role::Bass,
+                    45,
+                    2.0,
+                    a_end,
+                    PitchFunction::ChordTone,
+                    "fifth",
+                ),
+                v(Role::Pad, 53, 0.0, 8.0, PitchFunction::ChordTone, "pad"),
+                v(Role::Pad, 60, 0.0, 8.0, PitchFunction::ChordTone, "pad"),
+                v(Role::Pad, 64, 0.0, 8.0, PitchFunction::ChordTone, "pad"),
+            ]
+        };
+        let long = measure(band(8.0), &c);
+        assert_eq!(long.identity_flips, 1, "{long:?}");
+        assert!((long.identity_flip_beats - 4.0).abs() < 1e-6, "{long:?}");
+        // The fifth let go inside the memory: the root is still heard.
+        let short = measure(band(3.5), &c);
+        assert_eq!(short.identity_flips, 0, "{short:?}");
+    }
+
+    #[test]
+    fn a_unison_doubling_the_leads_colour_is_one_owner() {
+        // The lead sings the 9th (D6); the keys double it in unison (D5, tagged). One owner in two
+        // roles. Untagged, the same keys D5 is a second owner of the colour.
+        let c = ctx_of(&[(0.0, 4.0, CMAJ7)]);
+        let band = |unison: bool| {
+            let mut keys = v(
+                Role::Keys,
+                74,
+                0.0,
+                4.0,
+                PitchFunction::LicensedExtension,
+                if unison { "unison" } else { "comp" },
+            );
+            keys.unison = unison;
+            vec![
+                v(Role::Bass, 36, 0.0, 4.0, PitchFunction::ChordTone, "root"),
+                v(Role::Pad, 64, 0.0, 4.0, PitchFunction::ChordTone, "pad"),
+                v(Role::Pad, 71, 0.0, 4.0, PitchFunction::ChordTone, "pad"),
+                keys,
+                v(
+                    Role::Lead,
+                    86,
+                    0.0,
+                    4.0,
+                    PitchFunction::LicensedExtension,
+                    "melody",
+                ),
+            ]
+        };
+        assert_eq!(measure(band(true), &c).duplicate_tension_slices, 0);
+        assert_eq!(measure(band(false), &c).duplicate_tension_slices, 1);
     }
 
     #[test]

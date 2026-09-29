@@ -453,7 +453,7 @@ fn sfx_octave(
     at: f64,
     v: &SfxVoicing,
 ) -> Option<(Midi, String)> {
-    use super::sonority::{classify_clash, Clash, VerticalClass, Voice};
+    use super::sonority::{classify_clash, sfx_voice, Clash, VerticalClass, Voice};
     let (a, d, _, _) = kind.envelope();
     let end = at + (a + d + kind.hold_secs()) as f64 * score.tempo_bpm.max(1.0) as f64 / 60.0;
     let ctx = perf.context_at(at)?;
@@ -467,20 +467,7 @@ fn sfx_octave(
         let mut n = 0;
         let mut why = Vec::new();
         for (k, &p) in v.pitches.iter().enumerate() {
-            let me = Voice {
-                role: super::score::Role::Lead,
-                pitch: p + shift,
-                start: at,
-                end,
-                function: v.function[k],
-                tag: "sfx",
-                resolves: true,
-                resolves_to: None,
-                unison: false,
-                written_end: end,
-                sfx: true,
-                owned: v.owned_by.is_some(),
-            };
+            let me = sfx_voice(p + shift, v.function[k], at, end, v.owned_by.is_some());
             for o in &sounding {
                 if Clash::of(me.pitch, o.pitch).is_some()
                     && classify_clash(ctx, &me, o, None) == VerticalClass::UnownedCollision
