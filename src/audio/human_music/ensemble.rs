@@ -293,8 +293,18 @@ pub(super) fn plan_ensemble(
         } else {
             KeysMode::Comp
         };
+        // A pad re-entry starting in this bar is staged (a swell) even when the slot also widens:
+        // re-entering is the verb of this bar, the upper layer takes over after it.
+        let pad_reenters = actions.actions.iter().any(|a| {
+            a.kind == ActionKind::ReEntry
+                && a.initiator == Agent::Pad
+                && a.start_beat >= s - 1e-6
+                && a.start_beat < e - 1e-6
+        });
         let pad = if has(ActionKind::Thin) {
             PadMode::Silent
+        } else if pad_reenters {
+            PadMode::Swell
         } else if has(ActionKind::Thicken) {
             PadMode::UpperStructure
         } else {

@@ -30,7 +30,7 @@ use gibson::audio::human_music::diagnostics::{
     ActionDiagnostics, CoherenceDiagnostics, DiscourseDiagnostics, HarmonyContextDiagnostics,
     LeadOutlineDiagnostics, RealizationDiagnostics, RigidityDiagnostics,
 };
-use gibson::audio::human_music::functor::{compose_full, compose_with_grammar};
+use gibson::audio::human_music::functor::{compose_full, compose_with_grammar, SfxAudit};
 use gibson::audio::human_music::harmony::ChordSpan;
 use gibson::audio::human_music::language::MusicalLanguage;
 use gibson::audio::human_music::performance::{CallPolicy, PerformanceOptions, ResponseMode};
@@ -275,6 +275,8 @@ fn main() -> std::io::Result<()> {
             );
         }
         print!("{}", ComplexityReport::measure(&perf, &score).report());
+        print!("{}", perf.regions.dump());
+        print!("{}", SfxAudit::measure(&perf, &score).report());
         print!(
             "{}",
             VoicingDiagnostics::measure(&score, &perf.contexts).report()

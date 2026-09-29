@@ -282,7 +282,72 @@ impl PerformancePlan {
         //    Modulate moves the tonal region itself; every context is analysed in its own region,
         //    and the misses are re-measured on the harmony that actually sounds.
         let frame = HarmonicFrame::from_plan(plan, timeline, region, total_beats);
-        let (edits, regions) = apply_harmonic_actions(&mut chords, &mut actions, &frame);
+        let (mut edits, mut regions) = apply_harmonic_actions(&mut chords, &mut actions, &frame);
+        // A harmonic verb the harmony could not perform anywhere in its window (no lawful
+        // substitute, no recolouring, no applied dominant — e.g. a Reharmonize over a m7b5) is
+        // not left in the plan as an unwitnessable promise: it is removed before anybody plays
+        // and deferred with the reason.
+        let harmonic = [
+            ActionKind::Tonicize,
+            ActionKind::Reharmonize,
+            ActionKind::Recolor,
+            ActionKind::Modulate,
+        ];
+        let unperformed: Vec<ActionId> = actions
+            .actions
+            .iter()
+            .filter(|a| harmonic.contains(&a.kind))
+            .filter(|a| {
+                !edits.iter().any(|e| e.action == a.id)
+                    && !regions.spans.iter().any(|sp| sp.cause == Some(a.id))
+            })
+            .map(|a| a.id)
+            .collect();
+        let mut admissions = admissions;
+        if !unperformed.is_empty() {
+            let reason = "the harmony offers no lawful edit anywhere in its window";
+            for &id in &unperformed {
+                if let Some(a) = actions.get(id) {
+                    admissions.push(AdmissionRecord {
+                        action: None,
+                        kind: a.kind,
+                        start_beat: a.start_beat,
+                        outcome: Admission::Rejected { reason },
+                    });
+                    if let ActionCause::Morphism {
+                        transition,
+                        morphism,
+                    } = a.cause
+                    {
+                        actions.deferred.push(Deferral {
+                            transition,
+                            morphism,
+                            reason,
+                        });
+                    }
+                }
+            }
+            let remap = actions.remove(&unperformed);
+            for e in &mut edits {
+                e.action = remap(e.action).expect("an edited action is performed");
+            }
+            for sp in &mut regions.spans {
+                sp.cause = sp.cause.and_then(&remap);
+            }
+            for r in &mut regions.relabels {
+                if let Some(n) = remap(r.action) {
+                    r.action = n;
+                }
+            }
+            for w in &mut stage.windows {
+                if let Some(n) = remap(w.action) {
+                    w.action = n;
+                }
+            }
+            for r in &mut admissions {
+                r.action = r.action.and_then(&remap);
+            }
+        }
         let contexts = analyze_regions(&chords, &regions);
         if let (Some(tl), Some(home_chord)) = (&plan.backbone, home_chord) {
             deflects = super::backbone::deflect_witnesses(
