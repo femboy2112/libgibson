@@ -839,11 +839,10 @@ fn an_arrangement_veto_is_decided_before_realization() {
 }
 
 /// The strict form of the veto probe: EVERY action that survives admission into the vetoed intro
-/// is performed (witnessed) or carries an admission decision. Currently red: see the ignore reason.
+/// is performed (witnessed) or carries an admission decision. It exposed (and now guards) a defect:
+/// the ensemble Deflect was left undecided when the bass was vetoed — admission now brings the bass
+/// on for the miss's first beat (or rejects the Deflect when nobody pitched is on stage).
 #[test]
-#[ignore = "DEFECT exposed by the R7b probes: with the intro bass vetoed, the slot-1 Deflect \
-            (Ensemble) survives admission undecided and unperformable — admit_actions only \
-            reconciles ensemble Push/Hit/Unison, and the Deflect witness needs a stamped bass note"]
 fn a_veto_leaves_no_surviving_action_unperformable() {
     let tl = IntentTimeline::walk(&flagship_trace());
     for world in MusicWorld::all() {

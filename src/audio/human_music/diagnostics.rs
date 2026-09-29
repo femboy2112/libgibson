@@ -1527,9 +1527,9 @@ impl ActionDiagnostics {
     }
 }
 
-/// Per gesture, the mean Jaccard of consecutive cycles' `(kind, initiator, offset)` sets of the
-/// gesture's own actions (offsets in half-beats, anchored to the nearer slot edge). Pairs where
-/// both cycles are empty are skipped.
+/// Per gesture, the mean Jaccard of consecutive cycles' `(kind, initiator, anchored edge)` sets of
+/// the gesture's own actions (the edge = the slot start or end the action sits nearer). Pairs where
+/// either cycle has no actions (a final Reset with nothing to hand over to) are skipped.
 pub fn manifestation_recurrence(
     ap: &super::action::ActionPlan,
     bb: &super::backbone::BackboneTimeline,
@@ -1557,12 +1557,14 @@ pub fn manifestation_recurrence(
                     .map(|a| {
                         let from_start = a.start_beat - s0;
                         let from_end = a.start_beat - e0;
-                        let off = if from_start.abs() <= from_end.abs() {
-                            from_start
+                        // The choreography's identity: what, by whom, anchored to which edge
+                        // (a handover's exact length scales with the slot, its identity does not).
+                        let edge = if from_start.abs() <= from_end.abs() {
+                            0
                         } else {
-                            100.0 + from_end
+                            1
                         };
-                        (a.kind, a.initiator, (off * 2.0).round() as i32)
+                        (a.kind, a.initiator, edge)
                     })
                     .collect();
                 v.sort();
@@ -1573,7 +1575,9 @@ pub fn manifestation_recurrence(
         let mut js = Vec::new();
         for w in cycles.windows(2) {
             let (a, b) = (&w[0], &w[1]);
-            if a.is_empty() && b.is_empty() {
+            // A slot with no actions at all (the final Reset has no next attempt to hand over to)
+            // says nothing about recurrence.
+            if a.is_empty() || b.is_empty() {
                 continue;
             }
             let inter = a.iter().filter(|x| b.contains(x)).count();

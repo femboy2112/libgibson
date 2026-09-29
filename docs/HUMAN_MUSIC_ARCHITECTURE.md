@@ -917,7 +917,7 @@ duration) on the quantized beat, and sit under the band's own accent.
 | figure calls / drum calls | 5 / 1 | 5 / 1 | 5 / 1 |
 | informative receipts related to their real caller | 7/7 | 6/6 | 6/6 |
 | declared stasis / longest undeclared idle | 12 b / 10 b | 12 b / 10 b | 12 b / 10 b |
-| manifestation recurrence lift/deflect/open/reset | .12/.35/.33/.00 | same | same |
+| manifestation recurrence lift/deflect/open/reset (Fixed probe: .50/.75/1.00/1.00) | .33/.35/.33/.00 | same | same |
 | budget violations | 0 | 0 | 0 |
 | onset recurrence keys / bass / drums | .23 / .47 / .42 | .33 / .47 / .54 | .33 / .47 / .54 |
 | region transitions (the flagship does not modulate) | 0 | 0 | 0 |

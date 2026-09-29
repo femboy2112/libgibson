@@ -154,8 +154,11 @@ pub fn realize_keys(
                 (score > 0.2).then_some((score + rng.range_f32(0.0, 0.05), s))
             })
             .collect();
-        // Listen to the lead: never stab on top of its onsets.
-        steps.retain(|&(_, s)| !lead_onset_near(lead, AccentGrid::beat_of(bar, s)));
+        // Listen to the lead: never stab on top of its onsets. And ask the stage per stab.
+        steps.retain(|&(_, s)| {
+            let b = AccentGrid::beat_of(bar, s);
+            !lead_onset_near(lead, b) && perf.on_stage(Agent::Keys, b)
+        });
         steps.sort_by(|a, b| b.0.total_cmp(&a.0));
         let max_stabs = match eb.keys {
             KeysMode::Stab => 2,

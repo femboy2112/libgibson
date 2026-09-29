@@ -424,6 +424,18 @@ pub fn realize_drums(
                     );
                 }
             }
+            // A strong push is accented by the snare too (a faint one is left to the kick).
+            if w.push >= 0.9 && w.hit < 0.9 && !back && force > 0.6 {
+                hit(
+                    &mut hits,
+                    DrumVoice::Snare,
+                    at,
+                    (0.35 + 0.45 * force) * d,
+                    "hit",
+                    accents,
+                    &mut rng,
+                );
+            }
             if w.hit >= 0.9 && !back {
                 hit(
                     &mut hits,

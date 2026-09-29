@@ -695,6 +695,14 @@ pub fn declare_stasis(
             .unwrap_or(total_beats)
             .min(t.at_beat + 16.0)
             .min(total_beats);
+        // The stillness lasts until the next thing anybody does (the next event's lead-in may
+        // start a little before that event).
+        let end = actions
+            .actions
+            .iter()
+            .map(|x| x.start_beat)
+            .filter(|&b| b > t.at_beat + 0.25)
+            .fold(end, f64::min);
         if end > t.at_beat + 1.0 && !starts_in(t.at_beat + 0.25, end) && !culminates(t.at_beat, end)
         {
             out.push(super::action::StasisSpan {
@@ -790,6 +798,21 @@ fn admit_actions(actions: &mut ActionPlan, stage: &mut Stage) -> Vec<AdmissionRe
                         a.initiator = solo;
                     } else if present.is_empty() {
                         reject.push((a.id, "nobody is on stage for an ensemble accent"));
+                    }
+                }
+                ActionKind::Deflect => {
+                    // The miss is made concrete by the bass arriving on the ACTUAL root. With the
+                    // bass out, it enters for the miss's first beat (if anybody pitched is there
+                    // to deflect at all); with nobody pitched on stage the miss cannot sound.
+                    if !stage.on_stage(Agent::Bass, s) {
+                        let pitched =
+                            stage.present(&[Agent::Pad, Agent::Keys, Agent::Lead], s, s + 0.25);
+                        if pitched.is_empty() {
+                            reject.push((a.id, "nobody pitched is on stage to sound the miss"));
+                        } else {
+                            stage.admit(Agent::Bass, s, s + 1.0, a.id);
+                            record(Admission::Admitted { agent: Agent::Bass });
+                        }
                     }
                 }
                 ActionKind::Unison => {

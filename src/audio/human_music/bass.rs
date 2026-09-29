@@ -151,7 +151,9 @@ pub fn realize_bass(
         onsets.dedup();
         onsets.retain(|&s| {
             let b = AccentGrid::beat_of(bar, s);
-            !perf.accent.is_hole(b) && !in_quote(b)
+            // The stage per onset: an admitted window (the bass entering to state a missed root)
+            // does not open the rest of the bar.
+            !perf.accent.is_hole(b) && !in_quote(b) && perf.on_stage(Agent::Bass, b)
         });
 
         for (k, &s) in onsets.iter().enumerate() {
