@@ -21,7 +21,7 @@ use super::context::HarmonicContext;
 use super::ids::{ActionId, MaterialId};
 use super::interaction::Transform;
 use super::motif::{Motif, MotifBank};
-use super::performance::PerformancePlan;
+use super::performance::{EnsembleCoupling, PerformancePlan};
 use super::theory::{pitch_class, Midi, Scale};
 
 /// One event of a piece of material.
@@ -350,6 +350,21 @@ pub fn project_pitched(
     perf: &PerformancePlan,
     stable: &dyn Fn(&HarmonicContext, i32) -> bool,
 ) -> Vec<Projected> {
+    project(m, at, until, anchor, perf, stable, false)
+}
+
+/// [`project_pitched`]; with `floor` (the coupled bass) unpitched material alternates the
+/// context's root and real fifth instead of its guide tones — an echo in the bass is still the
+/// floor, and a bar of 3rds and 7ths down there has no root at all.
+fn project(
+    m: &InteractionMaterial,
+    at: f64,
+    until: f64,
+    anchor: Midi,
+    perf: &PerformancePlan,
+    stable: &dyn Fn(&HarmonicContext, i32) -> bool,
+    floor: bool,
+) -> Vec<Projected> {
     let mut out: Vec<Projected> = Vec::new();
     let mut prev: Option<Midi> = None;
     let mut prev_step: Option<i32> = None;
@@ -379,10 +394,17 @@ pub fn project_pitched(
             }
             None => {
                 let g = &ctx.palette.guide_tones;
-                let pc = g
-                    .get(i % g.len().max(1))
-                    .copied()
-                    .unwrap_or(ctx.chord.root_pc);
+                let pc = if floor {
+                    if i % 2 == 0 {
+                        ctx.chord.root_pc
+                    } else {
+                        super::bass::fifth_of(ctx)
+                    }
+                } else {
+                    g.get(i % g.len().max(1))
+                        .copied()
+                        .unwrap_or(ctx.chord.root_pc)
+                };
                 let base = (anchor / 12) * 12 + pc;
                 if base > anchor + 6 {
                     base - 12
@@ -423,7 +445,8 @@ pub fn stable_for(agent: Agent, ctx: &HarmonicContext, pc: i32) -> bool {
 /// projection both the owner and anybody who listens to it (a lead answering a bass figure) use.
 /// The line starts on the owner's stable pitch nearest its home register over the harmony at `at`.
 /// The drums project onsets only; a pitched player echoing unpitched material (a drum figure)
-/// puts its rhythm on the harmony's guide tones.
+/// puts its rhythm on the harmony's guide tones. The coupled bass is the exception on both counts:
+/// it starts on the root nearest its home register and echoes on root and fifth.
 pub fn line_of(
     m: &InteractionMaterial,
     owner: Agent,
@@ -440,18 +463,35 @@ pub fn line_of(
             .collect();
     }
     let center = home_register(owner);
+    // The coupled bass (Round VIII) is the floor even when it speaks: its line starts on the ROOT
+    // nearest E2, not on whichever chord tone happens to be nearest (often the 3rd or 7th — an
+    // inversion nobody planned), and its echoes sit on root and fifth. The independent control
+    // keeps the R7b projection.
+    let floor = owner == Agent::Bass && perf.coupling == EnsembleCoupling::Coupled;
     let anchor = perf
         .context_at(at)
         .map(|ctx| {
             (0..=12)
                 .flat_map(|d| [center - d, center + d])
-                .find(|&p| stable_for(owner, ctx, pitch_class(p)))
+                .find(|&p| {
+                    if floor {
+                        pitch_class(p) == ctx.chord.root_pc
+                    } else {
+                        stable_for(owner, ctx, pitch_class(p))
+                    }
+                })
                 .unwrap_or(center)
         })
         .unwrap_or(center);
-    project_pitched(m, at, until, anchor, perf, &|c, pc| {
-        stable_for(owner, c, pc)
-    })
+    project(
+        m,
+        at,
+        until,
+        anchor,
+        perf,
+        &|c, pc| stable_for(owner, c, pc),
+        floor,
+    )
 }
 
 /// A heard event, for [`relation`]: an onset and (for a pitched player) its pitch.

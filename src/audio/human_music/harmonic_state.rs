@@ -29,7 +29,9 @@ use super::theory::{note_name, pitch_class, Midi};
 pub struct VerticalDecision {
     pub beat: f64,
     pub role: Role,
-    /// What happened: `"revoiced"`, `"refused"`, `"substituted"`, `"octave"`.
+    /// What happened: `"revoiced"`, `"refused"`, `"substituted"`, `"octave"`, `"held"` (a note
+    /// sustained through a moving line instead of re-attacking), `"owned"` (a non-root floor an
+    /// action owns), `"kept"` (a hazard with no clean alternative on a note an action pins).
     pub what: &'static str,
     /// Why, naming the notes.
     pub reason: String,
@@ -233,11 +235,14 @@ impl<'a> HarmonicEnsembleState<'a> {
         if cand.role == Role::Bass {
             if let Some(ctx) = self.context_at(cand.start) {
                 let f = BassFunction::of(&ctx.chord, cand.pitch);
-                let owned = (cand.is_linear() && cand.dur() <= LINEAR_MAX_BEATS + 1e-9)
-                    || cand.function == Some(PitchFunction::PedalTone)
-                    || self
-                        .plan_at(cand.start)
-                        .is_some_and(|p| p.bass_pc == pitch_class(cand.pitch));
+                // The audit's rule exactly: a linear floor owns its function only by being short
+                // AND resolving (`candidate` assumes it resolves; a caller that knows better says so).
+                let owned =
+                    (cand.is_linear() && cand.dur() <= LINEAR_MAX_BEATS + 1e-9 && cand.resolves)
+                        || cand.function == Some(PitchFunction::PedalTone)
+                        || self
+                            .plan_at(cand.start)
+                            .is_some_and(|p| p.bass_pc == pitch_class(cand.pitch));
                 if matches!(f, BassFunction::Tension(_) | BassFunction::NonChord) && !owned {
                     out.push(Hazard::Floor { function: f });
                 }

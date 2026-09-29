@@ -186,7 +186,7 @@ fn realize_coupled(
     let plans = plan_sonority(&perf.contexts, lead, &policy);
     let mut state = HarmonicEnsembleState::new(&perf.contexts, plans, policy);
     state.commit(lead);
-    let bass = super::bass::realize_bass(perf, plan, world, lead, &[]);
+    let bass = super::bass::realize_bass_coupled(perf, plan, world, lead, &mut state);
     state.commit(&bass);
     let lines = super::comp::keys_lines(perf, lead, super::comp::keys_velocity(world));
     state.commit(&lines);
