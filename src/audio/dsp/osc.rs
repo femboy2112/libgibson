@@ -124,13 +124,30 @@ impl FmOsc {
     }
 
     /// Configure: carrier frequency (Hz), modulator:carrier frequency `ratio`, and
-    /// modulation `index` (peak phase deviation, in cycles).
+    /// modulation `index` (peak phase deviation, in cycles). The index is clamped to
+    /// [`FmOsc::alias_free_index`], so a high note never folds its sidebands back below Nyquist.
     #[inline]
     pub fn set(&mut self, carrier_hz: f32, ratio: f32, index: f32) {
         let c = carrier_hz.clamp(0.0, self.sr * 0.5);
         self.carrier_dt = c / self.sr;
         self.mod_dt = (c * ratio).clamp(0.0, self.sr * 0.5) / self.sr;
-        self.index = index.max(0.0);
+        self.index = index
+            .max(0.0)
+            .min(Self::alias_free_index(self.sr, c, ratio));
+    }
+
+    /// The largest modulation index (cycles) whose spectrum stays under `0.45 * sr` for a
+    /// `carrier_hz` carrier and a `ratio` modulator: the sidebands sit at `fc ± k·fm` and are
+    /// negligible past `k = β + 2` (Carson's rule plus one sideband; `β = 2π·index` radians), so
+    /// the top partial is `fc·(1 + ratio·(β + 2))`. A larger index folds sidebands past Nyquist
+    /// back into the audible band as INHARMONIC partials — a bell that is out of tune with its
+    /// own fundamental. Unbounded (`f32::INFINITY`) when nothing modulates.
+    pub fn alias_free_index(sr: f32, carrier_hz: f32, ratio: f32) -> f32 {
+        if carrier_hz <= 0.0 || ratio <= 0.0 {
+            return f32::INFINITY;
+        }
+        let beta = ((0.45 * sr / carrier_hz - 1.0) / ratio - 2.0).max(0.0);
+        beta / std::f32::consts::TAU
     }
 
     /// Reset both phases.
@@ -269,6 +286,55 @@ mod tests {
         let vb = render(|| b.next(), 2000);
         assert_eq!(va, vb);
         assert!(va.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+    }
+
+    /// Goertzel magnitude of `v` at `hz`.
+    fn goertzel(v: &[f32], hz: f32) -> f32 {
+        let w = std::f32::consts::TAU * hz / SR;
+        let (mut s1, mut s2) = (0.0f64, 0.0f64);
+        let c = 2.0 * (w as f64).cos();
+        for &x in v {
+            let s0 = x as f64 + c * s1 - s2;
+            s2 = s1;
+            s1 = s0;
+        }
+        ((s1 * s1 + s2 * s2 - c * s1 * s2).max(0.0)).sqrt() as f32
+    }
+
+    #[test]
+    fn fm_high_notes_do_not_fold_inharmonic_partials_below_nyquist() {
+        // BLACK_ICE's lead (ratio 2, index 2.2 cycles = 13.8 rad) at its climax G6 (1568 Hz): the
+        // unlimited spectrum reaches k = 16 sidebands, 1568·29 = 45472 Hz folds to 48000 − 45472 =
+        // 2528 Hz — an inharmonic partial the R8 synth scout measured at −15.6 dB in the real
+        // render. Band-limited, it is gone; a low note keeps its full index.
+        let g6 = 1567.98;
+        let lim = FmOsc::alias_free_index(SR, g6, 2.0);
+        assert!(lim < 2.2 && lim > 0.0, "limit {lim}");
+        let mut o = FmOsc::new(SR);
+        o.set(g6, 2.0, 2.2);
+        assert_eq!(o.index, lim);
+        let v = render(|| o.next(), 48_000);
+        let fundamental = goertzel(&v, g6);
+        let alias = goertzel(&v, 2528.0);
+        let db = 20.0 * (alias / fundamental).log10();
+        assert!(
+            db < -80.0,
+            "folded partial at {db:.1} dB re the fundamental"
+        );
+        // The unlimited phase-modulation formula at the same note DOES alias (the defect).
+        let naive: Vec<f32> = (0..48_000)
+            .map(|i| {
+                let t = i as f32 / SR;
+                let m = (std::f32::consts::TAU * 2.0 * g6 * t).sin() * 2.2;
+                ((g6 * t + m) * std::f32::consts::TAU).sin()
+            })
+            .collect();
+        let naive_db = 20.0 * (goertzel(&naive, 2528.0) / goertzel(&naive, g6)).log10();
+        assert!(naive_db > -30.0, "the control must alias: {naive_db:.1} dB");
+        // A4 (440 Hz) is far from the limit: its index is untouched.
+        let mut low = FmOsc::new(SR);
+        low.set(440.0, 2.0, 2.2);
+        assert_eq!(low.index, 2.2);
     }
 
     #[test]
