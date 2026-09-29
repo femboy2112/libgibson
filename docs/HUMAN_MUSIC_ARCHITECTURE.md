@@ -1,5 +1,9 @@
 # HumanMusic: the `gibson::audio` architecture (experimental)
 
+**Round XI experiment:** [Phenomenal regimes](HUMAN_MUSIC_PHENOMENAL_REGIMES.md) adds an
+opt-in StablePropulsion target and one PropulsiveReturn grammar, preserving the Round IX/X
+controls below. It records the matched A/B, independent musical witnesses and listening limits.
+
 This documents LibGibson's **audio realization axis** — `gibson::audio` and, on top of
 it, the **HumanMusic** procedural composition engine (`gibson::audio::human_music`). It
 is a research/engineering-alpha subsystem, Rust-only, not yet part of the C ABI. Read

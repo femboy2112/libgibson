@@ -57,6 +57,7 @@ use gibson::audio::human_music::meaning::Commutation;
 use gibson::audio::human_music::performance::{
     CallPolicy, EnsembleCoupling, PerformanceOptions, ResponseMode,
 };
+use gibson::audio::human_music::phenomenal::PhenomenalTrajectory;
 use gibson::audio::human_music::semantic::{
     calm_loop, deflected_lift_trace, rise_unresolved, SemanticTrace,
 };
@@ -337,6 +338,9 @@ fn main() -> std::io::Result<()> {
     }
 
     let trace = story_trace(&story, beats);
+    if std::env::args().any(|a| a == "--phenomenal") {
+        return phenomenal_ab(&out_dir, sr, block, &trace, seed, prod);
+    }
     // Round X: the same story, seed, grammar and band, composed twice — the page is the variable.
     if std::env::args().any(|a| a == "--meaning") {
         return meaning_ab(&out_dir, sr, block, &trace, seed, grammar, prod);
@@ -1262,5 +1266,105 @@ fn ab_coupling(
         }
     }
     println!("\nSame composition, same synth: only the realization's coupling differs.");
+    Ok(())
+}
+
+/// Round XI: same trace/seed/options/production, two song targets. Confirm the compositional
+/// distinction before the first render; take each immutable score through normal and reference
+/// production. SWISS_SIGNAL precedes BLACK_ICE so the first listen has no dark-world confound.
+fn phenomenal_ab(
+    out_dir: &std::path::Path,
+    sr: SampleRate,
+    block: usize,
+    trace: &SemanticTrace,
+    seed: u64,
+    prod: ProductionControl,
+) -> std::io::Result<()> {
+    let a = SongMap::compose(
+        trace,
+        seed,
+        Some(CompositionGrammar::DeflectedLift),
+        Composer::MeaningDirected,
+    );
+    let b = SongMap::compose(trace, seed, None, Composer::StablePropulsion);
+    let opts = perf_options();
+    println!("Round XI: seed={seed} beats={} options={opts:?} production={prod:?} sr={sr:?} block={block}", trace.total_beats);
+    if format!("{:?}", a.plan.arrangement) != format!("{:?}", b.plan.arrangement) {
+        return Err(std::io::Error::other("A/B orchestration envelopes differ"));
+    }
+    println!("orchestration envelope: identical");
+    let legacy = Commutation::check(&a);
+    println!("Round X control: {}", legacy.report());
+    // Keep inherited form failures visible on short/custom stories; the flagship must commute.
+    if !legacy.commutes() {
+        return Err(std::io::Error::other(
+            "Round X control does not commute on this input",
+        ));
+    }
+    for (label, song) in [("tension_deflection", &a), ("stable_propulsion", &b)] {
+        println!("\n=== {label} ===");
+        print_page(song);
+        let trajectory = PhenomenalTrajectory::observe(song);
+        let report = trajectory.report();
+        println!("{report}");
+        std::fs::write(out_dir.join(format!("{label}.trajectory.txt")), report)?;
+        if let Some(target) = &song.phenomenal {
+            let failures = trajectory.divergences(target);
+            println!("F target {target:?}\nphenomenal commutation: {failures:?}");
+            if !failures.is_empty() {
+                return Err(std::io::Error::other(format!(
+                    "phenomenal target failed: {failures:?}"
+                )));
+            }
+        }
+    }
+    for id in [WorldId::SwissSignal, WorldId::BlackIce] {
+        let world = MusicWorld::from_id(id);
+        let dir = out_dir.join(world.name.to_lowercase());
+        std::fs::create_dir_all(&dir)?;
+        println!("\nworld={world:?}");
+        for (label, song) in [("tension_deflection", &a), ("stable_propulsion", &b)] {
+            let c = perform(song, &world, opts);
+            let law = SongMapConformance::check(song, &c.perf, &c.score);
+            println!("{label}: {}", law.report());
+            if !law.passes() {
+                return Err(std::io::Error::other(law.report()));
+            }
+            let d = RealizationDiagnostics::measure(&song.plan, &c.score);
+            println!("{label}: song={:#018x} performance={:#018x} score={:#018x} repairs={} rejudged={} unjustified={:?}",
+                song.fingerprint(), c.perf.fingerprint(), c.score.fingerprint(),
+                c.score.melody_repairs, c.score.melody_rejudged, d.unjustified_by_role);
+            write_notes_tsv(&dir.join(format!("{label}.notes.tsv")), &c.score)?;
+            for (suffix, production) in [
+                ("", prod),
+                (".harmonic_reference", ProductionControl::HARMONIC_REFERENCE),
+            ] {
+                let mut synth = HumanMusicSynth::with_production(&c.score, &world, sr, production);
+                if production == ProductionControl::HARMONIC_REFERENCE {
+                    synth.set_stem_mask(StemMask::harmonic());
+                }
+                let frames = synth.total_samples();
+                let mut out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
+                let gain = if production == ProductionControl::NORMAL || out.peak <= 1e-6 {
+                    1.0
+                } else {
+                    0.8 / out.peak
+                };
+                normalize_for_comparison(&mut out, production);
+                if out.had_nonfinite {
+                    return Err(std::io::Error::other("nonfinite render"));
+                }
+                let path = dir.join(format!("{label}{suffix}.wav"));
+                write_wav_i16(&path, &out.audio, sr)?;
+                println!(
+                    "wav={} frames={frames} peak={:.6} rms={:.6} gain={gain:.6} nonfinite={}",
+                    path.display(),
+                    out.peak,
+                    out.rms,
+                    out.had_nonfinite
+                );
+            }
+        }
+    }
     Ok(())
 }

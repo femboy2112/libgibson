@@ -1,0 +1,1608 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 52.01s
+     Running unittests src/lib.rs (target/debug/deps/gibson-2a3f364e1156a977)
+
+running 658 tests
+test ansi::tests::test_compiler_autowrap_protection ... ok
+test ansi::tests::test_compiler_empty_diff_emits_zero_bytes ... ok
+test ansi::tests::test_compiler_erase_to_eol ... ok
+test ansi::tests::test_compiler_patch_emits_text ... ok
+test audio::buffer::tests::add_and_scale_compose ... ok
+test audio::buffer::tests::interleave_is_lrlr ... ok
+test audio::buffer::tests::mismatched_add_uses_overlap_not_panic ... ok
+test audio::buffer::tests::new_block_is_zeroed_and_finite ... ok
+test audio::buffer::tests::nonfinite_is_detected ... ok
+test audio::buffer::tests::peak_rms_dc_probes ... ok
+test audio::device::tests::device_error_display_is_human_readable ... ok
+test audio::device::tests::drain_full_supply_reports_no_underrun ... ok
+test audio::device::tests::drain_pops_available_then_zero_fills_and_counts_underrun ... ok
+test audio::device::tests::interleave_then_drain_round_trips_lrlr ... ok
+test audio::device::tests::play_and_stop_on_real_device ... ignored, requires a real audio output device
+test audio::device::tests::ring_capacity_math_is_bounded_and_stereo_even ... ok
+test audio::dsp::drums::tests::idle_drums_are_silent ... ok
+test audio::dsp::drums::tests::kick_is_bounded_terminates_and_is_low_biased ... ok
+test audio::dsp::drums::tests::snare_and_hat_and_clap_are_safe_and_terminate ... ok
+test audio::dsp::env::tests::adsr_rises_sustains_and_releases_bounded ... ok
+test audio::dsp::env::tests::exp_decay_monotone_and_terminates ... ok
+test audio::dsp::env::tests::idle_envelopes_are_silent ... ok
+test audio::dsp::filter::tests::highpass_attenuates_lows ... ok
+test audio::dsp::filter::tests::lowpass_passes_lows_and_attenuates_highs ... ok
+test audio::dsp::filter::tests::resonance_boosts_energy_near_cutoff ... ok
+test audio::dsp::filter::tests::stays_finite_under_extreme_modulation ... ok
+test audio::dsp::fx::tests::chorus_is_safe_and_widens ... ok
+test audio::dsp::fx::tests::compressor_reduces_gain_above_threshold ... ok
+test audio::dsp::fx::tests::delay_produces_an_echo_and_stays_finite ... ok
+test audio::dsp::fx::tests::limiter_never_exceeds_ceiling ... ok
+test audio::dsp::fx::tests::pan_is_equal_power ... ok
+test audio::dsp::fx::tests::reverb_tail_decays_and_never_diverges ... ok
+test audio::dsp::fx::tests::saturate_is_bounded ... ok
+test audio::dsp::osc::tests::all_shapes_stay_bounded_and_finite ... ok
+test audio::dsp::osc::tests::fm_high_notes_do_not_fold_inharmonic_partials_below_nyquist ... ok
+test audio::dsp::osc::tests::fm_is_bounded_and_deterministic ... ok
+test audio::dsp::osc::tests::freq_clamped_below_nyquist ... ok
+test audio::dsp::osc::tests::noise_is_deterministic_bounded_and_roughly_centered ... ok
+test audio::dsp::osc::tests::polyblep_saw_reduces_alias_energy_vs_naive ... ok
+test audio::dsp::osc::tests::sine_frequency_is_correct_via_zero_crossings ... ok
+test audio::graph::tests::bus_indices_are_distinct_and_stable ... ok
+test audio::graph::tests::ducking_lowers_music_gain ... ok
+test audio::graph::tests::mixer_sums_with_gain_and_stays_bounded ... ok
+test audio::graph::tests::soft_clip_is_transparent_in_the_linear_region ... ok
+test audio::human_music::action::tests::every_live_morphism_is_witnessed_or_deferred ... ok
+test audio::human_music::action::tests::families_are_stable_per_piece_and_the_null_plan_is_empty ... ok
+test audio::human_music::action::tests::the_spine_generates_its_own_verbs_every_cycle ... ok
+test audio::human_music::backbone::tests::a_trace_without_gesture_events_declares_a_fixed_tiling ... ok
+test audio::human_music::backbone::tests::every_deflect_is_a_prepared_miss ... ok
+test audio::human_music::backbone::tests::morphism_effects_bind_to_gestures ... ok
+test audio::human_music::backbone::tests::realization_is_deterministic_and_world_specific ... ok
+test audio::human_music::backbone::tests::slots_tile_the_piece_and_the_thesis_states_the_cell ... ok
+test audio::human_music::backbone::tests::the_open_follows_from_the_miss_and_reset_is_home ... ok
+test audio::human_music::backbone::tests::the_simple_language_moves_slower_but_is_the_same_spine ... ok
+test audio::human_music::backbone::tests::the_spine_order_beats_a_scrambled_gesture_assignment ... ok
+test audio::human_music::backbone::tests::the_two_clocks_are_one_clock ... ok
+test audio::human_music::bass::tests::a_unison_over_a_lead_tension_does_not_put_the_tension_in_the_bass ... ok
+test audio::human_music::bass::tests::the_coupled_flagship_bass_owns_the_floor ... ok
+test audio::human_music::comp::tests::a_cornered_connector_steps_aside_and_keeps_the_contour ... ok
+test audio::human_music::comp::tests::a_keys_answer_over_its_callers_held_note_is_placed_not_summed ... ok
+test audio::human_music::comp::tests::material_roles_name_what_each_event_is_harmonically ... ok
+test audio::human_music::comp::tests::the_coupled_keys_lines_are_placed_against_the_band_without_losing_their_meaning ... ok
+test audio::human_music::context::tests::a_bare_major_triad_is_not_an_applied_dominant ... ok
+test audio::human_music::context::tests::a_deflection_differs_from_its_expected_arrival_but_stays_related ... ok
+test audio::human_music::context::tests::a_dominant_claim_needs_evidence_and_an_applied_dominant_tonicizes ... ok
+test audio::human_music::context::tests::a_modal_flat_seven_is_not_a_leading_tone_chord ... ok
+test audio::human_music::context::tests::a_modal_pedal_is_a_pedal_not_a_cadence ... ok
+test audio::human_music::context::tests::a_natural_minor_v_is_not_a_classical_dominant ... ok
+test audio::human_music::context::tests::one_degree_behaves_differently_across_modes ... ok
+test audio::human_music::context::tests::palettes_stay_continuous_across_consecutive_contexts ... ok
+test audio::human_music::contract::tests::demo_arc_infers_hook_arc ... ok
+test audio::human_music::contract::tests::every_grammar_has_a_primary_anchor_and_a_sane_budget ... ok
+test audio::human_music::contract::tests::world_switch_transports_at_least_one_anchor ... ok
+test audio::human_music::diagnostics::tests::a_form_locked_accompaniment_measures_rigid ... ok
+test audio::human_music::diagnostics::tests::a_line_with_guide_tones_color_and_rests_does_not_trip_the_flag ... ok
+test audio::human_music::diagnostics::tests::a_real_composition_is_directed ... ok
+test audio::human_music::diagnostics::tests::a_real_composition_is_structurally_coherent ... ok
+test audio::human_music::diagnostics::tests::a_repeated_root_third_fifth_arpeggio_trips_the_noodle_flag ... ok
+test audio::human_music::diagnostics::tests::applied_dominants_raise_palette_transitions_but_not_region_transitions ... ok
+test audio::human_music::diagnostics::tests::catches_a_foreground_budget_violation ... ok
+test audio::human_music::diagnostics::tests::catches_abandoned_obligations ... ok
+test audio::human_music::diagnostics::tests::catches_an_unresolved_secondary_dominant ... ok
+test audio::human_music::diagnostics::tests::clockwork_answers_measure_rigid_and_free_answers_do_not ... ok
+test audio::human_music::diagnostics::tests::discourse_measures_a_tiny_piece_without_panicking ... ok
+test audio::human_music::diagnostics::tests::empty_score_measures_to_zeros_without_panicking ... ok
+test audio::human_music::diagnostics::tests::free_answers_vary_in_time_and_quote_the_call ... ok
+test audio::human_music::diagnostics::tests::mood_without_action_keeps_the_mood_and_loses_the_verbs ... ok
+test audio::human_music::diagnostics::tests::onset_vectors_bin_on_the_sixteenth_grid ... ok
+test audio::human_music::diagnostics::tests::r7_flagship_values_are_reported ... ok
+test audio::human_music::diagnostics::tests::realization_diagnostics_read_the_actual_score ... ok
+test audio::human_music::diagnostics::tests::shuffle_the_sentences_scores_strictly_worse ... ok
+test audio::human_music::diagnostics::tests::the_flagship_harmony_deflects_with_prepared_common_tone_misses ... ok
+test audio::human_music::diagnostics::tests::the_flagship_witnesses_every_morphism_and_acts ... ok
+test audio::human_music::diagnostics::tests::the_kaleidoscope_permutation_measures_worse ... ok
+test audio::human_music::discourse::tests::a_calm_loop_invents_no_high_pressure_culmination ... ok
+test audio::human_music::discourse::tests::a_debt_never_settled_past_its_deadline_is_abandoned ... ok
+test audio::human_music::discourse::tests::a_debt_settled_after_its_deadline_is_late ... ok
+test audio::human_music::discourse::tests::a_deferrable_debt_is_pending_before_its_deadline ... ok
+test audio::human_music::discourse::tests::a_resolving_arc_abandons_no_obligation ... ok
+test audio::human_music::discourse::tests::an_answer_settles_the_question_and_leaves_the_departure_for_a_homecoming ... ok
+test audio::human_music::discourse::tests::an_unresolved_arc_has_no_answer_and_leaves_a_debt_open ... ok
+test audio::human_music::discourse::tests::culmination_precedes_the_answer_and_is_not_resolved ... ok
+test audio::human_music::discourse::tests::every_phrase_has_a_goal_and_referential_roles_point_somewhere ... ok
+test audio::human_music::discourse::tests::false_climax_puts_the_culmination_on_the_true_peak ... ok
+test audio::human_music::discourse::tests::is_deterministic ... ok
+test audio::human_music::discourse::tests::settle_refuses_unknown_early_incompatible_and_double_settlement ... ok
+test audio::human_music::discourse::tests::settlements_bind_to_the_action_that_discharges_them ... ok
+test audio::human_music::discourse::tests::the_canonical_arc_reads_establish_culminate_answer_dissolve_in_order ... ok
+test audio::human_music::discourse::tests::the_deflected_lift_flagship_settles_each_cycle_on_time ... ok
+test audio::human_music::ensemble_probes::a_stings_audible_life_is_its_own_envelope ... ok
+test audio::human_music::ensemble_probes::fuzz_the_coupled_band_keeps_every_receipt_the_control_keeps ... ignored, fuzz sweep: run with --release -- --ignored
+test audio::human_music::ensemble_probes::fuzz_the_surgical_band_never_loses_a_receipt_silently ... ignored, fuzz sweep: run with --release -- --ignored
+test audio::human_music::ensemble_probes::the_coupled_band_sounds_one_harmony_where_the_control_did_not ... ok
+test audio::human_music::ensemble_probes::the_default_is_the_r7b_band_again ... ok
+test audio::human_music::ensemble_probes::the_independent_control_is_the_r7b_composition ... ok
+test audio::human_music::ensemble_probes::the_joint_bed_beats_each_player_alone_on_the_union ... ok
+test audio::human_music::ensemble_probes::the_r8_control_is_the_composition_the_listen_rejected ... ok
+test audio::human_music::ensemble_probes::the_reviews_counterexamples_keep_their_receipts ... ok
+test audio::human_music::ensemble_probes::the_surgical_band_is_r7b_minus_its_garbage ... ok
+test audio::human_music::form::tests::climax_has_the_highest_tension ... ok
+test audio::human_music::form::tests::energy_curve_is_bounded_and_continuous ... ok
+test audio::human_music::form::tests::form_covers_the_trace_and_has_a_climax ... ok
+test audio::human_music::form::tests::the_partial_bar_rule_counts_every_bar_a_piece_touches ... ok
+test audio::human_music::functor::tests::a_bass_chord_tone_is_really_a_chord_tone ... ok
+test audio::human_music::functor::tests::a_chord_names_its_own_tritone ... ok
+test audio::human_music::functor::tests::a_request_of_any_length_renders_exactly_that_length ... ok
+test audio::human_music::functor::tests::an_event_that_quantizes_onto_the_end_is_deferred_not_dropped ... ok
+test audio::human_music::functor::tests::compose_produces_a_valid_multivoice_score ... ok
+test audio::human_music::functor::tests::deflected_lift_recurs_the_hook_with_a_clean_ledger ... ok
+test audio::human_music::functor::tests::deterministic_for_seed ... ok
+test audio::human_music::functor::tests::every_bass_note_carries_a_justified_function ... ok
+test audio::human_music::functor::tests::every_sting_sounds_in_its_local_harmony_or_is_owned ... ok
+test audio::human_music::functor::tests::grammar_forces_the_resolution_policy_in_the_chords ... ok
+test audio::human_music::functor::tests::keys_comp_in_voiced_stabs_not_single_notes ... ok
+test audio::human_music::functor::tests::negative_control_the_world_scale_stings_ignore_the_harmony ... ok
+test audio::human_music::functor::tests::same_trace_gives_same_form_across_worlds ... ok
+test audio::human_music::functor::tests::the_realizer_leaves_no_unjustified_lead_notes ... ok
+test audio::human_music::functor::tests::walk_intent_resolves_at_the_end ... ok
+test audio::human_music::groove::tests::fills_land_at_phrase_ends_not_by_coin_flip ... ok
+test audio::human_music::groove::tests::groove_interlocks_kick_and_backbeat ... ok
+test audio::human_music::groove::tests::swing_delays_offbeats_in_vapor_not_black_ice ... ok
+test audio::human_music::groove::tests::velocities_are_bounded_and_deterministic ... ok
+test audio::human_music::harmonic_state::tests::colours_and_identity_are_read_from_what_sounds ... ok
+test audio::human_music::harmonic_state::tests::the_ledger_refuses_what_the_audit_would_call_garbage ... ok
+test audio::human_music::harmony::tests::c_major_diatonic_chords_are_correct ... ok
+test audio::human_music::harmony::tests::c_major_sevenths ... ok
+test audio::human_music::harmony::tests::closure_hierarchy_is_realized_not_a_period_every_phrase ... ok
+test audio::human_music::harmony::tests::deterministic_progression_for_seed ... ok
+test audio::human_music::harmony::tests::interior_degree_minimizes_the_cost_vector ... ok
+test audio::human_music::harmony::tests::loop_policy_cycles_home_without_functional_cadences ... ok
+test audio::human_music::harmony::tests::progression_covers_the_plan_and_ends_on_tonic ... ok
+test audio::human_music::harmony::tests::secondary_dominants_resolve ... ok
+test audio::human_music::ids::tests::a_stamp_holds_three_distinct_actions_and_ignores_repeats ... ok
+test audio::human_music::intent::tests::composition_threads_state_and_sums_cost ... ok
+test audio::human_music::intent::tests::cost_weighting_is_monotone ... ok
+test audio::human_music::intent::tests::holonomy_returning_is_not_identity ... ok
+test audio::human_music::intent::tests::identity_prolong_barely_changes_intent ... ok
+test audio::human_music::intent::tests::resolve_releases_expectation_built_by_prepare ... ok
+test audio::human_music::material::tests::relation_prefers_the_real_caller_over_unrelated_material ... ok
+test audio::human_music::material::tests::scale_steps_walk_the_scale ... ok
+test audio::human_music::material::tests::the_transform_algebra_holds_at_the_material_level ... ok
+test audio::human_music::meaning_probes::a_hand_written_song_can_mean_its_story ... ok
+test audio::human_music::meaning_probes::a_hanging_answer_hangs_nearby ... ok
+test audio::human_music::meaning_probes::a_return_pivot_is_read_in_the_region_it_leaves ... ok
+test audio::human_music::meaning_probes::groove_extremes_are_lawful_and_the_prior_aims_between ... ok
+test audio::human_music::meaning_probes::scrambled_meaning_breaks_the_law ... ok
+test audio::human_music::meaning_probes::the_composer_now_hears_the_story ... ok
+test audio::human_music::meaning_probes::the_control_is_untouched_and_shares_the_form ... ok
+test audio::human_music::meaning_probes::the_instrument_reads_every_story ... ok
+test audio::human_music::meaning_probes::the_listener_model_sees_what_it_used_to_miss ... ok
+test audio::human_music::meaning_probes::the_meaning_composer_across_songs ... ok
+test audio::human_music::meaning_probes::the_meaning_directed_flagship ... ok
+test audio::human_music::meaning_probes::the_prior_says_why_a_melody_is_unusual ... ok
+test audio::human_music::meaning_probes::the_r9_composer_cannot_mean_two_stories ... ok
+test audio::human_music::meaning_probes::the_r9_song_does_not_mean_its_story ... ok
+test audio::human_music::meaning_probes::witness_development_before_exposition ... ok
+test audio::human_music::meaning_probes::witness_expectation_before_home ... ok
+test audio::human_music::meaning_probes::witness_the_composer_is_meaning_blind ... ok
+test audio::human_music::motif::tests::a_line_through_changes_needs_no_repairs_and_every_note_is_justified ... ok
+test audio::human_music::motif::tests::augment_doubles_duration_diminish_halves ... ok
+test audio::human_music::motif::tests::events_keep_the_motif_rhythm_and_rest_only_in_the_interior ... ok
+test audio::human_music::motif::tests::fragment_then_tail_reconstructs_the_motif ... ok
+test audio::human_music::motif::tests::invert_negates_intervals_about_first ... ok
+test audio::human_music::motif::tests::motif_bank_is_deterministic_and_populated ... ok
+test audio::human_music::motif::tests::realize_phrase_is_deterministic ... ok
+test audio::human_music::motif::tests::realize_phrase_preserves_contour_direction ... ok
+test audio::human_music::motif::tests::realize_phrase_puts_chord_tones_on_strong_beats ... ok
+test audio::human_music::motif::tests::render_places_notes_in_time_and_pitch ... ok
+test audio::human_music::motif::tests::sequence_length_and_transposition ... ok
+test audio::human_music::motif::tests::similarity_is_perfect_with_self ... ok
+test audio::human_music::motif::tests::similarity_is_tempo_invariant ... ok
+test audio::human_music::motif::tests::similarity_is_transposition_invariant ... ok
+test audio::human_music::motif::tests::similarity_separates_a_different_contour ... ok
+test audio::human_music::motif::tests::the_fusion_line_uses_connective_motion_and_stays_deterministic ... ok
+test audio::human_music::motif::tests::transformations_preserve_identity ... ok
+test audio::human_music::motif::tests::transpose_shifts_all_degrees ... ok
+test audio::human_music::performance::tests::clockwork_responses_are_rigid_by_construction ... ok
+test audio::human_music::performance::tests::disabling_actions_keeps_the_harmony_and_removes_the_verbs ... ok
+test audio::human_music::performance::tests::free_responses_vary_responder_and_latency ... ok
+test audio::human_music::performance::tests::the_accent_grid_varies_across_bars_of_a_slot ... ok
+test audio::human_music::phenomenal_probes::actual_content_can_falsify_the_target_and_labels_cannot_rescue_it ... ok
+test audio::human_music::phenomenal_probes::fresh_lengths_and_seeds_keep_the_distinction_or_report_short_form_limits ... ok
+test audio::human_music::phenomenal_probes::grammar_should_admit_fulfilled_arrival ... ok
+test audio::human_music::phenomenal_probes::low_pressure_should_not_require_high_preparation ... ok
+test audio::human_music::phenomenal_probes::propulsion_can_increase_without_harmonic_debt ... ok
+test audio::human_music::phenomenal_probes::same_band_preserves_both_song_maps ... ok
+test audio::human_music::phenomenal_probes::suspended_deflection_is_a_distinct_measured_control ... ok
+test audio::human_music::pitch::tests::a_broken_slide_that_leaps_out_is_rejected ... ok
+test audio::human_music::pitch::tests::a_broken_suspension_that_resolves_upward_is_rejected ... ok
+test audio::human_music::pitch::tests::a_chord_tone_is_a_chord_tone ... ok
+test audio::human_music::pitch::tests::a_common_tone_tied_across_the_boundary_is_accepted ... ok
+test audio::human_music::pitch::tests::a_diatonic_passing_tone_walks_between_chord_tones ... ok
+test audio::human_music::pitch::tests::a_licensed_tension_is_colour_not_a_wrong_note ... ok
+test audio::human_music::pitch::tests::a_lone_non_chord_tone_with_no_neighbours_is_none ... ok
+test audio::human_music::pitch::tests::a_neighbour_leaves_and_returns ... ok
+test audio::human_music::pitch::tests::a_sustained_chord_tone_that_turns_dissonant_across_the_boundary_is_unjustified ... ok
+test audio::human_music::pitch::tests::an_enclosure_surrounds_the_target ... ok
+test audio::human_music::pitch::tests::an_unjustified_strong_beat_leap_is_none ... ok
+test audio::human_music::pitch::tests::anticipation_belongs_to_the_next_chord_when_close ... ok
+test audio::human_music::pitch::tests::anticipation_needs_the_harmony_to_be_close ... ok
+test audio::human_music::pitch::tests::chromatic_approach_leads_by_semitone_into_a_chord_tone ... ok
+test audio::human_music::pitch::tests::suspension_holds_from_the_previous_chord_and_resolves_down ... ok
+test audio::human_music::plan::tests::a_partial_final_bar_is_a_bar_and_the_piece_ends_where_it_was_asked_to ... ok
+test audio::human_music::plan::tests::a_recurs_and_a_prime_points_at_its_base ... ok
+test audio::human_music::plan::tests::arrangement_respects_the_foreground_budget ... ok
+test audio::human_music::plan::tests::dump_reports_families_and_roles ... ok
+test audio::human_music::plan::tests::every_recurring_hook_gets_a_foreground_lead ... ok
+test audio::human_music::plan::tests::foreground_is_not_a_loudness_cliff_over_texture ... ok
+test audio::human_music::plan::tests::phrases_tile_the_form_on_the_grid ... ok
+test audio::human_music::plan::tests::salient_semantic_events_align_to_phrase_boundaries ... ok
+test audio::human_music::plan::tests::silence_is_a_first_class_event_and_every_voice_is_heard_somewhere ... ok
+test audio::human_music::plan::tests::the_intro_teases_with_more_than_a_lonely_pad ... ok
+test audio::human_music::probes::a_bass_call_is_answered_from_the_bass_not_the_coincident_lead ... ok
+test audio::human_music::probes::a_semantic_delta_sizes_the_action_and_the_score ... ok
+test audio::human_music::probes::a_veto_leaves_no_surviving_action_unperformable ... ok
+test audio::human_music::probes::action_ids_are_dense_and_every_reference_resolves ... ok
+test audio::human_music::probes::an_arrangement_veto_is_decided_before_realization ... ok
+test audio::human_music::probes::an_unlicensed_pileup_overspends_and_a_licensed_burst_does_not ... ok
+test audio::human_music::probes::declared_stasis_is_not_idleness ... ok
+test audio::human_music::probes::every_flagship_obligation_cites_the_action_that_settles_it ... ok
+test audio::human_music::probes::every_informative_answer_relates_to_its_real_caller ... ok
+test audio::human_music::probes::every_statement_calling_is_saturation ... ok
+test audio::human_music::probes::fixed_choreography_measures_rigid_and_varied_does_not ... ok
+test audio::human_music::probes::the_flagship_lead_holds_its_receipts ... ok
+test audio::human_music::probes::unstamped_events_never_witness_an_action ... ok
+test audio::human_music::region::tests::a_deceptive_entry_does_not_establish_and_downgrades ... ok
+test audio::human_music::region::tests::a_modulation_pivots_transposes_the_path_and_returns_home ... ok
+test audio::human_music::region::tests::a_relative_key_modulation_is_refused_and_relabelled ... ok
+test audio::human_music::region::tests::a_third_substitute_keeps_function_and_a_fallback_is_labelled_recolor ... ok
+test audio::human_music::region::tests::a_tritone_substitute_keeps_the_next_chord_and_the_guide_tritone ... ok
+test audio::human_music::region::tests::an_applied_dominant_is_a_tonicization_not_a_region_change ... ok
+test audio::human_music::region::tests::analyze_is_analyze_regions_over_one_home_span ... ok
+test audio::human_music::region::tests::the_cinematic_impact_really_modulates_and_comes_home ... ok
+test audio::human_music::region::tests::the_flagship_stays_home ... ok
+test audio::human_music::rng::tests::chance_roughly_matches_probability ... ok
+test audio::human_music::rng::tests::deterministic_for_a_seed ... ok
+test audio::human_music::rng::tests::floats_in_range_and_below_bounded ... ok
+test audio::human_music::score::tests::empty_score_validates_and_summarizes ... ok
+test audio::human_music::score::tests::validate_holds_the_score_to_its_exact_end ... ok
+test audio::human_music::score::tests::validate_rejects_bad_velocity ... ok
+test audio::human_music::semantic::tests::danger_has_more_pressure_than_success ... ok
+test audio::human_music::semantic::tests::deflected_lift_trace_bounces_where_the_cinematic_arc_climbs_once ... ok
+test audio::human_music::semantic::tests::deflected_lift_trace_never_reaches_catastrophe ... ok
+test audio::human_music::semantic::tests::emphasis_and_elevation_map_monotonically ... ok
+test audio::human_music::semantic::tests::identity_prolong_requires_no_event ... ok
+test audio::human_music::semantic::tests::insignificant_change_is_filtered ... ok
+test audio::human_music::semantic::tests::trace_is_genuinely_bounded_by_total_beats ... ok
+test audio::human_music::semantic::tests::trace_state_lookup_is_last_event_wins ... ok
+test audio::human_music::song_probes::one_song_four_performances ... ok
+test audio::human_music::song_probes::real_mutations_move_the_song ... ok
+test audio::human_music::song_probes::the_chart_is_the_songs ... ok
+test audio::human_music::song_probes::the_chart_rhythm_is_the_songs ... ok
+test audio::human_music::song_probes::the_law_holds_across_songs ... ok
+test audio::human_music::song_probes::the_theme_is_the_songs ... ok
+test audio::human_music::sonority::tests::a_fifth_in_the_bass_under_rootless_shells_flips_the_chord ... ok
+test audio::human_music::sonority::tests::a_lead_ninth_copied_into_the_bass_is_a_bass_function_violation ... ok
+test audio::human_music::sonority::tests::a_planned_altered_dominant_is_coherent_and_its_abuses_are_not ... ok
+test audio::human_music::sonority::tests::a_release_tail_is_contact_not_the_next_floor ... ok
+test audio::human_music::sonority::tests::a_resolving_passing_collision_is_owned_linear_dissonance ... ok
+test audio::human_music::sonority::tests::a_sting_owns_its_dissonance_not_its_chord_tone ... ok
+test audio::human_music::sonority::tests::a_suspension_owns_its_clash_only_off_its_own_resolution_tone ... ok
+test audio::human_music::sonority::tests::a_tension_pile_is_caught_and_the_coordinated_version_passes ... ok
+test audio::human_music::sonority::tests::a_unison_doubling_the_leads_colour_is_one_owner ... ok
+test audio::human_music::sonority::tests::a_voicing_cluster_of_chord_tones_is_colour_not_garbage ... ok
+test audio::human_music::sonority::tests::audible_ends_follow_the_envelope ... ok
+test audio::human_music::sonority::tests::degrees_and_core ... ok
+test audio::human_music::sonority::tests::individually_legal_collectively_garbage_fails_the_union ... ok
+test audio::human_music::sonority::tests::low_register_mud_is_measured_across_roles ... ok
+test audio::human_music::sonority::tests::tension_specs_know_where_a_tension_may_sit ... ok
+test audio::human_music::sonority::tests::the_b_form_is_colour_and_the_real_avoids_are_not ... ok
+test audio::human_music::sonority::tests::the_colour_budget_counts_what_the_band_adds_not_what_the_chord_spells ... ok
+test audio::human_music::sonority::tests::the_roots_memory_runs_out_under_a_held_non_root_floor ... ok
+test audio::human_music::surgical::tests::a_receipt_never_keeps_a_bad_note ... ok
+test audio::human_music::surgical::tests::a_stab_is_judged_only_while_it_sounds ... ok
+test audio::human_music::surgical::tests::a_unison_bass_never_floors_the_leads_ninth ... ok
+test audio::human_music::surgical::tests::one_clash_one_edit ... ok
+test audio::human_music::surgical::tests::one_collision_does_not_move_the_bed ... ok
+test audio::human_music::surgical::tests::owned_tension_is_not_sterilized ... ok
+test audio::human_music::surgical::tests::silence_beats_a_worse_replacement ... ok
+test audio::human_music::surgical::tests::the_perturbation_report_diffs_the_scores ... ok
+test audio::human_music::synth::tests::bus_levels_are_nonzero_for_every_audible_bus_in_a_real_bounce ... ok
+test audio::human_music::synth::tests::bus_meter_is_independent_of_the_stem_mask ... ok
+test audio::human_music::synth::tests::every_sfx_kind_dies_within_its_declared_lifetime ... ok
+test audio::human_music::synth::tests::four_sfx_voices_service_ten_sequential_events ... ok
+test audio::human_music::synth::tests::production_normal_is_bit_identical_to_new_and_reference_changes_only_production ... ok
+test audio::human_music::synth::tests::production_toggles_parse_and_label_round_trip ... ok
+test audio::human_music::synth::tests::repro_sustained_sfx_hangs_forever ... ok
+test audio::human_music::synth::tests::tempo_comes_from_the_score_not_the_world ... ok
+test audio::human_music::synth::tests::the_harmonic_mask_is_every_voice_the_audit_counts ... ok
+test audio::human_music::theory::tests::a4_is_440 ... ok
+test audio::human_music::theory::tests::c_major_scale_degrees ... ok
+test audio::human_music::theory::tests::chord_pitch_classes_and_stacking ... ok
+test audio::human_music::theory::tests::nearest_scale_and_chord_snapping ... ok
+test audio::human_music::theory::tests::voice_motion_counts_semitones ... ok
+test audio::human_music::timeline::tests::accumulated_cost_is_monotone_nondecreasing ... ok
+test audio::human_music::timeline::tests::elevation_axis_is_live_in_register ... ok
+test audio::human_music::timeline::tests::prolong_transition_preserves_structural_identity ... ok
+test audio::human_music::timeline::tests::span_of_a_quiet_region_crosses_nothing_and_points_at_the_next_event ... ok
+test audio::human_music::timeline::tests::span_sees_a_mid_span_confirmation_the_start_snapshot_misses ... ok
+test audio::human_music::timeline::tests::walk_endpoint_matches_the_old_fold_semantics ... ok
+test audio::human_music::timeline::tests::walk_has_one_transition_per_event_and_a_consistent_endpoint ... ok
+test audio::human_music::voicing::tests::a_plain_triad_needs_its_triad_and_may_choose_the_ninth ... ok
+test audio::human_music::voicing::tests::common_tones_reduce_motion_between_related_chords ... ok
+test audio::human_music::voicing::tests::dp_never_worse_than_greedy_or_legacy ... ok
+test audio::human_music::voicing::tests::flagship_voicings_keep_the_score_honest ... ok
+test audio::human_music::voicing::tests::keys_shells_carry_both_guide_tones ... ok
+test audio::human_music::voicing::tests::lift_centroid_never_falls_within_a_slot ... ok
+test audio::human_music::voicing::tests::open_spread_is_wider_than_close ... ok
+test audio::human_music::voicing::tests::path_pcs_are_chord_or_licensed ... ok
+test audio::human_music::voicing::tests::stability_measures_the_bed_and_what_moved_from_a_reference ... ok
+test audio::human_music::voicing::tests::voices_stay_in_register ... ok
+test audio::human_music::voicing::tests::voicing_contains_the_chord_tones ... ok
+test audio::human_music::witness::tests::the_flagship_witnesses_every_action_in_the_notes ... ok
+test audio::human_music::world::tests::from_id_round_trips ... ok
+test audio::human_music::world::tests::three_distinct_worlds ... ok
+test audio::media::tests::duck_curve_pulls_music_down_under_dialogue ... ok
+test audio::media::tests::fades_zero_the_edges ... ok
+test audio::media::tests::interleave_parse_round_trips ... ok
+test audio::media::tests::placed_clip_renders_at_its_offset ... ok
+test audio::render::tests::deterministic_same_source_same_output ... ok
+test audio::render::tests::render_seconds_matches_sample_math ... ok
+test audio::render::tests::renders_exact_frame_count_across_partial_last_block ... ok
+test audio::time::tests::audio_clock_duration_round_trip ... ok
+test audio::time::tests::sample_rate_rejects_zero_and_reports_hz ... ok
+test audio::time::tests::sample_time_seconds_round_trip_is_exact_on_whole_samples ... ok
+test audio::time::tests::tempo_map_beat_sample_conversions ... ok
+test audio::time::tests::tempo_map_clamps_insane_input ... ok
+test audio::time::tests::transport_advance_never_drifts_over_many_blocks ... ok
+test audio::time::tests::transport_seek_and_pause_retain_playhead ... ok
+test audio::wav::tests::f32_wav_is_format_3_and_lossless ... ok
+test audio::wav::tests::i16_clamps_beyond_full_scale_without_wrapping ... ok
+test audio::wav::tests::i16_wav_has_canonical_header_and_size ... ok
+test canvas::tests::braille_all_dots_is_full_block ... ok
+test canvas::tests::braille_circle_is_round_and_bounded ... ok
+test canvas::tests::braille_clipping_and_out_of_bounds ... ok
+test canvas::tests::braille_diagonal_line_covers_endpoints ... ok
+test canvas::tests::braille_each_dot_position_is_exact ... ok
+test canvas::tests::braille_ellipse_and_polygon ... ok
+test canvas::tests::braille_filled_circle_covers_centre ... ok
+test canvas::tests::braille_rect_outline_and_fill ... ok
+test canvas::tests::braille_unset_and_clear ... ok
+test canvas::tests::clip_drops_fully_outside_line ... ok
+test canvas::tests::clip_handles_near_i32_extreme_coordinates ... ok
+test canvas::tests::clip_rejects_empty_and_accepts_inside ... ok
+test canvas::tests::clip_truncates_huge_diagonal_line ... ok
+test canvas::tests::clip_truncates_huge_horizontal_line ... ok
+test canvas::tests::clip_truncates_huge_vertical_line ... ok
+test canvas::tests::clipping_is_idempotent_for_inside_lines ... ok
+test canvas::tests::half_block_both_uses_fg_top_bg_bottom ... ok
+test canvas::tests::half_block_bottom_only_uses_lower_glyph ... ok
+test canvas::tests::half_block_empty_cell_is_transparent ... ok
+test canvas::tests::half_block_geometry_is_one_pixel_wide_two_tall_per_cell ... ok
+test canvas::tests::half_block_odd_column_pixel_is_rendered_in_rich_text ... ok
+test canvas::tests::half_block_rect_and_clipping ... ok
+test canvas::tests::half_block_top_only_uses_upper_glyph ... ok
+test canvas::tests::halfblock_is_empty_tracks_pixels ... ok
+test canvas::tests::huge_lines_are_clipped_by_the_canvas_and_do_not_panic ... ok
+test canvas::tests::oscilloscope_produces_some_dots ... ok
+test canvas::tests::zero_and_single_pixel_canvases_are_safe ... ok
+test capability::tests::capability_unknown_is_not_supported ... ok
+test capability::tests::colorterm_truecolor_detected ... ok
+test capability::tests::dumb_term_is_mono ... ok
+test capability::tests::mono_env_disables_color ... ok
+test capability::tests::plain_xterm_is_ansi16 ... ok
+test capability::tests::quantization_ladder ... ok
+test capability::tests::reset_is_preserved_as_default_not_a_color ... ok
+test cell::tests::test_color_lerp_and_xterm_mapping ... ok
+test cell::tests::test_glyph_ascii ... ok
+test cell::tests::test_glyph_combining ... ok
+test cell::tests::test_glyph_emoji ... ok
+test cell::tests::test_glyph_wide_cjk ... ok
+test cell::tests::test_no_color_theme_adds_no_color ... ok
+test cell::tests::test_rich_text_multi_line ... ok
+test cell::tests::test_span_and_line_plain_and_ansi ... ok
+test cell::tests::test_style_builder ... ok
+test cell::tests::test_theme_styles_are_semantic_roles ... ok
+test cell::tests::test_theme_tokens ... ok
+test clock::tests::easings_hit_endpoints ... ok
+test clock::tests::fixed_step_clock_is_exact_and_reproducible ... ok
+test clock::tests::motion_helpers_are_bounded_and_periodic ... ok
+test clock::tests::real_mode_is_not_fixed ... ok
+test clock::tests::time_source_fixed_mode_advances_deterministically ... ok
+test diff::tests::affected_footprint_counts_already_blank_cells_but_exact_does_not ... ok
+test diff::tests::affected_footprint_may_exceed_removed_surface_area ... ok
+test diff::tests::exact_delta_is_zero_for_identical_surfaces_and_changed_counts_differ ... ok
+test diff::tests::exact_delta_matches_cell_by_cell_comparison ... ok
+test diff::tests::logical_damage_counts_cleared_trailing_rows ... ok
+test diff::tests::logical_damage_counts_erase_to_eol_cells ... ok
+test diff::tests::logical_damage_counts_shrinking_line_region ... ok
+test diff::tests::logical_damage_is_zero_for_identical_surfaces ... ok
+test diff::tests::logical_damage_superset_of_explicit_runs ... ok
+test diff::tests::test_erase_to_eol_when_text_shrinks ... ok
+test diff::tests::test_height_shrink_clears_rows ... ok
+test diff::tests::test_identical_surfaces_empty_diff ... ok
+test diff::tests::test_single_cell_diff ... ok
+test field::tests::bayer_threshold_is_bounded_and_deterministic ... ok
+test field::tests::braille_field_is_deterministic ... ok
+test field::tests::dither_density_increases_with_intensity ... ok
+test field::tests::dithered_field_does_not_collapse_to_solid_or_empty ... ok
+test field::tests::dithered_field_is_deterministic ... ok
+test field::tests::halfblock_field_fills_pixels ... ok
+test field::tests::heat_ramp_is_monotonic_in_red_channel ... ok
+test field::tests::plasma_is_bounded_and_deterministic ... ok
+test focus::tests::capture_and_release_restores_previous_focus ... ok
+test focus::tests::cycles_with_wraparound ... ok
+test focus::tests::duplicate_ids_are_ignored ... ok
+test focus::tests::empty_ring_is_safe ... ok
+test focus::tests::nested_capture_restores_in_order ... ok
+test focus::tests::set_only_known_ids ... ok
+test geom::tests::behind_to_visible_crossing_keeps_visible_portion ... ok
+test geom::tests::box_xyz_has_requested_extents ... ok
+test geom::tests::crossing_segment_draws_a_truncated_edge_not_nothing ... ok
+test geom::tests::cube_has_eight_vertices_and_twelve_edges ... ok
+test geom::tests::data_tower_sits_on_the_ground_plane ... ok
+test geom::tests::endpoint_exactly_on_near_plane_is_visible ... ok
+test geom::tests::fully_visible_edge_renders_at_least_as_much_as_crossing_edge ... ok
+test geom::tests::grid_xz_is_consistent_and_composable ... ok
+test geom::tests::hostile_projection_inputs_never_reach_a_canvas ... ok
+test geom::tests::identity_projection_maps_origin_to_centre ... ok
+test geom::tests::invalid_projector_degrades_to_none_instead_of_nan ... ok
+test geom::tests::invisible_invisible_segment_is_dropped ... ok
+test geom::tests::nan_and_infinite_endpoints_are_rejected ... ok
+test geom::tests::nan_input_never_reaches_canvas ... ok
+test geom::tests::near_camera_projection_is_clipped_to_canvas_efficiently ... ok
+test geom::tests::near_edges_have_smaller_depth_than_far_edges ... ok
+test geom::tests::points_behind_near_plane_are_rejected ... ok
+test geom::tests::project_mesh_reports_finite_depth_for_all_edges ... ok
+test geom::tests::projection_is_deterministic_and_finite_across_rotations ... ok
+test geom::tests::torus_topology_is_consistent ... ok
+test geom::tests::validating_constructor_rejects_pathological_parameters ... ok
+test geom::tests::very_shallow_crossing_is_not_dropped ... ok
+test geom::tests::visible_to_behind_crossing_keeps_visible_portion ... ok
+test geom::tests::visible_visible_segment_is_returned_unchanged ... ok
+test geom::tests::wireframe_draws_some_dots ... ok
+test glitch::tests::empty_rect_is_a_noop ... ok
+test glitch::tests::glitch_never_leaves_dangling_wide_glyphs ... ok
+test glitch::tests::invert_only_changes_opaque_cells ... ok
+test glitch::tests::row_shift_moves_content_and_fills_with_spaces ... ok
+test glitch::tests::scramble_is_deterministic_and_bounded ... ok
+test glyph::tests::ascii_ramp_monotonic_and_ascii ... ok
+test glyph::tests::block_density_ramp ... ok
+test glyph::tests::braille_mode_matches_legacy_formula ... ok
+test glyph::tests::detection_precedence_and_auto_policy ... ok
+test glyph::tests::empty_mask_is_none_in_every_mode ... ok
+test glyph::tests::full_mask_is_full_ink ... ok
+test glyph::tests::halfblock_vertical_halves ... ok
+test glyph::tests::nonempty_mask_is_some_in_every_mode ... ok
+test glyph::tests::parse_round_trips_and_rejects_garbage ... ok
+test glyph::tests::transcode_braille_is_a_noop ... ok
+test glyph::tests::transcode_lowers_resolution_and_preserves_style_and_text ... ok
+test input::tests::test_bracketed_paste ... ok
+test input::tests::test_combining_accent_inserted_independently_merges ... ok
+test input::tests::test_emoji_skin_tone_modifier_merges ... ok
+test input::tests::test_insert_before_following_grapheme_merges_backwards ... ok
+test input::tests::test_mixed_ascii_cjk_emoji_arbitrary_edits_keep_invariant ... ok
+test input::tests::test_paste_merges_with_existing_combining_sequence ... ok
+test input::tests::test_regional_indicator_flags ... ok
+test input::tests::test_single_line_paste_normalizes_line_breaks ... ok
+test input::tests::test_text_input_emoji_navigation ... ok
+test input::tests::test_text_input_grapheme_combining_backspace ... ok
+test input::tests::test_text_input_mixed_display_width_scrolling ... ok
+test input::tests::test_text_input_typing ... ok
+test input::tests::test_zwj_emoji_sequence_merges ... ok
+test layout::additional_tests::test_percentage_semantics ... ok
+test layout::tests::test_col_layout_with_gap ... ok
+test layout::tests::test_row_layout_flex ... ok
+test layout::tests::test_text_wrapping ... ok
+test painter::border_clip_tests::panel_children_never_overwrite_the_border ... ok
+test painter::tests::combining_and_emoji_cursor_positions_are_cluster_aligned ... ok
+test painter::tests::cursor_at_end_does_not_fabricate_a_glyph ... ok
+test painter::tests::cursor_at_start_highlights_first_glyph ... ok
+test painter::tests::cursor_in_the_middle_highlights_existing_glyph ... ok
+test painter::tests::empty_input_without_placeholder_cursor_only ... ok
+test painter::tests::horizontal_scroll_keeps_cursor_visible_and_placeholder_intact ... ok
+test painter::tests::placeholder_is_fully_intact_with_cursor ... ok
+test painter::tests::test_paint_box_with_border_and_text ... ok
+test painter::tests::test_paint_rail ... ok
+test painter::tests::test_paint_rule ... ok
+test painter::tests::test_paint_spinner ... ok
+test painter::tests::test_paint_text_input_cjk_emoji_scrolling ... ok
+test painter::tests::wide_glyph_cursor_highlights_both_halves_without_splitting ... ok
+test particles::tests::burst_is_reproducible_and_expires ... ok
+test particles::tests::directional_burst_follows_the_heading ... ok
+test particles::tests::life_variance_scales_lifetime_not_angle ... ok
+test particles::tests::particle_render_is_bounded_by_canvas ... ok
+test particles::tests::radial_burst_actually_spreads_in_all_quadrants ... ok
+test particles::tests::render_cells_respects_clip_rect ... ok
+test particles::tests::rng_is_deterministic_for_a_seed ... ok
+test particles::tests::rng_range_is_bounded ... ok
+test renderer::tests::test_non_tty_render_emits_nothing ... ok
+test renderer::tests::test_observe_geometry_invalidates_only_on_change ... ok
+test replication::tests::freeze_stops_growth_until_resumed ... ok
+test replication::tests::growth_is_bounded_and_deterministic ... ok
+test replication::tests::inactive_render_is_a_no_op ... ok
+test replication::tests::max_nodes_bound_is_respected ... ok
+test replication::tests::neutralize_collapses_and_clears ... ok
+test replication::tests::render_draws_within_the_canvas ... ok
+test scene::tests::add_assigns_stable_ids_and_interns_tags ... ok
+test scene::tests::add_panics_loudly_on_duplicate_label - should panic ... ok
+test scene::tests::camera_pan_wraps_scene_in_a_viewport ... ok
+test scene::tests::delay_repeat_and_reverse_behave ... ok
+test scene::tests::duplicate_labels_are_rejected ... ok
+test scene::tests::evaluation_is_deterministic_and_z_sorted ... ok
+test scene::tests::identity_and_interning_are_deterministic ... ok
+test scene::tests::identity_preserves_the_scene ... ok
+test scene::tests::parallel_on_independent_targets_is_order_independent ... ok
+test scene::tests::parallel_same_channel_uses_explicit_write_order ... ok
+test scene::tests::reveal_controls_visibility_and_to_node_omits_hidden ... ok
+test scene::tests::sequence_is_associative_at_checkpoints ... ok
+test scene::tests::sequence_matches_manual_two_step_composition ... ok
+test scene::tests::translate_reaches_endpoints_and_rounds_to_cells ... ok
+test scene::tests::unknown_targets_resolve_to_empty_without_panicking ... ok
+test scheduler::tests::changing_fps_resets_phase_locked_epoch ... ok
+test scheduler::tests::completion_relative_never_reports_missed_periods ... ok
+test scheduler::tests::missed_periods_accumulate_and_last_frame_resets_on_epoch_change ... ok
+test scheduler::tests::phase_locked_pacing_charges_render_time_to_the_current_period ... ok
+test scheduler::tests::phase_locked_pacing_skips_missed_deadlines_without_drifting ... ok
+test scheduler::tests::phase_locked_reports_missed_periods_after_overrun ... ok
+test scheduler::tests::phase_locked_reports_zero_missed_within_budget ... ok
+test scheduler::tests::test_animation_interval_clamped_to_budget ... ok
+test scheduler::tests::test_scheduler_budget_and_throttling ... ok
+test scheduler::tests::test_total_terminal_bytes_is_sum ... ok
+test show::tests::gradient_block_shapes ... ok
+test show::tests::gradient_spans_cover_all_graphemes ... ok
+test show::tests::helpers_produce_zero_raw_ansi ... ok
+test show::tests::hex_dump_is_deterministic ... ok
+test show::tests::progress_reaches_zero_and_full ... ok
+test show::tests::sparkline_uses_block_glyphs ... ok
+test story::tests::branches_differ_locally_but_reconverge ... ok
+test story::tests::debug_inspector_reports_beat_facts_and_mounts ... ok
+test story::tests::default_timeout_path_reaches_download ... ok
+test story::tests::drain_trace_hands_off_steps_and_resets_live_buffer ... ok
+test story::tests::drain_under_bounded_carries_both_shed_counts ... ok
+test story::tests::duplicate_beat_ids_are_rejected - should panic ... ok
+test story::tests::duplicate_bundle_names_are_rejected - should panic ... ok
+test story::tests::event_then_immediate_beat_is_observable ... ok
+test story::tests::fact_transition_waits_for_next_update ... ok
+test story::tests::facts_are_semantic_and_persistent ... ok
+test story::tests::mounted_bundles_run_on_time_since_mount ... ok
+test story::tests::multiple_events_only_the_first_transitions ... ok
+test story::tests::presentation_composes_beat_and_bundle_effects ... ok
+test story::tests::replay_reproduces_irregular_dt_exactly ... ok
+test story::tests::retention_all_is_default_and_records_every_step ... ok
+test story::tests::retention_all_keeps_full_beat_log ... ok
+test story::tests::retention_all_replays_exactly_from_zero ... ok
+test story::tests::retention_bounded_huge_cap_never_overflows_or_inverts ... ok
+test story::tests::retention_bounded_keeps_a_recent_window_and_reports_drops ... ok
+test story::tests::retention_bounded_zero_and_disabled_record_nothing ... ok
+test story::tests::retention_bounds_beat_log_not_just_steps ... ok
+test story::tests::retention_policy_transitions_keep_honest_accounting ... ok
+test story::tests::story_replay_is_deterministic_and_identical ... ok
+test story::tests::trace_records_every_intermediate_beat ... ok
+test story::tests::user_choice_after_min_duration_selects_the_arrow ... ok
+test story::tests::validate_accepts_a_well_formed_story ... ok
+test story::tests::validate_rejects_missing_default_target ... ok
+test story::tests::validate_rejects_unknown_mounted_bundle ... ok
+test story::tests::validate_rejects_unknown_start ... ok
+test story::tests::validate_rejects_unknown_transition_target ... ok
+test surface::tests::test_border_drawing ... ok
+test surface::tests::test_print_ascii ... ok
+test surface::tests::test_wide_boundary_clipping ... ok
+test surface::tests::test_wide_cjk_placement ... ok
+test surface::tests::test_wide_overwrite_continuation ... ok
+test surface::tests::test_wide_overwrite_lead_with_single ... ok
+test surface::tests::wide_glyph_cannot_escape_the_surface_right_edge ... ok
+test surface::tests::wide_glyph_fully_inside_clip_is_placed ... ok
+test surface::tests::wide_glyph_lead_on_final_clip_column_does_not_leak_continuation ... ok
+test surface::tests::wide_glyph_left_clipped_does_not_leave_half_glyph ... ok
+test temporal::tests::advance_emits_ordinary_surface_cells ... ok
+test temporal::tests::advance_into_matches_owned_advance ... ok
+test temporal::tests::batch_install_into_field_round_trips_static_fallback ... ok
+test temporal::tests::batch_projects_logical_braille_image_with_exact_two_color_cell ... ok
+test temporal::tests::changing_color_depth_reclassifies_reversibly ... ok
+test temporal::tests::conservative_gate_rejects_unmeasured_low_rate_and_excess_depth ... ok
+test temporal::tests::dither_survives_coherent_frame_subsampling_that_biases_plain_sigma_delta ... ok
+test temporal::tests::incremental_motion_region_matches_full_active_accounting ... ok
+test temporal::tests::incremental_region_accounting_matches_full_oracle_across_many_edits ... ok
+test temporal::tests::incremental_region_matches_full_reprojection ... ok
+test temporal::tests::jitter_gate_rejects_ragged_presentation ... ok
+test temporal::tests::motion_region_holds_static_while_neighbor_modulates ... ok
+test temporal::tests::processor_cadence_hysteresis_holds_static_after_missed_period ... ok
+test temporal::tests::processor_defaults_to_static_when_unmeasured ... ok
+test temporal::tests::processor_modulates_low_swing_cells_and_freezes_high_swing_cells ... ok
+test temporal::tests::processor_mono_forces_static_everywhere ... ok
+test temporal::tests::processor_motion_static_forces_static_despite_good_profile ... ok
+test temporal::tests::processor_reduced_motion_forces_static ... ok
+test temporal::tests::projector_127_representatives_match_full_254_scan_fit ... ok
+test temporal::tests::projector_emitted_error_is_at_least_ideal_error ... ok
+test temporal::tests::raising_depth_cap_reenables_target_without_reprojection ... ok
+test temporal::tests::reset_all_restores_every_accumulator_to_fresh ... ok
+test temporal::tests::reset_erases_prior_residual_while_keep_retains_it ... ok
+test temporal::tests::reset_region_clamps_to_bounds_and_counts ... ok
+test temporal::tests::residual_modulation_converges_to_duty_from_static_baseline ... ok
+test temporal::tests::resolved_swing_is_capability_aware_not_raw_rgb ... ok
+test temporal::tests::rgb_projector_exactly_handles_binary_black_white_pattern ... ok
+test temporal::tests::rgb_projector_temporal_line_never_worse_than_static_partition ... ok
+test temporal::tests::seeded_phases_decorrelate_uniform_half_duty_field ... ok
+test temporal::tests::sigma_delta_mean_converges_to_requested_duty ... ok
+test temporal::tests::srgb8_linear_lut_is_bit_identical_to_the_transfer_function ... ok
+test temporal::tests::static_surface_uses_stored_optimal_mask_not_duty_threshold ... ok
+test temporal::tests::styled_path_preserves_per_cell_palette_while_masks_change ... ok
+test temporal::tests::transport_budget_caps_changed_cells_per_frame ... ok
+test temporal::tests::transport_preserves_long_run_mean ... ok
+test temporal::tests::transport_reduces_changed_cells_on_projected_content ... ok
+test temporal::tests::uniform_rgb_projector_uses_stable_background_without_temporal_churn ... ok
+test temporal::tests::zero_and_full_duty_are_temporally_stable ... ok
+test transaction::tests::commit_reports_exact_wire_bytes_including_terminator ... ok
+test transaction::tests::commit_without_sync_updates_counts_payload_only ... ok
+test transition::tests::dissolve_is_the_inverse_of_type_on ... ok
+test transition::tests::empty_input_is_safe ... ok
+test transition::tests::revealed_count_is_monotonic_and_capped ... ok
+test transition::tests::scramble_ends_exact_and_preserves_grapheme_count ... ok
+test transition::tests::scramble_is_deterministic ... ok
+test transition::tests::type_on_covers_hostile_cluster_boundaries ... ok
+test transition::tests::type_on_ends_exact ... ok
+test transition::tests::type_on_never_splits_graphemes ... ok
+test ui::compile::visual_tests::narrow_editorial_modal_separates_its_ordinal_from_the_underlay ... ok
+test ui::compile::visual_tests::stretched_vapor_window_fills_its_frame_instead_of_exposing_screen_background ... ok
+test ui::compile::visual_tests::vapor_bevel_keeps_corners_local_and_inset_editor_keeps_cursor ... ok
+test ui::motion::tests::none_is_immediate_and_reduced_never_moves_or_hides ... ok
+test ui::motion::tests::plans_are_deterministic_finite_and_exactly_identity_at_deadline ... ok
+test ui::runtime::tests::arrow_keys_traverse_focus_inside_a_modal_and_wrap ... ok
+test ui::runtime::tests::borrowed_headless_app_renders_settled_once_and_context_remains_usable ... ok
+test ui::runtime::tests::changing_policy_restricts_already_running_motion ... ok
+test ui::runtime::tests::each_runtime_frame_collects_semantic_metadata_once ... ok
+test ui::runtime::tests::editor_boundary_keys_do_not_leak_into_background_shortcuts ... ok
+test ui::runtime::tests::focus_traversal_yields_to_controls_that_consume_arrows ... ok
+test ui::runtime::tests::invalid_tree_never_invokes_custom_presentation_or_changes_routing ... ok
+test ui::runtime::tests::modal_reordering_and_underlying_removal_preserve_live_focus ... ok
+test ui::runtime::tests::sibling_modal_restores_covered_modals_selected_focus ... ok
+test ui::skin::tests::ascii_resolution_and_narrow_spacing_are_explicit ... ok
+test ui::skin::tests::low_color_styles_contain_no_rgb_and_tokens_are_editable ... ok
+test ui::skin::tests::mono_retains_structural_and_attribute_identity ... ok
+test ui::skin::tests::muted_color_is_not_dimmed_twice_and_empty_selection_slots_are_neutral ... ok
+test viewport::tests::clamp_keeps_camera_in_bounds ... ok
+test viewport::tests::content_smaller_than_viewport_clamps_to_zero ... ok
+test viewport::tests::end_then_clamp_bottoms_out ... ok
+test viewport::tests::page_and_home_behave ... ok
+
+test result: ok. 655 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 98.48s
+
+     Running tests/acid_architecture.rs (target/debug/deps/acid_architecture-00e54bd2c16be049)
+
+running 3 tests
+test architecture_is_deterministic_filled_and_bounded ... ok
+test damage_removes_vault_and_storage_pieces_without_changing_control ... ok
+test mirror_and_isolation_reconfigure_the_same_architecture ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/acid_battle.rs (target/debug/deps/acid_battle-204ec9dc1afee744)
+
+running 18 tests
+test automatic_defender_uses_state_and_finishes ... ok
+test continuous_control_is_separate_from_integrity ... ok
+test decoy_is_a_reachable_target_with_a_resource_cost ... ok
+test final_moves_and_unknown_inputs_have_honest_availability ... ok
+test fortified_intermediate_node_stops_forward_progress ... ok
+test hard_isolate_sacrifices_visibility_and_capabilities ... ok
+test huge_duration_is_bounded_and_quiet_time_partition_is_exact ... ok
+test isolation_and_decoy_counterfactuals_change_tactics_and_world ... ok
+test no_route_means_no_magical_display_occupation ... ok
+test only_explicit_invitation_reopens_a_severed_display_corridor ... ok
+test planner_is_deterministic_and_every_candidate_is_legal ... ok
+test raw_irregular_update_inputs_replay_every_world_field ... ok
+test recognized_mirror_draws_a_real_approach_then_retreat_without_capture ... ok
+test released_acid_leaves_scars_without_stale_traffic ... ok
+test repeated_strategy_changes_memory_and_decoy_recognition ... ok
+test severed_edges_cannot_carry_pressure_or_reachability ... ok
+test stalemate_quality_matches_held_or_disconnected_topology ... ok
+test trace_cost_provokes_evasion_without_free_progress ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/acid_battlefield.rs (target/debug/deps/acid_battlefield-23f1946f05a0bcd6)
+
+running 4 tests
+test auto_and_passive_runs_replay_complete_state_at_resolution ... ok
+test exact_irregular_inputs_replay_graph_memory_facts_bundles_and_realized_scene ... ok
+test identical_prefix_then_isolation_or_decoy_changes_world_and_screen ... ok
+test watching_preserves_operator_pacing_intervention_and_replay ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.11s
+
+     Running tests/acid_battlefield_goldens.rs (target/debug/deps/acid_battlefield_goldens-9fb6b6e7b53e7c12)
+
+running 1 test
+test battlefield_semantic_goldens ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/acid_graphics.rs (target/debug/deps/acid_graphics-a586f8cbc08201e4)
+
+running 10 tests
+test autonomous_default_visits_cyberspace_and_reconstructs_without_input ... ok
+test defense_counterfactual_changes_the_picture_without_reading_labels ... ok
+test frozen_graphical_frame_has_zero_semantic_delta_footprint_and_wire_bytes ... ok
+test influence_sign_changes_light_without_changing_topology_or_time ... ok
+test irregular_input_replay_reconstructs_world_visual_history_and_full_frame ... ok
+test legacy_ending_reassembles_ui_on_recorded_visual_time_without_mutating_final_world ... ok
+test moving_graphics_report_real_damage_and_wire_cost ... ok
+test resize_reprojects_history_without_advancing_or_retaining_old_pixels ... ok
+test three_hero_frames_have_real_rgb_volume_and_repeat_exactly ... ok
+test visual_mode_is_a_projection_and_feedback_history_is_bounded ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.84s
+
+     Running tests/acid_presentation.rs (target/debug/deps/acid_presentation-ea2607725d0c31db)
+
+running 12 tests
+test accepted_zero_time_defenses_change_shot_without_a_camera_cut ... ok
+test actor_dialogue_does_not_concatenate_with_subsystem_labels ... ok
+test animated_shot_damage_keeps_delta_footprint_and_wire_separate ... ok
+test cinematic_controls_survive_all_shots_and_responsive_framing ... ok
+test completed_world_reassembles_as_scarred_aftermath_not_a_dashboard ... ok
+test five_hero_shots_have_geometry_light_and_distinct_camera_compositions ... ok
+test frozen_default_cinema_has_zero_delta_footprint_and_wire_cost ... ok
+test irregular_input_replays_every_shot_camera_and_final_raster ... ok
+test narrow_shot_framing_changes_without_modifying_semantic_anchor ... ok
+test quiet_does_not_announce_acid_with_premature_magenta_routes ... ok
+test semantic_world_selects_distinct_focal_shots ... ok
+test trace_confidence_is_not_an_endless_trace_action ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.33s
+
+     Running tests/acid_render.rs (target/debug/deps/acid_render-decb3c8e64893f32)
+
+running 8 tests
+test acid_route_strokes_do_not_fill_terminal_cell_backgrounds ... ok
+test actual_story_frames_match_whole_renderer_vt100_across_sizes ... ok
+test display_counter_removes_invasion_without_corrupting_control_island ... ok
+test ghost_input_never_edits_crash_buffer_and_live_resize_keeps_renderer_correct ... ok
+test instant_final_counter_does_not_freeze_a_recoil_offscreen ... ok
+test packets_advance_between_world_quanta_and_replay_exactly ... ok
+test real_auth_frontier_increment_is_panel_local_and_frozen_frame_is_free ... ok
+test real_ghost_cursor_and_route_motion_have_bounded_damage ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.25s
+
+     Running tests/acid_story.rs (target/debug/deps/acid_story-e2ffd79006142ad7)
+
+running 14 tests
+test acid_surrender_is_temporary_and_release_does_not_repair_damage ... ok
+test branch_inspection_stages_include_real_topology_and_defense_causes ... ok
+test counterplay_is_in_beat_and_routes_reconverge_at_macro_finale ... ok
+test cut_link_contains_subsystems_but_retains_structural_scars ... ok
+test deterministic_auto_and_idle_complete_with_repeatable_worlds ... ok
+test dramatic_timeout_never_reopens_a_severed_display_path ... ok
+test early_auth_isolation_prevents_unexplained_reacquisition ... ok
+test early_route_isolation_cannot_be_overridden_by_an_act_entry ... ok
+test every_inspection_stage_has_valid_state_and_exact_irregular_replay ... ok
+test final_decoy_requires_an_occupied_mirror_not_just_a_command_name ... ok
+test hard_isolation_cleanly_interrupts_takeover_and_costs_telemetry ... ok
+test killing_one_lease_recovers_ground_without_erasing_other_footholds ... ok
+test ordered_multiple_commands_are_recorded_with_costs_and_replay ... ok
+test trace_is_earned_and_changes_ending_quality ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.09s
+
+     Running tests/audio_humanmusic.rs (target/debug/deps/audio_humanmusic-776562e6b4e6bee1)
+
+running 13 tests
+test composition_matches_sequential_application_and_summed_cost ... ok
+test cross_world_render_is_valid_and_safe ... ok
+test dialogue_track_is_silent_before_placement_and_energetic_after ... ok
+test duck_curve_pulls_mid_dialogue_down_but_leaves_idle_alone ... ok
+test event_to_morphisms_is_nonempty_for_every_demo_event ... ok
+test identity_prolong_leaves_core_state_unchanged ... ok
+test modulate_round_trip_has_holonomy ... ok
+test same_seed_is_byte_identical ... ok
+test same_trace_same_skeleton_different_dialect ... ok
+test score_summary_is_nonempty_and_reports_tempo ... ok
+test synth_total_samples_matches_render_frame_count ... ok
+test walk_intent_resolves_and_develops_motif ... ok
+test wav_round_trip_has_correct_riff_header_and_data_length ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 32.58s
+
+     Running tests/capability_fallback.rs (target/debug/deps/capability_fallback-0f6c4a43fa5cb653)
+
+running 6 tests
+test ansi16_emits_only_base_colors ... ok
+test ansi256_quantizes_without_rgb_sgr ... ok
+test commit_output_obeys_color_depth ... ok
+test mono_emits_no_color_at_all ... ok
+test same_ui_degrades_through_the_whole_renderer ... ok
+test truecolor_emits_rgb_sgr ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/cinematic_paths.rs (target/debug/deps/cinematic_paths-80b407dbf1695124)
+
+running 5 tests
+test endpoint_tangents_and_interior_finite_difference_agree ... ok
+test endpoints_and_parameter_clamping_preserve_route_anchors ... ok
+test hostile_finite_control_points_do_not_overflow ... ok
+test reversed_route_has_reversed_motion_without_changing_geometry ... ok
+test stationary_and_nonfinite_routes_have_explicit_safe_results ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/commit_invariance.rs (target/debug/deps/commit_invariance-5933ad83e970304a)
+
+running 4 tests
+test test_commit_discards_from_live_surface ... ok
+test test_commit_does_not_interpret_control_characters ... ok
+test test_insert_before_live_preserves_live_surface ... ok
+test test_scrollback_invariance_diff_cost ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/compositor.rs (target/debug/deps/compositor-f6ae7139f898cd05)
+
+running 9 tests
+test dim_node_marks_region_style_only_in_a_layer ... ok
+test multiple_z_layers_composite_in_order ... ok
+test node_kind_stack_is_public_and_matchable ... ok
+test opaque_overlay_replaces_and_transparent_does_not ... ok
+test stack_children_share_the_same_rectangle ... ok
+test stack_paints_overlay_without_destroying_base_interior ... ok
+test style_only_overlay_keeps_glyph_and_merges_style ... ok
+test transparent_cells_leave_lower_layer_untouched ... ok
+test wide_glyph_is_cleared_when_overlay_writes_its_continuation ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/demo_render.rs (target/debug/deps/demo_render-f150b2fa8f5caeb2)
+
+running 7 tests
+test fx_lab_plasma_scene_structure ... ok
+test fx_lab_wireframe_scene_structure ... ok
+test hack_the_gibson_compact_structure ... ok
+test hack_the_gibson_fullscreen_structure ... ok
+test polished_agent_fullscreen_structure ... ok
+test polished_agent_inline_is_the_default ... ok
+test polished_agent_narrow_structure ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.48s
+
+     Running tests/diff_golden.rs (target/debug/deps/diff_golden-e7c473184e189506)
+
+running 6 tests
+test test_diff_identical_frames_zero_bytes ... ok
+test test_diff_line_shrinks_emits_erase_to_eol ... ok
+test test_diff_previous_larger_than_next_clears_rows ... ok
+test test_diff_single_cell_bounded_patch ... ok
+test test_diff_style_only_change ... ok
+test test_diff_wide_character_overwrite ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/effects_perf.rs (target/debug/deps/effects_perf-8319da924c9a8fcc)
+
+running 9 tests
+test braille_phase_update_has_bounded_diff_cost ... ok
+test erase_to_eol_has_large_logical_damage_but_tiny_wire_cost ... ok
+test frozen_particle_state_is_zero_damage_and_zero_bytes ... ok
+test identical_frame_reports_zero_logical_damage ... ok
+test one_cell_sprite_move_is_bounded_to_old_plus_new_footprint ... ok
+test particle_field_motion_is_bounded ... ok
+test resize_during_wireframe_animation_is_safe_and_reanchors ... ok
+test scanline_overlay_moves_with_small_diff ... ok
+test wireframe_rotation_damage_is_bounded_and_static_frame_is_free ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/event_pressure_pty.rs (target/debug/deps/event_pressure_pty-eb7ba6d7b51c9f22)
+
+running 9 tests
+test analysis_rejects_duplicate_reordered_and_missing_keys_without_fake_latency ... ok
+test context_coincident_lone_key_delivery_acceptance ... ignored, Known upstream failure: issue #15; run explicitly to test real delivery acceptance
+test controlled_collision_distinguishes_raw_delivery_from_known_backend_stall ...    Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.42s
+ok
+test diagnostic_configuration_and_receipt_boundaries_reject_invalid_input ... ok
+test graphical_drain_pauses_are_bounded_and_failures_are_classified_honestly ... ok
+test matching_keys_received_after_verdict_deadline_do_not_retroactively_pass ... ok
+test real_viewer_controls_resize_and_escape_restore_both_terminal_modes ... ok
+test settled_resize_then_lone_key_never_needs_a_second_key ... ok
+test silent_raw_crossterm_and_context_deliver_exact_normal_order ... ok
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 21.52s
+
+     Running tests/event_pressure_trace.rs (target/debug/deps/event_pressure_trace-b48352053d959c47)
+
+running 3 tests
+test malformed_key_and_extreme_clock_are_not_hidden_by_analysis ... ok
+test replay_cannot_hide_a_child_exit_or_restoration_failure ... ok
+test replay_prefix_cannot_see_future_verdict_or_override_recorded_configuration ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/event_pressure_visual.rs (target/debug/deps/event_pressure_visual-e971c2a4cfda54b3)
+
+running 6 tests
+test a_pending_single_key_has_no_invented_decode_or_application_receipt ... ok
+test diagnostic_percentiles_are_nearest_rank_and_retention_bounded ... ok
+test empty_measurements_never_fabricate_a_latency_or_pending_byte_count ... ok
+test pending_frame_is_unmeasured_until_a_commit_receipt_and_replay_cannot_see_the_future ... ok
+test supported_compositions_are_pure_wide_safe_and_capability_aware ... ok
+test unprobed_layers_do_not_become_observations_from_a_later_receipt ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/ffi_lifecycle.rs (target/debug/deps/ffi_lifecycle-81b065f6a4421511)
+
+running 18 tests
+test test_ffi_abi_version_exposed ... ok
+test test_ffi_bad_align_rejected ... ok
+test test_ffi_create_destroy_repeated ... ok
+test test_ffi_hostile_invalid_border_type ... ok
+test test_ffi_hostile_invalid_color_type ... ok
+test test_ffi_hostile_invalid_render_mode ... ok
+test test_ffi_hostile_invalid_wrap_value ... ok
+test test_ffi_hostile_malformed_utf8 ... ok
+test test_ffi_hostile_null_pointers ... ok
+test test_ffi_insert_text_is_safe_raw_is_explicit ... safe [2J text
+ raw
+ok
+test test_ffi_node_creation_and_layout ... ok
+test test_ffi_non_finite_layout_values_rejected ... ok
+test test_ffi_null_pointer_error_reporting ... ok
+test test_ffi_render_and_commit ... Committed via C ABI
+Inserted above live via C ABI
+ok
+test test_ffi_rich_text_abi ...                               Structured rich text
+                              Structured rich text
+ok
+test test_ffi_stats_overflow_is_prevented ... ok
+test test_ffi_stats_oversized_buffer_prefix_write_leaves_trailing_untouched ... ok
+test test_ffi_stats_rejects_wrong_abi_version ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/geometry_diff_contract.rs (target/debug/deps/geometry_diff_contract-32696f94d54fd431)
+
+running 8 tests
+test changing_dimensions_match_direct_comparison_in_both_directions ... ok
+test erased_cells_are_exact_but_blank_padding_is_only_affected ... ok
+test first_frame_blank_gaps_and_identical_frames_have_exact_coordinates ... ok
+test intersections_match_a_widened_independent_endpoint_oracle ... ok
+test rectangle_endpoints_saturate_consistently ... ok
+test removed_columns_and_rows_remain_in_previous_coordinate_space ... ok
+test shrink_is_safe_for_large_amounts_and_clipped_origins ... ok
+test wide_glyphs_count_both_cells_when_rows_appear_or_disappear ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/glyph_realization.rs (target/debug/deps/glyph_realization-97e682548b63066d)
+
+running 14 tests
+test braille_transcode_is_identity_on_real_frames ... ok
+test explicit_braille_override_keeps_hero ... ok
+test fallback_modes_are_well_formed_on_real_frames ... ok
+test film_actually_uses_braille ... ok
+test intro::planet::tests::city_site_and_spherical_ground_share_perspective_rays ... ok
+test intro::planet::tests::emerging_network_light_never_erases_the_underlying_globe ... ok
+test intro::planet::tests::orbital_hold_rotates_geography_with_fixed_scale_and_correct_occlusion ... ok
+test intro::prologue::tests::assembly_is_monotonic_in_row_count ... ok
+test intro::prologue::tests::boot_brings_the_four_canonical_agents_online ... ok
+test intro::prologue::tests::boot_schedule_is_ordered_and_bounded ... ok
+test intro::prologue::tests::live_ui_builds_across_the_prelude_and_widths ... ok
+test intro::prologue::tests::stage_progression_is_ordered_and_total ... ok
+test intro::world::facade_tests::native_windows_fit_inside_their_projected_building_plates ... ok
+test linux_vt_auto_policy_emits_no_braille ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.22s
+
+     Running tests/headless_capture.rs (target/debug/deps/headless_capture-c26c78321b815a0b)
+
+running 3 tests
+test headless_render_is_captured_not_written_to_stdout ... ok
+test render_mode_is_reexported_from_context_module ... ok
+test take_output_returns_and_drains_the_buffer ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/intro_cinema.rs (target/debug/deps/intro_cinema-b096fe6cd70e04dd)
+
+running 22 tests
+test cue_sheet_is_contiguous_and_direct_entry_has_the_right_act ... ok
+test empty_small_and_capped_viewports_are_safe_and_resize_is_only_projection ... ok
+test every_act_is_responsive_wide_safe_and_hints_retreat_during_the_film ... ok
+test exact_update_replay_and_seek_produce_identical_final_projection ... ok
+test four_identities_are_unique_cell_safe_and_survive_every_readable_facade ... ok
+test frozen_frames_have_zero_exact_affected_and_wire_cost ... ok
+test graphical_title_and_companion_fit_the_supported_compositions ... ok
+test interaction_hints_have_explicit_seekable_visibility_without_paint_timers ... ok
+test intro::planet::tests::city_site_and_spherical_ground_share_perspective_rays ... ok
+test intro::planet::tests::emerging_network_light_never_erases_the_underlying_globe ... ok
+test intro::planet::tests::orbital_hold_rotates_geography_with_fixed_scale_and_correct_occlusion ... ok
+test intro::prologue::tests::assembly_is_monotonic_in_row_count ... ok
+test intro::prologue::tests::boot_brings_the_four_canonical_agents_online ... ok
+test intro::prologue::tests::boot_schedule_is_ordered_and_bounded ... ok
+test intro::prologue::tests::live_ui_builds_across_the_prelude_and_widths ... ok
+test intro::prologue::tests::stage_progression_is_ordered_and_total ... ok
+test intro::world::facade_tests::native_windows_fit_inside_their_projected_building_plates ... ok
+test late_ascent_sampling_cannot_wrap_into_a_distant_city_cell ... ok
+test named_city_shots_cover_each_facade_and_preserve_continuous_camera_poses ... ok
+test pause_seek_skip_and_terminal_hold_are_bounded ... ok
+test semantic_jobs_respect_dependencies_and_messages_carry_completed_outputs ... ok
+test semantic_labels_and_rgb_diversity_survive_the_visual_transformation ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.35s
+
+     Running tests/intro_prologue.rs (target/debug/deps/intro_prologue-d2c4d8fa0ea8a53c)
+
+running 15 tests
+test assembly_reveals_structure_progressively ... ok
+test boot_log_is_credible_and_names_the_agents ... ok
+test dump_prologue ... ok
+test intro::planet::tests::city_site_and_spherical_ground_share_perspective_rays ... ok
+test intro::planet::tests::emerging_network_light_never_erases_the_underlying_globe ... ok
+test intro::planet::tests::orbital_hold_rotates_geography_with_fixed_scale_and_correct_occlusion ... ok
+test intro::prologue::tests::assembly_is_monotonic_in_row_count ... ok
+test intro::prologue::tests::boot_brings_the_four_canonical_agents_online ... ok
+test intro::prologue::tests::boot_schedule_is_ordered_and_bounded ... ok
+test intro::prologue::tests::live_ui_builds_across_the_prelude_and_widths ... ok
+test intro::prologue::tests::stage_progression_is_ordered_and_total ... ok
+test intro::world::facade_tests::native_windows_fit_inside_their_projected_building_plates ... ok
+test live_ui_matches_harness_framing_at_handoff ... ok
+test no_worker_is_active_before_ignition ... ok
+test prologue_boots_hands_off_to_film_and_restores ...    Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.59s
+ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.23s
+
+     Running tests/intro_pty.rs (target/debug/deps/intro_pty-e3dead979324f57f)
+
+running 6 tests
+test intro_arrow_cues_and_restart_change_semantics_then_ctrl_c_restores ...     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+ok
+test intro_auto_runs_from_harness_through_finale_and_exits_cleanly ... ok
+test intro_opening_hints_disappear_and_navigation_restores_them ... ok
+test intro_resize_reprojects_frozen_membrane_city_and_earth_without_advancing ... ok
+test intro_smoke_limit_exits_even_when_visual_time_is_frozen ... ok
+test intro_space_pauses_exact_output_then_resumes_and_escape_restores ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.97s
+
+     Running tests/intro_reaction.rs (target/debug/deps/intro_reaction-2b6d0252d1e661d2)
+
+running 21 tests
+test active_cue_is_some_inside_a_window_and_none_in_the_gaps ... ok
+test aspect_stretch_returns_to_one_at_both_ends_and_swells_mid ... ok
+test braille_tile_round_trips_exactly_through_the_same_projector ... ok
+test contain_gives_uniform_scale_stretch_fills_independently ... ok
+test cue_edit_start_is_monotonic_and_windows_do_not_overlap ... ok
+test dest_bbox_sub_clamps_to_the_grid ... ok
+test dest_bbox_sub_is_empty_when_placed_far_off_grid ... ok
+test every_effect_is_finite_positive_and_deterministic ... ok
+test frame_index_covers_clamps_endpoints_and_is_nondecreasing ... ok
+test intro_plays_continuously_one_to_one_then_holds_for_the_sting ... ok
+test inverse_mirrors_the_x_axis_when_framing_mirrors ... ok
+test inverse_round_trips_a_source_pixel_no_mirror ... ok
+test normal_effect_is_always_identity ... ok
+test opaque_subject_composites_inside_bbox_and_leaves_outside_untouched ... ok
+test punch_zoom_reaches_peak_by_quarter_and_holds ... ok
+test pure_key_film_leaves_every_cell_byte_identical ... ok
+test resolve_at_zero_plays_the_film_from_the_top_with_no_reaction ... ok
+test smash_in_snaps_home_by_18_percent ... ok
+test src_progress_in_range_gaps_are_zeroed_and_resolve_is_deterministic ... ok
+test stage_index_resolves_known_names_and_rejects_unknown ... ok
+test total_edit_seconds_is_the_edit_end_and_covers_every_cue ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/non_tty_redirection.rs (target/debug/deps/non_tty_redirection-96f0cf9a506c3e44)
+
+running 2 tests
+test test_non_tty_structured_commit_zero_escapes ... ok
+test test_non_tty_suppresses_interactive_ansi ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/pty_demos.rs (target/debug/deps/pty_demos-a0b8d0a539497115)
+
+running 26 tests
+test acid_auto_completes_entire_story_without_input ...    Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.64s
+ok
+test acid_cinematic_auto_completes_full_story_and_restores_terminal ... ok
+test acid_cinematic_default_crash_fights_and_accepts_typed_intervention ... ok
+test acid_cinematic_final_numeric_shortcut_resolves_and_esc_restores ... ok
+test acid_cinematic_shortcuts_preserve_typed_input_and_change_world ... ok
+test acid_ctrl_c_restores_terminal_during_display_takeover ... ok
+test acid_cyber_takeover_keeps_final_agency_and_restores_terminal ... ok
+test acid_cyber_trace_decoy_and_full_visual_replay_use_real_pty_input ... ok
+test acid_decoy_draws_remote_lease_then_opponent_recognizes_mirror ... ok
+test acid_default_crash_fights_without_input_and_accepts_intervention ... ok
+test acid_default_stays_for_aftermath_and_world_replay ... ok
+test acid_final_cut_link_resolves_and_replays_before_restoring_terminal ... ok
+test acid_hard_isolation_costs_visible_telemetry_and_available_actions ... ok
+test acid_isolation_disconnects_route_and_causes_valid_pivot ... ok
+test acid_responsive_compositions_survive_all_color_capabilities ... ok
+test acid_trace_changes_visible_world_and_planner_during_first_contest ... ok
+test fx_lab_deterministic_filled_3d_accepts_ctrl_c ...    Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.45s
+ok
+test hack_rabbit_replicates_and_cookie_neutralizes_it ...    Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.46s
+ok
+test hack_shell_commands_trigger_real_effects ... ok
+test hack_tactical_choices_have_local_consequences ... ok
+test hack_tactical_selector_commits_a_directive ... ok
+test polished_accepts_hostile_unicode_and_scrolls_code ...    Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.46s
+ok
+test polished_inline_approve_commits_truthful_summary ... ok
+test polished_inline_cancel_reports_cancelled ... ok
+test polished_inline_reject_commits_no_changes ... ok
+test polished_permission_reject_returns_to_prompt ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 29.24s
+
+     Running tests/pty_integration.rs (target/debug/deps/pty_integration-e2c0b7e364523cb6)
+
+running 4 tests
+test pty_capture_bounds_silent_and_partial_line_children_and_reaps ... ok
+test pty_capture_reaps_on_assertion_unwind ... ok
+test test_pty_agent_chat_lifecycle ...    Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.32s
+ok
+test test_pty_window_resize_safety ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s
+
+     Running tests/pty_resize_torture.rs (target/debug/deps/pty_resize_torture-04eb9156747b9263)
+
+running 3 tests
+test acid_cinematic_shots_resize_without_losing_input_or_terminal_state ...     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+ok
+test acid_graphical_and_feedback_resize_torture_restores_terminal ...     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+ok
+test test_pty_resize_torture_with_assertions ...    Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.34s
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.69s
+
+     Running tests/raster3d.rs (target/debug/deps/raster3d-c31886942a8aa7f1)
+
+running 15 tests
+test camera_look_at_and_transform_agree_with_projection ... ok
+test depth_tested_routes_hide_behind_geometry_and_clear_resets_depth ... ok
+test filled_constructors_and_backface_culling_show_nearest_surface ... ok
+test flat_light_and_fog_provide_volume_and_depth ... ok
+test hostile_finite_segments_never_escape_pixel_work_budget ... ok
+test identical_frames_have_exact_surface_identity_and_color_diversity ... ok
+test invalid_coordinates_degenerate_triangles_and_camera_are_rejected ... ok
+test monochrome_preserves_density_without_color ... ok
+test near_plane_crossing_clips_instead_of_dropping_triangle ... ok
+test perspective_depth_matches_independent_ray_plane_intersection ... ok
+test raster_allocation_and_empty_shapes_are_bounded ... ok
+test raster_replacement_resets_depth_even_with_equal_pixel_count ... ok
+test real_occlusion_is_independent_of_submission_order ... ok
+test rgb_software_blend_clipping_and_opaque_halfblocks ... ok
+test viewport_and_far_plane_clip_and_work_stays_bounded ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/raster_fx.rs (target/debug/deps/raster_fx-ea3d7dcae782aa51)
+
+running 18 tests
+test chromatic_split_displaces_channels_and_clamps_edges ... ok
+test effect_order_is_observable ... ok
+test empty_chain_is_exact_identity ... ok
+test feedback_half_life_and_black_decay_are_predictable ... ok
+test feedback_replays_exact_irregular_sequence ... ok
+test feedback_reset_resize_and_extreme_durations_are_safe ... ok
+test feedback_resize_preserves_history_when_clamped_dimensions_match ... ok
+test feedback_saturates_without_hiding_excess_energy_and_resizes_on_input ... ok
+test feedback_zero_dt_is_identity_even_with_new_input_dimensions ... ok
+test fields_have_expected_spatial_geometry ... ok
+test fields_reject_nan_and_remain_finite_for_hostile_coordinates ... ok
+test glow_has_bounded_support_and_preserves_source ... ok
+test hostile_finite_effects_and_empty_images_are_bounded ... ok
+test nonfinite_effect_parameters_are_identity ... ok
+test normalized_vignette_works_across_dimensions ... ok
+test sequential_and_chain_composition_match ... ok
+test workspace_reuse_and_resize_are_deterministic ... ok
+test zero_effects_are_identity_and_glow_radius_is_capped ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/regression_v0_2_1.rs (target/debug/deps/regression_v0_2_1-041a23b8971adeb7)
+
+running 7 tests
+test issue_35_text_input_distinguishes_text_from_chords ... ok
+test issue_35_ui_runtime_does_not_swallow_alt_hotkeys ... ok
+test issue_37_explicit_entrance_motion_is_preserved ... ok
+test issue_37_keyed_element_visible_on_first_frame ... ok
+test issue_44_separator_needs_no_turbofish ... ok
+test issue_46_headless_context_is_not_interactive ... ok
+test issue_48_e01_rootless_render_is_observable ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/regression_v0_2_2.rs (target/debug/deps/regression_v0_2_2-1f2cc195cf7e2f9a)
+
+running 7 tests
+test issue_45_commit_text_with_mode_nowrap_preserves_columns ... ok
+test issue_45_nowrap_preserves_wide_preformatted_row ... ok
+test issue_45_nowrap_still_neutralizes_control_sequences ... ok
+test issue_47_exact_changed_cells_exposed_and_discriminating ... ok
+test issue_48_e02_last_frame_lines_are_visible_text ... ok
+test issue_48_e02_no_frame_before_first_render ... ok
+test issue_48_e02_wide_glyph_not_split_in_frame_lines ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/regression_v0_2_3.rs (target/debug/deps/regression_v0_2_3-cfff3e59f0cd85b5)
+
+running 5 tests
+test issue_36_element_percent_lowers_to_taffy_percent ... ok
+test issue_43_braille_blit_overlays_and_preserves_bg ... ok
+test issue_43_canvas_callback_receives_layout_resolved_rect ... ok
+test issue_43_glyph_from_char_matches_new ... ok
+test issue_48_e06_surface_clip_is_local_and_bounded ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/regression_v0_2_4.rs (target/debug/deps/regression_v0_2_4-98a9c342dc8d67a1)
+
+running 9 tests
+test issue_39_ensure_visible_scrolls_minimally ... ok
+test issue_39_scroll_to_item_pins_to_top ... ok
+test issue_39_visible_range_guards_degenerate_inputs ... ok
+test issue_39_visible_range_includes_partial_items_at_both_edges ... ok
+test issue_40_remove_before_focus_keeps_same_widget ... ok
+test issue_40_remove_down_to_empty_unsets_focus ... ok
+test issue_40_remove_focused_last_falls_back_to_new_last ... ok
+test issue_40_remove_focused_transfers_to_next_survivor ... ok
+test issue_40_remove_reindexes_capture_stack ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/regression_v0_2_5.rs (target/debug/deps/regression_v0_2_5-a6cd36e653e4e82c)
+
+running 5 tests
+test issue_48_e09_background_applies_to_supported_kinds ... ok
+test issue_48_e09_scroll_offset_applies_to_text_input ... ok
+test issue_48_e09_stats_readable_through_shared_ref ... ok
+test issue_48_e09_stats_reflect_render_activity ... ok
+test issue_48_e09_wrong_kind_builder_calls_are_silent_no_ops ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/regression_v0_3_0.rs (target/debug/deps/regression_v0_3_0-532f9b72454d2ef3)
+
+running 8 tests
+test context_frame_pacing_is_compatibility_default_and_phase_locked_is_opt_in ... ok
+test frame_report_distinguishes_full_repaint_from_partial_change ... ok
+test frame_report_exposes_exact_change_and_settled_zero_write ... ok
+test processor_advance_composes_through_the_render_pipeline ... ok
+test processor_static_fallback_composes_and_clips_without_leaking ... ok
+test temporal_field_composes_as_an_ordinary_surface ... ok
+test temporal_luminance_gate_defaults_to_static_for_unmeasured_and_60hz_paths ... ok
+test temporal_surface_composes_through_a_clipped_viewport ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/resize_torture.rs (target/debug/deps/resize_torture-b4e2a6d8d9804bdd)
+
+running 2 tests
+test test_narrow_terminal_responsiveness ... ok
+test test_resize_torture_cycle_dimensions ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/runtime_observatory_live.rs (target/debug/deps/runtime_observatory_live-675035564b743a9e)
+
+running 4 tests
+test live_endurance_soaks_and_stays_bounded ...    Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.49s
+ok
+test live_million_tick_paints_and_restores ... ok
+test live_ownership_duel_reveals_real_child_receipts ...    Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.36s
+ok
+test live_restore_failure_reveals_real_child_receipts ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.76s
+
+     Running tests/safety_api.rs (target/debug/deps/safety_api-1884051a410b4acd)
+
+running 8 tests
+test commit_text_cannot_inject_controls ... ok
+test context_safe_insertion_api_smoke ... ok
+test insert_line_fast_path_requires_supported_capability ... ok
+test insert_rich_text_is_safe_and_preserves_styles ... ok
+test insert_text_cannot_inject_terminal_controls ... ok
+test insert_text_is_width_aware ... ok
+test raw_lines_unchecked_does_pass_controls_through ... ok
+test renderer_commit_is_now_safe_text_not_raw ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/scene.rs (target/debug/deps/scene-64c24d7eca46d7e8)
+
+running 16 tests
+test fully_offscreen_layer_paints_nothing ... ok
+test later_children_win_z_order ... ok
+test moving_one_cell_sprite_has_bounded_damage_and_no_ghost ... ok
+test negative_offset_is_clipped_at_the_left_edge ... ok
+test positioned_layer_sits_at_offset_without_reflowing_base ... ok
+test positioned_layer_wide_glyph_left_clipped_leaves_no_half_glyph ... ok
+test raster_larger_than_viewport_is_clipped ... ok
+test raster_node_composites_shared_surface ... ok
+test raster_node_wide_glyph_cannot_leak_past_its_rectangle ... ok
+test viewport_hides_world_outside_its_rectangle ... ok
+test viewport_inside_stack_is_positioned_and_clipped ... ok
+test viewport_pan_damage_is_viewport_local ... ok
+test viewport_pans_horizontally_and_clips ... ok
+test viewport_pans_vertically ... ok
+test viewport_wide_glyph_scrolled_off_left_is_suppressed ... ok
+test wide_glyph_at_layer_boundary_never_dangles ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/scene_algebra.rs (target/debug/deps/scene_algebra-59751b81276178e1)
+
+running 8 tests
+test default_timeout_selects_a_route_without_user_input ... ok
+test effect_identity_and_associativity_through_the_functor ... ok
+test render_functor_emits_ordinary_nodes ... ok
+test scene_evaluation_is_deterministic ... ok
+test story_trace_replays_identically ... ok
+test tactical_choices_branch_and_reconverge ... ok
+test trace_steps_capture_events_in_order ... ok
+test translating_one_entity_yields_bounded_damage ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/scene_cinematic.rs (target/debug/deps/scene_cinematic-e9809e202f49e4aa)
+
+running 14 tests
+test additive_displacement_composes_with_baseline_and_absolute_trajectory ... ok
+test cinematic_dissolve_preserves_legacy_visibility_and_exact_endpoints ... ok
+test displacement_sums_before_clamping_and_commutes_even_at_integer_edges ... ok
+test dissolve_masks_are_stable_and_entity_specific_for_tag_targets ... ok
+test duration_arithmetic_saturates_without_usize_repeat_truncation ... ok
+test jitter_preserves_placement_and_uses_exact_modulo_at_large_times ... ok
+test long_loop_and_repeat_remainders_are_not_truncated_to_u64_nanoseconds ... ok
+test loops_are_exact_at_boundaries_and_zero_duration_is_noop ... ok
+test one_entity_infection_is_local_and_a_frozen_frame_costs_zero_bytes ... ok
+test overflowing_repeat_at_duration_max_starts_next_cycle ... ok
+test sequence_at_duration_max_starts_next_child_instead_of_skipping_it ... ok
+test style_mask_progression_preserves_glyphs_and_restores_without_undo ... ok
+test style_mask_tag_seeds_match_static_and_dynamic_forms ... ok
+test surface_chain_preserves_order_and_removal_restores_underlying_node ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/screen_state_vt100.rs (target/debug/deps/screen_state_vt100-eca4766a9532639e)
+
+running 4 tests
+test test_vt100_autowrap_protection_at_right_margin ... ok
+test test_vt100_cjk_emoji_placement ... ok
+test test_vt100_screen_state_diff_and_cursor ... ok
+test test_vt100_strip_ansi_escapes_clean ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/story_reactions.rs (target/debug/deps/story_reactions-639f11127f09eaa1)
+
+running 15 tests
+test all_reactions_use_original_beat_even_after_winning_transition_event ... ok
+test automatic_guard_observes_final_facts_after_all_reactions ... ok
+test event_then_declaration_then_action_order_is_deterministic ... ok
+test exact_event_kinds_do_not_alias_and_empty_updates_do_not_react ... ok
+test first_event_transition_wins_and_new_entry_actions_run_last ... ok
+test reaction_can_enable_one_automatic_arrow_but_cannot_chain ... ok
+test reaction_changes_fact_without_resetting_beat_or_running_entry_again ... ok
+test reaction_fact_persists_through_later_transition ... ok
+test reaction_mounts_and_removes_bundle_without_leaving_beat ... ok
+test reactions_ignore_min_duration_but_event_and_fact_transitions_respect_it ... ok
+test remount_restarts_bundle_time_and_action_order_controls_final_mount ... ok
+test replay_preserves_reactions_facts_beats_and_bundle_clock_exactly ... ok
+test terminal_director_does_not_accept_reactions_or_record_more_steps ... ok
+test validation_checks_reaction_bundle_references ... ok
+test validation_rejects_non_event_reaction_conditions ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/structured_output.rs (target/debug/deps/structured_output-eeae14eb5d9e8c4e)
+
+running 4 tests
+test commit_rich_text_preserves_styles_and_neutralizes_control_chars ... ok
+test commit_text_and_commit_node_wrap_identically ... ok
+test commit_text_is_width_aware ... ok
+test commit_text_wraps_long_unicode_without_panic ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/surface_fx.rs (target/debug/deps/surface_fx-84049d40411cd4e2)
+
+running 21 tests
+test dissolve_endpoints_stability_and_monotone_masks ... ok
+test identity_postprocess_matches_clipped_panel_on_every_edge ... ok
+test nested_postprocess_and_viewport_preserve_mask_coordinates ... ok
+test ordered_chains_are_associative_but_not_commutative ... ok
+test ordinary_panel_frontier_has_local_damage_and_frozen_frame_is_free ... ok
+test ordinary_text_input_is_postprocessed_without_changing_its_data ... ok
+test overlay_preserves_ordinary_glyphs_layout_and_holes ... ok
+test scene_bundle_removal_restores_exact_original_and_local_damage ... ok
+test scoped_endpoints_match_identity_and_full_effect_including_movement ... ok
+test scoped_hostile_chains_keep_wide_glyphs_valid_and_outside_exact ... ok
+test scoped_movement_never_imports_outside_content_or_exports_partial_glyphs ... ok
+test scoped_noise_is_stable_monotone_and_keeps_transparency ... ok
+test scoped_radial_and_band_have_spatial_geometry ... ok
+test scoped_rect_clips_and_nested_scopes_intersect ... ok
+test scoped_wide_boundary_is_indivisible_and_protects_neighbors ... ok
+test scoped_wipes_are_normalized_and_responsive ... ok
+test scramble_is_seeded_preserves_styles_and_wide_glyphs ... ok
+test style_mask_spreads_without_erasing_glyphs_or_transparency ... ok
+test style_only_cells_are_never_promoted_into_opaque_glyphs ... ok
+test tear_is_strip_local_and_transparent_holes_remain_holes ... ok
+test wide_glyphs_survive_hostile_chains_and_extreme_parameters ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests/terminal_ownership.rs (target/debug/deps/terminal_ownership-3165af518fe9075b)
+
+running 7 tests
+test drop_then_reacquire ...     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+ok
+test headless_does_not_take_lease ... ok
+test panic_hook_chains_a_preexisting_host_hook ... ok
+test panic_restores_when_owned ... ok
+test restore_reports_output_failure_but_still_tears_down ... ok
+test second_owner_errors ... ok
+test worker_panic_leaves_owner_terminal_intact ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/ui_controls.rs (target/debug/deps/ui_controls-5be27f83d2b050f8)
+
+running 14 tests
+test activation_is_visible_but_finite_and_reduced_preserves_all_glyphs ... ok
+test editor_callbacks_cannot_steal_edit_keys_but_can_bind_unsupported_shortcuts ... ok
+test explicit_editorial_section_numbers_survive_reordering_and_conditional_omission ... ok
+test explicit_presentation_compilation_and_plain_compilation_have_distinct_phase_contracts ... ok
+test focused_editor_owns_supported_ctrl_line_shortcuts_and_leaves_others_routable ... ok
+test handlerless_and_submit_only_editors_own_edit_events_without_mutating_model ... ok
+test modal_motion_is_local_and_the_underlying_veil_is_stable ... ok
+test persistent_control_states_remain_distinct_in_mono_and_ansi16 ... ok
+test presented_custom_content_receives_the_same_automatic_motion_as_raw_content ... ok
+test presented_custom_nodes_observe_current_reconciled_focus_in_the_rendered_frame ... ok
+test presented_custom_nodes_observe_current_skin_geometry_and_clamped_clock ... ok
+test presented_raw_unicode_effects_and_local_overlays_still_preserve_complete_glyphs ... ok
+test switching_skins_clears_old_feedback_and_preserves_controlled_selection_and_action ... ok
+test toast_motion_cannot_restyle_or_erase_the_rest_of_its_parent ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+
+     Running tests/ui_goldens.rs (target/debug/deps/ui_goldens-06577f3ec43fa01f)
+
+running 4 tests
+test ascii_chrome_fallback_does_not_transliterate_application_content ... ok
+test hostile_zero_tiny_and_extreme_values_stay_in_the_substrate_bounds ... ok
+test one_semantic_tree_preserves_information_across_skin_capability_size_matrix ... ok
+test three_mono_design_grammars_have_distinct_plain_structure_goldens ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+
+     Running tests/ui_layer.rs (target/debug/deps/ui_layer-370b80ef477c3e6c)
+
+running 22 tests
+test adding_a_local_overlay_preserves_fixed_and_growing_layout_constraints ... ok
+test custom_component_can_embed_a_clipped_substrate_viewport ... ok
+test custom_control_receives_unhandled_focused_events_only ... ok
+test custom_spacing_tokens_control_actual_geometry_and_builder_override_wins ... ok
+test deterministic_motion_settles_to_the_exact_no_motion_surface ... ok
+test duplicate_keys_are_rejected_transactionally_even_across_overlays ... ok
+test empty_modal_still_blocks_background_shortcuts_and_restores_focus ... ok
+test excessive_trees_are_rejected_before_lowering ... ok
+test grow_weights_share_row_width_without_intrinsic_content_bias ... ok
+test keys_keep_the_focused_action_through_reorder_and_responsive_reflow ... ok
+test leaf_children_cannot_create_invisible_actions ... ok
+test local_modal_stays_inside_host_and_cannot_cover_neighbor ... ok
+test local_post_processing_preserves_layout_glyphs_and_neighbor_styles ... ok
+test nested_modal_capture_restores_each_previous_focus_without_business_state ... ok
+test raw_node_surface_canvas_and_scene_keep_the_existing_composition_path ... ok
+test removed_keys_and_finite_animation_state_do_not_accumulate_under_churn ... ok
+test removing_modal_and_saved_control_chooses_a_live_replacement ... ok
+test same_key_replacement_updates_the_action_and_focusability ... ok
+test selection_is_controlled_and_never_mutated_by_activation ... ok
+test settled_panel_editor_keeps_one_cursor_and_inactive_editor_cannot_steal_it ... ok
+test traversal_skips_disabled_controls_and_forgets_removed_targets ... ok
+test unicode_edit_actions_are_owned_by_the_application_and_submission_is_typed ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/video_bake.rs (target/debug/deps/video_bake-c8d6500b1bafe639)
+
+running 7 tests
+test empty_input_is_rejected ... ok
+test every_spec_field_changes_the_fingerprint ... ok
+test fingerprint_is_deterministic ... ok
+test nearby_cuts_do_not_collide ... ok
+test non_frame_multiple_length_is_rejected ... ok
+test one_whole_frame_is_accepted ... ok
+test source_identity_changes_the_fingerprint ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/video_composite.rs (target/debug/deps/video_composite-fb3e51d1505d1598)
+
+running 5 tests
+test background_shows_through_key_foreground_shows_over_it ... ok
+test bbox_and_coverage_match_the_rectangle ... ok
+test pure_key_frame_is_empty ... ok
+test sparse_union_reprojection_is_identical_to_full_and_clears_the_trail ... ok
+test vacated_region_returns_to_background_not_a_ghost ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+     Running tests/video_keying.rs (target/debug/deps/video_keying-e587c0bbfc1915a0)
+
+running 11 tests
+test alpha_is_deterministic ... ok
+test alpha_is_monotonic_nonincreasing_in_greenness ... ok
+test bbox_union_treats_empty_as_identity ... ok
+test composite_endpoints_are_exact ... ok
+test composite_midpoint_rounds ... ok
+test degenerate_thresholds_are_a_hard_cut_not_a_nan ... ok
+test despill_clamps_green_only ... ok
+test greenness_metric_signs ... ok
+test key_pixel_bundles_despill_and_alpha ... ok
+test non_green_foreground_is_fully_opaque ... ok
+test pure_green_is_fully_transparent ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/visual_goldens.rs (target/debug/deps/visual_goldens-5f28f115a92c4f41)
+
+running 2 tests
+test acid_cinematic_goldens ...     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+ok
+test visual_goldens ...     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.06s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.08s
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 48.00s
+
+     Running tests/whole_renderer_vt100.rs (target/debug/deps/whole_renderer_vt100-60e06635b76b8bbc)
+
+running 21 tests
+test fullscreen_resize_clears_stale_blank_regions_and_accounts_for_clear ... ok
+test insert_line_fast_path_inserts_history_without_repainting_live ... ok
+test insert_line_fast_path_multiple_rows_and_cursor_restore ... ok
+test insert_strategy_is_reported ... ok
+test overlay_modal_composites_without_reflowing_the_base ... ok
+test overlay_removal_leaves_no_ghost_cells ... ok
+test repaint_fallback_restores_exact_cursor ... ok
+test repaint_fallback_used_when_no_room_and_restores_live_and_cursor ... ok
+test resize_during_overlay_animation_reanchors_without_panic ... ok
+test resize_invalidates_anchor_and_resyncs ... ok
+test resize_to_narrow_width_reflows_without_panic ... ok
+test whole_renderer_cjk_and_emoji ... ok
+test whole_renderer_commit_moves_live_to_scrollback ... ok
+test whole_renderer_cursor_visibility_is_physical_truth ... ok
+test whole_renderer_first_inline_frame_appears ... ok
+test whole_renderer_fullscreen_owns_the_canvas ... ok
+test whole_renderer_live_region_growth_and_shrink ... ok
+test whole_renderer_long_input_scrolls_with_hostile_unicode ... ok
+test whole_renderer_long_input_survives_resize ... ok
+test whole_renderer_right_margin_no_autowrap_glitch ... ok
+test whole_renderer_second_frame_one_cell_diff ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+   Doc-tests gibson
+
+running 2 tests
+test src/context.rs - context::Context::headless (line 91) ... ok
+test src/context.rs - context::Context::run_once (line 332) - compile ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s
+

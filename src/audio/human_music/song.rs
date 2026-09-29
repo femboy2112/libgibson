@@ -228,7 +228,35 @@ impl SongMap {
         if composer == Composer::StablePropulsion {
             // F selects the grammar. The legacy grammar argument applies only to R9/R10.
             let target = PhenomenalTarget::from_trace(trace, PhenomenalRegime::StablePropulsion);
-            return SongMap::build(trace, seed, Some(target.grammar()));
+            let mut song = SongMap::build(trace, seed, Some(target.grammar()));
+            // This experiment holds the R10 control's orchestration envelope fixed as well as
+            // the band. Only the harmonic/thematic page and its discourse are the intervention.
+            // Reuse the existing planner, then schedule the new thesis in those exact seats.
+            let control = CompositionPlan::build_with_contract_for_beats(
+                &song.timeline,
+                trace.total_beats,
+                CoherenceContract::for_grammar(CompositionGrammar::DeflectedLift),
+            );
+            song.plan.arrangement = control.arrangement;
+            song.thematic.sites = song
+                .plan
+                .targets()
+                .into_iter()
+                .filter(|t| {
+                    song.plan
+                        .arrangement
+                        .at(t.phrase.ix as usize)
+                        .lead
+                        .is_audible()
+                })
+                .map(|t| ThemeSite {
+                    phrase: t.phrase.ix,
+                    role: t.goal.role,
+                    motif: song.thematic.bank.identity.clone(),
+                    handoff: Handoff::Restatement,
+                })
+                .collect();
+            return song;
         }
         let song = SongMap::build(trace, seed, grammar);
         match composer {

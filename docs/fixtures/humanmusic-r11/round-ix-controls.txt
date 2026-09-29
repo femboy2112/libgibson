@@ -1,0 +1,13 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/lib.rs (target/debug/deps/gibson-bb7570885a984e62)
+
+running 6 tests
+test audio::human_music::song_probes::real_mutations_move_the_song ... ok
+test audio::human_music::song_probes::the_chart_rhythm_is_the_songs ... ok
+test audio::human_music::song_probes::the_chart_is_the_songs ... ok
+test audio::human_music::song_probes::the_theme_is_the_songs ... ok
+test audio::human_music::song_probes::one_song_four_performances ... ok
+test audio::human_music::song_probes::the_law_holds_across_songs ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 646 filtered out; finished in 3.56s
+

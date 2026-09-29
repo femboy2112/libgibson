@@ -1,0 +1,15 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.60s
+     Running unittests src/lib.rs (target/debug/deps/gibson-bb7570885a984e62)
+
+running 7 tests
+test audio::human_music::phenomenal_probes::low_pressure_should_not_require_high_preparation ... ok
+test audio::human_music::phenomenal_probes::actual_content_can_falsify_the_target_and_labels_cannot_rescue_it ... ok
+test audio::human_music::phenomenal_probes::propulsion_can_increase_without_harmonic_debt ... ok
+test audio::human_music::phenomenal_probes::suspended_deflection_is_a_distinct_measured_control ... ok
+test audio::human_music::phenomenal_probes::grammar_should_admit_fulfilled_arrival ... ok
+test audio::human_music::phenomenal_probes::fresh_lengths_and_seeds_keep_the_distinction_or_report_short_form_limits ... ok
+test audio::human_music::phenomenal_probes::same_band_preserves_both_song_maps ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 645 filtered out; finished in 0.64s
+

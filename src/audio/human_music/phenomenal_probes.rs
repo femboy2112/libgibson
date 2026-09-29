@@ -165,6 +165,13 @@ fn actual_content_can_falsify_the_target_and_labels_cannot_rescue_it() {
     assert!(PhenomenalTrajectory::observe(&no_recurrence)
         .divergences(&target)
         .contains(&"familiarity"));
+    let mut fragments = song.clone();
+    for site in &mut fragments.thematic.sites {
+        site.motif = site.motif.fragment(2);
+    }
+    assert!(PhenomenalTrajectory::observe(&fragments)
+        .divergences(&target)
+        .contains(&"familiarity"));
     let mut slow = song.clone();
     for site in &mut slow.thematic.sites {
         site.motif = site.motif.scale_rhythm(4.0);
@@ -184,6 +191,10 @@ fn same_band_preserves_both_song_maps() {
         Composer::MeaningDirected,
     );
     let b = stable(120.0, 2112);
+    assert_eq!(
+        format!("{:?}", a.plan.arrangement),
+        format!("{:?}", b.plan.arrangement)
+    );
     let opts = PerformanceOptions::default();
     assert_ne!(
         PhenomenalTrajectory::observe(&a).summary,

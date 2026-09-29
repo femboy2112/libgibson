@@ -1,0 +1,243 @@
+   Compiling cfg-if v1.0.5
+   Compiling libc v0.2.189
+   Compiling bitflags v2.13.2
+   Compiling smallvec v1.16.1
+   Compiling log v0.4.34
+   Compiling scopeguard v1.2.0
+   Compiling arrayvec v0.7.8
+   Compiling linux-raw-sys v0.12.1
+   Compiling itoa v1.0.18
+   Compiling lock_api v0.4.14
+   Compiling vte v0.15.0
+   Compiling rustix v1.1.5
+   Compiling castaway v0.2.4
+   Compiling slotmap v1.1.1
+   Compiling zmij v1.0.23
+   Compiling derive_more v2.1.1
+   Compiling static_assertions v1.1.0
+   Compiling unicode-width v0.2.2
+   Compiling unicode-segmentation v1.13.3
+   Compiling vt100 v0.16.2
+   Compiling compact_str v0.10.0
+   Compiling taffy v0.14.0
+   Compiling errno v0.3.14
+   Compiling parking_lot_core v0.9.12
+   Compiling mio v1.2.3
+   Compiling nix v0.28.0
+   Compiling serial2 v0.2.38
+   Compiling filedescriptor v0.8.3
+   Compiling signal-hook-registry v1.4.8
+   Compiling parking_lot v0.12.5
+   Compiling signal-hook v0.3.18
+   Compiling signal-hook-mio v0.2.5
+   Compiling crossterm v0.29.0
+   Compiling portable-pty v0.9.0
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `release` profile [optimized] target(s) in 2m 51s
+     Running unittests src/lib.rs (target/release/deps/gibson-2da5e1d80ac6533e)
+
+running 2 tests
+RED 11.3% bounce 24 seed 0 Some(DeflectedLift) simple=true VAPOR95: perturbation (R7b -> surgical, diffed): notes=62 changed=7 (11.3%) removed=1 shortened_only=5 repitched=1 displacement=12 st (mean 12.00) added=0 | by role: pad=5 keys=1 bass=1 lead=0  !! RED: more than 10% of the notes changed — investigate before accepting
+surgical repairs (R7b -> surgical, every edit): 7
+     0.00 pad   shorten       E5 shortened 3.92 -> 2.88 b    because pad E5 against keys F5 = unowned m2 over Gm7 @3.50
+     3.75 keys  omit          F5 removed                     because pad E4 against keys F5 = unowned m9 over C7 @4.00
+     4.00 pad   shorten       E4 shortened 3.92 -> 3.38 b    because pad E4 against keys F5 = unowned m9 over F @8.00
+     4.00 pad   shorten       A#4 shortened 3.92 -> 3.38 b   because keys A4 against pad A#4 = unowned m2 over F @8.00
+    15.50 bass  octave        A2 -> A1                       because bass A2 (approach) never resolves
+     8.00 pad   shorten       A4 shortened 7.84 -> 7.38 b    because pad A4 against keys A#4 = unowned m2 over A# @16.00
+    17.00 pad   shorten       A#4 shortened 2.92 -> 2.38 b   because keys A4 against pad A#4 = unowned m2 over F @20.00
+
+RED 11.3% bounce 24 seed 1 Some(DeflectedLift) simple=true VAPOR95: perturbation (R7b -> surgical, diffed): notes=62 changed=7 (11.3%) removed=4 shortened_only=2 repitched=1 displacement=12 st (mean 12.00) added=0 | by role: pad=4 keys=2 bass=1 lead=0  !! RED: more than 10% of the notes changed — investigate before accepting
+surgical repairs (R7b -> surgical, every edit): 7
+     0.00 pad   shorten       E5 shortened 3.92 -> 2.88 b    because pad E5 against keys F5 = unowned m2 over Gm7 @3.50
+     4.00 pad   omit          E4 removed                     because pad E4 against keys F5 = unowned m9 over C7 @4.00
+     3.75 keys  omit          F5 removed                     because keys E5 against keys F5 = unowned m2 over C7 @4.00
+     8.00 keys  omit          A4 removed                     because keys A4 against pad A#4 = unowned m2 over F @8.00
+     8.00 pad   omit          A4 removed                     because pad A4 against lead A#4 = unowned m2 over F @8.50
+    15.50 bass  octave        A2 -> A1                       because bass A2 (approach) never resolves
+    17.00 pad   shorten       A#4 shortened 2.92 -> 2.38 b   because keys A4 against pad A#4 = unowned m2 over F @20.00
+
+RED 11.3% bounce 24 seed 2 Some(DeflectedLift) simple=true VAPOR95: perturbation (R7b -> surgical, diffed): notes=62 changed=7 (11.3%) removed=1 shortened_only=5 repitched=1 displacement=12 st (mean 12.00) added=0 | by role: pad=5 keys=1 bass=1 lead=0  !! RED: more than 10% of the notes changed — investigate before accepting
+surgical repairs (R7b -> surgical, every edit): 7
+     0.00 pad   shorten       E5 shortened 3.92 -> 2.88 b    because pad E5 against keys F5 = unowned m2 over Gm7 @3.50
+     3.75 keys  omit          F5 removed                     because pad E4 against keys F5 = unowned m9 over C7 @4.00
+     4.00 pad   shorten       E4 shortened 3.92 -> 3.38 b    because pad E4 against keys F5 = unowned m9 over F @8.00
+     4.00 pad   shorten       A#4 shortened 3.92 -> 3.38 b   because keys A4 against pad A#4 = unowned m2 over F @8.00
+    15.50 bass  octave        A2 -> A1                       because bass A2 (approach) never resolves
+     8.00 pad   shorten       A4 shortened 7.84 -> 7.38 b    because pad A4 against keys A#4 = unowned m2 over A# @16.00
+    17.00 pad   shorten       A#4 shortened 2.92 -> 2.38 b   because keys A4 against pad A#4 = unowned m2 over F @20.00
+
+RED 11.3% bounce 24 seed 3 Some(DeflectedLift) simple=true VAPOR95: perturbation (R7b -> surgical, diffed): notes=62 changed=7 (11.3%) removed=4 shortened_only=2 repitched=1 displacement=12 st (mean 12.00) added=0 | by role: pad=4 keys=2 bass=1 lead=0  !! RED: more than 10% of the notes changed — investigate before accepting
+surgical repairs (R7b -> surgical, every edit): 7
+     0.00 pad   shorten       E5 shortened 3.92 -> 2.88 b    because pad E5 against keys F5 = unowned m2 over Gm7 @3.50
+     4.00 pad   omit          E4 removed                     because pad E4 against keys F5 = unowned m9 over C7 @4.00
+     3.75 keys  omit          F5 removed                     because keys E5 against keys F5 = unowned m2 over C7 @4.00
+     8.00 keys  omit          A4 removed                     because keys A4 against pad A#4 = unowned m2 over F @8.00
+     8.00 pad   omit          A4 removed                     because pad A4 against lead A#4 = unowned m2 over F @8.50
+    15.50 bass  octave        A2 -> A1                       because bass A2 (approach) never resolves
+    17.00 pad   shorten       A#4 shortened 2.92 -> 2.38 b   because keys A4 against pad A#4 = unowned m2 over F @20.00
+
+RED 10.3% bounce 24 seed 3 None simple=false VAPOR95: perturbation (R7b -> surgical, diffed): notes=87 changed=9 (10.3%) removed=1 shortened_only=8 repitched=0 displacement=0 st (mean 0.00) added=0 | by role: pad=7 keys=2 bass=0 lead=0  !! RED: more than 10% of the notes changed — investigate before accepting
+surgical repairs (R7b -> surgical, every edit): 9
+     2.00 pad   shorten       A4 shortened 1.96 -> 1.38 b    because pad A4 against pad A#4 = unowned m2 over A# @4.00
+     6.00 pad   shorten       F5 shortened 1.96 -> 1.38 b    because lead E5 against pad F5 = unowned m2 over Gm @8.00
+    12.00 keys  omit          C5 removed                     because pad B4 against keys C5 = unowned m2 over A# @12.00
+    10.00 pad   shorten       C#5 shortened 1.96 -> 1.38 b   because pad C#5 against sfx D5 = unowned m2 over A# @12.00
+    10.00 pad   shorten       E5 shortened 1.96 -> 1.38 b    because pad E5 against sfx F5 = unowned m2 over A# @12.00
+    14.00 pad   shorten       A#4 shortened 1.96 -> 1.38 b   because keys A4 against pad A#4 = unowned m2 over Dm @16.00
+    16.00 pad   shorten       E5 shortened 1.96 -> 1.38 b    because pad E5 against pad F5 = unowned m2 over A# @18.00
+    16.00 keys  shorten       E5 shortened 1.94 -> 1.88 b    because keys E5 against pad F5 = unowned m2 over A# @18.00
+    18.00 pad   shorten       F5 shortened 1.96 -> 1.38 b    because keys E5 against pad F5 = unowned m2 over C7 @20.00
+
+RED 10.7% bounce 24 seed 4 Some(DeflectedLift) simple=false VAPOR95: perturbation (R7b -> surgical, diffed): notes=75 changed=8 (10.7%) removed=4 shortened_only=2 repitched=2 displacement=24 st (mean 12.00) added=0 | by role: pad=3 keys=3 bass=2 lead=0  !! RED: more than 10% of the notes changed — investigate before accepting
+surgical repairs (R7b -> surgical, every edit): 8
+     3.75 keys  omit          F5 removed                     because pad E5 against keys F5 = unowned m2 over C7 @4.00
+     0.00 pad   shorten       F5 shortened 3.92 -> 3.38 b    because keys E5 against pad F5 = unowned m2 over C7 @4.00
+     8.00 keys  omit          A4 removed                     because keys A4 against pad A#4 = unowned m2 over F6 @8.00
+     8.00 pad   omit          A4 removed                     because pad A4 against lead A#4 = unowned m2 over F6 @8.50
+     8.00 keys  omit          E5 removed                     because keys E5 against sfx F6 = unowned m9 over F6 @9.50
+    11.75 bass  octave        A2 -> A1                       because bass A2 (approach) never resolves
+    19.50 bass  octave        F#1 -> F#2                     because bass F#1 as the floor of A#add9 = b13 in the bass
+    16.00 pad   shorten       A#5 shortened 3.92 -> 3.38 b   because pad A4 against pad A#5 = unowned m9 over F6 @20.00
+
+RED 11.7% bounce 24 seed 6 None simple=false VAPOR95: perturbation (R7b -> surgical, diffed): notes=103 changed=12 (11.7%) removed=4 shortened_only=7 repitched=1 displacement=12 st (mean 12.00) added=0 | by role: pad=8 keys=3 bass=1 lead=0  !! RED: more than 10% of the notes changed — investigate before accepting
+surgical repairs (R7b -> surgical, every edit): 12
+     0.00 pad   shorten       A4 shortened 1.96 -> 1.38 b    because pad A4 against pad A#4 = unowned m2 over A @2.00
+     4.00 pad   omit          C6 removed                     because pad B4 against pad C6 = unowned m9 over A# @4.00
+     4.00 pad   omit          A#4 removed                    because pad A#4 against keys B4 = unowned m2 over A# @4.00
+     3.75 keys  omit          C#5 removed                    because keys C#5 against pad D5 = unowned m2 over A# @4.00
+     6.00 pad   shorten       F5 shortened 1.96 -> 1.38 b    because lead E5 against pad F5 = unowned m2 over Gm @8.00
+    12.00 keys  omit          C5 removed                     because pad B4 against keys C5 = unowned m2 over A# @12.00
+    10.00 pad   shorten       C#5 shortened 1.96 -> 1.38 b   because pad C#5 against sfx D5 = unowned m2 over A# @12.00
+    10.00 pad   shorten       E5 shortened 1.96 -> 1.38 b    because pad E5 against sfx F5 = unowned m2 over A# @12.00
+    15.50 bass  octave        C#2 -> C#3                     because bass C#2 as the floor of C7 = b9 in the bass
+    16.00 pad   shorten       E5 shortened 1.96 -> 1.38 b    because pad E5 against pad F5 = unowned m2 over A# @18.00
+    17.50 keys  shorten       E5 shortened 0.49 -> 0.38 b    because keys E5 against pad F5 = unowned m2 over A# @18.00
+    18.00 pad   shorten       F5 shortened 1.96 -> 1.38 b    because keys E5 against pad F5 = unowned m2 over C7 @20.00
+
+RED 14.4% bounce 24 seed 6 None simple=true VAPOR95: perturbation (R7b -> surgical, diffed): notes=90 changed=13 (14.4%) removed=4 shortened_only=9 repitched=0 displacement=0 st (mean 0.00) added=0 | by role: pad=9 keys=4 bass=0 lead=0  !! RED: more than 10% of the notes changed — investigate before accepting
+surgical repairs (R7b -> surgical, every edit): 13
+     0.00 pad   shorten       A4 shortened 1.96 -> 1.38 b    because pad A4 against pad A#4 = unowned m2 over A @2.00
+     2.00 pad   shorten       A4 shortened 1.96 -> 1.38 b    because pad A4 against keys A#5 = unowned m9 over A# @4.00
+     2.00 pad   shorten       B4 shortened 1.96 -> 1.38 b    because pad B4 against pad C6 = unowned m9 over A# @4.00
+     2.00 pad   shorten       C#5 shortened 1.96 -> 1.38 b   because pad C#5 against keys D5 = unowned m2 over A# @4.00
+     3.75 keys  omit          B4 removed                     because pad A#4 against keys B4 = unowned m2 over A# @4.00
+     3.75 keys  omit          C#5 removed                    because keys C#5 against pad D5 = unowned m2 over A# @4.00
+     8.00 keys  omit          A4 removed                     because keys A4 against pad A#4 = unowned m2 over A @10.00
+    12.00 keys  omit          C5 removed                     because pad B4 against keys C5 = unowned m2 over A# @12.00
+    10.00 pad   shorten       C#5 shortened 1.96 -> 1.38 b   because pad C#5 against sfx D5 = unowned m2 over A# @12.00
+    10.00 pad   shorten       E5 shortened 1.96 -> 1.38 b    because pad E5 against sfx F5 = unowned m2 over A# @12.00
+    12.00 pad   shorten       F5 shortened 1.96 -> 1.38 b    because keys E5 against pad F5 = unowned m2 over C7 @14.00
+    16.00 pad   shorten       F5 shortened 1.96 -> 1.38 b    because pad E5 against pad F5 = unowned m2 over A# @18.00
+    18.00 pad   shorten       F5 shortened 1.96 -> 1.38 b    because keys E5 against pad F5 = unowned m2 over C7 @20.00
+
+RED 10.9% bounce 37 seed 5 None simple=true BLACK_ICE: perturbation (R7b -> surgical, diffed): notes=110 changed=12 (10.9%) removed=4 shortened_only=6 repitched=2 displacement=17 st (mean 8.50) added=0 | by role: pad=10 keys=0 bass=2 lead=0  !! RED: more than 10% of the notes changed — investigate before accepting
+surgical repairs (R7b -> surgical, every edit): 12
+     8.00 pad   omit          E5 removed                     because pad E5 against lead F6 = unowned m9 over Dm @10.00
+     8.00 pad   shorten       A5 shortened 3.92 -> 3.66 b    because pad G#4 against pad A5 = unowned m9 over E7 @12.00
+    16.00 pad   shorten       B4 shortened 3.92 -> 3.66 b    because pad B4 against sfx C5 = unowned m2 over Am @20.00
+    20.00 pad   omit          B4 removed                     because pad B4 against sfx C5 = unowned m2 over Am @20.00
+    23.50 bass  octave        C3 -> C2                       because bass C3 (approach) never resolves
+    20.00 pad   shorten       E5 shortened 3.92 -> 3.66 b    because pad D#4 against pad E5 = unowned m9 over C# @24.00
+    24.00 pad   omit          C#5 removed                    because pad C#5 against lead D6 = unowned m9 over C# @25.00
+    26.00 pad   omit          E4 removed                     because pad E4 against pad F5 = unowned m9 over Dm @26.00
+    26.00 pad   shorten       A4 shortened 1.96 -> 1.66 b    because sfx G#4 against pad A4 = unowned m2 over E7 @28.00
+    26.00 pad   shorten       F5 shortened 1.96 -> 1.66 b    because pad E4 against pad F5 = unowned m9 over E7 @28.00
+    30.00 pad   shorten       B4 shortened 1.96 -> 1.66 b    because pad B4 against pad C5 = unowned m2 over G @32.00
+    32.00 bass  floor         G2 -> D2                       because bass G2 as the floor of G = #9 in the bass
+
+RED 10.7% bounce 64 seed 3 None simple=false VAPOR95: perturbation (R7b -> surgical, diffed): notes=214 changed=23 (10.7%) removed=11 shortened_only=12 repitched=0 displacement=0 st (mean 0.00) added=0 | by role: pad=18 keys=5 bass=0 lead=0  !! RED: more than 10% of the notes changed — investigate before accepting
+surgical repairs (R7b -> surgical, every edit): 23
+     8.00 pad   omit          A#4 removed                    because pad A3 against pad A#4 = unowned m9 over A# @8.00
+    12.00 pad   shorten       A4 shortened 3.92 -> 3.38 b    because pad A4 against pad A#5 = unowned m9 over A# @16.00
+    16.00 keys  omit          F5 removed                     because lead E5 against keys F5 = unowned m2 over A# @16.00
+    20.00 pad   shorten       A5 shortened 3.92 -> 2.88 b    because pad A5 against lead A#5 = unowned m2 over C7 @23.50
+    24.00 pad   omit          A5 removed                     because pad A5 against lead A#5 = unowned m2 over Dm @24.00
+    24.00 pad   shorten       E5 shortened 1.96 -> 1.38 b    because pad E5 against pad F5 = unowned m2 over A# @26.00
+    26.00 pad   omit          A#5 removed                    because lead A5 against pad A#5 = unowned m2 over A# @26.00
+    29.50 keys  omit          A#4 removed                    because pad A4 against keys A#4 = unowned m2 over F @30.00
+    29.50 keys  omit          E5 removed                     because keys E5 against pad F5 = unowned m2 over F @30.00
+    30.00 pad   shorten       F5 shortened 1.96 -> 1.38 b    because pad F5 against lead F#5 = unowned m2 over A @32.00
+    32.00 pad   shorten       B4 shortened 1.96 -> 1.38 b    because pad B4 against sfx C5 = unowned m2 over Am @34.00
+    34.00 pad   omit          B4 removed                     because pad B4 against sfx C5 = unowned m2 over Am @34.00
+    36.00 pad   shorten       C4 shortened 1.96 -> 1.38 b    because pad C4 against keys C#5 = unowned m9 over A @38.00
+    36.00 pad   shorten       B4 shortened 1.96 -> 1.38 b    because pad B4 against keys C5 = unowned m2 over A @38.00
+    40.00 pad   omit          A4 removed                     because pad A4 against lead A#5 = unowned m9 over Am @41.50
+    40.00 pad   shorten       B4 shortened 1.96 -> 1.62 b    because pad B4 against keys C5 = unowned m2 over A# @42.25
+    40.00 pad   shorten       E5 shortened 1.96 -> 1.62 b    because pad E5 against keys F5 = unowned m2 over A# @42.25
+    42.00 pad   shorten       F5 shortened 1.96 -> 1.38 b    because pad E4 against pad F5 = unowned m9 over C7 @44.00
+    50.00 pad   shorten       A4 shortened 1.96 -> 1.38 b    because pad A4 against pad A#4 = unowned m2 over C7 @52.00
+    58.00 pad   omit          C4 removed                     because pad C4 against pad C#5 = unowned m9 over A# @58.00
+    57.50 keys  omit          B4 removed                     because pad A#4 against keys B4 = unowned m2 over A# @58.00
+    57.50 keys  omit          C#5 removed                    because keys C#5 against pad D5 = unowned m2 over A# @58.00
+    58.00 pad   shorten       F4 shortened 1.96 -> 1.38 b    because sfx E4 against pad F4 = unowned m2 over C7 @60.00
+
+RED 14.3% demo 24 seed 3 None simple=true BLACK_ICE: perturbation (R7b -> surgical, diffed): notes=35 changed=5 (14.3%) removed=5 shortened_only=0 repitched=0 displacement=0 st (mean 0.00) added=0 | by role: pad=5 keys=0 bass=0 lead=0  !! RED: more than 10% of the notes changed — investigate before accepting
+surgical repairs (R7b -> surgical, every edit): 5
+     0.00 pad   omit          B3 removed                     because pad B3 against pad C5 = unowned m9 over Am @0.00
+     4.00 pad   omit          B3 removed                     because pad B3 against pad C5 = unowned m9 over Am @4.00
+     8.00 pad   omit          B3 removed                     because pad B3 against pad C5 = unowned m9 over Am @8.00
+    12.00 pad   omit          B3 removed                     because pad B3 against pad C5 = unowned m9 over Am @12.00
+    20.00 pad   omit          B3 removed                     because pad B3 against pad C5 = unowned m9 over Am @20.00
+
+RED 11.4% demo 24 seed 5 None simple=true BLACK_ICE: perturbation (R7b -> surgical, diffed): notes=35 changed=4 (11.4%) removed=3 shortened_only=1 repitched=0 displacement=0 st (mean 0.00) added=0 | by role: pad=4 keys=0 bass=0 lead=0  !! RED: more than 10% of the notes changed — investigate before accepting
+surgical repairs (R7b -> surgical, every edit): 4
+     0.00 pad   shorten       C#4 shortened 3.92 -> 3.66 b   because pad C#4 against pad D5 = unowned m9 over C @4.00
+    12.00 pad   omit          B3 removed                     because pad B3 against pad C5 = unowned m9 over Am @12.00
+    16.00 pad   omit          B3 removed                     because pad B3 against pad C5 = unowned m9 over Am @16.00
+    20.00 pad   omit          B3 removed                     because pad B3 against pad C5 = unowned m9 over Am @20.00
+
+RED 11.4% demo 24 seed 6 None simple=true BLACK_ICE: perturbation (R7b -> surgical, diffed): notes=35 changed=4 (11.4%) removed=3 shortened_only=1 repitched=0 displacement=0 st (mean 0.00) added=0 | by role: pad=4 keys=0 bass=0 lead=0  !! RED: more than 10% of the notes changed — investigate before accepting
+surgical repairs (R7b -> surgical, every edit): 4
+     0.00 pad   omit          B3 removed                     because pad B3 against pad C5 = unowned m9 over Am @0.00
+    12.00 pad   omit          B3 removed                     because pad B3 against pad C5 = unowned m9 over Am @12.00
+    12.00 pad   shorten       A4 shortened 3.92 -> 3.66 b    because lead G#3 against pad A4 = unowned m9 over C# @16.00
+    20.00 pad   omit          B3 removed                     because pad B3 against pad C5 = unowned m9 over Am @20.00
+
+RED 10.9% demo 96 seed 7 Some(DeflectedLift) simple=false VAPOR95: perturbation (R7b -> surgical, diffed): notes=341 changed=37 (10.9%) removed=19 shortened_only=12 repitched=6 displacement=35 st (mean 5.83) added=0 | by role: pad=18 keys=10 bass=9 lead=0  !! RED: more than 10% of the notes changed — investigate before accepting
+surgical repairs (R7b -> surgical, every edit): 37
+     2.00 bass  floor         G2 -> C3                       because bass G2 floor held under a rootless C7 (identity flip)
+     3.00 bass  shorten       C#2 shortened 0.90 -> 0.44 b   because bass C#2 as the floor of C7 = b9 in the bass
+    11.75 bass  floor         C3 -> A#2                      because bass C3 as the floor of A#add9 = 9 in the bass
+     8.00 pad   shorten       A#3 shortened 3.92 -> 3.38 b   because bass A2 against pad A#3 = unowned m9 over F6 @12.00
+    12.00 pad   shorten       A3 shortened 3.92 -> 3.38 b    because pad A3 against keys A#4 = unowned m9 over Gm7 @16.00
+    16.00 pad   omit          A#3 removed                    because lead A3 against pad A#3 = unowned m2 over Gm7 @16.50
+    16.75 keys  omit          F4 removed                     because pad E4 against keys F4 = unowned m2 over Gm7 @16.75
+    16.75 keys  octave        A#4 -> A#5                     because lead A3 against keys A#4 = unowned m9 over Gm7 @16.75
+    19.25 keys  omit          F4 removed                     because pad E4 against keys F4 = unowned m2 over Gm7 @19.25
+    23.00 bass  shorten       F#2 shortened 0.90 -> 0.44 b   because bass F#2 against pad G3 = unowned m9 over Em7b5 @23.00
+    24.00 pad   omit          A#3 removed                    because lead A3 against pad A#3 = unowned m2 over Gm7 @24.00
+    23.75 keys  omit          A#4 removed                    because lead A3 against keys A#4 = unowned m9 over Gm7 @24.00
+    24.75 keys  omit          F4 removed                     because lead E4 against keys F4 = unowned m2 over Gm7 @24.75
+    24.00 pad   shorten       A4 shortened 3.92 -> 3.38 b    because pad A4 against keys A#4 = unowned m2 over Em7b5 @28.00
+    24.00 pad   shorten       F3 shortened 3.92 -> 3.38 b    because bass E2 against pad F3 = unowned m9 over Em7b5 @28.00
+    28.00 pad   omit          A4 removed                     because pad A4 against keys A#4 = unowned m2 over Em7b5 @29.25
+    31.00 bass  shorten       F#2 shortened 0.90 -> 0.44 b   because bass F#2 against pad G3 = unowned m9 over Em7b5 @31.00
+    33.00 bass  floor         A2 -> G2                       because bass A2 against pad A#3 = unowned m9 over Gm9 @33.00
+    32.00 pad   omit          A4 removed                     because pad A4 against lead A#5 = unowned m9 over Gm9 @34.50  [receipt deferred: a10]
+    36.00 pad   omit          A4 removed                     because pad A4 against keys A#4 = unowned m2 over Em7b5 @37.25
+    39.00 bass  shorten       F#2 shortened 0.90 -> 0.44 b   because bass F#2 as the floor of Em7b5 = 9 in the bass
+    39.75 keys  omit          A#4 removed                    because pad A4 against keys A#4 = unowned m2 over G7 @40.00
+    43.00 bass  octave        B2 -> B1                       because bass B2 (approach) never resolves
+    48.00 pad   omit          E5 removed                     because pad E5 against lead F5 = unowned m2 over Dm7 @49.50
+    48.00 keys  omit          E5 removed                     because keys E5 against lead F5 = unowned m2 over Dm7 @49.50
+    56.00 pad   omit          E5 removed                     because pad E5 against lead F5 = unowned m2 over Dm7 @57.00
+    63.75 keys  omit          C5 removed                     because pad B4 against keys C5 = unowned m2 over Gmaj7 @64.00
+    62.00 pad   shorten       C5 shortened 1.96 -> 1.62 b    because keys B4 against pad C5 = unowned m2 over Gmaj7 @64.25
+    68.00 pad   shorten       F#5 shortened 3.92 -> 3.38 b   because pad F#5 against lead G5 = unowned m2 over Em7 @72.00
+    72.00 pad   omit          F#5 removed                    because pad F#5 against lead G5 = unowned m2 over Em7 @72.00
+    72.25 keys  omit          F#5 removed                    because keys F#5 against lead G5 = unowned m2 over Em7 @72.25
+    80.00 pad   omit          F#5 removed                    because pad F#5 against lead G5 = unowned m2 over Em7 @80.50
+    80.25 keys  omit          F#5 removed                    because keys F#5 against lead G5 = unowned m2 over Em7 @80.50
+    86.00 pad   shorten       B4 shortened 1.96 -> 1.38 b    because pad B4 against pad C5 = unowned m2 over A#add9 @88.00
+    86.00 pad   shorten       F#5 shortened 1.96 -> 1.38 b   because keys F5 against pad F#5 = unowned m2 over A#add9 @88.00
+    91.00 bass  floor         C2 -> A#1                      because bass C2 as the floor of A#add9 = 9 in the bass
+    92.00 pad   omit          A#4 removed                    because keys A4 against pad A#4 = unowned m2 over A#maj9 @93.50
+
+surgical fuzz: 1152 compositions | edits 8850/210320 notes (4.21%) | worst 14.4% (bounce 24 seed 6 None simple=true VAPOR95) | receipts deferred (reported) 9 | lost silently 0
+test audio::human_music::ensemble_probes::fuzz_the_surgical_band_never_loses_a_receipt_silently ... ok
+fuzz: 1152 compositions per arm | receipts lost 0 gained 61 | unowned pitched-pair collisions 6087 -> 54 | missing-core beats 1567.9 -> 950.1
+test audio::human_music::ensemble_probes::fuzz_the_coupled_band_keeps_every_receipt_the_control_keeps ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 650 filtered out; finished in 57.86s
+

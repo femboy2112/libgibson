@@ -1,0 +1,29 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.64s
+     Running unittests src/lib.rs (target/debug/deps/gibson-bb7570885a984e62)
+
+running 2 tests
+test audio::human_music::phenomenal_probes::low_pressure_should_not_require_high_preparation ... FAILED
+test audio::human_music::phenomenal_probes::grammar_should_admit_fulfilled_arrival ... FAILED
+
+failures:
+
+---- audio::human_music::phenomenal_probes::low_pressure_should_not_require_high_preparation stdout ----
+
+thread 'audio::human_music::phenomenal_probes::low_pressure_should_not_require_high_preparation' (915867) panicked at src/audio/human_music/phenomenal_probes.rs:14:5:
+low-pressure target still mandates Prepare(High)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- audio::human_music::phenomenal_probes::grammar_should_admit_fulfilled_arrival stdout ----
+
+thread 'audio::human_music::phenomenal_probes::grammar_should_admit_fulfilled_arrival' (915866) panicked at src/audio/human_music/phenomenal_probes.rs:20:5:
+every available chart denies its expected arrival
+
+
+failures:
+    audio::human_music::phenomenal_probes::grammar_should_admit_fulfilled_arrival
+    audio::human_music::phenomenal_probes::low_pressure_should_not_require_high_preparation
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 645 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

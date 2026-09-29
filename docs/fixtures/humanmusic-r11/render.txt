@@ -1,0 +1,103 @@
+    Blocking waiting for file lock on build directory
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `release` profile [optimized] target(s) in 4m 21s
+     Running `target/release/examples/human_music_lab --phenomenal --beats=120 --seed=2112 --language=fusion --out=target/humanmusic-r11`
+Round XI: seed=2112 beats=120 options=PerformanceOptions { language: MusicalLanguage { id: FusionConversation, harmonic_rhythm: Diminished, color_depth: 2, shell_voicings: true, surface_subdivision: 4, syncopation: 0.6, interaction: 0.85, distributed_agency: true, unison_figures: true, complexity_budget: 9.0, chromatic_connectives: 0.55, internal_rest: 0.25 }, coupling: Independent, actions: true, responses: Free, calls: Selective, manifestations: Varied } production=ProductionControl { clean_waves: false, zero_detune: false, no_saturation: false, dry: false, no_bus_comp: false, short_release: false } sr=SampleRate(48000) block=512
+orchestration envelope: identical
+Round X control: MeaningPlan: arc Mid, resolution Home — 20 events checked, 0 divergent (0 composer-owned)
+  Theme   p1  @ 16.0  want Thesis(Mid)    heard Thesis(Mid)    ok  widest leap 3 steps
+  Theme   p1  @ 16.0  want Learn          heard Learn          ok  Literal, heard as written 0x before, lands Open
+  Theme   p2  @ 32.0  want Payoff         heard Payoff         ok  Literal, heard as written 1x before, lands Open
+  Theme   p3  @ 48.0  want Answer(Home)   heard Answer(Home)   ok  Variant, heard as written 2x before, lands Home
+  Theme   p5  @ 80.0  want Payoff         heard Payoff         ok  Literal, heard as written 2x before, lands Open
+  Theme   p6  @ 88.0  want Answer(Home)   heard Answer(Home)   ok  Variant, heard as written 3x before, lands Home
+  Theme   p7  @ 96.0  want Recognize      heard Recognize      ok  Literal, heard as written 3x before, lands Open
+  Harmony s0  @  0.0  want Establish      heard Establish      ok  tonic first @0.0 · first pointer @2.0
+  Harmony s0  @  0.0  want Prepare(High)  heard Prepare(High)  ok  CMaj -> GDom7 (Fifth) · pull 0.00 -> 1.00 · keeps 1 of home · certainty Mid
+  Harmony s1  @  4.0  want Miss(Mid)      heard Miss(Mid)      ok  GDom7 -> AMin (Step) · pull 1.00 -> 0.00 · keeps 2 of home · certainty High
+  Harmony s2  @  8.0  want Open           heard Open           ok  AMin -> FMaj (Neighbour) · pull 0.00 -> 0.00 · keeps 1 of home · certainty Mid
+  Harmony s3  @ 12.0  want Reset          heard Reset          ok  FMaj -> CMaj (Fifth) · pull 0.00 -> 0.00 · keeps 3 of home · certainty Mid
+  Harmony s4  @ 16.0  want Prepare(High)  heard Prepare(High)  ok  CMaj -> GDom7 (Fifth) · pull 0.00 -> 1.00 · keeps 1 of home · certainty Mid
+  Harmony s5  @ 32.0  want Miss(Mid)      heard Miss(Mid)      ok  GDom7 -> AMin (Step) · pull 1.00 -> 0.00 · keeps 2 of home · certainty High
+  Harmony s6  @ 48.0  want Open           heard Open           ok  DMin -> FMaj (Neighbour) · pull 0.00 -> 0.00 · keeps 1 of home · certainty Mid
+  Harmony s7  @ 64.0  want Reset          heard Reset          ok  FAdd9 -> CMaj (Fifth) · pull 0.00 -> 0.00 · keeps 3 of home · certainty Mid
+  Harmony s8  @ 80.0  want Prepare(High)  heard Prepare(High)  ok  CMaj -> GDom7 (Fifth) · pull 0.00 -> 1.00 · keeps 1 of home · certainty Mid
+  Harmony s9  @ 88.0  want Miss(Mid)      heard Miss(Mid)      ok  GDom7 -> AMin (Step) · pull 1.00 -> 0.00 · keeps 2 of home · certainty High
+  Harmony s10 @ 96.0  want Open           heard Open           ok  AMin -> FMaj (Neighbour) · pull 0.00 -> 0.00 · keeps 1 of home · certainty Mid
+  Harmony s11 @112.0  want Reset          heard Reset          ok  FAdd9 -> CMaj (Fifth) · pull 0.00 -> 0.00 · keeps 3 of home · certainty Mid
+
+
+=== tension_deflection ===
+SongMap 0x8d901e3de29190a2 (MeaningDirected)  thesis [0, 1, 0, 1, 4, 3, 2] [0.5, 0.5, 0.5, 0.5, 1.0, 0.5, 2.5]
+  p1 Depart    Restatement  [0, 1, 0, 1, 4, 3, 2]
+  p2 Culminate Hook         [0, 1, 0, 1, 4, 3, 2]
+  p3 Answer    Consequent   [0, 1, 0, 1, 2, 1, 0]
+  p5 Culminate Hook         [0, 1, 0, 1, 4, 3, 2]
+  p6 Answer    Consequent   [0, 1, 0, 1, 2, 1, 0]
+  p7 Restate   Restatement  [0, 1, 0, 1, 4, 3, 2]
+  lead sheet (C): 0:C 2:G7 4:Am 8:F 12:C 16:C 24:G7 32:Am 40:Dm 48:F 56:Fadd9 64:C 72:F 80:C 84:G7 88:Am 96:F 104:Fadd9 112:C
+phenomenal PhenomenalState { stability: Mid, propulsion: High, expectation: High, surprise: High, openness: Mid, familiarity: High }; tonic 0.283; attacks/theme-beat 1.167; pointer exposure 0.117; literal 4; confirms 3; withheld 3; debt 0; classification None
+beat stability propulsion expectation surprise openness familiarity debt witnesses
+0.00 Mid Low High Low Low Low 1 PhenomenalWitness { beats: 4.0, tonic_beats: 2.0, roots: [0, 7], peak_pull: 1.0, pointer_beats: 2.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 0, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 1 }
+4.00 Low Low Low Mid Low Low 1 PhenomenalWitness { beats: 4.0, tonic_beats: 0.0, roots: [9], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 0, confirms: 0, withheld: 1, unexpected_moves: 0, debt: 1 }
+8.00 Low Low Low Low Low Low 1 PhenomenalWitness { beats: 4.0, tonic_beats: 0.0, roots: [5], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 0, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 1 }
+12.00 High Low Low Low Low Low 0 PhenomenalWitness { beats: 4.0, tonic_beats: 4.0, roots: [0], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 0, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 0 }
+16.00 Mid High High Low Mid Mid 1 PhenomenalWitness { beats: 16.0, tonic_beats: 8.0, roots: [0, 7], peak_pull: 1.0, pointer_beats: 8.0, theme_attacks: 7, theme_beats: 6.0, register_span: 4, literal_statements: 1, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 1 }
+32.00 Low High Low Mid Mid High 1 PhenomenalWitness { beats: 16.0, tonic_beats: 0.0, roots: [9, 2], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 7, theme_beats: 6.0, register_span: 4, literal_statements: 2, confirms: 0, withheld: 1, unexpected_moves: 0, debt: 1 }
+48.00 Low High Low Low Low High 1 PhenomenalWitness { beats: 16.0, tonic_beats: 0.0, roots: [5, 5], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 7, theme_beats: 6.0, register_span: 2, literal_statements: 2, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 1 }
+64.00 Mid Low Low Low Low High 0 PhenomenalWitness { beats: 16.0, tonic_beats: 8.0, roots: [0, 5], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 2, confirms: 1, withheld: 0, unexpected_moves: 0, debt: 0 }
+80.00 Mid High High Low Mid High 1 PhenomenalWitness { beats: 8.0, tonic_beats: 4.0, roots: [0, 7], peak_pull: 1.0, pointer_beats: 4.0, theme_attacks: 7, theme_beats: 6.0, register_span: 4, literal_statements: 3, confirms: 1, withheld: 0, unexpected_moves: 0, debt: 1 }
+88.00 Low High Low Mid Low High 1 PhenomenalWitness { beats: 8.0, tonic_beats: 0.0, roots: [9], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 7, theme_beats: 6.0, register_span: 2, literal_statements: 3, confirms: 0, withheld: 1, unexpected_moves: 0, debt: 1 }
+96.00 Low High Low Low Mid High 1 PhenomenalWitness { beats: 16.0, tonic_beats: 0.0, roots: [5, 5], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 7, theme_beats: 6.0, register_span: 4, literal_statements: 4, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 1 }
+112.00 High Low Low Low Low High 0 PhenomenalWitness { beats: 8.0, tonic_beats: 8.0, roots: [0], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 4, confirms: 1, withheld: 0, unexpected_moves: 0, debt: 0 }
+
+
+=== stable_propulsion ===
+SongMap 0xaf5360442b9b6729 (StablePropulsion)  thesis [0, 2, 4, 2, 7, 4, 2, 0] [0.5, 0.5, 1.0, 0.5, 0.5, 1.0, 0.5, 1.5]
+  p1 Restate   Restatement  [0, 2, 4, 2, 7, 4, 2, 0]
+  p2 Return    Restatement  [0, 2, 4, 2, 7, 4, 2, 0]
+  p3 Restate   Restatement  [0, 2, 4, 2, 7, 4, 2, 0]
+  p5 Restate   Restatement  [0, 2, 4, 2, 7, 4, 2, 0]
+  p6 Return    Restatement  [0, 2, 4, 2, 7, 4, 2, 0]
+  p7 Restate   Restatement  [0, 2, 4, 2, 7, 4, 2, 0]
+  lead sheet (C): 0:C 4:C6 8:C 12:C6 16:F 20:Fadd9 24:C 28:C6 32:C 36:C6 40:C 44:C6 48:F 52:Fadd9 56:C 60:C6 64:C 68:C6 72:C 76:C6 80:F 84:Fadd9 88:C 92:C6 96:C 100:C6 104:C 108:C6 112:C 116:C6
+phenomenal PhenomenalState { stability: High, propulsion: High, expectation: Low, surprise: Low, openness: High, familiarity: High }; tonic 0.800; attacks/theme-beat 1.333; pointer exposure 0.000; literal 6; confirms 2; withheld 0; debt 0; classification Some(StablePropulsion)
+beat stability propulsion expectation surprise openness familiarity debt witnesses
+0.00 High Low Low Low Low Low 0 PhenomenalWitness { beats: 8.0, tonic_beats: 8.0, roots: [0, 0], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 0, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 0 }
+8.00 High Low Low Low Low Low 0 PhenomenalWitness { beats: 8.0, tonic_beats: 8.0, roots: [0, 0], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 0, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 0 }
+16.00 Low High Low Low High Mid 0 PhenomenalWitness { beats: 8.0, tonic_beats: 0.0, roots: [5, 5], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 8, theme_beats: 6.0, register_span: 7, literal_statements: 1, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 0 }
+24.00 High Low Low Low Low Mid 0 PhenomenalWitness { beats: 8.0, tonic_beats: 8.0, roots: [0, 0], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 1, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 0 }
+32.00 High High Low Low High High 0 PhenomenalWitness { beats: 8.0, tonic_beats: 8.0, roots: [0, 0], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 8, theme_beats: 6.0, register_span: 7, literal_statements: 2, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 0 }
+40.00 High Low Low Low Low High 0 PhenomenalWitness { beats: 8.0, tonic_beats: 8.0, roots: [0, 0], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 2, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 0 }
+48.00 Low High Low Low High High 0 PhenomenalWitness { beats: 8.0, tonic_beats: 0.0, roots: [5, 5], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 8, theme_beats: 6.0, register_span: 7, literal_statements: 3, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 0 }
+56.00 High Low Low Low Low High 0 PhenomenalWitness { beats: 8.0, tonic_beats: 8.0, roots: [0, 0], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 3, confirms: 1, withheld: 0, unexpected_moves: 0, debt: 0 }
+64.00 High Low Low Low Low High 0 PhenomenalWitness { beats: 8.0, tonic_beats: 8.0, roots: [0, 0], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 3, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 0 }
+72.00 High Low Low Low Low High 0 PhenomenalWitness { beats: 8.0, tonic_beats: 8.0, roots: [0, 0], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 3, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 0 }
+80.00 Low High Low Low High High 0 PhenomenalWitness { beats: 8.0, tonic_beats: 0.0, roots: [5, 5], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 8, theme_beats: 6.0, register_span: 7, literal_statements: 4, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 0 }
+88.00 High High Low Low High High 0 PhenomenalWitness { beats: 8.0, tonic_beats: 8.0, roots: [0, 0], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 8, theme_beats: 6.0, register_span: 7, literal_statements: 5, confirms: 1, withheld: 0, unexpected_moves: 0, debt: 0 }
+96.00 High High Low Low High High 0 PhenomenalWitness { beats: 8.0, tonic_beats: 8.0, roots: [0, 0], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 8, theme_beats: 6.0, register_span: 7, literal_statements: 6, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 0 }
+104.00 High Low Low Low Low High 0 PhenomenalWitness { beats: 8.0, tonic_beats: 8.0, roots: [0, 0], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 6, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 0 }
+112.00 High Low Low Low Low High 0 PhenomenalWitness { beats: 8.0, tonic_beats: 8.0, roots: [0, 0], peak_pull: 0.0, pointer_beats: 0.0, theme_attacks: 0, theme_beats: 0.0, register_span: 0, literal_statements: 6, confirms: 0, withheld: 0, unexpected_moves: 0, debt: 0 }
+
+F target PhenomenalTarget { regime: StablePropulsion, total_beats: 120.0, state: PhenomenalState { stability: High, propulsion: High, expectation: Low, surprise: Low, openness: High, familiarity: High }, confirm: true, contour: [HarmonicTarget { beat: 0.0, stability: High, expectation: Low, surprise: Low, confirm: false }, HarmonicTarget { beat: 8.0, stability: High, expectation: Low, surprise: Low, confirm: false }, HarmonicTarget { beat: 16.0, stability: Low, expectation: Low, surprise: Low, confirm: false }, HarmonicTarget { beat: 24.0, stability: High, expectation: Low, surprise: Low, confirm: false }, HarmonicTarget { beat: 32.0, stability: High, expectation: Low, surprise: Low, confirm: false }, HarmonicTarget { beat: 40.0, stability: High, expectation: Low, surprise: Low, confirm: false }, HarmonicTarget { beat: 48.0, stability: Low, expectation: Low, surprise: Low, confirm: false }, HarmonicTarget { beat: 56.0, stability: High, expectation: Low, surprise: Low, confirm: true }, HarmonicTarget { beat: 64.0, stability: High, expectation: Low, surprise: Low, confirm: false }, HarmonicTarget { beat: 72.0, stability: High, expectation: Low, surprise: Low, confirm: false }, HarmonicTarget { beat: 80.0, stability: Low, expectation: Low, surprise: Low, confirm: false }, HarmonicTarget { beat: 88.0, stability: High, expectation: Low, surprise: Low, confirm: true }, HarmonicTarget { beat: 96.0, stability: High, expectation: Low, surprise: Low, confirm: false }, HarmonicTarget { beat: 104.0, stability: High, expectation: Low, surprise: Low, confirm: false }, HarmonicTarget { beat: 112.0, stability: High, expectation: Low, surprise: Low, confirm: false }] }
+phenomenal commutation: []
+
+world=MusicWorld { id: SwissSignal, name: "SWISS_SIGNAL", tempo_bpm: 118.0, tonic_pc: 0, mode: Ionian, swing: 0.0, subdiv: 4, use_sevenths: false, allow_chromatic_mediant: false, allow_modal_mixture: false, allow_secondary_dominant: true, voicing_spread: 0.85, pad: Patch { osc: Shape(Triangle), sub: false, unison: 1, detune_cents: 0.0, cutoff_hz: 2600.0, cutoff_env: 200.0, resonance: 0.08, adsr: (0.08, 0.5, 0.5, 0.5), gain: 0.42, pan: 0.0 }, bass: Patch { osc: Shape(Triangle), sub: true, unison: 1, detune_cents: 0.0, cutoff_hz: 1100.0, cutoff_env: 200.0, resonance: 0.1, adsr: (0.005, 0.16, 0.5, 0.14), gain: 0.78, pan: 0.0 }, lead: Patch { osc: Shape(Pulse(0.5)), sub: false, unison: 1, detune_cents: 0.0, cutoff_hz: 5000.0, cutoff_env: 700.0, resonance: 0.12, adsr: (0.003, 0.12, 0.0, 0.08), gain: 0.55, pan: 0.1 }, keys: Patch { osc: Shape(Sine), sub: false, unison: 1, detune_cents: 0.0, cutoff_hz: 6000.0, cutoff_env: 0.0, resonance: 0.05, adsr: (0.002, 0.18, 0.0, 0.1), gain: 0.58, pan: -0.12 }, kick: KickParams { base_hz: 55.0, pitch_sweep_hz: 160.0, pitch_tau: 0.02, amp_tau: 0.1, click: 0.3 }, snare: SnareParams { noise_hp_hz: 2000.0, noise_tau: 0.08, tone_tau: 0.05, tone_lo_hz: 200.0, tone_hi_hz: 360.0, noise_mix: 0.8 }, hat_cutoff: 9500.0, ghost_amount: 0.1, drum_density: 0.4, reverb_size: 0.5, reverb_damp: 0.6, reverb_mix: 0.1, saturation: 1.15, master_ceiling: 0.98, base_dynamic: 0.75, pad_mix: 0.6, lead_mix: 0.62, keys_mix: 0.9, bass_mix: 0.85 }
+tension_deflection: SongMapConformance: PASS (song 0x8d901e3de29190a2, performed 0x8d901e3de29190a2; 6 identity sites, 15 landmarks, 31 chord changes checked)
+tension_deflection: song=0x8d901e3de29190a2 performance=0x2abc19f43612a85c score=0x81436232f8f637db repairs=0 rejudged=0 unjustified=[(Pad, 0), (Keys, 0), (Bass, 0), (Lead, 0)]
+wav=target/humanmusic-r11/swiss_signal/tension_deflection.wav frames=3048814 peak=0.672575 rms=0.066838 gain=1.000000 nonfinite=false
+wav=target/humanmusic-r11/swiss_signal/tension_deflection.harmonic_reference.wav frames=3048814 peak=0.800000 rms=0.063623 gain=2.435890 nonfinite=false
+stable_propulsion: SongMapConformance: PASS (song 0xaf5360442b9b6729, performed 0xaf5360442b9b6729; 6 identity sites, 15 landmarks, 30 chord changes checked)
+stable_propulsion: song=0xaf5360442b9b6729 performance=0x1e99b6d9458ab484 score=0xdaa35c0fd38738a9 repairs=0 rejudged=0 unjustified=[(Pad, 0), (Keys, 0), (Bass, 0), (Lead, 0)]
+wav=target/humanmusic-r11/swiss_signal/stable_propulsion.wav frames=3048814 peak=0.725263 rms=0.067110 gain=1.000000 nonfinite=false
+wav=target/humanmusic-r11/swiss_signal/stable_propulsion.harmonic_reference.wav frames=3048814 peak=0.800000 rms=0.057466 gain=2.118582 nonfinite=false
+
+world=MusicWorld { id: BlackIce, name: "BLACK_ICE", tempo_bpm: 88.0, tonic_pc: 9, mode: Aeolian, swing: 0.0, subdiv: 4, use_sevenths: true, allow_chromatic_mediant: true, allow_modal_mixture: true, allow_secondary_dominant: true, voicing_spread: 0.35, pad: Patch { osc: Shape(Saw), sub: false, unison: 2, detune_cents: 8.0, cutoff_hz: 1400.0, cutoff_env: 900.0, resonance: 0.35, adsr: (0.06, 0.4, 0.55, 0.6), gain: 0.6, pan: 0.0 }, bass: Patch { osc: Shape(Saw), sub: true, unison: 1, detune_cents: 0.0, cutoff_hz: 700.0, cutoff_env: 500.0, resonance: 0.3, adsr: (0.004, 0.12, 0.6, 0.12), gain: 0.85, pan: 0.0 }, lead: Patch { osc: Fm { ratio: 2.0, index: 2.2 }, sub: false, unison: 1, detune_cents: 0.0, cutoff_hz: 4200.0, cutoff_env: 1200.0, resonance: 0.2, adsr: (0.004, 0.18, 0.4, 0.18), gain: 0.62, pan: 0.12 }, keys: Patch { osc: Shape(Pulse(0.35)), sub: false, unison: 1, detune_cents: 0.0, cutoff_hz: 3000.0, cutoff_env: 1600.0, resonance: 0.3, adsr: (0.003, 0.14, 0.0, 0.1), gain: 0.72, pan: -0.15 }, kick: KickParams { base_hz: 48.0, pitch_sweep_hz: 220.0, pitch_tau: 0.025, amp_tau: 0.12, click: 0.4 }, snare: SnareParams { noise_hp_hz: 1800.0, noise_tau: 0.1, tone_tau: 0.06, tone_lo_hz: 190.0, tone_hi_hz: 340.0, noise_mix: 0.75 }, hat_cutoff: 8500.0, ghost_amount: 0.35, drum_density: 0.8, reverb_size: 0.6, reverb_damp: 0.5, reverb_mix: 0.14, saturation: 1.6, master_ceiling: 0.97, base_dynamic: 0.85, pad_mix: 0.62, lead_mix: 0.62, keys_mix: 1.3, bass_mix: 0.9 }
+tension_deflection: SongMapConformance: PASS (song 0x8d901e3de29190a2, performed 0x8d901e3de29190a2; 6 identity sites, 15 landmarks, 31 chord changes checked)
+tension_deflection: song=0x8d901e3de29190a2 performance=0x98e868957138f9cc score=0x9d335353c4458c48 repairs=0 rejudged=0 unjustified=[(Pad, 0), (Keys, 0), (Bass, 0), (Lead, 0)]
+wav=target/humanmusic-r11/black_ice/tension_deflection.wav frames=4047273 peak=0.859430 rms=0.117655 gain=1.000000 nonfinite=false
+wav=target/humanmusic-r11/black_ice/tension_deflection.harmonic_reference.wav frames=4047273 peak=0.800000 rms=0.098012 gain=2.100590 nonfinite=false
+stable_propulsion: SongMapConformance: PASS (song 0xaf5360442b9b6729, performed 0xaf5360442b9b6729; 6 identity sites, 15 landmarks, 30 chord changes checked)
+stable_propulsion: song=0xaf5360442b9b6729 performance=0xdd68e9d7339daba4 score=0x493297b10781a271 repairs=0 rejudged=0 unjustified=[(Pad, 0), (Keys, 0), (Bass, 0), (Lead, 0)]
+wav=target/humanmusic-r11/black_ice/stable_propulsion.wav frames=4047273 peak=0.870559 rms=0.119152 gain=1.000000 nonfinite=false
+wav=target/humanmusic-r11/black_ice/stable_propulsion.harmonic_reference.wav frames=4047273 peak=0.800000 rms=0.081641 gain=1.674950 nonfinite=false

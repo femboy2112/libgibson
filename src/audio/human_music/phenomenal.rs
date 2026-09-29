@@ -35,6 +35,20 @@ pub struct PhenomenalTarget {
     pub state: PhenomenalState,
     /// Whether recurring expected home arrivals are requested as positive payoffs.
     pub confirm: bool,
+    /// Time-indexed harmonic constraints, generated before the chart. Thematic coordinates
+    /// apply to audible statements, rather than requiring a lead solo in every slot.
+    pub contour: Vec<HarmonicTarget>,
+}
+
+/// One point of F's trajectory. Stability is tonic occupancy; the brief neighbor is explicitly
+/// permitted to leave home. Later returns must fulfill the expectation learned on the first pass.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HarmonicTarget {
+    pub beat: f64,
+    pub stability: Level,
+    pub expectation: Level,
+    pub surprise: Level,
+    pub confirm: bool,
 }
 
 impl PhenomenalTarget {
@@ -69,15 +83,36 @@ impl PhenomenalTarget {
                 familiarity: High,
             },
         };
+        let total_beats = if trace.total_beats.is_finite() && trace.total_beats > 0.0 {
+            trace.total_beats
+        } else {
+            4.0
+        };
+        let bars = (total_beats / 4.0).ceil() as u32;
+        let contour = if regime == PhenomenalRegime::StablePropulsion {
+            (0..bars)
+                .step_by(2)
+                .map(|bar| {
+                    let phase = (bar / 2) % 4;
+                    let neighbor = phase == 2 && bar + 2 < bars;
+                    HarmonicTarget {
+                        beat: bar as f64 * 4.0,
+                        stability: if neighbor { Low } else { High },
+                        expectation: state.expectation,
+                        surprise: state.surprise,
+                        confirm: phase == 3 && bar >= 8,
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         Self {
             regime,
-            total_beats: if trace.total_beats.is_finite() && trace.total_beats > 0.0 {
-                trace.total_beats
-            } else {
-                4.0
-            },
+            total_beats,
             state,
             confirm: regime == PhenomenalRegime::StablePropulsion,
+            contour,
         }
     }
 
@@ -101,7 +136,7 @@ pub enum Arrival {
 
 use super::backbone::lead_sheet;
 use super::context::PullEvidence;
-use super::meaning::{Family, ThemeRelation};
+use super::meaning::Family;
 use super::song::SongMap;
 use super::theory::Scale;
 
@@ -260,8 +295,8 @@ impl PhenomenalTrajectory {
                         continue;
                     }
                     let motif = &site.motif;
-                    if ThemeRelation::of(&song.thematic.bank.identity, motif)
-                        == ThemeRelation::Literal
+                    if motif.degrees == song.thematic.bank.identity.degrees
+                        && motif.rhythm == song.thematic.bank.identity.rhythm
                     {
                         literal += 1;
                     }
@@ -386,6 +421,29 @@ impl PhenomenalTrajectory {
         }
         if !target.confirm && (self.withheld < 2 || self.unresolved_debt == 0) {
             out.push("no recurring withheld closure");
+        }
+        for point in &target.contour {
+            let slot = self
+                .slots
+                .iter()
+                .find(|s| (s.beat - point.beat).abs() < 1e-6);
+            match slot {
+                None => out.push("missing trajectory slot"),
+                Some(slot) => {
+                    if slot.state.stability != point.stability {
+                        out.push("slot stability");
+                    }
+                    if slot.state.expectation != point.expectation {
+                        out.push("slot expectation");
+                    }
+                    if slot.state.surprise != point.surprise {
+                        out.push("slot surprise");
+                    }
+                    if point.confirm && slot.witness.confirms == 0 {
+                        out.push("missed scheduled confirmation");
+                    }
+                }
+            }
         }
         out
     }
