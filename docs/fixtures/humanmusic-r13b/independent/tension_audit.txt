@@ -1,0 +1,45 @@
+== swiss_mass.notes.tsv: {'Foreshadowing': 2, 'Transient': 43, 'UNJUSTIFIED': 4}
+    14.24s b28.00 Cmaj7  exposure=3.44 pad:pad:B4 vs pad:pad:C5 m2
+    18.31s b36.00 Cmaj7  exposure=3.44 pad:pad:B4 vs pad:pad:C5 m2
+    22.37s b44.00 Cmaj7  exposure=3.44 pad:pad:B4 vs pad:pad:C5 m2
+    58.98s b116.00 Cmaj7  exposure=3.44 pad:pad:B3 vs pad:pad:C5 m9
+   out-of-key non-chord notes: {'Foreshadowing': 2, 'Transient': 4}
+== swiss_tension.notes.tsv: {'Foreshadowing': 2, 'Transient': 31}
+   out-of-key non-chord notes: {'Foreshadowing': 2, 'Transient': 4}
+== black_ice_mass.notes.tsv: {'Anticipation': 2, 'Foreshadowing': 4, 'Transient': 45, 'UNJUSTIFIED': 33}
+     2.73s b4.00 Am9    exposure=4.57 pad:pad:B3 vs pad:pad:C5 m9
+     8.18s b12.00 Am9    exposure=4.57 pad:pad:B4 vs pad:pad:C5 m2
+    12.61s b18.50 Dm9    exposure=0.41 lead:melody:B4 vs pad:pad:C5 m2
+    12.95s b17.00 Dm9    exposure=0.41 pad:pad:E5 vs lead:melody:F5 m2
+    16.70s b24.50 Am6    exposure=0.44 lead:melody:C#5 vs pad:pad:C5 m2
+    18.75s b27.50 Am6    exposure=0.41 lead:melody:C#5 vs pad:pad:C5 m2
+    19.09s b28.00 Am9    exposure=4.57 pad:pad:B4 vs pad:pad:C5 m2
+    19.09s b28.00 Am9    exposure=1.53 pad:pad:B4 vs lead:melody:C5 m2
+    23.52s b34.50 Am6    exposure=0.41 lead:melody:B4 vs pad:pad:C5 m2
+    24.89s b36.50 Am9    exposure=0.41 lead:melody:C#5 vs pad:pad:C5 m2
+    28.98s b42.50 Am6    exposure=0.41 lead:melody:B4 vs pad:pad:C5 m2
+    30.00s b44.00 Am9    exposure=4.57 pad:pad:B4 vs pad:pad:C5 m2
+    30.34s b44.50 Am9    exposure=0.41 lead:melody:C#5 vs pad:pad:C5 m2
+    30.68s b44.00 Am9    exposure=1.02 pad:pad:B4 vs lead:melody:C5 m2
+    33.41s b49.00 Dm9    exposure=0.44 lead:melody:C#5 vs pad:pad:C5 m2
+    34.77s b51.00 Dm9    exposure=0.44 lead:melody:C#5 vs pad:pad:C5 m2
+    38.52s b56.50 Am6    exposure=0.44 lead:melody:C#5 vs pad:pad:C5 m2
+    40.57s b59.50 Am6    exposure=0.41 lead:melody:C#5 vs pad:pad:C5 m2
+    40.91s b60.00 Am9    exposure=4.57 pad:pad:B4 vs pad:pad:C5 m2
+    40.91s b60.00 Am9    exposure=1.53 pad:pad:B4 vs lead:melody:C5 m2
+    46.36s b68.00 Am9    exposure=4.57 pad:pad:B4 vs pad:pad:C5 m2
+    51.82s b76.00 Am9    exposure=4.57 pad:pad:B4 vs pad:pad:C5 m2
+    56.25s b82.50 Dm9    exposure=0.41 lead:melody:B4 vs pad:pad:C5 m2
+    56.59s b81.00 Dm9    exposure=0.41 pad:pad:E5 vs lead:melody:F5 m2
+    60.68s b89.00 Am6    exposure=0.44 lead:melody:C#5 vs pad:pad:C5 m2
+    62.05s b91.00 Am6    exposure=0.44 lead:melody:C#5 vs pad:pad:C5 m2
+    65.80s b96.50 Am6    exposure=0.44 lead:melody:C#5 vs pad:pad:C5 m2
+    67.84s b99.50 Am6    exposure=0.41 lead:melody:C#5 vs pad:pad:C5 m2
+    68.18s b100.00 Am9    exposure=4.57 pad:pad:B4 vs pad:pad:C5 m2
+    68.18s b100.00 Am9    exposure=1.53 pad:pad:B4 vs lead:melody:C5 m2
+    72.61s b106.50 Am6    exposure=0.41 lead:melody:B4 vs pad:pad:C5 m2
+    73.64s b108.00 Am9    exposure=4.57 pad:pad:B4 vs pad:pad:C5 m2
+    73.98s b108.50 Am9    exposure=0.41 lead:melody:A#4 vs pad:pad:A4 m2
+   out-of-key non-chord notes: {'Foreshadowing': 35, 'Transient': 1}
+== black_ice_tension.notes.tsv: {'Anticipation': 2, 'Foreshadowing': 3, 'Transient': 62}
+   out-of-key non-chord notes: {'Foreshadowing': 22, 'Transient': 14}

@@ -1,0 +1,27 @@
+regime=stable world=swiss seed=2112 beats=120 tempo=118 arm=mass
+song=0xaf5360442b9b6729 performance=0x1e99b6d9458ab484 score=0xcc5a3c30a90fcd5f
+regime=stable world=swiss seed=2112 beats=120 tempo=118 arm=tension
+song=0xaf5360442b9b6729 performance=0x1e99b6d9458ab484 score=0x19c45672092a000b
+before (mass) -> after (tension), within 1.5 s of 44 s
+sounding at 43.00 s
+  before: pad: A4 C5 E5 G5  keys: C#5  bass: C#3  lead: C#4
+  after:  pad: A4 C5 E5 G5  keys: C#5  bass: C#3  lead: C#4
+sounding at 43.50 s
+  before: pad: A4 C5 E5 G5  keys: -  bass: C3  lead: -
+  after:  pad: A4 C5 E5 G5  keys: -  bass: C3  lead: -
+sounding at 44.00 s
+  before: pad: A4 C5 E5 G5  keys: E4 A4  bass: -  lead: -
+  after:  pad: A4 C5 E5 G5  keys: E4 A4  bass: -  lead: -
+sounding at 44.50 s
+  before: pad: A4 C5 E5 G5  keys: E4 A4 D5  bass: E2  lead: -
+  after:  pad: A4 C5 E5 G5  keys: E4 A4 D5  bass: E2  lead: -
+sounding at 45.00 s
+  before: pad: A4 C5 E5 G5  keys: -  bass: C2  lead: E4
+  after:  pad: A4 C5 E5 G5  keys: -  bass: C2  lead: E4
+clashes before (beat, seconds, responsible note, partner, exposure, verdict):
+  83.500  42.458s lead:melody   E4    0.50  vs pad:pad       F5    int=13 overlap=0.093s sal=1.00 exposure=0.093 Fleeting next=- Transient
+  84.500  42.966s keys:unison   C#5   0.45  vs pad:pad       C5    int=1  overlap=0.137s sal=1.00 exposure=0.137 Fleeting next=C5 Transient
+clashes after:
+  83.500  42.458s lead:melody   E4    0.50  vs pad:pad       F5    int=13 overlap=0.093s sal=1.00 exposure=0.093 Fleeting next=- Transient
+  84.500  42.966s keys:unison   C#5   0.45  vs pad:pad       C5    int=1  overlap=0.137s sal=1.00 exposure=0.137 Fleeting next=C5 Transient
+edits:

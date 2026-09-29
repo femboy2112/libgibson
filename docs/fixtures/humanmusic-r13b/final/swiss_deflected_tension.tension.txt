@@ -1,0 +1,3 @@
+regime=deflected world=swiss seed=2112 beats=120 tempo=118 arm=tension
+song=0x8d901e3de29190a2 performance=0x2abc19f43612a85c score=0x2801628af07602f2
+clashes=21 transient=21 foreshadowing=0 suspension=0 anticipation=0 unjustified=0

@@ -1,0 +1,5 @@
+regime=stable world=swiss seed=2112 beats=120 tempo=118 arm=tension
+song=0xaf5360442b9b6729 performance=0x1e99b6d9458ab484 score=0x19c45672092a000b
+clashes=26 transient=24 foreshadowing=2 suspension=0 anticipation=0 unjustified=0
+   7.000   3.559s bass:quote    B2    0.45  vs pad:pad       C4    int=13 overlap=0.254s sal=1.00 exposure=0.254 Gestural next=C3 Foreshadowing
+ 111.000  56.441s bass:quote    B2    0.45  vs pad:pad       C4    int=13 overlap=0.254s sal=1.00 exposure=0.254 Gestural next=C3 Foreshadowing

@@ -1,0 +1,6 @@
+# pitched_notes=443 pitch_changed=0 duration_changed=0 retimed=0 omitted=4 added=0 changed_events=4 affected=0.903%
+beat	seconds	role	role_note	note	beats	action	tension	partner	interval	exposure	class
+28.0000	14.237	pad	pad	C5	3.920	OmittedCovered	pad B4 @28.000	pad C5 @28.000	1	3.051	Asserted
+36.0000	18.305	pad	pad	C5	3.920	OmittedCovered	pad B4 @36.000	pad C5 @36.000	1	3.051	Asserted
+44.0000	22.373	pad	pad	C5	3.920	OmittedCovered	pad B4 @44.000	pad C5 @44.000	1	3.051	Asserted
+116.0000	58.983	pad	pad	C5	3.920	OmittedCovered	pad B3 @116.000	pad C5 @116.000	13	3.439	Asserted

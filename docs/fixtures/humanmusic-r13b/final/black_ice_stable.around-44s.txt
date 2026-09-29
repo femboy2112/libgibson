@@ -1,0 +1,31 @@
+regime=stable world=black_ice seed=2112 beats=120 tempo=88 arm=mass
+song=0xaf5360442b9b6729 performance=0xdd68e9d7339daba4 score=0x25bd8016f915e19a
+regime=stable world=black_ice seed=2112 beats=120 tempo=88 arm=tension
+song=0xaf5360442b9b6729 performance=0xdd68e9d7339daba4 score=0x6ae9952210c5be22
+before (mass) -> after (tension), within 1.5 s of 44 s
+sounding at 43.00 s
+  before: pad: G4 B4 C5 E5  keys: -  bass: A2  lead: -
+  after:  pad: G4 C5 E5 B5  keys: -  bass: A2  lead: -
+sounding at 43.50 s
+  before: pad: G4 B4 C5 E5  keys: -  bass: G#2  lead: -
+  after:  pad: G4 C5 E5 B5  keys: -  bass: G#2  lead: -
+sounding at 44.00 s
+  before: pad: F#4 C5 E5  keys: F#5  bass: A2  lead: -
+  after:  pad: F#4 C5 E5  keys: F#5  bass: A2  lead: -
+sounding at 44.50 s
+  before: pad: F#4 C5 E5  keys: -  bass: A2  lead: -
+  after:  pad: F#4 C5 E5  keys: -  bass: A2  lead: -
+sounding at 45.00 s
+  before: pad: F#4 C5 E5  keys: -  bass: A2  lead: -
+  after:  pad: F#4 C5 E5  keys: -  bass: A2  lead: -
+clashes before (beat, seconds, responsible note, partner, exposure, verdict):
+  60.000  40.909s pad:pad       B4    3.92  vs pad:pad       C5    int=1  overlap=2.727s sal=1.50 exposure=4.091 Asserted next=C5 Unjustified
+  62.500  42.614s keys:comp     B4    0.20  vs pad:pad       C5    int=1  overlap=0.108s sal=1.00 exposure=0.108 Fleeting next=G4 Transient
+  63.500  43.295s keys:comp     B4    0.45  vs pad:pad       C5    int=1  overlap=0.108s sal=1.00 exposure=0.108 Fleeting next=C5 Transient
+  66.500  45.341s keys:comp     B4    0.80  vs pad:pad       C5    int=1  overlap=0.108s sal=1.00 exposure=0.108 Fleeting next=- Transient
+clashes after:
+  62.500  42.614s keys:comp     B4    0.20  vs pad:pad       C5    int=1  overlap=0.108s sal=1.00 exposure=0.108 Fleeting next=G4 Transient
+  63.500  43.295s keys:comp     B4    0.45  vs pad:pad       C5    int=1  overlap=0.108s sal=1.00 exposure=0.108 Fleeting next=C5 Transient
+  66.500  45.341s keys:comp     B4    0.80  vs pad:pad       C5    int=1  overlap=0.108s sal=1.00 exposure=0.108 Fleeting next=- Transient
+edits:
+  beat 60.000 (40.909 s) pad pad B4 3.92 beats -> Displaced(83) (clash B4 vs C5, exposure 4.091 Asserted)

@@ -1,0 +1,9 @@
+regime=stable world=swiss seed=2112 beats=120 tempo=118 arm=mass
+song=0xaf5360442b9b6729 performance=0x1e99b6d9458ab484 score=0xcc5a3c30a90fcd5f
+clashes=42 transient=36 foreshadowing=2 suspension=0 anticipation=0 unjustified=4
+   7.000   3.559s bass:quote    B2    0.45  vs pad:pad       C4    int=13 overlap=0.254s sal=1.00 exposure=0.254 Gestural next=C3 Foreshadowing
+  28.000  14.237s pad:pad       B4    3.92  vs pad:pad       C5    int=1  overlap=2.034s sal=1.50 exposure=3.051 Asserted next=C5 Unjustified
+  36.000  18.305s pad:pad       B4    3.92  vs pad:pad       C5    int=1  overlap=2.034s sal=1.50 exposure=3.051 Asserted next=C5 Unjustified
+  44.000  22.373s pad:pad       B4    3.92  vs pad:pad       C5    int=1  overlap=2.034s sal=1.50 exposure=3.051 Asserted next=A4 Unjustified
+ 111.000  56.441s bass:quote    B2    0.45  vs pad:pad       C4    int=13 overlap=0.254s sal=1.00 exposure=0.254 Gestural next=C3 Foreshadowing
+ 116.000  58.983s pad:pad       B3    3.92  vs pad:pad       C5    int=13 overlap=2.293s sal=1.50 exposure=3.439 Asserted next=- Unjustified

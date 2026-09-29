@@ -1,0 +1,8 @@
+regime=stable world=black_ice seed=2112 beats=120 tempo=88 arm=tension
+song=0xaf5360442b9b6729 performance=0xdd68e9d7339daba4 score=0x6ae9952210c5be22
+clashes=59 transient=54 foreshadowing=3 suspension=0 anticipation=2 unjustified=0
+   3.500   2.386s bass:approach G#2   0.45  vs pad:pad       A3    int=13 overlap=0.341s sal=1.00 exposure=0.341 Gestural next=A2 Foreshadowing
+  35.500  24.205s lead:melody   G5    0.50  vs pad:pad       F#4   int=13 overlap=0.341s sal=1.00 exposure=0.341 Gestural next=- Anticipation
+  33.000  22.500s lead:melody   C#5   0.45  vs pad:pad       C5    int=1  overlap=0.341s sal=1.00 exposure=0.341 Gestural next=D5 Foreshadowing
+  43.500  29.659s lead:melody   G5    0.50  vs pad:pad       F#4   int=13 overlap=0.341s sal=1.00 exposure=0.341 Gestural next=- Anticipation
+  41.000  27.955s lead:melody   C#5   0.45  vs pad:pad       C5    int=1  overlap=0.341s sal=1.00 exposure=0.341 Gestural next=D5 Foreshadowing

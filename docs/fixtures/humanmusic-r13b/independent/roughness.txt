@@ -1,0 +1,10 @@
+swiss      14.3- 16.2 s  roughness x1000 mass=  7.64 tension=  5.94 (-22.3%)  Cmaj7 pad, the 16 s chord
+swiss      18.4- 20.3 s  roughness x1000 mass=  7.45 tension=  5.77 (-22.6%)  Cmaj7 pad
+swiss      22.4- 24.3 s  roughness x1000 mass=  7.26 tension=  5.17 (-28.8%)  Cmaj7 pad
+swiss      42.5- 45.5 s  roughness x1000 mass=  6.56 tension=  6.54 ( -0.3%)  the 43-45 s window
+swiss       0.0- 62.0 s  roughness x1000 mass=  6.63 tension=  6.43 ( -3.1%)  whole song
+black_ice   8.2- 10.9 s  roughness x1000 mass= 31.82 tension= 25.57 (-19.6%)  Am9 pad
+black_ice  19.2- 21.8 s  roughness x1000 mass= 41.63 tension= 36.81 (-11.6%)  Am9 pad + lead C5
+black_ice  30.0- 32.7 s  roughness x1000 mass= 39.11 tension= 34.00 (-13.1%)  Am9 pad
+black_ice  16.6- 19.1 s  roughness x1000 mass= 30.95 tension= 31.07 ( +0.4%)  Am6, lead C#5s
+black_ice   0.0- 82.0 s  roughness x1000 mass= 32.72 tension= 30.76 ( -6.0%)  whole song

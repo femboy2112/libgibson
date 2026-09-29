@@ -1,0 +1,7 @@
+regime=deflected world=swiss seed=2112 beats=120 tempo=118 arm=r12
+song=0x8d901e3de29190a2 performance=0x2abc19f43612a85c score=0x8b2b4cb318d64c52
+clashes=27 transient=23 foreshadowing=0 suspension=0 anticipation=0 unjustified=4
+  32.000  16.271s pad:pad       B4    3.92  vs keys:hold     C5    int=1  overlap=0.137s sal=1.50 exposure=0.206 Gestural next=- Unjustified
+  92.000  46.780s pad:pad       E5    3.92  vs pad:pad       F5    int=1  overlap=2.034s sal=1.50 exposure=3.051 Asserted next=C5 Unjustified
+ 100.000  50.847s keys:comp     E4    0.45  vs pad:pad       F5    int=13 overlap=0.137s sal=1.50 exposure=0.206 Gestural next=- Unjustified
+ 112.000  56.949s pad:pad       F5    3.92  vs keys:comp     E4    int=13 overlap=0.137s sal=1.50 exposure=0.206 Gestural next=- Unjustified

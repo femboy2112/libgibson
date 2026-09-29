@@ -1,5 +1,12 @@
 # HumanMusic Round XIII — temporal mass
 
+> **Round XIIIb correction.** The maintainer's listen of this round's renders: the SWISS chord at
+> 16 s was still there, and BLACK_ICE still had wrong notes. The 16 s chord was never the keys D5
+> this round removed. It is the pad's written Cmaj7 voiced `E4 B4 C5 G5`, a sustained semitone
+> between two chord tones, which an ownership audit cannot see. Round XIIIb measures the sounding
+> texture instead: [HUMAN_MUSIC_SOUNDING_TENSION.md](HUMAN_MUSIC_SOUNDING_TENSION.md). This
+> document stays as the Round XIII record.
+
 ## Scope and authority
 
 Started at `d72b72f1d4d4c670f3ac2f2a5a3ccd808051d911` on `feat/v0.4-humanmusic-audio`;

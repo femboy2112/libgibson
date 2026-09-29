@@ -1,0 +1,8 @@
+regime=deflected world=black_ice seed=2112 beats=120 tempo=88 arm=r12
+song=0x8d901e3de29190a2 performance=0x98e868957138f9cc score=0x716f7ec67508ea4b
+clashes=15 transient=10 foreshadowing=3 suspension=0 anticipation=0 unjustified=2
+   9.000   6.136s pad:pad       E4    3.92  vs pad:pad       F4    int=1  overlap=2.045s sal=1.00 exposure=2.045 Asserted next=F4 Unjustified
+  90.500  61.705s lead:melody   A#5   0.45  vs pad:pad       A4    int=13 overlap=0.341s sal=1.00 exposure=0.341 Gestural next=A5 Foreshadowing
+  99.000  67.500s lead:melody   C#6   0.45  vs pad:pad       C5    int=13 overlap=0.341s sal=1.00 exposure=0.341 Gestural next=C6 Foreshadowing
+ 107.000  72.955s lead:melody   C#6   0.45  vs pad:pad       C5    int=13 overlap=0.341s sal=1.00 exposure=0.341 Gestural next=C6 Foreshadowing
+ 106.000  72.273s pad:pad       E5    3.92  vs lead:melody   F6    int=13 overlap=0.440s sal=1.25 exposure=0.550 Gestural next=E5 Unjustified

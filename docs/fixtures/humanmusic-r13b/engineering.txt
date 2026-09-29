@@ -1,0 +1,15 @@
+Round XIIIb final engineering receipts (tree = a8514cc + the Round XIIIb source, lab and docs; no source change after the gate except the lab's receipt formatting, re-checked by preflight)
+
+PASS: cargo +1.98.1 fmt -- --check
+PASS: cargo +1.98.1 clippy --all-targets --all-features -- -D warnings
+PASS: RUSTDOCFLAGS="-D warnings" cargo +1.98.1 doc --no-deps
+PASS: RUST_TEST_THREADS=1 cargo +1.98.1 test --all-features (1265 passed, 0 failed, 5 ignored, 60 suites)
+PASS: RUST_TEST_THREADS=1 cargo +1.98.1 test --release --lib fuzz_the_ -- --ignored --nocapture (3 passed: coupled 1152 compositions, receipts lost 0; surgical 1152, lost silently 0, deferred 9; tension 240 performances, unjustified 2609 -> 0, receipts lost 0 gained 8, no new Round XII false claim)
+PASS: cargo +1.85 check --locked --lib --all-features
+PASS: RUST_TEST_THREADS=1 cargo +1.98.1 test --example fx_lab --example skin_gallery --example polished_agent_ui --example ui_showcase --example large_collection (19 passed)
+PASS: RUSTUP_TOOLCHAIN=1.98.1 STABLE_TOOLCHAIN=+1.98.1 MSRV_TOOLCHAIN=+1.85 RUST_TEST_THREADS=1 scripts/release/preflight.sh (RELEASE PREFLIGHT: PASS, 13/13 on the final tree)
+PASS: cargo +1.98.1 run --release --example sounding_tension_lab -- --render --pitched --dump-notes --around-seconds=16 --around-seconds=44 --out=target/humanmusic-r13b/final (every lab assertion; the WAVs re-render byte-identically)
+
+The full suite includes every prior HumanMusic regression and the 12 Round XIII controls, plus 11 Round XIIIb controls (tension_witnesses).
+The five ignored tests are the three release-mode HumanMusic sweeps (run explicitly above), the real output-device test and the known upstream issue #15 input-delivery acceptance; the latter two remain unverified.
+Source, protected-file, audio and receipt hashes: final-manifest.json. No merge, tag, release, version or ABI change. Audio remains Rust-only. No human audition is claimed.
