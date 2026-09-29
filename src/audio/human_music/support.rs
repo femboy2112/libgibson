@@ -26,8 +26,9 @@ use super::harmonic_state::HarmonicEnsembleState;
 use super::performance::{KeysMode, PadMode, PerformancePlan};
 use super::score::{Note, PitchFunction, Role};
 use super::sonority::{
-    classify_clash, core_pcs, identity_pcs, is_suspension, low_interval_limit, tension_specs,
-    Clash, ColorPolicy, SonorityPlan, TensionSpec, VerticalClass, Voice, MIN_OVERLAP_BEATS,
+    classify_clash, core_pcs, identity_pcs, is_selected_color, is_suspension, low_interval_limit,
+    tension_specs, Clash, ColorPolicy, SonorityPlan, TensionSpec, VerticalClass, Voice,
+    MIN_OVERLAP_BEATS,
 };
 use super::theory::{pitch_class, Midi};
 use super::voicing::{
@@ -415,7 +416,11 @@ pub fn union_cost(
             c.duplicate_color += (owners - 1) as f32;
         }
     }
-    c.over_color = colors.len().saturating_sub(policy.color_budget) as f32;
+    c.over_color = colors
+        .iter()
+        .filter(|&&pc| is_selected_color(&ctx.chord, pc))
+        .count()
+        .saturating_sub(policy.color_budget) as f32;
     c.exact_unison = pad.iter().filter(|p| keys.contains(p)).count() as f32;
     let busiest = others
         .iter()

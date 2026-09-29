@@ -26,7 +26,10 @@
 //!   every pair, across roles — the bass and the lower pad/keys voices share one acoustic register.
 //! - **Colour is a budget, not a menu.** [`ColorPolicy`] bounds the distinct colour tones, the
 //!   sounding voices and the pitch classes per world and language: the band picks a small colour
-//!   set; it does not sound the union of every legal tension each engine happened to pick.
+//!   set; it does not sound the union of every legal tension each engine happened to pick. The
+//!   budget counts [`is_selected_color`] tones only — the ones the players ADD beyond the written
+//!   chord. A written 9th (the G of an Fmaj9) is the song, not a choice the band spent; it is still
+//!   an extension for doubling, contradiction and register purposes.
 //! - **One core sound.** Where a chordal player (pad/keys) sounds, the BAND must contain the guide
 //!   tones (3rd and 7th/6th) — no single player has to.
 
@@ -119,6 +122,13 @@ pub fn core_pcs(chord: &Chord) -> Vec<i32> {
         .into_iter()
         .map(|i| (chord.root_pc + i).rem_euclid(12))
         .collect()
+}
+
+/// Whether `pc` is SELECTED colour over `chord`: a tone the chord symbol does not spell, so a player
+/// chose to add it. The colour budget counts these. A written extension (the 9th of an add9/maj9)
+/// is an extension — beyond the core — but not a selection: the harmony already asked for it.
+pub fn is_selected_color(chord: &Chord, pc: i32) -> bool {
+    !chord.contains_pc(pc)
 }
 
 /// The tones that DEFINE `chord`'s identity beyond its root: the guide tones (3rd or its sus
@@ -393,7 +403,8 @@ pub struct SonorityPlan {
     pub bass_function: BassFunction,
     /// The core guide tones (3rd, 7th/6th) the band must contain.
     pub core: Vec<i32>,
-    /// Colour pitch classes selected for this harmony, each with its single owner.
+    /// Colour pitch classes selected for this harmony ([`is_selected_color`]), each with its single
+    /// owner.
     pub colors: Vec<(i32, Role)>,
     /// Pitch classes the accompaniment deliberately omits (the root when the bass has it, the 5th
     /// under a #11, a colour the lead already sustains).
@@ -449,7 +460,6 @@ pub fn plan_sonority(
         .map(|(i, ctx)| {
             let start = ctx.start_beat;
             let end = start + ctx.dur_beats as f64;
-            let core = core_pcs(&ctx.chord);
             let mut colors: Vec<(i32, Role)> = Vec::new();
             for n in lead.iter().filter(|n| {
                 let e = n.start_beat + n.dur_beats as f64;
@@ -459,7 +469,7 @@ pub fn plan_sonority(
                     && !n.function.is_some_and(|f| is_linear(f) || is_suspension(f))
             }) {
                 let pc = pitch_class(n.pitch);
-                if !core.contains(&pc) && !colors.iter().any(|c| c.0 == pc) {
+                if is_selected_color(&ctx.chord, pc) && !colors.iter().any(|c| c.0 == pc) {
                     colors.push((pc, Role::Lead));
                 }
             }
@@ -851,6 +861,7 @@ pub struct Slice {
     /// Indices into the voice list.
     pub sounding: Vec<usize>,
     pub distinct_pcs: usize,
+    /// The selected colour sounding ([`is_selected_color`]).
     pub colors: Vec<i32>,
     pub problems: Vec<Problem>,
     pub class: VerticalClass,
@@ -946,8 +957,9 @@ pub fn evaluate(
             }
         }
     }
-    // Colour: the resting (non-linear) tones beyond the core. SFX gestures are not the band's
-    // colour owners (they join the clash and density checks only).
+    // Extensions: the resting (non-linear) tones beyond the core. SFX gestures are not the band's
+    // colour owners (they join the clash and density checks only). Doubling, contradiction and
+    // expense are judged over every extension; the BUDGET over selected colour only.
     let resting: Vec<usize> = sounding
         .iter()
         .copied()
@@ -957,17 +969,17 @@ pub fn evaluate(
                 && !voices[i].function.is_some_and(is_suspension)
         })
         .collect();
-    let mut colors: Vec<i32> = resting
+    let mut extensions: Vec<i32> = resting
         .iter()
         .map(|&i| pitch_class(voices[i].pitch))
         .filter(|pc| !core.contains(pc))
         .collect();
-    colors.sort_unstable();
-    colors.dedup();
-    if !colors.is_empty() {
+    extensions.sort_unstable();
+    extensions.dedup();
+    if !extensions.is_empty() {
         raise(&mut class, VerticalClass::StableColor);
     }
-    for &pc in &colors {
+    for &pc in &extensions {
         let mut owners: Vec<Role> = Vec::new();
         let mut unison_only = true;
         for &i in &resting {
@@ -1012,14 +1024,19 @@ pub fn evaluate(
         }
     }
     let altered_ok = |x: i32| plan.is_some_and(|p| p.altered.contains(&x));
-    for (i, &x) in colors.iter().enumerate() {
-        for &y in &colors[i + 1..] {
+    for (i, &x) in extensions.iter().enumerate() {
+        for &y in &extensions[i + 1..] {
             let d = (y - x).rem_euclid(12);
             if (d == 1 || d == 11) && !(altered_ok(x) && altered_ok(y)) {
                 problems.push(Problem::Contradiction { a: x, b: y });
             }
         }
     }
+    let colors: Vec<i32> = extensions
+        .iter()
+        .copied()
+        .filter(|&pc| is_selected_color(&ctx.chord, pc))
+        .collect();
     if colors.len() > policy.color_budget {
         problems.push(Problem::OverColor {
             colors: colors.clone(),
@@ -1105,8 +1122,11 @@ pub fn slices(
             .iter()
             .map(|&i| pitch_class(voices[i].pitch))
             .collect();
-        let core = core_pcs(&ctx.chord);
-        let mut colors: Vec<i32> = pcs.iter().copied().filter(|p| !core.contains(p)).collect();
+        let mut colors: Vec<i32> = pcs
+            .iter()
+            .copied()
+            .filter(|&p| is_selected_color(&ctx.chord, p))
+            .collect();
         colors.sort_unstable();
         out.push(Slice {
             start: s,
@@ -1824,6 +1844,45 @@ mod tests {
             d.bass_function_violations, 0,
             "a planned slash bass is owned"
         );
+    }
+
+    #[test]
+    fn the_colour_budget_counts_what_the_band_adds_not_what_the_chord_spells() {
+        // Fmaj9 WRITES its 9th (G). SWISS_SIGNAL's budget is one selected colour: the written G plus
+        // one added 13th (D) is within it; add a #11 (B) too and the band has chosen two colours.
+        let fmaj9 = Chord::new(5, Quality::Maj9);
+        let c = ctx_of(&[(0.0, 4.0, fmaj9)]);
+        let policy = ColorPolicy::for_world(WorldId::SwissSignal, &MusicalLanguage::default());
+        assert_eq!(policy.color_budget, 1);
+        assert!(
+            !is_selected_color(&fmaj9, 7),
+            "the written 9th is not a selection"
+        );
+        assert!(is_selected_color(&fmaj9, 2), "the 13th is");
+        let ext = PitchFunction::LicensedExtension;
+        let mut band = vec![
+            v(Role::Bass, 41, 0.0, 4.0, PitchFunction::ChordTone, "root"),
+            v(Role::Pad, 64, 0.0, 4.0, PitchFunction::ChordTone, "pad"),
+            v(Role::Pad, 69, 0.0, 4.0, PitchFunction::ChordTone, "pad"),
+            v(Role::Pad, 79, 0.0, 4.0, PitchFunction::ChordTone, "pad"),
+            v(Role::Keys, 74, 0.0, 4.0, ext, "comp"),
+        ];
+        let d = EnsembleSonorityDiagnostics::measure_voices(&band, &c, &policy, &[]);
+        assert_eq!(d.over_color_slices, 0, "written 9 + one 13: {d:?}");
+        band.push(v(Role::Keys, 83, 0.0, 4.0, ext, "comp"));
+        let d = EnsembleSonorityDiagnostics::measure_voices(&band, &c, &policy, &[]);
+        assert_eq!(d.over_color_slices, 1, "13 AND #11 are two choices: {d:?}");
+        // A written extension is still an extension: two players owning the written 9th double it.
+        let doubled = vec![
+            v(Role::Bass, 41, 0.0, 4.0, PitchFunction::ChordTone, "root"),
+            v(Role::Pad, 64, 0.0, 4.0, PitchFunction::ChordTone, "pad"),
+            v(Role::Pad, 69, 0.0, 4.0, PitchFunction::ChordTone, "pad"),
+            v(Role::Pad, 79, 0.0, 4.0, PitchFunction::ChordTone, "pad"),
+            v(Role::Keys, 67, 0.0, 4.0, PitchFunction::ChordTone, "comp"),
+        ];
+        let d = EnsembleSonorityDiagnostics::measure_voices(&doubled, &c, &policy, &[]);
+        assert_eq!(d.over_color_slices, 0);
+        assert_eq!(d.duplicate_tension_slices, 1, "{d:?}");
     }
 
     #[test]

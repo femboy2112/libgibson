@@ -259,8 +259,9 @@ impl<'a> HarmonicEnsembleState<'a> {
             .collect()
     }
 
-    /// The colour pitch classes already sounding (resting, non-core) in `[a, b)` over the harmony
-    /// at `a`, with the roles that own each.
+    /// The extension pitch classes already sounding (resting, beyond the core — written or selected,
+    /// see [`super::sonority::is_selected_color`]) in `[a, b)` over the harmony at `a`, with the
+    /// roles that own each.
     pub fn colors_in(&self, a: f64, b: f64) -> Vec<(i32, Vec<Role>)> {
         let Some(ctx) = self.context_at(a) else {
             return Vec::new();
