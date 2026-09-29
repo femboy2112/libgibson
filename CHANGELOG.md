@@ -15,7 +15,30 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-Nothing yet.
+Work in progress on `feat/v0.4-humanmusic-audio` (draft PR #70) toward the intended 0.4.0
+milestone. **Not released**: the package version stays **0.3.1**, `GIBSON_ABI_VERSION` stays
+**1**, MSRV stays **1.85**, and nothing below is exposed through the C ABI.
+
+### Added (experimental, Rust-only)
+
+- **`gibson::audio`** — an offline/real-time audio substrate (sample-accurate time, buffers,
+  a block renderer, WAV writer, DSP building blocks) with an optional `audio-cpal` output
+  backend (feature-gated; no new mandatory dependencies).
+- **HumanMusic** (`gibson::audio::human_music`) — a procedural composer driven by LibGibson's
+  semantic style/story state, with three sonic worlds (BLACK_ICE, VAPOR95, SWISS_SIGNAL), no
+  prerecorded musical assets, and a structural/causal diagnostics suite. Rounds I–VIIb are
+  documented in [docs/HUMAN_MUSIC_ARCHITECTURE.md](docs/HUMAN_MUSIC_ARCHITECTURE.md); the
+  current round (VIIb) makes the performance causal: calls own their material and answers
+  derive from it, one stage decides who plays before anybody plays, every event is stamped
+  with the exact actions it performs, Modulate really changes the tonal region, the band
+  shares one complexity budget, gestures vary their manifestation per cycle, semantic state
+  deltas size the actions, quiet is declared, obligations settle named debts by deadline,
+  pad and keys are voiced by a bounded voice-path DP, SFX sit in the local harmony, and a
+  requested length is rendered exactly.
+- `examples/human_music_lab.rs` — renders the flagship (and A/B probes, stems, calibration
+  grammars) with every receipt printed next to the WAV paths.
+
+Perceptual quality is **unverified** until the maintainer's listening gate.
 
 ## [0.3.1] - 2026-09-28
 
