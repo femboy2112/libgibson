@@ -14,7 +14,9 @@
 //! harmony, interaction material, the complexity budget), and every player realizes a projection
 //! of that performance into the [`score::Score`] IR, stamped with the exact actions it performs
 //! ([`witness`] audits them; [`song::SongMapConformance`] checks the performance preserves the
-//! song). See `docs/HUMAN_MUSIC_ARCHITECTURE.md` (§3.19 is the current state); the categorical
+//! song; Round X: [`composer`] can choose a song's content toward the listener plan
+//! [`meaning::MeaningPlan`] its story asks for, and [`meaning::Commutation`] checks that it means
+//! it). See `docs/HUMAN_MUSIC_ARCHITECTURE.md` (§3.20 is the current state); the categorical
 //! vocabulary (`intent.rs`) survives where it is load-bearing.
 
 pub mod action;

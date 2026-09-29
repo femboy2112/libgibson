@@ -518,7 +518,7 @@ fn the_control_is_untouched_and_shares_the_form() {
 fn the_meaning_directed_flagship() {
     let r9 = r9_song(&deflected_lift_trace(120.0));
     let (song, report) = compose_meaning(r9, &CompositionalPrior::HOOKY_FUSION);
-    assert_eq!(song.fingerprint(), 0x2c46_6177_1531_4b76);
+    assert_eq!(song.fingerprint(), 0x5e87_e2a6_128a_a984);
 
     // The chart: home first; V7; the textbook miss (vi) moving to ii; the open window (IV);
     // home with its plagal neighbour. Chosen from 117 lawful journeys: 6 mean the plan.
@@ -537,20 +537,21 @@ fn the_meaning_directed_flagship() {
         report.chart_stages
     );
 
-    // The theme: a pickup, a two-note cell stated twice in place, one reach of a fourth, a step
-    // back, a landing on the third; its consequent settles on the tonic. 72 lawful lines; 24 reach
-    // as far as the arc; 12 are typical for the prior; 4 sit best on the chart; the seed picks.
+    // The theme: a two-note cell stated twice in place, one reach of a fourth, a step back, a
+    // landing on the third; its consequent settles on the tonic. 72 lawful lines; 24 reach as far
+    // as the arc; 8 are typical for the prior (in the octave over home, even cells); 3 sit best on
+    // the chart; the seed picks.
     let chosen = &report.themes[report.theme];
-    assert_eq!(chosen.thesis.degrees, vec![3, 4, 5, 4, 5, 8, 7, 9]);
+    assert_eq!(chosen.thesis.degrees, vec![0, 1, 0, 1, 4, 3, 2]);
     assert_eq!(
         chosen.thesis.rhythm,
-        vec![0.5, 0.5, 0.5, 0.5, 0.5, 1.0, 0.5, 2.0]
+        vec![0.5, 0.5, 0.5, 0.5, 1.0, 0.5, 2.5]
     );
-    assert_eq!(chosen.answer.degrees, vec![3, 4, 5, 4, 5, 6, 5, 7]);
+    assert_eq!(chosen.answer.degrees, vec![0, 1, 0, 1, 2, 1, 0]);
     let survivors: Vec<usize> = report.theme_stages.iter().map(|s| s.1).collect();
     assert_eq!(
         survivors,
-        vec![72, 72, 24, 24, 12, 4, 1],
+        vec![72, 72, 24, 24, 8, 3, 1],
         "{:?}",
         report.theme_stages
     );
@@ -701,13 +702,13 @@ fn groove_extremes_are_lawful_and_the_prior_aims_between() {
     let prior = CompositionalPrior::HOOKY_FUSION;
     let (_, report) = compose_meaning(r9_song(&deflected_lift_trace(120.0)), &prior);
     let thesis = report.themes[report.theme].thesis.clone();
-    assert_eq!(thesis.len(), 8);
+    assert_eq!(thesis.len(), 7);
     let with = |rhythm: Vec<f32>| Motif {
         rhythm,
         ..thesis.clone()
     };
-    let low = with(vec![0.5, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 2.0]);
-    let extreme = with(vec![0.75, 0.25, 0.75, 0.25, 0.75, 1.25, 0.5, 1.5]);
+    let low = with(vec![0.5, 0.5, 0.5, 0.5, 1.0, 1.0, 2.0]);
+    let extreme = with(vec![0.75, 0.25, 0.75, 0.25, 1.25, 1.25, 1.5]);
     let levels: Vec<Level> = [&low, &thesis, &extreme]
         .iter()
         .map(|m| {

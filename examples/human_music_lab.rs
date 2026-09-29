@@ -29,6 +29,8 @@
 //!   cargo run --release --example human_music_lab -- --dump-notes           # <world>.notes.tsv
 //!   cargo run --release --example human_music_lab -- --acceptance           # Round IX: ONE SongMap,
 //!                                          # 4 performances (3 rooms fusion + BLACK_ICE simple)
+//!   cargo run --release --example human_music_lab -- --meaning              # Round X: ONE story, two
+//!                                          # composers (A = R9, B = meaning-directed), same band
 //!
 //! Every mode below `--calibrate`/`--ab`/`--stems` builds ONE [`SongMap`] and performs it in each
 //! room (Round IX): the song is never re-composed per world, and each performance's
@@ -38,7 +40,11 @@ use std::path::PathBuf;
 
 use gibson::audio::buffer::StereoBlock;
 use gibson::audio::human_music::action::ManifestationPolicy;
+use gibson::audio::human_music::backbone::lead_sheet;
 use gibson::audio::human_music::budget::ComplexityReport;
+use gibson::audio::human_music::composer::{
+    compose_meaning, Composer, CompositionReport, CompositionalPrior,
+};
 use gibson::audio::human_music::contract::CompositionGrammar;
 use gibson::audio::human_music::diagnostics::{
     ActionDiagnostics, CoherenceDiagnostics, DiscourseDiagnostics, HarmonyContextDiagnostics,
@@ -47,6 +53,7 @@ use gibson::audio::human_music::diagnostics::{
 use gibson::audio::human_music::functor::{compose_full, compose_with_grammar, perform, SfxAudit};
 use gibson::audio::human_music::harmony::ChordSpan;
 use gibson::audio::human_music::language::MusicalLanguage;
+use gibson::audio::human_music::meaning::Commutation;
 use gibson::audio::human_music::performance::{
     CallPolicy, EnsembleCoupling, PerformanceOptions, ResponseMode,
 };
@@ -330,6 +337,10 @@ fn main() -> std::io::Result<()> {
     }
 
     let trace = story_trace(&story, beats);
+    // Round X: the same story, seed, grammar and band, composed twice — the page is the variable.
+    if std::env::args().any(|a| a == "--meaning") {
+        return meaning_ab(&out_dir, sr, block, &trace, seed, grammar, prod);
+    }
     // Round IX: the song is composed ONCE, before any room or idiom is known; every render below
     // is a performance of this one map.
     let song = SongMap::build(&trace, seed, Some(grammar));
@@ -714,6 +725,146 @@ fn acceptance(
         print_spine(&c.song.plan, &c.score.chords);
         println!("{}", r.report());
         println!("wav: {}", path.display());
+    }
+    Ok(())
+}
+
+/// Print what the meaning-directed composer considered and why it chose what it chose.
+fn print_composition(r: &CompositionReport) {
+    println!("CompositionalPrior {:?}", r.prior);
+    println!(
+        "MeaningPlan (F): arc {:?}, resolution {:?}, {} events",
+        r.target.arc,
+        r.target.resolution,
+        r.target.events.len()
+    );
+    println!("chart filters (survivors): {:?}", r.chart_stages);
+    if let Some(i) = r.chart {
+        println!("chart chosen: {:?}", r.charts[i].cell);
+    }
+    println!("theme filters (survivors): {:?}", r.theme_stages);
+    let t = &r.themes[r.theme];
+    println!(
+        "thesis {:?} rhythm {:?} ({:?}, fit {:.2})",
+        t.thesis.degrees, t.thesis.rhythm, t.params, t.fit
+    );
+    println!("answer {:?}", t.answer.degrees);
+    println!("thesis profile {:?}", t.profile);
+    let mut near: Vec<_> = r
+        .themes
+        .iter()
+        .filter(|c| c.dropped_by.is_some() && c.profile.reach == r.target.arc)
+        .collect();
+    near.sort_by(|a, b| b.fit.total_cmp(&a.fit));
+    for c in near.iter().take(4) {
+        println!(
+            "  runner-up {:?} fit {:.2} dropped by {:?} unusual {:?}",
+            c.thesis.degrees,
+            c.fit,
+            c.dropped_by.unwrap_or(""),
+            c.profile.unusual(&r.prior)
+        );
+    }
+}
+
+/// A song's content, readable: its theme sites and its lead sheet (the chart as charted, in C).
+fn print_page(song: &SongMap) {
+    println!(
+        "SongMap {:#018x} ({:?})  thesis {:?} {:?}",
+        song.fingerprint(),
+        song.composer(),
+        song.thematic.bank.identity.degrees,
+        song.thematic.bank.identity.rhythm
+    );
+    for s in &song.thematic.sites {
+        println!(
+            "  p{} {:<9} {:<12} {:?}",
+            s.phrase,
+            format!("{:?}", s.role),
+            format!("{:?}", s.handoff),
+            s.motif.degrees
+        );
+    }
+    if let (Some(bb), Some(hm)) = (&song.plan.backbone, &song.harmonic) {
+        let end = song.plan.form.total_beats;
+        let sheet: Vec<String> = lead_sheet(bb, hm, song.frame)
+            .iter()
+            .filter(|s| s.start_beat < end - 1e-9)
+            .map(|s| format!("{:.0}:{}", s.start_beat, s.chord.label()))
+            .collect();
+        println!("  lead sheet (C): {}", sheet.join(" "));
+    }
+}
+
+/// Round X acceptance A/B: ONE story, ONE seed, ONE grammar, ONE band — two composers. A is the
+/// Round IX structural song (the control, `SongMap::build`); B is the meaning-directed song
+/// (`Composer::MeaningDirected`). Same form, same performance options, coupling and production:
+/// only the page differs. BLACK_ICE decides; VAPOR95 checks it is the SONG that changed, not a
+/// BLACK_ICE accident. The questions for the ear: which song do you want to hear again, and can
+/// you tell what B is doing sooner than A?
+fn meaning_ab(
+    out_dir: &std::path::Path,
+    sr: SampleRate,
+    block: usize,
+    trace: &SemanticTrace,
+    seed: u64,
+    grammar: CompositionGrammar,
+    prod: ProductionControl,
+) -> std::io::Result<()> {
+    let a = SongMap::compose(trace, seed, Some(grammar), Composer::StructuralR9);
+    let (b, report) = compose_meaning(a.clone(), &CompositionalPrior::HOOKY_FUSION);
+    let opts = perf_options();
+    println!(
+        "HumanMusic Round X acceptance — one story, two composers (seed {seed}, {:?}, {:?} coupling)\n",
+        opts.language.id, opts.coupling
+    );
+    print_composition(&report);
+    for (label, song) in [("A structural", &a), ("B meaning", &b)] {
+        println!("\n=== {label} ===");
+        print_page(song);
+        println!("{}", Commutation::check(song).report());
+    }
+    for id in [WorldId::BlackIce, WorldId::Vapor95] {
+        let world = MusicWorld::from_id(id);
+        for (label, song) in [("structural", &a), ("meaning", &b)] {
+            let c = perform(song, &world, opts);
+            let r = SongMapConformance::check(song, &c.perf, &c.score);
+            let d = RealizationDiagnostics::measure(&song.plan, &c.score);
+            let mut synth = HumanMusicSynth::with_production(&c.score, &world, sr, prod);
+            let frames = synth.total_samples();
+            let mut out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
+            normalize_for_comparison(&mut out, prod);
+            let path = out_dir.join(format!(
+                "{}_{label}{}.wav",
+                world.name.to_lowercase(),
+                production_suffix(prod)
+            ));
+            write_wav_i16(&path, &out.audio, sr)?;
+            println!(
+                "{} / {label}: SongMap {:#018x}  performance {:#018x}  score {:#018x}  conformance {}  \
+                 repairs {} rejudged {}  unjustified {:?}  lead notes {}  beats {}  peak {:.3} rms {:.4}",
+                world.name,
+                song.fingerprint(),
+                c.perf.fingerprint(),
+                c.score.fingerprint(),
+                if r.passes() { "PASS" } else { "FAIL" },
+                c.score.melody_repairs,
+                c.score.melody_rejudged,
+                d.unjustified_by_role,
+                c.score
+                    .notes
+                    .iter()
+                    .filter(|n| n.role == gibson::audio::human_music::score::Role::Lead)
+                    .count(),
+                c.score.total_beats,
+                out.peak,
+                out.rms
+            );
+            if !r.passes() {
+                println!("{}", r.report());
+            }
+            println!("wav: {}", path.display());
+        }
     }
     Ok(())
 }

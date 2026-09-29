@@ -8,7 +8,7 @@ this alongside the module docs in `src/audio/mod.rs` and
 
 This is the **Round IX** revision of this document. The rounds are a layer progression,
 each fixing what the previous one didn't reach. Rounds I–III are summarized here; Rounds IV–IX
-in §3.12–§3.19, where **§3.19 is the current state** and §7 opens with the **current** limits.
+in §3.12–§3.20, where **§3.20 is the current state** and §7 opens with the **current** limits.
 Sections §3.1–§3.11 describe the Round II/III planning layers; where a later round replaced a
 mechanism, the section is marked *historical* and points at its replacement.
 
@@ -1147,7 +1147,7 @@ loses no receipt silently (9 deferred, all on the ledger). Every piece that edit
 of its notes is printed with its ledger — these are the short 24-beat pieces and the dirtiest R7b
 realizations, each edit a real clash against the melody or between support players, or a floor.
 
-### 3.19 Round IX — the song is one object: `SongMap` (current state)
+### 3.19 Round IX — the song is one object: `SongMap`
 
 **The defect.** Every doc since Round II said *CompositionPlan is the song*; the code disagreed.
 The plan held the contract, form, discourse, arrangement envelope and the abstract backbone — and
@@ -1306,6 +1306,116 @@ events; a realized-contour theme check (conformance checks the statement and its
 not the pitches the line engine chose); chord-quality conformance (roots only — quality is the
 room's); a generic category / sheaf framework; any solver, vertical or language work.
 
+### 3.20 Round X — a listener model: `MeaningPlan`, a prior, a composer (current state)
+
+**The listen.** Round IX's four renders were heard as a band on one page — and the page as written
+in a language the listener does not understand: coherent, structurally meaningful, not legible.
+The band is frozen this round; the defect is in the composer.
+
+**Three witnesses** (commit `17f16e0`, on the Round IX composer, which stays unchanged as the
+control): the content is **meaning-blind** (`calm_loop` — peak pressure < 0.5 — and the unreleased
+`rise_unresolved` get the same germ and the same chart); **development before exposition** (the
+flagship's first lead statement is the thesis transposed +2; the thesis itself is stated once,
+last, at phrase 7; calm and rise never state it; the culminating "hook" `[0,4,4,6,3]` is neither
+the thesis nor the bank's hook); **expectation before home** (the chart opens on its lift, the first
+deflection sounds at beat 4 and the tonic at beat 12; the deflect and open satellites collapse to
+16-beat pedals; home is the least-heard anchor of the song).
+
+**The diagram, made to constrain code** (`meaning.rs`):
+
+```text
+  SemanticTrace ──F──▶ MeaningPlan ◀──μ── SongMap ◀──π── Performance
+```
+
+- **F** (`MeaningPlan::target(trace, plan)`) reads the story — its peak semantic pressure (the
+  *arc*: low / mid / high) and whether a confirmation or resolved section releases that peak (the
+  *resolution*: home / open) — and the FORM (phrase grid, roles, the lead's seats, backbone slots).
+  Never the theme or the chart. Theme lane, per lead-seated phrase: `Learn` the thesis first;
+  `Reinforce` it until learned (`LEARNED_AFTER` = 2 statements as written); `Payoff` at every
+  culmination; `Answer(resolution)` — its consequent; `Develop` only once learned; `Recognize` on
+  return; and `Thesis(arc)` — how far its salient reach goes. Harmony lane, per backbone slot:
+  `Establish` home before the first pointer; `Prepare(High)` at every Lift; `Miss(arc)` at every
+  Deflect; `Open`; `Reset`; and no surprise anywhere else.
+- **μ** (`MeaningPlan::observe(song)`) reads the theme sites and `backbone::lead_sheet` — the chart
+  as charted, in the reference frame, at its canonical rhythm, no colour — on the same grid, in the
+  same vocabulary plus the events no plan asks for (`Premature`, `Unestablished`, `Unprepared`,
+  `Unrelated`, `Arrive`, `NoRelief`, `NoHome`, `Stray`). The listener model is small and stated:
+  familiarity = literal statements heard; expectation = the pointer's dominant pull home;
+  **surprise at a miss** = what it keeps of the expected arrival (two tones and a prolongation of
+  the pointer — V7→iii — barely registers; two tones — V7→vi — is the textbook miss; one tone —
+  V7→IV, V7→bVI — lands hard; none is `Unrelated`); **certainty before it** = home already heard +
+  a strong pointer; relief = a familiar step from the miss that does not raise the pull; closure =
+  home by a familiar relation; a borrowed or remote chart relation outside the designated miss is
+  a `Stray`.
+- **The law** (`Commutation::check(song)`): exact categorical equality per (lane, place, class),
+  and no unasked `Stray`. Every divergence is owned by the **Composer** (its theme and chart could
+  have met the plan) or the **Form** it was handed (a Deflect the form placed with no Lift before
+  it — no chart can prepare it).
+
+The instrument was calibrated before any composer existed (commit `1d2fee0`): the Round IX flagship
+diverges in exactly 7 places (six theme sites hear material before it was taught — the thesis is
+first *learned* at the return meant to be *recognized* — and the first pointer sounds before home;
+its V7→vi miss is right); a hand-written song on the same form commutes 20/20 and every band plays
+it; premature development, a payoff with no setup, the return of the never-learned, no miss, and a
+mid song under a calm story each break it for their own reason; **surprise everywhere** (every slot
+remote) is a valid song all four bands play that the model refuses.
+
+**`CompositionalPrior`** (`composer.rs`) — what kinds of SONG a composer and its listeners find
+syntactically familiar; separate from `MusicalLanguage` (how a BAND performs one). One prior,
+`HOOKY_FUSION`: HARD — playable (6 beats, ≥ 5 notes, span ≤ 8 steps, a landing ≥ 1.5 beats,
+well-formed rhythm); SOFT (bands, not maxima; a line outside them stays lawful and the profile says
+why it is unusual) — mostly steps, one salient leap recovered by a step back, a recurring rhythmic
+cell, mid displacement, a tonic-triad landing, within the octave over home, no triple strike;
+chart — at most one pedal, home heard at least as long as the miss, a fourth/fifth into every Reset.
+
+**The composer** (`SongMap::compose(trace, seed, grammar, Composer::MeaningDirected)`,
+experimental, NOT the default): it takes the Round IX song's FORM unchanged and chooses only the
+content, so an A/B isolates the page. A bounded search, filters in order with every stage's
+survivors recorded (a filter that would empty the field is skipped and reported), no weighted
+total: **chart** — 117 lawful DeflectedLift journeys (lift {I, ii, IV} × deflect {vi, iii, IV, bVI}
+× open × the Reset's neighbour; the pointer V7, home I; the lift's partner and the deflect/open
+neighbours by rule) → μ agrees with F → the prior's chart filters → the seed; **thesis** — a
+72-point grammar (`[pickup] cell cell' reach recovery landing`, 6 beats, and its consequent) →
+lawful → reaches as far as the arc → settles as the story does → typical for the prior → sits best
+on the lead sheet (structural notes on chord tones, the line engine's own structural rule, mode-safe;
+fits within 0.1 are equals) → the seed. **Schedule** — the thesis as written wherever the listener is
+taught, reminded, paid off or recognizes it (a `Restatement` handoff is identity on ANY role; the
+performance now reads identity from the site); its consequent at every answer; a development
+(Round IX's trajectory) only once learned. The bank is one idea: identity = hook = the thesis.
+
+**The flagship A/B song** (bounce, seed 2112): SongMap `0x5e87e2a6128aa984`. Chart `I V7 | vi ii |
+IV IV | I IV` (home first; the textbook miss moving to ii; the open window; home with its plagal
+neighbour) — 117 → 6 mean the plan → 5 → 5 → 2 → the seed. Thesis `[0,1,0,1,4,3,2]` on
+`[½,½,½,½,1,½,2½]` (a two-note cell stated twice in place, one reach of a fourth, a stepwise fall to
+the third), consequent `[0,1,0,1,2,1,0]` settling on the tonic — 72 → 24 → 24 → 8 → 3 → the seed.
+Learned at phrase 1, paid off at 2 and 5, answered at 3 and 6, recognized at 7; every miss heard
+with HIGH certainty (home and a strong pointer before it; the control's first miss is MID). All
+four bands conform, 0 melody repairs / re-judged, 0 unjustified, exact length.
+
+**Witness 1, flipped:** calm gets a stepwise thesis and a soft miss (V7→iii); the unresolved rise a
+wide reach, a hard miss (V7→IV) and a consequent left hanging; each commutes with its own story
+and not with the other's. **Across songs** (6 stories × 3 lengths × 4 bands, and a 4-seed sweep of
+288): 0 composer-owned divergences (the form-owned ones are identical to the control's), π identity
+everywhere, 0 repaired / re-judged / unjustified.
+
+**Claim discipline.** *New capability:* the listener plan (F), its observation (μ), the law, the
+explicit prior, and a composer that selects content against them. *Inherited defect repaired:* the
+Round IX conformance checker read a modulation's return pivot — the span's last chord kept because
+it is diatonic to both keys, home starting ON it — in the home region, calling the chart's own
+transposed satellite off-chart (18/288 R10 performances; unreachable with the control's pedal
+satellites); it is now also read in the region it leaves, with a negative control. *Current-round
+regressions repaired:* the first composer pick (`[3,4,5,4,5,8,7,9]`) sat a fourth above home, which
+the band's culmination register placed at C7 in BLACK_ICE — the prior gained its octave band before
+any render was offered; a home-salience filter ("home the most-heard root") that the form's long
+Open slot made unsatisfiable was restated as "home over the miss" (the witness's actual defect).
+
+**PARKED:** a learned statistical prior (corpus, MIDI, ML); style inference; affect → open colour
+(the trace's tone could carry warm/tense; not used); a final cycle that finally PAYS the expectation
+(needs a form change); the form-owned divergences (false_climax's Lift-less deflects, rise's strong
+dissolve over an unresolved story, calm's eight misses) — the form is Round IX's and shared; charts
+for the phrase-engine grammars; the inherited obligation-witness gap; register/voicing of the lead
+(the band's); any performance, solver, vertical or language work.
+
 ## 4. Engines carried over from Round I
 
 These pieces of the Round I vertical slice are still in place. They were not part of the
@@ -1395,7 +1505,22 @@ piece sounds good.
 
 ## 7. Honest limits
 
-### Current (Round IX)
+### Current (Round X)
+
+- **The ear decides, and it has not heard this round.** The receipts show a song that meets its
+  listener plan and plays cleanly in every band; whether anyone wants to hear it again — and hears
+  what it is doing sooner than the control — is the listen's to say. Enjoyment is unverified.
+- **The listener model is a model.** Categories, not measurements of a mind: familiarity counts
+  literal statements, surprise counts kept tones. It cannot hear a performance; it reads the page.
+- **The band re-decides the line.** The frozen line engine snaps structural notes to local chord
+  tones and chooses connectives (chromatic in the fusion idiom), so the thesis as written and as
+  heard differ; theme fit is measured on the lead sheet assuming downbeat entries.
+- **One prior, one grammar.** HOOKY_FUSION and a 72-point thesis grammar; the seed chooses among
+  equals, so the song space is bounded by design.
+- **The form is Round IX's.** Where the form cannot carry the plan (the form-owned divergences) the
+  composer cannot fix it.
+
+### Round IX
 
 - **The ear is the gate, and it has not heard this round.** The fingerprints, conformance and
   byte-identity receipts establish one map and four distinct performances that realize it; whether
@@ -1588,6 +1713,11 @@ a `CoherenceDiagnostics` report, and render receipts printed to stdout. Flags:
   `--acceptance` renders the acceptance set from that one map —
   `acceptance_{black_ice,vapor95,swiss_signal}_fusion.wav` and `acceptance_black_ice_simple.wav` —
   each with its fingerprints, spine and conformance report (the coupling flag is honoured).
+- Round X: `--meaning` renders the A/B — the same story, seed, grammar and band, two composers:
+  `black_ice_structural.wav` / `black_ice_meaning.wav` and `vapor95_structural.wav` /
+  `vapor95_meaning.wav` (A = the Round IX song, byte-identical to its acceptance renders; B = the
+  meaning-directed song), with the prior, the chart and theme filters' survivors, both pages, both
+  expectation receipts (`Commutation::report`) and each render's fingerprints and conformance.
 - Round VIIIb: `--coupling=r7b|r8|surgical` (default `r7b`, the Round VIIb band; `independent`
   and `coupled` are accepted aliases). Every arm prints the harmonic-stability ruler (against the
   R7b realization off the default) and the hard vertical defects it still sounds; `surgical` adds

@@ -39,9 +39,10 @@ pub enum Composer {
 
 /// **What kinds of SONG a composer and its listeners find syntactically familiar** — separate
 /// from [`super::language::MusicalLanguage`], which says how a BAND performs a song. One prior is
-/// implemented: [`CompositionalPrior::HOOKY_FUSION`] — hook first, a compact singable thesis with
-/// one salient reach, repetition before transformation, moderate displacement, a legible chart
-/// whose only surprise is the designated miss, and home more familiar than the chord that misses it.
+/// implemented: [`CompositionalPrior::HOOKY_FUSION`] — hook first, a compact singable thesis in the
+/// octave above home with one salient reach, repetition before transformation, moderate
+/// displacement, a legible chart whose only surprise is the designated miss, and home more
+/// familiar than the chord that misses it.
 ///
 /// Hard constraints make a candidate lawful; soft preferences only rank lawful candidates, and a
 /// candidate outside them stays valid (the diagnostics say why it is unusual).
@@ -62,6 +63,10 @@ pub struct CompositionalPrior {
     pub min_stepwise: f32,
     /// Most leaps of a fourth or wider (one salient reach, not six).
     pub max_large_leaps: usize,
+    /// The highest scale degree the thesis may climb to, counted from home: a tune that sits in
+    /// the octave above its tonic, not a fourth above it (the band sets the octave; the song sets
+    /// where in it the tune lives).
+    pub max_top: i32,
     /// The rhythmic displacement band aimed at (stable pulse + patterned push, not maximal).
     pub displacement: Level,
     /// Chart-fit resolution: fits within one bucket are equals (the seed decides among them).
@@ -86,6 +91,7 @@ impl CompositionalPrior {
         min_landing_beats: 1.5,
         min_stepwise: 0.5,
         max_large_leaps: 1,
+        max_top: 7,
         displacement: Level::Mid,
         fit_bucket: 0.1,
         max_pedals: 1,
@@ -197,6 +203,8 @@ pub struct ThemeProfile {
     pub beats: f32,
     /// Widest span, in scale steps.
     pub span: i32,
+    /// The highest degree, counted from home.
+    pub top: i32,
     /// Fraction of moves by step or repeat.
     pub stepwise: f32,
     /// Leaps of a fourth or wider.
@@ -267,6 +275,7 @@ impl ThemeProfile {
             notes: m.len(),
             beats: m.total_beats(),
             span: hi - lo,
+            top: hi,
             stepwise: if moves.is_empty() {
                 1.0
             } else {
@@ -321,6 +330,9 @@ impl ThemeProfile {
         }
         if self.large_leaps > prior.max_large_leaps {
             v.push("more than one salient leap");
+        }
+        if self.top > prior.max_top {
+            v.push("climbs above the octave over home");
         }
         if !self.recovered {
             v.push("a leap left unrecovered");
