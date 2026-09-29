@@ -3,8 +3,9 @@
 //! [`compose_full`] composes one [`SongMap`] ([`SongMap::build`]: the trace walked into a causal
 //! [`IntentTimeline`](super::timeline::IntentTimeline) — each semantic event a sequence of intent morphisms evolving a running
 //! [`MusicIntent`] — and the [`CompositionPlan`]) and [`perform`]s it: one [`PerformancePlan`], every
-//! player a projection of that performance. Swapping the world keeps the song; what the song does
-//! not yet own (Round IX moves it) still follows the world and the language.
+//! player a projection of that performance. Swapping the world or the language keeps the song (its
+//! theme, its chart, its rhythm — [`super::song::SongMapConformance`] checks it); the room
+//! re-modes and colours it, the idiom declares its rhythm transform and plays its own fiber.
 
 use super::action::{ActionCause, ActionKind, Agent};
 use super::contract::CompositionGrammar;

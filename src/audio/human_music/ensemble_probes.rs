@@ -379,7 +379,7 @@ fn the_coupled_band_sounds_one_harmony_where_the_control_did_not() {
         );
         assert!(di.bass_function_violations > 0, "{}", world.name);
         // The coupled band: no pitched pair collides unowned; at most one residual (a sting). Round
-        // IX: BLACK_ICE now plays the SONG's theme (the Ionian-charted germ, re-moded), and the
+        // IX: BLACK_ICE now plays the SONG's theme and chart (charted in Ionian, re-moded), and the
         // frozen R8 solver — the rejected control, not revisited — leaves exactly one keys/lead
         // collision on it. Pinned exactly, not loosened: any further drift fails here.
         assert_eq!(pairs(&dc), r8_pairs(world.id), "{}", world.name);

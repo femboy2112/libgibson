@@ -9,8 +9,8 @@
 //! The pipeline is now
 //!
 //! ```text
-//! SongMap (contract, form, discourse, arrangement envelope,
-//!          backbone timeline)                             — the SONG (Round IX: super::song)
+//! SongMap (contract, form, discourse, arrangement envelope, backbone
+//!          timeline, thematic map, harmonic map)          — the SONG (Round IX: super::song)
 //!        │  + MusicWorld (timbre)  + MusicalLanguage (idiom)
 //!        ▼
 //! PerformancePlan                                         — the shared PERFORMANCE

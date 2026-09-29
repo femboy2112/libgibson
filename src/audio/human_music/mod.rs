@@ -6,14 +6,16 @@
 //! production-quality dynamics — all generated programmatically with **no prerecorded
 //! musical assets**.
 //!
-//! The pipeline is a planning pipeline, not a proof: a semantic trace becomes a causal
-//! [`timeline::IntentTimeline`], the timeline one [`plan::CompositionPlan`] (the song), the
-//! plan plus a [`world::MusicWorld`] (timbre) and a [`language::MusicalLanguage`] (idiom) one
-//! [`performance::PerformancePlan`] (the shared performance: actions, the stage, harmony,
-//! interaction material, the complexity budget), and every player realizes a projection of
-//! that performance into the [`score::Score`] IR, stamped with the exact actions it performs
-//! ([`witness`] audits them). See `docs/HUMAN_MUSIC_ARCHITECTURE.md` (§3.16 is the current
-//! state); the categorical vocabulary (`intent.rs`) survives where it is load-bearing.
+//! The pipeline is a planning pipeline, not a proof: a semantic trace becomes ONE
+//! [`song::SongMap`] (the song — the causal [`timeline::IntentTimeline`], the
+//! [`plan::CompositionPlan`], and the thematic and harmonic maps, all before any room or idiom),
+//! the song plus a [`world::MusicWorld`] (timbre, home mode) and a [`language::MusicalLanguage`]
+//! (idiom) one [`performance::PerformancePlan`] (the shared performance: actions, the stage,
+//! harmony, interaction material, the complexity budget), and every player realizes a projection
+//! of that performance into the [`score::Score`] IR, stamped with the exact actions it performs
+//! ([`witness`] audits them; [`song::SongMapConformance`] checks the performance preserves the
+//! song). See `docs/HUMAN_MUSIC_ARCHITECTURE.md` (§3.19 is the current state); the categorical
+//! vocabulary (`intent.rs`) survives where it is load-bearing.
 
 pub mod action;
 pub mod backbone;

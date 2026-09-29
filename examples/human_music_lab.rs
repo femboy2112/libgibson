@@ -27,6 +27,12 @@
 //!   cargo run --release --example human_music_lab -- --production=nosat,dry  # remove single factors
 //!   cargo run --release --example human_music_lab -- --stems --pair-stems    # solo + pitched pairs
 //!   cargo run --release --example human_music_lab -- --dump-notes           # <world>.notes.tsv
+//!   cargo run --release --example human_music_lab -- --acceptance           # Round IX: ONE SongMap,
+//!                                          # 4 performances (3 rooms fusion + BLACK_ICE simple)
+//!
+//! Every mode below `--calibrate`/`--ab`/`--stems` builds ONE [`SongMap`] and performs it in each
+//! room (Round IX): the song is never re-composed per world, and each performance's
+//! `SongMapConformance` is printed next to its render.
 
 use std::path::PathBuf;
 
@@ -38,7 +44,7 @@ use gibson::audio::human_music::diagnostics::{
     ActionDiagnostics, CoherenceDiagnostics, DiscourseDiagnostics, HarmonyContextDiagnostics,
     LeadOutlineDiagnostics, RealizationDiagnostics, RigidityDiagnostics,
 };
-use gibson::audio::human_music::functor::{compose_full, compose_with_grammar, SfxAudit};
+use gibson::audio::human_music::functor::{compose_full, compose_with_grammar, perform, SfxAudit};
 use gibson::audio::human_music::harmony::ChordSpan;
 use gibson::audio::human_music::language::MusicalLanguage;
 use gibson::audio::human_music::performance::{
@@ -47,6 +53,7 @@ use gibson::audio::human_music::performance::{
 use gibson::audio::human_music::semantic::{
     calm_loop, deflected_lift_trace, rise_unresolved, SemanticTrace,
 };
+use gibson::audio::human_music::song::{SongMap, SongMapConformance};
 use gibson::audio::human_music::sonority::{ColorPolicy, EnsembleSonorityDiagnostics};
 use gibson::audio::human_music::surgical::{ledger, residual, Perturbation};
 use gibson::audio::human_music::synth::{HumanMusicSynth, ProductionControl, StemMask};
@@ -323,6 +330,12 @@ fn main() -> std::io::Result<()> {
     }
 
     let trace = story_trace(&story, beats);
+    // Round IX: the song is composed ONCE, before any room or idiom is known; every render below
+    // is a performance of this one map.
+    let song = SongMap::build(&trace, seed, Some(grammar));
+    if std::env::args().any(|a| a == "--acceptance") {
+        return acceptance(&out_dir, sr, block, &song, prod);
+    }
 
     let worlds: Vec<WorldId> = match which.as_str() {
         "black_ice" => vec![WorldId::BlackIce],
@@ -335,18 +348,17 @@ fn main() -> std::io::Result<()> {
         "HumanMusic lab — {grammar:?} / story={story} — {} events, {beats:.0} beats",
         trace.events.len()
     );
-    println!(
-        "seed={seed}  sr={} Hz  out={}\n",
-        sr.get(),
-        out_dir.display()
-    );
+    println!("seed={seed}  sr={} Hz  out={}", sr.get(), out_dir.display());
+    print_song(&song);
+    println!();
 
     for id in worlds {
         let world = MusicWorld::from_id(id);
         let file_stem = world.name.to_lowercase();
         let path = out_dir.join(format!("{file_stem}{}.wav", production_suffix(prod)));
 
-        let comp = compose_full(&trace, &world, seed, Some(grammar), perf_options());
+        let comp = perform(&song, &world, perf_options());
+        let conformance = SongMapConformance::check(&song, &comp.perf, &comp.score);
         let (score, plan, perf) = (comp.score, comp.song.plan, comp.perf);
         score.validate().expect("score invariants");
         if std::env::args().any(|a| a == "--dump-notes") {
@@ -376,6 +388,12 @@ fn main() -> std::io::Result<()> {
             "=== {} =========================================",
             world.name
         );
+        println!(
+            "performance {:#018x}  score {:#018x}",
+            perf.fingerprint(),
+            score.fingerprint()
+        );
+        println!("{}", conformance.report());
         print!("{}", score.summary());
         print_spine(&plan, &score.chords);
         print!("{}", plan.dump());
@@ -388,13 +406,11 @@ fn main() -> std::io::Result<()> {
             RealizationDiagnostics::measure(&plan, &score).report()
         );
         print!("{}", LeadOutlineDiagnostics::measure(&score).report());
-        // Round VII: the verbs, the bar-to-bar rigidity, and the harmony as relations. The
-        // timeline is re-walked here (compose_full keeps its copy to itself); the walk is
-        // deterministic, so this is the same spine the actions were lifted from.
-        let timeline = IntentTimeline::walk(&trace);
+        // Round VII: the verbs, the bar-to-bar rigidity, and the harmony as relations — against
+        // the song's own timeline (the spine the actions were lifted from).
         print!(
             "{}",
-            ActionDiagnostics::measure(&timeline, &plan, &perf, &score).report()
+            ActionDiagnostics::measure(&song.timeline, &plan, &perf, &score).report()
         );
         print!("{}", RigidityDiagnostics::measure(&score).report());
         print!("{}", HarmonyContextDiagnostics::measure(&perf).report());
@@ -469,11 +485,9 @@ fn main() -> std::io::Result<()> {
         // from the R7b realization of the SAME composition (the prior the ear preferred).
         let opts = perf_options();
         let r7b = (opts.coupling != EnsembleCoupling::Independent).then(|| {
-            compose_full(
-                &trace,
+            perform(
+                &song,
                 &world,
-                seed,
-                Some(grammar),
                 PerformanceOptions {
                     coupling: EnsembleCoupling::Independent,
                     ..opts
@@ -615,6 +629,92 @@ fn main() -> std::io::Result<()> {
     }
 
     println!("Listen to the WAVs above. Same form + motif + resolutions, three dialects.");
+    Ok(())
+}
+
+/// The song's receipt: its fingerprint and its thematic and harmonic maps' fingerprints.
+fn print_song(song: &SongMap) {
+    println!(
+        "SongMap {:#018x}  ThematicMap {:#018x}  HarmonicMap {}",
+        song.fingerprint(),
+        song.thematic.fingerprint(),
+        song.harmonic
+            .map(|h| format!("{:#018x}", h.fingerprint()))
+            .unwrap_or_else(|| "none (this grammar charts no harmony yet)".into())
+    );
+}
+
+/// Round IX acceptance: ONE SongMap, four performances — BLACK_ICE, VAPOR95 and SWISS_SIGNAL in
+/// the flagship idiom, and BLACK_ICE in the plain one — each rendered, fingerprinted and checked
+/// for conformance. The question for the ear: different bands, the same composition?
+fn acceptance(
+    out_dir: &std::path::Path,
+    sr: SampleRate,
+    block: usize,
+    song: &SongMap,
+    prod: ProductionControl,
+) -> std::io::Result<()> {
+    let base = perf_options();
+    let fusion = PerformanceOptions {
+        language: MusicalLanguage::fusion_conversation(),
+        ..base
+    };
+    let simple = PerformanceOptions {
+        language: MusicalLanguage::simple(),
+        ..base
+    };
+    println!("HumanMusic Round IX acceptance — one SongMap, four performances");
+    print_song(song);
+    let set = [
+        (WorldId::BlackIce, fusion),
+        (WorldId::Vapor95, fusion),
+        (WorldId::SwissSignal, fusion),
+        (WorldId::BlackIce, simple),
+    ];
+    for (id, opts) in set {
+        let world = MusicWorld::from_id(id);
+        let c = perform(song, &world, opts);
+        let r = SongMapConformance::check(song, &c.perf, &c.score);
+        let mut synth = HumanMusicSynth::with_production(&c.score, &world, sr, prod);
+        let frames = synth.total_samples();
+        let mut out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
+        normalize_for_comparison(&mut out, prod);
+        let path = out_dir.join(format!(
+            "acceptance_{}_{}{}.wav",
+            world.name.to_lowercase(),
+            opts.language.id.label(),
+            production_suffix(prod)
+        ));
+        write_wav_i16(&path, &out.audio, sr)?;
+        println!(
+            "\n=== {} / {} ({:?} rhythm, {:?} coupling) ===",
+            world.name,
+            opts.language.id.label(),
+            opts.language.harmonic_rhythm,
+            opts.coupling
+        );
+        println!(
+            "SongMap {:#018x} (performed {:#018x})  performance {:#018x}  score {:#018x}",
+            c.song.fingerprint(),
+            c.perf.song_fingerprint,
+            c.perf.fingerprint(),
+            c.score.fingerprint()
+        );
+        println!(
+            "home {}{:?}  chords {}  statements {}  interactions {}  actions {}  notes {}  drums {}",
+            note_name(c.perf.region.tonic_pc + 60).trim_end_matches(char::is_numeric),
+            c.perf.region.mode,
+            c.score.chords.len(),
+            c.perf.statements.len(),
+            c.perf.interactions.len(),
+            c.perf.actions.actions.len(),
+            c.score.notes.len(),
+            c.score.drums.len()
+        );
+        print_spine(&c.song.plan, &c.score.chords);
+        println!("{}", r.report());
+        println!("wav: {}", path.display());
+    }
     Ok(())
 }
 
