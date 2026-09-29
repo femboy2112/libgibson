@@ -987,6 +987,34 @@ pub fn realize(
     }
 }
 
+/// The song's **lead sheet**: the chart as charted — every slot's chord path in the song's own
+/// reference `frame` (tonic C), at the chart's canonical rhythm, with no room's mode, no idiom's
+/// colour and no rhythm transform. What the listener model reads (Round X,
+/// [`super::meaning::MeaningPlan::observe`]); no performance plays it verbatim.
+pub fn lead_sheet(
+    timeline: &BackboneTimeline,
+    chart: &super::song::HarmonicMap,
+    frame: super::theory::Mode,
+) -> Vec<ChordSpan> {
+    let region = Scale::new(0, frame);
+    let cell = chart.cell.realize(&region);
+    let plain = MusicalLanguage::simple();
+    let mut spans = Vec::new();
+    for slot in &timeline.slots {
+        for (off, len, chord) in slot_path(slot, &cell, &plain, chart.bars_per_chord, false) {
+            spans.push(ChordSpan {
+                start_beat: slot.start_beat() + off,
+                dur_beats: len as f32,
+                chord,
+                function: contextual_function(&chord, &region),
+                degree: ChartRoot::degree_of_pc(chord.root_pc, &region).unwrap_or(-1),
+                note: slot.gesture.label(),
+            });
+        }
+    }
+    spans
+}
+
 /// Measure the miss at every Deflect slot of `timeline` over the harmony `spans`, each in the
 /// region `region_at` its slot start (`fallback_pointer` when the slot opens the piece). Called on
 /// the backbone's own spans by [`realize`], and again by the performance AFTER the harmonic

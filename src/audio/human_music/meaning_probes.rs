@@ -9,13 +9,20 @@
 //! developed before it is ever stated, and the harmony raises its first expectation before home
 //! has been heard.
 
+use super::backbone::{ChartCell, ChartRoot};
 use super::contract::CompositionGrammar;
 use super::discourse::DiscourseRole;
 use super::functor::perform;
 use super::language::MusicalLanguage;
+use super::meaning::{Close, Commutation, Lane, Level, MeaningKind as K, MeaningPlan, Owner};
+use super::motif::{Handoff, Motif, MotifBank};
 use super::performance::PerformanceOptions;
-use super::semantic::{calm_loop, deflected_lift_trace, rise_unresolved, EventKind, SemanticTrace};
-use super::song::SongMap;
+use super::semantic::{
+    calm_loop, deflected_lift_trace, demo_trace, false_climax, rise_unresolved, EventKind,
+    SemanticTrace,
+};
+use super::song::{SongMap, SongMapConformance};
+use super::theory::Quality;
 use super::world::MusicWorld;
 
 const SEED: u64 = 2112;
@@ -161,4 +168,292 @@ fn witness_expectation_before_home() {
         i < vi && i < iv,
         "home is the least-heard anchor: I {i} vi {vi} IV {iv} beats"
     );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The instrument (F, μ, the law), calibrated BEFORE any composer exists: the Round IX song must
+// fail it for the reasons the witnesses name, a hand-written song must be able to pass it, and
+// every scrambled version of that song must fail it for its own exact reason.
+
+/// The divergences as `(lane, at, wanted, heard)`, in order.
+fn divergent(c: &Commutation) -> Vec<(Lane, u32, Option<K>, Option<K>)> {
+    c.divergences
+        .iter()
+        .map(|d| (d.lane, d.at, d.wanted, d.heard))
+        .collect()
+}
+
+/// A thesis written by hand for the calibration: a pickup, a two-note cell stated and sequenced a
+/// step up, one reach of a fourth, a step back, a landing on the third. Six beats.
+fn hand_thesis() -> Motif {
+    Motif {
+        id: 0,
+        degrees: vec![-1, 0, 1, 1, 2, 5, 4, 2],
+        rhythm: vec![0.5, 0.5, 0.5, 0.5, 0.5, 1.0, 0.5, 2.0],
+    }
+}
+
+/// Its consequent: the same head and rhythm, stepping down to rest on the tonic.
+fn hand_answer() -> Motif {
+    Motif {
+        degrees: vec![-1, 0, 1, 1, 2, 3, 2, 0],
+        ..hand_thesis()
+    }
+}
+
+/// A chart written by hand: home first (I), the pointer (V7), the textbook miss (vi) moving to
+/// ii, the open window (IV), home (I) with its plagal neighbour.
+fn hand_chart() -> ChartCell {
+    ChartCell {
+        lift: ChartRoot::Degree(0),
+        lift_alt: ChartRoot::Degree(1),
+        pointer: ChartRoot::Degree(4),
+        expected: ChartRoot::Degree(0),
+        deflect: ChartRoot::Degree(5),
+        open: ChartRoot::Degree(3),
+        reset: ChartRoot::Degree(0),
+        satellites: [
+            ChartRoot::Degree(1),
+            ChartRoot::Degree(3),
+            ChartRoot::Degree(3),
+        ],
+    }
+}
+
+/// The flagship's form with the hand-written theme and chart: the thesis taught first, paid off at
+/// every culmination, answered by its consequent, recognized on return.
+fn hand_song() -> SongMap {
+    let mut s = r9_song(&deflected_lift_trace(120.0));
+    let (thesis, answer) = (hand_thesis(), hand_answer());
+    s.thematic.bank = MotifBank {
+        identity: thesis.clone(),
+        hook: thesis.clone(),
+        rhythmic_cell: thesis.fragment(3).scale_rhythm(0.5),
+        bass_cell: thesis.fragment(2).transpose(-7),
+        countermotif: Some(thesis.invert()),
+    };
+    let mut first = true;
+    for site in &mut s.thematic.sites {
+        let (motif, handoff) = match site.role {
+            _ if first => (thesis.clone(), Handoff::Restatement),
+            DiscourseRole::Culminate => (thesis.clone(), Handoff::Hook),
+            DiscourseRole::Answer => (answer.clone(), Handoff::Response),
+            _ => (thesis.clone(), Handoff::Restatement),
+        };
+        first = false;
+        site.motif = motif;
+        site.handoff = handoff;
+    }
+    s.harmonic.as_mut().unwrap().cell = hand_chart();
+    s
+}
+
+/// The four acceptance performances of `song` all conform to it (π holds: a valid, playable song).
+fn plays(song: &SongMap) -> bool {
+    let fusion = PerformanceOptions::default();
+    let simple = PerformanceOptions {
+        language: MusicalLanguage::simple(),
+        ..fusion
+    };
+    [
+        (MusicWorld::black_ice(), fusion),
+        (MusicWorld::vapor95(), fusion),
+        (MusicWorld::swiss_signal(), fusion),
+        (MusicWorld::black_ice(), simple),
+    ]
+    .iter()
+    .all(|(w, o)| {
+        let c = perform(song, w, *o);
+        let r = SongMapConformance::check(song, &c.perf, &c.score);
+        assert!(r.passes(), "{}", r.report());
+        (c.score.total_beats - song.plan.form.total_beats).abs() < 1e-9
+    })
+}
+
+/// The Round IX flagship does not mean its story, and for exactly the reasons the witnesses name:
+/// every theme site hears material before it was taught (the thesis is first LEARNED at the
+/// return that was meant to be recognized), and the first pointer sounds before home. The miss
+/// itself is right — V7 to vi, the textbook deceptive arrival, a mid surprise for a mid arc.
+#[test]
+fn the_r9_song_does_not_mean_its_story() {
+    let s = r9_song(&deflected_lift_trace(120.0));
+    let c = Commutation::check(&s);
+    assert_eq!(c.target.arc, Level::Mid);
+    assert_eq!(c.target.resolution, Close::Home);
+    assert!(c.checked >= 20, "non-vacuous: {} events", c.checked);
+    use Lane::*;
+    assert_eq!(
+        divergent(&c),
+        vec![
+            (Theme, 1, Some(K::Learn), Some(K::Premature)),
+            (Theme, 2, Some(K::Payoff), Some(K::Premature)),
+            (Theme, 3, Some(K::Answer(Close::Home)), Some(K::Premature)),
+            (Theme, 5, Some(K::Payoff), Some(K::Premature)),
+            (Theme, 6, Some(K::Answer(Close::Home)), Some(K::Premature)),
+            (Theme, 7, Some(K::Recognize), Some(K::Learn)),
+            (Harmony, 0, Some(K::Establish), Some(K::Unestablished)),
+        ],
+        "{}",
+        c.report()
+    );
+    assert!(c.divergences.iter().all(|d| d.owner == Owner::Composer));
+    assert_eq!(c.observed.count(K::Miss(Level::Mid)), 3);
+}
+
+/// Calibration: the instrument CAN pass. A hand-written theme and chart on the same form mean
+/// exactly what the story asks — and the song is a valid SongMap every band plays (π holds).
+#[test]
+fn a_hand_written_song_can_mean_its_story() {
+    let s = hand_song();
+    let c = Commutation::check(&s);
+    assert!(c.commutes(), "{}", c.report());
+    assert_eq!(c.observed.count(K::Payoff), 2);
+    assert_eq!(c.observed.count(K::Recognize), 1);
+    assert_eq!(c.observed.count(K::Miss(Level::Mid)), 3);
+    assert!(plays(&s));
+}
+
+/// Scrambled expectation structure is caught, each for its own reason — and "surprise
+/// everywhere" is a VALID song (every band plays it, π holds) that the listener model refuses.
+#[test]
+fn scrambled_meaning_breaks_the_law() {
+    use Lane::*;
+    let thesis = hand_thesis();
+
+    // Premature development: the first thing heard is the thesis inverted and moved.
+    let mut s = hand_song();
+    s.thematic.sites[0].motif = thesis.invert().transpose(3);
+    let c = Commutation::check(&s);
+    assert_eq!(
+        divergent(&c)[..2],
+        [
+            (Theme, 1, Some(K::Learn), Some(K::Premature)),
+            (Theme, 2, Some(K::Payoff), Some(K::Learn)),
+        ]
+    );
+
+    // A payoff with no setup: the first statement is the consequent, so the culmination is
+    // where the thesis is first heard.
+    let mut s = hand_song();
+    s.thematic.sites[0].motif = hand_answer();
+    let c = Commutation::check(&s);
+    assert!(divergent(&c).contains(&(Theme, 2, Some(K::Payoff), Some(K::Learn))));
+
+    // The return of something never learned: every statement before the restatement developed.
+    let mut s = hand_song();
+    let last = s.thematic.sites.len() - 1;
+    for site in &mut s.thematic.sites[..last] {
+        site.motif = site.motif.transpose(2);
+    }
+    let c = Commutation::check(&s);
+    assert!(divergent(&c).contains(&(Theme, 7, Some(K::Recognize), Some(K::Learn))));
+
+    // No miss at all: the deflection lands the expected arrival.
+    let mut s = hand_song();
+    s.harmonic.as_mut().unwrap().cell.deflect = ChartRoot::Degree(0);
+    let c = Commutation::check(&s);
+    assert_eq!(c.observed.count(K::Arrive), 3);
+    assert!(!c.commutes());
+
+    // Surprise everywhere: every slot remote. Lawful, playable — and meaningless to the model.
+    let mut s = hand_song();
+    let chrom = |semitones, quality| ChartRoot::Chromatic { semitones, quality };
+    s.harmonic.as_mut().unwrap().cell = ChartCell {
+        lift: chrom(6, Quality::Maj),
+        lift_alt: chrom(1, Quality::Maj),
+        deflect: chrom(1, Quality::Maj),
+        open: chrom(11, Quality::Maj),
+        satellites: [
+            chrom(6, Quality::Min),
+            chrom(10, Quality::Maj),
+            chrom(3, Quality::Maj),
+        ],
+        ..hand_chart()
+    };
+    let c = Commutation::check(&s);
+    assert_eq!(c.observed.count(K::Unestablished), 1);
+    assert_eq!(c.observed.count(K::Unrelated), 3);
+    assert!(c.observed.count(K::Stray) >= 3, "{}", c.report());
+    assert!(c.observed.count(K::NoRelief) + c.observed.count(K::NoHome) >= 3);
+    assert!(plays(&s), "a valid song every band can play");
+
+    // A song written for one arc does not mean another: the same content under a calm story.
+    let mut s = hand_song();
+    s.trace = calm_loop(120.0);
+    let c = Commutation::check(&s);
+    assert!(divergent(&c).contains(&(
+        Theme,
+        1,
+        Some(K::Thesis(Level::Low)),
+        Some(K::Thesis(Level::Mid))
+    )));
+    assert_eq!(
+        c.divergences
+            .iter()
+            .filter(|d| d.wanted == Some(K::Miss(Level::Low)))
+            .count(),
+        3
+    );
+}
+
+/// The meaning-blind composer, in the instrument's terms: F separates the calm story from the
+/// unresolved rise (arc and resolution), and the Round IX songs for them observe the SAME thesis
+/// reach and the SAME miss — so they cannot both mean their stories.
+#[test]
+fn the_r9_composer_cannot_mean_two_stories() {
+    let (calm, rise) = (calm_loop(120.0), rise_unresolved(120.0));
+    let (a, b) = (r9_song(&calm), r9_song(&rise));
+    let (fa, fb) = (
+        MeaningPlan::target(&a.trace, &a.plan),
+        MeaningPlan::target(&b.trace, &b.plan),
+    );
+    assert_eq!((fa.arc, fa.resolution), (Level::Low, Close::Home));
+    assert_eq!((fb.arc, fb.resolution), (Level::High, Close::Open));
+    let content = |s: &SongMap| {
+        let o = MeaningPlan::observe(s);
+        o.events
+            .iter()
+            .map(|w| w.event.kind)
+            .filter(|k| matches!(k, K::Thesis(_) | K::Miss(_)))
+            .map(|k| format!("{k:?}"))
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    assert_eq!(content(&a), content(&b), "one content for two stories");
+    let (ca, cb) = (Commutation::check(&a), Commutation::check(&b));
+    let content_miss = |c: &Commutation| {
+        c.divergences
+            .iter()
+            .filter(|d| matches!(d.wanted, Some(K::Thesis(_)) | Some(K::Miss(_))))
+            .count()
+    };
+    assert!(content_miss(&ca) > 0 && content_miss(&cb) > 0);
+}
+
+/// Every stock story: F is non-vacuous, the Round IX composer never commutes, and where the Round
+/// IX FORM itself cannot carry the plan (false_climax: two deflections placed with no Lift before
+/// them) the divergence is the form's, not the composer's. Exact counts: the control is frozen.
+#[test]
+fn the_instrument_reads_every_story() {
+    let expect = [
+        ("bounce", deflected_lift_trace(120.0), 7, 0),
+        ("demo", demo_trace(120.0), 11, 0),
+        ("calm", calm_loop(120.0), 15, 0),
+        ("rise", rise_unresolved(120.0), 10, 0),
+        ("false_climax", false_climax(120.0), 12, 2),
+    ];
+    for (name, t, divergent, form_owned) in expect {
+        let c = Commutation::check(&r9_song(&t));
+        assert!(c.checked >= 10, "{name}: {} events", c.checked);
+        let form = c
+            .divergences
+            .iter()
+            .filter(|d| d.owner == Owner::Form)
+            .count();
+        assert_eq!(
+            (c.divergences.len(), form),
+            (divergent, form_owned),
+            "{name}\n{}",
+            c.report()
+        );
+    }
 }
