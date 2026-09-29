@@ -49,6 +49,7 @@ mod meaning_probes;
 pub mod melody;
 pub mod motif;
 pub mod performance;
+pub mod phenomenal;
 #[cfg(test)]
 mod phenomenal_probes;
 pub mod pitch;
