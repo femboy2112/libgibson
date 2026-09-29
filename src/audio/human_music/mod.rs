@@ -49,6 +49,8 @@ pub mod region;
 pub mod rng;
 pub mod score;
 pub mod semantic;
+#[cfg(test)]
+mod song_probes;
 pub mod sonority;
 pub mod support;
 pub mod surgical;
