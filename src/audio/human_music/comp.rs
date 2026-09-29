@@ -634,14 +634,21 @@ pub fn realize_pad(
     world: &MusicWorld,
 ) -> Vec<Note> {
     // One global voice path over the sounding harmonies; each bar's mode picks its shape family.
-    realize_pad_on(perf, world, &pad_path(perf, world.voicing_spread))
+    realize_pad_on(perf, world, &pad_path(perf, world.voicing_spread), None)
 }
 
-/// Realize the pad on the voice path `pp` (its own, or the joint support path).
+/// Whether a pad pitch's release tail over `[a, b)` would meet ANOTHER player a minor 2nd / 9th
+/// away (the coupled realization supplies it; the pad's own next voicing is a legato crossfade).
+pub type TailGuard<'g> = &'g dyn Fn(f64, f64, Midi) -> bool;
+
+/// Realize the pad on the voice path `pp` (its own, or the joint support path). With a `guard`
+/// (the coupled realization), a voice whose release tail would clash with another player in the
+/// next harmony starts its release early by that tail.
 pub fn realize_pad_on(
     perf: &PerformancePlan,
     world: &MusicWorld,
     pp: &super::voicing::RolePath,
+    guard: Option<TailGuard>,
 ) -> Vec<Note> {
     let mut out = Vec::new();
     let vel = (0.4 * world.base_dynamic).clamp(0.05, 1.0);
@@ -651,6 +658,30 @@ pub fn realize_pad_on(
         };
         let dur = ctx.dur_beats * 0.98;
         let v = pp.voicing(ci, ctx);
+        // Round VIII (coupled): a pad voice whose release tail would ring a minor 2nd / 9th against
+        // ANOTHER player at the next harmony starts its release early by that tail (to the masking
+        // floor), so it has faded under the next chord's attack. Held common tones, and tails that
+        // only meet the pad's own next voicing (a legato crossfade), keep their full length.
+        let next = perf
+            .contexts
+            .get(ci + 1)
+            .filter(|n| (n.start_beat - (ctx.start_beat + ctx.dur_beats as f64)).abs() < 1e-6);
+        let next_voicing = next.and_then(|_| pp.at(ci + 1)).map(|v| v.voices);
+        let tail =
+            (super::sonority::release_tail_secs(&world.pad, super::sonority::MASKING_FLOOR_DB)
+                * world.tempo_bpm.max(1.0) as f64
+                / 60.0) as f32;
+        let pad_dur = |p: Midi, d: f32| -> f32 {
+            let (Some(n), Some(guard)) = (next, guard) else {
+                return d;
+            };
+            let held = next_voicing.as_ref().is_some_and(|nv| nv.contains(&p));
+            // Only a tail that would meet ANOTHER player a minor 2nd / 9th away lifts early.
+            if held || !guard(n.start_beat, n.start_beat + tail as f64, p) {
+                return d;
+            }
+            (d - tail).max(0.5 * d)
+        };
         // The stage decides whether the pad sounds this harmony, and how loud; the pad's own
         // re-entries and thickenings are stamped on the notes that perform them.
         let on = perf.on_stage(Agent::Pad, ctx.start_beat);
@@ -668,7 +699,7 @@ pub fn realize_pad_on(
             }
             let mut n = Note::new(
                 at,
-                d.max(0.1),
+                pad_dur(p, d).max(0.1),
                 p,
                 (vel * vm * level).clamp(0.02, 1.0),
                 Role::Pad,

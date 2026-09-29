@@ -593,7 +593,9 @@ pub fn classify_clash(
 ) -> VerticalClass {
     let (lo, hi) = if a.pitch <= b.pitch { (a, b) } else { (b, a) };
     let short_linear =
-        |v: &Voice| v.is_linear() && v.dur() <= LINEAR_MAX_BEATS + 1e-9 && v.resolves;
+        // Linearity is a property of the WRITTEN note: an audible tail does not make a passing
+        // tone long.
+        |v: &Voice| v.is_linear() && v.written_end - v.start <= LINEAR_MAX_BEATS + 1e-9 && v.resolves;
     if short_linear(lo) || short_linear(hi) {
         return VerticalClass::LinearCollision;
     }
@@ -799,24 +801,46 @@ pub fn resolution_of(all: &[Voice], x: &Voice, contexts: &[HarmonicContext]) -> 
         .map(|y| y.pitch)
 }
 
+/// The default audibility floor (dB below a note's peak) of the audible measure.
+pub const AUDIBLE_FLOOR_DB: f64 = 30.0;
+/// The masking floor: a release tail this far below its peak is covered by the next harmony's
+/// attack. The coupled pad releases early by its tail to this level.
+pub const MASKING_FLOOR_DB: f64 = 20.0;
+
 /// The approximate AUDIBLE end (beats) of a note on `patch` at `tempo_bpm` — its ADSR heard down to
-/// −30 dB of its peak. A percussive patch (sustain ≈ 0) falls silent after its decay whatever its
-/// written length; a sustaining one rings through its release after the note-off. Diagnostics only:
-/// the planner never simulates samples.
-pub fn audible_end(start: f64, dur: f64, patch: &Patch, tempo_bpm: f32) -> f64 {
+/// `floor_db` below its peak. A percussive patch (sustain ≈ 0) falls silent after its decay whatever
+/// its written length; a sustaining one rings through its release after the note-off. The
+/// envelope moves 40 dB in its decay/release time (`dsp::env::time_to_coef`). Diagnostics and the
+/// pad's early release only: the planner never simulates samples.
+pub fn audible_end_at(start: f64, dur: f64, patch: &Patch, tempo_bpm: f32, floor_db: f64) -> f64 {
     let spb = 60.0 / tempo_bpm.max(1.0) as f64;
     let (a, d, s, r) = patch.adsr;
     let (a, d, s, r) = (a as f64, d as f64, s as f64, r as f64);
-    // The envelope moves 40 dB (to 1%) in its decay/release time (dsp::env time_to_coef).
     let nominal = dur * spb;
+    let frac = floor_db / 40.0;
     let secs = if s <= 0.02 {
-        // Falls to −30 dB after attack + ¾ of the decay (or the release, if gated off first).
-        (a + 0.75 * d).min(nominal + 0.75 * r)
+        // Falls below the floor during its decay (or its release, if gated off first).
+        (a + frac * d).min(nominal + frac * r)
     } else {
-        let tail = r * ((30.0 + 20.0 * s.log10()) / 40.0).max(0.0);
-        nominal + tail
+        nominal + release_tail_secs(patch, floor_db)
     };
     start + secs / spb
+}
+
+/// [`audible_end_at`] at the default [`AUDIBLE_FLOOR_DB`].
+pub fn audible_end(start: f64, dur: f64, patch: &Patch, tempo_bpm: f32) -> f64 {
+    audible_end_at(start, dur, patch, tempo_bpm, AUDIBLE_FLOOR_DB)
+}
+
+/// Seconds a sustained note on `patch` stays within `floor_db` of its peak after its note-off
+/// (released from its sustain level).
+pub fn release_tail_secs(patch: &Patch, floor_db: f64) -> f64 {
+    let (_, _, s, r) = patch.adsr;
+    let (s, r) = (s as f64, r as f64);
+    if s <= 0.02 {
+        return 0.0;
+    }
+    r * ((floor_db + 20.0 * s.log10()) / 40.0).max(0.0)
 }
 
 /// One analysed slice of the Score: an interval with a constant set of sounding notes.
@@ -889,10 +913,11 @@ pub fn evaluate(
     {
         let v = &voices[bass];
         let f = BassFunction::of(&ctx.chord, v.pitch);
-        let owned = (v.is_linear() && v.dur() <= LINEAR_MAX_BEATS + 1e-9 && v.resolves)
-            || v.function == Some(PitchFunction::PedalTone)
-            || v.tag == "pedal"
-            || plan.is_some_and(|p| p.bass_pc == pitch_class(v.pitch));
+        let owned =
+            (v.is_linear() && v.written_end - v.start <= LINEAR_MAX_BEATS + 1e-9 && v.resolves)
+                || v.function == Some(PitchFunction::PedalTone)
+                || v.tag == "pedal"
+                || plan.is_some_and(|p| p.bass_pc == pitch_class(v.pitch));
         if matches!(f, BassFunction::Tension(_) | BassFunction::NonChord) && !owned {
             problems.push(Problem::BassFunction { bass, function: f });
         }
@@ -1186,6 +1211,25 @@ impl EnsembleSonorityDiagnostics {
         policy: &ColorPolicy,
         plans: &[SonorityPlan],
     ) -> EnsembleSonorityDiagnostics {
+        EnsembleSonorityDiagnostics::measure_audible_at(
+            score,
+            contexts,
+            world,
+            policy,
+            plans,
+            AUDIBLE_FLOOR_DB,
+        )
+    }
+
+    /// [`Self::measure_audible`] with an explicit audibility floor (dB below each note's peak).
+    pub fn measure_audible_at(
+        score: &Score,
+        contexts: &[HarmonicContext],
+        world: &MusicWorld,
+        policy: &ColorPolicy,
+        plans: &[SonorityPlan],
+        floor_db: f64,
+    ) -> EnsembleSonorityDiagnostics {
         let mut voices = voices_of(score, contexts);
         for v in &mut voices {
             let patch = match v.role {
@@ -1194,7 +1238,7 @@ impl EnsembleSonorityDiagnostics {
                 Role::Bass => &world.bass,
                 Role::Lead => &world.lead,
             };
-            v.end = audible_end(v.start, v.end - v.start, patch, score.tempo_bpm);
+            v.end = audible_end_at(v.start, v.end - v.start, patch, score.tempo_bpm, floor_db);
         }
         EnsembleSonorityDiagnostics::measure_voices(&voices, contexts, policy, plans)
     }

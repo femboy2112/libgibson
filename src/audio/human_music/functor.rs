@@ -193,7 +193,21 @@ fn realize_coupled(
     // The bed: the pad and the keys' comping voiced as ONE decision against everything above.
     let n = super::comp::keys_shell_n(perf);
     let sp = super::support::joint_support_paths(perf, world.voicing_spread, lead, n, &state);
-    let pad = super::comp::realize_pad_on(perf, world, &sp.pad);
+    // A pad tail that would meet another player a minor 2nd / 9th away at the next harmony (the
+    // ledger's lead, bass and keys lines, or the keys' next voicing) lifts early.
+    let guard = |a: f64, b: f64, p: Midi| -> bool {
+        let semi = |q: Midi| matches!((q - p).abs(), 1 | 13);
+        state
+            .sounding(a, b)
+            .any(|v| v.role != super::score::Role::Pad && semi(v.pitch))
+            || sp
+                .keys
+                .voicing_at(perf, a + 1e-3)
+                .voices
+                .into_iter()
+                .any(semi)
+    };
+    let pad = super::comp::realize_pad_on(perf, world, &sp.pad, Some(&guard));
     let mut keys = super::comp::keys_comp(perf, world, lead, seed, &sp.keys);
     keys.extend(lines);
     let keys = super::comp::finish_keys_coupled(keys, perf);

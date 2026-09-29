@@ -446,8 +446,23 @@ fn main() -> std::io::Result<()> {
         }
         // --sonority-detail=unowned|missing|flip|bass|all: every problem slice of that class, spelled.
         if let Some(which) = arg("--sonority-detail=") {
-            use gibson::audio::human_music::sonority::{describe, slices, voices_of, Problem};
-            let voices = voices_of(&score, &perf.contexts);
+            use gibson::audio::human_music::score::Role;
+            use gibson::audio::human_music::sonority::{
+                audible_end_at, describe, slices, voices_of, Problem,
+            };
+            let mut voices = voices_of(&score, &perf.contexts);
+            // --audible-floor=<dB>: slice the AUDIBLE lifetimes instead of the written ones.
+            if let Some(floor) = arg("--audible-floor=").and_then(|f| f.parse::<f64>().ok()) {
+                for v in voices.iter_mut().filter(|v| !v.sfx) {
+                    let patch = match v.role {
+                        Role::Pad => &world.pad,
+                        Role::Keys => &world.keys,
+                        Role::Bass => &world.bass,
+                        Role::Lead => &world.lead,
+                    };
+                    v.end = audible_end_at(v.start, v.end - v.start, patch, score.tempo_bpm, floor);
+                }
+            }
             for sl in slices(&voices, &perf.contexts, &policy, &[]) {
                 let hit = sl.problems.iter().any(|p| match (which.as_str(), p) {
                     ("unowned", Problem::Unowned { .. }) => true,
@@ -475,16 +490,31 @@ fn main() -> std::io::Result<()> {
                 d.reason
             );
         }
-        println!(
-            "ensemble sonority (AUDIBLE lifetimes): unowned m2={} m9={} ({:.2} beats) identity_flips={} bass_function={} crowded={} mean_pcs={:.2}",
-            audible.unowned_m2,
-            audible.unowned_m9,
-            audible.unowned_beats,
-            audible.identity_flips,
-            audible.bass_function_violations,
-            audible.crowded_slices,
-            audible.mean_distinct_pcs,
+        let masked = EnsembleSonorityDiagnostics::measure_audible_at(
+            &score,
+            &perf.contexts,
+            &world,
+            &policy,
+            &[],
+            20.0,
         );
+        for (floor, a) in [(30, &audible), (20, &masked)] {
+            println!(
+                "ensemble sonority (AUDIBLE lifetimes, -{floor} dB): unowned m2={} m9={} ({:.2} beats) identity_flips={} bass_function={} crowded={} mean_pcs={:.2} owned[{}]",
+                a.unowned_m2,
+                a.unowned_m9,
+                a.unowned_beats,
+                a.identity_flips,
+                a.bass_function_violations,
+                a.crowded_slices,
+                a.mean_distinct_pcs,
+                a.owned
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            );
+        }
         println!(
             "lead: melody_repairs={} rejudged_at_release={}",
             score.melody_repairs, score.melody_rejudged

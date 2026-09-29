@@ -440,8 +440,9 @@ pub fn union_cost(
 
 /// The complement variants of `base` over `ctx` for a role whose window is `range`: each candidate
 /// with one voice moved an octave (up to [`LIFT_HEADROOM`] above the window, never below it), one
-/// voice dropped (down to two voices), or one guide-tone voice swapped for the nearest non-guide
-/// allowed pitch within a minor 3rd. Pre-scored alone against `others` (the ledger's voices here) —
+/// voice dropped (down to two voices), one guide-tone voice swapped for the nearest non-guide
+/// allowed pitch within a minor 3rd, or — where the candidate lacks an identity tone (the ♭5 a
+/// m7♭5 shell never carries) — one non-identity voice swapped for that tone at its nearest place. Pre-scored alone against `others` (the ledger's voices here) —
 /// unowned collisions plus, for a player that CARRIES the harmony, the identity tones it would shed
 /// that no committed voice carries; then distance from the base's register — and the best
 /// [`COMPLEMENT_KEEP`] returned. The joint key still demands the BAND hold every identity tone.
@@ -539,6 +540,22 @@ fn complements(
                 let mut w = v.clone();
                 w.remove(i);
                 offer(w, v, &mut out);
+            }
+            // Complete the identity: a non-identity voice becomes a missing identity tone.
+            if !identity.contains(&pitch_class(v[i])) {
+                for &g in identity
+                    .iter()
+                    .filter(|&&g| !v.iter().any(|&p| pitch_class(p) == g))
+                {
+                    if let Some(q) = (0..=6)
+                        .flat_map(|d| [v[i] - d, v[i] + d])
+                        .find(|&q| pitch_class(q) == g && !v.contains(&q))
+                    {
+                        let mut w = v.clone();
+                        w[i] = q;
+                        offer(w, v, &mut out);
+                    }
+                }
             }
             if guides.contains(&pitch_class(v[i])) {
                 if let Some(q) = (1..=3).flat_map(|d| [v[i] - d, v[i] + d]).find(|&q| {
