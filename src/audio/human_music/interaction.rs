@@ -460,13 +460,9 @@ pub(super) fn plan_interactions(
                     a.kind == ActionKind::Fragment && a.initiator == Agent::Lead && a.covers(start)
                 })
                 .map(|a| a.id);
-            let identity_role = matches!(
-                t.goal.role,
-                DiscourseRole::Culminate
-                    | DiscourseRole::Restate
-                    | DiscourseRole::Return
-                    | DiscourseRole::Establish
-            );
+            // Identity is the SONG's declaration (Round X: a site the song restates to teach it
+            // is identity whatever its role), not re-derived here from the role.
+            let identity_role = site.is_identity();
             let fragmenting = fragment_action.is_some() && thesis_stated && !identity_role;
             if let (Some(f), false) = (fragment_action, fragmenting) {
                 band_fragments.push((start, f));

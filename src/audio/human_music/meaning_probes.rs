@@ -10,11 +10,15 @@
 //! has been heard.
 
 use super::backbone::{ChartCell, ChartRoot};
+use super::composer::{compose_meaning, Composer, CompositionalPrior, ThemeProfile};
 use super::contract::CompositionGrammar;
+use super::diagnostics::RealizationDiagnostics;
 use super::discourse::DiscourseRole;
 use super::functor::perform;
 use super::language::MusicalLanguage;
-use super::meaning::{Close, Commutation, Lane, Level, MeaningKind as K, MeaningPlan, Owner};
+use super::meaning::{
+    Close, Commutation, Lane, Level, MeaningKind as K, MeaningPlan, Owner, Witness,
+};
 use super::motif::{Handoff, Motif, MotifBank};
 use super::performance::PerformanceOptions;
 use super::semantic::{
@@ -456,4 +460,414 @@ fn the_instrument_reads_every_story() {
             c.report()
         );
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The meaning-directed composer (Round X): the same form as the control, a different page.
+
+fn r10_song(trace: &SemanticTrace) -> SongMap {
+    SongMap::compose(
+        trace,
+        SEED,
+        Some(CompositionGrammar::DeflectedLift),
+        Composer::MeaningDirected,
+    )
+}
+
+/// The Round IX composer is the control and stays byte-for-byte what it was; the meaning-directed
+/// song shares its form exactly (trace, timeline, contract, phrases, roles, seats, slots), so an
+/// A/B between them changes only the song's content.
+#[test]
+fn the_control_is_untouched_and_shares_the_form() {
+    let t = deflected_lift_trace(120.0);
+    let a = r9_song(&t);
+    assert_eq!(
+        a.fingerprint(),
+        0xf4d4_3f1c_1da2_ac91,
+        "the Round IX flagship"
+    );
+    let a2 = SongMap::compose(
+        &t,
+        SEED,
+        Some(CompositionGrammar::DeflectedLift),
+        Composer::StructuralR9,
+    );
+    assert_eq!(a2.fingerprint(), a.fingerprint());
+    assert_eq!(
+        (a.composer(), a.meaning.is_some()),
+        (Composer::StructuralR9, false)
+    );
+
+    let b = r10_song(&t);
+    assert_eq!(b.composer(), Composer::MeaningDirected);
+    assert_eq!(format!("{:?}", a.plan), format!("{:?}", b.plan), "one form");
+    assert_eq!(format!("{:?}", a.timeline), format!("{:?}", b.timeline));
+    assert_eq!(
+        a.harmonic.map(|h| h.bars_per_chord),
+        b.harmonic.map(|h| h.bars_per_chord)
+    );
+    assert_ne!(a.thematic, b.thematic, "a different theme");
+    assert_ne!(a.harmonic, b.harmonic, "a different chart");
+    assert_ne!(a.fingerprint(), b.fingerprint());
+}
+
+/// The acceptance song: the flagship story composed toward its MeaningPlan. It means what the story
+/// asks on all 20 modelled events; every band plays it (π: one song, four distinct performances and
+/// scores, all conforming) with no melody repaired or re-judged, no unjustified note, exact length.
+#[test]
+fn the_meaning_directed_flagship() {
+    let r9 = r9_song(&deflected_lift_trace(120.0));
+    let (song, report) = compose_meaning(r9, &CompositionalPrior::HOOKY_FUSION);
+    assert_eq!(song.fingerprint(), 0x2c46_6177_1531_4b76);
+
+    // The chart: home first; V7; the textbook miss (vi) moving to ii; the open window (IV);
+    // home with its plagal neighbour. Chosen from 117 lawful journeys: 6 mean the plan.
+    let cell = song.harmonic.unwrap().cell;
+    let d = ChartRoot::Degree;
+    assert_eq!(
+        (cell.lift, cell.pointer, cell.deflect, cell.open, cell.reset),
+        (d(0), d(4), d(5), d(3), d(0))
+    );
+    assert_eq!(cell.satellites, [d(1), d(3), d(3)]);
+    let survivors: Vec<usize> = report.chart_stages.iter().map(|s| s.1).collect();
+    assert_eq!(
+        survivors,
+        vec![117, 6, 5, 5, 2, 1],
+        "{:?}",
+        report.chart_stages
+    );
+
+    // The theme: a pickup, a two-note cell stated twice in place, one reach of a fourth, a step
+    // back, a landing on the third; its consequent settles on the tonic. 72 lawful lines; 24 reach
+    // as far as the arc; 12 are typical for the prior; 4 sit best on the chart; the seed picks.
+    let chosen = &report.themes[report.theme];
+    assert_eq!(chosen.thesis.degrees, vec![3, 4, 5, 4, 5, 8, 7, 9]);
+    assert_eq!(
+        chosen.thesis.rhythm,
+        vec![0.5, 0.5, 0.5, 0.5, 0.5, 1.0, 0.5, 2.0]
+    );
+    assert_eq!(chosen.answer.degrees, vec![3, 4, 5, 4, 5, 6, 5, 7]);
+    let survivors: Vec<usize> = report.theme_stages.iter().map(|s| s.1).collect();
+    assert_eq!(
+        survivors,
+        vec![72, 72, 24, 24, 12, 4, 1],
+        "{:?}",
+        report.theme_stages
+    );
+    assert!(chosen.profile.unusual(&report.prior).is_empty());
+
+    // The listener plan, met: learned first, paid off, answered, recognized; home before the
+    // first pointer; three prepared, related, mid misses — each heard with HIGH certainty.
+    let c = Commutation::check(&song);
+    assert!(c.commutes(), "{}", c.report());
+    assert_eq!(c.checked, 20);
+    let certain = c
+        .observed
+        .events
+        .iter()
+        .filter(|w| w.event.kind == K::Miss(Level::Mid))
+        .all(|w| {
+            matches!(
+                w.witness,
+                Witness::Move {
+                    certainty: Level::High,
+                    ..
+                }
+            )
+        });
+    assert!(certain, "every miss follows home and a strong pointer");
+    assert_eq!(c.observed.count(K::Stray), 0);
+
+    // π: one song, four performances.
+    let fusion = PerformanceOptions::default();
+    let simple = PerformanceOptions {
+        language: MusicalLanguage::simple(),
+        ..fusion
+    };
+    let mut perf_prints = Vec::new();
+    let mut score_prints = Vec::new();
+    for (w, o) in [
+        (MusicWorld::black_ice(), fusion),
+        (MusicWorld::vapor95(), fusion),
+        (MusicWorld::swiss_signal(), fusion),
+        (MusicWorld::black_ice(), simple),
+    ] {
+        let p = perform(&song, &w, o);
+        let r = SongMapConformance::check(&song, &p.perf, &p.score);
+        assert!(r.passes(), "{}", r.report());
+        assert_eq!(r.song, song.fingerprint());
+        assert_eq!((p.score.melody_repairs, p.score.melody_rejudged), (0, 0));
+        let rd = RealizationDiagnostics::measure(&song.plan, &p.score);
+        assert!(rd.unjustified_by_role.iter().all(|x| x.1 == 0));
+        assert!((p.score.total_beats - 120.0).abs() < 1e-9);
+        perf_prints.push(p.perf.fingerprint());
+        score_prints.push(p.score.fingerprint());
+    }
+    perf_prints.sort();
+    perf_prints.dedup();
+    score_prints.sort();
+    score_prints.dedup();
+    assert_eq!((perf_prints.len(), score_prints.len()), (4, 4));
+}
+
+/// WITNESS 1, flipped: the composer now hears the story. Calm (a low arc, settled) gets a thesis
+/// with no salient reach and a soft miss (V7→iii, which keeps two tones of home AND prolongs the
+/// pointer); the unresolved rise gets a wide reach, a hard miss (V7→IV) and a consequent left
+/// hanging. Each means its own story; neither means the other's.
+#[test]
+fn the_composer_now_hears_the_story() {
+    let (calm, rise) = (
+        r10_song(&calm_loop(120.0)),
+        r10_song(&rise_unresolved(120.0)),
+    );
+    assert_ne!(calm.thematic.bank, rise.thematic.bank);
+    let (cc, rc) = (calm.harmonic.unwrap().cell, rise.harmonic.unwrap().cell);
+    assert_eq!(
+        (cc.deflect, rc.deflect),
+        (ChartRoot::Degree(2), ChartRoot::Degree(3))
+    );
+    for s in [&calm, &rise] {
+        assert_eq!(Commutation::check(s).composer_divergences(), 0);
+    }
+    let o = |s: &SongMap, k: K| MeaningPlan::observe(s).count(k);
+    assert_eq!(o(&calm, K::Thesis(Level::Low)), 1);
+    assert_eq!(o(&rise, K::Thesis(Level::High)), 1);
+    assert!(o(&calm, K::Miss(Level::Low)) > 0 && o(&calm, K::Miss(Level::High)) == 0);
+    assert!(o(&rise, K::Miss(Level::High)) > 0 && o(&rise, K::Miss(Level::Low)) == 0);
+    assert!(o(&rise, K::Answer(Close::Open)) > 0 && o(&rise, K::Answer(Close::Home)) == 0);
+
+    // Swap the stories: the calm page under the rise's story (and back) no longer commutes.
+    let mut swapped = calm.clone();
+    swapped.trace = rise_unresolved(120.0);
+    assert!(Commutation::check(&swapped).composer_divergences() > 0);
+    let mut swapped = rise.clone();
+    swapped.trace = calm_loop(120.0);
+    assert!(Commutation::check(&swapped).composer_divergences() > 0);
+}
+
+/// The alien melody: lawful (it fits, it is long enough, it is playable by every band — π holds),
+/// yet the prior names exactly why it is unusual, where the composer's thesis is typical. The
+/// machine says "unusual / low-prior", never "bad".
+#[test]
+fn the_prior_says_why_a_melody_is_unusual() {
+    let prior = CompositionalPrior::HOOKY_FUSION;
+    let alien = Motif {
+        id: 0,
+        degrees: vec![0, 5, -1, 4, -2, 6, 1],
+        rhythm: vec![0.75, 0.25, 1.25, 0.5, 1.0, 0.75, 1.5],
+    };
+    let p = ThemeProfile::of(&alien);
+    assert_eq!(p.unlawful(&prior), None, "a lawful motif");
+    assert_eq!(
+        p.unusual(&prior),
+        vec![
+            "mostly leaps",
+            "more than one salient leap",
+            "a leap left unrecovered",
+            "no recurring rhythmic cell",
+            "displacement outside the band",
+            "lands off the tonic triad",
+        ]
+    );
+    let (_, report) = compose_meaning(r9_song(&deflected_lift_trace(120.0)), &prior);
+    assert!(report.themes[report.theme]
+        .profile
+        .unusual(&prior)
+        .is_empty());
+
+    // A song built on it is valid and every band plays it; the listener plan notices the reach.
+    let mut s = hand_song();
+    s.thematic.bank.identity = alien.clone();
+    for site in &mut s.thematic.sites {
+        if site.motif == hand_thesis() {
+            site.motif = alien.clone();
+        }
+    }
+    assert!(plays(&s));
+    let c = Commutation::check(&s);
+    assert!(divergent(&c).contains(&(
+        Lane::Theme,
+        1,
+        Some(K::Thesis(Level::Mid)),
+        Some(K::Thesis(Level::High))
+    )));
+}
+
+/// Groove extremes: the chosen thesis's degrees under a low, the chosen (medium) and an extreme
+/// displacement are all lawful — the prior aims at the middle band; it does not outlaw the rest
+/// (the grammar's dotted cells stay in the candidate set, dropped only as atypical).
+#[test]
+fn groove_extremes_are_lawful_and_the_prior_aims_between() {
+    let prior = CompositionalPrior::HOOKY_FUSION;
+    let (_, report) = compose_meaning(r9_song(&deflected_lift_trace(120.0)), &prior);
+    let thesis = report.themes[report.theme].thesis.clone();
+    assert_eq!(thesis.len(), 8);
+    let with = |rhythm: Vec<f32>| Motif {
+        rhythm,
+        ..thesis.clone()
+    };
+    let low = with(vec![0.5, 0.5, 0.5, 0.5, 1.0, 0.5, 0.5, 2.0]);
+    let extreme = with(vec![0.75, 0.25, 0.75, 0.25, 0.75, 1.25, 0.5, 1.5]);
+    let levels: Vec<Level> = [&low, &thesis, &extreme]
+        .iter()
+        .map(|m| {
+            let p = ThemeProfile::of(m);
+            assert_eq!(p.unlawful(&prior), None);
+            p.displacement
+        })
+        .collect();
+    assert_eq!(levels, vec![Level::Low, Level::Mid, Level::High]);
+    assert_eq!(prior.displacement, Level::Mid);
+    assert!(report.themes.iter().any(|c| c.params.long_short
+        && c.profile.displacement == Level::High
+        && c.dropped_by == Some("typical for the prior")));
+}
+
+/// Across songs: every stock story (and the modulating impact trace) at three lengths, composed
+/// toward its plan — every song means it wherever its form lets it (no composer-owned divergence;
+/// the form-owned ones are the Round IX form's, identical to the control's), every performance plays the song (π identity),
+/// nothing repaired, re-judged or unjustified. The inherited obligation-witness gap is unchanged:
+/// the same 60 of 72 performances as the Round IX control (a performance-side defect, PARKED).
+#[test]
+fn the_meaning_composer_across_songs() {
+    use super::semantic::{Density, Elevation, Emphasis, SemanticEvent, SemanticState, Tone};
+    let e = |at: f64, tone: Tone, kind: EventKind| SemanticEvent {
+        at_beat: at,
+        state: SemanticState {
+            tone,
+            emphasis: Emphasis::Normal,
+            density: Density::Normal,
+            elevation: Elevation::Raised,
+        },
+        kind,
+    };
+    let impact = |beats: f64| {
+        SemanticTrace::new(
+            vec![
+                e(16.0, Tone::Info, EventKind::FocusAcquired),
+                e(32.0, Tone::Danger, EventKind::Impact),
+                e(48.0, Tone::Success, EventKind::Confirmation),
+                e(64.0, Tone::Neutral, EventKind::SectionResolved),
+            ],
+            beats,
+        )
+    };
+    let stories: [(&str, &dyn Fn(f64) -> SemanticTrace); 6] = [
+        ("bounce", &deflected_lift_trace),
+        ("demo", &demo_trace),
+        ("rise", &rise_unresolved),
+        ("false_climax", &false_climax),
+        ("calm", &calm_loop),
+        ("impact", &impact),
+    ];
+    let fusion = PerformanceOptions::default();
+    let simple = PerformanceOptions {
+        language: MusicalLanguage::simple(),
+        ..fusion
+    };
+    let (mut performances, mut unwitnessed, mut form_owned) = (0, 0, 0);
+    for (name, story) in stories {
+        for beats in [80.0, 120.0, 160.0] {
+            let song = r10_song(&story(beats));
+            let c = Commutation::check(&song);
+            assert_eq!(
+                c.composer_divergences(),
+                0,
+                "{name} {beats}\n{}",
+                c.report()
+            );
+            // What remains is the form's, and exactly the control's (the form is shared).
+            let form = |c: &Commutation| {
+                c.divergences
+                    .iter()
+                    .filter(|d| d.owner == Owner::Form)
+                    .map(|d| (d.at, d.wanted, d.heard))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(form(&c), form(&Commutation::check(&r9_song(&story(beats)))));
+            form_owned += c.divergences.len();
+            for (w, o) in [
+                (MusicWorld::black_ice(), fusion),
+                (MusicWorld::vapor95(), fusion),
+                (MusicWorld::swiss_signal(), fusion),
+                (MusicWorld::black_ice(), simple),
+            ] {
+                let p = perform(&song, &w, o);
+                let r = SongMapConformance::check(&song, &p.perf, &p.score);
+                let identity = r.song == r.performed
+                    && !r.bank_mismatch
+                    && r.missing_theme_sites.is_empty()
+                    && r.wrong_harmonic_landmarks.is_empty()
+                    && r.illegal_harmonic_transforms.is_empty()
+                    && r.form_mismatch.is_empty();
+                assert!(identity, "{name} {beats} {}: {}", w.name, r.report());
+                assert_eq!((p.score.melody_repairs, p.score.melody_rejudged), (0, 0));
+                let rd = RealizationDiagnostics::measure(&song.plan, &p.score);
+                assert!(
+                    rd.unjustified_by_role.iter().all(|x| x.1 == 0),
+                    "{name} {beats}"
+                );
+                performances += 1;
+                unwitnessed += usize::from(r.unwitnessed_song_obligations > 0);
+            }
+        }
+    }
+    assert_eq!(performances, 72);
+    assert_eq!(
+        unwitnessed, 60,
+        "the inherited gap, exactly as the control has it"
+    );
+    assert_eq!(
+        form_owned, 7,
+        "false_climax's two unliftable deflects at every length; one in the 80-beat bounce"
+    );
+}
+
+/// The Round IX checker, recalibrated (an inherited instrument gap Round X's content exposed): a
+/// modulation may return home through the span's own last chord when it is diatonic to both
+/// regions, and the planner starts home ON it. That chord is the chart's, as the region it leaves
+/// transposed it, and is read there. The negative control: any other root at that boundary is
+/// still outside the chart.
+#[test]
+fn a_return_pivot_is_read_in_the_region_it_leaves() {
+    let song = r10_song(&demo_trace(120.0));
+    let simple = PerformanceOptions {
+        language: MusicalLanguage::simple(),
+        ..PerformanceOptions::default()
+    };
+    let mut p = perform(&song, &MusicWorld::black_ice(), simple);
+    let at = 80.0;
+    let (home, left) = (p.perf.region_at(at), p.perf.region_at(at - 1e-3));
+    assert_ne!(home, left, "a region boundary");
+    let k = p
+        .score
+        .chords
+        .iter()
+        .position(|c| (c.start_beat - at).abs() < 1e-9)
+        .unwrap();
+    let cell = song.harmonic.unwrap().cell;
+    let heard = p.score.chords[k].chord.root_pc;
+    assert!(
+        [cell.deflect, cell.satellites[0]]
+            .iter()
+            .any(|r| r.root_pc(&left) == heard),
+        "the chart's chord in the region it leaves"
+    );
+    let r = SongMapConformance::check(&song, &p.perf, &p.score);
+    assert!(r.illegal_harmonic_transforms.is_empty(), "{}", r.report());
+
+    let lawful: Vec<i32> = [cell.deflect, cell.satellites[0]]
+        .iter()
+        .flat_map(|r| [r.root_pc(&home), r.root_pc(&left)])
+        .collect();
+    let stray = (0..12).find(|pc| !lawful.contains(pc)).unwrap();
+    p.score.chords[k].chord.root_pc = stray;
+    let r = SongMapConformance::check(&song, &p.perf, &p.score);
+    assert_eq!(
+        r.illegal_harmonic_transforms
+            .iter()
+            .map(|t| t.beat)
+            .collect::<Vec<_>>(),
+        vec![at]
+    );
 }

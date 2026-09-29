@@ -30,8 +30,10 @@
 //! discretionary calls and answers, who answers, response latency, density, ornamentation.
 
 use super::backbone::ChartCell;
+use super::composer::{compose_meaning, Composer, CompositionalPrior};
 use super::contract::{CoherenceContract, CompositionGrammar};
 use super::discourse::DiscourseRole;
+use super::meaning::MeaningPlan;
 use super::motif::{Handoff, Motif, MotifBank, ThematicTrajectory};
 use super::plan::CompositionPlan;
 use super::semantic::SemanticTrace;
@@ -58,8 +60,10 @@ pub struct ThemeSite {
 
 impl ThemeSite {
     /// Whether the site states the song's IDENTITY — the thesis coming home (Establish, Restate,
-    /// Return) or its hook (Culminate). A performance may develop other sites (a Fragment verb);
-    /// these it must state as written.
+    /// Return), its hook (Culminate), or the thesis restated wherever the song teaches it (Round X:
+    /// a [`Handoff::Restatement`] on any role — the first statement a listener hears, before it
+    /// can be developed). A performance may develop other sites (a Fragment verb); these it must
+    /// state as written.
     pub fn is_identity(&self) -> bool {
         matches!(
             self.role,
@@ -67,7 +71,7 @@ impl ThemeSite {
                 | DiscourseRole::Restate
                 | DiscourseRole::Return
                 | DiscourseRole::Culminate
-        )
+        ) || self.handoff == Handoff::Restatement
     }
 }
 
@@ -142,6 +146,9 @@ pub struct SongMap {
     /// The chart (present when the grammar has a backbone — DeflectedLift). The phrase-engine
     /// grammars have no song-level chart yet: their harmony is still the room's (PARKED).
     pub harmonic: Option<HarmonicMap>,
+    /// The listener plan the song was composed toward (Round X, [`Composer::MeaningDirected`]);
+    /// `None` for the Round IX composer, which composed toward none.
+    pub meaning: Option<MeaningPlan>,
 }
 
 impl SongMap {
@@ -173,6 +180,33 @@ impl SongMap {
             frame,
             thematic,
             harmonic,
+            meaning: None,
+        }
+    }
+
+    /// Compose the song for `trace` with an explicit `composer`. [`Composer::StructuralR9`] is
+    /// exactly [`SongMap::build`] (the control); [`Composer::MeaningDirected`] keeps that same form
+    /// and writes the theme, its placement and the chart toward the story's
+    /// [`MeaningPlan`] under [`CompositionalPrior::HOOKY_FUSION`] (experimental, not the default).
+    pub fn compose(
+        trace: &SemanticTrace,
+        seed: u64,
+        grammar: Option<CompositionGrammar>,
+        composer: Composer,
+    ) -> SongMap {
+        let song = SongMap::build(trace, seed, grammar);
+        match composer {
+            Composer::StructuralR9 => song,
+            Composer::MeaningDirected => compose_meaning(song, &CompositionalPrior::HOOKY_FUSION).0,
+        }
+    }
+
+    /// Which composer chose this song's content.
+    pub fn composer(&self) -> Composer {
+        if self.meaning.is_some() {
+            Composer::MeaningDirected
+        } else {
+            Composer::StructuralR9
         }
     }
 }
@@ -211,7 +245,7 @@ impl SongMap {
     /// proof of sameness: the listen decides whether two performances are one song.
     pub fn fingerprint(&self) -> u64 {
         let p = &self.plan;
-        fnv1a(&format!(
+        let mut text = format!(
             "frame={:?}|timeline={:?}|contract={:?}|form={:?}|discourse={:?}|arrangement={:?}|backbone={:?}|thematic={:#x}|harmonic={:?}",
             self.frame,
             self.timeline,
@@ -222,7 +256,13 @@ impl SongMap {
             p.backbone,
             self.thematic.fingerprint(),
             self.harmonic.map(|h| h.fingerprint()),
-        ))
+        );
+        // Round X: the listener plan a meaning-directed song was composed toward is song identity
+        // too. Appended only when present, so a Round IX song hashes exactly as it always did.
+        if let Some(m) = &self.meaning {
+            text.push_str(&format!("|meaning={m:?}"));
+        }
+        fnv1a(&text)
     }
 
     /// The chart's landmarks: every backbone slot's entry anchor on its downbeat, and the pointer
@@ -421,9 +461,17 @@ impl SongMapConformance {
                     G::Reset => vec![c.reset, c.satellites[2]],
                 };
                 // A Lift may also climb through the pointer's own applied dominant (V/V).
-                let applied = (c.pointer.root_pc(&region) + 7).rem_euclid(12);
-                let lawful_root = vocab.iter().any(|r| r.root_pc(&region) == root)
-                    || (sl.gesture == G::Lift && root == applied);
+                let lawful_in = |region: &super::theory::Scale| {
+                    let applied = (c.pointer.root_pc(region) + 7).rem_euclid(12);
+                    vocab.iter().any(|r| r.root_pc(region) == root)
+                        || (sl.gesture == G::Lift && root == applied)
+                };
+                // A modulation's return pivot may be the span's last chord itself, kept because it
+                // is diatonic to both regions — and the planner starts home ON it. It is the chart's
+                // chord as the region it LEAVES transposed it, so it is read there too (Round X: a
+                // diatonic satellite made this path reachable; the gap is the Round IX checker's).
+                let left = perf.region_at(at - 1e-3);
+                let lawful_root = lawful_in(&region) || (left != region && lawful_in(&left));
                 if !lawful_root {
                     illegal_harmonic_transforms.push(TransformMiss {
                         beat: at,
