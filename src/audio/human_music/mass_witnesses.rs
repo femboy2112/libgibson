@@ -420,3 +420,169 @@ fn round_xii_observer_is_time_blind() {
     };
     assert_eq!(run(false), run(true));
 }
+
+/// A voicing note of `role` tagged as the realizer tags it (`hold`, `comp`, `pad`, `answer`).
+fn voiced(beat: f64, dur: f32, pitch: i32, role: Role, tag: &'static str) -> Note {
+    let mut n = note(beat, dur, pitch, role, F::ChordTone);
+    n.prov.role_note = tag;
+    n
+}
+
+/// The realizer's gate pays exactly the rent owed, by the smallest intervention: an asserted
+/// unwritten colour is shortened when that alone ends the assertion, omitted once per voicing
+/// while the voicing keeps a guide tone, or moved to the nearest written chord tone. Written
+/// extensions, lines and gestural colours are left alone.
+#[test]
+fn r13_gate_pays_rent_by_the_smallest_intervention() {
+    use super::comp::{gate_support_mass, SupportMassAction as A};
+    let world = MusicWorld::swiss_signal();
+    let gate = |chords: &[(f64, Quality, i32)], mut pad: Vec<Note>, mut keys: Vec<Note>| {
+        let (p, _) = fixture(chords, world.tempo_bpm);
+        let edits = gate_support_mass(&p, &world, &mut pad, &mut keys);
+        let pitches = |v: &[Note]| v.iter().map(|n| (n.pitch, n.dur_beats)).collect::<Vec<_>>();
+        (
+            edits
+                .iter()
+                .map(|e| (e.note.pitch, e.action))
+                .collect::<Vec<_>>(),
+            pitches(&pad),
+            pitches(&keys),
+        )
+    };
+    let c6 = [(0.0, Quality::Maj6, 0), (8.0, Quality::Maj7, 0)];
+    // The SWISS witness shape: a keys shell struck with the C6 arrival sheds its unwritten D5.
+    let hold = [64, 69, 74]
+        .map(|p| voiced(0.0, 1.94, p, Role::Keys, "hold"))
+        .to_vec();
+    let (e, _, keys) = gate(&c6, vec![], hold);
+    assert_eq!(e, [(74, A::Omitted)]);
+    assert_eq!(keys, [(64, 1.94), (69, 1.94)]);
+    // Two unwritten colours in one pad voicing over Dm7: one omitted, the next moved (the bed
+    // keeps its density).
+    let dm7 = [(0.0, Quality::Min7, 2), (8.0, Quality::Min7, 9)];
+    let pad = [65, 72, 76, 79]
+        .map(|p| voiced(0.0, 3.92, p, Role::Pad, "pad"))
+        .to_vec();
+    let (e, pad, _) = gate(&dm7, pad, vec![]);
+    assert_eq!(e, [(76, A::Omitted), (79, A::Moved(77))]);
+    assert_eq!(pad.len(), 3);
+    // Off the arrival and not fused: releasing the sustained colour early is enough.
+    let (e, pad, _) = gate(&c6, vec![voiced(1.0, 2.9, 74, Role::Pad, "pad")], vec![]);
+    assert_eq!(e, [(74, A::Shortened(0.75))]);
+    assert_eq!(pad, [(74, 0.75)]);
+    // Authored: the same held D over Cadd9 is written harmony.
+    let add9 = [(0.0, Quality::Add9, 0), (8.0, Quality::Maj7, 0)];
+    let hold = [64, 67, 74]
+        .map(|p| voiced(0.0, 3.9, p, Role::Keys, "hold"))
+        .to_vec();
+    assert!(gate(&add9, vec![], hold).0.is_empty());
+    // A weak offbeat stab and a material line at the arrival are not voicing assertions.
+    let stab = [64, 69, 74]
+        .map(|p| voiced(1.5, 0.45, p, Role::Keys, "comp"))
+        .to_vec();
+    assert!(gate(&c6, vec![], stab).0.is_empty());
+    let line = vec![voiced(0.0, 1.0, 74, Role::Keys, "answer")];
+    assert!(gate(&c6, vec![], line).0.is_empty());
+}
+
+/// The matched A/B: Round XII `perform_temporal` stays frozen; `perform_mass` removes every
+/// accidental reharmonization while the song, the plan, the lead, the bass, the drums and every
+/// written chord tone stay exactly where they were.
+#[test]
+fn r13_matched_scores_pay_rent_without_moving_the_song() {
+    use super::contract::CompositionGrammar;
+    use super::functor::perform_mass;
+    use super::song::SongMapConformance;
+    for (composer, grammar, frozen, budget) in [
+        (
+            Composer::StablePropulsion,
+            None,
+            [0x8ab3cd9fa10d751c, 0x06446ebcbbd14038],
+            [0.02, 0.05],
+        ),
+        (
+            Composer::MeaningDirected,
+            Some(CompositionGrammar::DeflectedLift),
+            [0x8b2b4cb318d64c52, 0x716f7ec67508ea4b],
+            [0.05, 0.07],
+        ),
+    ] {
+        let song = SongMap::compose(&deflected_lift_trace(120.0), 2112, grammar, composer);
+        for (wi, world) in [MusicWorld::swiss_signal(), MusicWorld::black_ice()]
+            .iter()
+            .enumerate()
+        {
+            let a = perform_temporal(&song, world, PerformanceOptions::default());
+            let b = perform_mass(&song, world, PerformanceOptions::default());
+            assert_eq!(a.score.fingerprint(), frozen[wi], "Round XII control drift");
+            assert_eq!(a.perf.fingerprint(), b.perf.fingerprint());
+            assert!(SongMapConformance::check(&song, &b.perf, &b.score).passes());
+            for (x, y) in [
+                (
+                    format!("{:?}", a.score.drums),
+                    format!("{:?}", b.score.drums),
+                ),
+                (format!("{:?}", a.score.sfx), format!("{:?}", b.score.sfx)),
+                (
+                    format!("{:?}", a.score.chords),
+                    format!("{:?}", b.score.chords),
+                ),
+            ] {
+                assert_eq!(x, y);
+            }
+            let line = |s: &Score, r: Role| {
+                s.notes
+                    .iter()
+                    .filter(|n| n.role == r)
+                    .map(|n| format!("{n:?}"))
+                    .collect::<Vec<_>>()
+            };
+            for r in [Role::Lead, Role::Bass] {
+                assert_eq!(line(&a.score, r), line(&b.score, r), "{r:?} moved");
+            }
+            let present = |n: &Note| {
+                b.score
+                    .notes
+                    .iter()
+                    .any(|m| m.role == n.role && m.start_beat == n.start_beat && m.pitch == n.pitch)
+            };
+            let mut moved = 0;
+            for n in &a.score.notes {
+                let written = a
+                    .perf
+                    .context_at(n.start_beat)
+                    .is_some_and(|c| c.chord.contains_pc(super::theory::pitch_class(n.pitch)));
+                if written || !matches!(n.role, Role::Pad | Role::Keys) {
+                    assert!(present(n), "a written or non-support note moved: {n:?}");
+                }
+                moved += usize::from(!present(n));
+            }
+            assert!(b.score.notes.len() <= a.score.notes.len());
+            assert!(
+                moved > 0 && (moved as f64) < budget[wi] * a.score.notes.len() as f64,
+                "unbounded perturbation {moved}"
+            );
+            let (da, db) = (
+                MassDiagnostics::measure(&a.perf, &a.score, world),
+                MassDiagnostics::measure(&b.perf, &b.score, world),
+            );
+            assert!(da.accidental_reharmonizations > 0);
+            assert_eq!(db.accidental_reharmonizations, 0, "{}", db.report());
+            assert_eq!(
+                db.overdrawn_gestures, da.overdrawn_gestures,
+                "the lead is untouched"
+            );
+            let r12 = &db.base;
+            assert_eq!(
+                r12.false_function_claims
+                    + r12.false_suspensions
+                    + r12.broken_anticipations
+                    + r12.unresolved_tendencies
+                    + r12.bad_arrivals,
+                0,
+                "{}",
+                r12.report()
+            );
+        }
+    }
+}

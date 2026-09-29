@@ -109,6 +109,19 @@ pub fn perform_temporal(
     }
 }
 
+/// Round XIII opt-in: the Round XII realization with the support voicings' temporal-mass contract
+/// ([`super::comp::gate_support_mass`]). Same song, same performance plan, same lead and bass;
+/// [`perform_temporal`] remains the exact Round XII listening control.
+pub fn perform_mass(song: &SongMap, world: &MusicWorld, opts: PerformanceOptions) -> Composition {
+    let perf = PerformancePlan::from_song(song, world, opts);
+    let score = realize_arm(song, world, &perf, true, true);
+    Composition {
+        score,
+        song: song.clone(),
+        perf,
+    }
+}
+
 /// Realize a score from an explicit (possibly hand-mutated) song and performance — the entry the
 /// adversarial probes use to inject a call, veto an arrangement, or license a burst and watch what
 /// the players do with it.
@@ -121,6 +134,17 @@ pub fn realize_performance(song: &SongMap, world: &MusicWorld, perf: &Performanc
 /// and the drums (who hear the bass) — each reading the same [`PerformancePlan`]; then
 /// `apply_arrangement` gates the voices.
 fn realize(song: &SongMap, world: &MusicWorld, perf: &PerformancePlan, temporal: bool) -> Score {
+    realize_arm(song, world, perf, temporal, false)
+}
+
+/// [`realize`], with the Round XIII support mass gate when `mass` (only [`perform_mass`]).
+fn realize_arm(
+    song: &SongMap,
+    world: &MusicWorld,
+    perf: &PerformancePlan,
+    temporal: bool,
+    mass: bool,
+) -> Score {
     let (trace, seed, plan) = (&song.trace, song.seed, &song.plan);
     let total_beats = plan.form.total_beats;
     let mut score = Score::new(world.tempo_bpm, BEATS_PER_BAR, total_beats);
@@ -142,7 +166,11 @@ fn realize(song: &SongMap, world: &MusicWorld, perf: &PerformancePlan, temporal:
             } else {
                 super::comp::realize_keys(perf, plan, world, &lead.notes, seed)
             };
-            let pad = super::comp::realize_pad(perf, plan, world);
+            let mut pad = super::comp::realize_pad(perf, plan, world);
+            let mut keys = keys;
+            if mass {
+                super::comp::gate_support_mass(perf, world, &mut pad, &mut keys);
+            }
             let bass = if temporal {
                 super::bass::realize_bass_temporal(perf, plan, world, &lead.notes, &keys)
             } else {

@@ -153,3 +153,27 @@ under a harmony that does not write the ninth, and is owned only as a common ton
 The two BLACK_ICE lead C#5 overdrawn gestures (beats 33 and 41) come from the same mechanism.
 C#5 is heard for 0.34 s over Am6 on a sustaining lead and approaches D5, which is itself an
 unowned colour. In SWISS the lead patch is a ping.
+
+## Commit 3 — the support voicings pay their rent (`perform_mass`)
+
+`functor::perform_mass` is the opt-in Round XIII arm. It is Round XII's `perform_temporal`
+plus `comp::gate_support_mass`, which runs on the pad and keys before the bass hears them
+(the bass ignores the keys). `perform` (R11) and `perform_temporal` (R12) are byte-identical;
+a test pins the four R12 temporal score hashes.
+
+The gate is the realizer's own rule, and the audit grades its output independently. Its
+condition: a pad/keys voicing note (`pad`, `comp`, `hold`) whose pitch class is a licensed
+tension that the sounding harmony does not write, with `TemporalMass` class `Asserted`. For
+such a note it takes the first action that works:
+
+1. **Shorten**: release it early in grid steps (`STEP_BEATS`, never below one step), if that
+   alone ends the assertion. A fused colour cannot be shortened out of fusion, and a percussive
+   keys ping has no written length to shorten.
+2. **Omit**: allowed once per voicing, and only while the voicing still sounds a guide tone of
+   the harmony. A second omission from the same voicing would revoice the bed, which is
+   Round VIII's failure.
+3. **Move**: to the nearest written chord tone that the voicing does not already sound.
+
+Written extensions, material lines (answers, figures, unison) and non-asserted colours are
+never touched. The gate returns its own ledger (`SupportMassEdit`). The lab replays it and
+checks that its counts equal an independent diff of the two finished scores.

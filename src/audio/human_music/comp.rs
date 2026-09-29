@@ -12,6 +12,7 @@ use super::action::{ActionKind, Agent};
 use super::context::HarmonicContext;
 use super::harmonic_state::{voice_of, HarmonicEnsembleState, Hazard, VerticalDecision};
 use super::ids::{ActionId, ActionStamp};
+use super::mass::{ExposureClass, TemporalMass};
 use super::performance::{AccentGrid, Call, KeysMode, PadMode, PerformancePlan, Response, STEPS};
 use super::plan::CompositionPlan;
 use super::rng::Rng;
@@ -171,6 +172,151 @@ fn gate_pitch(perf: &PerformancePlan, beat: f64, dur: f32, pitch: Midi) -> Midi 
         .flat_map(|d| [pitch - d, pitch + d])
         .find(|&p| legal(p))
         .unwrap_or(pitch)
+}
+
+/// Round XIII: the support voicings' temporal-mass contract (the opt-in `perform_mass` arm).
+///
+/// A pad or keys voicing colour — an available tension the sounding harmony does not write —
+/// whose [`TemporalMass`] asserts it into the chord (struck with the harmony's own attack, or
+/// dwelt on long enough) has become part of the perceived chord identity, so the song must have
+/// authored it. When it has not, the smallest intervention that pays the rent wins, in order:
+/// shorten it (in grid steps, never below one, only if that alone ends the assertion); omit it
+/// (when the voicing still sounds a guide tone of the harmony and has not already lost a voice
+/// here: a second omission would revoice the bed, Round VIII's failure); or move it to the
+/// nearest written chord tone the voicing does not already sound. Written extensions, lines (answers, figures,
+/// unison) and non-asserted colours are untouched. This is the realizer's own rule — pitch-class
+/// authorship — not the audit's reconstruction, which grades the result independently.
+///
+/// Returns the gate's own ledger, one entry per decision, in decision order.
+pub fn gate_support_mass(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    pad: &mut Vec<Note>,
+    keys: &mut Vec<Note>,
+) -> Vec<SupportMassEdit> {
+    let mut ledger = gate_role_mass(perf, world, pad);
+    ledger.extend(gate_role_mass(perf, world, keys));
+    ledger
+}
+
+/// What the support mass gate did to one asserted, unwritten voicing colour.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SupportMassAction {
+    /// Released early, at this written length (beats).
+    Shortened(f32),
+    Omitted,
+    /// Moved to this written chord tone.
+    Moved(Midi),
+}
+
+/// One support mass gate decision: the note as realized, its mass there, and the action.
+#[derive(Debug, Clone, Copy)]
+pub struct SupportMassEdit {
+    pub note: Note,
+    pub mass: TemporalMass,
+    pub action: SupportMassAction,
+}
+
+fn gate_role_mass(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    notes: &mut Vec<Note>,
+) -> Vec<SupportMassEdit> {
+    let mut ledger = Vec::new();
+    let mut order: Vec<usize> = (0..notes.len()).collect();
+    order.sort_by(|&a, &b| notes[a].start_beat.total_cmp(&notes[b].start_beat));
+    let mut alive = vec![true; notes.len()];
+    // Onsets of voicings that already lost a voice to this gate.
+    let mut thinned: Vec<f64> = Vec::new();
+    // The class of note `i` in the current (partly gated) line.
+    let class_of = |notes: &[Note], alive: &[bool], i: usize| -> TemporalMass {
+        let idx: Vec<usize> = (0..notes.len()).filter(|&j| alive[j]).collect();
+        let line: Vec<Note> = idx.iter().map(|&j| notes[j]).collect();
+        let at = idx
+            .iter()
+            .position(|&j| j == i)
+            .expect("gated note is alive");
+        TemporalMass::of_notes(
+            &line,
+            &perf.contexts,
+            world.tempo_bpm,
+            super::form::BEATS_PER_BAR,
+            world,
+        )[at]
+    };
+    for &i in &order {
+        let n = notes[i];
+        if !alive[i] || !matches!(n.prov.role_note, "pad" | "comp" | "hold") {
+            continue;
+        }
+        let Some(ctx) = perf.context_at(n.start_beat) else {
+            continue;
+        };
+        let pc = pitch_class(n.pitch);
+        if ctx.chord.contains_pc(pc) || !ctx.palette.tensions.contains(&pc) {
+            continue;
+        }
+        let mass = class_of(notes, &alive, i);
+        if mass.class < ExposureClass::Asserted {
+            continue;
+        }
+        let edit = |action| SupportMassEdit {
+            note: n,
+            mass,
+            action,
+        };
+        // 1. Shorten: the longest grid-step length that ends the assertion.
+        let step = super::performance::STEP_BEATS as f32;
+        let mut len = ((n.dur_beats / step).ceil() - 1.0) * step;
+        let mut shortened = false;
+        while len >= step - 1e-6 {
+            notes[i].dur_beats = len;
+            if class_of(notes, &alive, i).class < ExposureClass::Asserted {
+                shortened = true;
+                ledger.push(edit(SupportMassAction::Shortened(len)));
+                break;
+            }
+            len -= step;
+        }
+        if shortened {
+            continue;
+        }
+        notes[i].dur_beats = n.dur_beats;
+        // 2. Omit, once per voicing, when it still states the harmony's guide tones without it.
+        let bundle: Vec<usize> = (0..notes.len())
+            .filter(|&j| j != i && alive[j] && (notes[j].start_beat - n.start_beat).abs() < 1e-6)
+            .collect();
+        let first = !thinned.iter().any(|&t| (t - n.start_beat).abs() < 1e-6);
+        if first
+            && bundle.iter().any(|&j| {
+                ctx.palette
+                    .guide_tones
+                    .contains(&pitch_class(notes[j].pitch))
+            })
+        {
+            alive[i] = false;
+            thinned.push(n.start_beat);
+            ledger.push(edit(SupportMassAction::Omitted));
+            continue;
+        }
+        // 3. The nearest written chord tone the voicing does not already sound.
+        if let Some(q) = (1..=12)
+            .flat_map(|d| [n.pitch - d, n.pitch + d])
+            .find(|&q| {
+                ctx.chord.contains_pc(pitch_class(q)) && bundle.iter().all(|&j| notes[j].pitch != q)
+            })
+        {
+            notes[i].pitch = q;
+            notes[i].function = function_over(ctx, q);
+            ledger.push(edit(SupportMassAction::Moved(q)));
+        }
+    }
+    let mut k = 0;
+    notes.retain(|_| {
+        k += 1;
+        alive[k - 1]
+    });
+    ledger
 }
 
 /// The keys' final pass: onset order (stable), then lift off at harmony changes.
