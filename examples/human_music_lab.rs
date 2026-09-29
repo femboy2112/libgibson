@@ -41,6 +41,7 @@ use gibson::audio::human_music::performance::{CallPolicy, PerformanceOptions, Re
 use gibson::audio::human_music::semantic::{
     calm_loop, deflected_lift_trace, rise_unresolved, SemanticTrace,
 };
+use gibson::audio::human_music::sonority::{ColorPolicy, EnsembleSonorityDiagnostics};
 use gibson::audio::human_music::synth::{HumanMusicSynth, ProductionControl, StemMask};
 use gibson::audio::human_music::theory::note_name;
 use gibson::audio::human_music::timeline::IntentTimeline;
@@ -146,6 +147,19 @@ fn production_suffix(p: ProductionControl) -> String {
         ".harmonic_reference".into()
     } else {
         format!(".prod_{}", p.label())
+    }
+}
+
+/// A render with production factors removed is quieter (no saturation loudness, no bus comp):
+/// scale it — one pure gain, pitch and timing untouched — to peak 0.8 so an A/B against the normal
+/// mix compares harmony, not level. The normal mix is written as rendered.
+fn normalize_for_comparison(audio: &mut StereoBlock, peak: f32, prod: ProductionControl) {
+    if prod == ProductionControl::NORMAL || peak <= 1e-6 {
+        return;
+    }
+    let g = 0.8 / peak;
+    for x in audio.left.iter_mut().chain(audio.right.iter_mut()) {
+        *x *= g;
     }
 }
 
@@ -308,6 +322,8 @@ fn main() -> std::io::Result<()> {
         let out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
         let render_wall = t0.elapsed();
 
+        let mut out = out;
+        normalize_for_comparison(&mut out.audio, out.peak, prod);
         write_wav_i16(&path, &out.audio, sr)?;
 
         let real_secs = out.duration().as_secs_f64();
@@ -404,6 +420,30 @@ fn main() -> std::io::Result<()> {
         print!(
             "{}",
             VoicingDiagnostics::measure(&score, &perf.contexts).report()
+        );
+        // Round VIII: the UNION the band sounds — nominal durations, then the audible lifetimes on
+        // this world's envelopes (a pad tail under the next chord, a stab already silent).
+        let policy = ColorPolicy::for_world(world.id, &perf.language);
+        print!(
+            "{}",
+            EnsembleSonorityDiagnostics::measure(&score, &perf.contexts, &policy, &[]).report()
+        );
+        let audible = EnsembleSonorityDiagnostics::measure_audible(
+            &score,
+            &perf.contexts,
+            &world,
+            &policy,
+            &[],
+        );
+        println!(
+            "ensemble sonority (AUDIBLE lifetimes): unowned m2={} m9={} ({:.2} beats) identity_flips={} bass_function={} crowded={} mean_pcs={:.2}",
+            audible.unowned_m2,
+            audible.unowned_m9,
+            audible.unowned_beats,
+            audible.identity_flips,
+            audible.bass_function_violations,
+            audible.crowded_slices,
+            audible.mean_distinct_pcs,
         );
         println!(
             "lead: melody_repairs={} rejudged_at_release={}",
@@ -589,7 +629,8 @@ fn stems(
         let mut synth = HumanMusicSynth::with_production(&score, &world, sr, prod);
         synth.set_stem_mask(mask);
         let frames = synth.total_samples();
-        let out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
+        let mut out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
+        normalize_for_comparison(&mut out.audio, out.peak, prod);
         let path = out_dir.join(format!("{file_stem}.{name}{suffix}.wav"));
         write_wav_i16(&path, &out.audio, sr)?;
         println!(
