@@ -808,6 +808,124 @@ keys-led re-entry is a call; `191c79f` — the lead is targets first, then justi
 (`MelodicEvent`, `LicensedExtension`/`Enclosure`, classification inside the search); `79b47b5` —
 exposition and the hook protected from fragmentation, lawful release registers.
 
+### 3.16 Round VIIb — closing the causal gaps (current state)
+
+Round VII built the nervous system — actions, one clock, contextual harmony, an ensemble — and ended
+mid-integration. Round VIIb is an integration/closure round: it verified, with nine read-only
+scouts against the code, where an abstraction existed in a struct or a test without constraining the
+realized Score, and connected it.
+
+**Interaction material (`material.rs`).** Found: a keys/bass/drum "answer" transformed whatever the
+LEAD played inside the call window — even when the bass or keys called — because the players are
+realized in listening order and the caller's notes did not exist yet; a lead "answer" to a bass
+figure was scheduled after it but did not derive from it. Now every call owns an
+`InteractionMaterial` built in the plan (onsets, durations, accents, a relative scale-step contour —
+absent for drums — and its `MaterialSource`), every response derives its own material from the
+CALL's (`transform_material`: quote / echo / invert / compress / complete), and caller and responder
+realize projections of the same object (`line_of`), so realization order no longer decides
+causality. A lead answering a figure enters where that figure's projection left off.
+`witness::interaction_receipts` measures, on realized notes, `relation(answer, real caller)` against
+every other line sounding in the call window.
+
+**Selective, distributed conversation (`interaction.rs`).** Found: every lead statement became a
+call; drums could answer but never call; the planner ignored an action's declared responders; the
+LEAD could be planned as a free responder the lead realizer never plays. Now an
+`InteractionOpportunity` weighs rhetorical openness, space opened by an action, headroom and
+redundancy before a statement calls (`CallPolicy::EveryStatement` is the saturation probe); figures
+(pickups, fragments, re-entries, fills — including drum fills, rhythm-only) are stated whether or not
+anyone answers, and open calls the band answers; one player states one line at a time.
+
+**One orchestration authority (`ensemble::Stage`).** Found: `apply_arrangement` deleted notes of
+phrase-silenced voices AFTER the performance was realized — it silently removed a planned intro fill
+and a coda pullback, and the old witness counted the resulting silence as the pullback. Now the
+arrangement is only the envelope the stage is seeded from; every action is admitted / recast /
+rejected before realization (the admission ledger is in the plan dump); realizers ask the stage who
+plays and how loud; `functor::stamp_arrangement` only writes provenance, and
+`orchestration_violations()` is asserted empty.
+
+**Exact, causal receipts (`ids.rs`, `score::Provenance`, `witness.rs`).** Typed `ActionId`,
+`InteractionId`, `MaterialId`, `ObligationId` replace four raw-`u32` id spaces (and a `u32::MAX`
+sentinel and `action: 0` placeholders that aliased real action a0). Every realizer stamps the exact
+actions, interaction, material and obligation an event performs; `witness::audit`'s primary evidence
+is events carrying the id, then the event shape is held to the action's contract (an ensemble push by
+two stamped players ahead of the target; a resolve arriving on the intended harmony; a deflect with
+the bass on the ACTUAL root; an answer by the right responder carrying its material). Absences
+(break, thin) and harmonic changes are labelled as such (`WitnessClass`). The exact audit found and
+this round fixed: a beat-0 "pickup" into the first downbeat (deferred), lone-player accents recast as
+pickups that began on their own target, a Deflect root swallowed by a figure, resolutions credited to
+a silent lead, overlapping same-player figures, a keys hold cancelled by an answer elsewhere in the
+bar, `Sequence` "witnessed" from the plan alone (deferred: no realizer sequences yet), a one-beat
+break that silenced the kit for the whole bar, an unperformable harmonic verb left in the plan, and a
+pad "re-entry" by a pad that never left. The action vector's id contract is explicit: `id == index`
+always; the base plan is time-sorted before ids are assigned; `chronological()` and `get()`.
+
+**Obligations (`discourse.rs`).** Deadlines are enforced (a deferrable debt may cross phrases, not
+its deadline; `Pending / Settled / Late / Abandoned`); settlement is many-to-many and names a
+specific debt of a compatible kind (`compatible(kind, role)`; `SettleError::{IncompatibleKind, …}`);
+a debt opened at phrase 5 no longer gets the global answer phrase 3 as its deadline; each settled
+debt is bound to the performance action that discharges it and events carry the obligation id.
+
+**Tonal regions (`region.rs`).** `Modulate` now changes the region: a `RegionTimeline` (home /
+pivot / modulated / return spans), a closely related target (a whole-step lift under rising
+pressure, else the dominant key; the relative key's same collection is refused), a pivot diatonic to
+both regions, the functional path transposed into the new region, a planned return; each context is
+analysed in its own region (`context::analyze_regions`) and a span that does not establish its key is
+downgraded to `Tonicize` with the reason. `Tonicize` stays a brief applied dominant. `Reharmonize`
+performs a lawful substitution (tritone sub; diatonic third substitute) and otherwise is relabelled
+`Recolor`; a harmonic verb with no lawful edit anywhere in its window is deferred.
+`HarmonyContextDiagnostics.region_transitions` now counts true region changes;
+`palette_scale_transitions` is the old chord-scale count.
+
+**One complexity budget (`budget.rs`).** One interpretable spend measure (weighted onsets); the lead's
+statements and every planned answer and figure are reserved first; the remainder goes to the
+accompanists by who is in front; a named ensemble action licenses a burst; keys stabs, bass extra
+onsets (a walk halves when unaffordable) and drum ghosts/hats consume their free allowance;
+`ComplexityReport` compares planned vs realized per bar.
+
+**Sized verbs, varied manifestations, declared stillness (`action.rs`, `timeline.rs`).** Each
+transition carries its prev/next `SemanticState` and an `EffectVector` (strength = half arrival
+weight, half size of change, plus deltas, compactness, novelty); lifted actions inherit it and it
+sizes pickups, breaks, fills (and their density), hit force (a clap on a big compact arrival),
+whether the keys join a faint accent, and the kinetic target. Backbone gestures keep their EFFECT
+and identity invariants (every Deflect: the harmonic miss + its hit) but are performed through a
+bounded `Manifestation` family rotated per cycle under memory (`ManifestationPolicy::Fixed` is the
+rigidity probe). `declare_stasis` declares a Prolong event's still span, a relaxation's hold and a
+dissolve's rest; `longest_undeclared_idle_beats` counts only what nobody declared (durative windows
+cover only their first two beats).
+
+**Global voice leading (`voicing.rs`).** A bounded Viterbi over ≤24 filtered candidates per context
+(close, drop-2, shells ± one licensed extension, rootless, guide + extensions, licensed upper
+structures, the legacy voicing): lexicographic cost (gesture violations, then guide-tone breaks,
+then weighted motion/retention/crossing/spacing/register/span/doubling/melody clash). Pad and keys
+voice from the path; the legacy `VoiceLeader` is the control (the path is never worse under the key).
+
+**Exact length and SFX in the local harmony (`functor.rs`, `score.rs`, `synth.rs`).** A requested
+length renders exactly (9 / 10.5 / 17 beats, not 8 / 12 / 16); stings are pitched in the local
+harmony (a Warning uses the chord's own tritone or is an OWNED dissonance bounded by its owner's
+duration) on the quantized beat, and sit under the band's own accent.
+
+**Receipts (flagship bounce, seed 2112, BLACK_ICE / VAPOR95 / SWISS_SIGNAL, at this revision):**
+
+| | BLACK_ICE | VAPOR95 | SWISS_SIGNAL |
+|---|---|---|---|
+| exact causal witnesses | 54/54 | 54/54 | 54/54 |
+| melody repairs / rejudged at release | 0 / 0 | 0 / 0 | 0 / 0 |
+| unjustified (every role) / cross-boundary | 0 / 0 | 0 / 0 | 0 / 0 |
+| lead connective / ext / strong-beat ext | 0.22 / 0.32 / 0.69 | 0.09 / 0.42 / 0.60 | 0.09 / 0.42 / 0.60 |
+| thesis-return similarity / max boundary leap | 0.78 / 4 | 0.88 / 0 | 0.88 / 0 |
+| statements → calls (selective rate) | 10 → 6 (0.60) | 10 → 6 (0.60) | 10 → 6 (0.60) |
+| figure calls / drum calls | 5 / 1 | 5 / 1 | 5 / 1 |
+| informative receipts related to their real caller | 7/7 | 6/6 | 6/6 |
+| declared stasis / longest undeclared idle | 12 b / 10 b | 12 b / 10 b | 12 b / 10 b |
+| manifestation recurrence lift/deflect/open/reset | .12/.35/.33/.00 | same | same |
+| budget violations | 0 | 0 | 0 |
+| onset recurrence keys / bass / drums | .23 / .47 / .42 | .33 / .47 / .54 | .33 / .47 / .54 |
+| region transitions (the flagship does not modulate) | 0 | 0 | 0 |
+| SFX: chord / owned / unjustified | 6 / 2 / 0 | 6 / 2 / 0 | 6 / 2 / 0 |
+
+The cinematic story now modulates in every world (e.g. BLACK_ICE: A aeolian → pivot → B aeolian
+62–84 → return → home) and is fully witnessed (34/34, 35/35, 35/35).
+
 ## 4. Engines carried over from Round I
 
 These pieces of the Round I vertical slice are still in place. They were not part of the
@@ -881,7 +999,38 @@ Establish→Culminate→Answer→Dissolve in order, the shuffle probe scores str
 and the anti-overfitting synthetic-trace tests in §3.11). It does not and cannot certify
 that a piece sounds good.
 
-## 7. Honest limits (Engineering Alpha, Round III/IV)
+## 7. Honest limits
+
+### Current (Round VIIb)
+
+- **Perceptual quality is unverified.** Every receipt above is structural/causal; none says the
+  music is good. The decisive gate is the maintainer's listen to the Round VIIb renders: can you
+  hear THAT musician's idea transformed by the responder; the exact musical consequence of a
+  semantic event; complexity distributed rather than piled up; recurring gestures related without
+  identical choreography; a modulation that really moves; quiet that feels intended; one group of
+  musicians reacting to each other.
+- **The material-relation metric shares a germ.** Every figure is grown from the one motif bank,
+  so a caller and an unrelated line can resemble each other by common provenance; the receipts
+  compare against every other line actually sounding, but a positive margin is evidence of
+  causal derivation, not proof of perceptual salience. Two-event answers are marked
+  uninformative.
+- **Lead answers are statements.** The lead answers a figure through its next statement's entry
+  (it continues the figure's contour); it never plays a free 2-beat interjection.
+- **`Sequence` has no realizer** (the morphism is deferred with that reason); `Pivot` is produced
+  by no semantic event.
+- **The flagship never modulates** (its story has no Impact / Danger event); true modulation is
+  exercised by the cinematic story and the region tests. A Modulate landing exactly on a Deflect
+  slot start cannot establish its key and is relabelled `Tonicize`.
+- **Voicing weights and budget constants are hand-set**, calibrated so the flagship neither
+  violates nor idles its budget; they were not tuned by listening.
+- **Undeclared idle is 10 beats** on the flagship (beats 37.5–47.5, inside cycle 1's four-bar
+  Deflect slot: the lead's statement at beat 40 stands alone — it is not a call — and no verb fires
+  until the next call at 47.5), reported rather than declared away.
+- **The Round VII witness count was not causal.** Anything citing "57/57" predates this round.
+- The model is experimental; Rust-only; not in the C ABI; version 0.3.1; nothing here is released.
+
+### Historical (Round III/IV)
+
 
 This is Round IV of the intended v0.4.0 milestone. Round IV (§3.12) added pitch justification (no
 unjustified lead notes), healed the second Culminate/Climax split-brain, gave phrases register
