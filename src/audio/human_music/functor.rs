@@ -10,12 +10,14 @@
 use super::action::{ActionCause, ActionKind, Agent};
 use super::contract::{CoherenceContract, CompositionGrammar};
 use super::form::{Section, BEATS_PER_BAR};
+use super::harmonic_state::HarmonicEnsembleState;
 use super::ids::ActionId;
 use super::intent::{IntentMorphism, MusicIntent};
-use super::performance::{PerformanceOptions, PerformancePlan};
+use super::performance::{EnsembleCoupling, PerformanceOptions, PerformancePlan};
 use super::plan::{ArrangementRole, CompositionPlan};
-use super::score::{PitchFunction, Provenance, Score, SfxEvent, SfxKind};
+use super::score::{Note, PitchFunction, Provenance, Score, SfxEvent, SfxKind};
 use super::semantic::{EventKind, SemanticTrace, Tone};
+use super::sonority::{plan_sonority, ColorPolicy};
 use super::theory::{pitch_class, Chord, Midi};
 use super::timeline::IntentTimeline;
 use super::world::MusicWorld;
@@ -126,9 +128,19 @@ fn realize(
     let lead = super::melody::realize_lead(perf, plan);
     score.melody_repairs = lead.repairs;
     score.melody_rejudged = lead.rejudged;
-    let keys = super::comp::realize_keys(perf, plan, world, &lead.notes, seed);
-    let pad = super::comp::realize_pad(perf, plan, world);
-    let bass = super::bass::realize_bass(perf, plan, world, &lead.notes, &keys);
+    let (pad, keys, bass) = match perf.coupling {
+        EnsembleCoupling::Independent => {
+            let keys = super::comp::realize_keys(perf, plan, world, &lead.notes, seed);
+            let pad = super::comp::realize_pad(perf, plan, world);
+            let bass = super::bass::realize_bass(perf, plan, world, &lead.notes, &keys);
+            (pad, keys, bass)
+        }
+        EnsembleCoupling::Coupled => {
+            let r = realize_coupled(world, seed, plan, perf, &lead.notes);
+            score.vertical_decisions = r.decisions;
+            (r.pad, r.keys, r.bass)
+        }
+    };
     score.drums = super::groove::realize_drums(perf, plan, world, seed, &bass, &lead.notes);
     score.notes.extend(pad);
     score.notes.extend(keys);
@@ -147,6 +159,48 @@ fn realize(
         "a realizer played somebody the stage had out"
     );
     score
+}
+
+/// The pitched support players realized as ONE harmonic state (Round VIII).
+struct Coupled {
+    pad: Vec<Note>,
+    keys: Vec<Note>,
+    bass: Vec<Note>,
+    decisions: Vec<super::harmonic_state::VerticalDecision>,
+}
+
+/// Realize bass, keys and pad against one [`HarmonicEnsembleState`], in RIGIDITY order: the lead is
+/// already fixed (the first mover); the bass states the floor against it; the keys' material lines
+/// (answers, figures, unison — pitch free within their contour) are placed against lead and bass;
+/// then the pad and the keys' comping are voiced JOINTLY against everything already sounding.
+fn realize_coupled(
+    world: &MusicWorld,
+    seed: u64,
+    plan: &CompositionPlan,
+    perf: &PerformancePlan,
+    lead: &[Note],
+) -> Coupled {
+    let policy = ColorPolicy::for_world(world.id, &perf.language);
+    let plans = plan_sonority(&perf.contexts, lead, &policy);
+    let mut state = HarmonicEnsembleState::new(&perf.contexts, plans, policy);
+    state.commit(lead);
+    let bass = super::bass::realize_bass(perf, plan, world, lead, &[]);
+    state.commit(&bass);
+    let lines = super::comp::keys_lines(perf, lead, super::comp::keys_velocity(world));
+    state.commit(&lines);
+    let spread = world.voicing_spread;
+    let kp = super::voicing::keys_path(perf, spread, lead, super::comp::keys_shell_n(perf));
+    let pp = super::voicing::pad_path(perf, spread);
+    let pad = super::comp::realize_pad_on(perf, world, &pp);
+    let mut keys = super::comp::keys_comp(perf, world, lead, seed, &kp);
+    keys.extend(lines);
+    let keys = super::comp::finish_keys(keys, perf);
+    Coupled {
+        pad,
+        keys,
+        bass,
+        decisions: state.log().to_vec(),
+    }
 }
 
 /// The final end-of-piece safety pass: no note, drum stroke, SFX or chord span starts at or after

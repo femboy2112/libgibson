@@ -50,6 +50,9 @@ pub const MIN_OVERLAP_BEATS: f64 = 0.125;
 /// The chordal cluster exemption: a one-player semitone of chord tones is a voicing colour only at
 /// or above this pitch (lower, it is mud).
 pub const CLUSTER_FLOOR: Midi = 55;
+/// Harmonic memory: a root stated (by anyone) within this many beats, inside the same harmony,
+/// still names the chord — a two-feel's fifth on beat 3 is Dm7/A, not Fmaj7.
+pub const ROOT_MEMORY_BEATS: f64 = 2.0;
 
 /// A tension's degree over the chord root.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -402,6 +405,82 @@ pub struct SonorityPlan {
     pub policy: ColorPolicy,
 }
 
+impl SonorityPlan {
+    /// The colour room the accompaniment has left: the policy's budget minus the colours the lead
+    /// already owns here.
+    pub fn color_room(&self) -> usize {
+        self.policy.color_budget.saturating_sub(self.colors.len())
+    }
+
+    /// A one-line dump.
+    pub fn dump(&self) -> String {
+        let colors: Vec<String> = self
+            .colors
+            .iter()
+            .map(|(pc, r)| format!("{pc}:{}", r.label()))
+            .collect();
+        format!(
+            "  sonority ctx{} @{:.2}-{:.2}: floor pc{} {}  core {:?}  colours [{}] room {}",
+            self.context,
+            self.start_beat,
+            self.end_beat,
+            self.bass_pc,
+            self.bass_function.label(),
+            self.core,
+            colors.join(" "),
+            self.color_room()
+        )
+    }
+}
+
+/// Allocate every harmony BEFORE the support players voice it: the floor (the root — no inversion
+/// is planned until one is authored), the identity tones the band must contain, and the colours the
+/// LEAD already owns there (its resting extensions of a half beat or more — the lead is the first
+/// mover and is never re-pitched), under `policy`. A pure function of the contexts and the lead line,
+/// computed at realize time (a probe that mutates the performance and re-realizes gets a fresh plan).
+pub fn plan_sonority(
+    contexts: &[HarmonicContext],
+    lead: &[super::score::Note],
+    policy: &ColorPolicy,
+) -> Vec<SonorityPlan> {
+    contexts
+        .iter()
+        .enumerate()
+        .map(|(i, ctx)| {
+            let start = ctx.start_beat;
+            let end = start + ctx.dur_beats as f64;
+            let core = core_pcs(&ctx.chord);
+            let mut colors: Vec<(i32, Role)> = Vec::new();
+            for n in lead.iter().filter(|n| {
+                let e = n.start_beat + n.dur_beats as f64;
+                n.start_beat >= start - 1e-6
+                    && n.start_beat < end - 1e-6
+                    && e.min(end) - n.start_beat >= 0.5 - 1e-9
+                    && !n.function.is_some_and(|f| is_linear(f) || is_suspension(f))
+            }) {
+                let pc = pitch_class(n.pitch);
+                if !core.contains(&pc) && !colors.iter().any(|c| c.0 == pc) {
+                    colors.push((pc, Role::Lead));
+                }
+            }
+            colors.sort_by_key(|c| c.0);
+            SonorityPlan {
+                context: i,
+                start_beat: start,
+                end_beat: end,
+                bass_pc: ctx.chord.root_pc,
+                bass_function: BassFunction::Root,
+                core: identity_pcs(&ctx.chord),
+                colors,
+                omit: Vec::new(),
+                altered: Vec::new(),
+                upper_structure: None,
+                policy: *policy,
+            }
+        })
+        .collect()
+}
+
 /// A sounding note, as the vertical theory sees it: who, what pitch, when, and why.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Voice {
@@ -415,8 +494,18 @@ pub struct Voice {
     /// Whether this note, if linear or suspended, reaches its resolution (the same player moves by
     /// step to a stable tone within [`RESOLVE_WINDOW_BEATS`]). Always true for a stable note.
     pub resolves: bool,
+    /// The pitch the same player steps to next (observed), if it does — what a suspension resolves
+    /// INTO (it may not sound against that tone), what an alteration owes.
+    pub resolves_to: Option<Midi>,
     /// Whether it doubles a planned ensemble unison line (one owner in several roles).
     pub unison: bool,
+    /// Where the note is WRITTEN to end (the Score's end), when `end` is an audible end instead — so
+    /// a same-player release tail crossfading under its own successor reads as voice-leading.
+    pub written_end: f64,
+    /// A pitched SFX gesture (it joins the union; its owned dissonance is its owner's).
+    pub sfx: bool,
+    /// An SFX dissonance owned by a planned action.
+    pub owned: bool,
 }
 
 impl Voice {
@@ -467,6 +556,9 @@ pub enum VerticalClass {
     Suspension,
     /// An explicitly planned alteration package.
     AlteredColor,
+    /// One player's release tail crossfading a step under its own successor (voice-leading, heard
+    /// only through the envelope — never in the written Score).
+    VoiceStep,
     /// Nothing accounts for it.
     UnownedCollision,
 }
@@ -481,15 +573,18 @@ impl VerticalClass {
             VerticalClass::LinearCollision => "linear",
             VerticalClass::Suspension => "suspension",
             VerticalClass::AlteredColor => "altered",
+            VerticalClass::VoiceStep => "voice-step",
             VerticalClass::UnownedCollision => "UNOWNED",
         }
     }
 }
 
 /// Who owns the semitone-class clash between `a` and `b` over `ctx` — the vertical question. The
-/// order of the exemptions is the order of the argument: motion first (a resolving linear note or
-/// suspension owns its clash), then structure (a bass pedal, a planned alteration), then the
-/// one-player chordal cluster; otherwise nobody does.
+/// order of the exemptions is the order of the argument: motion first (a resolving linear note owns
+/// its clash; a resolving suspension owns one — but never against the very tone it resolves into,
+/// save the 9-8 over a bass that holds it an octave or more below), then structure (a bass pedal, an
+/// SFX gesture's owned dissonance, a planned alteration against the dominant's ROOT that resolves),
+/// then the one-player chordal cluster and the one-player release crossfade; otherwise nobody does.
 pub fn classify_clash(
     ctx: &HarmonicContext,
     a: &Voice,
@@ -504,34 +599,60 @@ pub fn classify_clash(
     }
     let susp = |v: &Voice| v.function.is_some_and(is_suspension);
     if susp(lo) || susp(hi) {
-        return if (susp(lo) && lo.resolves) || (susp(hi) && hi.resolves) {
-            VerticalClass::Suspension
-        } else {
+        let (s, other) = if susp(hi) { (hi, lo) } else { (lo, hi) };
+        if !s.resolves {
+            return VerticalClass::UnownedCollision;
+        }
+        let against_resolution = s.resolves_to.map(pitch_class) == Some(pitch_class(other.pitch));
+        let nine_eight = other.role == Role::Bass && !other.sfx && s.pitch - other.pitch >= 12;
+        return if against_resolution && !nine_eight {
             VerticalClass::UnownedCollision
+        } else {
+            VerticalClass::Suspension
         };
     }
     if lo.role == Role::Bass
+        && !lo.sfx
         && (lo.function == Some(PitchFunction::PedalTone) || lo.tag == "pedal")
         && hi.pitch - lo.pitch >= 12
     {
         return VerticalClass::OwnedTension;
     }
+    if (lo.sfx && lo.owned) || (hi.sfx && hi.owned) {
+        return VerticalClass::OwnedTension;
+    }
     if let Some(p) = plan {
-        let (lpc, hpc) = (pitch_class(lo.pitch), pitch_class(hi.pitch));
-        if !p.altered.is_empty()
-            && (p.altered.contains(&hpc) || p.altered.contains(&lpc))
-            && (lpc == ctx.chord.root_pc || hpc == ctx.chord.root_pc || p.altered.contains(&lpc))
-        {
-            return VerticalClass::AlteredColor;
+        if is_dominant(&ctx.chord) && !p.altered.is_empty() {
+            let root = ctx.chord.root_pc;
+            let (lpc, hpc) = (pitch_class(lo.pitch), pitch_class(hi.pitch));
+            let owned_by = |alt: &Voice, other_pc: i32| {
+                p.altered.contains(&pitch_class(alt.pitch))
+                    && other_pc == root
+                    && alt.resolves_to.is_some()
+            };
+            if owned_by(hi, lpc) || owned_by(lo, hpc) {
+                return VerticalClass::AlteredColor;
+            }
         }
     }
     if lo.role == hi.role
+        && !lo.sfx
+        && !hi.sfx
         && hi.pitch - lo.pitch == 1
         && lo.pitch >= CLUSTER_FLOOR
         && ctx.chord.contains_pc(pitch_class(lo.pitch))
         && ctx.chord.contains_pc(pitch_class(hi.pitch))
     {
         return VerticalClass::StableColor;
+    }
+    let crossfade = |x: &Voice, y: &Voice| x.written_end <= y.start + 1e-6;
+    if lo.role == hi.role
+        && !lo.sfx
+        && !hi.sfx
+        && (hi.pitch - lo.pitch) <= 2
+        && (crossfade(lo, hi) || crossfade(hi, lo))
+    {
+        return VerticalClass::VoiceStep;
     }
     VerticalClass::UnownedCollision
 }
@@ -559,16 +680,19 @@ pub enum Problem {
     ExpensiveSustained { voice: usize },
     /// A chordal player sounds, but the band lacks an identity tone (a guide tone, or an altered 5th).
     MissingCore { missing: Vec<i32> },
-    /// The bass rests on a non-root while nobody sounds the root: the rootless upper voices plus
-    /// that floor spell a DIFFERENT chord (Dm7's shell over an A bass reads Fmaj7). Hard when the
-    /// bass holds it a beat or more.
+    /// The bass rests on a non-root while nobody sounds the root — nor has, inside this harmony,
+    /// within [`ROOT_MEMORY_BEATS`]: the rootless upper voices plus that floor spell a DIFFERENT
+    /// chord (Dm7's shell over an A bass that never stated D reads Fmaj7). Hard when the bass holds
+    /// it a beat or more.
     IdentityFlip { bass: usize, held: bool },
     /// More voices sounding than the policy's density limit.
     Crowded { voices: usize, limit: usize },
     /// More distinct pitch classes than the policy's limit.
     TooManyPcs { pcs: usize, limit: usize },
-    /// A linear/suspended note that never reaches its resolution.
+    /// A linear/suspended note (or a planned alteration) that never reaches its resolution.
     Unresolved { voice: usize },
+    /// A resting colour tone voiced below its [`TensionSpec::min_register`].
+    TensionLow { voice: usize },
 }
 
 impl Problem {
@@ -584,8 +708,10 @@ impl Problem {
     }
 }
 
-/// Every [`Voice`] of a realized Score, sorted by (start, role, pitch), with the resolution flag of
-/// each linear or suspended note computed from what the same player actually plays next.
+/// Every [`Voice`] of a realized Score — its notes and its pitched SFX gestures (for their gated
+/// life: attack + decay + hold) — sorted by (start, role, pitch), with each note's observed
+/// resolution (what the same player steps to next) and the resolution flag of each linear or
+/// suspended note.
 pub fn voices_of(score: &Score, contexts: &[HarmonicContext]) -> Vec<Voice> {
     let mut v: Vec<Voice> = score
         .notes
@@ -598,46 +724,79 @@ pub fn voices_of(score: &Score, contexts: &[HarmonicContext]) -> Vec<Voice> {
             function: n.function,
             tag: n.prov.role_note,
             resolves: true,
+            resolves_to: None,
             unison: n.prov.motif_xform == Some("unison") || n.prov.role_note == "unison",
+            written_end: n.start_beat + n.dur_beats as f64,
+            sfx: false,
+            owned: false,
         })
         .collect();
+    let bps = score.tempo_bpm.max(1.0) as f64 / 60.0;
+    for e in score.sfx.iter().filter(|e| e.is_pitched()) {
+        let (a, d, _, _) = e.kind.envelope();
+        let end = e.start_beat + (a + d + e.kind.hold_secs()) as f64 * bps;
+        for (k, &p) in e.pitches.iter().enumerate() {
+            v.push(Voice {
+                role: Role::Lead,
+                pitch: p,
+                start: e.start_beat,
+                end,
+                function: e.function[k],
+                tag: "sfx",
+                resolves: true,
+                resolves_to: None,
+                unison: false,
+                written_end: end,
+                sfx: true,
+                owned: e.owned_by.is_some(),
+            });
+        }
+    }
     v.sort_by(|a, b| {
         a.start
             .total_cmp(&b.start)
             .then(a.role.label().cmp(b.role.label()))
             .then(a.pitch.cmp(&b.pitch))
     });
-    let resolved: Vec<bool> = v
-        .iter()
-        .map(|x| {
-            let needs = x.function.is_some_and(|f| is_linear(f) || is_suspension(f));
-            !needs || resolves_in(&v, x, contexts)
-        })
-        .collect();
-    for (x, r) in v.iter_mut().zip(resolved) {
-        x.resolves = r;
-    }
+    settle_resolutions(&mut v, contexts);
     v
 }
 
-/// Whether the same player, within [`RESOLVE_WINDOW_BEATS`] of `x`'s end, moves by a step (1–2
-/// semitones) to a pitch stable over the harmony it lands in (a chord tone for the bass).
-fn resolves_in(all: &[Voice], x: &Voice, contexts: &[HarmonicContext]) -> bool {
-    all.iter().any(|y| {
-        y.role == x.role
-            && y.start > x.start + 1e-6
-            && y.start >= x.end - 0.26
-            && y.start <= x.end + RESOLVE_WINDOW_BEATS
-            && (1..=2).contains(&(y.pitch - x.pitch).abs())
-            && context_at(contexts, y.start).is_some_and(|c| {
-                let pc = pitch_class(y.pitch);
-                if y.role == Role::Bass {
-                    c.chord.contains_pc(pc)
-                } else {
-                    c.palette.is_stable(pc)
-                }
-            })
-    })
+/// Fill each voice's observed resolution and the resolution flag of its linear/suspended notes.
+pub fn settle_resolutions(v: &mut [Voice], contexts: &[HarmonicContext]) {
+    let resolved: Vec<Option<Midi>> = v.iter().map(|x| resolution_of(v, x, contexts)).collect();
+    for (x, r) in v.iter_mut().zip(resolved) {
+        let needs = x.function.is_some_and(|f| is_linear(f) || is_suspension(f));
+        x.resolves = !needs || r.is_some();
+        x.resolves_to = r;
+    }
+}
+
+/// The pitch the same player steps to (1–2 semitones), within [`RESOLVE_WINDOW_BEATS`] of `x`'s
+/// written end, if it is stable over the harmony it lands in (a chord tone for the bass) — the
+/// observed resolution. SFX gestures never resolve (they are gestures, not lines).
+pub fn resolution_of(all: &[Voice], x: &Voice, contexts: &[HarmonicContext]) -> Option<Midi> {
+    if x.sfx {
+        return None;
+    }
+    all.iter()
+        .find(|y| {
+            !y.sfx
+                && y.role == x.role
+                && y.start > x.start + 1e-6
+                && y.start >= x.written_end - 0.26
+                && y.start <= x.written_end + RESOLVE_WINDOW_BEATS
+                && (1..=2).contains(&(y.pitch - x.pitch).abs())
+                && context_at(contexts, y.start).is_some_and(|c| {
+                    let pc = pitch_class(y.pitch);
+                    if y.role == Role::Bass {
+                        c.chord.contains_pc(pc)
+                    } else {
+                        c.palette.is_stable(pc)
+                    }
+                })
+        })
+        .map(|y| y.pitch)
 }
 
 /// The approximate AUDIBLE end (beats) of a note on `patch` at `tempo_bpm` — its ADSR heard down to
@@ -737,8 +896,15 @@ pub fn evaluate(
         if matches!(f, BassFunction::Tension(_) | BassFunction::NonChord) && !owned {
             problems.push(Problem::BassFunction { bass, function: f });
         }
-        // The identity: a non-root floor under a band that has no root anywhere.
-        let root_sounds = sounding
+        // The identity: a non-root floor under a band that has no root anywhere — and has not had
+        // one, in this harmony, within the ear's memory.
+        let now = voices[bass].start.max(ctx.start_beat);
+        let root_sounds = voices.iter().any(|x| {
+            pitch_class(x.pitch) == ctx.chord.root_pc
+                && !x.is_linear()
+                && x.start < now + 1e-6
+                && x.end > (now - ROOT_MEMORY_BEATS).max(ctx.start_beat) + 1e-6
+        }) || sounding
             .iter()
             .any(|&i| pitch_class(voices[i].pitch) == ctx.chord.root_pc && !voices[i].is_linear());
         let chordal = sounding
@@ -755,11 +921,16 @@ pub fn evaluate(
             }
         }
     }
-    // Colour: the resting (non-linear) tones beyond the core.
+    // Colour: the resting (non-linear) tones beyond the core. SFX gestures are not the band's
+    // colour owners (they join the clash and density checks only).
     let resting: Vec<usize> = sounding
         .iter()
         .copied()
-        .filter(|&i| !voices[i].is_linear() && !voices[i].function.is_some_and(is_suspension))
+        .filter(|&i| {
+            !voices[i].sfx
+                && !voices[i].is_linear()
+                && !voices[i].function.is_some_and(is_suspension)
+        })
         .collect();
     let mut colors: Vec<i32> = resting
         .iter()
@@ -789,6 +960,29 @@ pub fn evaluate(
                 .filter(|&&i| pitch_class(voices[i].pitch) == pc)
             {
                 problems.push(Problem::ExpensiveSustained { voice: i });
+            }
+        }
+    }
+    // Available is not stable anywhere: a resting colour below its spec's register muddies the floor.
+    let specs = tension_specs(ctx);
+    for &i in &resting {
+        let pc = pitch_class(voices[i].pitch);
+        if voices[i].role != Role::Bass
+            && specs
+                .iter()
+                .any(|t| t.pc == pc && voices[i].pitch < t.min_register)
+        {
+            problems.push(Problem::TensionLow { voice: i });
+        }
+    }
+    // A planned alteration is a tendency: sounded, it owes its step.
+    if let Some(p) = plan {
+        for &i in sounding {
+            if !voices[i].sfx
+                && p.altered.contains(&pitch_class(voices[i].pitch))
+                && voices[i].resolves_to.is_none()
+            {
+                problems.push(Problem::Unresolved { voice: i });
             }
         }
     }
@@ -939,6 +1133,11 @@ pub struct EnsembleSonorityDiagnostics {
     pub missing_core_beats: f64,
     /// Linear/suspended notes that never resolve (unique).
     pub unresolved: usize,
+    /// Unique resting colour notes voiced below their tension's register floor.
+    pub tension_low: usize,
+    /// Unique cross-role MAJOR 2nds / 9ths among resting upper voices — soft: colour, but a smear
+    /// of them is what a fix that merely turns every m2 into an M2 would leave behind.
+    pub cross_role_seconds: usize,
     /// Unique bass notes whose floor flips the chord's identity (rootless band, non-root bass);
     /// `identity_flips_held` of them held a beat or more (hard). And the beats it lasts.
     pub identity_flips: usize,
@@ -955,13 +1154,14 @@ pub struct EnsembleSonorityDiagnostics {
     pub policy: Option<ColorPolicy>,
 }
 
-fn pair_key(a: Role, b: Role) -> String {
-    let (x, y) = if a.label() <= b.label() {
-        (a, b)
+fn pair_key(a: &Voice, b: &Voice) -> String {
+    let name = |v: &Voice| if v.sfx { "sfx" } else { v.role.label() };
+    let (x, y) = if name(a) <= name(b) {
+        (name(a), name(b))
     } else {
-        (b, a)
+        (name(b), name(a))
     };
-    format!("{}/{}", x.label(), y.label())
+    format!("{x}/{y}")
 }
 
 impl EnsembleSonorityDiagnostics {
@@ -1021,6 +1221,7 @@ impl EnsembleSonorityDiagnostics {
         let mut expensive: BTreeSet<usize> = BTreeSet::new();
         let mut unresolved: BTreeSet<usize> = BTreeSet::new();
         let mut flips: BTreeSet<(usize, bool)> = BTreeSet::new();
+        let mut low_tension: BTreeSet<usize> = BTreeSet::new();
         for s in &sl {
             let dur = s.end - s.start;
             total += dur;
@@ -1057,7 +1258,7 @@ impl EnsembleSonorityDiagnostics {
                             any_unowned = true;
                             if unowned.insert((*a, *b, *clash)) {
                                 *d.role_pairs
-                                    .entry(pair_key(voices[*a].role, voices[*b].role))
+                                    .entry(pair_key(&voices[*a], &voices[*b]))
                                     .or_default() += 1;
                             }
                         }
@@ -1083,6 +1284,9 @@ impl EnsembleSonorityDiagnostics {
                     Problem::IdentityFlip { bass, held } => {
                         flips.insert((*bass, *held));
                         any_flip = true;
+                    }
+                    Problem::TensionLow { voice } => {
+                        low_tension.insert(*voice);
                     }
                 }
             }
@@ -1123,6 +1327,31 @@ impl EnsembleSonorityDiagnostics {
         d.expensive_sustained = expensive.len();
         d.unresolved = unresolved.len();
         d.identity_flips = flips.len();
+        d.tension_low = low_tension.len();
+        let mut seconds: BTreeSet<(usize, usize)> = BTreeSet::new();
+        for s in &sl {
+            for (i, &a) in s.sounding.iter().enumerate() {
+                for &b in &s.sounding[i + 1..] {
+                    let (va, vb) = (&voices[a], &voices[b]);
+                    let resting = |v: &Voice| {
+                        !v.sfx
+                            && !v.is_linear()
+                            && v.role != Role::Bass
+                            && !v.function.is_some_and(is_suspension)
+                    };
+                    let overlap = va.end.min(vb.end) - va.start.max(vb.start);
+                    if va.role != vb.role
+                        && resting(va)
+                        && resting(vb)
+                        && matches!((va.pitch - vb.pitch).abs(), 2 | 14)
+                        && overlap >= MIN_OVERLAP_BEATS - 1e-9
+                    {
+                        seconds.insert((a.min(b), a.max(b)));
+                    }
+                }
+            }
+        }
+        d.cross_role_seconds = seconds.len();
         d.identity_flips_held = flips.iter().filter(|x| x.1).count();
         for v in voices.iter().filter(|v| v.role == Role::Bass) {
             let Some(ctx) = context_at(contexts, v.start) else {
@@ -1208,11 +1437,13 @@ impl EnsembleSonorityDiagnostics {
         );
         let _ = writeln!(
             s,
-            "  duplicate_tension_slices={} over_colour_slices={} contradiction_slices={} expensive_sustained={} missing_core_slices={} ({:.2} beats) crowded={} too_many_pcs={}",
+            "  duplicate_tension_slices={} over_colour_slices={} contradiction_slices={} expensive_sustained={} tension_low={} cross_role_seconds={} missing_core_slices={} ({:.2} beats) crowded={} too_many_pcs={}",
             self.duplicate_tension_slices,
             self.over_color_slices,
             self.contradiction_slices,
             self.expensive_sustained,
+            self.tension_low,
+            self.cross_role_seconds,
             self.missing_core_slices,
             self.missing_core_beats,
             self.crowded_slices,
@@ -1229,9 +1460,18 @@ impl EnsembleSonorityDiagnostics {
         .iter()
         .map(|k| format!("{k}={}", self.role_pairs.get(*k).copied().unwrap_or(0)))
         .chain(
-            ["bass/bass", "keys/keys", "lead/lead", "pad/pad"]
-                .iter()
-                .filter_map(|k| self.role_pairs.get(*k).map(|n| format!("{k}={n}"))),
+            [
+                "bass/bass",
+                "keys/keys",
+                "lead/lead",
+                "pad/pad",
+                "bass/sfx",
+                "keys/sfx",
+                "lead/sfx",
+                "pad/sfx",
+            ]
+            .iter()
+            .filter_map(|k| self.role_pairs.get(*k).map(|n| format!("{k}={n}"))),
         )
         .collect();
         let _ = writeln!(s, "  unowned by role pair: {}", pairs.join(" "));
@@ -1261,30 +1501,42 @@ pub fn describe(s: &Slice, voices: &[Voice], contexts: &[HarmonicContext]) -> St
         s.sounding.len(),
         s.distinct_pcs
     );
-    for role in [Role::Bass, Role::Pad, Role::Keys, Role::Lead] {
+    for (label, role, sfx) in [
+        ("bass", Role::Bass, false),
+        ("pad", Role::Pad, false),
+        ("keys", Role::Keys, false),
+        ("lead", Role::Lead, false),
+        ("sfx", Role::Lead, true),
+    ] {
         let names: Vec<String> = s
             .sounding
             .iter()
-            .filter(|&&i| voices[i].role == role)
+            .filter(|&&i| voices[i].role == role && voices[i].sfx == sfx)
             .map(|&i| {
                 let v = &voices[i];
                 format!(
-                    "{}({})",
+                    "{}({},{})",
                     note_name(v.pitch),
-                    v.function.map(|f| f.label()).unwrap_or("NONE")
+                    v.function.map(|f| f.label()).unwrap_or("NONE"),
+                    v.tag
                 )
             })
             .collect();
         if !names.is_empty() {
-            let _ = writeln!(
-                out,
-                "  {:5} {}",
-                format!("{}:", role.label()),
-                names.join(" ")
-            );
+            let _ = writeln!(out, "  {:5} {}", format!("{label}:"), names.join(" "));
         }
     }
-    let nm = |i: usize| format!("{} {}", voices[i].role.label(), note_name(voices[i].pitch));
+    let nm = |i: usize| {
+        format!(
+            "{} {}",
+            if voices[i].sfx {
+                "sfx"
+            } else {
+                voices[i].role.label()
+            },
+            note_name(voices[i].pitch)
+        )
+    };
     for p in &s.problems {
         let line = match p {
             Problem::Unowned { clash, a, b } => {
@@ -1324,6 +1576,10 @@ pub fn describe(s: &Slice, voices: &[Voice], contexts: &[HarmonicContext]) -> St
             Problem::Crowded { voices: n, limit } => format!("{n} sounding voices > {limit}"),
             Problem::TooManyPcs { pcs, limit } => format!("{pcs} distinct pcs > {limit}"),
             Problem::Unresolved { voice } => format!("{} never resolves", nm(*voice)),
+            Problem::TensionLow { voice } => format!(
+                "{} is colour below its register floor (muddies the foundation)",
+                nm(*voice)
+            ),
             Problem::IdentityFlip { bass, held } => format!(
                 "{} under a rootless band = a different chord{}",
                 nm(*bass),
@@ -1371,7 +1627,11 @@ mod tests {
             function: Some(f),
             tag,
             resolves: true,
+            resolves_to: None,
             unison: false,
+            written_end: end,
+            sfx: false,
+            owned: false,
         }
     }
 
@@ -1638,21 +1898,22 @@ mod tests {
     }
 
     #[test]
-    fn a_resolving_suspension_passes_and_a_broken_one_fails() {
-        // Over G7 the keys hold C5, a 4-3 suspension a minor 2nd over the pad's B4. Resolved: the
-        // keys step down to B4 at beat 2. Broken: the keys never move.
-        let g7 = Chord::new(7, Quality::Dom7);
-        let c = ctx_of(&[(0.0, 4.0, g7)]);
-        let mk = |resolve: bool| {
+    fn a_suspension_owns_its_clash_only_off_its_own_resolution_tone() {
+        // Over C, the keys suspend D♭4 into C4 (a b9-8 against the bass). The clash is D♭4 against
+        // whatever else sounds a semitone class away from it.
+        let c_maj = Chord::new(0, Quality::Maj);
+        let c = ctx_of(&[(0.0, 4.0, c_maj)]);
+        let mk = |partner: Voice, resolve: bool| {
             let mut vs = vec![
-                v(Role::Bass, 43, 0.0, 4.0, PitchFunction::ChordTone, "root"),
-                v(Role::Pad, 71, 0.0, 4.0, PitchFunction::ChordTone, "pad"),
-                v(Role::Keys, 72, 0.0, 2.0, PitchFunction::Suspension, "hold"),
+                partner,
+                v(Role::Pad, 64, 0.0, 4.0, PitchFunction::ChordTone, "pad"),
+                v(Role::Pad, 67, 0.0, 4.0, PitchFunction::ChordTone, "pad"),
+                v(Role::Keys, 61, 0.0, 2.0, PitchFunction::Suspension, "hold"),
             ];
             if resolve {
                 vs.push(v(
                     Role::Keys,
-                    71,
+                    60,
                     2.0,
                     4.0,
                     PitchFunction::ChordTone,
@@ -1661,31 +1922,53 @@ mod tests {
             }
             voices_of_with_resolution(&mut vs, &c)
         };
-        let ok = measure(mk(true), &c);
+        // The 9-8: the BASS holds the resolution pitch class an octave and more below — owned.
+        let bass_c3 = v(Role::Bass, 48, 0.0, 4.0, PitchFunction::ChordTone, "root");
+        let ok = measure(mk(bass_c3, true), &c);
         assert_eq!(ok.hard_total(), 0, "{}", ok.report());
         assert!(ok.owned.get("suspension").copied().unwrap_or(0) >= 1);
-        let broken = measure(mk(false), &c);
-        assert!(broken.unowned_m2 >= 1, "{}", broken.report());
+        // The same suspension against its resolution tone in ANOTHER UPPER voice (the pad holding
+        // C4 while the keys' D♭4 resolves into it) is the forbidden case — unowned.
+        let pad_c4 = v(Role::Pad, 60, 0.0, 4.0, PitchFunction::ChordTone, "pad");
+        let against = measure(mk(pad_c4, true), &c);
+        assert!(against.unowned_m2 >= 1, "{}", against.report());
+        // Broken: never resolves.
+        let bass_c3 = v(Role::Bass, 48, 0.0, 4.0, PitchFunction::ChordTone, "root");
+        let broken = measure(mk(bass_c3, false), &c);
+        assert!(broken.unowned_m9 >= 1, "{}", broken.report());
         assert!(broken.unresolved >= 1);
     }
 
     #[test]
-    fn a_planned_altered_dominant_is_coherent_and_the_same_notes_unplanned_are_not() {
-        // G7(b9): bass G2, keys G3 B3 F4 A♭4 — the A♭4 a minor 9th over the keys' G3. Unplanned it is
-        // an unowned m9; with an explicit alteration package {A♭} it is the chord's planned colour.
+    fn a_planned_altered_dominant_is_coherent_and_its_abuses_are_not() {
+        // G7(b9) -> Cmaj7: bass G2; keys G3 B3 F4 and A♭4 — the A♭4 a minor 9th over the keys' G3
+        // (the root) — then A♭4 steps down to G4 on the Cmaj7. The package {A♭} owns the b9 against
+        // the ROOT, over a DOMINANT, when it RESOLVES; nothing else.
         let g7 = Chord::new(7, Quality::Dom7);
-        let c = ctx_of(&[(0.0, 4.0, g7)]);
-        let voices = vec![
-            v(Role::Bass, 43, 0.0, 4.0, PitchFunction::ChordTone, "root"),
-            v(Role::Keys, 55, 0.0, 4.0, PitchFunction::ChordTone, "comp"),
-            v(Role::Keys, 59, 0.0, 4.0, PitchFunction::ChordTone, "comp"),
-            v(Role::Keys, 65, 0.0, 4.0, PitchFunction::ChordTone, "comp"),
-            v(Role::Keys, 68, 0.0, 4.0, PitchFunction::ModalColor, "comp"),
-        ];
-        let unplanned = measure(voices.clone(), &c);
-        assert!(unplanned.unowned_m9 >= 1, "{}", unplanned.report());
-        let plan = SonorityPlan {
-            context: 0,
+        let cmaj7 = Chord::new(0, Quality::Maj7);
+        let c = ctx_of(&[(0.0, 4.0, g7), (4.0, 4.0, cmaj7)]);
+        let base = |resolve: bool| {
+            let mut vs = vec![
+                v(Role::Bass, 43, 0.0, 4.0, PitchFunction::ChordTone, "root"),
+                v(Role::Keys, 55, 0.0, 4.0, PitchFunction::ChordTone, "comp"),
+                v(Role::Keys, 59, 0.0, 4.0, PitchFunction::ChordTone, "comp"),
+                v(Role::Keys, 65, 0.0, 4.0, PitchFunction::ChordTone, "comp"),
+                v(Role::Keys, 68, 0.0, 4.0, PitchFunction::ModalColor, "comp"),
+            ];
+            if resolve {
+                vs.push(v(
+                    Role::Keys,
+                    67,
+                    4.0,
+                    8.0,
+                    PitchFunction::ChordTone,
+                    "comp",
+                ));
+            }
+            voices_of_with_resolution(&mut vs, &c)
+        };
+        let plan = |ctx: usize| SonorityPlan {
+            context: ctx,
             start_beat: 0.0,
             end_beat: 4.0,
             bass_pc: 7,
@@ -1697,14 +1980,44 @@ mod tests {
             upper_structure: None,
             policy: ColorPolicy::lenient(),
         };
-        let planned = EnsembleSonorityDiagnostics::measure_voices(
-            &voices,
-            &c,
-            &ColorPolicy::lenient(),
-            &[plan],
-        );
+        let lenient = ColorPolicy::lenient();
+        let unplanned = measure(base(true), &c);
+        assert!(unplanned.unowned_m9 >= 1, "{}", unplanned.report());
+        let planned =
+            EnsembleSonorityDiagnostics::measure_voices(&base(true), &c, &lenient, &[plan(0)]);
         assert_eq!(planned.hard_total(), 0, "{}", planned.report());
         assert!(planned.owned.get("altered").copied().unwrap_or(0) >= 1);
+        // The package does not excuse an unresolved alteration.
+        let held =
+            EnsembleSonorityDiagnostics::measure_voices(&base(false), &c, &lenient, &[plan(0)]);
+        assert!(
+            held.unowned_m9 >= 1 && held.unresolved >= 1,
+            "{}",
+            held.report()
+        );
+        // Nor a b9 against the natural 9 (A♭4 against a lead A4): not a clash with the root.
+        let mut with_nine = base(true);
+        with_nine.push(v(
+            Role::Lead,
+            69,
+            0.0,
+            4.0,
+            PitchFunction::LicensedExtension,
+            "melody",
+        ));
+        let with_nine = voices_of_with_resolution(&mut with_nine, &c);
+        let d = EnsembleSonorityDiagnostics::measure_voices(&with_nine, &c, &lenient, &[plan(0)]);
+        assert!(
+            d.unowned_m2 >= 1 && d.contradiction_slices >= 1,
+            "{}",
+            d.report()
+        );
+        // Nor a package on a chord that is not a dominant (the same notes planned over Cmaj7).
+        let cm = ctx_of(&[(0.0, 4.0, cmaj7), (4.0, 4.0, cmaj7)]);
+        let mut over_major = base(true);
+        let over_major = voices_of_with_resolution(&mut over_major, &cm);
+        let d = EnsembleSonorityDiagnostics::measure_voices(&over_major, &cm, &lenient, &[plan(0)]);
+        assert!(d.unowned_m9 >= 1, "{}", d.report());
     }
 
     #[test]
@@ -1733,6 +2046,20 @@ mod tests {
         assert_eq!(flipped.identity_flips_held, 1, "{}", flipped.report());
         let rooted = measure(shells(38), &c);
         assert_eq!(rooted.identity_flips, 0, "{}", rooted.report());
+        // The two-feel: root D2 on beat 1, fifth A2 on beat 3 — the ear still has the D.
+        let mut two_feel = shells(45);
+        two_feel[0].start = 2.0;
+        two_feel[0].end = 4.0;
+        two_feel.push(v(
+            Role::Bass,
+            38,
+            0.0,
+            2.0,
+            PitchFunction::ChordTone,
+            "root",
+        ));
+        let d = measure(two_feel, &c);
+        assert_eq!(d.identity_flips, 0, "{}", d.report());
     }
 
     #[test]
@@ -1785,18 +2112,11 @@ mod tests {
         );
     }
 
-    /// Recompute the `resolves` flags of hand-built voices the way [`voices_of`] does.
+    /// Settle the resolutions of hand-built voices the way [`voices_of`] does.
     fn voices_of_with_resolution(vs: &mut [Voice], ctxs: &[HarmonicContext]) -> Vec<Voice> {
         vs.sort_by(|a, b| a.start.total_cmp(&b.start).then(a.pitch.cmp(&b.pitch)));
-        let all = vs.to_vec();
-        all.iter()
-            .map(|x| {
-                let needs = x.function.is_some_and(|f| is_linear(f) || is_suspension(f));
-                Voice {
-                    resolves: !needs || resolves_in(&all, x, ctxs),
-                    ..*x
-                }
-            })
-            .collect()
+        let mut all = vs.to_vec();
+        settle_resolutions(&mut all, ctxs);
+        all
     }
 }

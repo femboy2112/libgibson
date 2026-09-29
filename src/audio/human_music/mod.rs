@@ -28,6 +28,7 @@ pub mod ensemble;
 pub mod form;
 pub mod functor;
 pub mod groove;
+pub mod harmonic_state;
 pub mod harmony;
 pub mod ids;
 pub mod instrument;

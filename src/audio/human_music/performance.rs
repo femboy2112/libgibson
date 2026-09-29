@@ -131,6 +131,10 @@ fn gesture_ix(g: HarmonicGesture) -> usize {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PerformanceOptions {
     pub language: MusicalLanguage,
+    /// How the pitched players' simultaneous notes are chosen: `Coupled` (Round VIII — one harmonic
+    /// state every player realizes against) or `Independent` (the R7b control: each player solves
+    /// its own pitches and the union is never evaluated).
+    pub coupling: EnsembleCoupling,
     /// Build the action plan (false = the mood-without-action probe).
     pub actions: bool,
     pub responses: ResponseMode,
@@ -144,12 +148,26 @@ impl Default for PerformanceOptions {
     fn default() -> Self {
         PerformanceOptions {
             language: MusicalLanguage::default(),
+            coupling: EnsembleCoupling::Coupled,
             actions: true,
             responses: ResponseMode::Free,
             calls: CallPolicy::Selective,
             manifestations: super::action::ManifestationPolicy::Varied,
         }
     }
+}
+
+/// Whether the pitched players realize ONE coupled harmonic state or solve independently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EnsembleCoupling {
+    /// Round VIII: the band realizes one harmonic state in rigidity order (lead, bass, the keys'
+    /// material lines, then the pad and keys bed solved JOINTLY against everything already
+    /// sounding), with the bass holding the floor and every colour owned.
+    #[default]
+    Coupled,
+    /// The R7b control, byte-identical: lead, keys, pad and bass each choose their pitches alone
+    /// (the keys hear the lead softly; the pad and the bass hear nobody's pitches).
+    Independent,
 }
 
 /// What the stage did with an action whose initiator the arrangement envelope had off stage —
@@ -185,6 +203,8 @@ pub struct AdmissionRecord {
 #[derive(Debug, Clone)]
 pub struct PerformancePlan {
     pub language: MusicalLanguage,
+    /// Coupled or independent ensemble realization (see [`EnsembleCoupling`]).
+    pub coupling: EnsembleCoupling,
     /// The HOME region (the world's tonic + mode). The region in force at a beat is
     /// [`Self::region_at`]: a Modulate moves it for a planned span.
     pub region: Scale,
@@ -419,6 +439,7 @@ impl PerformancePlan {
 
         let mut perf = PerformancePlan {
             language: lang,
+            coupling: opts.coupling,
             region,
             regions,
             chords,

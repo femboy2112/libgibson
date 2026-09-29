@@ -85,7 +85,22 @@ pub fn release_at_harmony_change(
     released
 }
 
-/// Realize the keys.
+/// The keys' base velocity in `world`.
+pub fn keys_velocity(world: &MusicWorld) -> f32 {
+    (0.35 * world.base_dynamic).clamp(0.05, 1.0)
+}
+
+/// How many voices the keys' path carries in `perf`'s language (3 for shell voicings, else 4).
+pub fn keys_shell_n(perf: &PerformancePlan) -> usize {
+    if perf.language.shell_voicings {
+        3
+    } else {
+        4
+    }
+}
+
+/// Realize the keys — the R7b control: one global voice path over every harmony the keys play in,
+/// listening to the lead, and the material lines (answers, figures, unison) projected alone.
 pub fn realize_keys(
     perf: &PerformancePlan,
     _plan: &CompositionPlan,
@@ -93,12 +108,32 @@ pub fn realize_keys(
     lead: &[Note],
     seed: u64,
 ) -> Vec<Note> {
+    let kp = keys_path(perf, world.voicing_spread, lead, keys_shell_n(perf));
+    let mut out = keys_comp(perf, world, lead, seed, &kp);
+    out.extend(keys_lines(perf, lead, keys_velocity(world)));
+    finish_keys(out, perf)
+}
+
+/// The keys' final pass: onset order (stable), then lift off at harmony changes.
+pub fn finish_keys(mut out: Vec<Note>, perf: &PerformancePlan) -> Vec<Note> {
+    out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+    release_at_harmony_change(&mut out, &perf.chords);
+    out
+}
+
+/// The keys' comping and holds on the voice path `kp`: stabs on the shared grid around the lead,
+/// planned pushes/hits, sustained bars and the planned suspensions (not the material lines).
+pub fn keys_comp(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    lead: &[Note],
+    seed: u64,
+    kp: &super::voicing::RolePath,
+) -> Vec<Note> {
     let mut out = Vec::new();
     let mut rng = Rng::new(seed ^ 0x6E75_C0A9);
-    let vel = (0.35 * world.base_dynamic).clamp(0.05, 1.0);
-    let shell_n = if perf.language.shell_voicings { 3 } else { 4 };
-    // One global voice path over every harmony the keys play in, listening to the lead.
-    let kp = keys_path(perf, world.voicing_spread, lead, shell_n);
+    let vel = keys_velocity(world);
+    let shell_n = keys_shell_n(perf);
     let unisons: Vec<(f64, f64)> = perf
         .actions
         .of_kind(super::action::ActionKind::Unison)
@@ -295,6 +330,13 @@ pub fn realize_keys(
             out.push(n);
         }
     }
+    out
+}
+
+/// The keys' material lines, each projected alone (the R7b control): answers to calls, the keys'
+/// own figures, and the planned ensemble unison.
+pub fn keys_lines(perf: &PerformancePlan, lead: &[Note], vel: f32) -> Vec<Note> {
+    let mut out = Vec::new();
     // Answers: the CALL's material, transformed (derived in the plan), in the keys' register —
     // whoever called. Round VII transformed whatever the lead happened to play in the window.
     for (call, r) in perf.responses_for(Agent::Keys) {
@@ -324,8 +366,6 @@ pub fn realize_keys(
             out.push(n);
         }
     }
-    out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
-    release_at_harmony_change(&mut out, &perf.chords);
     out
 }
 
@@ -553,15 +593,23 @@ pub fn figure_notes(perf: &PerformancePlan, agent: Agent, role: Role, velocity: 
     out
 }
 
-/// Realize the pad.
+/// Realize the pad — the R7b control: its own voice path, hearing nobody.
 pub fn realize_pad(
     perf: &PerformancePlan,
     _plan: &CompositionPlan,
     world: &MusicWorld,
 ) -> Vec<Note> {
-    let mut out = Vec::new();
     // One global voice path over the sounding harmonies; each bar's mode picks its shape family.
-    let pp = pad_path(perf, world.voicing_spread);
+    realize_pad_on(perf, world, &pad_path(perf, world.voicing_spread))
+}
+
+/// Realize the pad on the voice path `pp` (its own, or the joint support path).
+pub fn realize_pad_on(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    pp: &super::voicing::RolePath,
+) -> Vec<Note> {
+    let mut out = Vec::new();
     let vel = (0.4 * world.base_dynamic).clamp(0.05, 1.0);
     for (ci, ctx) in perf.contexts.iter().enumerate() {
         let Some(eb) = perf.bar_at(ctx.start_beat) else {

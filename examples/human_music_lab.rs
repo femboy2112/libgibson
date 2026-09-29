@@ -37,7 +37,9 @@ use gibson::audio::human_music::diagnostics::{
 use gibson::audio::human_music::functor::{compose_full, compose_with_grammar, SfxAudit};
 use gibson::audio::human_music::harmony::ChordSpan;
 use gibson::audio::human_music::language::MusicalLanguage;
-use gibson::audio::human_music::performance::{CallPolicy, PerformanceOptions, ResponseMode};
+use gibson::audio::human_music::performance::{
+    CallPolicy, EnsembleCoupling, PerformanceOptions, ResponseMode,
+};
 use gibson::audio::human_music::semantic::{
     calm_loop, deflected_lift_trace, rise_unresolved, SemanticTrace,
 };
@@ -103,6 +105,10 @@ fn perf_options() -> PerformanceOptions {
         language: match arg("--language=").as_deref() {
             Some("simple") => MusicalLanguage::simple(),
             _ => MusicalLanguage::fusion_conversation(),
+        },
+        coupling: match arg("--coupling=").as_deref() {
+            Some("independent") | Some("off") => EnsembleCoupling::Independent,
+            _ => EnsembleCoupling::Coupled,
         },
         actions: arg("--actions=").as_deref() != Some("off"),
         responses: match arg("--responses=").as_deref() {

@@ -372,6 +372,10 @@ pub struct Score {
     /// change, re-judged as chord tones after being released there. Not a snap, but not free
     /// either — reported next to `melody_repairs` so "0 repairs" hides nothing.
     pub melody_rejudged: usize,
+    /// Round VIII: every explained vertical decision the coupled realization made (a bass unison
+    /// note re-pitched to the floor, a material line moved an octave, a candidate refused) — so
+    /// "zero unowned collisions" is never a hidden repair either. Empty under the independent control.
+    pub vertical_decisions: Vec<super::harmonic_state::VerticalDecision>,
 }
 
 impl Score {
@@ -388,6 +392,7 @@ impl Score {
             total_beats,
             melody_repairs: 0,
             melody_rejudged: 0,
+            vertical_decisions: Vec::new(),
         }
     }
 
