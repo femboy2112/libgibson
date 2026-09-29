@@ -22,6 +22,17 @@ pub struct LeadRealization {
 
 /// Realize every planned lead statement, connecting each to the previous statement's exit pitch.
 pub fn realize_lead(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadRealization {
+    realize_lead_impl(perf, false)
+}
+
+/// Realize temporal pitch paths over the R11 statement and register scaffold.
+/// Each statement retains the legacy entry register even when the previous statement's
+/// selected pitch changes, preventing a local choice from shifting the whole song.
+pub fn realize_lead_temporal(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadRealization {
+    realize_lead_impl(perf, true)
+}
+
+fn realize_lead_impl(perf: &PerformancePlan, temporal: bool) -> LeadRealization {
     let mut notes = Vec::new();
     let mut repairs = 0usize;
     let mut prev_exit: Option<Midi> = None;
@@ -91,7 +102,7 @@ pub fn realize_lead(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadReal
             .find(|&t| t + 1.0 > st.start_beat && t - 0.25 < st_end);
         // Targets first, then connectors justified inside the search, spoken in the
         // performance's language (tension targets, chromatic appetite, internal rests).
-        let line = super::motif::realize_line(&super::motif::LineRequest {
+        let request = super::motif::LineRequest {
             motif,
             chords: &perf.chords,
             contexts: &perf.contexts,
@@ -103,11 +114,17 @@ pub fn realize_lead(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadReal
             style: super::motif::LineStyle::for_language(&perf.language),
             max_candidates: 6,
             arrival,
-        });
-        repairs += line.repairs;
-        if let Some(last) = line.notes.last() {
+        };
+        let legacy = super::motif::realize_line(&request);
+        if let Some(last) = legacy.notes.last() {
             prev_exit = Some(last.pitch);
         }
+        let line = if temporal {
+            super::motif::realize_line_temporal(&request)
+        } else {
+            legacy
+        };
+        repairs += line.repairs;
         let base_vel = (0.55 + 0.4 * st.energy).clamp(0.1, 1.0);
         let interaction = st.call.and_then(|c| perf.interaction_of(c));
         for ln in line.notes {

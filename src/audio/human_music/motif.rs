@@ -778,6 +778,8 @@ struct Slot {
     allowed: u16,
     /// Guide tones (3rd, 7th/6th) of the onset harmony.
     guide: u16,
+    /// Upcoming guide tones supplied by the shared harmonic palette.
+    next_targets: u16,
     /// The line's required arrival ([`LineRequest::arrival`]): chord tones of `cur` only, filtered
     /// from the unconstrained candidates.
     arrive: bool,
@@ -808,6 +810,28 @@ const C_CONTOUR_PEN: f32 = 3.0;
 const C_FID_W: f32 = 0.08;
 /// Connector candidates per event.
 const CONN_CAP: usize = 12;
+
+/// A soft cost for structural colour without a nearby core-tone destination.
+/// Callers supply the actual adjacent events; a scale or function label is not proof.
+pub(super) fn extension_path_cost(
+    source: Chord,
+    pitch: Midi,
+    destination: Chord,
+    next_pitch: Midi,
+    elapsed: f64,
+) -> f32 {
+    if source.contains_pc(pitch_class(pitch)) {
+        return 0.0;
+    }
+    let owned = elapsed <= 2.0 + 1e-6
+        && (next_pitch - pitch).abs() <= 2
+        && destination.contains_pc(pitch_class(next_pitch));
+    if owned {
+        0.0
+    } else {
+        1.4
+    }
+}
 
 impl<'a> LineRequest<'a> {
     fn slots(&self, events: &[MelodicEvent]) -> Vec<Slot> {
@@ -871,6 +895,7 @@ impl<'a> LineRequest<'a> {
                 licensed,
                 allowed: palette_mask | cur_mask | imminent,
                 guide,
+                next_targets: ctx.map_or(0, |c| super::pitch::pc_mask(&c.palette.next_targets)),
                 arrive,
             });
         }
@@ -884,9 +909,21 @@ struct Engine<'s> {
     scale: Scale,
     style: LineStyle,
     prev_pitch: Option<Midi>,
+    /// The R11 rhythm/register scaffold. Presence enables temporal pitch selection.
+    legacy: Option<&'s [LineNote]>,
 }
 
 impl Engine<'_> {
+    fn same_gate(&self, s: usize, p: Midi) -> bool {
+        self.legacy
+            .is_none_or(|line| (self.gate_for(s, p) as f32 - line[s].dur).abs() < 1e-6)
+    }
+
+    fn edit_cost(&self, s: usize, p: Midi) -> f32 {
+        self.legacy
+            .map_or(0.0, |line| if line[s].pitch == p { 0.0 } else { 0.2 })
+    }
+
     /// The sounding gate of pitch `p` at slot `s`: the event's gate, released at the next harmony
     /// change when `p` does not belong to that harmony (a note lifts off rather than smearing).
     fn gate_for(&self, s: usize, p: Midi) -> f64 {
@@ -924,7 +961,11 @@ impl Engine<'_> {
             is_strong: sl.strong,
             licensed: sl.licensed,
         };
-        super::pitch::classify_r11(&ctx, &self.scale)
+        if self.legacy.is_some() {
+            super::pitch::classify(&ctx, &self.scale)
+        } else {
+            super::pitch::classify_r11(&ctx, &self.scale)
+        }
     }
 
     fn is_stable(&self, s: usize, p: Midi) -> bool {
@@ -945,6 +986,7 @@ impl Engine<'_> {
                 if !v.contains(&m)
                     && self.is_stable(s, m)
                     && self.classify(s, m, None, None).is_some()
+                    && self.same_gate(s, m)
                 {
                     v.push(m);
                     if v.len() >= cap {
@@ -958,7 +1000,15 @@ impl Engine<'_> {
             v.retain(|&m| has_pc(chord_mask(sl.cur), m));
         }
         if v.is_empty() {
-            v.push(nearest_chord_tone(a, sl.cur, &self.scale));
+            let fallback = if self.legacy.is_none() {
+                nearest_chord_tone(a, sl.cur, &self.scale)
+            } else {
+                (0..=24)
+                    .flat_map(|d| [a - d, a + d])
+                    .find(|&p| has_pc(chord_mask(sl.cur), p) && self.same_gate(s, p))
+                    .unwrap_or_else(|| nearest_chord_tone(a, sl.cur, &self.scale))
+            };
+            v.push(fallback);
         }
         v
     }
@@ -994,6 +1044,19 @@ impl Engine<'_> {
     fn target_node(&self, s: usize, p: Midi, is_first: bool, is_last: bool) -> f32 {
         let sl = &self.slots[s];
         let mut c = T_ANCHOR_W * (p - sl.anchor).abs() as f32 + self.tone_pref(s, p, is_last);
+        if self.legacy.is_some() {
+            c += self.edit_cost(s, p);
+            if is_last && !has_pc(chord_mask(sl.cur), p) {
+                c += 1.1;
+            }
+            if sl.next_boundary.is_some_and(|b| b - sl.start <= 2.0 + 1e-6) && sl.next_targets != 0
+            {
+                let distance = (0..=6)
+                    .find(|&d| has_pc(sl.next_targets, p - d) || has_pc(sl.next_targets, p + d))
+                    .unwrap_or(6);
+                c += 0.18 * distance as f32;
+            }
+        }
         if is_first {
             if let Some(pp) = self.prev_pitch {
                 c += FIRST_VL_W * (p - pp).abs() as f32;
@@ -1018,7 +1081,29 @@ impl Engine<'_> {
         if mv.abs() > 9 {
             c += 0.3 * (mv.abs() - 9) as f32;
         }
+        if self.legacy.is_some() {
+            // With connectors, their actual adjacent steps carry the ownership cost instead.
+            if b == a + 1 {
+                c += self.path_step(a, pa, b, pb);
+            }
+            if sa.cur != sb.cur && mv.abs() > 5 {
+                c += 0.12 * (mv.abs() - 5) as f32;
+            }
+        }
         c
+    }
+
+    fn path_step(&self, a: usize, pa: Midi, b: usize, pb: Midi) -> f32 {
+        let (sa, sb) = (&self.slots[a], &self.slots[b]);
+        if !sa.structural || has_pc(chord_mask(sa.cur), pa) {
+            return 0.0;
+        }
+        match (sa.cur, sb.cur) {
+            (Some(source), Some(destination)) => {
+                extension_path_cost(source, pa, destination, pb, sb.start - sa.start)
+            }
+            _ => 0.0,
+        }
     }
 
     /// Connector register fit, loosened by the language's connective appetite: a line that
@@ -1047,6 +1132,11 @@ impl Engine<'_> {
             c += C_CONTOUR_PEN;
         }
         c + self.c_fid_w() * (mv - (sy.anchor - sx.anchor)).abs() as f32
+            + if self.legacy.is_some() {
+                self.path_step(x, px, y, py)
+            } else {
+                0.0
+            }
     }
 
     /// The cost of a connector's justification. A connector's job is to connect: motion that
@@ -1095,6 +1185,7 @@ impl Engine<'_> {
                 v.truncate(CONN_CAP);
             }
         }
+        v.retain(|&p| self.same_gate(s, p));
         v
     }
 
@@ -1126,6 +1217,7 @@ impl Engine<'_> {
             .iter()
             .map(|&p| {
                 self.c_anchor_w() * (p - self.slots[slot(1)].anchor).abs() as f32
+                    + self.edit_cost(slot(1), p)
                     + self.step(slot(0), pa, slot(1), p)
             })
             .collect();
@@ -1160,6 +1252,7 @@ impl Engine<'_> {
                             0.0
                         } else {
                             self.c_anchor_w() * (pl - self.slots[slot(pos)].anchor).abs() as f32
+                                + self.edit_cost(slot(pos), pl)
                         };
                         d[j * nn + l] = best + node + self.step(slot(pos - 1), pj, slot(pos), pl);
                         b[j * nn + l] = bi;
@@ -1208,6 +1301,18 @@ impl Engine<'_> {
 /// Realize one statement: targets first, then justified connectors. Deterministic — no RNG; ties
 /// resolve to the candidate nearest the motif's anchor.
 pub fn realize_line(req: &LineRequest) -> LineRealization {
+    realize_line_impl(req, None)
+}
+
+/// Realize a statement with bounded harmonic direction and extension ownership costs.
+/// The R11 realization supplies exactly the same events and sounding gates; only pitch
+/// candidates with those gates participate, and all melodic contour costs remain active.
+pub fn realize_line_temporal(req: &LineRequest) -> LineRealization {
+    let legacy = realize_line(req);
+    realize_line_impl(req, Some(&legacy.notes))
+}
+
+fn realize_line_impl(req: &LineRequest, legacy: Option<&[LineNote]>) -> LineRealization {
     let events = melodic_events(req.motif, req.start_beat, &req.style);
     let slots = req.slots(&events);
     let n = slots.len();
@@ -1222,6 +1327,7 @@ pub fn realize_line(req: &LineRequest) -> LineRealization {
         scale: *req.scale,
         style: req.style,
         prev_pitch: req.prev_pitch,
+        legacy,
     };
     let cap = req.max_candidates.max(1);
 
@@ -1779,5 +1885,119 @@ mod tests {
             connective > 0,
             "no passing/approach/neighbour motion at all"
         );
+    }
+
+    #[test]
+    fn temporal_next_targets_change_an_ambiguous_structural_choice() {
+        let scale = Scale::new(0, Mode::Ionian);
+        let chords = vec![
+            span(0.0, 2.0, Chord::new(0, Quality::Maj)),
+            span(2.0, 2.0, Chord::new(5, Quality::Maj)),
+        ];
+        let mut contexts = super::super::context::analyze(&chords, &scale);
+        let motif = Motif {
+            id: 0,
+            degrees: vec![1],
+            rhythm: vec![0.5],
+        };
+        // A controlled field mutation proves this information reaches selection. Other
+        // palette fields and the actual harmony are frozen, so this is a consumer test.
+        contexts[0].palette.next_targets = vec![0];
+        let mut request = fusion_request(&motif, &chords, &contexts, &scale);
+        request.start_beat = 1.0;
+        let legacy = realize_line(&request);
+        let toward_c = realize_line_temporal(&request);
+        contexts[0].palette.next_targets = vec![4];
+        let mut request = fusion_request(&motif, &chords, &contexts, &scale);
+        request.start_beat = 1.0;
+        assert_eq!(
+            realize_line(&request),
+            legacy,
+            "R11 does not consume future targets"
+        );
+        let toward_e = realize_line_temporal(&request);
+        assert_eq!(pitch_class(toward_c.notes[0].pitch), 0);
+        assert_eq!(pitch_class(toward_e.notes[0].pitch), 4);
+    }
+
+    #[test]
+    fn temporal_search_preserves_gates_and_connective_motion() {
+        let (chords, contexts, scale) = two_five_one();
+        let mut chromatic = 0;
+        for seed in [Motif::seed_a(), Motif::seed_b()] {
+            for shift in 0..7 {
+                let motif = seed.transpose(shift).sequence(1, 2);
+                let request = fusion_request(&motif, &chords, &contexts, &scale);
+                let old = realize_line(&request);
+                let new = realize_line_temporal(&request);
+                assert_eq!(new.repairs, 0, "{new:?}");
+                assert_eq!(old.notes.len(), new.notes.len());
+                for (a, b) in old.notes.iter().zip(&new.notes) {
+                    assert_eq!((a.start, a.dur, a.accent), (b.start, b.dur, b.accent));
+                    assert!(b.function.is_some(), "{b:?}");
+                    chromatic += usize::from(matches!(
+                        b.function,
+                        Some(
+                            PitchFunction::ChromaticApproach
+                                | PitchFunction::ChromaticPassing
+                                | PitchFunction::Enclosure
+                        )
+                    ));
+                }
+            }
+        }
+        assert!(
+            chromatic > 0,
+            "the temporal search must preserve chromaticism"
+        );
+        let chords = vec![span(0.0, 4.0, Chord::new(0, Quality::Maj))];
+        let contexts = super::super::context::analyze(&chords, &scale);
+        let motif = Motif {
+            id: 0,
+            degrees: vec![2, 3, 4],
+            rhythm: vec![0.5, 0.5, 1.0],
+        };
+        let line = realize_line_temporal(&fusion_request(&motif, &chords, &contexts, &scale));
+        assert_eq!(
+            line.notes[1].function,
+            Some(PitchFunction::DiatonicPassing),
+            "{line:?}"
+        );
+    }
+
+    #[test]
+    fn temporal_extension_cost_distinguishes_owned_color_from_a_leap() {
+        let c = Chord::new(0, Quality::Maj7);
+        let f = Chord::new(5, Quality::Maj7);
+        assert_eq!(extension_path_cost(c, 69, f, 69, 1.0), 0.0);
+        assert_eq!(extension_path_cost(c, 69, c, 67, 1.0), 0.0);
+        assert!(extension_path_cost(c, 69, f, 76, 1.0) > 0.0);
+    }
+
+    #[test]
+    fn temporal_search_keeps_an_extension_that_becomes_a_common_core_tone() {
+        let scale = Scale::new(0, Mode::Ionian);
+        let chords = vec![
+            span(0.0, 2.0, Chord::new(0, Quality::Maj7)),
+            span(2.0, 2.0, Chord::new(5, Quality::Maj7)),
+        ];
+        let contexts = super::super::context::analyze(&chords, &scale);
+        let motif = Motif {
+            id: 0,
+            degrees: vec![5, 5],
+            rhythm: vec![1.0, 1.0],
+        };
+        let mut request = fusion_request(&motif, &chords, &contexts, &scale);
+        request.start_beat = 1.0;
+        let line = realize_line_temporal(&request);
+        assert_eq!(
+            line.notes.iter().map(|n| n.pitch).collect::<Vec<_>>(),
+            vec![69, 69]
+        );
+        assert_eq!(
+            line.notes[0].function,
+            Some(PitchFunction::LicensedExtension)
+        );
+        assert_eq!(line.notes[1].function, Some(PitchFunction::ChordTone));
     }
 }
