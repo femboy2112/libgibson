@@ -132,8 +132,8 @@ fn gesture_ix(g: HarmonicGesture) -> usize {
 pub struct PerformanceOptions {
     pub language: MusicalLanguage,
     /// How the pitched players' simultaneous notes are chosen: `Independent` (the R7b band, the
-    /// default the listen prefers) or `CoupledR8` (the Round VIII joint bed — the rejected negative
-    /// control).
+    /// default the listen prefers), `CoupledR8` (the Round VIII joint bed — the rejected negative
+    /// control) or `Surgical` (R7b, then only its real hard vertical defects repaired locally).
     pub coupling: EnsembleCoupling,
     /// Build the action plan (false = the mood-without-action probe).
     pub actions: bool,
@@ -172,6 +172,10 @@ pub enum EnsembleCoupling {
     /// state in rigidity order (lead, bass, the keys' material lines, then the pad and keys bed
     /// solved JOINTLY against everything already sounding). Pinned byte-for-byte at 5644c96.
     CoupledR8,
+    /// Round VIIIb: the R7b realization, then [`super::surgical::repair`] — only the REAL hard
+    /// vertical defects (measured over actual audible overlap) repaired, each by the smallest local
+    /// edit of the offending support note, every edit recorded in `Score::vertical_repairs`.
+    Surgical,
 }
 
 /// What the stage did with an action whose initiator the arrangement envelope had off stage —

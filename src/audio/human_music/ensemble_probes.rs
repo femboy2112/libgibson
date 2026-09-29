@@ -125,6 +125,181 @@ fn the_default_is_the_r7b_band_again() {
     }
 }
 
+/// **Round VIIIb acceptance, per world.** The surgical arm is the R7b realization with only its real
+/// hard vertical defects repaired: the melody untouched, no new unjustified note, no receipt lost
+/// unless the ledger reports it deferred, the floor clean, what actually rings far cleaner than R7b —
+/// and the BED where R7b left it (Round VIII bought its zero with a revoiced bed: pad motion 4.7 ->
+/// 7.6, three quarters of the pad voicings changed). The perturbation report is a diff of the two
+/// scores and must agree with the repair ledger.
+#[test]
+fn the_surgical_band_is_r7b_minus_its_garbage() {
+    use super::diagnostics::RealizationDiagnostics;
+    use super::score::Role;
+    use super::surgical::{residual, Perturbation, RepairEdit};
+    use super::voicing::HarmonicStability;
+    for world in MusicWorld::all() {
+        let r7b = flagship(&world, EnsembleCoupling::Independent);
+        let r8 = flagship(&world, EnsembleCoupling::CoupledR8);
+        let sur = flagship(&world, EnsembleCoupling::Surgical);
+        let policy = ColorPolicy::for_world(world.id, &sur.perf.language);
+        let ctx = &sur.perf.contexts;
+        let reps = &sur.score.vertical_repairs;
+        // The melody is the R7b melody.
+        let lead = |c: &Composition| {
+            format!(
+                "{:?}",
+                c.score
+                    .notes
+                    .iter()
+                    .filter(|n| n.role == Role::Lead)
+                    .collect::<Vec<_>>()
+            )
+        };
+        assert_eq!(lead(&sur), lead(&r7b), "{}: the melody moved", world.name);
+        assert_eq!(sur.score.melody_repairs, r7b.score.melody_repairs);
+        assert!(reps.iter().all(|r| r.role != Role::Lead));
+        // No new unjustified note.
+        let unjustified = |c: &Composition| {
+            RealizationDiagnostics::measure(&c.plan, &c.score).unjustified_nonchord_notes
+        };
+        assert!(unjustified(&sur) <= unjustified(&r7b), "{}", world.name);
+        // Receipts: every one R7b keeps is kept, or its loss is on the ledger.
+        let (wa, ws) = (audit(&r7b.perf, &r7b.score), audit(&sur.perf, &sur.score));
+        let deferred: Vec<_> = reps
+            .iter()
+            .flat_map(|r| r.deferred.iter().copied())
+            .collect();
+        for (a, b) in wa.rows.iter().zip(&ws.rows) {
+            if a.witnessed && !b.witnessed {
+                assert!(
+                    deferred.contains(&b.action),
+                    "{}: {:?}@{} lost silently",
+                    world.name,
+                    b.kind,
+                    b.action
+                );
+            }
+        }
+        // The interaction receipts (an answer about its caller) survive the repairs.
+        let conversed = |c: &Composition| {
+            super::witness::interaction_receipts(&c.perf, &c.score)
+                .iter()
+                .filter(|r| r.informative() && r.margin() > 0.0)
+                .count()
+        };
+        assert!(conversed(&sur) >= conversed(&r7b), "{}", world.name);
+        // What actually rings (audible at the masking floor): the floor clean, the collisions gone.
+        let audible = |c: &Composition| {
+            EnsembleSonorityDiagnostics::measure_audible_at(
+                &c.score,
+                ctx,
+                &world,
+                &policy,
+                &[],
+                MASKING_FLOOR_DB,
+            )
+        };
+        let (a7, a8, asu) = (audible(&r7b), audible(&r8), audible(&sur));
+        let (h7, h8, hs) = (
+            residual(&r7b.score, ctx, &world, &policy).len(),
+            residual(&r8.score, ctx, &world, &policy).len(),
+            residual(&sur.score, ctx, &world, &policy).len(),
+        );
+        assert_eq!(asu.bass_function_violations, 0, "{}", world.name);
+        assert!(
+            asu.unowned_beats < a7.unowned_beats / 4.0,
+            "{}: audible unowned {:.2} b vs R7b {:.2} b",
+            world.name,
+            asu.unowned_beats,
+            a7.unowned_beats
+        );
+        assert!(
+            hs <= 2 && hs * 10 <= h7,
+            "{}: hard defects {h7} -> {hs}",
+            world.name
+        );
+        // The edit distance, measured by diffing the scores — and it agrees with the ledger.
+        let p = Perturbation::measure(&r7b.score, &sur.score);
+        let count = |f: fn(&RepairEdit) -> bool| reps.iter().filter(|r| f(&r.edit)).count();
+        assert_eq!(p.added, 0);
+        assert_eq!(
+            p.changed,
+            reps.len(),
+            "{}: one edit per repaired note",
+            world.name
+        );
+        assert_eq!(p.removed, count(|e| matches!(e, RepairEdit::Removed)));
+        assert_eq!(
+            p.repitched,
+            count(|e| matches!(e, RepairEdit::Repitched { .. }))
+        );
+        assert_eq!(
+            p.shortened,
+            count(|e| matches!(e, RepairEdit::Shortened { .. }))
+        );
+        let shift: i32 = reps
+            .iter()
+            .map(|r| match r.edit {
+                RepairEdit::Repitched { to } => (to - r.original).abs(),
+                _ => 0,
+            })
+            .sum();
+        assert_eq!(p.displacement, shift);
+        assert!(p.edit_fraction() <= 0.10, "{}: {}", world.name, p.report());
+        // The bed stays where R7b put it; R8's did not.
+        let st7 = HarmonicStability::measure(&r7b.score, ctx, None);
+        let st8 = HarmonicStability::measure(&r8.score, ctx, Some(&r7b.score));
+        let sts = HarmonicStability::measure(&sur.score, ctx, Some(&r7b.score));
+        eprintln!(
+            "{}: hard defects R7b {h7} / R8 {h8} / surgical {hs} | audible unowned beats {:.2} / {:.2} / {:.2} | edits {} ({:.1}%) | pad motion {:.2} / {:.2} / {:.2} common {:.2} / {:.2} / {:.2} changed R8 {:.0}% surgical {:.0}% | keys motion {:.2} / {:.2} / {:.2} changed R8 {:.0}% surgical {:.0}% | deferred {}",
+            world.name,
+            a7.unowned_beats,
+            a8.unowned_beats,
+            asu.unowned_beats,
+            p.changed,
+            100.0 * p.edit_fraction(),
+            st7.pad.mean_motion,
+            st8.pad.mean_motion,
+            sts.pad.mean_motion,
+            st7.pad.mean_common_tones,
+            st8.pad.mean_common_tones,
+            sts.pad.mean_common_tones,
+            100.0 * st8.pad.changed_share(),
+            100.0 * sts.pad.changed_share(),
+            st7.keys.mean_motion,
+            st8.keys.mean_motion,
+            sts.keys.mean_motion,
+            100.0 * st8.keys.changed_share(),
+            100.0 * sts.keys.changed_share(),
+            deferred.len(),
+        );
+        assert!(
+            (sts.pad.mean_motion - st7.pad.mean_motion).abs() <= 0.5,
+            "{}: pad motion {:.2} vs R7b {:.2}",
+            world.name,
+            sts.pad.mean_motion,
+            st7.pad.mean_motion
+        );
+        assert!(
+            (sts.pad.mean_common_tones - st7.pad.mean_common_tones).abs() <= 0.25,
+            "{}",
+            world.name
+        );
+        assert!(
+            (sts.keys.mean_motion - st7.keys.mean_motion).abs() <= 0.5,
+            "{}",
+            world.name
+        );
+        assert!(
+            sts.pad.changed_share() * 2.0 < st8.pad.changed_share()
+                && st8.pad.changed_share() >= 0.5,
+            "{}: the surgical bed must stay far closer to R7b than R8's",
+            world.name
+        );
+        assert!(sts.keys.changed_share() <= 0.15, "{}", world.name);
+    }
+}
+
 /// `MusicWorld::all()` order: BLACK_ICE, VAPOR95, SWISS_SIGNAL.
 const R8_PINS: [u64; 3] = [
     0x1f97_14ee_5fea_d745,
@@ -345,6 +520,121 @@ fn fuzz_the_coupled_band_keeps_every_receipt_the_control_keeps() {
         eprintln!("  LOST {l}");
     }
     assert!(losses.is_empty(), "{} receipts lost", losses.len());
+}
+
+/// The surgical pass must never lose a receipt SILENTLY, on inputs far beyond the flagship (the
+/// coupled fuzz's grid: 1152 compositions): every action the R7b control witnesses is witnessed by
+/// the surgical arm or reported deferred by the repair that cost it; the melody is untouched; the
+/// diffed edit count is the ledger's; and every piece that edits more than a tenth of its notes is
+/// printed with its ledger for reading. Run explicitly (`--ignored`, release).
+#[test]
+#[ignore = "fuzz sweep: run with --release -- --ignored"]
+fn fuzz_the_surgical_band_never_loses_a_receipt_silently() {
+    use super::language::MusicalLanguage;
+    use super::score::Role;
+    use super::semantic::demo_trace;
+    use super::surgical::Perturbation;
+    let (mut runs, mut deferred, mut edits, mut notes) = (0usize, 0usize, 0usize, 0usize);
+    let mut worst = (0.0f64, String::new());
+    let mut silent: Vec<String> = Vec::new();
+    for story in ["bounce", "demo"] {
+        for beats in [24.0, 37.0, 48.0, 64.0, 96.0, 120.0] {
+            let trace = match story {
+                "bounce" => deflected_lift_trace(beats),
+                _ => demo_trace(beats),
+            };
+            for seed in 0..8u64 {
+                for grammar in [Some(CompositionGrammar::DeflectedLift), None] {
+                    for simple in [false, true] {
+                        for world in MusicWorld::all() {
+                            let arm = |coupling| {
+                                let language = if simple {
+                                    MusicalLanguage::simple()
+                                } else {
+                                    MusicalLanguage::default()
+                                };
+                                compose_full(
+                                    &trace,
+                                    &world,
+                                    seed,
+                                    grammar,
+                                    PerformanceOptions {
+                                        coupling,
+                                        language,
+                                        ..PerformanceOptions::default()
+                                    },
+                                )
+                            };
+                            let (ind, sur) = (
+                                arm(EnsembleCoupling::Independent),
+                                arm(EnsembleCoupling::Surgical),
+                            );
+                            runs += 1;
+                            let reps = &sur.score.vertical_repairs;
+                            let owed: Vec<_> = reps
+                                .iter()
+                                .flat_map(|r| r.deferred.iter().copied())
+                                .collect();
+                            deferred += owed.len();
+                            let (ai, asu) =
+                                (audit(&ind.perf, &ind.score), audit(&sur.perf, &sur.score));
+                            for (wi, ws) in ai.rows.iter().zip(&asu.rows) {
+                                if wi.witnessed && !ws.witnessed && !owed.contains(&ws.action) {
+                                    silent.push(format!(
+                                        "{story} {beats} seed {seed} {grammar:?} simple={simple} {}: {:?}@{}",
+                                        world.name, ws.kind, ws.action
+                                    ));
+                                }
+                            }
+                            let lead = |c: &Composition| {
+                                format!(
+                                    "{:?}",
+                                    c.score
+                                        .notes
+                                        .iter()
+                                        .filter(|n| n.role == Role::Lead)
+                                        .collect::<Vec<_>>()
+                                )
+                            };
+                            assert_eq!(lead(&sur), lead(&ind), "the melody moved");
+                            let p = Perturbation::measure(&ind.score, &sur.score);
+                            assert_eq!(p.changed, reps.len(), "one edit per repaired note");
+                            edits += p.changed;
+                            notes += p.notes;
+                            if p.edit_fraction() > 0.10 {
+                                eprintln!(
+                                    "RED {:.1}% {story} {beats} seed {seed} {grammar:?} simple={simple} {}: {}{}",
+                                    100.0 * p.edit_fraction(),
+                                    world.name,
+                                    p.report(),
+                                    super::surgical::ledger(reps)
+                                );
+                            }
+                            if p.edit_fraction() > worst.0 {
+                                worst = (
+                                    p.edit_fraction(),
+                                    format!("{story} {beats} seed {seed} {grammar:?} simple={simple} {}", world.name),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    eprintln!(
+        "surgical fuzz: {runs} compositions | edits {edits}/{notes} notes ({:.2}%) | worst {:.1}% ({}) | receipts deferred (reported) {deferred} | lost silently {}",
+        100.0 * edits as f64 / notes.max(1) as f64,
+        100.0 * worst.0,
+        worst.1,
+        silent.len()
+    );
+    for l in &silent {
+        eprintln!("  SILENT {l}");
+    }
+    // Past a tenth of a piece's notes is a RED warning to read (printed above with its ledger), not a
+    // correctness theorem: a 24-beat piece has few notes, and some R7b realizations are dirtier.
+    assert!(silent.is_empty(), "{} receipts lost silently", silent.len());
 }
 
 /// The adversarial review's counterexamples, pinned (the fuzz above found them by the dozen): a

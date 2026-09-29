@@ -129,7 +129,8 @@ fn realize(
     score.melody_repairs = lead.repairs;
     score.melody_rejudged = lead.rejudged;
     let (pad, keys, bass) = match perf.coupling {
-        EnsembleCoupling::Independent => {
+        // The surgical arm realizes the R7b band first, note for note; it repairs afterwards.
+        EnsembleCoupling::Independent | EnsembleCoupling::Surgical => {
             let keys = super::comp::realize_keys(perf, plan, world, &lead.notes, seed);
             let pad = super::comp::realize_pad(perf, plan, world);
             let bass = super::bass::realize_bass(perf, plan, world, &lead.notes, &keys);
@@ -155,6 +156,21 @@ fn realize(
     clip_to_end(&mut score);
     // --- Provenance only: the stage already decided who plays and how loud. ---
     stamp_arrangement(&mut score, plan, perf);
+    // --- Round VIIIb: the finished R7b score, its real hard vertical defects repaired one note at
+    //     a time (every edit on the ledger; a receipt surrendered to harmony is reported, not kept
+    //     by keeping the bad note). ---
+    if perf.coupling == EnsembleCoupling::Surgical {
+        let policy = ColorPolicy::for_world(world.id, &perf.language);
+        let witnessed = |s: &Score| -> Vec<(ActionId, bool)> {
+            super::witness::audit(perf, s)
+                .rows
+                .iter()
+                .map(|r| (r.action, r.witnessed))
+                .collect()
+        };
+        score.vertical_repairs =
+            super::surgical::repair(&mut score, &perf.contexts, world, &policy, Some(&witnessed));
+    }
     debug_assert!(
         orchestration_violations(perf, &score).is_empty(),
         "a realizer played somebody the stage had out"

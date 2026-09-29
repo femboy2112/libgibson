@@ -48,6 +48,7 @@ use gibson::audio::human_music::semantic::{
     calm_loop, deflected_lift_trace, rise_unresolved, SemanticTrace,
 };
 use gibson::audio::human_music::sonority::{ColorPolicy, EnsembleSonorityDiagnostics};
+use gibson::audio::human_music::surgical::{ledger, residual, Perturbation};
 use gibson::audio::human_music::synth::{HumanMusicSynth, ProductionControl, StemMask};
 use gibson::audio::human_music::theory::note_name;
 use gibson::audio::human_music::timeline::IntentTimeline;
@@ -111,9 +112,11 @@ fn perf_options() -> PerformanceOptions {
             _ => MusicalLanguage::fusion_conversation(),
         },
         // The default is the R7b band (the listen preferred it to Round VIII's coupled bed);
-        // `r8` renders the rejected negative control.
+        // `r8` renders the rejected negative control, `surgical` R7b with its real hard vertical
+        // defects repaired note by note.
         coupling: match arg("--coupling=").as_deref() {
             Some("r8") | Some("coupled") => EnsembleCoupling::CoupledR8,
+            Some("surgical") => EnsembleCoupling::Surgical,
             _ => EnsembleCoupling::Independent,
         },
         actions: arg("--actions=").as_deref() != Some("off"),
@@ -482,6 +485,25 @@ fn main() -> std::io::Result<()> {
             "{}",
             HarmonicStability::measure(&score, &perf.contexts, r7b.as_ref()).report()
         );
+        if opts.coupling == EnsembleCoupling::Surgical {
+            print!("{}", ledger(&score.vertical_repairs));
+            if let Some(reference) = &r7b {
+                print!("{}", Perturbation::measure(reference, &score).report());
+            }
+        }
+        {
+            // The hard vertical defects this realization still sounds (audible lifetimes at the
+            // masking floor, the surgical pass's own detector) — for every arm, so the three compare.
+            let policy = ColorPolicy::for_world(world.id, &perf.language);
+            let left = residual(&score, &perf.contexts, &world, &policy);
+            println!(
+                "hard vertical defects sounding (audible, -20 dB; clash >= 0.125 b, floor, held flip, unresolved): {}",
+                left.len()
+            );
+            for d in &left {
+                println!("  {d}");
+            }
+        }
         // Round VIII: the UNION the band sounds — nominal durations, then the audible lifetimes on
         // this world's envelopes (a pad tail under the next chord, a stab already silent).
         let policy = ColorPolicy::for_world(world.id, &perf.language);
@@ -911,9 +933,10 @@ fn ab(
     ab_coupling(out_dir, sr, block, seed, trace)
 }
 
-/// The coupling A/B: the SAME composition realized by the R7b band (each player projecting the
-/// shared material alone — the default the listen preferred) and by Round VIII's coupled bed (the
-/// rejected negative control), in every world, with the vertical numbers beside each file.
+/// The coupling A/B/C: the SAME composition realized by the R7b band (each player projecting the
+/// shared material alone — the default the listen preferred), by Round VIII's coupled bed (the
+/// rejected negative control) and by the surgical pass (R7b with only its real hard vertical defects
+/// repaired), in every world, with the vertical numbers beside each file.
 fn ab_coupling(
     out_dir: &std::path::Path,
     sr: SampleRate,
@@ -922,12 +945,13 @@ fn ab_coupling(
     trace: &SemanticTrace,
 ) -> std::io::Result<()> {
     println!(
-        "\nHumanMusic A/B — R7b (independent) vs R8 (coupled, rejected) realization, seed={seed}\n"
+        "\nHumanMusic A/B — R7b (independent) vs R8 (coupled, rejected) vs surgical realization, seed={seed}\n"
     );
     for world in MusicWorld::all() {
         for (name, coupling) in [
             ("r7b", EnsembleCoupling::Independent),
             ("r8", EnsembleCoupling::CoupledR8),
+            ("surgical", EnsembleCoupling::Surgical),
         ] {
             let c = compose_full(
                 trace,

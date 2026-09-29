@@ -379,6 +379,10 @@ pub struct Score {
     /// Round VIII: what the joint pad+keys solve did (the union cost along the independent control's
     /// choice vs the joint choice). `None` under the independent control.
     pub support_report: Option<super::support::JointReport>,
+    /// Round VIIIb: every edit the surgical pass made to the R7b realization (the note, what it
+    /// became, the defect it removed, the rung of the repair ladder, any receipt it surrendered).
+    /// Empty under every other coupling.
+    pub vertical_repairs: Vec<super::surgical::VerticalRepair>,
 }
 
 impl Score {
@@ -397,6 +401,7 @@ impl Score {
             melody_rejudged: 0,
             vertical_decisions: Vec::new(),
             support_report: None,
+            vertical_repairs: Vec::new(),
         }
     }
 
