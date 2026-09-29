@@ -54,7 +54,7 @@ use gibson::audio::human_music::timeline::IntentTimeline;
 use gibson::audio::human_music::voicing::VoicingDiagnostics;
 use gibson::audio::human_music::witness;
 use gibson::audio::human_music::{demo_trace, MusicWorld, WorldId};
-use gibson::audio::render::OfflineRenderer;
+use gibson::audio::render::{OfflineRenderer, RenderResult};
 use gibson::audio::wav::write_wav_i16;
 use gibson::audio::SampleRate;
 
@@ -163,14 +163,17 @@ fn production_suffix(p: ProductionControl) -> String {
 /// A render with production factors removed is quieter (no saturation loudness, no bus comp):
 /// scale it — one pure gain, pitch and timing untouched — to peak 0.8 so an A/B against the normal
 /// mix compares harmony, not level. The normal mix is written as rendered.
-fn normalize_for_comparison(audio: &mut StereoBlock, peak: f32, prod: ProductionControl) {
-    if prod == ProductionControl::NORMAL || peak <= 1e-6 {
+fn normalize_for_comparison(out: &mut RenderResult, prod: ProductionControl) {
+    if prod == ProductionControl::NORMAL || out.peak <= 1e-6 {
         return;
     }
-    let g = 0.8 / peak;
-    for x in audio.left.iter_mut().chain(audio.right.iter_mut()) {
+    let g = 0.8 / out.peak;
+    for x in out.audio.left.iter_mut().chain(out.audio.right.iter_mut()) {
         *x *= g;
     }
+    // The receipts describe the file that is written, not the pre-normalization render.
+    out.peak *= g;
+    out.rms *= g;
 }
 
 /// The realized Score, one note per line (TSV): the exact pitches the diagnostics and the ear argue
@@ -190,13 +193,16 @@ fn write_notes_tsv(
             .then(a.role.label().cmp(b.role.label()))
             .then(a.pitch.cmp(&b.pitch))
     });
-    for n in notes {
-        let chord = score
+    let chord_at = |beat: f64| {
+        score
             .chords
             .iter()
-            .rfind(|c| c.start_beat <= n.start_beat + 1e-6)
+            .rfind(|c| c.start_beat <= beat + 1e-6)
             .map(|c| c.chord.label())
-            .unwrap_or_default();
+            .unwrap_or_default()
+    };
+    for n in notes {
+        let chord = chord_at(n.start_beat);
         let actions: Vec<String> = n.prov.actions.iter().map(|a| a.to_string()).collect();
         let _ = writeln!(
             s,
@@ -213,6 +219,28 @@ fn write_notes_tsv(
             chord,
             actions.join(","),
         );
+    }
+    // The stings the vertical audit counts: one row per pitch, role `sfx`, their gated length.
+    let bps = score.tempo_bpm.max(1.0) as f64 / 60.0;
+    for e in score.sfx.iter().filter(|e| e.is_pitched()) {
+        let (a, d, _, _) = e.kind.envelope();
+        let dur = (a + d + e.kind.hold_secs()) as f64 * bps;
+        for (k, &p) in e.pitches.iter().enumerate() {
+            let _ = writeln!(
+                s,
+                "{:.4}\t{:.4}\t{:.4}\tsfx\t{}\t{}\t{}\t{:?}\t{}\t{}\t{}",
+                e.start_beat,
+                dur,
+                e.start_beat + dur,
+                p,
+                note_name(p),
+                e.function[k].map(|f| f.label()).unwrap_or("NONE"),
+                e.kind,
+                if e.owned_by.is_some() { "owned" } else { "-" },
+                chord_at(e.start_beat),
+                e.owned_by.map(|a| a.to_string()).unwrap_or_default(),
+            );
+        }
     }
     std::fs::write(path, s)
 }
@@ -323,9 +351,10 @@ fn main() -> std::io::Result<()> {
         }
 
         let mut synth = HumanMusicSynth::with_production(&score, &world, sr, prod);
-        // The harmonic reference is a HARMONIC control: the four pitched buses only.
+        // The harmonic reference is a HARMONIC control: every voice the vertical audit counts (the
+        // four pitched buses and the pitched stings), no drums.
         if prod == ProductionControl::HARMONIC_REFERENCE {
-            synth.set_stem_mask(StemMask::pitched());
+            synth.set_stem_mask(StemMask::harmonic());
         }
         let frames = synth.total_samples();
         let t0 = std::time::Instant::now();
@@ -333,7 +362,7 @@ fn main() -> std::io::Result<()> {
         let render_wall = t0.elapsed();
 
         let mut out = out;
-        normalize_for_comparison(&mut out.audio, out.peak, prod);
+        normalize_for_comparison(&mut out, prod);
         write_wav_i16(&path, &out.audio, sr)?;
 
         let real_secs = out.duration().as_secs_f64();
@@ -457,23 +486,14 @@ fn main() -> std::io::Result<()> {
             }
         }
         if let Some(which) = arg("--sonority-detail=") {
-            use gibson::audio::human_music::score::Role;
             use gibson::audio::human_music::sonority::{
-                audible_end_at, describe, slices, voices_of, Problem,
+                audible_voices, describe, slices, voices_of, Problem,
             };
-            let mut voices = voices_of(&score, &perf.contexts);
-            // --audible-floor=<dB>: slice the AUDIBLE lifetimes instead of the written ones.
-            if let Some(floor) = arg("--audible-floor=").and_then(|f| f.parse::<f64>().ok()) {
-                for v in voices.iter_mut().filter(|v| !v.sfx) {
-                    let patch = match v.role {
-                        Role::Pad => &world.pad,
-                        Role::Keys => &world.keys,
-                        Role::Bass => &world.bass,
-                        Role::Lead => &world.lead,
-                    };
-                    v.end = audible_end_at(v.start, v.end - v.start, patch, score.tempo_bpm, floor);
-                }
-            }
+            // --audible-floor=<dB>: slice the AUDIBLE lifetimes (the audible measure's own list).
+            let voices = match arg("--audible-floor=").and_then(|f| f.parse::<f64>().ok()) {
+                Some(floor) => audible_voices(&score, &perf.contexts, &world, floor),
+                None => voices_of(&score, &perf.contexts),
+            };
             for sl in slices(&voices, &perf.contexts, &policy, &[]) {
                 let hit = sl.problems.iter().any(|p| match (which.as_str(), p) {
                     ("unowned", Problem::Unowned { .. }) => true,
@@ -695,7 +715,13 @@ fn stems(
                 .iter()
                 .map(|n| (format!("stem_{n}"), StemMask::solo(n))),
         );
-        masks.push(("stem_full".to_string(), StemMask::full()));
+        // Under the harmonic reference "full" is the reference mix itself (no drums).
+        let full = if prod == ProductionControl::HARMONIC_REFERENCE {
+            StemMask::harmonic()
+        } else {
+            StemMask::full()
+        };
+        masks.push(("stem_full".to_string(), full));
     }
     if pairs {
         masks.extend(
@@ -711,7 +737,7 @@ fn stems(
         synth.set_stem_mask(mask);
         let frames = synth.total_samples();
         let mut out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
-        normalize_for_comparison(&mut out.audio, out.peak, prod);
+        normalize_for_comparison(&mut out, prod);
         let path = out_dir.join(format!("{file_stem}.{name}{suffix}.wav"));
         write_wav_i16(&path, &out.audio, sr)?;
         println!(

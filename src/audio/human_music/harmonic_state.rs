@@ -455,5 +455,16 @@ mod tests {
             "E and B are Cmaj7's identity"
         );
         assert_eq!(st.colors_in(0.0, 4.0), vec![(2, vec![Role::Lead])]);
+        // Without the B the band states C6/Em-ish, not Cmaj7; a passing B is not the 7th either.
+        let mut thin = HarmonicEnsembleState::new(&c, Vec::new(), ColorPolicy::lenient());
+        thin.commit(&[
+            note(Role::Keys, 64, 0.0, 4.0, PitchFunction::ChordTone),
+            note(Role::Lead, 71, 1.0, 0.25, PitchFunction::DiatonicPassing),
+        ]);
+        assert!(!thin.identity_covered(0.0, 4.0), "no resting 7th");
+        assert!(
+            thin.colors_in(0.0, 4.0).is_empty(),
+            "a passing tone is not colour"
+        );
     }
 }

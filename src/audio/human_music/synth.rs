@@ -249,6 +249,19 @@ impl StemMask {
         ("pad", "lead"),
     ];
 
+    /// Every voice the vertical audit counts: the four pitched buses AND the (pitched) SFX stings —
+    /// drums muted. The harmonic reference renders this mask.
+    pub const fn harmonic() -> StemMask {
+        StemMask {
+            pad: true,
+            keys: true,
+            bass: true,
+            lead: true,
+            drums: false,
+            sfx: true,
+        }
+    }
+
     /// The four pitched buses (pad, keys, bass, lead) — drums and SFX muted.
     pub const fn pitched() -> StemMask {
         StemMask {
@@ -364,8 +377,10 @@ impl BusMeter {
 /// reproduces the normal render exactly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ProductionControl {
-    /// Every pitched voice is ONE clean triangle oscillator: no FM, no sub octave, the filter wide
-    /// open (12 kHz, no envelope, no resonance). Gain, pan and ADSR are the patch's own.
+    /// Every pitched voice's oscillators become clean triangles — no FM, no sub octave, the filter
+    /// wide open (12 kHz, no envelope, no resonance) — and an SFX sting's FM operator a plain sine
+    /// through an open filter. Gain, pan and ADSR are the patch's own; the unison COUNT and detune
+    /// are [`ProductionControl::zero_detune`]'s factor, not this one.
     pub clean_waves: bool,
     /// Unison collapsed to a single oscillator at the written pitch (no detune spread, no beating).
     pub zero_detune: bool,
@@ -375,8 +390,9 @@ pub struct ProductionControl {
     pub dry: bool,
     /// The bus compressor bypassed (the limiter stays — it is the safety ceiling).
     pub no_bus_comp: bool,
-    /// Every pitched voice's release capped at 60 ms, so a note is heard for its NOMINAL Score
-    /// duration and a long pad tail cannot ring under the next harmony.
+    /// Every pitched voice's (and sting's) release capped at 60 ms, so a sustaining note is heard
+    /// for about its NOMINAL Score duration and a long pad tail cannot ring under the next harmony.
+    /// A pluck (sustain 0) still decays inside its written length.
     pub short_release: bool,
 }
 
@@ -620,7 +636,7 @@ impl HumanMusicSynth {
             snare: Snare::with_params(srf, world.snare),
             hat: Hat::with_cutoff(srf, world.hat_cutoff),
             clap: Clap::new(srf),
-            sfx_voices: (0..4).map(|_| SfxVoice::new(srf)).collect(),
+            sfx_voices: (0..4).map(|_| SfxVoice::new(srf, production)).collect(),
             reverb,
             sat_drive: world.saturation,
             comp,
@@ -882,10 +898,14 @@ struct SfxVoice {
     remaining: i64,
     gated_off: bool,
     sr: f32,
+    // Debug production (the harmonic reference): a plain sine operator through an open filter, and
+    // a capped release. NORMAL leaves both off.
+    clean: bool,
+    short_release: bool,
 }
 
 impl SfxVoice {
-    fn new(sr: f32) -> SfxVoice {
+    fn new(sr: f32, production: ProductionControl) -> SfxVoice {
         let mut osc_b = Osc::new(sr);
         osc_b.set_shape(Wave::Triangle);
         SfxVoice {
@@ -899,6 +919,8 @@ impl SfxVoice {
             remaining: 0,
             gated_off: true,
             sr,
+            clean: production.clean_waves,
+            short_release: production.short_release,
         }
     }
 
@@ -907,21 +929,23 @@ impl SfxVoice {
     }
 
     fn trigger(&mut self, kind: SfxKind, freqs: [f32; 2], vel: f32) {
-        self.osc_a.set(freqs[0], 2.0, 1.5);
+        self.osc_a
+            .set(freqs[0], 2.0, if self.clean { 0.0 } else { 1.5 });
         self.osc_b.set_freq(freqs[1]);
         // The envelope is the kind's own declared property (score.rs) — the synth no longer keeps
         // a private second copy that could drift from it.
         let (a, d, s, r) = kind.envelope();
+        let r = if self.short_release { r.min(0.06) } else { r };
         self.amp.set(a, d, s, r);
         self.amp.gate_on();
-        self.filt.set(
-            if matches!(kind, SfxKind::Danger | SfxKind::Impact) {
-                1800.0
-            } else {
-                5000.0
-            },
-            0.3,
-        );
+        let (cutoff, res) = if self.clean {
+            (12_000.0, 0.0)
+        } else if matches!(kind, SfxKind::Danger | SfxKind::Impact) {
+            (1800.0, 0.3)
+        } else {
+            (5000.0, 0.3)
+        };
+        self.filt.set(cutoff, res);
         self.filt.reset();
         self.pan = match kind {
             SfxKind::Acquire => 0.2,
@@ -987,7 +1011,7 @@ mod tests {
     #[test]
     fn repro_sustained_sfx_hangs_forever() {
         let sr = 48_000.0f32;
-        let mut v = SfxVoice::new(sr);
+        let mut v = SfxVoice::new(sr, ProductionControl::NORMAL);
         v.trigger(SfxKind::Transition, [440.0, 660.0], 1.0);
         for _ in 0..(sr as usize * 3) {
             v.next();
@@ -1007,7 +1031,7 @@ mod tests {
         // shared effect, not this oscillator — the point is the oscillator has stopped feeding it.)
         let sr = 48_000.0f32;
         for kind in SfxKind::ALL {
-            let mut v = SfxVoice::new(sr);
+            let mut v = SfxVoice::new(sr, ProductionControl::NORMAL);
             v.trigger(kind, [440.0, 660.0], 1.0);
             let bound = (kind.max_lifetime_secs() * sr).ceil() as usize;
             let tail_start = bound - bound / 10; // last 10% is well past the release
@@ -1037,7 +1061,9 @@ mod tests {
         // four jammed active forever and events 5..10 were silently dropped. After the last event
         // drains, the pool must be fully free again.
         let sr = 48_000.0f32;
-        let mut pool: Vec<SfxVoice> = (0..4).map(|_| SfxVoice::new(sr)).collect();
+        let mut pool: Vec<SfxVoice> = (0..4)
+            .map(|_| SfxVoice::new(sr, ProductionControl::NORMAL))
+            .collect();
         let gap = (sr * 0.5) as usize;
         let mut serviced = 0;
         for i in 0..10usize {
@@ -1128,7 +1154,23 @@ mod tests {
     fn production_normal_is_bit_identical_to_new_and_reference_changes_only_production() {
         // The harmonic reference is only an honest control if NORMAL reproduces the normal render
         // sample-for-sample (the toggles are the ONLY difference), and the reference actually
-        // removes something (it renders, finitely, and differs).
+        // removes something (it renders, finitely, and differs). `new` IS `with_production(NORMAL)`,
+        // so comparing the two renders only guards determinism; the contract is carried by the
+        // voice-level identity below (NORMAL builds every pool from the world's own patch) and the
+        // bus branches, which take the pre-R8 path exactly when their toggle is off.
+        for w in MusicWorld::all() {
+            for p in [&w.pad, &w.keys, &w.bass, &w.lead] {
+                assert_eq!(
+                    format!("{:?}", ProductionControl::NORMAL.apply(p)),
+                    format!("{p:?}"),
+                    "{}: NORMAL must not touch a patch",
+                    w.name
+                );
+                let r = ProductionControl::HARMONIC_REFERENCE.apply(p);
+                assert!(matches!(r.osc, OscKind::Shape(Wave::Triangle)) && r.unison == 1);
+                assert!(!r.sub && r.detune_cents == 0.0 && r.adsr.3 <= 0.06);
+            }
+        }
         use super::super::functor::compose;
         use super::super::semantic::deflected_lift_trace;
         use crate::audio::render::OfflineRenderer;
