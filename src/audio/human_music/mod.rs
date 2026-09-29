@@ -40,6 +40,8 @@ pub mod motif;
 pub mod performance;
 pub mod pitch;
 pub mod plan;
+#[cfg(test)]
+mod probes;
 pub mod region;
 pub mod rng;
 pub mod score;
