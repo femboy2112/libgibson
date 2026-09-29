@@ -2114,3 +2114,57 @@ fn every_informative_answer_relates_to_its_real_caller() {
         );
     }
 }
+
+/// Every settled flagship debt cites the action that discharges it in the performance, and a
+/// suspended cadence met by the backbone's miss is recorded as DEFLECTED by that Deflect — never
+/// as a payment the music does not make. Negative control: the plan's unbound ledger cites none.
+#[test]
+fn every_flagship_obligation_cites_the_action_that_settles_it() {
+    use super::discourse::SettleHow;
+    for world in MusicWorld::all() {
+        let c = flagship(&world);
+        let led = &c.perf.obligations;
+        assert!(!led.obligations.is_empty(), "{}: no debts", world.name);
+        assert_eq!(
+            c.plan.discourse.ledger.unwitnessed_settlements().count(),
+            c.plan.discourse.ledger.resolved_count(),
+            "{}: the plan's ledger is unbound by construction",
+            world.name
+        );
+        for o in &led.obligations {
+            let st = o
+                .settlement
+                .unwrap_or_else(|| panic!("{}: {} unsettled", world.name, o.id));
+            let w = st
+                .witness
+                .unwrap_or_else(|| panic!("{}: {} settled with no action", world.name, o.id));
+            let a = c.perf.actions.get(w).expect("witness resolves");
+            if st.how == SettleHow::Deflected {
+                assert_eq!(a.kind, ActionKind::Deflect, "{}: {}", world.name, o.id);
+            } else {
+                assert!(
+                    matches!(
+                        a.kind,
+                        ActionKind::Resolve
+                            | ActionKind::Hit
+                            | ActionKind::Answer
+                            | ActionKind::Call
+                            | ActionKind::ReEntry
+                            | ActionKind::Fill
+                    ),
+                    "{}: {} paid by {:?}",
+                    world.name,
+                    o.id,
+                    a.kind
+                );
+            }
+        }
+        assert!(
+            led.obligations
+                .iter()
+                .any(|o| o.settlement.is_some_and(|s| s.how == SettleHow::Deflected)),
+            "{}: the flagship's second suspended cadence meets the Deflect",
+            world.name
+        );
+    }
+}

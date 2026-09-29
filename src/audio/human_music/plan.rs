@@ -812,7 +812,7 @@ impl CompositionPlan {
         let led = &self.discourse.ledger;
         let _ = writeln!(
             s,
-            "obligations ({}): {} resolved, {} late, {} abandoned, {} unwitnessed",
+            "obligations ({}): {} resolved, {} late, {} abandoned, {} not yet bound to an action (witnesses bind per performance: PerformancePlan::obligations)",
             led.obligations.len(),
             led.resolved_count(),
             led.late_count(),

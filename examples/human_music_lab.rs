@@ -276,6 +276,28 @@ fn main() -> std::io::Result<()> {
         }
         print!("{}", ComplexityReport::measure(&perf, &score).report());
         println!("{}", perf.regions.dump());
+        // The debts, as settled IN THIS PERFORMANCE: each settlement bound to the action that
+        // discharges it (the plan dump above prints the plan's unbound ledger).
+        for o in &perf.obligations.obligations {
+            println!(
+                "  obligation {} {} opened@phrase{} due@{:?} -> {}",
+                o.id,
+                o.kind.label(),
+                o.source_phrase,
+                o.deadline,
+                match o.settlement {
+                    Some(st) => format!(
+                        "{:?} by phrase{} witness={}",
+                        st.how,
+                        st.by_phrase,
+                        st.witness
+                            .map(|w| w.to_string())
+                            .unwrap_or_else(|| "NONE".into())
+                    ),
+                    None => "unsettled".into(),
+                }
+            );
+        }
         print!("{}", SfxAudit::measure(&perf, &score).report());
         print!(
             "{}",

@@ -513,12 +513,28 @@ impl ObligationLedger {
 ///   settlement stays honestly unwitnessed rather than borrowing an unrelated action.
 fn discharges(kind: ObligationKind, a: &MusicalAction, plan: &ActionPlan) -> bool {
     match kind {
-        ObligationKind::SuspendedCadence | ObligationKind::HarmonicDeparture => {
+        ObligationKind::SuspendedCadence => {
             a.kind == ActionKind::Resolve
                 || (a.kind == ActionKind::Hit
                     && a.pays
                         .and_then(|p| plan.get(p))
                         .is_some_and(|p| p.kind == ActionKind::Resolve))
+        }
+        // A departure is paid by coming home: a resolution, or the cadence hit of a
+        // SectionResolved / Confirmation arrival (the backbone's Reset lands on home).
+        ObligationKind::HarmonicDeparture => {
+            a.kind == ActionKind::Resolve
+                || (a.kind == ActionKind::Hit
+                    && (matches!(
+                        a.cause,
+                        ActionCause::Morphism {
+                            morphism: super::intent::IntentMorphism::Cadence,
+                            ..
+                        }
+                    ) || a
+                        .pays
+                        .and_then(|p| plan.get(p))
+                        .is_some_and(|p| p.kind == ActionKind::Resolve)))
         }
         ObligationKind::MotifQuestion => {
             a.kind == ActionKind::Answer
@@ -558,14 +574,26 @@ pub fn bind_settlement_witnesses(
             continue;
         };
         let (start, end) = phrase_span(s.by_phrase);
+        let within =
+            |a: &&&MusicalAction| a.start_beat >= start - 1e-6 && a.start_beat < end - 1e-6;
         s.witness = chrono
             .iter()
-            .find(|a| {
-                a.start_beat >= start - 1e-6
-                    && a.start_beat < end - 1e-6
-                    && discharges(kind, a, actions)
-            })
+            .filter(within)
+            .find(|a| discharges(kind, a, actions))
             .map(|a| a.id);
+        // A suspended cadence met by a planned miss (the backbone's Deflect) is settled by that
+        // miss — an acknowledged evasion, not a payment: the ledger says so instead of claiming
+        // a resolution the music never makes.
+        if s.witness.is_none() && kind == ObligationKind::SuspendedCadence {
+            if let Some(d) = chrono
+                .iter()
+                .filter(within)
+                .find(|a| a.kind == ActionKind::Deflect)
+            {
+                s.witness = Some(d.id);
+                s.how = SettleHow::Deflected;
+            }
+        }
     }
 }
 

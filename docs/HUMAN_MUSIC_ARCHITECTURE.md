@@ -863,7 +863,10 @@ always; the base plan is time-sorted before ids are assigned; `chronological()` 
 its deadline; `Pending / Settled / Late / Abandoned`); settlement is many-to-many and names a
 specific debt of a compatible kind (`compatible(kind, role)`; `SettleError::{IncompatibleKind, …}`);
 a debt opened at phrase 5 no longer gets the global answer phrase 3 as its deadline; each settled
-debt is bound to the performance action that discharges it and events carry the obligation id.
+debt is bound to the performance action that discharges it and events carry the obligation id. On
+the flagship: the harmonic departure is paid by the cadence hit that lands home, the first
+suspended cadence by its resolution, and the second — met by the backbone's miss — is recorded as
+**Deflected** by that Deflect rather than as a payment the music never makes.
 
 **Tonal regions (`region.rs`).** `Modulate` now changes the region: a `RegionTimeline` (home /
 pivot / modulated / return spans), a closely related target (a whole-step lift under rising
