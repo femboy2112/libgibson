@@ -24,10 +24,11 @@ use super::harmony::ChordSpan;
 use super::ids::{ActionId, InteractionId, MaterialId};
 use super::language::MusicalLanguage;
 use super::material::{transform_material, InteractionMaterial, MaterialSource};
-use super::motif::{Handoff, Motif, MotifBank, ThematicTrajectory};
+use super::motif::{Handoff, Motif};
 use super::performance::{AccentGrid, PerformanceOptions};
 use super::plan::CompositionPlan;
 use super::rng::Rng;
+use super::song::ThematicMap;
 
 /// How responses are planned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -324,12 +325,13 @@ pub(super) fn plan_interactions(
     actions: &mut ActionPlan,
     accent: &AccentGrid,
     chords: &[ChordSpan],
-    bank: &MotifBank,
+    thematic: &ThematicMap,
     lang: &MusicalLanguage,
     opts: &PerformanceOptions,
     stage: &Stage,
     seed: u64,
 ) -> InteractionPlan {
+    let bank = &thematic.bank;
     let mode = opts.responses;
     let interact = opts.actions;
     let mut rng = Rng::new(seed ^ 0x1A7E_4C71);
@@ -380,9 +382,9 @@ pub(super) fn plan_interactions(
         }
     }
 
-    // --- 2. Lead statements along the audible line, developed by the thematic trajectory; start
-    //        offsets vary lawfully (a pickup into the bar, on the beat, a displaced entry). ---
-    let mut traj = ThematicTrajectory::new(bank);
+    // --- 2. Lead statements at the song's theme sites, stating what the song states there (the
+    //        thematic trajectory ran once, upstream, in the SongMap); start offsets vary lawfully
+    //        (a pickup into the bar, on the beat, a displaced entry). ---
     let mut offset_memory: Vec<i32> = Vec::new();
     let mut thesis_stated = false;
     // Statement starts whose Fragment verb passes to the band (before the thesis was stated),
@@ -390,10 +392,13 @@ pub(super) fn plan_interactions(
     let mut band_fragments: Vec<(f64, ActionId)> = Vec::new();
     for t in plan.targets() {
         let phrase = t.phrase;
+        let Some(site) = thematic.site(phrase.ix) else {
+            continue;
+        };
         if !stage.on_stage(Agent::Lead, phrase.start_beat()) {
             continue;
         }
-        let (motif, handoff) = traj.next_for(t.goal.role);
+        let (motif, handoff) = (&site.motif, site.handoff);
         let len = motif.total_beats() as f64;
         if len < 1e-6 {
             continue;

@@ -366,17 +366,19 @@ pub struct MotifBank {
 }
 
 impl MotifBank {
-    /// Generate the roster deterministically from `seed`, colored by `scale`.
+    /// Generate the roster deterministically from `seed`, in the song's reference `frame`.
     ///
-    /// Determinism lives entirely in `seed` (a seeded [`Rng`]); `scale` only tilts which
-    /// germ is chosen (bright modes get the open rising call, darker modes the restless one),
-    /// so `(scale, seed)` fully determines the bank. Every melodic member is non-empty by
+    /// Determinism lives entirely in `seed` (a seeded [`Rng`]); `frame` — the SONG's reference
+    /// mode (Round IX: [`super::song::SongMap::frame`]), never a room's — only tilts which germ is
+    /// chosen (a bright frame gets the open rising call, a darker one the restless germ), so
+    /// `(frame, seed)` fully determines the bank. Every member is a scale-degree contour: a room
+    /// realizes it in its own mode without choosing it. Every melodic member is non-empty by
     /// construction.
-    pub fn generate(scale: &Scale, seed: u64) -> MotifBank {
+    pub fn generate(frame: Mode, seed: u64) -> MotifBank {
         let mut rng = Rng::new(seed);
 
-        // Bright rooms get the open rising call; darker modes get the more restless germ.
-        let bright = matches!(scale.mode, Mode::Ionian | Mode::Lydian | Mode::Mixolydian);
+        // A bright frame gets the open rising call; a darker one the more restless germ.
+        let bright = matches!(frame, Mode::Ionian | Mode::Lydian | Mode::Mixolydian);
         let base = if bright {
             Motif::seed_a()
         } else {
@@ -741,6 +743,10 @@ pub struct LineRequest<'a> {
     pub style: LineStyle,
     /// Target candidates considered per structural event.
     pub max_candidates: usize,
+    /// A beat the line must ARRIVE at: the first sounding event within `[t - 0.25, t + 1)` may
+    /// only be a chord tone of its onset harmony (a lead Resolve the plan handed this statement).
+    /// A feasibility constraint, not a cost: a line that already arrives is unchanged.
+    pub arrival: Option<f64>,
 }
 
 /// One sounding event with its full harmonic situation, precomputed once.
@@ -765,6 +771,8 @@ struct Slot {
     allowed: u16,
     /// Guide tones (3rd, 7th/6th) of the onset harmony.
     guide: u16,
+    /// The line's required arrival ([`LineRequest::arrival`]): chord tones of `cur` only.
+    arrive: bool,
 }
 
 fn has_pc(mask: u16, p: Midi) -> bool {
@@ -796,11 +804,16 @@ const CONN_CAP: usize = 12;
 impl<'a> LineRequest<'a> {
     fn slots(&self, events: &[MelodicEvent]) -> Vec<Slot> {
         let mut out = Vec::new();
+        let mut arrival = self.arrival;
         for (i, ev) in events.iter().enumerate() {
             if ev.rest {
                 continue;
             }
             let start = self.start_beat + ev.onset;
+            let arrive = arrival.is_some_and(|t| start >= t - 0.25 && start < t + 1.0);
+            if arrive {
+                arrival = None;
+            }
             let deg = self.motif.degrees[i];
             let cur = chord_at(self.chords, start);
             let next_boundary = next_boundary_after(self.chords, start);
@@ -810,7 +823,7 @@ impl<'a> LineRequest<'a> {
                 .and_then(|cs| chord_at(self.chords, cs - 1e-3));
             let ctx = super::context::context_at(self.contexts, start).or(self.contexts.first());
             let cur_mask = chord_mask(cur);
-            let licensed = if self.style.tension_targets {
+            let licensed = if self.style.tension_targets && !arrive {
                 ctx.map_or(0, |c| super::pitch::pc_mask(&c.palette.tensions)) & !cur_mask
             } else {
                 0
@@ -850,6 +863,7 @@ impl<'a> LineRequest<'a> {
                 licensed,
                 allowed: palette_mask | cur_mask | imminent,
                 guide,
+                arrive,
             });
         }
         out
@@ -1049,6 +1063,7 @@ impl Engine<'_> {
         let hi = (pa.max(pb) + 3).max(sl.anchor + 2);
         let mut v: Vec<Midi> = (lo..=hi)
             .filter(|&p| has_pc(sl.allowed, p) || (p - pb).abs() == 1 || (p - pa).abs() == 1)
+            .filter(|&p| !sl.arrive || has_pc(chord_mask(sl.cur), p))
             .collect();
         v.sort_by_key(|&p| ((p - sl.anchor).abs(), p));
         v.truncate(CONN_CAP);
@@ -1352,6 +1367,7 @@ pub fn realize_phrase_reporting(
 ) -> (Vec<RealizedNote>, usize) {
     let contexts = super::context::analyze(chords, scale);
     let r = realize_line(&LineRequest {
+        arrival: None,
         motif,
         chords,
         contexts: &contexts,
@@ -1532,10 +1548,9 @@ mod tests {
 
     #[test]
     fn motif_bank_is_deterministic_and_populated() {
-        let s = Scale::new(0, Mode::Ionian);
-        let a = MotifBank::generate(&s, 7);
-        let b = MotifBank::generate(&s, 7);
-        assert_eq!(a, b); // deterministic in (scale, seed)
+        let a = MotifBank::generate(Mode::Ionian, 7);
+        let b = MotifBank::generate(Mode::Ionian, 7);
+        assert_eq!(a, b); // deterministic in (frame, seed)
         assert!(!a.identity.is_empty());
         assert!(!a.hook.is_empty());
         assert!(!a.rhythmic_cell.is_empty());
@@ -1640,6 +1655,7 @@ mod tests {
         scale: &'a Scale,
     ) -> LineRequest<'a> {
         LineRequest {
+            arrival: None,
             motif,
             chords,
             contexts,

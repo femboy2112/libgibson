@@ -75,6 +75,20 @@ pub fn realize_lead(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadReal
             }
             _ => base_octave,
         };
+        // A lead Resolve whose resolution window this statement sounds in is an obligation of the
+        // line: it must ARRIVE on a chord tone there. The plan hands the Resolve to the lead because
+        // a statement sounds at the target; once one song is realized in rooms of different modes
+        // (Round IX), the same answer can land on a licensed extension in one room (an A over
+        // C add9) and on the fifth in another, so the arrival is a constraint of the search, not a
+        // coincidence of it.
+        let st_end = st.end_beat();
+        let arrival = perf
+            .actions
+            .actions
+            .iter()
+            .filter(|a| a.kind == ActionKind::Resolve && a.initiator == Agent::Lead)
+            .map(|a| a.target_beat.unwrap_or(a.start_beat))
+            .find(|&t| t + 1.0 > st.start_beat && t - 0.25 < st_end);
         // Targets first, then connectors justified inside the search, spoken in the
         // performance's language (tension targets, chromatic appetite, internal rests).
         let line = super::motif::realize_line(&super::motif::LineRequest {
@@ -88,6 +102,7 @@ pub fn realize_lead(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadReal
             prev_pitch: prev_exit,
             style: super::motif::LineStyle::for_language(&perf.language),
             max_candidates: 6,
+            arrival,
         });
         repairs += line.repairs;
         if let Some(last) = line.notes.last() {
@@ -142,7 +157,8 @@ pub fn realize_lead(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadReal
         }
     }
     // A lead Resolve is performed by the lead's arrival on a chord tone of the harmony at the
-    // resolution: stamp that note (the first chord-tone onset within a beat of the target).
+    // resolution: stamp that note (the first chord-tone onset within a beat of the target). The
+    // line search was told where it must arrive (`LineRequest::arrival`), so the note is there.
     for a in perf
         .actions
         .actions

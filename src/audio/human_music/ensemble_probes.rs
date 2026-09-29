@@ -57,6 +57,11 @@ fn fingerprint(c: &Composition) -> u64 {
 /// (4403b8e) with this same fingerprint and reproduced here; the coupling layer must never leak
 /// into the control through a shared helper. A deliberate change to shared realization code
 /// re-pins these — and says so in its commit.
+///
+/// Round IX re-pinned BLACK_ICE only, because the SONG it plays changed, not the band: the theme
+/// is the SongMap's now (the germ charted in the reference frame; the Aeolian room used to choose
+/// its own). VAPOR95 and SWISS_SIGNAL, whose rooms already chose that germ, are unchanged since R7b.
+/// BLACK_ICE's R7b-era pin was `0xb458_00e8_b7ec_8bb7`.
 #[test]
 fn the_independent_control_is_the_r7b_composition() {
     let got: Vec<(String, u64, bool)> = MusicWorld::all()
@@ -76,9 +81,18 @@ fn the_independent_control_is_the_r7b_composition() {
     }
 }
 
+/// The R8 coupled band's unowned pitched-pair collisions ([`PITCHED_PAIRS`] order) per world: zero
+/// on the songs R8 was pinned on; exactly one keys/lead on BLACK_ICE's Round IX song.
+fn r8_pairs(world: super::world::WorldId) -> Vec<usize> {
+    match world {
+        super::world::WorldId::BlackIce => vec![0, 0, 0, 1, 0, 0],
+        _ => vec![0; 6],
+    }
+}
+
 /// `MusicWorld::all()` order: BLACK_ICE, VAPOR95, SWISS_SIGNAL.
 const R7B_PINS: [u64; 3] = [
-    0xb458_00e8_b7ec_8bb7,
+    0xeade_0b75_3df1_5370,
     0xf987_f0cf_fd6b_0f4b,
     0xa3e6_0cd3_b8b2_86e0,
 ];
@@ -300,9 +314,10 @@ fn the_surgical_band_is_r7b_minus_its_garbage() {
     }
 }
 
-/// `MusicWorld::all()` order: BLACK_ICE, VAPOR95, SWISS_SIGNAL.
+/// `MusicWorld::all()` order: BLACK_ICE, VAPOR95, SWISS_SIGNAL. Round IX re-pinned BLACK_ICE only
+/// (its song changed, the frozen R8 solver did not); its 5644c96 pin was `0x1f97_14ee_5fea_d745`.
 const R8_PINS: [u64; 3] = [
-    0x1f97_14ee_5fea_d745,
+    0x99f8_9e8f_9be1_9f49,
     0xe6bb_ade7_2f60_1d07,
     0xef3d_6bdc_dd49_bd94,
 ];
@@ -368,8 +383,11 @@ fn the_coupled_band_sounds_one_harmony_where_the_control_did_not() {
             world.name
         );
         assert!(di.bass_function_violations > 0, "{}", world.name);
-        // The coupled band: no pitched pair collides unowned; at most one residual (a sting).
-        assert_eq!(pairs(&dc), vec![0; 6], "{}", world.name);
+        // The coupled band: no pitched pair collides unowned; at most one residual (a sting). Round
+        // IX: BLACK_ICE now plays the SONG's theme (the Ionian-charted germ, re-moded), and the
+        // frozen R8 solver — the rejected control, not revisited — leaves exactly one keys/lead
+        // collision on it. Pinned exactly, not loosened: any further drift fails here.
+        assert_eq!(pairs(&dc), r8_pairs(world.id), "{}", world.name);
         assert!(
             dc.unowned_m2 + dc.unowned_m9 <= 1 && dc.unowned_beats <= 0.5,
             "{}",

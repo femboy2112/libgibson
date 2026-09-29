@@ -15,17 +15,94 @@
 //!
 //! **Song identity** (this object): the coherence contract, the form graph (phrases, families,
 //! exact length), the discourse (roles, closures, culmination, the obligation ledger), the
-//! arrangement envelope (who is seated per phrase), and the DeflectedLift backbone timeline
-//! (gestures, cycles, slot grid).
+//! arrangement envelope (who is seated per phrase), the DeflectedLift backbone timeline
+//! (gestures, cycles, slot grid), and the [`ThematicMap`] — the germ, its hook and cells as
+//! scale-degree contours, and the theme site of every phrase the lead is seated in.
+//!
+//! Relative coordinates are charted against one declared [`REFERENCE_FRAME`] (Nashville-number
+//! practice: degrees relative to a major-scale reference). A room re-modes them; it never
+//! chooses them.
 //!
 //! **Performance freedom** (the fiber, NOT here): register, voicing, chord colour and extensions,
 //! articulation, dynamics, timbre, pan, swing, microtiming, passing and approach tones, fills,
 //! discretionary calls and answers, who answers, response latency, density, ornamentation.
 
 use super::contract::{CoherenceContract, CompositionGrammar};
+use super::discourse::DiscourseRole;
+use super::motif::{Handoff, Motif, MotifBank, ThematicTrajectory};
 use super::plan::CompositionPlan;
 use super::semantic::SemanticTrace;
+use super::theory::Mode;
 use super::timeline::IntentTimeline;
+
+/// The reference frame every song is charted in. Scale-degree coordinates (the germ's contour,
+/// the chart's roots) are chosen against it once; each room realizes them in its own mode.
+pub const REFERENCE_FRAME: Mode = Mode::Ionian;
+
+/// Where the song states thematic material: one site per phrase the arrangement envelope seats
+/// the lead in, carrying exactly what is stated there.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThemeSite {
+    /// The phrase index.
+    pub phrase: u32,
+    /// The phrase's discourse role (what the statement is FOR).
+    pub role: DiscourseRole,
+    /// The material stated, developed from the previous site (scale degrees + rhythm).
+    pub motif: Motif,
+    /// How it connects to the previous site.
+    pub handoff: Handoff,
+}
+
+impl ThemeSite {
+    /// Whether the site states the song's IDENTITY — the thesis coming home (Establish, Restate,
+    /// Return) or its hook (Culminate). A performance may develop other sites (a Fragment verb);
+    /// these it must state as written.
+    pub fn is_identity(&self) -> bool {
+        matches!(
+            self.role,
+            DiscourseRole::Establish
+                | DiscourseRole::Restate
+                | DiscourseRole::Return
+                | DiscourseRole::Culminate
+        )
+    }
+}
+
+/// The song's thematic identity: the motif bank (germ, hook, cells — every member a scale-degree
+/// contour, no room's pitch in it) and the theme site of every lead-seated phrase, developed along
+/// the discourse by the [`ThematicTrajectory`] exactly once, before any performance.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThematicMap {
+    pub bank: MotifBank,
+    pub sites: Vec<ThemeSite>,
+}
+
+impl ThematicMap {
+    fn build(plan: &CompositionPlan, frame: Mode, seed: u64) -> ThematicMap {
+        let bank = MotifBank::generate(frame, seed ^ 0x3E10_D1E5);
+        let mut traj = ThematicTrajectory::new(&bank);
+        let sites = plan
+            .targets()
+            .into_iter()
+            .filter(|t| plan.arrangement.at(t.phrase.ix as usize).lead.is_audible())
+            .map(|t| {
+                let (motif, handoff) = traj.next_for(t.goal.role);
+                ThemeSite {
+                    phrase: t.phrase.ix,
+                    role: t.goal.role,
+                    motif,
+                    handoff,
+                }
+            })
+            .collect();
+        ThematicMap { bank, sites }
+    }
+
+    /// The theme site of `phrase`, if the song states material there.
+    pub fn site(&self, phrase: u32) -> Option<&ThemeSite> {
+        self.sites.iter().find(|s| s.phrase == phrase)
+    }
+}
 
 /// The song: every coordinate a performance must preserve, built before any world or language is
 /// known.
@@ -40,6 +117,10 @@ pub struct SongMap {
     /// The composition seed. Every song-level choice draws from it; performances reuse it for
     /// their own (fiber) randomness.
     pub seed: u64,
+    /// The reference frame the song's relative coordinates are charted in ([`REFERENCE_FRAME`]).
+    pub frame: Mode,
+    /// The germ and where and what the song states of it.
+    pub thematic: ThematicMap,
 }
 
 impl SongMap {
@@ -57,11 +138,15 @@ impl SongMap {
             ),
             None => CompositionPlan::build_for_beats(&timeline, trace.total_beats),
         };
+        let frame = REFERENCE_FRAME;
+        let thematic = ThematicMap::build(&plan, frame, seed);
         SongMap {
             trace: trace.clone(),
             timeline,
             plan,
             seed,
+            frame,
+            thematic,
         }
     }
 }

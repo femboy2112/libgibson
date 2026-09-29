@@ -392,13 +392,15 @@ impl PerformancePlan {
         let accent = build_accent_grid(plan, &actions, &lang, seed);
 
         // 5. Lead statements, materials, opportunities, calls, responses.
-        let bank = MotifBank::generate(&region, seed ^ 0x3E10_D1E5);
+        // The song's own theme: the bank and every site come from the SongMap (Round IX), never
+        // from this room's mode.
+        let bank = song.thematic.bank.clone();
         let ip = plan_interactions(
             plan,
             &mut actions,
             &accent,
             &chords,
-            &bank,
+            &song.thematic,
             &lang,
             &opts,
             &stage,

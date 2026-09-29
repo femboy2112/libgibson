@@ -1135,6 +1135,10 @@ mod tests {
         ("SWISS_SIGNAL", 0, &[2, 3, 6, 7, 8, 10], 0.300),
     ];
 
+    /// Rooms whose flagship song changed in Round IX (the SongMap owns the theme): the coupled
+    /// control's exact `(keys/lead unowned, hard_total)` on the new song.
+    const R9_SONG_CHANGED: [(&str, (usize, usize)); 1] = [("BLACK_ICE", (1, 1))];
+
     /// The flagship, coupled, every world: the keys' answers and figures are placed against the band
     /// and nothing the witness reads is lost — no unowned keys/lead collision, no more hard problems
     /// than before, every action witnessed, every informative receipt still about its caller, the
@@ -1248,9 +1252,34 @@ mod tests {
                 c.score.melody_repairs,
                 role_counts(p, &c.score.notes, Role::Keys),
             );
+            assert_eq!(r.witnessed(), r.total(), "{}: {}", world.name, r.report());
+            assert_eq!(c.score.melody_repairs, 0, "{}", world.name);
+            if let Some(&(keys_lead, hard)) = R9_SONG_CHANGED
+                .iter()
+                .find(|x| x.0 == world.name)
+                .map(|x| &x.1)
+            {
+                // Round IX: this room now plays the SONG's own material, so the 5db3296 history is
+                // not its history. The frozen R8 solver (the rejected control, not revisited) is
+                // held to its exact measurements on the new song, and every informative receipt
+                // must still be about its caller.
+                assert_eq!(
+                    (pair(&d, "keys/lead"), d.hard_total()),
+                    (keys_lead, hard),
+                    "{}",
+                    world.name
+                );
+                assert!(
+                    rec.iter()
+                        .filter(|x| x.informative())
+                        .all(|x| x.margin() > 0.0),
+                    "{}",
+                    world.name
+                );
+                continue;
+            }
             assert_eq!(pair(&d, "keys/lead"), 0, "{}", world.name);
             assert!(d.hard_total() <= hard_before, "{}", world.name);
-            assert_eq!(r.witnessed(), r.total(), "{}: {}", world.name, r.report());
             for &ix in informative_before {
                 let x = rec
                     .iter()
@@ -1263,7 +1292,6 @@ mod tests {
                 );
             }
             assert!(min_margin >= min_before - 0.05, "{}", world.name);
-            assert_eq!(c.score.melody_repairs, 0, "{}", world.name);
         }
     }
 

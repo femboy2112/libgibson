@@ -4,17 +4,19 @@
 //! forced DeflectedLift, seed 2112); what varies is only the room ([`MusicWorld`]) and the idiom
 //! ([`MusicalLanguage`]).
 //!
-//! These first probes are the round's falsifiable starting point: each one asserts a defect AS IT
-//! STANDS on the R8b tip (0b4483d) — the composition plan is identical across worlds, yet the room
-//! still picks the theme and the chart, and the idiom still rewrites the chart's rhythm through a
-//! field no song coordinate owns. Each is replaced by the law it witnesses when that law lands.
+//! The round started from three witnesses, each asserting a defect AS IT STOOD on the R8b tip
+//! (0b4483d): the composition plan was identical across worlds, yet the room picked the theme and
+//! the chart, and the idiom rewrote the chart's rhythm through a field no song coordinate owned.
+//! Each is replaced by the law it witnessed when that law lands (the git history keeps the flip).
 
 use super::backbone::HarmonicGesture;
 use super::contract::CompositionGrammar;
-use super::functor::{compose_full, Composition};
+use super::functor::{compose_full, perform, Composition};
 use super::language::MusicalLanguage;
 use super::performance::PerformanceOptions;
+use super::score::Role;
 use super::semantic::deflected_lift_trace;
+use super::song::{SongMap, ThemeSite};
 use super::theory::Scale;
 use super::world::MusicWorld;
 
@@ -38,37 +40,90 @@ fn degree_of(pc: i32, region: &Scale) -> Option<i32> {
     (0..7).find(|&d| region.degree_pitch(d, 4).rem_euclid(12) == pc.rem_euclid(12))
 }
 
-/// **Witness 1 (defect): the room picks the theme.** The composition plan the three worlds are
-/// performed from is the same plan — and still the germ differs, because `MotifBank::generate`
-/// reads the world's mode (`bright` Ionian rooms get one germ, the Aeolian room another).
+/// The four acceptance performances of ONE song: three rooms speaking the flagship idiom, and the
+/// Aeolian room speaking the plain one.
+fn acceptance(song: &SongMap) -> [(&'static str, Composition); 4] {
+    let fusion = PerformanceOptions::default();
+    let simple = PerformanceOptions {
+        language: MusicalLanguage::simple(),
+        ..fusion
+    };
+    [
+        (
+            "BLACK_ICE/fusion",
+            perform(song, &MusicWorld::black_ice(), fusion),
+        ),
+        (
+            "VAPOR95/fusion",
+            perform(song, &MusicWorld::vapor95(), fusion),
+        ),
+        (
+            "SWISS_SIGNAL/fusion",
+            perform(song, &MusicWorld::swiss_signal(), fusion),
+        ),
+        (
+            "BLACK_ICE/simple",
+            perform(song, &MusicWorld::black_ice(), simple),
+        ),
+    ]
+}
+
+fn flagship_song() -> SongMap {
+    SongMap::build(
+        &deflected_lift_trace(120.0),
+        SEED,
+        Some(CompositionGrammar::DeflectedLift),
+    )
+}
+
+/// **Law 1 (was witness 1): the theme is the song's.** Every performance states the SongMap's own
+/// bank, and at every identity site (the thesis coming home, the hook) states exactly what the song
+/// states there — and the lead is heard stating it. On 0b4483d the Aeolian room stated germ id 1
+/// `[0,3,6,4,3,1]` while the Ionian rooms stated id 0 `[0,4,3,5,2]`.
 #[test]
-fn witness_the_world_picks_the_theme() {
-    let fusion = MusicalLanguage::fusion_conversation();
-    let [bi, v95, sw] = MusicWorld::all().map(|w| flagship(&w, fusion));
-    assert_eq!(
-        bi.song.plan.dump(),
-        v95.song.plan.dump(),
-        "the plan is world-free"
+fn the_theme_is_the_songs() {
+    let song = flagship_song();
+    let identity: Vec<&ThemeSite> = song
+        .thematic
+        .sites
+        .iter()
+        .filter(|s| s.is_identity())
+        .collect();
+    assert!(
+        identity.len() >= 3,
+        "the flagship states its thesis and hook"
     );
-    assert_eq!(
-        bi.song.plan.dump(),
-        sw.song.plan.dump(),
-        "the plan is world-free"
-    );
-    let germ = |c: &Composition| c.perf.bank.identity.clone();
-    eprintln!("BLACK_ICE germ {:?}", germ(&bi));
-    eprintln!("VAPOR95   germ {:?}", germ(&v95));
-    eprintln!("SWISS     germ {:?}", germ(&sw));
-    assert_ne!(
-        germ(&bi).identity(),
-        germ(&v95).identity(),
-        "defect: the Aeolian room and the Ionian room state different themes"
-    );
-    assert_eq!(
-        germ(&v95),
-        germ(&sw),
-        "the split is by mode, not by tonic: both Ionian rooms share the germ"
-    );
+    for (label, c) in acceptance(&song) {
+        assert_eq!(
+            c.perf.bank, song.thematic.bank,
+            "{label}: the bank is the song's"
+        );
+        for site in &identity {
+            let st = c
+                .perf
+                .statements
+                .iter()
+                .find(|st| st.phrase == site.phrase)
+                .unwrap_or_else(|| panic!("{label}: phrase {} states nothing", site.phrase));
+            assert_eq!(
+                st.motif, site.motif,
+                "{label}: phrase {} restated",
+                site.phrase
+            );
+            let heard = c
+                .score
+                .notes
+                .iter()
+                .filter(|n| n.role == Role::Lead && n.prov.material == Some(st.material))
+                .count();
+            assert!(heard > 0, "{label}: phrase {} is silent", site.phrase);
+        }
+        eprintln!(
+            "{label}: germ {:?} at {} identity sites",
+            c.perf.bank.identity.degrees,
+            identity.len()
+        );
+    }
 }
 
 /// **Witness 2 (defect): the room picks the chart.** The plan carries only the abstract gestures
