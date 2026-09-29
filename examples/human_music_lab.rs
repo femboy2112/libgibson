@@ -275,7 +275,7 @@ fn main() -> std::io::Result<()> {
             );
         }
         print!("{}", ComplexityReport::measure(&perf, &score).report());
-        print!("{}", perf.regions.dump());
+        println!("{}", perf.regions.dump());
         print!("{}", SfxAudit::measure(&perf, &score).report());
         print!(
             "{}",

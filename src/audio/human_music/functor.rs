@@ -319,10 +319,24 @@ fn add_sfx_and_provenance(
         }
         let sec_kind = plan.form.phrase_at(at).family.to_section_kind();
         let v = voice_sfx(kind, at, ti, score.tempo_bpm, plan, perf);
+        // When the band itself accents this beat (the same event's hit or push), the sting sits
+        // under the ensemble instead of stacking on top of it: the accent is the band's.
+        let band_accents = perf
+            .actions_starting(
+                &[
+                    super::action::ActionKind::Hit,
+                    super::action::ActionKind::Push,
+                ],
+                at,
+                0.125,
+                None,
+            )
+            .next()
+            .is_some();
         score.sfx.push(SfxEvent {
             start_beat: at,
             kind,
-            velocity: ev.state.dynamic(),
+            velocity: ev.state.dynamic() * if band_accents { 0.75 } else { 1.0 },
             prov: Provenance {
                 section: sec_kind,
                 role_note: "sfx",
