@@ -40,6 +40,8 @@ pub mod intent;
 pub mod interaction;
 pub mod language;
 pub mod material;
+#[cfg(test)]
+mod meaning_probes;
 pub mod melody;
 pub mod motif;
 pub mod performance;
