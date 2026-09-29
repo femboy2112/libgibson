@@ -1747,9 +1747,9 @@ mod tests {
     #[test]
     fn individually_legal_collectively_garbage_fails_the_union() {
         // Cmaj7, every note individually lawful: bass root, pad a valid E4-G4-B4 voicing, keys a
-        // chord tone plus two licensed tensions (C5 D5 A5), lead a chord tone (B5). The per-note
-        // audit (function != None) passes every one; the union holds the pad's B4 against the keys'
-        // C5 — a cross-role minor 2nd nobody owns.
+        // chord tone plus two licensed tensions (C5 D5 A5), lead another licensed tension (the 9th,
+        // D6). The per-note audit (function != None) passes every one; the union holds the pad's B4
+        // against the keys' C5 — a cross-role minor 2nd nobody owns.
         let c = ctx_of(&[(0.0, 4.0, CMAJ7)]);
         let voices = vec![
             v(Role::Bass, 36, 0.0, 4.0, PitchFunction::ChordTone, "root"),
@@ -1773,12 +1773,26 @@ mod tests {
                 PitchFunction::LicensedExtension,
                 "comp",
             ),
-            v(Role::Lead, 83, 0.0, 2.0, PitchFunction::ChordTone, "melody"),
+            // The lead takes another licensed tension (the 9th, D6).
+            v(
+                Role::Lead,
+                86,
+                0.0,
+                2.0,
+                PitchFunction::LicensedExtension,
+                "melody",
+            ),
         ];
+        // The per-note audit passes: every note carries a function (R4-R7's `unjustified == 0`)
+        // and is lawful over the chord — a chord tone or a licensed tension of the palette.
         assert!(
             voices.iter().all(|x| x.function.is_some()),
             "per-note audit passes"
         );
+        assert!(voices.iter().all(|x| {
+            let pc = pitch_class(x.pitch);
+            c[0].chord.contains_pc(pc) || c[0].palette.tensions.contains(&pc)
+        }));
         let d = measure(voices, &c);
         assert!(
             d.unowned_m2 >= 1,

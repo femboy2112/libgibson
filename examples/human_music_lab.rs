@@ -18,7 +18,10 @@
 //!   cargo run --release --example human_music_lab -- --responses=clockwork  # fixed-slot answers
 //!   cargo run --release --example human_music_lab -- --calls=every          # every statement calls
 //!   cargo run --release --example human_music_lab -- --manifest=fixed       # one choreography
-//!   cargo run --release --example human_music_lab -- --ab                   # all six A/Bs, BLACK_ICE
+//!   cargo run --release --example human_music_lab -- --ab                   # six A/Bs (BLACK_ICE) +
+//!                                                                          # independent vs coupled x3
+//!   cargo run --release --example human_music_lab -- --coupling=independent # the R7b realization
+//!   cargo run --release --example human_music_lab -- --sonority-detail=unowned  # every offending slice
 //!   cargo run --release --example human_music_lab -- --harmonic-reference   # same Score, clean timbre
 //!   cargo run --release --example human_music_lab -- --production=nosat,dry  # remove single factors
 //!   cargo run --release --example human_music_lab -- --stems --pair-stems    # solo + pitched pairs
@@ -849,5 +852,78 @@ fn ab(
     println!(
         "\nSame song four ways: language, action and interaction timing isolated for the ear."
     );
+    ab_coupling(out_dir, sr, block, seed, trace)
+}
+
+/// Round VIII's A/B: the SAME composition realized by the independent control (each player
+/// projecting the shared material alone — the R7b band) and by the coupled band (one harmonic
+/// ledger), in every world, with the vertical numbers beside each file.
+fn ab_coupling(
+    out_dir: &std::path::Path,
+    sr: SampleRate,
+    block: usize,
+    seed: u64,
+    trace: &SemanticTrace,
+) -> std::io::Result<()> {
+    println!("\nHumanMusic A/B — independent (R7b) vs coupled (R8) realization, seed={seed}\n");
+    for world in MusicWorld::all() {
+        for (name, coupling) in [
+            ("independent", EnsembleCoupling::Independent),
+            ("coupled", EnsembleCoupling::Coupled),
+        ] {
+            let c = compose_full(
+                trace,
+                &world,
+                seed,
+                Some(CompositionGrammar::DeflectedLift),
+                PerformanceOptions {
+                    coupling,
+                    ..PerformanceOptions::default()
+                },
+            );
+            c.score.validate().expect("A/B score invariants");
+            let mut synth = HumanMusicSynth::new(&c.score, &world, sr);
+            let frames = synth.total_samples();
+            let out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
+            let path = out_dir.join(format!(
+                "ab_coupling_{}_{name}.wav",
+                world.name.to_lowercase()
+            ));
+            write_wav_i16(&path, &out.audio, sr)?;
+            let policy = ColorPolicy::for_world(world.id, &c.perf.language);
+            let d = EnsembleSonorityDiagnostics::measure(&c.score, &c.perf.contexts, &policy, &[]);
+            let a = EnsembleSonorityDiagnostics::measure_audible_at(
+                &c.score,
+                &c.perf.contexts,
+                &world,
+                &policy,
+                &[],
+                gibson::audio::human_music::sonority::MASKING_FLOOR_DB,
+            );
+            let w = witness::audit(&c.perf, &c.score);
+            println!(
+                "  {:13} {:12} notes={:<4} unowned m2/m9 {}/{} ({:.2} b)  audible -20 dB {}/{} ({:.2} b)  bass_function={} missing_core={} ({:.2} b)  witnessed {}/{} repairs={} peak={:.3} rms={:.3}  {}",
+                world.name,
+                name,
+                c.score.notes.len(),
+                d.unowned_m2,
+                d.unowned_m9,
+                d.unowned_beats,
+                a.unowned_m2,
+                a.unowned_m9,
+                a.unowned_beats,
+                d.bass_function_violations,
+                d.missing_core_slices,
+                d.missing_core_beats,
+                w.witnessed(),
+                w.total(),
+                c.score.melody_repairs,
+                out.peak,
+                out.rms,
+                path.display()
+            );
+        }
+    }
+    println!("\nSame composition, same synth: only the realization's coupling differs.");
     Ok(())
 }
