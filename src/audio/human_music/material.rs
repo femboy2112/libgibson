@@ -512,7 +512,7 @@ pub enum MaterialRole {
     /// A linear event — passing, neighbour, approach, or a weak-beat step between two steps. Its
     /// exact pitch is the most negotiable thing in the line.
     Connector,
-    /// The line's last event: where it lands.
+    /// A final event that satisfies the line's destination contract.
     Arrival,
     /// A tone that leans on its resolution — a suspension, retardation, appoggiatura or
     /// anticipation, or an on-beat tension stepping to a chord tone.
@@ -536,14 +536,41 @@ impl MaterialRole {
 /// One realized material event, for [`resolve_roles`]: `(beat, pitch, function)`.
 pub type RoleEvent = (f64, Option<Midi>, Option<PitchFunction>);
 
-/// Label each event of one realized material line (in onset order) by what it is harmonically over
-/// the harmony it sounds in. Precedence: the last event is the `Arrival`; a suspension-type,
-/// appoggiatura or anticipation function is a `Tendency`; any other linear function, an unpitched
-/// event, or an off-beat pitch reached AND left by step (1–2 semitones) that is not a guide tone is
-/// a `Connector`; then a guide tone is a `GuideTarget`, another chord tone a `StructuralTarget`, a
-/// licensed tension on the beat stepping to a chord tone a `Tendency`, any other licensed tension a
-/// `ColorTarget`, and whatever is left (a scale colour) a `Connector`. Pure and deterministic.
+/// The permitted destination of a pitched response.
+#[derive(Debug, Clone, Copy)]
+pub enum ArrivalContract<'a> {
+    /// A closed response lands on a member of the destination chord.
+    Closed,
+    /// An intentionally open response may additionally land on one of these selected,
+    /// locally licensed colour pitch classes. Selection must come from the phrase's plan.
+    Open { selected_colors: &'a [i32] },
+}
+
+impl ArrivalContract<'_> {
+    /// Whether this pitch meets the destination contract in the actual arrival harmony.
+    pub fn accepts(self, pitch: Midi, ctx: &HarmonicContext) -> bool {
+        let pc = pitch_class(pitch);
+        ctx.chord.contains_pc(pc)
+            || matches!(self, Self::Open { selected_colors }
+                if ctx.palette.tensions.contains(&pc)
+                    && selected_colors.iter().any(|p| p.rem_euclid(12) == pc))
+    }
+}
+
+/// Label the events of a closed response. Final position is only an arrival candidate;
+/// the pitch must satisfy the destination harmony.
 pub fn resolve_roles(events: &[RoleEvent], perf: &PerformancePlan) -> Vec<MaterialRole> {
+    resolve_roles_with_contract(events, perf, ArrivalContract::Closed)
+}
+
+/// Label each event by its harmonic role. An earned arrival takes precedence, followed by
+/// tendency and connector functions, guide/core tones, and available colour. An open ending
+/// additionally requires explicit colour selection; a local license alone is insufficient.
+pub fn resolve_roles_with_contract(
+    events: &[RoleEvent],
+    perf: &PerformancePlan,
+    contract: ArrivalContract<'_>,
+) -> Vec<MaterialRole> {
     let n = events.len();
     let step = |a: Option<Midi>, b: Option<Midi>| match (a, b) {
         (Some(a), Some(b)) => (1..=2).contains(&(a - b).abs()),
@@ -552,7 +579,12 @@ pub fn resolve_roles(events: &[RoleEvent], perf: &PerformancePlan) -> Vec<Materi
     (0..n)
         .map(|i| {
             let (beat, pitch, function) = events[i];
-            if i + 1 == n {
+            if i + 1 == n
+                && pitch.is_some_and(|p| {
+                    perf.context_at(beat)
+                        .is_some_and(|ctx| contract.accepts(p, ctx))
+                })
+            {
                 return MaterialRole::Arrival;
             }
             if let Some(f) = function {
@@ -572,7 +604,7 @@ pub fn resolve_roles(events: &[RoleEvent], perf: &PerformancePlan) -> Vec<Materi
             let guide = ctx.chord.contains_pc(pc) && ctx.palette.guide_tones.contains(&pc);
             let on_beat = (beat - beat.round()).abs() < 1e-6;
             let prev = i.checked_sub(1).and_then(|j| events[j].1);
-            let next = events[i + 1].1;
+            let next = events.get(i + 1).and_then(|e| e.1);
             if !guide && !on_beat && step(prev, pitch) && step(pitch, next) {
                 return MaterialRole::Connector;
             }
@@ -583,9 +615,10 @@ pub fn resolve_roles(events: &[RoleEvent], perf: &PerformancePlan) -> Vec<Materi
             } else if ctx.palette.tensions.contains(&pc) {
                 let resolves = next.is_some_and(|q| {
                     step(Some(p), Some(q))
-                        && perf
-                            .context_at(events[i + 1].0)
-                            .is_some_and(|c| c.chord.contains_pc(pitch_class(q)))
+                        && events.get(i + 1).is_some_and(|e| {
+                            perf.context_at(e.0)
+                                .is_some_and(|c| c.chord.contains_pc(pitch_class(q)))
+                        })
                 });
                 if on_beat && resolves {
                     MaterialRole::Tendency
@@ -704,6 +737,63 @@ pub fn relation(call: &[Heard], resp: &[Heard], transform: Transform) -> f32 {
 mod tests {
     use super::super::theory::Mode;
     use super::*;
+
+    #[test]
+    fn arrival_requires_core_or_explicitly_selected_open_color() {
+        use super::super::{
+            composer::Composer, performance::PerformanceOptions, semantic::deflected_lift_trace,
+            song::SongMap, world::MusicWorld,
+        };
+        let song = SongMap::compose(
+            &deflected_lift_trace(120.0),
+            2112,
+            None,
+            Composer::StablePropulsion,
+        );
+        let perf = PerformancePlan::from_song(
+            &song,
+            &MusicWorld::swiss_signal(),
+            PerformanceOptions::default(),
+        );
+        let ctx = perf
+            .contexts
+            .iter()
+            .find(|c| !c.palette.tensions.is_empty())
+            .unwrap();
+        let pc = ctx.palette.tensions[0];
+        let color = [(
+            ctx.start_beat,
+            Some(60 + pc),
+            Some(PitchFunction::LicensedExtension),
+        )];
+        assert_ne!(resolve_roles(&color, &perf)[0], MaterialRole::Arrival);
+        assert_eq!(
+            resolve_roles_with_contract(
+                &color,
+                &perf,
+                ArrivalContract::Open {
+                    selected_colors: &[pc]
+                },
+            )[0],
+            MaterialRole::Arrival
+        );
+        assert_ne!(
+            resolve_roles_with_contract(
+                &color,
+                &perf,
+                ArrivalContract::Open {
+                    selected_colors: &[]
+                },
+            )[0],
+            MaterialRole::Arrival
+        );
+        let core = [(ctx.start_beat, Some(60 + ctx.chord.root_pc), None)];
+        assert_eq!(resolve_roles(&core, &perf)[0], MaterialRole::Arrival);
+        assert_ne!(
+            resolve_roles(&[(ctx.start_beat, None, None)], &perf)[0],
+            MaterialRole::Arrival
+        );
+    }
 
     fn mat(steps: &[Option<i32>], onsets: &[f64]) -> InteractionMaterial {
         InteractionMaterial {

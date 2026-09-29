@@ -916,6 +916,7 @@ impl Engine<'_> {
             duration: self.gate_for(s, p),
             prev,
             next,
+            next_onset: self.slots.get(s + 1).map(|slot| slot.start),
             prev_chord: sl.prev_chord,
             cur: sl.cur,
             next_chord: sl.next_chord,
@@ -923,7 +924,7 @@ impl Engine<'_> {
             is_strong: sl.strong,
             licensed: sl.licensed,
         };
-        super::pitch::classify(&ctx, &self.scale)
+        super::pitch::classify_r11(&ctx, &self.scale)
     }
 
     fn is_stable(&self, s: usize, p: Midi) -> bool {

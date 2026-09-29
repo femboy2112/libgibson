@@ -1,14 +1,11 @@
 //! Pitch justification — the jazz principle in code: there are no forbidden pitches, only
 //! unjustified ones.
 //!
-//! [`classify`] labels a realized note with the harmonic [`PitchFunction`] it serves against the
-//! chord actually sounding beneath it and its neighbours in time. A non-chord tone is only a
-//! "wrong note" when it has no intelligible past or future: not a chord tone, not borrowed from
-//! the chord it is about to become (anticipation), not held from the chord it just was
-//! (suspension), and not walking a stepwise path into a structural tone (approach / neighbour /
-//! passing / appoggiatura). A note that classifies to `None` is exactly such an unjustified note —
-//! what the listener registers as "wrong" — which realization diagnostics count as a defect and
-//! (Round IV, later) the realizer's search learns to avoid choosing without a reason.
+//! [`classify`] reconstructs local pitch syntax from a realized note, its timed neighbours,
+//! and the harmony sounding beneath it. A function names a local relationship; it does not prove
+//! ensemble compatibility or ownership along the song's harmonic path. Those are separate audits.
+//! In particular, a licensed extension is available colour, not automatically a justified
+//! structural destination. A suspension requires actual temporal carry across a harmony change.
 
 use super::score::PitchFunction;
 use super::theory::{pitch_class, Chord, Midi, Scale};
@@ -57,6 +54,8 @@ pub struct PitchContext {
     /// The previous / next realized pitches in time (for stepwise-path reasoning).
     pub prev: Option<Midi>,
     pub next: Option<Midi>,
+    /// Actual onset of the next realized pitch, when known.
+    pub next_onset: Option<f64>,
     /// The harmony sounding just BEFORE the current chord span (what a suspension is held from).
     pub prev_chord: Option<Chord>,
     /// The chord sounding at `onset`.
@@ -86,16 +85,41 @@ impl PitchContext {
 }
 
 /// Classify the harmonic function of a realized note from its full [`PitchContext`] and the `scale`.
-/// Returns the [`PitchFunction`] the note serves, or `None` when it is a non-chord tone with no
-/// intelligible justification (an unjustified "wrong note").
+/// Returns the local [`PitchFunction`], or `None` when no supported local relationship explains
+/// the note. A returned label is not a proof of temporal harmonic ownership.
 ///
-/// Test order is precedence: a note is first a chord tone (and stays one only if its sustained body
-/// does not turn dissonant across a chord change); else it is justified by the future it belongs to
-/// (anticipation — only if that future is temporally close), the past it carries (suspension —
-/// only across an actual boundary), or the stepwise path it walks (chromatic approach / neighbour /
-/// passing / appoggiatura). What none of those explain is `None`.
+/// A physically held suspension is recognized first. Otherwise chord membership and available
+/// colour precede anticipation and melodic connector syntax. Anticipation must connect to the
+/// arriving harmony through the held note or a timed successor. What none explain is `None`.
 pub fn classify(ctx: &PitchContext, scale: &Scale) -> Option<PitchFunction> {
+    classify_inner(ctx, scale, false)
+}
+
+/// Frozen Round XI local semantics for the exact control realization.
+pub(super) fn classify_r11(ctx: &PitchContext, scale: &Scale) -> Option<PitchFunction> {
+    classify_inner(ctx, scale, true)
+}
+
+fn classify_inner(ctx: &PitchContext, scale: &Scale, r11: bool) -> Option<PitchFunction> {
     let pitch = ctx.pitch;
+    if !r11 && in_chord(ctx.cur, pitch) && ctx.crosses_boundary() {
+        if let (Some(boundary), Some(next), Some(next_onset)) =
+            (ctx.next_boundary, ctx.next, ctx.next_onset)
+        {
+            let end = ctx.onset + ctx.duration;
+            if ctx.onset < boundary - 1e-6
+                && !in_chord(ctx.next_chord, pitch)
+                && next < pitch
+                && pitch - next <= 2
+                && in_chord(ctx.next_chord, next)
+                && next_onset >= boundary
+                && next_onset >= end - 0.26
+                && next_onset <= end + 1.0
+            {
+                return Some(PitchFunction::Suspension);
+            }
+        }
+    }
 
     // 1. A member of the sounding chord. Onset-legal — but if it SUSTAINS past the chord change
     //    into harmony where it is no longer a chord tone, its held body is an unexplained
@@ -109,7 +133,7 @@ pub fn classify(ctx: &PitchContext, scale: &Scale) -> Option<PitchFunction> {
     }
 
     // 1b. A licensed tension of the local palette (the 9th over a minor 7th, the 13th over a
-    //     major chord): consonant colour, under the same sustain rule as a chord tone — its held
+    //     major chord): locally available colour, under the same sustain rule as a chord tone — its held
     //     body may not smear into a following harmony it does not belong to.
     if in_mask(ctx.licensed, pitch) {
         if ctx.crosses_boundary() && ctx.next_chord.is_some() && !in_chord(ctx.next_chord, pitch) {
@@ -124,15 +148,24 @@ pub fn classify(ctx: &PitchContext, scale: &Scale) -> Option<PitchFunction> {
     if in_chord(ctx.next_chord, pitch) {
         if let Some(beats) = ctx.beats_until_next() {
             if (-1e-6..=ANTICIPATION_WINDOW).contains(&beats) {
-                return Some(PitchFunction::Anticipation);
+                let boundary = ctx.onset + beats;
+                let connects = ctx.crosses_boundary()
+                    || matches!((ctx.next, ctx.next_onset), (Some(p), Some(at))
+                        if at >= boundary - 1e-6
+                            && at <= boundary + ANTICIPATION_WINDOW
+                            && (p - pitch).abs() <= 2
+                            && in_chord(ctx.next_chord, p));
+                if r11 || connects {
+                    return Some(PitchFunction::Anticipation);
+                }
             }
         }
         // Too far away → fall through; the note must justify itself as a path or be `None`.
     }
 
-    // 3. Suspension: a tone held from the PREVIOUS harmony (so the harmony must actually have
-    //    changed) that resolves DOWN by step into a current chord tone.
-    if in_chord(ctx.prev_chord, pitch) {
+    // Frozen R11 control only: historical membership was incorrectly treated as temporal carry.
+    // Current semantics require the physical cross-boundary proof above.
+    if r11 && in_chord(ctx.prev_chord, pitch) {
         if let Some(np) = ctx.next {
             if np < pitch && (pitch - np) <= 2 && in_chord(ctx.cur, np) {
                 return Some(PitchFunction::Suspension);
@@ -224,6 +257,7 @@ mod tests {
             duration: 0.5,
             prev: None,
             next: None,
+            next_onset: None,
             prev_chord: None,
             cur,
             next_chord: None,
@@ -248,7 +282,8 @@ mod tests {
         // D (62, a G7 tone) over C major, one beat before G7 arrives — close enough to anticipate.
         let c = PitchContext {
             prev: Some(60),
-            next: Some(67),
+            next: Some(62),
+            next_onset: Some(1.0),
             prev_chord: Some(c_major()),
             next_chord: Some(g_dom7()),
             next_boundary: Some(1.0),
@@ -307,12 +342,65 @@ mod tests {
     fn suspension_holds_from_the_previous_chord_and_resolves_down() {
         // D (62, a G7 tone) held over C major, resolving down a step to C (60, a C tone).
         let c = PitchContext {
+            onset: 3.5,
+            duration: 1.0,
             prev: Some(62),
             next: Some(60),
+            next_onset: Some(4.5),
+            next_chord: Some(c_major()),
+            next_boundary: Some(4.0),
+            ..base(62, Some(g_dom7()))
+        };
+        assert_eq!(classify(&c, &cmaj_scale()), Some(PitchFunction::Suspension));
+    }
+
+    #[test]
+    fn historical_membership_does_not_prove_a_suspension() {
+        let c = PitchContext {
+            onset: 5.0,
+            next: Some(60),
+            next_onset: Some(5.5),
             prev_chord: Some(g_dom7()),
             ..base(62, Some(c_major()))
         };
-        assert_eq!(classify(&c, &cmaj_scale()), Some(PitchFunction::Suspension));
+        assert_ne!(classify(&c, &cmaj_scale()), Some(PitchFunction::Suspension));
+        assert_eq!(
+            classify_r11(&c, &cmaj_scale()),
+            Some(PitchFunction::Suspension)
+        );
+    }
+
+    #[test]
+    fn anticipation_must_connect_to_the_actual_arrival() {
+        let c = PitchContext {
+            onset: 3.5,
+            next: Some(67),
+            next_onset: Some(4.0),
+            next_chord: Some(g_dom7()),
+            next_boundary: Some(4.0),
+            ..base(62, Some(c_major()))
+        };
+        assert_ne!(
+            classify(&c, &cmaj_scale()),
+            Some(PitchFunction::Anticipation)
+        );
+        assert_eq!(
+            classify_r11(&c, &cmaj_scale()),
+            Some(PitchFunction::Anticipation)
+        );
+        let held = PitchContext { duration: 1.0, ..c };
+        assert_eq!(
+            classify(&held, &cmaj_scale()),
+            Some(PitchFunction::Anticipation)
+        );
+        let canceled = PitchContext {
+            next_chord: Some(c_major()),
+            ..held
+        };
+        assert_ne!(
+            classify(&canceled, &cmaj_scale()),
+            Some(PitchFunction::Anticipation)
+        );
     }
 
     #[test]

@@ -16,6 +16,7 @@ fn context(pitch: i32) -> PitchContext {
         duration: 0.5,
         prev: Some(67),
         next: Some(60),
+        next_onset: Some(5.5),
         prev_chord: Some(Chord::new(7, Quality::Dom7)),
         cur: Some(Chord::new(0, Quality::Maj)),
         next_chord: None,
@@ -26,7 +27,6 @@ fn context(pitch: i32) -> PitchContext {
 }
 
 #[test]
-#[ignore = "R12 pre-intervention falsifier: historical harmony does not prove temporal carry"]
 fn r12_false_suspension() {
     assert_ne!(
         classify(&context(62), &Scale::new(0, Mode::Ionian)),
@@ -35,7 +35,6 @@ fn r12_false_suspension() {
 }
 
 #[test]
-#[ignore = "R12 pre-intervention falsifier: final position does not prove arrival"]
 fn r12_fake_arrival() {
     let song = SongMap::compose(
         &deflected_lift_trace(120.0),

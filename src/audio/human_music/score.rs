@@ -121,7 +121,7 @@ impl SfxKind {
 /// unjustified note.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PitchFunction {
-    /// A member of the sounding chord — consonant, needs no further justification.
+    /// A member of the onset chord. Temporal carry and destination need separate evidence.
     ChordTone,
     /// A chord extension (7/9/11/13, …) the world/grammar licenses as consonant color.
     LicensedExtension,
@@ -365,7 +365,7 @@ pub struct Score {
     pub total_beats: f64,
     /// How many lead notes the melodic snap pass had to repair (the forward DP produced an
     /// unjustified pitch that was snapped to a chord tone). A generation-side honesty metric — the
-    /// residual `unjustified_nonchord_notes` says 0 wrong notes SURVIVE, this says how many the
+    /// residual `unjustified_nonchord_notes` says 0 notes lack a local label, this says how many the
     /// search had to fix. Target 0: choose justified tension, do not manufacture then repair.
     pub melody_repairs: usize,
     /// Lead notes the search left unclassified only because their sustain crossed a harmony

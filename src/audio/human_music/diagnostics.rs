@@ -402,6 +402,8 @@ struct PhraseLead {
 /// Restate/Return phrase's realized contour resembles the opening statement — all measured from
 /// pitches, an independent witness.
 #[derive(Debug, Clone, PartialEq)]
+/// Label-coverage and realization receipts, not proof of temporal pitch validity.
+/// See [`super::temporal::TemporalPitchDiagnostics`] for independent path reconstruction.
 pub struct RealizationDiagnostics {
     /// Phrases that actually sound a lead melody.
     pub lead_phrases: usize,

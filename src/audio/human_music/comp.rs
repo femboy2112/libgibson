@@ -40,6 +40,14 @@ fn nearest_stable(ctx: &HarmonicContext, target: Midi) -> Midi {
         .unwrap_or(target)
 }
 
+/// The nearest actual chord member; available colour does not satisfy this contract.
+fn nearest_chord_tone(ctx: &HarmonicContext, target: Midi) -> Midi {
+    (0..=12)
+        .flat_map(|d| [target - d, target + d])
+        .find(|&p| ctx.chord.contains_pc(pitch_class(p)))
+        .unwrap_or(target)
+}
+
 fn prov(role_note: &'static str, xform: Option<&'static str>) -> Provenance {
     Provenance {
         role_note,
@@ -687,6 +695,22 @@ pub fn octave_near(p: Midi, center: Midi) -> Midi {
 /// sounding in the window, the unison DOUBLES THE LEAD'S ACTUAL LINE (so keys, bass and lead play
 /// one figure together); otherwise the band states the piece's rhythmic cell on stable tones.
 pub fn unison_lines(perf: &PerformancePlan, lead: &[Note]) -> Vec<(ActionId, Vec<LineNote>)> {
+    unison_lines_inner(perf, lead, false)
+}
+
+/// Realize the same figure with its literal chord-member landing contract enforced.
+pub fn unison_lines_temporal(
+    perf: &PerformancePlan,
+    lead: &[Note],
+) -> Vec<(ActionId, Vec<LineNote>)> {
+    unison_lines_inner(perf, lead, true)
+}
+
+fn unison_lines_inner(
+    perf: &PerformancePlan,
+    lead: &[Note],
+    temporal: bool,
+) -> Vec<(ActionId, Vec<LineNote>)> {
     let mut out = Vec::new();
     for a in perf.actions.of_kind(super::action::ActionKind::Unison) {
         let src = lead_in(lead, a.start_beat, a.end_beat());
@@ -718,7 +742,12 @@ pub fn unison_lines(perf: &PerformancePlan, lead: &[Note]) -> Vec<(ActionId, Vec
         // Land on a chord tone of the harmony the figure arrives in.
         if let Some(ctx) = perf.context_at(at.min(a.end_beat() - 0.25)) {
             if at < a.end_beat() - 0.2 {
-                let p = nearest_stable(ctx, line.last().map(|l| l.2).unwrap_or(67));
+                let target = line.last().map(|l| l.2).unwrap_or(67);
+                let p = if temporal {
+                    nearest_chord_tone(ctx, target)
+                } else {
+                    nearest_stable(ctx, target)
+                };
                 line.push((at, 0.5, p, function_over(ctx, p)));
             }
         }
@@ -1634,7 +1663,7 @@ mod tests {
             (t0 + 2.0, Some(84 + t), None),
             (t0 + 3.0, Some(50), Some(PitchFunction::DiatonicPassing)),
             (t0 + 4.0, Some(60), Some(PitchFunction::Suspension)),
-            (t0 + 5.0, Some(67), None),
+            (t0 + 5.0, Some(60 + at(t0 + 5.0).chord.root_pc), None),
         ];
         assert_eq!(
             resolve_roles(&ev, p),
@@ -1661,7 +1690,6 @@ mod tests {
 #[cfg(test)]
 mod r12_landing_witness {
     #[test]
-    #[ignore = "R12 pre-intervention falsifier: chord landing uses color-inclusive helper"]
     fn chord_landing_must_choose_a_chord_member() {
         use crate::audio::human_music::{context, harmony::ChordSpan, theory::*};
         let chord = Chord::new(0, Quality::Maj7);
@@ -1671,6 +1699,6 @@ mod r12_landing_witness {
         );
         let ctx = &contexts[0];
         let p = 60 + ctx.palette.tensions[0];
-        assert!(chord.contains_pc(pitch_class(super::nearest_stable(ctx, p))));
+        assert!(chord.contains_pc(pitch_class(super::nearest_chord_tone(ctx, p))));
     }
 }
