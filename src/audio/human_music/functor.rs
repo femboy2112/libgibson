@@ -188,8 +188,14 @@ fn realize_coupled(
     state.commit(lead);
     let bass = super::bass::realize_bass_coupled(perf, plan, world, lead, &mut state);
     state.commit(&bass);
-    let lines = super::comp::keys_lines(perf, lead, super::comp::keys_velocity(world));
+    // The keys' material lines, heard against lead and bass before they speak (answers and figures
+    // re-placed by whole octaves, an answer's colliding connector stepped aside); the unison as is.
+    let (lines, placed) =
+        super::comp::keys_lines_coupled(perf, lead, super::comp::keys_velocity(world), &state);
     state.commit(&lines);
+    for d in placed {
+        state.record(d.beat, d.role, d.what, d.reason);
+    }
     // The bed: the pad and the keys' comping voiced as ONE decision against everything above.
     let n = super::comp::keys_shell_n(perf);
     let sp = super::support::joint_support_paths(perf, world.voicing_spread, lead, n, &state);

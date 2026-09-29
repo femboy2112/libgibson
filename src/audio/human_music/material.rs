@@ -22,7 +22,10 @@ use super::ids::{ActionId, MaterialId};
 use super::interaction::Transform;
 use super::motif::{Motif, MotifBank};
 use super::performance::{EnsembleCoupling, PerformancePlan};
+use super::score::{Note, PitchFunction, Role};
+use super::sonority::{is_linear, is_suspension};
 use super::theory::{pitch_class, Midi, Scale};
+use std::collections::BTreeMap;
 
 /// One event of a piece of material.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -492,6 +495,139 @@ pub fn line_of(
         &|c, pc| stable_for(owner, c, pc),
         floor,
     )
+}
+
+/// What a pitched material event IS, harmonically, where it sounds (Round VIII) — so a transformed
+/// or re-placed response can preserve MEANING (it still lands on the guide tone, still arrives),
+/// not only the step silhouette. A label computed at realization over the harmony each event lands
+/// in; the material itself stays instrument- and harmony-independent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MaterialRole {
+    /// A chord tone other than a guide tone (root, 5th, a written extension of the chord).
+    StructuralTarget,
+    /// A guide tone (the 3rd, the 7th or 6th): the pitch that says which chord this is.
+    GuideTarget,
+    /// A licensed tension resting as colour.
+    ColorTarget,
+    /// A linear event — passing, neighbour, approach, or a weak-beat step between two steps. Its
+    /// exact pitch is the most negotiable thing in the line.
+    Connector,
+    /// The line's last event: where it lands.
+    Arrival,
+    /// A tone that leans on its resolution — a suspension, retardation, appoggiatura or
+    /// anticipation, or an on-beat tension stepping to a chord tone.
+    Tendency,
+}
+
+impl MaterialRole {
+    /// A short label.
+    pub fn label(self) -> &'static str {
+        match self {
+            MaterialRole::StructuralTarget => "structural",
+            MaterialRole::GuideTarget => "guide",
+            MaterialRole::ColorTarget => "color",
+            MaterialRole::Connector => "connector",
+            MaterialRole::Arrival => "arrival",
+            MaterialRole::Tendency => "tendency",
+        }
+    }
+}
+
+/// One realized material event, for [`resolve_roles`]: `(beat, pitch, function)`.
+pub type RoleEvent = (f64, Option<Midi>, Option<PitchFunction>);
+
+/// Label each event of one realized material line (in onset order) by what it is harmonically over
+/// the harmony it sounds in. Precedence: the last event is the `Arrival`; a suspension-type,
+/// appoggiatura or anticipation function is a `Tendency`; any other linear function, an unpitched
+/// event, or an off-beat pitch reached AND left by step (1–2 semitones) that is not a guide tone is
+/// a `Connector`; then a guide tone is a `GuideTarget`, another chord tone a `StructuralTarget`, a
+/// licensed tension on the beat stepping to a chord tone a `Tendency`, any other licensed tension a
+/// `ColorTarget`, and whatever is left (a scale colour) a `Connector`. Pure and deterministic.
+pub fn resolve_roles(events: &[RoleEvent], perf: &PerformancePlan) -> Vec<MaterialRole> {
+    let n = events.len();
+    let step = |a: Option<Midi>, b: Option<Midi>| match (a, b) {
+        (Some(a), Some(b)) => (1..=2).contains(&(a - b).abs()),
+        _ => false,
+    };
+    (0..n)
+        .map(|i| {
+            let (beat, pitch, function) = events[i];
+            if i + 1 == n {
+                return MaterialRole::Arrival;
+            }
+            if let Some(f) = function {
+                if is_suspension(f)
+                    || matches!(f, PitchFunction::Appoggiatura | PitchFunction::Anticipation)
+                {
+                    return MaterialRole::Tendency;
+                }
+                if is_linear(f) {
+                    return MaterialRole::Connector;
+                }
+            }
+            let (Some(p), Some(ctx)) = (pitch, perf.context_at(beat)) else {
+                return MaterialRole::Connector;
+            };
+            let pc = pitch_class(p);
+            let guide = ctx.chord.contains_pc(pc) && ctx.palette.guide_tones.contains(&pc);
+            let on_beat = (beat - beat.round()).abs() < 1e-6;
+            let prev = i.checked_sub(1).and_then(|j| events[j].1);
+            let next = events[i + 1].1;
+            if !guide && !on_beat && step(prev, pitch) && step(pitch, next) {
+                return MaterialRole::Connector;
+            }
+            if guide {
+                MaterialRole::GuideTarget
+            } else if ctx.chord.contains_pc(pc) {
+                MaterialRole::StructuralTarget
+            } else if ctx.palette.tensions.contains(&pc) {
+                let resolves = next.is_some_and(|q| {
+                    step(Some(p), Some(q))
+                        && perf
+                            .context_at(events[i + 1].0)
+                            .is_some_and(|c| c.chord.contains_pc(pitch_class(q)))
+                });
+                if on_beat && resolves {
+                    MaterialRole::Tendency
+                } else {
+                    MaterialRole::ColorTarget
+                }
+            } else {
+                MaterialRole::Connector
+            }
+        })
+        .collect()
+}
+
+/// How many events of `role`'s realized material lines (answers and figures, grouped by material)
+/// carry each [`MaterialRole`] — the small report of what the lines MEAN harmonically.
+pub fn role_counts(
+    perf: &PerformancePlan,
+    notes: &[Note],
+    role: Role,
+) -> BTreeMap<MaterialRole, usize> {
+    let mut lines: BTreeMap<MaterialId, Vec<&Note>> = BTreeMap::new();
+    for n in notes.iter().filter(|n| {
+        n.role == role
+            && n.prov.material.is_some()
+            && matches!(n.prov.role_note, "answer" | "figure")
+    }) {
+        if let Some(mid) = n.prov.material {
+            lines.entry(mid).or_default().push(n);
+        }
+    }
+    let mut out = BTreeMap::new();
+    for line in lines.values_mut() {
+        line.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+        let ev: Vec<RoleEvent> = line
+            .iter()
+            .map(|n| (n.start_beat, Some(n.pitch), n.function))
+            .collect();
+        for r in resolve_roles(&ev, perf) {
+            *out.entry(r).or_default() += 1;
+        }
+    }
+    out
 }
 
 /// A heard event, for [`relation`]: an onset and (for a pitched player) its pitch.
