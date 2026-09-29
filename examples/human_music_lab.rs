@@ -19,6 +19,10 @@
 //!   cargo run --release --example human_music_lab -- --calls=every          # every statement calls
 //!   cargo run --release --example human_music_lab -- --manifest=fixed       # one choreography
 //!   cargo run --release --example human_music_lab -- --ab                   # all six A/Bs, BLACK_ICE
+//!   cargo run --release --example human_music_lab -- --harmonic-reference   # same Score, clean timbre
+//!   cargo run --release --example human_music_lab -- --production=nosat,dry  # remove single factors
+//!   cargo run --release --example human_music_lab -- --stems --pair-stems    # solo + pitched pairs
+//!   cargo run --release --example human_music_lab -- --dump-notes           # <world>.notes.tsv
 
 use std::path::PathBuf;
 
@@ -37,7 +41,8 @@ use gibson::audio::human_music::performance::{CallPolicy, PerformanceOptions, Re
 use gibson::audio::human_music::semantic::{
     calm_loop, deflected_lift_trace, rise_unresolved, SemanticTrace,
 };
-use gibson::audio::human_music::synth::{HumanMusicSynth, StemMask};
+use gibson::audio::human_music::synth::{HumanMusicSynth, ProductionControl, StemMask};
+use gibson::audio::human_music::theory::note_name;
 use gibson::audio::human_music::timeline::IntentTimeline;
 use gibson::audio::human_music::voicing::VoicingDiagnostics;
 use gibson::audio::human_music::witness;
@@ -114,6 +119,80 @@ fn perf_options() -> PerformanceOptions {
     }
 }
 
+/// The debug production controls selected on the command line: `--harmonic-reference` (every
+/// production factor removed, pitched buses only) or `--production=<toggles>`.
+fn production() -> ProductionControl {
+    if std::env::args().any(|a| a == "--harmonic-reference") {
+        return ProductionControl::HARMONIC_REFERENCE;
+    }
+    match arg("--production=") {
+        Some(spec) => ProductionControl::parse(&spec).unwrap_or_else(|e| {
+            eprintln!(
+                "--production: {e} (toggles: {:?})",
+                ProductionControl::NAMES
+            );
+            std::process::exit(2)
+        }),
+        None => ProductionControl::NORMAL,
+    }
+}
+
+/// The file-name suffix of a production control: empty for the normal mix, `.harmonic_reference`
+/// for the neutral reference, else `.prod_<toggles>`.
+fn production_suffix(p: ProductionControl) -> String {
+    if p == ProductionControl::NORMAL {
+        String::new()
+    } else if p == ProductionControl::HARMONIC_REFERENCE {
+        ".harmonic_reference".into()
+    } else {
+        format!(".prod_{}", p.label())
+    }
+}
+
+/// The realized Score, one note per line (TSV): the exact pitches the diagnostics and the ear argue
+/// about, with their role, function, provenance tag and the harmony they sound over.
+fn write_notes_tsv(
+    path: &std::path::Path,
+    score: &gibson::audio::human_music::score::Score,
+) -> std::io::Result<()> {
+    use std::fmt::Write;
+    let mut s = String::from(
+        "start\tdur\tend\trole\tmidi\tname\tfunction\trole_note\txform\tchord\tactions\n",
+    );
+    let mut notes: Vec<_> = score.notes.iter().collect();
+    notes.sort_by(|a, b| {
+        a.start_beat
+            .total_cmp(&b.start_beat)
+            .then(a.role.label().cmp(b.role.label()))
+            .then(a.pitch.cmp(&b.pitch))
+    });
+    for n in notes {
+        let chord = score
+            .chords
+            .iter()
+            .rfind(|c| c.start_beat <= n.start_beat + 1e-6)
+            .map(|c| c.chord.label())
+            .unwrap_or_default();
+        let actions: Vec<String> = n.prov.actions.iter().map(|a| a.to_string()).collect();
+        let _ = writeln!(
+            s,
+            "{:.4}\t{:.4}\t{:.4}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            n.start_beat,
+            n.dur_beats,
+            n.start_beat + n.dur_beats as f64,
+            n.role.label(),
+            n.pitch,
+            note_name(n.pitch),
+            n.function.map(|f| f.label()).unwrap_or("NONE"),
+            n.prov.role_note,
+            n.prov.motif_xform.unwrap_or("-"),
+            chord,
+            actions.join(","),
+        );
+    }
+    std::fs::write(path, s)
+}
+
 fn main() -> std::io::Result<()> {
     let seed: u64 = arg("--seed=").and_then(|s| s.parse().ok()).unwrap_or(2112);
     let beats: f64 = arg("--beats=")
@@ -142,6 +221,7 @@ fn main() -> std::io::Result<()> {
 
     let sr = SampleRate::STUDIO;
     let block = 512;
+    let prod = production();
 
     // Calibration mode: render the four grammar probes, each exercising a different definition of
     // musical direction, and dump their plan + coherence + discourse diagnostics.
@@ -163,13 +243,26 @@ fn main() -> std::io::Result<()> {
     // Stem-isolation mode: render each bus of ONE world alone (plus the full mix) so a bad tone
     // can be pinned to a specific voice family — "the wrong pitch is in bass at bar N" instead of
     // "something sounds fucky". Rust-only debug surface; defaults to BLACK_ICE.
-    if std::env::args().any(|a| a == "--stems") {
+    // Pair stems (Round VIII): the six pitched-role pairs, to hear WHICH TWO players collide.
+    let want_stems = std::env::args().any(|a| a == "--stems");
+    let want_pairs = std::env::args().any(|a| a == "--pair-stems");
+    if want_stems || want_pairs {
         let wid = match which.as_str() {
             "vapor95" => WorldId::Vapor95,
             "swiss_signal" => WorldId::SwissSignal,
             _ => WorldId::BlackIce,
         };
-        return stems(&out_dir, sr, block, seed, wid, grammar, &story);
+        return stems(
+            &out_dir,
+            sr,
+            block,
+            seed,
+            wid,
+            grammar,
+            &story,
+            (want_stems, want_pairs),
+            prod,
+        );
     }
 
     let trace = story_trace(&story, beats);
@@ -194,13 +287,22 @@ fn main() -> std::io::Result<()> {
     for id in worlds {
         let world = MusicWorld::from_id(id);
         let file_stem = world.name.to_lowercase();
-        let path = out_dir.join(format!("{file_stem}.wav"));
+        let path = out_dir.join(format!("{file_stem}{}.wav", production_suffix(prod)));
 
         let comp = compose_full(&trace, &world, seed, Some(grammar), perf_options());
         let (score, plan, perf) = (comp.score, comp.plan, comp.perf);
         score.validate().expect("score invariants");
+        if std::env::args().any(|a| a == "--dump-notes") {
+            let tsv = out_dir.join(format!("{file_stem}.notes.tsv"));
+            write_notes_tsv(&tsv, &score)?;
+            println!("notes: {}", tsv.display());
+        }
 
-        let mut synth = HumanMusicSynth::new(&score, &world, sr);
+        let mut synth = HumanMusicSynth::with_production(&score, &world, sr, prod);
+        // The harmonic reference is a HARMONIC control: the four pitched buses only.
+        if prod == ProductionControl::HARMONIC_REFERENCE {
+            synth.set_stem_mask(StemMask::pitched());
+        }
         let frames = synth.total_samples();
         let t0 = std::time::Instant::now();
         let out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
@@ -323,6 +425,7 @@ fn main() -> std::io::Result<()> {
             out.max_active_voices,
             out.worst_block_time().as_secs_f64() * 1000.0,
         );
+        println!("production: {}", prod.label());
         println!("wav: {}\n", path.display());
     }
 
@@ -434,9 +537,11 @@ fn calibrate(
 }
 
 /// Stem isolation: render one world's six buses (pad/keys/bass/lead/drums/sfx) each in isolation,
-/// plus the full mix, to `<world>.stem_<bus>.wav`. Each stem uses a fresh synth (clean DSP state)
-/// with the corresponding [`StemMask`]. The point is diagnostic: listen to one bus at a time to
-/// find which voice family a bad tone lives in.
+/// plus the full mix, to `<world>.stem_<bus>.wav`; and/or (Round VIII) the six pitched-role PAIRS
+/// to `<world>.pair_<a>+<b>.wav` — a vertical collision lives between two players, which a solo
+/// stem cannot hear. Each render uses a fresh synth (clean DSP state) with the corresponding
+/// [`StemMask`] and the selected [`ProductionControl`] (suffix in the file name when not normal).
+#[allow(clippy::too_many_arguments)]
 fn stems(
     out_dir: &std::path::Path,
     sr: SampleRate,
@@ -445,6 +550,8 @@ fn stems(
     wid: WorldId,
     grammar: CompositionGrammar,
     story: &str,
+    (solo, pairs): (bool, bool),
+    prod: ProductionControl,
 ) -> std::io::Result<()> {
     let world = MusicWorld::from_id(wid);
     let file_stem = world.name.to_lowercase();
@@ -460,21 +567,33 @@ fn stems(
         out_dir.display()
     );
 
-    let mut masks: Vec<(String, StemMask)> = StemMask::NAMES
-        .iter()
-        .map(|n| ((*n).to_string(), StemMask::solo(n)))
-        .collect();
-    masks.push(("full".to_string(), StemMask::full()));
+    let mut masks: Vec<(String, StemMask)> = Vec::new();
+    if solo {
+        masks.extend(
+            StemMask::NAMES
+                .iter()
+                .map(|n| (format!("stem_{n}"), StemMask::solo(n))),
+        );
+        masks.push(("stem_full".to_string(), StemMask::full()));
+    }
+    if pairs {
+        masks.extend(
+            StemMask::PITCHED_PAIRS
+                .iter()
+                .map(|(a, b)| (format!("pair_{a}+{b}"), StemMask::only(&[a, b]))),
+        );
+    }
+    let suffix = production_suffix(prod);
 
     for (name, mask) in masks {
-        let mut synth = HumanMusicSynth::new(&score, &world, sr);
+        let mut synth = HumanMusicSynth::with_production(&score, &world, sr, prod);
         synth.set_stem_mask(mask);
         let frames = synth.total_samples();
         let out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
-        let path = out_dir.join(format!("{file_stem}.stem_{name}.wav"));
+        let path = out_dir.join(format!("{file_stem}.{name}{suffix}.wav"));
         write_wav_i16(&path, &out.audio, sr)?;
         println!(
-            "  {name:6}  peak={:.3} rms={:.3} nonfinite={}  {}",
+            "  {name:16}  peak={:.3} rms={:.3} nonfinite={}  {}",
             out.peak,
             out.rms,
             out.audio.has_nonfinite(),

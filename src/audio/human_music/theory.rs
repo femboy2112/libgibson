@@ -14,6 +14,19 @@ pub fn midi_to_hz(m: Midi) -> f32 {
     440.0 * 2f32.powf((m as f32 - 69.0) / 12.0)
 }
 
+/// A MIDI pitch as a note name with octave, sharps only, MIDI 60 = `C4` (`A#2`, `E4`, …) — for
+/// dumps and diagnostics that must show the actual offending notes.
+pub fn note_name(m: Midi) -> String {
+    const NAMES: [&str; 12] = [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ];
+    format!(
+        "{}{}",
+        NAMES[m.rem_euclid(12) as usize],
+        m.div_euclid(12) - 1
+    )
+}
+
 /// The pitch class `0..=11` of a MIDI note.
 #[inline]
 pub fn pitch_class(m: Midi) -> i32 {

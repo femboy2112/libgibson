@@ -237,6 +237,45 @@ impl StemMask {
         }
     }
 
+    /// The six pitched-role PAIRS a vertical collision can live in (bass+keys, bass+pad, bass+lead,
+    /// keys+pad, keys+lead, pad+lead) — for `--pair-stems`: two voices at a time answer "which two
+    /// players are fighting?" where a solo stem cannot.
+    pub const PITCHED_PAIRS: [(&'static str, &'static str); 6] = [
+        ("bass", "keys"),
+        ("bass", "pad"),
+        ("bass", "lead"),
+        ("keys", "pad"),
+        ("keys", "lead"),
+        ("pad", "lead"),
+    ];
+
+    /// The four pitched buses (pad, keys, bass, lead) — drums and SFX muted.
+    pub const fn pitched() -> StemMask {
+        StemMask {
+            pad: true,
+            keys: true,
+            bass: true,
+            lead: true,
+            drums: false,
+            sfx: false,
+        }
+    }
+
+    /// Exactly the named buses audible (all others muted). Unrecognized names add nothing.
+    pub fn only(names: &[&str]) -> StemMask {
+        let mut m = StemMask::silent();
+        for n in names {
+            let s = StemMask::solo(n);
+            m.pad |= s.pad;
+            m.keys |= s.keys;
+            m.bass |= s.bass;
+            m.lead |= s.lead;
+            m.drums |= s.drums;
+            m.sfx |= s.sfx;
+        }
+        m
+    }
+
     /// Solo exactly one named bus (all others muted). An unrecognized name solos nothing.
     pub fn solo(name: &str) -> StemMask {
         let mut m = StemMask::silent();
@@ -316,6 +355,126 @@ impl BusMeter {
     }
 }
 
+/// Debug **production controls** (experimental lab surface, Rust-only, not in the C ABI): each
+/// toggle removes exactly ONE production factor while the Score — every pitch, onset, duration and
+/// velocity — stays bit-identical. Round VIII's listen heard the band "out of tune" although every
+/// note was individually justified; this is the instrument that separates a composition defect (the
+/// ugliness survives [`ProductionControl::HARMONIC_REFERENCE`]) from a production one (it vanishes,
+/// and the single-factor toggles localize which factor made it). [`ProductionControl::NORMAL`]
+/// reproduces the normal render exactly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ProductionControl {
+    /// Every pitched voice is ONE clean triangle oscillator: no FM, no sub octave, the filter wide
+    /// open (12 kHz, no envelope, no resonance). Gain, pan and ADSR are the patch's own.
+    pub clean_waves: bool,
+    /// Unison collapsed to a single oscillator at the written pitch (no detune spread, no beating).
+    pub zero_detune: bool,
+    /// The music-bus `tanh` saturation bypassed (no intermodulation of the summed chord).
+    pub no_saturation: bool,
+    /// The reverb bypassed (dry).
+    pub dry: bool,
+    /// The bus compressor bypassed (the limiter stays — it is the safety ceiling).
+    pub no_bus_comp: bool,
+    /// Every pitched voice's release capped at 60 ms, so a note is heard for its NOMINAL Score
+    /// duration and a long pad tail cannot ring under the next harmony.
+    pub short_release: bool,
+}
+
+impl ProductionControl {
+    /// Normal production (every factor as the world specifies it).
+    pub const NORMAL: ProductionControl = ProductionControl {
+        clean_waves: false,
+        zero_detune: false,
+        no_saturation: false,
+        dry: false,
+        no_bus_comp: false,
+        short_release: false,
+    };
+
+    /// The neutral harmonic reference: every production factor removed — clean zero-detune
+    /// triangles, no saturation, dry, no bus compression, releases capped — the same exact Score.
+    pub const HARMONIC_REFERENCE: ProductionControl = ProductionControl {
+        clean_waves: true,
+        zero_detune: true,
+        no_saturation: true,
+        dry: true,
+        no_bus_comp: true,
+        short_release: true,
+    };
+
+    /// The toggle names, for CLI parsing (`--production=nosat,nodetune`).
+    pub const NAMES: [&'static str; 6] =
+        ["clean", "nodetune", "nosat", "dry", "nocomp", "shortrel"];
+
+    /// Parse a comma-separated toggle list (`"nosat,dry"`), `"reference"` or `"normal"`. Unknown
+    /// names are an error (a typo must not silently render the normal mix).
+    pub fn parse(spec: &str) -> Result<ProductionControl, String> {
+        match spec {
+            "normal" | "" => return Ok(ProductionControl::NORMAL),
+            "reference" | "harmonic-reference" => return Ok(ProductionControl::HARMONIC_REFERENCE),
+            _ => {}
+        }
+        let mut c = ProductionControl::NORMAL;
+        for name in spec.split(',').map(str::trim).filter(|n| !n.is_empty()) {
+            match name {
+                "clean" => c.clean_waves = true,
+                "nodetune" => c.zero_detune = true,
+                "nosat" => c.no_saturation = true,
+                "dry" => c.dry = true,
+                "nocomp" => c.no_bus_comp = true,
+                "shortrel" => c.short_release = true,
+                other => return Err(format!("unknown production toggle `{other}`")),
+            }
+        }
+        Ok(c)
+    }
+
+    /// A short label for file names and dumps (`normal`, `reference`, or the toggles joined by `+`).
+    pub fn label(&self) -> String {
+        if *self == ProductionControl::NORMAL {
+            return "normal".into();
+        }
+        if *self == ProductionControl::HARMONIC_REFERENCE {
+            return "reference".into();
+        }
+        let on = [
+            self.clean_waves,
+            self.zero_detune,
+            self.no_saturation,
+            self.dry,
+            self.no_bus_comp,
+            self.short_release,
+        ];
+        ProductionControl::NAMES
+            .iter()
+            .zip(on)
+            .filter(|(_, b)| *b)
+            .map(|(n, _)| *n)
+            .collect::<Vec<_>>()
+            .join("+")
+    }
+
+    /// `patch` with this control's voice-level toggles applied.
+    pub fn apply(&self, patch: &Patch) -> Patch {
+        let mut p = *patch;
+        if self.clean_waves {
+            p.osc = OscKind::Shape(Wave::Triangle);
+            p.sub = false;
+            p.cutoff_hz = 12_000.0;
+            p.cutoff_env = 0.0;
+            p.resonance = 0.0;
+        }
+        if self.zero_detune {
+            p.unison = 1;
+            p.detune_cents = 0.0;
+        }
+        if self.short_release {
+            p.adsr.3 = p.adsr.3.min(0.06);
+        }
+        p
+    }
+}
+
 /// The HumanMusic synthesizer.
 pub struct HumanMusicSynth {
     total_samples: u64,
@@ -359,11 +518,25 @@ pub struct HumanMusicSynth {
     stems: StemMask,
     // Per-bus level meter (lab/diagnostic), accumulated every sample independent of `stems`.
     meter: BusMeter,
+    // Debug production controls (experimental lab surface); NORMAL by default = the normal mix.
+    production: ProductionControl,
 }
 
 impl HumanMusicSynth {
     /// Build a synth for `score` under `world` at `sr`.
     pub fn new(score: &Score, world: &MusicWorld, sr: SampleRate) -> HumanMusicSynth {
+        HumanMusicSynth::with_production(score, world, sr, ProductionControl::NORMAL)
+    }
+
+    /// Build a synth for `score` under `world` at `sr` with the debug [`ProductionControl`] toggles
+    /// (experimental lab surface). The Score is realized exactly as by [`HumanMusicSynth::new`];
+    /// only the removed production factors differ. `ProductionControl::NORMAL` is `new`.
+    pub fn with_production(
+        score: &Score,
+        world: &MusicWorld,
+        sr: SampleRate,
+        production: ProductionControl,
+    ) -> HumanMusicSynth {
         let srf = sr.as_f64() as f32;
         // Tempo is the SCORE's — the score IS the composition, the world is only the dialect.
         // compose() sets score.tempo_bpm from world.tempo_bpm so they agree today, but the
@@ -420,7 +593,15 @@ impl HumanMusicSynth {
         sfx.sort_by_key(|e| e.at);
 
         let mut reverb = Reverb::new(srf);
-        reverb.set(world.reverb_size, world.reverb_damp, world.reverb_mix);
+        reverb.set(
+            world.reverb_size,
+            world.reverb_damp,
+            if production.dry {
+                0.0
+            } else {
+                world.reverb_mix
+            },
+        );
         let mut comp = Compressor::new(srf);
         comp.set(-14.0, 2.5, 12.0, 140.0, 1.5);
         let mut limiter = Limiter::new(srf);
@@ -431,10 +612,10 @@ impl HumanMusicSynth {
 
         HumanMusicSynth {
             total_samples,
-            pads: mk_pool(&world.pad, 6),
-            keys: mk_pool(&world.keys, 6),
-            bass: mk_pool(&world.bass, 3),
-            lead: mk_pool(&world.lead, 3),
+            pads: mk_pool(&production.apply(&world.pad), 6),
+            keys: mk_pool(&production.apply(&world.keys), 6),
+            bass: mk_pool(&production.apply(&world.bass), 3),
+            lead: mk_pool(&production.apply(&world.lead), 3),
             kick: Kick::with_params(srf, world.kick),
             snare: Snare::with_params(srf, world.snare),
             hat: Hat::with_cutoff(srf, world.hat_cutoff),
@@ -460,6 +641,7 @@ impl HumanMusicSynth {
             duck: None,
             stems: StemMask::full(),
             meter: BusMeter::default(),
+            production,
         }
     }
 
@@ -613,9 +795,15 @@ impl AudioSource for HumanMusicSynth {
                 mr += dr;
             }
 
-            // Music production: saturation -> reverb send.
-            ml = soft_saturate(ml * 0.6, self.sat_drive);
-            mr = soft_saturate(mr * 0.6, self.sat_drive);
+            // Music production: saturation -> reverb send. (The harmonic reference bypasses the
+            // tanh — same 0.6 trim, no intermodulation — and the reverb's mix is 0 when dry.)
+            if self.production.no_saturation {
+                ml *= 0.6;
+                mr *= 0.6;
+            } else {
+                ml = soft_saturate(ml * 0.6, self.sat_drive);
+                mr = soft_saturate(mr * 0.6, self.sat_drive);
+            }
             let (ml, mr) = self.reverb.process_stereo(ml, mr);
 
             // Duck the music under dialogue if a curve is set.
@@ -647,9 +835,11 @@ impl AudioSource for HumanMusicSynth {
             // --- Master mix + bus comp + limiter. ---
             let mut lx = ml * self.music_gain * duck + sl * self.sfx_gain;
             let mut rx = mr * self.music_gain * duck + sr * self.sfx_gain;
-            let (cl2, cr2) = self.comp.process_stereo(lx, rx);
-            lx = cl2;
-            rx = cr2;
+            if !self.production.no_bus_comp {
+                let (cl2, cr2) = self.comp.process_stereo(lx, rx);
+                lx = cl2;
+                rx = cr2;
+            }
             let (fl, fr) = self.limiter.process_stereo(lx, rx);
             out.left[i] = fl;
             out.right[i] = fr;
@@ -931,6 +1121,80 @@ mod tests {
                 lvl.peak,
                 lvl.rms
             );
+        }
+    }
+
+    #[test]
+    fn production_normal_is_bit_identical_to_new_and_reference_changes_only_production() {
+        // The harmonic reference is only an honest control if NORMAL reproduces the normal render
+        // sample-for-sample (the toggles are the ONLY difference), and the reference actually
+        // removes something (it renders, finitely, and differs).
+        use super::super::functor::compose;
+        use super::super::semantic::deflected_lift_trace;
+        use crate::audio::render::OfflineRenderer;
+
+        let world = MusicWorld::black_ice();
+        let score = compose(&deflected_lift_trace(24.0), &world, 2112);
+        let sr = SampleRate::STUDIO;
+        let render = |mut s: HumanMusicSynth| {
+            let frames = s.total_samples();
+            OfflineRenderer::new(sr, 512).render(&mut s, frames).audio
+        };
+        let a = render(HumanMusicSynth::new(&score, &world, sr));
+        let b = render(HumanMusicSynth::with_production(
+            &score,
+            &world,
+            sr,
+            ProductionControl::NORMAL,
+        ));
+        assert_eq!(a.left, b.left, "NORMAL production diverged from new()");
+        assert_eq!(a.right, b.right, "NORMAL production diverged from new()");
+        let r = render(HumanMusicSynth::with_production(
+            &score,
+            &world,
+            sr,
+            ProductionControl::HARMONIC_REFERENCE,
+        ));
+        assert!(
+            !r.has_nonfinite(),
+            "the harmonic reference rendered non-finite audio"
+        );
+        assert_eq!(r.left.len(), a.left.len(), "same score, same length");
+        assert_ne!(r.left, a.left, "the harmonic reference changed nothing");
+    }
+
+    #[test]
+    fn production_toggles_parse_and_label_round_trip() {
+        assert_eq!(
+            ProductionControl::parse("normal").unwrap(),
+            ProductionControl::NORMAL
+        );
+        assert_eq!(
+            ProductionControl::parse("reference").unwrap(),
+            ProductionControl::HARMONIC_REFERENCE
+        );
+        let c = ProductionControl::parse("nosat,dry").unwrap();
+        assert!(c.no_saturation && c.dry && !c.clean_waves && !c.zero_detune);
+        assert_eq!(c.label(), "nosat+dry");
+        assert!(
+            ProductionControl::parse("nosatt").is_err(),
+            "a typo must not silently render the normal mix"
+        );
+        // Every single toggle, set alone, parses back to exactly itself.
+        for name in ProductionControl::NAMES {
+            let one = ProductionControl::parse(name).unwrap();
+            assert_ne!(one, ProductionControl::NORMAL, "{name} toggled nothing");
+            assert_eq!(one.label(), name);
+        }
+        // The pair masks: exactly two pitched buses each, never drums/SFX.
+        for (a, b) in StemMask::PITCHED_PAIRS {
+            let m = StemMask::only(&[a, b]);
+            let on = [m.pad, m.keys, m.bass, m.lead]
+                .iter()
+                .filter(|x| **x)
+                .count();
+            assert_eq!(on, 2, "{a}+{b}");
+            assert!(!m.drums && !m.sfx);
         }
     }
 
