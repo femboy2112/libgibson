@@ -669,6 +669,42 @@ pub fn classify_clash(
     VerticalClass::UnownedCollision
 }
 
+/// The audit's verdict on a semitone-class pair: [`classify_clash`], plus the one exemption a
+/// synthetic witness proved it wrong about (Round VIIIb) — a minor chord's licensed 9th a semitone
+/// under its minor 3rd, in the mid register, sounded by the chordal support (Dm7 voiced C E F A, the
+/// rootless "B-form", or the pad's E under the keys' F): that E–F is the voicing's colour, not a
+/// collision — whether or not the chord symbol happens to spell the 9 (the same notes over "Dm9"
+/// were already stable) and whichever of the pad and the keys holds which half (the ear hears one
+/// composite voicing). Not exempt: the 9th directly under the MELODY, the same pair a minor 9th apart,
+/// and every other semitone between chord tones (root over major 7th is the classic avoid).
+///
+/// The Round VIII coupled generator is frozen as the rejected negative control and keeps calling
+/// [`classify_clash`] directly; the ruler (every slice this module evaluates) calls this.
+pub fn classify_heard(
+    ctx: &HarmonicContext,
+    a: &Voice,
+    b: &Voice,
+    plan: Option<&SonorityPlan>,
+) -> VerticalClass {
+    let (lo, hi) = if a.pitch <= b.pitch { (a, b) } else { (b, a) };
+    let above_root = |v: &Voice| (pitch_class(v.pitch) - ctx.chord.root_pc).rem_euclid(12);
+    let support = |v: &Voice| matches!(v.role, Role::Pad | Role::Keys);
+    if support(lo)
+        && support(hi)
+        && !lo.sfx
+        && !hi.sfx
+        && hi.pitch - lo.pitch == 1
+        && lo.pitch >= CLUSTER_FLOOR
+        && above_root(lo) == 2
+        && above_root(hi) == 3
+        && ctx.chord.contains_pc(pitch_class(hi.pitch))
+        && ctx.palette.is_stable(pitch_class(lo.pitch))
+    {
+        return VerticalClass::StableColor;
+    }
+    classify_clash(ctx, a, b, plan)
+}
+
 /// One problem in one slice — every one names the actual notes.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Problem {
@@ -971,7 +1007,7 @@ pub fn evaluate(
             let (lo, hi) = if va.pitch < vb.pitch { (a, b) } else { (b, a) };
             let iv = voices[hi].pitch - voices[lo].pitch;
             if let Some(clash) = Clash::of(va.pitch, vb.pitch) {
-                let c = classify_clash(ctx, va, vb, plan);
+                let c = classify_heard(ctx, va, vb, plan);
                 raise(&mut class, c);
                 if c == VerticalClass::UnownedCollision {
                     problems.push(Problem::Unowned {
@@ -1405,7 +1441,7 @@ impl EnsembleSonorityDiagnostics {
                 for (i, &a) in s.sounding.iter().enumerate() {
                     for &b in &s.sounding[i + 1..] {
                         if Clash::of(voices[a].pitch, voices[b].pitch).is_some() {
-                            let c = classify_clash(ctx, &voices[a], &voices[b], plan);
+                            let c = classify_heard(ctx, &voices[a], &voices[b], plan);
                             if c != VerticalClass::UnownedCollision {
                                 owned.insert((a.min(b), a.max(b), c));
                             }
@@ -2472,5 +2508,130 @@ mod tests {
         let mut all = vs.to_vec();
         settle_resolutions(&mut all, ctxs);
         all
+    }
+
+    /// Round VIIIb's classifier controls. The ONE class the ruler was provably wrong about — a minor
+    /// chord's 9th a semitone under its minor 3rd in the chordal support, the rootless "B-form" — is
+    /// colour whether one player or two hold it; everything around it that is a real avoid stays
+    /// unowned; the owned relations (a written alteration, a suspension, a short linear note) stay
+    /// owned. The raw `classify_clash` (the frozen R8 generator's) still says what it said.
+    #[test]
+    fn the_b_form_is_colour_and_the_real_avoids_are_not() {
+        let dm7 = Chord {
+            root_pc: 2,
+            quality: Quality::Min7,
+        };
+        let c = ctx_of(&[(0.0, 4.0, dm7)]);
+        let ctx = &c[0];
+        let ext = PitchFunction::LicensedExtension;
+        let ct = PitchFunction::ChordTone;
+        // Dm7 voiced C5 E5 F5 A5 by the pad alone.
+        let (e5, f5) = (
+            v(Role::Pad, 76, 0.0, 4.0, ext, "pad"),
+            v(Role::Pad, 77, 0.0, 4.0, ct, "pad"),
+        );
+        assert_eq!(
+            classify_clash(ctx, &e5, &f5, None),
+            VerticalClass::UnownedCollision
+        );
+        assert_eq!(
+            classify_heard(ctx, &e5, &f5, None),
+            VerticalClass::StableColor
+        );
+        // The same two notes split between the pad and the keys: one composite voicing.
+        let f5_keys = v(Role::Keys, 77, 0.0, 0.5, ct, "comp");
+        assert_eq!(
+            classify_heard(ctx, &e5, &f5_keys, None),
+            VerticalClass::StableColor
+        );
+        // Not exempt: the 9th directly under the MELODY's 3rd, the pair a minor 9th apart, a sting.
+        let f5_lead = v(Role::Lead, 77, 0.0, 1.0, ct, "melody");
+        assert_eq!(
+            classify_heard(ctx, &e5, &f5_lead, None),
+            VerticalClass::UnownedCollision
+        );
+        let e4 = v(Role::Pad, 64, 0.0, 4.0, ext, "pad");
+        assert_eq!(
+            classify_heard(ctx, &e4, &f5, None),
+            VerticalClass::UnownedCollision
+        );
+        let f5_sfx = Voice {
+            sfx: true,
+            ..f5_keys
+        };
+        assert_eq!(
+            classify_heard(ctx, &e5, &f5_sfx, None),
+            VerticalClass::UnownedCollision
+        );
+        // Root over major 7th — the classic avoid — stays unowned between the support players and
+        // against the melody.
+        let c7 = ctx_of(&[(0.0, 4.0, CMAJ7)]);
+        let b4 = v(Role::Pad, 71, 0.0, 4.0, ct, "pad");
+        for other in [
+            v(Role::Keys, 72, 0.0, 0.5, ct, "comp"),
+            v(Role::Lead, 72, 0.0, 1.0, ct, "melody"),
+        ] {
+            assert_eq!(
+                classify_heard(&c7[0], &b4, &other, None),
+                VerticalClass::UnownedCollision
+            );
+        }
+        // A written b9 on the dominant, planned and resolving, against the root: owned.
+        let g7 = ctx_of(&[(
+            0.0,
+            4.0,
+            Chord {
+                root_pc: 7,
+                quality: Quality::Dom7,
+            },
+        )]);
+        let plan = SonorityPlan {
+            context: 0,
+            start_beat: 0.0,
+            end_beat: 4.0,
+            bass_pc: 7,
+            bass_function: BassFunction::Root,
+            core: vec![11, 5],
+            colors: vec![],
+            omit: vec![],
+            altered: vec![8],
+            upper_structure: None,
+            policy: ColorPolicy::lenient(),
+        };
+        let g4 = v(Role::Bass, 55, 0.0, 4.0, ct, "root");
+        let ab5 = Voice {
+            resolves_to: Some(79),
+            ..v(Role::Pad, 68, 0.0, 1.0, ext, "pad")
+        };
+        assert_eq!(
+            classify_heard(&g7[0], &g4, &ab5, Some(&plan)),
+            VerticalClass::AlteredColor
+        );
+        // A short chromatic passing tone brushing a pad tone, and a resolving suspension: owned.
+        let pass = Voice {
+            resolves: true,
+            ..v(
+                Role::Lead,
+                75,
+                2.0,
+                2.25,
+                PitchFunction::ChromaticPassing,
+                "melody",
+            )
+        };
+        let e5c = v(Role::Pad, 76, 0.0, 4.0, ct, "pad");
+        assert_eq!(
+            classify_heard(&c7[0], &pass, &e5c, None),
+            VerticalClass::LinearCollision
+        );
+        let sus = Voice {
+            resolves_to: Some(76),
+            ..v(Role::Pad, 77, 0.0, 1.0, PitchFunction::Suspension, "pad")
+        };
+        let b4c = v(Role::Keys, 71, 0.0, 1.0, ct, "comp");
+        assert_ne!(
+            classify_heard(&c7[0], &sus, &Voice { pitch: 78, ..b4c }, None),
+            VerticalClass::UnownedCollision
+        );
     }
 }
