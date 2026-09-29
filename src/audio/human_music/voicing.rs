@@ -356,7 +356,20 @@ fn fifth_pc(chord: &Chord) -> Option<i32> {
 /// The pitch classes every candidate over `ctx` must carry, most defining first: both guide tones
 /// (3rd, 7th/6th) — or, over a chord with a single guide tone (add9, a triad, a sus), the 3rd +
 /// 9th (when licensed) + 5th, with the root added if fewer than three remain.
+///
+/// This is the R7b requirement, which colours EVERY plain triad with its 9th in every world; the
+/// independent control keeps it. The coupled band asks [`required_pcs_with`] what the harmony NEEDS.
 pub fn required_pcs(ctx: &HarmonicContext) -> Vec<i32> {
+    required_pcs_with(ctx, true)
+}
+
+/// The pitch classes a candidate over `ctx` must carry. With `triad_color` (the world/language
+/// [`ColorPolicy::triad_color`](super::sonority::ColorPolicy)) a single-guide chord's support
+/// carries its licensed 9th even when the chord does not write one — [`required_pcs`]. Without it
+/// the requirement is what the chord SPELLS: the 3rd (or its sus stand-in), a WRITTEN 9th (an add9
+/// asks for it), the 5th, the root if fewer than three remain. The 9th stays AVAILABLE — a
+/// candidate may still select it as colour; it is no longer forced.
+pub fn required_pcs_with(ctx: &HarmonicContext, triad_color: bool) -> Vec<i32> {
     let g = ctx.palette.guide_tones.clone();
     if g.len() >= 2 {
         return g;
@@ -364,7 +377,8 @@ pub fn required_pcs(ctx: &HarmonicContext) -> Vec<i32> {
     let root = ctx.chord.root_pc;
     let mut req = g;
     let ninth = (root + 2).rem_euclid(12);
-    if allowed(ctx, ninth) && !req.contains(&ninth) {
+    if allowed(ctx, ninth) && !req.contains(&ninth) && (triad_color || ctx.chord.contains_pc(ninth))
+    {
         req.push(ninth);
     }
     if let Some(f) = fifth_pc(&ctx.chord) {
@@ -389,8 +403,13 @@ fn is_extension(ctx: &HarmonicContext, pc: i32) -> bool {
 /// Licensed extensions over `ctx` beyond the required tones, most idiomatic first (9, 13, 11, ♭13,
 /// then the rest).
 pub fn extensions(ctx: &HarmonicContext) -> Vec<i32> {
+    extensions_with(ctx, true)
+}
+
+/// [`extensions`] beyond [`required_pcs_with`]`(ctx, triad_color)`.
+fn extensions_with(ctx: &HarmonicContext, triad_color: bool) -> Vec<i32> {
     let root = ctx.chord.root_pc;
-    let req = required_pcs(ctx);
+    let req = required_pcs_with(ctx, triad_color);
     let fifth = fifth_pc(&ctx.chord);
     let mut ext: Vec<i32> = (0..12)
         .filter(|&pc| is_extension(ctx, pc))
@@ -421,11 +440,12 @@ fn shapes(
     ctx: &HarmonicContext,
     range: &VoiceRange,
     family: ShapeFamily,
+    triad_color: bool,
 ) -> Vec<(VoicingShape, Vec<i32>)> {
     let root = ctx.chord.root_pc;
     let iv_of = |pc: i32| (pc - root).rem_euclid(12);
-    let req = required_pcs(ctx);
-    let ext = extensions(ctx);
+    let req = required_pcs_with(ctx, triad_color);
+    let ext = extensions_with(ctx, triad_color);
     let fifth = fifth_pc(&ctx.chord);
     let guide = &ctx.palette.guide_tones;
     let two_guides = guide.len() >= 2;
@@ -638,8 +658,9 @@ fn build_candidates(
     family: ShapeFamily,
     legacy: Option<&Voicing>,
     strict: bool,
+    triad_color: bool,
 ) -> Vec<VoicingCandidate> {
-    let req = required_pcs(ctx);
+    let req = required_pcs_with(ctx, triad_color);
     let mut seen: Vec<Vec<Midi>> = Vec::new();
     let mut out: Vec<VoicingCandidate> = Vec::new();
     if family == ShapeFamily::Full {
@@ -660,7 +681,7 @@ fn build_candidates(
             groups.entry(shape).or_default().push(v);
         }
     };
-    for (shape, seq) in shapes(ctx, range, family) {
+    for (shape, seq) in shapes(ctx, range, family, triad_color) {
         for v in place(&seq, range.low, range.high) {
             if shape == VoicingShape::Close && v.len() == 4 {
                 let mut d = v.clone();
@@ -713,11 +734,22 @@ pub fn candidates(
     family: ShapeFamily,
     legacy: Option<&Voicing>,
 ) -> Vec<VoicingCandidate> {
-    let strict = build_candidates(ctx, range, family, legacy, true);
+    candidates_with(ctx, range, family, legacy, true)
+}
+
+/// [`candidates`] under [`required_pcs_with`]`(ctx, triad_color)`.
+pub fn candidates_with(
+    ctx: &HarmonicContext,
+    range: &VoiceRange,
+    family: ShapeFamily,
+    legacy: Option<&Voicing>,
+    triad_color: bool,
+) -> Vec<VoicingCandidate> {
+    let strict = build_candidates(ctx, range, family, legacy, true, triad_color);
     if !strict.is_empty() {
         return strict;
     }
-    let relaxed = build_candidates(ctx, range, family, legacy, false);
+    let relaxed = build_candidates(ctx, range, family, legacy, false, triad_color);
     if !relaxed.is_empty() {
         return relaxed;
     }
@@ -1180,6 +1212,15 @@ fn sounding(lead: &[Note], a: f64, b: f64) -> Vec<Midi> {
 /// the bar's [`PadMode`] (Shell → shells; UpperStructure → the upper window, a voice ≥ MIDI 79;
 /// otherwise full). Returns the context index of each step alongside.
 pub fn pad_steps(perf: &PerformancePlan, spread: f32) -> (Vec<usize>, Vec<PathStep<'_>>) {
+    pad_steps_with(perf, spread, true)
+}
+
+/// [`pad_steps`] with candidates under [`required_pcs_with`]`(ctx, triad_color)`.
+pub fn pad_steps_with(
+    perf: &PerformancePlan,
+    spread: f32,
+    triad_color: bool,
+) -> (Vec<usize>, Vec<PathStep<'_>>) {
     let slots = slot_ids(perf);
     // The legacy control, called exactly as the old pad called it (every bar-mapped harmony).
     let mut vl = VoiceLeader::new(52, 79, spread);
@@ -1202,7 +1243,7 @@ pub fn pad_steps(perf: &PerformancePlan, spread: f32) -> (Vec<usize>, Vec<PathSt
         steps.push(PathStep {
             ctx,
             range,
-            candidates: candidates(ctx, &range, family, Some(&legacy)),
+            candidates: candidates_with(ctx, &range, family, Some(&legacy), triad_color),
             gesture: eb.gesture,
             slot: slots.get(eb.bar as usize).copied().flatten(),
             re_entry: last.is_none_or(|l| l + 1 != ci),
@@ -1221,6 +1262,17 @@ pub fn keys_steps<'a>(
     spread: f32,
     lead: &[Note],
     n: usize,
+) -> (Vec<usize>, Vec<PathStep<'a>>) {
+    keys_steps_with(perf, spread, lead, n, true)
+}
+
+/// [`keys_steps`] with candidates under [`required_pcs_with`]`(ctx, triad_color)`.
+pub fn keys_steps_with<'a>(
+    perf: &'a PerformancePlan,
+    spread: f32,
+    lead: &[Note],
+    n: usize,
+    triad_color: bool,
 ) -> (Vec<usize>, Vec<PathStep<'a>>) {
     let range = VoiceRange::keys(n, spread);
     let slots = slot_ids(perf);
@@ -1242,7 +1294,7 @@ pub fn keys_steps<'a>(
         steps.push(PathStep {
             ctx,
             range,
-            candidates: candidates(ctx, &range, ShapeFamily::Full, Some(&legacy)),
+            candidates: candidates_with(ctx, &range, ShapeFamily::Full, Some(&legacy), triad_color),
             gesture: eb.and_then(|e| e.gesture),
             slot: eb.and_then(|e| slots.get(e.bar as usize).copied().flatten()),
             re_entry: last.is_none_or(|l| l + 1 != ci),
@@ -1581,6 +1633,48 @@ mod tests {
             }
             assert!(v.voices.windows(2).all(|w| w[0] <= w[1]), "not sorted");
         }
+    }
+
+    #[test]
+    fn a_plain_triad_needs_its_triad_and_may_choose_the_ninth() {
+        // R7b forced every single-guide chord's support to carry 3rd + 9th + 5th in every world.
+        // Required now means NEEDED: a plain C triad needs E G (C); the D is available, not owed.
+        use super::super::context::analyze;
+        use super::super::harmony::ChordSpan;
+        use super::super::theory::{Mode, Scale};
+        let spans = [
+            ChordSpan::test(0.0, 4.0, Chord::new(0, Quality::Maj)),
+            ChordSpan::test(4.0, 4.0, Chord::new(5, Quality::Add9)),
+        ];
+        let ctxs = analyze(&spans, &Scale::new(0, Mode::Ionian));
+        let (c, fadd9) = (&ctxs[0], &ctxs[1]);
+        assert!(allowed(c, 2), "the 9th is licensed over C");
+        assert!(
+            required_pcs(c).contains(&2),
+            "the R7b control still forces it"
+        );
+        let plain = required_pcs_with(c, false);
+        assert!(!plain.contains(&2), "{plain:?}");
+        assert!(plain.contains(&4) && plain.contains(&7));
+        // A WRITTEN 9th is the harmony's own: Fadd9 still requires its G either way.
+        assert!(required_pcs_with(fadd9, false).contains(&7));
+        // The plain candidate set holds a triad voicing with no 9th AND still offers the 9th.
+        let range = VoiceRange::pad(0.5);
+        let cands = candidates_with(c, &range, ShapeFamily::Full, None, false);
+        let pcs = |v: &VoicingCandidate| -> Vec<i32> {
+            v.voices.iter().map(|&p| pitch_class(p)).collect()
+        };
+        assert!(
+            cands.iter().any(|v| !pcs(v).contains(&2)),
+            "a plain triad voicing"
+        );
+        assert!(
+            cands.iter().any(|v| pcs(v).contains(&2)),
+            "the 9th stays available"
+        );
+        assert!(candidates(c, &range, ShapeFamily::Full, None)
+            .iter()
+            .all(|v| pcs(v).contains(&2)));
     }
 
     #[test]

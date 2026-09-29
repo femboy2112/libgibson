@@ -32,8 +32,8 @@ use super::sonority::{
 };
 use super::theory::{pitch_class, Midi};
 use super::voicing::{
-    allowed, evaluate_path, gesture_tier, keys_steps, pad_steps, step_cost, voice_path, weigh,
-    PathStep, PathWeights, RolePath, VoiceRange, VoicingCandidate, VoicingShape,
+    allowed, evaluate_path, gesture_tier, keys_steps_with, pad_steps_with, step_cost, voice_path,
+    weigh, PathStep, PathWeights, RolePath, VoiceRange, VoicingCandidate, VoicingShape,
 };
 
 /// The share of a harmony's window a committed voice must cover to carry a pitch class.
@@ -639,8 +639,11 @@ pub fn joint_support_paths(
 ) -> SupportPaths {
     let w = PathWeights::default();
     let uw = UnionWeights::default();
-    let (pix, mut psteps) = pad_steps(perf, spread);
-    let (kix, mut ksteps) = keys_steps(perf, spread, lead, n);
+    // The world/language decides whether a plain triad's support must carry an unwritten 9th
+    // (R7b forced it everywhere): required means the harmony NEEDS it, not that it sounds jazzy.
+    let triad_color = state.policy().triad_color;
+    let (pix, mut psteps) = pad_steps_with(perf, spread, triad_color);
+    let (kix, mut ksteps) = keys_steps_with(perf, spread, lead, n, triad_color);
     // The control: each player's own path, on the voicing engine's own candidates.
     let pind = voice_path(&psteps, &w);
     let kind = voice_path(&ksteps, &w);
