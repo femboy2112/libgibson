@@ -133,10 +133,25 @@ pub fn finish_keys(mut out: Vec<Note>, perf: &PerformancePlan) -> Vec<Note> {
 }
 
 /// The coupled keys' final pass: as [`finish_keys`], but a note lifts off AT the next harmony when
-/// it does not belong there (no half-beat of tolerated overhang).
+/// it does not belong there (no half-beat of tolerated overhang), and a comping stab or hold — a
+/// voicing chosen FOR its harmony — never rings into the next one at all, whatever its pitch class
+/// (the lines — answers, figures, unison — may cross a change; they are lines).
 pub fn finish_keys_coupled(mut out: Vec<Note>, perf: &PerformancePlan) -> Vec<Note> {
     out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
     release_with_overhang(&mut out, &perf.chords, 0.02);
+    for n in out
+        .iter_mut()
+        .filter(|n| matches!(n.prov.role_note, "comp" | "hold"))
+    {
+        let end = n.start_beat + n.dur_beats as f64;
+        if let Some(next) = perf
+            .chords
+            .iter()
+            .find(|c| c.start_beat > n.start_beat + 1e-6 && c.start_beat < end - 1e-6)
+        {
+            n.dur_beats = ((next.start_beat - n.start_beat) as f32 * 0.97).max(0.1);
+        }
+    }
     out
 }
 

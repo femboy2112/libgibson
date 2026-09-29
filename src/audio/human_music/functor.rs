@@ -375,7 +375,23 @@ fn add_sfx_and_provenance(
             continue; // the event lands on the end of the piece: no time left to sound it
         }
         let sec_kind = plan.form.phrase_at(at).family.to_section_kind();
-        let v = voice_sfx(kind, at, ti, score.tempo_bpm, plan, perf);
+        let mut v = voice_sfx(kind, at, ti, score.tempo_bpm, plan, perf);
+        // Round VIII: the sting joins the band's one harmony — under the coupled realization it keeps
+        // its shape and pitch classes (the chord verdict and an owned tritone are untouched) and moves
+        // by whole octaves to the placement with the fewest unowned clashes against what sounds.
+        if perf.coupling == EnsembleCoupling::Coupled && v.pitches != SfxEvent::UNPITCHED {
+            if let Some((shift, reason)) = sfx_octave(score, perf, kind, at, &v) {
+                v.pitches = v.pitches.map(|p| p + shift);
+                score
+                    .vertical_decisions
+                    .push(super::harmonic_state::VerticalDecision {
+                        beat: at,
+                        role: super::score::Role::Lead,
+                        what: "sfx-octave",
+                        reason,
+                    });
+            }
+        }
         // When the band itself accents this beat (the same event's hit or push), the sting sits
         // under the ensemble instead of stacking on top of it: the accent is the band's.
         let band_accents = perf
@@ -405,6 +421,85 @@ fn add_sfx_and_provenance(
             dissonance_beats: v.dissonance_beats,
         });
     }
+}
+
+/// The whole-octave shift (within MIDI 24..=96) that gives an SFX gesture the fewest unowned clashes
+/// against the notes sounding during its gated life, if it beats the composer's own register —
+/// with the reason. Ties keep the original register.
+fn sfx_octave(
+    score: &Score,
+    perf: &PerformancePlan,
+    kind: SfxKind,
+    at: f64,
+    v: &SfxVoicing,
+) -> Option<(Midi, String)> {
+    use super::sonority::{classify_clash, Clash, VerticalClass, Voice};
+    let (a, d, _, _) = kind.envelope();
+    let end = at + (a + d + kind.hold_secs()) as f64 * score.tempo_bpm.max(1.0) as f64 / 60.0;
+    let ctx = perf.context_at(at)?;
+    let sounding: Vec<Voice> = score
+        .notes
+        .iter()
+        .filter(|n| n.start_beat < end - 1e-6 && n.start_beat + n.dur_beats as f64 > at + 1e-6)
+        .map(super::harmonic_state::voice_of)
+        .collect();
+    let clashes = |shift: Midi| -> (u32, Vec<String>) {
+        let mut n = 0;
+        let mut why = Vec::new();
+        for (k, &p) in v.pitches.iter().enumerate() {
+            let me = Voice {
+                role: super::score::Role::Lead,
+                pitch: p + shift,
+                start: at,
+                end,
+                function: v.function[k],
+                tag: "sfx",
+                resolves: true,
+                resolves_to: None,
+                unison: false,
+                written_end: end,
+                sfx: true,
+                owned: v.owned_by.is_some(),
+            };
+            for o in &sounding {
+                if Clash::of(me.pitch, o.pitch).is_some()
+                    && classify_clash(ctx, &me, o, None) == VerticalClass::UnownedCollision
+                {
+                    n += 1;
+                    why.push(format!(
+                        "{} against {} {}",
+                        super::theory::note_name(p),
+                        o.role.label(),
+                        super::theory::note_name(o.pitch)
+                    ));
+                }
+            }
+        }
+        (n, why)
+    };
+    let (base, why) = clashes(0);
+    if base == 0 {
+        return None;
+    }
+    let lo = v.pitches.iter().min().copied().unwrap_or(60);
+    let hi = v.pitches.iter().max().copied().unwrap_or(60);
+    let best = [12, -12, 24, -24]
+        .into_iter()
+        .filter(|s| lo + s >= 24 && hi + s <= 96)
+        .map(|s| (clashes(s).0, s.abs(), s))
+        .min()?;
+    (best.0 < base).then(|| {
+        (
+            best.2,
+            format!(
+                "moved {:+} semitones: {} -> {} unowned clashes ({})",
+                best.2,
+                base,
+                best.0,
+                why.join(", ")
+            ),
+        )
+    })
 }
 
 /// An SFX gesture's pitches and their justification.
