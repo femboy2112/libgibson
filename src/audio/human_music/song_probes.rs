@@ -9,30 +9,18 @@
 //! the chart, and the idiom rewrote the chart's rhythm through a field no song coordinate owned.
 //! Each is replaced by the law it witnessed when that law lands (the git history keeps the flip).
 
-use super::backbone::{ChartRoot, HarmonicGesture};
+use super::backbone::{ChartCell, ChartRoot, HarmonicGesture};
 use super::contract::CompositionGrammar;
-use super::functor::{compose_full, perform, Composition};
-use super::language::MusicalLanguage;
+use super::functor::{perform, Composition};
+use super::language::{HarmonicRhythm, MusicalLanguage};
 use super::performance::PerformanceOptions;
 use super::score::Role;
 use super::semantic::deflected_lift_trace;
-use super::song::{SongMap, ThemeSite};
+use super::song::{HarmonicMap, SongMap, SongMapConformance, ThemeSite, CHART_BARS_PER_CHORD};
+use super::theory::Mode;
 use super::world::MusicWorld;
 
 const SEED: u64 = 2112;
-
-fn flagship(world: &MusicWorld, language: MusicalLanguage) -> Composition {
-    compose_full(
-        &deflected_lift_trace(120.0),
-        world,
-        SEED,
-        Some(CompositionGrammar::DeflectedLift),
-        PerformanceOptions {
-            language,
-            ..PerformanceOptions::default()
-        },
-    )
-}
 
 /// The four acceptance performances of ONE song: three rooms speaking the flagship idiom, and the
 /// Aeolian room speaking the plain one.
@@ -120,32 +108,6 @@ fn the_theme_is_the_songs() {
     }
 }
 
-/// The chart landmarks a performance must sound: every slot's entry anchor at its downbeat and the
-/// pointer as the last harmony of every Lift, each as `(beat, what, chart root)`.
-fn landmarks(song: &SongMap) -> Vec<(f64, &'static str, ChartRoot)> {
-    let tl = song
-        .plan
-        .backbone
-        .as_ref()
-        .expect("DeflectedLift has a backbone");
-    let cell = song.harmonic.expect("DeflectedLift has a chart").cell;
-    let mut v = Vec::new();
-    for sl in &tl.slots {
-        let root = match sl.gesture {
-            HarmonicGesture::Lift => cell.lift,
-            HarmonicGesture::Deflect => cell.deflect,
-            HarmonicGesture::Open => cell.open,
-            HarmonicGesture::Reset => cell.reset,
-        };
-        v.push((sl.start_beat(), sl.gesture.label(), root));
-        if sl.gesture == HarmonicGesture::Lift {
-            let end = sl.end_beat().min(song.plan.form.total_beats);
-            v.push((end - 1e-3, "pointer", cell.pointer));
-        }
-    }
-    v
-}
-
 /// **Law 2 (was witness 2): the chart is the song's.** Every room sounds the SAME relational
 /// journey: at every slot's downbeat the chart's anchor, and the pointer closing every Lift — each
 /// root read in the region in force there. On 0b4483d the Aeolian room searched its own cell and
@@ -153,7 +115,7 @@ fn landmarks(song: &SongMap) -> Vec<(f64, &'static str, ChartRoot)> {
 #[test]
 fn the_chart_is_the_songs() {
     let song = flagship_song();
-    let marks = landmarks(&song);
+    let marks = song.landmarks();
     let kinds: std::collections::BTreeSet<&str> = marks.iter().map(|m| m.1).collect();
     assert_eq!(kinds.len(), 5, "every landmark kind is charted: {kinds:?}");
     for (label, c) in acceptance(&song) {
@@ -177,62 +139,234 @@ fn the_chart_is_the_songs() {
     }
 }
 
-/// **Witness 3 (defect): the idiom silently rewrites the chart's rhythm.** Nothing in the plan
-/// says how often the chord changes; `MusicalLanguage::harmonic_rhythm_bars` (Simple 2, Fusion 1)
-/// does, inside `slot_path`. Same plan, same room: the change points differ, and the only
-/// authority for them is a language field.
+/// Chord changes inside the backbone.
+fn changes(c: &Composition) -> usize {
+    c.score.chords.len()
+}
+
+/// **Law 3 (was witness 3): the chart's rhythm is the song's.** The canonical harmonic rhythm is a
+/// SongMap coordinate; an idiom applies a declared, typed transform to it (Simple `AsCharted`,
+/// Fusion `Diminished`) and both keep every landmark. On 0b4483d the change points came from
+/// `MusicalLanguage::harmonic_rhythm_bars` (2 / 1), a number no song coordinate owned.
 #[test]
-fn witness_the_language_rewrites_the_chart_rhythm() {
+fn the_chart_rhythm_is_the_songs() {
+    let song = flagship_song();
+    let hm = song.harmonic.expect("DeflectedLift has a chart");
+    assert_eq!(hm.bars_per_chord, CHART_BARS_PER_CHORD);
     let world = MusicWorld::black_ice();
-    let simple = MusicalLanguage::simple();
-    let fusion = MusicalLanguage::fusion_conversation();
-    let s = flagship(&world, simple);
-    let f = flagship(&world, fusion);
-    assert_eq!(
-        s.song.plan.dump(),
-        f.song.plan.dump(),
-        "the plan is language-free"
-    );
-    let tl = s
-        .song
-        .plan
-        .backbone
-        .clone()
-        .expect("DeflectedLift has a backbone");
-    let chart = s.song.harmonic.expect("DeflectedLift has a chart").cell;
-    let onsets = |lang: &MusicalLanguage| -> Vec<f64> {
-        super::backbone::realize(&tl, &chart, &world, lang)
-            .spans
-            .iter()
-            .map(|sp| sp.start_beat)
-            .collect()
+    let fusion = PerformanceOptions::default();
+    let simple = PerformanceOptions {
+        language: MusicalLanguage::simple(),
+        ..fusion
     };
-    let (os, of) = (onsets(&simple), onsets(&fusion));
+    assert_eq!(simple.language.harmonic_rhythm, HarmonicRhythm::AsCharted);
+    assert_eq!(fusion.language.harmonic_rhythm, HarmonicRhythm::Diminished);
+    let (s, f) = (
+        perform(&song, &world, simple),
+        perform(&song, &world, fusion),
+    );
+    for c in [&s, &f] {
+        let r = SongMapConformance::check(&song, &c.perf, &c.score);
+        assert!(r.passes(), "{}", r.report());
+    }
+    // The song, not the idiom, owns the rhythm: re-chart it at four bars per chord and the plain
+    // idiom follows the song — fewer changes, the same landmarks, still conformant.
+    let mut slower = song.clone();
+    slower.harmonic = Some(HarmonicMap {
+        bars_per_chord: 4,
+        ..hm
+    });
+    let s4 = perform(&slower, &world, simple);
     eprintln!(
-        "chord changes: simple {} / fusion {} (harmonic_rhythm_bars {} / {})",
-        os.len(),
-        of.len(),
-        simple.harmonic_rhythm_bars,
-        fusion.harmonic_rhythm_bars
+        "chord changes: simple {} / fusion {} / simple on the 4-bar chart {}",
+        changes(&s),
+        changes(&f),
+        changes(&s4)
     );
-    assert_ne!(simple.harmonic_rhythm_bars, fusion.harmonic_rhythm_bars);
-    assert_ne!(
-        os, of,
-        "defect: the language moves the chart's change points"
+    assert!(changes(&s4) < changes(&s) && changes(&s) < changes(&f));
+    let r4 = SongMapConformance::check(&slower, &s4.perf, &s4.score);
+    assert!(r4.passes(), "{}", r4.report());
+    // ...and the 2-bar performance is NOT a performance of the 4-bar song: its extra changes are
+    // off the declared grid (the rhythm check is not vacuous).
+    let cross = SongMapConformance::check(&slower, &s.perf, &s.score);
+    assert!(
+        !cross.illegal_harmonic_transforms.is_empty(),
+        "{}",
+        cross.report()
     );
-    // ...and the Lift of a multi-bar slot reaches the pointer at a different beat.
-    let lift = tl
+}
+
+/// **The acceptance contract.** ONE SongMap, four performances — three rooms speaking the flagship
+/// idiom and the Aeolian room speaking the plain one: the song's fingerprint is identical (and
+/// rebuilding the song from the same inputs reproduces it), every performance conforms, and the
+/// performance plans and the scores all differ. Whether they SOUND like one song is the listen's.
+#[test]
+fn one_song_four_performances() {
+    let song = flagship_song();
+    let fp = song.fingerprint();
+    assert_eq!(
+        flagship_song().fingerprint(),
+        fp,
+        "the song is deterministic"
+    );
+    let hm = song.harmonic.expect("DeflectedLift has a chart");
+    eprintln!(
+        "SongMap {fp:#018x}  ThematicMap {:#018x}  HarmonicMap {:#018x}",
+        song.thematic.fingerprint(),
+        hm.fingerprint()
+    );
+    let perfs = acceptance(&song);
+    let mut perf_fps = Vec::new();
+    let mut score_fps = Vec::new();
+    for (label, c) in &perfs {
+        assert_eq!(
+            c.song.fingerprint(),
+            fp,
+            "{label}: the song travelled intact"
+        );
+        let r = SongMapConformance::check(&song, &c.perf, &c.score);
+        eprintln!(
+            "{label}: perf {:#018x} score {:#018x} | {} {:?} home {}{:?} | {} chords, {} statements, {} actions, {} notes",
+            c.perf.fingerprint(),
+            c.score.fingerprint(),
+            c.perf.language.id.label(),
+            c.perf.language.harmonic_rhythm,
+            c.perf.region.tonic_pc,
+            c.perf.region.mode,
+            c.score.chords.len(),
+            c.perf.statements.len(),
+            c.perf.actions.actions.len(),
+            c.score.notes.len()
+        );
+        eprintln!("  {}", r.report());
+        assert!(r.passes(), "{label}: {}", r.report());
+        assert!(r.sites_checked >= 3 && r.landmarks_checked >= 10 && r.changes_checked >= 10);
+        perf_fps.push(c.perf.fingerprint());
+        score_fps.push(c.score.fingerprint());
+    }
+    let distinct = |v: &[u64]| v.iter().collect::<std::collections::BTreeSet<_>>().len();
+    assert_eq!(distinct(&perf_fps), 4, "four different performances");
+    assert_eq!(distinct(&score_fps), 4, "four different scores");
+}
+
+/// **Negative controls: a real song coordinate moves the map; the check sees it.** Mutating the
+/// thesis contour, a harmonic arrival or a landmark changes the song's fingerprint, and a
+/// performance of the ORIGINAL song fails conformance against the mutated one with the exact
+/// reason — while nothing a performance decides (room, idiom) moves the fingerprint at all.
+#[test]
+fn real_mutations_move_the_song() {
+    let song = flagship_song();
+    let fp = song.fingerprint();
+    let hm = song.harmonic.expect("DeflectedLift has a chart");
+    let c = perform(&song, &MusicWorld::vapor95(), PerformanceOptions::default());
+
+    // The thesis contour.
+    let mut thesis = song.clone();
+    thesis.thematic.bank.identity.degrees[1] += 1;
+    assert_ne!(thesis.fingerprint(), fp);
+    assert_ne!(thesis.thematic.fingerprint(), song.thematic.fingerprint());
+    assert_eq!(thesis.harmonic, song.harmonic, "the chart did not move");
+    let r = SongMapConformance::check(&thesis, &c.perf, &c.score);
+    assert!(r.bank_mismatch && !r.passes(), "{}", r.report());
+
+    // An identity site restated otherwise.
+    let mut site = song.clone();
+    let ix = site
+        .thematic
+        .sites
+        .iter()
+        .position(|s| s.is_identity())
+        .expect("an identity site");
+    site.thematic.sites[ix].motif = site.thematic.sites[ix].motif.transpose(1);
+    assert_ne!(site.fingerprint(), fp);
+    let r = SongMapConformance::check(&site, &c.perf, &c.score);
+    assert!(
+        r.missing_theme_sites
+            .iter()
+            .any(|m| m.why == "stated otherwise"),
+        "{}",
+        r.report()
+    );
+
+    // The harmonic arrival: the deflection lands on another degree.
+    let mut arrival = song.clone();
+    arrival.harmonic = Some(HarmonicMap {
+        cell: ChartCell {
+            deflect: ChartRoot::Degree(2),
+            ..hm.cell
+        },
+        ..hm
+    });
+    assert_ne!(hm.cell.deflect, ChartRoot::Degree(2), "a real change");
+    assert_ne!(arrival.fingerprint(), fp);
+    let r = SongMapConformance::check(&arrival, &c.perf, &c.score);
+    assert!(
+        r.wrong_harmonic_landmarks
+            .iter()
+            .any(|m| m.landmark == "deflect"),
+        "{}",
+        r.report()
+    );
+
+    // A landmark: one Deflect slot charted as an Open.
+    let mut landmark = song.clone();
+    let tl = landmark.plan.backbone.as_mut().expect("a backbone");
+    let k = tl
         .slots
         .iter()
-        .find(|sl| sl.gesture == HarmonicGesture::Lift && sl.bars >= 4)
-        .expect("the flagship has a statement-length Lift");
-    let pointer_onset = |lang: &MusicalLanguage| -> f64 {
-        super::backbone::realize(&tl, &chart, &world, lang)
-            .spans
+        .position(|s| s.gesture == HarmonicGesture::Deflect)
+        .expect("a Deflect slot");
+    tl.slots[k].gesture = HarmonicGesture::Open;
+    assert_ne!(landmark.fingerprint(), fp);
+    let r = SongMapConformance::check(&landmark, &c.perf, &c.score);
+    assert!(!r.wrong_harmonic_landmarks.is_empty(), "{}", r.report());
+
+    // The R8b defect, re-enacted: the Aeolian room searching its OWN mode for the cell (on
+    // 0b4483d it found degree journey [1,5,2,0], opening on bIII). Performed, and checked against
+    // the song: caught at the Open landmarks and as chords outside the chart's vocabulary.
+    let mut searched = song.clone();
+    searched.harmonic = Some(HarmonicMap {
+        cell: ChartCell::chart(Mode::Aeolian, song.seed),
+        ..hm
+    });
+    let old = perform(
+        &searched,
+        &MusicWorld::black_ice(),
+        PerformanceOptions::default(),
+    );
+    let r = SongMapConformance::check(&song, &old.perf, &old.score);
+    eprintln!("{}", r.report());
+    assert!(
+        r.wrong_harmonic_landmarks
             .iter()
-            .filter(|sp| sp.start_beat >= lift.start_beat() && sp.start_beat < lift.end_beat())
-            .map(|sp| sp.start_beat)
-            .fold(f64::NEG_INFINITY, f64::max)
-    };
-    assert_ne!(pointer_onset(&simple), pointer_onset(&fusion));
+            .all(|m| m.landmark == "open")
+            && !r.wrong_harmonic_landmarks.is_empty(),
+        "{}",
+        r.report()
+    );
+    assert!(
+        r.illegal_harmonic_transforms
+            .iter()
+            .any(|m| m.why.starts_with("root outside")),
+        "{}",
+        r.report()
+    );
+
+    // The fiber does not move it.
+    for world in MusicWorld::all() {
+        for language in [
+            MusicalLanguage::simple(),
+            MusicalLanguage::fusion_conversation(),
+        ] {
+            let p = perform(
+                &song,
+                &world,
+                PerformanceOptions {
+                    language,
+                    ..PerformanceOptions::default()
+                },
+            );
+            assert_eq!(p.perf.song_fingerprint, fp);
+        }
+    }
 }

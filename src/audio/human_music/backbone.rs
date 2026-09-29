@@ -876,10 +876,11 @@ fn slot_path(
     slot: &GestureSlot,
     cell: &HarmonicCell,
     lang: &MusicalLanguage,
+    chart_bars: u32,
     s7: bool,
 ) -> Vec<(f64, f64, Chord)> {
     let total = slot.bars as f64 * BEATS_PER_BAR;
-    let hr = lang.harmonic_rhythm_bars.max(1) as f64 * BEATS_PER_BAR;
+    let hr = lang.harmonic_rhythm.bars_per_chord(chart_bars) as f64 * BEATS_PER_BAR;
     // Deeper colour on transformed/compressed returns; the thesis and statement keep the base.
     let depth = match slot.variation {
         CycleVariation::Thesis | CycleVariation::Statement => lang.color_depth.min(1),
@@ -950,19 +951,20 @@ fn slot_path(
 }
 
 /// Realize the song's `timeline` and `chart` as harmony in `world`'s room under `lang`. The room
-/// re-modes the chart and colours it; it chooses no root.
+/// re-modes the chart and colours it; the idiom applies its declared rhythm transform to the
+/// chart's canonical rhythm; neither chooses a root or a change point of its own.
 pub fn realize(
     timeline: &BackboneTimeline,
-    chart: &ChartCell,
+    chart: &super::song::HarmonicMap,
     world: &MusicWorld,
     lang: &MusicalLanguage,
 ) -> BackboneRealization {
     let region = Scale::new(world.tonic_pc, world.mode);
-    let cell = chart.realize(&region);
+    let cell = chart.cell.realize(&region);
     let s7 = world.use_sevenths;
     let mut spans: Vec<ChordSpan> = Vec::new();
     for slot in &timeline.slots {
-        for (off, len, chord) in slot_path(slot, &cell, lang, s7) {
+        for (off, len, chord) in slot_path(slot, &cell, lang, chart.bars_per_chord, s7) {
             let degree = (0..7)
                 .find(|&d| region.degree_pitch(d, 4).rem_euclid(12) == chord.root_pc)
                 .unwrap_or(-1);
@@ -1045,9 +1047,17 @@ mod tests {
         BackboneTimeline::build(&tl, 30, &[0, 4, 8, 12, 16, 20, 22, 24, 28], 4, 4)
     }
 
-    /// The flagship chart (seed 2112, charted in the reference frame).
-    fn chart() -> ChartCell {
-        ChartCell::chart(super::super::song::REFERENCE_FRAME, 2112)
+    /// A chart (charted in the reference frame at `seed`, the canonical rhythm).
+    fn chart_at(seed: u64) -> super::super::song::HarmonicMap {
+        super::super::song::HarmonicMap {
+            cell: ChartCell::chart(super::super::song::REFERENCE_FRAME, seed),
+            bars_per_chord: super::super::song::CHART_BARS_PER_CHORD,
+        }
+    }
+
+    /// The flagship chart (seed 2112).
+    fn chart() -> super::super::song::HarmonicMap {
+        chart_at(2112)
     }
 
     #[test]
@@ -1161,7 +1171,9 @@ mod tests {
     #[test]
     fn the_open_follows_from_the_miss_and_reset_is_home() {
         for world in MusicWorld::all() {
-            let c = chart().realize(&Scale::new(world.tonic_pc, world.mode));
+            let c = chart()
+                .cell
+                .realize(&Scale::new(world.tonic_pc, world.mode));
             assert!(
                 common_tones(&c.open, &c.deflect) >= 1,
                 "{}: open unrelated to the deflection",
@@ -1177,7 +1189,7 @@ mod tests {
     fn realization_is_deterministic_and_world_specific() {
         let tl = flagship();
         let lang = MusicalLanguage::default();
-        let chart = ChartCell::chart(super::super::song::REFERENCE_FRAME, 7);
+        let chart = chart_at(7);
         let a = realize(&tl, &chart, &MusicWorld::black_ice(), &lang);
         let b = realize(&tl, &chart, &MusicWorld::black_ice(), &lang);
         assert_eq!(a.cell, b.cell);
@@ -1200,7 +1212,7 @@ mod tests {
     #[test]
     fn the_simple_language_moves_slower_but_is_the_same_spine() {
         let tl = flagship();
-        let chart = ChartCell::chart(super::super::song::REFERENCE_FRAME, 1);
+        let chart = chart_at(1);
         let f = realize(
             &tl,
             &chart,

@@ -5,19 +5,54 @@
 //! - the **composition** ([`super::plan::CompositionPlan`]: form, discourse, the DeflectedLift
 //!   backbone timeline) is the song's identity;
 //! - the **world** ([`super::world::MusicWorld`]) is timbre, production and local physics;
-//! - the **language** (this module) is the performance idiom: harmonic rhythm inside a backbone
-//!   gesture, colour depth, voicing and melodic-connective policy, rhythmic surface, how often and
-//!   how freely the players interact, and how much simultaneous information the ensemble may spend.
+//! - the **language** (this module) is the performance idiom: a declared transform of the song's
+//!   harmonic rhythm ([`HarmonicRhythm`]), colour depth, voicing and melodic-connective policy,
+//!   rhythmic surface, how often and how freely the players interact, and how much simultaneous
+//!   information the ensemble may spend.
 //!
 //! The same composition under [`MusicalLanguage::simple`] and [`MusicalLanguage::fusion_conversation`]
 //! is the same song spoken two ways. No artist is encoded here — only generic mechanisms.
 
+/// How an idiom treats the song's harmonic rhythm: a declared, typed transform of the chart's
+/// canonical rhythm ([`super::song::HarmonicMap::bars_per_chord`]) — never a private number (Round
+/// IX: `harmonic_rhythm_bars` used to move the chart's change points with no song coordinate
+/// owning them). Both transforms preserve the chart's landmarks: every slot's anchor on its
+/// downbeat and the pointer closing every Lift.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HarmonicRhythm {
+    /// One chord per chart unit, as charted.
+    AsCharted,
+    /// Diminution: every chart unit split in two. The added changes are prolongations — an
+    /// anchor's satellite or colour pedal, the reach's sequence step, the pointer's own applied
+    /// dominant — and the pointer moves to the Lift's last (shorter) unit, still closing it.
+    Diminished,
+}
+
+impl HarmonicRhythm {
+    /// Bars per chord under this transform of a chart that changes every `chart_bars` bars.
+    pub fn bars_per_chord(self, chart_bars: u32) -> u32 {
+        match self {
+            HarmonicRhythm::AsCharted => chart_bars.max(1),
+            HarmonicRhythm::Diminished => (chart_bars / 2).max(1),
+        }
+    }
+
+    /// A short lowercase label for dumps.
+    pub fn label(self) -> &'static str {
+        match self {
+            HarmonicRhythm::AsCharted => "as-charted",
+            HarmonicRhythm::Diminished => "diminished",
+        }
+    }
+}
+
 /// Which language profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LanguageId {
-    /// Plain statement: slow harmonic rhythm, triads/7ths, on-beat support, rare interaction.
+    /// Plain statement: the chart's own harmonic rhythm, triads/7ths, on-beat support, rare
+    /// interaction.
     Simple,
-    /// High-sophistication conversational fusion: fast harmonic rhythm, extended colour, shell
+    /// High-sophistication conversational fusion: diminished harmonic rhythm, extended colour, shell
     /// voicings, syncopated surface, distributed initiative, unison figures, a tight complexity
     /// budget so density is coordinated rather than piled up.
     FusionConversation,
@@ -38,8 +73,8 @@ impl LanguageId {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MusicalLanguage {
     pub id: LanguageId,
-    /// Bars per chord inside a backbone gesture slot (the harmonic rhythm).
-    pub harmonic_rhythm_bars: u32,
+    /// The declared transform of the song's harmonic rhythm inside a backbone gesture slot.
+    pub harmonic_rhythm: HarmonicRhythm,
     /// Harmonic colour depth: 0 = triads/7ths only, 1 = add 9ths/6ths on open windows, 2 = full
     /// extended colour on every stable harmony.
     pub color_depth: u8,
@@ -68,7 +103,7 @@ impl MusicalLanguage {
     pub fn simple() -> MusicalLanguage {
         MusicalLanguage {
             id: LanguageId::Simple,
-            harmonic_rhythm_bars: 2,
+            harmonic_rhythm: HarmonicRhythm::AsCharted,
             color_depth: 0,
             shell_voicings: false,
             surface_subdivision: 2,
@@ -86,7 +121,7 @@ impl MusicalLanguage {
     pub fn fusion_conversation() -> MusicalLanguage {
         MusicalLanguage {
             id: LanguageId::FusionConversation,
-            harmonic_rhythm_bars: 1,
+            harmonic_rhythm: HarmonicRhythm::Diminished,
             color_depth: 2,
             shell_voicings: true,
             surface_subdivision: 4,

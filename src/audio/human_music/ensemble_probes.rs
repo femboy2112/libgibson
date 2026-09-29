@@ -43,14 +43,7 @@ fn flagship(world: &MusicWorld, coupling: EnsembleCoupling) -> Composition {
 /// drum hit, SFX event and chord, plus the melody repair counters. Not the R8 reports (the
 /// Independent control leaves them empty by contract; that is asserted separately).
 fn fingerprint(c: &Composition) -> u64 {
-    let s = &c.score;
-    let text = format!(
-        "{:?}|{:?}|{:?}|{:?}|{}|{}",
-        s.notes, s.drums, s.sfx, s.chords, s.melody_repairs, s.melody_rejudged
-    );
-    text.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
-        (h ^ b as u64).wrapping_mul(0x0100_0000_01b3)
-    })
+    c.score.fingerprint()
 }
 
 /// The Independent control IS the R7b composition. The pins were computed on the R7b tip

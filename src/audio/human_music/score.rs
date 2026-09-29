@@ -386,6 +386,21 @@ pub struct Score {
 }
 
 impl Score {
+    /// The score's fingerprint: FNV-1a over what a listener hears — every note (with its function
+    /// and provenance), drum hit, SFX event and chord, plus the melody repair counters. The formula
+    /// the R7b/R8 pins were computed with.
+    pub fn fingerprint(&self) -> u64 {
+        super::song::fnv1a(&format!(
+            "{:?}|{:?}|{:?}|{:?}|{}|{}",
+            self.notes,
+            self.drums,
+            self.sfx,
+            self.chords,
+            self.melody_repairs,
+            self.melody_rejudged
+        ))
+    }
+
     /// An empty score.
     pub fn new(tempo_bpm: f32, beats_per_bar: f64, total_beats: f64) -> Score {
         Score {

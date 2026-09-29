@@ -211,6 +211,9 @@ pub struct AdmissionRecord {
 /// The whole shared performance.
 #[derive(Debug, Clone)]
 pub struct PerformancePlan {
+    /// The fingerprint of the song this performs ([`super::song::SongMap::fingerprint`]) — the
+    /// performance's CLAIM; [`super::song::SongMapConformance`] checks the content.
+    pub song_fingerprint: u64,
     pub language: MusicalLanguage,
     /// Coupled or independent ensemble realization (see [`EnsembleCoupling`]).
     pub coupling: EnsembleCoupling,
@@ -269,7 +272,7 @@ impl PerformancePlan {
         //    re-modes and colours the chart; it no longer searches its own), or the phrase engine.
         let (mut chords, mut deflects, home_chord) = match (&plan.backbone, &song.harmonic) {
             (Some(tl), Some(hm)) => {
-                let r = super::backbone::realize(tl, &hm.cell, world, &lang);
+                let r = super::backbone::realize(tl, hm, world, &lang);
                 (r.spans, r.deflects, Some(r.cell.reset))
             }
             _ => (
@@ -451,6 +454,7 @@ impl PerformancePlan {
         });
 
         let mut perf = PerformancePlan {
+            song_fingerprint: song.fingerprint(),
             language: lang,
             coupling: opts.coupling,
             region,
@@ -482,6 +486,12 @@ impl PerformancePlan {
             eb.budget = a.total;
         }
         perf
+    }
+
+    /// The performance's fingerprint: everything this performance decided (FNV-1a over its full
+    /// debug form). Two performances of one song differ here; their songs do not.
+    pub fn fingerprint(&self) -> u64 {
+        super::song::fnv1a(&format!("{self:?}"))
     }
 
     /// `agent`'s complexity allowance in `bar` minus what the plan already reserved for it (its
