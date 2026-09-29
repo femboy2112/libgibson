@@ -114,12 +114,41 @@ pub fn perform_temporal(
 /// [`perform_temporal`] remains the exact Round XII listening control.
 pub fn perform_mass(song: &SongMap, world: &MusicWorld, opts: PerformanceOptions) -> Composition {
     let perf = PerformancePlan::from_song(song, world, opts);
-    let score = realize_arm(song, world, &perf, true, true);
+    let score = realize_arm(song, world, &perf, true, Contract::Mass);
     Composition {
         score,
         song: song.clone(),
         perf,
     }
+}
+
+/// Round XIIIb opt-in: [`perform_mass`], then the sounding-tension law over the whole band
+/// ([`super::tension::gate_sounding_tension`]): a note that clashes with what sounds must be
+/// transient or foreshadow its resolution. Same song, same performance plan, same drums;
+/// [`perform_mass`] remains the exact Round XIII listening control.
+pub fn perform_tension(
+    song: &SongMap,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+) -> Composition {
+    let perf = PerformancePlan::from_song(song, world, opts);
+    let score = realize_arm(song, world, &perf, true, Contract::Tension);
+    Composition {
+        score,
+        song: song.clone(),
+        perf,
+    }
+}
+
+/// Which opt-in pitch contract a realization honours on top of the written one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Contract {
+    /// The realizers as they are.
+    Written,
+    /// Round XIII: asserted support colours pay rent.
+    Mass,
+    /// Round XIIIb: Mass, then sounding tension must be transient or foreshadowing.
+    Tension,
 }
 
 /// Realize a score from an explicit (possibly hand-mutated) song and performance — the entry the
@@ -134,7 +163,7 @@ pub fn realize_performance(song: &SongMap, world: &MusicWorld, perf: &Performanc
 /// and the drums (who hear the bass) — each reading the same [`PerformancePlan`]; then
 /// `apply_arrangement` gates the voices.
 fn realize(song: &SongMap, world: &MusicWorld, perf: &PerformancePlan, temporal: bool) -> Score {
-    realize_arm(song, world, perf, temporal, false)
+    realize_arm(song, world, perf, temporal, Contract::Written)
 }
 
 /// [`realize`], with the Round XIII support mass gate when `mass` (only [`perform_mass`]).
@@ -143,7 +172,7 @@ fn realize_arm(
     world: &MusicWorld,
     perf: &PerformancePlan,
     temporal: bool,
-    mass: bool,
+    contract: Contract,
 ) -> Score {
     let (trace, seed, plan) = (&song.trace, song.seed, &song.plan);
     let total_beats = plan.form.total_beats;
@@ -168,7 +197,7 @@ fn realize_arm(
             };
             let mut pad = super::comp::realize_pad(perf, plan, world);
             let mut keys = keys;
-            if mass {
+            if contract >= Contract::Mass {
                 super::comp::gate_support_mass(perf, world, &mut pad, &mut keys);
             }
             let bass = if temporal {
@@ -190,6 +219,37 @@ fn realize_arm(
     score.notes.extend(keys);
     score.notes.extend(bass);
     score.notes.extend(lead.notes);
+    // Round XIIIb: after the drums have heard the band as written, so the groove is unchanged.
+    // Every interaction receipt the band witnesses must survive each edit.
+    if contract >= Contract::Tension {
+        let witnessed = |s: &Score| -> Vec<bool> {
+            super::witness::audit(perf, s)
+                .rows
+                .iter()
+                .map(|r| r.witnessed)
+                .collect()
+        };
+        let before = witnessed(&score);
+        let mut notes = std::mem::take(&mut score.notes);
+        let template = score.clone();
+        let keeps = |band: &[Note]| -> bool {
+            let mut s = template.clone();
+            s.notes = band.to_vec();
+            witnessed(&s)
+                .iter()
+                .zip(&before)
+                .all(|(&now, &was)| now || !was)
+        };
+        score.tension_edits = super::tension::gate_sounding_tension(
+            &mut notes,
+            &perf.contexts,
+            world,
+            score.tempo_bpm,
+            score.beats_per_bar,
+            Some(&keeps),
+        );
+        score.notes = notes;
+    }
 
     // --- SFX from significant semantic events, pitched in the local harmony. ---
     add_sfx_and_provenance(&mut score, trace, plan, perf, world);

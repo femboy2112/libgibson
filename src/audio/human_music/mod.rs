@@ -75,6 +75,9 @@ pub mod temporal;
 mod temporal_probes;
 #[cfg(test)]
 mod temporal_witnesses;
+pub mod tension;
+#[cfg(test)]
+mod tension_witnesses;
 pub mod theory;
 pub mod timeline;
 pub mod voicing;

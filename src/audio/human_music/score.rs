@@ -383,6 +383,9 @@ pub struct Score {
     /// became, the defect it removed, the rung of the repair ladder, any receipt it surrendered).
     /// Empty under every other coupling.
     pub vertical_repairs: Vec<super::surgical::VerticalRepair>,
+    /// Round XIIIb: every edit the sounding-tension gate made (the note, the clash that asked for
+    /// it, the action). Empty under every arm but `perform_tension`.
+    pub tension_edits: Vec<super::tension::TensionEdit>,
 }
 
 impl Score {
@@ -417,6 +420,7 @@ impl Score {
             vertical_decisions: Vec::new(),
             support_report: None,
             vertical_repairs: Vec::new(),
+            tension_edits: Vec::new(),
         }
     }
 
