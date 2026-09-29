@@ -1446,6 +1446,8 @@ pub struct RoleVoicings {
     pub voicings: usize,
     /// Mean symmetric nearest-neighbour motion between consecutive voicings.
     pub mean_motion: f32,
+    /// Mean exact pitches a voicing keeps from the one before it (common-tone retention).
+    pub mean_common_tones: f32,
     /// Guide-tone voices whose line breaks into the next voicing (no guide tone within a step).
     pub guide_breaks: usize,
     /// Voicings missing at least one of their harmony's guide tones.
@@ -1522,6 +1524,7 @@ fn measure_role(
     let mut out = RoleVoicings::default();
     let mut prev: Option<(Vec<Midi>, &HarmonicContext)> = None;
     let mut motion = 0.0f32;
+    let mut common = 0usize;
     let mut pairs = 0usize;
     for (beat, mut v, _) in groups {
         v.sort_unstable();
@@ -1546,6 +1549,7 @@ fn measure_role(
         *out.shapes.entry(classify(&v, ctx)).or_default() += 1;
         if let Some((a, actx)) = &prev {
             motion += nn_motion(a, &v);
+            common += v.iter().filter(|p| a.contains(p)).count();
             pairs += 1;
             out.guide_breaks += guide_breaks(a, &actx.palette.guide_tones, &v, g) as usize;
         }
@@ -1555,6 +1559,11 @@ fn measure_role(
         0.0
     } else {
         motion / pairs as f32
+    };
+    out.mean_common_tones = if pairs == 0 {
+        0.0
+    } else {
+        common as f32 / pairs as f32
     };
     out
 }
@@ -1592,9 +1601,10 @@ impl VoicingDiagnostics {
                 .join(" ");
             let _ = writeln!(
                 s,
-                "  {name}: voicings={} mean_motion={:.2} guide_breaks={} missing_guide={} semitone_pairs={} top_semitone_pairs={}  shapes: {shapes}",
+                "  {name}: voicings={} mean_motion={:.2} common_tones={:.2} guide_breaks={} missing_guide={} semitone_pairs={} top_semitone_pairs={}  shapes: {shapes}",
                 r.voicings,
                 r.mean_motion,
+                r.mean_common_tones,
                 r.guide_breaks,
                 r.missing_guide,
                 r.semitone_pairs,
