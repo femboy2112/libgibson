@@ -42,6 +42,8 @@ pub mod instrument;
 pub mod intent;
 pub mod interaction;
 pub mod language;
+#[cfg(test)]
+mod mass_witnesses;
 pub mod material;
 pub mod meaning;
 #[cfg(test)]

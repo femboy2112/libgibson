@@ -1,0 +1,50 @@
+$ cargo +1.98.1 test --lib r13_ -- --include-ignored
+# source d72b72f1d4d4c670f3ac2f2a5a3ccd808051d911 + uncommitted witnesses only (no production change)
+
+running 4 tests
+test audio::human_music::mass_witnesses::r13_slow_staircase_owes_its_own_justification ... FAILED
+test audio::human_music::mass_witnesses::r13_tempo_dilation_changes_the_proof ... FAILED
+test audio::human_music::mass_witnesses::r13_long_orphan_ninth_is_not_a_short_stab ... FAILED
+test audio::human_music::mass_witnesses::r13_swiss_witnesses_outweigh_the_offbeat_stab ... FAILED
+
+failures:
+
+---- audio::human_music::mass_witnesses::r13_slow_staircase_owes_its_own_justification stdout ----
+
+thread 'audio::human_music::mass_witnesses::r13_slow_staircase_owes_its_own_justification' panicked at src/audio/human_music/mass_witnesses.rs:135:5:
+assertion `left != right` failed: fast slide and slow staircase judged alike
+  left: ("Orphaned None", true, ["locally valid connector reaches an extension whose own path is orphaned"])
+ right: ("Orphaned None", true, ["locally valid connector reaches an extension whose own path is orphaned"])
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- audio::human_music::mass_witnesses::r13_tempo_dilation_changes_the_proof stdout ----
+
+thread 'audio::human_music::mass_witnesses::r13_tempo_dilation_changes_the_proof' panicked at src/audio/human_music/mass_witnesses.rs:121:5:
+assertion `left != right` failed: tempo left the proof unchanged
+  left: ("Orphaned Some(OrphanColor)", true, ["available extension has no retained common tone, bounded core resolution, or explicit open endpoint"])
+ right: ("Orphaned Some(OrphanColor)", true, ["available extension has no retained common tone, bounded core resolution, or explicit open endpoint"])
+
+---- audio::human_music::mass_witnesses::r13_long_orphan_ninth_is_not_a_short_stab stdout ----
+
+thread 'audio::human_music::mass_witnesses::r13_long_orphan_ninth_is_not_a_short_stab' panicked at src/audio/human_music/mass_witnesses.rs:157:9:
+assertion `left != right` failed: Keys hold equals a stab
+  left: ("Orphaned Some(OrphanColor)", true, ["available extension has no retained common tone, bounded core resolution, or explicit open endpoint"])
+ right: ("Orphaned Some(OrphanColor)", true, ["available extension has no retained common tone, bounded core resolution, or explicit open endpoint"])
+
+---- audio::human_music::mass_witnesses::r13_swiss_witnesses_outweigh_the_offbeat_stab stdout ----
+
+thread 'audio::human_music::mass_witnesses::r13_swiss_witnesses_outweigh_the_offbeat_stab' panicked at src/audio/human_music/mass_witnesses.rs:108:9:
+assertion `left != right` failed: beat 32 is indistinguishable from the stab
+  left: ("Orphaned Some(OrphanColor)", true, ["available extension has no retained common tone, bounded core resolution, or explicit open endpoint"])
+ right: ("Orphaned Some(OrphanColor)", true, ["available extension has no retained common tone, bounded core resolution, or explicit open endpoint"])
+
+
+failures:
+    audio::human_music::mass_witnesses::r13_long_orphan_ninth_is_not_a_short_stab
+    audio::human_music::mass_witnesses::r13_slow_staircase_owes_its_own_justification
+    audio::human_music::mass_witnesses::r13_swiss_witnesses_outweigh_the_offbeat_stab
+    audio::human_music::mass_witnesses::r13_tempo_dilation_changes_the_proof
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 686 filtered out; finished in 0.25s
+
+error: test failed, to rerun pass `--lib`
