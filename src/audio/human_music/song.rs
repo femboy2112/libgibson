@@ -16,8 +16,10 @@
 //! **Song identity** (this object): the coherence contract, the form graph (phrases, families,
 //! exact length), the discourse (roles, closures, culmination, the obligation ledger), the
 //! arrangement envelope (who is seated per phrase), the DeflectedLift backbone timeline
-//! (gestures, cycles, slot grid), and the [`ThematicMap`] — the germ, its hook and cells as
-//! scale-degree contours, and the theme site of every phrase the lead is seated in.
+//! (gestures, cycles, slot grid), the [`ThematicMap`] — the germ, its hook and cells as
+//! scale-degree contours, and the theme site of every phrase the lead is seated in — and the
+//! [`HarmonicMap`]: the DeflectedLift journey (lift, pointer, expected arrival, the deflection
+//! that misses it, the open, home) as relational chart roots.
 //!
 //! Relative coordinates are charted against one declared [`REFERENCE_FRAME`] (Nashville-number
 //! practice: degrees relative to a major-scale reference). A room re-modes them; it never
@@ -27,6 +29,7 @@
 //! articulation, dynamics, timbre, pan, swing, microtiming, passing and approach tones, fills,
 //! discretionary calls and answers, who answers, response latency, density, ornamentation.
 
+use super::backbone::ChartCell;
 use super::contract::{CoherenceContract, CompositionGrammar};
 use super::discourse::DiscourseRole;
 use super::motif::{Handoff, Motif, MotifBank, ThematicTrajectory};
@@ -104,6 +107,14 @@ impl ThematicMap {
     }
 }
 
+/// The song's harmonic identity (DeflectedLift): the chart every room realizes. A room re-modes and
+/// colours it; it never searches for its own journey.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HarmonicMap {
+    /// The journey's relational roots, charted once in the song's reference frame.
+    pub cell: ChartCell,
+}
+
 /// The song: every coordinate a performance must preserve, built before any world or language is
 /// known.
 #[derive(Debug, Clone)]
@@ -121,6 +132,9 @@ pub struct SongMap {
     pub frame: Mode,
     /// The germ and where and what the song states of it.
     pub thematic: ThematicMap,
+    /// The chart (present when the grammar has a backbone — DeflectedLift). The phrase-engine
+    /// grammars have no song-level chart yet: their harmony is still the room's (PARKED).
+    pub harmonic: Option<HarmonicMap>,
 }
 
 impl SongMap {
@@ -140,6 +154,9 @@ impl SongMap {
         };
         let frame = REFERENCE_FRAME;
         let thematic = ThematicMap::build(&plan, frame, seed);
+        let harmonic = plan.backbone.as_ref().map(|_| HarmonicMap {
+            cell: ChartCell::chart(frame, seed),
+        });
         SongMap {
             trace: trace.clone(),
             timeline,
@@ -147,6 +164,7 @@ impl SongMap {
             seed,
             frame,
             thematic,
+            harmonic,
         }
     }
 }

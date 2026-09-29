@@ -12,6 +12,11 @@
 //!   performance planner and every instrument know the spine before a single chord is chosen.
 //! - [`realize`] translates that abstract gesture path into world-specific harmony.
 //!
+//! Round IX moves the chord journey itself upstream: the [`ChartCell`] (lift, pointer, expected,
+//! deflect, open, reset and the satellites as relational [`ChartRoot`]s) is searched ONCE, in the
+//! song's reference frame, and lives in the [`super::song::SongMap`]. [`realize`] re-modes and
+//! colours it for a room; it no longer searches the room's own mode for a cell.
+//!
 //! **The two clocks are one clock now.** Round VI tiled the four gestures one per bar (`bar % 4`)
 //! while the flagship story placed its semantic lift/deflect/open/reset roughly four bars apart, so
 //! one semantic "lift" contained a whole harmonic Lift→Deflect→Open→Reset cycle — and the story's
@@ -601,9 +606,11 @@ fn colour(base: Chord, gesture: HarmonicGesture, depth: u8, alt: bool, s7: bool)
     }
 }
 
-/// Search the world-specific cell: bounded, deterministic, the RNG only breaking exact ties.
-pub fn generate_cell(world: &MusicWorld, seed: u64) -> HarmonicCell {
-    let region = Scale::new(world.tonic_pc, world.mode);
+/// Search the cell in `region`: bounded, deterministic, the RNG only breaking exact ties. Run ONCE,
+/// by the song, in its reference frame ([`ChartCell::chart`]) — never by a room (Round IX: a room
+/// that searched its own mode discovered its own journey).
+fn search_cell(region: &Scale, seed: u64) -> HarmonicCell {
+    let region = *region;
     let tonic = region.tonic_pc;
     let mut rng = Rng::new(seed ^ 0xBACC_B0E1);
     let triad = |d: i32| diatonic_chord(&region, d, false);
@@ -752,6 +759,118 @@ pub fn generate_cell(world: &MusicWorld, seed: u64) -> HarmonicCell {
     }
 }
 
+/// One root of the song's chart, RELATIVE to whatever home it is realized in: a scale degree (the
+/// room's mode gives it its quality — ii in major is ii° in minor, the same function) or a fixed
+/// chromatic interval above the tonic with its own quality (a borrowed chord stays borrowed).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChartRoot {
+    /// A 0-based scale degree of the home.
+    Degree(i32),
+    /// `semitones` above the tonic, sounding `quality` in every room.
+    Chromatic { semitones: i32, quality: Quality },
+}
+
+impl ChartRoot {
+    /// The chart root of `chord` in `region`: its degree when the chord is that degree's diatonic
+    /// triad, otherwise its exact interval and quality above the tonic.
+    fn of(chord: Chord, region: &Scale) -> ChartRoot {
+        (0..7)
+            .find(|&d| diatonic_chord(region, d, false) == chord)
+            .map(ChartRoot::Degree)
+            .unwrap_or(ChartRoot::Chromatic {
+                semitones: (chord.root_pc - region.tonic_pc).rem_euclid(12),
+                quality: chord.quality,
+            })
+    }
+
+    /// The root pitch class this chart root names in `region`.
+    pub fn root_pc(self, region: &Scale) -> i32 {
+        match self {
+            ChartRoot::Degree(d) => region.degree_pitch(d, 4).rem_euclid(12),
+            ChartRoot::Chromatic { semitones, .. } => (region.tonic_pc + semitones).rem_euclid(12),
+        }
+    }
+
+    /// The chord this chart root is in `region` (a degree takes the region's diatonic triad).
+    pub fn chord(self, region: &Scale) -> Chord {
+        match self {
+            ChartRoot::Degree(d) => diatonic_chord(region, d, false),
+            ChartRoot::Chromatic { quality, .. } => Chord::new(self.root_pc(region), quality),
+        }
+    }
+
+    /// The scale degree whose root is pitch class `pc` in `region`, if `pc` is diatonic there.
+    pub fn degree_of_pc(pc: i32, region: &Scale) -> Option<i32> {
+        (0..7).find(|&d| region.degree_pitch(d, 4).rem_euclid(12) == pc.rem_euclid(12))
+    }
+}
+
+/// The song's harmonic chart for the DeflectedLift journey — Lift, the pointer and what it makes
+/// the ear expect, the Deflect that misses it, the Open the miss opens, the Reset home, and each
+/// anchor's prolonging satellite — as RELATIONAL roots ([`ChartRoot`]). Searched once, in the
+/// song's reference frame; every room realizes the same journey in its own mode
+/// ([`ChartCell::realize`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChartCell {
+    pub lift: ChartRoot,
+    pub lift_alt: ChartRoot,
+    /// Always realized as a dominant seventh on its root: the pointer must carry the leading tone.
+    pub pointer: ChartRoot,
+    /// What the pointer makes the ear expect (home).
+    pub expected: ChartRoot,
+    pub deflect: ChartRoot,
+    pub open: ChartRoot,
+    pub reset: ChartRoot,
+    /// The Deflect, Open and Reset anchors' satellites.
+    pub satellites: [ChartRoot; 3],
+}
+
+impl ChartCell {
+    /// Chart the cell: the search run once in `frame` (tonic C — the chart is transposition-free),
+    /// every chord converted to its relative root.
+    pub fn chart(frame: super::theory::Mode, seed: u64) -> ChartCell {
+        let region = Scale::new(0, frame);
+        let c = search_cell(&region, seed);
+        let r = |ch: Chord| ChartRoot::of(ch, &region);
+        ChartCell {
+            lift: r(c.lift),
+            lift_alt: r(c.lift_alt),
+            pointer: ChartRoot::degree_of_pc(c.pointer.root_pc, &region)
+                .map(ChartRoot::Degree)
+                .unwrap_or(ChartRoot::Chromatic {
+                    semitones: c.pointer.root_pc.rem_euclid(12),
+                    quality: Quality::Dom7,
+                }),
+            expected: r(c.expected),
+            deflect: r(c.deflect),
+            open: r(c.open),
+            reset: r(c.reset),
+            satellites: c.satellites.map(r),
+        }
+    }
+
+    /// The chart realized in `region`: every degree takes the region's diatonic triad, the pointer
+    /// its dominant seventh, and the expectation is re-derived from the pointer IN the region (so
+    /// the deflection is measured against what this room actually expects).
+    pub fn realize(&self, region: &Scale) -> HarmonicCell {
+        let pointer = Chord::new(self.pointer.root_pc(region), Quality::Dom7);
+        let expected = expected_chord(
+            expected_target(&pointer, region).unwrap_or(region.tonic_pc),
+            region,
+        );
+        HarmonicCell {
+            lift: self.lift.chord(region),
+            lift_alt: self.lift_alt.chord(region),
+            pointer,
+            expected,
+            deflect: self.deflect.chord(region),
+            open: self.open.chord(region),
+            reset: self.reset.chord(region),
+            satellites: self.satellites.map(|s| s.chord(region)),
+        }
+    }
+}
+
 /// The chord path of one slot: `(beats offset, beats length, chord)`.
 fn slot_path(
     slot: &GestureSlot,
@@ -830,15 +949,16 @@ fn slot_path(
     out
 }
 
-/// Realize the world-independent `timeline` as harmony for `world` under `lang`.
+/// Realize the song's `timeline` and `chart` as harmony in `world`'s room under `lang`. The room
+/// re-modes the chart and colours it; it chooses no root.
 pub fn realize(
     timeline: &BackboneTimeline,
+    chart: &ChartCell,
     world: &MusicWorld,
     lang: &MusicalLanguage,
-    seed: u64,
 ) -> BackboneRealization {
     let region = Scale::new(world.tonic_pc, world.mode);
-    let cell = generate_cell(world, seed);
+    let cell = chart.realize(&region);
     let s7 = world.use_sevenths;
     let mut spans: Vec<ChordSpan> = Vec::new();
     for slot in &timeline.slots {
@@ -923,6 +1043,11 @@ mod tests {
         let tl = IntentTimeline::walk(&trace);
         // The flagship form's phrase starts (verified against the plan in the plan tests).
         BackboneTimeline::build(&tl, 30, &[0, 4, 8, 12, 16, 20, 22, 24, 28], 4, 4)
+    }
+
+    /// The flagship chart (seed 2112, charted in the reference frame).
+    fn chart() -> ChartCell {
+        ChartCell::chart(super::super::song::REFERENCE_FRAME, 2112)
     }
 
     #[test]
@@ -1018,7 +1143,7 @@ mod tests {
         // keeps common tones with it — in every world, at every Deflect slot.
         let tl = flagship();
         for world in MusicWorld::all() {
-            let r = realize(&tl, &world, &MusicalLanguage::default(), 2112);
+            let r = realize(&tl, &chart(), &world, &MusicalLanguage::default());
             assert!(r.deflects.len() >= 3, "{}: too few misses", world.name);
             for w in &r.deflects {
                 assert!(
@@ -1036,7 +1161,7 @@ mod tests {
     #[test]
     fn the_open_follows_from_the_miss_and_reset_is_home() {
         for world in MusicWorld::all() {
-            let c = generate_cell(&world, 2112);
+            let c = chart().realize(&Scale::new(world.tonic_pc, world.mode));
             assert!(
                 common_tones(&c.open, &c.deflect) >= 1,
                 "{}: open unrelated to the deflection",
@@ -1052,11 +1177,13 @@ mod tests {
     fn realization_is_deterministic_and_world_specific() {
         let tl = flagship();
         let lang = MusicalLanguage::default();
-        let a = realize(&tl, &MusicWorld::black_ice(), &lang, 7);
-        let b = realize(&tl, &MusicWorld::black_ice(), &lang, 7);
+        let chart = ChartCell::chart(super::super::song::REFERENCE_FRAME, 7);
+        let a = realize(&tl, &chart, &MusicWorld::black_ice(), &lang);
+        let b = realize(&tl, &chart, &MusicWorld::black_ice(), &lang);
         assert_eq!(a.cell, b.cell);
         assert_eq!(a.spans.len(), b.spans.len());
-        let v = realize(&tl, &MusicWorld::vapor95(), &lang, 7);
+        // The same chart sounds in another home (absolute roots move with the room)...
+        let v = realize(&tl, &chart, &MusicWorld::vapor95(), &lang);
         assert_ne!(a.cell.signature(), v.cell.signature());
         // The spans cover the piece and carry the gesture of their slot.
         let end = a
@@ -1073,13 +1200,19 @@ mod tests {
     #[test]
     fn the_simple_language_moves_slower_but_is_the_same_spine() {
         let tl = flagship();
+        let chart = ChartCell::chart(super::super::song::REFERENCE_FRAME, 1);
         let f = realize(
             &tl,
+            &chart,
             &MusicWorld::black_ice(),
             &MusicalLanguage::fusion_conversation(),
-            1,
         );
-        let s = realize(&tl, &MusicWorld::black_ice(), &MusicalLanguage::simple(), 1);
+        let s = realize(
+            &tl,
+            &chart,
+            &MusicWorld::black_ice(),
+            &MusicalLanguage::simple(),
+        );
         assert!(s.spans.len() < f.spans.len());
         assert_eq!(s.cell.signature(), f.cell.signature());
         assert_eq!(s.deflects.len(), f.deflects.len());
@@ -1113,7 +1246,7 @@ mod tests {
         let world = MusicWorld::black_ice();
         let lang = MusicalLanguage::default();
         let prepared_misses = |t: &BackboneTimeline| {
-            realize(t, &world, &lang, 2112)
+            realize(t, &chart(), &world, &lang)
                 .deflects
                 .iter()
                 .filter(|w| w.prepared && w.actual.root_pc != w.expected.root_pc)

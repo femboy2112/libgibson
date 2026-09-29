@@ -265,13 +265,14 @@ impl PerformancePlan {
         let total_beats = plan.form.total_beats;
         let targets = plan.targets();
 
-        // 1. Harmony: the backbone realized in this world and language, or the phrase engine.
-        let (mut chords, mut deflects, home_chord) = match &plan.backbone {
-            Some(tl) => {
-                let r = super::backbone::realize(tl, world, &lang, seed);
+        // 1. Harmony: the song's chart realized in this room and language (Round IX: the room
+        //    re-modes and colours the chart; it no longer searches its own), or the phrase engine.
+        let (mut chords, mut deflects, home_chord) = match (&plan.backbone, &song.harmonic) {
+            (Some(tl), Some(hm)) => {
+                let r = super::backbone::realize(tl, &hm.cell, world, &lang);
                 (r.spans, r.deflects, Some(r.cell.reset))
             }
-            None => (
+            _ => (
                 HarmonyEngine::new(world, seed).generate(&targets, plan.contract.resolution),
                 Vec::new(),
                 None,

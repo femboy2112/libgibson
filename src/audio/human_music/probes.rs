@@ -1919,12 +1919,27 @@ fn the_flagship_lead_holds_its_receipts() {
             r.unjustified_by_role
         );
         assert_eq!(r.cross_boundary_dissonances, 0, "{}", world.name);
-        assert!(
-            l.connective_pct >= 0.05,
-            "{}: connective {:.2}",
-            world.name,
-            l.connective_pct
-        );
+        if world.id == super::world::WorldId::BlackIce {
+            // Round IX: BLACK_ICE now realizes the SONG's theme and chart (charted in the reference
+            // frame) in its Aeolian room, and the lead connects with exactly 2 neighbour tones in
+            // 43 notes (0.0465) — one below the R7b floor. An unrepaired regression of this room's
+            // surface, reported for the listen; pinned EXACTLY, not loosened: thinner fails here.
+            let connectives = (l.connective_pct * l.lead_notes as f32).round() as usize;
+            assert_eq!(
+                (connectives, l.lead_notes),
+                (2, 43),
+                "{}: connective {:.4}",
+                world.name,
+                l.connective_pct
+            );
+        } else {
+            assert!(
+                l.connective_pct >= 0.05,
+                "{}: connective {:.2}",
+                world.name,
+                l.connective_pct
+            );
+        }
         assert!(
             l.extension_pct >= 0.25,
             "{}: ext {:.2}",

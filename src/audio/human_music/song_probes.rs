@@ -9,7 +9,7 @@
 //! the chart, and the idiom rewrote the chart's rhythm through a field no song coordinate owned.
 //! Each is replaced by the law it witnessed when that law lands (the git history keeps the flip).
 
-use super::backbone::HarmonicGesture;
+use super::backbone::{ChartRoot, HarmonicGesture};
 use super::contract::CompositionGrammar;
 use super::functor::{compose_full, perform, Composition};
 use super::language::MusicalLanguage;
@@ -17,7 +17,6 @@ use super::performance::PerformanceOptions;
 use super::score::Role;
 use super::semantic::deflected_lift_trace;
 use super::song::{SongMap, ThemeSite};
-use super::theory::Scale;
 use super::world::MusicWorld;
 
 const SEED: u64 = 2112;
@@ -33,11 +32,6 @@ fn flagship(world: &MusicWorld, language: MusicalLanguage) -> Composition {
             ..PerformanceOptions::default()
         },
     )
-}
-
-/// The 0-based scale degree of pitch class `pc` in `region`, or `None` if it is not diatonic.
-fn degree_of(pc: i32, region: &Scale) -> Option<i32> {
-    (0..7).find(|&d| region.degree_pitch(d, 4).rem_euclid(12) == pc.rem_euclid(12))
 }
 
 /// The four acceptance performances of ONE song: three rooms speaking the flagship idiom, and the
@@ -126,38 +120,61 @@ fn the_theme_is_the_songs() {
     }
 }
 
-/// **Witness 2 (defect): the room picks the chart.** The plan carries only the abstract gestures
-/// (Lift/Deflect/Open/Reset); `backbone::realize(timeline, world, ..)` searches the chord cell in
-/// the world's own mode, so rooms of different modes discover different journeys. Measured as
-/// scale degrees in each room (so a mere transposition would compare equal): the Open lands on a
-/// different degree in the Aeolian room than in the Ionian rooms.
-#[test]
-fn witness_the_world_picks_the_chart() {
-    let fusion = MusicalLanguage::fusion_conversation();
-    let bi = flagship(&MusicWorld::black_ice(), fusion);
-    let tl = bi
-        .song
+/// The chart landmarks a performance must sound: every slot's entry anchor at its downbeat and the
+/// pointer as the last harmony of every Lift, each as `(beat, what, chart root)`.
+fn landmarks(song: &SongMap) -> Vec<(f64, &'static str, ChartRoot)> {
+    let tl = song
         .plan
         .backbone
-        .clone()
+        .as_ref()
         .expect("DeflectedLift has a backbone");
-    let journey = |world: &MusicWorld| -> [Option<i32>; 4] {
-        let region = Scale::new(world.tonic_pc, world.mode);
-        let cell = super::backbone::realize(&tl, world, &fusion, SEED).cell;
-        [cell.lift, cell.deflect, cell.open, cell.reset].map(|c| degree_of(c.root_pc, &region))
-    };
-    let [a, b, c] = MusicWorld::all().map(|w| journey(&w));
-    eprintln!(
-        "degree journey [lift, deflect, open, reset]: BLACK_ICE {a:?}  VAPOR95 {b:?}  SWISS {c:?}"
-    );
-    assert_ne!(
-        a, b,
-        "defect: the same plan realizes a different degree journey per room"
-    );
-    assert_eq!(
-        b, c,
-        "rooms of one mode agree (the search is transposition-invariant)"
-    );
+    let cell = song.harmonic.expect("DeflectedLift has a chart").cell;
+    let mut v = Vec::new();
+    for sl in &tl.slots {
+        let root = match sl.gesture {
+            HarmonicGesture::Lift => cell.lift,
+            HarmonicGesture::Deflect => cell.deflect,
+            HarmonicGesture::Open => cell.open,
+            HarmonicGesture::Reset => cell.reset,
+        };
+        v.push((sl.start_beat(), sl.gesture.label(), root));
+        if sl.gesture == HarmonicGesture::Lift {
+            let end = sl.end_beat().min(song.plan.form.total_beats);
+            v.push((end - 1e-3, "pointer", cell.pointer));
+        }
+    }
+    v
+}
+
+/// **Law 2 (was witness 2): the chart is the song's.** Every room sounds the SAME relational
+/// journey: at every slot's downbeat the chart's anchor, and the pointer closing every Lift — each
+/// root read in the region in force there. On 0b4483d the Aeolian room searched its own cell and
+/// opened on degree 2 (bIII) where the Ionian rooms opened on degree 3 (IV).
+#[test]
+fn the_chart_is_the_songs() {
+    let song = flagship_song();
+    let marks = landmarks(&song);
+    let kinds: std::collections::BTreeSet<&str> = marks.iter().map(|m| m.1).collect();
+    assert_eq!(kinds.len(), 5, "every landmark kind is charted: {kinds:?}");
+    for (label, c) in acceptance(&song) {
+        let mut wrong = Vec::new();
+        for &(beat, what, root) in &marks {
+            let heard = c
+                .score
+                .chords
+                .iter()
+                .find(|sp| {
+                    sp.start_beat <= beat + 1e-6 && beat < sp.start_beat + sp.dur_beats as f64
+                })
+                .map(|sp| sp.chord.root_pc);
+            let region = c.perf.region_at(beat);
+            if heard != Some(root.root_pc(&region)) {
+                wrong.push((beat, what, root, heard));
+            }
+        }
+        eprintln!("{label}: {} landmarks, wrong {:?}", marks.len(), wrong);
+        assert!(wrong.is_empty(), "{label}: the room played another journey");
+    }
 }
 
 /// **Witness 3 (defect): the idiom silently rewrites the chart's rhythm.** Nothing in the plan
@@ -182,8 +199,9 @@ fn witness_the_language_rewrites_the_chart_rhythm() {
         .backbone
         .clone()
         .expect("DeflectedLift has a backbone");
+    let chart = s.song.harmonic.expect("DeflectedLift has a chart").cell;
     let onsets = |lang: &MusicalLanguage| -> Vec<f64> {
-        super::backbone::realize(&tl, &world, lang, SEED)
+        super::backbone::realize(&tl, &chart, &world, lang)
             .spans
             .iter()
             .map(|sp| sp.start_beat)
@@ -209,7 +227,7 @@ fn witness_the_language_rewrites_the_chart_rhythm() {
         .find(|sl| sl.gesture == HarmonicGesture::Lift && sl.bars >= 4)
         .expect("the flagship has a statement-length Lift");
     let pointer_onset = |lang: &MusicalLanguage| -> f64 {
-        super::backbone::realize(&tl, &world, lang, SEED)
+        super::backbone::realize(&tl, &chart, &world, lang)
             .spans
             .iter()
             .filter(|sp| sp.start_beat >= lift.start_beat() && sp.start_beat < lift.end_beat())

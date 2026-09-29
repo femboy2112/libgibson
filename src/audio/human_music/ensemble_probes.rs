@@ -59,9 +59,10 @@ fn fingerprint(c: &Composition) -> u64 {
 /// re-pins these — and says so in its commit.
 ///
 /// Round IX re-pinned BLACK_ICE only, because the SONG it plays changed, not the band: the theme
-/// is the SongMap's now (the germ charted in the reference frame; the Aeolian room used to choose
-/// its own). VAPOR95 and SWISS_SIGNAL, whose rooms already chose that germ, are unchanged since R7b.
-/// BLACK_ICE's R7b-era pin was `0xb458_00e8_b7ec_8bb7`.
+/// and the chart are the SongMap's now (both charted in the reference frame; the Aeolian room used
+/// to choose its own germ and search its own cell). VAPOR95 and SWISS_SIGNAL, whose rooms already
+/// chose that germ and whose own search is the song's chart transposed, are unchanged since R7b.
+/// BLACK_ICE's R7b-era pin was `0xb458_00e8_b7ec_8bb7` (theme moved: `0xeade_0b75_3df1_5370`).
 #[test]
 fn the_independent_control_is_the_r7b_composition() {
     let got: Vec<(String, u64, bool)> = MusicWorld::all()
@@ -92,7 +93,7 @@ fn r8_pairs(world: super::world::WorldId) -> Vec<usize> {
 
 /// `MusicWorld::all()` order: BLACK_ICE, VAPOR95, SWISS_SIGNAL.
 const R7B_PINS: [u64; 3] = [
-    0xeade_0b75_3df1_5370,
+    0xb195_8b4b_761c_df10,
     0xf987_f0cf_fd6b_0f4b,
     0xa3e6_0cd3_b8b2_86e0,
 ];
@@ -315,9 +316,10 @@ fn the_surgical_band_is_r7b_minus_its_garbage() {
 }
 
 /// `MusicWorld::all()` order: BLACK_ICE, VAPOR95, SWISS_SIGNAL. Round IX re-pinned BLACK_ICE only
-/// (its song changed, the frozen R8 solver did not); its 5644c96 pin was `0x1f97_14ee_5fea_d745`.
+/// (its song changed, the frozen R8 solver did not); its 5644c96 pin was `0x1f97_14ee_5fea_d745`
+/// (theme moved: `0x99f8_9e8f_9be1_9f49`).
 const R8_PINS: [u64; 3] = [
-    0x99f8_9e8f_9be1_9f49,
+    0xb57a_1311_b903_e6d4,
     0xe6bb_ade7_2f60_1d07,
     0xef3d_6bdc_dd49_bd94,
 ];
