@@ -603,7 +603,7 @@ impl PerformancePlan {
                 Some(r) => {
                     let _ = writeln!(
                         s,
-                        "  call a{} {:<5} {:>6.2}..{:<6.2} -> {:<5} {:+.2}b {:<8}{}{}",
+                        "  call {} {:<5} {:>6.2}..{:<6.2} -> {:<5} {:+.2}b {:<8}{}{}",
                         c.action,
                         c.initiator.label(),
                         c.start_beat,
@@ -622,7 +622,7 @@ impl PerformancePlan {
                 None => {
                     let _ = writeln!(
                         s,
-                        "  call a{} {:<5} {:>6.2}..{:<6.2} -> (no room)",
+                        "  call {} {:<5} {:>6.2}..{:<6.2} -> (no room)",
                         c.action,
                         c.initiator.label(),
                         c.start_beat,
