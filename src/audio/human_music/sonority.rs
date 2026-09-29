@@ -1540,6 +1540,24 @@ impl EnsembleSonorityDiagnostics {
         .collect();
         let _ = writeln!(s, "  unowned by role pair: {}", pairs.join(" "));
         let _ = writeln!(s, "  non-root bass events: {}", self.non_root_bass.len());
+        if !self.non_root_bass.is_empty() {
+            // Why each non-root floor is there: its function over the chord, and the bass line's
+            // own reason (tag/pitch function) — the justification, not just the count.
+            let mut by_function: BTreeMap<&str, usize> = BTreeMap::new();
+            let mut by_reason: BTreeMap<&str, usize> = BTreeMap::new();
+            for (_, _, _, f, why) in &self.non_root_bass {
+                *by_function.entry(f.as_str()).or_default() += 1;
+                *by_reason.entry(why.as_str()).or_default() += 1;
+            }
+            let join = |m: &BTreeMap<&str, usize>| {
+                m.iter()
+                    .map(|(k, n)| format!("{k}={n}"))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            };
+            let _ = writeln!(s, "    by floor function: {}", join(&by_function));
+            let _ = writeln!(s, "    by reason (tag/function): {}", join(&by_reason));
+        }
         for w in &self.worst {
             for line in w.lines() {
                 let _ = writeln!(s, "    {line}");

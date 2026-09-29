@@ -22,6 +22,7 @@
 //!                                                                          # independent vs coupled x3
 //!   cargo run --release --example human_music_lab -- --coupling=independent # the R7b realization
 //!   cargo run --release --example human_music_lab -- --sonority-detail=unowned  # every offending slice
+//!   cargo run --release --example human_music_lab -- --sonority-detail=nonroot  # every non-root bass
 //!   cargo run --release --example human_music_lab -- --harmonic-reference   # same Score, clean timbre
 //!   cargo run --release --example human_music_lab -- --production=nosat,dry  # remove single factors
 //!   cargo run --release --example human_music_lab -- --stems --pair-stems    # solo + pitched pairs
@@ -433,10 +434,8 @@ fn main() -> std::io::Result<()> {
         // Round VIII: the UNION the band sounds — nominal durations, then the audible lifetimes on
         // this world's envelopes (a pad tail under the next chord, a stab already silent).
         let policy = ColorPolicy::for_world(world.id, &perf.language);
-        print!(
-            "{}",
-            EnsembleSonorityDiagnostics::measure(&score, &perf.contexts, &policy, &[]).report()
-        );
+        let sonority = EnsembleSonorityDiagnostics::measure(&score, &perf.contexts, &policy, &[]);
+        print!("{}", sonority.report());
         let audible = EnsembleSonorityDiagnostics::measure_audible(
             &score,
             &perf.contexts,
@@ -448,6 +447,15 @@ fn main() -> std::io::Result<()> {
             print!("{}", r.report());
         }
         // --sonority-detail=unowned|missing|flip|bass|all: every problem slice of that class, spelled.
+        // --sonority-detail=nonroot: every non-root bass note with its function and its reason.
+        if arg("--sonority-detail=").as_deref() == Some("nonroot") {
+            for (beat, pitch, chord, f, why) in &sonority.non_root_bass {
+                println!(
+                    "  non-root bass {beat:>7.2} {:4} over {chord:7} {f:9} {why}",
+                    note_name(*pitch)
+                );
+            }
+        }
         if let Some(which) = arg("--sonority-detail=") {
             use gibson::audio::human_music::score::Role;
             use gibson::audio::human_music::sonority::{
