@@ -67,6 +67,8 @@ pub mod sonority;
 pub mod support;
 pub mod surgical;
 pub mod synth;
+#[cfg(test)]
+mod temporal_witnesses;
 pub mod theory;
 pub mod timeline;
 pub mod voicing;

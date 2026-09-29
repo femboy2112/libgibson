@@ -1657,3 +1657,20 @@ mod tests {
         assert_eq!(resolve_roles(&passing, p)[1], MaterialRole::Connector);
     }
 }
+
+#[cfg(test)]
+mod r12_landing_witness {
+    #[test]
+    #[ignore = "R12 pre-intervention falsifier: chord landing uses color-inclusive helper"]
+    fn chord_landing_must_choose_a_chord_member() {
+        use crate::audio::human_music::{context, harmony::ChordSpan, theory::*};
+        let chord = Chord::new(0, Quality::Maj7);
+        let contexts = context::analyze(
+            &[ChordSpan::test(0.0, 4.0, chord)],
+            &Scale::new(0, Mode::Ionian),
+        );
+        let ctx = &contexts[0];
+        let p = 60 + ctx.palette.tensions[0];
+        assert!(chord.contains_pc(pitch_class(super::nearest_stable(ctx, p))));
+    }
+}
