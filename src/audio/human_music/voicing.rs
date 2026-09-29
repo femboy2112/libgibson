@@ -21,7 +21,7 @@
 //!
 //! [`VoicingDiagnostics`] measures what the pad and keys actually sounded, from the Score.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::backbone::HarmonicGesture;
 use super::context::{context_at, HarmonicContext};
@@ -1491,11 +1491,14 @@ fn classify(v: &[Midi], ctx: &HarmonicContext) -> &'static str {
     }
 }
 
-fn measure_role(
+/// One role's voicings in `score` — its notes grouped by onset, a staged entry joined to the voicing
+/// it extends — as `(onset, sorted distinct pitches, the harmony)`; single-note onsets and onsets
+/// outside every harmony are not voicings.
+fn voicing_groups<'c>(
     score: &Score,
-    contexts: &[HarmonicContext],
+    contexts: &'c [HarmonicContext],
     keep: impl Fn(&Note) -> bool,
-) -> RoleVoicings {
+) -> Vec<(f64, Vec<Midi>, &'c HarmonicContext)> {
     // Group by onset: (pitches, earliest end) per onset.
     let mut by_onset: BTreeMap<i64, (Vec<Midi>, f64)> = BTreeMap::new();
     for n in score.notes.iter().filter(|n| keep(n)) {
@@ -1521,20 +1524,30 @@ fn measure_role(
         }
         groups.push((beat, pitches, end));
     }
+    groups
+        .into_iter()
+        .filter_map(|(beat, mut v, _)| {
+            v.sort_unstable();
+            v.dedup();
+            if v.len() < 2 {
+                return None;
+            }
+            Some((beat, v, context_at(contexts, beat)?))
+        })
+        .collect()
+}
+
+fn measure_role(
+    score: &Score,
+    contexts: &[HarmonicContext],
+    keep: impl Fn(&Note) -> bool,
+) -> RoleVoicings {
     let mut out = RoleVoicings::default();
     let mut prev: Option<(Vec<Midi>, &HarmonicContext)> = None;
     let mut motion = 0.0f32;
     let mut common = 0usize;
     let mut pairs = 0usize;
-    for (beat, mut v, _) in groups {
-        v.sort_unstable();
-        v.dedup();
-        if v.len() < 2 {
-            continue;
-        }
-        let Some(ctx) = context_at(contexts, beat) else {
-            continue;
-        };
+    for (_, v, ctx) in voicing_groups(score, contexts, keep) {
         out.voicings += 1;
         let g = &ctx.palette.guide_tones;
         if !g.iter().all(|pc| v.iter().any(|&p| pitch_class(p) == *pc)) {
@@ -1568,6 +1581,149 @@ fn measure_role(
     out
 }
 
+/// The pad's voicings (its `"pad"` notes).
+fn is_pad_voice(n: &Note) -> bool {
+    n.role == Role::Pad && n.prov.role_note == "pad"
+}
+
+/// The keys' voicings (their `"hold"` / `"comp"` notes — not their material lines).
+fn is_keys_voice(n: &Note) -> bool {
+    n.role == Role::Keys && matches!(n.prov.role_note, "hold" | "comp")
+}
+
+/// How much one role's harmonic bed MOVES (Round VIIIb) — measured beside the vertical metrics so an
+/// optimizer can never again buy a lower collision count with a doubled bed motion unseen (Round
+/// VIII: pad motion 4.7 -> 7.6 semitones while "unowned m2/m9" went to zero).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct RoleStability {
+    /// Voicings measured (the same onset groups as [`RoleVoicings`]).
+    pub voicings: usize,
+    /// Semitone motion ([`nn_motion`]) between consecutive voicings: mean, median, maximum.
+    pub mean_motion: f32,
+    pub median_motion: f32,
+    pub max_motion: f32,
+    /// Mean exact pitches a voicing keeps from the one before it.
+    pub mean_common_tones: f32,
+    /// Against a reference realization: voicings whose onset both voice, how many of those sound
+    /// different pitches, and onsets voiced by only one of the two.
+    pub matched: usize,
+    pub changed: usize,
+    pub unmatched: usize,
+}
+
+impl RoleStability {
+    /// The share of matched voicings that changed (0 without a reference).
+    pub fn changed_share(&self) -> f32 {
+        if self.matched == 0 {
+            0.0
+        } else {
+            self.changed as f32 / self.matched as f32
+        }
+    }
+}
+
+/// Harmonic stability of the pad and the keys, optionally against a reference realization of the
+/// same composition (the R7b band, for the surgical arm).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct HarmonicStability {
+    pub pad: RoleStability,
+    pub keys: RoleStability,
+    /// Whether the `matched`/`changed` fields compare against a reference.
+    pub referenced: bool,
+}
+
+fn role_stability(
+    score: &Score,
+    reference: Option<&Score>,
+    contexts: &[HarmonicContext],
+    keep: fn(&Note) -> bool,
+) -> RoleStability {
+    let groups = voicing_groups(score, contexts, keep);
+    let mut out = RoleStability {
+        voicings: groups.len(),
+        ..RoleStability::default()
+    };
+    let mut motions: Vec<f32> = Vec::new();
+    let mut common = 0usize;
+    for w in groups.windows(2) {
+        motions.push(nn_motion(&w[0].1, &w[1].1));
+        common += w[1].1.iter().filter(|p| w[0].1.contains(p)).count();
+    }
+    if !motions.is_empty() {
+        let n = motions.len() as f32;
+        out.mean_motion = motions.iter().sum::<f32>() / n;
+        out.mean_common_tones = common as f32 / n;
+        out.max_motion = motions.iter().copied().fold(0.0, f32::max);
+        motions.sort_by(f32::total_cmp);
+        let m = motions.len();
+        out.median_motion = if m % 2 == 1 {
+            motions[m / 2]
+        } else {
+            (motions[m / 2 - 1] + motions[m / 2]) / 2.0
+        };
+    }
+    if let Some(r) = reference {
+        let theirs = voicing_groups(r, contexts, keep);
+        let key = |b: f64| (b * 1000.0).round() as i64;
+        let mine: BTreeMap<i64, &Vec<Midi>> = groups.iter().map(|(b, v, _)| (key(*b), v)).collect();
+        for (b, v, _) in &theirs {
+            match mine.get(&key(*b)) {
+                Some(m) => {
+                    out.matched += 1;
+                    out.changed += usize::from(*m != v);
+                }
+                None => out.unmatched += 1,
+            }
+        }
+        let ours: BTreeSet<i64> = theirs.iter().map(|(b, _, _)| key(*b)).collect();
+        out.unmatched += mine.keys().filter(|k| !ours.contains(k)).count();
+    }
+    out
+}
+
+impl HarmonicStability {
+    /// Measure the pad and keys voicings of `score` over `contexts`; with a `reference` (another
+    /// realization of the SAME composition), also how many voicings differ from it.
+    pub fn measure(
+        score: &Score,
+        contexts: &[HarmonicContext],
+        reference: Option<&Score>,
+    ) -> HarmonicStability {
+        HarmonicStability {
+            pad: role_stability(score, reference, contexts, is_pad_voice),
+            keys: role_stability(score, reference, contexts, is_keys_voice),
+            referenced: reference.is_some(),
+        }
+    }
+
+    /// A compact report, one line per role.
+    pub fn report(&self) -> String {
+        use std::fmt::Write;
+        let mut s = String::from(
+            "harmonic stability (how far the bed moves between voicings — beside the vertical metrics):\n",
+        );
+        for (name, r) in [("pad", &self.pad), ("keys", &self.keys)] {
+            let _ = write!(
+                s,
+                "  {name}: voicings={} motion mean={:.2} median={:.2} max={:.1} common_tones={:.2}",
+                r.voicings, r.mean_motion, r.median_motion, r.max_motion, r.mean_common_tones
+            );
+            if self.referenced {
+                let _ = write!(
+                    s,
+                    " | vs reference: changed {}/{} ({:.0}%) unmatched={}",
+                    r.changed,
+                    r.matched,
+                    100.0 * r.changed_share(),
+                    r.unmatched
+                );
+            }
+            s.push('\n');
+        }
+        s
+    }
+}
+
 impl VoicingDiagnostics {
     /// Measure the pad (`"pad"` notes) and keys (`"hold"` / `"comp"` notes) voicings of `score`
     /// against the harmonies in `contexts`, grouping each role's notes by onset (a staged entry —
@@ -1575,12 +1731,8 @@ impl VoicingDiagnostics {
     /// voicing). Single-note onsets are not voicings and are skipped.
     pub fn measure(score: &Score, contexts: &[HarmonicContext]) -> VoicingDiagnostics {
         VoicingDiagnostics {
-            pad: measure_role(score, contexts, |n| {
-                n.role == Role::Pad && n.prov.role_note == "pad"
-            }),
-            keys: measure_role(score, contexts, |n| {
-                n.role == Role::Keys && matches!(n.prov.role_note, "hold" | "comp")
-            }),
+            pad: measure_role(score, contexts, is_pad_voice),
+            keys: measure_role(score, contexts, is_keys_voice),
         }
     }
 
@@ -1619,6 +1771,58 @@ impl VoicingDiagnostics {
 mod tests {
     use super::super::theory::Quality;
     use super::*;
+
+    /// The stability report measures the SAME voicings as the voicing diagnostics (its mean motion and
+    /// common tones agree), adds the median and the maximum, and counts — onset by onset — the
+    /// voicings a reference realization voiced differently.
+    #[test]
+    fn stability_measures_the_bed_and_what_moved_from_a_reference() {
+        use super::super::context::analyze;
+        use super::super::form::SectionKind;
+        use super::super::harmony::ChordSpan;
+        use super::super::score::Provenance;
+        use super::super::theory::{Mode, Scale};
+        let spans: Vec<ChordSpan> = [(0, Quality::Maj7), (9, Quality::Min7), (5, Quality::Maj7)]
+            .iter()
+            .enumerate()
+            .map(|(i, &(r, q))| ChordSpan::test(4.0 * i as f64, 4.0, Chord::new(r, q)))
+            .collect();
+        let ctx = analyze(&spans, &Scale::new(0, Mode::Ionian));
+        let bed = |voicings: &[[Midi; 3]]| {
+            let mut s = Score::new(120.0, 4.0, 12.0);
+            for (i, v) in voicings.iter().enumerate() {
+                for &p in v {
+                    let mut n = Note::new(
+                        4.0 * i as f64,
+                        3.9,
+                        p,
+                        0.7,
+                        Role::Pad,
+                        Provenance::new(SectionKind::A),
+                    );
+                    n.prov.role_note = "pad";
+                    s.notes.push(n);
+                }
+            }
+            s
+        };
+        let r7b = bed(&[[64, 67, 71], [64, 67, 72], [64, 69, 72]]);
+        let moved = bed(&[[64, 67, 71], [52, 67, 84], [64, 69, 72]]);
+        let st = HarmonicStability::measure(&r7b, &ctx, None);
+        let vd = VoicingDiagnostics::measure(&r7b, &ctx);
+        assert_eq!(st.pad.voicings, vd.pad.voicings);
+        assert!((st.pad.mean_motion - vd.pad.mean_motion).abs() < 1e-6);
+        assert!((st.pad.mean_common_tones - vd.pad.mean_common_tones).abs() < 1e-6);
+        // [64,67,71]->[64,67,72] moves 1, ->[64,69,72] moves 2 (nearest-neighbour, symmetric).
+        assert_eq!((st.pad.median_motion, st.pad.max_motion), (1.5, 2.0));
+        let sm = HarmonicStability::measure(&moved, &ctx, Some(&r7b));
+        assert_eq!(
+            (sm.pad.matched, sm.pad.changed, sm.pad.unmatched),
+            (3, 1, 0)
+        );
+        assert!(sm.pad.mean_motion > st.pad.mean_motion);
+        assert!(sm.report().contains("changed 1/3"));
+    }
 
     #[test]
     fn common_tones_reduce_motion_between_related_chords() {
