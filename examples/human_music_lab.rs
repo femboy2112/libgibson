@@ -51,7 +51,7 @@ use gibson::audio::human_music::sonority::{ColorPolicy, EnsembleSonorityDiagnost
 use gibson::audio::human_music::synth::{HumanMusicSynth, ProductionControl, StemMask};
 use gibson::audio::human_music::theory::note_name;
 use gibson::audio::human_music::timeline::IntentTimeline;
-use gibson::audio::human_music::voicing::VoicingDiagnostics;
+use gibson::audio::human_music::voicing::{HarmonicStability, VoicingDiagnostics};
 use gibson::audio::human_music::witness;
 use gibson::audio::human_music::{demo_trace, MusicWorld, WorldId};
 use gibson::audio::render::{OfflineRenderer, RenderResult};
@@ -110,9 +110,11 @@ fn perf_options() -> PerformanceOptions {
             Some("simple") => MusicalLanguage::simple(),
             _ => MusicalLanguage::fusion_conversation(),
         },
+        // The default is the R7b band (the listen preferred it to Round VIII's coupled bed);
+        // `r8` renders the rejected negative control.
         coupling: match arg("--coupling=").as_deref() {
-            Some("independent") | Some("off") => EnsembleCoupling::Independent,
-            _ => EnsembleCoupling::Coupled,
+            Some("r8") | Some("coupled") => EnsembleCoupling::CoupledR8,
+            _ => EnsembleCoupling::Independent,
         },
         actions: arg("--actions=").as_deref() != Some("off"),
         responses: match arg("--responses=").as_deref() {
@@ -459,6 +461,26 @@ fn main() -> std::io::Result<()> {
         print!(
             "{}",
             VoicingDiagnostics::measure(&score, &perf.contexts).report()
+        );
+        // Round VIIIb: how far the bed moves — and, off the R7b default, how much of it moved away
+        // from the R7b realization of the SAME composition (the prior the ear preferred).
+        let opts = perf_options();
+        let r7b = (opts.coupling != EnsembleCoupling::Independent).then(|| {
+            compose_full(
+                &trace,
+                &world,
+                seed,
+                Some(grammar),
+                PerformanceOptions {
+                    coupling: EnsembleCoupling::Independent,
+                    ..opts
+                },
+            )
+            .score
+        });
+        print!(
+            "{}",
+            HarmonicStability::measure(&score, &perf.contexts, r7b.as_ref()).report()
         );
         // Round VIII: the UNION the band sounds — nominal durations, then the audible lifetimes on
         // this world's envelopes (a pad tail under the next chord, a stab already silent).
@@ -889,9 +911,9 @@ fn ab(
     ab_coupling(out_dir, sr, block, seed, trace)
 }
 
-/// Round VIII's A/B: the SAME composition realized by the independent control (each player
-/// projecting the shared material alone — the R7b band) and by the coupled band (one harmonic
-/// ledger), in every world, with the vertical numbers beside each file.
+/// The coupling A/B: the SAME composition realized by the R7b band (each player projecting the
+/// shared material alone — the default the listen preferred) and by Round VIII's coupled bed (the
+/// rejected negative control), in every world, with the vertical numbers beside each file.
 fn ab_coupling(
     out_dir: &std::path::Path,
     sr: SampleRate,
@@ -899,11 +921,13 @@ fn ab_coupling(
     seed: u64,
     trace: &SemanticTrace,
 ) -> std::io::Result<()> {
-    println!("\nHumanMusic A/B — independent (R7b) vs coupled (R8) realization, seed={seed}\n");
+    println!(
+        "\nHumanMusic A/B — R7b (independent) vs R8 (coupled, rejected) realization, seed={seed}\n"
+    );
     for world in MusicWorld::all() {
         for (name, coupling) in [
-            ("independent", EnsembleCoupling::Independent),
-            ("coupled", EnsembleCoupling::Coupled),
+            ("r7b", EnsembleCoupling::Independent),
+            ("r8", EnsembleCoupling::CoupledR8),
         ] {
             let c = compose_full(
                 trace,

@@ -135,7 +135,7 @@ fn realize(
             let bass = super::bass::realize_bass(perf, plan, world, &lead.notes, &keys);
             (pad, keys, bass)
         }
-        EnsembleCoupling::Coupled => {
+        EnsembleCoupling::CoupledR8 => {
             let r = realize_coupled(world, seed, plan, perf, &lead.notes);
             score.vertical_decisions = r.decisions;
             score.support_report = Some(r.support);
@@ -401,7 +401,7 @@ fn add_sfx_and_provenance(
         // Round VIII: the sting joins the band's one harmony — under the coupled realization it keeps
         // its shape and pitch classes (the chord verdict and an owned tritone are untouched) and moves
         // by whole octaves to the placement with the fewest unowned clashes against what sounds.
-        if perf.coupling == EnsembleCoupling::Coupled && v.pitches != SfxEvent::UNPITCHED {
+        if perf.coupling == EnsembleCoupling::CoupledR8 && v.pitches != SfxEvent::UNPITCHED {
             if let Some((shift, reason)) = sfx_octave(score, perf, world, kind, at, &v) {
                 v.pitches = v.pitches.map(|p| p + shift);
                 score

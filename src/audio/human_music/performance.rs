@@ -131,9 +131,9 @@ fn gesture_ix(g: HarmonicGesture) -> usize {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PerformanceOptions {
     pub language: MusicalLanguage,
-    /// How the pitched players' simultaneous notes are chosen: `Coupled` (Round VIII — one harmonic
-    /// state every player realizes against) or `Independent` (the R7b control: each player solves
-    /// its own pitches and the union is never evaluated).
+    /// How the pitched players' simultaneous notes are chosen: `Independent` (the R7b band, the
+    /// default the listen prefers) or `CoupledR8` (the Round VIII joint bed — the rejected negative
+    /// control).
     pub coupling: EnsembleCoupling,
     /// Build the action plan (false = the mood-without-action probe).
     pub actions: bool,
@@ -148,7 +148,7 @@ impl Default for PerformanceOptions {
     fn default() -> Self {
         PerformanceOptions {
             language: MusicalLanguage::default(),
-            coupling: EnsembleCoupling::Coupled,
+            coupling: EnsembleCoupling::Independent,
             actions: true,
             responses: ResponseMode::Free,
             calls: CallPolicy::Selective,
@@ -157,17 +157,21 @@ impl Default for PerformanceOptions {
     }
 }
 
-/// Whether the pitched players realize ONE coupled harmonic state or solve independently.
+/// How the pitched players' simultaneous notes are realized.
+///
+/// The Round VIII listen rejected the coupled bed ("trash": it revoiced three quarters of the pad to
+/// satisfy the collision ruler — pad motion 4.7 -> 7.6 semitones, common tones 1.3 -> 0.9), so the
+/// default is the R7b band again until the ear approves another path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EnsembleCoupling {
-    /// Round VIII: the band realizes one harmonic state in rigidity order (lead, bass, the keys'
-    /// material lines, then the pad and keys bed solved JOINTLY against everything already
-    /// sounding), with the bass holding the floor and every colour owned.
+    /// The R7b band, byte-identical (the default): lead, keys, pad and bass each choose their
+    /// pitches alone (the keys hear the lead softly; the pad and the bass hear nobody's pitches).
     #[default]
-    Coupled,
-    /// The R7b control, byte-identical: lead, keys, pad and bass each choose their pitches alone
-    /// (the keys hear the lead softly; the pad and the bass hear nobody's pitches).
     Independent,
+    /// Round VIII, kept as the NEGATIVE CONTROL the listen rejected: the band realizes one harmonic
+    /// state in rigidity order (lead, bass, the keys' material lines, then the pad and keys bed
+    /// solved JOINTLY against everything already sounding). Pinned byte-for-byte at 5644c96.
+    CoupledR8,
 }
 
 /// What the stage did with an action whose initiator the arrangement envelope had off stage —

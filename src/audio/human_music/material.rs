@@ -470,7 +470,7 @@ pub fn line_of(
     // nearest E2, not on whichever chord tone happens to be nearest (often the 3rd or 7th — an
     // inversion nobody planned), and its echoes sit on root and fifth. The independent control
     // keeps the R7b projection.
-    let floor = owner == Agent::Bass && perf.coupling == EnsembleCoupling::Coupled;
+    let floor = owner == Agent::Bass && perf.coupling == EnsembleCoupling::CoupledR8;
     let anchor = perf
         .context_at(at)
         .map(|ctx| {

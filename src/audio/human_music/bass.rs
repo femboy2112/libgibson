@@ -76,7 +76,7 @@ pub fn realize_bass(
     realize(perf, plan, world, lead, keys, None)
 }
 
-/// Realize the bass as the FLOOR of the coupled ensemble (Round VIII, `EnsembleCoupling::Coupled`
+/// Realize the bass as the FLOOR of the coupled ensemble (Round VIII, `EnsembleCoupling::CoupledR8`
 /// only): the same rhythm and the same stage as [`realize_bass`], but every pitch is chosen as
 /// what it does UNDER the band. The ensemble unison keeps its rhythm and picks its own pitch per
 /// line note (a lead 9th is the lead's colour, not the bass's chord); figures, answers and echoes
@@ -881,7 +881,7 @@ mod tests {
                 effect: EffectVector::NEUTRAL,
             });
             let mut floors = Vec::new();
-            for coupling in [EnsembleCoupling::Independent, EnsembleCoupling::Coupled] {
+            for coupling in [EnsembleCoupling::Independent, EnsembleCoupling::CoupledR8] {
                 injected.coupling = coupling;
                 let score = realize_performance(
                     &deflected_lift_trace(120.0),
@@ -962,7 +962,7 @@ mod tests {
     #[test]
     fn the_coupled_flagship_bass_owns_the_floor() {
         for world in MusicWorld::all() {
-            let c = flagship(&world, EnsembleCoupling::Coupled);
+            let c = flagship(&world, EnsembleCoupling::CoupledR8);
             let d = EnsembleSonorityDiagnostics::measure(
                 &c.score,
                 &c.perf.contexts,

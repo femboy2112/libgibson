@@ -1147,7 +1147,7 @@ mod tests {
                 .iter()
                 .find(|b| b.0 == world.name)
                 .expect("a flagship world");
-            let c = flagship(&world, EnsembleCoupling::Coupled);
+            let c = flagship(&world, EnsembleCoupling::CoupledR8);
             let p = &c.perf;
             let d = measure(&c.score, p, &world);
             let lead: Vec<Note> = c
@@ -1362,7 +1362,7 @@ mod tests {
         let trace = deflected_lift_trace(120.0);
         let mut exercised = 0;
         for world in MusicWorld::all() {
-            let c = flagship(&world, EnsembleCoupling::Coupled);
+            let c = flagship(&world, EnsembleCoupling::CoupledR8);
             let lead = realize_lead(&c.perf, &c.plan).notes;
             let state = ledger(&world, &c.plan, &c.perf, &lead);
             let vel = keys_velocity(&world);
@@ -1500,7 +1500,7 @@ mod tests {
     #[test]
     fn a_cornered_connector_steps_aside_and_keeps_the_contour() {
         let world = &MusicWorld::all()[0];
-        let c = flagship(world, EnsembleCoupling::Coupled);
+        let c = flagship(world, EnsembleCoupling::CoupledR8);
         let vel = keys_velocity(world);
         let ix = c
             .perf
@@ -1583,7 +1583,7 @@ mod tests {
     /// Each event of a line is labelled by what it IS where it sounds, in precedence order.
     #[test]
     fn material_roles_name_what_each_event_is_harmonically() {
-        let c = flagship(&MusicWorld::all()[0], EnsembleCoupling::Coupled);
+        let c = flagship(&MusicWorld::all()[0], EnsembleCoupling::CoupledR8);
         let p = &c.perf;
         let t0 = p
             .contexts

@@ -83,6 +83,55 @@ const R7B_PINS: [u64; 3] = [
     0xa3e6_0cd3_b8b2_86e0,
 ];
 
+/// The Round VIII coupled realization the listen REJECTED ("trash": the bed revoiced itself to
+/// satisfy the collision ruler), pinned at 5644c96 exactly as it was heard. It stays reachable as
+/// the negative control; nothing in Round VIIIb may drift it.
+#[test]
+fn the_r8_control_is_the_composition_the_listen_rejected() {
+    let got: Vec<u64> = MusicWorld::all()
+        .iter()
+        .map(|world| fingerprint(&flagship(world, EnsembleCoupling::CoupledR8)))
+        .collect();
+    for (world, fp) in MusicWorld::all().iter().zip(&got) {
+        eprintln!("{}: r8 fingerprint {fp:#018x}", world.name);
+    }
+    for ((world, fp), pin) in MusicWorld::all().iter().zip(&got).zip(R8_PINS) {
+        assert_eq!(*fp, pin, "{}: the R8 control drifted", world.name);
+    }
+}
+
+/// The listen rejected Round VIII: the DEFAULT realization is the R7b band again, byte for byte, until
+/// the ear approves another path.
+#[test]
+fn the_default_is_the_r7b_band_again() {
+    assert_eq!(
+        PerformanceOptions::default().coupling,
+        EnsembleCoupling::Independent
+    );
+    for (world, pin) in MusicWorld::all().iter().zip(R7B_PINS) {
+        let c = compose_full(
+            &deflected_lift_trace(120.0),
+            world,
+            SEED,
+            Some(CompositionGrammar::DeflectedLift),
+            PerformanceOptions::default(),
+        );
+        assert_eq!(
+            fingerprint(&c),
+            pin,
+            "{}: the default is not R7b",
+            world.name
+        );
+    }
+}
+
+/// `MusicWorld::all()` order: BLACK_ICE, VAPOR95, SWISS_SIGNAL.
+const R8_PINS: [u64; 3] = [
+    0x1f97_14ee_5fea_d745,
+    0xe6bb_ade7_2f60_1d07,
+    0xef3d_6bdc_dd49_bd94,
+];
+
 /// The Round VIII result, per world: the control reproduces the listen's defect (lawful notes,
 /// unowned union); the coupled band sounds one harmony — nominally AND at the audible (−20 dB
 /// masking) lifetimes — keeps its floor, and pays nothing for it in receipts or melody repairs.
@@ -90,7 +139,7 @@ const R7B_PINS: [u64; 3] = [
 fn the_coupled_band_sounds_one_harmony_where_the_control_did_not() {
     for world in MusicWorld::all() {
         let ind = flagship(&world, EnsembleCoupling::Independent);
-        let cou = flagship(&world, EnsembleCoupling::Coupled);
+        let cou = flagship(&world, EnsembleCoupling::CoupledR8);
         let policy = ColorPolicy::for_world(world.id, &cou.perf.language);
         let nominal = |c: &Composition| {
             EnsembleSonorityDiagnostics::measure(&c.score, &c.perf.contexts, &policy, &[])
@@ -178,7 +227,7 @@ fn the_coupled_band_sounds_one_harmony_where_the_control_did_not() {
 #[test]
 fn the_joint_bed_beats_each_player_alone_on_the_union() {
     for world in MusicWorld::all() {
-        let c = flagship(&world, EnsembleCoupling::Coupled);
+        let c = flagship(&world, EnsembleCoupling::CoupledR8);
         let r = c
             .score
             .support_report
@@ -244,7 +293,7 @@ fn fuzz_the_coupled_band_keeps_every_receipt_the_control_keeps() {
                             };
                             let (ind, cou) = (
                                 arm(EnsembleCoupling::Independent),
-                                arm(EnsembleCoupling::Coupled),
+                                arm(EnsembleCoupling::CoupledR8),
                             );
                             runs += 1;
                             let (ai, ac) =
@@ -374,7 +423,7 @@ fn the_reviews_counterexamples_keep_their_receipts() {
         };
         let (ind, cou) = (
             arm(EnsembleCoupling::Independent),
-            arm(EnsembleCoupling::Coupled),
+            arm(EnsembleCoupling::CoupledR8),
         );
         let row = |c: &Composition| {
             *audit(&c.perf, &c.score)
@@ -392,13 +441,16 @@ fn the_reviews_counterexamples_keep_their_receipts() {
         assert!(rc.witnessed, "{story} {beats} seed {seed} {}", world.name);
     }
     // SWISS_SIGNAL, bounce 96, seed 4: keys Sustain bar 18 strikes C at 72; Dm follows at 74. The
-    // keys never play their Dm voicing, so the band must carry Dm's 3rd (F) some other way.
+    // keys never play their Dm voicing, so the coupled band must carry Dm's 3rd (F) some other way.
     let c = compose_full(
         &deflected_lift_trace(96.0),
         &MusicWorld::swiss_signal(),
         4,
         None,
-        PerformanceOptions::default(),
+        PerformanceOptions {
+            coupling: EnsembleCoupling::CoupledR8,
+            ..PerformanceOptions::default()
+        },
     );
     let f = c.score.notes.iter().any(|n| {
         pitch_class(n.pitch) == 5
@@ -417,7 +469,7 @@ fn a_stings_audible_life_is_its_own_envelope() {
     use super::sonority::{audible_end_at, audible_voices, AUDIBLE_FLOOR_DB};
     let mut differs = 0;
     for world in MusicWorld::all() {
-        let c = flagship(&world, EnsembleCoupling::Coupled);
+        let c = flagship(&world, EnsembleCoupling::CoupledR8);
         let s = &c.score;
         let voices = audible_voices(s, &c.perf.contexts, &world, AUDIBLE_FLOOR_DB);
         let bps = s.tempo_bpm as f64 / 60.0;
