@@ -1666,7 +1666,7 @@ structure!(score::Score, "score/events/v2";
     melody_rejudged => "melody_rejudged",
     ; ignore observed_lifetime, mono_voice, voice_continuity, vertical_decisions, support_report,
       vertical_repairs, tension_edits, pad_voicing_edits, hearings,
-      expression_decisions, occupancy, phrase_plans, support_voicing_decisions
+      expression_decisions, occupancy, phrase_plans, support_voicing_decisions, percussion
 );
 
 macro_rules! legacy_alias {
@@ -1741,6 +1741,7 @@ impl CanonicalFingerprint for policy::PerformanceProfile {
             observation,
             evidence,
             admission,
+            percussion,
             repair,
         } = self;
         w.field("pitch", pitch);
@@ -1753,6 +1754,21 @@ impl CanonicalFingerprint for policy::PerformanceProfile {
         w.field("repair", repair);
         if *admission != policy::ActionAdmission::Planned {
             w.field("admission", admission);
+        }
+        if *percussion != super::super::percussion::PercussionPolicy::Unarbitrated {
+            w.field("percussion", percussion);
+        }
+    }
+}
+impl CanonicalFingerprint for super::super::percussion::PercussionPolicy {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        w.tag("percussion/PercussionPolicy/v1");
+        match self {
+            Self::Unarbitrated => w.tag("unarbitrated"),
+            Self::Arbitrated(restraint) => {
+                w.tag("arbitrated");
+                w.tag(restraint.label());
+            }
         }
     }
 }

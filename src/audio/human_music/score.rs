@@ -410,6 +410,8 @@ pub struct Score {
     pub phrase_plans: Vec<super::phrase_expression::PhrasePlan>,
     /// Round XVI chord-preserving source voicing choices and contact tradeoffs.
     pub support_voicing_decisions: Vec<super::support_voicing::VoicingPathDecision>,
+    /// The arbitrated drummer's receipt (`None` for the historical, unarbitrated drummer).
+    pub percussion: Option<super::percussion::PercussionReport>,
 }
 
 // Historical receipts used the derived field order. Preserve that spelling for archived
@@ -441,6 +443,9 @@ impl std::fmt::Debug for Score {
         d.field("support_voicing_decisions", &self.support_voicing_decisions);
         if let Some(policy) = self.observed_lifetime {
             d.field("observed_lifetime", &policy);
+        }
+        if let Some(report) = &self.percussion {
+            d.field("percussion", report);
         }
         d.finish()
     }
@@ -526,6 +531,7 @@ impl Score {
             occupancy: Vec::new(),
             phrase_plans: Vec::new(),
             support_voicing_decisions: Vec::new(),
+            percussion: None,
         }
     }
 

@@ -636,6 +636,626 @@ fn realize_drums_impl(
     hits
 }
 
+/// One drum candidate before arbitration: a stroke some producer would play, typed as required
+/// (with why) or optional (with what it adds).
+#[derive(Debug, Clone, Copy)]
+struct Candidate {
+    bar: u32,
+    at: f64,
+    voice: DrumVoice,
+    vel: f32,
+    tag: &'static str,
+    stamp: super::ids::ActionStamp,
+    class: Result<super::percussion::Required, super::percussion::Ornament>,
+    /// Among optional candidates of one kind, lower is spent first (a fill's strokes nearest
+    /// its landing, otherwise onset order).
+    rank: f64,
+    /// A declined optional candidate that still sounds as this voice (an open hat that stays a
+    /// closed hat: its time-keeping slot is required, only the opening is an ornament).
+    fallback: Option<DrumVoice>,
+    salt: u64,
+    material: Option<super::ids::MaterialId>,
+    interaction: Option<super::ids::InteractionId>,
+}
+
+/// The drums as ONE arbitrated percussion surface (see [`super::percussion`]): the same producers
+/// the historical drummer runs — pocket, accents, ghosts, hats, figures, unison, answers — offer
+/// typed candidates; required strokes all sound; optional strokes of each bar compete for one
+/// allowance decided from the band's already-realized notes. A pinned cover groove is unchanged.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn realize_drums_arbitrated(
+    perf: &super::performance::PerformancePlan,
+    plan: &super::plan::CompositionPlan,
+    world: &MusicWorld,
+    seed: u64,
+    band: [&[super::score::Note]; 3],
+    lead: &[super::score::Note],
+    ownership: Option<&super::occupancy::AuthoredOccupancy>,
+    restraint: super::percussion::DrumRestraint,
+) -> (Vec<DrumHit>, super::percussion::PercussionReport) {
+    use super::action::{ActionKind, Agent};
+    use super::ids::{ActionId, ActionStamp};
+    use super::percussion::{
+        decide, unit_draw, BarDecision, BarEvidence, Ornament, PercussionReport, Required,
+    };
+    use super::performance::{AccentGrid, DrumsMode, STEPS, STEP_BEATS};
+    let [bass, keys, _pad] = band;
+    if let Some(hits) = perf
+        .cover_constraints
+        .as_ref()
+        .and_then(|c| c.drums(perf, world))
+    {
+        let required = hits.len();
+        return (
+            hits,
+            PercussionReport {
+                restraint,
+                bars: Vec::new(),
+                ornaments: Ornament::ALL.iter().map(|&o| (o, 0, 0)).collect(),
+                required,
+            },
+        );
+    }
+    let subdiv_steps = match perf.language.surface_subdivision.max(world.subdiv) {
+        s if s >= 4 => 1usize,
+        2 | 3 => 2,
+        _ => 4,
+    };
+    let use_clap = matches!(world.id, super::world::WorldId::Vapor95);
+    let dyn_scale = |energy: f32| {
+        (world.base_dynamic * (0.55 + 0.45 * energy) * (0.6 + 0.4 * world.drum_density))
+            .clamp(0.0, 1.0)
+    };
+    let swung = |frac: f64| super::rhythm::legacy_eighth_position(frac, world.swing);
+    let bar_of = |at: f64| AccentGrid::step_of(at).0;
+    let mut cands: Vec<Candidate> = Vec::new();
+    let mut offer = |c: Candidate| {
+        if c.at < perf.total_beats - 1e-9 && perf.on_stage(Agent::Drums, c.at) {
+            cands.push(c);
+        }
+    };
+    let cand = |bar: u32,
+                at: f64,
+                voice: DrumVoice,
+                vel: f32,
+                tag: &'static str,
+                stamp: ActionStamp,
+                class: Result<Required, Ornament>,
+                salt: u64| Candidate {
+        bar,
+        at,
+        voice,
+        vel,
+        tag,
+        stamp,
+        class,
+        rank: at,
+        fallback: None,
+        salt,
+        material: None,
+        interaction: None,
+    };
+    let bass_steps = |bar: u32| -> Vec<usize> {
+        if let Some(intent) = ownership {
+            return intent.rhythm_steps(bar, false);
+        }
+        let bs = AccentGrid::beat_of(bar, 0);
+        bass.iter()
+            .filter(|n| n.start_beat >= bs - 1e-6 && n.start_beat < bs + 4.0 - 1e-6)
+            .map(|n| AccentGrid::step_of(n.start_beat).1)
+            .collect()
+    };
+    let drum_figures: Vec<(ActionId, ActionKind, Vec<f64>, Vec<f32>)> = perf
+        .figures_for(Agent::Drums)
+        .filter_map(|m| match m.source {
+            super::material::MaterialSource::Figure { action, kind } => Some((
+                action,
+                kind,
+                m.events.iter().map(|e| m.start_beat + e.onset).collect(),
+                m.events.iter().map(|e| e.accent).collect(),
+            )),
+            _ => None,
+        })
+        .collect();
+    let in_drum_figure = |b: f64| {
+        drum_figures.iter().any(|(_, k, on, _)| {
+            *k == ActionKind::Fill
+                && on.first().is_some_and(|&f| b >= f - 1e-6)
+                && on.last().is_some_and(|&l| b < l + 0.5)
+        })
+    };
+    // Bars whose drum onset rate a surface verb compares with the preceding window.
+    let surface_windows: Vec<(f64, f64)> = perf
+        .actions
+        .actions
+        .iter()
+        .filter(|a| matches!(a.kind, ActionKind::Pullback | ActionKind::Accelerate))
+        .map(|a| {
+            let (s, e) = (a.start_beat, a.end_beat());
+            ((s - (e - s)).max(0.0), e)
+        })
+        .collect();
+    let in_surface_window = |bar: u32| {
+        let (bs, be) = (
+            AccentGrid::beat_of(bar, 0),
+            AccentGrid::beat_of(bar, 0) + 4.0,
+        );
+        surface_windows.iter().any(|&(lo, hi)| bs < hi && be > lo)
+    };
+
+    for eb in &perf.ensemble {
+        let bar = eb.bar;
+        let bs = AccentGrid::beat_of(bar, 0);
+        if !perf.on_stage(Agent::Drums, bs) {
+            continue;
+        }
+        let pt = plan.form.phrase_at(bs);
+        let energy = plan
+            .discourse
+            .goal(pt.ix as usize)
+            .energy_target
+            .max(0.3 * eb.kinetic);
+        if energy < 0.24 && eb.drums != DrumsMode::Fill {
+            continue;
+        }
+        let d = dyn_scale(energy.max(eb.kinetic * 0.8));
+        let in_hole = |s: usize| perf.accent.at(bar, s).hole >= 0.5;
+        let bsteps = bass_steps(bar);
+        let surface = perf
+            .actions_covering(
+                &[ActionKind::Pullback, ActionKind::Accelerate],
+                bs + 0.5,
+                Some(Agent::Drums),
+            )
+            .fold(ActionStamp::NONE, ActionStamp::with);
+        let free = perf.free_allowance(Agent::Drums, bar);
+        let tight = free < 4.0;
+        for s in 0..STEPS {
+            let w = perf.accent.at(bar, s);
+            let at = AccentGrid::beat_of(bar, s);
+            if in_hole(s) && w.hit < 0.9 {
+                continue;
+            }
+            let in_fill = in_drum_figure(at);
+            let accents0 = perf
+                .actions_starting(
+                    &[ActionKind::Push, ActionKind::Hit],
+                    at,
+                    STEP_BEATS * 0.5,
+                    None,
+                )
+                .fold(ActionStamp::NONE, ActionStamp::with);
+            let force = perf.force_of(accents0).unwrap_or(0.5);
+            let accents = accents0.iter().fold(surface, ActionStamp::with);
+            let witness = |c: Result<Required, Ornament>| {
+                if accents0.is_empty() {
+                    c
+                } else {
+                    Ok(Required::ActionWitness)
+                }
+            };
+            // --- Kick ---
+            let (kick, anchor) = match eb.drums {
+                DrumsMode::HalfTime => (s == 0 || (s == 10 && eb.kinetic > 0.5), true),
+                DrumsMode::Break => (w.hit >= 0.9, false),
+                _ => {
+                    let anchor = s == 0 || (s == 8 && !bsteps.iter().any(|&b| b == 6 || b == 10));
+                    let accent = w.push >= 0.9 || w.hit >= 0.9;
+                    let interlock = s % 2 == 0
+                        && s % 4 != 0
+                        && bsteps.contains(&s)
+                        && (bar + s as u32 / 2) % 2 == 0;
+                    (anchor || accent || interlock, anchor)
+                }
+            };
+            if kick {
+                let class = if anchor {
+                    Ok(Required::PocketAnchor)
+                } else {
+                    witness(Err(Ornament::Interlock))
+                };
+                offer(cand(
+                    bar,
+                    at,
+                    DrumVoice::Kick,
+                    (0.95 - 0.1 * (s != 0) as u8 as f32)
+                        * world.base_dynamic
+                        * if accents0.is_empty() {
+                            1.0
+                        } else {
+                            0.85 + 0.3 * force
+                        },
+                    "kick",
+                    accents,
+                    class,
+                    1,
+                ));
+            }
+            // --- Snare / backbeat ---
+            let back = match eb.drums {
+                DrumsMode::HalfTime => s == 8,
+                DrumsMode::Break => false,
+                _ => w.backbeat >= 0.9,
+            };
+            if back && !in_fill {
+                offer(cand(
+                    bar,
+                    at,
+                    DrumVoice::Snare,
+                    0.85 * d,
+                    "backbeat",
+                    surface,
+                    Ok(Required::PocketAnchor),
+                    2,
+                ));
+                if use_clap {
+                    offer(cand(
+                        bar,
+                        at,
+                        DrumVoice::Clap,
+                        0.6 * d,
+                        "backbeat",
+                        surface,
+                        Ok(Required::PocketAnchor),
+                        3,
+                    ));
+                }
+            }
+            if w.push >= 0.9 && w.hit < 0.9 && !back && force > 0.6 {
+                offer(cand(
+                    bar,
+                    at,
+                    DrumVoice::Snare,
+                    (0.35 + 0.45 * force) * d,
+                    "hit",
+                    accents,
+                    witness(Err(Ornament::Landing)),
+                    4,
+                ));
+            }
+            if w.hit >= 0.9 && !back {
+                offer(cand(
+                    bar,
+                    at,
+                    DrumVoice::Snare,
+                    (0.6 + 0.4 * force) * d,
+                    "hit",
+                    accents,
+                    witness(Err(Ornament::Landing)),
+                    5,
+                ));
+                if force > 0.7 {
+                    offer(cand(
+                        bar,
+                        at,
+                        DrumVoice::Clap,
+                        (0.5 + 0.3 * force) * d,
+                        "hit",
+                        accents,
+                        Err(Ornament::Landing),
+                        6,
+                    ));
+                }
+            }
+            // Ghosts on the weaker off-beats (a stable per-slot draw, not a shared stream).
+            if world.ghost_amount > 0.15
+                && !back
+                && !in_fill
+                && eb.drums != DrumsMode::Break
+                && s % 2 == 1
+                && (0.12..0.5).contains(&w.syncopation)
+                && unit_draw(seed, bar, s, 7) < f64::from(0.35 + 0.4 * eb.kinetic)
+            {
+                offer(cand(
+                    bar,
+                    at,
+                    DrumVoice::Snare,
+                    (0.22 * d).min(0.35),
+                    "ghost",
+                    surface,
+                    Err(Ornament::Ghost),
+                    8,
+                ));
+            }
+            // --- Hats: the time-line is required; opening one is an ornament. ---
+            let hat_every = match eb.drums {
+                DrumsMode::HalfTime => 4,
+                DrumsMode::DoubleTime => 1,
+                DrumsMode::Break => 99,
+                _ if tight => subdiv_steps.max(2),
+                _ => subdiv_steps,
+            };
+            if s % hat_every == 0 && !in_fill {
+                let open =
+                    (w.pickup >= 0.8 && s % 2 == 0 && s >= 12) || w.push >= 0.9 || w.hit >= 0.9;
+                let contour = if s % 4 == 0 {
+                    0.7
+                } else if s % 2 == 0 {
+                    0.5
+                } else {
+                    0.34
+                };
+                let acc = contour + 0.2 * w.syncopation;
+                let frac = s as f64 * STEP_BEATS;
+                let mut c = cand(
+                    bar,
+                    bs + swung(frac),
+                    if open {
+                        DrumVoice::OpenHat
+                    } else {
+                        DrumVoice::ClosedHat
+                    },
+                    acc * d,
+                    "hat",
+                    if open { accents } else { surface },
+                    if open {
+                        Err(Ornament::OpenHat)
+                    } else {
+                        Ok(Required::Timekeeping)
+                    },
+                    9,
+                );
+                if open {
+                    c.fallback = Some(DrumVoice::ClosedHat);
+                }
+                offer(c);
+            }
+        }
+    }
+    // Figures: the minimal witness (first stroke and the landing) is required; the rest is a
+    // flourish, spent nearest the landing first.
+    for (id, kind, onsets, accents) in &drum_figures {
+        let base = match kind {
+            ActionKind::Fill => 0.4,
+            _ => 0.5,
+        };
+        let mut landed: Vec<f64> = Vec::new();
+        let last = onsets.len().saturating_sub(1);
+        let landing = onsets.last().copied().unwrap_or(0.0);
+        for (k, (&at0, &acc)) in onsets.iter().zip(accents).enumerate() {
+            let (at, accent_ids) = super::comp::land_once(perf, at0, &mut landed);
+            let stamp = perf
+                .actions_covering(
+                    &[
+                        ActionKind::Pickup,
+                        ActionKind::Fill,
+                        ActionKind::Fragment,
+                        ActionKind::ReEntry,
+                    ],
+                    at,
+                    Some(Agent::Drums),
+                )
+                .fold(accent_ids.with(*id), ActionStamp::with);
+            let ph = plan.form.phrase_at(at);
+            let energy = plan.discourse.goal(ph.ix as usize).energy_target.max(0.3);
+            let class = if k == 0 || k == last || !accent_ids.is_empty() {
+                Ok(Required::ActionWitness)
+            } else {
+                Err(Ornament::FillFlourish)
+            };
+            let mut c = cand(
+                bar_of(at),
+                at,
+                if *kind == ActionKind::Fill && k + 1 == onsets.len() && onsets.len() > 3 {
+                    DrumVoice::Kick
+                } else {
+                    DrumVoice::Snare
+                },
+                (base + 0.5 * acc) * dyn_scale(energy),
+                "fill",
+                stamp,
+                class,
+                10 + k as u64,
+            );
+            c.rank = landing - at0;
+            offer(c);
+        }
+    }
+    // The ensemble unison: decorative to the audit (keys and bass carry its witness); its first
+    // and last strokes join the landing, the inner ones are the first thing a restrained kit drops.
+    for (id, line) in super::comp::unison_lines(perf, lead) {
+        for (i, &(at, _, _, _)) in line.iter().enumerate() {
+            let v = if i == 0 { 0.8 } else { 0.6 } * world.base_dynamic;
+            let st = ActionStamp::of(id);
+            let edge = i == 0 || i + 1 == line.len();
+            let class = if edge {
+                Ornament::Landing
+            } else {
+                Ornament::UnisonInner
+            };
+            offer(cand(
+                bar_of(at),
+                at,
+                DrumVoice::Snare,
+                v,
+                "unison",
+                st,
+                Err(class),
+                40 + i as u64,
+            ));
+            if edge {
+                offer(cand(
+                    bar_of(at),
+                    at,
+                    DrumVoice::Kick,
+                    v,
+                    "unison",
+                    st,
+                    Err(Ornament::Landing),
+                    60 + i as u64,
+                ));
+            }
+        }
+    }
+    // The drummer's answers: the first stroke witnesses the answer; the echo is optional.
+    for (call, r) in perf.responses_for(Agent::Drums) {
+        let Some(mid) = r.material else {
+            continue;
+        };
+        let m = perf.material(mid);
+        let interaction = perf
+            .interactions
+            .iter()
+            .find(|i| i.call.action == call.action)
+            .map(|i| i.id);
+        for (k, e) in m.events.iter().enumerate() {
+            let at = r.start_beat + e.onset;
+            if at >= r.start_beat + r.dur_beats - 1e-6 {
+                break;
+            }
+            let mut c = cand(
+                bar_of(at),
+                at,
+                DrumVoice::Snare,
+                (0.45 + 0.15 * e.accent) * world.base_dynamic,
+                "answer",
+                ActionStamp::NONE.with_opt(r.action),
+                if k == 0 {
+                    Ok(Required::ActionWitness)
+                } else {
+                    Err(Ornament::AnswerEcho)
+                },
+                80 + k as u64,
+            );
+            c.material = Some(mid);
+            c.interaction = interaction;
+            offer(c);
+        }
+    }
+
+    // --- Arbitration: bar by bar, in time. ---
+    let onsets_in = |notes: &[super::score::Note], bs: f64| {
+        notes
+            .iter()
+            .filter(|n| n.start_beat >= bs - 1e-6 && n.start_beat < bs + 4.0 - 1e-6)
+            .count()
+    };
+    let drum_led =
+        |bs: f64| {
+            perf.actions.actions.iter().any(|a| {
+                a.initiator == Agent::Drums && a.start_beat < bs + 4.0 && a.end_beat() > bs
+            }) || perf
+                .responses_for(Agent::Drums)
+                .any(|(_, r)| r.start_beat < bs + 4.0 && r.start_beat + r.dur_beats > bs)
+        };
+    let mut bars: Vec<u32> = cands.iter().map(|c| c.bar).collect();
+    bars.sort_unstable();
+    bars.dedup();
+    let mut admitted_ix = vec![false; cands.len()];
+    let mut decisions = Vec::new();
+    let mut previous = 0usize;
+    let mut spoke_in_phrase: Option<u32> = None;
+    for bar in bars {
+        let bs = AccentGrid::beat_of(bar, 0);
+        let phrase = plan.form.phrase_at(bs);
+        let last_bar = (bs + 4.0) >= phrase.end_beat() - 1e-6;
+        let lead_second_half = lead
+            .iter()
+            .any(|n| n.start_beat >= bs + 2.0 - 1e-6 && n.start_beat < bs + 4.0 - 1e-6);
+        let foreground = perf
+            .ensemble
+            .iter()
+            .find(|e| e.bar == bar)
+            .is_some_and(|e| e.foreground == Agent::Drums);
+        let lead_onsets = onsets_in(lead, bs);
+        let evidence = BarEvidence {
+            drummer_floor: foreground || drum_led(bs),
+            surface_window: in_surface_window(bar),
+            phrase_end_space: last_bar && !lead_second_half && spoke_in_phrase != Some(phrase.ix),
+            lead_onsets,
+            band_onsets: lead_onsets + onsets_in(bass, bs) + onsets_in(keys, bs),
+            previous_ornaments: previous,
+        };
+        let (band, reason) = decide(restraint, &evidence);
+        let mut optional: Vec<usize> = (0..cands.len())
+            .filter(|&i| cands[i].bar == bar && cands[i].class.is_err())
+            .collect();
+        optional.sort_by(|&a, &b| {
+            let (ka, kb) = (cands[a].class.err().unwrap(), cands[b].class.err().unwrap());
+            ka.cmp(&kb).then(cands[a].rank.total_cmp(&cands[b].rank))
+        });
+        let take = band.allowance().min(optional.len());
+        for &i in &optional[..take] {
+            admitted_ix[i] = true;
+        }
+        let required = cands
+            .iter()
+            .enumerate()
+            .filter(|(i, c)| {
+                c.bar == bar && c.class.is_ok() && {
+                    admitted_ix[*i] = true;
+                    true
+                }
+            })
+            .count();
+        if take >= 2 {
+            spoke_in_phrase = Some(phrase.ix);
+        }
+        previous = take;
+        decisions.push(BarDecision {
+            bar,
+            band,
+            reason,
+            evidence,
+            required,
+            offered: optional.len(),
+            admitted: take,
+        });
+    }
+    let mut ornaments: Vec<(Ornament, usize, usize)> =
+        Ornament::ALL.iter().map(|&o| (o, 0, 0)).collect();
+    let mut hits = Vec::new();
+    for (i, c) in cands.iter().enumerate() {
+        if let Err(kind) = c.class {
+            let slot = ornaments.iter_mut().find(|o| o.0 == kind).unwrap();
+            slot.1 += 1;
+            if admitted_ix[i] {
+                slot.2 += 1;
+            }
+        }
+        let voice = if admitted_ix[i] {
+            c.voice
+        } else if let Some(v) = c.fallback {
+            v
+        } else {
+            continue;
+        };
+        let level = perf.level(Agent::Drums, c.at);
+        let jitter =
+            (unit_draw(seed, c.bar, (c.at * 64.0) as usize, c.salt) * 0.016 - 0.008) as f32;
+        let mut prov = super::comp::stamped(
+            Provenance {
+                groove_variation: Some(c.tag),
+                ..Provenance::new(super::form::SectionKind::A)
+            },
+            if admitted_ix[i] {
+                c.stamp
+            } else {
+                ActionStamp::NONE
+            },
+        );
+        prov.material = c.material;
+        prov.interaction = c.interaction;
+        hits.push(DrumHit {
+            start_beat: (c.at + f64::from(jitter)).max(0.0),
+            voice,
+            velocity: (c.vel * level).clamp(0.02, 1.0),
+            prov,
+        });
+    }
+    hits.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+    let required = cands.iter().filter(|c| c.class.is_ok()).count();
+    (
+        hits,
+        PercussionReport {
+            restraint,
+            bars: decisions,
+            ornaments,
+            required,
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::plan::{CompositionPlan, PhraseTarget};

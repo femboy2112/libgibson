@@ -4,6 +4,7 @@
 //! [`PerformanceProfile::validate`] is the public boundary for combinations with final hearings.
 //! Historical entry points retain their exact configurations through private adapters.
 
+pub use super::percussion::{DrumRestraint, PercussionPolicy};
 use super::performance::EnsembleCoupling;
 use super::pocket::PocketOptions;
 use super::voice::ObservedLifetimePolicy;
@@ -154,6 +155,8 @@ pub struct PerformanceProfile {
     pub evidence: SourceEvidencePolicy,
     /// Planned (every historical profile) or rehearsed verb admission.
     pub admission: ActionAdmission,
+    /// The historical unarbitrated drummer, or one arbitrated percussion surface.
+    pub percussion: PercussionPolicy,
     pub(crate) repair: HistoricalRepair,
 }
 
@@ -173,6 +176,7 @@ impl PerformanceProfile {
         observation: ObservedLifetimePolicy::ExplicitContinuity,
         evidence: SourceEvidencePolicy::Events,
         admission: ActionAdmission::Planned,
+        percussion: PercussionPolicy::Unarbitrated,
         repair: HistoricalRepair::None,
     };
     pub const TEMPORAL: Self = Self {
@@ -199,10 +203,27 @@ impl PerformanceProfile {
         lifetime: VoiceLifetimePolicy::ExplicitContinuations,
         ..Self::PHRASED
     };
+    /// The hardened general profile: the accepted pocket's source laws, every verb it keeps
+    /// actually performed ([`ActionAdmission::Rehearsed`]), and a drummer who serves the pocket
+    /// ([`DrumRestraint::Balanced`] on one arbitrated percussion surface). New work should start
+    /// here; [`Self::POCKET`] stays the byte-exact accepted R17 arm.
+    pub const BAND: Self = Self::POCKET
+        .with_admission(ActionAdmission::Rehearsed)
+        .with_drum_restraint(DrumRestraint::Balanced);
 
     /// The same laws with another verb-admission law.
     pub const fn with_admission(self, admission: ActionAdmission) -> Self {
         Self { admission, ..self }
+    }
+
+    /// The same laws with another percussion law.
+    pub const fn with_percussion(self, percussion: PercussionPolicy) -> Self {
+        Self { percussion, ..self }
+    }
+
+    /// The same laws with the drummer arbitrated at `restraint`.
+    pub const fn with_drum_restraint(self, restraint: DrumRestraint) -> Self {
+        self.with_percussion(PercussionPolicy::Arbitrated(restraint))
     }
 
     /// Validate once before planning/realizing a public profile. Historical post-hoc repair

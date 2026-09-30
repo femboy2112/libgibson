@@ -61,6 +61,7 @@ mod meaning_probes;
 pub mod melody;
 pub mod motif;
 pub mod occupancy;
+pub mod percussion;
 pub mod performance;
 pub mod phenomenal;
 #[cfg(test)]

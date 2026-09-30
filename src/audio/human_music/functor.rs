@@ -608,15 +608,36 @@ fn realize_policy(
         }
     };
     score.hearings.push(Hearing::of("drums", Role::Bass, &bass));
-    score.drums = if semantic_occupancy {
-        let intent = score
+    let intent = semantic_occupancy.then(|| {
+        score
             .occupancy
             .iter()
             .find(|o| o.role == Role::Bass)
-            .expect("bass source occupancy");
-        super::groove::realize_drums_owned(perf, plan, world, seed, &bass, &lead.notes, intent)
-    } else {
-        super::groove::realize_drums(perf, plan, world, seed, &bass, &lead.notes)
+            .expect("bass source occupancy")
+    });
+    score.drums = match (profile.percussion, intent) {
+        (super::percussion::PercussionPolicy::Arbitrated(restraint), intent) => {
+            // One percussion surface: the drummer also hears the keys it must leave room for.
+            score.hearings.push(Hearing::of("drums", Role::Keys, &keys));
+            let (drums, report) = super::groove::realize_drums_arbitrated(
+                perf,
+                plan,
+                world,
+                seed,
+                [&bass, &keys, &pad],
+                &lead.notes,
+                intent,
+                restraint,
+            );
+            score.percussion = Some(report);
+            drums
+        }
+        (super::percussion::PercussionPolicy::Unarbitrated, Some(intent)) => {
+            super::groove::realize_drums_owned(perf, plan, world, seed, &bass, &lead.notes, intent)
+        }
+        (super::percussion::PercussionPolicy::Unarbitrated, None) => {
+            super::groove::realize_drums(perf, plan, world, seed, &bass, &lead.notes)
+        }
     };
     score.notes.extend(pad);
     score.notes.extend(keys);
