@@ -18,6 +18,8 @@ pub enum PhraseTransform {
     GridPickup,
     MetricalPush,
     CoordinatedSpace,
+    /// Optional connective yields where an authored hole divides the thought.
+    PhraseSpace,
     PhysicalFallback,
 }
 
@@ -77,6 +79,35 @@ pub struct PhraseRealization {
     pub events: Vec<ExpressionEvent>,
     pub decisions: Vec<ExpressionDecision>,
     pub plans: Vec<PhrasePlan>,
+}
+
+// Check the entire relocation corridor, not just its landing. Grid half-steps and every
+// admission boundary partition the piecewise-constant stage/accent authority exactly.
+fn clear_corridor(perf: &PerformancePlan, role: Role, from: f64, to: f64) -> bool {
+    let agent = if role == Role::Bass {
+        Agent::Bass
+    } else {
+        Agent::Lead
+    };
+    let mut cuts = vec![from, to];
+    cuts.extend(
+        ((from * 8.0).floor() as i64..=(to * 8.0).ceil() as i64)
+            .map(|k| k as f64 / 8.0)
+            .filter(|b| *b > from && *b < to),
+    );
+    cuts.extend(
+        perf.stage
+            .windows
+            .iter()
+            .filter(|w| w.agent == agent)
+            .flat_map(|w| [w.start_beat, w.end_beat])
+            .filter(|b| *b > from && *b < to),
+    );
+    cuts.sort_by(f64::total_cmp);
+    cuts.iter()
+        .copied()
+        .chain(cuts.windows(2).map(|w| (w[0] + w[1]) * 0.5))
+        .all(|b| perf.on_stage(agent, b) && !perf.accent.is_hole(b))
 }
 
 fn anchored(perf: &PerformancePlan, n: &Note) -> bool {
@@ -243,6 +274,31 @@ pub fn realize(
             plans.push(plan);
             continue;
         }
+        if !clear_corridor(perf, first.role, first.start_beat, destination.start_beat)
+            && (first_connector..stop).all(|k| !anchored(perf, &line[k].note))
+        {
+            let remaining: Vec<_> = working
+                .iter()
+                .enumerate()
+                .filter(|(k, _)| !removed[*k] && !(*k >= first_connector && *k < stop))
+                .map(|(_, e)| *e)
+                .collect();
+            if identities_survive(&line, &remaining) {
+                for k in first_connector..stop {
+                    removed[k] = true;
+                    decisions.push(ExpressionDecision {
+                        before: expression::observe(perf,world,&line[k],k.checked_sub(1).map(|j|&line[j].note),line.get(k+1).map(|e|&e.note),support),
+                        after: None, after_observation: None, strategy: ExpressionStrategy::Omitted,
+                        reason: "authored stage hole divides the thought; optional connector yields instead of jumping the boundary",
+                    });
+                }
+                plan.performed.clear();
+                plan.transform = PhraseTransform::PhraseSpace;
+                plan.reason = "internal stage boundary owns the silence; fixed destination remains";
+                plans.push(plan);
+                continue;
+            }
+        }
         // A bass can leave the pickup to an already committed lead fragment. An actual shared
         // action is a unison obligation, not a reason to delete a participant.
         let lead_owns = first.role == Role::Bass
@@ -375,6 +431,7 @@ pub fn realize(
                         == perf.context_at(n.start_beat).map(|c| c.start_beat)
                     && perf.on_stage(agent, n.start_beat)
                     && !perf.accent.is_hole(n.start_beat)
+                    && clear_corridor(perf, n.role, old.start_beat, n.start_beat)
                     && expression::valid_function(
                         perf,
                         k.checked_sub(1).map(|j| &candidate[j].note),
@@ -588,6 +645,27 @@ pub fn realize(
                     .map(|e| e.note)
             })
             .collect();
+    }
+    for decision in &decisions {
+        if let Some(after) = decision.after {
+            if after.start_beat != decision.before.note.start_beat
+                && fallback.events.iter().any(|e| {
+                    e.note.role == after.role
+                        && e.note.pitch == after.pitch
+                        && e.note.start_beat == after.start_beat
+                })
+            {
+                assert!(
+                    clear_corridor(
+                        perf,
+                        after.role,
+                        decision.before.note.start_beat,
+                        after.start_beat
+                    ),
+                    "phrase relocation crossed a stage boundary"
+                );
+            }
+        }
     }
     assert_eq!(
         skeleton,

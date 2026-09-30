@@ -1,0 +1,19 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.05s
+     Running tests/audio_phrase_hostile.rs (target/debug/deps/audio_phrase_hostile-bc47e0b10b7f9346)
+
+running 1 test
+
+thread 'a_connector_cannot_jump_over_an_internal_stage_hole' (2540228) panicked at tests/audio_phrase_hostile.rs:304:5:
+connector jumped across authored hole: [ExpressionEvent { note: Note { start_beat: 24.0, dur_beats: 0.5, pitch: 72, velocity: 0.79, role: Lead, prov: Provenance { section: A, phrase: Some(1), family: Some("A"), anchor: Some("motif"), role_kind: Some("foreground"), motif_id: Some(0), motif_xform: Some("restate"), groove_variation: None, role: Some("restate"), closure: Some("weak"), morphism: None, role_note: "melody", actions: ActionStamp { ids: [None, None, None] }, interaction: Some(InteractionId(3)), material: Some(MaterialId(10)), obligation: None }, function: Some(ChordTone) }, structural: true }, ExpressionEvent { note: Note { start_beat: 25.125, dur_beats: 0.140625, pitch: 73, velocity: 0.6952, role: Lead, prov: Provenance { section: A, phrase: Some(1), family: Some("A"), anchor: Some("motif"), role_kind: Some("foreground"), motif_id: Some(0), motif_xform: Some("restate"), groove_variation: None, role: Some("restate"), closure: Some("weak"), morphism: None, role_note: "melody", actions: ActionStamp { ids: [None, None, None] }, interaction: Some(InteractionId(3)), material: Some(MaterialId(10)), obligation: None }, function: Some(Neighbor) }, structural: false }, ExpressionEvent { note: Note { start_beat: 25.5, dur_beats: 0.5, pitch: 72, velocity: 0.79, role: Lead, prov: Provenance { section: A, phrase: Some(1), family: Some("A"), anchor: Some("motif"), role_kind: Some("foreground"), motif_id: Some(0), motif_xform: Some("restate"), groove_variation: None, role: Some("restate"), closure: Some("weak"), morphism: None, role_note: "melody", actions: ActionStamp { ids: [None, None, None] }, interaction: Some(InteractionId(3)), material: Some(MaterialId(10)), obligation: None }, function: Some(ChordTone) }, structural: true }]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test a_connector_cannot_jump_over_an_internal_stage_hole ... FAILED
+
+failures:
+
+failures:
+    a_connector_cannot_jump_over_an_internal_stage_hole
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.39s
+
+error: test failed, to rerun pass `--test audio_phrase_hostile`

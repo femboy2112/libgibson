@@ -1,0 +1,35 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.69s
+     Running tests/audio_phrase_expression.rs (target/debug/deps/audio_phrase_expression-6b1b440c15bb198b)
+
+running 7 tests
+test bass_uses_committed_lead_fragment_space_without_losing_metric_pushes ... ok
+test empty_and_single_optional_sources_preserve_fixed_endpoints ... ok
+test harmonic_and_action_boundaries_are_not_sacrificed_for_fragments ... ok
+test low_kinetic_space_is_legal_and_distinct_from_driving_fragments ... ok
+test phrase_plan_compresses_existing_optional_notes_into_real_fragments ... ok
+test swing_transport_changes_only_declared_offbeats ... ok
+test swiss_accepted_source_is_exactly_unchanged_by_phrase_planning ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.30s
+
+     Running tests/audio_phrase_hostile.rs (target/debug/deps/audio_phrase_hostile-bc47e0b10b7f9346)
+
+running 6 tests
+test a_connector_cannot_jump_over_an_internal_stage_hole ... ok
+test r16_a_later_connector_cannot_move_its_stamped_push ... ok
+test r16_fallback_omission_must_revalidate_the_surviving_connective_path ... ok
+test r16_harmony_boundary_and_stage_hole_do_not_move_the_destination ... ok
+test r16_phrase_candidates_respect_frozen_physics_across_tempo_patch_and_kinetic ... ok
+test r16_zero_and_one_structural_event_are_identity_cases ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.47s
+
+     Running tests/audio_phrase_integration.rs (target/debug/deps/audio_phrase_integration-bd1973359036143d)
+
+running 3 tests
+test expressive_unison_moves_shared_accents_but_not_the_ordinary_drum_pocket ... ok
+test frozen_historical_arms_and_new_flagship_invariants ... ok
+test r16_hostile_world_seed_tempo_sweep ... ignored, bounded 120-case fresh-seed/world/tempo holdout; run explicitly in release
+
+test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 4.13s

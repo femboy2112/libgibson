@@ -284,3 +284,47 @@ fn r16_fallback_omission_must_revalidate_the_surviving_connective_path() {
         );
     }
 }
+
+#[test]
+fn a_connector_cannot_jump_over_an_internal_stage_hole() {
+    let song = SongMap::compose(
+        &deflected_lift_trace(120.0),
+        2112,
+        None,
+        Composer::StablePropulsion,
+    );
+    let w = MusicWorld::black_ice();
+    let mut c = perform_coherent(&song, &w, PerformanceOptions::default());
+    c.perf.accent.bars[6][3].hole = 1.0; // 24.75: between old onset and every viable late pickup.
+    let template = *c
+        .score
+        .role_notes(Role::Lead)
+        .find(|n| n.start_beat == 24.0)
+        .unwrap();
+    let line: Vec<_> = [(24.0, 72, true), (24.5, 73, false), (25.5, 72, true)]
+        .into_iter()
+        .map(|(at, pitch, structural)| {
+            let mut note = template;
+            note.start_beat = at;
+            note.pitch = pitch;
+            note.dur_beats = 0.5;
+            note.prov.actions = ActionStamp::NONE;
+            note.function = Some(if structural {
+                PitchFunction::ChordTone
+            } else {
+                PitchFunction::Neighbor
+            });
+            ExpressionEvent { note, structural }
+        })
+        .collect();
+    let skeleton = project(&line);
+    let out = phrase_expression::realize(&c.perf, &w, line, &[], &[]);
+    assert_eq!(project(&out.events), skeleton);
+    assert!(
+        out.events
+            .iter()
+            .all(|e| e.structural || e.note.start_beat < 24.75),
+        "connector jumped across authored hole: {:?}",
+        out.events
+    );
+}
