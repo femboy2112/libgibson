@@ -7,7 +7,6 @@ use gibson::audio::human_music::{
         cover_candidate, CoverAxis, CoverConformance, CoverError, CoverMap, CoverSpec, CoverTarget,
     },
     functor::{perform_with_profile, Composition},
-    language::MusicalLanguage,
     performance::PerformanceOptions,
     policy::PerformanceProfile,
     score::Role,
