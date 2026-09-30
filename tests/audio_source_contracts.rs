@@ -503,3 +503,42 @@ fn u3_rehearsed_obligations_are_paid_or_named() {
     }
     assert!(paid > open, "paid {paid}, open {open}");
 }
+
+/// G02/G22 (holdout v1): a keys hold — a voicing chosen for its harmony — rang up to half a beat
+/// into the next harmony, where its voice was not a member, and the temporal observer rejected
+/// the false function claim. Reproduced on fresh seeds; the note is never relabelled.
+#[test]
+fn temporal_hold_voices_do_not_ring_into_a_nonmember_harmony() {
+    use gibson::audio::human_music::temporal::TemporalPitchDiagnostics;
+    for seed in 77_400_001..77_400_041u64 {
+        for beats in [9.25, 12.0] {
+            let s = song(beats, seed, true, CompositionGrammar::LoopEvolution);
+            for world in WORLDS() {
+                let c = pocket(&s, &world, MusicalLanguage::fusion_conversation());
+                let law = TemporalPitchDiagnostics::measure(&c.perf, &c.score);
+                let hold_breaks = c
+                    .score
+                    .notes
+                    .iter()
+                    .filter(|n| n.role == Role::Keys && n.prov.role_note == "hold")
+                    .filter(|n| {
+                        let end = n.start_beat + f64::from(n.dur_beats);
+                        c.score.chords.iter().any(|h| {
+                            h.start_beat > n.start_beat + 1e-6
+                                && h.start_beat < end - 1e-6
+                                && !h.chord.contains_pc(n.pitch.rem_euclid(12))
+                        })
+                    })
+                    .count();
+                assert_eq!(
+                    hold_breaks,
+                    0,
+                    "seed {seed} {beats} {}: {} hold voices ring into a nonmember harmony\n{}",
+                    world.name,
+                    hold_breaks,
+                    law.report()
+                );
+            }
+        }
+    }
+}
