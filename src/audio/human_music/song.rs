@@ -278,8 +278,9 @@ impl SongMap {
     }
 }
 
-/// FNV-1a over `text`: stable across Rust versions and platforms (unlike `DefaultHasher`), so a
-/// fingerprint printed today is comparable with one printed on another machine or toolchain.
+/// Legacy FNV-1a over text. The hash arithmetic is stable; callers that format `Debug`
+/// data do NOT have a canonical cross-toolchain encoding. New identities use
+/// [`super::fingerprint::CanonicalFingerprint`].
 pub fn fnv1a(text: &str) -> u64 {
     text.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
         (h ^ b as u64).wrapping_mul(0x0100_0000_01b3)

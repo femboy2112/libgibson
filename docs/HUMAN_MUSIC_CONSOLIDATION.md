@@ -516,3 +516,30 @@ Observed: current seams, seed coupling, planned-vs-heard conformance gap, no loc
 Disclosed inside type boundary if implemented: a pure CoverMap-only generator cannot read excluded original Composition fields; runtime equality tests still required for accidental serialization/seed leakage.
 Conjectured: proposed axis default is sufficient for recognizability; only human blind audition can establish that bearing.
 UNVERIFIED: all proposed implementation/property results and real-song listening target; no CoverMap implementation yet exists at inspected HEAD.
+
+## Implemented: canonical identity schema v2
+
+`fingerprint::CanonicalFingerprint` writes a streaming, explicitly tagged binary
+encoding through `FingerprintWriter`. `fingerprint/schema.rs` declares field order
+and enum discriminants for the transitive SongMap, PerformancePlan and Score event
+graph. Exhaustive struct destructuring and enum matching require review when a
+field or variant is added. This is not a serializer generated from Debug at runtime.
+
+The stream begins `humanmusic-canonical/v2`. Tags/strings carry u64 byte lengths;
+integers are little endian; usize is u64; sequences carry lengths; enums carry
+explicit UTF-8 discriminant tags; floats are IEEE bits with signed zero and NaN
+payloads normalized. No blanket unordered-map implementation exists. FNV-1a is
+still the digest algorithm, not a cryptographic collision-proof identity.
+
+Existing `fingerprint()` formulas remain unchanged; explicit `legacy_fingerprint()`
+aliases name historical receipts. Song v2 includes song-defining consequences,
+not raw input seed/trace. Performance v2 includes the decisions, not its redundant
+legacy song-hash claim. Score v2 is **event identity**, including tempo, meter and
+length; render continuity and evidence are separate concerns. Never use an event
+digest alone to claim equal PCM. Canonical equality is schema-relative, not musical
+quality or recognition.
+
+`audio_canonical_fingerprint` tests Debug presentation independence, primitive
+boundaries, float normalization, song-coordinate mutation, free seed invariance,
+performance-grid mutation and note/time/provenance mutation. Historical baseline
+characterization remains a separate test and WAV comparisons remain mandatory.
