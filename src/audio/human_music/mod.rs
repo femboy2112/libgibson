@@ -37,6 +37,8 @@ pub mod functor;
 pub mod groove;
 pub mod harmonic_state;
 pub mod harmony;
+#[cfg(test)]
+mod heard_witnesses;
 pub mod ids;
 pub mod instrument;
 pub mod intent;
