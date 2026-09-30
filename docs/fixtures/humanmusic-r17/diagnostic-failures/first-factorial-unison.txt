@@ -1,0 +1,28 @@
+Observed pre-admission debug run; production files were under active implementation.
+Command: cargo +1.98.1 test --test audio_pocket_integration -- --nocapture
+Boundary: exact failure preserved; not a claim about subsequent source or human listening.
+
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.16s
+     Running tests/audio_pocket_integration.rs (target/debug/deps/audio_pocket_integration-da538a2d4f6a2a1f)
+
+running 6 tests
+test r17_fresh_world_seed_tempo_sweep ... ignored, 120-case fresh sweep; VAPOR95 withheld until flagship implementation settled
+test linked_lifetime_consumers_preserve_an_unrelated_same_role_overlap ... ok
+test frozen_unison_predecessor_reservation_exposes_final_lead_leak ... ok
+test swiss_support_only_keeps_accepted_other_roles_and_drums_exact ... ok
+
+thread 'primary_factorial_keeps_source_and_consumer_contracts' (2927154) panicked at tests/audio_pocket_integration.rs:242:13:
+accepted pitch changed BLACK_ICE factors=0011: prior=[(215, Note { start_beat: 84.625, dur_beats: 0.140625, pitch: 70, velocity: 0.27816254, role: Keys, prov: Provenance { section: A, phrase: Some(5), family: Some("A'"), anchor: None, role_kind: Some("support"), motif_id: None, motif_xform: Some("unison"), groove_variation: None, role: Some("restate"), closure: Some("weak"), morphism: None, role_note: "unison", actions: ActionStamp { ids: [Some(ActionId(23)), None, None] }, interaction: None, material: None, obligation: None }, function: Some(ChromaticApproach) })] new=Note { start_beat: 84.5, dur_beats: 0.425, pitch: 72, velocity: 0.27816254, role: Keys, prov: Provenance { section: A, phrase: Some(5), family: Some("A'"), anchor: None, role_kind: Some("support"), motif_id: None, motif_xform: Some("unison"), groove_variation: None, role: Some("restate"), closure: Some("weak"), morphism: None, role_note: "unison", actions: ActionStamp { ids: [Some(ActionId(23)), None, None] }, interaction: None, material: None, obligation: None }, function: Some(ChordTone) }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test primary_factorial_keeps_source_and_consumer_contracts ... FAILED
+test frozen_historical_controls_all_off_and_pocket_flagships ... ok
+
+failures:
+
+failures:
+    primary_factorial_keeps_source_and_consumer_contracts
+
+test result: FAILED. 4 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.13s
+
+error: test failed, to rerun pass `--test audio_pocket_integration`

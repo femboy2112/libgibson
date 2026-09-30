@@ -155,6 +155,44 @@ pub fn realize_bass_phrased(
     lead_plans: &[super::phrase_expression::PhrasePlan],
     ownership: Option<&AuthoredOccupancy>,
 ) -> PhraseBass {
+    realize_bass_phrase_impl(perf, plan, world, lead, keys, lead_plans, ownership, None)
+}
+
+/// Round XVII source pickup realization; unisons already inherit final lead articulation.
+#[allow(clippy::too_many_arguments)]
+pub fn realize_bass_pocketed(
+    perf: &PerformancePlan,
+    plan: &CompositionPlan,
+    world: &MusicWorld,
+    lead: &[Note],
+    keys: &[Note],
+    lead_plans: &[super::phrase_expression::PhrasePlan],
+    ownership: Option<&AuthoredOccupancy>,
+    factors: super::pocket::PocketOptions,
+) -> PhraseBass {
+    realize_bass_phrase_impl(
+        perf,
+        plan,
+        world,
+        lead,
+        keys,
+        lead_plans,
+        ownership,
+        Some(factors),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn realize_bass_phrase_impl(
+    perf: &PerformancePlan,
+    plan: &CompositionPlan,
+    world: &MusicWorld,
+    lead: &[Note],
+    keys: &[Note],
+    lead_plans: &[super::phrase_expression::PhrasePlan],
+    ownership: Option<&AuthoredOccupancy>,
+    pocket: Option<super::pocket::PocketOptions>,
+) -> PhraseBass {
     let authored = realize(perf, plan, world, lead, ownership, None, true);
     let line = authored
         .iter()
@@ -165,7 +203,11 @@ pub fn realize_bass_phrased(
         })
         .collect();
     let support: Vec<_> = lead.iter().chain(keys).copied().collect();
-    let result = super::phrase_expression::realize(perf, world, line, &support, lead_plans);
+    let result = if let Some(factors) = pocket {
+        super::phrase_expression::realize_pocket(perf, world, line, &support, lead_plans, factors)
+    } else {
+        super::phrase_expression::realize(perf, world, line, &support, lead_plans)
+    };
     PhraseBass {
         authored,
         notes: result.events.into_iter().map(|e| e.note).collect(),

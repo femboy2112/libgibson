@@ -28,14 +28,14 @@ pub struct LeadRealization {
 
 /// Realize every planned lead statement, connecting each to the previous statement's exit pitch.
 pub fn realize_lead(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadRealization {
-    realize_lead_impl(perf, false, None, false)
+    realize_lead_impl(perf, false, None, false, None)
 }
 
 /// Realize temporal pitch paths over the R11 statement and register scaffold.
 /// Each statement retains the legacy entry register even when the previous statement's
 /// selected pitch changes, preventing a local choice from shifting the whole song.
 pub fn realize_lead_temporal(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadRealization {
-    realize_lead_impl(perf, true, None, false)
+    realize_lead_impl(perf, true, None, false, None)
 }
 
 /// Temporal lead expressed before any dependent hears it.
@@ -44,7 +44,7 @@ pub fn realize_lead_expressive(
     _plan: &CompositionPlan,
     world: &super::world::MusicWorld,
 ) -> LeadRealization {
-    realize_lead_impl(perf, true, Some(world), false)
+    realize_lead_impl(perf, true, Some(world), false, None)
 }
 
 /// Plan one phrase's optional performance fiber before any other player hears it.
@@ -53,7 +53,17 @@ pub fn realize_lead_phrased(
     _plan: &CompositionPlan,
     world: &super::world::MusicWorld,
 ) -> LeadRealization {
-    realize_lead_impl(perf, true, Some(world), true)
+    realize_lead_impl(perf, true, Some(world), true, None)
+}
+
+/// Round XVII source-owned gesture realization, before dependent players hear it.
+pub fn realize_lead_pocketed(
+    perf: &PerformancePlan,
+    _plan: &CompositionPlan,
+    world: &super::world::MusicWorld,
+    factors: super::pocket::PocketOptions,
+) -> LeadRealization {
+    realize_lead_impl(perf, true, Some(world), true, Some(factors))
 }
 
 fn realize_lead_impl(
@@ -61,6 +71,7 @@ fn realize_lead_impl(
     temporal: bool,
     expressive: Option<&super::world::MusicWorld>,
     phrased: bool,
+    pocket: Option<super::pocket::PocketOptions>,
 ) -> LeadRealization {
     let mut notes = Vec::new();
     let mut repairs = 0usize;
@@ -235,7 +246,11 @@ fn realize_lead_impl(
             .map(|(note, structural)| super::expression::ExpressionEvent { note, structural })
             .collect();
         if phrased {
-            let result = super::phrase_expression::realize(perf, world, line, &[], &[]);
+            let result = if let Some(factors) = pocket {
+                super::phrase_expression::realize_pocket(perf, world, line, &[], &[], factors)
+            } else {
+                super::phrase_expression::realize(perf, world, line, &[], &[])
+            };
             notes = result.events.into_iter().map(|e| e.note).collect();
             expression = result.decisions;
             phrase_plans = result.plans;

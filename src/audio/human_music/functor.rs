@@ -238,6 +238,45 @@ pub fn perform_phrase_experiment(
     }
 }
 
+pub use super::pocket::PocketOptions;
+
+/// Round XVII opt-in pocket source arm. Human timing acceptance remains unverified.
+///
+/// # Panics
+/// Requires Independent coupling to preserve final-source hearings.
+pub fn perform_pocketed(
+    song: &SongMap,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+) -> Composition {
+    perform_pocket_experiment(song, world, opts, PocketOptions::default())
+}
+
+/// Independently toggle lattice selection, legato articulation, explicit voice continuity,
+/// and the reserved support hypothesis. Support promotion awaits human knockout evidence.
+///
+/// # Panics
+/// Requires Independent coupling.
+pub fn perform_pocket_experiment(
+    song: &SongMap,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+    factors: PocketOptions,
+) -> Composition {
+    assert_eq!(
+        opts.coupling,
+        EnsembleCoupling::Independent,
+        "Round XVII requires Independent coupling"
+    );
+    let perf = PerformancePlan::from_song(song, world, opts);
+    let score = realize_arm(song, world, &perf, true, Contract::Pocketed(factors));
+    Composition {
+        score,
+        song: song.clone(),
+        perf,
+    }
+}
+
 /// Which opt-in pitch contract a realization honours on top of the written one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Contract {
@@ -253,14 +292,15 @@ enum Contract {
     Expressive,
     /// Round XVI: optional phrase, semantic ownership and support path experiments.
     Phrased(PhraseOptions),
+    Pocketed(PocketOptions),
 }
 
 impl Contract {
     fn phrase(self) -> Option<PhraseOptions> {
-        if let Self::Phrased(opts) = self {
-            Some(opts)
-        } else {
-            None
+        match self {
+            Self::Phrased(opts) => Some(opts),
+            Self::Pocketed(_) => Some(PhraseOptions::default()),
+            _ => None,
         }
     }
 
@@ -305,7 +345,15 @@ fn realize_arm(
     score.chords = perf.chords.clone();
 
     let phrase = contract.phrase();
-    let lead = if phrase.is_some_and(|p| p.phrase_expression) {
+    let pocket = if let Contract::Pocketed(f) = contract {
+        Some(f)
+    } else {
+        None
+    };
+    score.mono_voice = pocket.is_some_and(|p| p.mono_voice);
+    let lead = if let Some(factors) = pocket {
+        super::melody::realize_lead_pocketed(perf, plan, world, factors)
+    } else if phrase.is_some_and(|p| p.phrase_expression) {
         super::melody::realize_lead_phrased(perf, plan, world)
     } else if contract == Contract::Expressive || phrase.is_some() {
         super::melody::realize_lead_expressive(perf, plan, world)
@@ -350,28 +398,57 @@ fn realize_arm(
             };
             if matches!(
                 contract,
-                Contract::Coherent | Contract::Expressive | Contract::Phrased(_)
+                Contract::Coherent
+                    | Contract::Expressive
+                    | Contract::Phrased(_)
+                    | Contract::Pocketed(_)
             ) {
                 // Round XIV keeps temporal bass; Round XV also hears final keys when expressing
                 // its connectives. The frozen coherent pad comes last and hears the band.
                 let bass = if phrase.is_some_and(|p| p.phrase_expression) {
                     score.hearings.push(Hearing::of("bass", Role::Keys, &keys));
-                    let result = super::bass::realize_bass_phrased(
-                        perf,
-                        plan,
-                        world,
-                        &lead.notes,
-                        &keys,
-                        &lead.phrase_plans,
-                        agency,
-                    );
-                    score
-                        .occupancy
-                        .push(super::occupancy::AuthoredOccupancy::from_bass(
+                    let result = if let Some(factors) = pocket {
+                        super::bass::realize_bass_pocketed(
+                            perf,
+                            plan,
+                            world,
+                            &lead.notes,
+                            &keys,
+                            &lead.phrase_plans,
+                            agency,
+                            factors,
+                        )
+                    } else {
+                        super::bass::realize_bass_phrased(
+                            perf,
+                            plan,
+                            world,
+                            &lead.notes,
+                            &keys,
+                            &lead.phrase_plans,
+                            agency,
+                        )
+                    };
+                    let bass_intent = if pocket.is_some_and(|p| p.changes_phrase()) {
+                        // The final lead's unison can shorten/lengthen its predecessor at the
+                        // bass source. Recover the whole authored reservation stream, not only
+                        // the explicitly retimed event. This is intent, never an acoustic hearing.
+                        let source = super::bass::realize_bass_temporal_owned(
+                            perf,
+                            plan,
+                            world,
+                            &lead.authored,
+                            agency,
+                        );
+                        super::occupancy::AuthoredOccupancy::from_bass(perf, &source, &[])
+                    } else {
+                        super::occupancy::AuthoredOccupancy::from_bass(
                             perf,
                             &result.authored,
                             &score.expression_decisions,
-                        ));
+                        )
+                    };
+                    score.occupancy.push(bass_intent);
                     score.phrase_plans.extend(result.plans);
                     score.expression_decisions.extend(result.decisions);
                     result.notes
@@ -413,6 +490,10 @@ fn realize_arm(
                     .chain(&bass)
                     .copied()
                     .collect();
+                if score.mono_voice {
+                    score.voice_continuity =
+                        super::pocket::continuations(&band, &score.phrase_plans);
+                }
                 for (source, notes) in [
                     (Role::Lead, &lead.notes),
                     (Role::Keys, &keys),
@@ -420,7 +501,16 @@ fn realize_arm(
                 ] {
                     score.hearings.push(Hearing::of("pad", source, notes));
                 }
-                let (pad, edits) = if phrase.is_some_and(|p| p.support_voicing) {
+                let (pad, edits) = if score.mono_voice {
+                    let (notes, edits, decisions) = super::comp::realize_pad_pocketed(
+                        perf,
+                        world,
+                        &band,
+                        &score.voice_continuity,
+                    );
+                    score.support_voicing_decisions = decisions;
+                    (notes, edits)
+                } else if phrase.is_some_and(|p| p.support_voicing) {
                     let (notes, edits, decisions) =
                         super::comp::realize_pad_phrased(perf, plan, world, &band);
                     score.support_voicing_decisions = decisions;
