@@ -289,12 +289,13 @@ pub struct DerivedHarmony {
     pub chords: Vec<CoverChord>,
 }
 
-/// The declared analyzer: fixed windows; per window, the (root, quality) among triads and seventh
-/// chords whose members cover the most sounding note-duration (every voice), preferring a triad,
-/// then the lowest sounding pitch as root, then the lower root; equal neighbours merge. A window
-/// with no sounding note continues the previous chord.
+/// The declared analyzer: fixed windows; per window, the triad whose members cover the most
+/// sounding note-duration (every voice; ties: the lowest sounding pitch as root, then the lower
+/// root); a seventh is added only when that pitch class sounds for at least half the window (a
+/// passing tone is not a chord member); equal neighbours merge; a window with no sounding note
+/// continues the previous chord.
 pub const DERIVED_HARMONY_METHOD: &str =
-    "satb-window-cover/v1: max covered note-duration; triad > seventh; bass-root; merge equal";
+    "satb-window-triad/v2: max covered duration triad; structural seventh >= half window; bass-root ties; merge equal";
 
 impl ReferenceSong {
     /// Derive a chord-span reading from every voice (see [`DERIVED_HARMONY_METHOD`]).
@@ -303,22 +304,14 @@ impl ReferenceSong {
         if window.beats() <= 0.0 {
             return Err(CoverError::Invalid("analysis window"));
         }
-        let candidates = [
-            Q::Maj,
-            Q::Min,
-            Q::Dim,
-            Q::Aug,
-            Q::Dom7,
-            Q::Maj7,
-            Q::Min7,
-            Q::Min7b5,
-        ];
+        let triads = [Q::Maj, Q::Min, Q::Dim, Q::Aug];
         let mut spans: Vec<CoverChord> = Vec::new();
         let mut at = super::rhythm::MetricPosition::new(0, 1).expect("zero");
         while at < self.length {
             let end = add(at, window)?.min(self.length);
             let (a, e) = (at.beats(), end.beats());
-            // (pitch class, sounding duration inside the window) and the lowest pitch at its start.
+            // (pitch class, sounding duration inside the window, summed over voices) and the
+            // lowest pitch sounding at the window's start.
             let mut weight = [0.0f64; 12];
             let mut lowest: Option<i32> = None;
             for voice in &self.voices {
@@ -337,32 +330,37 @@ impl ReferenceSong {
                 spans.last().map(|c| (c.relative_root, c.quality))
             } else {
                 let bass_pc = lowest.map(|p| p.rem_euclid(12));
-                let mut best: Option<(f64, bool, bool, i32, Q)> = None;
+                let w = |pc: i32| weight[pc.rem_euclid(12) as usize];
+                // 1. The triad covering the most sounding duration; ties: the lowest sounding
+                //    pitch as root, then the lower root.
+                let mut best: Option<(f64, bool, i32, Q)> = None;
                 for root in 0..12 {
-                    for &q in &candidates {
-                        let covered: f64 = q
-                            .intervals()
-                            .iter()
-                            .map(|o| weight[(root + o).rem_euclid(12) as usize])
-                            .sum();
-                        let key = (
-                            covered,
-                            q.intervals().len() == 3,
-                            bass_pc == Some(root),
-                            -root,
-                            q,
-                        );
+                    for &q in &triads {
+                        let covered: f64 = q.intervals().iter().map(|o| w(root + o)).sum();
+                        let key = (covered, bass_pc == Some(root), -root, q);
                         let better = best.is_none_or(|b| {
                             (key.0 - b.0).abs() > 1e-9 && key.0 > b.0
-                                || (key.0 - b.0).abs() <= 1e-9
-                                    && (key.1, key.2, key.3) > (b.1, b.2, b.3)
+                                || (key.0 - b.0).abs() <= 1e-9 && (key.1, key.2) > (b.1, b.2)
                         });
                         if better {
                             best = Some(key);
                         }
                     }
                 }
-                best.map(|b| ((-b.3 - self.tonic).rem_euclid(12), b.4))
+                best.map(|(_, _, neg_root, triad)| {
+                    let root = -neg_root;
+                    // 2. A seventh only when it is structural: sounding for at least half the
+                    //    window (a passing tone is not a chord member).
+                    let structural = |offset: i32| w(root + offset) >= (e - a) * 0.5 - 1e-9;
+                    let quality = match triad {
+                        Q::Maj if structural(10) => Q::Dom7,
+                        Q::Maj if structural(11) => Q::Maj7,
+                        Q::Min if structural(10) => Q::Min7,
+                        Q::Dim if structural(10) => Q::Min7b5,
+                        q => q,
+                    };
+                    ((root - self.tonic).rem_euclid(12), quality)
+                })
             };
             let Some((relative_root, quality)) = chord else {
                 return Err(CoverError::MissingAxis(CoverAxis::HarmonicContour));
