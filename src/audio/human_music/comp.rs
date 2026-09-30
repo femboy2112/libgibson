@@ -1381,6 +1381,35 @@ pub fn realize_pad_heard(
     world: &MusicWorld,
     band: &[Note],
 ) -> (Vec<Note>, Vec<PadVoicingEdit>) {
+    let (_, pad, edits) = heard_pad_path(perf, world, band);
+    (pad, edits)
+}
+
+/// Round XVI's pad: retain the Round XIV harmony solution, then select a same-pitch-class
+/// voicing within the source-owned path when the audible register/path witness asks for one.
+/// Trial realizations supply evidence; the selected path is emitted once as the final pad.
+pub fn realize_pad_phrased(
+    perf: &PerformancePlan,
+    _plan: &CompositionPlan,
+    world: &MusicWorld,
+    band: &[Note],
+) -> (
+    Vec<Note>,
+    Vec<PadVoicingEdit>,
+    Vec<super::support_voicing::VoicingPathDecision>,
+) {
+    let (path, pad, edits) = heard_pad_path(perf, world, band);
+    let (path, decisions) = super::support_voicing::select(perf, world, band, path, &pad);
+    (realize_pad_on(perf, world, &path, None), edits, decisions)
+}
+
+/// The exact Round XIV algorithm, with its selected source path retained for later source
+/// articulation. The public Round XIV arm returns the same notes and edits as before.
+fn heard_pad_path(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    band: &[Note],
+) -> (super::voicing::RolePath, Vec<Note>, Vec<PadVoicingEdit>) {
     use super::identity::{keeps_identity, IdentityDiagnostics};
     let mut pp = pad_path(perf, world.voicing_spread);
     let mut edits = Vec::new();
@@ -1447,7 +1476,7 @@ pub fn realize_pad_heard(
             }
         }
     }
-    (pad, edits)
+    (pp, pad, edits)
 }
 
 /// Whether a pad pitch's release tail over `[a, b)` would meet ANOTHER player a minor 2nd / 9th

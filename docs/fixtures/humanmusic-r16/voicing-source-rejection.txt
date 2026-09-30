@@ -1,0 +1,24 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.80s
+     Running tests/audio_voicing_surface.rs (target/debug/deps/audio_voicing_surface-e9e092f5d9c484f8)
+
+running 1 test
+source candidate28 witness=false motion28->20 identity=true contacts=false
+source before beat28 [IntervalContact { pad_pitch: 72, other_pitch: 71, other_role: Keys, semitones: 1, overlap_seconds: 0.004827285640248306, onset_separation_seconds: 2.288135593220339, coincident_attack: false }, IntervalContact { pad_pitch: 72, other_pitch: 71, other_role: Keys, semitones: 1, overlap_seconds: 0.1370000054594134, onset_separation_seconds: 0.2542372881355932, coincident_attack: false }, IntervalContact { pad_pitch: 72, other_pitch: 71, other_role: Keys, semitones: 1, overlap_seconds: 0.1370000054594134, onset_separation_seconds: 1.271186440677966, coincident_attack: false }, IntervalContact { pad_pitch: 72, other_pitch: 71, other_role: Keys, semitones: 1, overlap_seconds: 0.1370000054594134, onset_separation_seconds: 1.3983050847457625, coincident_attack: false }]
+source before beat32 [IntervalContact { pad_pitch: 64, other_pitch: 65, other_role: Lead, semitones: 1, overlap_seconds: 0.09299999801441906, onset_separation_seconds: 0.7627118644067796, coincident_attack: false }, IntervalContact { pad_pitch: 64, other_pitch: 65, other_role: Lead, semitones: 1, overlap_seconds: 0.09299999801441906, onset_separation_seconds: 1.7796610169491525, coincident_attack: false }]
+source after beat28 [IntervalContact { pad_pitch: 72, other_pitch: 71, other_role: Keys, semitones: 1, overlap_seconds: 0.004827285640248306, onset_separation_seconds: 2.288135593220339, coincident_attack: false }, IntervalContact { pad_pitch: 60, other_pitch: 47, other_role: Bass, semitones: 13, overlap_seconds: 0.31274145392138597, onset_separation_seconds: 1.5254237288135593, coincident_attack: false }, IntervalContact { pad_pitch: 71, other_pitch: 72, other_role: Keys, semitones: 1, overlap_seconds: 0.1370000054594134, onset_separation_seconds: 1.7796610169491525, coincident_attack: false }]
+source after beat32 [IntervalContact { pad_pitch: 64, other_pitch: 65, other_role: Lead, semitones: 1, overlap_seconds: 0.09299999801441906, onset_separation_seconds: 0.7627118644067796, coincident_attack: false }, IntervalContact { pad_pitch: 64, other_pitch: 65, other_role: Lead, semitones: 1, overlap_seconds: 0.09299999801441906, onset_separation_seconds: 1.7796610169491525, coincident_attack: false }]
+
+thread 'r16_production_should_discharge_the_reported_register_path_witness' (2522510) panicked at tests/audio_voicing_surface.rs:129:5:
+identity passes, but reported voicing family survives: [28.0]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test r16_production_should_discharge_the_reported_register_path_witness ... FAILED
+
+failures:
+
+failures:
+    r16_production_should_discharge_the_reported_register_path_witness
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.62s
+
+error: test failed, to rerun pass `--test audio_voicing_surface`

@@ -76,6 +76,7 @@ pub mod song;
 mod song_probes;
 pub mod sonority;
 pub mod support;
+pub mod support_voicing;
 pub mod surgical;
 pub mod synth;
 pub mod temporal;

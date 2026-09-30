@@ -19,6 +19,12 @@ pub struct IntervalContact {
     pub pad_pitch: Midi,
     pub other_pitch: Midi,
     pub other_role: Role,
+    /// Pitched SFX borrow a role in the sonority voice list; keep their source distinct.
+    pub other_is_sfx: bool,
+    pub pad_onset_beat: f64,
+    pub other_onset_beat: f64,
+    pub overlap_start_beat: f64,
+    pub overlap_end_beat: f64,
     /// Absolute register interval, not reduced modulo twelve.
     pub semitones: i32,
     pub overlap_seconds: f64,
@@ -185,10 +191,10 @@ impl VoicingSurfaceDiagnostics {
                 .collect();
             let mut contacts = Vec::new();
             for (i, p) in voices.iter().enumerate().filter(|(_, v)| {
-                !v.sfx && v.role == Role::Pad && v.start >= a - 1e-6 && v.start < b - 1e-6
+                !v.sfx && v.role == Role::Pad && v.end > a + 1e-6 && v.start < b - 1e-6
             }) {
                 for (j, q) in voices.iter().enumerate() {
-                    if i == j || (q.role == Role::Pad && !q.sfx && j < i && q.start >= a - 1e-6) {
+                    if i == j || (q.role == Role::Pad && !q.sfx && j < i) {
                         continue;
                     }
                     let overlap =
@@ -201,6 +207,11 @@ impl VoicingSurfaceDiagnostics {
                         pad_pitch: p.pitch,
                         other_pitch: q.pitch,
                         other_role: q.role,
+                        other_is_sfx: q.sfx,
+                        pad_onset_beat: p.start,
+                        other_onset_beat: q.start,
+                        overlap_start_beat: p.start.max(q.start).max(a),
+                        overlap_end_beat: p.end.min(q.end).min(b),
                         semitones: (p.pitch - q.pitch).abs(),
                         overlap_seconds: overlap,
                         onset_separation_seconds,
@@ -273,7 +284,7 @@ impl VoicingSurfaceDiagnostics {
                 );
             }
             for c in &r.contacts {
-                let _ = writeln!(out, "  contact {}:{} {}:{} interval={} overlap_s={:.6} onset_separation_s={:.6} coattack={}", Role::Pad.label(),note_name(c.pad_pitch),c.other_role.label(),note_name(c.other_pitch),c.semitones,c.overlap_seconds,c.onset_separation_seconds,c.coincident_attack);
+                let _ = writeln!(out, "  contact {}:{}@{:.6} {}:{}@{:.6} sfx={} interval={} overlap={:.6}..{:.6} overlap_s={:.6} onset_separation_s={:.6} coattack={}", Role::Pad.label(),note_name(c.pad_pitch),c.pad_onset_beat,c.other_role.label(),note_name(c.other_pitch),c.other_onset_beat,c.other_is_sfx,c.semitones,c.overlap_start_beat,c.overlap_end_beat,c.overlap_seconds,c.onset_separation_seconds,c.coincident_attack);
             }
         }
         out

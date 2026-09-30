@@ -1,10 +1,11 @@
 //! Round XVI: the chart can remain identifiable while its realized register/path is suspect.
 use gibson::audio::human_music::{
     composer::Composer,
+    expression::{observe, ConnectiveViability, ExpressionEvent},
     functor::{perform_expressive, Composition},
     identity::IdentityDiagnostics,
     performance::PerformanceOptions,
-    score::Role,
+    score::{PitchFunction, Role},
     semantic::deflected_lift_trace,
     voicing_diagnostics::VoicingSurfaceDiagnostics,
     MusicWorld, SongMap,
@@ -116,5 +117,87 @@ fn r16_production_should_discharge_the_reported_register_path_witness() {
     assert!(
         sites.is_empty(),
         "identity passes, but reported voicing family survives: {sites:?}"
+    );
+}
+
+#[test]
+fn r16_resolving_bass_tradeoff_has_frozen_within_song_controls_and_tempo_limit() {
+    let (w, x) = frozen();
+    let d = VoicingSurfaceDiagnostics::measure(&x.perf, &x.score, &w);
+    let bass: Vec<_> = x.score.role_notes(Role::Bass).collect();
+    let pad: Vec<_> = x.score.role_notes(Role::Pad).copied().collect();
+    // These accepted within-song controls already contain C4 versus B2→C3. They share
+    // provenance and are not independent human trials; they calibrate only this machine rule.
+    for (context_beat, bass_beat) in [(4.0, 7.0), (108.0, 111.0)] {
+        let row = d.rows.iter().find(|r| r.beat == context_beat).unwrap();
+        let contact = row
+            .contacts
+            .iter()
+            .find(|c| {
+                c.pad_pitch == 60
+                    && c.other_pitch == 47
+                    && c.other_onset_beat == bass_beat
+                    && c.other_role == Role::Bass
+                    && !c.other_is_sfx
+            })
+            .unwrap();
+        assert!((contact.overlap_seconds - 0.312741454).abs() < 1e-6);
+        let i = bass.iter().position(|n| n.start_beat == bass_beat).unwrap();
+        let event = ExpressionEvent {
+            note: *bass[i],
+            structural: true,
+        };
+        let evidence = observe(
+            &x.perf,
+            &w,
+            &event,
+            Some(bass[i - 1]),
+            Some(bass[i + 1]),
+            &pad,
+        );
+        assert_eq!(event.note.function, Some(PitchFunction::ChordTone));
+        assert_eq!(evidence.verdict, ConnectiveViability::AsWritten);
+        let mut slow = w.clone();
+        slow.tempo_bpm = 88.0;
+        let exposed = observe(
+            &x.perf,
+            &slow,
+            &event,
+            Some(bass[i - 1]),
+            Some(bass[i + 1]),
+            &pad,
+        );
+        assert_ne!(exposed.verdict, ConnectiveViability::AsWritten);
+    }
+    let mut slow = w.clone();
+    slow.tempo_bpm = 88.0;
+    let band: Vec<_> = x
+        .score
+        .notes
+        .iter()
+        .filter(|n| n.role != Role::Pad)
+        .copied()
+        .collect();
+    let (_, _, decisions) =
+        gibson::audio::human_music::comp::realize_pad_phrased(&x.perf, &x.song.plan, &slow, &band);
+    assert!(
+        !decisions.iter().any(|d| d.start_beat == 28.0),
+        "slower bass cannot borrow SWISS's accepted physical performance"
+    );
+    let mut unresolved_band = band;
+    unresolved_band
+        .iter_mut()
+        .find(|n| n.role == Role::Bass && n.start_beat == 31.5)
+        .unwrap()
+        .pitch = 47;
+    let (_, _, decisions) = gibson::audio::human_music::comp::realize_pad_phrased(
+        &x.perf,
+        &x.song.plan,
+        &w,
+        &unresolved_band,
+    );
+    assert!(
+        !decisions.iter().any(|d| d.start_beat == 28.0),
+        "a repeated seventh cannot borrow the later root: the immediate target must resolve"
     );
 }

@@ -1,0 +1,11 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.10s
+     Running tests/audio_voicing_surface.rs (target/debug/deps/audio_voicing_surface-e9e092f5d9c484f8)
+
+running 4 tests
+test r16_frozen_identity_passes_but_high_seventh_excursion_distinguishes_sites ... ok
+test r16_a_changed_voicing_is_observed_without_changing_chord_identity ... ok
+test r16_production_should_discharge_the_reported_register_path_witness ... ok
+test r16_resolving_bass_tradeoff_has_frozen_within_song_controls_and_tempo_limit ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s
