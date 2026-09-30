@@ -37,6 +37,15 @@ fn frozen_r15_individually_viable_connectives_repeat_one_temporal_shape() {
         .filter(|r| r.note.role == Role::Lead)
         .all(|r| r.verdict == ConnectiveViability::AsWritten));
     let d = PhraseSurfaceDiagnostics::measure(&c.song.plan, &c.perf, &c.score, &w);
+    let first_bass = d
+        .roles
+        .iter()
+        .filter(|r| r.role == Role::Bass)
+        .flat_map(|r| &r.notes)
+        .next()
+        .unwrap();
+    assert_eq!(first_bass.note.start_beat, 0.0);
+    assert_eq!(first_bass.silence_before_secs, 0.0);
     let shapes = d.shapes_for(Role::Lead);
     assert_eq!(
         shapes.iter().map(|s| s.source_onsets.len()).sum::<usize>(),

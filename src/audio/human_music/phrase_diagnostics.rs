@@ -201,7 +201,7 @@ impl PhraseSurfaceDiagnostics {
                         .iter()
                         .take(i)
                         .map(|p| audible_end_fn(p, world, score.tempo_bpm))
-                        .fold(n.start_beat - 10.0, f64::max);
+                        .fold(0.0, f64::max);
                     notes.push(SurfaceNote {
                         note: *n,
                         source_onset,
