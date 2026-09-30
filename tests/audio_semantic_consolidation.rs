@@ -907,3 +907,128 @@ fn a_song_records_who_composed_it() {
     assert_eq!(a.fingerprint(), b.fingerprint());
     assert_eq!(a.canonical_fingerprint(), b.canonical_fingerprint());
 }
+
+/// Witnesses from a fresh BAND sweep (seeds 78_307_00x): a bass approach aimed at a root its own
+/// line never sounds (the next bar opens on a quoted fragment), a keys comp stab whose tail rings
+/// into a harmony that excludes it, and a bass answer that does the same.
+fn earned_witnesses() -> [(&'static str, SongMap, MusicWorld, MusicalLanguage); 3] {
+    [
+        (
+            "stale bass approach",
+            SongMap::compose(
+                &deflected_lift_trace(7.25),
+                78_307_005,
+                Some(CompositionGrammar::HookArc),
+                Composer::MeaningDirected,
+            ),
+            MusicWorld::black_ice(),
+            MusicalLanguage::fusion_conversation(),
+        ),
+        (
+            "keys comp tail",
+            SongMap::compose(
+                &demo_trace(30.5),
+                78_307_003,
+                Some(CompositionGrammar::LoopEvolution),
+                Composer::MeaningDirected,
+            ),
+            MusicWorld::black_ice(),
+            MusicalLanguage::simple(),
+        ),
+        (
+            "bass answer tail",
+            SongMap::compose(
+                &deflected_lift_trace(16.0),
+                78_307_002,
+                Some(CompositionGrammar::HookArc),
+                Composer::StructuralR9,
+            ),
+            MusicWorld::black_ice(),
+            MusicalLanguage::fusion_conversation(),
+        ),
+    ]
+}
+
+/// Restated, not borrowed from the library's judge: a bass or keys note (neither ever declares
+/// a suspension) that is still sounding when the score's harmony changes to a chord without its
+/// pitch class.
+fn tails_into_foreign_harmony(c: &Composition) -> Vec<String> {
+    use gibson::audio::human_music::score::Role;
+    let mut out = Vec::new();
+    for n in c
+        .score
+        .notes
+        .iter()
+        .filter(|n| matches!(n.role, Role::Bass | Role::Keys))
+    {
+        let end = n.start_beat + f64::from(n.dur_beats);
+        for s in c.score.chords.iter().filter(|s| {
+            s.start_beat > n.start_beat + 1e-6
+                && s.start_beat < end - 1e-6
+                && !s.chord.pitch_classes().contains(&n.pitch.rem_euclid(12))
+        }) {
+            out.push(format!(
+                "{:?} {} at {} rings into {:?} at {}",
+                n.role, n.pitch, n.start_beat, s.chord, s.start_beat
+            ));
+        }
+    }
+    out
+}
+
+/// Restated: a bass note declared a chromatic approach whose next bass note is not a semitone
+/// away (or that nothing follows).
+fn approaches_that_miss(c: &Composition) -> Vec<String> {
+    use gibson::audio::human_music::score::{PitchFunction, Role};
+    let mut bass: Vec<_> = c.score.role_notes(Role::Bass).collect();
+    bass.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+    bass.iter()
+        .enumerate()
+        .filter(|(_, n)| n.function == Some(PitchFunction::ChromaticApproach))
+        .filter(|(i, n)| {
+            bass.get(i + 1)
+                .is_none_or(|q| (q.pitch - n.pitch).abs() != 1)
+        })
+        .map(|(i, n)| {
+            format!(
+                "approach {} at {} is followed by {:?}",
+                n.pitch,
+                n.start_beat,
+                bass.get(i + 1).map(|q| (q.pitch, q.start_beat))
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn band_bass_and_keys_claim_only_functions_their_realized_context_earns() {
+    use gibson::audio::human_music::temporal::TemporalPitchDiagnostics;
+    for (what, song, world, language) in earned_witnesses() {
+        let c = perform_with_profile(&song, &world, options(language), PerformanceProfile::BAND)
+            .unwrap_or_else(|e| panic!("{what}: {e}"));
+        let broken: Vec<_> = tails_into_foreign_harmony(&c)
+            .into_iter()
+            .chain(approaches_that_miss(&c))
+            .collect();
+        assert!(broken.is_empty(), "{what}: {broken:#?}");
+        assert_eq!(
+            TemporalPitchDiagnostics::measure(&c.perf, &c.score).false_function_claims,
+            0,
+            "{what}"
+        );
+    }
+}
+
+/// The accepted R17 arm keeps its archived realizers: the same witnesses still carry the claims
+/// the historical tolerances make (characterized, byte-exact; not repaired).
+#[test]
+fn the_historical_pocket_arm_keeps_its_archived_tolerances() {
+    for (what, song, world, language) in earned_witnesses() {
+        let c = perform_with_profile(&song, &world, options(language), PerformanceProfile::POCKET)
+            .unwrap_or_else(|e| panic!("{what}: {e}"));
+        assert!(
+            !tails_into_foreign_harmony(&c).is_empty() || !approaches_that_miss(&c).is_empty(),
+            "{what}: the witness no longer exercises the archived tolerance"
+        );
+    }
+}
