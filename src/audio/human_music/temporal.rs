@@ -360,14 +360,19 @@ impl TemporalPitchDiagnostics {
                 {
                     row.supported.push(F::PedalTone);
                 }
-                // Slide is an observed monotonic chromatic chain ending in a written chord tone.
+                // Slide is ONE attack gliding through a monotonic chain into a written chord tone.
+                // Round XIV: the synth attacks every Note (a fresh voice, envelopes gated on), so
+                // a chain of Notes is a discrete line whose every note owes its own function,
+                // however fast; the geometry alone never certifies a slide.
                 let mut at = i;
                 let mut direction = 0;
                 let mut links = 0;
                 let mut slide = false;
+                let mut glided = true;
                 while let Some(j) = following[at] {
                     let a = &score.notes[at];
                     let b = &score.notes[j];
+                    glided &= super::gesture::entry_of(b) == super::gesture::Entry::Glided;
                     let d = b.pitch - a.pitch;
                     if d.abs() > 2
                         || d == 0
@@ -386,7 +391,7 @@ impl TemporalPitchDiagnostics {
                     }
                     at = j;
                 }
-                if slide && links > 0 {
+                if slide && links > 0 && glided {
                     row.supported.push(F::SlidePath);
                 }
                 if !context_true {

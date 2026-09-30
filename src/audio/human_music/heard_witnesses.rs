@@ -6,8 +6,8 @@
 //! beat 28 because the bass sounded C at the pad's onset, but the bass then walks E2 G2 B2 while
 //! the pad holds E4 B4 G5, so 15.3–16.0 s is heard as Em over its own fifth. The falsifiers were
 //! committed failing first (`docs/fixtures/humanmusic-r14/baseline-failures.txt`); each is restated
-//! here against the audit that can see it ([`super::identity`], [`super::gesture`]). The two
-//! still ignored wait for the Round XII observer's slide rule and the causal receipt.
+//! here against the audit that can see it ([`super::identity`], [`super::gesture`]). The one still
+//! ignored waits for the causal receipt.
 use super::composer::Composer;
 use super::context::{analyze, HarmonicContext};
 use super::form::SectionKind;
@@ -385,15 +385,24 @@ fn r14_frozen_arms_as_heard() {
                 world.name,
                 g.report(&x.score)
             );
-            assert!(g.slide_supported > 0);
+            // Round XIV's slide law: the observer no longer certifies attacked notes as a slide
+            // (before it, 49 SWISS and 52 BLACK_ICE notes carried the label, every one of them
+            // with another function beside it: docs/fixtures/humanmusic-r14/frozen/).
+            assert_eq!(g.slide_supported, 0, "{}", world.name);
+            assert!(x
+                .score
+                .notes
+                .iter()
+                .all(|n| n.function != Some(F::SlidePath)));
         }
     }
 }
 
 /// The same route C–C#–D–D#–E as five separately attacked notes is a discrete line: the synth
-/// triggers a fresh voice per note, so no intermediate may be certified as a slide.
+/// triggers a fresh voice per note, so no note of it may be certified as a slide, however fast.
+/// Committed failing (the Round XII observer supported SlidePath from the pitch geometry alone);
+/// it passes since the observer's slide rule requires a physical glide.
 #[test]
-#[ignore = "Round XIV falsifier: the Round XII observer certifies attacked notes as a slide"]
 fn r14_attacked_notes_are_never_a_slide() {
     let (p, mut s) = fixture(&[(0.0, Quality::Maj, 0)], 118.0, 8.0);
     s.notes = [
@@ -795,6 +804,14 @@ fn fuzz_the_coherent_arm_keeps_every_chart_chord() {
                                 + t.unresolved_tendencies
                         };
                         assert!(claims(&d) <= claims(&a), "{what}");
+                        assert!(
+                            a.score
+                                .notes
+                                .iter()
+                                .chain(&d.score.notes)
+                                .all(|n| n.function != Some(F::SlidePath)),
+                            "{what}: a realizer declared a slide on attacked notes"
+                        );
                         for e in &d.score.pad_voicing_edits {
                             match e.reason {
                                 R::Spacing { from, to } => {
@@ -830,4 +847,49 @@ fn fuzz_the_coherent_arm_keeps_every_chart_chord() {
         "coherent sweep: {runs} performances; flips {before} ({secs_before:.1} s) -> {after} ({secs_after:.1} s); pad edits: {spacings} spacings, {rootings} rootings"
     );
     assert!(after < before);
+}
+
+/// Every bass chromatic approach in the acceptance songs is ONE attacked note leaning a semitone
+/// into its target on the next onset, the target a chord tone of its own harmony, and the Round
+/// XII observer independently supports the approach. Nothing is left for a slide to justify.
+#[test]
+fn r14_every_bass_approach_is_one_attacked_note_into_its_target() {
+    let song = stable_song();
+    for (world, count) in [
+        (MusicWorld::swiss_signal(), 18),
+        (MusicWorld::black_ice(), 18),
+    ] {
+        let d = perform_coherent(&song, &world, PerformanceOptions::default());
+        let audit = Audit::measure(&d.perf, &d.score);
+        let bass: Vec<usize> = (0..d.score.notes.len())
+            .filter(|&i| d.score.notes[i].role == Role::Bass)
+            .collect();
+        let mut seen = 0;
+        for (k, &i) in bass.iter().enumerate() {
+            let n = &d.score.notes[i];
+            if n.function != Some(F::ChromaticApproach) {
+                continue;
+            }
+            seen += 1;
+            let t = &d.score.notes[bass[k + 1]];
+            let what = format!("{} bass {} at {}", world.name, n.pitch, n.start_beat);
+            assert_eq!((t.pitch - n.pitch).abs(), 1, "{what}");
+            assert!(t.start_beat - n.start_beat <= 0.5 + 1e-9, "{what}");
+            assert!(
+                n.start_beat + f64::from(n.dur_beats) <= t.start_beat + 1e-9,
+                "{what}"
+            );
+            let ctx = d.perf.context_at(t.start_beat).unwrap();
+            assert!(ctx.chord.contains_pc(pitch_class(t.pitch)), "{what}");
+            let route = [PathEvent::of(n), PathEvent::of(t)];
+            assert_eq!(classify(&route), Some(Gesture::ChromaticApproach), "{what}");
+            let row = audit.rows.iter().find(|r| r.note_index == i).unwrap();
+            assert!(
+                row.supported.contains(&F::ChromaticApproach),
+                "{what}: {}",
+                row.detail
+            );
+        }
+        assert_eq!(seen, count, "{}", world.name);
+    }
 }
