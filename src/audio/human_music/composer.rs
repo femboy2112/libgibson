@@ -828,6 +828,7 @@ pub fn compose_meaning(
     let (thesis, answer) = (themes[pick].thesis.clone(), themes[pick].answer.clone());
     song.thematic = schedule(&song, &target, &thesis, &answer);
     song.meaning = Some(target.clone());
+    song.composed_by = Composer::MeaningDirected;
     let report = CompositionReport {
         prior: *prior,
         target,

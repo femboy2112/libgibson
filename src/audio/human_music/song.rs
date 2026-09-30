@@ -204,6 +204,10 @@ pub struct SongMap {
     pub meaning: Option<MeaningPlan>,
     /// Optional Round XI meaning request. Kept separate to preserve the R10 compatibility hash.
     pub phenomenal: Option<PhenomenalTarget>,
+    /// Which composer chose this song's content — recorded where it chose it, never inferred
+    /// from what a composer tends to produce. Provenance, not identity: it is in neither song
+    /// fingerprint (equal content is the same song whoever wrote it).
+    pub composed_by: Composer,
 }
 
 impl SongMap {
@@ -264,6 +268,7 @@ impl SongMap {
             meaning: None,
             phenomenal: stable
                 .then(|| PhenomenalTarget::from_trace(trace, PhenomenalRegime::StablePropulsion)),
+            composed_by: Composer::StructuralR9,
         }
     }
 
@@ -309,6 +314,7 @@ impl SongMap {
                 })
                 .filter(|site| site.statable(&song.plan))
                 .collect();
+            song.composed_by = Composer::StablePropulsion;
             return song;
         }
         let song = SongMap::build(trace, seed, grammar);
@@ -319,15 +325,11 @@ impl SongMap {
         }
     }
 
-    /// Which composer chose this song's content.
+    /// Which composer chose this song's content: the provenance recorded by the call that chose
+    /// it, never inferred from the song's grammar or requests. [`SongMap::build`] records
+    /// [`Composer::StructuralR9`] (a cover's target song is planned by it, pins aside).
     pub fn composer(&self) -> Composer {
-        if self.phenomenal.is_some() {
-            Composer::StablePropulsion
-        } else if self.meaning.is_some() {
-            Composer::MeaningDirected
-        } else {
-            Composer::StructuralR9
-        }
+        self.composed_by
     }
 }
 

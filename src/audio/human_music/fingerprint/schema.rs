@@ -1640,6 +1640,7 @@ impl CanonicalFingerprint for song::SongMap {
         let Self {
             trace: _,
             seed: _,
+            composed_by: _,
             frame,
             timeline,
             plan,
