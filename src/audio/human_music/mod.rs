@@ -75,6 +75,7 @@ pub mod pocket_diagnostics;
 pub mod policy;
 #[cfg(test)]
 mod probes;
+pub mod projection;
 pub mod reference_song;
 pub mod region;
 pub mod rehearsal;

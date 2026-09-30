@@ -106,24 +106,55 @@ impl ThematicMap {
 
     /// The theme sites `bank`'s trajectory yields over `plan` (only sites a performance can keep).
     pub(crate) fn from_bank(plan: &CompositionPlan, bank: MotifBank) -> ThematicMap {
-        let mut traj = ThematicTrajectory::new(&bank);
-        let sites = plan
+        let seated: Vec<_> = plan
             .targets()
             .into_iter()
             .filter(|t| plan.arrangement.at(t.phrase.ix as usize).lead.is_audible())
-            .map(|t| {
-                let (motif, handoff) = traj.next_for(t.goal.role);
-                ThemeSite {
-                    phrase: t.phrase.ix,
-                    role: t.goal.role,
-                    motif,
-                    handoff,
-                }
-            })
-            // The trajectory develops through every seated phrase; a site is only kept where it
-            // can be kept (later sites are unchanged by the drop).
-            .filter(|site| site.statable(plan))
             .collect();
+        // The trajectory develops through every seated phrase; a site is only kept where it can be
+        // kept (later sites are unchanged by the drop). `thesis_at` restates the thesis there.
+        let develop = |thesis_at: Option<u32>| -> Vec<ThemeSite> {
+            let mut traj = ThematicTrajectory::new(&bank);
+            seated
+                .iter()
+                .map(|t| {
+                    let role = if thesis_at == Some(t.phrase.ix) {
+                        DiscourseRole::Establish
+                    } else {
+                        t.goal.role
+                    };
+                    let (motif, handoff) = traj.next_for(role);
+                    ThemeSite {
+                        phrase: t.phrase.ix,
+                        role: t.goal.role,
+                        motif,
+                        handoff,
+                    }
+                })
+                .filter(|site| site.statable(plan))
+                .collect()
+        };
+        let mut sites = develop(None);
+        // A declared Motif anchor is the song's identity: the first statement a listener hears is
+        // the thesis, before it can be developed. When the trajectory would state only
+        // developments (a short song whose lead speaks only in its dissolve), the first seated
+        // phrase that can hold the thesis restates it. Songs that already state their identity
+        // are unchanged.
+        if plan
+            .contract
+            .anchors
+            .contains(&super::contract::CoherenceAnchor::Motif)
+            && !sites.iter().any(ThemeSite::is_identity)
+        {
+            if let Some(restated) = seated.iter().find_map(|t| {
+                let s = develop(Some(t.phrase.ix));
+                s.iter()
+                    .any(|x| x.phrase == t.phrase.ix && x.is_identity())
+                    .then_some(s)
+            }) {
+                sites = restated;
+            }
+        }
         ThematicMap { bank, sites }
     }
 
@@ -426,10 +457,26 @@ pub enum AnchorPresence {
     DeclaredButMissing(&'static str),
 }
 
-/// Every anchor the song's contract declares, with what the performance made of it.
+/// Whether a present anchor's identity-bearing evidence holds the anchor's identity relation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AnchorConformance {
+    /// The evidence holds the relation the anchor names.
+    Conforms,
+    /// The evidence exists but another identity sounds (why).
+    Deviates(String),
+}
+
+/// Every anchor the song's contract declares, with what the performance made of it: its
+/// **presence** (identity-bearing evidence sounds, the form had no room for it, or it is missing)
+/// and, for a present anchor, its **conformance** (that evidence holds the anchor's identity
+/// relation). Presence is read through the identity projections ([`super::projection`]) — a role
+/// is an instrument, never an identity: unrelated notes on the instrument never make an anchor
+/// present, and chords existing never make a harmonic trajectory the song's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnchorReport {
     pub anchors: Vec<(super::contract::CoherenceAnchor, AnchorPresence)>,
+    /// For every present anchor: whether its identity relation holds.
+    pub conformance: Vec<(super::contract::CoherenceAnchor, AnchorConformance)>,
 }
 
 impl AnchorReport {
@@ -440,6 +487,7 @@ impl AnchorReport {
         score: &super::score::Score,
     ) -> AnchorReport {
         use super::contract::CoherenceAnchor as A;
+        use super::projection::{groove_strokes, IdentityMaterial, PINNED_IDENTITY};
         use super::score::{DrumVoice, Role};
         use AnchorPresence::*;
         let full_bar = song
@@ -448,49 +496,75 @@ impl AnchorReport {
             .phrases
             .iter()
             .any(|p| p.end_beat() - p.start_beat() >= BEATS_PER_BAR - 1e-9);
-        let sounds = |role: Role| score.notes.iter().any(|n| n.role == role);
+        let material = IdentityMaterial::of(song, perf);
+        let identity = |role: Role| {
+            score
+                .role_notes(role)
+                .filter(|n| material.carries(n))
+                .count()
+        };
+        let pocket = groove_strokes(score);
+        let identity_sites: Vec<&ThemeSite> = song
+            .thematic
+            .sites
+            .iter()
+            .filter(|s| s.is_identity())
+            .collect();
         let presence = |anchor: A| -> AnchorPresence {
             match anchor {
                 A::Groove => {
-                    let strokes = score
-                        .drums
-                        .iter()
-                        .any(|d| matches!(d.voice, DrumVoice::Kick | DrumVoice::Snare));
+                    // The kit's identity: its recorded pocket anchors (a historical drummer
+                    // records none, and its kick/snare part is read whole).
+                    let strokes = match &pocket {
+                        Some(p) => !p.is_empty(),
+                        None => score
+                            .drums
+                            .iter()
+                            .any(|d| matches!(d.voice, DrumVoice::Kick | DrumVoice::Snare)),
+                    };
                     if strokes {
                         Realized
                     } else if !full_bar {
                         StructurallyInapplicable("no phrase holds a full bar")
+                    } else if pocket.is_some() {
+                        DeclaredButMissing("no pocket anchor sounds")
                     } else {
                         DeclaredButMissing("no kick or snare stroke sounds")
                     }
                 }
                 A::Motif => {
                     let stated = perf.statements.iter().any(|st| {
-                        song.thematic.sites.iter().any(|s| s.phrase == st.phrase)
+                        identity_sites.iter().any(|s| s.phrase == st.phrase)
                             && score.notes.iter().any(|n| {
-                                n.role == Role::Lead && n.prov.material == Some(st.material)
+                                n.role == Role::Lead
+                                    && n.prov.material == Some(st.material)
+                                    && material.carries(n)
                             })
                     });
                     if stated {
                         Realized
                     } else if song.thematic.sites.is_empty() {
                         StructurallyInapplicable("no seated phrase can hold a motif statement")
+                    } else if identity_sites.is_empty() {
+                        // The theme trajectory restates the thesis wherever a seated phrase can
+                        // hold it; none can in this form.
+                        StructurallyInapplicable("no lead-seated phrase can hold the thesis")
                     } else {
-                        DeclaredButMissing("no planned theme site is stated")
+                        DeclaredButMissing("no identity site is stated")
                     }
                 }
                 A::Riff => {
-                    if sounds(Role::Lead) || sounds(Role::Bass) {
+                    if identity(Role::Lead) > 0 || identity(Role::Bass) > 0 {
                         Realized
                     } else {
-                        DeclaredButMissing("neither lead nor bass sounds")
+                        DeclaredButMissing("neither the lead's identity nor the bass figure sounds")
                     }
                 }
                 A::BassFigure => {
-                    if sounds(Role::Bass) {
+                    if identity(Role::Bass) > 0 {
                         Realized
                     } else {
-                        DeclaredButMissing("the bass never sounds")
+                        DeclaredButMissing("the bass states no figure of its own")
                     }
                 }
                 A::HarmonicContour | A::HarmonicLoop => {
@@ -503,18 +577,248 @@ impl AnchorReport {
                 A::Form | A::Orchestration => Realized,
             }
         };
-        AnchorReport {
-            anchors: song
-                .plan
-                .contract
-                .anchors
+        let anchors: Vec<_> = song
+            .plan
+            .contract
+            .anchors
+            .iter()
+            .map(|&a| (a, presence(a)))
+            .collect();
+
+        // --- The identity relations. ---
+        let authored = |n: &super::score::Note| {
+            score
+                .expression_decisions
                 .iter()
-                .map(|&a| (a, presence(a)))
-                .collect(),
+                .rev()
+                .find(|d| {
+                    d.after.is_some_and(|a| {
+                        a.role == n.role && a.start_beat == n.start_beat && a.pitch == n.pitch
+                    })
+                })
+                .map_or(n.start_beat, |d| d.before.note.start_beat)
+        };
+        let total = score.total_beats;
+        let motif = || -> AnchorConformance {
+            let style = super::motif::LineStyle::for_language(&perf.language);
+            for site in &identity_sites {
+                let Some(st) = perf.statements.iter().find(|st| st.phrase == site.phrase) else {
+                    continue; // SongMapConformance names an unstated identity site
+                };
+                if st.motif != site.motif {
+                    return AnchorConformance::Deviates(format!(
+                        "phrase {}: the identity site is stated otherwise",
+                        site.phrase
+                    ));
+                }
+                if score.notes.iter().any(|n| {
+                    n.prov.material == Some(st.material) && n.prov.role_note == PINNED_IDENTITY
+                }) {
+                    continue; // a realized pin: its relation is the cover's to verify
+                }
+                let planned: Vec<f64> =
+                    super::motif::melodic_events(&st.motif, st.start_beat, &style)
+                        .iter()
+                        .filter(|e| !e.rest)
+                        .map(|e| st.start_beat + e.onset)
+                        .filter(|&b| b < total - 1e-9)
+                        .collect();
+                // The authored statement: every realized identity attack at its source onset,
+                // and every attack the phrase expression omitted by a recorded decision (lawful
+                // expression of the same statement — never an unrecorded drop).
+                let mut realized: Vec<f64> = score
+                    .role_notes(Role::Lead)
+                    .filter(|n| n.prov.material == Some(st.material) && material.carries(n))
+                    .map(authored)
+                    .chain(
+                        score
+                            .expression_decisions
+                            .iter()
+                            .filter(|d| {
+                                d.after.is_none()
+                                    && d.before.note.role == Role::Lead
+                                    && d.before.note.prov.material == Some(st.material)
+                            })
+                            .map(|d| d.before.note.start_beat),
+                    )
+                    .collect();
+                realized.sort_by(f64::total_cmp);
+                if realized != planned {
+                    return AnchorConformance::Deviates(format!(
+                        "phrase {}: the realized identity statement ({} attacks) is not the stated motif's rhythm ({} attacks)",
+                        site.phrase,
+                        realized.len(),
+                        planned.len()
+                    ));
+                }
+            }
+            AnchorConformance::Conforms
+        };
+        let bass_figure = || -> AnchorConformance {
+            for n in score.role_notes(Role::Bass).filter(|n| material.carries(n)) {
+                if n.prov.role_note == PINNED_IDENTITY || n.prov.role_note == "pedal" {
+                    continue;
+                }
+                let tone = perf
+                    .context_at(n.start_beat)
+                    .is_some_and(|c| c.chord.contains_pc(n.pitch.rem_euclid(12)));
+                if !tone {
+                    return AnchorConformance::Deviates(format!(
+                        "the bass figure's {} at {} is not a tone of the harmony it outlines",
+                        n.prov.role_note, n.start_beat
+                    ));
+                }
+            }
+            AnchorConformance::Conforms
+        };
+        let harmony = || -> AnchorConformance {
+            if !song.landmarks().is_empty() {
+                // The chart: every landmark heard on its root, in the region in force there.
+                let misses = SongMapConformance::check(song, perf, score).wrong_harmonic_landmarks;
+                return match misses.first() {
+                    None => AnchorConformance::Conforms,
+                    Some(m) => AnchorConformance::Deviates(format!(
+                        "{} at {}: the chart's root pc {} is not heard ({:?})",
+                        m.landmark, m.beat, m.expected_root_pc, m.heard_root_pc
+                    )),
+                };
+            }
+            // No chart: the trajectory is the declared closure of every phrase, heard at its end.
+            use super::discourse::Closure;
+            use super::theory::Function;
+            let functional = matches!(
+                song.plan.contract.resolution,
+                super::contract::ResolutionPolicy::Functional
+            );
+            for t in song.plan.targets() {
+                let end = t.phrase.end_beat().min(total);
+                let Some(last) = score.chords.iter().rfind(|c| {
+                    c.start_beat < end - 1e-9 && c.start_beat >= t.phrase.start_beat() - 1e-9
+                }) else {
+                    continue;
+                };
+                let region = perf.region_at(last.start_beat);
+                let degree = |d: i32| region.degree_pitch(d, 4).rem_euclid(12);
+                let root = last.chord.root_pc.rem_euclid(12);
+                let holds = if !functional {
+                    root == region.tonic_pc.rem_euclid(12)
+                } else {
+                    match t.goal.closure {
+                        Closure::Strong | Closure::Weak => root == region.tonic_pc.rem_euclid(12),
+                        Closure::Half => {
+                            super::context::contextual_function(&last.chord, &region)
+                                == Function::Dominant
+                        }
+                        Closure::Deceptive => root == degree(5),
+                        Closure::Deferred => root == degree(3),
+                        Closure::Open => true,
+                    }
+                };
+                if !holds {
+                    return AnchorConformance::Deviates(format!(
+                        "phrase {}: its declared {:?} closure is not heard at its end ({:?})",
+                        t.phrase.ix, t.goal.closure, last.chord
+                    ));
+                }
+            }
+            AnchorConformance::Conforms
+        };
+        let groove = || -> AnchorConformance {
+            let Some(pocket) = &pocket else {
+                return AnchorConformance::Conforms; // a historical drummer records no classes
+            };
+            // The groove is a pattern, not a stroke: some full bar states the pocket's kick AND
+            // its backbeat. (A fill or a figure-only bar is lawful time off the pocket.)
+            let bars = (total / BEATS_PER_BAR).floor() as u32;
+            let stated = (0..bars).any(|bar| {
+                let (s, e) = (
+                    f64::from(bar) * BEATS_PER_BAR,
+                    f64::from(bar + 1) * BEATS_PER_BAR,
+                );
+                let has = |v: DrumVoice| {
+                    pocket.iter().any(|(d, _)| {
+                        d.voice == v && d.start_beat >= s - 1e-6 && d.start_beat < e - 1e-6
+                    })
+                };
+                has(DrumVoice::Kick) && has(DrumVoice::Snare)
+            });
+            if stated {
+                AnchorConformance::Conforms
+            } else {
+                AnchorConformance::Deviates(
+                    "no full bar states the pocket's kick and backbeat together".into(),
+                )
+            }
+        };
+        let form = || -> AnchorConformance {
+            let planned: Vec<_> = song
+                .plan
+                .form
+                .phrases
+                .iter()
+                .map(|p| (p.start_bar, p.bars, p.family.to_section_kind()))
+                .collect();
+            let sounded: Vec<_> = score
+                .sections
+                .iter()
+                .map(|s| (s.start_bar, s.bars, s.kind))
+                .collect();
+            if planned == sounded {
+                AnchorConformance::Conforms
+            } else {
+                AnchorConformance::Deviates(
+                    "the sections that sound are not the song's form".into(),
+                )
+            }
+        };
+        let orchestration = || -> AnchorConformance {
+            let off = super::functor::orchestration_violations(perf, score);
+            if let Some((agent, beat)) = off.first() {
+                return AnchorConformance::Deviates(format!(
+                    "{agent:?} sounds off stage at {beat}"
+                ));
+            }
+            if perf.cover_constraints.is_none() {
+                let declared = super::ensemble::Stage::from_arrangement(&song.plan);
+                let roles = |st: &super::ensemble::Stage| {
+                    st.seats
+                        .iter()
+                        .map(|s| s.map(|x| x.role))
+                        .collect::<Vec<_>>()
+                };
+                if roles(&perf.stage) != roles(&declared) {
+                    return AnchorConformance::Deviates(
+                        "the stage seats another role topology than the song's arrangement".into(),
+                    );
+                }
+            }
+            AnchorConformance::Conforms
+        };
+        let riff_lane_is_lead = identity(Role::Lead) > 0;
+        let conformance = anchors
+            .iter()
+            .filter(|(_, p)| *p == Realized)
+            .map(|&(a, _)| {
+                let c = match a {
+                    A::Motif => motif(),
+                    A::Riff if riff_lane_is_lead => motif(),
+                    A::Riff | A::BassFigure => bass_figure(),
+                    A::HarmonicContour | A::HarmonicLoop => harmony(),
+                    A::Groove => groove(),
+                    A::Form => form(),
+                    A::Orchestration => orchestration(),
+                };
+                (a, c)
+            })
+            .collect();
+        AnchorReport {
+            anchors,
+            conformance,
         }
     }
 
-    /// The anchors this performance actually establishes.
+    /// The anchors whose identity-bearing evidence is present (a present anchor may still deviate:
+    /// see [`Self::established`]).
     pub fn realized(&self) -> impl Iterator<Item = super::contract::CoherenceAnchor> + '_ {
         self.anchors
             .iter()
@@ -522,15 +826,32 @@ impl AnchorReport {
             .map(|(a, _)| *a)
     }
 
-    /// Declared anchors the form had room for and the performance omitted.
-    pub fn violations(&self) -> Vec<(super::contract::CoherenceAnchor, &'static str)> {
-        self.anchors
+    /// The anchors this performance actually establishes: present AND holding their identity
+    /// relation.
+    pub fn established(&self) -> impl Iterator<Item = super::contract::CoherenceAnchor> + '_ {
+        self.realized().filter(|a| {
+            self.conformance
+                .iter()
+                .any(|(c, v)| c == a && *v == AnchorConformance::Conforms)
+        })
+    }
+
+    /// Declared anchors the form had room for and the performance omitted, or stated with another
+    /// identity than the anchor names.
+    pub fn violations(&self) -> Vec<(super::contract::CoherenceAnchor, String)> {
+        let mut out: Vec<_> = self
+            .anchors
             .iter()
             .filter_map(|&(a, p)| match p {
-                AnchorPresence::DeclaredButMissing(why) => Some((a, why)),
+                AnchorPresence::DeclaredButMissing(why) => Some((a, why.to_string())),
                 _ => None,
             })
-            .collect()
+            .collect();
+        out.extend(self.conformance.iter().filter_map(|(a, c)| match c {
+            AnchorConformance::Deviates(why) => Some((*a, why.clone())),
+            AnchorConformance::Conforms => None,
+        }));
+        out
     }
 }
 

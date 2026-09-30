@@ -412,6 +412,39 @@ pub struct Score {
     pub support_voicing_decisions: Vec<super::support_voicing::VoicingPathDecision>,
     /// The arbitrated drummer's receipt (`None` for the historical, unarbitrated drummer).
     pub percussion: Option<super::percussion::PercussionReport>,
+    /// Where each drum stroke came from, recorded by the drummer that made it (`None` for the
+    /// historical drummer, whose strokes keep only their performed float).
+    pub stroke_origins: Option<Vec<StrokeOrigin>>,
+}
+
+/// A drum stroke's recorded origin: `metric source → performed stroke`, kept by the realizer at
+/// the transport (never reconstructed from the performed float).
+///
+/// The kit's canonical metric source `MetricPosition` goes through the declared
+/// [`super::rhythm::GrooveTransport`] (the pocket) and the identity
+/// [`super::rhythm::FeelTransport`]; the arbitrated drummer then adds its historical seeded
+/// offset (±0.008 beats), a per-stroke timing draw outside the typed transport. A stroke's metric
+/// coordinate is therefore never inverted from where it sounds — it is recorded here.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StrokeOrigin {
+    pub voice: DrumVoice,
+    /// The performed onset, bit for bit the stroke's `start_beat`.
+    pub performed: f64,
+    /// The canonical metric source; `None` for a stroke not made on the metric lattice (a figure
+    /// on a triplet onset has no exact metric coordinate).
+    pub metric: Option<super::rhythm::MetricPosition>,
+    /// One of the groove's own anchors (the downbeat and mid-bar kick, the backbeat) or a pinned
+    /// cover stroke: the kit's identity, as opposed to accents, fills, figures and ornaments.
+    pub pocket: bool,
+}
+
+impl StrokeOrigin {
+    /// The recorded origin of `hit` among `origins`, if the drummer recorded one.
+    pub fn of<'a>(origins: &'a [StrokeOrigin], hit: &DrumHit) -> Option<&'a StrokeOrigin> {
+        origins
+            .iter()
+            .find(|o| o.voice == hit.voice && o.performed.to_bits() == hit.start_beat.to_bits())
+    }
 }
 
 // Historical receipts used the derived field order. Preserve that spelling for archived
@@ -446,6 +479,9 @@ impl std::fmt::Debug for Score {
         }
         if let Some(report) = &self.percussion {
             d.field("percussion", report);
+        }
+        if let Some(origins) = &self.stroke_origins {
+            d.field("stroke_origins", origins);
         }
         d.finish()
     }
@@ -532,6 +568,7 @@ impl Score {
             phrase_plans: Vec::new(),
             support_voicing_decisions: Vec::new(),
             percussion: None,
+            stroke_origins: None,
         }
     }
 

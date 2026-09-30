@@ -688,7 +688,7 @@ fn realize_policy(
         (super::percussion::PercussionPolicy::Arbitrated(restraint), intent) => {
             // One percussion surface: the drummer also hears the keys it must leave room for.
             score.hearings.push(Hearing::of("drums", Role::Keys, &keys));
-            let (drums, report) = super::groove::realize_drums_arbitrated(
+            let (drums, report, origins) = super::groove::realize_drums_arbitrated(
                 perf,
                 plan,
                 world,
@@ -699,6 +699,7 @@ fn realize_policy(
                 restraint,
             );
             score.percussion = Some(report);
+            score.stroke_origins = Some(origins);
             drums
         }
         (super::percussion::PercussionPolicy::Unarbitrated, Some(intent)) => {
@@ -856,6 +857,9 @@ fn clip_to_end(score: &mut Score) {
         n.dur_beats > 0.0
     });
     score.drums.retain(|d| starts_in(d.start_beat));
+    if let Some(origins) = &mut score.stroke_origins {
+        origins.retain(|o| starts_in(o.performed));
+    }
     score.sfx.retain(|e| starts_in(e.start_beat));
     score.chords.retain_mut(|c| {
         if !starts_in(c.start_beat) {

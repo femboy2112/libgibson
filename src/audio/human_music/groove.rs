@@ -656,6 +656,9 @@ struct Candidate {
     salt: u64,
     material: Option<super::ids::MaterialId>,
     interaction: Option<super::ids::InteractionId>,
+    /// The candidate's canonical metric source, before the pocket's swing and the stroke's
+    /// seeded offset (`None` off the metric lattice, e.g. a figure stroke on a triplet onset).
+    metric: Option<super::rhythm::MetricPosition>,
 }
 
 /// The drums as ONE arbitrated percussion surface (see [`super::percussion`]): the same producers
@@ -672,7 +675,11 @@ pub(crate) fn realize_drums_arbitrated(
     lead: &[super::score::Note],
     ownership: Option<&super::occupancy::AuthoredOccupancy>,
     restraint: super::percussion::DrumRestraint,
-) -> (Vec<DrumHit>, super::percussion::PercussionReport) {
+) -> (
+    Vec<DrumHit>,
+    super::percussion::PercussionReport,
+    Vec<super::score::StrokeOrigin>,
+) {
     use super::action::{ActionKind, Agent};
     use super::ids::{ActionId, ActionStamp};
     use super::percussion::{
@@ -680,10 +687,10 @@ pub(crate) fn realize_drums_arbitrated(
     };
     use super::performance::{AccentGrid, DrumsMode, STEPS, STEP_BEATS};
     let [bass, keys, _pad] = band;
-    if let Some(hits) = perf
+    if let Some((hits, origins)) = perf
         .cover_constraints
         .as_ref()
-        .and_then(|c| c.drums(perf, world))
+        .and_then(|c| c.drums_with_origins(perf, world))
     {
         let required = hits.len();
         return (
@@ -695,6 +702,7 @@ pub(crate) fn realize_drums_arbitrated(
                 required,
                 rate_guard: 0,
             },
+            origins,
         );
     }
     let subdiv_steps = match perf.language.surface_subdivision.max(world.subdiv) {
@@ -735,6 +743,8 @@ pub(crate) fn realize_drums_arbitrated(
         salt,
         material: None,
         interaction: None,
+        // Every candidate but a swung hat is offered at its unswung metric coordinate.
+        metric: super::rhythm::MetricPosition::from_exact_beats(at),
     };
     let bass_steps = |bar: u32| -> Vec<usize> {
         if let Some(intent) = ownership {
@@ -999,6 +1009,8 @@ pub(crate) fn realize_drums_arbitrated(
                 if open {
                     c.fallback = Some(DrumVoice::ClosedHat);
                 }
+                // The hat sounds at the swung slot; its metric source is the unswung one.
+                c.metric = super::rhythm::MetricPosition::from_exact_beats(bs + frac);
                 offer(c);
             }
         }
@@ -1262,6 +1274,7 @@ pub(crate) fn realize_drums_arbitrated(
     let mut ornaments: Vec<(Ornament, usize, usize)> =
         Ornament::ALL.iter().map(|&o| (o, 0, 0)).collect();
     let mut hits = Vec::new();
+    let mut origins = Vec::new();
     for (i, c) in cands.iter().enumerate() {
         if let Err(kind) = c.class {
             let slot = ornaments.iter_mut().find(|o| o.0 == kind).unwrap();
@@ -1293,8 +1306,15 @@ pub(crate) fn realize_drums_arbitrated(
         );
         prov.material = c.material;
         prov.interaction = c.interaction;
+        let start_beat = (c.at + f64::from(jitter)).max(0.0);
+        origins.push(super::score::StrokeOrigin {
+            voice,
+            performed: start_beat,
+            metric: c.metric,
+            pocket: c.class == Ok(Required::PocketAnchor),
+        });
         hits.push(DrumHit {
-            start_beat: (c.at + f64::from(jitter)).max(0.0),
+            start_beat,
             voice,
             velocity: (c.vel * level).clamp(0.02, 1.0),
             prov,
@@ -1311,6 +1331,7 @@ pub(crate) fn realize_drums_arbitrated(
             required,
             rate_guard,
         },
+        origins,
     )
 }
 

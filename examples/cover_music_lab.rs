@@ -105,7 +105,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let world = MusicWorld::black_ice();
         let song = SongMap::build(&demo_trace(64.0), 2112, Some(CompositionGrammar::HookArc));
         let source = perform_pocketed(&song, &world, PerformanceOptions::default());
-        let map = CoverMap::extract(
+        // The accepted listening corpus was made from the v1 lane quotient; it stays that
+        // historical adapter, byte for byte (the identity projection is `CoverMap::extract`).
+        let map = CoverMap::extract_lane(
             &source,
             &world,
             CoverSpec::from_contract(&song.plan.contract),

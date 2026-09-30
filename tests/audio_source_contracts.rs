@@ -309,7 +309,10 @@ fn u2_anchor_report_separates_no_room_from_omission() {
             let broken = AnchorReport::check(&s, &c.perf, &silent);
             assert_eq!(
                 broken.violations(),
-                vec![(CoherenceAnchor::Groove, "no kick or snare stroke sounds")]
+                vec![(
+                    CoherenceAnchor::Groove,
+                    "no kick or snare stroke sounds".to_string()
+                )]
             );
         }
     }

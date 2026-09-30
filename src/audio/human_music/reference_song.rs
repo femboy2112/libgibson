@@ -243,6 +243,7 @@ impl ReferenceSong {
             bass: None,
             orchestration: None,
             fidelity: None,
+            projection: super::cover::CoverProjection::Lane,
             spec: effective,
         };
         map.validate()?;
@@ -465,6 +466,7 @@ impl ReferenceSong {
                 .flatten(),
             orchestration: None,
             fidelity: None,
+            projection: super::cover::CoverProjection::Lane,
             spec: effective.spec(),
         };
         map.apply_fidelity(&effective);

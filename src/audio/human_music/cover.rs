@@ -91,12 +91,13 @@ impl CoverSpec {
         axes.push(CoverAxis::Form);
         Self::new(axes)
     }
-    /// What a generated source actually establishes: the declared anchors its performance
-    /// realized, plus the phrase/family scaffold. An anchor its finite form had no room for is not
+    /// What a generated source actually establishes: the declared anchors whose identity-bearing
+    /// evidence is present AND holds the anchor's identity relation
+    /// ([`super::song::AnchorReport::established`]), plus the phrase/family scaffold. An anchor its finite form had no room for is not
     /// a promise and is not pinned; one it had room for and omitted is a source violation that
     /// [`super::song::AnchorReport::violations`] names — it is never quietly relabelled Unknown.
     pub fn established(report: &super::song::AnchorReport) -> Self {
-        let mut axes: Vec<CoverAxis> = report.realized().map(Into::into).collect();
+        let mut axes: Vec<CoverAxis> = report.established().map(Into::into).collect();
         axes.push(CoverAxis::Form);
         Self::new(axes)
     }
@@ -220,6 +221,22 @@ pub struct SkeletonSchedule {
     pub bars_per_chord: u32,
 }
 
+/// Which realized events a map's line and groove axes were read from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CoverProjection {
+    /// The v1 lane quotient (historical adapter, byte-exact): a line axis is its instrument's
+    /// whole performed line and the groove every kick/snare stroke — an instrument, not an
+    /// identity. An external reference's declared voice is read this way too (it has no
+    /// material provenance: the selected voice IS its declaration).
+    #[default]
+    Lane,
+    /// The identity projection ([`super::projection`]): a line axis is its lane's
+    /// identity-bearing material (the lead's identity statements, the bass's own figure, a pinned
+    /// cover identity) and the groove the kit's recorded pocket anchors — never responses, fills,
+    /// figures, connective ornament or other material sharing the instrument.
+    Identity,
+}
+
 /// The quotient value: no source seed, trace, complete plan, score, patch or lookup key.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoverMap {
@@ -240,6 +257,9 @@ pub struct CoverMap {
     /// The exact relation each pinned axis holds, when it is not the v1 relation set (see
     /// [`CoverFidelityProfile`]). `None` is the v1 map, hash included.
     pub fidelity: Option<CoverFidelityProfile>,
+    /// Which events the line and groove axes were read from ([`CoverProjection::Lane`] for every
+    /// v1 map, hash included).
+    pub projection: CoverProjection,
 }
 
 /// A missing/unsupported source is an error, never permission to fabricate notes.
@@ -265,6 +285,10 @@ fn metric(value: f64) -> Result<MetricPosition, CoverError> {
 impl CoverMap {
     /// Extract actual sounded pitches and actual chord spans. `world` declares the
     /// legacy percussion transport, whose bounded jitter is uniquely projected.
+    ///
+    /// Line and groove axes are read through the identity projection ([`CoverProjection::Identity`],
+    /// [`super::projection`]): the events that realize the song's identity-bearing material, never
+    /// every event an instrument plays. [`Self::extract_lane`] is the historical v1 lane quotient.
     pub fn extract(
         reference: &Composition,
         world: &MusicWorld,
@@ -274,16 +298,51 @@ impl CoverMap {
     }
 
     /// [`Self::extract`] with the riff read on an explicit lane (`Lead` or `Bass`). Without one,
-    /// the historical choice holds: the lead when the reference sounds one, else the bass.
+    /// the lead when the reference's lead carries identity, else the bass.
     pub fn extract_on_lane(
         reference: &Composition,
         world: &MusicWorld,
         spec: CoverSpec,
         riff_lane: Option<Role>,
     ) -> Result<Self, CoverError> {
+        Self::extract_projected(reference, world, spec, riff_lane, CoverProjection::Identity)
+    }
+
+    /// The v1 lane quotient — a historical adapter, byte-exact with every v1 map: each line axis
+    /// is its instrument's whole performed line and the groove every kick/snare stroke. It pins an
+    /// instrument, not an identity: responses, fills and figures sharing the lane are pinned too.
+    pub fn extract_lane(
+        reference: &Composition,
+        world: &MusicWorld,
+        spec: CoverSpec,
+    ) -> Result<Self, CoverError> {
+        Self::extract_lane_on(reference, world, spec, None)
+    }
+
+    /// [`Self::extract_lane`] with the riff read on an explicit lane; without one, the lead when
+    /// the reference sounds one, else the bass.
+    pub fn extract_lane_on(
+        reference: &Composition,
+        world: &MusicWorld,
+        spec: CoverSpec,
+        riff_lane: Option<Role>,
+    ) -> Result<Self, CoverError> {
+        Self::extract_projected(reference, world, spec, riff_lane, CoverProjection::Lane)
+    }
+
+    pub(crate) fn extract_projected(
+        reference: &Composition,
+        world: &MusicWorld,
+        spec: CoverSpec,
+        riff_lane: Option<Role>,
+        projection: CoverProjection,
+    ) -> Result<Self, CoverError> {
         let score = &reference.score;
+        let identity = (projection == CoverProjection::Identity)
+            .then(|| super::projection::IdentityMaterial::of(&reference.song, &reference.perf));
+        let in_line = |n: &Note| identity.as_ref().is_none_or(|m| m.carries(n));
         let extract_line = |role: Role| -> Result<CoverLine, CoverError> {
-            let mut sounding: Vec<_> = score.role_notes(role).collect();
+            let mut sounding: Vec<_> = score.role_notes(role).filter(|n| in_line(n)).collect();
             sounding.sort_by(|a, b| {
                 a.start_beat
                     .total_cmp(&b.start_beat)
@@ -362,13 +421,13 @@ impl CoverMap {
         let riff = spec
             .contains(CoverAxis::Riff)
             .then(|| {
-                extract_line(riff_lane.unwrap_or(
-                    if score.role_notes(Role::Lead).next().is_some() {
+                extract_line(
+                    riff_lane.unwrap_or(if score.role_notes(Role::Lead).any(in_line) {
                         Role::Lead
                     } else {
                         Role::Bass
-                    },
-                ))
+                    }),
+                )
             })
             .transpose()?;
         let bass = spec
@@ -398,7 +457,38 @@ impl CoverMap {
         } else {
             None
         };
-        let groove = if spec.contains(CoverAxis::Groove) {
+        let recorded_groove = if projection == CoverProjection::Identity {
+            super::projection::groove_strokes(score)
+        } else {
+            None
+        };
+        let groove = if spec.contains(CoverAxis::Groove) && recorded_groove.is_some() {
+            // The kit's identity: the strokes its drummer recorded as pocket anchors, each at the
+            // metric source it recorded — no reverse projection of a performed float.
+            let mut strokes = Vec::new();
+            for (hit, origin) in recorded_groove.as_deref().unwrap_or(&[]) {
+                strokes.push(CoverStroke {
+                    at: origin.metric.ok_or(CoverError::UnprojectableTiming)?,
+                    voice: match hit.voice {
+                        DrumVoice::Kick => GrooveVoice::Kick,
+                        _ => GrooveVoice::Snare,
+                    },
+                });
+            }
+            strokes.sort_by_key(|s| {
+                (
+                    s.at,
+                    match s.voice {
+                        GrooveVoice::Kick => 0,
+                        GrooveVoice::Snare => 1,
+                    },
+                )
+            });
+            if strokes.is_empty() {
+                return Err(CoverError::MissingAxis(CoverAxis::Groove));
+            }
+            Some(strokes)
+        } else if spec.contains(CoverAxis::Groove) {
             let transport =
                 GrooveTransport::eighth_swing(world.swing).ok_or(CoverError::Invalid("swing"))?;
             let mut strokes = Vec::new();
@@ -510,6 +600,7 @@ impl CoverMap {
             groove,
             bass,
             fidelity: None,
+            projection,
         };
         out.validate()?;
         Ok(out)
@@ -1317,7 +1408,16 @@ impl CoverConstraints {
         Some(notes)
     }
     pub(crate) fn drums(&self, perf: &PerformancePlan, world: &MusicWorld) -> Option<Vec<DrumHit>> {
+        self.drums_with_origins(perf, world).map(|(hits, _)| hits)
+    }
+    /// The pinned kit and each stroke's recorded origin (a pinned stroke is the kit's identity).
+    pub(crate) fn drums_with_origins(
+        &self,
+        perf: &PerformancePlan,
+        world: &MusicWorld,
+    ) -> Option<(Vec<DrumHit>, Vec<super::score::StrokeOrigin>)> {
         let strokes = self.identity.groove.as_ref()?;
+        let mut origins = Vec::new();
         let mut rng = super::rng::Rng::new(self.seed ^ 0xC0FE_DA05);
         let mut hits = Vec::new();
         for s in strokes {
@@ -1329,12 +1429,19 @@ impl CoverConstraints {
                 perf.on_stage(Agent::Drums, at),
                 "pinned stroke at {at} without a drum seat"
             );
+            let voice = match s.voice {
+                GrooveVoice::Kick => DrumVoice::Kick,
+                GrooveVoice::Snare => DrumVoice::Snare,
+            };
+            origins.push(super::score::StrokeOrigin {
+                voice,
+                performed: at,
+                metric: Some(s.at),
+                pocket: true,
+            });
             hits.push(DrumHit {
                 start_beat: at,
-                voice: match s.voice {
-                    GrooveVoice::Kick => DrumVoice::Kick,
-                    GrooveVoice::Snare => DrumVoice::Snare,
-                },
+                voice,
                 velocity: rng.range_f32(0.65, 0.95) * world.base_dynamic,
                 prov: Provenance {
                     groove_variation: Some("cover-cell"),
@@ -1355,19 +1462,26 @@ impl CoverConstraints {
             if at >= self.identity.metric_length().beats() || !perf.on_stage(Agent::Drums, at) {
                 continue;
             }
+            let voice = if tick % 8 == 7 && self.seed % 2 == 1 {
+                DrumVoice::OpenHat
+            } else {
+                DrumVoice::ClosedHat
+            };
+            origins.push(super::score::StrokeOrigin {
+                voice,
+                performed: at,
+                metric: Some(m),
+                pocket: false,
+            });
             hits.push(DrumHit {
                 start_beat: at,
-                voice: if tick % 8 == 7 && self.seed % 2 == 1 {
-                    DrumVoice::OpenHat
-                } else {
-                    DrumVoice::ClosedHat
-                },
+                voice,
                 velocity: rng.range_f32(0.25, 0.55) * world.base_dynamic,
                 prov: Provenance::new(super::form::SectionKind::A),
             });
         }
         hits.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
-        Some(hits)
+        Some((hits, origins))
     }
 }
 
@@ -1602,9 +1716,65 @@ impl CoverConformance {
                 let lane = (axis == CoverAxis::Riff)
                     .then(|| expected.riff.as_ref().map(|l| l.role))
                     .flatten();
-                let projected =
-                    CoverMap::extract_on_lane(actual, world, CoverSpec::new([axis]), lane);
                 let rel = expected.relations();
+                // An identity map verified on a cover: each axis's primitive relation against what
+                // the cover realized — never by re-running the extractor ([`relations`]).
+                if expected.projection == CoverProjection::Identity
+                    && actual.perf.cover_constraints.is_some()
+                    && !(axis == CoverAxis::Motif && rel.motif == LineRelation::Theme)
+                {
+                    let verdict = match axis {
+                        CoverAxis::Motif => expected
+                            .motif
+                            .as_ref()
+                            .map(|l| relations::line(l, actual, world)),
+                        CoverAxis::Riff => expected
+                            .riff
+                            .as_ref()
+                            .map(|l| relations::line(l, actual, world)),
+                        CoverAxis::BassFigure => expected
+                            .bass
+                            .as_ref()
+                            .map(|l| relations::line(l, actual, world)),
+                        CoverAxis::Groove => expected
+                            .groove
+                            .as_deref()
+                            .map(|g| relations::groove(g, actual)),
+                        CoverAxis::HarmonicContour | CoverAxis::HarmonicLoop => {
+                            expected.harmony.as_deref().map(|h| {
+                                relations::harmony(
+                                    h,
+                                    rel.harmony == HarmonyRelation::QualityFamily,
+                                    actual,
+                                    world,
+                                )
+                            })
+                        }
+                        CoverAxis::Form => {
+                            expected.form.as_deref().map(|f| relations::form(f, actual))
+                        }
+                        CoverAxis::Orchestration => expected
+                            .orchestration
+                            .as_deref()
+                            .map(|o| relations::orchestration(o, actual)),
+                    }
+                    .unwrap_or_else(|| Err("the pinned axis holds no coordinate".into()));
+                    return CoverCheck {
+                        axis,
+                        relation: fidelity::relation_text(axis, &rel),
+                        passed: verdict.is_ok(),
+                        detail: verdict
+                            .err()
+                            .unwrap_or_else(|| "the realized pin holds the exact relation".into()),
+                    };
+                }
+                let projected = CoverMap::extract_projected(
+                    actual,
+                    world,
+                    CoverSpec::new([axis]),
+                    lane,
+                    expected.projection,
+                );
                 let line = |p: &Option<CoverLine>, r: LineRelation| {
                     p.as_ref().map(|l| fidelity::project_line(l, r))
                 };
@@ -1765,6 +1935,7 @@ impl CanonicalFingerprint for CoverMap {
             bass,
             orchestration,
             fidelity,
+            projection,
         } = self;
         w.tag("CoverMap/v1");
         w.field("spec", spec);
@@ -1780,6 +1951,10 @@ impl CanonicalFingerprint for CoverMap {
         w.field("orchestration", orchestration);
         if let Some(profile) = fidelity {
             w.field("fidelity", profile);
+        }
+        // v1 lane maps keep their exact hash; the identity projection is a tagged extension.
+        if *projection == CoverProjection::Identity {
+            w.field("projection", "identity");
         }
     }
 }
@@ -1899,6 +2074,7 @@ impl CoverMap {
             bass: None,
             orchestration: None,
             fidelity: None,
+            projection: CoverProjection::Lane,
         };
         out.validate()?;
         Ok(out)
@@ -1973,6 +2149,8 @@ mod tests;
 
 #[path = "cover_fidelity.rs"]
 mod fidelity;
+#[path = "cover_relations.rs"]
+mod relations;
 pub(crate) use fidelity::{fidelity_availability, fidelity_ceiling};
 pub use fidelity::{
     AxisEvidence, AxisFidelity, CoverFidelityPreset, CoverFidelityProfile, FidelityReport,
