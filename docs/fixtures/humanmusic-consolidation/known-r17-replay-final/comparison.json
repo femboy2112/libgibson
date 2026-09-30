@@ -1,0 +1,18 @@
+{
+  "source": "8a0b0cdb6fca1cf2efcebb295d920625d69cee0f",
+  "executed": 120,
+  "pass": 61,
+  "fail": 59,
+  "failure_families": {
+    "accepted pitch changed": 14,
+    "off-lattice": 38,
+    "new temporal claim": 5,
+    "new held identity flip": 2
+  },
+  "all_first_reasons_identical": true,
+  "passes_identical": true,
+  "new_failure_cases": [],
+  "removed_failure_cases": [],
+  "changed_first_reasons": [],
+  "known_not_holdout": true
+}
