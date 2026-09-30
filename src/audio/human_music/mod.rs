@@ -62,6 +62,7 @@ pub mod phenomenal;
 #[cfg(test)]
 mod phenomenal_probes;
 pub mod phrase_diagnostics;
+pub mod phrase_expression;
 pub mod pitch;
 pub mod plan;
 #[cfg(test)]
