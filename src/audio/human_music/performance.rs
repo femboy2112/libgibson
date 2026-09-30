@@ -83,12 +83,23 @@ pub struct AccentGrid {
 }
 
 impl AccentGrid {
+    /// Exact metric identity of an indexed sixteenth; never a performed swing coordinate.
+    /// Oversized legacy step indices are rejected rather than overflowing the identity.
+    pub fn metric_of(bar: u32, step: usize) -> Option<super::rhythm::MetricPosition> {
+        let index = i64::from(bar)
+            .checked_mul(STEPS as i64)?
+            .checked_add(i64::try_from(step).ok()?)?;
+        super::rhythm::MetricPosition::new(index, 4)
+    }
+
     /// The beat of `(bar, step)`.
     pub fn beat_of(bar: u32, step: usize) -> f64 {
         bar as f64 * BEATS_PER_BAR + step as f64 * STEP_BEATS
     }
 
-    /// The `(bar, step)` holding `beat` (floor).
+    /// Project `beat` to the nearest sixteenth step (half-step ties round upward).
+    /// A rounded bar-end step becomes the next downbeat; this is not a floor projection.
+    /// Negative input clamps to the first step, preserving the legacy API's domain boundary.
     pub fn step_of(beat: f64) -> (u32, usize) {
         let b = (beat / BEATS_PER_BAR).floor().max(0.0);
         let s = ((beat - b * BEATS_PER_BAR) / STEP_BEATS).round() as usize;

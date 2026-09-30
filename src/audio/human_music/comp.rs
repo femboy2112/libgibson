@@ -23,14 +23,7 @@ use super::world::MusicWorld;
 
 /// The function of `pitch` over `ctx`: a chord tone, a licensed tension, or `None`.
 fn function_over(ctx: &HarmonicContext, pitch: Midi) -> Option<PitchFunction> {
-    let pc = pitch_class(pitch);
-    if ctx.chord.contains_pc(pc) {
-        Some(PitchFunction::ChordTone)
-    } else if ctx.palette.tensions.contains(&pc) {
-        Some(PitchFunction::LicensedExtension)
-    } else {
-        None
-    }
+    super::pitch::source_stable_function(ctx.chord, &ctx.palette.tensions, pitch)
 }
 
 /// The nearest pitch to `target` that is stable over `ctx` (a chord tone or licensed tension).
@@ -43,10 +36,7 @@ fn nearest_stable(ctx: &HarmonicContext, target: Midi) -> Midi {
 
 /// The nearest actual chord member; available colour does not satisfy this contract.
 fn nearest_chord_tone(ctx: &HarmonicContext, target: Midi) -> Midi {
-    (0..=12)
-        .flat_map(|d| [target - d, target + d])
-        .find(|&p| ctx.chord.contains_pc(pitch_class(p)))
-        .unwrap_or(target)
+    ctx.chord.nearest_chord_tone(target)
 }
 
 fn prov(role_note: &'static str, xform: Option<&'static str>) -> Provenance {

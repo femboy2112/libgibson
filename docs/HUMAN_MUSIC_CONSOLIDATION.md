@@ -602,3 +602,26 @@ changes no accepted flagship event/evidence or synthesis output.
 three exact-coordinate unit laws. The tests include historical endpoint equality
 against the old quadratic definition, immutable-window reuse, explicit-edge
 mutation, coincident-SFX identity, and the frozen accepted event/evidence receipts.
+
+
+## Shared pitch relations and allocation ownership
+
+`PitchClassSet` is the sole normalized 12-bit membership object. Ordered chord
+voices remain separate: order and octave matter for voicing but not membership.
+`Chord`, motif masks and source membership consume this object. The comp/bass
+source classifier now shares the chord-first, literal licensed-palette relation;
+temporal classification remains a separate observer with its boundary evidence.
+Nearest chord tone selection retains the historical downward tie choice.
+
+**Disclosed:** exhaustive controls cover 18 qualities, all 12 roots/classes and
+13 octaves; shared source labels also cover malformed palette values -1 through13.
+A sustain-crossing falsifier shows that static membership cannot certify temporal
+function. The isolated staged source passed five pitch/coordinate laws and the
+accepted R17 event/evidence characterization (six tests). No whole-program speedup
+is claimed; removed vector allocations and duplicate scans are structural facts.
+`AccentGrid::metric_of` exposes exact metric identity; `step_of` documentation now
+correctly says nearest-step projection, including its existing tie/rollover behavior.
+
+Exact downloaded external-source bytes are archived unchanged, including upstream
+whitespace in `ode.ly` and the license page; their recorded SHA256 identities take
+precedence over normalizing archival text. No production formatting rule changed.

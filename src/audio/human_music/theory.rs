@@ -33,6 +33,48 @@ pub fn pitch_class(m: Midi) -> i32 {
     m.rem_euclid(12)
 }
 
+/// An octave-independent pitch-class set. Only the twelve musical bits can be represented.
+/// Ordered chord tones remain a separate object: this set deliberately forgets their order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct PitchClassSet(u16);
+
+impl PitchClassSet {
+    pub const EMPTY: Self = Self(0);
+
+    /// Import a legacy mask; bits outside the twelve pitch classes have no musical meaning.
+    pub const fn from_bits(bits: u16) -> Self {
+        Self(bits & 0x0fff)
+    }
+
+    pub fn from_pitches(pitches: &[Midi]) -> Self {
+        pitches.iter().copied().collect()
+    }
+
+    pub const fn bits(self) -> u16 {
+        self.0
+    }
+
+    pub fn contains(self, pitch: Midi) -> bool {
+        self.0 & (1_u16 << pitch_class(pitch)) != 0
+    }
+}
+
+impl FromIterator<Midi> for PitchClassSet {
+    fn from_iter<T: IntoIterator<Item = Midi>>(iter: T) -> Self {
+        Self(
+            iter.into_iter()
+                .fold(0, |mask, pitch| mask | (1_u16 << pitch_class(pitch))),
+        )
+    }
+}
+
+impl super::fingerprint::CanonicalFingerprint for PitchClassSet {
+    fn encode(&self, writer: &mut super::fingerprint::FingerprintWriter) {
+        writer.tag("PitchClassSet/v2");
+        writer.field("bits", &self.0);
+    }
+}
+
 /// Diatonic and common synthetic modes (interval pattern from the tonic).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -207,11 +249,19 @@ impl Chord {
 
     /// The chord's pitch classes.
     pub fn pitch_classes(&self) -> Vec<i32> {
+        self.pitch_class_iter().collect()
+    }
+
+    fn pitch_class_iter(&self) -> impl Iterator<Item = i32> + '_ {
         self.quality
             .intervals()
             .iter()
             .map(|&i| (self.root_pc + i).rem_euclid(12))
-            .collect()
+    }
+
+    /// The unordered chord membership relation, without allocating an ordered tone vector.
+    pub fn pitch_class_set(&self) -> PitchClassSet {
+        self.pitch_class_iter().collect()
     }
 
     /// The chord tones as MIDI pitches stacked from `base` (the root at or above `base`).
@@ -228,15 +278,15 @@ impl Chord {
 
     /// True if `pc` is a chord tone.
     pub fn contains_pc(&self, pc: i32) -> bool {
-        self.pitch_classes().contains(&pc.rem_euclid(12))
+        self.pitch_class_set().contains(pc)
     }
 
     /// The nearest chord tone to `m`.
     pub fn nearest_chord_tone(&self, m: Midi) -> Midi {
-        let pcs = self.pitch_classes();
+        let pcs = self.pitch_class_set();
         (0..=12)
             .flat_map(|d| [m - d, m + d])
-            .find(|&c| pcs.contains(&pitch_class(c)))
+            .find(|&c| pcs.contains(c))
             .unwrap_or(m)
     }
 

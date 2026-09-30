@@ -8,29 +8,40 @@
 //! structural destination. A suspension requires actual temporal carry across a harmony change.
 
 use super::score::PitchFunction;
-use super::theory::{pitch_class, Chord, Midi, Scale};
+use super::theory::{pitch_class, Chord, Midi, PitchClassSet, Scale};
 
 /// Whether `t`'s pitch-class is a tone of `chord` (false when there is no chord). Allocation-free:
 /// the realizer's search calls the classifier inside its inner loop.
 fn in_chord(chord: Option<Chord>, t: Midi) -> bool {
-    let pc = pitch_class(t);
-    chord.is_some_and(|c| {
-        c.quality
-            .intervals()
-            .iter()
-            .any(|&i| (c.root_pc + i).rem_euclid(12) == pc)
-    })
+    chord.is_some_and(|c| c.contains_pc(t))
 }
 
 /// A pitch-class set as a 12-bit mask (bit `pc` set), for [`PitchContext::licensed`].
 pub fn pc_mask(pcs: &[i32]) -> u16 {
-    pcs.iter()
-        .fold(0u16, |m, &pc| m | (1u16 << pc.rem_euclid(12)))
+    PitchClassSet::from_pitches(pcs).bits()
 }
 
 /// Whether `t`'s pitch class is in the 12-bit `mask`.
 fn in_mask(mask: u16, t: Midi) -> bool {
-    mask & (1u16 << pitch_class(t)) != 0
+    PitchClassSet::from_bits(mask).contains(t)
+}
+
+/// Source declaration from onset membership, with chord membership taking precedence over
+/// available colour. This does not certify a note's sustain, resolution, or heard function;
+/// the temporal and ensemble observers still reconstruct those relations independently.
+pub fn source_stable_function(
+    chord: Chord,
+    licensed: &[i32],
+    pitch: Midi,
+) -> Option<PitchFunction> {
+    let pc = pitch_class(pitch);
+    if chord.contains_pc(pc) {
+        Some(PitchFunction::ChordTone)
+    } else if licensed.contains(&pc) {
+        Some(PitchFunction::LicensedExtension)
+    } else {
+        None
+    }
 }
 
 /// How close (in beats) a note must sit to the arrival of the upcoming harmony to read as an

@@ -786,11 +786,11 @@ struct Slot {
 }
 
 fn has_pc(mask: u16, p: Midi) -> bool {
-    mask & (1u16 << pitch_class(p)) != 0
+    super::theory::PitchClassSet::from_bits(mask).contains(p)
 }
 
 fn chord_mask(c: Option<Chord>) -> u16 {
-    c.map_or(0, |c| super::pitch::pc_mask(&c.pitch_classes()))
+    c.map_or(0, |c| c.pitch_class_set().bits())
 }
 
 const INF: f32 = f32::INFINITY;

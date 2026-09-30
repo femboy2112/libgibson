@@ -941,13 +941,7 @@ fn gate_hazards(
 }
 
 fn stable_function(ctx: &HarmonicContext, p: Midi) -> Option<PitchFunction> {
-    if ctx.chord.contains_pc(pitch_class(p)) {
-        Some(PitchFunction::ChordTone)
-    } else if ctx.palette.tensions.contains(&pitch_class(p)) {
-        Some(PitchFunction::LicensedExtension)
-    } else {
-        None
-    }
+    super::pitch::source_stable_function(ctx.chord, &ctx.palette.tensions, p)
 }
 
 #[cfg(test)]
