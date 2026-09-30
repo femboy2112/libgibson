@@ -2,7 +2,7 @@
 use gibson::audio::human_music::{
     composer::Composer,
     expression::{observe, ConnectiveViability, ExpressionEvent},
-    functor::{perform_expressive, Composition},
+    functor::{perform_expressive, perform_phrased, Composition},
     identity::IdentityDiagnostics,
     performance::PerformanceOptions,
     score::{PitchFunction, Role},
@@ -105,7 +105,8 @@ fn r16_a_changed_voicing_is_observed_without_changing_chord_identity() {
 
 #[test]
 fn r16_production_should_discharge_the_reported_register_path_witness() {
-    let (w, x) = frozen();
+    let (w, old) = frozen();
+    let x = perform_phrased(&old.song, &w, PerformanceOptions::default());
     let d = VoicingSurfaceDiagnostics::measure(&x.perf, &x.score, &w);
     let sites: Vec<_> = d
         .rows
@@ -113,11 +114,65 @@ fn r16_production_should_discharge_the_reported_register_path_witness() {
         .filter(|r| r.high_seventh_excursion)
         .map(|r| r.beat)
         .collect();
-    // Active red witness until the new opt-in realization is wired here. R15 stays frozen.
     assert!(
         sites.is_empty(),
         "identity passes, but reported voicing family survives: {sites:?}"
     );
+    assert_eq!(
+        x.score
+            .support_voicing_decisions
+            .iter()
+            .map(|r| r.start_beat)
+            .collect::<Vec<_>>(),
+        [28.0, 36.0, 44.0]
+    );
+    for decision in &x.score.support_voicing_decisions {
+        assert_eq!(decision.before, [64, 72, 79, 83]);
+        assert_eq!(decision.after, [60, 64, 71, 79]);
+        assert!(!decision.added_tail_contacts.is_empty());
+        assert!(decision.added_tail_contacts.iter().all(|c| c.seconds < 0.3));
+    }
+    let bass_contact = &x.score.support_voicing_decisions[0].resolving_bass_contacts[0];
+    assert_eq!(
+        (
+            bass_contact.contact.other_pitch,
+            bass_contact.contact.other_onset_beat
+        ),
+        (47, 31.0)
+    );
+    assert_eq!(
+        (bass_contact.target_pitch, bass_contact.target_beat),
+        (48, 31.5)
+    );
+    assert_eq!(bass_contact.source_function, Some(PitchFunction::ChordTone));
+    assert_eq!(
+        bass_contact.physical_verdict,
+        ConnectiveViability::AsWritten
+    );
+    assert!(bass_contact.legacy_guard_rejected);
+    assert!((bass_contact.target_latency_seconds - 0.254237288).abs() < 1e-6);
+    assert!((bass_contact.source_audible_seconds - 0.312741454).abs() < 1e-6);
+    for beat in [4.0, 12.0, 60.0, 68.0, 76.0, 100.0, 108.0] {
+        let notes = |c: &Composition| {
+            c.score
+                .role_notes(Role::Pad)
+                .filter(|n| n.start_beat == beat)
+                .map(|n| format!("{n:?}"))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            notes(&old),
+            notes(&x),
+            "accepted within-song pad control at {beat}"
+        );
+    }
+    assert_eq!(
+        IdentityDiagnostics::measure(&x.score.notes, &x.perf.contexts, &w, w.tempo_bpm)
+            .flips()
+            .count(),
+        0
+    );
+    assert!(x.score.stale_hearings().is_empty());
 }
 
 #[test]

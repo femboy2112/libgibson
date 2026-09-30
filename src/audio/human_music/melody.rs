@@ -11,6 +11,10 @@ use super::theory::Midi;
 
 /// The realized lead line plus how many notes the search had to repair.
 pub struct LeadRealization {
+    /// Original source rhythm: semantic ownership, never an acoustic hearing.
+    pub authored: Vec<Note>,
+    /// Round XVI phrase plans; empty in historical arms.
+    pub phrase_plans: Vec<super::phrase_expression::PhrasePlan>,
     pub notes: Vec<Note>,
     /// Notes the line search itself had to snap (it found no justified candidate).
     pub repairs: usize,
@@ -24,14 +28,14 @@ pub struct LeadRealization {
 
 /// Realize every planned lead statement, connecting each to the previous statement's exit pitch.
 pub fn realize_lead(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadRealization {
-    realize_lead_impl(perf, false, None)
+    realize_lead_impl(perf, false, None, false)
 }
 
 /// Realize temporal pitch paths over the R11 statement and register scaffold.
 /// Each statement retains the legacy entry register even when the previous statement's
 /// selected pitch changes, preventing a local choice from shifting the whole song.
 pub fn realize_lead_temporal(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadRealization {
-    realize_lead_impl(perf, true, None)
+    realize_lead_impl(perf, true, None, false)
 }
 
 /// Temporal lead expressed before any dependent hears it.
@@ -40,13 +44,23 @@ pub fn realize_lead_expressive(
     _plan: &CompositionPlan,
     world: &super::world::MusicWorld,
 ) -> LeadRealization {
-    realize_lead_impl(perf, true, Some(world))
+    realize_lead_impl(perf, true, Some(world), false)
+}
+
+/// Plan one phrase's optional performance fiber before any other player hears it.
+pub fn realize_lead_phrased(
+    perf: &PerformancePlan,
+    _plan: &CompositionPlan,
+    world: &super::world::MusicWorld,
+) -> LeadRealization {
+    realize_lead_impl(perf, true, Some(world), true)
 }
 
 fn realize_lead_impl(
     perf: &PerformancePlan,
     temporal: bool,
     expressive: Option<&super::world::MusicWorld>,
+    phrased: bool,
 ) -> LeadRealization {
     let mut notes = Vec::new();
     let mut repairs = 0usize;
@@ -210,6 +224,8 @@ fn realize_lead_impl(
             n.prov = n.prov.realizing(a.id);
         }
     }
+    let authored = notes.clone();
+    let mut phrase_plans = Vec::new();
     let mut expression = Vec::new();
     if let Some(world) = expressive {
         let line = notes
@@ -218,11 +234,20 @@ fn realize_lead_impl(
             .zip(structural)
             .map(|(note, structural)| super::expression::ExpressionEvent { note, structural })
             .collect();
-        let result = super::expression::realize(perf, world, line, &[]);
-        notes = result.events.into_iter().map(|e| e.note).collect();
-        expression = result.decisions;
+        if phrased {
+            let result = super::phrase_expression::realize(perf, world, line, &[], &[]);
+            notes = result.events.into_iter().map(|e| e.note).collect();
+            expression = result.decisions;
+            phrase_plans = result.plans;
+        } else {
+            let result = super::expression::realize(perf, world, line, &[]);
+            notes = result.events.into_iter().map(|e| e.note).collect();
+            expression = result.decisions;
+        }
     }
     LeadRealization {
+        authored,
+        phrase_plans,
         expression,
         notes,
         repairs,

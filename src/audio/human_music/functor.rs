@@ -185,6 +185,59 @@ pub fn perform_expressive(
     }
 }
 
+/// Independent experimental factors. Historical R14/R15 entry points never read these.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PhraseOptions {
+    pub phrase_expression: bool,
+    pub semantic_occupancy: bool,
+    pub support_voicing: bool,
+}
+impl Default for PhraseOptions {
+    fn default() -> Self {
+        Self {
+            phrase_expression: true,
+            semantic_occupancy: true,
+            support_voicing: true,
+        }
+    }
+}
+
+/// Round XVI opt-in: phrase expression, semantic ownership, and source support voice paths.
+///
+/// # Panics
+/// Requires Independent coupling so no historical post-hoc repair can invalidate hearings.
+pub fn perform_phrased(
+    song: &SongMap,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+) -> Composition {
+    perform_phrase_experiment(song, world, opts, PhraseOptions::default())
+}
+
+/// Explicit factorial ablation of Round XVI's three source-level mechanisms.
+///
+/// # Panics
+/// Requires Independent coupling, like [`perform_phrased`].
+pub fn perform_phrase_experiment(
+    song: &SongMap,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+    factors: PhraseOptions,
+) -> Composition {
+    assert_eq!(
+        opts.coupling,
+        EnsembleCoupling::Independent,
+        "Round XVI requires Independent coupling and final-source hearings"
+    );
+    let perf = PerformancePlan::from_song(song, world, opts);
+    let score = realize_arm(song, world, &perf, true, Contract::Phrased(factors));
+    Composition {
+        score,
+        song: song.clone(),
+        perf,
+    }
+}
+
 /// Which opt-in pitch contract a realization honours on top of the written one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Contract {
@@ -198,9 +251,19 @@ enum Contract {
     Coherent,
     /// Round XV: source expression within the Round XIV causal order.
     Expressive,
+    /// Round XVI: optional phrase, semantic ownership and support path experiments.
+    Phrased(PhraseOptions),
 }
 
 impl Contract {
+    fn phrase(self) -> Option<PhraseOptions> {
+        if let Self::Phrased(opts) = self {
+            Some(opts)
+        } else {
+            None
+        }
+    }
+
     /// Whether the Round XIII support mass gate runs.
     fn mass(self) -> bool {
         matches!(self, Contract::Mass | Contract::Tension)
@@ -241,13 +304,21 @@ fn realize_arm(
     score.sections = sections_from_plan(plan);
     score.chords = perf.chords.clone();
 
-    let lead = if contract == Contract::Expressive {
+    let phrase = contract.phrase();
+    let lead = if phrase.is_some_and(|p| p.phrase_expression) {
+        super::melody::realize_lead_phrased(perf, plan, world)
+    } else if contract == Contract::Expressive || phrase.is_some() {
         super::melody::realize_lead_expressive(perf, plan, world)
     } else if temporal {
         super::melody::realize_lead_temporal(perf, plan)
     } else {
         super::melody::realize_lead(perf, plan)
     };
+    let lead_occupancy = super::occupancy::AuthoredOccupancy::from_lead(perf, &lead.authored);
+    if phrase.is_some() {
+        score.occupancy.push(lead_occupancy.clone());
+        score.phrase_plans = lead.phrase_plans.clone();
+    }
     score.expression_decisions = lead.expression;
     score.melody_repairs = lead.repairs;
     score.melody_rejudged = lead.rejudged;
@@ -260,16 +331,64 @@ fn realize_arm(
     let (pad, keys, bass) = match perf.coupling {
         // The surgical arm realizes the R7b band first, note for note; it repairs afterwards.
         EnsembleCoupling::Independent | EnsembleCoupling::Surgical => {
-            let keys = if temporal {
+            let keys = if phrase.is_some_and(|p| p.semantic_occupancy) {
+                super::comp::realize_keys_owned(
+                    perf,
+                    plan,
+                    world,
+                    &lead.notes,
+                    &lead_occupancy,
+                    seed,
+                )
+            } else if temporal {
                 super::comp::realize_keys_temporal(perf, plan, world, &lead.notes, seed)
             } else {
                 super::comp::realize_keys(perf, plan, world, &lead.notes, seed)
             };
-            if matches!(contract, Contract::Coherent | Contract::Expressive) {
+            if matches!(
+                contract,
+                Contract::Coherent | Contract::Expressive | Contract::Phrased(_)
+            ) {
                 // Round XIV keeps temporal bass; Round XV also hears final keys when expressing
                 // its connectives. The frozen coherent pad comes last and hears the band.
-                let bass = if contract == Contract::Expressive {
+                let bass = if phrase.is_some_and(|p| p.phrase_expression) {
                     score.hearings.push(Hearing::of("bass", Role::Keys, &keys));
+                    let result = super::bass::realize_bass_phrased(
+                        perf,
+                        plan,
+                        world,
+                        &lead.notes,
+                        &keys,
+                        &lead.phrase_plans,
+                    );
+                    score
+                        .occupancy
+                        .push(super::occupancy::AuthoredOccupancy::from_role(
+                            perf,
+                            &result.authored,
+                            Role::Bass,
+                        ));
+                    score.phrase_plans.extend(result.plans);
+                    score.expression_decisions.extend(result.decisions);
+                    result.notes
+                } else if contract == Contract::Expressive || phrase.is_some() {
+                    score.hearings.push(Hearing::of("bass", Role::Keys, &keys));
+                    if phrase.is_some() {
+                        let source = super::bass::realize_bass_temporal(
+                            perf,
+                            plan,
+                            world,
+                            &lead.notes,
+                            &keys,
+                        );
+                        score
+                            .occupancy
+                            .push(super::occupancy::AuthoredOccupancy::from_role(
+                                perf,
+                                &source,
+                                Role::Bass,
+                            ));
+                    }
                     let (notes, decisions) =
                         super::bass::realize_bass_expressive(perf, plan, world, &lead.notes, &keys);
                     score.expression_decisions.extend(decisions);
@@ -291,7 +410,14 @@ fn realize_arm(
                 ] {
                     score.hearings.push(Hearing::of("pad", source, notes));
                 }
-                let (pad, edits) = super::comp::realize_pad_heard(perf, plan, world, &band);
+                let (pad, edits) = if phrase.is_some_and(|p| p.support_voicing) {
+                    let (notes, edits, decisions) =
+                        super::comp::realize_pad_phrased(perf, plan, world, &band);
+                    score.support_voicing_decisions = decisions;
+                    (notes, edits)
+                } else {
+                    super::comp::realize_pad_heard(perf, plan, world, &band)
+                };
                 score.pad_voicing_edits = edits;
                 (pad, keys, bass)
             } else {
@@ -316,7 +442,16 @@ fn realize_arm(
         }
     };
     score.hearings.push(Hearing::of("drums", Role::Bass, &bass));
-    score.drums = super::groove::realize_drums(perf, plan, world, seed, &bass, &lead.notes);
+    score.drums = if phrase.is_some_and(|p| p.semantic_occupancy) {
+        let intent = score
+            .occupancy
+            .iter()
+            .find(|o| o.role == Role::Bass)
+            .expect("bass source occupancy");
+        super::groove::realize_drums_owned(perf, plan, world, seed, &bass, &lead.notes, intent)
+    } else {
+        super::groove::realize_drums(perf, plan, world, seed, &bass, &lead.notes)
+    };
     score.notes.extend(pad);
     score.notes.extend(keys);
     score.notes.extend(bass);

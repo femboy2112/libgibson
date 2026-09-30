@@ -65,7 +65,17 @@ fn frozen_r15_individually_viable_connectives_repeat_one_temporal_shape() {
 
 #[test]
 fn r16_acceptance_requires_more_than_repeated_individually_legal_graces() {
-    let c = baseline();
+    let song = SongMap::compose(
+        &deflected_lift_trace(120.0),
+        2112,
+        None,
+        Composer::StablePropulsion,
+    );
+    let c = gibson::audio::human_music::functor::perform_phrased(
+        &song,
+        &MusicWorld::black_ice(),
+        PerformanceOptions::default(),
+    );
     let d = PhraseSurfaceDiagnostics::measure(
         &c.song.plan,
         &c.perf,

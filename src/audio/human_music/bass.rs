@@ -113,6 +113,42 @@ pub fn realize_bass_expressive(
     )
 }
 
+/// Round XVI source output, retaining the authored pulse separately from the sounding line.
+pub struct PhraseBass {
+    pub authored: Vec<Note>,
+    pub notes: Vec<Note>,
+    pub decisions: Vec<super::expression::ExpressionDecision>,
+    pub plans: Vec<super::phrase_expression::PhrasePlan>,
+}
+
+/// Phrase bass-owned pickups; shared unisons already inherit the final lead gesture.
+pub fn realize_bass_phrased(
+    perf: &PerformancePlan,
+    plan: &CompositionPlan,
+    world: &MusicWorld,
+    lead: &[Note],
+    keys: &[Note],
+    lead_plans: &[super::phrase_expression::PhrasePlan],
+) -> PhraseBass {
+    let authored = realize(perf, plan, world, lead, keys, None, true);
+    let line = authored
+        .iter()
+        .copied()
+        .map(|note| super::expression::ExpressionEvent {
+            structural: note.prov.role_note != "approach",
+            note,
+        })
+        .collect();
+    let support: Vec<_> = lead.iter().chain(keys).copied().collect();
+    let result = super::phrase_expression::realize(perf, world, line, &support, lead_plans);
+    PhraseBass {
+        authored,
+        notes: result.events.into_iter().map(|e| e.note).collect(),
+        decisions: result.decisions,
+        plans: result.plans,
+    }
+}
+
 /// Realize the bass as the FLOOR of the coupled ensemble (Round VIII, `EnsembleCoupling::CoupledR8`
 /// only): the same rhythm and the same stage as [`realize_bass`], but every pitch is chosen as
 /// what it does UNDER the band. The ensemble unison keeps its rhythm and picks its own pitch per

@@ -214,3 +214,71 @@ fn r16_owned_drums_preserve_pocket_under_bass_retiming() {
     );
     assert_eq!(format!("{original:?}"), format!("{retimed:?}"));
 }
+
+#[test]
+fn r16_phrase_and_ownership_factors_are_independent_and_final_hearings_are_current() {
+    let song = song();
+    let world = MusicWorld::black_ice();
+    let legacy = perform_expressive(&song, &world, PerformanceOptions::default());
+    let mut cells = Vec::new();
+    for phrase_expression in [false, true] {
+        for semantic_occupancy in [false, true] {
+            let cell = perform_phrase_experiment(
+                &song,
+                &world,
+                PerformanceOptions::default(),
+                PhraseOptions {
+                    phrase_expression,
+                    semantic_occupancy,
+                    support_voicing: false,
+                },
+            );
+            assert!(cell.score.stale_hearings().is_empty());
+            if semantic_occupancy {
+                let intent = cell
+                    .score
+                    .occupancy
+                    .iter()
+                    .find(|o| o.role == Role::Lead)
+                    .expect("source intent recorded independently of heard notes");
+                let lead: Vec<_> = cell.score.role_notes(Role::Lead).copied().collect();
+                for n in cell
+                    .score
+                    .role_notes(Role::Keys)
+                    .filter(|n| n.prov.role_note == "comp")
+                {
+                    assert!(intent.allows_comp_at(n.start_beat, &lead));
+                }
+            }
+            let comp_attacks: std::collections::BTreeSet<_> = cell
+                .score
+                .role_notes(Role::Keys)
+                .filter(|n| n.prov.role_note == "comp")
+                .map(|n| (n.start_beat * 1000.0).round() as i64)
+                .collect();
+            eprintln!(
+                "phrase={phrase_expression} ownership={semantic_occupancy} comp_attacks={} stale=0",
+                comp_attacks.len()
+            );
+            cells.push(cell);
+        }
+    }
+    assert_eq!(
+        format!("{:?}", cells[0].score.notes),
+        format!("{:?}", legacy.score.notes)
+    );
+    assert_eq!(
+        format!("{:?}", cells[0].score.drums),
+        format!("{:?}", legacy.score.drums)
+    );
+    // Ownership alone cannot rewrite the lead's physical performance.
+    let lead = |i: usize| {
+        cells[i]
+            .score
+            .role_notes(Role::Lead)
+            .copied()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(format!("{:?}", lead(0)), format!("{:?}", lead(1)));
+    assert_eq!(format!("{:?}", lead(2)), format!("{:?}", lead(3)));
+}

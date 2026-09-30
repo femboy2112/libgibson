@@ -395,6 +395,12 @@ pub struct Score {
     pub hearings: Vec<Hearing>,
     /// Round XV decisions made inside lead/bass before dependent players hear their output.
     pub expression_decisions: Vec<super::expression::ExpressionDecision>,
+    /// Round XVI semantic intent, distinct from the final acoustic hearing ledger.
+    pub occupancy: Vec<super::occupancy::AuthoredOccupancy>,
+    /// Source phrase transformations and rejected alternatives.
+    pub phrase_plans: Vec<super::phrase_expression::PhrasePlan>,
+    /// Round XVI chord-preserving source voicing choices and contact tradeoffs.
+    pub support_voicing_decisions: Vec<super::support_voicing::VoicingPathDecision>,
 }
 
 /// A note as a dependent player consumed it: onset (beats), length (beats), pitch, function.
@@ -471,6 +477,9 @@ impl Score {
             pad_voicing_edits: Vec::new(),
             hearings: Vec::new(),
             expression_decisions: Vec::new(),
+            occupancy: Vec::new(),
+            phrase_plans: Vec::new(),
+            support_voicing_decisions: Vec::new(),
         }
     }
 
