@@ -1,0 +1,3 @@
+ABORTED before runtime by root instruction: source phase-normalization update pending.
+Zero fresh cases executed; VAPOR95 remains untouched. Not a test failure or pass.
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
