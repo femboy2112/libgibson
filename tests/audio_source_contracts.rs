@@ -4,14 +4,15 @@
 //! (77_100_0xx) outside its rows. Each one was committed red before its repair.
 use gibson::audio::human_music::{
     composer::Composer,
-    contract::CompositionGrammar,
+    contract::{CoherenceAnchor, CompositionGrammar},
     functor::{perform_with_profile, Composition},
     language::MusicalLanguage,
     occupancy,
     performance::PerformanceOptions,
     policy::PerformanceProfile,
-    score::Role,
+    score::{DrumVoice, Role},
     semantic::{deflected_lift_trace, demo_trace},
+    song::SongMapConformance,
     MusicWorld, SongMap,
 };
 
@@ -175,4 +176,93 @@ fn u1_the_checker_still_rejects_a_reservation_past_the_end() {
     assert!(!occupancy::violations(&c.perf, &score, true)
         .iter()
         .any(|s| s.starts_with("invalid reservation")));
+}
+
+/// U2 (Groove): holdout v1 had generated sources whose contract declares Groove as load-bearing but
+/// which never sound a kit stroke — every Intro/Coda-only form seats the drums Silent, and the
+/// arrangement's coverage guard covered the pitched voices only. A piece with at least one full
+/// bar of room has the opportunity to state its groove; it may not silently omit it.
+#[test]
+fn u2_declared_groove_sounds_when_the_form_has_a_full_bar() {
+    for (i, (beats, deflected)) in [(7.5, false), (12.0, false), (16.0, true), (23.75, false)]
+        .into_iter()
+        .enumerate()
+    {
+        for grammar in [
+            CompositionGrammar::HookArc,
+            CompositionGrammar::RiffDrive,
+            CompositionGrammar::LoopEvolution,
+        ] {
+            let s = song(beats, 77_100_021 + i as u64, deflected, grammar);
+            assert!(s.plan.contract.anchors.contains(&CoherenceAnchor::Groove));
+            for (language, lang) in [
+                (MusicalLanguage::simple(), "simple"),
+                (MusicalLanguage::fusion_conversation(), "fusion"),
+            ] {
+                let c = pocket(&s, &MusicWorld::black_ice(), language);
+                let pocket_strokes = c
+                    .score
+                    .drums
+                    .iter()
+                    .filter(|d| matches!(d.voice, DrumVoice::Kick | DrumVoice::Snare))
+                    .count();
+                assert!(
+                    pocket_strokes > 0,
+                    "{grammar:?} {beats} deflected={deflected} {lang}: Groove declared, never sounded"
+                );
+            }
+        }
+    }
+}
+
+/// U2 (Motif): a theme site is a promise to state the motif in that phrase. Holdout v1 planned
+/// sites in phrases shorter than the statement (a 4.5-beat piece, a 1.25-beat coda), which no
+/// performance can ever keep. A planned site must fit its phrase, and every planned identity site
+/// must then actually be stated.
+#[test]
+fn u2_theme_sites_fit_their_phrase_and_are_stated() {
+    for (i, (beats, deflected)) in [(4.5, false), (9.25, true), (12.0, false), (20.0, true)]
+        .into_iter()
+        .enumerate()
+    {
+        for composer in [
+            Composer::StructuralR9,
+            Composer::MeaningDirected,
+            Composer::StablePropulsion,
+        ] {
+            let trace = if deflected {
+                deflected_lift_trace(beats)
+            } else {
+                demo_trace(beats)
+            };
+            let s = SongMap::compose(
+                &trace,
+                77_100_031 + i as u64,
+                Some(CompositionGrammar::HookArc),
+                composer,
+            );
+            let tag = format!("{composer:?} {beats} deflected={deflected}");
+            for site in &s.thematic.sites {
+                let p = &s.plan.form.phrases[site.phrase as usize];
+                let span = p.end_beat() - p.start_beat();
+                assert!(
+                    f64::from(site.motif.total_beats()) <= span + 1e-6,
+                    "{tag}: site in phrase {} needs {} beats, phrase has {span}",
+                    site.phrase,
+                    site.motif.total_beats()
+                );
+            }
+            let c = pocket(
+                &s,
+                &MusicWorld::black_ice(),
+                MusicalLanguage::fusion_conversation(),
+            );
+            let conf = SongMapConformance::check(&s, &c.perf, &c.score);
+            assert!(
+                conf.missing_theme_sites.is_empty(),
+                "{tag}: {:?}",
+                conf.missing_theme_sites
+            );
+        }
+    }
 }
