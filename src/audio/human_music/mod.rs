@@ -68,12 +68,14 @@ pub mod pitch;
 pub mod plan;
 pub mod pocket;
 pub mod pocket_diagnostics;
+pub mod policy;
 #[cfg(test)]
 mod probes;
 pub mod region;
 pub mod rng;
 pub mod score;
 pub mod semantic;
+pub mod sfx;
 pub mod song;
 #[cfg(test)]
 mod song_probes;

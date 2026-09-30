@@ -14,7 +14,9 @@ use super::world::MusicWorld;
 pub struct PocketOptions {
     pub lattice_positions: bool,
     pub legato_connectives: bool,
+    /// Historical combined factor: changes source admission and emits continuation edges.
     pub mono_voice: bool,
+    /// Archived unavailable treatment; both values intentionally produce identical output.
     pub support_top_voice: bool,
     pub stable_precursors: bool,
 }
@@ -27,7 +29,7 @@ impl PocketOptions {
         support_top_voice: false,
         stable_precursors: false,
     };
-    pub(crate) fn changes_phrase(self) -> bool {
+    pub(crate) fn changes_source_admission(self) -> bool {
         self.lattice_positions
             || self.legato_connectives
             || self.mono_voice

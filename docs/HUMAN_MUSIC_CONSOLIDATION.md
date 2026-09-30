@@ -543,3 +543,28 @@ quality or recognition.
 boundaries, float normalization, song-coordinate mutation, free seed invariance,
 performance-grid mutation and note/time/provenance mutation. Historical baseline
 characterization remains a separate test and WAV comparisons remain mandatory.
+
+## Implemented: realization laws and historical adapters
+
+The central `Contract` chronology is removed. `PerformanceProfile` selects pitch,
+source expression, occupancy, support, source evidence and direct lifetime; one
+validation boundary rejects incompatible final-hearing/coupling combinations.
+`perform_with_profile` and `realize_with_profile` expose it. Existing `perform`
+remains the written default; historical functions construct their original exact
+law tuples, including mass/tension negative controls.
+
+`PulsePolicy::continuation_admission` is a source candidate law. The independent
+`VoiceLifetimePolicy` chooses emitted continuation physics. The historical mono
+factor explicitly maps to both. The new profile omits the unavailable support
+switch; `PocketOptions` retains the archived no-op for factorial reproduction.
+A pure lifetime-toggle test preserves lead/bass source events, phrase plans,
+expression decisions and authored occupancy while the edge graph changes.
+
+SFX realization/ownership/audit moved unchanged into `sfx.rs`, with old public
+names re-exported by `functor`. This removes a distinct subsystem from the causal
+band realizer. The planner/realizer construction boilerplate is shared.
+
+**Observed:** an isolated staged-source checkout passed 12 targeted tests (four
+policy, three pocket phase, four voice including small PCM controls, one complete
+flagship event/evidence characterization). This does not substitute for the final
+full/stem PCM rerender. Logs are under `fixtures/humanmusic-consolidation/verification`.

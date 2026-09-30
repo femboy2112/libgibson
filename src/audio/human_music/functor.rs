@@ -7,7 +7,7 @@
 //! theme, its chart, its rhythm — [`super::song::SongMapConformance`] checks it); the room
 //! re-modes and colours it, the idiom declares its rhythm transform and plays its own fiber.
 
-use super::action::{ActionCause, ActionKind, Agent};
+use super::action::Agent;
 use super::contract::CompositionGrammar;
 use super::form::{Section, BEATS_PER_BAR};
 use super::harmonic_state::HarmonicEnsembleState;
@@ -15,12 +15,20 @@ use super::ids::ActionId;
 use super::intent::{IntentMorphism, MusicIntent};
 use super::performance::{EnsembleCoupling, PerformanceOptions, PerformancePlan};
 use super::plan::{ArrangementRole, CompositionPlan};
-use super::score::{Hearing, Note, PitchFunction, Provenance, Role, Score, SfxEvent, SfxKind};
+use super::policy::{
+    ExpressionPolicy, HistoricalRepair, OccupancyPolicy, PerformanceProfile, PitchPolicy,
+    PolicyError, SourceEvidencePolicy, SupportPolicy, VoiceLifetimePolicy,
+};
+use super::score::{Hearing, Note, Provenance, Role, Score};
 use super::semantic::{EventKind, SemanticTrace, Tone};
+use super::sfx::add_sfx_and_provenance;
 use super::song::SongMap;
 use super::sonority::{plan_sonority, ColorPolicy};
-use super::theory::{pitch_class, Chord, Midi};
+use super::theory::Midi;
 use super::world::MusicWorld;
+
+/// Compatibility re-exports; SFX ownership and audit live in their own subsystem.
+pub use super::sfx::{SfxAudit, SfxVerdict};
 
 /// Compose a full score for `trace` under `world`, deterministic in `seed`.
 pub fn compose(trace: &SemanticTrace, world: &MusicWorld, seed: u64) -> Score {
@@ -84,13 +92,7 @@ pub fn compose_full(
 /// never re-derived; the performance plan is built from it and every player realizes a projection
 /// of that performance.
 pub fn perform(song: &SongMap, world: &MusicWorld, opts: PerformanceOptions) -> Composition {
-    let perf = PerformancePlan::from_song(song, world, opts);
-    let score = realize(song, world, &perf, false);
-    Composition {
-        score,
-        song: song.clone(),
-        perf,
-    }
+    perform_policy(song, world, opts, PerformanceProfile::WRITTEN)
 }
 
 /// Round XII opt-in pitch-path realization of the same song and performance plan.
@@ -100,26 +102,22 @@ pub fn perform_temporal(
     world: &MusicWorld,
     opts: PerformanceOptions,
 ) -> Composition {
-    let perf = PerformancePlan::from_song(song, world, opts);
-    let score = realize(song, world, &perf, true);
-    Composition {
-        score,
-        song: song.clone(),
-        perf,
-    }
+    perform_policy(song, world, opts, PerformanceProfile::TEMPORAL)
 }
 
 /// Round XIII opt-in: the Round XII realization with the support voicings' temporal-mass contract
 /// ([`super::comp::gate_support_mass`]). Same song, same performance plan, same lead and bass;
 /// [`perform_temporal`] remains the exact Round XII listening control.
 pub fn perform_mass(song: &SongMap, world: &MusicWorld, opts: PerformanceOptions) -> Composition {
-    let perf = PerformancePlan::from_song(song, world, opts);
-    let score = realize_arm(song, world, &perf, true, Contract::Mass);
-    Composition {
-        score,
-        song: song.clone(),
-        perf,
-    }
+    perform_policy(
+        song,
+        world,
+        opts,
+        PerformanceProfile {
+            repair: HistoricalRepair::SupportMass,
+            ..PerformanceProfile::TEMPORAL
+        },
+    )
 }
 
 /// Round XIIIb opt-in: [`perform_mass`], then the sounding-tension law over the whole band
@@ -131,13 +129,15 @@ pub fn perform_tension(
     world: &MusicWorld,
     opts: PerformanceOptions,
 ) -> Composition {
-    let perf = PerformancePlan::from_song(song, world, opts);
-    let score = realize_arm(song, world, &perf, true, Contract::Tension);
-    Composition {
-        score,
-        song: song.clone(),
-        perf,
-    }
+    perform_policy(
+        song,
+        world,
+        opts,
+        PerformanceProfile {
+            repair: HistoricalRepair::SoundingTension,
+            ..PerformanceProfile::TEMPORAL
+        },
+    )
 }
 
 /// Round XIV opt-in: Round XII's realization, with the pad realized last among the pitched
@@ -151,13 +151,7 @@ pub fn perform_coherent(
     world: &MusicWorld,
     opts: PerformanceOptions,
 ) -> Composition {
-    let perf = PerformancePlan::from_song(song, world, opts);
-    let score = realize_arm(song, world, &perf, true, Contract::Coherent);
-    Composition {
-        score,
-        song: song.clone(),
-        perf,
-    }
+    perform_policy(song, world, opts, PerformanceProfile::HEARD)
 }
 
 /// Round XV opt-in: the Round XIV harmonic solution with source-level expressive lead/bass.
@@ -176,13 +170,7 @@ pub fn perform_expressive(
         EnsembleCoupling::Independent,
         "Round XV expression requires Independent coupling; legacy repair arms cannot run after final hearings"
     );
-    let perf = PerformancePlan::from_song(song, world, opts);
-    let score = realize_arm(song, world, &perf, true, Contract::Expressive);
-    Composition {
-        score,
-        song: song.clone(),
-        perf,
-    }
+    perform_policy(song, world, opts, PerformanceProfile::EXPRESSIVE)
 }
 
 /// Independent experimental factors. Historical R14/R15 entry points never read these.
@@ -199,6 +187,27 @@ impl Default for PhraseOptions {
             semantic_occupancy: true,
             support_voicing: true,
         }
+    }
+}
+
+fn phrase_profile(options: PhraseOptions) -> PerformanceProfile {
+    PerformanceProfile {
+        expression: if options.phrase_expression {
+            ExpressionPolicy::Phrase
+        } else {
+            ExpressionPolicy::LocalConnectives
+        },
+        occupancy: if options.semantic_occupancy {
+            OccupancyPolicy::AuthoredIntent
+        } else {
+            OccupancyPolicy::Acoustic
+        },
+        support: if options.support_voicing {
+            SupportPolicy::SourceVoicePath
+        } else {
+            SupportPolicy::HeardHarmony
+        },
+        ..PerformanceProfile::PHRASED
     }
 }
 
@@ -229,18 +238,13 @@ pub fn perform_phrase_experiment(
         EnsembleCoupling::Independent,
         "Round XVI requires Independent coupling and final-source hearings"
     );
-    let perf = PerformancePlan::from_song(song, world, opts);
-    let score = realize_arm(song, world, &perf, true, Contract::Phrased(factors));
-    Composition {
-        score,
-        song: song.clone(),
-        perf,
-    }
+    perform_policy(song, world, opts, phrase_profile(factors))
 }
 
 pub use super::pocket::PocketOptions;
 
-/// Round XVII opt-in pocket source arm. Human timing acceptance remains unverified.
+/// Round XVII opt-in pocket source arm. The maintainer accepted the BLACK_ICE flagship pocket;
+/// general acceptance remains unverified.
 ///
 /// # Panics
 /// Requires Independent coupling to preserve final-source hearings.
@@ -268,8 +272,34 @@ pub fn perform_pocket_experiment(
         EnsembleCoupling::Independent,
         "Round XVII requires Independent coupling"
     );
+    perform_policy(
+        song,
+        world,
+        opts,
+        PerformanceProfile::legacy_pocket(factors),
+    )
+}
+
+/// Perform with explicit musical laws. Existing `perform` remains the default historical path.
+/// Invalid combinations fail before performance planning or source generation.
+pub fn perform_with_profile(
+    song: &SongMap,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+    profile: PerformanceProfile,
+) -> Result<Composition, PolicyError> {
+    profile.validate(opts.coupling)?;
+    Ok(perform_policy(song, world, opts, profile))
+}
+
+fn perform_policy(
+    song: &SongMap,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+    profile: PerformanceProfile,
+) -> Composition {
     let perf = PerformancePlan::from_song(song, world, opts);
-    let score = realize_arm(song, world, &perf, true, Contract::Pocketed(factors));
+    let score = realize_policy(song, world, &perf, profile);
     Composition {
         score,
         song: song.clone(),
@@ -277,66 +307,31 @@ pub fn perform_pocket_experiment(
     }
 }
 
-/// Which opt-in pitch contract a realization honours on top of the written one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Contract {
-    /// The realizers as they are.
-    Written,
-    /// Round XIII: asserted support colours pay rent.
-    Mass,
-    /// Round XIIIb: Mass, then sounding tension must be transient or foreshadowing.
-    Tension,
-    /// Round XIV: Written, with the pad hearing the band at its source. Neither Mass nor Tension.
-    Coherent,
-    /// Round XV: source expression within the Round XIV causal order.
-    Expressive,
-    /// Round XVI: optional phrase, semantic ownership and support path experiments.
-    Phrased(PhraseOptions),
-    Pocketed(PocketOptions),
-}
-
-impl Contract {
-    fn phrase(self) -> Option<PhraseOptions> {
-        match self {
-            Self::Phrased(opts) => Some(opts),
-            Self::Pocketed(_) => Some(PhraseOptions::default()),
-            _ => None,
-        }
-    }
-
-    /// Whether the Round XIII support mass gate runs.
-    fn mass(self) -> bool {
-        matches!(self, Contract::Mass | Contract::Tension)
-    }
-
-    /// Whether the Round XIIIb post-hoc sounding-tension gate runs.
-    fn tension(self) -> bool {
-        self == Contract::Tension
-    }
+/// Realize an already planned (including constrained cover) performance under explicit laws.
+/// Constraints belong to the supplied plan and are consumed before source choices.
+pub fn realize_with_profile(
+    song: &SongMap,
+    world: &MusicWorld,
+    perf: &PerformancePlan,
+    profile: PerformanceProfile,
+) -> Result<Score, PolicyError> {
+    profile.validate(perf.coupling)?;
+    Ok(realize_policy(song, world, perf, profile))
 }
 
 /// Realize a score from an explicit (possibly hand-mutated) song and performance — the entry the
 /// adversarial probes use to inject a call, veto an arrangement, or license a burst and watch what
 /// the players do with it.
 pub fn realize_performance(song: &SongMap, world: &MusicWorld, perf: &PerformancePlan) -> Score {
-    realize(song, world, perf, false)
+    realize_policy(song, world, perf, PerformanceProfile::WRITTEN)
 }
 
-/// Realize a score from a finished plan and its performance. The players are realized in
-/// listening order — the lead first, then the keys (who hear the lead), the bass (who hears both)
-/// and the drums (who hear the bass) — each reading the same [`PerformancePlan`]; then
-/// `apply_arrangement` gates the voices.
-fn realize(song: &SongMap, world: &MusicWorld, perf: &PerformancePlan, temporal: bool) -> Score {
-    realize_arm(song, world, perf, temporal, Contract::Written)
-}
-
-/// [`realize`], with the Round XIII support mass gate when `mass` (only [`perform_mass`]).
-fn realize_arm(
+/// Causal realization under musical policies; historical names end at their adapters.
+fn realize_policy(
     song: &SongMap,
     world: &MusicWorld,
     perf: &PerformancePlan,
-    temporal: bool,
-    contract: Contract,
+    profile: PerformanceProfile,
 ) -> Score {
     let (trace, seed, plan) = (&song.trace, song.seed, &song.plan);
     let total_beats = plan.form.total_beats;
@@ -344,29 +339,34 @@ fn realize_arm(
     score.sections = sections_from_plan(plan);
     score.chords = perf.chords.clone();
 
-    let phrase = contract.phrase();
-    let pocket = if let Contract::Pocketed(f) = contract {
-        Some(f)
+    let temporal = profile.pitch == PitchPolicy::Temporal;
+    let phrase_evidence = profile.evidence == SourceEvidencePolicy::AuthoredSources;
+    let phrase_expression = matches!(
+        profile.expression,
+        ExpressionPolicy::Phrase | ExpressionPolicy::Pulse(_)
+    );
+    let semantic_occupancy = profile.occupancy == OccupancyPolicy::AuthoredIntent;
+    let pulse = if let ExpressionPolicy::Pulse(policy) = profile.expression {
+        Some(policy)
     } else {
         None
     };
-    score.mono_voice = pocket.is_some_and(|p| p.mono_voice);
-    let lead = if let Some(factors) = pocket {
-        super::melody::realize_lead_pocketed(perf, plan, world, factors)
-    } else if phrase.is_some_and(|p| p.phrase_expression) {
-        super::melody::realize_lead_phrased(perf, plan, world)
-    } else if contract == Contract::Expressive || phrase.is_some() {
-        super::melody::realize_lead_expressive(perf, plan, world)
-    } else if temporal {
-        super::melody::realize_lead_temporal(perf, plan)
-    } else {
-        super::melody::realize_lead(perf, plan)
+    let pocket = pulse.map(|policy| policy.source_options());
+    score.mono_voice = profile.lifetime == VoiceLifetimePolicy::ExplicitContinuations;
+    let lead = match profile.expression {
+        ExpressionPolicy::Pulse(policy) => {
+            super::melody::realize_lead_pocketed(perf, plan, world, policy.source_options())
+        }
+        ExpressionPolicy::Phrase => super::melody::realize_lead_phrased(perf, plan, world),
+        ExpressionPolicy::LocalConnectives => {
+            super::melody::realize_lead_expressive(perf, plan, world)
+        }
+        ExpressionPolicy::Unchanged if temporal => super::melody::realize_lead_temporal(perf, plan),
+        ExpressionPolicy::Unchanged => super::melody::realize_lead(perf, plan),
     };
     let lead_occupancy = super::occupancy::AuthoredOccupancy::from_lead(perf, &lead.authored);
-    let agency = phrase
-        .filter(|p| p.semantic_occupancy)
-        .map(|_| &lead_occupancy);
-    if phrase.is_some() {
+    let agency = semantic_occupancy.then_some(&lead_occupancy);
+    if phrase_evidence {
         score.occupancy.push(lead_occupancy.clone());
         score.phrase_plans = lead.phrase_plans.clone();
     }
@@ -382,7 +382,7 @@ fn realize_arm(
     let (pad, keys, bass) = match perf.coupling {
         // The surgical arm realizes the R7b band first, note for note; it repairs afterwards.
         EnsembleCoupling::Independent | EnsembleCoupling::Surgical => {
-            let keys = if phrase.is_some_and(|p| p.semantic_occupancy) {
+            let keys = if semantic_occupancy {
                 super::comp::realize_keys_owned(
                     perf,
                     plan,
@@ -396,16 +396,10 @@ fn realize_arm(
             } else {
                 super::comp::realize_keys(perf, plan, world, &lead.notes, seed)
             };
-            if matches!(
-                contract,
-                Contract::Coherent
-                    | Contract::Expressive
-                    | Contract::Phrased(_)
-                    | Contract::Pocketed(_)
-            ) {
+            if profile.support != SupportPolicy::Independent {
                 // Round XIV keeps temporal bass; Round XV also hears final keys when expressing
                 // its connectives. The frozen coherent pad comes last and hears the band.
-                let bass = if phrase.is_some_and(|p| p.phrase_expression) {
+                let bass = if phrase_expression {
                     score.hearings.push(Hearing::of("bass", Role::Keys, &keys));
                     let result = if let Some(factors) = pocket {
                         super::bass::realize_bass_pocketed(
@@ -429,7 +423,7 @@ fn realize_arm(
                             agency,
                         )
                     };
-                    let bass_intent = if pocket.is_some_and(|p| p.changes_phrase()) {
+                    let bass_intent = if pulse.is_some_and(|p| p.changes_source()) {
                         // The final lead's unison can shorten/lengthen its predecessor at the
                         // bass source. Recover the whole authored reservation stream, not only
                         // the explicitly retimed event. This is intent, never an acoustic hearing.
@@ -452,9 +446,9 @@ fn realize_arm(
                     score.phrase_plans.extend(result.plans);
                     score.expression_decisions.extend(result.decisions);
                     result.notes
-                } else if contract == Contract::Expressive || phrase.is_some() {
+                } else if profile.expression == ExpressionPolicy::LocalConnectives {
                     score.hearings.push(Hearing::of("bass", Role::Keys, &keys));
-                    if phrase.is_some() {
+                    if phrase_evidence {
                         let source = super::bass::realize_bass_temporal_owned(
                             perf,
                             plan,
@@ -510,7 +504,7 @@ fn realize_arm(
                     );
                     score.support_voicing_decisions = decisions;
                     (notes, edits)
-                } else if phrase.is_some_and(|p| p.support_voicing) {
+                } else if profile.support == SupportPolicy::SourceVoicePath {
                     let (notes, edits, decisions) =
                         super::comp::realize_pad_phrased(perf, plan, world, &band);
                     score.support_voicing_decisions = decisions;
@@ -523,7 +517,7 @@ fn realize_arm(
             } else {
                 let mut pad = super::comp::realize_pad(perf, plan, world);
                 let mut keys = keys;
-                if contract.mass() {
+                if profile.mass() {
                     super::comp::gate_support_mass(perf, world, &mut pad, &mut keys);
                 }
                 let bass = if temporal {
@@ -542,7 +536,7 @@ fn realize_arm(
         }
     };
     score.hearings.push(Hearing::of("drums", Role::Bass, &bass));
-    score.drums = if phrase.is_some_and(|p| p.semantic_occupancy) {
+    score.drums = if semantic_occupancy {
         let intent = score
             .occupancy
             .iter()
@@ -558,7 +552,7 @@ fn realize_arm(
     score.notes.extend(lead.notes);
     // Round XIIIb: after the drums have heard the band as written, so the groove is unchanged.
     // Every interaction receipt the band witnesses must survive each edit.
-    if contract.tension() {
+    if profile.tension() {
         let witnessed = |s: &Score| -> Vec<bool> {
             super::witness::audit(perf, s)
                 .rows
@@ -815,439 +809,6 @@ fn stamp_arrangement(score: &mut Score, plan: &CompositionPlan, perf: &Performan
     }
 }
 
-/// One sting per significant semantic event, placed on the event's MUSICAL beat and pitched in the
-/// harmony sounding there.
-///
-/// The beat is the event's quantized beat ([`super::timeline::quantize_event_beat`], the same map
-/// the intent timeline — and so every action — uses); the raw semantic beat used to flam the sting
-/// a few tens of milliseconds against the ensemble hit the same event produced.
-fn add_sfx_and_provenance(
-    score: &mut Score,
-    trace: &SemanticTrace,
-    plan: &CompositionPlan,
-    perf: &PerformancePlan,
-    world: &MusicWorld,
-) {
-    let mut prev = trace.events.first().map(|e| e.state);
-    // `ti` is the event's intent-timeline transition: the walk emits exactly one per event.
-    for (ti, ev) in trace.events.iter().enumerate() {
-        let significant = ev.kind.requires_event()
-            && prev
-                .map(|p| p.is_significant_change(&ev.state))
-                .unwrap_or(true);
-        prev = Some(ev.state);
-        if !significant {
-            continue;
-        }
-        let kind = match (ev.kind, ev.state.tone) {
-            (EventKind::Impact, _) | (_, Tone::Danger) => SfxKind::Impact,
-            (EventKind::Confirmation, _) | (_, Tone::Success) => SfxKind::Confirm,
-            (EventKind::ModalEntered, _) | (_, Tone::Warning) => SfxKind::Warning,
-            (EventKind::FocusAcquired, _) => SfxKind::Acquire,
-            (EventKind::ActChanged, _) | (EventKind::SectionResolved, _) => SfxKind::Transition,
-            _ => SfxKind::Acquire,
-        };
-        let at = super::timeline::quantize_event_beat(ev.at_beat);
-        if at >= score.total_beats - 1e-9 {
-            continue; // the event lands on the end of the piece: no time left to sound it
-        }
-        let sec_kind = plan.form.phrase_at(at).family.to_section_kind();
-        let mut v = voice_sfx(kind, at, ti, score.tempo_bpm, plan, perf);
-        // Round VIII: the sting joins the band's one harmony — under the coupled realization it keeps
-        // its shape and pitch classes (the chord verdict and an owned tritone are untouched) and moves
-        // by whole octaves to the placement with the fewest unowned clashes against what sounds.
-        if perf.coupling == EnsembleCoupling::CoupledR8 && v.pitches != SfxEvent::UNPITCHED {
-            if let Some((shift, reason)) = sfx_octave(score, perf, world, kind, at, &v) {
-                v.pitches = v.pitches.map(|p| p + shift);
-                score
-                    .vertical_decisions
-                    .push(super::harmonic_state::VerticalDecision {
-                        beat: at,
-                        role: super::score::Role::Lead,
-                        what: "sfx-octave",
-                        reason,
-                    });
-            }
-        }
-        // When the band itself accents this beat (the same event's hit or push), the sting sits
-        // under the ensemble instead of stacking on top of it: the accent is the band's.
-        let band_accents = perf
-            .actions_starting(
-                &[
-                    super::action::ActionKind::Hit,
-                    super::action::ActionKind::Push,
-                ],
-                at,
-                0.125,
-                None,
-            )
-            .next()
-            .is_some();
-        score.sfx.push(SfxEvent {
-            start_beat: at,
-            kind,
-            velocity: ev.state.dynamic() * if band_accents { 0.75 } else { 1.0 },
-            prov: Provenance {
-                section: sec_kind,
-                role_note: "sfx",
-                ..Provenance::new(sec_kind)
-            },
-            pitches: v.pitches,
-            function: v.function,
-            owned_by: v.owned_by,
-            dissonance_beats: v.dissonance_beats,
-        });
-    }
-}
-
-/// The whole-octave shift (within MIDI 24..=96) that gives an SFX gesture the fewest unowned clashes
-/// against the notes sounding during its gated life, if it beats the composer's own register —
-/// with the reason. Ties keep the original register.
-fn sfx_octave(
-    score: &Score,
-    perf: &PerformancePlan,
-    world: &MusicWorld,
-    kind: SfxKind,
-    at: f64,
-    v: &SfxVoicing,
-) -> Option<(Midi, String)> {
-    use super::sonority::{classify_clash, sfx_voice, Clash, VerticalClass, Voice};
-    let (a, d, _, _) = kind.envelope();
-    let end = at + (a + d + kind.hold_secs()) as f64 * score.tempo_bpm.max(1.0) as f64 / 60.0;
-    let ctx = perf.context_at(at)?;
-    // What actually rings under the sting: each note to its audible end at the masking floor (a
-    // pad tail from the last chord is still there).
-    let world_patch = |r: super::score::Role| match r {
-        super::score::Role::Pad => &world.pad,
-        super::score::Role::Keys => &world.keys,
-        super::score::Role::Bass => &world.bass,
-        super::score::Role::Lead => &world.lead,
-    };
-    let sounding: Vec<Voice> = score
-        .notes
-        .iter()
-        .map(|n| {
-            let mut v = super::harmonic_state::voice_of(n);
-            v.end = super::sonority::audible_end_at(
-                v.start,
-                n.dur_beats as f64,
-                world_patch(n.role),
-                score.tempo_bpm,
-                super::sonority::MASKING_FLOOR_DB,
-            );
-            v
-        })
-        .filter(|v| v.start < end - 1e-6 && v.end > at + 1e-6)
-        .collect();
-    let clashes = |shift: Midi| -> (u32, Vec<String>) {
-        let mut n = 0;
-        let mut why = Vec::new();
-        for (k, &p) in v.pitches.iter().enumerate() {
-            let me = sfx_voice(p + shift, v.function[k], at, end, v.owned_by.is_some());
-            for o in &sounding {
-                if Clash::of(me.pitch, o.pitch).is_some()
-                    && classify_clash(ctx, &me, o, None) == VerticalClass::UnownedCollision
-                {
-                    n += 1;
-                    why.push(format!(
-                        "{} against {} {}",
-                        super::theory::note_name(p),
-                        o.role.label(),
-                        super::theory::note_name(o.pitch)
-                    ));
-                }
-            }
-        }
-        (n, why)
-    };
-    let (base, why) = clashes(0);
-    if base == 0 {
-        return None;
-    }
-    let lo = v.pitches.iter().min().copied().unwrap_or(60);
-    let hi = v.pitches.iter().max().copied().unwrap_or(60);
-    let best = [12, -12, 24, -24, 36, -36]
-        .into_iter()
-        .filter(|s| lo + s >= 24 && hi + s <= 96)
-        .map(|s| (clashes(s).0, s.abs(), s))
-        .min()?;
-    (best.0 < base).then(|| {
-        (
-            best.2,
-            format!(
-                "moved {:+} semitones: {} -> {} unowned clashes ({})",
-                best.2,
-                base,
-                best.0,
-                why.join(", ")
-            ),
-        )
-    })
-}
-
-/// An SFX gesture's pitches and their justification.
-struct SfxVoicing {
-    pitches: [Midi; 2],
-    function: [Option<PitchFunction>; 2],
-    owned_by: Option<ActionId>,
-    dissonance_beats: Option<f32>,
-}
-
-impl SfxVoicing {
-    fn chord_tones(pitches: [Midi; 2]) -> SfxVoicing {
-        SfxVoicing {
-            pitches,
-            function: [Some(PitchFunction::ChordTone); 2],
-            owned_by: None,
-            dissonance_beats: None,
-        }
-    }
-}
-
-/// The lower pitch class of a tritone the chord itself contains (Dom7 3–b7, m7b5 1–b5, dim 1–b5),
-/// if it has one.
-fn own_tritone(chord: &Chord) -> Option<i32> {
-    let iv = chord.quality.intervals();
-    iv.iter().enumerate().find_map(|(k, &a)| {
-        iv[k + 1..]
-            .iter()
-            .any(|&b| (b - a).rem_euclid(12) == 6)
-            .then_some((chord.root_pc + a).rem_euclid(12))
-    })
-}
-
-/// Pitch one SFX gesture against the harmony sounding at `at`, in the register the world-scale
-/// version used (so a sting whose local chord IS the tonic sounds exactly as before):
-///
-/// - Acquire: the chord's root high, its fifth just below.
-/// - Confirm: fifth → root, rising.
-/// - Transition: the guide tones (3rd, 7th/6th — the 5th for a triad) above the root.
-/// - Impact: the bass pitch class, low, doubled at the octave.
-/// - Warning: the chord's OWN tritone when it has one (both chord tones). Otherwise the alarm
-///   tritone is kept on the chord's root as an OWNED dissonance: owned by the planned action the
-///   same semantic event produced (the Hold a Suspend lifted, the Deflect bound to it) whose window
-///   holds the voice's whole bounded lifetime. With no such owner the Warning sounds the guide
-///   tones instead — a dissonance nobody owns is not played.
-/// - Danger (not produced by the functor today): root and fifth, low.
-///
-/// With no harmony at all (an empty chord plan) the gesture is left unpitched: the synth's
-/// world-scale fallback.
-fn voice_sfx(
-    kind: SfxKind,
-    at: f64,
-    transition: usize,
-    tempo_bpm: f32,
-    plan: &CompositionPlan,
-    perf: &PerformancePlan,
-) -> SfxVoicing {
-    let Some(ctx) = perf.context_at(at) else {
-        return SfxVoicing {
-            pitches: SfxEvent::UNPITCHED,
-            function: [None; 2],
-            owned_by: None,
-            dissonance_beats: None,
-        };
-    };
-    let chord = ctx.chord;
-    let root = chord.root_pc;
-    let iv = chord.quality.intervals();
-    let fifth = iv
-        .iter()
-        .find(|&&i| i == 7)
-        .or_else(|| iv.iter().find(|&&i| i == 6 || i == 8))
-        .map(|&i| (root + i).rem_euclid(12))
-        .unwrap_or(root);
-    // The lowest pitch of class `pc` at or above `floor`.
-    let place = |pc: i32, floor: Midi| floor + (pc - floor).rem_euclid(12);
-    let guides = |base: Midi| {
-        let g = super::context::guide_tones(&chord);
-        let lo = g.first().copied().unwrap_or(fifth);
-        let hi = g.get(1).copied().unwrap_or(fifth);
-        [place(lo, base), place(hi, base)]
-    };
-    match kind {
-        SfxKind::Acquire => {
-            let r = place(root, 84);
-            SfxVoicing::chord_tones([r, place(fifth, r - 12)])
-        }
-        SfxKind::Confirm => {
-            let r = place(root, 84);
-            SfxVoicing::chord_tones([place(fifth, r - 12), r])
-        }
-        SfxKind::Transition => SfxVoicing::chord_tones(guides(place(root, 60))),
-        SfxKind::Impact => {
-            let b = if chord.contains_pc(ctx.bass_pc) {
-                ctx.bass_pc
-            } else {
-                root
-            };
-            SfxVoicing::chord_tones([place(b, 24), place(b, 36)])
-        }
-        SfxKind::Danger => {
-            let r = place(root, 36);
-            SfxVoicing::chord_tones([r, place(fifth, r)])
-        }
-        SfxKind::Warning => {
-            if let Some(lo) = own_tritone(&chord) {
-                let p = place(lo, 60);
-                return SfxVoicing::chord_tones([p, p + 6]);
-            }
-            let life = kind.max_lifetime_beats(tempo_bpm);
-            match sfx_owner(perf, plan, transition, at, life) {
-                Some(owner) => {
-                    let p = place(root, 60);
-                    SfxVoicing {
-                        pitches: [p, p + 6],
-                        function: [Some(PitchFunction::ChordTone), None],
-                        owned_by: Some(owner),
-                        dissonance_beats: Some(life),
-                    }
-                }
-                None => SfxVoicing::chord_tones(guides(place(root, 60))),
-            }
-        }
-    }
-}
-
-/// The planned action that owns an SFX dissonance: one the SAME semantic event produced (a
-/// morphism its transition applied, or a backbone gesture bound to it) whose window holds
-/// `[at, at + span]`. The Hold a Suspend lifted is preferred (the alarm is the held tension), then
-/// the event's own morphisms over its gesture, then the longest window.
-fn sfx_owner(
-    perf: &PerformancePlan,
-    plan: &CompositionPlan,
-    transition: usize,
-    at: f64,
-    span: f32,
-) -> Option<ActionId> {
-    let binding = plan
-        .backbone
-        .as_ref()
-        .and_then(|bb| bb.bindings.iter().position(|b| b.transition == transition));
-    perf.actions
-        .actions
-        .iter()
-        .filter_map(|a| {
-            let tier = match a.cause {
-                ActionCause::Morphism { transition: t, .. } if t == transition => 0u8,
-                ActionCause::Gesture { .. } if binding.is_some() && a.binding == binding => 1,
-                _ => return None,
-            };
-            let holds = a.start_beat <= at + 1e-6 && at + span as f64 <= a.end_beat() + 1e-6;
-            holds.then_some((a.kind != ActionKind::Hold, tier, a.end_beat(), a.id))
-        })
-        .min_by(|x, y| {
-            x.0.cmp(&y.0)
-                .then(x.1.cmp(&y.1))
-                .then(y.2.total_cmp(&x.2))
-                .then(x.3.cmp(&y.3))
-        })
-        .map(|c| c.3)
-}
-
-/// How one SFX gesture stands against the harmony under it.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum SfxVerdict {
-    /// Every pitch is a tone of the chord sounding under it.
-    Chord,
-    /// A dissonant pitch, owned by a planned action whose window holds the voice's whole
-    /// lifetime (the payload is the owned span in beats).
-    Owned(f32),
-    /// An unowned or outliving dissonance, a pitch whose consonant label is false, no harmony to
-    /// judge against, or an unpitched (world-scale) gesture.
-    Unjustified,
-}
-
-/// The **SFX audit** (Round VIIb): is every sting in the local harmony, or honestly owned? Judged
-/// from the realized Score's own chords and the performance's actions — not from the labels the
-/// composer wrote, which it only cross-checks.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct SfxAudit {
-    pub total: usize,
-    /// Gestures whose every pitch is a chord tone of its context.
-    pub chord: usize,
-    /// Gestures carrying an owned dissonance that fits inside its owner.
-    pub owned: usize,
-    /// Everything else (target 0).
-    pub unjustified: usize,
-    /// The longest owned dissonance, in beats.
-    pub max_owned_beats: f32,
-}
-
-impl SfxAudit {
-    /// Audit every SFX of `score` against its chords and `perf`'s actions.
-    pub fn measure(perf: &PerformancePlan, score: &Score) -> SfxAudit {
-        let mut a = SfxAudit {
-            total: score.sfx.len(),
-            ..SfxAudit::default()
-        };
-        for e in &score.sfx {
-            match SfxAudit::verdict(e, perf, score) {
-                SfxVerdict::Chord => a.chord += 1,
-                SfxVerdict::Owned(d) => {
-                    a.owned += 1;
-                    a.max_owned_beats = a.max_owned_beats.max(d);
-                }
-                SfxVerdict::Unjustified => a.unjustified += 1,
-            }
-        }
-        a
-    }
-
-    /// The verdict on one gesture `e` of `score`.
-    pub fn verdict(e: &SfxEvent, perf: &PerformancePlan, score: &Score) -> SfxVerdict {
-        if !e.is_pitched() {
-            return SfxVerdict::Unjustified;
-        }
-        let b = e.start_beat;
-        let Some(chord) = score
-            .chords
-            .iter()
-            .filter(|c| c.start_beat <= b + 1e-6 && b < c.start_beat + c.dur_beats as f64)
-            .max_by(|x, y| x.start_beat.total_cmp(&y.start_beat))
-            .map(|c| c.chord)
-        else {
-            return SfxVerdict::Unjustified;
-        };
-        let mut dissonant = false;
-        for (p, f) in e.pitches.iter().zip(e.function) {
-            let tone = chord.contains_pc(pitch_class(*p));
-            if f.is_some_and(PitchFunction::is_consonant) && !tone {
-                return SfxVerdict::Unjustified; // labelled consonant, but it is not
-            }
-            dissonant |= !tone;
-        }
-        if !dissonant {
-            return SfxVerdict::Chord;
-        }
-        // An owned dissonance: an existing action whose window holds the whole voice lifetime,
-        // and a claimed span no shorter than that lifetime.
-        let life = e.kind.max_lifetime_beats(score.tempo_bpm);
-        match (
-            e.owned_by.and_then(|id| perf.actions.get(id)),
-            e.dissonance_beats,
-        ) {
-            (Some(owner), Some(d))
-                if d + 1e-4 >= life
-                    && d as f64 <= owner.dur_beats + 1e-6
-                    && owner.start_beat <= b + 1e-6
-                    && b + d as f64 <= owner.end_beat() + 1e-6 =>
-            {
-                SfxVerdict::Owned(d)
-            }
-            _ => SfxVerdict::Unjustified,
-        }
-    }
-
-    /// A one-line receipt.
-    pub fn report(&self) -> String {
-        format!(
-            "sfx: total={} chord={} owned={} unjustified={} max_owned_beats={:.2}\n",
-            self.total, self.chord, self.owned, self.unjustified, self.max_owned_beats
-        )
-    }
-}
-
 /// The intent-morphism gesture a semantic event maps to (used for provenance + testing the
 /// functor's action on morphisms; the concrete note choices above are its realization).
 pub fn event_to_morphisms(kind: EventKind, state_tone: Tone) -> Vec<IntentMorphism> {
@@ -1276,7 +837,7 @@ pub fn walk_intent(trace: &SemanticTrace) -> MusicIntent {
 
 #[cfg(test)]
 mod tests {
-    use super::super::score::{PitchFunction, Role};
+    use super::super::score::{PitchFunction, Role, SfxKind};
     use super::super::semantic::demo_trace;
     use super::super::theory::pitch_class;
     use super::super::timeline::IntentTimeline;
@@ -1533,16 +1094,6 @@ mod tests {
             assert!(lost >= 1, "{}: the old Warnings all fit", world.name);
             assert!(audit.unjustified >= lost);
         }
-    }
-
-    #[test]
-    fn a_chord_names_its_own_tritone() {
-        use super::super::theory::Quality;
-        // Dom7: 3–b7 (E–Bb over C7); m7b5: 1–b5 (B–F over Bm7b5); Maj7 and a triad have none.
-        assert_eq!(own_tritone(&Chord::new(0, Quality::Dom7)), Some(4));
-        assert_eq!(own_tritone(&Chord::new(11, Quality::Min7b5)), Some(11));
-        assert_eq!(own_tritone(&Chord::new(5, Quality::Maj7)), None);
-        assert_eq!(own_tritone(&Chord::new(9, Quality::Min)), None);
     }
 
     #[test]

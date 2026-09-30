@@ -1,0 +1,38 @@
+    Blocking waiting for file lock on build directory
+   Compiling libgibson v0.3.1 (/tmp/libgibson-policy-check)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 36.62s
+     Running tests/audio_consolidation_characterization.rs (/home/leah/LibGibson/target/debug/deps/audio_consolidation_characterization-421215bb0db186d1)
+
+running 1 test
+test accepted_pocket_events_and_causal_evidence_are_frozen ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.68s
+
+     Running tests/audio_pocket_phase.rs (/home/leah/LibGibson/target/debug/deps/audio_pocket_phase-0e626054bb82d7fa)
+
+running 3 tests
+test on_lattice_shift_can_change_metric_phase_and_whole_beat_motion_is_separate ... ok
+test frozen_r16_has_nonzero_lattice_residual_without_erasing_source_motion ... ok
+test stale_ledger_cannot_supply_a_performed_note_missing_from_actual_score ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+
+     Running tests/audio_pocket_voice.rs (/home/leah/LibGibson/target/debug/deps/audio_pocket_voice-fc03664c75188fea)
+
+running 4 tests
+test continuity_is_explicit_unique_and_stable_under_arrangement_stamps ... ok
+test mono_factor_without_explicit_links_does_not_choke_by_role ... ok
+test observer_caps_same_role_direct_voice_and_preserves_historical_ruler ... ok
+test mono_disabled_matches_pre_edit_pcm_and_enabled_is_block_independent ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s
+
+     Running tests/audio_realization_policy.rs (/home/leah/LibGibson/target/debug/deps/audio_realization_policy-42b4024822579087)
+
+running 4 tests
+test unlawful_profiles_are_rejected_at_one_boundary ... ok
+test unavailable_support_factor_remains_an_explicit_archived_non_treatment ... ok
+test changing_only_render_lifetime_preserves_source_phrases_and_semantic_ownership ... ok
+test historical_adapters_and_musical_profiles_have_identical_events_and_evidence ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.61s

@@ -1,0 +1,280 @@
+//! Musical realization laws, independent of the historical experiment names.
+//!
+//! A profile selects source generation, semantic ownership, support and lifetime separately.
+//! [`PerformanceProfile::validate`] is the public boundary for combinations with final hearings.
+//! Historical entry points retain their exact configurations through private adapters.
+
+use super::performance::EnsembleCoupling;
+use super::pocket::PocketOptions;
+
+/// How the melodic search justifies pitch paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PitchPolicy {
+    /// Frozen written/local classifier.
+    Written,
+    /// Time-aware source pitch paths.
+    Temporal,
+}
+
+/// Whether candidate connective gestures are admitted using explicit continuation physics.
+/// This is a source choice: changing it may change source notes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContinuationAdmission {
+    ReleaseEnvelope,
+    ExplicitContinuation,
+}
+
+/// Source pulse selection factors. There is no support-top-voice switch: that treatment has
+/// never been implemented. Archived factorial cells retain it only in [`PocketOptions`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PulsePolicy {
+    pub lattice_positions: bool,
+    pub legato_connectives: bool,
+    pub continuation_admission: ContinuationAdmission,
+    pub stable_precursors: bool,
+}
+
+impl PulsePolicy {
+    /// The source law of the accepted pocket. Acceptance is specific to the BLACK_ICE flagship.
+    pub const POCKET: Self = Self {
+        lattice_positions: true,
+        legato_connectives: true,
+        continuation_admission: ContinuationAdmission::ExplicitContinuation,
+        stable_precursors: false,
+    };
+
+    /// Whether this source policy differs from the phrase-expression control. Admission physics
+    /// is included honestly because it can select different source candidates.
+    pub fn changes_source(self) -> bool {
+        self.lattice_positions
+            || self.legato_connectives
+            || self.continuation_admission == ContinuationAdmission::ExplicitContinuation
+            || self.stable_precursors
+    }
+
+    pub(crate) fn from_legacy(options: PocketOptions) -> Self {
+        Self {
+            lattice_positions: options.lattice_positions,
+            legato_connectives: options.legato_connectives,
+            continuation_admission: if options.mono_voice {
+                ContinuationAdmission::ExplicitContinuation
+            } else {
+                ContinuationAdmission::ReleaseEnvelope
+            },
+            stable_precursors: options.stable_precursors,
+        }
+    }
+
+    /// The existing source planner's compatibility input. The renderer receives its own policy;
+    /// it does not read this historical `mono_voice` spelling.
+    pub(crate) fn source_options(self) -> PocketOptions {
+        PocketOptions {
+            lattice_positions: self.lattice_positions,
+            legato_connectives: self.legato_connectives,
+            mono_voice: self.continuation_admission == ContinuationAdmission::ExplicitContinuation,
+            support_top_voice: false,
+            stable_precursors: self.stable_precursors,
+        }
+    }
+}
+
+/// Source-expression strategy, before any dependent player hears the source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpressionPolicy {
+    Unchanged,
+    LocalConnectives,
+    Phrase,
+    Pulse(PulsePolicy),
+}
+
+/// What downstream players interpret as an available place to speak.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OccupancyPolicy {
+    Acoustic,
+    AuthoredIntent,
+}
+
+/// How support chooses its own notes before committing them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SupportPolicy {
+    Independent,
+    HeardHarmony,
+    SourceVoicePath,
+}
+
+/// Direct-voice rendering law. Changing this does not change source phrase admission.
+/// Heard support may respond to the different lifetime, but lead/bass source plans do not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VoiceLifetimePolicy {
+    ReleaseEnvelope,
+    ExplicitContinuations,
+}
+
+/// Evidence emitted by the source planner. Kept explicit for byte-exact historical adapters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceEvidencePolicy {
+    Events,
+    AuthoredSources,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HistoricalRepair {
+    None,
+    SupportMass,
+    SoundingTension,
+}
+
+/// Orthogonal laws for realization. The default remains the written historical production path.
+/// Use [`Self::POCKET`] explicitly for the accepted flagship source/lifetime combination.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PerformanceProfile {
+    pub pitch: PitchPolicy,
+    pub expression: ExpressionPolicy,
+    pub occupancy: OccupancyPolicy,
+    pub support: SupportPolicy,
+    pub lifetime: VoiceLifetimePolicy,
+    pub evidence: SourceEvidencePolicy,
+    pub(crate) repair: HistoricalRepair,
+}
+
+impl Default for PerformanceProfile {
+    fn default() -> Self {
+        Self::WRITTEN
+    }
+}
+
+impl PerformanceProfile {
+    pub const WRITTEN: Self = Self {
+        pitch: PitchPolicy::Written,
+        expression: ExpressionPolicy::Unchanged,
+        occupancy: OccupancyPolicy::Acoustic,
+        support: SupportPolicy::Independent,
+        lifetime: VoiceLifetimePolicy::ReleaseEnvelope,
+        evidence: SourceEvidencePolicy::Events,
+        repair: HistoricalRepair::None,
+    };
+    pub const TEMPORAL: Self = Self {
+        pitch: PitchPolicy::Temporal,
+        ..Self::WRITTEN
+    };
+    pub const HEARD: Self = Self {
+        support: SupportPolicy::HeardHarmony,
+        ..Self::TEMPORAL
+    };
+    pub const EXPRESSIVE: Self = Self {
+        expression: ExpressionPolicy::LocalConnectives,
+        ..Self::HEARD
+    };
+    pub const PHRASED: Self = Self {
+        expression: ExpressionPolicy::Phrase,
+        occupancy: OccupancyPolicy::AuthoredIntent,
+        support: SupportPolicy::SourceVoicePath,
+        evidence: SourceEvidencePolicy::AuthoredSources,
+        ..Self::EXPRESSIVE
+    };
+    pub const POCKET: Self = Self {
+        expression: ExpressionPolicy::Pulse(PulsePolicy::POCKET),
+        lifetime: VoiceLifetimePolicy::ExplicitContinuations,
+        ..Self::PHRASED
+    };
+
+    /// Validate once before planning/realizing a public profile. Historical post-hoc repair
+    /// configurations are available only through their compatibility entry points.
+    pub fn validate(self, coupling: EnsembleCoupling) -> Result<(), PolicyError> {
+        let expressed = self.expression != ExpressionPolicy::Unchanged;
+        let phrase = matches!(
+            self.expression,
+            ExpressionPolicy::Phrase | ExpressionPolicy::Pulse(_)
+        );
+        if expressed && self.pitch != PitchPolicy::Temporal {
+            return Err(PolicyError(
+                "source expression requires temporal pitch paths",
+            ));
+        }
+        if self.support != SupportPolicy::Independent && self.pitch != PitchPolicy::Temporal {
+            return Err(PolicyError("heard support requires temporal pitch paths"));
+        }
+        if self.evidence == SourceEvidencePolicy::AuthoredSources && !expressed {
+            return Err(PolicyError(
+                "authored evidence requires a source-expression planner",
+            ));
+        }
+        if expressed && self.support == SupportPolicy::Independent {
+            return Err(PolicyError(
+                "source expression requires support to hear final sources",
+            ));
+        }
+        if (expressed || self.support != SupportPolicy::Independent)
+            && coupling != EnsembleCoupling::Independent
+        {
+            return Err(PolicyError(
+                "final-source hearings require independent coupling",
+            ));
+        }
+        if self.occupancy == OccupancyPolicy::AuthoredIntent
+            && (!expressed || self.evidence != SourceEvidencePolicy::AuthoredSources)
+        {
+            return Err(PolicyError(
+                "authored occupancy requires authored source evidence",
+            ));
+        }
+        if self.lifetime == VoiceLifetimePolicy::ExplicitContinuations && !phrase {
+            return Err(PolicyError(
+                "explicit voice continuation requires source phrase ownership",
+            ));
+        }
+        if self.lifetime == VoiceLifetimePolicy::ExplicitContinuations
+            && self.support != SupportPolicy::SourceVoicePath
+        {
+            return Err(PolicyError(
+                "linked lifetime requires the source support observer",
+            ));
+        }
+        if phrase && self.evidence != SourceEvidencePolicy::AuthoredSources {
+            return Err(PolicyError(
+                "phrase expression requires authored source evidence",
+            ));
+        }
+        if self.support == SupportPolicy::SourceVoicePath
+            && self.evidence != SourceEvidencePolicy::AuthoredSources
+        {
+            return Err(PolicyError(
+                "source support paths require authored source evidence",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn mass(self) -> bool {
+        self.repair != HistoricalRepair::None
+    }
+
+    pub(crate) fn tension(self) -> bool {
+        self.repair == HistoricalRepair::SoundingTension
+    }
+
+    pub(crate) fn legacy_pocket(options: PocketOptions) -> Self {
+        Self {
+            expression: ExpressionPolicy::Pulse(PulsePolicy::from_legacy(options)),
+            // The archived factor intentionally coupled source admission and rendering.
+            lifetime: if options.mono_voice {
+                VoiceLifetimePolicy::ExplicitContinuations
+            } else {
+                VoiceLifetimePolicy::ReleaseEnvelope
+            },
+            ..Self::PHRASED
+        }
+    }
+}
+
+/// A rejected combination of musical laws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PolicyError(pub &'static str);
+
+impl std::fmt::Display for PolicyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl std::error::Error for PolicyError {}
