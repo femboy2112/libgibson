@@ -144,7 +144,24 @@ pub fn realize_keys_temporal(
     seed: u64,
 ) -> Vec<Note> {
     let kp = keys_path(perf, world.voicing_spread, lead, keys_shell_n(perf));
-    let mut out = keys_comp_impl(perf, world, lead, seed, &kp, true);
+    let mut out = keys_comp_impl(perf, world, lead, seed, &kp, true, None);
+    out.extend(keys_lines_impl(perf, lead, keys_velocity(world), true));
+    finish_keys(out, perf)
+}
+
+/// Source-level comping with authored lead ownership and the final acoustic lead kept separate.
+/// Retiming a grace does not donate its rhythmic reservation to a new keys attack. Shared
+/// material lines still inherit the final lead's actual gesture.
+pub fn realize_keys_owned(
+    perf: &PerformancePlan,
+    _plan: &CompositionPlan,
+    world: &MusicWorld,
+    lead: &[Note],
+    ownership: &super::occupancy::AuthoredOccupancy,
+    seed: u64,
+) -> Vec<Note> {
+    let kp = keys_path(perf, world.voicing_spread, lead, keys_shell_n(perf));
+    let mut out = keys_comp_impl(perf, world, lead, seed, &kp, true, Some(ownership));
     out.extend(keys_lines_impl(perf, lead, keys_velocity(world), true));
     finish_keys(out, perf)
 }
@@ -357,7 +374,7 @@ pub fn keys_comp(
     seed: u64,
     kp: &super::voicing::RolePath,
 ) -> Vec<Note> {
-    keys_comp_impl(perf, world, lead, seed, kp, false)
+    keys_comp_impl(perf, world, lead, seed, kp, false, None)
 }
 
 fn keys_comp_impl(
@@ -367,6 +384,7 @@ fn keys_comp_impl(
     seed: u64,
     kp: &super::voicing::RolePath,
     temporal: bool,
+    ownership: Option<&super::occupancy::AuthoredOccupancy>,
 ) -> Vec<Note> {
     let mut out = Vec::new();
     let mut rng = Rng::new(seed ^ 0x6E75_C0A9);
@@ -427,10 +445,14 @@ fn keys_comp_impl(
                 (score > 0.2).then_some((score + rng.range_f32(0.0, 0.05), s))
             })
             .collect();
-        // Listen to the lead: never stab on top of its onsets. And ask the stage per stab.
+        // The final acoustic lead supplies collision information. Its source's authored
+        // reservations separately decide whether an apparent gap is an accompaniment opening.
         steps.retain(|&(_, s)| {
             let b = AccentGrid::beat_of(bar, s);
-            !lead_onset_near(lead, b) && perf.on_stage(Agent::Keys, b)
+            ownership.map_or_else(
+                || !lead_onset_near(lead, b),
+                |intent| intent.allows_comp_at(b, lead),
+            ) && perf.on_stage(Agent::Keys, b)
         });
         steps.sort_by(|a, b| b.0.total_cmp(&a.0));
         let max_stabs = match eb.keys {

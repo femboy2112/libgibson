@@ -232,6 +232,34 @@ pub fn realize_drums(
     bass: &[super::score::Note],
     lead: &[super::score::Note],
 ) -> Vec<DrumHit> {
+    realize_drums_impl(perf, plan, world, seed, bass, lead, None)
+}
+
+/// The pocket reads the bass's authored pulse slots, while shared-action accents follow the
+/// final lead gesture. Acoustic hearings still contain only `bass` and `lead`; ownership is not
+/// a surrogate note stream. A grace therefore cannot accidentally move a pocket kick to a new
+/// sixteenth by being rounded onto the grid.
+pub fn realize_drums_owned(
+    perf: &super::performance::PerformancePlan,
+    plan: &super::plan::CompositionPlan,
+    world: &MusicWorld,
+    seed: u64,
+    bass: &[super::score::Note],
+    lead: &[super::score::Note],
+    ownership: &super::occupancy::AuthoredOccupancy,
+) -> Vec<DrumHit> {
+    realize_drums_impl(perf, plan, world, seed, bass, lead, Some(ownership))
+}
+
+fn realize_drums_impl(
+    perf: &super::performance::PerformancePlan,
+    plan: &super::plan::CompositionPlan,
+    world: &MusicWorld,
+    seed: u64,
+    bass: &[super::score::Note],
+    lead: &[super::score::Note],
+    ownership: Option<&super::occupancy::AuthoredOccupancy>,
+) -> Vec<DrumHit> {
     use super::action::{ActionKind, Agent};
     use super::ids::{ActionId, ActionStamp};
     use super::performance::{AccentGrid, DrumsMode, STEPS, STEP_BEATS};
@@ -287,6 +315,11 @@ pub fn realize_drums(
         });
     };
     let bass_steps = |bar: u32| -> Vec<usize> {
+        if let Some(intent) = ownership {
+            // Preserve the authored pocket, including intentional pickup accents. Optionality
+            // is retained by the intent IR; sounding the pickup as a grace does not rewrite it.
+            return intent.rhythm_steps(bar, false);
+        }
         let bs = AccentGrid::beat_of(bar, 0);
         bass.iter()
             .filter(|n| n.start_beat >= bs - 1e-6 && n.start_beat < bs + 4.0 - 1e-6)

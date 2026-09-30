@@ -1,7 +1,9 @@
 //! Round XVI: silence in a player's gesture does not automatically invite a comping stab.
 use gibson::audio::human_music::{
+    comp::realize_keys_owned,
     composer::Composer,
-    functor::{perform_coherent, perform_expressive},
+    functor::{perform_coherent, perform_expressive, perform_phrase_experiment, PhraseOptions},
+    groove::realize_drums_owned,
     occupancy::{AuthoredOccupancy, Opportunity, OwnershipKind},
     performance::PerformanceOptions,
     score::Role,
@@ -137,4 +139,78 @@ fn r16_semantic_bass_pulses_are_not_retimed_acoustic_attacks() {
     assert!(!ownership.rhythm_steps(0, true).contains(&14));
     assert!(x.score.role_notes(Role::Bass).all(|n| n.start_beat != 3.5));
     assert!(x.score.stale_hearings().is_empty());
+}
+
+#[test]
+fn r16_owned_keys_reject_micro_holes_at_source() {
+    let song = song();
+    let world = MusicWorld::black_ice();
+    let before = perform_coherent(&song, &world, PerformanceOptions::default());
+    let after = perform_expressive(&song, &world, PerformanceOptions::default());
+    let source: Vec<_> = before.score.role_notes(Role::Lead).copied().collect();
+    let acoustic: Vec<_> = after.score.role_notes(Role::Lead).copied().collect();
+    let ownership = AuthoredOccupancy::from_lead(&before.perf, &source);
+    let keys = realize_keys_owned(
+        &after.perf,
+        &song.plan,
+        &world,
+        &acoustic,
+        &ownership,
+        song.seed,
+    );
+    for beat in [27.5, 59.5, 96.5, 99.5] {
+        assert!(!keys
+            .iter()
+            .any(|n| n.start_beat == beat && n.prov.role_note == "comp"));
+    }
+    let original_comp: Vec<_> = before
+        .score
+        .role_notes(Role::Keys)
+        .filter(|n| n.prov.role_note == "comp")
+        .copied()
+        .collect();
+    let final_comp: Vec<_> = keys
+        .iter()
+        .filter(|n| n.prov.role_note == "comp")
+        .copied()
+        .collect();
+    // Final score provenance is enriched later; compare the actual accompaniment geometry.
+    let geometry = |notes: &[gibson::audio::human_music::score::Note]| {
+        notes
+            .iter()
+            .map(|n| (n.start_beat, n.dur_beats, n.pitch, n.velocity))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(geometry(&original_comp), geometry(&final_comp));
+}
+
+#[test]
+fn r16_owned_drums_preserve_pocket_under_bass_retiming() {
+    let song = song();
+    let world = MusicWorld::black_ice();
+    let before = perform_coherent(&song, &world, PerformanceOptions::default());
+    let after = perform_expressive(&song, &world, PerformanceOptions::default());
+    let source: Vec<_> = before.score.role_notes(Role::Bass).copied().collect();
+    let lead: Vec<_> = before.score.role_notes(Role::Lead).copied().collect();
+    let bass: Vec<_> = after.score.role_notes(Role::Bass).copied().collect();
+    let ownership = AuthoredOccupancy::from_role(&before.perf, &source, Role::Bass);
+    let original = realize_drums_owned(
+        &before.perf,
+        &song.plan,
+        &world,
+        song.seed,
+        &source,
+        &lead,
+        &ownership,
+    );
+    let retimed = realize_drums_owned(
+        &before.perf,
+        &song.plan,
+        &world,
+        song.seed,
+        &bass,
+        &lead,
+        &ownership,
+    );
+    assert_eq!(format!("{original:?}"), format!("{retimed:?}"));
 }
