@@ -1,0 +1,111 @@
+Round XVII frozen witnesses
+Source: c9242ff154fc60d9321995126af12f18574dd88e
+Verified: finite committed-score measurements; no listening inference.
+Lattice: world.subdiv transported by groove_position; triplets only if world.subdiv==3 or language.surface_subdivision==3.
+Straight BLACK/SWISS: subdiv=4, swing=0; pitched tolerance 1e-6 beat (numerical only), no stochastic jitter.
+Drums: seeded +/-0.008 beat retained and excluded from pitched lattice gate.
+WAV hashes verified against available historical files: 84/84.
+
+black_ice_r14: off_lattice=0 by_role={}
+black_ice_r15: off_lattice=34 by_role={'Bass': 16, 'Keys': 1, 'Lead': 17}
+  Keys onset=84.754211594 pitch=70
+  Bass onset=3.786322691 pitch=44
+  Bass onset=11.786322691 pitch=44
+  Bass onset=27.786440024 pitch=44
+  Bass onset=35.787232024 pitch=44
+  Bass onset=39.787041358 pitch=44
+  Bass onset=43.786733358 pitch=44
+  Bass onset=55.786557358 pitch=44
+  Bass onset=59.786616024 pitch=44
+  Bass onset=63.786733358 pitch=44
+  Bass onset=75.786909358 pitch=44
+  Bass onset=84.754211594 pitch=46
+  Bass onset=91.787138158 pitch=44
+  Bass onset=99.787202691 pitch=44
+  Bass onset=103.787560558 pitch=44
+  Bass onset=107.787320024 pitch=44
+  Bass onset=115.787505411 pitch=44
+  Lead onset=20.753762208 pitch=70
+  Lead onset=25.253445408 pitch=73
+  Lead onset=27.753445408 pitch=73
+  Lead onset=33.254237408 pitch=73
+  Lead onset=36.754046741 pitch=73
+  Lead onset=41.253738741 pitch=73
+  Lead onset=44.753856075 pitch=73
+  Lead onset=49.754014475 pitch=73
+  Lead onset=51.754014475 pitch=73
+  Lead onset=57.253621408 pitch=73
+  Lead onset=59.753621408 pitch=73
+  Lead onset=84.754211594 pitch=70
+  Lead onset=89.754143541 pitch=73
+  Lead onset=91.754143541 pitch=73
+  Lead onset=97.254208075 pitch=73
+  Lead onset=99.754208075 pitch=73
+  Lead onset=108.754442741 pitch=70
+black_ice_r16: off_lattice=15 by_role={'Bass': 7, 'Keys': 1, 'Lead': 7}
+  Keys onset=84.625000000 pitch=70
+  Bass onset=11.625000000 pitch=44
+  Bass onset=39.625000000 pitch=44
+  Bass onset=55.625000000 pitch=44
+  Bass onset=75.625000000 pitch=44
+  Bass onset=84.625000000 pitch=46
+  Bass onset=103.625000000 pitch=44
+  Bass onset=115.625000000 pitch=44
+  Lead onset=20.625000000 pitch=70
+  Lead onset=36.625000000 pitch=73
+  Lead onset=44.625000000 pitch=73
+  Lead onset=51.625000000 pitch=73
+  Lead onset=84.625000000 pitch=70
+  Lead onset=91.625000000 pitch=73
+  Lead onset=108.625000000 pitch=70
+swiss_r14: off_lattice=0 by_role={}
+swiss_r15: off_lattice=0 by_role={}
+swiss_r16: off_lattice=0 by_role={}
+
+Blip primary: retimed optional connective AND written gate silence >40 ms.
+R14 authored rests are not retimed; table retains their measured gaps.
+Primary connective cohort: ChromaticApproach/Neighbor/ChromaticPassing/DiatonicPassing/Enclosure; stable fragment precursors remain in table and all-retimed gap count.
+Destination = immediate later onset in same role; articulation/gate proxy only, not release-tail or PCM silence.
+R14 failures=0; R16 failures=30; retimed cohort=35; all-retimed gaps=35.
+
+| Role | Pitch | Function | Onset R14→R16 | Destination R14→R16 | Gate ms R14→R16 | Silence ms R14→R16 | Legato ratio R14→R16 | R16 fail |
+|---|---:|---|---|---|---|---|---|---|
+| Bass | 44 | ChromaticApproach | 3.5→3.75 | 4→4 | 306.818→68.182 | 34.091→102.273 | 0.9000→0.4000 | True |
+| Bass | 44 | ChromaticApproach | 11.5→11.625 | 12→12 | 306.818→95.881 | 34.091→159.801 | 0.9000→0.3750 | True |
+| Bass | 44 | ChromaticApproach | 35.5→35.75 | 36→36 | 306.818→68.182 | 34.091→102.273 | 0.9000→0.4000 | True |
+| Bass | 44 | ChromaticApproach | 39.5→39.625 | 40→40 | 306.818→95.881 | 34.091→159.801 | 0.9000→0.3750 | True |
+| Bass | 44 | ChromaticApproach | 43.5→43.75 | 44→44 | 306.818→68.182 | 34.091→102.273 | 0.9000→0.4000 | True |
+| Bass | 44 | ChromaticApproach | 55.5→55.625 | 56→56 | 306.818→95.881 | 34.091→159.801 | 0.9000→0.3750 | True |
+| Bass | 44 | ChromaticApproach | 63.5→63.75 | 64→64 | 306.818→68.182 | 34.091→102.273 | 0.9000→0.4000 | True |
+| Bass | 44 | ChromaticApproach | 75.5→75.625 | 76→76 | 306.818→95.881 | 34.091→159.801 | 0.9000→0.3750 | True |
+| Bass | 46 | ChromaticApproach | 84.5→84.625 | 85→85 | 306.818→95.881 | 34.091→159.801 | 0.9000→0.3750 | True |
+| Bass | 44 | ChromaticApproach | 91.5→91.75 | 92→92 | 306.818→68.182 | 34.091→102.273 | 0.9000→0.4000 | True |
+| Bass | 44 | ChromaticApproach | 103.5→103.625 | 104→104 | 306.818→95.881 | 34.091→159.801 | 0.9000→0.3750 | True |
+| Bass | 44 | ChromaticApproach | 107.5→107.75 | 108→108 | 306.818→68.182 | 34.091→102.273 | 0.9000→0.4000 | True |
+| Bass | 44 | ChromaticApproach | 115.5→115.625 | 116→116 | 306.818→95.881 | 34.091→159.801 | 0.9000→0.3750 | True |
+| Lead | 70 | ChromaticApproach | 20.5→20.625 | 21→21 | 306.818→95.881 | 34.091→159.801 | 0.9000→0.3750 | True |
+| Lead | 73 | Neighbor | 24.5→25.25 | 25.5→25.5 | 340.909→68.182 | 340.909→102.273 | 0.5000→0.4000 | True |
+| Lead | 76 | ChordTone | 26.5→27.5 | 27.5→27.75 | 340.909→122.727 | 340.909→47.727 | 0.5000→0.7200 | False |
+| Lead | 73 | ChromaticApproach | 27.5→27.75 | 28→28 | 306.818→68.182 | 34.091→102.273 | 0.9000→0.4000 | True |
+| Lead | 73 | ChromaticApproach | 33→33.25 | 33.5→33.5 | 306.818→68.182 | 34.091→102.273 | 0.9000→0.4000 | True |
+| Lead | 73 | ChromaticApproach | 36.5→36.625 | 37→37 | 306.818→95.881 | 34.091→159.801 | 0.9000→0.3750 | True |
+| Lead | 73 | ChromaticApproach | 41→41.25 | 41.5→41.5 | 306.818→68.182 | 34.091→102.273 | 0.9000→0.4000 | True |
+| Lead | 73 | ChromaticApproach | 44.5→44.625 | 45→45 | 306.818→95.881 | 34.091→159.801 | 0.9000→0.3750 | True |
+| Lead | 72 | ChordTone | 48.5→49.5 | 49→49.75 | 306.818→122.727 | 34.091→47.727 | 0.9000→0.7200 | False |
+| Lead | 73 | Neighbor | 49→49.75 | 50→50 | 340.909→68.182 | 340.909→102.273 | 0.5000→0.4000 | True |
+| Lead | 73 | ChromaticApproach | 51→51.625 | 52→52 | 340.909→95.881 | 340.909→159.801 | 0.5000→0.3750 | True |
+| Lead | 73 | Neighbor | 56.5→57.25 | 57.5→57.5 | 340.909→68.182 | 340.909→102.273 | 0.5000→0.4000 | True |
+| Lead | 76 | ChordTone | 58.5→59.5 | 59.5→59.75 | 340.909→122.727 | 340.909→47.727 | 0.5000→0.7200 | False |
+| Lead | 73 | ChromaticApproach | 59.5→59.75 | 60→60 | 306.818→68.182 | 34.091→102.273 | 0.9000→0.4000 | True |
+| Lead | 70 | ChromaticApproach | 84.5→84.625 | 85→85 | 306.818→95.881 | 34.091→159.801 | 0.9000→0.3750 | True |
+| Lead | 72 | ChordTone | 88.5→89.5 | 89→89.75 | 306.818→122.727 | 34.091→47.727 | 0.9000→0.7200 | False |
+| Lead | 73 | Neighbor | 89→89.75 | 90→90 | 340.909→68.182 | 340.909→102.273 | 0.5000→0.4000 | True |
+| Lead | 73 | ChromaticApproach | 91→91.625 | 92→92 | 340.909→95.881 | 340.909→159.801 | 0.5000→0.3750 | True |
+| Lead | 73 | Neighbor | 96.5→97.25 | 97.5→97.5 | 340.909→68.182 | 340.909→102.273 | 0.5000→0.4000 | True |
+| Lead | 76 | ChordTone | 98.5→99.5 | 99.5→99.75 | 340.909→122.727 | 340.909→47.727 | 0.5000→0.7200 | False |
+| Lead | 73 | ChromaticApproach | 99.5→99.75 | 100→100 | 306.818→68.182 | 34.091→102.273 | 0.9000→0.4000 | True |
+| Lead | 70 | ChromaticApproach | 108.5→108.625 | 109→109 | 306.818→95.881 | 34.091→159.801 | 0.9000→0.3750 | True |
+
+Calibration passes: off-lattice 7.625 rejected in straight world, accepted under swing=0.5; legal triplets conditional; 0.0001 pitched jitter rejected; 40/41-ms blip boundary; unretimed authored rest preserved.
+Boundary: source-level optionality inferred from the existing source-ledger retimed cohort; no structural-note classifier or audio detector is fabricated here.
+Reproduce: python3 scripts/dev/humanmusic_r17_witnesses.py

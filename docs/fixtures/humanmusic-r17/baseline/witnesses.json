@@ -1,0 +1,1118 @@
+{
+  "status": "Verified finite frozen score measurements; human acceptance not inferred",
+  "source_head": "c9242ff154fc60d9321995126af12f18574dd88e",
+  "source_family": "R16 committed score/debug receipts",
+  "lattice": {
+    "black_ice_r14": {
+      "count": 0,
+      "by_role": {},
+      "offenders": []
+    },
+    "black_ice_r15": {
+      "count": 34,
+      "by_role": {
+        "Bass": 16,
+        "Keys": 1,
+        "Lead": 17
+      },
+      "offenders": [
+        {
+          "role": "Keys",
+          "onset": 84.75421159442965,
+          "pitch": 70
+        },
+        {
+          "role": "Bass",
+          "onset": 3.7863226909616596,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 11.78632269096166,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 27.786440024357937,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 35.787232024301986,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 39.787041357642316,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 43.78673335776121,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 55.78655735775421,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 59.78661602436493,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 63.78673335776121,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 75.78690935759336,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 84.75421159442965,
+          "pitch": 46
+        },
+        {
+          "role": "Bass",
+          "onset": 91.78713815761994,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 99.78720269099662,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 103.78756055760175,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 107.7873200243929,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 115.78750541105062,
+          "pitch": 44
+        },
+        {
+          "role": "Lead",
+          "onset": 20.753762207848865,
+          "pitch": 70
+        },
+        {
+          "role": "Lead",
+          "onset": 25.253445407906213,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 27.753445407906213,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 33.25423740785026,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 36.75404674119059,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 41.25373874130948,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 44.753856074530916,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 49.75401447458967,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 51.75401447458967,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 57.25362140791321,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 59.75362140791321,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 84.75421159442965,
+          "pitch": 70
+        },
+        {
+          "role": "Lead",
+          "onset": 89.75414354116822,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 91.75414354116822,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 97.2542080745449,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 99.7542080745449,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 108.75444274116262,
+          "pitch": 70
+        }
+      ]
+    },
+    "black_ice_r16": {
+      "count": 15,
+      "by_role": {
+        "Bass": 7,
+        "Keys": 1,
+        "Lead": 7
+      },
+      "offenders": [
+        {
+          "role": "Keys",
+          "onset": 84.625,
+          "pitch": 70
+        },
+        {
+          "role": "Bass",
+          "onset": 11.625,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 39.625,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 55.625,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 75.625,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 84.625,
+          "pitch": 46
+        },
+        {
+          "role": "Bass",
+          "onset": 103.625,
+          "pitch": 44
+        },
+        {
+          "role": "Bass",
+          "onset": 115.625,
+          "pitch": 44
+        },
+        {
+          "role": "Lead",
+          "onset": 20.625,
+          "pitch": 70
+        },
+        {
+          "role": "Lead",
+          "onset": 36.625,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 44.625,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 51.625,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 84.625,
+          "pitch": 70
+        },
+        {
+          "role": "Lead",
+          "onset": 91.625,
+          "pitch": 73
+        },
+        {
+          "role": "Lead",
+          "onset": 108.625,
+          "pitch": 70
+        }
+      ]
+    },
+    "swiss_r14": {
+      "count": 0,
+      "by_role": {},
+      "offenders": []
+    },
+    "swiss_r15": {
+      "count": 0,
+      "by_role": {},
+      "offenders": []
+    },
+    "swiss_r16": {
+      "count": 0,
+      "by_role": {},
+      "offenders": []
+    }
+  },
+  "drums": {
+    "black_ice_r14": {
+      "count": 479,
+      "max_abs_lattice_residual": 0.007992150261998177
+    },
+    "swiss_r14": {
+      "count": 402,
+      "max_abs_lattice_residual": 0.007993781007826328
+    },
+    "swiss_r16": {
+      "count": 402,
+      "max_abs_lattice_residual": 0.007993781007826328
+    }
+  },
+  "wav_hashes_checked": 84,
+  "blip_definition": "Retimed optional connective AND written gate silence to next same-role onset >40 ms; no PCM-silence claim.",
+  "r14_blips": 0,
+  "r16_blips": 30,
+  "all_retimed_gap_failures": 35,
+  "connective_rows": [
+    {
+      "role": "Bass",
+      "pitch": 44,
+      "function": "ChromaticApproach",
+      "before_onset": 3.5,
+      "after_onset": 3.75,
+      "before": {
+        "destination": 4.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 4.0,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Bass",
+      "pitch": 44,
+      "function": "ChromaticApproach",
+      "before_onset": 11.5,
+      "after_onset": 11.625,
+      "before": {
+        "destination": 12.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 12.0,
+        "gate_ms": 95.88068181818181,
+        "silence_ms": 159.80113636363637,
+        "legato_ratio": 0.375
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Bass",
+      "pitch": 44,
+      "function": "ChromaticApproach",
+      "before_onset": 35.5,
+      "after_onset": 35.75,
+      "before": {
+        "destination": 36.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 36.0,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Bass",
+      "pitch": 44,
+      "function": "ChromaticApproach",
+      "before_onset": 39.5,
+      "after_onset": 39.625,
+      "before": {
+        "destination": 40.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 40.0,
+        "gate_ms": 95.88068181818181,
+        "silence_ms": 159.80113636363637,
+        "legato_ratio": 0.375
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Bass",
+      "pitch": 44,
+      "function": "ChromaticApproach",
+      "before_onset": 43.5,
+      "after_onset": 43.75,
+      "before": {
+        "destination": 44.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 44.0,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Bass",
+      "pitch": 44,
+      "function": "ChromaticApproach",
+      "before_onset": 55.5,
+      "after_onset": 55.625,
+      "before": {
+        "destination": 56.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 56.0,
+        "gate_ms": 95.88068181818181,
+        "silence_ms": 159.80113636363637,
+        "legato_ratio": 0.375
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Bass",
+      "pitch": 44,
+      "function": "ChromaticApproach",
+      "before_onset": 63.5,
+      "after_onset": 63.75,
+      "before": {
+        "destination": 64.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 64.0,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Bass",
+      "pitch": 44,
+      "function": "ChromaticApproach",
+      "before_onset": 75.5,
+      "after_onset": 75.625,
+      "before": {
+        "destination": 76.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 76.0,
+        "gate_ms": 95.88068181818181,
+        "silence_ms": 159.80113636363637,
+        "legato_ratio": 0.375
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Bass",
+      "pitch": 46,
+      "function": "ChromaticApproach",
+      "before_onset": 84.5,
+      "after_onset": 84.625,
+      "before": {
+        "destination": 85.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 85.0,
+        "gate_ms": 95.88068181818181,
+        "silence_ms": 159.80113636363637,
+        "legato_ratio": 0.375
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Bass",
+      "pitch": 44,
+      "function": "ChromaticApproach",
+      "before_onset": 91.5,
+      "after_onset": 91.75,
+      "before": {
+        "destination": 92.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 92.0,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Bass",
+      "pitch": 44,
+      "function": "ChromaticApproach",
+      "before_onset": 103.5,
+      "after_onset": 103.625,
+      "before": {
+        "destination": 104.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 104.0,
+        "gate_ms": 95.88068181818181,
+        "silence_ms": 159.80113636363637,
+        "legato_ratio": 0.375
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Bass",
+      "pitch": 44,
+      "function": "ChromaticApproach",
+      "before_onset": 107.5,
+      "after_onset": 107.75,
+      "before": {
+        "destination": 108.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 108.0,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Bass",
+      "pitch": 44,
+      "function": "ChromaticApproach",
+      "before_onset": 115.5,
+      "after_onset": 115.625,
+      "before": {
+        "destination": 116.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 116.0,
+        "gate_ms": 95.88068181818181,
+        "silence_ms": 159.80113636363637,
+        "legato_ratio": 0.375
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 70,
+      "function": "ChromaticApproach",
+      "before_onset": 20.5,
+      "after_onset": 20.625,
+      "before": {
+        "destination": 21.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 21.0,
+        "gate_ms": 95.88068181818181,
+        "silence_ms": 159.80113636363637,
+        "legato_ratio": 0.375
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 73,
+      "function": "Neighbor",
+      "before_onset": 24.5,
+      "after_onset": 25.25,
+      "before": {
+        "destination": 25.5,
+        "gate_ms": 340.90909090909093,
+        "silence_ms": 340.90909090909093,
+        "legato_ratio": 0.5
+      },
+      "after": {
+        "destination": 25.5,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 76,
+      "function": "ChordTone",
+      "before_onset": 26.5,
+      "after_onset": 27.5,
+      "before": {
+        "destination": 27.5,
+        "gate_ms": 340.90909090909093,
+        "silence_ms": 340.90909090909093,
+        "legato_ratio": 0.5
+      },
+      "after": {
+        "destination": 27.75,
+        "gate_ms": 122.72727272727273,
+        "silence_ms": 47.72727272727273,
+        "legato_ratio": 0.72
+      },
+      "r14_fails": false,
+      "connective": false,
+      "all_retimed_gap": true,
+      "r16_fails": false
+    },
+    {
+      "role": "Lead",
+      "pitch": 73,
+      "function": "ChromaticApproach",
+      "before_onset": 27.5,
+      "after_onset": 27.75,
+      "before": {
+        "destination": 28.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 28.0,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 73,
+      "function": "ChromaticApproach",
+      "before_onset": 33.0,
+      "after_onset": 33.25,
+      "before": {
+        "destination": 33.5,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 33.5,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 73,
+      "function": "ChromaticApproach",
+      "before_onset": 36.5,
+      "after_onset": 36.625,
+      "before": {
+        "destination": 37.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 37.0,
+        "gate_ms": 95.88068181818181,
+        "silence_ms": 159.80113636363637,
+        "legato_ratio": 0.375
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 73,
+      "function": "ChromaticApproach",
+      "before_onset": 41.0,
+      "after_onset": 41.25,
+      "before": {
+        "destination": 41.5,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 41.5,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 73,
+      "function": "ChromaticApproach",
+      "before_onset": 44.5,
+      "after_onset": 44.625,
+      "before": {
+        "destination": 45.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 45.0,
+        "gate_ms": 95.88068181818181,
+        "silence_ms": 159.80113636363637,
+        "legato_ratio": 0.375
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 72,
+      "function": "ChordTone",
+      "before_onset": 48.5,
+      "after_onset": 49.5,
+      "before": {
+        "destination": 49.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 49.75,
+        "gate_ms": 122.72727272727273,
+        "silence_ms": 47.72727272727273,
+        "legato_ratio": 0.72
+      },
+      "r14_fails": false,
+      "connective": false,
+      "all_retimed_gap": true,
+      "r16_fails": false
+    },
+    {
+      "role": "Lead",
+      "pitch": 73,
+      "function": "Neighbor",
+      "before_onset": 49.0,
+      "after_onset": 49.75,
+      "before": {
+        "destination": 50.0,
+        "gate_ms": 340.90909090909093,
+        "silence_ms": 340.90909090909093,
+        "legato_ratio": 0.5
+      },
+      "after": {
+        "destination": 50.0,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 73,
+      "function": "ChromaticApproach",
+      "before_onset": 51.0,
+      "after_onset": 51.625,
+      "before": {
+        "destination": 52.0,
+        "gate_ms": 340.90909090909093,
+        "silence_ms": 340.90909090909093,
+        "legato_ratio": 0.5
+      },
+      "after": {
+        "destination": 52.0,
+        "gate_ms": 95.88068181818181,
+        "silence_ms": 159.80113636363637,
+        "legato_ratio": 0.375
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 73,
+      "function": "Neighbor",
+      "before_onset": 56.5,
+      "after_onset": 57.25,
+      "before": {
+        "destination": 57.5,
+        "gate_ms": 340.90909090909093,
+        "silence_ms": 340.90909090909093,
+        "legato_ratio": 0.5
+      },
+      "after": {
+        "destination": 57.5,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 76,
+      "function": "ChordTone",
+      "before_onset": 58.5,
+      "after_onset": 59.5,
+      "before": {
+        "destination": 59.5,
+        "gate_ms": 340.90909090909093,
+        "silence_ms": 340.90909090909093,
+        "legato_ratio": 0.5
+      },
+      "after": {
+        "destination": 59.75,
+        "gate_ms": 122.72727272727273,
+        "silence_ms": 47.72727272727273,
+        "legato_ratio": 0.72
+      },
+      "r14_fails": false,
+      "connective": false,
+      "all_retimed_gap": true,
+      "r16_fails": false
+    },
+    {
+      "role": "Lead",
+      "pitch": 73,
+      "function": "ChromaticApproach",
+      "before_onset": 59.5,
+      "after_onset": 59.75,
+      "before": {
+        "destination": 60.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 60.0,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 70,
+      "function": "ChromaticApproach",
+      "before_onset": 84.5,
+      "after_onset": 84.625,
+      "before": {
+        "destination": 85.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 85.0,
+        "gate_ms": 95.88068181818181,
+        "silence_ms": 159.80113636363637,
+        "legato_ratio": 0.375
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 72,
+      "function": "ChordTone",
+      "before_onset": 88.5,
+      "after_onset": 89.5,
+      "before": {
+        "destination": 89.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 89.75,
+        "gate_ms": 122.72727272727273,
+        "silence_ms": 47.72727272727273,
+        "legato_ratio": 0.72
+      },
+      "r14_fails": false,
+      "connective": false,
+      "all_retimed_gap": true,
+      "r16_fails": false
+    },
+    {
+      "role": "Lead",
+      "pitch": 73,
+      "function": "Neighbor",
+      "before_onset": 89.0,
+      "after_onset": 89.75,
+      "before": {
+        "destination": 90.0,
+        "gate_ms": 340.90909090909093,
+        "silence_ms": 340.90909090909093,
+        "legato_ratio": 0.5
+      },
+      "after": {
+        "destination": 90.0,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 73,
+      "function": "ChromaticApproach",
+      "before_onset": 91.0,
+      "after_onset": 91.625,
+      "before": {
+        "destination": 92.0,
+        "gate_ms": 340.90909090909093,
+        "silence_ms": 340.90909090909093,
+        "legato_ratio": 0.5
+      },
+      "after": {
+        "destination": 92.0,
+        "gate_ms": 95.88068181818181,
+        "silence_ms": 159.80113636363637,
+        "legato_ratio": 0.375
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 73,
+      "function": "Neighbor",
+      "before_onset": 96.5,
+      "after_onset": 97.25,
+      "before": {
+        "destination": 97.5,
+        "gate_ms": 340.90909090909093,
+        "silence_ms": 340.90909090909093,
+        "legato_ratio": 0.5
+      },
+      "after": {
+        "destination": 97.5,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 76,
+      "function": "ChordTone",
+      "before_onset": 98.5,
+      "after_onset": 99.5,
+      "before": {
+        "destination": 99.5,
+        "gate_ms": 340.90909090909093,
+        "silence_ms": 340.90909090909093,
+        "legato_ratio": 0.5
+      },
+      "after": {
+        "destination": 99.75,
+        "gate_ms": 122.72727272727273,
+        "silence_ms": 47.72727272727273,
+        "legato_ratio": 0.72
+      },
+      "r14_fails": false,
+      "connective": false,
+      "all_retimed_gap": true,
+      "r16_fails": false
+    },
+    {
+      "role": "Lead",
+      "pitch": 73,
+      "function": "ChromaticApproach",
+      "before_onset": 99.5,
+      "after_onset": 99.75,
+      "before": {
+        "destination": 100.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 100.0,
+        "gate_ms": 68.18181818181819,
+        "silence_ms": 102.27272727272727,
+        "legato_ratio": 0.4
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    },
+    {
+      "role": "Lead",
+      "pitch": 70,
+      "function": "ChromaticApproach",
+      "before_onset": 108.5,
+      "after_onset": 108.625,
+      "before": {
+        "destination": 109.0,
+        "gate_ms": 306.8181818181818,
+        "silence_ms": 34.090909090909086,
+        "legato_ratio": 0.9
+      },
+      "after": {
+        "destination": 109.0,
+        "gate_ms": 95.88068181818181,
+        "silence_ms": 159.80113636363637,
+        "legato_ratio": 0.375
+      },
+      "r14_fails": false,
+      "connective": true,
+      "all_retimed_gap": true,
+      "r16_fails": true
+    }
+  ]
+}

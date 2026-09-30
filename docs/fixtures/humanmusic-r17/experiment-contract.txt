@@ -1,0 +1,48 @@
+HumanMusic Round XVII frozen experiment contract
+Source: c9242ff154fc60d9321995126af12f18574dd88e (R16 listening artifacts).
+Observed human bearings: BLACK_ICE accepted pitch, rejected timing; SWISS nearly accepted,
+with an out-of-place single-note horn-like sound at 28/36/44. Independent maintainer
+acceptance bearings; neither score witnesses nor envelope/PCM proxies override them.
+
+Primary falsifiers frozen before production:
+1. lattice_witness: every pitched onset belongs to world.subdiv lattice transported by
+   groove_position, plus triplets only when world.subdiv==3 or language.surface_subdivision==3.
+   BLACK/SWISS subdiv=4 swing=0: exactly zero off-lattice onsets required. No 32nd positions.
+   Numerical epsilon 1e-6 beat is not jitter. Drums retain existing seeded +/-0.008 beat jitter.
+2. connective_blip_witness: retimed optional same-role connective fails when written gate-end
+   to immediate next same-role onset exceeds 40 ms. R14 has no retimed optional connectives;
+   authored rests are retained as controls. Primary connective functions are ChromaticApproach,
+   Neighbor, ChromaticPassing, DiatonicPassing and Enclosure; stable fragment precursors have a separate all-retimed-gap count. Record every retimed R14/R16 lead/bass note's
+   onset, gate ms, gate silence ms, and gate/IOI. No inferred PCM-silence claim.
+3. All-off factor arm equals R16 note arrays, drums, score fingerprint and WAV bytes.
+   R14/R15/R16 committed fingerprints and hashes are preserved in baseline/.
+
+Rival predictions:
+- Lattice-position generation eliminates off-lattice pitched onsets, while keeping structural
+  onset/pitch/provenance q(E(L))==q(L), accepted lead/bass/keys pitches, and source identities.
+- Legato gates (~0.95-1.0 IOI) eliminate retimed connective written-silence failures.
+- Mono Lead/Bass note-on choke (10-20 ms, no glide) bounds the earlier voice's release;
+  envelope observation must match this opt-in PCM contract. Historical ruler stays frozen.
+- SWISS isolated static G5, low-root B2/C4 contact, and newly exposed lead/keys are rival
+  source hypotheses. Note-knockout stems at 28/36/44 and control 60 precede solver changes.
+  First gated pad candidate uses accepted within-song C4 G4 B4 E5; all other SWISS roles exact.
+- Stable precursor compression must be separately gated, bounded to one fragment subdivision,
+  and A/B compared; it is not silently folded into the four primary factors.
+
+Design: independent lattice_positions, legato_connectives, mono_voice, support_top_voice;
+full 2^4 BLACK factorial plus SWISS; forward lattice enumeration inside source corridor;
+ruler validates candidates only, no seconds-equivalent preference or backward-duration grid.
+If none passes, ledger space or previously licensed stable substitute, never invent an onset;
+this round prohibits BLACK/SWISS lead/bass/keys pitch changes. No post-hoc finished Score repair.
+
+Checks: exact material/action identity, stage corridors, frozen identity no-flips,
+45/45 fixture action receipts, zero stale hearings, original AuthoredOccupancy reservations,
+orchestration_violations()==[]. Fresh finite sweep seeds 3/7/19/43/101, two composers,
+two stories, three worlds, nominal and -12 BPM. VAPOR95 withheld from fitting.
+Suite, clippy strict, fmt, rustdoc warnings-as-errors, MSRV1.85, CI and Release Preflight
+at exact production source; no gate threshold weakening. No merge/tag/release, default
+promotion, version/ABI bump, pitch glide, systematic feel offsets, pad redesign, or SongMap rewrite.
+
+Claim boundary: frozen fixture measurements are Verified within recorded data. Architecture
+and causation remain implementation-linked; agents and generated tests are not independent
+listening evidence. Better sound is Conjectured and Human-unverified until maintainer audition.
