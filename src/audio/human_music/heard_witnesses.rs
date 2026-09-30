@@ -1,17 +1,22 @@
-//! Round XIV pre-intervention falsifiers: the object the listener hears must commute with the one
-//! the plan says is there.
+//! Round XIV witnesses: the object the listener hears must commute with the one the plan says is
+//! there.
 //!
 //! The maintainer's Round XIIIb listen: SWISS's ~16 s is now a different chord, and the band is no
 //! longer the system that generated itself. Round XIIIb took the pad's C5 out of the Cmaj7 at
 //! beat 28 because the bass sounded C at the pad's onset, but the bass then walks E2 G2 B2 while
-//! the pad holds E4 B4 G5, so 15.3–16.0 s is heard as Em over its own fifth. Each witness asserts
-//! a contract the current machinery cannot satisfy; they are ignored until the heard-object
-//! audits land. `docs/fixtures/humanmusic-r14/baseline-failures.txt` records the failing run.
+//! the pad holds E4 B4 G5, so 15.3–16.0 s is heard as Em over its own fifth. The falsifiers were
+//! committed failing first (`docs/fixtures/humanmusic-r14/baseline-failures.txt`); each is restated
+//! here against the audit that can see it ([`super::identity`], [`super::gesture`]). The two
+//! still ignored wait for the Round XII observer's slide rule and the causal receipt.
 use super::composer::Composer;
 use super::context::{analyze, HarmonicContext};
 use super::form::SectionKind;
-use super::functor::{perform_temporal, perform_tension, Composition};
+use super::functor::{perform_mass, perform_temporal, perform_tension, Composition};
+use super::gesture::{classify, entry_of, Entry, Gesture, GestureDiagnostics, PathEvent};
 use super::harmony::ChordSpan;
+use super::identity::{
+    keeps_identity, IdentityDiagnostics, IdentityRun, IdentityStatus, IDENTITY_HOLD_SECS,
+};
 use super::performance::{PerformanceOptions, PerformancePlan};
 use super::score::{Note, PitchFunction as F, Provenance, Role, Score};
 use super::semantic::deflected_lift_trace;
@@ -173,56 +178,213 @@ fn r14_the_r13b_band_at_sixteen_seconds_sounds_no_c() {
     );
 }
 
-/// The existing identity law must hear Round XIIIb's flip as a regression over Round XII. It
-/// cannot: its root memory lasts two beats past the root's audible end and is clamped to the
-/// harmony's start, so a downbeat root certifies the whole bar.
+/// The flips of `x` as (start s, end s, chart, heard rival), to the hundredth of a second.
+fn flips(x: &Composition, world: &MusicWorld) -> Vec<(String, String, String, String)> {
+    let id =
+        IdentityDiagnostics::measure(&x.score.notes, &x.perf.contexts, world, x.score.tempo_bpm);
+    id.flips()
+        .map(|r| {
+            (
+                format!("{:.2}", id.secs(r.start_beat)),
+                format!("{:.2}", id.secs(r.end_beat)),
+                r.chart.label(),
+                r.rival.label(),
+            )
+        })
+        .collect()
+}
+
+fn run(a: &str, b: &str, chart: &str, rival: &str) -> (String, String, String, String) {
+    (a.into(), b.into(), chart.into(), rival.into())
+}
+
+/// Round XII sounds the chart's Cmaj7 all through 15–17 s and flips once: at 42.97 s, Fmaj9
+/// voiced A4 C5 E5 G5 over a bass line on C# and C, with no F anywhere (inside the 43–45 s
+/// defect of the Round XII listen). Round XIII is the same. Round XIIIb adds the two Cmaj7 → Em
+/// flips it made by taking the root out. The Round VIII law reads the same flip beats in Round
+/// XII and Round XIIIb: its root memory lasts two beats past the root's audible end, clamped to
+/// the harmony's start, so a downbeat root certifies the whole bar.
 #[test]
-#[ignore = "Round XIV falsifier: the Round VIII identity law cannot hear the R13b flip"]
-fn r14_identity_law_hears_the_r13b_flip() {
+fn r14_identity_audit_hears_the_r13b_flip() {
     let song = stable_song();
     let world = MusicWorld::swiss_signal();
     let opts = PerformanceOptions::default();
-    let (a, c) = (
+    let (a, b, c) = (
         perform_temporal(&song, &world, opts),
+        perform_mass(&song, &world, opts),
         perform_tension(&song, &world, opts),
     );
-    let (fa, fc) = (round8_flip_beats(&a, &world), round8_flip_beats(&c, &world));
-    assert!(
-        fc > fa,
-        "R12 flip beats {fa}, R13b flip beats {fc}: the removed root is inaudible to the law"
+    assert_eq!(round8_flip_beats(&a, &world), round8_flip_beats(&c, &world));
+    let original = run("42.97", "44.75", "Fmaj9", "A");
+    assert_eq!(flips(&a, &world), std::slice::from_ref(&original));
+    assert_eq!(flips(&b, &world), std::slice::from_ref(&original));
+    assert_eq!(
+        flips(&c, &world),
+        [
+            run("15.25", "16.02", "Cmaj7", "Em"),
+            run("23.72", "24.41", "Cmaj7", "Em"),
+            original
+        ]
+    );
+    let at16 = |x: &Composition| {
+        let id = IdentityDiagnostics::measure(
+            &x.score.notes,
+            &x.perf.contexts,
+            &world,
+            x.score.tempo_bpm,
+        );
+        let s = id
+            .at_beat(16.0 * 118.0 / 60.0)
+            .expect("sound at 16 s")
+            .clone();
+        (s.status, s.rival.map(|r| r.label()), s.root_heard)
+    };
+    assert_eq!(at16(&a), (IdentityStatus::Rooted, None, true));
+    assert_eq!(
+        at16(&c),
+        (IdentityStatus::Flipped, Some("Em".to_string()), false)
     );
 }
 
-/// A note may be removed as "covered" only while its pitch class keeps sounding for as long as
-/// the note would have. Round XIIIb's proof reads one instant, the note's onset.
+/// Round XIIIb's coverage proof reads one instant: it removes the pad's C5 while the bass sounds
+/// C only until beat 2. The heard-identity contract rejects that removal. C stops sounding for
+/// the 1.5 beats the bass walks E G B under E4 B4 G5, the band flips to Em, and the band after
+/// the removal keeps the chart's identity worse than before.
 #[test]
-#[ignore = "Round XIV falsifier: R13b removes a root the bass covers only at the onset"]
-fn r14_coverage_must_hold_for_as_long_as_the_note_is_needed() {
+fn r14_onset_coverage_is_rejected_by_heard_identity() {
     let world = MusicWorld::swiss_signal();
     let ctx = contexts(&[(0.0, Quality::Maj7, 0)], 8.0);
     let before = walk_under_cmaj7();
-    let mut notes = before.clone();
-    let edits = gate_sounding_tension(&mut notes, &ctx, &world, 118.0, 4.0, None);
-    let win = heard_windows(&before, &world, 118.0);
-    for e in edits
+    let mut after = before.clone();
+    let edits = gate_sounding_tension(&mut after, &ctx, &world, 118.0, 4.0, None);
+    let omitted: Vec<i32> = edits
         .iter()
         .filter(|e| e.action == TensionAction::OmittedCovered)
-    {
-        let i = before
-            .iter()
-            .position(|n| {
-                n.role == e.note.role
-                    && n.pitch == e.note.pitch
-                    && n.start_beat == e.note.start_beat
-            })
-            .expect("the edited note");
-        let (a, b) = win[i];
-        assert!(
-            sounded_throughout(&before, i, pitch_class(e.note.pitch), a, b),
-            "{:?} {} removed as covered over [{a}, {b}), but its pitch class stops sounding",
-            e.note.role,
-            e.note.pitch
-        );
+        .map(|e| e.note.pitch)
+        .collect();
+    assert_eq!(omitted, [72], "R13b's gate removes C5 as covered");
+    let i = before.iter().position(|n| n.pitch == 72).unwrap();
+    let (a, b) = heard_windows(&before, &world, 118.0)[i];
+    assert!(!sounded_throughout(&before, i, 0, a, b));
+    let ib = IdentityDiagnostics::measure(&before, &ctx, &world, 118.0);
+    let ia = IdentityDiagnostics::measure(&after, &ctx, &world, 118.0);
+    assert_eq!(ib.flips().count(), 0, "{}", ib.report(&before, &ctx));
+    let f: Vec<&IdentityRun> = ia.flips().collect();
+    assert_eq!(f.len(), 1, "{}", ia.report(&after, &ctx));
+    assert_eq!(f[0].rival, Chord::new(4, Quality::Min));
+    assert!(f[0].secs >= IDENTITY_HOLD_SECS);
+    assert!(!keeps_identity(&ib, &ia, 0.0, 8.0));
+    assert!(keeps_identity(&ib, &ib, 0.0, 8.0));
+}
+
+/// Every status of one bar of `notes` under `chord` at 118 BPM, and its flips.
+fn heard_statuses(
+    chord: (Quality, i32),
+    notes: &[Note],
+) -> (Vec<IdentityStatus>, Vec<IdentityRun>) {
+    let ctx = contexts(&[(0.0, chord.0, chord.1)], 8.0);
+    let id = IdentityDiagnostics::measure(notes, &ctx, &MusicWorld::swiss_signal(), 118.0);
+    let mut st: Vec<IdentityStatus> = id.slices.iter().map(|s| s.status).collect();
+    st.dedup();
+    (st, id.flips().cloned().collect())
+}
+
+fn held(pitches: &[i32], role: Role, beat: f64, dur: f32) -> Vec<Note> {
+    pitches
+        .iter()
+        .map(|&p| note(beat, dur, p, role, role.label()))
+        .collect()
+}
+
+/// The negative and positive controls. Flipped: a Cmaj7 heard as Em over B with no C anywhere,
+/// and the Round XIIIb root deletion under a bass walk. Kept: an inversion (Cmaj7/E, Cmaj7/G),
+/// a root absent from the bass while an upper voice sounds it, a rootless voicing over the root,
+/// a genuine pedal, and a walk through a rival for one eighth (a passing ambiguity, not a flip).
+#[test]
+fn r14_identity_controls() {
+    use IdentityStatus as S;
+    let cmaj7 = (Quality::Maj7, 0);
+    // Fake Em/B: bass B2 and E4 G4 B4, no C at all.
+    let mut v = held(&[64, 67, 71], Role::Pad, 0.0, 3.92);
+    v.extend(held(&[47], Role::Bass, 0.0, 3.9));
+    let (st, f) = heard_statuses(cmaj7, &v);
+    assert_eq!(st, [S::Flipped]);
+    assert_eq!(f[0].rival, Chord::new(4, Quality::Min));
+    // Real Cmaj7/E and Cmaj7/G: the root is in the band.
+    for bass in [40, 43] {
+        let mut v = held(&[60, 67, 71], Role::Pad, 0.0, 3.92);
+        v.extend(held(&[bass], Role::Bass, 0.0, 3.9));
+        assert_eq!(heard_statuses(cmaj7, &v).0, [S::Rooted], "bass {bass}");
+    }
+    // The bass rests for a beat; the pad's C4 E4 B4 still sounds the root.
+    let mut v = held(&[60, 64, 71], Role::Pad, 0.0, 3.92);
+    v.extend(held(&[36], Role::Bass, 1.0, 2.9));
+    assert_eq!(heard_statuses(cmaj7, &v).0, [S::Rooted]);
+    // Rootless Cmaj9 (E4 G4 B4 D5) over the root in the bass: rooted while the bass sounds; the
+    // pad's release tail, ringing alone after the bass has stopped, is a passing Em7, not a flip.
+    let mut v = held(&[64, 67, 71, 74], Role::Pad, 0.0, 3.92);
+    v.extend(held(&[36], Role::Bass, 0.0, 3.9));
+    let (st, f) = heard_statuses(cmaj7, &v);
+    assert_eq!(st, [S::Rooted, S::Passing]);
+    assert!(f.is_empty());
+    // A C pedal under Dm7 voiced D4 F4 A4: the chart's root D is in the pad.
+    let mut v = held(&[62, 65, 69], Role::Pad, 0.0, 3.92);
+    v.extend(held(&[36], Role::Bass, 0.0, 3.9));
+    assert_eq!(heard_statuses((Quality::Min7, 2), &v).0, [S::Rooted]);
+    // The walk passes through Em for one eighth (B1 for 0.25 s at 118 BPM), then C2 returns.
+    let mut v = held(&[64, 67, 71, 74], Role::Pad, 0.0, 3.92);
+    v.extend(held(&[64, 67, 71, 74], Role::Pad, 4.0, 3.92));
+    v.push(note(0.0, 3.45, 36, Role::Bass, "root"));
+    v.push(note(3.5, 0.45, 35, Role::Bass, "approach"));
+    v.push(note(4.0, 3.9, 36, Role::Bass, "root"));
+    let (st, f) = heard_statuses(cmaj7, &v);
+    assert!(f.is_empty(), "{f:?}");
+    assert!(st.contains(&S::Passing), "{st:?}");
+    // Root deletion plus the bass walk: the Round XIIIb regression.
+    let v: Vec<Note> = walk_under_cmaj7()
+        .into_iter()
+        .filter(|n| n.pitch != 72)
+        .collect();
+    let (_, f) = heard_statuses(cmaj7, &v);
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].rival, Chord::new(4, Quality::Min));
+}
+
+/// The frozen arms, as heard: Round XII's original flips are Round XIII's (SWISS 1; BLACK_ICE
+/// 10, ten rootless pad voicings over a bass on the 5th or 3rd). Round XIIIb adds SWISS's two
+/// Cmaj7 → Em. No arm has a slide claim standing on the slide alone, a declared SlidePath, or a
+/// chromatic staircase: BLACK_ICE's chromatic moves are single approach notes.
+#[test]
+fn r14_frozen_arms_as_heard() {
+    let song = stable_song();
+    let opts = PerformanceOptions::default();
+    for (world, r12, r13b_extra) in [
+        (MusicWorld::swiss_signal(), 1, 2),
+        (MusicWorld::black_ice(), 10, 0),
+    ] {
+        let arms = [
+            perform_temporal(&song, &world, opts),
+            perform_mass(&song, &world, opts),
+            perform_tension(&song, &world, opts),
+        ];
+        let f: Vec<usize> = arms.iter().map(|x| flips(x, &world).len()).collect();
+        assert_eq!(f, [r12, r12, r12 + r13b_extra], "{}", world.name);
+        for x in &arms {
+            let g = GestureDiagnostics::measure(&x.perf, &x.score);
+            assert_eq!(
+                (
+                    g.declared_slides,
+                    g.slide_dependent,
+                    g.fake_slides,
+                    g.chromatic_staircases
+                ),
+                (0, 0, 0, 0),
+                "{}\n{}",
+                world.name,
+                g.report(&x.score)
+            );
+            assert!(g.slide_supported > 0);
+        }
     }
 }
 
@@ -260,6 +422,75 @@ fn r14_attacked_notes_are_never_a_slide() {
             r.detail
         );
     }
+}
+
+/// The route C–C#–D–D#: one attack gliding through the rest is a slide; four attacked notes are a
+/// discrete line, never a slide; a single attacked G#→A is a chromatic approach. Every Note the
+/// synth renders is attacked, so a declared SlidePath on attacked notes is a fake slide.
+#[test]
+fn r14_a_slide_is_one_attack() {
+    let route = |entries: [Entry; 4]| -> Vec<PathEvent> {
+        [48, 49, 50, 51]
+            .iter()
+            .zip(entries)
+            .enumerate()
+            .map(|(i, (&pitch, entry))| PathEvent {
+                pitch,
+                start_beat: 0.25 * i as f64,
+                dur_beats: 0.2,
+                entry,
+            })
+            .collect()
+    };
+    use Entry::{Attacked as At, Glided as Gl};
+    assert_eq!(classify(&route([At, Gl, Gl, Gl])), Some(Gesture::Slide));
+    assert_eq!(classify(&route([At; 4])), Some(Gesture::DiscreteLine));
+    assert_eq!(
+        classify(&route([At, Gl, At, Gl])),
+        Some(Gesture::DiscreteLine)
+    );
+    assert_eq!(
+        classify(&route([At; 4])[..2]),
+        Some(Gesture::ChromaticApproach)
+    );
+    let n = note(0.0, 1.0, 56, Role::Bass, "approach");
+    assert_eq!(entry_of(&n), Entry::Attacked);
+    let (p, mut s) = fixture(&[(0.0, Quality::Maj, 0)], 118.0, 8.0);
+    let line = |declared: F| -> Vec<Note> {
+        [48, 49, 50, 51, 52]
+            .iter()
+            .enumerate()
+            .map(|(i, &pitch)| {
+                let mut n = note(3.0 + 0.25 * i as f64, 0.2, pitch, Role::Bass, "walk");
+                n.function = Some(if i == 0 || i == 4 {
+                    F::ChordTone
+                } else {
+                    declared
+                });
+                n
+            })
+            .collect()
+    };
+    s.notes = line(F::SlidePath);
+    let g = GestureDiagnostics::measure(&p, &s);
+    assert_eq!(
+        (g.declared_slides, g.fake_slides),
+        (3, 3),
+        "{}",
+        g.report(&s)
+    );
+    s.notes = line(F::ChromaticPassing);
+    let g = GestureDiagnostics::measure(&p, &s);
+    assert_eq!(
+        (g.declared_slides, g.fake_slides),
+        (0, 0),
+        "{}",
+        g.report(&s)
+    );
+    assert!(g
+        .rows
+        .iter()
+        .all(|r| r.gesture != Some(Gesture::Slide) && r.attacks == r.route.len()));
 }
 
 /// What the keys, bass and drums realizers consumed of the lead: onset, length, pitch, function.

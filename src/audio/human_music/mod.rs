@@ -34,11 +34,13 @@ pub mod ensemble;
 mod ensemble_probes;
 pub mod form;
 pub mod functor;
+pub mod gesture;
 pub mod groove;
 pub mod harmonic_state;
 pub mod harmony;
 #[cfg(test)]
 mod heard_witnesses;
+pub mod identity;
 pub mod ids;
 pub mod instrument;
 pub mod intent;
