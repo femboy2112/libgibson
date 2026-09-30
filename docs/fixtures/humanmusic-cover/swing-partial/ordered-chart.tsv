@@ -1,0 +1,14 @@
+# Latest maintainer-supplied provisional skeleton. Relative to asserted tonic A.
+# Chord tokens are observed order ONLY; no source durations/repeat counts inferred.
+section intro ?
+section verse 7:maj 2:min 9:min 0:maj
+section pre 7:maj 2:min 9:min 0:maj
+section chorus 7:maj 2:min 5:maj 0:maj
+section verse 7:maj 2:min 9:min 0:maj
+section pre 7:maj 2:min 9:min 0:maj
+section chorus 7:maj 2:min 5:maj 0:maj
+section post 2:min 5:maj 0:maj 7:maj
+section bridge 9:min 5:maj 0:maj
+section pre 7:maj 2:min 9:min 0:maj
+section chorus 7:maj 2:min 5:maj 0:maj
+section post-outro 2:min 5:maj 0:maj 7:maj
