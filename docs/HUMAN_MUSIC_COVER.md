@@ -93,6 +93,75 @@ Free harmony is selected against pinned simultaneous melody/bass pitches before 
 
 A selected fiber can be empty under a target. The current lift requires a supported 4/4 domain and monophonic pinned lines, bounded MIDI pitches, mutually compatible pins and target chord vocabulary, and transport that preserves order and piece extent. Modern canonical observation requires `EnsembleCoupling::Independent`; expression, authored occupancy and continuation physics must satisfy [`PerformanceProfile::validate`](../src/audio/human_music/policy.rs). Historical coupled/mass/tension paths are compatibility experiments, not automatically supported modern cover combinations. An excluded coordinate is free of the identity constraint; that does not guarantee every excluded coordinate varies in every generated pair.
 
+## Fidelity dial (hardening round)
+
+The binary spec answers *which* axes are the song. The fidelity dial answers *how much* of each: a
+global [`CoverFidelityPreset`](../src/audio/human_music/cover_fidelity.rs) only builds a
+`CoverFidelityProfile`, which holds **one exact equivalence relation per axis** (every field is public,
+so any axis can be overridden). Nothing here is a similarity score.
+
+| Axis | Relations, weakest to strongest | Exact law at each level |
+| --- | --- | --- |
+| Motif | Free · Theme · Metric · Faithful | **Theme**: the line's first 8 beats (exact relative pitches and inter-onset rhythm) become the cover song's identity motif, and a statement the song derives from it sounds (placement, development and voicing are the band's: material *from* the song). **Metric**: the whole line, exact relative pitches at exact canonical onsets; lengths and rests free. **Faithful**: Metric plus every observed note/rest boundary (the v1 relation where boundaries were observed). |
+| Riff, BassFigure | Free · Metric · Faithful | As Motif (Theme is the melody's only). The riff's lane can be pinned (`riff_lane`). |
+| Harmony | Free · QualityFamily · Exact (Ordered: ceiling only) | **QualityFamily**: exact spans and relative roots; quality up to its triad family (major/minor/diminished/augmented/suspended); the target vocabulary picks the simplest admitted member. **Exact**: spans, roots and qualities (v1). **Ordered**: relative roots and qualities without durations — what an unmetered chart supports. |
+| Groove | Free · PocketSkeleton · KickSnare | **PocketSkeleton**: kick/snare strokes on the quarter-note grid; between beats free. **KickSnare**: every kick/snare stroke (v1). |
+| Form | Free · Exact (Topology: ceiling only) | **Exact**: phrase spans and families (v1). **Topology**: ordered family sequence (unmetered charts). |
+| Orchestration | Free · Exact | Per-bar role vector (v1). |
+
+| Preset | Motif | Riff | Bass | Harmony | Groove | Form | Seating |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Loose | Theme | – | – | – | – | – | – |
+| Interpretive | Metric | Metric | – | QualityFamily | PocketSkeleton | – | – |
+| Faithful | Faithful | Faithful | Metric | Exact | KickSnare | Exact | – |
+| Strict | Faithful | Faithful | Faithful | Exact | KickSnare | Exact | Exact |
+
+**Observational ceiling.** Extraction returns a `FidelityReport`: for each axis the requested relation,
+the effective one, the evidence (`Observed`, `DerivedAnalysis(method)`, `Unknown`, `NotPinned`) and the
+reason it was lowered. An axis the source never observed stays **Unknown at every preset** — turning the
+dial up is never permission to infer (tested on the Ode and on the Swing chart). A generated source that
+sounds no such line/stroke/chord lowers that axis to Free with the reason ("the source sounds none").
+
+**Compatibility.** `CoverFidelityProfile::from_spec(spec)` is the binary spec. Extraction at it yields
+exactly the v1 `CoverMap`, value and canonical hash (tested on generated sources, including HarmonicLoop
+pins). A non-v1 map records its relations in `CoverMap.fidelity`, encoded only when present.
+`ReferenceSong::extract` (binary) is unchanged; the fidelity path additionally observes an SATB `bass`
+voice as a bass line.
+
+**Ode sources vs derived analysis.** The Ode import observes pitches, onsets and durations per voice.
+Harmony is not in the source: `ReferenceSong::derive_harmony` is a declared analyzer
+(`satb-window-triad/v2`: the triad covering the most sounding duration per 2-beat window, a seventh only
+when it sounds for at least half the window). Its spans enter a map only when explicitly supplied and are
+reported as `DerivedAnalysis`, never as score metadata. Form, groove and seating are unobserved.
+
+**Swing partial.** `from_ordered_chart_fidelity` pins the chart (ordered harmony inside its section
+topology — exactly the v1 partial map) only when harmony and form are both requested; Loose and
+Interpretive therefore leave nothing to cover, and melody, bass and groove are Unknown at every preset.
+
+**The maintainer's open question** (exact vs chord-family harmony) is now a dial position, not a code
+change: `Exact` still lawfully refuses a pinned seventh in a triad-only target; `QualityFamily` admits it
+as its triad. A mode change (BLACK_ICE Aeolian into SWISS_SIGNAL Ionian) is not a quality family and stays
+a lawful refusal at both.
+
+## Cover-side repairs (hardening round)
+
+- **Riff lane (G17).** Conformance reads a pinned riff on the lane the map records
+  (`CoverMap::extract_on_lane`); the lead-else-bass choice is only the documented default of an unlaned
+  extraction.
+- **Groove vs seats (G23).** `CoverMap::validate` refuses (`ConflictingPins`) pinned strokes in a bar
+  whose pinned drum seat is Silent; the pinned drummer no longer skips a stroke (a debug assertion
+  states the invariant).
+- **One harmony authority (G14/G24).** When pinned lines constrain the harmony and the target grammar
+  generated a backbone chart, the cover's song drops that chart — it no longer claims a chart it does not
+  play.
+- **G18 `UnprojectableTiming`, G28 `ConflictingPins`.** Not reproduced as bugs: G28 is the same
+  seat-quotient limit as G23 (the extraction refuses honestly); G18's raise site was not isolated this
+  round and remains an explicit extraction refusal.
+- **`cover.rs` responsibilities.** Map/spec (types, validation), extraction, lift constraints, the lift
+  driver, conformance/freedom receipts and the ordered chart share private helpers; the fidelity dial is
+  its own module (`cover_fidelity.rs`). A wider behaviour-preserving split was judged a ~2,000-line move
+  with no semantic gain before review and was not made.
+
 ## Source observation is not a freedom choice
 
 `CoverKnowledge` distinguishes **Invariant**, **Free**, and **Unknown**. Unknown means not observed; it does not mean the source had no melody or that an invented melody was preserved. The same `CoverMap` supports a metric symbolic melody, complete generated reference, or partial ordered chart. Enrichment must explicitly supply newly observed fields; metric lift never guesses unknown source durations. There is no automatic chart/melody merge or enrichment method in this version: callers construct and validate the enriched map explicitly.
@@ -160,7 +229,7 @@ Falsifiers in `cover_tests.rs` (Observed at `1a06575`): `pinned_groove_plans_no_
 
 ## Known limits and refusals
 
-- **SWISS_SIGNAL pinned-harmony refusal (Observed, `3216021`).** The generated HookArc contract-default map is refused by SWISS_SIGNAL with `Invalid("pinned harmony outside target vocabulary")`, identically for both references. Cover generation is therefore not total across worlds when harmony is pinned. This is a lawful, explicit refusal. Whether `HarmonicContour`'s exact chord-quality relation should admit a quality-family relation is a maintainer decision and is not made here. The listening corpus shows the same refusal for the two INFEASIBLE generated targets.
+- **SWISS_SIGNAL pinned-harmony refusal (Observed, `3216021`).** The generated HookArc contract-default map is refused by SWISS_SIGNAL with `Invalid("pinned harmony outside target vocabulary")`, identically for both references. Cover generation is therefore not total across worlds when harmony is pinned. This is a lawful, explicit refusal. The quality-family question is now the fidelity dial's `HarmonyRelation::QualityFamily`; for the BLACK_ICE source the refusal is a mode change and stays lawful at both relations.
 - **Ode `transposed_faster` (Observed at `04e81fc`).** The preserved candidate has three temporal-function claims and is not counted as admitted.
 - **Generated VAPOR95 (Observed at `04e81fc`).** The candidate has one temporal-function claim in addition to the `song: false` failure; the `1a06575` falsifier covers BLACK_ICE seeds 901/902 only, so the VAPOR95 song failure has not been re-measured.
 - **Partial Swing has no melody.** Only ordered relative harmony and section-family topology are pinned; no recognition claim of any kind follows.

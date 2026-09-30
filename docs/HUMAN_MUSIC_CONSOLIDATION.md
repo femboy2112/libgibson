@@ -991,3 +991,35 @@ analysis: [`fresh/CLASSIFICATION.md`](fixtures/humanmusic-consolidation/fresh/CL
 
 Later commits touching only Markdown do not enter the build.
 <!-- /FINAL-GATE -->
+
+## Hardening round: holdout-v1 dispositions
+
+Holdout v1 stays immutable (`fresh/`); these repairs were each preceded by a committed falsifier on
+fresh seeds outside its rows (`tests/audio_source_contracts.rs`, `tests/audio_cover_contracts.rs`) and are
+judged by the separately declared holdout v2.
+
+| Family | Mechanism (read in code, reproduced red) | Disposition |
+| --- | --- | --- |
+| U1 partial final bar | `bass::realize` gated its last onset to the bar line, past the requested end; the reservation read from that line outlived the clipped note | **Repaired** at the one authority (the bass planner bounds its line to the piece). `occupancy::violations` unchanged; a mutation guard proves it still rejects `total + 1e-3`. |
+| U2 Groove never sounded | every Intro/Coda-only form seated the kit Silent; the coverage guard covered pitched voices only | **Repaired**: a Groove-declaring contract seats the kit in its highest-energy phrase holding a full bar. `AnchorReport` separates `StructurallyInapplicable` (no full bar) from `DeclaredButMissing` (a named violation); `CoverSpec::established` pins what a source really establishes. 8 of the 11 v1 `MissingAxis(Groove)` rows were explicit Groove requests (spec `all`/`riff-bass`) on drumless sources: lawful refusals. |
+| U2 theme site never stated | theme sites were planned in phrases shorter than the statement | **Repaired**: `ThemeSite::statable`; unstatable sites are never planned (all three site builders). |
+| U3 action receipts | the planner admits verbs no realizer performs (initiator silent in its window, one player on an ensemble hit, windows at the end); POCKET and WRITTEN identical | **Repaired for the new law, characterized for the historical arm**: `ActionAdmission::Rehearsed` strikes unperformed verbs before the take (recorded, never forged); historical `Planned` profiles stay byte-exact and keep the defect. |
+| U3 song obligations | debts settled by discourse role alone, before any action exists | **Repaired for groove debts** (the ordinary settlement planner schedules a real drum re-entry, admitted onto a Silent seat for its window, as the cover path already did). **Remaining, named**: cadence/departure debts settled where no home chord arrives, planned Resolves no bass/keys attack performs, Simple-language motif questions with no answer. |
+| G02/G22 temporal | a keys hold (a voicing chosen for its harmony) rang up to half a beat into a nonmember harmony | **Repaired**: nonmember hold voices lift off at the change (the coupled path's rule); member voices sustain the hold. |
+| G17 / G23 / G14,G24 | riff lane re-derived; pinned strokes dropped under a Silent pinned seat; a constrained cover claimed an unplayed chart | **Repaired** (see `HUMAN_MUSIC_COVER.md`). |
+| G18, G28 | extraction timing / seat-quotient refusals | **Not repaired**: explicit extraction refusals (G28 is the G23 quotient limit). |
+
+The accepted R17 pocket (48/48 WAV, 757/757 receipts) and all 16 cover listening WAVs stayed
+byte-identical after every source commit of this round (verify-pocket-freeze pass at each gate).
+
+## Hardening round: one percussion surface
+
+The drummer's producers (pocket, accents, ghosts, hats, figures, unison, answers) now offer typed
+candidates to one arbitration boundary (`percussion.rs`, `groove::realize_drums_arbitrated`) under
+`PercussionPolicy::Arbitrated(DrumRestraint)`: required strokes (pocket anchors, time-line hats, stamped
+action witnesses, a fill's first stroke and landing, pinned cover strokes) always sound; optional ones
+compete per bar for an allowance set by an ordered decision (the floor > a phrase-end moment > the band
+already speaking > spoke last bar > support), shifted by the restraint; a rate guard keeps pull-back /
+acceleration witnesses. `PerformanceProfile::BAND` (POCKET + rehearsed admission + Balanced) is the new
+general profile; POCKET keeps the historical drummer byte for byte. The feel seam above is now a typed
+identity (`rhythm::FeelTransport`), wired nowhere.
