@@ -1,4 +1,5 @@
 use super::*;
+use crate::audio::human_music::action::ActionKind;
 use crate::audio::human_music::{policy::PerformanceProfile, reference_song::ReferenceSong};
 fn source() -> ReferenceSong {
     ReferenceSong::from_tsv(
@@ -477,4 +478,203 @@ fn target_vocabulary_does_not_secretly_allow_mixture_or_extensions() {
             "pinned harmony outside target vocabulary"
         ))
     ));
+}
+
+// ---- Groove-debt honesty: a pinned kit never promises a return it cannot perform. ----
+
+/// The lab's generated source exactly: HookArc on `demo_trace(64)`, seed 2112, BLACK_ICE.
+fn lab_generated_map() -> (MusicWorld, CoverMap) {
+    let world = MusicWorld::black_ice();
+    let song = SongMap::build(
+        &super::super::semantic::demo_trace(64.0),
+        2112,
+        Some(CompositionGrammar::HookArc),
+    );
+    let source =
+        super::super::functor::perform_pocketed(&song, &world, PerformanceOptions::default());
+    let map = CoverMap::extract(
+        &source,
+        &world,
+        CoverSpec::from_contract(&song.plan.contract),
+    )
+    .unwrap();
+    (world, map)
+}
+fn groove_debts(ledger: &super::super::discourse::ObligationLedger) -> usize {
+    use super::super::discourse::ObligationKind;
+    ledger
+        .obligations
+        .iter()
+        .filter(|o| o.kind == ObligationKind::GrooveDestabilization)
+        .count()
+}
+#[test]
+fn pinned_groove_plans_no_groove_debt_and_the_generated_cover_is_admitted() {
+    let (black, map) = lab_generated_map();
+    assert!(
+        map.groove.is_some(),
+        "the contract default pins Groove here"
+    );
+    let mut world = black;
+    world.tempo_bpm = 95.0;
+    for seed in [901, 902] {
+        let c = cover_candidate(&map, target(&world, seed)).unwrap();
+        // The planner never opened the debt it could not discharge.
+        assert_eq!(groove_debts(&c.song.plan.discourse.ledger), 0);
+        assert_eq!(groove_debts(&c.perf.obligations), 0);
+        let song = super::super::song::SongMapConformance::check(&c.song, &c.perf, &c.score);
+        assert_eq!(song.unwitnessed_song_obligations, 0, "{}", song.report());
+        assert!(song.passes(), "{}", song.report());
+        assert!(
+            CoverPipelineReceipt::measure(&c, &world).passes(),
+            "{:?}",
+            CoverPipelineReceipt::measure(&c, &world)
+        );
+        assert!(CoverConformance::check(&map, &c, &world).passes());
+        // No witness is manufactured: no Drums ReEntry, no action stamped on any drum stroke.
+        assert!(!c
+            .perf
+            .actions
+            .of_kind(ActionKind::ReEntry)
+            .any(|a| a.initiator == Agent::Drums));
+        assert!(c.score.drums.iter().all(|h| h.prov.actions.is_empty()));
+    }
+}
+#[test]
+fn freed_groove_keeps_its_debt_and_a_real_reentry_witnesses_it() {
+    use super::super::discourse::ObligationKind;
+    let world = MusicWorld::black_ice();
+    let song = SongMap::build(
+        &super::super::semantic::demo_trace(64.0),
+        2112,
+        Some(CompositionGrammar::HookArc),
+    );
+    let source =
+        super::super::functor::perform_pocketed(&song, &world, PerformanceOptions::default());
+    let spec = CoverSpec::from_contract(&song.plan.contract).with(CoverAxis::Groove, false);
+    let map = CoverMap::extract(&source, &world, spec).unwrap();
+    assert!(map.groove.is_none());
+    let c = cover_candidate(&map, target(&world, 901)).unwrap();
+    // Same pinned form, so the same Withhold phrase: the role-driven kit really strips, so the
+    // debt stays declared — the repair is not "delete groove obligations everywhere".
+    assert_eq!(groove_debts(&c.perf.obligations), 1);
+    let debt = c
+        .perf
+        .obligations
+        .obligations
+        .iter()
+        .find(|o| o.kind == ObligationKind::GrooveDestabilization)
+        .unwrap();
+    let witness = debt
+        .settlement
+        .and_then(|s| s.witness)
+        .expect("a witnessed return");
+    let action = c.perf.actions.get(witness).unwrap();
+    assert_eq!(action.kind, ActionKind::ReEntry);
+    let song = super::super::song::SongMapConformance::check(&c.song, &c.perf, &c.score);
+    assert!(song.passes(), "{}", song.report());
+}
+#[test]
+fn an_unwitnessed_groove_settlement_still_fails_admission() {
+    use super::super::discourse::{DiscourseRole, ObligationKind, SettleHow};
+    let (black, map) = lab_generated_map();
+    let mut world = black;
+    world.tempo_bpm = 95.0;
+    let c = cover_candidate(&map, target(&world, 901)).unwrap();
+    let mut forged = copy_composition(&c);
+    let n = forged.perf.obligations.phrases;
+    let id = forged.perf.obligations.open_debt(
+        ObligationKind::GrooveDestabilization,
+        n - 2,
+        Some(n - 1),
+        0.4,
+        false,
+    );
+    forged
+        .perf
+        .obligations
+        .settle(id, n - 1, DiscourseRole::Dissolve, SettleHow::Paid)
+        .unwrap();
+    let song =
+        super::super::song::SongMapConformance::check(&forged.song, &forged.perf, &forged.score);
+    assert_eq!(song.unwitnessed_song_obligations, 1);
+    assert!(!song.passes());
+    assert!(!CoverPipelineReceipt::measure(&forged, &world).passes());
+}
+#[test]
+fn pinned_kit_ledger_is_the_role_driven_ledger_without_groove_debts() {
+    use super::super::discourse::{
+        resolve_obligations, resolve_obligations_for, DiscourseRole as R, KitMotion, ObligationKind,
+    };
+    let orderings: [&[R]; 5] = [
+        &[R::Establish, R::Culminate, R::Withhold, R::Dissolve],
+        &[R::Establish, R::Question, R::Depart, R::Answer, R::Dissolve],
+        &[R::Question, R::Withhold, R::Culminate, R::Answer, R::Return],
+        &[
+            R::Establish,
+            R::Withhold,
+            R::Establish,
+            R::Question,
+            R::Answer,
+        ],
+        &[R::Establish, R::Intensify, R::Culminate, R::Return],
+    ];
+    let shape = |o: &super::super::discourse::Obligation| {
+        (
+            o.kind,
+            o.source_phrase,
+            o.deadline,
+            o.settlement.map(|s| (s.by_phrase, s.how)),
+        )
+    };
+    for roles in orderings {
+        let driven = resolve_obligations(roles);
+        let pinned = resolve_obligations_for(roles, KitMotion::Pinned);
+        assert_eq!(groove_debts(&pinned), 0, "{roles:?}");
+        let expected: Vec<_> = driven
+            .obligations
+            .iter()
+            .filter(|o| o.kind != ObligationKind::GrooveDestabilization)
+            .map(shape)
+            .collect();
+        let got: Vec<_> = pinned.obligations.iter().map(shape).collect();
+        assert_eq!(got, expected, "{roles:?}");
+        // Ids stay the ledger's dense index, so `get` resolves every surviving debt.
+        for (i, o) in pinned.obligations.iter().enumerate() {
+            assert_eq!(o.id.index(), i);
+            assert_eq!(pinned.get(o.id).map(shape), Some(shape(o)));
+        }
+        assert_eq!(
+            resolve_obligations_for(roles, KitMotion::RoleDriven).obligations,
+            driven.obligations
+        );
+    }
+}
+#[test]
+fn ordinary_song_planning_is_unchanged_by_the_kit_seam() {
+    use super::super::discourse::{DiscoursePlan, KitMotion};
+    use super::super::plan::CompositionPlan;
+    for grammar in [
+        CompositionGrammar::HookArc,
+        CompositionGrammar::DeflectedLift,
+        CompositionGrammar::PropulsiveReturn,
+    ] {
+        let song = SongMap::build(&super::super::semantic::demo_trace(96.0), 17, Some(grammar));
+        let p = &song.plan;
+        let rebuilt = CompositionPlan::from_form_for_kit(
+            &song.timeline,
+            p.form.clone(),
+            p.contract.clone(),
+            KitMotion::RoleDriven,
+        );
+        assert_eq!(format!("{p:?}"), format!("{rebuilt:?}"));
+        let d = DiscoursePlan::build(&song.timeline, &p.form, &p.contract);
+        let k = DiscoursePlan::build_for_kit(
+            &song.timeline,
+            &p.form,
+            &p.contract,
+            KitMotion::RoleDriven,
+        );
+        assert_eq!(format!("{d:?}"), format!("{k:?}"));
+    }
 }

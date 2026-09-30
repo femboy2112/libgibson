@@ -259,6 +259,22 @@ fn strips_groove(role: DiscourseRole) -> bool {
     matches!(role, DiscourseRole::Withhold | DiscourseRole::Question)
 }
 
+/// Who moves the drum kit between phrases, and therefore whether a role's strip
+/// ([`strips_groove`]) is a departure the band really performs.
+///
+/// The ledger may only promise what the realizer can make audible: a groove debt records a kit
+/// that is actually stripped and later restored. This is a planning input, decided before any
+/// debt is opened — never a filter applied to a finished ledger.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KitMotion {
+    /// The ordinary groove realizer strips the kit on `Withhold`/`Question` and restores it on
+    /// the next full-kit phrase (a `ReEntry` witnesses the return).
+    RoleDriven,
+    /// The kit plays a pinned canonical pattern (a cover whose Groove axis is invariant): the
+    /// realizer never consults discourse role, so no strip happens and no groove debt may open.
+    Pinned,
+}
+
 /// The settlement table: how (if at all) a phrase in `role` can lawfully settle a debt of `kind`.
 ///
 /// - **MotifQuestion**: an `Answer` pays it; a `Return` or `Dissolve` can only deflect it (the
@@ -700,6 +716,18 @@ impl DiscoursePlan {
         form: &FormGraph,
         contract: &CoherenceContract,
     ) -> DiscoursePlan {
+        Self::build_for_kit(timeline, form, contract, KitMotion::RoleDriven)
+    }
+
+    /// [`DiscoursePlan::build`] for a band whose kit moves by `kit`. Roles, goals and every
+    /// non-groove debt are identical to the role-driven plan; a [`KitMotion::Pinned`] kit only
+    /// withholds the groove debts its realizer could never discharge.
+    pub fn build_for_kit(
+        timeline: &IntentTimeline,
+        form: &FormGraph,
+        contract: &CoherenceContract,
+        kit: KitMotion,
+    ) -> DiscoursePlan {
         let phrases = &form.phrases;
         let n = phrases.len();
 
@@ -773,7 +801,7 @@ impl DiscoursePlan {
             });
 
         // Open and settle the cross-phrase obligation ledger for this ordering.
-        let ledger = resolve_obligations(&roles);
+        let ledger = resolve_obligations_for(&roles, kit);
 
         // A goal per phrase: targets grounded in the phrase's own trajectory; closure, distances
         // and novelty from its role; referents to earlier material.
@@ -887,6 +915,12 @@ fn deadline_for(
 /// culmination while a harmonic departure waits for a homecoming — then opens its own debts. No
 /// "most recent of any kind" fallback: a phrase that cannot pay a debt does not get to pretend.
 pub(crate) fn resolve_obligations(roles: &[DiscourseRole]) -> ObligationLedger {
+    resolve_obligations_for(roles, KitMotion::RoleDriven)
+}
+
+/// [`resolve_obligations`] for a band whose kit moves by `kit`. Under [`KitMotion::Pinned`] no
+/// groove debt is opened; every other debt is opened and settled exactly as for a role-driven kit.
+pub(crate) fn resolve_obligations_for(roles: &[DiscourseRole], kit: KitMotion) -> ObligationLedger {
     let mut ledger = ObligationLedger::new(roles.len() as u32);
     for (i, &role) in roles.iter().enumerate() {
         let due: Vec<(ObligationId, SettleHow)> = ledger
@@ -911,8 +945,11 @@ pub(crate) fn resolve_obligations(roles: &[DiscourseRole]) -> ObligationLedger {
             _ => {}
         }
         // The groove debt opens where the kit is actually stripped — once per stripped run, since a
-        // second Withhold does not strip a kit that is already bare.
-        if strips_groove(role) && !(i > 0 && strips_groove(roles[i - 1])) {
+        // second Withhold does not strip a kit that is already bare. A pinned kit is never stripped.
+        if kit == KitMotion::RoleDriven
+            && strips_groove(role)
+            && !(i > 0 && strips_groove(roles[i - 1]))
+        {
             to_open.push((ObligationKind::GrooveDestabilization, 0.4, false));
         }
         for (kind, strength, deferrable) in to_open {

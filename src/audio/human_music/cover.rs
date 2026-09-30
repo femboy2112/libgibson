@@ -6,6 +6,7 @@
 //! is generated through the ordinary planner and final-source hearing pipeline.
 use super::action::Agent;
 use super::contract::{CoherenceAnchor, CoherenceContract, CompositionGrammar};
+use super::discourse::KitMotion;
 use super::fingerprint::{CanonicalFingerprint, FingerprintWriter};
 use super::functor::Composition;
 use super::harmony::ChordSpan;
@@ -1061,6 +1062,10 @@ impl CoverConstraints {
                 continue;
             };
             if debt.kind == ObligationKind::GrooveDestabilization {
+                debug_assert!(
+                    self.identity.groove.is_none(),
+                    "a pinned kit is planned with KitMotion::Pinned and opens no groove debt"
+                );
                 let at = phrase.start_beat();
                 if self.identity.groove.is_none()
                     && !actions
@@ -1403,6 +1408,14 @@ pub fn cover_candidate(map: &CoverMap, target: CoverTarget<'_>) -> Result<Compos
     }
     let trace = super::semantic::SemanticTrace::new(Vec::new(), map.metric_length().beats());
     let mut song = SongMap::build(&trace, target.seed, Some(target.grammar));
+    // A pinned groove plays its canonical pattern whatever the phrase role (`drums` never reads
+    // discourse, `apply_stage` keeps the seat on), so the plan must not promise a groove return it
+    // cannot perform. Decided from the quotient alone, before discourse planning.
+    let kit = if map.groove.is_some() {
+        KitMotion::Pinned
+    } else {
+        KitMotion::RoleDriven
+    };
     if let Some(form) = &map.form {
         let phrases = form
             .iter()
@@ -1429,10 +1442,19 @@ pub fn cover_candidate(map: &CoverMap, target: CoverTarget<'_>) -> Result<Compos
             total_bars: super::form::bars_spanning(map.metric_length().beats(), 4.0),
             total_beats: map.metric_length().beats(),
         };
-        song.plan = super::plan::CompositionPlan::from_form(
+        song.plan = super::plan::CompositionPlan::from_form_for_kit(
             &song.timeline,
             graph,
             CoherenceContract::for_grammar(target.grammar),
+            kit,
+        );
+    } else if kit == KitMotion::Pinned {
+        // Same timeline, form and contract `SongMap::build` planned from; only the kit differs.
+        song.plan = super::plan::CompositionPlan::from_form_for_kit(
+            &song.timeline,
+            song.plan.form.clone(),
+            song.plan.contract.clone(),
+            kit,
         );
     }
     // The new song has no retained source page. Its themes are target-generated when free.

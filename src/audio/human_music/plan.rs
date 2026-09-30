@@ -21,7 +21,7 @@
 //! summary.
 
 use super::contract::CoherenceContract;
-use super::discourse::{DiscoursePlan, DiscourseRole, PhraseGoal};
+use super::discourse::{DiscoursePlan, DiscourseRole, KitMotion, PhraseGoal};
 use super::form::{SectionKind, BEATS_PER_BAR};
 use super::intent::MusicIntent;
 use super::score::Role;
@@ -706,7 +706,18 @@ impl CompositionPlan {
         form: FormGraph,
         contract: CoherenceContract,
     ) -> CompositionPlan {
-        let discourse = DiscoursePlan::build(timeline, &form, &contract);
+        Self::from_form_for_kit(timeline, form, contract, KitMotion::RoleDriven)
+    }
+
+    /// [`CompositionPlan::from_form`] for a band whose kit moves by `kit` — the cover path, where a
+    /// pinned groove decides before discourse planning that no groove debt can be discharged.
+    pub fn from_form_for_kit(
+        timeline: &IntentTimeline,
+        form: FormGraph,
+        contract: CoherenceContract,
+        kit: KitMotion,
+    ) -> CompositionPlan {
+        let discourse = DiscoursePlan::build_for_kit(timeline, &form, &contract, kit);
         let mut arrangement = ArrangementPlan::build(&form, &discourse, &contract);
         // The thematic question/answer must be audible: give the lead a seat on Question/Answer
         // phrases even where the family-based arrangement would otherwise silence it.
