@@ -1,0 +1,20 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.91s
+     Running tests/audio_phrase_hostile.rs (target/debug/deps/audio_phrase_hostile-d5c0c1030d784a2b)
+
+running 2 tests
+
+thread 'r16_fallback_omission_must_revalidate_the_surviving_connective_path' (2525540) panicked at tests/audio_phrase_hostile.rs:119:9:
+source fallback left a stale pitch-function justification after omission: [ExpressionEvent { note: Note { start_beat: 24.0, dur_beats: 0.45, pitch: 69, velocity: 0.79, role: Lead, prov: Provenance { section: A, phrase: Some(1), family: Some("A"), anchor: Some("motif"), role_kind: Some("foreground"), motif_id: Some(0), motif_xform: Some("restate"), groove_variation: None, role: Some("restate"), closure: Some("weak"), morphism: None, role_note: "melody", actions: ActionStamp { ids: [None, None, None] }, interaction: Some(InteractionId(3)), material: Some(MaterialId(10)), obligation: None }, function: Some(ChordTone) }, structural: true }, ExpressionEvent { note: Note { start_beat: 24.5, dur_beats: 0.02, pitch: 71, velocity: 0.79, role: Lead, prov: Provenance { section: A, phrase: Some(1), family: Some("A"), anchor: Some("motif"), role_kind: Some("foreground"), motif_id: Some(0), motif_xform: Some("restate"), groove_variation: None, role: Some("restate"), closure: Some("weak"), morphism: None, role_note: "melody", actions: ActionStamp { ids: [None, None, None] }, interaction: Some(InteractionId(3)), material: Some(MaterialId(10)), obligation: None }, function: Some(ChromaticApproach) }, structural: false }, ExpressionEvent { note: Note { start_beat: 25.5, dur_beats: 0.45, pitch: 71, velocity: 0.79, role: Lead, prov: Provenance { section: A, phrase: Some(1), family: Some("A"), anchor: Some("motif"), role_kind: Some("foreground"), motif_id: Some(0), motif_xform: Some("restate"), groove_variation: None, role: Some("restate"), closure: Some("weak"), morphism: None, role_note: "melody", actions: ActionStamp { ids: [None, None, None] }, interaction: Some(InteractionId(3)), material: Some(MaterialId(10)), obligation: None }, function: Some(LicensedExtension) }, structural: true }]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test r16_a_later_connector_cannot_move_its_stamped_push ... ok
+test r16_fallback_omission_must_revalidate_the_surviving_connective_path ... FAILED
+
+failures:
+
+failures:
+    r16_fallback_omission_must_revalidate_the_surviving_connective_path
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+error: test failed, to rerun pass `--test audio_phrase_hostile`

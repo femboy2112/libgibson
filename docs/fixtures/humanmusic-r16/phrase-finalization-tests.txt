@@ -1,0 +1,35 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.38s
+     Running tests/audio_phrase_expression.rs (target/debug/deps/audio_phrase_expression-6b1b440c15bb198b)
+
+running 7 tests
+test swing_transport_changes_only_declared_offbeats ... ok
+test swiss_accepted_source_is_exactly_unchanged_by_phrase_planning ... ok
+test low_kinetic_space_is_legal_and_distinct_from_driving_fragments ... ok
+test empty_and_single_optional_sources_preserve_fixed_endpoints ... ok
+test phrase_plan_compresses_existing_optional_notes_into_real_fragments ... ok
+test harmonic_and_action_boundaries_are_not_sacrificed_for_fragments ... ok
+test bass_uses_committed_lead_fragment_space_without_losing_metric_pushes ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+
+     Running tests/audio_phrase_hostile.rs (target/debug/deps/audio_phrase_hostile-bc47e0b10b7f9346)
+
+running 2 tests
+test r16_fallback_omission_must_revalidate_the_surviving_connective_path ... ok
+test r16_a_later_connector_cannot_move_its_stamped_push ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+     Running tests/audio_phrase_surface.rs (target/debug/deps/audio_phrase_surface-85a9b13394d69b53)
+
+running 7 tests
+test degenerate_space_grace_target_is_distinct_from_legitimate_repeating_eighths ... ok
+test keys_occupation_is_union_not_polyphonic_note_count ... ok
+test ruler_distinguishes_real_subdivision_changes_from_float_jitter ... ok
+test empty_surface_is_not_a_repetition_failure ... ok
+test phrase_boundary_does_not_hide_bass_target_relationships ... ok
+test frozen_r15_individually_viable_connectives_repeat_one_temporal_shape ... ok
+test r16_acceptance_requires_more_than_repeated_individually_legal_graces ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s

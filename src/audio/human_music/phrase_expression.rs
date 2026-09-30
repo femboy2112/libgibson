@@ -457,7 +457,7 @@ pub fn realize(
         .filter(|(j, _)| !removed[*j])
         .map(|(_, e)| e)
         .collect();
-    let fallback = expression::realize(perf, world, prepared, support);
+    let mut fallback = expression::realize(perf, world, prepared, support);
     for plan in plans.iter_mut().filter(|p| {
         matches!(
             p.transform,
@@ -481,6 +481,114 @@ pub fn realize(
             .collect();
     }
     decisions.extend(fallback.decisions);
+    // Omitting an optional note changes the surviving neighbors. Re-judge the actual source
+    // result before any player hears it; a formerly valid approach cannot survive as B -> B.
+    // Stable pitch membership is a truthful substitute justification, not a moved target.
+    let mut at = 0;
+    while at < fallback.events.len() {
+        let event = fallback.events[at];
+        if !expression::connective(event.note.function) {
+            at += 1;
+            continue;
+        }
+        let prev = at.checked_sub(1).map(|j| &fallback.events[j].note);
+        let next = fallback.events.get(at + 1).map(|e| &e.note);
+        if expression::valid_function(perf, prev, &event.note, next) {
+            at += 1;
+            continue;
+        }
+        if event.structural {
+            // No structural relabel is authorized. Reject the destructive fallback decision
+            // that erased its original neighbor, retaining that source obligation.
+            if let Some(index) = line.iter().position(|e| {
+                e.note.start_beat == event.note.start_beat && e.note.pitch == event.note.pitch
+            }) {
+                if let Some(required) = line.get(index + 1) {
+                    if !fallback.events.iter().any(|e| {
+                        e.note.start_beat == required.note.start_beat
+                            && e.note.pitch == required.note.pitch
+                    }) {
+                        fallback.events.insert(at + 1, *required);
+                        decisions.retain(|d| {
+                            !(d.after.is_none()
+                                && d.before.note.start_beat == required.note.start_beat
+                                && d.before.note.role == required.note.role)
+                        });
+                        at += 1;
+                        continue;
+                    }
+                }
+            }
+            at += 1;
+            continue;
+        }
+        let before = expression::observe(perf, world, &event, prev, next, support);
+        let stable_function = [PitchFunction::ChordTone, PitchFunction::LicensedExtension]
+            .into_iter()
+            .find(|f| {
+                let mut n = event.note;
+                n.function = Some(*f);
+                expression::valid_function(perf, prev, &n, next)
+            });
+        if let Some(function) = stable_function {
+            fallback.events[at].note.function = Some(function);
+            let after = fallback.events[at];
+            decisions.push(ExpressionDecision {
+                before,after:Some(after.note),after_observation:Some(expression::observe(perf,world,&after,at.checked_sub(1).map(|j|&fallback.events[j].note),fallback.events.get(at+1).map(|e|&e.note),support)),
+                strategy:ExpressionStrategy::Substituted,
+                reason:"source omission changed local path; same pitch is now an actual stable chord/extension continuation, not an approach",
+            });
+            at += 1;
+        } else {
+            let remaining: Vec<_> = fallback
+                .events
+                .iter()
+                .enumerate()
+                .filter(|(j, _)| *j != at)
+                .map(|(_, e)| *e)
+                .collect();
+            let protects_neighbors = remaining
+                .iter()
+                .enumerate()
+                .filter(|(_, e)| e.structural && expression::connective(e.note.function))
+                .all(|(j, e)| {
+                    expression::valid_function(
+                        perf,
+                        j.checked_sub(1).map(|k| &remaining[k].note),
+                        &e.note,
+                        remaining.get(j + 1).map(|e| &e.note),
+                    )
+                });
+            if !anchored(perf, &event.note)
+                && identities_survive(&line, &remaining)
+                && protects_neighbors
+            {
+                fallback.events = remaining;
+                decisions.push(ExpressionDecision {before,after:None,after_observation:None,strategy:ExpressionStrategy::Omitted,reason:"source fallback changed neighboring path; optional unsupported connector yields to space"});
+                at = at.saturating_sub(1);
+            } else {
+                at += 1;
+            }
+        }
+    }
+    // Plans describe the final emitted source, including any fallback reclassification/space.
+    for plan in &mut plans {
+        plan.performed = plan
+            .performed
+            .iter()
+            .filter_map(|n| {
+                fallback
+                    .events
+                    .iter()
+                    .find(|e| {
+                        e.note.role == n.role
+                            && e.note.pitch == n.pitch
+                            && (e.note.start_beat - n.start_beat).abs() < 1e-6
+                    })
+                    .map(|e| e.note)
+            })
+            .collect();
+    }
     assert_eq!(
         skeleton,
         expression::project(&fallback.events),

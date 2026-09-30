@@ -139,3 +139,22 @@ fn degenerate_space_grace_target_is_distinct_from_legitimate_repeating_eighths()
     assert!(!isolated_grace(0.45, 0.20, 0.25));
     assert!(!isolated_grace(0.01, 0.045, 0.17));
 }
+
+#[test]
+fn phrase_boundary_does_not_hide_bass_target_relationships() {
+    let c = baseline();
+    let d = PhraseSurfaceDiagnostics::measure(
+        &c.song.plan,
+        &c.perf,
+        &c.score,
+        &MusicWorld::black_ice(),
+    );
+    let shapes = d.shapes_for(Role::Bass);
+    assert_eq!(
+        shapes.iter().map(|s| s.source_onsets.len()).sum::<usize>(),
+        18
+    );
+    for onset in [15.5, 63.5, 79.5] {
+        assert!(shapes.iter().any(|s| s.source_onsets.contains(&onset)));
+    }
+}

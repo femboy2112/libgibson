@@ -181,7 +181,7 @@ impl PhraseSurfaceDiagnostics {
                     let next = all
                         .iter()
                         .skip(i + 1)
-                        .find(|x| x.start_beat > n.start_beat + 1e-6 && x.start_beat < end);
+                        .find(|x| x.start_beat > n.start_beat + 1e-6);
                     let ioi = next.map(|x| x.start_beat - n.start_beat);
                     let audible_end = audible_end(
                         n.start_beat,
