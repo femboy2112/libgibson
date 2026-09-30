@@ -162,11 +162,20 @@ pub fn perform_coherent(
 
 /// Round XV opt-in: the Round XIV harmonic solution with source-level expressive lead/bass.
 /// Connective performance changes precede all downstream hearings; the pad solver is unchanged.
+///
+/// # Panics
+/// Panics for a non-default coupling: the historical coupled/surgical experiments have different
+/// source ordering or post-hoc repairs and cannot satisfy this arm's final-hearing contract.
 pub fn perform_expressive(
     song: &SongMap,
     world: &MusicWorld,
     opts: PerformanceOptions,
 ) -> Composition {
+    assert_eq!(
+        opts.coupling,
+        EnsembleCoupling::Independent,
+        "Round XV expression requires Independent coupling; legacy repair arms cannot run after final hearings"
+    );
     let perf = PerformancePlan::from_song(song, world, opts);
     let score = realize_arm(song, world, &perf, true, Contract::Expressive);
     Composition {

@@ -602,3 +602,24 @@ fn r15_vapor_holdout_keeps_chart_root_during_expression() {
         );
     }
 }
+
+#[test]
+fn r15_legacy_repair_modes_cannot_enter_the_expressive_arm() {
+    use gibson::audio::human_music::{functor::perform_expressive, performance::EnsembleCoupling};
+    for coupling in [EnsembleCoupling::Surgical, EnsembleCoupling::CoupledR8] {
+        let result = std::panic::catch_unwind(|| {
+            perform_expressive(
+                &song(),
+                &MusicWorld::black_ice(),
+                PerformanceOptions {
+                    coupling,
+                    ..PerformanceOptions::default()
+                },
+            )
+        });
+        assert!(
+            result.is_err(),
+            "legacy mode must fail before any realization or hearing"
+        );
+    }
+}

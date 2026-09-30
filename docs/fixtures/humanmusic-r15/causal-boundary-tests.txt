@@ -1,0 +1,23 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.72s
+     Running tests/audio_expression.rs (target/debug/deps/audio_expression-95656cfeceba4d2c)
+
+running 15 tests
+test fuzz_expressive_source_preserves_song_paths_receipts_and_identity ... ignored, bounded Round XV sweep: run release with --ignored --nocapture
+test r15_legacy_repair_modes_cannot_enter_the_expressive_arm ... ok
+test r15_optional_space_preserves_the_structural_line ... ok
+test r15_compact_run_keeps_contour_destination_and_structure ... ok
+test r15_black_ice_slow_neighbor_must_be_subordinate ... ok
+test r15_black_ice_bass_approach_must_be_subordinate ... ok
+test r15_structural_connective_is_never_moved_to_save_ornament ... ok
+test r15_swiss_accepted_analogue_is_short ... ok
+test r15_same_approach_tempo_is_load_bearing_even_for_sustaining_bass ... ok
+test r15_tempo_patch_factorial_and_compressed_neighbor ... ok
+test r15_nonviable_release_and_low_kinetic_choose_legal_space ... ok
+test r15_vapor_holdout_keeps_chart_root_during_expression ... ok
+test r15_frozen_ruler_distinguishes_worlds_without_production_changes ... ok
+test r15_all_eighteen_bass_approaches_are_expressed_with_receipts ... ok
+test r15_lead_expression_keeps_skeleton_and_final_hearings ... ok
+
+test result: ok. 14 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.39s
+
