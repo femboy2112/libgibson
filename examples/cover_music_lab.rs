@@ -16,6 +16,7 @@ use gibson::audio::{
         score::Score,
         semantic::demo_trace,
         song::{SongMap, SongMapConformance},
+        synth::StemMask,
         temporal::TemporalPitchDiagnostics,
         theory::Mode,
         witness, HumanMusicSynth, MusicWorld,
@@ -30,8 +31,28 @@ fn render(
     score: &Score,
     world: &MusicWorld,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    render_masked(path, score, world, StemMask::full())?;
+    // `--stems` adds a drums-only bus next to every full mix, so a percussion change can be heard
+    // (and hashed) in isolation from the rest of the band.
+    if std::env::args().any(|a| a == "--stems") {
+        render_masked(
+            &path.with_extension("drums.wav"),
+            score,
+            world,
+            StemMask::solo("drums"),
+        )?;
+    }
+    Ok(())
+}
+fn render_masked(
+    path: &Path,
+    score: &Score,
+    world: &MusicWorld,
+    mask: StemMask,
+) -> Result<(), Box<dyn std::error::Error>> {
     let rate = SampleRate::STUDIO;
     let mut synth = HumanMusicSynth::new(score, world, rate);
+    synth.set_stem_mask(mask);
     let frames = synth.total_samples();
     let audio = OfflineRenderer::new(rate, 256).render(&mut synth, frames);
     if audio.had_nonfinite {
