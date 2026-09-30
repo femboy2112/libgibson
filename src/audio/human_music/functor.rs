@@ -140,8 +140,28 @@ pub fn perform_tension(
     }
 }
 
+/// Round XIV opt-in: Round XII's realization, with the pad realized last among the pitched
+/// players so it hears the band (lead, keys and bass, none of whom read the pad). It spaces
+/// minor-2nd/9th clusters in its own voicings by octaves, and sounds the chart's root wherever the
+/// heard band would otherwise flip the chord's identity ([`super::comp::realize_pad_heard`]).
+/// Nothing is edited after a dependent has heard it: no post-hoc gate runs.
+/// [`perform_temporal`] remains the exact Round XII listening control.
+pub fn perform_coherent(
+    song: &SongMap,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+) -> Composition {
+    let perf = PerformancePlan::from_song(song, world, opts);
+    let score = realize_arm(song, world, &perf, true, Contract::Coherent);
+    Composition {
+        score,
+        song: song.clone(),
+        perf,
+    }
+}
+
 /// Which opt-in pitch contract a realization honours on top of the written one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Contract {
     /// The realizers as they are.
     Written,
@@ -149,6 +169,20 @@ enum Contract {
     Mass,
     /// Round XIIIb: Mass, then sounding tension must be transient or foreshadowing.
     Tension,
+    /// Round XIV: Written, with the pad hearing the band at its source. Neither Mass nor Tension.
+    Coherent,
+}
+
+impl Contract {
+    /// Whether the Round XIII support mass gate runs.
+    fn mass(self) -> bool {
+        matches!(self, Contract::Mass | Contract::Tension)
+    }
+
+    /// Whether the Round XIIIb post-hoc sounding-tension gate runs.
+    fn tension(self) -> bool {
+        self == Contract::Tension
+    }
 }
 
 /// Realize a score from an explicit (possibly hand-mutated) song and performance — the entry the
@@ -195,17 +229,34 @@ fn realize_arm(
             } else {
                 super::comp::realize_keys(perf, plan, world, &lead.notes, seed)
             };
-            let mut pad = super::comp::realize_pad(perf, plan, world);
-            let mut keys = keys;
-            if contract >= Contract::Mass {
-                super::comp::gate_support_mass(perf, world, &mut pad, &mut keys);
-            }
-            let bass = if temporal {
-                super::bass::realize_bass_temporal(perf, plan, world, &lead.notes, &keys)
+            if contract == Contract::Coherent {
+                // Round XIV: the bass (who hears the lead, and ignores keys and pad) is realized
+                // exactly as in Round XII; the pad comes last and hears the band.
+                let bass =
+                    super::bass::realize_bass_temporal(perf, plan, world, &lead.notes, &keys);
+                let band: Vec<Note> = lead
+                    .notes
+                    .iter()
+                    .chain(&keys)
+                    .chain(&bass)
+                    .copied()
+                    .collect();
+                let (pad, edits) = super::comp::realize_pad_heard(perf, plan, world, &band);
+                score.pad_voicing_edits = edits;
+                (pad, keys, bass)
             } else {
-                super::bass::realize_bass(perf, plan, world, &lead.notes, &keys)
-            };
-            (pad, keys, bass)
+                let mut pad = super::comp::realize_pad(perf, plan, world);
+                let mut keys = keys;
+                if contract.mass() {
+                    super::comp::gate_support_mass(perf, world, &mut pad, &mut keys);
+                }
+                let bass = if temporal {
+                    super::bass::realize_bass_temporal(perf, plan, world, &lead.notes, &keys)
+                } else {
+                    super::bass::realize_bass(perf, plan, world, &lead.notes, &keys)
+                };
+                (pad, keys, bass)
+            }
         }
         EnsembleCoupling::CoupledR8 => {
             let r = realize_coupled(world, seed, plan, perf, &lead.notes);
@@ -221,7 +272,7 @@ fn realize_arm(
     score.notes.extend(lead.notes);
     // Round XIIIb: after the drums have heard the band as written, so the groove is unchanged.
     // Every interaction receipt the band witnesses must survive each edit.
-    if contract >= Contract::Tension {
+    if contract.tension() {
         let witnessed = |s: &Score| -> Vec<bool> {
             super::witness::audit(perf, s)
                 .rows

@@ -11,7 +11,9 @@
 use super::composer::Composer;
 use super::context::{analyze, HarmonicContext};
 use super::form::SectionKind;
-use super::functor::{perform_mass, perform_temporal, perform_tension, Composition};
+use super::functor::{
+    perform_coherent, perform_mass, perform_temporal, perform_tension, Composition,
+};
 use super::gesture::{classify, entry_of, Entry, Gesture, GestureDiagnostics, PathEvent};
 use super::harmony::ChordSpan;
 use super::identity::{
@@ -20,7 +22,7 @@ use super::identity::{
 use super::performance::{PerformanceOptions, PerformancePlan};
 use super::score::{Note, PitchFunction as F, Provenance, Role, Score};
 use super::semantic::deflected_lift_trace;
-use super::song::SongMap;
+use super::song::{SongMap, SongMapConformance};
 use super::sonority::{ColorPolicy, EnsembleSonorityDiagnostics};
 use super::temporal::TemporalPitchDiagnostics as Audit;
 use super::tension::{gate_sounding_tension, heard_windows, TensionAction};
@@ -536,4 +538,296 @@ fn r14_every_dependent_heard_the_final_lead() {
         "{} lead notes heard by keys/bass/drums are not in the final score: {stale:?}",
         stale.len()
     );
+}
+
+/// A pad pitch at an onset: (beat, MIDI).
+type PadPitch = (f64, i32);
+
+/// Pad pitches that differ between two bands as multisets: what left, what came.
+fn pad_moves(a: &Score, b: &Score) -> (Vec<PadPitch>, Vec<PadPitch>) {
+    let bag = |s: &Score| -> Vec<(f64, i32, f32)> {
+        let mut v: Vec<_> = s
+            .role_notes(Role::Pad)
+            .map(|n| (n.start_beat, n.pitch, n.dur_beats))
+            .collect();
+        v.sort_by(|x, y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+        v
+    };
+    let (x, y) = (bag(a), bag(b));
+    let gone = x
+        .iter()
+        .filter(|n| !y.contains(n))
+        .map(|n| (n.0, n.1))
+        .collect();
+    let came = y
+        .iter()
+        .filter(|n| !x.contains(n))
+        .map(|n| (n.0, n.1))
+        .collect();
+    (gone, came)
+}
+
+/// Round XIV's arm against Round XII, as heard: no chart chord flips, and the band keeps the
+/// chart's identity at least as well as Round XII at every instant. Only pad pitches change;
+/// lead, keys, bass, drums, SFX, the plan, the song conformance, the interaction receipts and the
+/// Round XII pitch-path counts are Round XII's.
+#[test]
+fn r14_coherent_arm_keeps_every_chart_chord() {
+    use super::comp::PadVoicingReason as R;
+    let song = stable_song();
+    let opts = PerformanceOptions::default();
+    for (world, spacings, rootings, moved) in [
+        (MusicWorld::swiss_signal(), 4, 1, 5),
+        (MusicWorld::black_ice(), 14, 10, 24),
+    ] {
+        let a = perform_temporal(&song, &world, opts);
+        let d = perform_coherent(&song, &world, opts);
+        let what = world.name;
+        let ida = IdentityDiagnostics::measure(
+            &a.score.notes,
+            &a.perf.contexts,
+            &world,
+            a.score.tempo_bpm,
+        );
+        let idd = IdentityDiagnostics::measure(
+            &d.score.notes,
+            &d.perf.contexts,
+            &world,
+            d.score.tempo_bpm,
+        );
+        assert_eq!(
+            idd.flips().count(),
+            0,
+            "{what}\n{}",
+            idd.report(&d.score.notes, &d.perf.contexts)
+        );
+        assert!(keeps_identity(&ida, &idd, 0.0, 1e9), "{what}");
+        assert_eq!(a.perf.fingerprint(), d.perf.fingerprint());
+        for role in [Role::Lead, Role::Keys, Role::Bass] {
+            let x: Vec<&Note> = a.score.role_notes(role).collect();
+            let y: Vec<&Note> = d.score.role_notes(role).collect();
+            assert_eq!(format!("{x:?}"), format!("{y:?}"), "{what} {role:?}");
+        }
+        assert_eq!(
+            format!("{:?}", a.score.drums),
+            format!("{:?}", d.score.drums)
+        );
+        assert_eq!(format!("{:?}", a.score.sfx), format!("{:?}", d.score.sfx));
+        assert_eq!(a.score.notes.len(), d.score.notes.len());
+        let conform =
+            |x: &Composition| SongMapConformance::check(&song, &x.perf, &x.score).report();
+        assert_eq!(conform(&a), conform(&d), "{what}");
+        let receipts = |x: &Composition| -> Vec<bool> {
+            super::witness::audit(&x.perf, &x.score)
+                .rows
+                .iter()
+                .map(|r| r.witnessed)
+                .collect()
+        };
+        assert_eq!(receipts(&a), receipts(&d), "{what}");
+        let (ta, td) = (
+            Audit::measure(&a.perf, &a.score),
+            Audit::measure(&d.perf, &d.score),
+        );
+        assert_eq!(
+            (
+                ta.false_function_claims,
+                ta.false_suspensions,
+                ta.broken_anticipations,
+                ta.unresolved_tendencies,
+                ta.bad_arrivals
+            ),
+            (
+                td.false_function_claims,
+                td.false_suspensions,
+                td.broken_anticipations,
+                td.unresolved_tendencies,
+                td.bad_arrivals
+            ),
+            "{what}"
+        );
+        let e = &d.score.pad_voicing_edits;
+        let n_space = e
+            .iter()
+            .filter(|x| matches!(x.reason, R::Spacing { .. }))
+            .count();
+        let n_root = e
+            .iter()
+            .filter(|x| matches!(x.reason, R::Rooting { .. }))
+            .count();
+        assert_eq!((n_space, n_root), (spacings, rootings), "{what}: {e:?}");
+        // Every spacing keeps the voicing's pitch classes; every rooting adds the chart's root.
+        for x in e {
+            let pcs = |v: &[i32]| {
+                let mut p: Vec<i32> = v.iter().map(|&m| pitch_class(m)).collect();
+                p.sort_unstable();
+                p
+            };
+            match x.reason {
+                R::Spacing { from, to } => {
+                    assert_eq!(pcs(&x.before), pcs(&x.after));
+                    assert_eq!((to - from).abs() % 12, 0);
+                }
+                R::Rooting { root, .. } => {
+                    let chart = d.perf.contexts[x.context].chord.root_pc;
+                    assert_eq!(pitch_class(root), chart);
+                    assert!(!x.before.iter().any(|&m| pitch_class(m) == chart));
+                }
+            }
+        }
+        let (gone, came) = pad_moves(&a.score, &d.score);
+        assert_eq!(
+            (gone.len(), came.len()),
+            (moved, moved),
+            "{what}: {gone:?} -> {came:?}"
+        );
+    }
+}
+
+/// SWISS's ~16 s under Round XIV: the chart's Cmaj7 at every probe second, the pad's B moved an
+/// octave up out of the B4–C5 cluster, the C kept.
+#[test]
+fn r14_swiss_sixteen_seconds_is_still_cmaj7() {
+    let song = stable_song();
+    let world = MusicWorld::swiss_signal();
+    let d = perform_coherent(&song, &world, PerformanceOptions::default());
+    let id = IdentityDiagnostics::measure(&d.score.notes, &d.perf.contexts, &world, 118.0);
+    for secs in [15.0, 15.5, 16.0, 16.5, 17.0] {
+        let s = id.at_beat(secs * 118.0 / 60.0).expect("sound");
+        assert_eq!(s.status, IdentityStatus::Rooted, "{secs} s");
+    }
+    let win = heard_windows(&d.score.notes, &world, 118.0);
+    let beat = 16.0 * 118.0 / 60.0;
+    let mut at16: Vec<(Role, i32)> = (0..d.score.notes.len())
+        .filter(|&i| win[i].0 <= beat && beat < win[i].1)
+        .map(|i| (d.score.notes[i].role, d.score.notes[i].pitch))
+        .collect();
+    at16.sort_by_key(|&(r, p)| (r.label(), p));
+    assert_eq!(
+        at16,
+        [
+            (Role::Bass, 47),
+            (Role::Pad, 64),
+            (Role::Pad, 72),
+            (Role::Pad, 79),
+            (Role::Pad, 83)
+        ]
+    );
+}
+
+/// The Round XIV arm across 2 stories × 2 lengths × 10 seeds × 2 composers × 3 worlds (240
+/// performances), against Round XII: identity no worse at any instant; the plan, the song
+/// conformance, lead, keys, bass, drums and SFX unchanged; no interaction receipt lost; no new
+/// Round XII false claim; every edit a pad pitch class kept (spacing) or the chart's root added
+/// (rooting). Prints what remains flipped: the flips the pad cannot reach (it is silent there, or
+/// no admissible voicing helps).
+#[test]
+#[ignore = "sweep: run with --ignored --nocapture"]
+fn fuzz_the_coherent_arm_keeps_every_chart_chord() {
+    use super::comp::PadVoicingReason as R;
+    use super::contract::CompositionGrammar;
+    use super::semantic::demo_trace;
+    let (mut runs, mut before, mut after, mut spacings, mut rootings) = (0, 0, 0, 0, 0);
+    let (mut secs_before, mut secs_after) = (0.0, 0.0);
+    for story in ["bounce", "demo"] {
+        for beats in [37.0, 120.0] {
+            let trace = match story {
+                "bounce" => deflected_lift_trace(beats),
+                _ => demo_trace(beats),
+            };
+            for seed in 0..10u64 {
+                for (grammar, composer) in [
+                    (None, Composer::StablePropulsion),
+                    (
+                        Some(CompositionGrammar::DeflectedLift),
+                        Composer::MeaningDirected,
+                    ),
+                ] {
+                    let song = SongMap::compose(&trace, seed, grammar, composer);
+                    for world in MusicWorld::all() {
+                        let opts = PerformanceOptions::default();
+                        let a = perform_temporal(&song, &world, opts);
+                        let d = perform_coherent(&song, &world, opts);
+                        let what = format!("{story}/{beats}/{seed}/{composer:?}/{}", world.name);
+                        runs += 1;
+                        let id = |x: &Composition| {
+                            IdentityDiagnostics::measure(
+                                &x.score.notes,
+                                &x.perf.contexts,
+                                &world,
+                                x.score.tempo_bpm,
+                            )
+                        };
+                        let (ia, id_) = (id(&a), id(&d));
+                        assert!(keeps_identity(&ia, &id_, 0.0, 1e9), "{what}");
+                        before += ia.flips().count();
+                        after += id_.flips().count();
+                        secs_before += ia.flipped_secs();
+                        secs_after += id_.flipped_secs();
+                        assert_eq!(a.perf.fingerprint(), d.perf.fingerprint(), "{what}");
+                        let law = |x: &Composition| {
+                            SongMapConformance::check(&song, &x.perf, &x.score).report()
+                        };
+                        assert_eq!(law(&a), law(&d), "{what}");
+                        for role in [Role::Lead, Role::Keys, Role::Bass] {
+                            let x: Vec<&Note> = a.score.role_notes(role).collect();
+                            let y: Vec<&Note> = d.score.role_notes(role).collect();
+                            assert_eq!(format!("{x:?}"), format!("{y:?}"), "{what} {role:?}");
+                        }
+                        assert_eq!(
+                            format!("{:?}{:?}", a.score.drums, a.score.sfx),
+                            format!("{:?}{:?}", d.score.drums, d.score.sfx),
+                            "{what}"
+                        );
+                        let (wa, wd) = (
+                            super::witness::audit(&a.perf, &a.score),
+                            super::witness::audit(&d.perf, &d.score),
+                        );
+                        for (x, y) in wa.rows.iter().zip(&wd.rows) {
+                            assert!(!x.witnessed || y.witnessed, "{what}: lost {:?}", x.action);
+                        }
+                        let claims = |x: &Composition| {
+                            let t = Audit::measure(&x.perf, &x.score);
+                            t.false_function_claims
+                                + t.false_suspensions
+                                + t.broken_anticipations
+                                + t.bad_arrivals
+                                + t.unresolved_tendencies
+                        };
+                        assert!(claims(&d) <= claims(&a), "{what}");
+                        for e in &d.score.pad_voicing_edits {
+                            match e.reason {
+                                R::Spacing { from, to } => {
+                                    spacings += 1;
+                                    assert_eq!(pitch_class(from), pitch_class(to), "{what}");
+                                }
+                                R::Rooting { root, .. } => {
+                                    rootings += 1;
+                                    assert_eq!(
+                                        pitch_class(root),
+                                        d.perf.contexts[e.context].chord.root_pc,
+                                        "{what}"
+                                    );
+                                }
+                            }
+                        }
+                        for r in id_.flips() {
+                            println!(
+                                "remaining {what}: {:.2}-{:.2} s {} heard as {} ({:.3} s)",
+                                id_.secs(r.start_beat),
+                                id_.secs(r.end_beat),
+                                r.chart.label(),
+                                r.rival.label(),
+                                r.secs
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    println!(
+        "coherent sweep: {runs} performances; flips {before} ({secs_before:.1} s) -> {after} ({secs_after:.1} s); pad edits: {spacings} spacings, {rootings} rootings"
+    );
+    assert!(after < before);
 }

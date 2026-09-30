@@ -386,6 +386,10 @@ pub struct Score {
     /// Round XIIIb: every edit the sounding-tension gate made (the note, the clash that asked for
     /// it, the action). Empty under every arm but `perform_tension`.
     pub tension_edits: Vec<super::tension::TensionEdit>,
+    /// Round XIV: every change the pad made to its Round XII voice path at the source (spacing a
+    /// minor 2nd/9th by octaves; sounding the chart's root where the heard band flipped it).
+    /// Empty under every arm but `perform_coherent`.
+    pub pad_voicing_edits: Vec<super::comp::PadVoicingEdit>,
 }
 
 impl Score {
@@ -421,6 +425,7 @@ impl Score {
             support_report: None,
             vertical_repairs: Vec::new(),
             tension_edits: Vec::new(),
+            pad_voicing_edits: Vec::new(),
         }
     }
 

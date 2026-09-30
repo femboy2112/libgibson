@@ -1187,6 +1187,247 @@ pub fn realize_pad(
     realize_pad_on(perf, world, &pad_path(perf, world.voicing_spread), None)
 }
 
+/// The pad's full register: [`super::voicing::VoiceRange::pad`]'s floor to
+/// [`super::voicing::VoiceRange::pad_upper`]'s ceiling.
+const PAD_SPAN: (Midi, Midi) = (52, 91);
+
+/// Why the Round XIV pad changed a voicing of its Round XII path.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PadVoicingReason {
+    /// Two held members a minor 2nd or minor 9th apart: `from` moved by whole octaves to `to`
+    /// (same pitch class, so the chord the pad sounds is unchanged).
+    Spacing { from: Midi, to: Midi },
+    /// The band heard over this harmony was `rival`, with no chart root in it, for at least
+    /// [`super::identity::IDENTITY_HOLD_SECS`]. The pad now sounds the chart's `root`, in place of
+    /// `replaced` (an unwritten colour or the 5th), or added when nothing could give way.
+    Rooting {
+        rival: super::theory::Chord,
+        replaced: Option<Midi>,
+        root: Midi,
+    },
+}
+
+/// One Round XIV pad voicing change: harmony `context` (starting at `start_beat`), the voicing
+/// before and after.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PadVoicingEdit {
+    pub context: usize,
+    pub start_beat: f64,
+    pub before: Vec<Midi>,
+    pub after: Vec<Midi>,
+    pub reason: PadVoicingReason,
+}
+
+/// How structural pitch class `pc` is over `ctx`: its place in the written chord (root 0,
+/// 3rd 1, 5th 2, 7th/6th 3, written extensions after), then 8 for a scale tone, 9 chromatic.
+fn degree_rank(ctx: &HarmonicContext, pc: i32) -> u8 {
+    match ctx.chord.pitch_classes().iter().position(|&c| c == pc) {
+        Some(i) => i as u8,
+        None if ctx.region.contains_pc(pc) => 8,
+        None => 9,
+    }
+}
+
+/// The first pair of `v`'s members a minor 2nd or minor 9th apart (low, high).
+fn cluster(v: &[Midi]) -> Option<(Midi, Midi)> {
+    v.iter().enumerate().find_map(|(i, &a)| {
+        v[i + 1..]
+            .iter()
+            .find(|&&b| super::sonority::Clash::of(a, b).is_some())
+            .map(|&b| (a.min(b), a.max(b)))
+    })
+}
+
+/// Whether `q` could join `others` in the pad: in its register, not already there, and no minor
+/// 2nd or minor 9th against any of them.
+fn fits(q: Midi, others: &[Midi]) -> bool {
+    (PAD_SPAN.0..=PAD_SPAN.1).contains(&q)
+        && !others.contains(&q)
+        && others
+            .iter()
+            .all(|&x| super::sonority::Clash::of(x, q).is_none())
+}
+
+/// Whether `after` keeps the upper layer `before` had: an upper-structure voicing's top voice at
+/// or above [`super::voicing::VoiceRange::pad_upper`]'s `min_top` (the audible witness of a pad
+/// thickening).
+fn keeps_upper_layer(before: &[Midi], after: &[Midi]) -> bool {
+    let top = super::voicing::VoiceRange::pad_upper(0.0)
+        .min_top
+        .unwrap_or(Midi::MAX);
+    before.iter().all(|&p| p < top) || after.iter().any(|&p| p >= top)
+}
+
+/// Space one voicing: while two members sit a minor 2nd or 9th apart, move the less structural
+/// of the two (then the other) by the smallest whole-octave step that leaves it clear of every
+/// other member. Returns the edits made.
+fn space_voicing(ctx: &HarmonicContext, ci: usize, v: &mut [Midi]) -> Vec<PadVoicingEdit> {
+    let mut edits = Vec::new();
+    while let Some((lo, hi)) = cluster(v) {
+        let (rl, rh) = (
+            degree_rank(ctx, pitch_class(lo)),
+            degree_rank(ctx, pitch_class(hi)),
+        );
+        let order = if rh >= rl { [hi, lo] } else { [lo, hi] };
+        let moved = order.iter().find_map(|&p| {
+            let others: Vec<Midi> = v.iter().copied().filter(|&x| x != p).collect();
+            [12, -12, 24, -24]
+                .iter()
+                .map(|d| p + d)
+                .find(|&q| {
+                    let mut after = others.clone();
+                    after.push(q);
+                    fits(q, &others) && keeps_upper_layer(v, &after)
+                })
+                .map(|q| (p, q))
+        });
+        let Some((from, to)) = moved else {
+            break;
+        };
+        let before = v.to_vec();
+        for x in v.iter_mut() {
+            if *x == from {
+                *x = to;
+            }
+        }
+        v.sort_unstable();
+        edits.push(PadVoicingEdit {
+            context: ci,
+            start_beat: ctx.start_beat,
+            before,
+            after: v.to_vec(),
+            reason: PadVoicingReason::Spacing { from, to },
+        });
+    }
+    edits
+}
+
+/// The ways the pad could sound the chart's root in voicing `v`, in order of preference: in
+/// place of an unwritten colour (least structural first), then of the 5th, then added. Each
+/// places the root in the octave nearest the note it replaces (the voicing's middle when added)
+/// where it clashes with no remaining member. Written chord tones other than the 5th, and
+/// written extensions, are never given up, and an upper-structure voicing keeps its upper layer.
+fn rooting_candidates(ctx: &HarmonicContext, v: &[Midi]) -> Vec<(Option<Midi>, Midi, Vec<Midi>)> {
+    let root = ctx.chord.root_pc.rem_euclid(12);
+    let fifth = (root + 7) % 12;
+    let mut give: Vec<Midi> = v
+        .iter()
+        .copied()
+        .filter(|&p| degree_rank(ctx, pitch_class(p)) >= 8)
+        .collect();
+    give.sort_by_key(|&p| (std::cmp::Reverse(degree_rank(ctx, pitch_class(p))), -p));
+    give.extend(v.iter().copied().filter(|&p| {
+        pitch_class(p) == fifth && ctx.chord.contains_pc(fifth) && degree_rank(ctx, fifth) < 8
+    }));
+    let middle = v.iter().sum::<Midi>() / v.len().max(1) as Midi;
+    give.into_iter()
+        .map(Some)
+        .chain(std::iter::once(None))
+        .filter_map(|out| {
+            let rest: Vec<Midi> = v.iter().copied().filter(|&p| Some(p) != out).collect();
+            let near = out.unwrap_or(middle);
+            (PAD_SPAN.0..=PAD_SPAN.1)
+                .filter(|&q| pitch_class(q) == root && fits(q, &rest))
+                .map(|q| {
+                    let mut after = rest.clone();
+                    after.push(q);
+                    after.sort_unstable();
+                    (out, q, after)
+                })
+                .filter(|(_, _, after)| keeps_upper_layer(v, after))
+                .min_by_key(|&(_, q, _)| ((q - near).abs(), q))
+        })
+        .collect()
+}
+
+/// Round XIV: the pad as a player who hears the band (`band`: the lead, keys and bass already
+/// realized, which never read the pad). It plays Round XII's voice path, voicing by voicing,
+/// with two changes made at the source, before any note is emitted:
+///
+/// 1. Spacing. Two held members a minor 2nd or 9th apart (SWISS's Cmaj7 E4 B4 C5 G5, held
+///    2.3 s) are spread by octaves. The pitch classes are unchanged, so the chord it sounds is
+///    unchanged.
+/// 2. Rooting. Where the heard band flips the chart's identity over a harmony the pad voices
+///    ([`super::identity`]), the pad sounds the chart's root. An edit is kept only when it removes
+///    flipped time over that harmony and leaves the band's identity no worse anywhere
+///    ([`super::identity::keeps_identity`]).
+///
+/// Nothing is ever removed on the grounds that another player covers it.
+pub fn realize_pad_heard(
+    perf: &PerformancePlan,
+    _plan: &CompositionPlan,
+    world: &MusicWorld,
+    band: &[Note],
+) -> (Vec<Note>, Vec<PadVoicingEdit>) {
+    use super::identity::{keeps_identity, IdentityDiagnostics};
+    let mut pp = pad_path(perf, world.voicing_spread);
+    let mut edits = Vec::new();
+    for t in 0..pp.path.voicings.len() {
+        let ci = pp.context_ix[t];
+        let mut v = pp.path.voicings[t].voices.clone();
+        edits.extend(space_voicing(&perf.contexts[ci], ci, &mut v));
+        pp.path.voicings[t].voices = v;
+    }
+    let heard = |pp: &super::voicing::RolePath| -> (Vec<Note>, IdentityDiagnostics) {
+        let pad = realize_pad_on(perf, world, pp, None);
+        let mut all = band.to_vec();
+        all.extend(pad.iter().copied());
+        let id = IdentityDiagnostics::measure(&all, &perf.contexts, world, world.tempo_bpm);
+        (pad, id)
+    };
+    let flipped_over = |id: &IdentityDiagnostics, ci: usize| -> f64 {
+        id.flips()
+            .flat_map(|r| r.slices.iter())
+            .map(|&k| &id.slices[k])
+            .filter(|s| s.context == ci)
+            .map(|s| s.end_beat - s.start_beat)
+            .sum()
+    };
+    let (mut pad, mut id) = heard(&pp);
+    let mut flipped: Vec<(usize, super::theory::Chord)> = id
+        .flips()
+        .flat_map(|r| r.slices.iter().map(move |&k| (k, r.rival)))
+        .map(|(k, rival)| (id.slices[k].context, rival))
+        .collect();
+    flipped.dedup_by_key(|x| x.0);
+    let end = perf
+        .chords
+        .last()
+        .map_or(0.0, |c| c.start_beat + f64::from(c.dur_beats))
+        + 64.0;
+    for (ci, rival) in flipped {
+        let Ok(t) = pp.context_ix.binary_search(&ci) else {
+            continue;
+        };
+        let before = flipped_over(&id, ci);
+        if before <= 0.0 {
+            continue;
+        }
+        let voices = pp.path.voicings[t].voices.clone();
+        for (replaced, root, after) in rooting_candidates(&perf.contexts[ci], &voices) {
+            let mut trial = pp.clone();
+            trial.path.voicings[t].voices = after.clone();
+            let (p2, id2) = heard(&trial);
+            if flipped_over(&id2, ci) < before - 1e-9 && keeps_identity(&id, &id2, 0.0, end) {
+                edits.push(PadVoicingEdit {
+                    context: ci,
+                    start_beat: perf.contexts[ci].start_beat,
+                    before: voices,
+                    after,
+                    reason: PadVoicingReason::Rooting {
+                        rival,
+                        replaced,
+                        root,
+                    },
+                });
+                (pp, pad, id) = (trial, p2, id2);
+                break;
+            }
+        }
+    }
+    (pad, edits)
+}
+
 /// Whether a pad pitch's release tail over `[a, b)` would meet ANOTHER player a minor 2nd / 9th
 /// away (the coupled realization supplies it; the pad's own next voicing is a legato crossfade).
 pub type TailGuard<'g> = &'g dyn Fn(f64, f64, Midi) -> bool;
