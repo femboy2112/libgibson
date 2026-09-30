@@ -716,3 +716,86 @@ fn u3b_forged_and_dropped_settlements_are_caught() {
     }
     assert!(found, "the corpus holds an open debt to mutate");
 }
+
+/// Release builds never silently accept an impossible state: an invariant a correct performance
+/// needs is enforced where a `Result` can carry it, not only by a debug assertion (which vanishes
+/// in release and panics in debug). A pinned groove forced onto a song planned with a role-driven
+/// kit that owes a groove return, and a pinned stroke forced where the stage has the kit out,
+/// are typed errors.
+#[test]
+fn release_invariants_are_errors_not_debug_assertions() {
+    use gibson::audio::human_music::{
+        cover::{CoverAxis, CoverConstraints, CoverMap, CoverSpec},
+        discourse::ObligationKind,
+        functor::realize_with_profile,
+        performance::PerformancePlan,
+        policy::OccupancyPolicy,
+        rhythm::GrooveTransport,
+    };
+    let world = MusicWorld::vapor95();
+    let language = MusicalLanguage::fusion_conversation();
+    // A source whose groove is pinnable, and a role-driven song that owes a groove return.
+    let source_song = SongMap::compose(
+        &deflected_lift_trace(32.0),
+        78_301_050,
+        Some(CompositionGrammar::DeflectedLift),
+        Composer::StructuralR9,
+    );
+    let source = perform_with_profile(
+        &source_song,
+        &world,
+        options(language),
+        PerformanceProfile::BAND,
+    )
+    .unwrap();
+    let map = CoverMap::extract(&source, &world, CoverSpec::new([CoverAxis::Groove])).unwrap();
+    let debtor =
+        (78_301_051u64..78_301_120)
+            .flat_map(|seed| {
+                GRAMMARS.into_iter().flat_map(move |g| {
+                    [demo_trace(64.0), deflected_lift_trace(64.0)]
+                        .map(|t| SongMap::compose(&t, seed, Some(g), Composer::StructuralR9))
+                })
+            })
+            .find(|s| {
+                s.plan.discourse.ledger.obligations.iter().any(|o| {
+                    o.kind == ObligationKind::GrooveDestabilization && o.settlement.is_some()
+                })
+            })
+            .expect("fixture: a role-driven song that owes a groove return");
+    let constraints = CoverConstraints {
+        identity: map.clone(),
+        transport: GrooveTransport::eighth_swing(world.swing).unwrap(),
+        seed: 1,
+        tonic: world.tonic_pc,
+        occupancy_policy: OccupancyPolicy::AuthoredIntent,
+    };
+    let planned = std::panic::catch_unwind(|| {
+        PerformancePlan::from_song_constrained(
+            &debtor,
+            &world,
+            options(language),
+            constraints.clone(),
+        )
+    });
+    assert!(
+        matches!(planned, Ok(Err(_))),
+        "a pinned kit with a groove debt must be a typed error, not a panic or a silent plan"
+    );
+
+    // A pinned stroke with no drum seat: a plan whose stage never seated the kit is handed pinned
+    // strokes after the fact.
+    let mut perf = PerformancePlan::from_song(&debtor, &world, options(language));
+    for bar in &mut perf.stage.seats {
+        bar[4].on = false;
+    }
+    perf.stage.windows.clear();
+    perf.cover_constraints = Some(constraints);
+    let realized = std::panic::catch_unwind(|| {
+        realize_with_profile(&debtor, &world, &perf, PerformanceProfile::BAND)
+    });
+    assert!(
+        matches!(realized, Ok(Err(_))),
+        "a stroke sounding off stage must be a typed error, not a panic or a silent score"
+    );
+}
