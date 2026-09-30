@@ -156,3 +156,11 @@ Notable files: golden `humanmusic-r17/final/{black_ice,swiss}_r17.*.txt` (22, ~2
 in place because Rust reads them from that path); `humanmusic-consolidation/fresh/results/run.log`
 (643 KB) is holdout v1 and stays; `humanmusic-cover/ode-import/{observations,midi-observations}.json`
 (symbolic-source observations) stay untouched.
+
+## Correction after cherry-pick (hardening round)
+
+`humanmusic-r17/verification/fresh-failures.json` and `fresh-sweep.txt` were compacted, but the
+committed known-sweep classifier (`humanmusic-consolidation/known-r17-replay/classify.py`) reads them
+directly; the compaction's reference search covered `src/ tests/ examples/ scripts/`, not tooling under
+`docs/`. Both were restored in place, byte-identical to their manifest rows (their archive rows are kept,
+so `expand-humanmusic-archives.py check` still reports 0 problems). Working-tree size grows by their bytes.
