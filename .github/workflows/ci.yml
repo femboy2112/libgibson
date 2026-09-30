@@ -20,6 +20,20 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
+  symbolic-import:
+    name: Symbolic source parser laws
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned parser tools
+        run: |
+          python3 -m venv "$RUNNER_TEMP/symbolic-parser"
+          "$RUNNER_TEMP/symbolic-parser/bin/python" -m pip install -r scripts/audio/requirements-symbolic.txt
+      - name: Test symbolic observations and unsupported-input rejection
+        run: '"$RUNNER_TEMP/symbolic-parser/bin/python" -m unittest discover -s scripts/audio -p test_import_symbolic.py'
+
   rust:
     name: Rust (fmt, clippy, test, build)
     runs-on: ubuntu-latest
