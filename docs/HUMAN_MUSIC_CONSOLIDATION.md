@@ -22,7 +22,8 @@ to the start SHA. Later sections will record implementation and exact evidence.
 This section describes the integrated objects and call boundaries. It is a source
 map, not final-source acceptance: cover controls, final listening artifacts, fresh
 holdout and final engineering gates remain **UNVERIFIED** until their receipts are
-recorded. The before-state audits and historical controls below remain evidence.
+recorded (later cover-law and pre-repair listening receipts now exist; see the
+[claim ledger](#current-claim-ledger)). The before-state audits and historical controls below remain evidence.
 The [cover guide](HUMAN_MUSIC_COVER.md) gives exact defaults, relations, API use and
 reference-ingestion limits.
 
@@ -140,8 +141,11 @@ final-source ABI and clean-room consumer checks remain mandatory.
 | Historical known sweep remains 61/59 | **Observed**, exact replay source and first-failure comparison recorded below; known data |
 | New objects express the stated source/lifetime/cover relations | **Disclosed within code inspection and the individually cited law-test boundaries**; not universal musical acceptance |
 | Ode source encodings agree under declared staff projection | **Corroborated within a shared edition**, with the raw mismatch retained |
-| Final integrated cover laws, renders, PCM preservation and engineering gates | **UNVERIFIED** at this documentation checkpoint |
-| Fresh 36-case holdout | **UNVERIFIED**, prepared configuration; no musical cases executed before root's freeze/commit |
+| Cover laws (tempo-only, transposition-only, language-only, contract-default noninterference, per-group freedom) | **Observed**, `tests/audio_cover_laws.rs` 5/5 at `3216021`; the generated contract-default map's SWISS_SIGNAL refusal is an Observed lawful limit, see [Known unresolved defects](#known-unresolved-defects) |
+| Pinned-groove groove-debt repair | **Observed** at `1a06575`: lib cover tests 19/19, discourse/song/plan lib tests 31/31, `audio_consolidation_characterization` 1/1, `audio_realization_policy` 8/8, `audio_canonical_fingerprint` 5/5, strict clippy and fmt clean; mutation check red as recorded |
+| Cover lab renders and WAV hashes | **Observed** at pre-repair source `04e81fc` ([corpus](fixtures/humanmusic-cover/listening/README.md): ode 5 admitted/1 failed, swing-partial 5 admitted, generated 0 admitted/3 failed/2 infeasible); post-repair regeneration **Observed** at `ced9833` ([receipt](fixtures/humanmusic-cover/listening-post-repair/README.md)): 16 WAVs byte-identical, generated 2 admitted/1 failed/2 infeasible |
+| PCM preservation and final engineering gates at the final SHA | **UNVERIFIED**, see `<!-- FINAL-GATE -->` placeholder below |
+| Fresh 36-case holdout | **Observed** once at `6ac812f` (committed `8a0b0cd`): 7/36 pass (6/6 external Ode covers, 1/30 generated); failures preserved and classified, none repaired after contact; see holdout results below |
 | Cover recognition, interpretation quality and post-consolidation listening acceptance | **UNVERIFIED**, requires the maintainer's ear |
 
 ## Phase 0: accepted artifact freeze
@@ -901,3 +905,73 @@ canonical structural versus performed coordinates, the directly diagnosed
 source-function crossing, and the unresolved held F-major6/A-minor object.
 The source/binary hashes are recorded; evolving cover work was excluded. This is
 known-data regression, not a new holdout or general acceptance claim.
+
+
+## Removed or unified duplicate authorities
+
+This section consolidates what the "Implemented" sections above record, by commit. Each entry says what that commit's message and the sections above state it did; none is a claim of musical acceptance.
+
+- `21430e1` (`refactor(audio): realize musical laws through explicit profiles`): the central chronological `Contract` dispatch is replaced by validated orthogonal policies in `PerformanceProfile`, with one validation boundary; historical wrappers construct their original law tuples. Source admission (`PulsePolicy::continuation_admission`) is split from render lifetime (`VoiceLifetimePolicy`). SFX realization, ownership and audit move unchanged into `sfx.rs` with `functor` re-exports.
+- `055f9ae` (`refactor(audio): centralize metric transport and heard lifetime physics`): `MetricPosition`/`GrooveTransport`/`PerformedPosition` replace duplicate eighth-only swing helpers (current drum and phrase swing delegate to one transport; historical subdivision swing stays separate). Envelope endpoints, role-to-patch selection and continuation endpoints live in `voice`; `HeardWindows` is shared by mass, tension and identity, and the historical same-role masking path uses one sorted index instead of a quadratic scan. Sonority keeps source indices instead of rematching by float, which fixed a coincident-SFX envelope misidentification (falsifier added).
+- `e277d27` (`refactor(audio): share exact pitch membership and source relations`): duplicate chord-mask, nearest-tone and source-function logic (comp/bass) are unified on `PitchClassSet` and one chord-first licensed-palette relation. Static membership is deliberately not merged with the temporal classifier.
+- `3188c69` (`refactor(audio): preserve explicit pitch units through musical identity`): not a removal of a duplicate; it separates two conflated units by adding `PitchBasis` (scale steps versus semitones) to motif and interaction material, with archived Debug/fingerprint encodings preserved for scale-step objects.
+- `1b920f6` (`feat(audio): add explicit canonical v2 identity schemas`): adds tagged canonical encodings beside the legacy Debug/FNV formulas rather than removing them; the legacy formulas remain named `legacy_fingerprint()` receipts. This separates two identity authorities rather than collapsing them.
+- Canonical empty-edge observation (see "Repaired" above): the historical same-role masking fallback for an empty continuation graph is no longer selected by modern profiles.
+- `1a06575` (`fix(audio): plan no groove debt a pinned cover kit cannot discharge`): removes a planner/realizer split-brain. Discourse planning opened a `GrooveDestabilization` debt from phrase role alone, while a pinned Groove realizer never strips or returns the kit, so the debt could not be discharged and every generated contract-default cover failed admission with `unwitnessed_song_obligations: 1`. There is now one typed authority, `KitMotion { RoleDriven, Pinned }`, decided from the quotient before discourse planning. Old entry points are exact `RoleDriven` wrappers; no `DiscoursePlan` field was added.
+
+## Known unresolved defects
+
+- **Known R17 sweep: 59 first-assertion failures remain red**, classified as 14 pitch, 38 lattice, 5 temporal, 2 held identity (120 executed, 61 complete passes). Counts unchanged; see the [replay classification](fixtures/humanmusic-consolidation/known-r17-replay/README.md).
+- **`SongMap::composer()` self-report ambiguity.** It infers `StablePropulsion` from the PropulsiveReturn phenomenal target, so a StructuralR9 or MeaningDirected song on the PropulsiveReturn grammar reports the wrong composer. Recorded in the [holdout pre-freeze review](fixtures/humanmusic-consolidation/fresh/README.md); the holdout harness treats the declared composer as authority. Not fixed in the library.
+- **Generated contract-default pinned-harmony refusal in SWISS_SIGNAL** (`Invalid("pinned harmony outside target vocabulary")`, Observed at `3216021`). Lawful and explicit; whether the chord-quality relation should admit a quality-family relation is a maintainer decision.
+- **Ode `transposed_faster`**: 3 temporal-function claims (Observed at `04e81fc`, preserved failure).
+- **Generated VAPOR95**: 1 temporal-function claim (Observed at `04e81fc`).
+- **`PocketOptions::default()`** still spells archived `support_top_voice: true`. It is inert (never read by production realization) and documented as such.
+- **f64 beat migration is incremental**: exact rational coordinates exist for canonical identity and transport, but legacy float beats remain at many boundaries.
+
+## Session continuation (post-Codex)
+
+Facts recorded after Codex's last commit (`cee745b`):
+
+- `064de33` `test(audio): retain generated-cover SongMap admission diagnosis`: reporting-only sidecar; all three generated admission failures are exactly `unwitnessed_song_obligations: 1`; main report byte-identical to the `04e81fc` corpus; no WAV replaced. Its mechanism was Conjectured there.
+- `1a06575` `fix(audio): plan no groove debt a pinned cover kit cannot discharge`: the `KitMotion` repair described above and in the [cover guide](HUMAN_MUSIC_COVER.md#pinned-groove-and-discourse-obligations). The conjectured hat-arrival repair from the diagnosis was rejected (it would fabricate a return from a departure that never happened) as was a post-hoc ledger filter. Observed after repair: lib cover tests 19/19, discourse/song/plan lib tests 31/31, `audio_consolidation_characterization` 1/1, `audio_realization_policy` 8/8, `audio_canonical_fingerprint` 5/5, strict clippy `--all-targets --all-features` exit 0, fmt clean. Mutation check: forcing `RoleDriven` turns the repro red.
+- `3216021` `test(audio): isolate cover laws one variable at a time`: `tests/audio_cover_laws.rs`, 5/5 Observed (tempo-only, transposition-only, language-only, contract-default noninterference with three positive controls, per-group freedom sweep). Observed limit: SWISS_SIGNAL refuses the generated HookArc contract-default map.
+- `6ac812f` `test(audio): declare consolidated holdout v1 before first contact`: configuration and harness committed before any case executed; see the [fresh README](fixtures/humanmusic-consolidation/fresh/README.md), including its "Pre-freeze harness review".
+
+<!-- POST-REPAIR-LISTENING -->
+## Post-repair listening corpus
+
+**Observed** at `ced9833` ([receipt](fixtures/humanmusic-cover/listening-post-repair/README.md)): the three
+cover lab runs regenerated with identical inputs produce **16 WAVs byte-identical** to the `04e81fc`
+corpus; Ode and Swing reports are byte-identical; generated candidates changed only their `perf`
+fingerprints and moved from `song: false` to `song: true`, admitting both BLACK_ICE covers (VAPOR95
+stays red on one temporal claim; two vocabulary refusals unchanged). Human recognition remains
+UNVERIFIED.
+<!-- /POST-REPAIR-LISTENING -->
+
+<!-- HOLDOUT-V1-RESULTS -->
+## Consolidated holdout v1 results
+
+**Observed, first and only contact** at `6ac812f` (architecture frozen at `3216021`; release profile;
+executed configuration byte-identical to the declared SHA256 `c45fa6de…`). Raw receipts:
+[`fresh/results/`](fixtures/humanmusic-consolidation/fresh/results/) (committed `8a0b0cd`); post-contact
+analysis: [`fresh/CLASSIFICATION.md`](fixtures/humanmusic-consolidation/fresh/CLASSIFICATION.md).
+
+- **7/36 cases pass**: all six external Ode covers and G29. 29/30 generated cases fail; 67 of 970
+  receipts fail; exit 101 preserved.
+- Largest families are source-side ordinary POCKET generation on fresh short, partial-bar and
+  Simple-language inputs: a partial-final-bar bass reservation (`invalid reservation for Bass`, 16
+  sources + 2 covers; 0/9 bar-aligned vs 16/21 partial-bar sources), absolute action-witness gaps (15;
+  Simple language fragment 0/12, hit 6/24), and unwitnessed song obligations/theme sites (7).
+- 11 extractions refuse `MissingAxis(Groove)` because those sources are literally drumless while the
+  contract default pins Groove; 4 cover lifts are explicit vocabulary refusals; 7 of the 11 generated
+  covers that exist fail at least one cover-side receipt.
+- Held identity failed 0 times (30 sources, 17 covers).
+- Nothing was repaired after contact. Any repair must first write its counterexample and be judged on a
+  second untouched holdout. The finite, deliberately chosen matrix is not a population sample; generator
+  and observers share provenance.
+<!-- /HOLDOUT-V1-RESULTS -->
+
+<!-- FINAL-GATE -->
+Final gate at the final SHA: not yet run. To be filled by the orchestrator.
+<!-- /FINAL-GATE -->

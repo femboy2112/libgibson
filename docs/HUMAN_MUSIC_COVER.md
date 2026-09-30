@@ -4,7 +4,7 @@ A cover is a performance in a declared invariant fiber. For a reference performa
 
 `CoverMap` contains selected relative musical coordinates. It does not retain the source `Composition`, `SongMap`, seed, semantic trace, instruments, or a source lookup. The generator accepts only the map and a target world, language, grammar, seed, and realization profile. Constraints enter form, harmony, stage, statement/material and source-event choices before rendering. No finished Score is repaired to force cover equality.
 
-This document describes the implemented experimental API and its boundaries. Final-source cover controls, listening renders, fresh holdout, CI and Release Preflight remain **UNVERIFIED** until their source-bound receipts are recorded in the [consolidation report](HUMAN_MUSIC_CONSOLIDATION.md). The retained source-import observations below have their own explicit evidence; they do not establish musical acceptance.
+This document describes the implemented experimental API and its boundaries. Source-bound receipts that now exist: the [listening corpus](fixtures/humanmusic-cover/listening/README.md) (machine checks and hashes, bound to source `04e81fc`, before the groove-debt repair `1a06575`; see [Listening artifacts](#listening-artifacts)) and the cover-law tests listed under [Noninterference law](#noninterference-law) and [Freedom law](#freedom-law) (Observed at the commits named there). The post-repair corpus (16 WAVs byte-identical to `04e81fc`; see [Post-repair listening corpus](#post-repair-listening-corpus)) and the one-contact fresh holdout (7/36; see [Holdout v1](#holdout-v1-cover-rows)) are now recorded; final-source CI and Release Preflight are recorded in the [consolidation report](HUMAN_MUSIC_CONSOLIDATION.md). The retained source-import observations below have their own explicit evidence; they do not establish musical acceptance.
 
 ## Three routes
 
@@ -129,7 +129,88 @@ The [cover controls](../src/audio/human_music/cover_tests.rs) and [directed revi
 
 For fully observed maps, `CoverSpec::all()` freezes all eight **supported identity axes**, not every event attribute or PCM sample: articulation, dynamics, global register, hats and rendering still have freedom. Equal map and equal full target reproduce the same result. `CoverSpec::none()` retains only the metric domain; regenerated melody differs and original identity checks fail. That vacuous fiber is not a useful claim to be a cover.
 
-**Disclosed within source inspection:** the extractor/generator data boundary and the relations implemented above. **Observed:** the linked retained source-import facts, raw mismatch and declared projected agreement. Development counterexamples are retained in the [review ledger](fixtures/humanmusic-cover/development-review/README.md); its receipts name their evolving-source boundary. **UNVERIFIED at this documentation checkpoint:** final-source controls, final lab renders/hashes, fresh holdout, final CI/preflight, listener recognition and interpretation quality. The provisional Swing chart's relationship to the real recording remains unverified. A generated test is not independent listening evidence. Final results belong in the consolidation report and must not be fitted after holdout contact.
+**Disclosed within source inspection:** the extractor/generator data boundary and the relations implemented above. **Observed:** the linked retained source-import facts, raw mismatch and declared projected agreement. Development counterexamples are retained in the [review ledger](fixtures/humanmusic-cover/development-review/README.md); its receipts name their evolving-source boundary. **Observed after this paragraph was first written:** the retained listening corpus (lab renders and WAV hashes at source `04e81fc`, pre-repair) and the law tests named in the sections below. **UNVERIFIED at this documentation checkpoint:** post-repair lab renders/hashes, fresh holdout, final CI/preflight, listener recognition and interpretation quality. The provisional Swing chart's relationship to the real recording remains unverified. A generated test is not independent listening evidence. Final results belong in the consolidation report and must not be fitted after holdout contact.
+
+## Noninterference law
+
+A cover generator may read only the map and the target. The law is: two references whose selected coordinates are equal produce equal maps, and equal maps with an identical complete target produce identical covers, whatever else differed between the references. This is a finite-falsifier claim with shared implementation provenance, not a proof over all inputs.
+
+- `equal_quotients_cannot_leak_free_reference_data` (`src/audio/human_music/cover_tests.rs`): changes reference seed/trace, non-lead pitches/dynamics and tempo, extracts equal maps, drops both references, then compares generated song/plan/score evidence and canonical plan/event fingerprints.
+- `hostile_source_leak_would_fail_the_output_equality_witness` (same file): a deliberate forbidden-source dynamics mutation must fail full-output equality even when the cover quotient passes, so the witness can detect a leak.
+- `contract_default_noninterference` (`tests/audio_cover_laws.rs`, commit `3216021`, Observed): perturbs only unpinned score data (Pad/Keys/Bass pitch and velocity, Lead velocity, hat/open-hat/clap velocity). It requires equal maps by canonical fingerprint and by Debug, identical covers over 2 seeds x {BLACK_ICE, SWISS_SIGNAL}, and identical refusals. Three positive controls confirm the perturbation harness is not vacuous: a changed lead pitch, a kick-to-snare change and a changed chord root each move the map.
+
+## Freedom law
+
+An excluded coordinate is free of the identity constraint. That does not guarantee that every excluded coordinate varies in every generated pair; the tested claim is weaker and explicit.
+
+- `CoverFreedom` has four groups: `support_voicing`, `dynamics`, `percussion_detail`, `interactions`.
+- `external_melody_survives_three_worlds_key_tempo_and_seed` and `all_axes_freeze_identity_but_not_articulation_and_none_is_not_a_cover` (`cover_tests.rs`) assert that `CoverFreedom::compare` reports some freedom while pinned coordinates hold.
+- `every_free_group_varies_somewhere_in_a_small_sweep` (`tests/audio_cover_laws.rs`, commit `3216021`, Observed): Ode motif-only map, seeds 901-903 across three worlds; each `CoverFreedom` field is true in at least one pair. Each group is checked separately, not only their OR.
+- `tempo_only_change_preserves_metric_cover_identity`, `transposition_only_preserves_relative_harmony_and_motif` and `language_only_change_is_either_conformant_or_an_explicit_refusal` (same file, `3216021`, Observed) change one variable at a time.
+
+## Pinned groove and discourse obligations
+
+Defect (fixed in `1a06575`): with Groove pinned, the kit plays its canonical pattern regardless of phrase role. `CoverConstraints::drums` never reads discourse and `apply_stage` keeps the drum seat on, so the kit is never stripped and no return can happen. Yet `resolve_obligations` opened a `GrooveDestabilization` obligation from the phrase role alone (`strips_groove` in `discourse.rs`), and `plan_settlements` skipped the `ReEntry` for a pinned Groove. Every generated contract-default cover therefore failed SongMap admission with exactly `unwitnessed_song_obligations: 1` (receipts in [diagnosis/](fixtures/humanmusic-cover/listening/diagnosis/README.md)).
+
+Repair: a typed planning input `KitMotion { RoleDriven, Pinned }`, decided from the quotient (`map.groove.is_some()`) before discourse planning, threaded through `resolve_obligations_for`, `DiscoursePlan::build_for_kit` and `CompositionPlan::from_form_for_kit`. Existing entry points are exact `RoleDriven` wrappers. No `DiscoursePlan` field was added, so legacy Debug fingerprints and non-cover paths are unchanged. No gate, witness or threshold moved and no witness is manufactured.
+
+Alternatives rejected: the diagnosis-time conjecture (reserve a silence and stamp a designated hat arrival) would fabricate a return from a departure that never happened, and the `ReEntry` witness also has a staged alternative, so the proposed silence reservation was self-imposed. A post-hoc ledger filter was rejected because `answer_referent` reads the ledger during `DiscoursePlan::build`.
+
+Falsifiers in `cover_tests.rs` (Observed at `1a06575`): `pinned_groove_plans_no_groove_debt_and_the_generated_cover_is_admitted` (BLACK_ICE seeds 901/902 at 95 BPM now admitted; no Drums `ReEntry`; no action stamped on any drum stroke), `freed_groove_keeps_its_debt_and_a_real_reentry_witnesses_it`, `an_unwitnessed_groove_settlement_still_fails_admission`, `pinned_kit_ledger_is_the_role_driven_ledger_without_groove_debts`, `ordinary_song_planning_is_unchanged_by_the_kit_seam`. Mutation check: forcing `RoleDriven` turns the repro test red (it trips the new `debug_assert` in `plan_settlements`). The retained corpus below predates this repair and still shows the failure.
+
+## Known limits and refusals
+
+- **SWISS_SIGNAL pinned-harmony refusal (Observed, `3216021`).** The generated HookArc contract-default map is refused by SWISS_SIGNAL with `Invalid("pinned harmony outside target vocabulary")`, identically for both references. Cover generation is therefore not total across worlds when harmony is pinned. This is a lawful, explicit refusal. Whether `HarmonicContour`'s exact chord-quality relation should admit a quality-family relation is a maintainer decision and is not made here. The listening corpus shows the same refusal for the two INFEASIBLE generated targets.
+- **Ode `transposed_faster` (Observed at `04e81fc`).** The preserved candidate has three temporal-function claims and is not counted as admitted.
+- **Generated VAPOR95 (Observed at `04e81fc`).** The candidate has one temporal-function claim in addition to the `song: false` failure; the `1a06575` falsifier covers BLACK_ICE seeds 901/902 only, so the VAPOR95 song failure has not been re-measured.
+- **Partial Swing has no melody.** Only ordered relative harmony and section-family topology are pinned; no recognition claim of any kind follows.
+- The pinned-harmony refusal and temporal claims have not been re-measured after `1a06575`; the corpus is pre-repair.
+
+## Listening artifacts
+
+Corpus: [listening/README.md](fixtures/humanmusic-cover/listening/README.md), [receipt.json](fixtures/humanmusic-cover/listening/receipt.json), [WAV_SHA256SUMS](fixtures/humanmusic-cover/listening/WAV_SHA256SUMS), with per-run reports under [ode/](fixtures/humanmusic-cover/listening/ode/report.txt), [swing-partial/](fixtures/humanmusic-cover/listening/swing-partial/report.txt), [generated/](fixtures/humanmusic-cover/listening/generated/report.txt) and [diagnosis/](fixtures/humanmusic-cover/listening/diagnosis/README.md). WAVs stay local under `target/humanmusic-cover/`; only hashes and metadata are committed. The corpus is source-bound to `04e81fc`, before the groove-debt repair.
+
+| Run | Admitted (declared machine checks pass) | Preserved failed | Infeasible |
+| --- | ---: | ---: | ---: |
+| ode | 5 | 1 (`transposed_faster`, 3 temporal-function claims) | 0 |
+| swing-partial | 5 | 0 | 0 |
+| generated | 0 | 3 (`song: false`; VAPOR95 also 1 temporal claim) | 2 (pinned harmony outside target vocabulary) |
+
+Human recognition and musical quality are **UNVERIFIED**; a successful render command does not mean a candidate passed its checks.
+
+<!-- POST-REPAIR-LISTENING -->
+## Post-repair listening corpus
+
+**Observed** at `ced9833` ([receipt](fixtures/humanmusic-cover/listening-post-repair/README.md)): the three
+cover lab runs regenerated with identical inputs produce **16 WAVs byte-identical** to the `04e81fc`
+corpus; Ode and Swing reports are byte-identical; generated candidates changed only their `perf`
+fingerprints and moved from `song: false` to `song: true`, admitting both BLACK_ICE covers (VAPOR95
+stays red on one temporal claim; two vocabulary refusals unchanged). Human recognition remains
+UNVERIFIED.
+<!-- /POST-REPAIR-LISTENING -->
+
+<!-- HOLDOUT-V1-RESULTS -->
+## Holdout v1 (cover rows)
+
+**Observed, first and only contact** at `6ac812f` (architecture frozen at `3216021`; release profile;
+executed configuration byte-identical to the declared SHA256 `c45fa6de…`). Raw receipts:
+[`fresh/results/`](fixtures/humanmusic-consolidation/fresh/results/) (committed `8a0b0cd`); post-contact
+analysis: [`fresh/CLASSIFICATION.md`](fixtures/humanmusic-consolidation/fresh/CLASSIFICATION.md).
+
+- **7/36 cases pass**: all six external Ode covers and G29. 29/30 generated cases fail; 67 of 970
+  receipts fail; exit 101 preserved.
+- Largest families are source-side ordinary POCKET generation on fresh short, partial-bar and
+  Simple-language inputs: a partial-final-bar bass reservation (`invalid reservation for Bass`, 16
+  sources + 2 covers; 0/9 bar-aligned vs 16/21 partial-bar sources), absolute action-witness gaps (15;
+  Simple language fragment 0/12, hit 6/24), and unwitnessed song obligations/theme sites (7).
+- 11 extractions refuse `MissingAxis(Groove)` because those sources are literally drumless while the
+  contract default pins Groove; 4 cover lifts are explicit vocabulary refusals; 7 of the 11 generated
+  covers that exist fail at least one cover-side receipt.
+- Held identity failed 0 times (30 sources, 17 covers).
+- Nothing was repaired after contact. Any repair must first write its counterexample and be judged on a
+  second untouched holdout. The finite, deliberately chosen matrix is not a population sample; generator
+  and observers share provenance.
+<!-- /HOLDOUT-V1-RESULTS -->
 
 ## Reproduction and listening
 
