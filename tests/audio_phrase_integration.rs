@@ -1,7 +1,7 @@
 //! Round XVI end-to-end invariants and deliberately separate hostile configurations.
 use gibson::audio::human_music::{
     composer::Composer,
-    expression::annotate,
+    expression::{annotate, connective, valid_function},
     functor::{perform_coherent, perform_expressive, perform_phrased, Composition},
     identity::IdentityDiagnostics,
     performance::PerformanceOptions,
@@ -22,6 +22,37 @@ fn check(a: &Composition, b: &Composition, world: &MusicWorld, label: &str) {
     );
     b.score.validate().unwrap();
     assert!(b.score.stale_hearings().is_empty(), "{label}");
+    for plan in &b.score.phrase_plans {
+        assert!(
+            b.score
+                .role_notes(plan.role)
+                .any(|n| n.start_beat == plan.destination.start_beat
+                    && n.pitch == plan.destination.pitch),
+            "local destination moved {label}: {plan:?}"
+        );
+    }
+    for role in [Role::Lead, Role::Bass] {
+        let mut notes: Vec<_> = b.score.role_notes(role).collect();
+        notes.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+        for (i, n) in notes.iter().enumerate() {
+            if b.score.expression_decisions.iter().any(|d| {
+                d.after.is_some_and(|a| {
+                    a.role == role && a.start_beat == n.start_beat && a.pitch == n.pitch
+                })
+            }) && connective(n.function)
+            {
+                assert!(
+                    valid_function(
+                        &b.perf,
+                        i.checked_sub(1).map(|j| notes[j]),
+                        n,
+                        notes.get(i + 1).copied()
+                    ),
+                    "transformed path unsupported {label}: {n:?}"
+                );
+            }
+        }
+    }
     let r14 = perform_coherent(&a.song, world, PerformanceOptions::default());
     let source: Vec<_> = r14.score.role_notes(Role::Lead).copied().collect();
     for e in annotate(&a.perf, &source).iter().filter(|e| e.structural) {
@@ -150,4 +181,36 @@ fn r16_hostile_world_seed_tempo_sweep() {
     }
     assert_eq!(count, 120);
     println!("R16 holdout: {count} performances; no newly flipped held identity, lost action, stale hearing, structural target movement or extra false temporal claim");
+}
+
+#[test]
+fn expressive_unison_moves_shared_accents_but_not_the_ordinary_drum_pocket() {
+    let song = SongMap::compose(
+        &deflected_lift_trace(120.0),
+        2112,
+        None,
+        Composer::StablePropulsion,
+    );
+    let w = MusicWorld::black_ice();
+    let a = perform_coherent(&song, &w, PerformanceOptions::default());
+    let b = perform_phrased(&song, &w, PerformanceOptions::default());
+    let ordinary = |c: &Composition| {
+        c.score
+            .drums
+            .iter()
+            .filter(|d| d.prov.groove_variation != Some("unison"))
+            .map(|d| format!("{d:?}"))
+            .collect::<Vec<_>>()
+    };
+    let (left, right) = (ordinary(&a), ordinary(&b));
+    assert_eq!(left.len(), right.len());
+    let first = left
+        .iter()
+        .zip(&right)
+        .enumerate()
+        .find(|(_, (x, y))| x != y);
+    assert!(
+        first.is_none(),
+        "an inherited grace changed the non-unison pocket: {first:?}"
+    );
 }

@@ -68,6 +68,39 @@ impl AuthoredOccupancy {
         Self::from_role(perf, source, Role::Lead)
     }
 
+    /// The bass source already inherits the final lead unison. Recover that shared gesture's
+    /// authored pulse for the ordinary drum pocket; the explicit unison accents still consume
+    /// the final acoustic lead. Only semantic reservations change, never sounding notes.
+    pub fn from_bass(
+        perf: &PerformancePlan,
+        source: &[Note],
+        lead_decisions: &[super::expression::ExpressionDecision],
+    ) -> Self {
+        let mut intent = Self::from_role(perf, source, Role::Bass);
+        for (slot, note) in intent
+            .rhythm
+            .iter_mut()
+            .zip(source.iter().filter(|n| n.role == Role::Bass))
+        {
+            if note.prov.role_note != "unison" {
+                continue;
+            }
+            let mut pitch = note.pitch;
+            for decision in lead_decisions.iter().rev() {
+                if let Some(after) = decision.after {
+                    if after.role == Role::Lead
+                        && (after.start_beat - slot.beat).abs() < 1e-6
+                        && (after.pitch - pitch).rem_euclid(12) == 0
+                    {
+                        slot.beat = decision.before.note.start_beat;
+                        pitch += decision.before.note.pitch - after.pitch;
+                    }
+                }
+            }
+        }
+        intent
+    }
+
     /// Capture a player's own source. Drum interlock can read these semantic pulse slots while
     /// its acoustic hearing continues to record only the final bass notes.
     pub fn from_role(perf: &PerformancePlan, source: &[Note], role: Role) -> Self {

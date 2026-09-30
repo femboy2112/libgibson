@@ -342,8 +342,8 @@ pub fn realize(
         for grid in grids {
             let step = grid.beats();
             let mut candidate = working.clone();
-            for k in start..stop {
-                let n = &mut candidate[k].note;
+            for (k, event) in candidate.iter_mut().enumerate().take(stop).skip(start) {
+                let n = &mut event.note;
                 n.start_beat =
                     groove_position(destination.start_beat - (stop - k) as f64 * step, world);
                 // Meter supplies the gate; frozen envelope viability determines admissibility.

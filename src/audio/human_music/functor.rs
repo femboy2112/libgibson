@@ -363,10 +363,10 @@ fn realize_arm(
                     );
                     score
                         .occupancy
-                        .push(super::occupancy::AuthoredOccupancy::from_role(
+                        .push(super::occupancy::AuthoredOccupancy::from_bass(
                             perf,
                             &result.authored,
-                            Role::Bass,
+                            &score.expression_decisions,
                         ));
                     score.phrase_plans.extend(result.plans);
                     score.expression_decisions.extend(result.decisions);
@@ -383,10 +383,10 @@ fn realize_arm(
                         );
                         score
                             .occupancy
-                            .push(super::occupancy::AuthoredOccupancy::from_role(
+                            .push(super::occupancy::AuthoredOccupancy::from_bass(
                                 perf,
                                 &source,
-                                Role::Bass,
+                                &score.expression_decisions,
                             ));
                     }
                     let (notes, decisions) =
