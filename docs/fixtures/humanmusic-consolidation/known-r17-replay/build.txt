@@ -1,0 +1,8 @@
+   Compiling pkg-config v0.3.34
+   Compiling alsa-sys v0.4.0
+   Compiling cpal v0.18.2
+   Compiling alsa v0.11.0
+   Compiling dasp_sample v0.11.0
+   Compiling libgibson v0.3.1 (/tmp/libgibson-known-r17-44e2d7e)
+   Compiling rtrb v0.3.5
+    Finished `release` profile [optimized] target(s) in 2m 21s

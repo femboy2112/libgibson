@@ -732,3 +732,18 @@ The modern BLACK pocket matches the archived full Score receipt after normalizin
 only that new metadata. The isolated snapshot passed21 tests, including short PCM
 controls and complete accepted event/evidence characterization; final full/stem WAV
 equivalence remains a separately required receipt.
+
+
+## Known R17 replay after core consolidation
+
+At exact source `44e2d7efabc28e684701240b5466d06a91d541dd`, the unchanged
+known120-case sweep executed in18.377 seconds (release, one test thread) and
+returned exit101: **61 complete passes,59 first-assertion failures**. Every
+passing case label and all59 first-failure reason strings match the original.
+The four counts remain **14 pitch,38 lattice,5 temporal,2 held identity**.
+[Full classification and raw failures](fixtures/humanmusic-consolidation/known-r17-replay/README.md)
+preserve the distinction between authored identity and historical pitch repair,
+canonical structural versus performed coordinates, the directly diagnosed
+source-function crossing, and the unresolved held F-major6/A-minor object.
+The source/binary hashes are recorded; evolving cover work was excluded. This is
+known-data regression, not a new holdout or general acceptance claim.
