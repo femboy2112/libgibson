@@ -1,0 +1,19 @@
+case	phase	law	status	detail
+G27	source	generation	PASS	returned a candidate; admission checked separately
+G27	source	declared-grammar	PASS	grammar=PropulsiveReturn; declared_composer=StablePropulsion; self_reported_composer=StablePropulsion
+G27	source	canonical-inventory	PASS	song=68b726a961d2737e; plan=ffcb0e6efff9f776; score=ee2400ce30a1dc4b; notes=16; drums=0; length=4.5; tempo=71
+G27	source	score-domain	PASS	all score domains valid
+G27	source	song-projection	FAIL	SongMapConformance: FAIL (song 0xe9eb801701ebed9f, performed 0xe9eb801701ebed9f; 1 identity sites, 1 landmarks, 2 chord changes checked)\n  missing_theme_site: phrase 0 (not stated)
+G27	source	pitch-function-presence	PASS	unclassified=[]
+G27	source	temporal-function	PASS	false_function_claims=0\nfalse_suspensions=0\nbroken_anticipations=0\norphan_extensions=2\norphan_structural_extensions=0\nunresolved_tendencies=0\nbad_arrivals=0\nguide_path_misses=0\npath_breaks_at_harmony_changes=0\nlocally_legal_globally_unexplained=2\nambiguous_voices=5\nbeat 1.5000 role keys pitch G5 (79) duration 0.9000\n  current F @ 0.00 previous none next F6 @ 4.00 next_structural none destination none\n  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)\n  previous note none; next note none; structural_proxy=false ambiguous_voice=true\n  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint\n  next guide targets: [9, 2]\nbeat 3.5000 role keys pitch G5 (79) duration 0.4500\n  current F @ 0.00 previous none next F6 @ 4.00 next_structural none destination none\n  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)\n  previous note none; next note none; structural_proxy=false ambiguous_voice=true\n  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint\n  next guide targets: [9, 2]\n
+G27	source	held-identity	PASS	identity: 11 slices, 0 rival runs, 0 flipped (-0.000 s), hold 0.5 s\n
+G27	source	action-receipts	PASS	causal witnesses (events stamped with the action's id, held to its contract — NOT a quality score):\n  witnessed 0/0 actions  (stamped 0/0, absence 0, harmonic 0)\n\n
+G27	source	stage-boundary	PASS	authoritative violations=[]; diagnostic raw-onset disagreements=[]
+G27	source	causal-hearing	PASS	stale=[]
+G27	source	guard:hearing-ledger-coverage	PASS	missing=[]; ledgers=8
+G27	source	continuation-identity	PASS	violations=[]; edges=[]
+G27	source	guard:direct-voice-lifetime	PASS	failures=[]
+G27	source	occupancy-contract	FAIL	violations=["invalid reservation for Bass"]
+G27	source	guard:semantic-occupancy	PASS	failures=[]; ownership=[AuthoredOccupancy { role: Lead, rhythm: [], spans: [] }, AuthoredOccupancy { role: Bass, rhythm: [RhythmReservation { beat: 0.0, end_beat: 1.7999999523162842, structural: true, material: None, actions: ActionStamp { ids: [None, None, None] } }, RhythmReservation { beat: 2.0, end_beat: 3.799999952316284, structural: true, material: None, actions: ActionStamp { ids: [None, None, None] } }, RhythmReservation { beat: 4.0, end_beat: 7.599999904632568, structural: true, material: None, actions: ActionStamp { ids: [None, None, None] } }], spans: [] }]
+G27	source	phrase-destinations	PASS	missing=[]
+G27	extraction	generated-projection	FAIL	MissingAxis(Motif)
