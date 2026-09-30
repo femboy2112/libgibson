@@ -13,6 +13,8 @@ use super::score::{Note, Role};
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RhythmReservation {
     pub beat: f64,
+    /// End of the authored reservation; never an assertion of acoustic audibility.
+    pub end_beat: f64,
     pub structural: bool,
     pub material: Option<MaterialId>,
     pub actions: ActionStamp,
@@ -93,6 +95,7 @@ impl AuthoredOccupancy {
                         && (after.pitch - pitch).rem_euclid(12) == 0
                     {
                         slot.beat = decision.before.note.start_beat;
+                        slot.end_beat = slot.beat + f64::from(decision.before.note.dur_beats);
                         pitch += decision.before.note.pitch - after.pitch;
                     }
                 }
@@ -109,6 +112,7 @@ impl AuthoredOccupancy {
             .iter()
             .map(|e| RhythmReservation {
                 beat: e.note.start_beat,
+                end_beat: e.note.start_beat + f64::from(e.note.dur_beats),
                 structural: e.structural,
                 material: e.note.prov.material,
                 actions: e.note.prov.actions,
@@ -185,6 +189,14 @@ impl AuthoredOccupancy {
             rhythm,
             spans,
         }
+    }
+
+    /// Authored activity for counterline agency. Consumers must also check final acoustic
+    /// activity: preserving an old opening never licenses a new physical collision.
+    pub fn active_between(&self, start: f64, end: f64) -> bool {
+        self.rhythm
+            .iter()
+            .any(|r| r.beat < end - 1e-6 && r.end_beat > start + 1e-6)
     }
 
     /// Preserve the original rhythm's attack clearance, independently of expression.

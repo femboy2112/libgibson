@@ -315,6 +315,9 @@ fn realize_arm(
         super::melody::realize_lead(perf, plan)
     };
     let lead_occupancy = super::occupancy::AuthoredOccupancy::from_lead(perf, &lead.authored);
+    let agency = phrase
+        .filter(|p| p.semantic_occupancy)
+        .map(|_| &lead_occupancy);
     if phrase.is_some() {
         score.occupancy.push(lead_occupancy.clone());
         score.phrase_plans = lead.phrase_plans.clone();
@@ -360,6 +363,7 @@ fn realize_arm(
                         &lead.notes,
                         &keys,
                         &lead.phrase_plans,
+                        agency,
                     );
                     score
                         .occupancy
@@ -374,12 +378,12 @@ fn realize_arm(
                 } else if contract == Contract::Expressive || phrase.is_some() {
                     score.hearings.push(Hearing::of("bass", Role::Keys, &keys));
                     if phrase.is_some() {
-                        let source = super::bass::realize_bass_temporal(
+                        let source = super::bass::realize_bass_temporal_owned(
                             perf,
                             plan,
                             world,
                             &lead.notes,
-                            &keys,
+                            agency,
                         );
                         score
                             .occupancy
@@ -389,8 +393,14 @@ fn realize_arm(
                                 &score.expression_decisions,
                             ));
                     }
-                    let (notes, decisions) =
-                        super::bass::realize_bass_expressive(perf, plan, world, &lead.notes, &keys);
+                    let (notes, decisions) = super::bass::realize_bass_expressive_owned(
+                        perf,
+                        plan,
+                        world,
+                        &lead.notes,
+                        &keys,
+                        agency,
+                    );
                     score.expression_decisions.extend(decisions);
                     notes
                 } else {

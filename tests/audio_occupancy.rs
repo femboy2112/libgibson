@@ -282,3 +282,45 @@ fn r16_phrase_and_ownership_factors_are_independent_and_final_hearings_are_curre
     assert_eq!(format!("{:?}", lead(0)), format!("{:?}", lead(1)));
     assert_eq!(format!("{:?}", lead(2)), format!("{:?}", lead(3)));
 }
+
+#[test]
+fn r16_bass_counterline_does_not_claim_an_expressive_vacancy() {
+    use gibson::audio::human_music::{bass::realize_bass_temporal_owned, performance::BassMode};
+    let c = perform_coherent(
+        &song(),
+        &MusicWorld::black_ice(),
+        PerformanceOptions::default(),
+    );
+    let world = MusicWorld::black_ice();
+    let template = *c.score.role_notes(Role::Lead).next().unwrap();
+    let mut perf = c.perf.clone();
+    for bar in &mut perf.ensemble {
+        bar.bass = BassMode::Counter;
+    }
+    let mut witnessed = 0;
+    for bar in &perf.ensemble {
+        let start = f64::from(bar.bar) * 4.0;
+        let mut authored = template;
+        authored.start_beat = start;
+        authored.dur_beats = 4.0;
+        let source = [authored];
+        let intent = AuthoredOccupancy::from_lead(&perf, &source);
+        // Omission leaves literal silence. The source still owns its counterline reservation.
+        let naked = realize_bass_temporal_owned(&perf, &c.song.plan, &world, &[], None);
+        let owned = realize_bass_temporal_owned(&perf, &c.song.plan, &world, &[], Some(&intent));
+        for n in naked.iter().filter(|n| {
+            n.prov.role_note == "counter" && n.start_beat >= start && n.start_beat < start + 4.0
+        }) {
+            witnessed += 1;
+            assert!(!owned
+                .iter()
+                .any(|m| m.start_beat == n.start_beat && m.prov.role_note == "counter"));
+            assert!(intent.active_between(n.start_beat, n.start_beat + 0.5));
+        }
+        assert!(!intent.active_between(start + 4.0, start + 4.5));
+    }
+    assert!(
+        witnessed > 0,
+        "the unowned control must expose the agency error"
+    );
+}

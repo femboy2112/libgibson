@@ -14,6 +14,7 @@ use super::comp::LineNote;
 use super::context::HarmonicContext;
 use super::harmonic_state::{candidate, voice_of, HarmonicEnsembleState};
 use super::ids::{ActionId, ActionStamp};
+use super::occupancy::AuthoredOccupancy;
 use super::performance::{AccentGrid, BassMode, PerformancePlan, STEPS};
 use super::plan::CompositionPlan;
 use super::score::{Note, PitchFunction, Provenance, Role};
@@ -71,9 +72,9 @@ pub fn realize_bass(
     plan: &CompositionPlan,
     world: &MusicWorld,
     lead: &[Note],
-    keys: &[Note],
+    _keys: &[Note],
 ) -> Vec<Note> {
-    realize(perf, plan, world, lead, keys, None, false)
+    realize(perf, plan, world, lead, None, None, false)
 }
 
 /// The same bass rhythm with approaches aimed at the destination's actual root register.
@@ -83,9 +84,20 @@ pub fn realize_bass_temporal(
     plan: &CompositionPlan,
     world: &MusicWorld,
     lead: &[Note],
-    keys: &[Note],
+    _keys: &[Note],
 ) -> Vec<Note> {
-    realize(perf, plan, world, lead, keys, None, true)
+    realize(perf, plan, world, lead, None, None, true)
+}
+
+/// Temporal bass with authored agency reservations and final acoustic hearing.
+pub fn realize_bass_temporal_owned(
+    perf: &PerformancePlan,
+    plan: &CompositionPlan,
+    world: &MusicWorld,
+    lead: &[Note],
+    ownership: Option<&AuthoredOccupancy>,
+) -> Vec<Note> {
+    realize(perf, plan, world, lead, ownership, None, true)
 }
 
 /// Express source-owned pickups before drums and pad consume this bass. Shared unisons already
@@ -97,7 +109,19 @@ pub fn realize_bass_expressive(
     lead: &[Note],
     keys: &[Note],
 ) -> (Vec<Note>, Vec<super::expression::ExpressionDecision>) {
-    let notes = realize(perf, plan, world, lead, keys, None, true);
+    realize_bass_expressive_owned(perf, plan, world, lead, keys, None)
+}
+
+/// R15 expression instrument with R16 agency, for the explicit factorial control.
+pub fn realize_bass_expressive_owned(
+    perf: &PerformancePlan,
+    plan: &CompositionPlan,
+    world: &MusicWorld,
+    lead: &[Note],
+    keys: &[Note],
+    ownership: Option<&AuthoredOccupancy>,
+) -> (Vec<Note>, Vec<super::expression::ExpressionDecision>) {
+    let notes = realize(perf, plan, world, lead, ownership, None, true);
     let line = notes
         .into_iter()
         .map(|note| super::expression::ExpressionEvent {
@@ -129,8 +153,9 @@ pub fn realize_bass_phrased(
     lead: &[Note],
     keys: &[Note],
     lead_plans: &[super::phrase_expression::PhrasePlan],
+    ownership: Option<&AuthoredOccupancy>,
 ) -> PhraseBass {
-    let authored = realize(perf, plan, world, lead, keys, None, true);
+    let authored = realize(perf, plan, world, lead, ownership, None, true);
     let line = authored
         .iter()
         .copied()
@@ -164,7 +189,7 @@ pub fn realize_bass_coupled(
     lead: &[Note],
     state: &mut HarmonicEnsembleState<'_>,
 ) -> Vec<Note> {
-    realize(perf, plan, world, lead, &[], Some(state), false)
+    realize(perf, plan, world, lead, None, Some(state), false)
 }
 
 /// The one bass realizer. `floor` is `None` for the R7b control (byte-identical to Round VIIb) and
@@ -174,7 +199,7 @@ fn realize(
     _plan: &CompositionPlan,
     world: &MusicWorld,
     lead: &[Note],
-    _keys: &[Note],
+    ownership: Option<&AuthoredOccupancy>,
     mut floor: Option<&mut HarmonicEnsembleState<'_>>,
     temporal: bool,
 ) -> Vec<Note> {
@@ -184,6 +209,7 @@ fn realize(
     let lead_active = |a: f64, b: f64| {
         lead.iter()
             .any(|n| n.start_beat < b - 1e-6 && n.start_beat + n.dur_beats as f64 > a + 1e-6)
+            || ownership.is_some_and(|intent| intent.active_between(a, b))
     };
     let quoted: Vec<(f64, f64)> = perf
         .figures_for(Agent::Bass)
@@ -234,10 +260,20 @@ fn realize(
                 extra.sort_by(|a, b| b.0.total_cmp(&a.0));
                 // The complexity budget: a busy lead bar leaves the bass one extra onset fewer,
                 // unless the bass is the one in front.
-                let lead_notes = lead
-                    .iter()
-                    .filter(|n| n.start_beat >= bs - 1e-6 && n.start_beat < be - 1e-6)
-                    .count();
+                let lead_notes = ownership.map_or_else(
+                    || {
+                        lead.iter()
+                            .filter(|n| n.start_beat >= bs - 1e-6 && n.start_beat < be - 1e-6)
+                            .count()
+                    },
+                    |intent| {
+                        intent
+                            .rhythm
+                            .iter()
+                            .filter(|r| r.beat >= bs - 1e-6 && r.beat < be - 1e-6)
+                            .count()
+                    },
+                );
                 let mut n = if eb.kinetic > 0.6 { 3 } else { 2 };
                 if lead_notes >= 5 && eb.foreground != Agent::Bass {
                     n -= 1;
