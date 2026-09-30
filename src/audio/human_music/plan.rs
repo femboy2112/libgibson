@@ -560,7 +560,40 @@ impl ArrangementPlan {
         for role in [Role::Pad, Role::Keys, Role::Bass, Role::Lead] {
             plan.ensure_audible_somewhere(form, role);
         }
+        if contract
+            .anchors
+            .contains(&super::contract::CoherenceAnchor::Groove)
+        {
+            plan.ensure_groove_seated(form);
+        }
         plan
+    }
+
+    /// A contract that declares Groove load-bearing must seat the kit somewhere it can state it:
+    /// a phrase holding at least one full bar. Intro/Coda-only forms seat the drums Silent by
+    /// family, which silently broke that promise in short pieces. The highest-energy phrase with
+    /// room gets a Pulse seat; a form with no full bar has no opportunity, and the anchor is
+    /// reported structurally inapplicable rather than stated ([`super::song::AnchorReport`]).
+    fn ensure_groove_seated(&mut self, form: &FormGraph) {
+        let has_room = |p: &Phrase| p.end_beat() - p.start_beat() >= BEATS_PER_BAR - 1e-9;
+        if self
+            .phrases
+            .iter()
+            .zip(&form.phrases)
+            .any(|(a, p)| a.drums.is_audible() && has_room(p))
+        {
+            return;
+        }
+        let best = form
+            .phrases
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| has_room(p))
+            .max_by(|a, b| a.1.intent.energy.total_cmp(&b.1.intent.energy))
+            .map(|(i, _)| i);
+        if let Some(i) = best {
+            self.phrases[i].drums = ArrangementRole::Pulse;
+        }
     }
 
     fn ensure_audible_somewhere(&mut self, form: &FormGraph, role: Role) {

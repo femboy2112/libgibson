@@ -877,5 +877,6 @@ fn schedule(song: &SongMap, target: &MeaningPlan, thesis: &Motif, answer: &Motif
             handoff,
         });
     }
+    sites.retain(|site| site.statable(&song.plan));
     ThematicMap { bank, sites }
 }

@@ -33,6 +33,7 @@ use super::backbone::ChartCell;
 use super::composer::{compose_meaning, Composer, CompositionalPrior};
 use super::contract::{CoherenceContract, CompositionGrammar};
 use super::discourse::DiscourseRole;
+use super::form::BEATS_PER_BAR;
 use super::meaning::MeaningPlan;
 use super::motif::{Handoff, Motif, MotifBank, ThematicTrajectory};
 use super::phenomenal::{PhenomenalRegime, PhenomenalTarget};
@@ -66,6 +67,18 @@ impl ThemeSite {
     /// can be developed) and the thesis's consequent ([`Handoff::Consequent`]: its landing is the
     /// answer the listener is promised). A performance may develop other sites (a Fragment verb);
     /// these it must state as written.
+    /// Whether a performance can keep this site at all: its phrase is long enough to state the
+    /// motif (the statement planner's own fit rule). A site that cannot be kept is never planned —
+    /// a finite form does not promise an identity statement it has no room to make.
+    pub fn statable(&self, plan: &CompositionPlan) -> bool {
+        plan.form
+            .phrases
+            .get(self.phrase as usize)
+            .is_some_and(|p| {
+                f64::from(self.motif.total_beats()) <= p.end_beat() - p.start_beat() + 1e-6
+            })
+    }
+
     pub fn is_identity(&self) -> bool {
         matches!(
             self.role,
@@ -103,6 +116,9 @@ impl ThematicMap {
                     handoff,
                 }
             })
+            // The trajectory develops through every seated phrase; a site is only kept where it
+            // can be kept (later sites are unchanged by the drop).
+            .filter(|site| site.statable(plan))
             .collect();
         ThematicMap { bank, sites }
     }
@@ -256,6 +272,7 @@ impl SongMap {
                     motif: song.thematic.bank.identity.clone(),
                     handoff: Handoff::Restatement,
                 })
+                .filter(|site| site.statable(&song.plan))
                 .collect();
             return song;
         }
@@ -389,6 +406,128 @@ pub struct TransformMiss {
     pub beat: f64,
     pub root_pc: i32,
     pub why: &'static str,
+}
+
+/// What a declared coherence anchor became in one finite performance. The contract states what a
+/// listener is meant to recognize; this separates a form that had no room to state an anchor from
+/// a performance that had room and omitted it. Exact, per anchor — never a score.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnchorPresence {
+    /// The performance states the anchor.
+    Realized,
+    /// This finite form offers the anchor no place to be stated (why); the song never promised it.
+    StructurallyInapplicable(&'static str),
+    /// The form had room and the contract declared it, but the performance never stated it: a
+    /// composition-generation violation, not an observation gap.
+    DeclaredButMissing(&'static str),
+}
+
+/// Every anchor the song's contract declares, with what the performance made of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnchorReport {
+    pub anchors: Vec<(super::contract::CoherenceAnchor, AnchorPresence)>,
+}
+
+impl AnchorReport {
+    /// Read the contract's declared anchors against the song's finite form and the realized score.
+    pub fn check(
+        song: &SongMap,
+        perf: &super::performance::PerformancePlan,
+        score: &super::score::Score,
+    ) -> AnchorReport {
+        use super::contract::CoherenceAnchor as A;
+        use super::score::{DrumVoice, Role};
+        use AnchorPresence::*;
+        let full_bar = song
+            .plan
+            .form
+            .phrases
+            .iter()
+            .any(|p| p.end_beat() - p.start_beat() >= BEATS_PER_BAR - 1e-9);
+        let sounds = |role: Role| score.notes.iter().any(|n| n.role == role);
+        let presence = |anchor: A| -> AnchorPresence {
+            match anchor {
+                A::Groove => {
+                    let strokes = score
+                        .drums
+                        .iter()
+                        .any(|d| matches!(d.voice, DrumVoice::Kick | DrumVoice::Snare));
+                    if strokes {
+                        Realized
+                    } else if !full_bar {
+                        StructurallyInapplicable("no phrase holds a full bar")
+                    } else {
+                        DeclaredButMissing("no kick or snare stroke sounds")
+                    }
+                }
+                A::Motif => {
+                    let stated = perf.statements.iter().any(|st| {
+                        song.thematic.sites.iter().any(|s| s.phrase == st.phrase)
+                            && score.notes.iter().any(|n| {
+                                n.role == Role::Lead && n.prov.material == Some(st.material)
+                            })
+                    });
+                    if stated {
+                        Realized
+                    } else if song.thematic.sites.is_empty() {
+                        StructurallyInapplicable("no seated phrase can hold a motif statement")
+                    } else {
+                        DeclaredButMissing("no planned theme site is stated")
+                    }
+                }
+                A::Riff => {
+                    if sounds(Role::Lead) || sounds(Role::Bass) {
+                        Realized
+                    } else {
+                        DeclaredButMissing("neither lead nor bass sounds")
+                    }
+                }
+                A::BassFigure => {
+                    if sounds(Role::Bass) {
+                        Realized
+                    } else {
+                        DeclaredButMissing("the bass never sounds")
+                    }
+                }
+                A::HarmonicContour | A::HarmonicLoop => {
+                    if score.chords.is_empty() {
+                        DeclaredButMissing("no chord span")
+                    } else {
+                        Realized
+                    }
+                }
+                A::Form | A::Orchestration => Realized,
+            }
+        };
+        AnchorReport {
+            anchors: song
+                .plan
+                .contract
+                .anchors
+                .iter()
+                .map(|&a| (a, presence(a)))
+                .collect(),
+        }
+    }
+
+    /// The anchors this performance actually establishes.
+    pub fn realized(&self) -> impl Iterator<Item = super::contract::CoherenceAnchor> + '_ {
+        self.anchors
+            .iter()
+            .filter(|(_, p)| *p == AnchorPresence::Realized)
+            .map(|(a, _)| *a)
+    }
+
+    /// Declared anchors the form had room for and the performance omitted.
+    pub fn violations(&self) -> Vec<(super::contract::CoherenceAnchor, &'static str)> {
+        self.anchors
+            .iter()
+            .filter_map(|&(a, p)| match p {
+                AnchorPresence::DeclaredButMissing(why) => Some((a, why)),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 /// **π, checked.** Whether a performance (its plan and its realized score) preserves the song's

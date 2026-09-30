@@ -5,6 +5,7 @@
 use gibson::audio::human_music::{
     composer::Composer,
     contract::{CoherenceAnchor, CompositionGrammar},
+    cover::{CoverMap, CoverSpec},
     functor::{perform_with_profile, Composition},
     language::MusicalLanguage,
     occupancy,
@@ -12,7 +13,7 @@ use gibson::audio::human_music::{
     policy::PerformanceProfile,
     score::{DrumVoice, Role},
     semantic::{deflected_lift_trace, demo_trace},
-    song::SongMapConformance,
+    song::{AnchorPresence, AnchorReport, SongMapConformance},
     MusicWorld, SongMap,
 };
 
@@ -262,6 +263,52 @@ fn u2_theme_sites_fit_their_phrase_and_are_stated() {
                 conf.missing_theme_sites.is_empty(),
                 "{tag}: {:?}",
                 conf.missing_theme_sites
+            );
+        }
+    }
+}
+
+/// The distinction, proved both ways: no room is not a promise; room plus omission is a
+/// violation the report names; and a generated source's established spec extracts.
+#[test]
+fn u2_anchor_report_separates_no_room_from_omission() {
+    let world = MusicWorld::black_ice();
+    // Shorter than one bar: no phrase can hold a groove, so Groove is structurally inapplicable.
+    let short = song(3.0, 77_100_041, false, CompositionGrammar::HookArc);
+    let c = pocket(&short, &world, MusicalLanguage::fusion_conversation());
+    let report = AnchorReport::check(&short, &c.perf, &c.score);
+    let groove = report
+        .anchors
+        .iter()
+        .find(|(a, _)| *a == CoherenceAnchor::Groove)
+        .expect("HookArc declares Groove");
+    assert!(
+        matches!(groove.1, AnchorPresence::StructurallyInapplicable(_)),
+        "{report:?}"
+    );
+    assert!(report.violations().is_empty(), "{report:?}");
+    // Room, and the performance states it.
+    for (beats, deflected) in [(7.5, false), (12.0, false), (16.0, true), (23.75, false)] {
+        for grammar in [CompositionGrammar::HookArc, CompositionGrammar::RiffDrive] {
+            let s = song(beats, 77_100_042, deflected, grammar);
+            let c = pocket(&s, &world, MusicalLanguage::simple());
+            let report = AnchorReport::check(&s, &c.perf, &c.score);
+            assert!(
+                report.violations().is_empty(),
+                "{grammar:?} {beats}: {report:?}"
+            );
+            let spec = CoverSpec::established(&report);
+            assert!(spec.contains(gibson::audio::human_music::cover::CoverAxis::Groove));
+            CoverMap::extract(&c, &world, spec)
+                .unwrap_or_else(|e| panic!("{grammar:?} {beats}: established spec: {e:?}"));
+            // Mutation: the same score with its kit removed is a declared-but-missing violation,
+            // not an inapplicable anchor — the detector sees the omission.
+            let mut silent = c.score.clone();
+            silent.drums.clear();
+            let broken = AnchorReport::check(&s, &c.perf, &silent);
+            assert_eq!(
+                broken.violations(),
+                vec![(CoherenceAnchor::Groove, "no kick or snare stroke sounds")]
             );
         }
     }

@@ -83,9 +83,20 @@ pub struct CoverSpec {
     axes: Vec<CoverAxis>,
 }
 impl CoverSpec {
-    /// A grammar's declared recognition anchors, plus the phrase/family scaffold.
+    /// A grammar's declared recognition anchors, plus the phrase/family scaffold. This is the
+    /// declaration, not an observation: a short finite form may have had no room to state an
+    /// anchor. For a generated source prefer [`Self::established`].
     pub fn from_contract(contract: &CoherenceContract) -> Self {
         let mut axes: Vec<_> = contract.anchors.iter().copied().map(Into::into).collect();
+        axes.push(CoverAxis::Form);
+        Self::new(axes)
+    }
+    /// What a generated source actually establishes: the declared anchors its performance
+    /// realized, plus the phrase/family scaffold. An anchor its finite form had no room for is not
+    /// a promise and is not pinned; one it had room for and omitted is a source violation that
+    /// [`super::song::AnchorReport::violations`] names — it is never quietly relabelled Unknown.
+    pub fn established(report: &super::song::AnchorReport) -> Self {
+        let mut axes: Vec<CoverAxis> = report.realized().map(Into::into).collect();
         axes.push(CoverAxis::Form);
         Self::new(axes)
     }
