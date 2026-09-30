@@ -3,10 +3,11 @@ use gibson::audio::{
     human_music::{
         composer::Composer,
         expression::ExpressionDiagnostics,
-        functor::{perform_coherent, perform_expressive, Composition},
+        functor::{perform_coherent, perform_expressive, perform_phrased, Composition},
         identity::IdentityDiagnostics,
         performance::PerformanceOptions,
         phrase_diagnostics::PhraseSurfaceDiagnostics,
+        score::{Note, Role},
         semantic::deflected_lift_trace,
         song::{SongMap, SongMapConformance},
         synth::StemMask,
@@ -43,6 +44,79 @@ fn render(
         audio.rms
     ))
 }
+// Recover the source event identity from the source ledger; retiming never becomes an addition.
+fn source_slot(c: &Composition, n: &Note) -> (f64, i32) {
+    c.score
+        .expression_decisions
+        .iter()
+        .find_map(|d| {
+            let a = d.after?;
+            ((a.start_beat - n.start_beat).abs() < 1e-6
+                && ((a.role == n.role && a.pitch == n.pitch)
+                    || (n.prov.role_note == "unison"
+                        && a.role == Role::Lead
+                        && (a.pitch - n.pitch).rem_euclid(12) == 0)))
+                .then_some((
+                    d.before.note.start_beat,
+                    n.pitch + d.before.note.pitch - a.pitch,
+                ))
+        })
+        .unwrap_or((n.start_beat, n.pitch))
+}
+fn perturbation(a: &Composition, b: &Composition) -> String {
+    let mut out=String::from("Source-ledger identity diff; categories overlap. Octave movement is a pitch change, not new harmony.\n");
+    for role in Role::ALL {
+        let old: Vec<_> = a.score.role_notes(role).collect();
+        let new: Vec<_> = b.score.role_notes(role).collect();
+        let mut used = vec![false; new.len()];
+        let (mut retimed, mut duration, mut velocity, mut pitch, mut omitted) = (0, 0, 0, 0, 0);
+        let mut rows = String::new();
+        for n in &old {
+            let (at, pc) = source_slot(a, n);
+            let found = new
+                .iter()
+                .enumerate()
+                .filter(|(i, m)| {
+                    let (bt, q) = source_slot(b, m);
+                    !used[*i]
+                        && (at - bt).abs() < 1e-6
+                        && n.prov == m.prov
+                        && (pc == q || role == Role::Pad && (pc - q).rem_euclid(12) == 0)
+                })
+                .min_by_key(|(_, m)| (n.pitch - m.pitch).abs());
+            if let Some((i, m)) = found {
+                used[i] = true;
+                retimed += usize::from(n.start_beat != m.start_beat);
+                duration += usize::from(n.dur_beats != m.dur_beats);
+                velocity += usize::from(n.velocity != m.velocity);
+                pitch += usize::from(n.pitch != m.pitch);
+                if format!("{n:?}") != format!("{m:?}") {
+                    writeln!(rows, "before={n:?}\nafter={m:?}").unwrap();
+                }
+            } else {
+                omitted += 1;
+                writeln!(rows, "omitted={n:?}").unwrap();
+            }
+        }
+        let added = used.iter().filter(|u| !**u).count();
+        writeln!(out,"{} old={} new={} retimed={retimed} duration={duration} velocity={velocity} pitch={pitch} omitted={omitted} added={added}",role.label(),old.len(),new.len()).unwrap();
+        out.push_str(&rows);
+        for (i, n) in new.iter().enumerate().filter(|(i, _)| !used[*i]) {
+            let _ = i;
+            writeln!(out, "added={n:?}").unwrap();
+        }
+    }
+    writeln!(
+        out,
+        "drums old={} new={} exact_equal={}",
+        a.score.drums.len(),
+        b.score.drums.len(),
+        format!("{:?}", a.score.drums) == format!("{:?}", b.score.drums)
+    )
+    .unwrap();
+    out
+}
+
 fn main() -> std::io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let out = args
@@ -68,7 +142,16 @@ fn main() -> std::io::Result<()> {
     ] {
         let r14 = perform_coherent(&song, &w, PerformanceOptions::default());
         let r15 = perform_expressive(&song, &w, PerformanceOptions::default());
-        for (arm, c) in [("r14", &r14), ("r15", &r15)] {
+        let r16 = perform_phrased(&song, &w, PerformanceOptions::default());
+        std::fs::write(
+            dir.join(format!("{name}.r15-r16.perturbation.txt")),
+            perturbation(&r15, &r16),
+        )?;
+        std::fs::write(
+            dir.join(format!("{name}.r14-r16.perturbation.txt")),
+            perturbation(&r14, &r16),
+        )?;
+        for (arm, c) in [("r14", &r14), ("r15", &r15), ("r16", &r16)] {
             let prefix = format!("{name}_{arm}");
             let id =
                 IdentityDiagnostics::measure(&c.score.notes, &c.perf.contexts, &w, w.tempo_bpm);
@@ -103,7 +186,20 @@ fn main() -> std::io::Result<()> {
                         .map(|n| format!("{n:?}\n"))
                         .collect::<String>(),
                 ),
-                ("drums", format!("{:#?}", c.score.drums)),
+                (
+                    "drums",
+                    c.score.drums.iter().map(|d| format!("{d:?}\n")).collect(),
+                ),
+                ("phrase_plans", format!("{:#?}", c.score.phrase_plans)),
+                ("occupancy", format!("{:#?}", c.score.occupancy)),
+                (
+                    "voicing_decisions",
+                    c.score
+                        .support_voicing_decisions
+                        .iter()
+                        .map(|d| d.report())
+                        .collect(),
+                ),
                 (
                     "expression",
                     ExpressionDiagnostics::measure(&c.perf, &c.score, &w).report(w.tempo_bpm),

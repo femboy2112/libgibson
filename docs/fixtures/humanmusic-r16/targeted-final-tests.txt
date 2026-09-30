@@ -1,0 +1,88 @@
+    Blocking waiting for file lock on build directory
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 23.94s
+     Running tests/audio_expression.rs (target/debug/deps/audio_expression-95656cfeceba4d2c)
+
+running 15 tests
+test fuzz_expressive_source_preserves_song_paths_receipts_and_identity ... ignored, bounded Round XV sweep: run release with --ignored --nocapture
+test r15_legacy_repair_modes_cannot_enter_the_expressive_arm ... ok
+test r15_optional_space_preserves_the_structural_line ... ok
+test r15_compact_run_keeps_contour_destination_and_structure ... ok
+test r15_same_approach_tempo_is_load_bearing_even_for_sustaining_bass ... ok
+test r15_black_ice_bass_approach_must_be_subordinate ... ok
+test r15_black_ice_slow_neighbor_must_be_subordinate ... ok
+test r15_structural_connective_is_never_moved_to_save_ornament ... ok
+test r15_nonviable_release_and_low_kinetic_choose_legal_space ... ok
+test r15_swiss_accepted_analogue_is_short ... ok
+test r15_frozen_ruler_distinguishes_worlds_without_production_changes ... ok
+test r15_tempo_patch_factorial_and_compressed_neighbor ... ok
+test r15_vapor_holdout_keeps_chart_root_during_expression ... ok
+test r15_all_eighteen_bass_approaches_are_expressed_with_receipts ... ok
+test r15_lead_expression_keeps_skeleton_and_final_hearings ... ok
+
+test result: ok. 14 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.42s
+
+     Running tests/audio_occupancy.rs (target/debug/deps/audio_occupancy-fbf8b36d65273fb0)
+
+running 10 tests
+test r16_null_source_has_no_phantom_phrase_ownership ... ok
+test r16_authored_internal_rests_and_real_yields_are_distinct ... ok
+test r16_retiming_or_omitting_a_sound_does_not_transfer_ownership ... ok
+test r16_swiss_existing_comp_opportunities_remain_legal ... ok
+test r16_bass_counterline_does_not_claim_an_expressive_vacancy ... ok
+test r16_owned_drums_preserve_pocket_under_bass_retiming ... ok
+test r16_owned_keys_reject_micro_holes_at_source ... ok
+test r16_frozen_r15_micro_holes_are_not_authored_opportunities ... ok
+test r16_semantic_bass_pulses_are_not_retimed_acoustic_attacks ... ok
+test r16_phrase_and_ownership_factors_are_independent_and_final_hearings_are_current ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.62s
+
+     Running tests/audio_phrase_expression.rs (target/debug/deps/audio_phrase_expression-6b1b440c15bb198b)
+
+running 7 tests
+test swing_transport_changes_only_declared_offbeats ... ok
+test harmonic_and_action_boundaries_are_not_sacrificed_for_fragments ... ok
+test empty_and_single_optional_sources_preserve_fixed_endpoints ... ok
+test swiss_accepted_source_is_exactly_unchanged_by_phrase_planning ... ok
+test bass_uses_committed_lead_fragment_space_without_losing_metric_pushes ... ok
+test phrase_plan_compresses_existing_optional_notes_into_real_fragments ... ok
+test low_kinetic_space_is_legal_and_distinct_from_driving_fragments ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.02s
+
+     Running tests/audio_phrase_hostile.rs (target/debug/deps/audio_phrase_hostile-bc47e0b10b7f9346)
+
+running 6 tests
+test a_connector_cannot_jump_over_an_internal_stage_hole ... ok
+test r16_a_later_connector_cannot_move_its_stamped_push ... ok
+test r16_fallback_omission_must_revalidate_the_surviving_connective_path ... ok
+test r16_phrase_candidates_respect_frozen_physics_across_tempo_patch_and_kinetic ... ok
+test r16_zero_and_one_structural_event_are_identity_cases ... ok
+test r16_harmony_boundary_and_stage_hole_do_not_move_the_destination ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s
+
+     Running tests/audio_phrase_surface.rs (target/debug/deps/audio_phrase_surface-85a9b13394d69b53)
+
+running 7 tests
+test degenerate_space_grace_target_is_distinct_from_legitimate_repeating_eighths ... ok
+test keys_occupation_is_union_not_polyphonic_note_count ... ok
+test ruler_distinguishes_real_subdivision_changes_from_float_jitter ... ok
+test r16_acceptance_requires_more_than_repeated_individually_legal_graces ... ok
+test phrase_boundary_does_not_hide_bass_target_relationships ... ok
+test empty_surface_is_not_a_repetition_failure ... ok
+test frozen_r15_individually_viable_connectives_repeat_one_temporal_shape ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.71s
+
+     Running tests/audio_voicing_surface.rs (target/debug/deps/audio_voicing_surface-07316a35639e6c26)
+
+running 4 tests
+test r16_a_changed_voicing_is_observed_without_changing_chord_identity ... ok
+test r16_frozen_identity_passes_but_high_seventh_excursion_distinguishes_sites ... ok
+test r16_resolving_bass_tradeoff_has_frozen_within_song_controls_and_tempo_limit ... ok
+test r16_production_should_discharge_the_reported_register_path_witness ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s
+

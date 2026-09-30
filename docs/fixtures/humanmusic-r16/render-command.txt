@@ -1,0 +1,58 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `release` profile [optimized] target(s) in 35.21s
+     Running `target/release/examples/phrase_music_lab --out=target/humanmusic-r16/final --render`
+StablePropulsion seed=2112 FusionConversation default options song=af5360442b9b6729
+black_ice_r14 score=562462b4c3c7e728 notes=449 flips=0 stale=0 temporal_false=0 actions=45/45
+black_ice_r15 score=32cecf0800d51ce5 notes=458 flips=0 stale=0 temporal_false=0 actions=45/45
+black_ice_r16 score=71d6b6423a560637 notes=446 flips=0 stale=0 temporal_false=0 actions=45/45
+swiss_r14 score=beb08c057ed87d94 notes=449 flips=0 stale=0 temporal_false=0 actions=45/45
+swiss_r15 score=beb08c057ed87d94 notes=449 flips=0 stale=0 temporal_false=0 actions=45/45
+swiss_r16 score=03817af045ff24d6 notes=449 flips=0 stale=0 temporal_false=0 actions=45/45
+target/humanmusic-r16/final/black_ice_r14.full.wav frames=4047273 peak=0.8648741 rms=0.11956436
+target/humanmusic-r16/final/black_ice_r14.lead.wav frames=4047273 peak=0.36948958 rms=0.04945774
+target/humanmusic-r16/final/black_ice_r14.bass.wav frames=4047273 peak=0.26492348 rms=0.07513132
+target/humanmusic-r16/final/black_ice_r14.keys.wav frames=4047273 peak=0.51939195 rms=0.027162831
+target/humanmusic-r16/final/black_ice_r14.pad.wav frames=4047273 peak=0.13331111 rms=0.020385837
+target/humanmusic-r16/final/black_ice_r14.lead_bass.wav frames=4047273 peak=0.4983261 rms=0.08967426
+target/humanmusic-r16/final/black_ice_r14.support.wav frames=4047273 peak=0.60249317 rms=0.082155734
+target/humanmusic-r16/final/black_ice_r14.rhythm.wav frames=4047273 peak=0.8053328 rms=0.10950085
+target/humanmusic-r16/final/black_ice_r15.full.wav frames=4047273 peak=0.89121133 rms=0.11643521
+target/humanmusic-r16/final/black_ice_r15.lead.wav frames=4047273 peak=0.36010003 rms=0.045493774
+target/humanmusic-r16/final/black_ice_r15.bass.wav frames=4047273 peak=0.2819099 rms=0.072853476
+target/humanmusic-r16/final/black_ice_r15.keys.wav frames=4047273 peak=0.53130627 rms=0.027886106
+target/humanmusic-r16/final/black_ice_r15.pad.wav frames=4047273 peak=0.13331111 rms=0.020385837
+target/humanmusic-r16/final/black_ice_r15.lead_bass.wav frames=4047273 peak=0.48822176 rms=0.08538456
+target/humanmusic-r16/final/black_ice_r15.support.wav frames=4047273 peak=0.580576 rms=0.080395296
+target/humanmusic-r16/final/black_ice_r15.rhythm.wav frames=4047273 peak=0.796744 rms=0.107732944
+target/humanmusic-r16/final/black_ice_r16.full.wav frames=4047273 peak=0.9353182 rms=0.11674252
+target/humanmusic-r16/final/black_ice_r16.lead.wav frames=4047273 peak=0.35244378 rms=0.045219127
+target/humanmusic-r16/final/black_ice_r16.bass.wav frames=4047273 peak=0.26312402 rms=0.07297456
+target/humanmusic-r16/final/black_ice_r16.keys.wav frames=4047273 peak=0.51939195 rms=0.027193202
+target/humanmusic-r16/final/black_ice_r16.pad.wav frames=4047273 peak=0.13331111 rms=0.020385837
+target/humanmusic-r16/final/black_ice_r16.lead_bass.wav frames=4047273 peak=0.49488032 rms=0.085662305
+target/humanmusic-r16/final/black_ice_r16.support.wav frames=4047273 peak=0.6164527 rms=0.08018084
+target/humanmusic-r16/final/black_ice_r16.rhythm.wav frames=4047273 peak=0.8129099 rms=0.10813333
+target/humanmusic-r16/final/swiss_r14.full.wav frames=3048814 peak=0.7209068 rms=0.06706261
+target/humanmusic-r16/final/swiss_r14.lead.wav frames=3048814 peak=0.11336147 rms=0.013480117
+target/humanmusic-r16/final/swiss_r14.bass.wav frames=3048814 peak=0.19583412 rms=0.034426007
+target/humanmusic-r16/final/swiss_r14.keys.wav frames=3048814 peak=0.14509888 rms=0.0076789386
+target/humanmusic-r16/final/swiss_r14.pad.wav frames=3048814 peak=0.0745384 rms=0.011731641
+target/humanmusic-r16/final/swiss_r14.lead_bass.wav frames=3048814 peak=0.28676766 rms=0.036939774
+target/humanmusic-r16/final/swiss_r14.support.wav frames=3048814 peak=0.24413721 rms=0.03712537
+target/humanmusic-r16/final/swiss_r14.rhythm.wav frames=3048814 peak=0.5624263 rms=0.06447057
+target/humanmusic-r16/final/swiss_r15.full.wav frames=3048814 peak=0.7209068 rms=0.06706261
+target/humanmusic-r16/final/swiss_r15.lead.wav frames=3048814 peak=0.11336147 rms=0.013480117
+target/humanmusic-r16/final/swiss_r15.bass.wav frames=3048814 peak=0.19583412 rms=0.034426007
+target/humanmusic-r16/final/swiss_r15.keys.wav frames=3048814 peak=0.14509888 rms=0.0076789386
+target/humanmusic-r16/final/swiss_r15.pad.wav frames=3048814 peak=0.0745384 rms=0.011731641
+target/humanmusic-r16/final/swiss_r15.lead_bass.wav frames=3048814 peak=0.28676766 rms=0.036939774
+target/humanmusic-r16/final/swiss_r15.support.wav frames=3048814 peak=0.24413721 rms=0.03712537
+target/humanmusic-r16/final/swiss_r15.rhythm.wav frames=3048814 peak=0.5624263 rms=0.06447057
+target/humanmusic-r16/final/swiss_r16.full.wav frames=3048814 peak=0.72663146 rms=0.06704121
+target/humanmusic-r16/final/swiss_r16.lead.wav frames=3048814 peak=0.11336147 rms=0.013480117
+target/humanmusic-r16/final/swiss_r16.bass.wav frames=3048814 peak=0.19583412 rms=0.034426007
+target/humanmusic-r16/final/swiss_r16.keys.wav frames=3048814 peak=0.14509888 rms=0.0076789386
+target/humanmusic-r16/final/swiss_r16.pad.wav frames=3048814 peak=0.07523201 rms=0.01177801
+target/humanmusic-r16/final/swiss_r16.lead_bass.wav frames=3048814 peak=0.28676766 rms=0.036939774
+target/humanmusic-r16/final/swiss_r16.support.wav frames=3048814 peak=0.25215715 rms=0.037141036
+target/humanmusic-r16/final/swiss_r16.rhythm.wav frames=3048814 peak=0.5624263 rms=0.06447057

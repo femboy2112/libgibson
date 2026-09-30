@@ -1,0 +1,12 @@
+{
+  "production_head": "3f3eaa28486dd114b354a6c9040f204925d086e1",
+  "starting_head": "bc9fbd7c1ea1c2688708a48ec37b493f7e6a2583",
+  "song_fingerprint": "af5360442b9b6729",
+  "render_directory": "/home/leah/LibGibson/target/humanmusic-r16/final",
+  "artifact_tools_sha256": {
+    "examples/phrase_music_lab.rs": "1a8adad13dfd0e6e7be39843a781beeb4594ffd5499c947ebeaa5a05a0d82d90",
+    "scripts/dev/humanmusic_r16_windows.py": "ba50dcef40f708c52d44e2177da3464fa10cf49467fdb0466f4c773e34195b2f"
+  },
+  "verification": "All six current note/drum arrays compared byte-for-byte to rendered inputs after final bass-agency change; all 84 WAV SHA256 values rechecked. Observer-only silence-origin correction changes no synth input.",
+  "boundary": "Machine measurements and deterministic renders; no human audition by the agent. PCM spectral proxy is not musical quality."
+}

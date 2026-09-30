@@ -1,0 +1,290 @@
+[
+  {
+    "source": "swiss_r14.full.wav",
+    "window": "swiss_r14.b028.full.wav",
+    "start_seconds": 13.220338983050848,
+    "end_seconds": 17.28813559322034,
+    "start_frame": 634576,
+    "end_frame": 829831
+  },
+  {
+    "source": "swiss_r14.full.wav",
+    "window": "swiss_r14.b036.full.wav",
+    "start_seconds": 17.28813559322034,
+    "end_seconds": 21.35593220338983,
+    "start_frame": 829831,
+    "end_frame": 1025085
+  },
+  {
+    "source": "swiss_r14.full.wav",
+    "window": "swiss_r14.b044.full.wav",
+    "start_seconds": 21.35593220338983,
+    "end_seconds": 25.423728813559322,
+    "start_frame": 1025085,
+    "end_frame": 1220339
+  },
+  {
+    "source": "swiss_r14.full.wav",
+    "window": "swiss_r14.b060.full.wav",
+    "start_seconds": 29.491525423728813,
+    "end_seconds": 33.559322033898304,
+    "start_frame": 1415593,
+    "end_frame": 1610847
+  },
+  {
+    "source": "swiss_r14.pad.wav",
+    "window": "swiss_r14.b028.pad.wav",
+    "start_seconds": 13.220338983050848,
+    "end_seconds": 17.28813559322034,
+    "start_frame": 634576,
+    "end_frame": 829831
+  },
+  {
+    "source": "swiss_r14.pad.wav",
+    "window": "swiss_r14.b036.pad.wav",
+    "start_seconds": 17.28813559322034,
+    "end_seconds": 21.35593220338983,
+    "start_frame": 829831,
+    "end_frame": 1025085
+  },
+  {
+    "source": "swiss_r14.pad.wav",
+    "window": "swiss_r14.b044.pad.wav",
+    "start_seconds": 21.35593220338983,
+    "end_seconds": 25.423728813559322,
+    "start_frame": 1025085,
+    "end_frame": 1220339
+  },
+  {
+    "source": "swiss_r14.pad.wav",
+    "window": "swiss_r14.b060.pad.wav",
+    "start_seconds": 29.491525423728813,
+    "end_seconds": 33.559322033898304,
+    "start_frame": 1415593,
+    "end_frame": 1610847
+  },
+  {
+    "source": "swiss_r14.support.wav",
+    "window": "swiss_r14.b028.support.wav",
+    "start_seconds": 13.220338983050848,
+    "end_seconds": 17.28813559322034,
+    "start_frame": 634576,
+    "end_frame": 829831
+  },
+  {
+    "source": "swiss_r14.support.wav",
+    "window": "swiss_r14.b036.support.wav",
+    "start_seconds": 17.28813559322034,
+    "end_seconds": 21.35593220338983,
+    "start_frame": 829831,
+    "end_frame": 1025085
+  },
+  {
+    "source": "swiss_r14.support.wav",
+    "window": "swiss_r14.b044.support.wav",
+    "start_seconds": 21.35593220338983,
+    "end_seconds": 25.423728813559322,
+    "start_frame": 1025085,
+    "end_frame": 1220339
+  },
+  {
+    "source": "swiss_r14.support.wav",
+    "window": "swiss_r14.b060.support.wav",
+    "start_seconds": 29.491525423728813,
+    "end_seconds": 33.559322033898304,
+    "start_frame": 1415593,
+    "end_frame": 1610847
+  },
+  {
+    "source": "swiss_r15.full.wav",
+    "window": "swiss_r15.b028.full.wav",
+    "start_seconds": 13.220338983050848,
+    "end_seconds": 17.28813559322034,
+    "start_frame": 634576,
+    "end_frame": 829831
+  },
+  {
+    "source": "swiss_r15.full.wav",
+    "window": "swiss_r15.b036.full.wav",
+    "start_seconds": 17.28813559322034,
+    "end_seconds": 21.35593220338983,
+    "start_frame": 829831,
+    "end_frame": 1025085
+  },
+  {
+    "source": "swiss_r15.full.wav",
+    "window": "swiss_r15.b044.full.wav",
+    "start_seconds": 21.35593220338983,
+    "end_seconds": 25.423728813559322,
+    "start_frame": 1025085,
+    "end_frame": 1220339
+  },
+  {
+    "source": "swiss_r15.full.wav",
+    "window": "swiss_r15.b060.full.wav",
+    "start_seconds": 29.491525423728813,
+    "end_seconds": 33.559322033898304,
+    "start_frame": 1415593,
+    "end_frame": 1610847
+  },
+  {
+    "source": "swiss_r15.pad.wav",
+    "window": "swiss_r15.b028.pad.wav",
+    "start_seconds": 13.220338983050848,
+    "end_seconds": 17.28813559322034,
+    "start_frame": 634576,
+    "end_frame": 829831
+  },
+  {
+    "source": "swiss_r15.pad.wav",
+    "window": "swiss_r15.b036.pad.wav",
+    "start_seconds": 17.28813559322034,
+    "end_seconds": 21.35593220338983,
+    "start_frame": 829831,
+    "end_frame": 1025085
+  },
+  {
+    "source": "swiss_r15.pad.wav",
+    "window": "swiss_r15.b044.pad.wav",
+    "start_seconds": 21.35593220338983,
+    "end_seconds": 25.423728813559322,
+    "start_frame": 1025085,
+    "end_frame": 1220339
+  },
+  {
+    "source": "swiss_r15.pad.wav",
+    "window": "swiss_r15.b060.pad.wav",
+    "start_seconds": 29.491525423728813,
+    "end_seconds": 33.559322033898304,
+    "start_frame": 1415593,
+    "end_frame": 1610847
+  },
+  {
+    "source": "swiss_r15.support.wav",
+    "window": "swiss_r15.b028.support.wav",
+    "start_seconds": 13.220338983050848,
+    "end_seconds": 17.28813559322034,
+    "start_frame": 634576,
+    "end_frame": 829831
+  },
+  {
+    "source": "swiss_r15.support.wav",
+    "window": "swiss_r15.b036.support.wav",
+    "start_seconds": 17.28813559322034,
+    "end_seconds": 21.35593220338983,
+    "start_frame": 829831,
+    "end_frame": 1025085
+  },
+  {
+    "source": "swiss_r15.support.wav",
+    "window": "swiss_r15.b044.support.wav",
+    "start_seconds": 21.35593220338983,
+    "end_seconds": 25.423728813559322,
+    "start_frame": 1025085,
+    "end_frame": 1220339
+  },
+  {
+    "source": "swiss_r15.support.wav",
+    "window": "swiss_r15.b060.support.wav",
+    "start_seconds": 29.491525423728813,
+    "end_seconds": 33.559322033898304,
+    "start_frame": 1415593,
+    "end_frame": 1610847
+  },
+  {
+    "source": "swiss_r16.full.wav",
+    "window": "swiss_r16.b028.full.wav",
+    "start_seconds": 13.220338983050848,
+    "end_seconds": 17.28813559322034,
+    "start_frame": 634576,
+    "end_frame": 829831
+  },
+  {
+    "source": "swiss_r16.full.wav",
+    "window": "swiss_r16.b036.full.wav",
+    "start_seconds": 17.28813559322034,
+    "end_seconds": 21.35593220338983,
+    "start_frame": 829831,
+    "end_frame": 1025085
+  },
+  {
+    "source": "swiss_r16.full.wav",
+    "window": "swiss_r16.b044.full.wav",
+    "start_seconds": 21.35593220338983,
+    "end_seconds": 25.423728813559322,
+    "start_frame": 1025085,
+    "end_frame": 1220339
+  },
+  {
+    "source": "swiss_r16.full.wav",
+    "window": "swiss_r16.b060.full.wav",
+    "start_seconds": 29.491525423728813,
+    "end_seconds": 33.559322033898304,
+    "start_frame": 1415593,
+    "end_frame": 1610847
+  },
+  {
+    "source": "swiss_r16.pad.wav",
+    "window": "swiss_r16.b028.pad.wav",
+    "start_seconds": 13.220338983050848,
+    "end_seconds": 17.28813559322034,
+    "start_frame": 634576,
+    "end_frame": 829831
+  },
+  {
+    "source": "swiss_r16.pad.wav",
+    "window": "swiss_r16.b036.pad.wav",
+    "start_seconds": 17.28813559322034,
+    "end_seconds": 21.35593220338983,
+    "start_frame": 829831,
+    "end_frame": 1025085
+  },
+  {
+    "source": "swiss_r16.pad.wav",
+    "window": "swiss_r16.b044.pad.wav",
+    "start_seconds": 21.35593220338983,
+    "end_seconds": 25.423728813559322,
+    "start_frame": 1025085,
+    "end_frame": 1220339
+  },
+  {
+    "source": "swiss_r16.pad.wav",
+    "window": "swiss_r16.b060.pad.wav",
+    "start_seconds": 29.491525423728813,
+    "end_seconds": 33.559322033898304,
+    "start_frame": 1415593,
+    "end_frame": 1610847
+  },
+  {
+    "source": "swiss_r16.support.wav",
+    "window": "swiss_r16.b028.support.wav",
+    "start_seconds": 13.220338983050848,
+    "end_seconds": 17.28813559322034,
+    "start_frame": 634576,
+    "end_frame": 829831
+  },
+  {
+    "source": "swiss_r16.support.wav",
+    "window": "swiss_r16.b036.support.wav",
+    "start_seconds": 17.28813559322034,
+    "end_seconds": 21.35593220338983,
+    "start_frame": 829831,
+    "end_frame": 1025085
+  },
+  {
+    "source": "swiss_r16.support.wav",
+    "window": "swiss_r16.b044.support.wav",
+    "start_seconds": 21.35593220338983,
+    "end_seconds": 25.423728813559322,
+    "start_frame": 1025085,
+    "end_frame": 1220339
+  },
+  {
+    "source": "swiss_r16.support.wav",
+    "window": "swiss_r16.b060.support.wav",
+    "start_seconds": 29.491525423728813,
+    "end_seconds": 33.559322033898304,
+    "start_frame": 1415593,
+    "end_frame": 1610847
+  }
+]

@@ -1,0 +1,13 @@
+black_ice r14->r16 drums 479->479 exact-events-removed=2 exact-events-added=2
+  ordinary: 475->475 exact-events-removed=0 exact-events-added=0
+  unison: 4->4 exact-events-removed=2 exact-events-added=2
+black_ice r15->r16 drums 479->479 exact-events-removed=55 exact-events-added=55
+  ordinary: 475->475 exact-events-removed=53 exact-events-added=53
+  unison: 4->4 exact-events-removed=2 exact-events-added=2
+swiss r14->r16 drums 402->402 exact-events-removed=0 exact-events-added=0
+  ordinary: 398->398 exact-events-removed=0 exact-events-added=0
+  unison: 4->4 exact-events-removed=0 exact-events-added=0
+swiss r15->r16 drums 402->402 exact-events-removed=0 exact-events-added=0
+  ordinary: 398->398 exact-events-removed=0 exact-events-added=0
+  unison: 4->4 exact-events-removed=0 exact-events-added=0
+Counts here are exact-event set differences; a retimed event appears once removed and once added. These are not inferred new authored hits.

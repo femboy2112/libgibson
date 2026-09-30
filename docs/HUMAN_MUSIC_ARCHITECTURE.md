@@ -1,5 +1,7 @@
 # HumanMusic: the `gibson::audio` architecture (experimental)
 
+Round XVI opt-in phrase planning, semantic occupancy and source support paths: [HUMAN_MUSIC_PHRASE_EXPRESSION.md](HUMAN_MUSIC_PHRASE_EXPRESSION.md).
+
 Round XV source expression (target-relative grace, burst and space, with the Round XIV pad frozen): [HUMAN_MUSIC_EXPRESSION.md](HUMAN_MUSIC_EXPRESSION.md).
 Round XIII temporal mass (pitch ownership scaled by perceptual exposure): [HUMAN_MUSIC_TEMPORAL_MASS.md](HUMAN_MUSIC_TEMPORAL_MASS.md).
 Round XIIIb sounding tension (every sounding semitone clash transient or foreshadowing): [HUMAN_MUSIC_SOUNDING_TENSION.md](HUMAN_MUSIC_SOUNDING_TENSION.md).
