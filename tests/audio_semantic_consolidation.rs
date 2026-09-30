@@ -531,3 +531,188 @@ fn u3b_a_settlement_is_true_only_when_the_realized_score_discharges_it() {
         false_claims.join("\n")
     );
 }
+
+/// The obligation layer, not the verb rejection, decides a debt: every debt the song settles is,
+/// in a rehearsed performance, either settled by a performed verb or left open with a reason —
+/// and each stated reason is TRUE of the performance (checked here from the chords and the
+/// rehearsal record, not from the reason string). A recast settlement lands on an arrival a
+/// player made. Nothing is dropped silently, and the historical arm keeps its archived ledger.
+#[test]
+fn u3b_every_open_debt_is_named_and_its_reason_is_true() {
+    use gibson::audio::human_music::{
+        discourse::ObligationKind, rehearsal::RehearsalOutcome, song::SongMapConformance, witness,
+    };
+    let (mut open, mut recast, mut settled) = (0, 0, 0);
+    for world in worlds() {
+        for (language, lang) in languages() {
+            for grammar in GRAMMARS {
+                for seed in 78_302_010u64..78_302_014 {
+                    for beats in [32.0, 56.75] {
+                        let composer = if seed % 2 == 0 {
+                            Composer::StructuralR9
+                        } else {
+                            Composer::MeaningDirected
+                        };
+                        let song = SongMap::compose(
+                            &deflected_lift_trace(beats),
+                            seed,
+                            Some(grammar),
+                            composer,
+                        );
+                        let c = perform_with_profile(
+                            &song,
+                            &world,
+                            options(language),
+                            PerformanceProfile::BAND,
+                        )
+                        .expect("no refusal on this corpus");
+                        let tag = format!("{} {lang} {grammar:?} {seed} {beats}", world.name);
+                        let law = SongMapConformance::check(&song, &c.perf, &c.score);
+                        assert!(
+                            law.dropped_song_obligations.is_empty(),
+                            "{tag}: {}",
+                            law.report()
+                        );
+                        assert_eq!(law.unwitnessed_song_obligations, 0, "{tag}");
+                        let trace = c
+                            .perf
+                            .rehearsal
+                            .as_ref()
+                            .expect("a rehearsed plan keeps its trace");
+                        for d in &trace.open_debts {
+                            open += 1;
+                            let phrase = &song.plan.form.phrases[d.by_phrase as usize];
+                            let home = c.perf.region.tonic_pc.rem_euclid(12);
+                            let sounds_home = c.perf.chords.iter().any(|s| {
+                                s.start_beat >= phrase.start_beat() - 1e-9
+                                    && s.start_beat < phrase.end_beat() - 1e-9
+                                    && s.chord.root_pc.rem_euclid(12) == home
+                            });
+                            let rejected = trace.verbs.iter().any(|v| {
+                                v.key.settles() == Some(d.obligation)
+                                    && matches!(v.outcome, RehearsalOutcome::Rejected(_))
+                            });
+                            match d.reason {
+                                r if r.starts_with("rehearsed:") => {
+                                    assert!(rejected, "{tag}: {d:?}")
+                                }
+                                r if r.starts_with(
+                                    "the settling phrase never sounds the home chord",
+                                ) =>
+                                {
+                                    assert!(
+                                        matches!(
+                                            d.kind,
+                                            ObligationKind::SuspendedCadence
+                                                | ObligationKind::HarmonicDeparture
+                                        ) && !sounds_home,
+                                        "{tag}: false reason {d:?}"
+                                    )
+                                }
+                                _ => {}
+                            }
+                            assert!(
+                                c.perf
+                                    .obligations
+                                    .get(d.obligation)
+                                    .is_some_and(|o| o.settlement.is_none()),
+                                "{tag}: an open debt is still recorded settled"
+                            );
+                        }
+                        let audit = witness::audit(&c.perf, &c.score);
+                        for v in &trace.verbs {
+                            if let RehearsalOutcome::Recast { beat, .. } = v.outcome {
+                                recast += 1;
+                                let a = c
+                                    .perf
+                                    .actions
+                                    .actions
+                                    .iter()
+                                    .find(|a| a.start_beat == beat && a.kind == v.kind)
+                                    .expect("the recast verb is on the chart where it moved");
+                                assert!(
+                                    audit.rows.iter().any(|r| r.action == a.id && r.witnessed),
+                                    "{tag}: a recast settlement is unperformed"
+                                );
+                            }
+                        }
+                        settled += c
+                            .perf
+                            .obligations
+                            .obligations
+                            .iter()
+                            .filter(|o| o.settlement.is_some())
+                            .count();
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        settled > 0 && open > 0,
+        "the corpus exercises both outcomes: {settled} settled, {open} open, {recast} recast"
+    );
+}
+
+/// Mutation: a settlement forged into a rehearsed performance's ledger without a discharging
+/// verb, and a debt silently cleared, are both caught; the historical arm's archived ledger is
+/// untouched (it never gains a trace and still reports its unwitnessed settlements).
+#[test]
+fn u3b_forged_and_dropped_settlements_are_caught() {
+    use gibson::audio::human_music::{
+        discourse::{SettleHow, Settlement},
+        song::SongMapConformance,
+    };
+    let world = MusicWorld::vapor95();
+    let language = MusicalLanguage::fusion_conversation();
+    let mut found = false;
+    for seed in 78_302_020u64..78_302_040 {
+        let song = SongMap::compose(
+            &deflected_lift_trace(48.0),
+            seed,
+            Some(CompositionGrammar::HookArc),
+            Composer::StructuralR9,
+        );
+        let c = perform_with_profile(&song, &world, options(language), PerformanceProfile::BAND)
+            .unwrap();
+        let Some(d) = c
+            .perf
+            .rehearsal
+            .as_ref()
+            .and_then(|t| t.open_debts.first().copied())
+        else {
+            continue;
+        };
+        found = true;
+        // Forge: claim the open debt settled with no witness.
+        let mut forged = c.perf.clone();
+        let o = forged
+            .obligations
+            .obligations
+            .iter_mut()
+            .find(|o| o.id == d.obligation)
+            .unwrap();
+        o.settlement = Some(Settlement {
+            by_phrase: d.by_phrase,
+            how: SettleHow::Paid,
+            witness: None,
+        });
+        assert!(!SongMapConformance::check(&song, &forged, &c.score).passes());
+        // Drop: clear the reason, keep the debt open.
+        let mut dropped = c.perf.clone();
+        dropped.rehearsal.as_mut().unwrap().open_debts.clear();
+        let law = SongMapConformance::check(&song, &dropped, &c.score);
+        assert!(
+            !law.passes() && !law.dropped_song_obligations.is_empty(),
+            "{}",
+            law.report()
+        );
+        // The archived arm: no trace, archived ledger.
+        let pocket =
+            perform_with_profile(&song, &world, options(language), PerformanceProfile::POCKET)
+                .unwrap();
+        assert!(pocket.perf.rehearsal.is_none());
+        break;
+    }
+    assert!(found, "the corpus holds an open debt to mutate");
+}

@@ -77,6 +77,7 @@ pub mod policy;
 mod probes;
 pub mod reference_song;
 pub mod region;
+pub mod rehearsal;
 pub mod rhythm;
 pub mod rng;
 pub mod score;

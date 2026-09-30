@@ -331,6 +331,7 @@ pub(super) fn plan_interactions(
     stage: &Stage,
     seed: u64,
     cover: Option<&super::cover::CoverConstraints>,
+    vetoed: &[super::rehearsal::ActionKey],
 ) -> InteractionPlan {
     let bank = &thematic.bank;
     let mode = opts.responses;
@@ -624,7 +625,7 @@ pub(super) fn plan_interactions(
             accent,
             stage,
         );
-        let verdict = if room.is_empty() {
+        let mut verdict = if room.is_empty() {
             Verdict::StandsAlone("nobody on stage has room to answer")
         } else if mode == ResponseMode::Clockwork
             || opts.calls == CallPolicy::EveryStatement
@@ -635,23 +636,8 @@ pub(super) fn plan_interactions(
         } else {
             Verdict::StandsAlone("it closes its own thought")
         };
-        opportunities.push(InteractionOpportunity {
-            source: OpportunitySource::Statement(si),
-            initiator: Agent::Lead,
-            start_beat: st.start_beat,
-            end_beat: end,
-            openness: open,
-            space,
-            headroom,
-            redundancy,
-            score,
-            verdict,
-        });
-        let is_call = verdict == Verdict::Call;
-        if st.answers.is_none() && !is_call {
-            continue;
-        }
-        let id = actions.push(MusicalAction {
+        // The verb this statement would be (a call, or the lead's answer to a figure call).
+        let verb = |is_call: bool| MusicalAction {
             id: ActionId(0),
             cause: match st.answers {
                 Some((c, _)) => ActionCause::Interaction { call: c },
@@ -674,7 +660,34 @@ pub(super) fn plan_interactions(
             binding: None,
             pays: st.answers.map(|(c, _)| c),
             effect: EffectVector::NEUTRAL,
+        };
+        // A rehearsal found nobody performing this verb: the statement stands alone.
+        let struck = !vetoed.is_empty()
+            && (st.answers.is_some() || verdict == Verdict::Call)
+            && vetoed.contains(&super::rehearsal::ActionKey::of(
+                &verb(verdict == Verdict::Call),
+                actions,
+            ));
+        if struck && verdict == Verdict::Call {
+            verdict = Verdict::StandsAlone(super::performance::REHEARSAL_REJECTION);
+        }
+        opportunities.push(InteractionOpportunity {
+            source: OpportunitySource::Statement(si),
+            initiator: Agent::Lead,
+            start_beat: st.start_beat,
+            end_beat: end,
+            openness: open,
+            space,
+            headroom,
+            redundancy,
+            score,
+            verdict,
         });
+        let is_call = verdict == Verdict::Call;
+        if (st.answers.is_none() && !is_call) || (struck && st.answers.is_some()) {
+            continue;
+        }
+        let id = actions.push(verb(is_call));
         statements[si].call = Some(id);
         if is_call {
             last_call_motif = Some(st.motif.clone());
@@ -905,6 +918,28 @@ pub(super) fn plan_interactions(
             if r.transform == Transform::Silence {
                 return Some(r);
             }
+            // A rehearsal found nobody performing this answer: the space is left open instead.
+            let answer = MusicalAction {
+                id: ActionId(0),
+                cause: ActionCause::Interaction { call: call.action },
+                initiator: r.responder,
+                start_beat: r.start_beat,
+                dur_beats: r.dur_beats,
+                kind: ActionKind::Answer,
+                target_beat: None,
+                responders: vec![],
+                binding: None,
+                pays: Some(call.action),
+                effect: EffectVector::NEUTRAL,
+            };
+            if !vetoed.is_empty()
+                && vetoed.contains(&super::rehearsal::ActionKey::of(&answer, actions))
+            {
+                return Some(Response {
+                    transform: Transform::Silence,
+                    ..r
+                });
+            }
             // The response's own material, derived from the CALL's material.
             let mid = MaterialId(materials.len() as u32);
             let m = transform_material(
@@ -917,19 +952,7 @@ pub(super) fn plan_interactions(
             )?;
             materials.push(m);
             r.material = Some(mid);
-            r.action = Some(actions.push(MusicalAction {
-                id: ActionId(0),
-                cause: ActionCause::Interaction { call: call.action },
-                initiator: r.responder,
-                start_beat: r.start_beat,
-                dur_beats: r.dur_beats,
-                kind: ActionKind::Answer,
-                target_beat: None,
-                responders: vec![],
-                binding: None,
-                pays: Some(call.action),
-                effect: EffectVector::NEUTRAL,
-            }));
+            r.action = Some(actions.push(answer));
             Some(r)
         });
         interactions.push(Interaction {

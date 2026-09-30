@@ -561,8 +561,16 @@ pub struct SongMapConformance {
     /// Chord changes outside the chart's vocabulary for their gesture, or off the declared rhythm
     /// transform's grid, that no recorded harmonic action (a typed, logged edit) explains.
     pub illegal_harmonic_transforms: Vec<TransformMiss>,
-    /// Song obligations settled in the performance with no witnessing action.
+    /// Song obligations settled in the performance with no witnessing action — a settlement the
+    /// performance claims but no concrete verb discharges (a false claim).
     pub unwitnessed_song_obligations: usize,
+    /// Debts the song's discourse settles that this performance leaves open, each with the
+    /// reason its rehearsal recorded (no performed discharge exists there). Reported, not
+    /// failed: an honest open debt is the performance's own declared outcome.
+    pub unresolved_song_obligations: Vec<super::rehearsal::OpenDebt>,
+    /// Debts the song settles that the performance leaves open with NO recorded reason — a
+    /// settlement silently dropped.
+    pub dropped_song_obligations: Vec<super::ids::ObligationId>,
     /// The score's length or sections disagree with the song's form.
     pub form_mismatch: Vec<String>,
     pub sites_checked: usize,
@@ -737,6 +745,26 @@ impl SongMapConformance {
             form_mismatch.push(format!("sections {sections:?} != phrases {phrases:?}"));
         }
 
+        // The discourse says where each debt settles; the performance's ledger says what it did.
+        // A debt the song settles and the performance leaves open is either named (with its
+        // rehearsal's reason) or silently dropped.
+        let open_debts = perf
+            .rehearsal
+            .as_ref()
+            .map(|r| r.open_debts.as_slice())
+            .unwrap_or(&[]);
+        let (mut unresolved_song_obligations, mut dropped_song_obligations) =
+            (Vec::new(), Vec::new());
+        for o in &song.plan.discourse.ledger.obligations {
+            let performed = perf.obligations.get(o.id).and_then(|p| p.settlement);
+            if o.settlement.is_none() || performed.is_some() {
+                continue;
+            }
+            match open_debts.iter().find(|d| d.obligation == o.id) {
+                Some(d) => unresolved_song_obligations.push(*d),
+                None => dropped_song_obligations.push(o.id),
+            }
+        }
         SongMapConformance {
             song: song.fingerprint(),
             performed: perf.song_fingerprint,
@@ -745,6 +773,8 @@ impl SongMapConformance {
             wrong_harmonic_landmarks,
             illegal_harmonic_transforms,
             unwitnessed_song_obligations: perf.obligations.unwitnessed_settlements().count(),
+            unresolved_song_obligations,
+            dropped_song_obligations,
             form_mismatch,
             sites_checked: identity.len(),
             landmarks_checked: marks.len(),
@@ -760,6 +790,7 @@ impl SongMapConformance {
             && self.wrong_harmonic_landmarks.is_empty()
             && self.illegal_harmonic_transforms.is_empty()
             && self.unwitnessed_song_obligations == 0
+            && self.dropped_song_obligations.is_empty()
             && self.form_mismatch.is_empty()
     }
 
@@ -803,6 +834,18 @@ impl SongMapConformance {
                 "\n  unwitnessed_song_obligations: {}",
                 self.unwitnessed_song_obligations
             ));
+        }
+        for d in &self.unresolved_song_obligations {
+            s.push_str(&format!(
+                "\n  unresolved_song_obligation (open, named): {} {} due by phrase {} ({})",
+                d.obligation,
+                d.kind.label(),
+                d.by_phrase,
+                d.reason
+            ));
+        }
+        for id in &self.dropped_song_obligations {
+            s.push_str(&format!("\n  dropped_song_obligation: {id} (settled by the song, open in the performance with no reason)"));
         }
         for m in &self.form_mismatch {
             s.push_str(&format!("\n  form_mismatch: {m}"));

@@ -1128,6 +1128,7 @@ impl CanonicalFingerprint for performance::PerformancePlan {
             admissions,
             obligations,
             budget,
+            rehearsal,
         } = self;
         w.tag("performance/PerformancePlan/v2");
         w.field("language", language);
@@ -1155,6 +1156,9 @@ impl CanonicalFingerprint for performance::PerformancePlan {
         w.field("budget", budget);
         if let Some(constraints) = cover_constraints {
             w.field("cover_constraints", constraints);
+        }
+        if let Some(trace) = rehearsal {
+            w.field("rehearsal", trace);
         }
     }
 }

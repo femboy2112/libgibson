@@ -303,16 +303,15 @@ pub fn perform_with_profile(
     })
 }
 
-/// How many times the band may rehearse a chart before the take.
-const REHEARSALS: usize = 3;
-
 /// Plan and realize under `profile`'s verb-admission law (the profile is already validated).
 ///
-/// `Planned` is the historical single pass. `Rehearsed` plans each settled song obligation's
-/// discharging event, realizes, audits every verb against the realized score, and strikes the verbs
-/// no player performed from the chart (recorded as rejections) before realizing again — at most
-/// [`REHEARSALS`] times. The final score is an ordinary realization of the final plan; the audit is
-/// unchanged and still judges it.
+/// `Planned` is the historical single pass. `Rehearsed` is the finite normalization of
+/// [`super::rehearsal`]: plan, realize, audit every verb against the realized score, then strike
+/// the verbs no player performed (and move a settlement nobody played onto the arrival a player
+/// made in its phrase, once), and plan again — until every verb on the chart is performed. The
+/// take is an ordinary realization of the final plan; the audit is unchanged and still judges it.
+/// A normalization that cannot make progress, or exhausts [`super::rehearsal::REHEARSAL_FUEL`], is
+/// refused: a take with an unperformed verb is never returned.
 pub(crate) fn plan_and_realize(
     song: &SongMap,
     world: &MusicWorld,
@@ -322,34 +321,98 @@ pub(crate) fn plan_and_realize(
 ) -> Result<(PerformancePlan, Score), super::cover::CoverError> {
     use super::performance::{ActionKey, AdmissionInputs};
     use super::policy::ActionAdmission;
+    use super::rehearsal::{RehearsalOutcome, RehearsedVerb, REHEARSAL_FUEL};
     let observed = Some(profile.observation);
+    let rehearsed = profile.admission == ActionAdmission::Rehearsed;
     let mut inputs = AdmissionInputs {
-        settlements: profile.admission == ActionAdmission::Rehearsed,
+        rehearsed,
         vetoed: Vec::new(),
+        recast: Vec::new(),
         harmony: profile.harmony,
     };
-    let mut rehearsals = 0;
-    loop {
-        let perf =
+    let mut judged: Vec<RehearsedVerb> = Vec::new();
+    for pass in 0..=REHEARSAL_FUEL {
+        let mut perf =
             PerformancePlan::from_song_admitted(song, world, opts, constraints.clone(), &inputs)?;
         let score = realize_policy(song, world, &perf, profile, observed);
-        if profile.admission == ActionAdmission::Planned || rehearsals == REHEARSALS {
+        if !rehearsed {
             return Ok((perf, score));
         }
-        let unperformed: Vec<ActionKey> = super::witness::audit(&perf, &score)
+        let audit = super::witness::audit(&perf, &score);
+        let unperformed: Vec<&super::action::MusicalAction> = audit
             .rows
             .iter()
             .filter(|r| !r.witnessed)
             .filter_map(|r| perf.actions.get(r.action))
-            .map(ActionKey::of)
-            .filter(|k| !inputs.vetoed.contains(k))
             .collect();
         if unperformed.is_empty() {
+            // The take: every verb on the chart is performed (a recast one where it moved to).
+            for a in &perf.actions.actions {
+                let recast = inputs.recast.iter().find(|r| {
+                    matches!(a.cause, super::action::ActionCause::Discourse { obligation, .. } if obligation == r.obligation)
+                });
+                judged.push(RehearsedVerb {
+                    key: ActionKey::of(a, &perf.actions),
+                    kind: a.kind,
+                    planned_beat: a.start_beat,
+                    pass,
+                    outcome: match recast {
+                        Some(r) => RehearsalOutcome::Recast {
+                            beat: r.start_beat,
+                            by: r.by,
+                        },
+                        None => RehearsalOutcome::Performed,
+                    },
+                });
+            }
+            let trace = perf.rehearsal.get_or_insert_with(Default::default);
+            trace.passes = pass;
+            trace.verbs = judged;
             return Ok((perf, score));
         }
-        inputs.vetoed.extend(unperformed);
-        rehearsals += 1;
+        let mut progress = false;
+        for a in unperformed {
+            let key = ActionKey::of(a, &perf.actions);
+            if inputs.vetoed.contains(&key) {
+                continue; // an ineffective veto: no progress from it
+            }
+            if let (super::action::ActionKind::Resolve, Some(obligation)) = (a.kind, key.settles())
+            {
+                if !inputs.recast.iter().any(|r| r.obligation == obligation) {
+                    if let Some(r) =
+                        super::rehearsal::observed_arrival(song, &perf, &score, a, obligation)
+                    {
+                        inputs.recast.push(r);
+                        progress = true;
+                        continue;
+                    }
+                }
+            }
+            let outcome = match a.cause {
+                super::action::ActionCause::Morphism { .. } => {
+                    RehearsalOutcome::Deferred(super::performance::REHEARSAL_REJECTION)
+                }
+                _ => RehearsalOutcome::Rejected(super::performance::REHEARSAL_REJECTION),
+            };
+            judged.push(RehearsedVerb {
+                key: key.clone(),
+                kind: a.kind,
+                planned_beat: a.start_beat,
+                pass,
+                outcome,
+            });
+            inputs.vetoed.push(key);
+            progress = true;
+        }
+        if !progress {
+            return Err(super::cover::CoverError::Invalid(
+                "rehearsal cannot strike a verb nobody performs",
+            ));
+        }
     }
+    Err(super::cover::CoverError::Invalid(
+        "rehearsal did not converge within its fuel",
+    ))
 }
 
 fn perform_historical(

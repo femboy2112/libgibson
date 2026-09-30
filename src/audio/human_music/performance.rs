@@ -321,6 +321,9 @@ pub struct PerformancePlan {
     pub budget: Vec<super::budget::ComplexityAllocation>,
     /// Optional canonical cover constraints. Absent on every historical path.
     pub cover_constraints: Option<super::cover::CoverConstraints>,
+    /// Rehearsed admission's record: every planned verb's outcome and every debt left open.
+    /// Absent on every historical (`Planned`) path.
+    pub rehearsal: Option<super::rehearsal::RehearsalTrace>,
 }
 
 /// The ordinary twin of the cover path's settlement planner: a song obligation the discourse
@@ -390,43 +393,21 @@ fn plan_settlements(
     }
 }
 
-/// A verb's identity across rebuilds of one plan: the planner creates the same verbs in the same
-/// order, so onset, cause and verb family name it even after ids are reassigned. Harmonic verbs
-/// form one family because the harmony may recast one as another after admission (a
-/// Reharmonize with no lawful substitute becomes a Recolor): striking the recast verb strikes the
-/// verb that was planned.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ActionKey {
-    family: &'static str,
-    start: u64,
-    cause: String,
-}
-
-impl ActionKey {
-    pub(crate) fn of(a: &super::action::MusicalAction) -> Self {
-        let family = match a.kind {
-            ActionKind::Tonicize
-            | ActionKind::Reharmonize
-            | ActionKind::Recolor
-            | ActionKind::Modulate => "harmonic",
-            kind => kind.label(),
-        };
-        Self {
-            family,
-            start: a.start_beat.to_bits(),
-            cause: format!("{:?}", a.cause),
-        }
-    }
-}
+pub use super::rehearsal::ActionKey;
 
 /// Plan-time admission inputs chosen by the realization profile. Never stored in the plan, so a
 /// historical (`Planned`) build is the exact historical plan.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct AdmissionInputs {
-    /// Give each settled song obligation its discharging event through the source planner.
-    pub settlements: bool,
-    /// Verbs a rehearsal of this same plan found no player performing.
+    /// Rehearsed admission: each settled song obligation gets its discharging verb from the source
+    /// planner, and a settlement stands only while a performed verb discharges it (otherwise the
+    /// debt is left open, named — [`super::rehearsal::OpenDebt`]).
+    pub rehearsed: bool,
+    /// Verbs a rehearsal of this same plan found no player performing, struck wherever a planner
+    /// makes them.
     pub vetoed: Vec<ActionKey>,
+    /// Settlement verbs a rehearsal moved onto the arrival a player actually made.
+    pub recast: Vec<super::rehearsal::Recast>,
     /// The archived colours, or the world/language harmonic vocabulary as a source law.
     pub harmony: super::policy::HarmonyPolicy,
 }
@@ -590,23 +571,23 @@ impl PerformancePlan {
             // No stage, material or dependent action IDs exist yet.
             let _remap = actions.remove(&rejected);
         }
-        if let Some(c) = cover_constraints.as_ref().filter(|_| opts.actions) {
-            c.plan_settlements(plan, &chords, &mut actions);
-        } else if admission.settlements && opts.actions {
-            plan_settlements(plan, &chords, region, &mut actions);
-        }
         // A rehearsal of this same plan found nobody performing these verbs: they are struck from
-        // the chart now, before any stage, material or dependent id exists, and recorded.
-        if !admission.vetoed.is_empty() {
+        // the chart now — before the settlement planner looks for a discharge (so it never counts
+        // on a struck verb) and again after it — before any stage, material or dependent id
+        // exists, and recorded.
+        let strike = |actions: &mut ActionPlan, records: &mut Vec<AdmissionRecord>| {
+            if admission.vetoed.is_empty() {
+                return;
+            }
             let vetoed: Vec<ActionId> = actions
                 .actions
                 .iter()
-                .filter(|a| admission.vetoed.contains(&ActionKey::of(a)))
+                .filter(|a| admission.vetoed.contains(&ActionKey::of(a, actions)))
                 .map(|a| a.id)
                 .collect();
             for &id in &vetoed {
                 let a = actions.get(id).expect("vetoed action exists");
-                constrained_rejections.push(AdmissionRecord {
+                records.push(AdmissionRecord {
                     action: None,
                     kind: a.kind,
                     start_beat: a.start_beat,
@@ -627,7 +608,30 @@ impl PerformancePlan {
                 }
             }
             let _remap = actions.remove(&vetoed);
+        };
+        if admission.rehearsed {
+            strike(&mut actions, &mut constrained_rejections);
         }
+        if let Some(c) = cover_constraints.as_ref().filter(|_| opts.actions) {
+            c.plan_settlements(plan, &chords, &mut actions);
+        } else if admission.rehearsed && opts.actions {
+            plan_settlements(plan, &chords, region, &mut actions);
+        }
+        // A settlement a rehearsal found unplayed where it was planned moves onto the arrival a
+        // player made in its phrase (performed there by that player).
+        for r in &admission.recast {
+            let domain = PerformanceDomain::new(total_beats);
+            if let Some(a) = actions.actions.iter_mut().find(|a| {
+                matches!(a.cause, ActionCause::Discourse { obligation, .. } if obligation == r.obligation)
+            }) {
+                let dur = domain.fit(r.start_beat, a.dur_beats).unwrap_or(a.dur_beats);
+                a.start_beat = r.start_beat;
+                a.target_beat = Some(r.start_beat);
+                a.initiator = r.by;
+                a.dur_beats = dur;
+            }
+        }
+        strike(&mut actions, &mut constrained_rejections);
         let mut stage = Stage::from_arrangement(plan);
         if let Some(c) = &cover_constraints {
             c.apply_stage(&mut stage);
@@ -743,15 +747,18 @@ impl PerformancePlan {
             &stage,
             seed,
             cover_constraints.as_ref(),
+            &admission.vetoed,
         );
         let (statements, interactions) = (ip.statements, ip.interactions);
         // 5b. A resolution is performed by whoever ARRIVES: the lead when a statement sounds at
         //     the target, otherwise the bass (or keys) who are there — never a silent lead.
-        for a in actions
-            .actions
-            .iter_mut()
-            .filter(|a| a.kind == ActionKind::Resolve)
-        {
+        for a in actions.actions.iter_mut().filter(|a| {
+            // A recast settlement is already performed by the player a rehearsal heard arrive.
+            a.kind == ActionKind::Resolve
+                && !admission.recast.iter().any(|r| {
+                    matches!(a.cause, ActionCause::Discourse { obligation, .. } if obligation == r.obligation)
+                })
+        }) {
             let t = a.target_beat.unwrap_or(a.start_beat);
             let lead_sings = statements
                 .iter()
@@ -786,6 +793,30 @@ impl PerformancePlan {
                 .map(|p| (p.start_beat(), p.end_beat()))
                 .unwrap_or((0.0, 0.0))
         });
+        // Rehearsed: every verb left on this chart is performed (the rehearsal converged), so a
+        // bound witness is a performed discharge. A debt the discourse settles here with no such
+        // verb is not settled by this performance: it stays open, named. The phrase role alone
+        // never makes a settlement true.
+        let rehearsal = admission.rehearsed.then(|| {
+            let mut open_debts = Vec::new();
+            for o in &mut obligations.obligations {
+                let Some(s) = o.settlement.filter(|s| s.witness.is_none()) else {
+                    continue;
+                };
+                let rejected = admission.vetoed.iter().any(|k| k.settles() == Some(o.id));
+                open_debts.push(super::rehearsal::OpenDebt {
+                    obligation: o.id,
+                    kind: o.kind,
+                    by_phrase: s.by_phrase,
+                    reason: super::rehearsal::open_reason(o.kind, rejected),
+                });
+                o.settlement = None;
+            }
+            super::rehearsal::RehearsalTrace {
+                open_debts,
+                ..Default::default()
+            }
+        });
 
         let mut perf = PerformancePlan {
             song_fingerprint: song.fingerprint(),
@@ -813,6 +844,7 @@ impl PerformancePlan {
             obligations,
             budget: Vec::new(),
             cover_constraints,
+            rehearsal,
         };
         // 8. The shared complexity budget: the lead's statements and the planned answers and
         //    figures are reserved, the rest is shared out to the accompanists.
@@ -1558,6 +1590,9 @@ impl std::fmt::Debug for PerformancePlan {
         if let Some(c) = &self.cover_constraints {
             d.field("cover_constraints", c);
         }
+        if let Some(r) = &self.rehearsal {
+            d.field("rehearsal", r);
+        }
         d.finish()
     }
 }
@@ -1578,7 +1613,7 @@ mod tests {
             .iter()
             .find(|a| matches!(a.cause, ActionCause::Interaction { .. }))
             .expect("the flagship answers a call");
-        let before = ActionKey::of(answer);
+        let before = ActionKey::of(answer, &p.actions);
         let start = answer.start_beat;
         let mut struck = p.actions.clone();
         let first = struck.actions[0].id;
@@ -1589,7 +1624,7 @@ mod tests {
             .iter()
             .find(|a| a.start_beat == start && matches!(a.cause, ActionCause::Interaction { .. }))
             .expect("still planned");
-        assert_eq!(ActionKey::of(same), before);
+        assert_eq!(ActionKey::of(same, &struck), before);
     }
 
     /// A verb the rehearsal found nobody performing is struck wherever the planner makes it —
@@ -1613,7 +1648,7 @@ mod tests {
                 a.kind == ActionKind::Answer && matches!(a.cause, ActionCause::Interaction { .. })
             })
             .expect("an answer");
-        let key = ActionKey::of(answer);
+        let key = ActionKey::of(answer, &base.actions);
         let inputs = AdmissionInputs {
             vetoed: vec![key.clone()],
             ..AdmissionInputs::default()
@@ -1625,7 +1660,7 @@ mod tests {
                 .actions
                 .actions
                 .iter()
-                .any(|a| ActionKey::of(a) == key),
+                .any(|a| ActionKey::of(a, &struck.actions) == key),
             "a vetoed answer is still on the chart"
         );
     }
