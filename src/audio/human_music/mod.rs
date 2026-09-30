@@ -63,6 +63,7 @@ pub mod phenomenal;
 mod phenomenal_probes;
 pub mod phrase_diagnostics;
 pub mod phrase_expression;
+pub mod voice;
 pub mod pitch;
 pub mod plan;
 #[cfg(test)]

@@ -188,7 +188,6 @@ impl TemporalMass {
         beats_per_bar: f64,
         world: &MusicWorld,
     ) -> Vec<TemporalMass> {
-        let spb = 60.0 / f64::from(tempo_bpm.max(1.0));
         let dwell_end: Vec<f64> = notes
             .iter()
             .map(|n| {
@@ -211,6 +210,56 @@ impl TemporalMass {
                     .max(n.start_beat)
             })
             .collect();
+        Self::from_dwell_ends(notes, contexts, tempo_bpm, beats_per_bar, &dwell_end)
+    }
+
+    /// Use the score's explicit continuation contracts for the opt-in pocket arm.
+    /// Historical scores retain the frozen masking model in [`Self::of_notes`]. The pocket
+    /// flag selects unmasked physics; only explicit links authorize a choke, with or without it.
+    pub fn of_score(
+        score: &Score,
+        contexts: &[HarmonicContext],
+        world: &MusicWorld,
+    ) -> Vec<TemporalMass> {
+        if !score.mono_voice && score.voice_continuity.is_empty() {
+            return Self::of_notes(
+                &score.notes,
+                contexts,
+                score.tempo_bpm,
+                score.beats_per_bar,
+                world,
+            );
+        }
+        let dwell_end: Vec<_> = score
+            .notes
+            .iter()
+            .map(|n| {
+                super::voice::effective_audible_end_at(
+                    n,
+                    patch(world, n.role),
+                    score.tempo_bpm,
+                    super::sonority::AUDIBLE_FLOOR_DB,
+                    &score.voice_continuity,
+                )
+            })
+            .collect();
+        Self::from_dwell_ends(
+            &score.notes,
+            contexts,
+            score.tempo_bpm,
+            score.beats_per_bar,
+            &dwell_end,
+        )
+    }
+
+    fn from_dwell_ends(
+        notes: &[Note],
+        contexts: &[HarmonicContext],
+        tempo_bpm: f32,
+        beats_per_bar: f64,
+        dwell_end: &[f64],
+    ) -> Vec<TemporalMass> {
+        let spb = 60.0 / f64::from(tempo_bpm.max(1.0));
         let window = RECALL_WINDOW_SECS / spb;
         notes
             .iter()
@@ -423,13 +472,7 @@ impl MassDiagnostics {
     /// score's own tempo (the score is the clock).
     pub fn measure(perf: &PerformancePlan, score: &Score, world: &MusicWorld) -> Self {
         let base = TemporalPitchDiagnostics::measure(perf, score);
-        let masses = TemporalMass::of_notes(
-            &score.notes,
-            &perf.contexts,
-            score.tempo_bpm,
-            score.beats_per_bar,
-            world,
-        );
+        let masses = TemporalMass::of_score(score, &perf.contexts, world);
         let spb = 60.0 / f64::from(score.tempo_bpm.max(1.0));
         let mut out = MassDiagnostics::default();
         for (i, n) in score.notes.iter().enumerate() {

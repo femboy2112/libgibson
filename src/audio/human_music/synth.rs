@@ -20,6 +20,7 @@ use super::super::StereoBlock;
 use super::instrument::{OscKind, Patch};
 use super::score::{DrumVoice, Role, Score, SfxKind};
 use super::theory::{midi_to_hz, Midi, Scale};
+use super::voice::{VoiceEventId, MONO_CHOKE_SECS};
 use super::world::MusicWorld;
 
 /// A single polyphonic synth voice built from a [`Patch`].
@@ -32,6 +33,8 @@ struct SynthVoice {
     fm_index: f32,
     amp: Adsr,
     fenv: Adsr,
+    idle_amp: Adsr,
+    idle_fenv: Adsr,
     filt: Svf,
     cutoff_base: f32,
     cutoff_env: f32,
@@ -43,6 +46,9 @@ struct SynthVoice {
     gated_off: bool,
     tick: u32,
     age: u64,
+    // Remaining/total output-ramp samples; None is the byte-exact historical path.
+    choke: Option<(u32, u32)>,
+    event_id: Option<VoiceEventId>,
 }
 
 impl SynthVoice {
@@ -89,6 +95,8 @@ impl SynthVoice {
             fm,
             fm_ratio,
             fm_index,
+            idle_amp: amp.clone(),
+            idle_fenv: fenv.clone(),
             amp,
             fenv,
             filt: Svf::new(sr),
@@ -102,6 +110,8 @@ impl SynthVoice {
             gated_off: true,
             tick: 0,
             age: 0,
+            choke: None,
+            event_id: None,
         }
     }
 
@@ -115,6 +125,12 @@ impl SynthVoice {
         if let Some(fm) = &mut self.fm {
             fm.set(freq, self.fm_ratio, self.fm_index);
         }
+        // A silenced linked voice can be reused before its old ADSR naturally drains.
+        // Restart its envelopes at zero; the historical unchoked allocation path is untouched.
+        if self.choke.is_some() {
+            self.amp = self.idle_amp.clone();
+            self.fenv = self.idle_fenv.clone();
+        }
         self.amp.gate_on();
         self.fenv.gate_on();
         self.filt.reset();
@@ -122,15 +138,24 @@ impl SynthVoice {
         self.remaining = dur_samples.max(1);
         self.gated_off = false;
         self.age = 0;
+        self.choke = None;
     }
 
     fn active(&self) -> bool {
-        self.amp.is_active()
+        self.amp.is_active() && self.choke.is_none_or(|(remaining, _)| remaining > 0)
+    }
+
+    /// Start once: a later attack must never prolong an already draining voice.
+    fn choke(&mut self, samples: u32) {
+        if self.active() && self.choke.is_none() {
+            let samples = samples.max(1);
+            self.choke = Some((samples, samples));
+        }
     }
 
     /// One mono sample of this voice (unpanned).
     fn next(&mut self) -> f32 {
-        if !self.amp.is_active() {
+        if !self.active() {
             return 0.0;
         }
         let mut raw = 0.0;
@@ -162,12 +187,20 @@ impl SynthVoice {
             self.gated_off = true;
         }
         self.age += 1;
-        y
+        if let Some((remaining, total)) = &mut self.choke {
+            let gain = *remaining as f32 / *total as f32;
+            *remaining -= 1;
+            y * gain
+        } else {
+            y
+        }
     }
 }
 
 /// A pre-scheduled note event (sample-accurate).
 struct NoteEvent {
+    id: VoiceEventId,
+    choke_from: Vec<VoiceEventId>,
     at: u64,
     dur: i64,
     freq: f32,
@@ -494,6 +527,7 @@ impl ProductionControl {
 /// The HumanMusic synthesizer.
 pub struct HumanMusicSynth {
     total_samples: u64,
+    choke_samples: u32,
     // Voice pools per role.
     pads: Vec<SynthVoice>,
     keys: Vec<SynthVoice>,
@@ -553,6 +587,12 @@ impl HumanMusicSynth {
         sr: SampleRate,
         production: ProductionControl,
     ) -> HumanMusicSynth {
+        let continuity_errors =
+            super::voice::continuity_violations(&score.notes, &score.voice_continuity);
+        assert!(
+            continuity_errors.is_empty(),
+            "invalid voice continuity: {continuity_errors:?}"
+        );
         let srf = sr.as_f64() as f32;
         // Tempo is the SCORE's — the score IS the composition, the world is only the dialect.
         // compose() sets score.tempo_bpm from world.tempo_bpm so they agree today, but the
@@ -570,6 +610,13 @@ impl HumanMusicSynth {
             .notes
             .iter()
             .map(|n| NoteEvent {
+                id: VoiceEventId::of(n),
+                choke_from: score
+                    .voice_continuity
+                    .iter()
+                    .filter(|link| link.to == VoiceEventId::of(n))
+                    .map(|link| link.from)
+                    .collect(),
                 at: tempo.beat_to_sample(n.start_beat).0,
                 dur: (n.dur_beats as f64 * tempo.samples_per_beat()).round() as i64,
                 freq: midi_to_hz(n.pitch),
@@ -628,6 +675,7 @@ impl HumanMusicSynth {
 
         HumanMusicSynth {
             total_samples,
+            choke_samples: (MONO_CHOKE_SECS * sr.as_f64()).round().max(1.0) as u32,
             pads: mk_pool(&production.apply(&world.pad), 6),
             keys: mk_pool(&production.apply(&world.keys), 6),
             bass: mk_pool(&production.apply(&world.bass), 3),
@@ -705,13 +753,19 @@ impl HumanMusicSynth {
         self.meter.levels()
     }
 
-    fn trigger_note(&mut self, ev: &NoteEvent) {
+    fn trigger_note(&mut self, index: usize) {
+        let ev = &self.notes[index];
         let pool = match ev.role {
             Role::Pad => &mut self.pads,
             Role::Keys => &mut self.keys,
             Role::Bass => &mut self.bass,
             Role::Lead => &mut self.lead,
         };
+        for voice in pool.iter_mut() {
+            if voice.event_id.is_some_and(|id| ev.choke_from.contains(&id)) {
+                voice.choke(self.choke_samples);
+            }
+        }
         // Find an inactive voice, else steal the oldest.
         let idx = pool.iter().position(|v| !v.active()).unwrap_or_else(|| {
             pool.iter()
@@ -721,6 +775,7 @@ impl HumanMusicSynth {
                 .unwrap_or(0)
         });
         pool[idx].trigger(ev.freq, ev.velocity, ev.dur);
+        pool[idx].event_id = Some(ev.id);
     }
 }
 
@@ -733,14 +788,7 @@ impl AudioSource for HumanMusicSynth {
 
             // --- Trigger scheduled events at this sample. ---
             while self.ncur < self.notes.len() && self.notes[self.ncur].at <= abs {
-                let ev = NoteEvent {
-                    at: self.notes[self.ncur].at,
-                    dur: self.notes[self.ncur].dur,
-                    freq: self.notes[self.ncur].freq,
-                    velocity: self.notes[self.ncur].velocity,
-                    role: self.notes[self.ncur].role,
-                };
-                self.trigger_note(&ev);
+                self.trigger_note(self.ncur);
                 self.ncur += 1;
             }
             while self.dcur < self.drums.len() && self.drums[self.dcur].at <= abs {
@@ -1002,6 +1050,92 @@ pub fn world_scale_sfx_pitches(kind: SfxKind, scale: &Scale) -> [Midi; 2] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mono_choke_drains_even_releasing_voices_without_restarting_the_ramp() {
+        let world = MusicWorld::black_ice();
+        let mut voice = SynthVoice::new(&world.lead, 48_000.0);
+        let mut reference = SynthVoice::new(&world.lead, 48_000.0);
+        voice.trigger(440.0, 0.8, 100);
+        reference.trigger(440.0, 0.8, 100);
+        for _ in 0..200 {
+            assert_eq!(voice.next(), reference.next());
+        }
+        assert!(
+            voice.gated_off && voice.active(),
+            "exercise an existing release tail"
+        );
+        voice.choke(720);
+        let mut nonzero = false;
+        for remaining in (1..=720).rev() {
+            // Simulate repeated subsequent attacks: they cannot restart this tail.
+            voice.choke(720);
+            let expected = reference.next() * (remaining as f32 / 720.0);
+            let sample = voice.next();
+            assert_eq!(sample, expected);
+            nonzero |= sample != 0.0;
+        }
+        assert!(nonzero && reference.active());
+        assert!(!voice.active());
+        assert_eq!(voice.next(), 0.0);
+        voice.trigger(660.0, 0.8, 1000);
+        assert!(voice.active() && voice.choke.is_none());
+        let mut fresh_amp = voice.idle_amp.clone();
+        fresh_amp.gate_on();
+        assert_eq!(
+            voice.amp.next(),
+            fresh_amp.next(),
+            "reused voice must not resume an old sustain"
+        );
+    }
+
+    #[test]
+    fn explicit_continuation_leaves_independent_same_role_voice_alive() {
+        use super::super::{
+            form::SectionKind,
+            score::{Note, Provenance},
+            voice::VoiceContinuation,
+        };
+        let world = MusicWorld::black_ice();
+        for role in [Role::Lead, Role::Bass] {
+            let mut score = Score::new(world.tempo_bpm, 4.0, 2.0);
+            let from = Note::new(0.0, 1.0, 60, 0.8, role, Provenance::new(SectionKind::A));
+            let independent = Note::new(0.0, 1.0, 67, 0.8, role, Provenance::new(SectionKind::A));
+            let to = Note::new(0.25, 1.0, 62, 0.8, role, Provenance::new(SectionKind::A));
+            score.notes = vec![from, independent, to];
+            score
+                .voice_continuity
+                .push(VoiceContinuation::new(&from, &to).unwrap());
+            let mut synth = HumanMusicSynth::new(&score, &world, SampleRate::STUDIO);
+            let frames =
+                (0.25 * 60.0 / f64::from(world.tempo_bpm) * 48_000.0).round() as usize + 720;
+            let mut block = StereoBlock::new(frames);
+            synth.render(
+                &mut block,
+                &RenderCtx {
+                    sr: SampleRate::STUDIO,
+                    start: SampleTime(0),
+                },
+            );
+            let pool = if role == Role::Lead {
+                &synth.lead
+            } else {
+                &synth.bass
+            };
+            let source = pool
+                .iter()
+                .find(|v| v.event_id == Some(VoiceEventId::of(&from)))
+                .unwrap();
+            assert!(!source.active());
+            for note in [independent, to] {
+                let voice = pool
+                    .iter()
+                    .find(|v| v.event_id == Some(VoiceEventId::of(&note)))
+                    .unwrap();
+                assert!(voice.active() && voice.choke.is_none());
+            }
+        }
+    }
 
     // P0 REGRESSION (written to FAIL on the pre-fix code): a triggered SFX voice must reach a
     // bounded end. Pre-fix, SfxVoice::trigger() gates the ADSR on and NOTHING ever gates it off,

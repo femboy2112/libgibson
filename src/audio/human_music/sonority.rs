@@ -841,6 +841,9 @@ pub fn audible_voices(
     floor_db: f64,
 ) -> Vec<Voice> {
     let mut v = voices_of(score, contexts);
+    // voices_of sorts stably. Match each projected voice to one source note once, preserving
+    // duplicate multiplicity without guessing a role-wide voice/string assignment.
+    let mut consumed = vec![false; score.notes.len()];
     for x in &mut v {
         let patch = if x.sfx {
             // The SFX voice's own envelope, found by its onset (gestures never share a beat and a
@@ -869,6 +872,28 @@ pub fn audible_voices(
                 Role::Lead => &world.lead,
             }
         };
+        if (score.mono_voice || !score.voice_continuity.is_empty()) && !x.sfx {
+            let source = score.notes.iter().enumerate().find(|(i, n)| {
+                !consumed[*i]
+                    && n.role == x.role
+                    && n.pitch == x.pitch
+                    && n.start_beat == x.start
+                    && n.start_beat + f64::from(n.dur_beats) == x.written_end
+                    && n.function == x.function
+                    && n.prov.role_note == x.tag
+            });
+            if let Some((i, note)) = source {
+                consumed[i] = true;
+                x.end = super::voice::effective_audible_end_at(
+                    note,
+                    &patch,
+                    score.tempo_bpm,
+                    floor_db,
+                    &score.voice_continuity,
+                );
+                continue;
+            }
+        }
         x.end = audible_end_at(
             x.start,
             x.written_end - x.start,

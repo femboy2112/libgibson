@@ -26,7 +26,7 @@
 //! downbeat root certifies the whole bar. Here the root's own audible tail is its memory, and
 //! the hold is measured in seconds.
 use super::context::{guide_tones, HarmonicContext};
-use super::score::{Note, Role};
+use super::score::{Note, Role, Score};
 use super::tension::heard_windows;
 use super::theory::{note_name, pitch_class, Chord, Quality};
 use super::world::MusicWorld;
@@ -143,6 +143,21 @@ impl IdentityDiagnostics {
         tempo_bpm: f32,
     ) -> IdentityDiagnostics {
         let win = heard_windows(notes, world, tempo_bpm);
+        Self::measure_windows(notes, contexts, tempo_bpm, &win)
+    }
+
+    /// Audit with the score's explicit pocket continuity and its own tempo.
+    pub fn measure_score(score: &Score, contexts: &[HarmonicContext], world: &MusicWorld) -> Self {
+        let win = super::tension::heard_windows_score(score, world);
+        Self::measure_windows(&score.notes, contexts, score.tempo_bpm, &win)
+    }
+
+    fn measure_windows(
+        notes: &[Note],
+        contexts: &[HarmonicContext],
+        tempo_bpm: f32,
+        win: &[(f64, f64)],
+    ) -> Self {
         let mut cuts: Vec<f64> = win.iter().flat_map(|&(a, b)| [a, b]).collect();
         cuts.extend(contexts.iter().map(|c| c.start_beat));
         cuts.sort_by(f64::total_cmp);

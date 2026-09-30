@@ -265,10 +265,26 @@ pub fn observe(
     target: Option<&Note>,
     support: &[Note],
 ) -> ExpressionObservation {
+    observe_with_voice_contract(perf, world, event, prev, target, support, &[])
+}
+
+/// Inspect with explicit source-owned voice continuity. Only a linked successor bounds
+/// the current direct voice at that attack plus the synth's short choke ramp.
+/// This is direct-voice exposure: shared downstream reverb can outlive it. The frozen Round XV
+/// observer is exactly the empty-links path; all acceptance thresholds are unchanged.
+pub fn observe_with_voice_contract(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    event: &ExpressionEvent,
+    prev: Option<&Note>,
+    target: Option<&Note>,
+    support: &[Note],
+    links: &[super::voice::VoiceContinuation],
+) -> ExpressionObservation {
     let n = &event.note;
     let spb = 60.0 / f64::from(world.tempo_bpm.max(1.0));
     let p = patch(world, n.role);
-    let end = audible_end(n.start_beat, f64::from(n.dur_beats), p, world.tempo_bpm);
+    let end = super::voice::effective_audible_end(n, world, links);
     let audible = (end - n.start_beat) * spb;
     let latency = target.map_or(f64::INFINITY, |t| (t.start_beat - n.start_beat) * spb);
     let chart_dissonance = perf
@@ -280,12 +296,7 @@ pub fn observe(
             s.role != n.role
                 && matches!((s.pitch - n.pitch).rem_euclid(12), 1 | 11)
                 && s.start_beat < end
-                && audible_end(
-                    s.start_beat,
-                    f64::from(s.dur_beats),
-                    patch(world, s.role),
-                    world.tempo_bpm,
-                ) > n.start_beat
+                && super::voice::effective_audible_end(s, world, links) > n.start_beat
         })
         .map(|s| (s.role, s.pitch))
         .collect();
@@ -387,13 +398,14 @@ impl ExpressionDiagnostics {
                 .enumerate()
                 .filter(|(_, e)| connective(e.note.function))
             {
-                rows.push(observe(
+                rows.push(observe_with_voice_contract(
                     perf,
                     world,
                     e,
                     i.checked_sub(1).map(|j| &notes[j]),
                     notes.get(i + 1),
                     &score.notes,
+                    &score.voice_continuity,
                 ));
             }
         }

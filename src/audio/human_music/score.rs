@@ -355,6 +355,11 @@ impl SfxEvent {
 /// A complete, deterministic score.
 #[derive(Debug, Clone)]
 pub struct Score {
+    /// Opt-in Round XVII Lead/Bass direct-voice choke contract. Historical scores are false.
+    /// Orthogonal to the event fingerprint; render receipts must record this flag too.
+    pub mono_voice: bool,
+    /// Source-declared connective continuations; no role-wide monophony is inferred.
+    pub voice_continuity: Vec<super::voice::VoiceContinuation>,
     pub notes: Vec<Note>,
     pub drums: Vec<DrumHit>,
     pub sfx: Vec<SfxEvent>,
@@ -460,6 +465,8 @@ impl Score {
     /// An empty score.
     pub fn new(tempo_bpm: f32, beats_per_bar: f64, total_beats: f64) -> Score {
         Score {
+            mono_voice: false,
+            voice_continuity: Vec::new(),
             notes: Vec::new(),
             drums: Vec::new(),
             sfx: Vec::new(),

@@ -151,6 +151,31 @@ pub fn heard_windows(notes: &[Note], world: &MusicWorld, tempo_bpm: f32) -> Vec<
         .collect()
 }
 
+/// Score-aware heard windows. Pocket voices follow only explicit continuation links;
+/// unrelated simultaneous notes retain their own patch lifetime. Explicit links are honored
+/// with or without the pocket flag; the flag alone selects unmasked physics and licenses no choke.
+pub fn heard_windows_score(score: &Score, world: &MusicWorld) -> Vec<(f64, f64)> {
+    if !score.mono_voice && score.voice_continuity.is_empty() {
+        return heard_windows(&score.notes, world, score.tempo_bpm);
+    }
+    score
+        .notes
+        .iter()
+        .map(|n| {
+            (
+                n.start_beat,
+                super::voice::effective_audible_end_at(
+                    n,
+                    patch(world, n.role),
+                    score.tempo_bpm,
+                    super::sonority::AUDIBLE_FLOOR_DB,
+                    &score.voice_continuity,
+                ),
+            )
+        })
+        .collect()
+}
+
 /// How structural `pitch` is over `ctx`, 0 = the root: its place in the written chord, then 8 for
 /// a tone of the region's scale, 9 for a chromatic tone.
 fn rank(ctx: &HarmonicContext, pitch: Midi) -> u8 {
@@ -172,6 +197,17 @@ pub fn clashes(
 ) -> Vec<Clash> {
     let spb = 60.0 / f64::from(tempo_bpm.max(1.0));
     let win = heard_windows(notes, world, tempo_bpm);
+    clashes_in_windows(notes, contexts, spb, beats_per_bar, &win, None)
+}
+
+fn clashes_in_windows(
+    notes: &[Note],
+    contexts: &[HarmonicContext],
+    spb: f64,
+    beats_per_bar: f64,
+    win: &[(f64, f64)],
+    links: Option<&[super::voice::VoiceContinuation]>,
+) -> Vec<Clash> {
     let mut order: Vec<usize> = (0..notes.len()).collect();
     order.sort_by(|&a, &b| notes[a].start_beat.total_cmp(&notes[b].start_beat));
     let mut out = Vec::new();
@@ -185,7 +221,13 @@ pub fn clashes(
             }
             // One voice's legato: its tail into the role's next attack.
             let a_end = notes[a].start_beat + f64::from(notes[a].dur_beats);
-            if notes[a].role == notes[b].role && a_end <= notes[b].start_beat + EPS {
+            let connected = links.map_or(notes[a].role == notes[b].role, |links| {
+                links.iter().any(|l| {
+                    l.from == super::voice::VoiceEventId::of(&notes[a])
+                        && l.to == super::voice::VoiceEventId::of(&notes[b])
+                })
+            });
+            if connected && a_end <= notes[b].start_beat + EPS {
                 continue;
             }
             let (s, e) = (notes[b].start_beat, win[a].1.min(win[b].1));
@@ -209,7 +251,7 @@ pub fn clashes(
             } else {
                 (a, b)
             };
-            out.push(judge(notes, &win, contexts, spb, beats_per_bar, t, c, s, e));
+            out.push(judge(notes, win, contexts, spb, beats_per_bar, t, c, s, e));
         }
     }
     out
@@ -307,13 +349,24 @@ impl TensionDiagnostics {
         contexts: &[HarmonicContext],
         world: &MusicWorld,
     ) -> TensionDiagnostics {
-        let clashes = clashes(
-            &score.notes,
-            contexts,
-            world,
-            score.tempo_bpm,
-            score.beats_per_bar,
-        );
+        let clashes = if score.mono_voice || !score.voice_continuity.is_empty() {
+            clashes_in_windows(
+                &score.notes,
+                contexts,
+                60.0 / f64::from(score.tempo_bpm.max(1.0)),
+                score.beats_per_bar,
+                &heard_windows_score(score, world),
+                Some(&score.voice_continuity),
+            )
+        } else {
+            clashes(
+                &score.notes,
+                contexts,
+                world,
+                score.tempo_bpm,
+                score.beats_per_bar,
+            )
+        };
         let count = |v: TensionVerdict| clashes.iter().filter(|c| c.verdict == v).count();
         TensionDiagnostics {
             transient: count(TensionVerdict::Transient),

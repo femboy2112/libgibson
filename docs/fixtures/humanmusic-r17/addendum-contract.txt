@@ -1,0 +1,25 @@
+Round XVII addendum (after Phase0, before arm admission)
+
+Lattice membership is necessary, not sufficient. Generate indexed positions from a
+shared metric origin; choose by source phase, phrase IOI contour, shared AccentGrid,
+kinetic/pickup context, existing gestures and immutable structural corridor; physical
+latency only rejects. Retain separate diagnostic fields, never one quality score.
+Hostile witness: two lattice-valid physically viable placements differ in source phase;
+an all-early lattice-valid pickup stream must remain distinguishable as phase-wrong.
+
+Role is not a voice. Only explicitly declared source connective -> destination links
+may choke. Missing/ambiguous endpoints fail rather than guessing a lane. Advancing one
+of two simultaneous same-role voices must preserve the independent one. Direct choke
+15ms and effective audible endpoint are one shared authority for renderer, expression,
+mass, identity, sounding tension and support. Shared reverb may outlive direct voice.
+Historical APIs/arms retain their old meanings and PCM bytes.
+
+Observed maintainer knockout feedback (b028):
+"shit sound in 0031_m79, 0028_m60 sounds in tune."
+0031_m79 mutes pad G5: unwanted sound remains.
+0028_m60 mutes pad C4: maintainer reports it sounds in tune.
+This implicates the low C4 pad event in this window and defeats G5-alone as the leading
+source explanation there. It does not identify whether the mechanism is C4/B2 contact,
+masking, voice timbre, or release interaction, nor certify homologues36/44.
+The suggested C4 G4 B4 E5 exemplar retains the implicated note: not promoted from
+within-song similarity. Only localized, admitted candidates become new audition arms.
