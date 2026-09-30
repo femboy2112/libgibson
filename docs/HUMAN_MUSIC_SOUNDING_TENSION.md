@@ -1,5 +1,14 @@
 # HumanMusic Round XIIIb — sounding tension
 
+> **Round XIV correction.** The maintainer's listen of this round's renders: the ~16 s chord and
+> BLACK_ICE's wrong notes were not fixed, and SWISS gained a regression. The C5 this round removed
+> as "covered by the bass" was covered only at the pad's onset. The bass then walks E2 G2 B2
+> under E4 B4 G5, so 15.25–16.02 s and 23.72–24.41 s are heard as E minor under a Cmaj7 chart.
+> The gate also re-timed 18 BLACK_ICE lead notes after the keys, bass and drums had heard them.
+> Round XIV keeps this arm as a historical control, measures the chord the band sounds instead,
+> and fixes the pad at its source: [HUMAN_MUSIC_HEARD_OBJECTS.md](HUMAN_MUSIC_HEARD_OBJECTS.md).
+> This document stays as the Round XIIIb record.
+
 ## Scope and authority
 
 Continues Round XIII (`a7fde22..a8514cc`) on `feat/v0.4-humanmusic-audio`; main/base

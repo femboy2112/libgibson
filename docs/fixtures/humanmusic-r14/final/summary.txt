@@ -1,0 +1,24 @@
+swiss     r12  notes 449 | identity flips 1 (1.780 s): [42.97-44.75 s Fmaj9 heard as A (1.780 s)]
+swiss     r12  gesture: declared slides 0 | slide-supported 0 | slide-dependent 0 | FAKE SLIDES 0 | physical slides 0 | chromatic approaches 0 | discrete lines 0 (chromatic staircases 0)
+swiss     r12  stale hearings 0: []
+swiss     r13  notes 443 | identity flips 1 (1.780 s): [42.97-44.75 s Fmaj9 heard as A (1.780 s)]
+swiss     r13  gesture: declared slides 0 | slide-supported 0 | slide-dependent 0 | FAKE SLIDES 0 | physical slides 0 | chromatic approaches 0 | discrete lines 0 (chromatic staircases 0)
+swiss     r13  stale hearings 0: []
+swiss     r13b notes 439 | identity flips 3 (3.234 s): [15.25-16.02 s Cmaj7 heard as Em (0.763 s); 23.72-24.41 s Cmaj7 heard as Em (0.691 s); 42.97-44.75 s Fmaj9 heard as A (1.780 s)]
+swiss     r13b gesture: declared slides 0 | slide-supported 0 | slide-dependent 0 | FAKE SLIDES 0 | physical slides 0 | chromatic approaches 0 | discrete lines 0 (chromatic staircases 0)
+swiss     r13b stale hearings 0: []
+swiss     r14  notes 449 | identity flips 0 (-0.000 s): []
+swiss     r14  gesture: declared slides 0 | slide-supported 0 | slide-dependent 0 | FAKE SLIDES 0 | physical slides 0 | chromatic approaches 0 | discrete lines 0 (chromatic staircases 0)
+swiss     r14  stale hearings 0: []
+black_ice r12  notes 449 | identity flips 10 (9.835 s): [9.95-10.91 s Am9 heard as C (0.963 s); 14.66-15.42 s Dm7 heard as F (0.759 s); 20.45-21.14 s Am9 heard as Em (0.682 s); 31.76-32.73 s Am9 heard as C (0.963 s); 33.92-34.92 s Dm9 heard as Am (0.997 s); 36.99-37.83 s Dm7 heard as Am (0.844 s); 55.74-56.74 s Dm9 heard as Am (0.997 s); 57.95-60.00 s Dm7 heard as Am (2.045 s); 69.95-70.91 s Am9 heard as C (0.963 s); 80.86-81.48 s Am9 heard as C (0.622 s)]
+black_ice r12  gesture: declared slides 0 | slide-supported 0 | slide-dependent 0 | FAKE SLIDES 0 | physical slides 0 | chromatic approaches 0 | discrete lines 0 (chromatic staircases 0)
+black_ice r12  stale hearings 0: []
+black_ice r13  notes 432 | identity flips 10 (9.755 s): [9.95-10.91 s Am9 heard as C (0.963 s); 14.66-15.34 s Dm7 heard as F (0.679 s); 20.45-21.14 s Am9 heard as Em (0.682 s); 31.76-32.73 s Am9 heard as C (0.963 s); 33.92-34.92 s Dm9 heard as Am (0.997 s); 36.99-37.83 s Dm7 heard as F (0.844 s); 55.74-56.74 s Dm9 heard as Am (0.997 s); 57.95-60.00 s Dm7 heard as F (2.045 s); 69.95-70.91 s Am9 heard as C (0.963 s); 80.86-81.48 s Am9 heard as C (0.622 s)]
+black_ice r13  gesture: declared slides 0 | slide-supported 0 | slide-dependent 0 | FAKE SLIDES 0 | physical slides 0 | chromatic approaches 0 | discrete lines 0 (chromatic staircases 0)
+black_ice r13  stale hearings 0: []
+black_ice r13b notes 432 | identity flips 10 (9.755 s): [9.95-10.91 s Am9 heard as C (0.963 s); 14.66-15.34 s Dm7 heard as F (0.679 s); 20.45-21.14 s Am9 heard as Em (0.682 s); 31.76-32.73 s Am9 heard as C (0.963 s); 33.92-34.92 s Dm9 heard as Am (0.997 s); 36.99-37.83 s Dm7 heard as F (0.844 s); 55.74-56.74 s Dm9 heard as Am (0.997 s); 57.95-60.00 s Dm7 heard as F (2.045 s); 69.95-70.91 s Am9 heard as C (0.963 s); 80.86-81.48 s Am9 heard as C (0.622 s)]
+black_ice r13b gesture: declared slides 0 | slide-supported 0 | slide-dependent 0 | FAKE SLIDES 0 | physical slides 0 | chromatic approaches 0 | discrete lines 0 (chromatic staircases 0)
+black_ice r13b stale hearings 3: [keys heard 18 notes of the lead not in the final score; bass heard 18 notes of the lead not in the final score; drums heard 18 notes of the lead not in the final score]
+black_ice r14  notes 449 | identity flips 0 (-0.000 s): []
+black_ice r14  gesture: declared slides 0 | slide-supported 0 | slide-dependent 0 | FAKE SLIDES 0 | physical slides 0 | chromatic approaches 0 | discrete lines 0 (chromatic staircases 0)
+black_ice r14  stale hearings 0: []

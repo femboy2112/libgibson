@@ -1,0 +1,35 @@
+Round XII (A) -> Round XIV (B), black_ice, independent diff of the two scores
+pitched events (A): 449
+notes pitch-changed: 24
+notes duration-changed: 0
+notes omitted: 0
+notes added: 0
+note count: 449 -> 449
+total changed events: 24
+percentage of pitched events affected: 5.345%
+pad voicings changed: 20 (ledger: 24 edits over 20 voicings)
+lead, keys, bass: identical; drums identical: true; sfx identical: true
+pitch    pad  beat   4.000  B3 -> B5
+pitch    pad  beat  12.000  B4 -> A5
+pitch    pad  beat  12.000  E5 -> B5
+pitch    pad  beat  20.000  G5 -> D6
+pitch    pad  beat  24.000  B4 -> B5
+pitch    pad  beat  28.000  B4 -> A5
+pitch    pad  beat  28.000  E5 -> B5
+pitch    pad  beat  44.000  B4 -> A5
+pitch    pad  beat  44.000  E5 -> B5
+pitch    pad  beat  48.000  G4 -> D4
+pitch    pad  beat  52.000  G5 -> D6
+pitch    pad  beat  56.000  B4 -> B5
+pitch    pad  beat  60.000  B4 -> B5
+pitch    pad  beat  64.000  B4 -> B5
+pitch    pad  beat  68.000  B4 -> B5
+pitch    pad  beat  72.000  B4 -> B5
+pitch    pad  beat  76.000  B4 -> B5
+pitch    pad  beat  80.000  G4 -> D4
+pitch    pad  beat  84.000  E5 -> D5
+pitch    pad  beat 100.000  B4 -> A5
+pitch    pad  beat 100.000  E5 -> B5
+pitch    pad  beat 104.000  B4 -> B5
+pitch    pad  beat 108.000  B4 -> B5
+pitch    pad  beat 116.000  F#5 -> A5

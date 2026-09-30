@@ -1,0 +1,40 @@
+t = 15.0 s
+  r12   15.000-15.170  s  beats  22.000-22.250   chart Dm7    bass C3  | bass C3 pad F4 C5 E5 G5 lead A4  | root D: last heard 0.341 s ago  guide [F+ C+]  rival C  -> FLIPPED
+  r13b  15.000-15.170  s  beats  22.000-22.250   chart Dm7    bass C3  | bass C3 pad F4 C5 F5 lead A4  | root D: last heard 0.341 s ago  guide [F+ C+]  rival F  -> FLIPPED
+  r14   15.000-15.170  s  beats  22.000-22.250   chart Dm7    bass C3  | bass C3 pad F4 C5 E5 D6 lead A4  | root D: heard  guide [F+ C+]  rival none  -> rooted
+t = 15.5 s
+  r12   15.418-16.023  s  beats  22.612-23.500   chart Dm7    bass F4  | pad F4 C5 E5 G5  | root D: last heard 0.759 s ago  guide [F+ C+]  rival none  -> implied
+  r13b  15.418-16.023  s  beats  22.612-23.500   chart Dm7    bass F4  | pad F4 C5 F5  | root D: last heard 0.759 s ago  guide [F+ C+]  rival none  -> implied
+  r14   15.418-16.023  s  beats  22.612-23.500   chart Dm7    bass F4  | pad F4 C5 E5 D6  | root D: heard  guide [F+ C+]  rival none  -> rooted
+t = 16.0 s
+  r12   15.418-16.023  s  beats  22.612-23.500   chart Dm7    bass F4  | pad F4 C5 E5 G5  | root D: last heard 0.759 s ago  guide [F+ C+]  rival none  -> implied
+  r13b  15.418-16.023  s  beats  22.612-23.500   chart Dm7    bass F4  | pad F4 C5 F5  | root D: last heard 0.759 s ago  guide [F+ C+]  rival none  -> implied
+  r14   15.418-16.023  s  beats  22.612-23.500   chart Dm7    bass F4  | pad F4 C5 E5 D6  | root D: heard  guide [F+ C+]  rival none  -> rooted
+t = 16.5 s
+  r12   16.364-16.705  s  beats  24.000-24.500   chart Am6    bass A2  | bass A2 pad F#4 B4 C5 E5 lead C5  | root A: heard  guide [C+ F#+]  rival none  -> rooted
+  r13b  16.364-16.705  s  beats  24.000-24.500   chart Am6    bass A2  | bass A2 pad F#4 C5 E5 lead C5  | root A: heard  guide [C+ F#+]  rival none  -> rooted
+  r14   16.364-16.705  s  beats  24.000-24.500   chart Am6    bass A2  | bass A2 pad F#4 C5 E5 B5 lead C5  | root A: heard  guide [C+ F#+]  rival none  -> rooted
+t = 17.0 s
+  r12   16.705-17.145  s  beats  24.500-25.145   chart Am6    bass A2  | bass A2 pad F#4 B4 C5 E5 lead C#5  | root A: heard  guide [C+ F#+]  rival none  -> rooted
+  r13b  16.889-17.386  s  beats  24.770-25.500   chart Am6    bass A2  | bass A2 pad F#4 C5 E5  | root A: heard  guide [C+ F#+]  rival none  -> rooted
+  r14   16.705-17.145  s  beats  24.500-25.145   chart Am6    bass A2  | bass A2 pad F#4 C5 E5 B5 lead C#5  | root A: heard  guide [C+ F#+]  rival none  -> rooted
+t = 43.0 s
+  r12   42.892-43.295  s  beats  62.908-63.500   chart Am9    bass A2  | bass A2 pad G4 B4 C5 E5  | root A: heard  guide [C+ G+]  rival none  -> rooted
+  r13b  42.892-43.295  s  beats  62.908-63.500   chart Am9    bass A2  | bass A2 pad G4 C5 E5 B5  | root A: heard  guide [C+ G+]  rival none  -> rooted
+  r14   42.892-43.295  s  beats  62.908-63.500   chart Am9    bass A2  | bass A2 pad G4 C5 E5 B5  | root A: heard  guide [C+ G+]  rival none  -> rooted
+t = 43.5 s
+  r12   43.403-43.636  s  beats  63.658-64.000   chart Am9    bass G#2 | bass G#2 pad G4 B4 C5 E5  | root A: last heard 0.108 s ago  guide [C+ G+]  rival E  -> passing
+  r13b  43.403-43.636  s  beats  63.658-64.000   chart Am9    bass G#2 | bass G#2 pad G4 C5 E5 B5  | root A: last heard 0.108 s ago  guide [C+ G+]  rival E  -> passing
+  r14   43.403-43.636  s  beats  63.658-64.000   chart Am9    bass G#2 | bass G#2 pad G4 C5 E5 B5  | root A: last heard 0.108 s ago  guide [C+ G+]  rival E  -> passing
+t = 44.0 s
+  r12   43.977-44.085  s  beats  64.500-64.658   chart Am6    bass A2  | bass A2 pad F#4 B4 C5 E5 keys F#5  | root A: heard  guide [C+ F#+]  rival none  -> rooted
+  r13b  43.977-44.085  s  beats  64.500-64.658   chart Am6    bass A2  | bass A2 pad F#4 C5 E5 keys F#5  | root A: heard  guide [C+ F#+]  rival none  -> rooted
+  r14   43.977-44.085  s  beats  64.500-64.658   chart Am6    bass A2  | bass A2 pad F#4 C5 E5 B5 keys F#5  | root A: heard  guide [C+ F#+]  rival none  -> rooted
+t = 44.5 s
+  r12   44.426-44.659  s  beats  65.158-65.500   chart Am6    bass A2  | bass A2 pad F#4 B4 C5 E5  | root A: heard  guide [C+ F#+]  rival none  -> rooted
+  r13b  44.426-44.659  s  beats  65.158-65.500   chart Am6    bass A2  | bass A2 pad F#4 C5 E5  | root A: heard  guide [C+ F#+]  rival none  -> rooted
+  r14   44.426-44.659  s  beats  65.158-65.500   chart Am6    bass A2  | bass A2 pad F#4 C5 E5 B5  | root A: heard  guide [C+ F#+]  rival none  -> rooted
+t = 45.0 s
+  r12   44.767-45.341  s  beats  65.658-66.500   chart Am6    bass A2  | bass A2 pad F#4 B4 C5 E5  | root A: heard  guide [C+ F#+]  rival none  -> rooted
+  r13b  44.767-45.341  s  beats  65.658-66.500   chart Am6    bass A2  | bass A2 pad F#4 C5 E5  | root A: heard  guide [C+ F#+]  rival none  -> rooted
+  r14   44.767-45.341  s  beats  65.658-66.500   chart Am6    bass A2  | bass A2 pad F#4 C5 E5 B5  | root A: heard  guide [C+ F#+]  rival none  -> rooted

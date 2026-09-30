@@ -1,0 +1,1 @@
+gesture: declared slides 0 | slide-supported 0 | slide-dependent 0 | FAKE SLIDES 0 | physical slides 0 | chromatic approaches 0 | discrete lines 0 (chromatic staircases 0)

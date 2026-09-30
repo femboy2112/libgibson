@@ -1,0 +1,74 @@
+identity: 330 slices, 20 rival runs, 10 flipped (9.755 s), hold 0.5 s
+run   9.946-10.909  s  beats  14.587-16.000   chart Am9    rival C    0.963 s  FLIPPED
+      9.946-10.057  s  beats  14.587-14.750   chart Am9    bass G4  | pad G4 B4 C5 E5  | root A: last heard 0.000 s ago  guide [C+ G+]  rival C  -> FLIPPED
+     10.057-10.568  s  beats  14.750-15.500   chart Am9    bass E2  | bass E2 pad G4 B4 C5 E5  | root A: last heard 0.111 s ago  guide [C+ G+]  rival Em  -> FLIPPED
+     10.568-10.909  s  beats  15.500-16.000   chart Am9    bass D#2 | bass D#2 pad G4 B4 C5 E5  | root A: last heard 0.622 s ago  guide [C+ G+]  rival Cm  -> FLIPPED
+run  14.659-15.338  s  beats  21.500-22.495   chart Dm7    rival F    0.679 s  FLIPPED
+     14.659-14.767  s  beats  21.500-21.658   chart Dm7    bass F2  | bass F2 pad F4 C5 F5 keys C4 F4 B4 lead A4  | root D: last heard 0.000 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     14.767-14.830  s  beats  21.658-21.750   chart Dm7    bass F2  | bass F2 pad F4 C5 F5 lead A4  | root D: last heard 0.108 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     14.830-15.000  s  beats  21.750-22.000   chart Dm7    bass A2  | bass A2 pad F4 C5 F5 lead A4  | root D: last heard 0.170 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     15.000-15.170  s  beats  22.000-22.250   chart Dm7    bass C3  | bass C3 pad F4 C5 F5 lead A4  | root D: last heard 0.341 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     15.170-15.278  s  beats  22.250-22.408   chart Dm7    bass C3  | bass C3 pad F4 C5 F5 keys C4 F4 lead A4  | root D: last heard 0.511 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     15.278-15.338  s  beats  22.408-22.495   chart Dm7    bass C3  | bass C3 pad F4 C5 F5 lead A4  | root D: last heard 0.619 s ago  guide [F+ C+]  rival F  -> FLIPPED
+run  16.023-16.364  s  beats  23.500-24.000   chart Dm7    rival F    0.341 s  passing
+run  18.750-19.091  s  beats  27.500-28.000   chart Am6    rival C#m  0.341 s  passing
+run  20.455-21.136  s  beats  30.000-31.000   chart Am9    rival Em   0.682 s  FLIPPED
+     20.455-20.795  s  beats  30.000-30.500   chart Am9    bass E2  | bass E2 pad G4 B4 C5 E5  | root A: last heard 0.000 s ago  guide [C+ G+]  rival Em  -> FLIPPED
+     20.795-20.903  s  beats  30.500-30.658   chart Am9    bass G2  | bass G2 pad G4 B4 C5 E5 keys C4 G4  | root A: last heard 0.341 s ago  guide [C+ G+]  rival C  -> FLIPPED
+     20.903-20.966  s  beats  30.658-30.750   chart Am9    bass G2  | bass G2 pad G4 B4 C5 E5  | root A: last heard 0.449 s ago  guide [C+ G+]  rival C  -> FLIPPED
+     20.966-21.074  s  beats  30.750-30.908   chart Am9    bass G2  | bass G2 pad G4 B4 C5 E5 keys C4 G4 B4  | root A: last heard 0.511 s ago  guide [C+ G+]  rival C  -> FLIPPED
+     21.074-21.136  s  beats  30.908-31.000   chart Am9    bass G2  | bass G2 pad G4 B4 C5 E5  | root A: last heard 0.619 s ago  guide [C+ G+]  rival C  -> FLIPPED
+run  21.477-21.818  s  beats  31.500-32.000   chart Am9    rival Em   0.341 s  passing
+run  31.764-32.727  s  beats  46.587-48.000   chart Am9    rival C    0.963 s  FLIPPED
+     31.764-31.813  s  beats  46.587-46.658   chart Am9    bass C4  | pad G4 B4 C5 E5 keys C4 G4  | root A: last heard 0.000 s ago  guide [C+ G+]  rival C  -> FLIPPED
+     31.813-31.875  s  beats  46.658-46.750   chart Am9    bass G4  | pad G4 B4 C5 E5  | root A: last heard 0.048 s ago  guide [C+ G+]  rival C  -> FLIPPED
+     31.875-31.983  s  beats  46.750-46.908   chart Am9    bass E2  | bass E2 pad G4 B4 C5 E5 keys C4 G4 B4  | root A: last heard 0.111 s ago  guide [C+ G+]  rival Em  -> FLIPPED
+     31.983-32.719  s  beats  46.908-47.987   chart Am9    bass E2  | bass E2 pad G4 B4 C5 E5  | root A: last heard 0.219 s ago  guide [C+ G+]  rival Em  -> FLIPPED
+     32.719-32.727  s  beats  47.987-48.000   chart Am9    bass G4  | pad G4 B4 C5 E5  | root A: last heard 0.955 s ago  guide [C+ G+]  rival C  -> FLIPPED
+run  33.920-34.918  s  beats  49.750-51.212   chart Dm9    rival Am   0.997 s  FLIPPED
+     33.920-34.091  s  beats  49.750-50.000   chart Dm9    bass A2  | bass A2 pad F4 C5 E5  | root D: last heard 0.043 s ago  guide [F+ C+]  rival Am  -> FLIPPED
+     34.091-34.432  s  beats  50.000-50.500   chart Dm9    bass A2  | bass A2 pad F4 C5 E5 lead C5  | root D: last heard 0.213 s ago  guide [F+ C+]  rival Am  -> FLIPPED
+     34.432-34.773  s  beats  50.500-51.000   chart Dm9    bass A2  | bass A2 pad F4 C5 E5 lead A5  | root D: last heard 0.554 s ago  guide [F+ C+]  rival Am  -> FLIPPED
+     34.773-34.918  s  beats  51.000-51.212   chart Dm9    bass A2  | bass A2 pad F4 C5 E5 lead C#5  | root D: last heard 0.895 s ago  guide [F+ C+]  rival A  -> FLIPPED
+run  36.989-37.832  s  beats  54.250-55.487   chart Dm7    rival F    0.844 s  FLIPPED
+     36.989-37.097  s  beats  54.250-54.408   chart Dm7    bass A2  | bass A2 pad F4 C5 F5 keys C4 F4  | root D: last heard 0.077 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     37.097-37.159  s  beats  54.408-54.500   chart Dm7    bass A2  | bass A2 pad F4 C5 F5  | root D: last heard 0.185 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     37.159-37.267  s  beats  54.500-54.658   chart Dm7    bass A2  | bass A2 pad F4 C5 F5 keys C4 F4 B4  | root D: last heard 0.247 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     37.267-37.832  s  beats  54.658-55.487   chart Dm7    bass A2  | bass A2 pad F4 C5 F5  | root D: last heard 0.355 s ago  guide [F+ C+]  rival F  -> FLIPPED
+run  37.841-38.182  s  beats  55.500-56.000   chart Dm7    rival Fm   0.341 s  passing
+run  40.568-40.909  s  beats  59.500-60.000   chart Am6    rival C#m  0.341 s  passing
+run  42.520-42.784  s  beats  62.362-62.750   chart Am9    rival C    0.264 s  passing
+run  43.295-43.636  s  beats  63.500-64.000   chart Am9    rival E    0.341 s  passing
+run  48.895-49.091  s  beats  71.712-72.000   chart Am9    rival C    0.196 s  passing
+run  51.477-51.585  s  beats  75.500-75.658   chart Am6    rival E    0.108 s  passing
+run  55.739-56.736  s  beats  81.750-83.212   chart Dm9    rival Am   0.997 s  FLIPPED
+     55.739-55.847  s  beats  81.750-81.908   chart Dm9    bass A2  | bass A2 pad F4 C5 E5 keys C4 F4 B4 lead E5  | root D: last heard 0.043 s ago  guide [F+ C+]  rival Am  -> FLIPPED
+     55.847-56.008  s  beats  81.908-82.145   chart Dm9    bass A2  | bass A2 pad F4 C5 E5 lead E5  | root D: last heard 0.151 s ago  guide [F+ C+]  rival Am  -> FLIPPED
+     56.008-56.250  s  beats  82.145-82.500   chart Dm9    bass A2  | bass A2 pad F4 C5 E5  | root D: last heard 0.312 s ago  guide [F+ C+]  rival Am  -> FLIPPED
+     56.250-56.591  s  beats  82.500-83.000   chart Dm9    bass A2  | bass A2 pad F4 C5 E5 lead B4  | root D: last heard 0.554 s ago  guide [F+ C+]  rival Am  -> FLIPPED
+     56.591-56.736  s  beats  83.000-83.212   chart Dm9    bass A2  | bass A2 pad F4 C5 E5 lead F5  | root D: last heard 0.895 s ago  guide [F+ C+]  rival Am  -> FLIPPED
+run  57.955-60.000  s  beats  85.000-88.000   chart Dm7    rival F    2.045 s  FLIPPED
+     57.955-58.063  s  beats  85.000-85.158   chart Dm7    bass A2  | bass A2 pad F4 C5 A5 keys A4 lead A4  | root D: last heard 0.341 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     58.063-58.807  s  beats  85.158-86.250   chart Dm7    bass A2  | bass A2 pad F4 C5 A5 lead A4  | root D: last heard 0.449 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     58.807-58.915  s  beats  86.250-86.408   chart Dm7    bass A2  | bass A2 pad F4 C5 A5 keys C4 F4 B4 lead A4  | root D: last heard 1.193 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     58.915-58.952  s  beats  86.408-86.462   chart Dm7    bass A2  | bass A2 pad F4 C5 A5 lead A4  | root D: last heard 1.301 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     58.952-58.974  s  beats  86.462-86.495   chart Dm7    bass F4  | pad F4 C5 A5 lead A4  | root D: last heard 1.338 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     58.974-58.977  s  beats  86.495-86.500   chart Dm7    bass F4  | pad F4 C5 A5  | root D: last heard 1.361 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     58.977-59.085  s  beats  86.500-86.658   chart Dm7    bass C4  | pad F4 C5 A5 keys C4 F4  | root D: last heard 1.364 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     59.085-59.659  s  beats  86.658-87.500   chart Dm7    bass F4  | pad F4 C5 A5  | root D: last heard 1.472 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     59.659-59.767  s  beats  87.500-87.658   chart Dm7    bass F2  | bass F2 pad F4 C5 A5 keys C4 F4 B4  | root D: last heard 2.045 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     59.767-59.830  s  beats  87.658-87.750   chart Dm7    bass F2  | bass F2 pad F4 C5 A5  | root D: last heard 2.153 s ago  guide [F+ C+]  rival F  -> FLIPPED
+     59.830-60.000  s  beats  87.750-88.000   chart Dm7    bass A2  | bass A2 pad F4 C5 A5  | root D: last heard 2.216 s ago  guide [F+ C+]  rival F  -> FLIPPED
+run  69.946-70.909  s  beats 102.587-104.000  chart Am9    rival C    0.963 s  FLIPPED
+     69.946-69.994  s  beats 102.587-102.658  chart Am9    bass G4  | pad G4 B4 C5 E5 keys E5  | root A: last heard 0.000 s ago  guide [C+ G+]  rival C  -> FLIPPED
+     69.994-70.057  s  beats 102.658-102.750  chart Am9    bass G4  | pad G4 B4 C5 E5  | root A: last heard 0.048 s ago  guide [C+ G+]  rival C  -> FLIPPED
+     70.057-70.227  s  beats 102.750-103.000  chart Am9    bass E2  | bass E2 pad G4 B4 C5 E5  | root A: last heard 0.111 s ago  guide [C+ G+]  rival Em  -> FLIPPED
+     70.227-70.335  s  beats 103.000-103.158  chart Am9    bass E2  | bass E2 pad G4 B4 C5 E5 keys G5  | root A: last heard 0.281 s ago  guide [C+ G+]  rival Em  -> FLIPPED
+     70.335-70.568  s  beats 103.158-103.500  chart Am9    bass E2  | bass E2 pad G4 B4 C5 E5  | root A: last heard 0.389 s ago  guide [C+ G+]  rival Em  -> FLIPPED
+     70.568-70.909  s  beats 103.500-104.000  chart Am9    bass G#2 | bass G#2 pad G4 B4 C5 E5  | root A: last heard 0.622 s ago  guide [C+ G+]  rival E  -> FLIPPED
+run  80.855-81.477  s  beats 118.587-119.500  chart Am9    rival C    0.622 s  FLIPPED
+     80.855-80.903  s  beats 118.587-118.658  chart Am9    bass C4  | pad C4 E4 G4 keys C4 G4 B4  | root A: last heard 0.000 s ago  guide [C+ G+]  rival C  -> FLIPPED
+     80.903-80.966  s  beats 118.658-118.750  chart Am9    bass C4  | pad C4 E4 G4  | root A: last heard 0.048 s ago  guide [C+ G+]  rival C  -> FLIPPED
+     80.966-81.074  s  beats 118.750-118.908  chart Am9    bass E2  | bass E2 pad C4 E4 G4 keys C4 G4  | root A: last heard 0.111 s ago  guide [C+ G+]  rival C  -> FLIPPED
+     81.074-81.477  s  beats 118.908-119.500  chart Am9    bass E2  | bass E2 pad C4 E4 G4  | root A: last heard 0.219 s ago  guide [C+ G+]  rival C  -> FLIPPED
+run  81.861-82.136  s  beats 120.062-120.466  chart Am9    rival C    0.275 s  passing

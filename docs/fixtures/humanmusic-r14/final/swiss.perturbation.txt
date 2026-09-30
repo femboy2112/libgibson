@@ -1,0 +1,16 @@
+Round XII (A) -> Round XIV (B), swiss, independent diff of the two scores
+pitched events (A): 449
+notes pitch-changed: 5
+notes duration-changed: 0
+notes omitted: 0
+notes added: 0
+note count: 449 -> 449
+total changed events: 5
+percentage of pitched events affected: 1.114%
+pad voicings changed: 5 (ledger: 5 edits over 5 voicings)
+lead, keys, bass: identical; drums identical: true; sfx identical: true
+pitch    pad  beat  28.000  B4 -> B5
+pitch    pad  beat  36.000  B4 -> B5
+pitch    pad  beat  44.000  B4 -> B5
+pitch    pad  beat  84.000  C5 -> F4
+pitch    pad  beat 116.000  B3 -> B5

@@ -1,0 +1,25 @@
+context	beat	seconds	chart	before	after	reason
+1	4.000	2.727	Am9	B3 G4 A4 C5	G4 A4 C5 B5	spacing B3 -> B5
+3	12.000	8.182	Am9	G4 B4 C5 E5	G4 C5 E5 B5	spacing B4 -> B5
+6	24.000	16.364	Am6	F#4 B4 C5 E5	F#4 C5 E5 B5	spacing B4 -> B5
+7	28.000	19.091	Am9	G4 B4 C5 E5	G4 C5 E5 B5	spacing B4 -> B5
+11	44.000	30.000	Am9	G4 B4 C5 E5	G4 C5 E5 B5	spacing B4 -> B5
+14	56.000	38.182	Am6	F#4 B4 C5 E5	F#4 C5 E5 B5	spacing B4 -> B5
+15	60.000	40.909	Am9	G4 B4 C5 E5	G4 C5 E5 B5	spacing B4 -> B5
+16	64.000	43.636	Am6	F#4 B4 C5 E5	F#4 C5 E5 B5	spacing B4 -> B5
+17	68.000	46.364	Am9	G4 B4 C5 E5	G4 C5 E5 B5	spacing B4 -> B5
+18	72.000	49.091	Am6	F#4 B4 C5 D5	F#4 C5 D5 B5	spacing B4 -> B5
+19	76.000	51.818	Am9	G4 A4 B4 C5	G4 A4 C5 B5	spacing B4 -> B5
+25	100.000	68.182	Am9	G4 B4 C5 E5	G4 C5 E5 B5	spacing B4 -> B5
+26	104.000	70.909	Am6	F#4 B4 C5 D5	F#4 C5 D5 B5	spacing B4 -> B5
+27	108.000	73.636	Am9	G4 A4 B4 C5	G4 A4 C5 B5	spacing B4 -> B5
+3	12.000	8.182	Am9	G4 C5 E5 B5	G4 C5 A5 B5	rooting: heard as C; root A5 in place of E5
+5	20.000	13.636	Dm7	F4 C5 E5 G5	F4 C5 E5 D6	rooting: heard as F; root D6 in place of G5
+7	28.000	19.091	Am9	G4 C5 E5 B5	G4 C5 A5 B5	rooting: heard as Em; root A5 in place of E5
+11	44.000	30.000	Am9	G4 C5 E5 B5	G4 C5 A5 B5	rooting: heard as C; root A5 in place of E5
+12	48.000	32.727	Dm9	F4 G4 C5 E5	D4 F4 C5 E5	rooting: heard as Am; root D4 in place of G4
+13	52.000	35.455	Dm7	F4 C5 E5 G5	F4 C5 E5 D6	rooting: heard as Am; root D6 in place of G5
+20	80.000	54.545	Dm9	F4 G4 C5 E5	D4 F4 C5 E5	rooting: heard as Am; root D4 in place of G4
+21	84.000	57.273	Dm7	F4 C5 E5 A5	F4 C5 D5 A5	rooting: heard as Am; root D5 in place of E5
+25	100.000	68.182	Am9	G4 C5 E5 B5	G4 C5 A5 B5	rooting: heard as C; root A5 in place of E5
+29	116.000	79.091	Am9	C4 E4 G4 F#5	C4 E4 G4 A5	rooting: heard as C; root A5 in place of F#5
