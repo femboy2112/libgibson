@@ -256,3 +256,145 @@ fn h05_the_historical_pocket_arm_keeps_its_archived_colours() {
         "the archived SWISS Reset colours are characterized here; if this changes, the R17 arm moved"
     );
 }
+
+/// Every temporal object a performance plans or realizes, as `(what, start, end)`: action and
+/// stage windows, material and statement spans, chord and region spans, ownership spans,
+/// reservations, notes and drum strokes.
+fn temporal_objects(c: &Composition) -> Vec<(String, f64, f64)> {
+    let mut out = Vec::new();
+    for a in &c.perf.actions.actions {
+        out.push((format!("action {:?}", a.kind), a.start_beat, a.end_beat()));
+    }
+    for w in &c.perf.stage.windows {
+        out.push((
+            format!("stage window {:?}", w.agent),
+            w.start_beat,
+            w.end_beat,
+        ));
+    }
+    for m in &c.perf.materials {
+        out.push((
+            format!("material {:?} {:?}", m.id, m.owner),
+            m.start_beat,
+            m.start_beat + m.length(),
+        ));
+    }
+    for s in &c.perf.statements {
+        out.push((
+            format!("statement {}", s.phrase),
+            s.start_beat,
+            s.end_beat(),
+        ));
+    }
+    for s in &c.perf.chords {
+        out.push((
+            "chord".into(),
+            s.start_beat,
+            s.start_beat + f64::from(s.dur_beats),
+        ));
+    }
+    for r in &c.perf.regions.spans {
+        out.push(("region".into(), r.start_beat, r.end_beat));
+    }
+    for o in &c.score.occupancy {
+        for s in &o.spans {
+            out.push((
+                format!("ownership {:?} {:?}", o.role, s.kind),
+                s.start,
+                s.end,
+            ));
+        }
+        for r in &o.rhythm {
+            out.push((format!("reservation {:?}", o.role), r.beat, r.end_beat));
+        }
+    }
+    for n in &c.score.notes {
+        out.push((
+            format!("note {:?}", n.role),
+            n.start_beat,
+            n.start_beat + f64::from(n.dur_beats),
+        ));
+    }
+    for d in &c.score.drums {
+        out.push(("drum".into(), d.start_beat, d.start_beat));
+    }
+    out
+}
+
+/// H12 (holdout v2, reproduced on fresh seeds): U1 bounded the bass line of a partial final bar,
+/// but an ownership span derived from a planned window could still run past the piece. The law is
+/// not about one role: every planned and realized temporal object inhabits the performance's
+/// domain `[0, total_beats]` (a drum stroke or an onset strictly before the end).
+#[test]
+fn h12_every_temporal_object_inhabits_the_performance_domain() {
+    let mut outside = Vec::new();
+    for world in worlds() {
+        for (language, lang) in languages() {
+            for grammar in GRAMMARS {
+                for (i, beats) in [6.75, 7.25, 10.5, 13.25, 21.75].into_iter().enumerate() {
+                    for (profile, arm) in [
+                        (PerformanceProfile::POCKET, "pocket"),
+                        (PerformanceProfile::BAND, "band"),
+                    ] {
+                        let seed = 78_301_030 + i as u64;
+                        let trace = if i % 2 == 0 {
+                            deflected_lift_trace(beats)
+                        } else {
+                            demo_trace(beats)
+                        };
+                        let composer = if grammar == CompositionGrammar::PropulsiveReturn {
+                            Composer::StablePropulsion
+                        } else {
+                            Composer::MeaningDirected
+                        };
+                        let song = SongMap::compose(&trace, seed, Some(grammar), composer);
+                        let Ok(c) = perform_with_profile(&song, &world, options(language), profile)
+                        else {
+                            continue;
+                        };
+                        let total = c.perf.total_beats;
+                        assert_eq!(total, beats);
+                        for (what, start, end) in temporal_objects(&c) {
+                            let inside = start.is_finite()
+                                && end.is_finite()
+                                && start >= 0.0
+                                && start < total
+                                && end <= total + 1e-9;
+                            if !inside {
+                                outside.push(format!(
+                                    "{} {lang} {grammar:?} {beats} {arm}: {what} {start}..{end}",
+                                    world.name
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut kinds: Vec<_> = outside
+        .iter()
+        .map(|o| {
+            o.split(": ")
+                .nth(1)
+                .unwrap_or("")
+                .split(' ')
+                .take(2)
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect();
+    kinds.sort();
+    kinds.dedup();
+    assert!(
+        outside.is_empty(),
+        "{} objects outside the domain; kinds {kinds:?}\n{}",
+        outside.len(),
+        outside
+            .iter()
+            .take(40)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+}
