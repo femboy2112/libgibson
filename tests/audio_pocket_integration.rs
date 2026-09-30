@@ -384,6 +384,7 @@ fn primary_factorial_keeps_source_and_consumer_contracts() {
 #[ignore = "120-case fresh sweep; VAPOR95 withheld until flagship implementation settled"]
 fn r17_fresh_world_seed_tempo_sweep() {
     let mut count = 0;
+    let mut failures = Vec::new();
     for seed in [3, 7, 19, 43, 101] {
         for story in [false, true] {
             for composer in [Composer::StablePropulsion, Composer::MeaningDirected] {
@@ -401,24 +402,31 @@ fn r17_fresh_world_seed_tempo_sweep() {
                     for delta in [0.0, -12.0] {
                         let original = world.tempo_bpm;
                         world.tempo_bpm += delta;
-                        let r15 = perform_expressive(&song, &world, PerformanceOptions::default());
-                        let r16 = perform_phrased(&song, &world, PerformanceOptions::default());
-                        let c = perform_pocketed(&song, &world, PerformanceOptions::default());
                         let label = format!(
                             "seed={seed} story={story} composer={composer:?} world={} tempo={}",
                             world.name, world.tempo_bpm
                         );
-                        check(&r15, &c, &world, &label);
-                        check(&r16, &c, &world, &label);
-                        pocket_witnesses(&c, &world, &label);
-                        original_reservations(&c, &world, &label);
-                        no_pitch_edits(&c, &label);
-                        matched_pitches_unchanged(&r16, &c, &label);
-                        println!(
-                            "PASS {label} notes={} decisions={}",
-                            c.score.notes.len(),
-                            c.score.expression_decisions.len()
-                        );
+                        let result = std::panic::catch_unwind(|| {
+                            let r15 =
+                                perform_expressive(&song, &world, PerformanceOptions::default());
+                            let r16 = perform_phrased(&song, &world, PerformanceOptions::default());
+                            let c = perform_pocketed(&song, &world, PerformanceOptions::default());
+                            check(&r15, &c, &world, &label);
+                            check(&r16, &c, &world, &label);
+                            pocket_witnesses(&c, &world, &label);
+                            original_reservations(&c, &world, &label);
+                            no_pitch_edits(&c, &label);
+                            matched_pitches_unchanged(&r16, &c, &label);
+                            println!(
+                                "PASS {label} notes={} decisions={}",
+                                c.score.notes.len(),
+                                c.score.expression_decisions.len()
+                            );
+                        });
+                        if result.is_err() {
+                            println!("FAIL {label}");
+                            failures.push(label);
+                        }
                         count += 1;
                         world.tempo_bpm = original;
                     }
@@ -427,6 +435,11 @@ fn r17_fresh_world_seed_tempo_sweep() {
         }
     }
     assert_eq!(count, 120);
+    println!(
+        "R17 sweep attempted={count} failed={} cases={failures:?}",
+        failures.len()
+    );
+    assert!(failures.is_empty(), "fresh sweep failures remain failures");
     println!("R17 fresh sweep: {count} finite performances; source projection, action receipts, identity, orchestration, lattice and connective blip gates pass");
 }
 

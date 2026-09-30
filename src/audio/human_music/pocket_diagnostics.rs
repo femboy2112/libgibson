@@ -97,6 +97,8 @@ pub struct PocketDiagnostics {
     pub phrases: Vec<PocketPhrase>,
     pub shared_actions: Vec<SharedActionTiming>,
     pub repeated_phase_morphologies: Vec<PhaseMorphology>,
+    /// Runs in source-onset order within each role; another transformed phase ends the run.
+    pub consecutive_phase_morphologies: Vec<PhaseMorphology>,
 }
 
 fn same(a: &Note, b: &Note) -> bool {
@@ -379,6 +381,34 @@ impl PocketDiagnostics {
                 }
             }
         }
+        for role in [Role::Lead, Role::Bass] {
+            let mut events: Vec<_> = groups
+                .iter()
+                .filter(|g| g.role == role)
+                .flat_map(|g| g.occurrences.iter().map(move |o| (g, *o)))
+                .collect();
+            events.sort_by(|(_, a), (_, b)| a.1.total_cmp(&b.1));
+            let mut runs: Vec<PhaseMorphology> = Vec::new();
+            for (group, occurrence) in events {
+                if let Some(last) = runs.last_mut().filter(|r| {
+                    r.direction == group.direction
+                        && r.source_phase == group.source_phase
+                        && r.performed_phase == group.performed_phase
+                }) {
+                    last.occurrences.push(occurrence);
+                } else {
+                    runs.push(PhaseMorphology {
+                        role,
+                        direction: group.direction,
+                        source_phase: group.source_phase,
+                        performed_phase: group.performed_phase,
+                        occurrences: vec![occurrence],
+                    });
+                }
+            }
+            out.consecutive_phase_morphologies
+                .extend(runs.into_iter().filter(|g| g.occurrences.len() > 1));
+        }
         out.repeated_phase_morphologies = groups
             .into_iter()
             .filter(|g| g.occurrences.len() > 1)
@@ -422,6 +452,9 @@ impl PocketDiagnostics {
         }
         for row in &self.repeated_phase_morphologies {
             writeln!(s, "repeated_phase={row:?}").unwrap();
+        }
+        for row in &self.consecutive_phase_morphologies {
+            writeln!(s, "consecutive_transformed_phase={row:?}").unwrap();
         }
         s
     }

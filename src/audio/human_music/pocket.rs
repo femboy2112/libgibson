@@ -116,11 +116,11 @@ pub struct SlotEvidence {
     pub accent_deviation: f64,
     pub repeated_phase_change: bool,
 }
-fn phase(at: f64, w: &MusicWorld) -> i64 {
-    slots(w, w.subdiv, at - 1.0, at + 1.0)
+fn phase(at: f64, w: &MusicWorld, surface: u32) -> f64 {
+    slots(w, surface, at - 1.0, at + 1.0)
         .into_iter()
         .min_by(|a, b| (a.position - at).abs().total_cmp(&(b.position - at).abs()))
-        .map_or(0, |s| i64::from(s.phase()))
+        .map_or(0.0, |s| f64::from(s.phase()) / f64::from(s.subdivision))
 }
 
 pub(crate) fn candidates(
@@ -181,17 +181,22 @@ pub(crate) fn candidates(
                     .first()
                     .zip(p.performed.first())
                     .is_some_and(|(a, b)| {
-                        phase(a.start_beat, world) != phase(b.start_beat, world)
-                            && candidate
-                                .first()
-                                .is_some_and(|s| phase(source[0], world) != i64::from(s.phase()))
+                        phase(a.start_beat, world, perf.language.surface_subdivision)
+                            != phase(b.start_beat, world, perf.language.surface_subdivision)
+                            && candidate.first().is_some_and(|s| {
+                                phase(source[0], world, perf.language.surface_subdivision)
+                                    != f64::from(s.phase()) / f64::from(s.subdivision)
+                            })
                     })
         });
         SlotEvidence {
             phase_changes: source
                 .iter()
                 .zip(candidate)
-                .filter(|(a, b)| phase(**a, world) != i64::from(b.phase()))
+                .filter(|(a, b)| {
+                    phase(**a, world, perf.language.surface_subdivision)
+                        != f64::from(b.phase()) / f64::from(b.subdivision)
+                })
                 .count(),
             ioi_deviation: old
                 .windows(2)
@@ -445,6 +450,14 @@ mod tests {
             .any(|p| (*p - 10.0 / 3.0).abs() < 1e-6));
     }
     #[test]
+    fn triplet_and_sixteenth_phase_indices_are_not_conflated() {
+        let w = MusicWorld::black_ice();
+        assert_eq!(phase(1.0 / 3.0, &w, 3), 1.0 / 3.0);
+        assert_eq!(phase(0.25, &w, 3), 0.25);
+        assert_ne!(phase(1.0 / 3.0, &w, 3), phase(0.25, &w, 3));
+    }
+
+    #[test]
     fn two_physically_viable_slots_do_not_have_equal_phrase_authority() {
         use super::super::{
             composer::Composer, functor::perform_coherent, performance::PerformanceOptions,
@@ -482,6 +495,6 @@ mod tests {
             );
             assert_eq!(obs.verdict, ConnectiveViability::AsWritten, "{obs:?}");
         }
-        assert_ne!(phase(24.5, &w), phase(25.0, &w));
+        assert_ne!(phase(24.5, &w, 4), phase(25.0, &w, 4));
     }
 }
