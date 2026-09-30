@@ -32,6 +32,7 @@ pub mod discourse;
 pub mod ensemble;
 #[cfg(test)]
 mod ensemble_probes;
+pub mod expression;
 pub mod form;
 pub mod functor;
 pub mod gesture;

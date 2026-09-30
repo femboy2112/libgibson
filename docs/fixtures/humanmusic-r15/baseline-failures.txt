@@ -1,1 +1,31 @@
    Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.41s
+     Running tests/audio_expression.rs (target/debug/deps/audio_expression-95656cfeceba4d2c)
+
+running 4 tests
+test r15_optional_space_preserves_the_structural_line ... ok
+test r15_swiss_accepted_analogue_is_short ... ok
+test r15_black_ice_bass_approach_must_be_subordinate ... FAILED
+test r15_black_ice_slow_neighbor_must_be_subordinate ... FAILED
+
+failures:
+
+---- r15_black_ice_bass_approach_must_be_subordinate stdout ----
+
+thread 'r15_black_ice_bass_approach_must_be_subordinate' (2259403) panicked at tests/audio_expression.rs:58:5:
+bass approach sounds for 0.383507 s
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- r15_black_ice_slow_neighbor_must_be_subordinate stdout ----
+
+thread 'r15_black_ice_slow_neighbor_must_be_subordinate' (2259404) panicked at tests/audio_expression.rs:41:5:
+slow neighbor sounds for 0.440094 s
+
+
+failures:
+    r15_black_ice_bass_approach_must_be_subordinate
+    r15_black_ice_slow_neighbor_must_be_subordinate
+
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+
+error: test failed, to rerun pass `--test audio_expression`
