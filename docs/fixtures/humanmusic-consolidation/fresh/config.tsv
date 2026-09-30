@@ -1,0 +1,42 @@
+# Consolidated holdout v1: 36 rows; PREDECLARED, NOT YET EXECUTED.
+# Source and target realization profile: explicit PerformanceProfile::POCKET.
+# nominal preserves the named world preset tempo. Target tonic is an absolute pitch class.
+# Ode is the committed observed soprano fixture; its other source axes are UNKNOWN.
+# No per-case retry, seed replacement, policy substitution, or post-contact fitting.
+id	source	story	source_seed	source_world	source_grammar	composer	beats	source_tempo	source_language	cover_spec	target_seed	target_world	target_grammar	target_tempo	target_tonic	target_language
+G01	generated	demo	31000001	BLACK_ICE	HookArc	StructuralR9	7.5	nominal	simple	default	41000003	BLACK_ICE	HookArc	79	0	fusion
+G02	generated	deflected	31000102	BLACK_ICE	LoopEvolution	MeaningDirected	9.25	83	fusion	groove-free	41000106	VAPOR95	LoopEvolution	nominal	2	simple
+G03	generated	demo	31000203	BLACK_ICE	PropulsiveReturn	StablePropulsion	15.5	nominal	fusion	all	41000209	SWISS_SIGNAL	HookArc	79	5	fusion
+G04	generated	deflected	31000304	BLACK_ICE	DeflectedLift	StructuralR9	20	83	simple	motif-only	41000312	SWISS_SIGNAL	DeflectedLift	nominal	7	simple
+G05	generated	demo	31000405	BLACK_ICE	RiffDrive	MeaningDirected	23.75	nominal	fusion	riff-bass	41000415	SWISS_SIGNAL	HookArc	79	9	fusion
+G06	generated	deflected	31000506	BLACK_ICE	PropulsiveReturn	StablePropulsion	32.5	83	fusion	default	41000518	VAPOR95	PropulsiveReturn	nominal	11	simple
+G07	generated	demo	31000607	BLACK_ICE	LoopEvolution	StructuralR9	4.5	nominal	simple	groove-free	41000621	BLACK_ICE	HookArc	79	0	fusion
+G08	generated	deflected	31000708	BLACK_ICE	RiffDrive	MeaningDirected	28	83	fusion	all	41000724	VAPOR95	RiffDrive	nominal	2	simple
+G09	generated	demo	31000809	BLACK_ICE	PropulsiveReturn	StablePropulsion	11.75	nominal	fusion	motif-only	41000827	SWISS_SIGNAL	HookArc	79	5	fusion
+G10	generated	deflected	31000910	BLACK_ICE	RiffDrive	StructuralR9	16	83	simple	riff-bass	41000930	SWISS_SIGNAL	RiffDrive	nominal	7	simple
+G11	generated	demo	31001011	SWISS_SIGNAL	LoopEvolution	MeaningDirected	7.5	nominal	simple	default	41001033	SWISS_SIGNAL	HookArc	113	9	fusion
+G12	generated	deflected	31001112	SWISS_SIGNAL	PropulsiveReturn	StablePropulsion	9.25	83	fusion	groove-free	41001136	BLACK_ICE	PropulsiveReturn	nominal	11	simple
+G13	generated	demo	31001213	SWISS_SIGNAL	DeflectedLift	StructuralR9	15.5	nominal	fusion	all	41001239	VAPOR95	HookArc	113	0	fusion
+G14	generated	deflected	31001314	SWISS_SIGNAL	PropulsiveReturn	MeaningDirected	20	83	simple	motif-only	41001342	VAPOR95	PropulsiveReturn	nominal	2	simple
+G15	generated	demo	31001415	SWISS_SIGNAL	RiffDrive	MeaningDirected	23.75	nominal	fusion	riff-bass	41001445	VAPOR95	HookArc	113	5	fusion
+G16	generated	deflected	31001516	SWISS_SIGNAL	LoopEvolution	StructuralR9	32.5	83	fusion	default	41001548	BLACK_ICE	LoopEvolution	nominal	7	simple
+G17	generated	demo	31001617	SWISS_SIGNAL	RiffDrive	MeaningDirected	4.5	nominal	simple	groove-free	41001651	SWISS_SIGNAL	HookArc	113	9	fusion
+G18	generated	deflected	31001718	SWISS_SIGNAL	PropulsiveReturn	StablePropulsion	28	83	fusion	all	41001754	BLACK_ICE	PropulsiveReturn	nominal	11	simple
+G19	generated	demo	31001819	SWISS_SIGNAL	PropulsiveReturn	StructuralR9	11.75	nominal	fusion	motif-only	41001857	VAPOR95	HookArc	113	0	fusion
+G20	generated	deflected	31001920	SWISS_SIGNAL	RiffDrive	StructuralR9	16	83	simple	riff-bass	41001960	VAPOR95	RiffDrive	nominal	2	simple
+G21	generated	demo	31002021	VAPOR95	PropulsiveReturn	StablePropulsion	7.5	nominal	simple	default	41002063	VAPOR95	HookArc	131	5	fusion
+G22	generated	deflected	31002122	VAPOR95	DeflectedLift	StructuralR9	9.25	107	fusion	groove-free	41002166	SWISS_SIGNAL	DeflectedLift	nominal	7	simple
+G23	generated	demo	31002223	VAPOR95	PropulsiveReturn	MeaningDirected	15.5	nominal	fusion	all	41002269	BLACK_ICE	HookArc	131	9	fusion
+G24	generated	deflected	31002324	VAPOR95	PropulsiveReturn	StablePropulsion	20	107	simple	motif-only	41002372	BLACK_ICE	PropulsiveReturn	nominal	11	simple
+G25	generated	demo	31002425	VAPOR95	RiffDrive	MeaningDirected	23.75	nominal	fusion	riff-bass	41002475	BLACK_ICE	HookArc	131	0	fusion
+G26	generated	deflected	31002526	VAPOR95	RiffDrive	MeaningDirected	32.5	107	fusion	default	41002578	SWISS_SIGNAL	RiffDrive	nominal	2	simple
+G27	generated	demo	31002627	VAPOR95	PropulsiveReturn	StablePropulsion	4.5	nominal	simple	groove-free	41002681	VAPOR95	HookArc	131	5	fusion
+G28	generated	deflected	31002728	VAPOR95	PropulsiveReturn	StructuralR9	28	107	fusion	all	41002784	SWISS_SIGNAL	PropulsiveReturn	nominal	7	simple
+G29	generated	demo	31002829	VAPOR95	HookArc	MeaningDirected	11.75	nominal	fusion	motif-only	41002887	BLACK_ICE	HookArc	131	9	fusion
+G30	generated	deflected	31002930	VAPOR95	RiffDrive	StructuralR9	16	107	simple	riff-bass	41002990	BLACK_ICE	RiffDrive	nominal	11	simple
+E01	ode	external	-	-	-	-	64	100	-	motif-only	51000007	BLACK_ICE	HookArc	nominal	7	fusion
+E02	ode	external	-	-	-	-	64	100	-	motif-only	51000114	SWISS_SIGNAL	LoopEvolution	nominal	7	simple
+E03	ode	external	-	-	-	-	64	100	-	motif-only	51000221	VAPOR95	RiffDrive	nominal	7	fusion
+E04	ode	external	-	-	-	-	64	100	-	motif-only	51000328	BLACK_ICE	HookArc	87	0	simple
+E05	ode	external	-	-	-	-	64	100	-	motif-only	51000435	SWISS_SIGNAL	LoopEvolution	121	2	fusion
+E06	ode	external	-	-	-	-	64	100	-	motif-only	51000542	VAPOR95	RiffDrive	143	11	simple
