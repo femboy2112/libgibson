@@ -468,3 +468,66 @@ fn h12_the_domain_audit_and_the_occupancy_checker_still_catch_a_forged_overrun()
     assert_eq!(d.fit(7.25, 0.5), None);
     assert_eq!(d.clip(8.0, 9.0), None);
 }
+
+/// H16/H28/H30 (holdout v2), reproduced on fresh seeds: a debt the song's discourse settles in
+/// a phrase was recorded settled in the performance although no event of the realized score
+/// discharges it — the settling phrase never arrived home, or the planned resolution was struck at
+/// rehearsal because nobody played it. Discourse says WHERE a debt should settle; only a realized
+/// discharge makes it settled. A performance's settlement is true only when the realized score
+/// witnesses the discharging verb (the action audit, unchanged, is the judge).
+#[test]
+fn u3b_a_settlement_is_true_only_when_the_realized_score_discharges_it() {
+    use gibson::audio::human_music::witness;
+    let mut false_claims = Vec::new();
+    let mut settled = 0;
+    for world in worlds() {
+        for (language, lang) in languages() {
+            for grammar in GRAMMARS {
+                for seed in 78_302_000u64..78_302_004 {
+                    for beats in [24.0, 40.5, 64.0] {
+                        let composer = if seed % 2 == 0 {
+                            Composer::StructuralR9
+                        } else {
+                            Composer::MeaningDirected
+                        };
+                        let trace = if seed % 2 == 0 {
+                            deflected_lift_trace(beats)
+                        } else {
+                            demo_trace(beats)
+                        };
+                        let song = SongMap::compose(&trace, seed, Some(grammar), composer);
+                        let Ok(c) = perform_with_profile(
+                            &song,
+                            &world,
+                            options(language),
+                            PerformanceProfile::BAND,
+                        ) else {
+                            continue;
+                        };
+                        let audit = witness::audit(&c.perf, &c.score);
+                        for o in &c.perf.obligations.obligations {
+                            let Some(s) = o.settlement else { continue };
+                            settled += 1;
+                            let realized = s.witness.is_some_and(|w| {
+                                audit.rows.iter().any(|r| r.action == w && r.witnessed)
+                            });
+                            if !realized {
+                                false_claims.push(format!(
+                                    "{} {lang} {grammar:?} {seed} {beats}: {:?} settled by phrase {} ({:?}) with witness {:?}",
+                                    world.name, o.kind, s.by_phrase, s.how, s.witness
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(settled > 0);
+    assert!(
+        false_claims.is_empty(),
+        "{} of {settled} settlements have no realized discharge:\n{}",
+        false_claims.len(),
+        false_claims.join("\n")
+    );
+}

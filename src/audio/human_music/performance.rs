@@ -1567,6 +1567,69 @@ mod tests {
     use super::super::semantic::deflected_lift_trace;
     use super::*;
 
+    /// A verb's identity survives the renumbering a veto causes: striking an earlier verb must
+    /// not rename a later one (a response names its call; the call's number shifts).
+    #[test]
+    fn a_verbs_identity_survives_the_renumbering_a_veto_causes() {
+        let p = flagship(PerformanceOptions::default());
+        let answer = p
+            .actions
+            .actions
+            .iter()
+            .find(|a| matches!(a.cause, ActionCause::Interaction { .. }))
+            .expect("the flagship answers a call");
+        let before = ActionKey::of(answer);
+        let start = answer.start_beat;
+        let mut struck = p.actions.clone();
+        let first = struck.actions[0].id;
+        assert!(first != answer.id);
+        let _ = struck.remove(&[first]);
+        let same = struck
+            .actions
+            .iter()
+            .find(|a| a.start_beat == start && matches!(a.cause, ActionCause::Interaction { .. }))
+            .expect("still planned");
+        assert_eq!(ActionKey::of(same), before);
+    }
+
+    /// A verb the rehearsal found nobody performing is struck wherever the planner makes it —
+    /// including the interaction planner's calls and answers, which exist only after the base
+    /// plan is admitted.
+    #[test]
+    fn a_vetoed_answer_is_struck_from_the_chart() {
+        let song = super::super::song::SongMap::build(
+            &deflected_lift_trace(120.0),
+            2112,
+            Some(super::super::contract::CompositionGrammar::DeflectedLift),
+        );
+        let world = MusicWorld::black_ice();
+        let opts = PerformanceOptions::default();
+        let base = PerformancePlan::from_song(&song, &world, opts);
+        let answer = base
+            .actions
+            .actions
+            .iter()
+            .find(|a| {
+                a.kind == ActionKind::Answer && matches!(a.cause, ActionCause::Interaction { .. })
+            })
+            .expect("an answer");
+        let key = ActionKey::of(answer);
+        let inputs = AdmissionInputs {
+            vetoed: vec![key.clone()],
+            ..AdmissionInputs::default()
+        };
+        let struck =
+            PerformancePlan::from_song_admitted(&song, &world, opts, None, &inputs).unwrap();
+        assert!(
+            !struck
+                .actions
+                .actions
+                .iter()
+                .any(|a| ActionKey::of(a) == key),
+            "a vetoed answer is still on the chart"
+        );
+    }
+
     fn flagship(opts: PerformanceOptions) -> PerformancePlan {
         let song = super::super::song::SongMap::build(
             &deflected_lift_trace(120.0),
