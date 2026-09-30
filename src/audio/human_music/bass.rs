@@ -285,6 +285,9 @@ fn realize(
         let bar = eb.bar;
         let bs = AccentGrid::beat_of(bar, 0);
         let be = bs + 4.0;
+        // A partial final bar ends where the piece does: the last onset's gate is measured to the
+        // requested end, not to a bar line the piece never reaches (equal to `be` in every full bar).
+        let bar_end = be.min(perf.total_beats);
         // The stage decides whether the bass plays this bar, and how loud.
         if !perf.on_stage(Agent::Bass, bs) {
             continue;
@@ -363,7 +366,7 @@ fn realize(
             let next_at = onsets
                 .get(k + 1)
                 .map(|&n| AccentGrid::beat_of(bar, n))
-                .unwrap_or(be);
+                .unwrap_or(bar_end);
             let dur = ((next_at - at) * 0.9).clamp(0.2, 3.9);
             // The harmony arriving after this bar (for approaches).
             let next_ctx = perf.context_at(be).filter(|c| c.start_beat >= be - 1e-6);
@@ -595,6 +598,19 @@ fn realize(
     out.extend(restruck);
     out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
     super::comp::release_at_harmony_change(&mut out, &perf.chords);
+    // The authored line lives inside the piece. Every emission path (onsets, figures, answers,
+    // unisons, restrikes) is bounded here, at the source, so a reservation read from this line
+    // and the final clipped note agree on one domain. A piece that fits its bars is untouched.
+    let total = perf.total_beats;
+    out.retain_mut(|n| {
+        if n.start_beat >= total - 1e-9 {
+            return false;
+        }
+        if n.start_beat + n.dur_beats as f64 > total + 1e-9 {
+            n.dur_beats = (total - n.start_beat) as f32;
+        }
+        n.dur_beats > 0.0
+    });
     if perf.cover_constraints.is_some() {
         super::cover::bound_source_gates(perf, &mut out);
     }
