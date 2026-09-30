@@ -60,6 +60,7 @@ pub mod performance;
 pub mod phenomenal;
 #[cfg(test)]
 mod phenomenal_probes;
+pub mod phrase_diagnostics;
 pub mod pitch;
 pub mod plan;
 #[cfg(test)]
@@ -86,6 +87,7 @@ mod tension_witnesses;
 pub mod theory;
 pub mod timeline;
 pub mod voicing;
+pub mod voicing_diagnostics;
 pub mod witness;
 pub mod world;
 

@@ -1,0 +1,22 @@
+    Blocking waiting for file lock on build directory
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.68s
+     Running tests/audio_voicing_surface.rs (target/debug/deps/audio_voicing_surface-e9e092f5d9c484f8)
+
+running 3 tests
+test r16_a_changed_voicing_is_observed_without_changing_chord_identity ... ok
+test r16_frozen_identity_passes_but_high_seventh_excursion_distinguishes_sites ... ok
+
+thread 'r16_production_should_discharge_the_reported_register_path_witness' (2513272) panicked at tests/audio_voicing_surface.rs:116:5:
+identity passes, but reported voicing family survives: [28.0, 36.0, 44.0]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test r16_production_should_discharge_the_reported_register_path_witness ... FAILED
+
+failures:
+
+failures:
+    r16_production_should_discharge_the_reported_register_path_witness
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+
+error: test failed, to rerun pass `--test audio_voicing_surface`
