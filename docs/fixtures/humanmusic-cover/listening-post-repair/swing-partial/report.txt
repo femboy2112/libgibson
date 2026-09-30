@@ -1,0 +1,47 @@
+Cover lab: machine invariance and freedom; human recognizability UNVERIFIED.
+PARTIAL-COVER SKELETON: melody/bass/groove/source timing UNKNOWN. Target schedule: one bar per observed chord; unobserved intro gets a generated tonic chord. No exact transcription claim.
+CoverMap canonical=a60ef2c3e5b258b2
+  motif: Unknown
+  riff: Unknown
+  groove: Unknown
+  harmonic-contour: Invariant
+  harmonic-loop: Unknown
+  form: Invariant
+  orchestration: Unknown
+  bass-figure: Unknown
+
+black_seed_1: seed=901 world=BLACK_ICE key=9 tempo=95 language=fusion score=6951379dc46e744e perf=bb5e4bd52be52e0c
+CoverConformance: PASS (metric length true)
+  harmonic-contour: PASS — ordered relative chord sequence; durations unobserved (actual score chord order; source metric timing remains unknown)
+  form: PASS — ordered section topology; lengths unobserved (target-generated section durations are not source observations)
+Pipeline PASS: CoverPipelineReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0 }
+
+black_seed_2: seed=902 world=BLACK_ICE key=9 tempo=95 language=fusion score=07ea0db0dfff27b9 perf=111098c4bf897679
+CoverConformance: PASS (metric length true)
+  harmonic-contour: PASS — ordered relative chord sequence; durations unobserved (actual score chord order; source metric timing remains unknown)
+  form: PASS — ordered section topology; lengths unobserved (target-generated section durations are not source observations)
+Pipeline PASS: CoverPipelineReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0 }
+Freedom versus first cover: CoverFreedom { support_voicing: true, dynamics: true, percussion_detail: true, interactions: true }
+
+swiss: seed=903 world=SWISS_SIGNAL key=0 tempo=100 language=simple score=f0348031134e1b0e perf=43b347e7c2b73ab8
+CoverConformance: PASS (metric length true)
+  harmonic-contour: PASS — ordered relative chord sequence; durations unobserved (actual score chord order; source metric timing remains unknown)
+  form: PASS — ordered section topology; lengths unobserved (target-generated section durations are not source observations)
+Pipeline PASS: CoverPipelineReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0 }
+Freedom versus first cover: CoverFreedom { support_voicing: true, dynamics: true, percussion_detail: true, interactions: true }
+
+vapor: seed=904 world=VAPOR95 key=5 tempo=95 language=fusion score=bbd2309ad822179b perf=b710a90d0a6bdb67
+CoverConformance: PASS (metric length true)
+  harmonic-contour: PASS — ordered relative chord sequence; durations unobserved (actual score chord order; source metric timing remains unknown)
+  form: PASS — ordered section topology; lengths unobserved (target-generated section durations are not source observations)
+Pipeline PASS: CoverPipelineReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0 }
+Freedom versus first cover: CoverFreedom { support_voicing: true, dynamics: true, percussion_detail: true, interactions: true }
+
+transposed_faster: seed=905 world=SWISS_SIGNAL key=5 tempo=118 language=fusion score=f46c40043ac6163a perf=ab78f01fbb9ff819
+CoverConformance: PASS (metric length true)
+  harmonic-contour: PASS — ordered relative chord sequence; durations unobserved (actual score chord order; source metric timing remains unknown)
+  form: PASS — ordered section topology; lengths unobserved (target-generated section durations are not source observations)
+Pipeline PASS: CoverPipelineReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0 }
+Freedom versus first cover: CoverFreedom { support_voicing: true, dynamics: true, percussion_detail: true, interactions: true }
+
+Listening questions: is the identified melody unmistakably the same song? Does the free band interpret it rather than merely change patches? The partial chart has no source-melody recognition claim.
