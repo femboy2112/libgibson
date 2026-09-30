@@ -1,0 +1,19 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `release` profile [optimized] target(s) in 2m 20s
+     Running tests/audio_expression.rs (target/release/deps/audio_expression-ec56b5ed6b9dc8d0)
+
+running 1 test
+
+thread 'fuzz_expressive_source_preserves_song_paths_receipts_and_identity' (2312045) panicked at tests/audio_expression.rs:528:33:
+changed path demo=false beats=120 seed=1 MeaningDirected BLACK_ICE: Note { start_beat: 27.25420220795377, dur_beats: 0.07240053, pitch: 77, velocity: 0.62694716, role: Lead, prov: Provenance { section: A, phrase: None, family: None, anchor: Some("motif"), role_kind: None, motif_id: Some(0), motif_xform: Some("restate"), groove_variation: None, role: None, closure: None, morphism: None, role_note: "melody", actions: ActionStamp { ids: [None, None, None] }, interaction: None, material: Some(MaterialId(7)), obligation: None }, function: Some(DiatonicPassing) }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test fuzz_expressive_source_preserves_song_paths_receipts_and_identity ... FAILED
+
+failures:
+
+failures:
+    fuzz_expressive_source_preserves_song_paths_receipts_and_identity
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 1.93s
+
+error: test failed, to rerun pass `--test audio_expression`

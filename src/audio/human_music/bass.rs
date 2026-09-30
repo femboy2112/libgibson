@@ -88,6 +88,31 @@ pub fn realize_bass_temporal(
     realize(perf, plan, world, lead, keys, None, true)
 }
 
+/// Express source-owned pickups before drums and pad consume this bass. Shared unisons already
+/// inherit the final lead rhythm; they are protected here rather than independently rephrased.
+pub fn realize_bass_expressive(
+    perf: &PerformancePlan,
+    plan: &CompositionPlan,
+    world: &MusicWorld,
+    lead: &[Note],
+    keys: &[Note],
+) -> (Vec<Note>, Vec<super::expression::ExpressionDecision>) {
+    let notes = realize(perf, plan, world, lead, keys, None, true);
+    let line = notes
+        .into_iter()
+        .map(|note| super::expression::ExpressionEvent {
+            structural: note.prov.role_note != "approach",
+            note,
+        })
+        .collect();
+    let support: Vec<_> = lead.iter().chain(keys).copied().collect();
+    let result = super::expression::realize(perf, world, line, &support);
+    (
+        result.events.into_iter().map(|e| e.note).collect(),
+        result.decisions,
+    )
+}
+
 /// Realize the bass as the FLOOR of the coupled ensemble (Round VIII, `EnsembleCoupling::CoupledR8`
 /// only): the same rhythm and the same stage as [`realize_bass`], but every pitch is chosen as
 /// what it does UNDER the band. The ensemble unison keeps its rhythm and picks its own pitch per

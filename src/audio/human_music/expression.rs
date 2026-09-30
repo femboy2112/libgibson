@@ -142,12 +142,12 @@ pub fn annotate(perf: &PerformancePlan, notes: &[Note]) -> Vec<ExpressionEvent> 
                     .find(|(m, b, _)| {
                         Some(*m) == n.prov.material && (*b - n.start_beat).abs() < 1e-6
                     })
-                    .map_or(true, |x| x.2),
+                    .is_none_or(|x| x.2),
                 Role::Bass if n.prov.role_note == "approach" => false,
                 Role::Bass if n.prov.role_note == "unison" => slots
                     .iter()
                     .find(|(_, b, _)| (*b - n.start_beat).abs() < 1e-6)
-                    .map_or(true, |x| x.2),
+                    .is_none_or(|x| x.2),
                 _ => true,
             };
             ExpressionEvent {
@@ -167,6 +167,15 @@ pub fn valid_function(
     n: &Note,
     next: Option<&Note>,
 ) -> bool {
+    let current = perf.context_at(n.start_beat);
+    if n.function == Some(F::ChordTone) {
+        return current.is_some_and(|c| c.chord.contains_pc(pitch_class(n.pitch)));
+    }
+    if n.function == Some(F::LicensedExtension) {
+        return current.is_some_and(|c| c.palette.tensions.contains(&pitch_class(n.pitch)));
+    }
+    let prev =
+        prev.filter(|p| n.start_beat - (p.start_beat + f64::from(p.dur_beats)) <= 1.0 + 1e-6);
     let Some(t) = next else {
         return false;
     };
@@ -183,11 +192,18 @@ pub fn valid_function(
     match n.function {
         Some(F::ChromaticApproach) => stable && delta.abs() == 1,
         Some(F::Neighbor) => {
-            prev.is_some_and(|p| p.pitch == t.pitch) && (1..=2).contains(&delta.abs())
+            stable && prev.is_some_and(|p| p.pitch == t.pitch) && (1..=2).contains(&delta.abs())
         }
         Some(F::ChromaticPassing | F::DiatonicPassing) => prev.is_some_and(|p| {
             let into = n.pitch - p.pitch;
-            (1..=2).contains(&into.abs())
+            let diatonic =
+                current.is_some_and(|c| c.palette.scale.contains_pc(pitch_class(n.pitch)));
+            stable
+                && perf
+                    .context_at(p.start_beat)
+                    .is_some_and(|c| c.palette.is_stable(pitch_class(p.pitch)))
+                && (n.function == Some(F::DiatonicPassing)) == diatonic
+                && (1..=2).contains(&into.abs())
                 && (1..=2).contains(&delta.abs())
                 && into.signum() == delta.signum()
         }),
@@ -201,6 +217,42 @@ pub fn valid_function(
         }
         _ => false,
     }
+}
+
+// Reconstruct function after retiming using actual adjacent events and current chord-scale.
+// Preserve the original label when still supported; the classifier's priority is not evidence
+// that a simultaneously true neighbor relationship vanished.
+fn reclassify(
+    perf: &PerformancePlan,
+    prev: Option<&Note>,
+    n: &Note,
+    next: Option<&Note>,
+) -> Option<F> {
+    if valid_function(perf, prev, n, next) {
+        return n.function;
+    }
+    let ci = perf.contexts.iter().position(|c| {
+        n.start_beat >= c.start_beat && n.start_beat < c.start_beat + f64::from(c.dur_beats)
+    })?;
+    let c = &perf.contexts[ci];
+    let ctx = super::pitch::PitchContext {
+        pitch: n.pitch,
+        onset: n.start_beat,
+        duration: f64::from(n.dur_beats),
+        prev: prev.map(|p| p.pitch),
+        next: next.map(|p| p.pitch),
+        next_onset: next.map(|p| p.start_beat),
+        prev_chord: ci.checked_sub(1).map(|i| perf.contexts[i].chord),
+        cur: Some(c.chord),
+        next_chord: perf.contexts.get(ci + 1).map(|c| c.chord),
+        next_boundary: Some(c.start_beat + f64::from(c.dur_beats)),
+        is_strong: (n.start_beat - n.start_beat.round()).abs() < 1e-6,
+        licensed: super::pitch::pc_mask(&c.palette.tensions),
+    };
+    let f = super::pitch::classify(&ctx, &c.palette.scale)?;
+    let mut proposed = *n;
+    proposed.function = Some(f);
+    valid_function(perf, prev, &proposed, next).then_some(f)
 }
 
 /// Inspect one attacked connective in both time coordinate systems. Release tails use the
@@ -248,7 +300,13 @@ pub fn observe(
     // A short decaying lead can carry a half-second written connection without sustaining a
     // separate proposition. A bass has a stricter IOI budget even on a short patch.
     let fleeting = n.role != Role::Bass && audible <= 0.115;
-    let latency_limit = if fleeting { 0.55 } else { 0.28 };
+    let latency_limit = if fleeting {
+        0.55
+    } else if n.role == Role::Bass && audible <= 0.115 {
+        0.36
+    } else {
+        0.28
+    };
     let exposure_limit = if n.role == Role::Bass {
         0.33
     } else if chart_dissonance || !contacts.is_empty() {
@@ -353,6 +411,8 @@ impl ExpressionDiagnostics {
 /// The physical strategy actually emitted. No legato/glide variant exists without DSP support.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExpressionStrategy {
+    /// Short attacked pickup at a metrically obligated push/hit onset.
+    ShortPickup,
     Grace,
     Burst,
     Substituted,
@@ -386,6 +446,17 @@ fn identities_survive(before: &[ExpressionEvent], after: &[ExpressionEvent]) -> 
                 .prov
                 .material
                 .is_none_or(|m| after.iter().any(|x| x.note.prov.material == Some(m)))
+    })
+}
+
+fn anchored_onset(perf: &PerformancePlan, n: &Note) -> bool {
+    perf.actions.actions.iter().any(|a| {
+        n.prov.actions.has(a.id)
+            && matches!(
+                a.kind,
+                super::action::ActionKind::Push | super::action::ActionKind::Hit
+            )
+            && (a.start_beat - n.start_beat).abs() < 1e-6
     })
 }
 
@@ -457,10 +528,22 @@ pub fn realize(
             let n = &mut candidate[k].note;
             n.start_beat = destination.start_beat - (stop - k) as f64 * step / spb;
             n.dur_beats = (gate / spb) as f32;
+            if anchored_onset(perf, &working[k].note) {
+                n.start_beat = working[k].note.start_beat;
+                n.dur_beats = (min_gate / spb) as f32;
+            }
             let rise = (k - start + 1) as f32 / (stop - start) as f32;
             n.velocity *=
                 (0.67 + 0.10 * kinetic + 0.06 * rise + 0.03 * observations[k - start].pickup)
                     .clamp(0.6, 0.88);
+        }
+        for k in start..stop {
+            candidate[k].note.function = reclassify(
+                perf,
+                k.checked_sub(1).map(|j| &candidate[j].note),
+                &candidate[k].note,
+                candidate.get(k + 1).map(|e| &e.note),
+            );
         }
         let allowed = kinetic >= 0.18
             && (start..stop).all(|k| {
@@ -499,7 +582,7 @@ pub fn realize(
                     support,
                 );
                 decisions.push(ExpressionDecision { before: observations[k-start].clone(), after: Some(candidate[k].note),
-                    after_observation: Some(after), strategy: if stop-start > 1 { ExpressionStrategy::Burst } else { ExpressionStrategy::Grace },
+                    after_observation: Some(after), strategy: if anchored_onset(perf, &working[k].note) { ExpressionStrategy::ShortPickup } else if stop-start > 1 { ExpressionStrategy::Burst } else { ExpressionStrategy::Grace },
                     reason: "target-relative attack, shorter gate and subordinate accent; destination unchanged" });
                 working[k] = candidate[k];
             }
@@ -526,10 +609,10 @@ pub fn realize(
                         })
                         && perf
                             .context_at(old.start_beat)
-                            .is_some_and(|c| c.chord.contains_pc(pitch_class(pitch)))
+                            .is_some_and(|c| c.palette.is_stable(pitch_class(pitch)))
                         && perf
                             .context_at(old.start_beat + f64::from(old.dur_beats))
-                            .is_some_and(|c| c.chord.contains_pc(pitch_class(pitch)))
+                            .is_some_and(|c| c.palette.is_stable(pitch_class(pitch)))
                         && support.iter().all(|s| {
                             !matches!((s.pitch - pitch).abs(), 1 | 13)
                                 || s.start_beat >= old.start_beat + f64::from(old.dur_beats)
@@ -543,9 +626,18 @@ pub fn realize(
                 });
             if let Some(pitch) = replacement {
                 working[k].note.pitch = pitch;
-                working[k].note.function = Some(F::ChordTone);
+                working[k].note.function = Some(
+                    if perf
+                        .context_at(old.start_beat)
+                        .is_some_and(|c| c.chord.contains_pc(pitch_class(pitch)))
+                    {
+                        F::ChordTone
+                    } else {
+                        F::LicensedExtension
+                    },
+                );
                 decisions.push(ExpressionDecision { before: observations[k-start].clone(), after: Some(working[k].note),
-                    after_observation: None, strategy: ExpressionStrategy::Substituted, reason: "nearby stable chord tone preserves direction; attacked chromatic candidate failed" });
+                    after_observation: None, strategy: ExpressionStrategy::Substituted, reason: "nearby stable chord/guide/available tone preserves direction; attacked chromatic candidate failed" });
             } else {
                 let remaining: Vec<_> = working
                     .iter()
@@ -553,7 +645,7 @@ pub fn realize(
                     .filter(|(j, _)| *j != k && !omit[*j])
                     .map(|(_, e)| *e)
                     .collect();
-                if identities_survive(&line, &remaining) {
+                if !anchored_onset(perf, &old) && identities_survive(&line, &remaining) {
                     omit[k] = true;
                     decisions.push(ExpressionDecision {
                         before: observations[k - start].clone(),

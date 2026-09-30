@@ -259,8 +259,14 @@ fn realize_arm(
             if matches!(contract, Contract::Coherent | Contract::Expressive) {
                 // Round XIV: the bass (who hears the lead, and ignores keys and pad) is realized
                 // exactly as in Round XII; the pad comes last and hears the band.
-                let bass =
-                    super::bass::realize_bass_temporal(perf, plan, world, &lead.notes, &keys);
+                let bass = if contract == Contract::Expressive {
+                    let (notes, decisions) =
+                        super::bass::realize_bass_expressive(perf, plan, world, &lead.notes, &keys);
+                    score.expression_decisions.extend(decisions);
+                    notes
+                } else {
+                    super::bass::realize_bass_temporal(perf, plan, world, &lead.notes, &keys)
+                };
                 let band: Vec<Note> = lead
                     .notes
                     .iter()

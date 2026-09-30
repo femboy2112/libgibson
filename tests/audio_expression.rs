@@ -123,9 +123,7 @@ fn r15_frozen_ruler_distinguishes_worlds_without_production_changes() {
 #[test]
 fn r15_lead_expression_keeps_skeleton_and_final_hearings() {
     use gibson::audio::human_music::{
-        expression::ExpressionStrategy,
-        functor::perform_expressive,
-        identity::{keeps_identity, IdentityDiagnostics},
+        expression::ExpressionStrategy, functor::perform_expressive, identity::IdentityDiagnostics,
     };
     for w in [MusicWorld::black_ice(), MusicWorld::swiss_signal()] {
         let a = perform_coherent(&song(), &w, PerformanceOptions::default());
@@ -145,7 +143,7 @@ fn r15_lead_expression_keeps_skeleton_and_final_hearings() {
         let id = |x: &gibson::audio::human_music::functor::Composition| {
             IdentityDiagnostics::measure(&x.score.notes, &x.perf.contexts, &w, w.tempo_bpm)
         };
-        assert!(keeps_identity(&id(&a), &id(&b), 0.0, 1e9));
+        assert_eq!(id(&b).flips().count(), 0, "{} new identity flip", w.name);
         if w.tempo_bpm == 118.0 {
             assert_eq!(a.score.fingerprint(), b.score.fingerprint());
             assert!(b.score.expression_decisions.is_empty());
@@ -321,4 +319,282 @@ fn r15_structural_connective_is_never_moved_to_save_ornament() {
     let out = realize(&perf, &MusicWorld::black_ice(), line.clone(), &[]);
     assert_eq!(project(&line), project(&out.events));
     assert!(out.decisions.is_empty());
+}
+
+#[test]
+fn r15_all_eighteen_bass_approaches_are_expressed_with_receipts() {
+    use gibson::audio::human_music::{
+        expression::ExpressionStrategy, functor::perform_expressive,
+        temporal::TemporalPitchDiagnostics, witness,
+    };
+    let w = MusicWorld::black_ice();
+    let a = perform_coherent(&song(), &w, PerformanceOptions::default());
+    let b = perform_expressive(&song(), &w, PerformanceOptions::default());
+    let old: Vec<_> = a
+        .score
+        .role_notes(Role::Bass)
+        .filter(|n| n.function == Some(F::ChromaticApproach))
+        .collect();
+    let new: Vec<_> = b
+        .score
+        .role_notes(Role::Bass)
+        .filter(|n| n.function == Some(F::ChromaticApproach))
+        .collect();
+    assert_eq!(old.len(), 18);
+    assert_eq!(new.len(), 18);
+    for (a, b) in old.iter().zip(&new) {
+        assert_eq!(a.pitch, b.pitch);
+        assert_eq!(a.prov, b.prov);
+        assert!(b.start_beat >= a.start_beat);
+        assert!(b.dur_beats < a.dur_beats);
+        assert!(life(b, &w) < 0.20);
+    }
+    let edits: Vec<_> = b
+        .score
+        .expression_decisions
+        .iter()
+        .filter(|e| e.before.note.role == Role::Bass)
+        .collect();
+    assert_eq!(
+        edits.len(),
+        17,
+        "the eighteenth inherits its shared lead/unison phrasing"
+    );
+    assert!(edits.iter().all(|e| matches!(
+        e.strategy,
+        ExpressionStrategy::Grace | ExpressionStrategy::ShortPickup
+    ) && e.after_observation.as_ref().unwrap().verdict
+        == V::AsWritten));
+    assert!(b.score.stale_hearings().is_empty());
+    let wa = witness::audit(&a.perf, &a.score);
+    let wb = witness::audit(&b.perf, &b.score);
+    for (a, b) in wa.rows.iter().zip(&wb.rows) {
+        assert!(
+            !a.witnessed || b.witnessed,
+            "lost {:?}: {:?} -> {:?}",
+            a.action,
+            a,
+            b
+        );
+    }
+    let ta = TemporalPitchDiagnostics::measure(&a.perf, &a.score);
+    let tb = TemporalPitchDiagnostics::measure(&b.perf, &b.score);
+    assert!(tb.false_function_claims <= ta.false_function_claims);
+    let d = ExpressionDiagnostics::measure(&b.perf, &b.score, &w);
+    assert!(d.rows.iter().all(|r| r.verdict == V::AsWritten));
+}
+
+#[test]
+fn r15_same_approach_tempo_is_load_bearing_even_for_sustaining_bass() {
+    use gibson::audio::human_music::expression::{observe, realize};
+    let (perf, mut line) = synthetic();
+    for e in &mut line {
+        e.note.role = Role::Bass;
+    }
+    line[0].note.pitch = 36;
+    line[1].note.pitch = 35;
+    line[1].note.dur_beats = 0.45;
+    line[1].note.function = Some(F::ChromaticApproach);
+    line[2].note.pitch = 36;
+    line[2].note.start_beat = 25.0;
+    for (w, want) in [
+        (MusicWorld::swiss_signal(), V::AsWritten),
+        (MusicWorld::black_ice(), V::NeedsCompression),
+    ] {
+        let r = observe(
+            &perf,
+            &w,
+            &line[1],
+            Some(&line[0].note),
+            Some(&line[2].note),
+            &[],
+        );
+        assert_eq!(r.verdict, want);
+        let result = realize(&perf, &w, line.clone(), &[]);
+        assert_eq!(project(&line), project(&result.events));
+        assert_eq!(
+            observe(
+                &perf,
+                &w,
+                &result.events[1],
+                Some(&result.events[0].note),
+                Some(&result.events[2].note),
+                &[]
+            )
+            .verdict,
+            V::AsWritten
+        );
+    }
+}
+
+#[test]
+#[ignore = "bounded Round XV sweep: run release with --ignored --nocapture"]
+fn fuzz_expressive_source_preserves_song_paths_receipts_and_identity() {
+    use gibson::audio::human_music::{
+        contract::CompositionGrammar, functor::perform_expressive, identity::IdentityDiagnostics,
+        semantic::demo_trace, song::SongMapConformance, temporal::TemporalPitchDiagnostics,
+        witness,
+    };
+    let mut runs = 0;
+    let mut edits = 0;
+    for demo in [false, true] {
+        for beats in [37.0, 120.0] {
+            for seed in 0..10 {
+                for (grammar, composer) in [
+                    (None, Composer::StablePropulsion),
+                    (
+                        Some(CompositionGrammar::DeflectedLift),
+                        Composer::MeaningDirected,
+                    ),
+                ] {
+                    let trace = if demo {
+                        demo_trace(beats)
+                    } else {
+                        deflected_lift_trace(beats)
+                    };
+                    let song = SongMap::compose(&trace, seed, grammar, composer);
+                    for w in MusicWorld::all() {
+                        let label = format!(
+                            "demo={demo} beats={beats} seed={seed} {composer:?} {}",
+                            w.name
+                        );
+                        let a = perform_coherent(&song, &w, PerformanceOptions::default());
+                        let b = perform_expressive(&song, &w, PerformanceOptions::default());
+                        assert_eq!(a.song.fingerprint(), b.song.fingerprint(), "{label}");
+                        assert_eq!(a.perf.fingerprint(), b.perf.fingerprint(), "{label}");
+                        assert_eq!(
+                            SongMapConformance::check(&song, &a.perf, &a.score).report(),
+                            SongMapConformance::check(&song, &b.perf, &b.score).report(),
+                            "{label}"
+                        );
+                        b.score.validate().unwrap();
+                        assert!(b.score.stale_hearings().is_empty(), "{label}");
+                        let id = |x: &gibson::audio::human_music::functor::Composition| {
+                            IdentityDiagnostics::measure(
+                                &x.score.notes,
+                                &x.perf.contexts,
+                                &w,
+                                w.tempo_bpm,
+                            )
+                        };
+                        let (ia, ib) = (id(&a), id(&b));
+                        // Expression changes brief ambiguity; no newly flipped interval may appear.
+                        for r in ib.flips() {
+                            assert!(
+                                ia.flips().any(|old| old.start_beat <= r.start_beat + 1e-6
+                                    && old.end_beat >= r.end_beat - 1e-6),
+                                "new flip {label}: {r:?}"
+                            );
+                        }
+                        let (wa, wb) = (
+                            witness::audit(&a.perf, &a.score),
+                            witness::audit(&b.perf, &b.score),
+                        );
+                        for (a, b) in wa.rows.iter().zip(&wb.rows) {
+                            assert!(
+                                !a.witnessed || b.witnessed,
+                                "receipt {label} {:?}",
+                                a.action
+                            );
+                        }
+                        let ta = TemporalPitchDiagnostics::measure(&a.perf, &a.score);
+                        let tb = TemporalPitchDiagnostics::measure(&b.perf, &b.score);
+                        assert!(
+                            tb.false_function_claims <= ta.false_function_claims,
+                            "path {label}: {} -> {}",
+                            ta.false_function_claims,
+                            tb.false_function_claims
+                        );
+                        assert!(b
+                            .score
+                            .notes
+                            .iter()
+                            .all(|n| n.function != Some(F::SlidePath)));
+                        for e in &b.score.expression_decisions {
+                            assert!(e.before.optional, "{label}");
+                            if let Some(n) = e.after {
+                                assert_eq!(n.prov, e.before.note.prov);
+                                let (ix, _) = b
+                                    .score
+                                    .notes
+                                    .iter()
+                                    .enumerate()
+                                    .find(|(_, x)| {
+                                        x.role == n.role
+                                            && x.start_beat == n.start_beat
+                                            && x.pitch == n.pitch
+                                    })
+                                    .expect("decision reaches final score");
+                                assert!(
+                                    tb.rows
+                                        .iter()
+                                        .find(|r| r.note_index == ix)
+                                        .unwrap()
+                                        .supported
+                                        .contains(&n.function.unwrap()),
+                                    "changed path {label}: {n:?}"
+                                );
+                            }
+                        }
+                        let notes: Vec<_> = a.score.role_notes(Role::Lead).copied().collect();
+                        for e in annotate(&a.perf, &notes).iter().filter(|e| e.structural) {
+                            assert!(
+                                b.score
+                                    .role_notes(Role::Lead)
+                                    .any(|n| n.start_beat == e.note.start_beat
+                                        && n.pitch == e.note.pitch
+                                        && n.prov == e.note.prov),
+                                "skeleton {label}"
+                            );
+                        }
+                        runs += 1;
+                        edits += b.score.expression_decisions.len();
+                    }
+                }
+            }
+        }
+    }
+    println!("expressive sweep: {runs} performances; {edits} source decisions; skeleton, song, path, identity, receipts, stale hearings all pass");
+}
+
+#[test]
+fn r15_vapor_holdout_keeps_chart_root_during_expression() {
+    use gibson::audio::human_music::{
+        contract::CompositionGrammar, functor::perform_expressive, identity::IdentityDiagnostics,
+        semantic::demo_trace,
+    };
+    let song = SongMap::compose(
+        &demo_trace(120.0),
+        7,
+        Some(CompositionGrammar::DeflectedLift),
+        Composer::MeaningDirected,
+    );
+    let w = MusicWorld::vapor95();
+    let a = perform_coherent(&song, &w, PerformanceOptions::default());
+    let b = perform_expressive(&song, &w, PerformanceOptions::default());
+    let ia = IdentityDiagnostics::measure(&a.score.notes, &a.perf.contexts, &w, w.tempo_bpm);
+    let ib = IdentityDiagnostics::measure(&b.score.notes, &b.perf.contexts, &w, w.tempo_bpm);
+    for e in &b.score.expression_decisions {
+        if (76.0..84.0).contains(&e.before.note.start_beat) {
+            println!("DECISION {e:?}");
+        }
+    }
+    for (arm, x) in [("A", &a), ("B", &b)] {
+        for n in x
+            .score
+            .notes
+            .iter()
+            .filter(|n| (76.0..84.0).contains(&n.start_beat))
+        {
+            println!("{arm} {n:?}");
+        }
+    }
+    for r in ib.flips() {
+        assert!(
+            ia.flips()
+                .any(|old| old.start_beat <= r.start_beat + 1e-6
+                    && old.end_beat >= r.end_beat - 1e-6),
+            "new {r:?}"
+        );
+    }
 }
