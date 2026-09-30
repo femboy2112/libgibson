@@ -413,3 +413,79 @@ fn a_declared_motif_is_stated_as_identity_where_the_lead_is_seated() {
     }
     assert!(songs > 0);
 }
+
+/// Every emitted pinned event carries a justified pitch function, or the lift is refused before
+/// realization (holdout v2 E04/H16/H18: pinned bass notes sounded with no function). A derived
+/// harmony analysed in two-beat windows and an exact bass line can be jointly unrealizable: a
+/// bass passing motion the analysis did not see has no lawful relation to the pinned chord. That
+/// is refused, typed — never relabelled after the fact.
+#[test]
+fn a_pinned_event_is_justified_or_the_lift_is_refused() {
+    use gibson::audio::human_music::{
+        cover::{CoverError, CoverFidelityPreset, CoverFidelityProfile},
+        reference_song::ReferenceSong,
+        rhythm::MetricPosition,
+    };
+    const ODE: &str = include_str!("../docs/fixtures/humanmusic-cover/ode-import/reference.tsv");
+    let reference = ReferenceSong::from_tsv(ODE, "sop").unwrap();
+    let derived = reference
+        .derive_harmony(MetricPosition::new(2, 1).unwrap())
+        .unwrap();
+    let (mut lifted, mut refused, mut unjustified) = (0, 0, Vec::new());
+    for preset in [CoverFidelityPreset::Faithful, CoverFidelityPreset::Strict] {
+        let (map, _) = reference
+            .extract_fidelity(
+                &CoverFidelityProfile::preset(preset),
+                Some(preset),
+                Some(&derived),
+            )
+            .unwrap();
+        for (world, tonic, seed) in [
+            (MusicWorld::black_ice(), 2, 78_305_600u64),
+            (MusicWorld::vapor95(), 7, 78_305_601),
+            (MusicWorld::black_ice(), 9, 78_305_602),
+            (MusicWorld::vapor95(), 0, 78_305_603),
+        ] {
+            let mut world = world;
+            world.tonic_pc = tonic;
+            match cover_candidate(
+                &map,
+                CoverTarget {
+                    world: &world,
+                    seed,
+                    grammar: CompositionGrammar::HookArc,
+                    options: options(MusicalLanguage::fusion_conversation()),
+                    profile: PerformanceProfile::BAND,
+                },
+            ) {
+                Ok(c) => {
+                    lifted += 1;
+                    unjustified.extend(
+                        c.score
+                            .notes
+                            .iter()
+                            .filter(|n| {
+                                n.prov.role_note == "cover-identity" && n.function.is_none()
+                            })
+                            .map(|n| {
+                                format!(
+                                    "{preset:?} {} {tonic}: {:?} at {}",
+                                    world.name, n.role, n.start_beat
+                                )
+                            }),
+                    );
+                }
+                Err(CoverError::Invalid(why)) if why.contains("no lawful pitch function") => {
+                    refused += 1
+                }
+                Err(e) => panic!("{preset:?} {}: unexpected refusal {e:?}", world.name),
+            }
+        }
+    }
+    assert!(
+        unjustified.is_empty(),
+        "pinned events sounded with no justified function:\n{}",
+        unjustified.join("\n")
+    );
+    assert!(lifted + refused == 8);
+}
