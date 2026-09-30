@@ -1,0 +1,11 @@
+case	phase	law	status	detail
+E03	reference	symbolic-ingestion	PASS	returned a candidate; admission checked separately
+E03	reference	derived-harmony	PASS	returned a candidate; admission checked separately
+E03	reference	guard:derived-harmony-labelled	PASS	DERIVED ANALYSIS method=satb-window-triad/v2: max covered duration triad; structural seventh >= half window; bass-root ties; merge equal; spans=28
+E03	extraction	projection	PASS	map=77870a73f49b062d; spec=[Motif, Riff, HarmonicContour, BassFigure]; knowledge=[(Motif, Invariant), (Riff, Invariant), (Groove, Unknown), (HarmonicContour, Invariant), (HarmonicLoop, Free), (Form, Unknown), (Orchestration, Unknown), (BassFigure, Invariant)]; expect=lawful
+E03	extraction	guard:map-validation	PASS	Ok(())
+E03	extraction	identity-present	PASS	pinned axes=[Motif, Riff, HarmonicContour, BassFigure] (a cover with no pinned identity is not a cover)
+E03	extraction	guard:ceiling-honest	PASS	problems=[]\nFidelity: faithful requested; observational ceiling: groove kick-snare->unknown, form exact->unknown\n  motif: requested faithful-line, effective faithful-line (Observed) — observed\n  riff: requested faithful-line, effective faithful-line (Observed) — observed\n  bass-figure: requested metric, effective metric (Observed) — observed\n  harmonic-contour: requested exact, effective exact (DerivedAnalysis("satb-window-triad/v2: max covered duration triad; structural seventh >= half window; bass-root ties; merge equal")) — available\n  groove: requested kick-snare, effective unknown (Unknown) — no percussion observed\n  form: requested exact, effective unknown (Unknown) — no phrase or section boundaries observed\n  orchestration: requested free, effective free (NotPinned) — not requested\n
+E03	reference	unobserved-axes-remain-unknown	PASS	wrongly known axes=[]
+E03	extraction	guard:derived-harmony-provenance	PASS	pinned harmony is labelled derived analysis, never score metadata
+E03	cover	candidate-lift	PASS	explicit refusal: Invalid("pinned harmony outside target vocabulary"); expect=lawful
