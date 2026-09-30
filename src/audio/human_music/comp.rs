@@ -326,10 +326,16 @@ fn gate_role_mass(
     ledger
 }
 
-/// The keys' final pass: onset order (stable), then lift off at harmony changes.
+/// The keys' final pass: onset order (stable), then lift off at harmony changes. A hold is a
+/// voicing chosen FOR its harmony: a held voice that is not a member of the next harmony lifts
+/// off AT the change (the coupled keys' rule), while its member voices sustain the hold. Other
+/// notes keep the tolerated half-beat tail.
 pub fn finish_keys(mut out: Vec<Note>, perf: &PerformancePlan) -> Vec<Note> {
     out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
     release_at_harmony_change(&mut out, &perf.chords);
+    for n in out.iter_mut().filter(|n| n.prov.role_note == "hold") {
+        release_with_overhang(std::slice::from_mut(n), &perf.chords, 0.0);
+    }
     out
 }
 
