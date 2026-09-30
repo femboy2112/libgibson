@@ -1,0 +1,27 @@
+{
+  "start_head": "207f0ab092e3d0a274998d84a245e7b78d096f97",
+  "branch": "feat/v0.4-humanmusic-audio",
+  "origin": "git@github.com:femboy2112/libgibson.git",
+  "initial_worktree": "clean",
+  "pr": 70,
+  "draft": true,
+  "toolchain": "1.98.1",
+  "black_score_legacy_v1": "8503f682f19fc982",
+  "black_performance_legacy_v1": "dd68e9d7339daba4",
+  "song_legacy_v1": "af5360442b9b6729",
+  "black_full_wav_sha256": "6fe3abf55cee22b69e6d3c06684574770eea40445de4183588cfd12707382f4d",
+  "historical_receipts": "docs/fixtures/humanmusic-r17/final",
+  "human_evidence": "Maintainer accepts BLACK_ICE R17 pocket; residual robotic feel; no general R17 acceptance.",
+  "old_sweep": {
+    "executed": 120,
+    "complete_passes": 61,
+    "first_failures": 59,
+    "pitch": 14,
+    "lattice": 38,
+    "temporal": 5,
+    "held_identity": 2
+  },
+  "render_command": "CARGO_BUILD_JOBS=1 cargo +1.98.1 run --release --example pocket_music_lab -- --out=target/humanmusic-consolidation/baseline --render",
+  "verification_command": "python3 scripts/verify-pocket-freeze.py target/humanmusic-consolidation/baseline",
+  "claims": "Event/evidence characterization and PCM comparison are separate. Audition report is historical human evidence, not machine inference."
+}
