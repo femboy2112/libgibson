@@ -1,0 +1,7 @@
+Pocket timing observations: independent columns, no scalar quality verdict.
+Positive displacement=late versus source; negative=early. Lattice residual is onset-minus-nearest-slot.
+Metric phase uses unswung pulse coordinates; whole-beat displacement remains a separate field.
+Structural bits come from source ledger or authored annotation; missing actual matches stay unresolved.
+Event matching retains exact note data and source identity; later chart-description provenance enrichment is ignored.
+AccentGrid weights are raw nearest grid samples; nearest drums are actual attacks including authored jitter.
+Boundary: shared implementation provenance; human pocket acceptance Not Established.

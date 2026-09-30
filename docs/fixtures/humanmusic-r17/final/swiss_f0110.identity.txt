@@ -1,0 +1,5 @@
+identity: 462 slices, 4 rival runs, 0 flipped (-0.000 s), hold 0.5 s
+run  11.186-11.525  s  beats  22.000-22.665   chart Fmaj9  rival C    0.338 s  passing
+run  11.949-12.042  s  beats  23.500-23.683   chart Fmaj9  rival C    0.093 s  passing
+run  48.122-48.559  s  beats  94.640-95.500   chart Cmaj7  rival Em   0.437 s  passing
+run  48.652-48.814  s  beats  95.683-96.000   chart Cmaj7  rival G    0.161 s  passing

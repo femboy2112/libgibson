@@ -1,0 +1,10 @@
+clashes=47 transient=38 foreshadowing=0 suspension=1 anticipation=2 unjustified=6
+  18.500  12.614s lead:melody   B4    0.45  vs pad:pad       C5    int=1  overlap=0.341s sal=1.00 exposure=0.341 Gestural next=F5 Unjustified
+  19.000  12.955s pad:pad       E5    2.92  vs lead:melody   F5    int=1  overlap=0.341s sal=1.00 exposure=0.341 Gestural next=E5 Unjustified
+  35.500  24.205s lead:melody   G5    0.50  vs pad:pad       F#4   int=13 overlap=0.341s sal=1.00 exposure=0.341 Gestural next=- Anticipation
+  34.500  23.523s lead:melody   B4    0.45  vs pad:pad       C5    int=1  overlap=0.341s sal=1.00 exposure=0.341 Gestural next=A5 Unjustified
+  43.500  29.659s lead:melody   G5    0.50  vs pad:pad       F#4   int=13 overlap=0.341s sal=1.00 exposure=0.341 Gestural next=- Anticipation
+  42.500  28.977s lead:melody   B4    0.45  vs pad:pad       C5    int=1  overlap=0.341s sal=1.00 exposure=0.341 Gestural next=A5 Unjustified
+  82.500  56.250s lead:melody   B4    0.45  vs pad:pad       C5    int=1  overlap=0.341s sal=1.00 exposure=0.341 Gestural next=F5 Unjustified
+  83.000  56.591s pad:pad       E5    2.92  vs lead:melody   F5    int=1  overlap=0.341s sal=1.00 exposure=0.341 Gestural next=D5 Suspension
+ 106.500  72.614s lead:melody   B4    0.45  vs pad:pad       C5    int=1  overlap=0.341s sal=1.00 exposure=0.341 Gestural next=F#5 Unjustified

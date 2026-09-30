@@ -1,0 +1,1534 @@
+[
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4625478292286210048,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    9,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            33,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4625619029774565376,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    9,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            33,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4626463454704697344,
+            pitch: 61,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    9,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            33,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4626604192193052672,
+            pitch: 60,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    9,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            33,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4627589354611539968,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    10,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            34,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4627870829588250624,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    10,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            34,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4628152304564961280,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    10,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            34,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4628433779541671936,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    10,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            34,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4629911523169402880,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    11,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            35,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4630052260657758208,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    11,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            35,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4630192998146113536,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    11,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            35,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4630333735634468864,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    11,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            35,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4631037423076245504,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    12,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            36,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4631178160564600832,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    12,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            36,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4631318898052956160,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    12,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            36,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4631459635541311488,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    12,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            36,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4632092954238910464,
+            pitch: 66,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    13,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4632233691727265792,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    13,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4633148485401575424,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    14,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4633289222889930752,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    14,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4633429960378286080,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    14,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4633570697866641408,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    14,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4635400285215260672,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    15,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            37,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4635435469587349504,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    15,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            37,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4635646575819882496,
+            pitch: 61,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    15,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            37,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4635681760191971328,
+            pitch: 60,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    15,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            37,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4635646575819882496,
+            pitch: 49,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            23,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "unison",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4635681760191971328,
+            pitch: 48,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            23,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "unison",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4635963235168681984,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    16,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4636033603912859648,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    16,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4636103972657037312,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    16,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4636174341401214976,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    16,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4636491000750014464,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    17,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4636561369494192128,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    17,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4636631738238369792,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    17,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4636702106982547456,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    17,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4637124319447613440,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    18,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            38,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4637194688191791104,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    18,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            38,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4637265056935968768,
+            pitch: 65,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    18,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            38,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+        to: VoiceEventId {
+            onset: 4637335425680146432,
+            pitch: 64,
+            role: Lead,
+            material: Some(
+                MaterialId(
+                    18,
+                ),
+            ),
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            38,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "melody",
+            motif: Some(
+                0,
+            ),
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4615063718147915776,
+            pitch: 35,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4616189618054758400,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4622663542519103488,
+            pitch: 35,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4622945017495814144,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4624915342332788736,
+            pitch: 40,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            2,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4625196817309499392,
+            pitch: 41,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4628433779541671936,
+            pitch: 35,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4628574517030027264,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4630192998146113536,
+            pitch: 35,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4630263366890291200,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4630755948099534848,
+            pitch: 35,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4630826316843712512,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4631318898052956160,
+            pitch: 35,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4631389266797133824,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4633007747913220096,
+            pitch: 37,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4633078116657397760,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4633570697866641408,
+            pitch: 35,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4633641066610819072,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4634133647820062720,
+            pitch: 35,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4634204016564240384,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            17,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4635013257122283520,
+            pitch: 35,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4635048441494372352,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4635294732098994176,
+            pitch: 40,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            20,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4635329916471083008,
+            pitch: 41,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4636139157029126144,
+            pitch: 35,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4636174341401214976,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4636702106982547456,
+            pitch: 35,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4636737291354636288,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    Some(
+                        ActionId(
+                            27,
+                        ),
+                    ),
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4636983581959258112,
+            pitch: 35,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4637018766331346944,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4637265056935968768,
+            pitch: 35,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4637300241308057600,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+    VoiceContinuation {
+        from: VoiceEventId {
+            onset: 4637828006889390080,
+            pitch: 35,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "approach",
+            motif: None,
+        },
+        to: VoiceEventId {
+            onset: 4637863191261478912,
+            pitch: 36,
+            role: Bass,
+            material: None,
+            actions: ActionStamp {
+                ids: [
+                    None,
+                    None,
+                    None,
+                ],
+            },
+            role_note: "root",
+            motif: None,
+        },
+    },
+]

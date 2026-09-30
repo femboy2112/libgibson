@@ -1,0 +1,14 @@
+clashes=62 transient=49 foreshadowing=5 suspension=0 anticipation=2 unjustified=6
+   7.000   3.559s bass:quote    B2    0.45  vs pad:pad       C4    int=13 overlap=0.313s sal=1.00 exposure=0.313 Gestural next=C3 Foreshadowing
+  20.000  10.169s pad:pad       E4    3.92  vs pad:pad       F5    int=13 overlap=0.259s sal=1.50 exposure=0.389 Gestural next=E4 Anticipation
+  28.000  14.237s pad:pad       B4    3.92  vs pad:pad       C5    int=1  overlap=0.259s sal=1.50 exposure=0.389 Gestural next=C5 Unjustified
+  31.000  15.763s bass:quote    B2    0.45  vs pad:pad       C4    int=13 overlap=0.313s sal=1.00 exposure=0.313 Gestural next=C3 Foreshadowing
+  32.000  16.271s pad:pad       B4    3.92  vs pad:pad       C5    int=1  overlap=0.259s sal=1.50 exposure=0.389 Gestural next=C5 Unjustified
+  36.000  18.305s pad:pad       B4    3.92  vs pad:pad       C5    int=1  overlap=0.259s sal=1.50 exposure=0.389 Gestural next=C5 Unjustified
+  40.000  20.339s pad:pad       B4    3.92  vs pad:pad       C5    int=1  overlap=0.259s sal=1.50 exposure=0.389 Gestural next=C5 Unjustified
+  44.000  22.373s pad:pad       B4    3.92  vs pad:pad       C5    int=1  overlap=0.259s sal=1.50 exposure=0.389 Gestural next=A4 Foreshadowing
+  48.000  24.407s pad:pad       E4    3.92  vs pad:pad       F4    int=1  overlap=0.259s sal=1.50 exposure=0.389 Gestural next=F4 Unjustified
+  84.000  42.712s pad:pad       E5    3.92  vs pad:pad       F5    int=1  overlap=0.259s sal=1.50 exposure=0.389 Gestural next=E5 Anticipation
+  88.000  44.746s pad:pad       F4    3.92  vs keys:hold     E4    int=1  overlap=0.137s sal=1.50 exposure=0.206 Gestural next=A4 Unjustified
+  92.000  46.780s pad:pad       B4    3.92  vs pad:pad       C5    int=1  overlap=0.259s sal=1.50 exposure=0.389 Gestural next=A4 Foreshadowing
+ 111.000  56.441s bass:quote    B2    0.45  vs pad:pad       C4    int=13 overlap=0.313s sal=1.00 exposure=0.313 Gestural next=C3 Foreshadowing

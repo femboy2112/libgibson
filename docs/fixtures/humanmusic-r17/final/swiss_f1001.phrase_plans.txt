@@ -1,0 +1,5648 @@
+[
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            1,
+        ),
+        material: Some(
+            MaterialId(
+                9,
+            ),
+        ),
+        thought_start: 16.5,
+        thought_end: 22.5,
+        phase: Opening,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: None,
+        source: [
+            Note {
+                start_beat: 17.0,
+                dur_beats: 0.45,
+                pitch: 64,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    33,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            0,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            9,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 17.0,
+                dur_beats: 0.45,
+                pitch: 64,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    33,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            0,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            9,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 17.5,
+            dur_beats: 0.5,
+            pitch: 65,
+            velocity: 0.77419996,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        Some(
+                            ActionId(
+                                33,
+                            ),
+                        ),
+                        None,
+                        None,
+                    ],
+                },
+                interaction: Some(
+                    InteractionId(
+                        0,
+                    ),
+                ),
+                material: Some(
+                    MaterialId(
+                        9,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.608,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            1,
+        ),
+        material: Some(
+            MaterialId(
+                9,
+            ),
+        ),
+        thought_start: 16.5,
+        thought_end: 22.5,
+        phase: Arrival,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 20.5,
+                dur_beats: 0.45,
+                pitch: 61,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    33,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            0,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            9,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 20.5,
+                dur_beats: 0.45,
+                pitch: 61,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    33,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            0,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            9,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 21.0,
+            dur_beats: 1.3499999,
+            pitch: 60,
+            velocity: 0.79,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        Some(
+                            ActionId(
+                                33,
+                            ),
+                        ),
+                        None,
+                        None,
+                    ],
+                },
+                interaction: Some(
+                    InteractionId(
+                        0,
+                    ),
+                ),
+                material: Some(
+                    MaterialId(
+                        9,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.648,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            1,
+        ),
+        material: Some(
+            MaterialId(
+                10,
+            ),
+        ),
+        thought_start: 23.5,
+        thought_end: 29.5,
+        phase: Opening,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: None,
+        source: [
+            Note {
+                start_beat: 24.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    34,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            3,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            10,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 24.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    34,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            3,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            10,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 25.5,
+            dur_beats: 0.45,
+            pitch: 64,
+            velocity: 0.77419996,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        Some(
+                            ActionId(
+                                34,
+                            ),
+                        ),
+                        None,
+                        None,
+                    ],
+                },
+                interaction: Some(
+                    InteractionId(
+                        3,
+                    ),
+                ),
+                material: Some(
+                    MaterialId(
+                        10,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.54,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            1,
+        ),
+        material: Some(
+            MaterialId(
+                10,
+            ),
+        ),
+        thought_start: 23.5,
+        thought_end: 29.5,
+        phase: Continuation,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 26.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    34,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            3,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            10,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 26.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    34,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            3,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            10,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 27.5,
+            dur_beats: 0.45,
+            pitch: 64,
+            velocity: 0.77419996,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        Some(
+                            ActionId(
+                                34,
+                            ),
+                        ),
+                        None,
+                        None,
+                    ],
+                },
+                interaction: Some(
+                    InteractionId(
+                        3,
+                    ),
+                ),
+                material: Some(
+                    MaterialId(
+                        10,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.54,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            2,
+        ),
+        material: Some(
+            MaterialId(
+                11,
+            ),
+        ),
+        thought_start: 32.5,
+        thought_end: 38.5,
+        phase: Opening,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: None,
+        source: [
+            Note {
+                start_beat: 33.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    35,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            4,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            11,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 33.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    35,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            4,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            11,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 34.5,
+            dur_beats: 0.45,
+            pitch: 64,
+            velocity: 0.77419996,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        Some(
+                            ActionId(
+                                35,
+                            ),
+                        ),
+                        None,
+                        None,
+                    ],
+                },
+                interaction: Some(
+                    InteractionId(
+                        4,
+                    ),
+                ),
+                material: Some(
+                    MaterialId(
+                        11,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.81,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            2,
+        ),
+        material: Some(
+            MaterialId(
+                11,
+            ),
+        ),
+        thought_start: 32.5,
+        thought_end: 38.5,
+        phase: Continuation,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 35.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    35,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            4,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            11,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 35.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    35,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            4,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            11,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 36.5,
+            dur_beats: 0.45,
+            pitch: 64,
+            velocity: 0.77419996,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        Some(
+                            ActionId(
+                                35,
+                            ),
+                        ),
+                        None,
+                        None,
+                    ],
+                },
+                interaction: Some(
+                    InteractionId(
+                        4,
+                    ),
+                ),
+                material: Some(
+                    MaterialId(
+                        11,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.81,
+        pickup: 0.3,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            2,
+        ),
+        material: Some(
+            MaterialId(
+                12,
+            ),
+        ),
+        thought_start: 40.5,
+        thought_end: 46.5,
+        phase: Opening,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: None,
+        source: [
+            Note {
+                start_beat: 41.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    36,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            5,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            12,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 41.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    36,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            5,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            12,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 42.5,
+            dur_beats: 0.45,
+            pitch: 64,
+            velocity: 0.77419996,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        Some(
+                            ActionId(
+                                36,
+                            ),
+                        ),
+                        None,
+                        None,
+                    ],
+                },
+                interaction: Some(
+                    InteractionId(
+                        5,
+                    ),
+                ),
+                material: Some(
+                    MaterialId(
+                        12,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.64000005,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            2,
+        ),
+        material: Some(
+            MaterialId(
+                12,
+            ),
+        ),
+        thought_start: 40.5,
+        thought_end: 46.5,
+        phase: Continuation,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 43.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    36,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            5,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            12,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 43.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    36,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            5,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            12,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 44.5,
+            dur_beats: 0.45,
+            pitch: 64,
+            velocity: 0.77419996,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        Some(
+                            ActionId(
+                                36,
+                            ),
+                        ),
+                        None,
+                        None,
+                    ],
+                },
+                interaction: Some(
+                    InteractionId(
+                        5,
+                    ),
+                ),
+                material: Some(
+                    MaterialId(
+                        12,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.64000005,
+        pickup: 0.3,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            3,
+        ),
+        material: Some(
+            MaterialId(
+                13,
+            ),
+        ),
+        thought_start: 48.0,
+        thought_end: 54.0,
+        phase: Opening,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: None,
+        source: [
+            Note {
+                start_beat: 49.0,
+                dur_beats: 0.5,
+                pitch: 66,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: Some(
+                        MaterialId(
+                            13,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 49.0,
+                dur_beats: 0.5,
+                pitch: 66,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: Some(
+                        MaterialId(
+                            13,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 50.0,
+            dur_beats: 0.45,
+            pitch: 65,
+            velocity: 0.79,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: Some(
+                    MaterialId(
+                        13,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.734,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            3,
+        ),
+        material: Some(
+            MaterialId(
+                14,
+            ),
+        ),
+        thought_start: 55.5,
+        thought_end: 61.5,
+        phase: Opening,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: None,
+        source: [
+            Note {
+                start_beat: 56.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: Some(
+                        MaterialId(
+                            14,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 56.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: Some(
+                        MaterialId(
+                            14,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 57.5,
+            dur_beats: 0.45,
+            pitch: 64,
+            velocity: 0.77419996,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: Some(
+                    MaterialId(
+                        14,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.6,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            3,
+        ),
+        material: Some(
+            MaterialId(
+                14,
+            ),
+        ),
+        thought_start: 55.5,
+        thought_end: 61.5,
+        phase: Continuation,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 58.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: Some(
+                        MaterialId(
+                            14,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 58.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: Some(
+                        MaterialId(
+                            14,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 59.5,
+            dur_beats: 0.45,
+            pitch: 64,
+            velocity: 0.77419996,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: Some(
+                    MaterialId(
+                        14,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.6,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            5,
+        ),
+        material: Some(
+            MaterialId(
+                15,
+            ),
+        ),
+        thought_start: 80.5,
+        thought_end: 86.5,
+        phase: Opening,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: None,
+        source: [
+            Note {
+                start_beat: 81.0,
+                dur_beats: 0.45,
+                pitch: 64,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    37,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            7,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            15,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 81.0,
+                dur_beats: 0.45,
+                pitch: 64,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    37,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            7,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            15,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 81.5,
+            dur_beats: 0.5,
+            pitch: 65,
+            velocity: 0.77419996,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        Some(
+                            ActionId(
+                                37,
+                            ),
+                        ),
+                        None,
+                        None,
+                    ],
+                },
+                interaction: Some(
+                    InteractionId(
+                        7,
+                    ),
+                ),
+                material: Some(
+                    MaterialId(
+                        15,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.7612,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            5,
+        ),
+        material: Some(
+            MaterialId(
+                15,
+            ),
+        ),
+        thought_start: 80.5,
+        thought_end: 86.5,
+        phase: Arrival,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 84.5,
+                dur_beats: 0.45,
+                pitch: 61,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    37,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            7,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            15,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 84.5,
+                dur_beats: 0.45,
+                pitch: 61,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    37,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            7,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            15,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 85.0,
+            dur_beats: 1.3499999,
+            pitch: 60,
+            velocity: 0.79,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        Some(
+                            ActionId(
+                                37,
+                            ),
+                        ),
+                        None,
+                        None,
+                    ],
+                },
+                interaction: Some(
+                    InteractionId(
+                        7,
+                    ),
+                ),
+                material: Some(
+                    MaterialId(
+                        15,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.8012,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            6,
+        ),
+        material: Some(
+            MaterialId(
+                16,
+            ),
+        ),
+        thought_start: 88.0,
+        thought_end: 94.0,
+        phase: Opening,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: None,
+        source: [
+            Note {
+                start_beat: 89.0,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.65806997,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: Some(
+                        MaterialId(
+                            16,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 89.0,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.65806997,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: Some(
+                        MaterialId(
+                            16,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 90.0,
+            dur_beats: 0.45,
+            pitch: 64,
+            velocity: 0.6715,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: Some(
+                    MaterialId(
+                        16,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.778,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            6,
+        ),
+        material: Some(
+            MaterialId(
+                16,
+            ),
+        ),
+        thought_start: 88.0,
+        thought_end: 94.0,
+        phase: Continuation,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 91.0,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.65806997,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: Some(
+                        MaterialId(
+                            16,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 91.0,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.65806997,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: Some(
+                        MaterialId(
+                            16,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 92.0,
+            dur_beats: 0.45,
+            pitch: 64,
+            velocity: 0.6715,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: Some(
+                    MaterialId(
+                        16,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.778,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            7,
+        ),
+        material: Some(
+            MaterialId(
+                17,
+            ),
+        ),
+        thought_start: 95.5,
+        thought_end: 101.5,
+        phase: Opening,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: None,
+        source: [
+            Note {
+                start_beat: 96.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: Some(
+                        MaterialId(
+                            17,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 96.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: Some(
+                        MaterialId(
+                            17,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 97.5,
+            dur_beats: 0.45,
+            pitch: 64,
+            velocity: 0.77419996,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: Some(
+                    MaterialId(
+                        17,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.8,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            7,
+        ),
+        material: Some(
+            MaterialId(
+                17,
+            ),
+        ),
+        thought_start: 95.5,
+        thought_end: 101.5,
+        phase: Continuation,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 98.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: Some(
+                        MaterialId(
+                            17,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 98.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: Some(
+                        MaterialId(
+                            17,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 99.5,
+            dur_beats: 0.45,
+            pitch: 64,
+            velocity: 0.77419996,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: Some(
+                    MaterialId(
+                        17,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.8,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            7,
+        ),
+        material: Some(
+            MaterialId(
+                18,
+            ),
+        ),
+        thought_start: 104.5,
+        thought_end: 110.5,
+        phase: Opening,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: None,
+        source: [
+            Note {
+                start_beat: 105.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    38,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            9,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            18,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 105.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    38,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            9,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            18,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    Neighbor,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 106.5,
+            dur_beats: 0.45,
+            pitch: 64,
+            velocity: 0.77419996,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        Some(
+                            ActionId(
+                                38,
+                            ),
+                        ),
+                        None,
+                        None,
+                    ],
+                },
+                interaction: Some(
+                    InteractionId(
+                        9,
+                    ),
+                ),
+                material: Some(
+                    MaterialId(
+                        18,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.84000003,
+        pickup: 0.0,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Lead,
+        phrase: Some(
+            7,
+        ),
+        material: Some(
+            MaterialId(
+                18,
+            ),
+        ),
+        thought_start: 104.5,
+        thought_end: 110.5,
+        phase: Continuation,
+        thought_iois: [
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            0.5,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 107.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    38,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            9,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            18,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 107.5,
+                dur_beats: 0.5,
+                pitch: 65,
+                velocity: 0.77419996,
+                role: Lead,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: Some(
+                        "motif",
+                    ),
+                    role_kind: None,
+                    motif_id: Some(
+                        0,
+                    ),
+                    motif_xform: Some(
+                        "restate",
+                    ),
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "melody",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    38,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: Some(
+                        InteractionId(
+                            9,
+                        ),
+                    ),
+                    material: Some(
+                        MaterialId(
+                            18,
+                        ),
+                    ),
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 108.5,
+            dur_beats: 0.45,
+            pitch: 64,
+            velocity: 0.77419996,
+            role: Lead,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: Some(
+                    "motif",
+                ),
+                role_kind: None,
+                motif_id: Some(
+                    0,
+                ),
+                motif_xform: Some(
+                    "restate",
+                ),
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "melody",
+                actions: ActionStamp {
+                    ids: [
+                        Some(
+                            ActionId(
+                                38,
+                            ),
+                        ),
+                        None,
+                        None,
+                    ],
+                },
+                interaction: Some(
+                    InteractionId(
+                        9,
+                    ),
+                ),
+                material: Some(
+                    MaterialId(
+                        18,
+                    ),
+                ),
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.84000003,
+        pickup: 0.3,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 0.0,
+        thought_end: 4.0,
+        phase: Continuation,
+        thought_iois: [
+            2.0,
+            0.25,
+            1.25,
+        ],
+        previous_transform: None,
+        source: [
+            Note {
+                start_beat: 3.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.3160024,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 3.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.3160024,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 4.0,
+            dur_beats: 1.9,
+            pitch: 36,
+            velocity: 0.3755805,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.5,
+        pickup: 0.3,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 8.0,
+        thought_end: 12.0,
+        phase: Continuation,
+        thought_iois: [
+            2.0,
+            0.25,
+            1.25,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 11.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.3160024,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 11.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.3160024,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 12.0,
+            dur_beats: 2.475,
+            pitch: 36,
+            velocity: 0.37920287,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.5,
+        pickup: 0.3,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 12.0,
+        thought_end: 16.0,
+        phase: Opening,
+        thought_iois: [
+            2.75,
+            0.75,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 15.5,
+                dur_beats: 0.45,
+                pitch: 40,
+                velocity: 0.32232246,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    2,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 15.5,
+                dur_beats: 0.45,
+                pitch: 40,
+                velocity: 0.32232246,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    2,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 16.0,
+            dur_beats: 3.6,
+            pitch: 41,
+            velocity: 0.38206258,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.578,
+        pickup: 0.9,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 24.0,
+        thought_end: 28.0,
+        phase: Opening,
+        thought_iois: [
+            2.0,
+            1.5,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 27.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.31924343,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 27.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.31924343,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 28.0,
+            dur_beats: 1.9,
+            pitch: 36,
+            velocity: 0.3832065,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.54,
+        pickup: 0.3,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 32.0,
+        thought_end: 36.0,
+        phase: Opening,
+        thought_iois: [
+            2.25,
+            1.25,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 35.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.3411205,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 35.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.3411205,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 36.0,
+            dur_beats: 2.25,
+            pitch: 36,
+            velocity: 0.39512214,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.81,
+        pickup: 0.3,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 36.0,
+        thought_end: 40.0,
+        phase: Continuation,
+        thought_iois: [
+            2.5,
+            0.25,
+            0.75,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 39.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.33585382,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 39.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.33585382,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 40.0,
+            dur_beats: 2.025,
+            pitch: 36,
+            velocity: 0.385113,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.745,
+        pickup: 0.9,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 40.0,
+        thought_end: 44.0,
+        phase: Opening,
+        thought_iois: [
+            2.25,
+            1.25,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 43.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.32734606,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 43.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.32734606,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 44.0,
+            dur_beats: 2.475,
+            pitch: 36,
+            velocity: 0.388926,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.64000005,
+        pickup: 0.3,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 52.0,
+        thought_end: 56.0,
+        phase: Opening,
+        thought_iois: [
+            2.25,
+            1.25,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 55.5,
+                dur_beats: 0.45,
+                pitch: 37,
+                velocity: 0.32248446,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 55.5,
+                dur_beats: 0.45,
+                pitch: 37,
+                velocity: 0.32248446,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 56.0,
+            dur_beats: 3.15,
+            pitch: 36,
+            velocity: 0.3813,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.58000004,
+        pickup: 0.8,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 56.0,
+        thought_end: 60.0,
+        phase: Opening,
+        thought_iois: [
+            3.5,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 59.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.32410502,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 59.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.32410502,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 60.0,
+            dur_beats: 2.25,
+            pitch: 36,
+            velocity: 0.385113,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.6,
+        pickup: 0.3,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 60.0,
+        thought_end: 64.0,
+        phase: Continuation,
+        thought_iois: [
+            2.5,
+            0.25,
+            0.75,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 63.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.32734606,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 63.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.32734606,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 64.0,
+            dur_beats: 3.6,
+            pitch: 36,
+            velocity: 0.40192837,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        Some(
+                            ActionId(
+                                17,
+                            ),
+                        ),
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.64000005,
+        pickup: 0.9,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 72.0,
+        thought_end: 76.0,
+        phase: Continuation,
+        thought_iois: [
+            2.25,
+            0.25,
+            1.0,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 75.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.33220762,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 75.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.33220762,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 76.0,
+            dur_beats: 2.475,
+            pitch: 36,
+            velocity: 0.39952615,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.7,
+        pickup: 0.3,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 76.0,
+        thought_end: 80.0,
+        phase: Opening,
+        thought_iois: [
+            2.75,
+            0.75,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 79.5,
+                dur_beats: 0.45,
+                pitch: 40,
+                velocity: 0.33959723,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    20,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 79.5,
+                dur_beats: 0.45,
+                pitch: 40,
+                velocity: 0.33959723,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            Some(
+                                ActionId(
+                                    20,
+                                ),
+                            ),
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 80.0,
+            dur_beats: 1.575,
+            pitch: 41,
+            velocity: 0.39666638,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.7912,
+        pickup: 0.8,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 88.0,
+        thought_end: 92.0,
+        phase: Opening,
+        thought_iois: [
+            2.25,
+            1.25,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 91.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.33852768,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 91.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.33852768,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 92.0,
+            dur_beats: 2.475,
+            pitch: 36,
+            velocity: 0.39836314,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.778,
+        pickup: 0.3,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 96.0,
+        thought_end: 100.0,
+        phase: Opening,
+        thought_iois: [
+            2.25,
+            1.25,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 99.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.34031028,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 99.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.34031028,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 100.0,
+            dur_beats: 2.475,
+            pitch: 36,
+            velocity: 0.41199467,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        Some(
+                            ActionId(
+                                27,
+                            ),
+                        ),
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.8,
+        pickup: 0.3,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 100.0,
+        thought_end: 104.0,
+        phase: Opening,
+        thought_iois: [
+            2.75,
+            0.75,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 103.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.35019547,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 103.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.35019547,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 104.0,
+            dur_beats: 2.025,
+            pitch: 36,
+            velocity: 0.40417802,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.922,
+        pickup: 0.8,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 104.0,
+        thought_end: 108.0,
+        phase: Opening,
+        thought_iois: [
+            2.25,
+            1.25,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 107.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.34355134,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 107.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.34355134,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 108.0,
+            dur_beats: 1.9,
+            pitch: 36,
+            velocity: 0.40799102,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.84000003,
+        pickup: 0.3,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+    PhrasePlan {
+        role: Bass,
+        phrase: None,
+        material: None,
+        thought_start: 112.0,
+        thought_end: 116.0,
+        phase: Continuation,
+        thought_iois: [
+            2.25,
+            0.25,
+            1.0,
+        ],
+        previous_transform: Some(
+            AsWritten,
+        ),
+        source: [
+            Note {
+                start_beat: 115.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.3486722,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        performed: [
+            Note {
+                start_beat: 115.5,
+                dur_beats: 0.45,
+                pitch: 35,
+                velocity: 0.3486722,
+                role: Bass,
+                prov: Provenance {
+                    section: A,
+                    phrase: None,
+                    family: None,
+                    anchor: None,
+                    role_kind: None,
+                    motif_id: None,
+                    motif_xform: None,
+                    groove_variation: None,
+                    role: None,
+                    closure: None,
+                    morphism: None,
+                    role_note: "approach",
+                    actions: ActionStamp {
+                        ids: [
+                            None,
+                            None,
+                            None,
+                        ],
+                    },
+                    interaction: None,
+                    material: None,
+                    obligation: None,
+                },
+                function: Some(
+                    ChromaticApproach,
+                ),
+            },
+        ],
+        destination: Note {
+            start_beat: 116.0,
+            dur_beats: 2.475,
+            pitch: 36,
+            velocity: 0.40417802,
+            role: Bass,
+            prov: Provenance {
+                section: A,
+                phrase: None,
+                family: None,
+                anchor: None,
+                role_kind: None,
+                motif_id: None,
+                motif_xform: None,
+                groove_variation: None,
+                role: None,
+                closure: None,
+                morphism: None,
+                role_note: "root",
+                actions: ActionStamp {
+                    ids: [
+                        None,
+                        None,
+                        None,
+                    ],
+                },
+                interaction: None,
+                material: None,
+                obligation: None,
+            },
+            function: Some(
+                ChordTone,
+            ),
+        },
+        transform: AsWritten,
+        grid: None,
+        kinetic: 0.90320003,
+        pickup: 0.3,
+        rejected_candidates: [],
+        reason: "authored phrase already physically viable",
+    },
+]

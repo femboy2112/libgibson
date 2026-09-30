@@ -1,0 +1,9 @@
+identity: 376 slices, 8 rival runs, 0 flipped (-0.000 s), hold 0.5 s
+run  42.520-42.784  s  beats  62.362-62.750   chart Am9    rival C    0.264 s  passing
+run  43.321-43.636  s  beats  63.537-64.000   chart Am9    rival C    0.315 s  passing
+run  48.895-49.091  s  beats  71.712-72.000   chart Am9    rival C    0.196 s  passing
+run  50.548-50.625  s  beats  74.137-74.250   chart Am6    rival Bm   0.077 s  passing
+run  51.735-51.818  s  beats  75.878-76.000   chart Am6    rival Bm   0.083 s  passing
+run  72.366-72.443  s  beats 106.137-106.250  chart Am6    rival Bm   0.077 s  passing
+run  73.287-73.466  s  beats 107.487-107.750  chart Am6    rival Bm   0.179 s  passing
+run  73.611-73.636  s  beats 107.962-108.000  chart Am6    rival Bm   0.026 s  passing

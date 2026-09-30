@@ -1,0 +1,12 @@
+context=7 beat=28.000 [64, 72, 79, 83]->[60, 64, 71, 79] candidates=58 reason=same-PC octave placement removes a sustained top-seventh excursion and reduces adjacent voice motion; identity retained; new resolving-bass contacts separately justified by frozen physical ruler
+  incoming [0, 3, 7, 4]->[-4, -5, -1, 0]; outgoing [0, -3, -7, -4]->[4, 5, 1, 0]; top Some(4)/Some(-4)->Some(0)/Some(0); root [72]->[60]; guides [64, 83]->[64, 71]; span 19->19; top_life_s 2.292963->2.292963; top_exposure_proxy 0.208018->0.208018
+  NEW pad tail contact 72@24.000->71@28.000 overlap=28.000000..28.509494 beats (0.259065s)
+  NEW pad tail contact 71@28.000->72@32.000 overlap=32.000000..32.509494 beats (0.259065s)
+  NEW resolving bass contact pad=60@28.000 bass=47@31.000 function=Some(ChordTone) dur_beats=0.45 velocity=0.40386817 target=48@31.500 target_function=Some(ChordTone) target_velocity=0.41062433 latency_s=0.254237 audible_s=0.312741 overlap_s=0.312741 frozen_R15=AsWritten legacy_guard_rejected=true provisional_listening_hypothesis=true
+context=9 beat=36.000 [64, 72, 79, 83]->[60, 64, 71, 79] candidates=58 reason=same-PC octave placement removes a sustained top-seventh excursion and reduces adjacent voice motion; identity retained; new resolving-bass contacts separately justified by frozen physical ruler
+  incoming [0, 3, 7, 4]->[-4, -5, -1, 0]; outgoing [0, -3, -7, -4]->[4, 5, 1, 0]; top Some(4)/Some(-4)->Some(0)/Some(0); root [72]->[60]; guides [64, 83]->[64, 71]; span 19->19; top_life_s 2.292963->2.292963; top_exposure_proxy 0.184182->0.184182
+  NEW pad tail contact 72@32.000->71@36.000 overlap=36.000000..36.509494 beats (0.259065s)
+  NEW pad tail contact 71@36.000->72@40.000 overlap=40.000000..40.509494 beats (0.259065s)
+context=11 beat=44.000 [64, 72, 79, 83]->[60, 64, 71, 79] candidates=58 reason=same-PC octave placement removes a sustained top-seventh excursion and reduces adjacent voice motion; identity retained; new resolving-bass contacts separately justified by frozen physical ruler
+  incoming [0, 3, 7, 4]->[-4, -5, -1, 0]; outgoing [1, -3, -7, -4]->[5, 5, 1, 0]; top Some(4)/Some(-4)->Some(0)/Some(0); root [72]->[60]; guides [64, 83]->[64, 71]; span 19->19; top_life_s 2.292963->2.292963; top_exposure_proxy 0.245576->0.245576
+  NEW pad tail contact 72@40.000->71@44.000 overlap=44.000000..44.509494 beats (0.259065s)

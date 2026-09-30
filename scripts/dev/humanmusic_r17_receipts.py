@@ -18,12 +18,27 @@ def digest(path):
     return value.hexdigest()
 
 
+def mixed_contrast(values, mask):
+    return sum((-1) ** (mask.bit_count()-bits.bit_count()) * values[bits]
+               for bits in range(16) if bits & mask == bits)
+
+
+def calibrate_factorial():
+    points = {bits: 5 + 3 * bool(bits & 1) + 2 * bool(bits & 2)
+              - 7 * bool(bits & 1) * bool(bits & 2)
+              + bool(bits & 2) * bool(bits & 8) for bits in range(16)}
+    expected = {0: 5, 1: 3, 2: 2, 3: -7, 10: 1}
+    assert all(mixed_contrast(points, mask) == expected.get(mask, 0) for mask in range(16))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directory', type=Path)
     parser.add_argument('--copy-receipts', type=Path)
+    parser.add_argument('--source-head', help='committed production authority; verified against current src/audio before sealing')
     parser.add_argument('--require-audio', action='store_true', help='require all82 planned WAVs, all32 historical controls and both all-off PCM equalities')
     args = parser.parse_args()
+    calibrate_factorial()
     directory = args.directory
     root = Path(__file__).resolve().parents[2]
     historical = root / 'docs/fixtures/humanmusic-r16/final'
@@ -50,6 +65,14 @@ def main():
         if full.exists():
             assert digest(full) == digest(directory / f'{world}_r16.full.wav')
             controls.append(full.name + ' byte-exact R16 PCM')
+    if args.require_audio:
+        for stem in stems:
+            assert digest(directory / f'swiss_r17.{stem}.wav') == digest(directory / f'swiss_r16.{stem}.wav'), stem
+        controls.append('SWISS support-only R17 all8 stems byte-exact R16 (NO-GO preserved)')
+        for world in ['black_ice', 'swiss']:
+            for bits in range(8):
+                assert digest(directory / f'{world}_f{bits:04b}.full.wav') == digest(directory / f'{world}_f{bits | 8:04b}.full.wav'), (world,bits)
+        controls.append('support-factor paired full mixes byte-exact for all16 world/configuration pairs')
     old_wav_hashes = dict((line.split('  ', 1)[1], line.split('  ', 1)[0])
                           for line in (historical / 'SHA256SUMS').read_text().splitlines())
     historical_wavs = 0
@@ -103,6 +126,42 @@ def main():
         boundary='Written gate silence, not PCM silence; source-ledger optional retiming cohort, source connective function retained.',
         rows=connectives), indent=2) + '\n')
     (directory / 'perturbation-summary.json').write_text(json.dumps(rows, indent=2) + '\n')
+    # Complete Boolean-factorial Mobius contrasts, with all factors-off as reference.
+    # These are signed mixed count differences, not interaction mechanisms or quality scores.
+    retained = {}
+    for line in (directory / 'summary.txt').read_text().splitlines():
+        match = re.search(r'^(\w+)_f([01]{4}) .*retained_unresolved=(\d+)', line)
+        if match:
+            retained[(match[1], int(match[2], 2))] = int(match[3])
+    factorial = []
+    for world in ['black_ice', 'swiss']:
+        values = {}
+        for bits in range(16):
+            arm = f'f{bits:04b}'
+            point = {'off_lattice': lattice[f'{world}_{arm}'],
+                     'retimed_source_connective_blips': sum(r['blip'] for r in connectives if r['world'] == world and r['arm'] == arm),
+                     'retained_unresolved': retained[(world, bits)]}
+            selected = [r for r in rows if r['comparison'] == f'{world}.r16-{arm}']
+            assert len(selected) == 4, (world, arm, len(selected))
+            for row in selected:
+                for key in ['old', 'new', 'retimed', 'gate', 'velocity', 'pitch', 'omitted', 'added']:
+                    point[f'{row["role"]}.{key}'] = row[key]
+            values[bits] = point
+        contrasts = {}
+        for mask in range(16):
+            contrasts[f'{mask:04b}'] = {key: mixed_contrast({bits: values[bits][key] for bits in range(16)}, mask) for key in values[0]}
+        for bits in range(16):
+            for key in values[0]:
+                assert sum(contrasts[f'{mask:04b}'][key] for mask in range(16) if mask & bits == mask) == values[bits][key]
+        support_noop = all(values[bits] == values[bits ^ 8] for bits in range(8))
+        assert support_noop, 'unadmitted support factor unexpectedly changed measurements'
+        factorial.append(dict(world=world, factor_bits={'0': 'lattice_positions', '1': 'legato_connectives', '2': 'mono_voice', '3': 'support_top_voice'},
+                              measurements={f'{k:04b}': v for k,v in values.items()},
+                              mobius_contrasts=contrasts, support_factor_is_noop=support_noop))
+    (directory / 'factorial-interactions.json').write_text(json.dumps(dict(
+        definition='Delta_S f(0) = sum over T subset S of (-1)^(|S|-|T|) f(T). Empty S is baseline; singleton is main change; order>=2 is mixed difference.',
+        boundary='Complete finite factorial count contrasts. Non-additivity does not identify mechanism; all receipts share implementation provenance, no sound-quality score.',
+        rows=factorial), indent=2) + '\n')
     columns = ['comparison', 'role', 'old', 'new', 'retimed', 'gate', 'velocity', 'pitch', 'omitted', 'added']
     table = ['| ' + ' | '.join(columns) + ' |', '|' + '|'.join(['---'] * len(columns)) + '|']
     table.extend('| ' + ' | '.join(str(row[key]) for key in columns) + ' |' for row in rows)
@@ -110,12 +169,15 @@ def main():
     tracked = subprocess.check_output(['git', 'ls-files', 'src/audio', 'examples/pocket_music_lab.rs', 'tests/audio_pocket_integration.rs'], cwd=root, text=True).splitlines()
     # Include newly created Rust production files before their first commit as well.
     tracked = sorted(set(tracked) | {str(p.relative_to(root)) for p in (root / 'src/audio/human_music').glob('*.rs')})
+    source_head = subprocess.check_output(['git', 'rev-parse', args.source_head or 'HEAD'], cwd=root, text=True).strip()
+    subprocess.run(['git', 'diff', '--quiet', source_head, '--', 'src/audio'], cwd=root, check=True)
     provenance = dict(
-        production_head=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip(),
+        production_head=source_head,
         production_source_sha256={name: digest(root / name) for name in tracked},
         artifact_tools_sha256={name: digest(root / name) for name in ['examples/pocket_music_lab.rs', 'scripts/dev/humanmusic_r17_receipts.py']},
         render_directory=str(directory.resolve()),
         factor_order='high-to-low bits: support_top_voice, mono_voice, legato_connectives, lattice_positions; stable_precursors separately gated',
+        human_acceptance={'arm': 'BLACK_ICE R17 full', 'status': 'Observed maintainer audition', 'quote': 'in the pocket, much better, but still a little grid/robotic. this is a good place to call it for this round, but make note. good work', 'boundary': 'Flagship timing accepted with residual grid/robotic feel; does not override failed fresh sweep or SWISS source NO-GO.'},
         support_factor_status='Maintainer accepted C4 knockout and rejected G5 knockout; C4 implicated, source selector NO-GO under unchanged ruler',
         boundary='Machine-generated score, envelope and PCM receipts share implementation provenance. No audio audition by the agent. Zero lattice violations is not timing acceptance; full design does not establish sound quality or mechanism.')
     (directory / 'provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')

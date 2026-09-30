@@ -1,0 +1,7 @@
+    Checking alsa-sys v0.4.0
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Checking alsa v0.11.0
+    Checking cpal v0.18.2
+ Documenting libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.96s
+   Generated /home/leah/LibGibson/target/doc/gibson/index.html

@@ -1,0 +1,6 @@
+Source-ledger identity diff; categories overlap. Octave movement is a pitch change, not new harmony.
+pad old=116 new=116 retimed=0 duration=0 velocity=0 pitch=0 omitted=0 added=0
+keys old=157 new=157 retimed=0 duration=0 velocity=0 pitch=0 omitted=0 added=0
+bass old=93 new=93 retimed=0 duration=0 velocity=0 pitch=0 omitted=0 added=0
+lead old=80 new=80 retimed=0 duration=0 velocity=0 pitch=0 omitted=0 added=0
+drums old=479 new=479 exact_equal=true
