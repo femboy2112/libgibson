@@ -469,6 +469,24 @@ impl ReferenceSong {
             projection: super::cover::CoverProjection::Lane,
             spec: effective.spec(),
         };
+        // The bass FIGURE, not every bass note: under a pinned (declared) harmony and a relation
+        // that does not freeze the line (Metric), the figure is the bass's structural tones — each
+        // a tone of the pinned chord where it sounds — and its connective motion (a passing or
+        // approach tone the analysis does not hold) is the band's to realize. A relation that
+        // freezes the line (Faithful, the Strict preset) keeps every note; if a frozen note then
+        // has no lawful function in the pinned harmony the lift is refused before realization.
+        if effective.bass == LineRelation::Metric {
+            if let (Some(bass), Some(harmony)) = (map.bass.as_mut(), map.harmony.as_ref()) {
+                bass.notes.retain(|n| {
+                    harmony.iter().any(|h| {
+                        h.at <= n.at
+                            && n.at < h.end
+                            && super::theory::Chord::new(h.relative_root, h.quality)
+                                .contains_pc(n.relative_pitch.rem_euclid(12))
+                    })
+                });
+            }
+        }
         map.apply_fidelity(&effective);
         map.validate()?;
         Ok((map, report))

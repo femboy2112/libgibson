@@ -852,6 +852,11 @@ impl PerformancePlan {
         for (eb, a) in perf.ensemble.iter_mut().zip(&perf.budget) {
             eb.budget = a.total;
         }
+        // 9. A cover's pinned events are emitted from the plan alone; each must be justified in
+        //    the planned harmony, or the lift is refused before anybody plays.
+        if let Some(c) = &perf.cover_constraints {
+            c.pinned_functions_hold(&perf)?;
+        }
         Ok(perf)
     }
 

@@ -1332,6 +1332,30 @@ impl CoverConstraints {
         }
     }
     /// Exact pitches constrain the domain; register, gate and dynamics are target draws.
+    /// Every pinned event the lift will emit carries a justified pitch function in the planned
+    /// harmony — read from the same deterministic source the realizer emits — or the lift is
+    /// refused here, before anybody plays. Two pins can be jointly unrealizable (an exact bass
+    /// line against a coarser derived harmony): that is a typed refusal, never a relabelling.
+    pub(crate) fn pinned_functions_hold(&self, perf: &PerformancePlan) -> Result<(), CoverError> {
+        for (role, why) in [
+            (
+                Role::Lead,
+                "a pinned lead event has no lawful pitch function in the target harmony",
+            ),
+            (
+                Role::Bass,
+                "a pinned bass event has no lawful pitch function in the target harmony",
+            ),
+        ] {
+            if self
+                .source_notes(perf, role)
+                .is_some_and(|notes| notes.iter().any(|n| n.function.is_none()))
+            {
+                return Err(CoverError::Invalid(why));
+            }
+        }
+        Ok(())
+    }
     pub(crate) fn source_notes(&self, perf: &PerformancePlan, role: Role) -> Option<Vec<Note>> {
         let line = self.identity.line(role)?;
         let mut rng = super::rng::Rng::new(

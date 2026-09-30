@@ -274,9 +274,13 @@ fn ode_covers_conform_at_every_preset() {
                         conformance.report()
                     );
                 }
+                // Lawful: a pinned chord outside the target vocabulary, or two pins (an exact
+                // bass line, a coarser derived harmony) jointly leaving a pinned event with no
+                // lawful pitch function — refused before realization, never relabelled.
                 Err(CoverError::Invalid(why)) => {
                     assert!(
-                        why.contains("outside target vocabulary"),
+                        why.contains("outside target vocabulary")
+                            || why.contains("no lawful pitch function"),
                         "{preset:?}: {why}"
                     )
                 }
@@ -284,7 +288,10 @@ fn ode_covers_conform_at_every_preset() {
             }
         }
     }
-    assert!(lifted >= 8, "{lifted}");
+    // Loose/Interpretive/Faithful lift in BLACK_ICE and VAPOR95 and Loose in SWISS; Strict (the
+    // frozen SATB bass against the two-beat derived triads) is a lawful refusal wherever the
+    // vocabulary admits the harmony.
+    assert!(lifted >= 7, "{lifted}");
 }
 
 /// Quality family: a pinned seventh chord into a target without sevenths is refused at Exact
