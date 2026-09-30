@@ -438,6 +438,9 @@ impl ExpressionDiagnostics {
 pub enum ExpressionStrategy {
     /// Short attacked pickup at a metrically obligated push/hit onset.
     ShortPickup,
+    /// Required source/action content retained when an ablated arm cannot admit expression.
+    /// This is an unresolved physical obligation, never an AsWritten certification.
+    RetainedObligation,
     Grace,
     Burst,
     Substituted,

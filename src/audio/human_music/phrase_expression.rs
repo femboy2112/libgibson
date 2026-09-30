@@ -83,7 +83,7 @@ pub struct PhraseRealization {
 
 // Check the entire relocation corridor, not just its landing. Grid half-steps and every
 // admission boundary partition the piecewise-constant stage/accent authority exactly.
-fn clear_corridor(perf: &PerformancePlan, role: Role, from: f64, to: f64) -> bool {
+pub(crate) fn clear_corridor(perf: &PerformancePlan, role: Role, from: f64, to: f64) -> bool {
     let agent = if role == Role::Bass {
         Agent::Bass
     } else {
@@ -110,7 +110,7 @@ fn clear_corridor(perf: &PerformancePlan, role: Role, from: f64, to: f64) -> boo
         .all(|b| perf.on_stage(agent, b) && !perf.accent.is_hole(b))
 }
 
-fn anchored(perf: &PerformancePlan, n: &Note) -> bool {
+pub(crate) fn anchored(perf: &PerformancePlan, n: &Note) -> bool {
     perf.actions.actions.iter().any(|a| {
         n.prov.actions.has(a.id)
             && matches!(a.kind, ActionKind::Push | ActionKind::Hit)
@@ -118,7 +118,7 @@ fn anchored(perf: &PerformancePlan, n: &Note) -> bool {
     })
 }
 
-fn identities_survive(before: &[ExpressionEvent], after: &[ExpressionEvent]) -> bool {
+pub(crate) fn identities_survive(before: &[ExpressionEvent], after: &[ExpressionEvent]) -> bool {
     before.iter().all(|e| {
         e.note
             .prov
@@ -148,6 +148,55 @@ pub fn realize(
     support: &[Note],
     lead_plans: &[PhrasePlan],
 ) -> PhraseRealization {
+    realize_impl(perf, world, line, support, lead_plans, None)
+}
+
+/// Opt-in Round XVII source planner; historical factors-off dispatches exactly to Round XVI.
+pub fn realize_pocket(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    line: Vec<ExpressionEvent>,
+    support: &[Note],
+    lead_plans: &[PhrasePlan],
+    factors: super::pocket::PocketOptions,
+) -> PhraseRealization {
+    realize_impl(
+        perf,
+        world,
+        line,
+        support,
+        lead_plans,
+        factors.changes_phrase().then_some(factors),
+    )
+}
+
+fn realize_impl(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    line: Vec<ExpressionEvent>,
+    support: &[Note],
+    lead_plans: &[PhrasePlan],
+    pocket: Option<super::pocket::PocketOptions>,
+) -> PhraseRealization {
+    let committed_links = if pocket.is_some_and(|p| p.mono_voice) {
+        super::pocket::continuations(support, lead_plans)
+    } else {
+        Vec::new()
+    };
+    let observe = |perf: &PerformancePlan,
+                   world: &MusicWorld,
+                   event: &ExpressionEvent,
+                   prev: Option<&Note>,
+                   target: Option<&Note>,
+                   support: &[Note]| {
+        let mut links = committed_links.clone();
+        links.extend(super::pocket::candidate_links(
+            event,
+            target,
+            pocket.is_some_and(|p| p.mono_voice),
+        ));
+        expression::observe_with_voice_contract(perf, world, event, prev, target, support, &links)
+    };
     let skeleton = expression::project(&line);
     let mut working = line.clone();
     let mut removed = vec![false; line.len()];
@@ -181,7 +230,7 @@ pub fn realize(
             continue;
         };
         let first = line[first_connector].note;
-        let observation = expression::observe(
+        let observation = observe(
             perf,
             world,
             &line[first_connector],
@@ -259,7 +308,7 @@ pub fn realize(
             reason: "authored phrase already physically viable",
         };
         let all_viable = (first_connector..stop).all(|k| {
-            expression::observe(
+            observe(
                 perf,
                 world,
                 &line[k],
@@ -287,7 +336,7 @@ pub fn realize(
                 for k in first_connector..stop {
                     removed[k] = true;
                     decisions.push(ExpressionDecision {
-                        before: expression::observe(perf,world,&line[k],k.checked_sub(1).map(|j|&line[j].note),line.get(k+1).map(|e|&e.note),support),
+                        before: observe(perf,world,&line[k],k.checked_sub(1).map(|j|&line[j].note),line.get(k+1).map(|e|&e.note),support),
                         after: None, after_observation: None, strategy: ExpressionStrategy::Omitted,
                         reason: "authored stage hole divides the thought; optional connector yields instead of jumping the boundary",
                     });
@@ -342,9 +391,11 @@ pub fn realize(
         // Bring an optional stable precursor into the same fragment, but never steal a stable
         // destination from another connector or cross material/action ownership.
         let mut start = first_connector;
-        if first.role == Role::Lead && start > 0 {
+        if first.role == Role::Lead && start > 0 && pocket.is_none_or(|p| p.stable_precursors) {
             let p = &line[start - 1];
             if !p.structural
+                // A distant stable precursor is a separate authored rhythm, not fragment fodder.
+                && (pocket.is_none() || first.start_beat-p.note.start_beat <= 1.0/f64::from(world.subdiv.max(1)) + 1e-6)
                 && stable(&p.note)
                 && !anchored(perf, &p.note)
                 && p.note.prov.material == first.prov.material
@@ -395,13 +446,32 @@ pub fn realize(
             grids.push(preferred);
         }
         let mut accepted = None;
-        for grid in grids {
+        let positions: Vec<_> = if pocket.is_some_and(|p| p.lattice_positions) {
+            super::pocket::candidates(world, perf, &line, start, stop, &plans)
+        } else {
+            grids
+                .into_iter()
+                .map(|grid| {
+                    (
+                        grid,
+                        (start..stop)
+                            .map(|k| {
+                                groove_position(
+                                    destination.start_beat - (stop - k) as f64 * grid.beats(),
+                                    world,
+                                )
+                            })
+                            .collect(),
+                    )
+                })
+                .collect()
+        };
+        for (grid, positions) in positions {
             let step = grid.beats();
             let mut candidate = working.clone();
             for (k, event) in candidate.iter_mut().enumerate().take(stop).skip(start) {
                 let n = &mut event.note;
-                n.start_beat =
-                    groove_position(destination.start_beat - (stop - k) as f64 * step, world);
+                n.start_beat = positions[k - start];
                 // Meter supplies the gate; frozen envelope viability determines admissibility.
                 // Stable precursor notes get more body than the chromatic continuation.
                 n.dur_beats = (step
@@ -414,6 +484,13 @@ pub fn realize(
                     }) as f32;
                 let rise = (k - start + 1) as f32 / (stop - start) as f32;
                 n.velocity *= 0.76 + 0.12 * rise;
+                if pocket.is_some_and(|p| p.legato_connectives) {
+                    let target = positions
+                        .get(k - start + 1)
+                        .copied()
+                        .unwrap_or(destination.start_beat);
+                    n.dur_beats = ((target - n.start_beat) * 0.97) as f32;
+                }
             }
             let valid = (start..stop).all(|k| {
                 let old = line[k].note;
@@ -424,6 +501,10 @@ pub fn realize(
                     Agent::Lead
                 };
                 (!anchored(perf, &old) || (n.start_beat - old.start_beat).abs() < 1e-6)
+                    && (pocket.is_none()
+                        || !stable(&old)
+                        || n.start_beat - old.start_beat
+                            <= 1.0 / f64::from(world.subdiv.max(1)) + 1e-6)
                     && n.start_beat >= old.start_beat
                     && n.start_beat < destination.start_beat
                     && (k == 0 || candidate[k - 1].note.start_beat < n.start_beat)
@@ -439,7 +520,7 @@ pub fn realize(
                         candidate.get(k + 1).map(|e| &e.note),
                     )
                     && (!expression::connective(n.function)
-                        || expression::observe(
+                        || observe(
                             perf,
                             world,
                             &candidate[k],
@@ -471,7 +552,7 @@ pub fn realize(
                 "phrase role, pickup accent and previous subdivision choose a metrical pickup"
             };
             for k in start..stop {
-                let before = expression::observe(
+                let before = observe(
                     perf,
                     world,
                     &line[k],
@@ -479,7 +560,7 @@ pub fn realize(
                     line.get(k + 1).map(|e| &e.note),
                     support,
                 );
-                let after = expression::observe(
+                let after = observe(
                     perf,
                     world,
                     &candidate[k],
@@ -502,7 +583,11 @@ pub fn realize(
             }
         } else {
             plan.transform = PhraseTransform::PhysicalFallback;
-            plan.reason="no admissible metrical candidate; unchanged Round XV source ladder decides articulation or space";
+            plan.reason = if pocket.is_some() {
+                "no admitted pocket candidate; source yields space or preserves a protected authored obligation"
+            } else {
+                "no admissible metrical candidate; unchanged Round XV source ladder decides articulation or space"
+            };
         }
         plans.push(plan);
     }
@@ -514,7 +599,11 @@ pub fn realize(
         .filter(|(j, _)| !removed[*j])
         .map(|(_, e)| e)
         .collect();
-    let mut fallback = expression::realize(perf, world, prepared, support);
+    let mut fallback = if let Some(factors) = pocket {
+        super::pocket::fallback(perf, world, prepared, support, factors, &committed_links)
+    } else {
+        expression::realize(perf, world, prepared, support)
+    };
     for plan in plans.iter_mut().filter(|p| {
         matches!(
             p.transform,
@@ -579,7 +668,7 @@ pub fn realize(
             at += 1;
             continue;
         }
-        let before = expression::observe(perf, world, &event, prev, next, support);
+        let before = observe(perf, world, &event, prev, next, support);
         let stable_function = [PitchFunction::ChordTone, PitchFunction::LicensedExtension]
             .into_iter()
             .find(|f| {
@@ -591,7 +680,7 @@ pub fn realize(
             fallback.events[at].note.function = Some(function);
             let after = fallback.events[at];
             decisions.push(ExpressionDecision {
-                before,after:Some(after.note),after_observation:Some(expression::observe(perf,world,&after,at.checked_sub(1).map(|j|&fallback.events[j].note),fallback.events.get(at+1).map(|e|&e.note),support)),
+                before,after:Some(after.note),after_observation:Some(observe(perf,world,&after,at.checked_sub(1).map(|j|&fallback.events[j].note),fallback.events.get(at+1).map(|e|&e.note),support)),
                 strategy:ExpressionStrategy::Substituted,
                 reason:"source omission changed local path; same pitch is now an actual stable chord/extension continuation, not an approach",
             });
