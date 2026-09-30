@@ -8,11 +8,11 @@
 //! a recurring motif + a directed harmonic contour.
 //!
 //! A [`CoherenceContract`] states, up front, **what the listener is expected to recognize**
-//! (the load-bearing [`CoherenceAnchor`]s), how often it should recur, how far it may be
-//! transformed before it stops being itself, how phrases tend to be sized, how the piece
-//! resolves, how many voices may be in the foreground at once, and how much novelty a phrase
-//! may spend. The planning layer then holds itself to this contract, and the diagnostics
-//! layer measures whether the realized score actually honored it.
+//! (the load-bearing [`CoherenceAnchor`]s), how phrases are sized, how the piece resolves and
+//! how many voices may be in the foreground at once — the planners hold themselves to these, and
+//! [`super::song::AnchorReport`] judges whether the realized score established each anchor. The
+//! contract also records calibration nobody enforces (a transformation bound, a novelty budget);
+//! each field's documentation states which it is, and a perturbation audit proves it.
 //!
 //! This is deliberately separate from [`super::world::MusicWorld`], which stays a *sonic
 //! dialect* (timbre, mix, harmonic vocabulary constraints). The same contract under three
@@ -81,24 +81,43 @@ pub enum ResolutionPolicy {
 }
 
 /// The declared identity and budgets of one piece.
+///
+/// Every field states its standing: **Load-bearing** (a planner, realizer or law reads it) or
+/// **Descriptive** (recorded in the song's fingerprints and the plan dump, read by nothing). The
+/// standing is audited by perturbation (`contract_standing.rs`): a Descriptive field that starts
+/// being read, or a Load-bearing one nothing reads any more, fails that audit.
 #[derive(Debug, Clone)]
 pub struct CoherenceContract {
-    /// The strategy family governing planning.
+    /// The strategy family governing planning. **Load-bearing**: it selects the backbone
+    /// (DeflectedLift, PropulsiveReturn), the stable thesis and chart, and the harmonic map.
     pub grammar: CompositionGrammar,
     /// The axes the listener is expected to recognize and track (most-load-bearing first).
+    /// **Load-bearing**: the arrangement seats the groove a Groove anchor declares, a
+    /// Motif-declaring song restates its thesis, [`super::song::AnchorReport`] judges each
+    /// anchor's presence and conformance (a [`super::receipt::PerformanceReceipt`] law), and a
+    /// cover of a generated source pins only the established ones.
     pub anchors: Vec<CoherenceAnchor>,
-    /// The period, in bars, over which the primary anchor should recur.
+    /// The period, in bars, over which the primary anchor should recur. **Load-bearing** only as
+    /// DeflectedLift's fixed-tiling rate: a trace too sparse to bind gestures tiles the cell at
+    /// `recurrence_bars / 4` bars per gesture. Under every other grammar, and for a DeflectedLift
+    /// whose gestures bind, nothing reads it.
     pub recurrence_bars: u32,
-    /// The maximum transformation magnitude `[0,1]` allowed on an anchor off a rupture — how
-    /// far A' may drift from A before it stops being A.
+    /// The transformation magnitude `[0,1]` the grammar was calibrated to allow an anchor off a
+    /// rupture. **Descriptive**: no planner bounds a transformation by it and no law measures one
+    /// against it.
     pub max_transform: f32,
-    /// The preferred phrase length in bars (a musically legible grid: 2/4/8).
+    /// The preferred phrase length in bars (a musically legible grid: 2/4/8). **Load-bearing**:
+    /// the form's phrase grid.
     pub phrase_bars: u32,
-    /// How phrases are expected to resolve.
+    /// How phrases are expected to resolve. **Load-bearing**: the harmony engine's cadential
+    /// policy, and the harmonic-trajectory conformance of a song without a chart.
     pub resolution: ResolutionPolicy,
     /// The maximum number of simultaneous foreground voices (usually 1, sometimes 2).
+    /// **Load-bearing**: the arrangement seats at most this many foreground voices per phrase.
     pub foreground_budget: u8,
-    /// The novelty a single phrase may spend before it counts as a rupture `[0,1]`.
+    /// The novelty a single phrase may spend before it counts as a rupture `[0,1]`, as
+    /// calibrated. **Descriptive**: it is scaled per role into each phrase goal's
+    /// `novelty_budget`, which nothing reads; no phrase's novelty is measured against it.
     pub novelty_budget: f32,
 }
 

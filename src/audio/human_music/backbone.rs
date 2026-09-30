@@ -122,7 +122,8 @@ pub enum ClockBinding {
 pub struct TimeScales {
     /// Beats per bar (the groove timescale).
     pub beats_per_bar: f64,
-    /// The contract's phrase grid in bars (the phrase timescale).
+    /// The contract's phrase grid in bars (the phrase timescale), recorded. **Descriptive**: shown
+    /// in the backbone dump; the slots are tiled from the form and the binding, not from it.
     pub phrase_bars: u32,
     /// How gesture slots are bound to semantic time.
     pub binding: ClockBinding,

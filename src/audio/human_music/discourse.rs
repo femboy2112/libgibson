@@ -151,7 +151,8 @@ pub struct MusicalThesis {
     pub home_density: f32,
     /// The phrase index that first states the thesis.
     pub established_by: u32,
-    /// The load-bearing identity axes carried over from the contract.
+    /// The identity axes, copied from the contract. **Descriptive**: every reader uses
+    /// [`super::contract::CoherenceContract::anchors`]; this copy is read by nothing.
     pub anchors: Vec<CoherenceAnchor>,
 }
 
@@ -637,10 +638,16 @@ pub struct PhraseGoal {
     pub tension_target: f32,
     pub density_target: f32,
     pub register_target: f32,
-    /// Target distance from the thesis `[0,1]` (thematic and harmonic).
+    /// Target thematic distance from the thesis `[0,1]`, by role. **Diagnostic**: read only by
+    /// [`super::diagnostics::DiscourseDiagnostics`]' `thesis_return_strength` (a declaration read
+    /// back as if measured; [`super::diagnostics::RealizationDiagnostics`] measures the realized
+    /// return). No realizer steers by it.
     pub thematic_distance: f32,
+    /// Target harmonic distance from the thesis `[0,1]`, by role. **Descriptive**: nothing reads
+    /// it.
     pub harmonic_distance: f32,
-    /// The novelty this phrase may spend `[0,1]`.
+    /// The novelty this phrase may spend `[0,1]` (the contract's budget scaled by role).
+    /// **Descriptive**: nothing reads it.
     pub novelty_budget: f32,
 }
 
