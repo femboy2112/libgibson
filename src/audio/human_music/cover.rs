@@ -267,6 +267,17 @@ impl CoverMap {
         world: &MusicWorld,
         spec: CoverSpec,
     ) -> Result<Self, CoverError> {
+        Self::extract_on_lane(reference, world, spec, None)
+    }
+
+    /// [`Self::extract`] with the riff read on an explicit lane (`Lead` or `Bass`). Without one,
+    /// the historical choice holds: the lead when the reference sounds one, else the bass.
+    pub fn extract_on_lane(
+        reference: &Composition,
+        world: &MusicWorld,
+        spec: CoverSpec,
+        riff_lane: Option<Role>,
+    ) -> Result<Self, CoverError> {
         let score = &reference.score;
         let extract_line = |role: Role| -> Result<CoverLine, CoverError> {
             let mut sounding: Vec<_> = score.role_notes(role).collect();
@@ -348,11 +359,13 @@ impl CoverMap {
         let riff = spec
             .contains(CoverAxis::Riff)
             .then(|| {
-                extract_line(if score.role_notes(Role::Lead).next().is_some() {
-                    Role::Lead
-                } else {
-                    Role::Bass
-                })
+                extract_line(riff_lane.unwrap_or(
+                    if score.role_notes(Role::Lead).next().is_some() {
+                        Role::Lead
+                    } else {
+                        Role::Bass
+                    },
+                ))
             })
             .transpose()?;
         let bass = spec
@@ -682,6 +695,18 @@ impl CoverMap {
 
             if groove.iter().any(|s| s.at.beats() < 0.0 || s.at >= length) {
                 return Err(CoverError::Invalid("groove outside piece"));
+            }
+            // Pinned strokes in a bar whose pinned drum seat is Silent (the source sounded them
+            // through an action window the seat quotient does not record) contradict each other:
+            // refused here, never lifted and then dropped.
+            if let Some(seats) = &self.orchestration {
+                if groove.iter().any(|s| {
+                    seats
+                        .get((s.at.beats() / 4.0) as usize)
+                        .is_none_or(|b| !b.roles[4].is_audible())
+                }) {
+                    return Err(CoverError::ConflictingPins);
+                }
             }
         }
         if self.orchestration.as_ref().is_some_and(|s| {
@@ -1272,9 +1297,13 @@ impl CoverConstraints {
         let mut hits = Vec::new();
         for s in strokes {
             let at = self.transport.transport(s.at).beats();
-            if !perf.on_stage(Agent::Drums, at) {
-                continue;
-            }
+            // Every pinned stroke has a seat: an unpinned stage seats the kit wherever the groove
+            // is pinned, and `validate` refuses a pinned Silent drum seat under a pinned stroke.
+            // A pinned stroke is never dropped here.
+            debug_assert!(
+                perf.on_stage(Agent::Drums, at),
+                "pinned stroke at {at} without a drum seat"
+            );
             hits.push(DrumHit {
                 start_beat: at,
                 voice: match s.voice {
@@ -1470,7 +1499,10 @@ pub fn cover_candidate(map: &CoverMap, target: CoverTarget<'_>) -> Result<Compos
     }
     // The new song has no retained source page. Its themes are target-generated when free.
     // With an external chart, the generic chart in a generated backbone is not a second authority.
-    if map.harmony.is_some() {
+    // A pinned line constrains the harmony around its attacks when no chart is pinned; a target
+    // grammar's generated backbone chart is then not what sounds, and must not be claimed either.
+    let line_constrained = map.line(Role::Lead).is_some() || map.line(Role::Bass).is_some();
+    if map.harmony.is_some() || (line_constrained && song.plan.backbone.is_some()) {
         song.plan.backbone = None;
         song.harmonic = None;
     }
@@ -1540,7 +1572,13 @@ impl CoverConformance {
             .iter()
             .copied()
             .map(|axis| {
-                let projected = CoverMap::extract(actual, world, CoverSpec::new([axis]));
+                // A pinned riff names its lane; the cover is read on that lane, never on whichever
+                // lane the cover happens to sound first.
+                let lane = (axis == CoverAxis::Riff)
+                    .then(|| expected.riff.as_ref().map(|l| l.role))
+                    .flatten();
+                let projected =
+                    CoverMap::extract_on_lane(actual, world, CoverSpec::new([axis]), lane);
                 let passed = projected.as_ref().is_ok_and(|p| match axis {
                     CoverAxis::Motif => p.motif == expected.motif,
                     CoverAxis::Riff => p.riff == expected.riff,
