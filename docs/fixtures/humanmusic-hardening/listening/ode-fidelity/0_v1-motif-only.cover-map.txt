@@ -1,0 +1,842 @@
+CoverMap {
+    spec: CoverSpec {
+        axes: [
+            Motif,
+        ],
+    },
+    unknown_axes: [
+        Groove,
+        HarmonicContour,
+        HarmonicLoop,
+        Form,
+        Orchestration,
+        BassFigure,
+    ],
+    ordered_chart: None,
+    length: Some(
+        MetricPosition {
+            ticks: 64,
+            subdivision: 1,
+        },
+    ),
+    form: None,
+    motif: Some(
+        CoverLine {
+            role: Lead,
+            notes: [
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 0,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 1,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 1,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 2,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 2,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 5,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 3,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 3,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 7,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 4,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 4,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 7,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 5,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 5,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 5,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 6,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 6,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 7,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 7,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 8,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 8,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 0,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 9,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 9,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 0,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 10,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 10,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 11,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 11,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 12,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 12,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 27,
+                            subdivision: 2,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 27,
+                        subdivision: 2,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 14,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 14,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 16,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 16,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 17,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 17,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 18,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 18,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 5,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 19,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 19,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 7,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 20,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 20,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 7,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 21,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 21,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 5,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 22,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 22,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 23,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 23,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 24,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 24,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 0,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 25,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 25,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 0,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 26,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 26,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 27,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 27,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 28,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 28,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 59,
+                            subdivision: 2,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 59,
+                        subdivision: 2,
+                    },
+                    relative_pitch: 0,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 30,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 30,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 0,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 32,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 32,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 33,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 33,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 34,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 34,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 35,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 35,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 0,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 36,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 36,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 37,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 37,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 75,
+                            subdivision: 2,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 75,
+                        subdivision: 2,
+                    },
+                    relative_pitch: 5,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 38,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 38,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 39,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 39,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 0,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 40,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 40,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 41,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 41,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 83,
+                            subdivision: 2,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 83,
+                        subdivision: 2,
+                    },
+                    relative_pitch: 5,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 42,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 42,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 43,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 43,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 44,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 44,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 0,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 45,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 45,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 46,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 46,
+                        subdivision: 1,
+                    },
+                    relative_pitch: -5,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 48,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 48,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 49,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 49,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 50,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 50,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 5,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 51,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 51,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 7,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 52,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 52,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 7,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 53,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 53,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 5,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 54,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 54,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 55,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 55,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 56,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 56,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 0,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 57,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 57,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 0,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 58,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 58,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 59,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 59,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 60,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 60,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 123,
+                            subdivision: 2,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 123,
+                        subdivision: 2,
+                    },
+                    relative_pitch: 0,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 62,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 62,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 0,
+                    reserved_until: Some(
+                        MetricPosition {
+                            ticks: 64,
+                            subdivision: 1,
+                        },
+                    ),
+                },
+            ],
+        },
+    ),
+    riff: None,
+    harmony: None,
+    groove: None,
+    bass: None,
+    orchestration: None,
+    fidelity: None,
+}

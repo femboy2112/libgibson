@@ -1,0 +1,18 @@
+PercussionReport restraint=busy required=159 ornaments admitted 49/49 offered (rate guard 0)
+  landing: 1/1
+  interlock: 1/1
+  open-hat: 4/4
+  fill-flourish: 0/0
+  answer-echo: 0/0
+  ghost: 43/43
+  unison-inner: 0/0
+  bar   4 Open required=14 ornaments 7/7 — busy restraint: every candidate (lead 5, band 9, prev 0)
+  bar   5 Open required=13 ornaments 9/9 — busy restraint: every candidate (lead 1, band 10, prev 7)
+  bar   6 Open required=22 ornaments 7/7 — busy restraint: every candidate (lead 2, band 4, prev 9)
+  bar   7 Open required=22 ornaments 6/6 — busy restraint: every candidate (lead 0, band 9, prev 7)
+  bar   8 Open required=7 ornaments 5/5 — busy restraint: every candidate (lead 5, band 7, prev 6)
+  bar   9 Open required=8 ornaments 0/0 — busy restraint: every candidate (lead 0, band 4, prev 5)
+  bar  10 Open required=7 ornaments 3/3 — busy restraint: every candidate (lead 4, band 9, prev 0)
+  bar  11 Open required=22 ornaments 4/4 — busy restraint: every candidate (lead 1, band 5, prev 3)
+  bar  12 Open required=22 ornaments 3/3 — busy restraint: every candidate (lead 0, band 4, prev 4)
+  bar  13 Open required=22 ornaments 5/5 — busy restraint: every candidate (lead 0, band 5, prev 3)

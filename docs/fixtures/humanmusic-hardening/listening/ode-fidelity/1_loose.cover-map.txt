@@ -1,0 +1,109 @@
+CoverMap {
+    spec: CoverSpec {
+        axes: [
+            Motif,
+        ],
+    },
+    unknown_axes: [
+        Groove,
+        Form,
+        Orchestration,
+    ],
+    ordered_chart: None,
+    length: Some(
+        MetricPosition {
+            ticks: 64,
+            subdivision: 1,
+        },
+    ),
+    form: None,
+    motif: Some(
+        CoverLine {
+            role: Lead,
+            notes: [
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 0,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: None,
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 1,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: None,
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 2,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 5,
+                    reserved_until: None,
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 3,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 7,
+                    reserved_until: None,
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 4,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 7,
+                    reserved_until: None,
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 5,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 5,
+                    reserved_until: None,
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 6,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 4,
+                    reserved_until: None,
+                },
+                CoverNote {
+                    at: MetricPosition {
+                        ticks: 7,
+                        subdivision: 1,
+                    },
+                    relative_pitch: 2,
+                    reserved_until: None,
+                },
+            ],
+        },
+    ),
+    riff: None,
+    harmony: None,
+    groove: None,
+    bass: None,
+    orchestration: None,
+    fidelity: Some(
+        CoverFidelityProfile {
+            motif: Theme,
+            riff: Free,
+            riff_lane: None,
+            bass: Free,
+            harmony: Free,
+            harmony_axis: Contour,
+            groove: Free,
+            form: Free,
+            orchestration: Free,
+        },
+    ),
+}

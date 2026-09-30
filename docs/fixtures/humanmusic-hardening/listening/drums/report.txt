@@ -1,0 +1,16 @@
+Drum restraint A/B: same song, plan and band per row; only the drummer changes.
+Question: does the drummer support the pocket and choose moments to speak?
+
+== generated_black_ice (BLACK_ICE)
+  0_historical: strokes 153, ornament strokes 33; historical: unarbitrated; band notes identical to historical: true
+  1_foundation: strokes 120, ornament strokes 0; ornaments admitted 0/35 offered, required 120; band notes identical to historical: true
+  2_balanced: strokes 130, ornament strokes 10; ornaments admitted 10/35 offered, required 120; band notes identical to historical: true
+  3_expressive: strokes 135, ornament strokes 15; ornaments admitted 15/35 offered, required 120; band notes identical to historical: true
+  4_busy: strokes 155, ornament strokes 35; ornaments admitted 35/35 offered, required 120; band notes identical to historical: true
+
+== riffdrive_vapor95 (VAPOR95)
+  0_historical: strokes 199, ornament strokes 38; historical: unarbitrated; band notes identical to historical: true
+  1_foundation: strokes 163, ornament strokes 2; ornaments admitted 2/49 offered, required 159; band notes identical to historical: true
+  2_balanced: strokes 175, ornament strokes 13; ornaments admitted 15/49 offered, required 159; band notes identical to historical: true
+  3_expressive: strokes 184, ornament strokes 22; ornaments admitted 24/49 offered, required 159; band notes identical to historical: true
+  4_busy: strokes 208, ornament strokes 47; ornaments admitted 49/49 offered, required 159; band notes identical to historical: true

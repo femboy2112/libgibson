@@ -1,0 +1,129 @@
+The homosapians — Ode to Joy: one target, five fidelities.
+Source: Mutopia #528 symbolic import (observed voices: alto, bass, sop, tenor).
+DERIVED ANALYSIS (not score metadata): satb-window-triad/v2: max covered duration triad; structural seventh >= half window; bass-root ties; merge equal over 2-beat windows:
+   0.00.. 4.00  root +0 Maj
+   4.00.. 6.00  root +5 Maj
+   6.00.. 8.00  root +0 Maj7
+   8.00..10.00  root +0 Maj
+  10.00..12.00  root +7 Maj
+  12.00..14.00  root +0 Maj
+  14.00..16.00  root +7 Maj
+  16.00..20.00  root +0 Maj
+  20.00..22.00  root +5 Maj
+  22.00..24.00  root +0 Maj7
+  24.00..26.00  root +0 Maj
+  26.00..30.00  root +7 Maj
+  30.00..32.00  root +0 Maj
+  32.00..34.00  root +7 Maj
+  34.00..36.00  root +0 Maj
+  36.00..38.00  root +7 Maj
+  38.00..40.00  root +0 Maj
+  40.00..42.00  root +7 Maj
+  42.00..44.00  root +4 Dom7
+  44.00..46.00  root +2 Dom7
+  46.00..48.00  root +7 Maj
+  48.00..50.00  root +0 Maj
+  50.00..52.00  root +10 Maj
+  52.00..54.00  root +9 Min7
+  54.00..58.00  root +5 Maj7
+  58.00..60.00  root +7 Dom7
+  60.00..62.00  root +7 Maj
+  62.00..64.00  root +0 Maj
+
+Target performance profile for every cover: PerformanceProfile::BAND (rehearsed admission, Balanced drummer). Seeds and worlds fixed per column; only the fidelity changes.
+
+== 0_v1-motif-only: CoverMap canonical=555820a5b3fdcb03
+v1 (current binary spec): observed melody pinned with its notated rests; everything else unknown
+
+  The homosapians — Ode to Joy (BLACK_ICE cover, fidelity: v1-motif-only)
+    file 0_v1-motif-only.black_ice.wav; score=55c4b45da610042f; CoverConformance: PASS (metric length true)
+      motif: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+  The homosapians — Ode to Joy (VAPOR95 cover, fidelity: v1-motif-only)
+    file 0_v1-motif-only.vapor95.wav; score=24f094cfaa39c1d6; CoverConformance: PASS (metric length true)
+      motif: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+
+== 1_loose: CoverMap canonical=169266a606b0f373
+Fidelity: loose requested; every requested relation is supported
+  motif: requested theme, effective theme (Observed) — observed
+  riff: requested free, effective free (NotPinned) — not requested
+  bass-figure: requested free, effective free (NotPinned) — not requested
+  harmonic-contour: requested free, effective free (NotPinned) — not requested
+  groove: requested free, effective free (NotPinned) — not requested
+  form: requested free, effective free (NotPinned) — not requested
+  orchestration: requested free, effective free (NotPinned) — not requested
+
+  The homosapians — Ode to Joy (BLACK_ICE cover, fidelity: loose)
+    file 1_loose.black_ice.wav; score=dee40ba7a7c34f55; CoverConformance: PASS (metric length true)
+      motif: PASS — the source's opening statement (exact relative pitches and rhythm) is the song's identity motif, and a statement derived from it sounds (exact projection agrees)
+  The homosapians — Ode to Joy (VAPOR95 cover, fidelity: loose)
+    file 1_loose.vapor95.wav; score=fec434decd2fffd2; CoverConformance: PASS (metric length true)
+      motif: PASS — the source's opening statement (exact relative pitches and rhythm) is the song's identity motif, and a statement derived from it sounds (exact projection agrees)
+
+== 2_interpretive: CoverMap canonical=9684b4f59a4096b7
+Fidelity: interpretive requested; observational ceiling: groove pocket-skeleton->unknown
+  motif: requested metric, effective metric (Observed) — observed
+  riff: requested metric, effective metric (Observed) — observed
+  bass-figure: requested free, effective free (NotPinned) — not requested
+  harmonic-contour: requested quality-family, effective quality-family (DerivedAnalysis("satb-window-triad/v2: max covered duration triad; structural seventh >= half window; bass-root ties; merge equal")) — available
+  groove: requested pocket-skeleton, effective unknown (Unknown) — no percussion observed
+  form: requested free, effective free (NotPinned) — not requested
+  orchestration: requested free, effective free (NotPinned) — not requested
+
+  The homosapians — Ode to Joy (BLACK_ICE cover, fidelity: interpretive)
+    file 2_interpretive.black_ice.wav; score=c159a21b8d174981; CoverConformance: PASS (metric length true)
+      motif: PASS — exact relative pitches at exact canonical onsets; lengths and rests free (exact projection agrees)
+      riff: PASS — exact relative pitches at exact canonical onsets; lengths and rests free (exact projection agrees)
+      harmonic-contour: PASS — exact chord spans and relative roots; quality up to its triad family (exact projection agrees)
+  The homosapians — Ode to Joy (VAPOR95 cover, fidelity: interpretive)
+    file 2_interpretive.vapor95.wav; score=31b600919b9e73d2; CoverConformance: PASS (metric length true)
+      motif: PASS — exact relative pitches at exact canonical onsets; lengths and rests free (exact projection agrees)
+      riff: PASS — exact relative pitches at exact canonical onsets; lengths and rests free (exact projection agrees)
+      harmonic-contour: PASS — exact chord spans and relative roots; quality up to its triad family (exact projection agrees)
+
+== 3_faithful: CoverMap canonical=77870a73f49b062d
+Fidelity: faithful requested; observational ceiling: groove kick-snare->unknown, form exact->unknown
+  motif: requested faithful-line, effective faithful-line (Observed) — observed
+  riff: requested faithful-line, effective faithful-line (Observed) — observed
+  bass-figure: requested metric, effective metric (Observed) — observed
+  harmonic-contour: requested exact, effective exact (DerivedAnalysis("satb-window-triad/v2: max covered duration triad; structural seventh >= half window; bass-root ties; merge equal")) — available
+  groove: requested kick-snare, effective unknown (Unknown) — no percussion observed
+  form: requested exact, effective unknown (Unknown) — no phrase or section boundaries observed
+  orchestration: requested free, effective free (NotPinned) — not requested
+
+  The homosapians — Ode to Joy (BLACK_ICE cover, fidelity: faithful)
+    file 3_faithful.black_ice.wav; score=fb4704a1063ecf5e; CoverConformance: PASS (metric length true)
+      motif: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+      riff: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+      harmonic-contour: PASS — relative roots, chord quality and exact metric span boundaries (exact projection agrees)
+      bass-figure: PASS — exact relative pitches at exact canonical onsets; lengths and rests free (exact projection agrees)
+  The homosapians — Ode to Joy (VAPOR95 cover, fidelity: faithful)
+    file 3_faithful.vapor95.wav; score=27e745173b64384b; CoverConformance: PASS (metric length true)
+      motif: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+      riff: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+      harmonic-contour: PASS — relative roots, chord quality and exact metric span boundaries (exact projection agrees)
+      bass-figure: PASS — exact relative pitches at exact canonical onsets; lengths and rests free (exact projection agrees)
+
+== 4_strict: CoverMap canonical=32820bc400b09c52
+Fidelity: strict requested; observational ceiling: groove kick-snare->unknown, form exact->unknown, orchestration exact->unknown
+  motif: requested faithful-line, effective faithful-line (Observed) — observed
+  riff: requested faithful-line, effective faithful-line (Observed) — observed
+  bass-figure: requested faithful-line, effective faithful-line (Observed) — observed
+  harmonic-contour: requested exact, effective exact (DerivedAnalysis("satb-window-triad/v2: max covered duration triad; structural seventh >= half window; bass-root ties; merge equal")) — available
+  groove: requested kick-snare, effective unknown (Unknown) — no percussion observed
+  form: requested exact, effective unknown (Unknown) — no phrase or section boundaries observed
+  orchestration: requested exact, effective unknown (Unknown) — no band seating observed
+
+  The homosapians — Ode to Joy (BLACK_ICE cover, fidelity: strict)
+    file 4_strict.black_ice.wav; score=fb4704a1063ecf5e; CoverConformance: PASS (metric length true)
+      motif: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+      riff: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+      harmonic-contour: PASS — relative roots, chord quality and exact metric span boundaries (exact projection agrees)
+      bass-figure: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+  The homosapians — Ode to Joy (VAPOR95 cover, fidelity: strict)
+    file 4_strict.vapor95.wav; score=27e745173b64384b; CoverConformance: PASS (metric length true)
+      motif: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+      riff: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+      harmonic-contour: PASS — relative roots, chord quality and exact metric span boundaries (exact projection agrees)
+      bass-figure: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+
+Listening question: which fidelity crosses from new music using Ode material to obviously the same song, and which becomes too literal? Recognition is UNVERIFIED by any machine check here.

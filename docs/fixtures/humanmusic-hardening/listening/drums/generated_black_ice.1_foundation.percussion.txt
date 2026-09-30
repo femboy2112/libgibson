@@ -1,0 +1,16 @@
+PercussionReport restraint=foundation required=120 ornaments admitted 0/35 offered (rate guard 0)
+  landing: 0/0
+  interlock: 0/0
+  open-hat: 0/0
+  fill-flourish: 0/0
+  answer-echo: 0/0
+  ghost: 0/35
+  unison-inner: 0/0
+  bar   4 Silent required=12 ornaments 0/6 — supports the pocket (lead 2, band 8, prev 0)
+  bar   5 Silent required=20 ornaments 0/3 — supports the pocket (lead 1, band 10, prev 0)
+  bar   6 Silent required=12 ornaments 0/2 — supports the pocket (lead 1, band 9, prev 0)
+  bar   7 Silent required=20 ornaments 0/2 — phrase end with space: a moment to speak (lead 0, band 10, prev 0)
+  bar   8 Silent required=12 ornaments 0/3 — the band is already speaking (lead 5, band 11, prev 0)
+  bar   9 Silent required=20 ornaments 0/6 — supports the pocket (lead 0, band 10, prev 0)
+  bar  10 Silent required=12 ornaments 0/5 — supports the pocket (lead 4, band 11, prev 0)
+  bar  11 Silent required=12 ornaments 0/8 — phrase end with space: a moment to speak (lead 1, band 11, prev 0)

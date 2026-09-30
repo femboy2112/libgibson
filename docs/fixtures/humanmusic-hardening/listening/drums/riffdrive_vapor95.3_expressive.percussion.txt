@@ -1,0 +1,18 @@
+PercussionReport restraint=expressive required=159 ornaments admitted 24/49 offered (rate guard 0)
+  landing: 1/1
+  interlock: 1/1
+  open-hat: 3/4
+  fill-flourish: 0/0
+  answer-echo: 0/0
+  ghost: 19/43
+  unison-inner: 0/0
+  bar   4 Sparse required=14 ornaments 1/7 — the band is already speaking (lead 5, band 9, prev 0)
+  bar   5 Conversational required=13 ornaments 3/9 — supports the pocket (lead 1, band 10, prev 1)
+  bar   6 Sparse required=22 ornaments 1/7 — spoke last bar: leaves room (lead 2, band 4, prev 3)
+  bar   7 Open required=22 ornaments 6/6 — phrase end with space: a moment to speak (lead 0, band 9, prev 1)
+  bar   8 Open required=7 ornaments 5/5 — the drummer has the floor (lead 5, band 7, prev 6)
+  bar   9 Open required=8 ornaments 0/0 — the drummer has the floor (lead 0, band 4, prev 5)
+  bar  10 Open required=7 ornaments 3/3 — the drummer has the floor (lead 4, band 9, prev 0)
+  bar  11 Sparse required=22 ornaments 1/4 — spoke last bar: leaves room (lead 1, band 5, prev 3)
+  bar  12 Conversational required=22 ornaments 3/3 — supports the pocket (lead 0, band 4, prev 1)
+  bar  13 Sparse required=22 ornaments 1/5 — spoke last bar: leaves room (lead 0, band 5, prev 3)
