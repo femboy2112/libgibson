@@ -1,0 +1,225 @@
+false_function_claims=0
+false_suspensions=0
+broken_anticipations=0
+orphan_extensions=36
+orphan_structural_extensions=6
+unresolved_tendencies=0
+bad_arrivals=0
+guide_path_misses=0
+path_breaks_at_harmony_changes=0
+locally_legal_globally_unexplained=36
+ambiguous_voices=122
+beat 0.0000 role pad pitch B4 (71) duration 3.9200
+  current Am @ 0.00 previous none next Am @ 4.00 next_structural Dm @ 8.00 destination Am @ 12.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note B4 @ 4.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 12.0000 role pad pitch B4 (71) duration 3.9200
+  current Am @ 12.00 previous Dm @ 8.00 next Am @ 16.00 next_structural E7 @ 24.00 destination Dm @ 28.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note A4 @ 8.00 dur 3.92; next note B4 @ 16.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 16.0000 role pad pitch B4 (71) duration 3.9200
+  current Am @ 16.00 previous Dm @ 8.00 next Am @ 20.00 next_structural E7 @ 24.00 destination Dm @ 28.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note B4 @ 12.00 dur 3.92; next note B4 @ 20.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 28.0000 role pad pitch E5 (76) duration 3.9200
+  current Dm @ 28.00 previous E7 @ 24.00 next Cmaj7 @ 32.00 next_structural Cmaj7 @ 32.00 destination Dm @ 40.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note E5 @ 24.00 dur 3.92; next note B4 @ 32.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [4, 11]
+beat 36.0000 role pad pitch D5 (74) duration 3.9200
+  current C @ 36.00 previous Dm @ 28.00 next Dm @ 40.00 next_structural Dm @ 40.00 destination E7 @ 44.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note B4 @ 32.00 dur 3.92; next note E5 @ 40.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [5]
+beat 62.0000 role pad pitch B4 (71) duration 1.9600
+  current Am @ 62.00 previous E7 @ 60.00 next none next_structural none destination none
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note B4 @ 60.00 dur 1.96; next note none; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+beat 0.5000 role keys pitch B5 (83) duration 0.9000
+  current Am @ 0.00 previous none next Am @ 4.00 next_structural Dm @ 8.00 destination Am @ 12.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 2.5000 role keys pitch B5 (83) duration 0.8000
+  current Am @ 0.00 previous none next Am @ 4.00 next_structural Dm @ 8.00 destination Am @ 12.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 3.5000 role keys pitch B5 (83) duration 0.4500
+  current Am @ 0.00 previous none next Am @ 4.00 next_structural Dm @ 8.00 destination Am @ 12.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 5.5000 role keys pitch B5 (83) duration 0.8000
+  current Am @ 4.00 previous none next Dm @ 8.00 next_structural Dm @ 8.00 destination Am @ 12.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [5]
+beat 6.5000 role keys pitch B5 (83) duration 0.8000
+  current Am @ 4.00 previous none next Dm @ 8.00 next_structural Dm @ 8.00 destination Am @ 12.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [5]
+beat 8.5000 role keys pitch E5 (76) duration 0.9000
+  current Dm @ 8.00 previous Am @ 4.00 next Am @ 12.00 next_structural Am @ 12.00 destination E7 @ 24.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note C5 @ 7.50 dur 0.45; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 10.5000 role keys pitch E5 (76) duration 0.8000
+  current Dm @ 8.00 previous Am @ 4.00 next Am @ 12.00 next_structural Am @ 12.00 destination E7 @ 24.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 11.5000 role keys pitch E5 (76) duration 0.4500
+  current Dm @ 8.00 previous Am @ 4.00 next Am @ 12.00 next_structural Am @ 12.00 destination E7 @ 24.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note C5 @ 12.50 dur 0.90; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 12.5000 role keys pitch B5 (83) duration 0.9000
+  current Am @ 12.00 previous Dm @ 8.00 next Am @ 16.00 next_structural E7 @ 24.00 destination Dm @ 28.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note A5 @ 11.50 dur 0.45; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 14.5000 role keys pitch B5 (83) duration 0.8000
+  current Am @ 12.00 previous Dm @ 8.00 next Am @ 16.00 next_structural E7 @ 24.00 destination Dm @ 28.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 15.5000 role keys pitch B5 (83) duration 0.4500
+  current Am @ 12.00 previous Dm @ 8.00 next Am @ 16.00 next_structural E7 @ 24.00 destination Dm @ 28.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 17.5000 role keys pitch B5 (83) duration 0.8000
+  current Am @ 16.00 previous Dm @ 8.00 next Am @ 20.00 next_structural E7 @ 24.00 destination Dm @ 28.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 18.5000 role keys pitch B5 (83) duration 0.8000
+  current Am @ 16.00 previous Dm @ 8.00 next Am @ 20.00 next_structural E7 @ 24.00 destination Dm @ 28.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 19.5000 role keys pitch B5 (83) duration 0.4500
+  current Am @ 16.00 previous Dm @ 8.00 next Am @ 20.00 next_structural E7 @ 24.00 destination Dm @ 28.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note B5 @ 20.50 dur 0.80; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 20.5000 role keys pitch B5 (83) duration 0.8000
+  current Am @ 20.00 previous Dm @ 8.00 next E7 @ 24.00 next_structural E7 @ 24.00 destination Dm @ 28.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note B5 @ 19.50 dur 0.45; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [8, 2]
+beat 21.5000 role keys pitch B5 (83) duration 0.8000
+  current Am @ 20.00 previous Dm @ 8.00 next E7 @ 24.00 next_structural E7 @ 24.00 destination Dm @ 28.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [8, 2]
+beat 22.5000 role keys pitch B5 (83) duration 0.4500
+  current Am @ 20.00 previous Dm @ 8.00 next E7 @ 24.00 next_structural E7 @ 24.00 destination Dm @ 28.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [8, 2]
+beat 28.5000 role keys pitch E5 (76) duration 0.8000
+  current Dm @ 28.00 previous E7 @ 24.00 next Cmaj7 @ 32.00 next_structural Cmaj7 @ 32.00 destination Dm @ 40.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note E5 @ 27.50 dur 0.45; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [4, 11]
+beat 29.5000 role keys pitch E5 (76) duration 0.8000
+  current Dm @ 28.00 previous E7 @ 24.00 next Cmaj7 @ 32.00 next_structural Cmaj7 @ 32.00 destination Dm @ 40.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [4, 11]
+beat 30.5000 role keys pitch E5 (76) duration 0.4500
+  current Dm @ 28.00 previous E7 @ 24.00 next Cmaj7 @ 32.00 next_structural Cmaj7 @ 32.00 destination Dm @ 40.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [4, 11]
+beat 34.5000 role keys pitch D5 (74) duration 0.8000
+  current Cmaj7 @ 32.00 previous Dm @ 28.00 next C @ 36.00 next_structural Dm @ 40.00 destination E7 @ 44.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [4]
+beat 37.5000 role keys pitch D5 (74) duration 0.8000
+  current C @ 36.00 previous Dm @ 28.00 next Dm @ 40.00 next_structural Dm @ 40.00 destination E7 @ 44.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [5]
+beat 38.5000 role keys pitch D5 (74) duration 0.8000
+  current C @ 36.00 previous Dm @ 28.00 next Dm @ 40.00 next_structural Dm @ 40.00 destination E7 @ 44.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [5]
+beat 39.5000 role keys pitch D5 (74) duration 0.4500
+  current C @ 36.00 previous Dm @ 28.00 next Dm @ 40.00 next_structural Dm @ 40.00 destination E7 @ 44.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [5]
+beat 42.5000 role keys pitch E5 (76) duration 0.8000
+  current Dm @ 40.00 previous C @ 36.00 next E7 @ 44.00 next_structural E7 @ 44.00 destination Em7 @ 48.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"UNOWNED", "stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [8, 2]
+beat 43.5000 role keys pitch E5 (76) duration 0.4500
+  current Dm @ 40.00 previous C @ 36.00 next E7 @ 44.00 next_structural E7 @ 44.00 destination Em7 @ 48.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"UNOWNED", "stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [8, 2]
+beat 54.5000 role keys pitch D#5 (75) duration 0.8000
+  current C# @ 54.00 previous Em7 @ 52.00 next Dm7 @ 56.00 next_structural Dm7 @ 56.00 destination E7 @ 60.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [5, 0]
+beat 55.5000 role keys pitch D#5 (75) duration 0.4500
+  current C# @ 54.00 previous Em7 @ 52.00 next Dm7 @ 56.00 next_structural Dm7 @ 56.00 destination E7 @ 60.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [5, 0]
+beat 63.5000 role keys pitch B4 (71) duration 0.4500
+  current Am @ 62.00 previous E7 @ 60.00 next none next_structural none destination none
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note none; next note none; structural_proxy=false ambiguous_voice=true
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+beat 41.5000 role lead pitch E6 (88) duration 0.3883
+  current Dm @ 40.00 previous C @ 36.00 next E7 @ 44.00 next_structural E7 @ 44.00 destination Em7 @ 48.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note A5 @ 41.00 dur 0.29; next note E6 @ 42.00 dur 0.77; structural_proxy=false ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [8, 2]

@@ -1,0 +1,72 @@
+[
+    Witness {
+        action: ActionId(
+            1,
+        ),
+        kind: Call,
+        witnessed: true,
+        class: Stamped,
+        stamped: 15,
+        evidence: "the caller's stamped statement notes",
+    },
+    Witness {
+        action: ActionId(
+            4,
+        ),
+        kind: Answer,
+        witnessed: true,
+        class: Stamped,
+        stamped: 1,
+        evidence: "the responder's stamped answer notes, carrying the response's material",
+    },
+    Witness {
+        action: ActionId(
+            2,
+        ),
+        kind: Call,
+        witnessed: true,
+        class: Stamped,
+        stamped: 15,
+        evidence: "the caller's stamped statement notes",
+    },
+    Witness {
+        action: ActionId(
+            5,
+        ),
+        kind: Answer,
+        witnessed: true,
+        class: Stamped,
+        stamped: 1,
+        evidence: "the responder's stamped answer notes, carrying the response's material",
+    },
+    Witness {
+        action: ActionId(
+            3,
+        ),
+        kind: Call,
+        witnessed: true,
+        class: Stamped,
+        stamped: 17,
+        evidence: "the caller's stamped statement notes",
+    },
+    Witness {
+        action: ActionId(
+            0,
+        ),
+        kind: ReEntry,
+        witnessed: true,
+        class: Stamped,
+        stamped: 2,
+        evidence: "stamped entry notes by the player, after silence or as a staged entry",
+    },
+    Witness {
+        action: ActionId(
+            6,
+        ),
+        kind: Answer,
+        witnessed: true,
+        class: Stamped,
+        stamped: 2,
+        evidence: "the responder's stamped answer notes, carrying the response's material",
+    },
+]

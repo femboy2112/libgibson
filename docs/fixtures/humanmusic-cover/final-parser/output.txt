@@ -1,0 +1,12 @@
+test_absolute_pitch_transpose_duration_rest_and_tie (test_import_symbolic.LilyTests.test_absolute_pitch_transpose_duration_rest_and_tie) ... ok
+test_metadata_changes_are_not_flattened (test_import_symbolic.LilyTests.test_metadata_changes_are_not_flattened) ... ok
+test_missing_metadata_stays_unknown (test_import_symbolic.LilyTests.test_missing_metadata_stays_unknown) ... ok
+test_pitch_and_rhythm_mutation_break_cross_check (test_import_symbolic.LilyTests.test_pitch_and_rhythm_mutation_break_cross_check) ... ok
+test_unsupported_syntax_is_not_silently_skipped (test_import_symbolic.LilyTests.test_unsupported_syntax_is_not_silently_skipped) ... ok
+test_note_on_zero_and_delta_accumulation (test_import_symbolic.MidiTests.test_note_on_zero_and_delta_accumulation) ... ok
+test_unterminated_or_asynchronous_source_rejected (test_import_symbolic.MidiTests.test_unterminated_or_asynchronous_source_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.024s
+
+OK

@@ -1,0 +1,12 @@
+[
+    Witness {
+        action: ActionId(
+            0,
+        ),
+        kind: ReEntry,
+        witnessed: true,
+        class: Stamped,
+        stamped: 2,
+        evidence: "stamped entry notes by the player, after silence or as a staged entry",
+    },
+]

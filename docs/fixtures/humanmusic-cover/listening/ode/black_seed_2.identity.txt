@@ -1,0 +1,2 @@
+identity: 256 slices, 1 rival runs, 0 flipped (-0.000 s), hold 0.5 s
+run  11.946-12.000  s  beats  18.914-19.000   chart Dmaj7  rival A    0.054 s  passing
