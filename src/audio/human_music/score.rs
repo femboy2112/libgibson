@@ -393,6 +393,8 @@ pub struct Score {
     /// Round XIV: what each dependent player consumed of another's realization, captured when
     /// it was consumed (see [`Score::stale_hearings`]).
     pub hearings: Vec<Hearing>,
+    /// Round XV decisions made inside lead/bass before dependent players hear their output.
+    pub expression_decisions: Vec<super::expression::ExpressionDecision>,
 }
 
 /// A note as a dependent player consumed it: onset (beats), length (beats), pitch, function.
@@ -468,6 +470,7 @@ impl Score {
             tension_edits: Vec::new(),
             pad_voicing_edits: Vec::new(),
             hearings: Vec::new(),
+            expression_decisions: Vec::new(),
         }
     }
 

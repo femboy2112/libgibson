@@ -349,3 +349,237 @@ impl ExpressionDiagnostics {
         out
     }
 }
+
+/// The physical strategy actually emitted. No legato/glide variant exists without DSP support.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpressionStrategy {
+    Grace,
+    Burst,
+    Substituted,
+    Omitted,
+}
+
+/// One source decision, including original identity when space replaces an optional note.
+#[derive(Debug, Clone)]
+pub struct ExpressionDecision {
+    pub before: ExpressionObservation,
+    pub after: Option<Note>,
+    pub after_observation: Option<ExpressionObservation>,
+    pub strategy: ExpressionStrategy,
+    pub reason: &'static str,
+}
+
+/// The source result. Downstream players receive `events`, never the unexpressed candidates.
+pub struct ExpressedLine {
+    pub events: Vec<ExpressionEvent>,
+    pub decisions: Vec<ExpressionDecision>,
+}
+
+fn identities_survive(before: &[ExpressionEvent], after: &[ExpressionEvent]) -> bool {
+    before.iter().all(|e| {
+        e.note
+            .prov
+            .actions
+            .iter()
+            .all(|a| after.iter().any(|x| x.note.prov.actions.has(a)))
+            && e.note
+                .prov
+                .material
+                .is_none_or(|m| after.iter().any(|x| x.note.prov.material == Some(m)))
+    })
+}
+
+/// Realize optional connective groups inside one responsible player. Stable local destinations
+/// are anchors even when they are not structural motif targets. Retiming is always later, never
+/// across a harmonic boundary or stage hole, and never moves the destination to save a grace.
+/// Candidate paths and their physical viability are checked before emission.
+pub fn realize(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    line: Vec<ExpressionEvent>,
+    support: &[Note],
+) -> ExpressedLine {
+    let skeleton = project(&line);
+    let mut working = line.clone();
+    let mut omit = vec![false; line.len()];
+    let mut decisions = Vec::new();
+    let spb = 60.0 / f64::from(world.tempo_bpm.max(1.0));
+    let mut i = 0;
+    while i < working.len() {
+        if working[i].structural || !connective(working[i].note.function) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < working.len()
+            && !working[i].structural
+            && connective(working[i].note.function)
+            && working[i].note.prov.material == working[start].note.prov.material
+        {
+            i += 1;
+        }
+        let stop = i;
+        let Some(destination) = working.get(stop).map(|e| e.note) else {
+            continue;
+        };
+        let observations: Vec<_> = (start..stop)
+            .map(|k| {
+                observe(
+                    perf,
+                    world,
+                    &working[k],
+                    k.checked_sub(1).map(|j| &working[j].note),
+                    working.get(k + 1).map(|e| &e.note),
+                    support,
+                )
+            })
+            .collect();
+        if observations
+            .iter()
+            .all(|r| r.verdict == ConnectiveViability::AsWritten)
+        {
+            continue;
+        }
+        let kinetic = observations[0].kinetic;
+        let p = patch(world, working[start].note.role);
+        let min_gate = 0.025_f64.max(f64::from(p.adsr.0));
+        let tail = release_tail_secs(p, AUDIBLE_FLOOR_DB);
+        // More motion gives a tighter run; pickup accents give it a little more attack. Contact
+        // shortens the gate. All of these act in seconds, with conversion only at the IR boundary.
+        let contact = observations
+            .iter()
+            .any(|r| r.chart_dissonance || !r.contacts.is_empty());
+        let gate =
+            (0.045 + 0.018 * f64::from(kinetic) - if contact { 0.01 } else { 0.0 }).max(min_gate);
+        let step = (gate + tail + 0.035 - 0.02 * f64::from(kinetic)).clamp(0.09, 0.22);
+        let mut candidate = working.clone();
+        for k in start..stop {
+            let n = &mut candidate[k].note;
+            n.start_beat = destination.start_beat - (stop - k) as f64 * step / spb;
+            n.dur_beats = (gate / spb) as f32;
+            let rise = (k - start + 1) as f32 / (stop - start) as f32;
+            n.velocity *=
+                (0.67 + 0.10 * kinetic + 0.06 * rise + 0.03 * observations[k - start].pickup)
+                    .clamp(0.6, 0.88);
+        }
+        let allowed = kinetic >= 0.18
+            && (start..stop).all(|k| {
+                let old = working[k].note;
+                let n = candidate[k].note;
+                let agent = if n.role == Role::Bass {
+                    super::action::Agent::Bass
+                } else {
+                    super::action::Agent::Lead
+                };
+                n.start_beat >= old.start_beat
+                    && perf.on_stage(agent, n.start_beat)
+                    && !perf.accent.is_hole(n.start_beat)
+                    && perf.context_at(old.start_beat).map(|c| c.start_beat)
+                        == perf.context_at(n.start_beat).map(|c| c.start_beat)
+                    && (k == 0 || candidate[k - 1].note.start_beat < n.start_beat)
+                    && observe(
+                        perf,
+                        world,
+                        &candidate[k],
+                        k.checked_sub(1).map(|j| &candidate[j].note),
+                        candidate.get(k + 1).map(|e| &e.note),
+                        support,
+                    )
+                    .verdict
+                        == ConnectiveViability::AsWritten
+            });
+        if allowed {
+            for k in start..stop {
+                let after = observe(
+                    perf,
+                    world,
+                    &candidate[k],
+                    k.checked_sub(1).map(|j| &candidate[j].note),
+                    candidate.get(k + 1).map(|e| &e.note),
+                    support,
+                );
+                decisions.push(ExpressionDecision { before: observations[k-start].clone(), after: Some(candidate[k].note),
+                    after_observation: Some(after), strategy: if stop-start > 1 { ExpressionStrategy::Burst } else { ExpressionStrategy::Grace },
+                    reason: "target-relative attack, shorter gate and subordinate accent; destination unchanged" });
+                working[k] = candidate[k];
+            }
+            continue;
+        }
+        // A failed physical candidate does not force chromatic survival. Prefer a nearby common
+        // chord tone strictly inside the original direction, then space. No early duplicate of
+        // the destination masquerades as a substitute.
+        for k in start..stop {
+            if observations[k - start].verdict == ConnectiveViability::AsWritten {
+                continue;
+            }
+            let old = working[k].note;
+            let prev = k.checked_sub(1).map(|j| working[j].note);
+            let replacement = (-2..=2)
+                .filter(|d| *d != 0)
+                .map(|d| old.pitch + d)
+                .find(|&pitch| {
+                    kinetic >= 0.18
+                        && pitch != destination.pitch
+                        && prev.is_some_and(|prev| {
+                            pitch > prev.pitch.min(destination.pitch)
+                                && pitch < prev.pitch.max(destination.pitch)
+                        })
+                        && perf
+                            .context_at(old.start_beat)
+                            .is_some_and(|c| c.chord.contains_pc(pitch_class(pitch)))
+                        && perf
+                            .context_at(old.start_beat + f64::from(old.dur_beats))
+                            .is_some_and(|c| c.chord.contains_pc(pitch_class(pitch)))
+                        && support.iter().all(|s| {
+                            !matches!((s.pitch - pitch).abs(), 1 | 13)
+                                || s.start_beat >= old.start_beat + f64::from(old.dur_beats)
+                                || audible_end(
+                                    s.start_beat,
+                                    f64::from(s.dur_beats),
+                                    patch(world, s.role),
+                                    world.tempo_bpm,
+                                ) <= old.start_beat
+                        })
+                });
+            if let Some(pitch) = replacement {
+                working[k].note.pitch = pitch;
+                working[k].note.function = Some(F::ChordTone);
+                decisions.push(ExpressionDecision { before: observations[k-start].clone(), after: Some(working[k].note),
+                    after_observation: None, strategy: ExpressionStrategy::Substituted, reason: "nearby stable chord tone preserves direction; attacked chromatic candidate failed" });
+            } else {
+                let remaining: Vec<_> = working
+                    .iter()
+                    .enumerate()
+                    .filter(|(j, _)| *j != k && !omit[*j])
+                    .map(|(_, e)| *e)
+                    .collect();
+                if identities_survive(&line, &remaining) {
+                    omit[k] = true;
+                    decisions.push(ExpressionDecision {
+                        before: observations[k - start].clone(),
+                        after: None,
+                        after_observation: None,
+                        strategy: ExpressionStrategy::Omitted,
+                        reason: "optional space: no viable subordinate attack within this phrase",
+                    });
+                }
+            }
+        }
+    }
+    let events: Vec<_> = working
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| !omit[*i])
+        .map(|(_, e)| e)
+        .collect();
+    assert_eq!(
+        skeleton,
+        project(&events),
+        "expression moved a structural event"
+    );
+    assert!(
+        identities_survive(&line, &events),
+        "expression erased material/action identity"
+    );
+    ExpressedLine { events, decisions }
+}

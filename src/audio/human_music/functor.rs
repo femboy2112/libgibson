@@ -160,6 +160,22 @@ pub fn perform_coherent(
     }
 }
 
+/// Round XV opt-in: the Round XIV harmonic solution with source-level expressive lead/bass.
+/// Connective performance changes precede all downstream hearings; the pad solver is unchanged.
+pub fn perform_expressive(
+    song: &SongMap,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+) -> Composition {
+    let perf = PerformancePlan::from_song(song, world, opts);
+    let score = realize_arm(song, world, &perf, true, Contract::Expressive);
+    Composition {
+        score,
+        song: song.clone(),
+        perf,
+    }
+}
+
 /// Which opt-in pitch contract a realization honours on top of the written one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Contract {
@@ -171,6 +187,8 @@ enum Contract {
     Tension,
     /// Round XIV: Written, with the pad hearing the band at its source. Neither Mass nor Tension.
     Coherent,
+    /// Round XV: source expression within the Round XIV causal order.
+    Expressive,
 }
 
 impl Contract {
@@ -214,11 +232,14 @@ fn realize_arm(
     score.sections = sections_from_plan(plan);
     score.chords = perf.chords.clone();
 
-    let lead = if temporal {
+    let lead = if contract == Contract::Expressive {
+        super::melody::realize_lead_expressive(perf, plan, world)
+    } else if temporal {
         super::melody::realize_lead_temporal(perf, plan)
     } else {
         super::melody::realize_lead(perf, plan)
     };
+    score.expression_decisions = lead.expression;
     score.melody_repairs = lead.repairs;
     score.melody_rejudged = lead.rejudged;
     // Round XIV: the keys, the bass and the drums consume the lead as it is now.
@@ -235,7 +256,7 @@ fn realize_arm(
             } else {
                 super::comp::realize_keys(perf, plan, world, &lead.notes, seed)
             };
-            if contract == Contract::Coherent {
+            if matches!(contract, Contract::Coherent | Contract::Expressive) {
                 // Round XIV: the bass (who hears the lead, and ignores keys and pad) is realized
                 // exactly as in Round XII; the pad comes last and hears the band.
                 let bass =

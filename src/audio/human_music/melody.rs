@@ -18,23 +18,39 @@ pub struct LeadRealization {
     /// re-judged as chord tones after being released at the change (their onset harmony owns
     /// them). Reported separately so "0 repairs" is not a hidden relabel (Round VIIb receipt).
     pub rejudged: usize,
+    /// Round XV source decisions; empty for historical arms.
+    pub expression: Vec<super::expression::ExpressionDecision>,
 }
 
 /// Realize every planned lead statement, connecting each to the previous statement's exit pitch.
 pub fn realize_lead(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadRealization {
-    realize_lead_impl(perf, false)
+    realize_lead_impl(perf, false, None)
 }
 
 /// Realize temporal pitch paths over the R11 statement and register scaffold.
 /// Each statement retains the legacy entry register even when the previous statement's
 /// selected pitch changes, preventing a local choice from shifting the whole song.
 pub fn realize_lead_temporal(perf: &PerformancePlan, _plan: &CompositionPlan) -> LeadRealization {
-    realize_lead_impl(perf, true)
+    realize_lead_impl(perf, true, None)
 }
 
-fn realize_lead_impl(perf: &PerformancePlan, temporal: bool) -> LeadRealization {
+/// Temporal lead expressed before any dependent hears it.
+pub fn realize_lead_expressive(
+    perf: &PerformancePlan,
+    _plan: &CompositionPlan,
+    world: &super::world::MusicWorld,
+) -> LeadRealization {
+    realize_lead_impl(perf, true, Some(world))
+}
+
+fn realize_lead_impl(
+    perf: &PerformancePlan,
+    temporal: bool,
+    expressive: Option<&super::world::MusicWorld>,
+) -> LeadRealization {
     let mut notes = Vec::new();
     let mut repairs = 0usize;
+    let mut structural = Vec::new();
     let mut prev_exit: Option<Midi> = None;
     for st in &perf.statements {
         // The statement speaks in the region in force where it starts (a Modulate moves it).
@@ -150,6 +166,7 @@ fn realize_lead_impl(perf: &PerformancePlan, temporal: bool) -> LeadRealization 
             );
             note.function = ln.function;
             notes.push(note);
+            structural.push(ln.structural);
         }
     }
     // A held note lifts off when the harmony moves under it (the realizer's classification assumed
@@ -193,7 +210,20 @@ fn realize_lead_impl(perf: &PerformancePlan, temporal: bool) -> LeadRealization 
             n.prov = n.prov.realizing(a.id);
         }
     }
+    let mut expression = Vec::new();
+    if let Some(world) = expressive {
+        let line = notes
+            .iter()
+            .copied()
+            .zip(structural)
+            .map(|(note, structural)| super::expression::ExpressionEvent { note, structural })
+            .collect();
+        let result = super::expression::realize(perf, world, line, &[]);
+        notes = result.events.into_iter().map(|e| e.note).collect();
+        expression = result.decisions;
+    }
     LeadRealization {
+        expression,
         notes,
         repairs,
         rejudged,
