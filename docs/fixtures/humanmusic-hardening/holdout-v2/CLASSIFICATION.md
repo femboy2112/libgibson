@@ -11,14 +11,14 @@ correlated, not independent bearings.
 
 ## Result
 
-**33/48 cases pass** (1,685 checks, 19 failing receipts). 25/36 generated rows, 7/8 Ode rows and 4/4 Swing
+**33/48 cases pass** (1,685 checks, 19 failing receipts). 22/36 generated rows, 7/8 Ode rows and 4/4 Swing
 rows pass. For comparison only (different rows, not a like-for-like score): holdout v1 passed 7/36.
 
-Source laws that failed **0 times** across all 36 generated sources and their covers include score
-domains, held identity, stage boundaries, causal hearing, hearing-ledger coverage, continuation identity,
-the direct-voice lifetime, anchor reports (no declared-but-missing anchor) and phrase destinations.
-Under the `BAND` profile the action-receipt audit failed 0 times on 32 generated sources; the one
-action-receipt failure is H18, a historical `POCKET` source.
+Laws that failed **0 times** in all 70 inspected performances (36 generated sources and 34 lifted
+covers): score domains, held identity, stage boundaries, causal hearing, hearing-ledger coverage,
+continuation identity, the direct-voice lifetime and phrase destinations; the anchor report passed on
+all 36 sources and 34 covers (no declared-but-missing anchor). The source action-receipt audit passed on
+all 33 `BAND` sources and on 2 of the 3 historical `POCKET` sources; its one failure is H18 (`POCKET`).
 
 ## Families
 
