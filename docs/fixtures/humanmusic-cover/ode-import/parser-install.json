@@ -1,0 +1,156 @@
+{
+  "version": "1",
+  "pip_version": "24.0",
+  "install": [
+    {
+      "download_info": {
+        "url": "https://files.pythonhosted.org/packages/fd/28/45deb15c11859d2f10702b32e71de9328a9fa494f989626916db39a9617f/mido-1.3.3-py3-none-any.whl",
+        "archive_info": {
+          "hash": "sha256=01033c9b10b049e4436fca2762194ca839b09a4334091dd3c34e7f4ae674fd8a",
+          "hashes": {
+            "sha256": "01033c9b10b049e4436fca2762194ca839b09a4334091dd3c34e7f4ae674fd8a"
+          }
+        }
+      },
+      "is_direct": false,
+      "is_yanked": false,
+      "requested": true,
+      "metadata": {
+        "metadata_version": "2.1",
+        "name": "mido",
+        "version": "1.3.3",
+        "summary": "MIDI Objects for Python",
+        "description": ".. SPDX-FileCopyrightText: 2013 Ole Martin Bjorndalen <ombdalen@gmail.com>\n..\n.. SPDX-License-Identifier: CC-BY-4.0\n\nMido - MIDI Objects for Python\n==============================\n\n.. image:: https://img.shields.io/badge/License-MIT-blue.svg\n   :alt: MIT License\n   :target: https://github.com/mido/mido/blob/main/LICENSES/MIT.txt\n\n.. image:: https://img.shields.io/pypi/v/mido.svg\n   :alt: PyPi version\n   :target: https://pypi.org/project/mido\n\n.. image:: https://img.shields.io/pypi/pyversions/mido.svg\n   :alt: Python version\n   :target: https://python.org\n\n.. image:: https://pepy.tech/badge/mido\n   :alt: Downloads\n   :target: https://pepy.tech/project/mido\n\n.. image:: https://github.com/mido/mido/workflows/Test/badge.svg\n   :alt: Test status\n   :target: https://github.com/mido/mido/actions\n\n.. image:: https://readthedocs.org/projects/mido/badge/?version=latest\n   :alt: Docs status\n   :target: https://mido.readthedocs.io/\n\n.. image:: https://api.reuse.software/badge/github.com/mido/mido\n   :alt: REUSE status\n   :target: https://api.reuse.software/info/github.com/mido/mido\n\n.. image:: https://www.bestpractices.dev/projects/7987/badge\n           :alt: OpenSSF Best Practices\n           :target: https://www.bestpractices.dev/projects/7987\n\nMido is a library for working with MIDI messages and ports:\n\n.. code-block:: python\n\n   >>> import mido\n   >>> msg = mido.Message('note_on', note=60)\n   >>> msg.type\n   'note_on'\n   >>> msg.note\n   60\n   >>> msg.bytes()\n   [144, 60, 64]\n   >>> msg.copy(channel=2)\n   Message('note_on', channel=2, note=60, velocity=64, time=0)\n\n.. code-block:: python\n\n   port = mido.open_output('Port Name')\n   port.send(msg)\n\n.. code-block:: python\n\n    with mido.open_input() as inport:\n        for msg in inport:\n            print(msg)\n\n.. code-block:: python\n\n    mid = mido.MidiFile('song.mid')\n    for msg in mid.play():\n        port.send(msg)\n\n\nFull documentation at https://mido.readthedocs.io/\n\n\nMain Features\n-------------\n\n* convenient message objects.\n\n* supports RtMidi, PortMidi and Pygame. New backends are easy to\n  write.\n\n* full support for all 18 messages defined by the MIDI standard.\n\n* standard port API allows all kinds of input and output ports to be\n  used interchangeably. New port types can be written by subclassing\n  and overriding a few methods.\n\n* includes a reusable MIDI stream parser.\n\n* full support for MIDI files (read, write, create and play) with\n  complete access to every message in the file, including all common\n  meta messages.\n\n* can read and write SYX files (binary and plain text).\n\n* implements (somewhat experimental) MIDI over TCP/IP with socket\n  ports. This allows for example wireless MIDI between two\n  computers.\n\n* includes programs for playing MIDI files, listing ports and\n  serving and forwarding ports over a network.\n\n\nStatus\n------\n\n1.3 is the fourth stable release.\n\nThis project uses `Semantic Versioning <https://semver.org>`_.\n\n\nRequirements\n------------\n\nMido requires Python 3.7 or higher.\n\n\nInstalling\n----------\n\n::\n\n    python3 -m pip install mido\n\nOr, alternatively, if you want to use ports with the default backend::\n\n   python3 -m pip install mido[ports-rtmidi]\n\nSee ``docs/backends/`` for other backends.\n\n\n\nSource Code\n-----------\n\nhttps://github.com/mido/mido/\n\n\nLicense\n-------\n\nMido is released under the terms of the `MIT license\n<http://en.wikipedia.org/wiki/MIT_License>`_.\n\n\nQuestions and suggestions\n-------------------------\n\nFor questions and proposals which may not fit into issues or pull requests,\nwe recommend to ask and discuss in the `Discussions\n<https://github.com/mido/mido/discussions>`_ section.\n",
+        "description_content_type": "text/x-rst",
+        "keywords": [
+          "python",
+          "midi",
+          "midifile"
+        ],
+        "author_email": "Ole Martin Bjorndalen <ombdalen@gmail.com>",
+        "maintainer_email": "Radovan Bast <radovan.bast@gmail.com>, Raphaël Doursenaud <rdoursenaud@gmail.com>",
+        "license": "MIT",
+        "classifier": [
+          "Development Status :: 5 - Production/Stable",
+          "Intended Audience :: Developers",
+          "Natural Language :: English",
+          "License :: OSI Approved :: MIT License",
+          "Programming Language :: Python",
+          "Programming Language :: Python :: 3 :: Only",
+          "Programming Language :: Python :: 3.7",
+          "Programming Language :: Python :: 3.8",
+          "Programming Language :: Python :: 3.9",
+          "Programming Language :: Python :: 3.10",
+          "Programming Language :: Python :: 3.11",
+          "Programming Language :: Python :: 3.12",
+          "Programming Language :: Python :: 3.13",
+          "Topic :: Multimedia :: Sound/Audio :: MIDI",
+          "Topic :: Software Development",
+          "Topic :: Software Development :: Libraries",
+          "Topic :: Software Development :: Libraries :: Python Modules",
+          "Topic :: Utilities"
+        ],
+        "requires_dist": [
+          "packaging",
+          "importlib-metadata ; python_version < \"3.8\"",
+          "sphinx ~=4.3.2 ; extra == 'build-docs'",
+          "sphinx-rtd-theme ~=1.2.2 ; extra == 'build-docs'",
+          "check-manifest >=0.49 ; extra == 'check-manifest'",
+          "mido[check-manifest] ; extra == 'dev'",
+          "mido[lint-code] ; extra == 'dev'",
+          "mido[test-code] ; extra == 'dev'",
+          "mido[lint-reuse] ; extra == 'dev'",
+          "mido[build-docs] ; extra == 'dev'",
+          "mido[release] ; extra == 'dev'",
+          "ruff ~=0.1.6 ; extra == 'lint-code'",
+          "reuse ~=1.1.2 ; extra == 'lint-reuse'",
+          "mido[ports-pygame] ; extra == 'ports-all'",
+          "mido[ports-rtmidi] ; extra == 'ports-all'",
+          "mido[ports-rtmidi-python] ; extra == 'ports-all'",
+          "PyGame ~=2.5 ; extra == 'ports-pygame'",
+          "python-rtmidi ~=1.5.4 ; extra == 'ports-rtmidi'",
+          "rtmidi-python ~=0.2.2 ; extra == 'ports-rtmidi-python'",
+          "twine ~=4.0.2 ; extra == 'release'",
+          "pytest ~=7.4.0 ; extra == 'test-code'"
+        ],
+        "requires_python": "~=3.7",
+        "project_url": [
+          "documentation, https://mido.readthedocs.io",
+          "source, https://github.com/mido/mido"
+        ],
+        "provides_extra": [
+          "build-docs",
+          "check-manifest",
+          "dev",
+          "lint-code",
+          "lint-reuse",
+          "ports-all",
+          "ports-pygame",
+          "ports-rtmidi",
+          "ports-rtmidi-python",
+          "release",
+          "test-code"
+        ]
+      }
+    },
+    {
+      "download_info": {
+        "url": "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl",
+        "archive_info": {
+          "hash": "sha256=d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+          "hashes": {
+            "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
+          }
+        }
+      },
+      "is_direct": false,
+      "is_yanked": false,
+      "requested": false,
+      "metadata": {
+        "metadata_version": "2.4",
+        "name": "packaging",
+        "version": "26.3",
+        "summary": "Core utilities for Python packages",
+        "description": "packaging\n=========\n\n.. start-intro\n\nReusable core utilities for various Python Packaging\n`interoperability specifications <https://packaging.python.org/specifications/>`_.\n\nThis library provides utilities that implement the interoperability\nspecifications which have clearly one correct behaviour (eg: :pep:`440`)\nor benefit greatly from having a single shared implementation (eg: :pep:`425`).\n\n.. end-intro\n\nThe ``packaging`` project includes the following: version handling, specifiers,\nmarkers, requirements, tags, metadata, lockfiles, utilities.\n\nDocumentation\n-------------\n\nThe `documentation`_ provides information and the API for the following:\n\n- Version Handling\n- Specifiers\n- Markers\n- Licenses\n- Requirements\n- Metadata\n- Tags\n- Lockfiles (pylock)\n- Direct URL helpers\n- Dependency groups\n- Errors\n- Utilities\n\nInstallation\n------------\n\nUse ``pip`` to install these utilities::\n\n    pip install packaging\n\nThe ``packaging`` library uses calendar-based versioning (``YY.N``).\n\nDiscussion\n----------\n\nIf you run into bugs, you can file them in our `issue tracker`_.\n\nYou can also join discussions on `GitHub Discussions`_ to ask questions or get involved.\n\n.. _`documentation`: https://packaging.pypa.io/\n.. _`issue tracker`: https://github.com/pypa/packaging/issues\n.. _`GitHub Discussions`: https://github.com/pypa/packaging/discussions\n\n\nCode of Conduct\n---------------\n\nEveryone interacting in the packaging project's codebases, issue trackers, chat\nrooms, and mailing lists is expected to follow the `PSF Code of Conduct`_.\n\n.. _PSF Code of Conduct: https://github.com/pypa/.github/blob/main/CODE_OF_CONDUCT.md\n\nContributing\n------------\n\nThe ``CONTRIBUTING.rst`` file outlines how to contribute to this project as\nwell as how to report a potential security issue. The documentation for this\nproject also covers information about `project development`_ and `security`_.\n\n.. _`project development`: https://packaging.pypa.io/en/latest/development/\n.. _`security`: https://packaging.pypa.io/en/latest/security/\n\nProject History\n---------------\n\nPlease review the ``CHANGELOG.rst`` file or the `Changelog documentation`_ for\nrecent changes and project history.\n\n.. _`Changelog documentation`: https://packaging.pypa.io/en/latest/changelog/\n\n",
+        "description_content_type": "text/x-rst",
+        "author_email": "Donald Stufft <donald@stufft.io>",
+        "classifier": [
+          "Development Status :: 5 - Production/Stable",
+          "Intended Audience :: Developers",
+          "Programming Language :: Python",
+          "Programming Language :: Python :: 3",
+          "Programming Language :: Python :: 3 :: Only",
+          "Programming Language :: Python :: 3.9",
+          "Programming Language :: Python :: 3.10",
+          "Programming Language :: Python :: 3.11",
+          "Programming Language :: Python :: 3.12",
+          "Programming Language :: Python :: 3.13",
+          "Programming Language :: Python :: 3.14",
+          "Programming Language :: Python :: 3.15",
+          "Programming Language :: Python :: Implementation :: CPython",
+          "Programming Language :: Python :: Implementation :: PyPy",
+          "Programming Language :: Python :: Free Threading :: 4 - Resilient",
+          "Typing :: Typed"
+        ],
+        "requires_python": ">=3.9",
+        "project_url": [
+          "Documentation, https://packaging.pypa.io/",
+          "Source, https://github.com/pypa/packaging"
+        ]
+      }
+    }
+  ],
+  "environment": {
+    "implementation_name": "cpython",
+    "implementation_version": "3.12.3",
+    "os_name": "posix",
+    "platform_machine": "x86_64",
+    "platform_release": "7.0.0-28-generic",
+    "platform_system": "Linux",
+    "platform_version": "#28~24.04.1-Ubuntu SMP PREEMPT_DYNAMIC Wed Jul  1 15:50:57 UTC 2",
+    "python_full_version": "3.12.3",
+    "platform_python_implementation": "CPython",
+    "python_version": "3.12",
+    "sys_platform": "linux"
+  }
+}

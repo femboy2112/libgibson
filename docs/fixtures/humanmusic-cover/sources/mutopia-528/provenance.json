@@ -1,0 +1,50 @@
+{
+  "retrieved_utc": "2026-09-30T07:13:31.640200+00:00",
+  "catalog_id": 528,
+  "edition": "Mutopia-2009/08/05-528",
+  "title": "Ode to Joy",
+  "composer": "L. V. Beethoven",
+  "stated_status": "Public Domain",
+  "status_source": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=528",
+  "license_details": "https://www.mutopiaproject.org/legal.html",
+  "artifacts": [
+    {
+      "file": "ode.ly",
+      "url": "https://www.mutopiaproject.org/ftp/BeethovenLv/ode/ode.ly",
+      "resolved_url": "https://www.mutopiaproject.org/ftp/BeethovenLv/ode/ode.ly",
+      "bytes": 2907,
+      "sha256": "a0c865aa9f71221605362622d281405071e0734540e86ce131131757cc803a71"
+    },
+    {
+      "file": "ode.mid",
+      "url": "https://www.mutopiaproject.org/ftp/BeethovenLv/ode/ode.mid",
+      "resolved_url": "https://www.mutopiaproject.org/ftp/BeethovenLv/ode/ode.mid",
+      "bytes": 2192,
+      "sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b"
+    },
+    {
+      "file": "catalog.html",
+      "url": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=528",
+      "resolved_url": "https://www.mutopiaproject.org/cgibin/piece-info.cgi?id=528",
+      "bytes": 5675,
+      "sha256": "858fa8d6ba0868eab2cff036e9d69599d2781227f90083e311ecca5fd9f41857"
+    },
+    {
+      "file": "license.html",
+      "url": "https://www.mutopiaproject.org/legal.html",
+      "resolved_url": "https://www.mutopiaproject.org/legal.html",
+      "bytes": 6786,
+      "sha256": "21dd9566f45b2b238be3e79c449d03fb964854e85e5d1d6e6c244d3352136aa3"
+    }
+  ],
+  "parser": {
+    "lily": "scripts/audio/import_symbolic.py absolute-lily/v1",
+    "midi": "mido 1.3.3",
+    "python": "3.12.3",
+    "melody_selection": "explicit LilyPond named voice sop",
+    "cross_check": "all four named source voices against MIDI with declared per-staff simultaneous exact-unison coalescing",
+    "support_harmony": "not encoded; no source chord labels inferred"
+  },
+  "boundary": "Source edition facts; not an assertion that this SATB arrangement is the unique canonical Beethoven source.",
+  "reproduction": "target/humanmusic-consolidation/ingest-venv/bin/python scripts/audio/import_symbolic.py --lily docs/fixtures/humanmusic-cover/sources/mutopia-528/ode.ly --midi docs/fixtures/humanmusic-cover/sources/mutopia-528/ode.mid --voice sop --voice alto --voice tenor --voice bass --midi-group upper=sop,alto --midi-group lower=tenor,bass --out docs/fixtures/humanmusic-cover/ode-import"
+}
