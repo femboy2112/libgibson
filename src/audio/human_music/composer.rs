@@ -192,6 +192,7 @@ fn build_line(p: &ThemeParams, ending: Ending, beats: f32) -> Motif {
     d.push(land);
     r.push(beats - r.iter().sum::<f32>());
     Motif {
+        pitch_basis: super::theory::PitchBasis::ScaleSteps,
         id: 0,
         degrees: d,
         rhythm: r,

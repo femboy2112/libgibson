@@ -112,7 +112,7 @@ fn realize_lead_impl(
                 // other role — including a thesis restatement — connects to the nearest octave.
                 let releasing = matches!(st.role, DiscourseRole::Answer | DiscourseRole::Dissolve);
                 let cost = |o: i32| {
-                    let p = scale.degree_pitch(first_deg, o);
+                    let p = motif.pitch_at(&scale, first_deg, o);
                     let d = (p - pe).abs();
                     if releasing && p > pe + 2 {
                         d + 12

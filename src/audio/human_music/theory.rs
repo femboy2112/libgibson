@@ -5,6 +5,15 @@
 //! `0..=11` (C = 0). Keeping pitch as a plain integer makes voice-leading distance an
 //! honest semitone count.
 
+/// The coordinate unit of a relative pitch contour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PitchBasis {
+    /// Steps through a declared scale.
+    ScaleSteps,
+    /// Exact chromatic offsets, independent of the target scale.
+    Semitones,
+}
+
 /// A MIDI note number.
 pub type Midi = i32;
 

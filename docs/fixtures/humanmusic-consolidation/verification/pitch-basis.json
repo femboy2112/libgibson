@@ -1,0 +1,13 @@
+{
+  "parent": "38aeba2196a5676c1d995dc1cce71b6e5820a5d2",
+  "boundary": "isolated detached worktree with staged pitch-unit patch; later changes are rustdoc only",
+  "toolchain": "1.98.1",
+  "command": "CARGO_BUILD_JOBS=1 CARGO_TARGET_DIR=/home/leah/LibGibson/target cargo +1.98.1 test --test audio_canonical_fingerprint --test audio_consolidation_characterization",
+  "tests": {
+    "audio_canonical_fingerprint": 5,
+    "audio_consolidation_characterization": 1
+  },
+  "exit": 0,
+  "patch_sha256": "88e93da39a7666e81c9c8dfc5fb361be046dce517fd89eedb510f2085452fadf",
+  "claim": "Explicit semitone and scale-step units do not alias; historical event and causal receipts remain exact. This is not PCM or listening evidence."
+}

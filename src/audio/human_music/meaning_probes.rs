@@ -192,6 +192,7 @@ fn divergent(c: &Commutation) -> Vec<(Lane, u32, Option<K>, Option<K>)> {
 /// step up, one reach of a fourth, a step back, a landing on the third. Six beats.
 fn hand_thesis() -> Motif {
     Motif {
+        pitch_basis: super::theory::PitchBasis::ScaleSteps,
         id: 0,
         degrees: vec![-1, 0, 1, 1, 2, 5, 4, 2],
         rhythm: vec![0.5, 0.5, 0.5, 0.5, 0.5, 1.0, 0.5, 2.0],
@@ -668,6 +669,7 @@ fn the_composer_now_hears_the_story() {
 fn the_prior_says_why_a_melody_is_unusual() {
     let prior = CompositionalPrior::HOOKY_FUSION;
     let alien = Motif {
+        pitch_basis: super::theory::PitchBasis::ScaleSteps,
         id: 0,
         degrees: vec![0, 5, -1, 4, -2, 6, 1],
         rhythm: vec![0.75, 0.25, 1.25, 0.5, 1.0, 0.75, 1.5],
@@ -985,6 +987,7 @@ fn the_listener_model_sees_what_it_used_to_miss() {
 
     // A malformed motif relates as foreign; it does not panic the model.
     let broken = Motif {
+        pitch_basis: super::theory::PitchBasis::ScaleSteps,
         id: 0,
         degrees: vec![0, 1, 2],
         rhythm: vec![1.0, 1.0],

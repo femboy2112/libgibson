@@ -17,7 +17,7 @@
 //! exact length), the discourse (roles, closures, culmination, the obligation ledger), the
 //! arrangement envelope (who is seated per phrase), the DeflectedLift backbone timeline
 //! (gestures, cycles, slot grid), the [`ThematicMap`] — the germ, its hook and cells as
-//! scale-degree contours, and the theme site of every phrase the lead is seated in — and the
+//! contours with declared pitch units, and the theme site of every phrase the lead is seated in — and the
 //! [`HarmonicMap`]: the DeflectedLift journey (lift, pointer, expected arrival, the deflection
 //! that misses it, the open, home) as relational chart roots.
 //!
@@ -53,7 +53,7 @@ pub struct ThemeSite {
     pub phrase: u32,
     /// The phrase's discourse role (what the statement is FOR).
     pub role: DiscourseRole,
-    /// The material stated, developed from the previous site (scale degrees + rhythm).
+    /// The material stated, developed from the previous site (declared pitch units + rhythm).
     pub motif: Motif,
     /// How it connects to the previous site.
     pub handoff: Handoff,
@@ -77,7 +77,7 @@ impl ThemeSite {
     }
 }
 
-/// The song's thematic identity: the motif bank (germ, hook, cells — every member a scale-degree
+/// The song's thematic identity: the motif bank (germ, hook, cells — every member a declared-unit pitch
 /// contour, no room's pitch in it) and the theme site of every lead-seated phrase, developed along
 /// the discourse by the [`ThematicTrajectory`] exactly once, before any performance.
 #[derive(Debug, Clone, PartialEq)]
@@ -177,6 +177,7 @@ impl SongMap {
             // A rhythmic cell, its octave expansion and a tonic landing. Literal recognition
             // precedes any performance development. No question or miss is a prerequisite.
             let thesis = Motif {
+                pitch_basis: super::theory::PitchBasis::ScaleSteps,
                 id: 0,
                 degrees: vec![0, 2, 4, 2, 7, 4, 2, 0],
                 rhythm: vec![0.5, 0.5, 1.0, 0.5, 0.5, 1.0, 0.5, 1.5],

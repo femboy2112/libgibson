@@ -710,13 +710,36 @@ structure!(interaction::Interaction, "interaction/Interaction/v2";
     response => "response",
 );
 
-structure!(material::InteractionMaterial, "material/InteractionMaterial/v2";
-    id => "id",
-    owner => "owner",
-    source => "source",
-    start_beat => "start_beat",
-    events => "events",
-);
+impl CanonicalFingerprint for material::InteractionMaterial {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        let Self {
+            id,
+            owner,
+            source,
+            start_beat,
+            events,
+            pitch_basis,
+        } = self;
+        w.tag("material/InteractionMaterial/v2");
+        w.field("id", id);
+        w.field("owner", owner);
+        w.field("source", source);
+        w.field("start_beat", start_beat);
+        w.field("events", events);
+        if *pitch_basis != material::PitchBasis::ScaleSteps {
+            w.field("pitch_basis", pitch_basis);
+        }
+    }
+}
+impl CanonicalFingerprint for theory::PitchBasis {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        w.tag("theory/PitchBasis/v2");
+        w.tag(match self {
+            Self::ScaleSteps => "ScaleSteps",
+            Self::Semitones => "Semitones",
+        });
+    }
+}
 
 structure!(interaction::InteractionOpportunity, "interaction/InteractionOpportunity/v2";
     source => "source",
@@ -922,11 +945,23 @@ structure!(intent::MorphismCost, "intent/MorphismCost/v2";
     repetition => "repetition",
 );
 
-structure!(motif::Motif, "motif/Motif/v2";
-    id => "id",
-    degrees => "degrees",
-    rhythm => "rhythm",
-);
+impl CanonicalFingerprint for motif::Motif {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        let Self {
+            id,
+            degrees,
+            rhythm,
+            pitch_basis,
+        } = self;
+        w.tag("motif/Motif/v2");
+        w.field("id", id);
+        w.field("degrees", degrees);
+        w.field("rhythm", rhythm);
+        if *pitch_basis != theory::PitchBasis::ScaleSteps {
+            w.field("pitch_basis", pitch_basis);
+        }
+    }
+}
 
 structure!(motif::MotifBank, "motif/MotifBank/v2";
     identity => "identity",
@@ -1652,4 +1687,14 @@ structure!(policy::PerformanceProfile, "policy/PerformanceProfile/v2";
     pitch => "pitch", expression => "expression", occupancy => "occupancy",
     support => "support", lifetime => "lifetime", observation => "observation",
     evidence => "evidence", repair => "repair",
+);
+
+// The legacy float-normalized shape is a diagnostic descriptor. The wrapper retains
+// pitch units; exact cover rhythm uses rational metric positions instead.
+structure!(motif::MotifIdentity, "motif/LegacyShape/v2";
+    interval_contour => "interval_contour", rhythmic_profile => "rhythmic_profile",
+    direction_signature => "direction_signature",
+);
+structure!(motif::TypedMotifIdentity, "motif/TypedShape/v2";
+    pitch_basis => "pitch_basis", shape => "shape",
 );

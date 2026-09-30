@@ -1,4 +1,4 @@
-//! Motif identities and their transformations. A motif is a scale-degree contour plus a
+//! Motif identities and their transformations. A motif has a pitch contour in an explicit unit plus a
 //! rhythm; the same motif heard at the climax must be recognizably the object seeded at the
 //! start. Transformations preserve the identity (`id`) while developing the material, so
 //! the melody engine can grow one idea across the whole piece instead of inventing a new
@@ -10,14 +10,16 @@ use super::harmony::ChordSpan;
 use super::language::MusicalLanguage;
 use super::rng::Rng;
 use super::score::PitchFunction;
-use super::theory::{pitch_class, Chord, Midi, Mode, Scale};
+use super::theory::{pitch_class, Chord, Midi, Mode, PitchBasis, Scale};
 
-/// A motif: parallel scale-degree and rhythm vectors sharing an identity.
-#[derive(Debug, Clone, PartialEq)]
+/// A motif: parallel declared-pitch-coordinate and rhythm vectors sharing an identity.
+#[derive(Clone, PartialEq)]
 pub struct Motif {
     /// Stable identity — survives every transformation.
     pub id: u8,
-    /// Scale-degree offsets from a tonal root (the melodic contour).
+    /// Coordinate unit of `degrees`; chromatic references retain exact semitones.
+    pub pitch_basis: PitchBasis,
+    /// Pitch offsets from a tonal root in the declared basis (the melodic contour).
     pub degrees: Vec<i32>,
     /// Note durations in beats, parallel to `degrees`.
     pub rhythm: Vec<f32>,
@@ -29,6 +31,7 @@ impl Motif {
     /// 6th degree (degree 5) give it a hook the ear can catch.
     pub fn seed_a() -> Motif {
         Motif {
+            pitch_basis: PitchBasis::ScaleSteps,
             id: 0,
             degrees: vec![0, 4, 3, 5, 2],
             rhythm: vec![0.5, 0.5, 1.0, 1.0, 1.0],
@@ -39,9 +42,18 @@ impl Motif {
     /// back down, front-loaded with sixteenth-into-eighth momentum.
     pub fn seed_b() -> Motif {
         Motif {
+            pitch_basis: PitchBasis::ScaleSteps,
             id: 1,
             degrees: vec![0, 3, 6, 4, 3, 1],
             rhythm: vec![0.5, 0.5, 0.5, 0.5, 1.0, 1.0],
+        }
+    }
+
+    /// Interpret one stored coordinate without rounding chromatic data into scale steps.
+    pub fn pitch_at(&self, scale: &Scale, offset: i32, octave: i32) -> Midi {
+        match self.pitch_basis {
+            PitchBasis::ScaleSteps => scale.degree_pitch(offset, octave),
+            PitchBasis::Semitones => scale.tonic_pc + 12 * (octave + 1) + offset,
         }
     }
 
@@ -60,9 +72,10 @@ impl Motif {
         self.rhythm.iter().sum()
     }
 
-    /// Transpose the contour by `by` scale degrees (identity preserved).
+    /// Transpose by `by` units of the declared pitch basis (identity preserved).
     pub fn transpose(&self, by: i32) -> Motif {
         Motif {
+            pitch_basis: self.pitch_basis,
             id: self.id,
             degrees: self.degrees.iter().map(|d| d + by).collect(),
             rhythm: self.rhythm.clone(),
@@ -73,6 +86,7 @@ impl Motif {
     pub fn invert(&self) -> Motif {
         let pivot = self.degrees.first().copied().unwrap_or(0);
         Motif {
+            pitch_basis: self.pitch_basis,
             id: self.id,
             degrees: self.degrees.iter().map(|d| pivot - (d - pivot)).collect(),
             rhythm: self.rhythm.clone(),
@@ -86,6 +100,7 @@ impl Motif {
         let mut rhythm = self.rhythm.clone();
         rhythm.reverse();
         Motif {
+            pitch_basis: self.pitch_basis,
             id: self.id,
             degrees,
             rhythm,
@@ -96,6 +111,7 @@ impl Motif {
     pub fn scale_rhythm(&self, factor: f32) -> Motif {
         let f = factor.max(0.05);
         Motif {
+            pitch_basis: self.pitch_basis,
             id: self.id,
             degrees: self.degrees.clone(),
             rhythm: self.rhythm.iter().map(|r| r * f).collect(),
@@ -106,6 +122,7 @@ impl Motif {
     pub fn fragment(&self, take: usize) -> Motif {
         let n = take.clamp(1, self.len().max(1));
         Motif {
+            pitch_basis: self.pitch_basis,
             id: self.id,
             degrees: self.degrees.iter().take(n).copied().collect(),
             rhythm: self.rhythm.iter().take(n).copied().collect(),
@@ -117,6 +134,7 @@ impl Motif {
     pub fn tail(&self, skip: usize) -> Motif {
         let s = skip.min(self.len().saturating_sub(1));
         Motif {
+            pitch_basis: self.pitch_basis,
             id: self.id,
             degrees: self.degrees.iter().skip(s).copied().collect(),
             rhythm: self.rhythm.iter().skip(s).copied().collect(),
@@ -134,6 +152,7 @@ impl Motif {
             }
         }
         Motif {
+            pitch_basis: self.pitch_basis,
             id: self.id,
             degrees,
             rhythm,
@@ -143,11 +162,16 @@ impl Motif {
     /// Append `other` after this motif (same identity) — a call and its response fused into one
     /// statement, sharing both their DNA.
     pub fn concat(&self, other: &Motif) -> Motif {
+        assert_eq!(
+            self.pitch_basis, other.pitch_basis,
+            "mixed pitch bases require explicit conversion"
+        );
         let mut degrees = self.degrees.clone();
         degrees.extend_from_slice(&other.degrees);
         let mut rhythm = self.rhythm.clone();
         rhythm.extend_from_slice(&other.rhythm);
         Motif {
+            pitch_basis: self.pitch_basis,
             id: self.id,
             degrees,
             rhythm,
@@ -167,7 +191,7 @@ impl Motif {
         let mut t = start_beat;
         for (i, &deg) in self.degrees.iter().enumerate() {
             let dur = self.rhythm[i];
-            let pitch = scale.degree_pitch(root_degree + deg, octave);
+            let pitch = self.pitch_at(scale, root_degree + deg, octave);
             out.push((t, dur, pitch));
             t += dur as f64;
         }
@@ -188,7 +212,8 @@ impl Motif {
 // note. Diagnose before you cut — the same discipline, in code.
 // ---------------------------------------------------------------------------
 
-/// A transposition- and tempo-invariant structural fingerprint of a motif.
+/// Legacy transposition/tempo-normalized diagnostic shape descriptor.
+/// [`TypedMotifIdentity`] also retains the pitch basis; both descriptors normalize rhythm.
 ///
 /// Strip away absolute pitch and absolute duration and what's left is the *idea*: the
 /// sequence of leaps, their directions, and the proportion of the rhythm. Two statements
@@ -204,7 +229,23 @@ pub struct MotifIdentity {
     pub direction_signature: Vec<i8>,
 }
 
+/// Exact coordinate-aware identity. The older `MotifIdentity` remains a diagnostic
+/// shape descriptor whose approximate similarity deliberately has no unit authority.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypedMotifIdentity {
+    pub pitch_basis: PitchBasis,
+    pub shape: MotifIdentity,
+}
+
 impl Motif {
+    /// Contour/proportional-rhythm identity with its pitch unit retained.
+    /// Augmentation and diminution still share this shape; exact cover timing uses rational coordinates.
+    pub fn typed_identity(&self) -> TypedMotifIdentity {
+        TypedMotifIdentity {
+            pitch_basis: self.pitch_basis,
+            shape: self.identity(),
+        }
+    }
     /// Extract this motif's [`MotifIdentity`] — its fingerprint stripped of key and tempo.
     pub fn identity(&self) -> MotifIdentity {
         let interval_contour: Vec<i32> = self.degrees.windows(2).map(|w| w[1] - w[0]).collect();
@@ -882,7 +923,9 @@ impl<'a> LineRequest<'a> {
             out.push(Slot {
                 start,
                 gate: ev.dur as f64,
-                anchor: self.scale.degree_pitch(self.root_degree + deg, self.octave),
+                anchor: self
+                    .motif
+                    .pitch_at(self.scale, self.root_degree + deg, self.octave),
                 degree: deg,
                 structural: ev.target == TargetKind::Structural,
                 accent: ev.accent,
@@ -1600,6 +1643,7 @@ mod tests {
     #[test]
     fn invert_negates_intervals_about_first() {
         let m = Motif {
+            pitch_basis: PitchBasis::ScaleSteps,
             id: 9,
             degrees: vec![0, 2, 4],
             rhythm: vec![1.0, 1.0, 1.0],
@@ -1678,6 +1722,7 @@ mod tests {
     fn similarity_separates_a_different_contour() {
         let a = Motif::seed_a().identity();
         let other = Motif {
+            pitch_basis: PitchBasis::ScaleSteps,
             id: 0,
             degrees: vec![0, -3, -1, -6],
             rhythm: vec![1.0, 0.5, 0.5, 2.0],
@@ -1902,6 +1947,7 @@ mod tests {
         ];
         let mut contexts = super::super::context::analyze(&chords, &scale);
         let motif = Motif {
+            pitch_basis: PitchBasis::ScaleSteps,
             id: 0,
             degrees: vec![1],
             rhythm: vec![0.5],
@@ -1959,6 +2005,7 @@ mod tests {
         let chords = vec![span(0.0, 4.0, Chord::new(0, Quality::Maj))];
         let contexts = super::super::context::analyze(&chords, &scale);
         let motif = Motif {
+            pitch_basis: PitchBasis::ScaleSteps,
             id: 0,
             degrees: vec![2, 3, 4],
             rhythm: vec![0.5, 0.5, 1.0],
@@ -1989,6 +2036,7 @@ mod tests {
         ];
         let contexts = super::super::context::analyze(&chords, &scale);
         let motif = Motif {
+            pitch_basis: PitchBasis::ScaleSteps,
             id: 0,
             degrees: vec![5, 5],
             rhythm: vec![1.0, 1.0],
@@ -2016,6 +2064,7 @@ mod tests {
         ];
         let contexts = super::super::context::analyze(&chords, &scale);
         let motif = Motif {
+            pitch_basis: PitchBasis::ScaleSteps,
             id: 0,
             degrees: vec![5],
             rhythm: vec![0.5],
@@ -2042,5 +2091,19 @@ mod tests {
         slots[0].gate = 0.25;
         let released = cost(&slots);
         assert!((released - reaches - 1.1).abs() < 1e-6);
+    }
+}
+
+// Preserve the historical receipt presentation for scale-step motifs.
+impl std::fmt::Debug for Motif {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("Motif");
+        d.field("id", &self.id)
+            .field("degrees", &self.degrees)
+            .field("rhythm", &self.rhythm);
+        if self.pitch_basis != PitchBasis::ScaleSteps {
+            d.field("pitch_basis", &self.pitch_basis);
+        }
+        d.finish()
     }
 }

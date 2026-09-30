@@ -54,8 +54,10 @@ pub enum MaterialSource {
     },
 }
 
+pub use super::theory::PitchBasis;
+
 /// A piece of interaction material.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct InteractionMaterial {
     pub id: MaterialId,
     /// Who states it.
@@ -64,6 +66,8 @@ pub struct InteractionMaterial {
     /// The beat it is stated at.
     pub start_beat: f64,
     pub events: Vec<MaterialEvent>,
+    /// Exact chromatic references must not be rounded into scale steps.
+    pub pitch_basis: PitchBasis,
 }
 
 impl InteractionMaterial {
@@ -119,6 +123,7 @@ impl InteractionMaterial {
             at += d;
         }
         InteractionMaterial {
+            pitch_basis: motif.pitch_basis,
             id,
             owner,
             source,
@@ -197,6 +202,11 @@ impl InteractionMaterial {
             _ => return None,
         };
         Some(InteractionMaterial {
+            pitch_basis: match a.kind {
+                ActionKind::Fragment => bank.identity.pitch_basis,
+                ActionKind::ReEntry => bank.rhythmic_cell.pitch_basis,
+                _ => PitchBasis::ScaleSteps,
+            },
             id,
             owner: a.initiator,
             source: src,
@@ -280,6 +290,7 @@ pub fn transform_material(
         return None;
     }
     Some(InteractionMaterial {
+        pitch_basis: src.pitch_basis,
         id,
         owner,
         source: MaterialSource::Derived {
@@ -381,9 +392,13 @@ fn project(
         };
         let p = match e.step {
             Some(s) => {
+                let step = |from, offset| match m.pitch_basis {
+                    PitchBasis::ScaleSteps => scale_step(&ctx.palette.scale, from, offset),
+                    PitchBasis::Semitones => from + offset,
+                };
                 let base = match prev {
-                    Some(q) => scale_step(&ctx.palette.scale, q, s - prev_step.unwrap_or(0)),
-                    None => scale_step(&ctx.palette.scale, anchor, s),
+                    Some(q) => step(q, s - prev_step.unwrap_or(0)),
+                    None => step(anchor, s),
                 };
                 let dir = prev_step.map(|ps| (s - ps).signum()).unwrap_or(0);
                 prev_step = Some(s);
@@ -1146,6 +1161,7 @@ mod tests {
 
     fn mat(steps: &[Option<i32>], onsets: &[f64]) -> InteractionMaterial {
         InteractionMaterial {
+            pitch_basis: PitchBasis::ScaleSteps,
             id: MaterialId(0),
             owner: Agent::Bass,
             source: MaterialSource::Figure {
@@ -1262,5 +1278,21 @@ mod tests {
         // An inversion relates under Invert, not under Quote.
         let inv = h(&[(4.0, 64), (4.5, 61), (5.0, 59), (5.5, 57)]);
         assert!(relation(&a, &inv, Transform::Invert) > relation(&a, &inv, Transform::Quote));
+    }
+}
+
+// Keep every historical material's Debug and v1 receipt byte-exact.
+impl std::fmt::Debug for InteractionMaterial {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("InteractionMaterial");
+        d.field("id", &self.id)
+            .field("owner", &self.owner)
+            .field("source", &self.source)
+            .field("start_beat", &self.start_beat)
+            .field("events", &self.events);
+        if self.pitch_basis != PitchBasis::ScaleSteps {
+            d.field("pitch_basis", &self.pitch_basis);
+        }
+        d.finish()
     }
 }

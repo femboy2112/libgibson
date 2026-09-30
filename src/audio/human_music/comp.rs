@@ -1954,6 +1954,7 @@ mod tests {
         };
         let mid = MaterialId(p.materials.len() as u32);
         p.materials.push(InteractionMaterial {
+            pitch_basis: crate::audio::human_music::material::PitchBasis::ScaleSteps,
             id: mid,
             owner: Agent::Keys,
             source: MaterialSource::Derived {

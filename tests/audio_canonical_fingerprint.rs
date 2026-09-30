@@ -140,3 +140,40 @@ fn performance_and_events_have_distinct_explicit_schemas() {
         );
     }
 }
+
+#[test]
+fn chromatic_and_scale_step_motifs_do_not_alias() {
+    use gibson::audio::human_music::{
+        motif::Motif,
+        theory::{PitchBasis, Scale},
+    };
+    let mut diatonic = Motif::seed_a();
+    diatonic.degrees = vec![0, 1, 2];
+    diatonic.rhythm = vec![1.0; 3];
+    let mut chromatic = diatonic.clone();
+    chromatic.pitch_basis = PitchBasis::Semitones;
+    assert_eq!(diatonic.identity(), chromatic.identity()); // archived untyped descriptor
+    assert_ne!(diatonic.typed_identity(), chromatic.typed_identity());
+    assert_ne!(diatonic.typed_identity().canonical_fingerprint(), chromatic.typed_identity().canonical_fingerprint());
+    assert_ne!(
+        diatonic.canonical_fingerprint(),
+        chromatic.canonical_fingerprint()
+    );
+    let scale = Scale::new(0, Mode::Ionian);
+    assert_eq!(diatonic.pitch_at(&scale, 1, 4), 62);
+    assert_eq!(chromatic.pitch_at(&scale, 1, 4), 61);
+    for transformed in [
+        chromatic.transpose(2),
+        chromatic.invert(),
+        chromatic.retrograde(),
+        chromatic.scale_rhythm(2.0),
+        chromatic.fragment(2),
+        chromatic.tail(1),
+        chromatic.sequence(1, 2),
+        chromatic.concat(&chromatic),
+    ] {
+        assert_eq!(transformed.pitch_basis, PitchBasis::Semitones);
+        assert_eq!(transformed.pitch_at(&scale, 1, 4), 61);
+    }
+    assert!(std::panic::catch_unwind(|| chromatic.concat(&diatonic)).is_err());
+}
