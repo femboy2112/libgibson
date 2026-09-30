@@ -465,6 +465,22 @@ impl PerformancePlan {
             ));
         }
         constraints.validate_target()?;
+        // A pinned kit plays its canonical pattern whatever the phrase role, so it can perform no
+        // groove return: a song owing one must be planned with a pinned kit
+        // (`KitMotion::Pinned`, as `cover_candidate` does). Refused here, not asserted later.
+        if constraints.identity.groove.is_some()
+            && song
+                .plan
+                .discourse
+                .ledger
+                .obligations
+                .iter()
+                .any(|o| o.kind == super::discourse::ObligationKind::GrooveDestabilization)
+        {
+            return Err(super::cover::CoverError::Invalid(
+                "a pinned kit cannot carry a groove debt: plan the song with a pinned kit",
+            ));
+        }
         Self::build(song, world, opts, Some(constraints), admission)
     }
 
@@ -635,6 +651,7 @@ impl PerformancePlan {
         let mut stage = Stage::from_arrangement(plan);
         if let Some(c) = &cover_constraints {
             c.apply_stage(&mut stage);
+            c.pinned_strokes_seated(&stage)?;
         }
         let mut admissions = admit_actions(&mut actions, &mut stage);
         admissions.extend(constrained_rejections);

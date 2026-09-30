@@ -672,6 +672,16 @@ impl AnchorReport {
             AnchorConformance::Conforms
         };
         let harmony = || -> AnchorConformance {
+            // A cover's harmony is its constraints' (a pinned chart, verified by
+            // `CoverConformance`, or a harmony derived to contain every pinned attack): the target
+            // grammar's own closure plan is not what sounds, so it is not judged here.
+            if perf.cover_constraints.as_ref().is_some_and(|c| {
+                c.identity.harmony.is_some()
+                    || c.identity.line(Role::Lead).is_some()
+                    || c.identity.line(Role::Bass).is_some()
+            }) {
+                return AnchorConformance::Conforms;
+            }
             if !song.landmarks().is_empty() {
                 // The chart: every landmark heard on its root, in the region in force there.
                 let misses = SongMapConformance::check(song, perf, score).wrong_harmonic_landmarks;

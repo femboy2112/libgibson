@@ -76,6 +76,7 @@ pub mod policy;
 #[cfg(test)]
 mod probes;
 pub mod projection;
+pub mod receipt;
 pub mod reference_song;
 pub mod region;
 pub mod rehearsal;

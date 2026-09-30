@@ -303,6 +303,39 @@ pub fn perform_with_profile(
     })
 }
 
+/// A performance under explicit laws, not yet judged: exactly [`perform_with_profile`]. The
+/// candidate a checked route admits or rejects — kept so a rejected take can still be inspected
+/// and heard.
+pub fn perform_candidate(
+    song: &SongMap,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+    profile: PerformanceProfile,
+) -> Result<Composition, PolicyError> {
+    perform_with_profile(song, world, opts, profile)
+}
+
+/// The checked modern route: the candidate is returned only when every general performance law
+/// holds under `profile`'s declared laws ([`super::receipt::PerformanceReceipt::measure_under`]);
+/// otherwise it is rejected with the receipt naming each failure. A profile such as
+/// [`PerformanceProfile::BAND`] thereby rejects an internally invalid performance itself — no
+/// cover mode or holdout harness is needed to discover it. The historical `perform` is unchanged.
+pub fn perform_checked(
+    song: &SongMap,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+    profile: PerformanceProfile,
+) -> Result<Composition, super::receipt::PerformanceRejection> {
+    use super::receipt::{PerformanceReceipt, PerformanceRejection};
+    let c = perform_candidate(song, world, opts, profile).map_err(PerformanceRejection::Refused)?;
+    let receipt = PerformanceReceipt::measure_under(&c, world, profile);
+    if receipt.passes() {
+        Ok(c)
+    } else {
+        Err(PerformanceRejection::Rejected(Box::new(receipt)))
+    }
+}
+
 /// Plan and realize under `profile`'s verb-admission law (the profile is already validated).
 ///
 /// `Planned` is the historical single pass. `Rehearsed` is the finite normalization of
@@ -335,6 +368,7 @@ pub(crate) fn plan_and_realize(
         let mut perf =
             PerformancePlan::from_song_admitted(song, world, opts, constraints.clone(), &inputs)?;
         let score = realize_policy(song, world, &perf, profile, observed);
+        admit_take(&perf, &score).map_err(super::cover::CoverError::Invalid)?;
         if !rehearsed {
             return Ok((perf, score));
         }
@@ -423,6 +457,7 @@ fn perform_historical(
 ) -> Composition {
     let perf = PerformancePlan::from_song(song, world, opts);
     let score = realize_policy(song, world, &perf, profile, None);
+    stage_evidence(&perf, &score);
     Composition {
         score,
         song: song.clone(),
@@ -439,20 +474,18 @@ pub fn realize_with_profile(
     profile: PerformanceProfile,
 ) -> Result<Score, PolicyError> {
     profile.validate(perf.coupling)?;
-    Ok(realize_policy(
-        song,
-        world,
-        perf,
-        profile,
-        Some(profile.observation),
-    ))
+    let score = realize_policy(song, world, perf, profile, Some(profile.observation));
+    admit_take(perf, &score).map_err(PolicyError)?;
+    Ok(score)
 }
 
 /// Realize a score from an explicit (possibly hand-mutated) song and performance — the entry the
 /// adversarial probes use to inject a call, veto an arrangement, or license a burst and watch what
 /// the players do with it.
 pub fn realize_performance(song: &SongMap, world: &MusicWorld, perf: &PerformancePlan) -> Score {
-    realize_policy(song, world, perf, PerformanceProfile::WRITTEN, None)
+    let score = realize_policy(song, world, perf, PerformanceProfile::WRITTEN, None);
+    stage_evidence(perf, &score);
+    score
 }
 
 /// Causal realization under musical policies; historical names end at their adapters.
@@ -767,11 +800,30 @@ fn realize_policy(
         score.vertical_repairs =
             super::surgical::repair(&mut score, &perf.contexts, world, &policy, Some(&witnessed));
     }
-    debug_assert!(
-        orchestration_violations(perf, &score).is_empty(),
-        "a realizer played somebody the stage had out"
-    );
     score
+}
+
+/// A realized take is admitted only when nobody sounds where the stage has them out — the one
+/// orchestration authority, enforced on every `Result` route (a release build never returns a
+/// stage violation). The historical adapters, which return no `Result`, keep the same law as a
+/// debug assertion ([`stage_evidence`]).
+fn admit_take(perf: &PerformancePlan, score: &Score) -> Result<(), &'static str> {
+    if orchestration_violations(perf, score).is_empty() {
+        Ok(())
+    } else {
+        Err(STAGE_VIOLATION)
+    }
+}
+
+/// The refusal for a realized event whose player the stage had out.
+pub const STAGE_VIOLATION: &str = "a realizer played somebody the stage had out";
+
+/// Redundant developer evidence on the historical, `Result`-free adapters.
+fn stage_evidence(perf: &PerformancePlan, score: &Score) {
+    debug_assert!(
+        orchestration_violations(perf, score).is_empty(),
+        "{STAGE_VIOLATION}"
+    );
 }
 
 /// The pitched support players realized as ONE harmonic state (Round VIII).

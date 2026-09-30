@@ -799,3 +799,74 @@ fn release_invariants_are_errors_not_debug_assertions() {
         "a stroke sounding off stage must be a typed error, not a panic or a silent score"
     );
 }
+
+/// The checked modern route (a profile rejects its own invalid performance): a lawful BAND
+/// performance is returned; each general law, broken in a forged copy, is named by the receipt;
+/// profile-declared laws are judged only under the profile that declares them.
+#[test]
+fn perform_checked_admits_lawful_takes_and_names_every_broken_law() {
+    use gibson::audio::human_music::{
+        functor::perform_checked,
+        receipt::PerformanceReceipt,
+        score::DrumVoice,
+        theory::{Chord, Quality},
+    };
+    let world = MusicWorld::black_ice();
+    let song = SongMap::compose(
+        &deflected_lift_trace(32.0),
+        78_301_060,
+        Some(CompositionGrammar::HookArc),
+        Composer::StructuralR9,
+    );
+    let opts = options(MusicalLanguage::fusion_conversation());
+    let c = perform_checked(&song, &world, opts, PerformanceProfile::BAND)
+        .expect("a lawful BAND take is admitted");
+    let base = PerformanceReceipt::measure_under(&c, &world, PerformanceProfile::BAND);
+    assert!(base.passes() && base.failures().is_empty());
+    let copy = |c: &Composition| Composition {
+        score: c.score.clone(),
+        song: c.song.clone(),
+        perf: c.perf.clone(),
+    };
+    let judge =
+        |c: &Composition| PerformanceReceipt::measure_under(c, &world, PerformanceProfile::BAND);
+
+    // Domain: a planned window past the end.
+    let mut m = copy(&c);
+    let a = m.perf.actions.actions.last_mut().unwrap();
+    a.dur_beats = m.perf.total_beats + 2.0 - a.start_beat;
+    assert!(!judge(&m).domain_violations.is_empty());
+
+    // Anchor: the groove's pocket silenced.
+    let mut m = copy(&c);
+    m.score
+        .drums
+        .retain(|d| !matches!(d.voice, DrumVoice::Kick | DrumVoice::Snare));
+    assert!(!judge(&m).anchor_violations.is_empty());
+
+    // Vocabulary: a chord outside the world/language vocabulary — a law only where declared.
+    let mut m = copy(&c);
+    m.score.chords[0].chord = Chord::new(1, Quality::Dom9);
+    m.perf.chords[0].chord = Chord::new(1, Quality::Dom9);
+    let simple = MusicalLanguage::simple();
+    m.perf.language = simple;
+    assert!(!judge(&m).vocabulary_violations.is_empty());
+    assert!(
+        PerformanceReceipt::measure_under(&m, &world, PerformanceProfile::POCKET)
+            .vocabulary_violations
+            .is_empty(),
+        "the archived arm is characterized, not judged by the vocabulary law"
+    );
+
+    // Actions: a verb no player performs.
+    let mut m = copy(&c);
+    m.score
+        .notes
+        .iter_mut()
+        .for_each(|n| n.prov.actions = Default::default());
+    m.score
+        .drums
+        .iter_mut()
+        .for_each(|d| d.prov.actions = Default::default());
+    assert!(judge(&m).unwitnessed_actions > 0);
+}

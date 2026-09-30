@@ -1332,6 +1332,19 @@ impl CoverConstraints {
         }
     }
     /// Exact pitches constrain the domain; register, gate and dynamics are target draws.
+    /// Every pinned stroke sounds where the stage seats the kit (checked when the stage is built).
+    pub(crate) fn pinned_strokes_seated(
+        &self,
+        stage: &super::ensemble::Stage,
+    ) -> Result<(), CoverError> {
+        for s in self.identity.groove.iter().flatten() {
+            let at = self.transport.transport(s.at).beats();
+            if !stage.on_stage(Agent::Drums, at) {
+                return Err(CoverError::Invalid("a pinned stroke has no drum seat"));
+            }
+        }
+        Ok(())
+    }
     /// Every pinned event the lift will emit carries a justified pitch function in the planned
     /// harmony — read from the same deterministic source the realizer emits — or the lift is
     /// refused here, before anybody plays. Two pins can be jointly unrealizable (an exact bass
@@ -1447,12 +1460,10 @@ impl CoverConstraints {
         for s in strokes {
             let at = self.transport.transport(s.at).beats();
             // Every pinned stroke has a seat: an unpinned stage seats the kit wherever the groove
-            // is pinned, and `validate` refuses a pinned Silent drum seat under a pinned stroke.
-            // A pinned stroke is never dropped here.
-            debug_assert!(
-                perf.on_stage(Agent::Drums, at),
-                "pinned stroke at {at} without a drum seat"
-            );
+            // is pinned, `validate` refuses a pinned Silent drum seat under a pinned stroke, and
+            // the planner refuses a stage that left one unseated (`pinned_strokes_seated`). A
+            // pinned stroke is never dropped here; a forged plan's stroke off stage is refused by
+            // the stage law when the take is admitted.
             let voice = match s.voice {
                 GrooveVoice::Kick => DrumVoice::Kick,
                 GrooveVoice::Snare => DrumVoice::Snare,
@@ -1561,10 +1572,10 @@ pub struct CoverTarget<'a> {
 /// Checked lift: the cover quotient and enumerated `CoverPipelineReceipt` laws must pass.
 /// Use [`cover_candidate`] to retain a rejected candidate for diagnosis and listening.
 pub fn cover(map: &CoverMap, target: CoverTarget<'_>) -> Result<Composition, CoverError> {
-    let world = target.world;
+    let (world, profile) = (target.world, target.profile);
     let candidate = cover_candidate(map, target)?;
     let conformance = CoverConformance::check(map, &candidate, world);
-    let pipeline = CoverPipelineReceipt::measure(&candidate, world);
+    let pipeline = PerformanceReceipt::measure_under(&candidate, world, profile);
     if !conformance.passes() || !pipeline.passes() {
         return Err(CoverError::Rejected(Box::new(CoverAdmission {
             conformance,
@@ -1574,11 +1585,13 @@ pub fn cover(map: &CoverMap, target: CoverTarget<'_>) -> Result<Composition, Cov
     Ok(candidate)
 }
 
-/// Explicit admission evidence; quotient equality alone is not a lawful performance.
+/// Explicit admission evidence; quotient equality alone is not a lawful performance:
+/// `CoverAdmission = PerformanceReceipt + CoverConformance`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoverAdmission {
     pub conformance: CoverConformance,
-    pub pipeline: CoverPipelineReceipt,
+    /// The general performance laws, under the target profile's declared laws.
+    pub pipeline: PerformanceReceipt,
 }
 
 /// Lift selected invariants into a newly planned band. No completed Score is patched.
@@ -2182,72 +2195,12 @@ pub use fidelity::{
     OrchestrationRelation, QualityFamily, THEME_BEATS,
 };
 
-/// Ordinary pipeline laws are assessed independently of cover identity. A passed
-/// quotient never conceals a red pitch, hearing, identity, stage or action receipt.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CoverPipelineReceipt {
-    pub song: bool,
-    pub score_validation: Option<String>,
-    pub unclassified: usize,
-    pub temporal_false: usize,
-    pub held_identity_flips: usize,
-    pub stale_hearings: usize,
-    pub invalid_continuations: usize,
-    pub occupancy_violations: Vec<String>,
-    pub unwitnessed_actions: usize,
-    pub stage_violations: usize,
-}
-impl CoverPipelineReceipt {
-    pub fn measure(c: &Composition, world: &MusicWorld) -> Self {
-        let actions = super::witness::audit(&c.perf, &c.score);
-        Self {
-            song: super::song::SongMapConformance::check(&c.song, &c.perf, &c.score).passes(),
-            score_validation: c.score.validate().err(),
-            unclassified: c
-                .score
-                .notes
-                .iter()
-                .filter(|n| n.function.is_none())
-                .count(),
-            temporal_false: super::temporal::TemporalPitchDiagnostics::measure(&c.perf, &c.score)
-                .false_function_claims,
-            held_identity_flips: super::identity::IdentityDiagnostics::measure_score(
-                &c.score,
-                &c.perf.contexts,
-                world,
-            )
-            .flips()
-            .count(),
-            stale_hearings: c.score.stale_hearings().len(),
-            occupancy_violations: super::occupancy::violations(
-                &c.perf,
-                &c.score,
-                c.perf.cover_constraints.as_ref().is_some_and(|c| {
-                    c.occupancy_policy == super::policy::OccupancyPolicy::AuthoredIntent
-                }),
-            ),
-            invalid_continuations: super::voice::continuity_violations(
-                &c.score.notes,
-                &c.score.voice_continuity,
-            )
-            .len(),
-            unwitnessed_actions: actions.rows.iter().filter(|r| !r.witnessed).count(),
-            stage_violations: super::functor::orchestration_violations(&c.perf, &c.score).len(),
-        }
-    }
-    pub fn passes(&self) -> bool {
-        self.song
-            && self.score_validation.is_none()
-            && self.unclassified == 0
-            && self.temporal_false == 0
-            && self.held_identity_flips == 0
-            && self.stale_hearings == 0
-            && self.invalid_continuations == 0
-            && self.occupancy_violations.is_empty()
-            && self.unwitnessed_actions == 0
-            && self.stage_violations == 0
-    }
-}
+/// The general performance laws a cover is admitted under: exactly [`PerformanceReceipt`]
+/// (the name is kept for callers of the cover API). A passed quotient never conceals a red pitch,
+/// hearing, identity, stage, action, domain or anchor receipt.
+pub type CoverPipelineReceipt = super::receipt::PerformanceReceipt;
+pub use super::receipt::PerformanceReceipt;
+
 impl OrderedChart {
     /// Generic ordered chart: `section LABEL ROOT:QUALITY ...`. ROOT is a
     /// chromatic offset above the declared reference tonic; `?` means unobserved.
