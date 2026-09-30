@@ -132,6 +132,22 @@ pub enum ActionAdmission {
     Rehearsed,
 }
 
+/// Which law governs the chords a performance sounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum HarmonyPolicy {
+    /// Historical: the backbone's colours and the harmonic edits as archived. They can sound a
+    /// colour the world or language does not declare (a SWISS_SIGNAL `Maj6` Reset, a Simple-language
+    /// `Min6` pedal); characterized, byte-exact (the accepted R17 arm).
+    #[default]
+    Archived,
+    /// Every chord is admitted by the [`HarmonicVocabulary`](super::vocabulary::HarmonicVocabulary)
+    /// its world and language declare. A room's own colour choice (a backbone colour, a recolour,
+    /// an applied dominant, a modulation) is made inside the vocabulary or not at all; a chart chord
+    /// the room cannot admit refuses the performance before anybody plays
+    /// ([`VOCABULARY_REFUSAL`](super::vocabulary::VOCABULARY_REFUSAL)).
+    Vocabulary,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HistoricalRepair {
     None,
@@ -157,6 +173,8 @@ pub struct PerformanceProfile {
     pub admission: ActionAdmission,
     /// The historical unarbitrated drummer, or one arbitrated percussion surface.
     pub percussion: PercussionPolicy,
+    /// The archived chord colours, or the world/language harmonic vocabulary as a source law.
+    pub harmony: HarmonyPolicy,
     pub(crate) repair: HistoricalRepair,
 }
 
@@ -177,6 +195,7 @@ impl PerformanceProfile {
         evidence: SourceEvidencePolicy::Events,
         admission: ActionAdmission::Planned,
         percussion: PercussionPolicy::Unarbitrated,
+        harmony: HarmonyPolicy::Archived,
         repair: HistoricalRepair::None,
     };
     pub const TEMPORAL: Self = Self {
@@ -204,16 +223,23 @@ impl PerformanceProfile {
         ..Self::PHRASED
     };
     /// The hardened general profile: the accepted pocket's source laws, every verb it keeps
-    /// actually performed ([`ActionAdmission::Rehearsed`]), and a drummer who serves the pocket
-    /// ([`DrumRestraint::Balanced`] on one arbitrated percussion surface). New work should start
-    /// here; [`Self::POCKET`] stays the byte-exact accepted R17 arm.
+    /// actually performed ([`ActionAdmission::Rehearsed`]), a drummer who serves the pocket
+    /// ([`DrumRestraint::Balanced`] on one arbitrated percussion surface), and only the chords its
+    /// world and language declare ([`HarmonyPolicy::Vocabulary`]). New work should start here;
+    /// [`Self::POCKET`] stays the byte-exact accepted R17 arm.
     pub const BAND: Self = Self::POCKET
         .with_admission(ActionAdmission::Rehearsed)
-        .with_drum_restraint(DrumRestraint::Balanced);
+        .with_drum_restraint(DrumRestraint::Balanced)
+        .with_harmony(HarmonyPolicy::Vocabulary);
 
     /// The same laws with another verb-admission law.
     pub const fn with_admission(self, admission: ActionAdmission) -> Self {
         Self { admission, ..self }
+    }
+
+    /// The same laws with another harmonic-vocabulary law.
+    pub const fn with_harmony(self, harmony: HarmonyPolicy) -> Self {
+        Self { harmony, ..self }
     }
 
     /// The same laws with another percussion law.

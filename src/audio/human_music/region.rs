@@ -410,6 +410,8 @@ pub struct HarmonicFrame {
     pub lift_ends: Vec<f64>,
     /// Per intent transition: `(next.energy + next.tension) - (prev.energy + prev.tension)`.
     pub pressure_rise: Vec<f32>,
+    /// The harmonic-vocabulary source law every edit must stay inside (`None`: archived edits).
+    pub vocabulary: Option<super::vocabulary::HarmonicVocabulary>,
 }
 
 impl HarmonicFrame {
@@ -422,7 +424,23 @@ impl HarmonicFrame {
             slots: Vec::new(),
             lift_ends: Vec::new(),
             pressure_rise: Vec::new(),
+            vocabulary: None,
         }
+    }
+
+    /// This frame with every harmonic edit held inside `vocabulary`: an edit whose chord the
+    /// room cannot sound is not a lawful edit (the verb is refused or recast, never leaked).
+    pub fn with_vocabulary(
+        mut self,
+        vocabulary: Option<super::vocabulary::HarmonicVocabulary>,
+    ) -> HarmonicFrame {
+        self.vocabulary = vocabulary;
+        self
+    }
+
+    /// Whether the vocabulary law (if any) admits `chord`.
+    fn lawful(&self, chord: &Chord) -> bool {
+        self.vocabulary.is_none_or(|v| v.admits(*chord))
     }
 
     /// The frame of `plan` walked from `timeline`.
@@ -457,6 +475,7 @@ impl HarmonicFrame {
                 .iter()
                 .map(|t| (t.next.energy + t.next.tension) - (t.prev.energy + t.prev.tension))
                 .collect(),
+            vocabulary: None,
         }
     }
 
@@ -823,6 +842,14 @@ fn tonicize(
     let half = (prev.dur_beats / 2.0).max(1.0);
     let at = prev.start_beat + (prev.dur_beats - half) as f64;
     let dom = Chord::new((target.root_pc + 7).rem_euclid(12), Quality::Dom7);
+    // Under the vocabulary law the applied dominant is its admitted retraction, and only while it
+    // still pulls onto the target (a room without the seventh keeps the leading tone).
+    let dom = match frame.vocabulary {
+        None => dom,
+        Some(v) => v
+            .conform(dom)
+            .filter(|d| PullEvidence::of(d, target.root_pc).is_dominant())?,
+    };
     chords[ix - 1].dur_beats = prev.dur_beats - half;
     chords.insert(
         ix,
@@ -881,6 +908,7 @@ fn reharmonize(
             .find_map(|&ix| {
                 let (_, next) = neighbours(ix);
                 tritone_sub(&chords[ix].chord, next.as_ref(), &at(ix))
+                    .filter(|s| frame.lawful(s))
                     .map(|s| (ix, s, EditKind::TritoneSub, ActionKind::Reharmonize))
             });
         choice = choice.or_else(|| {
@@ -890,13 +918,16 @@ fn reharmonize(
                 .find_map(|&ix| {
                     let (prev, next) = neighbours(ix);
                     third_sub(&chords[ix].chord, prev.as_ref(), next.as_ref(), &at(ix))
+                        .filter(|s| frame.lawful(s))
                         .map(|s| (ix, s, EditKind::ThirdSub, ActionKind::Reharmonize))
                 })
         });
     }
     let choice = choice.or_else(|| {
         cands.iter().find_map(|&ix| {
-            recolor(&chords[ix].chord).map(|c| (ix, c, EditKind::Recolor, ActionKind::Recolor))
+            recolor(&chords[ix].chord)
+                .filter(|c| frame.lawful(c))
+                .map(|c| (ix, c, EditKind::Recolor, ActionKind::Recolor))
         })
     });
     let (ix, after, kind, verb) = choice?;
@@ -968,7 +999,28 @@ fn apply_with_targets(
             continue;
         };
         let to = forced.iter().find(|f| f.0 == id).map(|f| f.1);
-        match plan_modulation(chords, a, frame, &regions, &locked, &cadences, to) {
+        let planned =
+            plan_modulation(chords, a, frame, &regions, &locked, &cadences, to).and_then(|m| {
+                // Every chord the modulation writes (pivot, new dominant, transposed path, return)
+                // must be one the room can sound.
+                let written = |c: &&ChordSpan| {
+                    !chords.iter().any(|o| {
+                        o.start_beat == c.start_beat
+                            && o.dur_beats == c.dur_beats
+                            && o.chord == c.chord
+                    })
+                };
+                if m.chords
+                    .iter()
+                    .filter(written)
+                    .all(|c| frame.lawful(&c.chord))
+                {
+                    Ok(m)
+                } else {
+                    Err("the modulation leaves the world's harmonic vocabulary")
+                }
+            });
+        match planned {
             Ok(m) => {
                 *chords = m.chords;
                 regions.splice(&m.spans);

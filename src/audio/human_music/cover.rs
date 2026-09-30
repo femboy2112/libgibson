@@ -1376,24 +1376,7 @@ fn chord_admitted(
     world: &MusicWorld,
     language: &super::language::MusicalLanguage,
 ) -> bool {
-    let scale = super::theory::Scale::new(world.tonic_pc, world.mode);
-    let extension = matches!(
-        chord.quality,
-        Quality::Maj9
-            | Quality::Min9
-            | Quality::Dom9
-            | Quality::Add9
-            | Quality::Maj6
-            | Quality::Min6
-    );
-    (!extension || language.color_depth > 0)
-        && (world.use_sevenths || chord.quality.intervals().len() <= 3)
-        && (world.allow_modal_mixture
-            || chord
-                .quality
-                .intervals()
-                .iter()
-                .all(|offset| scale.contains_pc(chord.root_pc + offset)))
+    super::vocabulary::HarmonicVocabulary::of(world, language).admits(chord)
 }
 
 fn classify_source(perf: &PerformancePlan, notes: &mut [Note]) {

@@ -100,59 +100,7 @@ pub enum OrchestrationRelation {
     Exact,
 }
 
-/// A chord's family by its triad: what a quality-family relation preserves.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum QualityFamily {
-    Major,
-    Minor,
-    Diminished,
-    Augmented,
-    Suspended,
-}
-
-impl QualityFamily {
-    pub fn of(q: Quality) -> Self {
-        match q {
-            Quality::Maj
-            | Quality::Maj7
-            | Quality::Dom7
-            | Quality::Maj9
-            | Quality::Dom9
-            | Quality::Add9
-            | Quality::Maj6 => QualityFamily::Major,
-            Quality::Min | Quality::Min7 | Quality::MinMaj7 | Quality::Min9 | Quality::Min6 => {
-                QualityFamily::Minor
-            }
-            Quality::Dim | Quality::Min7b5 | Quality::Dim7 => QualityFamily::Diminished,
-            Quality::Aug => QualityFamily::Augmented,
-            Quality::Sus4 | Quality::Sus2 => QualityFamily::Suspended,
-        }
-    }
-    /// The family's members, simplest first (the order a target vocabulary is searched).
-    pub fn members(self) -> &'static [Quality] {
-        match self {
-            QualityFamily::Major => &[
-                Quality::Maj,
-                Quality::Dom7,
-                Quality::Maj7,
-                Quality::Maj6,
-                Quality::Add9,
-                Quality::Dom9,
-                Quality::Maj9,
-            ],
-            QualityFamily::Minor => &[
-                Quality::Min,
-                Quality::Min7,
-                Quality::Min6,
-                Quality::Min9,
-                Quality::MinMaj7,
-            ],
-            QualityFamily::Diminished => &[Quality::Dim, Quality::Min7b5, Quality::Dim7],
-            QualityFamily::Augmented => &[Quality::Aug],
-            QualityFamily::Suspended => &[Quality::Sus4, Quality::Sus2],
-        }
-    }
-}
+pub use super::super::theory::QualityFamily;
 
 /// The theme window of [`LineRelation::Theme`]: two 4/4 bars from the line's first attack.
 pub const THEME_BEATS: f64 = 8.0;

@@ -289,8 +289,13 @@ pub fn perform_with_profile(
     profile: PerformanceProfile,
 ) -> Result<Composition, PolicyError> {
     profile.validate(opts.coupling)?;
-    let (perf, score) = plan_and_realize(song, world, opts, None, profile)
-        .expect("unconstrained planner has no cover domain to reject");
+    // The unconstrained planner has no cover domain; its one refusal is a law the profile made a
+    // source law (a chart chord outside the world's harmonic vocabulary).
+    let (perf, score) =
+        plan_and_realize(song, world, opts, None, profile).map_err(|e| match e {
+            super::cover::CoverError::Invalid(why) => PolicyError(why),
+            _ => PolicyError("the unconstrained planner refused its own plan"),
+        })?;
     Ok(Composition {
         score,
         song: song.clone(),
@@ -321,6 +326,7 @@ pub(crate) fn plan_and_realize(
     let mut inputs = AdmissionInputs {
         settlements: profile.admission == ActionAdmission::Rehearsed,
         vetoed: Vec::new(),
+        harmony: profile.harmony,
     };
     let mut rehearsals = 0;
     loop {

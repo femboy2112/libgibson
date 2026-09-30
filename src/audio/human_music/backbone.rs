@@ -47,6 +47,7 @@ use super::rng::Rng;
 use super::semantic::EventKind;
 use super::theory::{Chord, Quality, Scale};
 use super::timeline::IntentTimeline;
+use super::vocabulary::HarmonicVocabulary;
 use super::world::MusicWorld;
 
 /// An abstract harmonic gesture — WHAT the harmony does, independent of WHY (the discourse role).
@@ -927,14 +928,19 @@ impl ChartCell {
     }
 }
 
-/// The chord path of one slot: `(beats offset, beats length, chord)`.
+/// The chord path of one slot: `(beats offset, beats length, chord)`. Under a `vocabulary` every
+/// colour the room chooses is retracted into it where it is chosen, and the applied dominant is
+/// taken only when admitted; a chart chord with no admitted retraction is left as charted (the
+/// planner refuses it, typed — a room never moves a root).
 fn slot_path(
     slot: &GestureSlot,
     cell: &HarmonicCell,
     lang: &MusicalLanguage,
     chart_bars: u32,
     s7: bool,
+    vocabulary: Option<&HarmonicVocabulary>,
 ) -> Vec<(f64, f64, Chord)> {
+    let fit = |c: Chord| vocabulary.and_then(|v| v.conform(c)).unwrap_or(c);
     let total = slot.bars as f64 * BEATS_PER_BAR;
     let hr = lang.harmonic_rhythm.bars_per_chord(chart_bars) as f64 * BEATS_PER_BAR;
     // Deeper colour on transformed/compressed returns; the thesis and statement keep the base.
@@ -948,8 +954,8 @@ fn slot_path(
     match slot.gesture {
         HarmonicGesture::Lift => {
             // Reach, (sequence), then the POINTER — always last, so the ear expects an arrival.
-            let pointer = cell.pointer;
-            let lift = colour(cell.lift, HarmonicGesture::Lift, depth, false, s7);
+            let pointer = fit(cell.pointer);
+            let lift = fit(colour(cell.lift, HarmonicGesture::Lift, depth, false, s7));
             if n == 1 {
                 let half = total / 2.0;
                 out.push((0.0, half, lift));
@@ -958,13 +964,20 @@ fn slot_path(
                 // In the full-colour language a statement-length reach climbs through the pointer's
                 // own applied dominant (V/V -> V7): a tonicization on the way up (the region stays).
                 let applied = Chord::new((pointer.root_pc + 7).rem_euclid(12), Quality::Dom7);
+                let applied_admitted = vocabulary.is_none_or(|v| v.admits(applied));
                 for i in 0..n - 1 {
-                    let c = if lang.color_depth >= 2 && n >= 4 && i + 2 == n {
+                    let c = if lang.color_depth >= 2 && n >= 4 && i + 2 == n && applied_admitted {
                         applied
                     } else if i % 2 == 1 {
-                        colour(cell.lift_alt, HarmonicGesture::Lift, depth, true, s7)
+                        fit(colour(
+                            cell.lift_alt,
+                            HarmonicGesture::Lift,
+                            depth,
+                            true,
+                            s7,
+                        ))
                     } else {
-                        colour(cell.lift, HarmonicGesture::Lift, depth, i > 0, s7)
+                        fit(colour(cell.lift, HarmonicGesture::Lift, depth, i > 0, s7))
                     };
                     out.push((i as f64 * unit, unit, c));
                 }
@@ -986,14 +999,14 @@ fn slot_path(
                 // of three or more units closes on its anchor, so the cycle ends at home.
                 let closes_home = g == HarmonicGesture::Reset && n >= 3 && i + 1 == n;
                 let use_sat = i % 2 == 1 && !closes_home;
-                let c = if use_sat && sat == base {
+                let c = fit(if use_sat && sat == base {
                     // No free neighbour: move by colour over the held root (a pedal).
                     colour(base, g, (depth + 1).min(2), true, s7)
                 } else if use_sat {
                     colour(sat, g, depth, false, s7)
                 } else {
                     colour(base, g, depth, i >= 2, s7)
-                };
+                });
                 let len = if i + 1 == n {
                     total - i as f64 * unit
                 } else {
@@ -1015,12 +1028,25 @@ pub fn realize(
     world: &MusicWorld,
     lang: &MusicalLanguage,
 ) -> BackboneRealization {
+    realize_in(timeline, chart, world, lang, None)
+}
+
+/// [`realize`] with the room's colours chosen inside `vocabulary` (the
+/// [`super::policy::HarmonyPolicy::Vocabulary`] source law); `None` is the archived realization.
+pub fn realize_in(
+    timeline: &BackboneTimeline,
+    chart: &super::song::HarmonicMap,
+    world: &MusicWorld,
+    lang: &MusicalLanguage,
+    vocabulary: Option<&HarmonicVocabulary>,
+) -> BackboneRealization {
     let region = Scale::new(world.tonic_pc, world.mode);
     let cell = chart.cell.realize(&region);
     let s7 = world.use_sevenths;
     let mut spans: Vec<ChordSpan> = Vec::new();
     for slot in &timeline.slots {
-        for (off, len, chord) in slot_path(slot, &cell, lang, chart.bars_per_chord, s7) {
+        for (off, len, chord) in slot_path(slot, &cell, lang, chart.bars_per_chord, s7, vocabulary)
+        {
             let degree = (0..7)
                 .find(|&d| region.degree_pitch(d, 4).rem_euclid(12) == chord.root_pc)
                 .unwrap_or(-1);
@@ -1057,7 +1083,7 @@ pub fn lead_sheet(
     let plain = MusicalLanguage::simple();
     let mut spans = Vec::new();
     for slot in &timeline.slots {
-        for (off, len, chord) in slot_path(slot, &cell, &plain, chart.bars_per_chord, false) {
+        for (off, len, chord) in slot_path(slot, &cell, &plain, chart.bars_per_chord, false, None) {
             spans.push(ChordSpan {
                 start_beat: slot.start_beat() + off,
                 dur_beats: len as f32,

@@ -59,6 +59,8 @@ pub struct HarmonyEngine {
     allow_secondary: bool,
     allow_mixture: bool,
     allow_chromatic_mediant: bool,
+    /// The harmonic-vocabulary source law (`None`: the archived choices, byte-exact).
+    vocabulary: Option<super::vocabulary::HarmonicVocabulary>,
     rng: Rng,
 }
 
@@ -71,8 +73,25 @@ impl HarmonyEngine {
             allow_secondary: world.allow_secondary_dominant,
             allow_mixture: world.allow_modal_mixture,
             allow_chromatic_mediant: world.allow_chromatic_mediant,
+            vocabulary: None,
             rng: Rng::new(seed ^ 0xC0FF_EE00),
         }
+    }
+
+    /// This engine choosing its secondary dominants and colour tints only inside `vocabulary`
+    /// (the [`super::policy::HarmonyPolicy::Vocabulary`] source law); `None` keeps the archived
+    /// choices and the archived random stream.
+    pub fn with_vocabulary(
+        mut self,
+        vocabulary: Option<super::vocabulary::HarmonicVocabulary>,
+    ) -> Self {
+        self.vocabulary = vocabulary;
+        self
+    }
+
+    /// Whether the vocabulary law (if any) admits `chord`.
+    fn lawful(&self, chord: Chord) -> bool {
+        self.vocabulary.is_none_or(|v| v.admits(chord))
     }
 
     /// The scale this engine works in.
@@ -261,23 +280,25 @@ impl HarmonyEngine {
                             let interior_len = n.saturating_sub(3);
                             let remaining_interior = interior_len.saturating_sub(i);
 
-                            if self.allow_secondary
+                            // A secondary dominant: Dom7 a perfect fifth above the target's
+                            // root. We take on the debt now; the next interior slot pays it.
+                            // Under the vocabulary law a V/x the room cannot sound is not taken.
+                            let secondary = if self.allow_secondary
                                 && func == Function::Dominant
                                 && remaining_interior >= 2
                                 && self.rng.chance(0.5)
                             {
-                                // A secondary dominant: Dom7 a perfect fifth above the target's
-                                // root. We take on the debt now; the next interior slot pays it.
                                 let target = self.pick_secondary_target(prev_degree);
                                 let target_root = self.scale.degree_pitch(target, 4).rem_euclid(12);
-                                let dom_root = (target_root + 7).rem_euclid(12);
+                                let dom =
+                                    Chord::new((target_root + 7).rem_euclid(12), Quality::Dom7);
+                                self.lawful(dom).then_some((target, dom))
+                            } else {
+                                None
+                            };
+                            if let Some((target, dom)) = secondary {
                                 pending_resolve = Some(target);
-                                (
-                                    Chord::new(dom_root, Quality::Dom7),
-                                    Function::Dominant,
-                                    -1,
-                                    "V/of",
-                                )
+                                (dom, Function::Dominant, -1, "V/of")
                             } else {
                                 // Cost-driven diatonic choice, then an optional color tint.
                                 let d = self.choose_interior_degree(
@@ -294,17 +315,23 @@ impl HarmonyEngine {
                                 // interior diatonic slots only — never a cadence, prep, or resolution.
                                 if self.allow_mixture && tension > 0.6 && self.rng.chance(0.2) {
                                     let bvi = (self.scale.tonic_pc + 8).rem_euclid(12);
-                                    chord = Chord::new(
+                                    let tint = Chord::new(
                                         bvi,
                                         if s7 { Quality::Maj7 } else { Quality::Maj },
                                     );
-                                    degree = -1;
-                                    note = "bVI mix";
+                                    if self.lawful(tint) {
+                                        chord = tint;
+                                        degree = -1;
+                                        note = "bVI mix";
+                                    }
                                 } else if self.allow_chromatic_mediant && self.rng.chance(0.12) {
                                     let cm = (self.scale.tonic_pc + 4).rem_euclid(12);
-                                    chord = Chord::new(cm, Quality::Maj);
-                                    degree = -1;
-                                    note = "chr med";
+                                    let tint = Chord::new(cm, Quality::Maj);
+                                    if self.lawful(tint) {
+                                        chord = tint;
+                                        degree = -1;
+                                        note = "chr med";
+                                    }
                                 }
                                 (chord, func, degree, note)
                             }

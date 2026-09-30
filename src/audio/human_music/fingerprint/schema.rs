@@ -1742,6 +1742,7 @@ impl CanonicalFingerprint for policy::PerformanceProfile {
             evidence,
             admission,
             percussion,
+            harmony,
             repair,
         } = self;
         w.field("pitch", pitch);
@@ -1757,6 +1758,18 @@ impl CanonicalFingerprint for policy::PerformanceProfile {
         }
         if *percussion != super::super::percussion::PercussionPolicy::Unarbitrated {
             w.field("percussion", percussion);
+        }
+        if *harmony != policy::HarmonyPolicy::Archived {
+            w.field("harmony", harmony);
+        }
+    }
+}
+impl CanonicalFingerprint for policy::HarmonyPolicy {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        w.tag("policy/HarmonyPolicy/v1");
+        match self {
+            Self::Archived => w.tag("archived"),
+            Self::Vocabulary => w.tag("vocabulary"),
         }
     }
 }

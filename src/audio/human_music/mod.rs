@@ -100,6 +100,7 @@ pub mod tension;
 mod tension_witnesses;
 pub mod theory;
 pub mod timeline;
+pub mod vocabulary;
 pub mod voice;
 pub mod voicing;
 pub mod voicing_diagnostics;

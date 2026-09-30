@@ -369,6 +369,8 @@ pub(crate) struct AdmissionInputs {
     pub settlements: bool,
     /// Verbs a rehearsal of this same plan found no player performing.
     pub vetoed: Vec<ActionKey>,
+    /// The archived colours, or the world/language harmonic vocabulary as a source law.
+    pub harmony: super::policy::HarmonyPolicy,
 }
 
 /// The reason a rehearsed verb is struck from the chart before the take.
@@ -437,6 +439,10 @@ impl PerformancePlan {
         let (timeline, plan, seed) = (&song.timeline, &song.plan, song.seed);
         let lang = opts.language;
         let region = Scale::new(world.tonic_pc, world.mode);
+        // The one harmonic-vocabulary law, when the profile makes it a source law: every chord
+        // producer below chooses inside it, and a chart chord it cannot admit refuses the plan.
+        let vocabulary = (admission.harmony == super::policy::HarmonyPolicy::Vocabulary)
+            .then(|| super::vocabulary::HarmonicVocabulary::of(world, &lang));
         // The exact requested length — a final partial bar ends here, not on the next bar line.
         let total_beats = plan.form.total_beats;
         let targets = plan.targets();
@@ -453,11 +459,13 @@ impl PerformancePlan {
         } else {
             match (&plan.backbone, &song.harmonic) {
                 (Some(tl), Some(hm)) => {
-                    let r = super::backbone::realize(tl, hm, world, &lang);
+                    let r = super::backbone::realize_in(tl, hm, world, &lang, vocabulary.as_ref());
                     (r.spans, r.deflects, Some(r.cell.reset))
                 }
                 _ => (
-                    HarmonyEngine::new(world, seed).generate(&targets, plan.contract.resolution),
+                    HarmonyEngine::new(world, seed)
+                        .with_vocabulary(vocabulary)
+                        .generate(&targets, plan.contract.resolution),
                     Vec::new(),
                     None,
                 ),
@@ -572,7 +580,8 @@ impl PerformancePlan {
         // 3. Harmonic actions edit the harmony (so they are heard, not merely labelled) and a
         //    Modulate moves the tonal region itself; every context is analysed in its own region,
         //    and the misses are re-measured on the harmony that actually sounds.
-        let frame = HarmonicFrame::from_plan(plan, timeline, region, total_beats);
+        let frame = HarmonicFrame::from_plan(plan, timeline, region, total_beats)
+            .with_vocabulary(vocabulary);
         let (mut edits, mut regions) = apply_harmonic_actions(&mut chords, &mut actions, &frame);
         // A harmonic verb the harmony could not perform anywhere in its window (no lawful
         // substitute, no recolouring, no applied dominant — e.g. a Reharmonize over a m7b5) is
@@ -636,6 +645,16 @@ impl PerformancePlan {
             }
             for r in &mut admissions {
                 r.action = r.action.and_then(&remap);
+            }
+        }
+        // Every producer above chose inside the vocabulary; what remains outside it is a chord the
+        // song itself names (a borrowed chart root) that this room cannot sound. Refuse, typed,
+        // before anybody plays — never recolour a root.
+        if let Some(v) = &vocabulary {
+            if chords.iter().any(|c| !v.admits(c.chord)) {
+                return Err(super::cover::CoverError::Invalid(
+                    super::vocabulary::VOCABULARY_REFUSAL,
+                ));
             }
         }
         let contexts = analyze_regions(&chords, &regions);
