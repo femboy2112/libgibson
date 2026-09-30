@@ -237,6 +237,9 @@ pub struct CoverMap {
     pub groove: Option<Vec<CoverStroke>>,
     pub bass: Option<CoverLine>,
     pub orchestration: Option<Vec<CoverSeats>>,
+    /// The exact relation each pinned axis holds, when it is not the v1 relation set (see
+    /// [`CoverFidelityProfile`]). `None` is the v1 map, hash included.
+    pub fidelity: Option<CoverFidelityProfile>,
 }
 
 /// A missing/unsupported source is an error, never permission to fabricate notes.
@@ -506,6 +509,7 @@ impl CoverMap {
             harmony,
             groove,
             bass,
+            fidelity: None,
         };
         out.validate()?;
         Ok(out)
@@ -537,6 +541,14 @@ impl CoverMap {
         if self.unknown_axes.iter().any(|a| self.spec.contains(*a)) {
             return Err(CoverError::Invalid(
                 "an axis cannot be both pinned and unknown",
+            ));
+        }
+        if self
+            .fidelity
+            .is_some_and(|profile| profile.spec() != self.spec)
+        {
+            return Err(CoverError::Invalid(
+                "fidelity relations disagree with the pins",
             ));
         }
         if let Some(chart) = &self.ordered_chart {
@@ -965,32 +977,45 @@ impl CoverConstraints {
     ) -> Result<Option<Vec<ChordSpan>>, CoverError> {
         let scale = super::theory::Scale::new(self.tonic, world.mode);
         if let Some(hs) = &self.identity.harmony {
-            if hs.iter().any(|h| {
-                !chord_admitted(
-                    Chord::new(self.tonic + h.relative_root, h.quality),
-                    world,
-                    language,
-                )
-            }) {
-                return Err(CoverError::Invalid(
-                    "pinned harmony outside target vocabulary",
-                ));
+            let family = self.identity.relations().harmony == HarmonyRelation::QualityFamily;
+            // Exact: the pinned quality or a refusal. Quality family: the pinned quality when the
+            // target speaks it, else the simplest member of its family the target admits.
+            let quality = |h: &CoverChord| -> Option<Quality> {
+                let admitted = |q: Quality| {
+                    chord_admitted(Chord::new(self.tonic + h.relative_root, q), world, language)
+                };
+                if admitted(h.quality) {
+                    Some(h.quality)
+                } else if family {
+                    QualityFamily::of(h.quality)
+                        .members()
+                        .iter()
+                        .copied()
+                        .find(|&q| admitted(q))
+                } else {
+                    None
+                }
+            };
+            let mut spans = Vec::with_capacity(hs.len());
+            for h in hs {
+                let Some(q) = quality(h) else {
+                    return Err(CoverError::Invalid(if family {
+                        "pinned harmony family outside target vocabulary"
+                    } else {
+                        "pinned harmony outside target vocabulary"
+                    }));
+                };
+                let chord = Chord::new(self.tonic + h.relative_root, q);
+                spans.push(ChordSpan {
+                    start_beat: h.at.beats(),
+                    dur_beats: (h.end.beats() - h.at.beats()) as f32,
+                    chord,
+                    function: super::context::contextual_function(&chord, &scale),
+                    degree: -1,
+                    note: "cover-chart",
+                });
             }
-            return Ok(Some(
-                hs.iter()
-                    .map(|h| ChordSpan {
-                        start_beat: h.at.beats(),
-                        dur_beats: (h.end.beats() - h.at.beats()) as f32,
-                        chord: Chord::new(self.tonic + h.relative_root, h.quality),
-                        function: super::context::contextual_function(
-                            &Chord::new(self.tonic + h.relative_root, h.quality),
-                            &scale,
-                        ),
-                        degree: -1,
-                        note: "cover-chart",
-                    })
-                    .collect(),
-            ));
+            return Ok(Some(spans));
         }
         let lines: Vec<_> = [
             self.identity.line(Role::Lead),
@@ -1499,22 +1524,39 @@ pub fn cover_candidate(map: &CoverMap, target: CoverTarget<'_>) -> Result<Compos
     }
     // The new song has no retained source page. Its themes are target-generated when free.
     // With an external chart, the generic chart in a generated backbone is not a second authority.
+    // A theme relation is not a pinned line: the source's opening statement becomes this song's
+    // identity motif, and the cover's own composer states and develops it where its form allows.
+    let mut identity = map.clone();
+    if map.relations().motif == LineRelation::Theme {
+        if let Some(theme) = identity.motif.take() {
+            let mut bank = song.thematic.bank.clone();
+            bank.identity = fidelity::theme_motif(&theme);
+            bank.hook = bank.identity.clone();
+            song.thematic = super::song::ThematicMap::from_bank(&song.plan, bank);
+            identity.spec = identity.spec.clone().with(CoverAxis::Motif, false);
+            identity.fidelity = identity.fidelity.map(|f| CoverFidelityProfile {
+                motif: LineRelation::Free,
+                ..f
+            });
+        }
+    }
     // A pinned line constrains the harmony around its attacks when no chart is pinned; a target
     // grammar's generated backbone chart is then not what sounds, and must not be claimed either.
-    let line_constrained = map.line(Role::Lead).is_some() || map.line(Role::Bass).is_some();
+    let line_constrained =
+        identity.line(Role::Lead).is_some() || identity.line(Role::Bass).is_some();
     if map.harmony.is_some() || (line_constrained && song.plan.backbone.is_some()) {
         song.plan.backbone = None;
         song.harmonic = None;
     }
     let constraints = CoverConstraints {
-        identity: map.clone(),
+        identity,
         transport: GrooveTransport::eighth_swing(target.world.swing)
             .ok_or(CoverError::Invalid("swing"))?,
         seed: target.seed,
         tonic: target.world.tonic_pc,
         occupancy_policy: target.profile.occupancy,
     };
-    if map.line(Role::Lead).is_some() {
+    if constraints.identity.line(Role::Lead).is_some() {
         let mut statements = Vec::new();
         constraints.plan_statements(&song.plan, &mut statements, &mut Vec::new());
         song.thematic.sites = statements
@@ -1579,20 +1621,40 @@ impl CoverConformance {
                     .flatten();
                 let projected =
                     CoverMap::extract_on_lane(actual, world, CoverSpec::new([axis]), lane);
-                let passed = projected.as_ref().is_ok_and(|p| match axis {
-                    CoverAxis::Motif => p.motif == expected.motif,
-                    CoverAxis::Riff => p.riff == expected.riff,
-                    CoverAxis::BassFigure => p.bass == expected.bass,
-                    CoverAxis::Groove => p.groove == expected.groove,
-                    CoverAxis::HarmonicContour | CoverAxis::HarmonicLoop => {
-                        p.harmony == expected.harmony
-                    }
-                    CoverAxis::Form => p.form == expected.form,
-                    CoverAxis::Orchestration => p.orchestration == expected.orchestration,
-                });
+                let rel = expected.relations();
+                let line = |p: &Option<CoverLine>, r: LineRelation| {
+                    p.as_ref().map(|l| fidelity::project_line(l, r))
+                };
+                let passed = if axis == CoverAxis::Motif && rel.motif == LineRelation::Theme {
+                    expected
+                        .motif
+                        .as_ref()
+                        .is_some_and(|theme| fidelity::states_theme(theme, actual))
+                } else {
+                    projected.as_ref().is_ok_and(|p| match axis {
+                        CoverAxis::Motif => line(&p.motif, rel.motif) == expected.motif,
+                        CoverAxis::Riff => line(&p.riff, rel.riff) == expected.riff,
+                        CoverAxis::BassFigure => line(&p.bass, rel.bass) == expected.bass,
+                        CoverAxis::Groove => match rel.groove {
+                            GrooveRelation::PocketSkeleton => {
+                                p.groove.as_deref().map(fidelity::skeleton) == expected.groove
+                            }
+                            _ => p.groove == expected.groove,
+                        },
+                        CoverAxis::HarmonicContour | CoverAxis::HarmonicLoop => match rel.harmony {
+                            HarmonyRelation::QualityFamily => {
+                                p.harmony.as_deref().map(fidelity::harmony_by_family)
+                                    == expected.harmony.as_deref().map(fidelity::harmony_by_family)
+                            }
+                            _ => p.harmony == expected.harmony,
+                        },
+                        CoverAxis::Form => p.form == expected.form,
+                        CoverAxis::Orchestration => p.orchestration == expected.orchestration,
+                    })
+                };
                 CoverCheck {
                     axis,
-                    relation: axis.relation(),
+                    relation: fidelity::relation_text(axis, &rel),
                     passed,
                     detail: if passed {
                         "exact projection agrees".into()
@@ -1704,21 +1766,40 @@ impl CanonicalFingerprint for GrooveVoice {
 }
 encode_fields!(CoverStroke, "CoverStroke/v1", at, voice);
 encode_fields!(CoverSeats, "CoverSeats/v1", roles);
-encode_fields!(
-    CoverMap,
-    "CoverMap/v1",
-    spec,
-    unknown_axes,
-    ordered_chart,
-    length,
-    form,
-    motif,
-    riff,
-    harmony,
-    groove,
-    bass,
-    orchestration
-);
+// v1 maps keep the exact v1 encoding; a fidelity profile is an explicitly tagged extension.
+impl CanonicalFingerprint for CoverMap {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        let Self {
+            spec,
+            unknown_axes,
+            ordered_chart,
+            length,
+            form,
+            motif,
+            riff,
+            harmony,
+            groove,
+            bass,
+            orchestration,
+            fidelity,
+        } = self;
+        w.tag("CoverMap/v1");
+        w.field("spec", spec);
+        w.field("unknown_axes", unknown_axes);
+        w.field("ordered_chart", ordered_chart);
+        w.field("length", length);
+        w.field("form", form);
+        w.field("motif", motif);
+        w.field("riff", riff);
+        w.field("harmony", harmony);
+        w.field("groove", groove);
+        w.field("bass", bass);
+        w.field("orchestration", orchestration);
+        if let Some(profile) = fidelity {
+            w.field("fidelity", profile);
+        }
+    }
+}
 impl CanonicalFingerprint for CoverConstraints {
     fn encode(&self, w: &mut FingerprintWriter) {
         let Self {
@@ -1834,6 +1915,7 @@ impl CoverMap {
             groove: None,
             bass: None,
             orchestration: None,
+            fidelity: None,
         };
         out.validate()?;
         Ok(out)
@@ -1905,6 +1987,15 @@ pub fn cover_skeleton(
 #[cfg(test)]
 #[path = "cover_tests.rs"]
 mod tests;
+
+#[path = "cover_fidelity.rs"]
+mod fidelity;
+pub(crate) use fidelity::{fidelity_availability, fidelity_ceiling};
+pub use fidelity::{
+    AxisEvidence, AxisFidelity, CoverFidelityPreset, CoverFidelityProfile, FidelityReport,
+    FormRelation, GrooveRelation, HarmonyAxis, HarmonyRelation, LineRelation,
+    OrchestrationRelation, QualityFamily, THEME_BEATS,
+};
 
 /// Ordinary pipeline laws are assessed independently of cover identity. A passed
 /// quotient never conceals a red pitch, hearing, identity, stage or action receipt.

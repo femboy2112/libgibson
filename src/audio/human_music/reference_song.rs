@@ -3,7 +3,10 @@
 //! The generic TSV adapter imports explicit symbolic events. It does not transcribe
 //! audio, infer missing melody, guess harmony, or treat a chord chart as a lead sheet.
 //! Provenance stays with the reference/receipt; generation receives only `CoverMap`.
-use super::cover::{CoverAxis, CoverError, CoverLine, CoverMap, CoverNote, CoverSpec};
+use super::cover::{
+    CoverAxis, CoverChord, CoverError, CoverFidelityPreset, CoverFidelityProfile, CoverLine,
+    CoverMap, CoverNote, CoverSpec, FidelityReport, HarmonyRelation, LineRelation,
+};
 use super::rhythm::MetricPosition;
 use super::score::{Note, Provenance, Role, Score};
 
@@ -239,6 +242,7 @@ impl ReferenceSong {
             groove: None,
             bass: None,
             orchestration: None,
+            fidelity: None,
             spec: effective,
         };
         map.validate()?;
@@ -271,6 +275,203 @@ impl ReferenceSong {
             })
             .collect();
         Ok(score)
+    }
+}
+
+/// A harmonic reading of the reference's simultaneities. **Derived analysis, not source
+/// metadata**: the symbolic source states pitches and onsets, never chord symbols; these spans are
+/// what our analyzer reads from them, with the method named. They enter a `CoverMap` only at an
+/// explicitly requested harmony relation, and every receipt labels them derived.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DerivedHarmony {
+    pub method: &'static str,
+    pub window: MetricPosition,
+    pub chords: Vec<CoverChord>,
+}
+
+/// The declared analyzer: fixed windows; per window, the (root, quality) among triads and seventh
+/// chords whose members cover the most sounding note-duration (every voice), preferring a triad,
+/// then the lowest sounding pitch as root, then the lower root; equal neighbours merge. A window
+/// with no sounding note continues the previous chord.
+pub const DERIVED_HARMONY_METHOD: &str =
+    "satb-window-cover/v1: max covered note-duration; triad > seventh; bass-root; merge equal";
+
+impl ReferenceSong {
+    /// Derive a chord-span reading from every voice (see [`DERIVED_HARMONY_METHOD`]).
+    pub fn derive_harmony(&self, window: MetricPosition) -> Result<DerivedHarmony, CoverError> {
+        use super::theory::Quality as Q;
+        if window.beats() <= 0.0 {
+            return Err(CoverError::Invalid("analysis window"));
+        }
+        let candidates = [
+            Q::Maj,
+            Q::Min,
+            Q::Dim,
+            Q::Aug,
+            Q::Dom7,
+            Q::Maj7,
+            Q::Min7,
+            Q::Min7b5,
+        ];
+        let mut spans: Vec<CoverChord> = Vec::new();
+        let mut at = super::rhythm::MetricPosition::new(0, 1).expect("zero");
+        while at < self.length {
+            let end = add(at, window)?.min(self.length);
+            let (a, e) = (at.beats(), end.beats());
+            // (pitch class, sounding duration inside the window) and the lowest pitch at its start.
+            let mut weight = [0.0f64; 12];
+            let mut lowest: Option<i32> = None;
+            for voice in &self.voices {
+                for n in &voice.notes {
+                    let (s, t) = (n.at.beats(), add(n.at, n.duration)?.beats());
+                    let overlap = t.min(e) - s.max(a);
+                    if overlap > 1e-9 {
+                        weight[n.pitch.rem_euclid(12) as usize] += overlap;
+                        if s <= a + 1e-9 || lowest.is_none() {
+                            lowest = Some(lowest.map_or(n.pitch, |l| l.min(n.pitch)));
+                        }
+                    }
+                }
+            }
+            let chord = if weight.iter().all(|&w| w <= 0.0) {
+                spans.last().map(|c| (c.relative_root, c.quality))
+            } else {
+                let bass_pc = lowest.map(|p| p.rem_euclid(12));
+                let mut best: Option<(f64, bool, bool, i32, Q)> = None;
+                for root in 0..12 {
+                    for &q in &candidates {
+                        let covered: f64 = q
+                            .intervals()
+                            .iter()
+                            .map(|o| weight[(root + o).rem_euclid(12) as usize])
+                            .sum();
+                        let key = (
+                            covered,
+                            q.intervals().len() == 3,
+                            bass_pc == Some(root),
+                            -root,
+                            q,
+                        );
+                        let better = best.is_none_or(|b| {
+                            (key.0 - b.0).abs() > 1e-9 && key.0 > b.0
+                                || (key.0 - b.0).abs() <= 1e-9
+                                    && (key.1, key.2, key.3) > (b.1, b.2, b.3)
+                        });
+                        if better {
+                            best = Some(key);
+                        }
+                    }
+                }
+                best.map(|b| ((-b.3 - self.tonic).rem_euclid(12), b.4))
+            };
+            let Some((relative_root, quality)) = chord else {
+                return Err(CoverError::MissingAxis(CoverAxis::HarmonicContour));
+            };
+            match spans.last_mut() {
+                Some(prev) if prev.relative_root == relative_root && prev.quality == quality => {
+                    prev.end = end;
+                }
+                _ => spans.push(CoverChord {
+                    at,
+                    end,
+                    relative_root,
+                    quality,
+                }),
+            }
+            at = end;
+        }
+        Ok(DerivedHarmony {
+            method: DERIVED_HARMONY_METHOD,
+            window,
+            chords: spans,
+        })
+    }
+
+    /// Extract at a fidelity profile. Observed: the selected voice (melody) and, when present, a
+    /// voice labelled `bass` (bass line), both with their notated note/rest boundaries.
+    /// Harmony only from an explicitly supplied [`DerivedHarmony`] (labelled derived in the
+    /// report). Groove, form and seating are unobserved and stay Unknown at every setting.
+    pub fn extract_fidelity(
+        &self,
+        requested: &CoverFidelityProfile,
+        preset: Option<CoverFidelityPreset>,
+        derived: Option<&DerivedHarmony>,
+    ) -> Result<(CoverMap, FidelityReport), CoverError> {
+        let base = self.extract(CoverSpec::none())?;
+        let line = |notes: &[ReferenceNote], role: Role| -> CoverLine {
+            let p = notes[0].pitch - self.tonic;
+            let origin = p - p.rem_euclid(12);
+            CoverLine {
+                role,
+                notes: notes
+                    .iter()
+                    .map(|n| CoverNote {
+                        at: n.at,
+                        relative_pitch: n.pitch - self.tonic - origin,
+                        reserved_until: Some(
+                            add(n.at, n.duration)
+                                .expect("reference rational sums validated before extraction"),
+                        ),
+                    })
+                    .collect(),
+            }
+        };
+        let melody = self.melody().filter(|m| !m.is_empty());
+        let bass_voice = self
+            .voices
+            .iter()
+            .find(|v| v.label == "bass" && v.label != self.selected_voice)
+            .filter(|v| {
+                !v.notes.is_empty()
+                    && v.notes
+                        .windows(2)
+                        .all(|p| add(p[0].at, p[0].duration).is_ok_and(|end| end <= p[1].at))
+            });
+        let observed = |present: bool| -> (Option<LineRelation>, &'static str) {
+            if present {
+                (
+                    Some(LineRelation::Faithful),
+                    "observed notes with notated rests",
+                )
+            } else {
+                (None, "no such voice observed")
+            }
+        };
+        let available = super::cover::fidelity_availability(
+            [
+                observed(melody.is_some()),
+                observed(melody.is_some()),
+                observed(bass_voice.is_some()),
+            ],
+            derived.map(|d| d.method),
+        );
+        let (effective, unknown, report) =
+            super::cover::fidelity_ceiling(requested, preset, &available)?;
+        let mut map = CoverMap {
+            unknown_axes: unknown,
+            ordered_chart: None,
+            length: base.length,
+            form: None,
+            motif: (effective.motif != LineRelation::Free)
+                .then(|| melody.map(|m| line(m, Role::Lead)))
+                .flatten(),
+            riff: (effective.riff != LineRelation::Free)
+                .then(|| melody.map(|m| line(m, Role::Lead)))
+                .flatten(),
+            harmony: (effective.harmony != HarmonyRelation::Free)
+                .then(|| derived.map(|d| d.chords.clone()))
+                .flatten(),
+            groove: None,
+            bass: (effective.bass != LineRelation::Free)
+                .then(|| bass_voice.map(|v| line(&v.notes, Role::Bass)))
+                .flatten(),
+            orchestration: None,
+            fidelity: None,
+            spec: effective.spec(),
+        };
+        map.apply_fidelity(&effective);
+        map.validate()?;
+        Ok((map, report))
     }
 }
 

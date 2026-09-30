@@ -101,7 +101,11 @@ pub struct ThematicMap {
 
 impl ThematicMap {
     fn build(plan: &CompositionPlan, frame: Mode, seed: u64) -> ThematicMap {
-        let bank = MotifBank::generate(frame, seed ^ 0x3E10_D1E5);
+        Self::from_bank(plan, MotifBank::generate(frame, seed ^ 0x3E10_D1E5))
+    }
+
+    /// The theme sites `bank`'s trajectory yields over `plan` (only sites a performance can keep).
+    pub(crate) fn from_bank(plan: &CompositionPlan, bank: MotifBank) -> ThematicMap {
         let mut traj = ThematicTrajectory::new(&bank);
         let sites = plan
             .targets()
