@@ -259,8 +259,8 @@ fn strips_groove(role: DiscourseRole) -> bool {
     matches!(role, DiscourseRole::Withhold | DiscourseRole::Question)
 }
 
-/// Who moves the drum kit between phrases, and therefore whether a role's strip
-/// ([`strips_groove`]) is a departure the band really performs.
+/// Who moves the drum kit between phrases, and therefore whether a role's strip (a `Withhold` or
+/// `Question` phrase baring the kit to kick and snare) is a departure the band really performs.
 ///
 /// The ledger may only promise what the realizer can make audible: a groove debt records a kit
 /// that is actually stripped and later restored. This is a planning input, decided before any
