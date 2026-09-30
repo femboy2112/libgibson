@@ -775,10 +775,5 @@ fn realize_impl(
 /// Transport the offbeat into the same swing pocket as `groove::realize_drums`.
 /// Straight worlds are exact identity; fixed destinations are never transported here.
 pub fn groove_position(beat: f64, world: &MusicWorld) -> f64 {
-    let eighth = (beat * 2.0).round() as i64;
-    if world.swing > 0.0 && (beat * 2.0 - eighth as f64).abs() < 1e-6 && eighth.rem_euclid(2) == 1 {
-        beat + f64::from(world.swing) * 0.25
-    } else {
-        beat
-    }
+    super::rhythm::legacy_eighth_position(beat, world.swing)
 }

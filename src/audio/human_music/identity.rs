@@ -148,8 +148,16 @@ impl IdentityDiagnostics {
 
     /// Audit with the score's explicit pocket continuity and its own tempo.
     pub fn measure_score(score: &Score, contexts: &[HarmonicContext], world: &MusicWorld) -> Self {
-        let win = super::tension::heard_windows_score(score, world);
-        Self::measure_windows(&score.notes, contexts, score.tempo_bpm, &win)
+        let heard = super::voice::HeardWindows::of_score(score, world);
+        Self::measure_heard_windows(&heard, contexts)
+    }
+
+    /// Reuse a direct-voice reconstruction shared with temporal mass or other observers.
+    pub fn measure_heard_windows(
+        heard: &super::voice::HeardWindows<'_>,
+        contexts: &[HarmonicContext],
+    ) -> Self {
+        Self::measure_windows(heard.notes(), contexts, heard.tempo_bpm(), heard.windows())
     }
 
     fn measure_windows(

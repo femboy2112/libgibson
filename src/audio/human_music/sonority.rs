@@ -41,6 +41,10 @@ use super::language::{LanguageId, MusicalLanguage};
 use super::score::{PitchFunction, Role, Score};
 use super::theory::{note_name, pitch_class, Chord, Midi, Quality};
 use super::world::{MusicWorld, WorldId};
+// Compatibility paths for the envelope authority, now owned by direct-voice physics.
+pub use super::voice::{
+    audible_end, audible_end_at, release_tail_secs, AUDIBLE_FLOOR_DB, MASKING_FLOOR_DB,
+};
 
 /// A note shorter than this (beats) that moves by step to a stable tone can own a collision as a
 /// linear event (passing, neighbour, approach, appoggiatura, anticipation, slide).
@@ -761,6 +765,20 @@ impl Problem {
 /// resolution (what the same player steps to next) and the resolution flag of each linear or
 /// suspended note.
 pub fn voices_of(score: &Score, contexts: &[HarmonicContext]) -> Vec<Voice> {
+    voices_with_sources(score, contexts).0
+}
+
+#[derive(Clone, Copy)]
+enum VoiceSource {
+    Note(usize),
+    Sfx(usize),
+}
+
+/// Retain source identity through sorting; observers must not recover it by float matching.
+fn voices_with_sources(
+    score: &Score,
+    contexts: &[HarmonicContext],
+) -> (Vec<Voice>, Vec<VoiceSource>) {
     let mut v: Vec<Voice> = score
         .notes
         .iter()
@@ -779,8 +797,9 @@ pub fn voices_of(score: &Score, contexts: &[HarmonicContext]) -> Vec<Voice> {
             owned: false,
         })
         .collect();
+    let mut sources: Vec<_> = (0..score.notes.len()).map(VoiceSource::Note).collect();
     let bps = score.tempo_bpm.max(1.0) as f64 / 60.0;
-    for e in score.sfx.iter().filter(|e| e.is_pitched()) {
+    for (source, e) in score.sfx.iter().enumerate().filter(|(_, e)| e.is_pitched()) {
         let (a, d, _, _) = e.kind.envelope();
         let end = e.start_beat + (a + d + e.kind.hold_secs()) as f64 * bps;
         for (k, &p) in e.pitches.iter().enumerate() {
@@ -791,16 +810,19 @@ pub fn voices_of(score: &Score, contexts: &[HarmonicContext]) -> Vec<Voice> {
                 end,
                 e.owned_by.is_some(),
             ));
+            sources.push(VoiceSource::Sfx(source));
         }
     }
-    v.sort_by(|a, b| {
+    let mut indexed: Vec<_> = v.into_iter().zip(sources).collect();
+    indexed.sort_by(|(a, _), (b, _)| {
         a.start
             .total_cmp(&b.start)
             .then(a.role.label().cmp(b.role.label()))
             .then(a.pitch.cmp(&b.pitch))
     });
+    let (mut v, sources): (Vec<_>, Vec<_>) = indexed.into_iter().unzip();
     settle_resolutions(&mut v, contexts);
-    v
+    (v, sources)
 }
 
 /// One pitch of a pitched SFX gesture as a vertical voice, sounding `[start, end)` (its gated
@@ -840,52 +862,19 @@ pub fn audible_voices(
     world: &MusicWorld,
     floor_db: f64,
 ) -> Vec<Voice> {
-    let mut v = voices_of(score, contexts);
-    // voices_of sorts stably. Match each projected voice to one source note once, preserving
-    // duplicate multiplicity without guessing a role-wide voice/string assignment.
-    let mut consumed = vec![false; score.notes.len()];
-    for x in &mut v {
-        let patch = if x.sfx {
-            // The SFX voice's own envelope, found by its onset (gestures never share a beat and a
-            // pitch across kinds).
-            let kind = score
-                .sfx
-                .iter()
-                .find(|e| {
-                    e.is_pitched()
-                        && (e.start_beat - x.start).abs() < 1e-9
-                        && e.pitches.contains(&x.pitch)
-                })
-                .map(|e| e.kind);
-            match kind {
-                Some(k) => Patch {
-                    adsr: k.envelope(),
-                    ..world.lead
-                },
-                None => continue,
-            }
-        } else {
-            *match x.role {
-                Role::Pad => &world.pad,
-                Role::Keys => &world.keys,
-                Role::Bass => &world.bass,
-                Role::Lead => &world.lead,
-            }
+    let (mut voices, sources) = voices_with_sources(score, contexts);
+    for (voice, source) in voices.iter_mut().zip(sources) {
+        let patch = match source {
+            VoiceSource::Sfx(index) => Patch {
+                adsr: score.sfx[index].kind.envelope(),
+                ..world.lead
+            },
+            VoiceSource::Note(index) => *super::voice::patch(world, score.notes[index].role),
         };
-        if (score.mono_voice || !score.voice_continuity.is_empty()) && !x.sfx {
-            let source = score.notes.iter().enumerate().find(|(i, n)| {
-                !consumed[*i]
-                    && n.role == x.role
-                    && n.pitch == x.pitch
-                    && n.start_beat == x.start
-                    && n.start_beat + f64::from(n.dur_beats) == x.written_end
-                    && n.function == x.function
-                    && n.prov.role_note == x.tag
-            });
-            if let Some((i, note)) = source {
-                consumed[i] = true;
-                x.end = super::voice::effective_audible_end_at(
-                    note,
+        if let VoiceSource::Note(index) = source {
+            if score.mono_voice || !score.voice_continuity.is_empty() {
+                voice.end = super::voice::effective_audible_end_at(
+                    &score.notes[index],
                     &patch,
                     score.tempo_bpm,
                     floor_db,
@@ -894,15 +883,16 @@ pub fn audible_voices(
                 continue;
             }
         }
-        x.end = audible_end_at(
-            x.start,
-            x.written_end - x.start,
+        // Preserve the historical projected-duration arithmetic for envelope-only voices.
+        voice.end = audible_end_at(
+            voice.start,
+            voice.written_end - voice.start,
             &patch,
             score.tempo_bpm,
             floor_db,
         );
     }
-    v
+    voices
 }
 
 /// Fill each voice's observed resolution and the resolution flag of its linear/suspended notes.
@@ -940,48 +930,6 @@ pub fn resolution_of(all: &[Voice], x: &Voice, contexts: &[HarmonicContext]) -> 
                 })
         })
         .map(|y| y.pitch)
-}
-
-/// The default audibility floor (dB below a note's peak) of the audible measure.
-pub const AUDIBLE_FLOOR_DB: f64 = 30.0;
-/// The masking floor: a release tail this far below its peak is covered by the next harmony's
-/// attack. The coupled pad releases early by its tail to this level.
-pub const MASKING_FLOOR_DB: f64 = 20.0;
-
-/// The approximate AUDIBLE end (beats) of a note on `patch` at `tempo_bpm` — its ADSR heard down to
-/// `floor_db` below its peak. A percussive patch (sustain ≈ 0) falls silent after its decay whatever
-/// its written length; a sustaining one rings through its release after the note-off. The
-/// envelope moves 40 dB in its decay/release time (`dsp::env::time_to_coef`). Diagnostics and the
-/// pad's early release only: the planner never simulates samples.
-pub fn audible_end_at(start: f64, dur: f64, patch: &Patch, tempo_bpm: f32, floor_db: f64) -> f64 {
-    let spb = 60.0 / tempo_bpm.max(1.0) as f64;
-    let (a, d, s, r) = patch.adsr;
-    let (a, d, s, r) = (a as f64, d as f64, s as f64, r as f64);
-    let nominal = dur * spb;
-    let frac = floor_db / 40.0;
-    let secs = if s <= 0.02 {
-        // Falls below the floor during its decay (or its release, if gated off first).
-        (a + frac * d).min(nominal + frac * r)
-    } else {
-        nominal + release_tail_secs(patch, floor_db)
-    };
-    start + secs / spb
-}
-
-/// [`audible_end_at`] at the default [`AUDIBLE_FLOOR_DB`].
-pub fn audible_end(start: f64, dur: f64, patch: &Patch, tempo_bpm: f32) -> f64 {
-    audible_end_at(start, dur, patch, tempo_bpm, AUDIBLE_FLOOR_DB)
-}
-
-/// Seconds a sustained note on `patch` stays within `floor_db` of its peak after its note-off
-/// (released from its sustain level).
-pub fn release_tail_secs(patch: &Patch, floor_db: f64) -> f64 {
-    let (_, _, s, r) = patch.adsr;
-    let (s, r) = (s as f64, r as f64);
-    if s <= 0.02 {
-        return 0.0;
-    }
-    r * ((floor_db + 20.0 * s.log10()) / 40.0).max(0.0)
 }
 
 /// One analysed slice of the Score: an interval with a constant set of sounding notes.

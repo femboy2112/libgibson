@@ -72,6 +72,7 @@ pub mod policy;
 #[cfg(test)]
 mod probes;
 pub mod region;
+pub mod rhythm;
 pub mod rng;
 pub mod score;
 pub mod semantic;

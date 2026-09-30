@@ -568,3 +568,37 @@ band realizer. The planner/realizer construction boilerplate is shared.
 policy, three pocket phase, four voice including small PCM controls, one complete
 flagship event/evidence characterization). This does not substitute for the final
 full/stem PCM rerender. Logs are under `fixtures/humanmusic-consolidation/verification`.
+
+## Implemented: metric coordinates and audibility ownership
+
+`MetricPosition` is a reduced rational quarter-note coordinate. `GrooveTransport`
+produces a `PerformedPosition` carrying its exact source; projecting that source
+commutes exactly. This is not an invented inverse of arbitrary floating beats.
+The historical sparse eighth-delay law is not globally monotone/bijective over
+arbitrary dense grids; new constrained generators must reject collisions/order
+reversals. A typed float import admits only exactly representable rational values.
+
+`rhythm::lattice_slots` owns enumeration. `pocket::LatticeSlot/slots` are compatible
+adapters; historical world/hat candidate selection remains unchanged. Current
+drum and phrase swing delegate to one transport boundary; historical subdivision
+swing remains explicitly separate. No structural Keys event moved to improve the
+known VAPOR result.
+
+Envelope endpoints, role-to-patch selection and continuation endpoints now live
+in `voice`; old sonority/expression/mass entry points re-export that authority.
+`HeardWindows` borrows immutable source notes and owns one reusable endpoint vector.
+Mass, tension and identity share its lifetime rules. The historical same-role
+masking path builds one sorted index instead of a quadratic scan. The canonical
+explicit path changes lifetime only through source-owned continuation edges.
+
+Sonority retains original note/SFX indices through projection and sorting instead
+of reconstructing identity by floating onset/pitch/gate matches. This exposed and
+fixed a universal diagnostic bug: coincident same-pitch SFX of different kinds
+could use the first event's envelope. The new falsifier preserves each source's
+own envelope. This correction changes a diagnostic on that counterexample; it
+changes no accepted flagship event/evidence or synthesis output.
+
+**Observed:** isolated staged-source verification passed 12 integration tests and
+three exact-coordinate unit laws. The tests include historical endpoint equality
+against the old quadratic definition, immutable-window reuse, explicit-edge
+mutation, coincident-SFX identity, and the frozen accepted event/evidence receipts.

@@ -1,0 +1,10 @@
+   Compiling libgibson v0.3.1 (/tmp/libgibson-rhythm-check)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.85s
+     Running unittests src/lib.rs (/home/leah/LibGibson/target/debug/deps/gibson-bb7570885a984e62)
+
+running 3 tests
+test audio::human_music::rhythm::tests::metric_identity_is_exact_and_float_import_never_quantizes ... ok
+test audio::human_music::rhythm::tests::authored_metric_grid_and_world_hat_grid_are_distinct_domains ... ok
+test audio::human_music::rhythm::tests::metric_transport_projection_commutes_without_a_float_inverse ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 729 filtered out; finished in 0.00s

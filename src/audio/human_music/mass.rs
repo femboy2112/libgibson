@@ -10,7 +10,7 @@
 //! ([`MassDiagnostics`]). The overlay reads the unchanged Round XII observer's independently
 //! reconstructed support (it never trusts a declared function) and adds time: written seconds at
 //! the score's tempo, audible seconds from the world's patch envelope (Round VIII
-//! [`audible_end`]), metric accent, onset fusion with the harmonic articulation, and recent
+//! [`super::voice::audible_end`]), metric accent, onset fusion with the harmonic articulation, and recent
 //! recurrence of the same colour in the same role.
 //!
 //! Mathematical invariants (tested): mass is non-decreasing in audible seconds, recurrence and
@@ -21,10 +21,8 @@
 //! deliberately does not simulate, and the acceptance holds are no louder than their stabs.
 
 use super::context::HarmonicContext;
-use super::instrument::Patch;
 use super::performance::PerformancePlan;
 use super::score::{Note, PitchFunction as F, Role, Score};
-use super::sonority::audible_end;
 use super::temporal::{ExtensionPath, PitchTrajectoryProof, TemporalPitchDiagnostics};
 use super::theory::{note_name, pitch_class};
 use super::world::MusicWorld;
@@ -188,76 +186,41 @@ impl TemporalMass {
         beats_per_bar: f64,
         world: &MusicWorld,
     ) -> Vec<TemporalMass> {
-        let dwell_end: Vec<f64> = notes
-            .iter()
-            .map(|n| {
-                let written_end = n.start_beat + f64::from(n.dur_beats);
-                let heard = audible_end(
-                    n.start_beat,
-                    f64::from(n.dur_beats),
-                    patch(world, n.role),
-                    tempo_bpm,
-                );
-                notes
-                    .iter()
-                    .filter(|m| {
-                        m.role == n.role
-                            && m.start_beat >= written_end - EPS
-                            && m.start_beat > n.start_beat + EPS
-                    })
-                    .map(|m| m.start_beat)
-                    .fold(heard, f64::min)
-                    .max(n.start_beat)
-            })
-            .collect();
-        Self::from_dwell_ends(notes, contexts, tempo_bpm, beats_per_bar, &dwell_end)
+        let heard = super::voice::HeardWindows::historical(notes, world, tempo_bpm);
+        Self::of_heard_windows(&heard, contexts, beats_per_bar)
     }
 
-    /// Use the score's explicit continuation contracts for the opt-in pocket arm.
-    /// Historical scores retain the frozen masking model in [`Self::of_notes`]. The pocket
-    /// flag selects unmasked physics; only explicit links authorize a choke, with or without it.
+    /// Use the score's declared observation policy and explicit continuation graph.
     pub fn of_score(
         score: &Score,
         contexts: &[HarmonicContext],
         world: &MusicWorld,
     ) -> Vec<TemporalMass> {
-        if !score.mono_voice && score.voice_continuity.is_empty() {
-            return Self::of_notes(
-                &score.notes,
-                contexts,
-                score.tempo_bpm,
-                score.beats_per_bar,
-                world,
-            );
-        }
-        let dwell_end: Vec<_> = score
-            .notes
-            .iter()
-            .map(|n| {
-                super::voice::effective_audible_end_at(
-                    n,
-                    patch(world, n.role),
-                    score.tempo_bpm,
-                    super::sonority::AUDIBLE_FLOOR_DB,
-                    &score.voice_continuity,
-                )
-            })
-            .collect();
-        Self::from_dwell_ends(
-            &score.notes,
+        let heard = super::voice::HeardWindows::of_score(score, world);
+        Self::of_heard_windows(&heard, contexts, score.beats_per_bar)
+    }
+
+    /// Reuse one immutable reconstruction across acoustic observers.
+    pub fn of_heard_windows(
+        heard: &super::voice::HeardWindows<'_>,
+        contexts: &[HarmonicContext],
+        beats_per_bar: f64,
+    ) -> Vec<TemporalMass> {
+        Self::from_windows(
+            heard.notes(),
             contexts,
-            score.tempo_bpm,
-            score.beats_per_bar,
-            &dwell_end,
+            heard.tempo_bpm(),
+            beats_per_bar,
+            heard.windows(),
         )
     }
 
-    fn from_dwell_ends(
+    fn from_windows(
         notes: &[Note],
         contexts: &[HarmonicContext],
         tempo_bpm: f32,
         beats_per_bar: f64,
-        dwell_end: &[f64],
+        windows: &[(f64, f64)],
     ) -> Vec<TemporalMass> {
         let spb = 60.0 / f64::from(tempo_bpm.max(1.0));
         let window = RECALL_WINDOW_SECS / spb;
@@ -275,7 +238,7 @@ impl TemporalMass {
                             && m.start_beat < n.start_beat - EPS
                     })
                     .map(|(j, m)| {
-                        (dwell_end[j].min(n.start_beat) - m.start_beat.max(n.start_beat - window))
+                        (windows[j].1.min(n.start_beat) - m.start_beat.max(n.start_beat - window))
                             .max(0.0)
                     })
                     .sum::<f64>()
@@ -290,7 +253,7 @@ impl TemporalMass {
                     n.role,
                     f64::from(n.dur_beats),
                     f64::from(n.dur_beats) * spb,
-                    (dwell_end[i] - n.start_beat) * spb,
+                    (windows[i].1 - n.start_beat) * spb,
                     recurrence,
                     Accent::of(n.start_beat, beats_per_bar),
                     fused,
@@ -318,15 +281,8 @@ impl TemporalMass {
     }
 }
 
-/// The world patch that sounds `role`.
-pub fn patch(world: &MusicWorld, role: Role) -> &Patch {
-    match role {
-        Role::Pad => &world.pad,
-        Role::Keys => &world.keys,
-        Role::Bass => &world.bass,
-        Role::Lead => &world.lead,
-    }
-}
+/// Historical import path for the common role-to-patch authority.
+pub use super::voice::patch;
 
 /// The strongest reason the independent observer found for a pitch, weakest first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

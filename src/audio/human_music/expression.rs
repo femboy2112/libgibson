@@ -5,7 +5,6 @@
 //! are explicit human-calibrated hypotheses, not psychoacoustic laws or a quality score.
 //! Source realizers inspect the chart's support obligation and already committed players. A
 //! frozen-score audit can additionally inspect the actual pad; it never repairs that score.
-use super::instrument::Patch;
 use super::motif::{melodic_events, LineStyle, TargetKind};
 use super::performance::{AccentGrid, PerformancePlan};
 use super::score::{Note, PitchFunction as F, Provenance, Role, Score};
@@ -100,14 +99,8 @@ pub fn connective(f: Option<F>) -> bool {
     )
 }
 
-pub fn patch(world: &MusicWorld, role: Role) -> &Patch {
-    match role {
-        Role::Lead => &world.lead,
-        Role::Bass => &world.bass,
-        Role::Keys => &world.keys,
-        Role::Pad => &world.pad,
-    }
-}
+/// Historical import path for the common role-to-patch authority.
+pub use super::voice::patch;
 
 /// Reconstruct authored lead slots for auditing frozen scores. Production retains the bit
 /// directly. Unknown events are protected, as are all bass notes except source-owned pickups.

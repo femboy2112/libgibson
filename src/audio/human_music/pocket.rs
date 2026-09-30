@@ -4,7 +4,8 @@ use super::expression::{
     self, ConnectiveViability, ExpressionDecision, ExpressionEvent, ExpressionStrategy,
 };
 use super::performance::PerformancePlan;
-use super::phrase_expression::{groove_position, PhraseGrid};
+use super::phrase_expression::PhraseGrid;
+pub use super::rhythm::LatticeSlot;
 use super::score::Note;
 use super::world::MusicWorld;
 
@@ -14,9 +15,11 @@ use super::world::MusicWorld;
 pub struct PocketOptions {
     pub lattice_positions: bool,
     pub legato_connectives: bool,
-    /// Historical combined factor: changes source admission and emits continuation edges.
+    /// Historical combined factor: changes source physical admission AND emits continuation
+    /// edges. New profiles separate those decisions; this spelling preserves factorial receipts.
     pub mono_voice: bool,
-    /// Archived unavailable treatment; both values intentionally produce identical output.
+    /// Archived unavailable treatment. Both values intentionally reproduce the same output.
+    /// New production profiles do not expose this non-treatment as an enabled musical feature.
     pub support_top_voice: bool,
     pub stable_precursors: bool,
 }
@@ -48,22 +51,6 @@ impl Default for PocketOptions {
     }
 }
 
-/// One groove position indexed from beat zero, before any destination is considered.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LatticeSlot {
-    pub index: i64,
-    pub subdivision: u32,
-    pub position: f64,
-    /// Transport from the straight pulse coordinate (beats).
-    pub swing_phase: f64,
-}
-impl LatticeSlot {
-    /// Metric phase within the beat, in subdivision ticks. Zero is a beat attack.
-    pub fn phase(self) -> u32 {
-        self.index.rem_euclid(i64::from(self.subdivision)) as u32
-    }
-}
-
 /// Generate whole bars forward from the shared pulse origin, then restrict the corridor.
 /// Physical latency has no role in construction.
 pub fn slots(world: &MusicWorld, surface_subdivision: u32, from: f64, to: f64) -> Vec<LatticeSlot> {
@@ -71,29 +58,11 @@ pub fn slots(world: &MusicWorld, surface_subdivision: u32, from: f64, to: f64) -
     if (world.subdiv == 3 || surface_subdivision == 3) && !divisions.contains(&3) {
         divisions.push(3);
     }
-    let mut positions = Vec::new();
-    for division in divisions {
-        let first_bar = (from / 4.0).floor() as i64;
-        let last_bar = (to / 4.0).floor() as i64;
-        for bar in first_bar..=last_bar {
-            for tick in 0..4 * i64::from(division) {
-                let index = bar * 4 * i64::from(division) + tick;
-                let straight = index as f64 / f64::from(division);
-                let position = groove_position(straight, world);
-                if position >= from - 1e-6 && position < to - 1e-6 {
-                    positions.push(LatticeSlot {
-                        index,
-                        subdivision: division,
-                        position,
-                        swing_phase: position - straight,
-                    });
-                }
-            }
-        }
-    }
-    positions.sort_by(|a, b| a.position.total_cmp(&b.position));
-    positions.dedup_by(|a, b| (a.position - b.position).abs() < 1e-6);
-    positions
+    let divisions: Vec<_> = divisions
+        .into_iter()
+        .map(|n| std::num::NonZeroU32::new(n).expect("nonzero pulse subdivision"))
+        .collect();
+    super::rhythm::lattice_slots(&divisions, world.swing, from, to)
 }
 
 pub fn lattice_positions(

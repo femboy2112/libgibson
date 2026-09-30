@@ -169,16 +169,7 @@ impl GrooveEngine {
     /// Apply swing to an off-subdivision position (delays every odd subdivision — the
     /// "and" of an 8th feel, or the e/a of a 16th feel).
     fn swung(&self, frac: f64) -> f64 {
-        if self.swing <= 0.0 {
-            return frac;
-        }
-        let sub = 1.0 / self.subdiv as f64;
-        let idx = (frac / sub).round() as i64;
-        if idx % 2 != 0 {
-            frac + self.swing as f64 * sub * 0.5
-        } else {
-            frac
-        }
+        super::rhythm::legacy_subdivision_position(frac, self.swing, self.subdiv)
     }
 
     fn emit_kick(
@@ -274,17 +265,7 @@ fn realize_drums_impl(
         (world.base_dynamic * (0.55 + 0.45 * energy) * (0.6 + 0.4 * world.drum_density))
             .clamp(0.0, 1.0)
     };
-    let swung = |frac: f64| -> f64 {
-        if world.swing <= 0.0 {
-            return frac;
-        }
-        let idx = (frac / 0.5).round() as i64;
-        if (frac * 2.0 - idx as f64).abs() < 1e-6 && idx % 2 != 0 {
-            frac + world.swing as f64 * 0.25
-        } else {
-            frac
-        }
-    };
+    let swung = |frac: f64| super::rhythm::legacy_eighth_position(frac, world.swing);
     let mut hits: Vec<DrumHit> = Vec::new();
     // Every stroke carries the exact actions it realizes; the level comes from the stage (the
     // single orchestration authority), so nothing has to be deleted or rescaled afterwards.

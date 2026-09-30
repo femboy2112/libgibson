@@ -117,63 +117,16 @@ pub struct Clash {
     pub verdict: TensionVerdict,
 }
 
-fn role_ix(r: Role) -> usize {
-    match r {
-        Role::Pad => 0,
-        Role::Keys => 1,
-        Role::Bass => 2,
-        Role::Lead => 3,
-    }
-}
-
-/// Each note's heard window `(start, end)` in beats: the patch envelope's audible end, cut at the
-/// same role's next attack at or after the written end (as [`super::mass::TemporalMass`]).
+/// Historical compatibility view of the shared direct-voice observation authority.
+/// The next same-role attack masks release tails under the frozen historical model.
 pub fn heard_windows(notes: &[Note], world: &MusicWorld, tempo_bpm: f32) -> Vec<(f64, f64)> {
-    let mut onsets: [Vec<f64>; 4] = Default::default();
-    for n in notes {
-        onsets[role_ix(n.role)].push(n.start_beat);
-    }
-    for o in &mut onsets {
-        o.sort_by(f64::total_cmp);
-    }
-    notes
-        .iter()
-        .map(|n| {
-            let dur = f64::from(n.dur_beats);
-            let written_end = n.start_beat + dur;
-            let heard = audible_end(n.start_beat, dur, patch(world, n.role), tempo_bpm);
-            let o = &onsets[role_ix(n.role)];
-            let k = o.partition_point(|&x| x < written_end - EPS);
-            let mask = o[k..].iter().copied().find(|&x| x > n.start_beat + EPS);
-            let end = mask.map_or(heard, |m| heard.min(m));
-            (n.start_beat, end.max(n.start_beat))
-        })
-        .collect()
+    super::voice::HeardWindows::historical(notes, world, tempo_bpm).into_windows()
 }
 
-/// Score-aware heard windows. Pocket voices follow only explicit continuation links;
-/// unrelated simultaneous notes retain their own patch lifetime. Explicit links are honored
-/// with or without the pocket flag; the flag alone selects unmasked physics and licenses no choke.
+/// Score-aware compatibility view. Only explicit continuation edges license direct choke;
+/// the legacy flag selects the historical observation convention when the graph is empty.
 pub fn heard_windows_score(score: &Score, world: &MusicWorld) -> Vec<(f64, f64)> {
-    if !score.mono_voice && score.voice_continuity.is_empty() {
-        return heard_windows(&score.notes, world, score.tempo_bpm);
-    }
-    score
-        .notes
-        .iter()
-        .map(|n| {
-            (
-                n.start_beat,
-                super::voice::effective_audible_end_at(
-                    n,
-                    patch(world, n.role),
-                    score.tempo_bpm,
-                    super::sonority::AUDIBLE_FLOOR_DB,
-                    &score.voice_continuity,
-                ),
-            )
-        })
-        .collect()
+    super::voice::HeardWindows::of_score(score, world).into_windows()
 }
 
 /// How structural `pitch` is over `ctx`, 0 = the root: its place in the written chord, then 8 for
