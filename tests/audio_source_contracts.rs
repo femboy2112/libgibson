@@ -313,3 +313,72 @@ fn u2_anchor_report_separates_no_room_from_omission() {
         }
     }
 }
+
+/// Fresh songs for the action/obligation contracts: short and long, straight and deflected,
+/// several grammars and composers (seeds 77_300_0xx, outside holdout v1).
+fn verb_corpus() -> Vec<(String, SongMap)> {
+    let mut out = Vec::new();
+    let mut seed = 77_300_000;
+    for (beats, deflected) in [
+        (9.25, true),
+        (16.0, true),
+        (20.0, false),
+        (32.5, true),
+        (64.0, true),
+        (96.0, false),
+    ] {
+        for grammar in [
+            CompositionGrammar::HookArc,
+            CompositionGrammar::RiffDrive,
+            CompositionGrammar::DeflectedLift,
+            CompositionGrammar::PropulsiveReturn,
+        ] {
+            for composer in [Composer::StructuralR9, Composer::MeaningDirected] {
+                seed += 1;
+                let trace = if deflected {
+                    deflected_lift_trace(beats)
+                } else {
+                    demo_trace(beats)
+                };
+                out.push((
+                    format!("{grammar:?} {composer:?} {beats} deflected={deflected} seed={seed}"),
+                    SongMap::compose(&trace, seed, Some(grammar), composer),
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// U3, the mechanism: the historical `Planned` admission (every historical profile, POCKET
+/// included) admits verbs no realizer performs and settles song obligations by discourse role
+/// alone, before any action exists. On fresh seeds the audit finds them unwitnessed. This
+/// characterizes the historical arm (which stays byte-exact); the contract is enforced for the
+/// rehearsed admission law.
+#[test]
+fn u3_historical_planned_admission_leaves_verbs_and_debts_unperformed() {
+    use std::collections::BTreeSet;
+    let mut kinds = BTreeSet::new();
+    let mut debts = 0;
+    for (_, s) in verb_corpus() {
+        for language in [
+            MusicalLanguage::simple(),
+            MusicalLanguage::fusion_conversation(),
+        ] {
+            let c = pocket(&s, &MusicWorld::black_ice(), language);
+            for row in gibson::audio::human_music::witness::audit(&c.perf, &c.score).rows {
+                if !row.witnessed {
+                    kinds.insert(format!("{:?}", row.kind));
+                }
+            }
+            debts += SongMapConformance::check(&s, &c.perf, &c.score).unwitnessed_song_obligations;
+        }
+    }
+    for kind in ["Fragment", "Hit", "Hold", "Resolve", "ReEntry", "Thicken"] {
+        assert!(
+            kinds.contains(kind),
+            "{kind} no longer unperformed: {kinds:?}"
+        );
+    }
+    assert!(debts > 0);
+}
