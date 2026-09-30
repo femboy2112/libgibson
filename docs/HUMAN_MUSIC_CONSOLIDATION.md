@@ -144,7 +144,7 @@ final-source ABI and clean-room consumer checks remain mandatory.
 | Cover laws (tempo-only, transposition-only, language-only, contract-default noninterference, per-group freedom) | **Observed**, `tests/audio_cover_laws.rs` 5/5 at `3216021`; the generated contract-default map's SWISS_SIGNAL refusal is an Observed lawful limit, see [Known unresolved defects](#known-unresolved-defects) |
 | Pinned-groove groove-debt repair | **Observed** at `1a06575`: lib cover tests 19/19, discourse/song/plan lib tests 31/31, `audio_consolidation_characterization` 1/1, `audio_realization_policy` 8/8, `audio_canonical_fingerprint` 5/5, strict clippy and fmt clean; mutation check red as recorded |
 | Cover lab renders and WAV hashes | **Observed** at pre-repair source `04e81fc` ([corpus](fixtures/humanmusic-cover/listening/README.md): ode 5 admitted/1 failed, swing-partial 5 admitted, generated 0 admitted/3 failed/2 infeasible); post-repair regeneration **Observed** at `ced9833` ([receipt](fixtures/humanmusic-cover/listening-post-repair/README.md)): 16 WAVs byte-identical, generated 2 admitted/1 failed/2 infeasible |
-| PCM preservation and final engineering gates at the final SHA | **UNVERIFIED**, see `<!-- FINAL-GATE -->` placeholder below |
+| PCM preservation and final engineering gates at the final SHA | **Observed**: R17 pocket 48/48 WAVs + 757/757 receipts byte-identical and known sweep 61/59 unchanged at `8a0b0cd`; local release preflight 13/13 and GitHub CI + Release Preflight success at `91c3820` (see Final gate below) |
 | Fresh 36-case holdout | **Observed** once at `6ac812f` (committed `8a0b0cd`): 7/36 pass (6/6 external Ode covers, 1/30 generated); failures preserved and classified, none repaired after contact; see holdout results below |
 | Cover recognition, interpretation quality and post-consolidation listening acceptance | **UNVERIFIED**, requires the maintainer's ear |
 
@@ -973,5 +973,21 @@ analysis: [`fresh/CLASSIFICATION.md`](fixtures/humanmusic-consolidation/fresh/CL
 <!-- /HOLDOUT-V1-RESULTS -->
 
 <!-- FINAL-GATE -->
-Final gate at the final SHA: not yet run. To be filled by the orchestrator.
+## Final gate
+
+**Observed at `91c38206a38bd49cfb1669f15ac97515de393874`** (clean tree), after the rustdoc fix `91c3820`:
+
+- Local `scripts/release/preflight.sh` (after `cargo +1.98.1 build --release`; `STABLE_TOOLCHAIN=+1.98.1`,
+  `MSRV_TOOLCHAIN=+1.85`, `CARGO_BUILD_JOBS=2`, `RUST_TEST_THREADS=2`): **13/13 PASS** — whitespace,
+  version/ABI consistency, fmt, clippy `--all-targets --all-features -D warnings`, `cargo test`, rustdoc
+  `-D warnings`, MSRV 1.85 locked lib check, MSRV declared-range consumer, `cargo package`, ABI v1 symbol
+  baseline, clean-room C/C++/Python/Go/Rust consumers, third-party notices, license files.
+- GitHub **CI: success** and **Release Preflight: success** at the same SHA.
+- The previous local run at `61ba2aa` failed only rustdoc (`KitMotion`'s public docs linked the private
+  `strips_groove`); that is the defect `91c3820` fixed. It is preserved here rather than hidden.
+- PCM: the accepted R17 pocket is byte-identical at `8a0b0cd` ([receipt](fixtures/humanmusic-consolidation/pocket-freeze-final/README.md));
+  the known R17 sweep is unchanged at `8a0b0cd` ([receipt](fixtures/humanmusic-consolidation/known-r17-replay-final/README.md)).
+  No source changed between those receipts and `91c3820` except the comment-only rustdoc fix.
+
+Later commits touching only Markdown do not enter the build.
 <!-- /FINAL-GATE -->
