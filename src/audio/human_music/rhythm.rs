@@ -164,6 +164,31 @@ impl PerformedPosition {
     }
 }
 
+/// The seam where a future human feel would live, between the pocket and the performed time:
+/// `MetricPosition` (song identity) -> [`GrooveTransport`] (the declared pocket) ->
+/// **`FeelTransport`** -> [`PerformedPosition`] (what sounds).
+///
+/// A future feel must be correlated and phrase/player-aware (a player leaning into a phrase,
+/// the band breathing together at a cadence), never independent per-note noise, and it must keep
+/// the metric source so projection stays exact. No such law exists yet: `Identity` is the only
+/// variant, it changes nothing, and nothing in the pipeline calls a non-identity feel. It is kept
+/// as a typed boundary so the accepted pocket timing can never be "humanized" by a side door.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FeelTransport {
+    /// No feel beyond the pocket: the performed coordinate is the pocket's.
+    #[default]
+    Identity,
+}
+
+impl FeelTransport {
+    /// Apply the feel to a pocket-transported position (the identity: returns it unchanged).
+    pub fn apply(self, pocket: PerformedPosition) -> PerformedPosition {
+        match self {
+            FeelTransport::Identity => pocket,
+        }
+    }
+}
+
 /// Historical float boundary shared by phrase and current drum realization.
 /// The tolerance belongs to importing untyped coordinates, not to metric identity.
 pub(crate) fn legacy_eighth_position(beat: f64, swing: f32) -> f64 {
@@ -240,6 +265,16 @@ pub fn lattice_slots(divisions: &[NonZeroU32], swing: f32, from: f64, to: f64) -
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_feel_seam_is_the_identity() {
+        let transport = GrooveTransport::eighth_swing(0.3).unwrap();
+        for ticks in 0..16 {
+            let m = MetricPosition::new(ticks, 4).unwrap();
+            let pocket = transport.transport(m);
+            assert_eq!(FeelTransport::default().apply(pocket), pocket);
+        }
+    }
+
     use super::*;
 
     #[test]
