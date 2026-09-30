@@ -275,3 +275,7 @@ mod tests {
         assert!(c.foreground_budget >= 1);
     }
 }
+
+#[cfg(test)]
+#[path = "contract_standing.rs"]
+mod standing;

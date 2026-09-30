@@ -225,6 +225,17 @@ impl SongMap {
             ),
             None => CompositionPlan::build_for_beats(&timeline, trace.total_beats),
         };
+        Self::from_plan(trace, seed, timeline, plan)
+    }
+
+    /// The song [`SongMap::build`] writes on an already-made `plan` (the contract standing audit
+    /// re-plans under a perturbed contract through this).
+    pub(crate) fn from_plan(
+        trace: &SemanticTrace,
+        seed: u64,
+        timeline: IntentTimeline,
+        plan: CompositionPlan,
+    ) -> SongMap {
         let frame = REFERENCE_FRAME;
         let mut thematic = ThematicMap::build(&plan, frame, seed);
         let stable = plan.contract.grammar == CompositionGrammar::PropulsiveReturn;
