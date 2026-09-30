@@ -17,6 +17,133 @@ ABI, tag, release, merge, or gate weakening is authorized by this mission.
 The audit below was written before production edits. Its line references refer
 to the start SHA. Later sections will record implementation and exact evidence.
 
+## Current implementation: authority and law boundaries
+
+This section describes the integrated objects and call boundaries. It is a source
+map, not final-source acceptance: cover controls, final listening artifacts, fresh
+holdout and final engineering gates remain **UNVERIFIED** until their receipts are
+recorded. The before-state audits and historical controls below remain evidence.
+The [cover guide](HUMAN_MUSIC_COVER.md) gives exact defaults, relations, API use and
+reference-ingestion limits.
+
+```text
+SemanticTrace
+  -> SongMap::build / compose                   song identity and composition
+  -> PerformancePlan::from_song                world/language performance choices
+  -> realize_with_profile / historical adapter
+       lead -> keys -> bass -> explicit links -> pad -> drums
+  -> Score                                     events plus source/observer evidence
+  -> HumanMusicSynth + world/production/rate    scheduling and PCM
+
+Composition + source world + CoverSpec -> CoverMap::extract
+ReferenceSong + selected observed axes -> ReferenceSong::extract -> CoverMap
+CoverMap + CoverTarget
+  -> fresh constrained SongMap
+  -> PerformancePlan::from_song_constrained
+  -> source realization -> candidate Composition
+  -> CoverConformance + CoverPipelineReceipt -> checked cover or rejection
+
+OrderedChart -> partial CoverMap + explicit target SkeletonSchedule
+  -> cover_skeleton -> candidate only
+```
+
+The graph's player order is the modern independent source path; historical
+coupled/repair adapters keep their own archived causality. `perform` and immediate
+composition keep the historical default. `perform_with_profile` validates the
+selected laws but does not itself certify every diagnostic. `cover_candidate`
+preserves a result for inspection; `cover` additionally checks its selected
+projection and enumerated pipeline receipts. A rejected `cover` returns admission
+receipts, not the Composition; diagnostic callers can retain a candidate directly.
+
+| Concern | Current authority and boundary | Executable law / falsifier |
+| --- | --- | --- |
+| Song form, themes and declared harmonic landmarks | `SongMap`; the performance derives its plan from it | `SongMapConformance`; source/plan/actual-note mutations remain distinct |
+| Cover identity | `CoverSpec` and `CoverMap`, with no retained source Composition or lookup | `CoverConformance` reads actual events; pinned pitch/landmark mutations fail; excluded voicing mutation does not change the quotient |
+| Cover generation | Fresh constrained song and `PerformancePlan::from_song_constrained`; constraints precede harmony, stage, material and note choices | Equal extracted maps plus identical complete targets produce equal generated evidence; a deliberately injected excluded dynamics field breaks that witness |
+| Pitch units and chord membership | `PitchBasis`; `PitchClassSet` and the shared source stable-function relation | Scale-step/semitone distinction; exhaustive chord masks; independent temporal sustain-crossing falsifier |
+| Canonical rhythm | `MetricPosition`, `GrooveTransport`, carried `PerformedPosition`; one lattice enumerator | Transported position projects to its exact carried metric source; distinct-position collisions are rejected in constrained generation |
+| Authored floor ownership | `AuthoredOccupancy`, separate from acoustic notes | Empty acoustic input does not release a reserved attack or an owned rest; cover occupancy checks use canonical source reservations |
+| Direct audibility | `voice` envelope/continuation law and borrowed `HeardWindows` | Only matching continuation edges can shorten direct envelopes; unrelated same-role notes and empty modern graphs cannot imply choke |
+| Causal hearing and agency | Final upstream notes consumed before each dependent source; Score hearing ledger | Missing/stale source observations and source/score mutations are inspectable; retained hearings must agree with final source notes |
+| Orchestration | Stage seats and admitted actions before source generation | `orchestration_violations`; incompatible cover pins fail before realization; partial Form has its own family-equivalence relation |
+| Realization policy | Orthogonal `PerformanceProfile` plus one validation boundary | Source expression and render lifetime can vary independently; unavailable support treatment exists only in the historical factorial adapter |
+| Rendering | Existing synth scheduling consumes events and explicit continuation edges | Short PCM controls plus separate full/stem SHA256 comparison; event fingerprints alone cannot certify PCM |
+| Historical experiments | Thin public wrappers, explicit archived policy/repair choices and frozen receipts | Accepted event/evidence characterization, historical hashes and exact known-case replay |
+
+The core no longer selects its musical laws by a chronological Contract arm.
+Round names remain receipt provenance and public compatibility names. Score remains
+the compatibility container; moving its evidence into another object or adding a
+RenderContract wrapper did not establish an additional authority and was deferred.
+Its explicit observation policy is distinct from the continuity graph consumed by
+synthesis. The source-level expression admission policy is also distinct from
+render lifetime; historical mono factors deliberately map to both for reproduction.
+
+Canonical schemas bind declared fields, enum tags, coordinate units and sequence
+order without using Debug. Core transitive schemas use exhaustive destructuring;
+the newer cover-value encoders in `cover.rs` have explicit field lists and require
+manual schema review when a field is added. They do not inherit an automatic promise
+that every future field enters identity. Legacy Debug encodings remain separately
+named historical receipts. `typed_identity` tags the old proportional motif shape
+with its pitch basis; it still quotients rhythmic augmentation. Exact cover rhythm
+uses rational positions, and canonical Motif fingerprints bind stored rhythm.
+
+### Reference authority, supported fibers and compatibility
+
+The [import manifest](fixtures/humanmusic-cover/ode-import/manifest.json) retains
+245 named Ode voice events and an explicitly selected 62-note soprano. The raw
+Lily/MIDI comparison is 245 versus 238, not equal. The [declared staff projection](fixtures/humanmusic-cover/ode-import/cross-check.json)
+coalesces exactly seven simultaneous unisons and agrees. Both encodings share one
+Mutopia edition; this corroborates conversion within that provenance boundary,
+not an independent historical source or a listener's recognition. The exact source
+edition, stated Public Domain status, URLs and hashes are in the [source custody record](fixtures/humanmusic-cover/sources/mutopia-528/provenance.json).
+
+`ReferenceSong` retains all named observations but its current 4/4 TSV adapter
+promotes only the selected monophonic voice to Motif/Riff. A HookArc request becomes
+an effective Motif-only map; `all()` becomes Motif plus Riff, with unavailable axes
+Unknown. Generated-reference extraction instead requires its requested axes.
+Callers requiring every requested pin must check the returned effective spec and
+knowledge states. No current TSV record imports source chords, BassFigure, drums,
+orchestration or phrase families. No automatic melody/chart enrichment is promised.
+
+For a fully observed map, all eight identity axes still leave articulation,
+dynamics, global register, hats and rendering outside the quotient; there is no
+all-event/PCM freeze profile. Conversely, the empty selection retains only the
+metric domain and has no useful song-identity claim. Different worlds/languages
+can make a selected fiber infeasible under pitch vocabulary, stage, range or groove
+transport restrictions. Pinned structural lines retain exact transported attacks
+and generated bounded gates but bypass optional ornament search; empty phrase plans
+are not evidence of expressive treatment. These are current feature limits.
+
+The [provisional Swing reference](fixtures/humanmusic-cover/swing-partial/provenance.json)
+contains maintainer assertions and an ordered chord/section skeleton, not melody,
+characteristic bass/drums or exact source timing. `cover_skeleton` adds a declared
+target schedule and tonic intro; it produces a partial candidate, not a checked
+recognizable cover of the recording. A full reference and blind human recognition
+remain outstanding. No artist preset, transcription from memory or feel noise is
+introduced by this consolidation.
+
+Historical public functions remain, but experimental Rust source compatibility is
+narrower than native ABI preservation. Exhaustive struct literals need new
+`Motif.pitch_basis`, `InteractionMaterial.pitch_basis`,
+`PerformancePlan.cover_constraints` and `Score.observed_lifetime` fields; exhaustive
+enum matches need `SectionFamily::Named` and `ActionCause::Discourse` cases. The
+[migration note](HUMAN_MUSIC_COVER.md#rust-source-migration) gives historical values
+and preferred constructors. These Rust-only audio objects are outside the C ABI;
+final-source ABI and clean-room consumer checks remain mandatory.
+
+### Current claim ledger
+
+| Claim | Status and boundary |
+| --- | --- |
+| Accepted R17 BLACK_ICE pocket sounds good | **Observed**, maintainer audition of the flagship only |
+| Start-source accepted controls reproduce | **Observed**, 48 WAVs and 757 text receipts at the frozen start source; manifest below |
+| Historical known sweep remains 61/59 | **Observed**, exact replay source and first-failure comparison recorded below; known data |
+| New objects express the stated source/lifetime/cover relations | **Disclosed within code inspection and the individually cited law-test boundaries**; not universal musical acceptance |
+| Ode source encodings agree under declared staff projection | **Corroborated within a shared edition**, with the raw mismatch retained |
+| Final integrated cover laws, renders, PCM preservation and engineering gates | **UNVERIFIED** at this documentation checkpoint |
+| Fresh 36-case holdout | **UNVERIFIED**, prepared configuration; no musical cases executed before root's freeze/commit |
+| Cover recognition, interpretation quality and post-consolidation listening acceptance | **UNVERIFIED**, requires the maintainer's ear |
+
 ## Phase 0: accepted artifact freeze
 
 **Observed:** regeneration at the start source with Rust 1.98.1 matched all
@@ -675,6 +802,33 @@ include consumed holdouts, historical red probes and hardware-dependent tests.
 | Listening | pocket/cover lab WAVs | bytes are machine evidence; perception awaits ear |
 | Historical archival | ignored old round sweeps | known data, not fresh validation |
 | Release | package, ABI, cleanroom, MSRV, notices | artifact/consumer boundary |
+
+The normal editing loop selects the affected law, then adds characterization when
+ownership can affect the accepted score. Example commands below are prescriptions,
+not additional execution receipts:
+
+```sh
+CARGO_BUILD_JOBS=1 RUST_TEST_THREADS=1 cargo +1.98.1 test --lib audio::human_music::rhythm::tests
+CARGO_BUILD_JOBS=1 RUST_TEST_THREADS=1 cargo +1.98.1 test --test audio_consolidation_characterization --test audio_pocket_voice
+CARGO_BUILD_JOBS=1 RUST_TEST_THREADS=1 cargo +1.98.1 test --lib audio::human_music::cover::tests
+```
+
+Choose the relevant commands rather than rerunning all three for every edit.
+Event/evidence characterization does not render PCM; the short voice controls
+test scheduling and block-size equivalence. Long multiworld render tests and the
+48-WAV accepted-corpus comparison remain required at their full-gate boundaries.
+Once a final source is frozen, preflight itself runs the ordinary suite; an extra
+identical full local rerun is unnecessary unless source changed or a failure needs
+discrimination. The dedicated CI PTY and consumer boundaries remain intact.
+
+Never blanket-run `cargo test -- --ignored`. Ignored tests include consumed R16/R17
+sweeps, known-red upstream PTY/device probes, expensive archives and the new holdout.
+The [fresh configuration and execution protocol](fixtures/humanmusic-consolidation/fresh/README.md)
+declare 36 cases: 30 generated sources and six Ode combinations. Its own executable
+is ignored and requires a new receipt directory; compilation alone is not contact.
+Commit the configuration after architecture freeze, then preserve the first run's
+complete per-case failures and panics. New target seeds do not make the already
+inspected Ode fixture, shared generator or shared diagnostics independent sources.
 
 Use both `CARGO_BUILD_JOBS=1` and `RUST_TEST_THREADS=1` on the constrained
 maintainer machine. This limits concurrency without changing assertions, timeouts
