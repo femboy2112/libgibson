@@ -113,7 +113,7 @@ fn measure(
     // Source-owned candidate instrument, never a mutation of the finished composition.
     let mut trial = Score::new(world.tempo_bpm, 4.0, perf.total_beats);
     if let Some(links) = continuity {
-        trial.mono_voice = true;
+        trial.observed_lifetime = Some(super::voice::ObservedLifetimePolicy::ExplicitContinuity);
         trial.voice_continuity = links.to_vec();
     }
     trial.notes.extend_from_slice(band);

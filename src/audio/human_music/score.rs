@@ -353,10 +353,14 @@ impl SfxEvent {
 }
 
 /// A complete, deterministic score.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Score {
-    /// Opt-in Round XVII Lead/Bass direct-voice choke contract. Historical scores are false.
-    /// Orthogonal to the event fingerprint; render receipts must record this flag too.
+    /// Direct-voice observation law. `None` preserves archived flag/edge interpretation;
+    /// modern profile entry points always declare a policy, including the empty-edge case.
+    /// This changes observation, never PCM scheduling or source-event identity by itself.
+    pub observed_lifetime: Option<super::voice::ObservedLifetimePolicy>,
+    /// Archived source-planning switch that requests Lead/Bass continuation edges. The synth
+    /// consumes `voice_continuity`, never this flag; retained for exact historical receipts.
     pub mono_voice: bool,
     /// Source-declared connective continuations; no role-wide monophony is inferred.
     pub voice_continuity: Vec<super::voice::VoiceContinuation>,
@@ -406,6 +410,40 @@ pub struct Score {
     pub phrase_plans: Vec<super::phrase_expression::PhrasePlan>,
     /// Round XVI chord-preserving source voicing choices and contact tradeoffs.
     pub support_voicing_decisions: Vec<super::support_voicing::VoicingPathDecision>,
+}
+
+// Historical receipts used the derived field order. Preserve that spelling for archived
+// scores; the explicit modern observation contract is visible only when it was declared.
+impl std::fmt::Debug for Score {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("Score");
+        d.field("mono_voice", &self.mono_voice);
+        d.field("voice_continuity", &self.voice_continuity);
+        d.field("notes", &self.notes);
+        d.field("drums", &self.drums);
+        d.field("sfx", &self.sfx);
+        d.field("chords", &self.chords);
+        d.field("sections", &self.sections);
+        d.field("tempo_bpm", &self.tempo_bpm);
+        d.field("beats_per_bar", &self.beats_per_bar);
+        d.field("total_beats", &self.total_beats);
+        d.field("melody_repairs", &self.melody_repairs);
+        d.field("melody_rejudged", &self.melody_rejudged);
+        d.field("vertical_decisions", &self.vertical_decisions);
+        d.field("support_report", &self.support_report);
+        d.field("vertical_repairs", &self.vertical_repairs);
+        d.field("tension_edits", &self.tension_edits);
+        d.field("pad_voicing_edits", &self.pad_voicing_edits);
+        d.field("hearings", &self.hearings);
+        d.field("expression_decisions", &self.expression_decisions);
+        d.field("occupancy", &self.occupancy);
+        d.field("phrase_plans", &self.phrase_plans);
+        d.field("support_voicing_decisions", &self.support_voicing_decisions);
+        if let Some(policy) = self.observed_lifetime {
+            d.field("observed_lifetime", &policy);
+        }
+        d.finish()
+    }
 }
 
 /// A note as a dependent player consumed it: onset (beats), length (beats), pitch, function.
@@ -465,6 +503,7 @@ impl Score {
     /// An empty score.
     pub fn new(tempo_bpm: f32, beats_per_bar: f64, total_beats: f64) -> Score {
         Score {
+            observed_lifetime: None,
             mono_voice: false,
             voice_continuity: Vec::new(),
             notes: Vec::new(),
@@ -487,6 +526,18 @@ impl Score {
             occupancy: Vec::new(),
             phrase_plans: Vec::new(),
             support_voicing_decisions: Vec::new(),
+        }
+    }
+
+    /// Effective observation law. Explicit edges and the archived mono flag retain their
+    /// historical meaning; a modern empty-edge score uses its declared policy.
+    pub fn observed_lifetime_policy(&self) -> super::voice::ObservedLifetimePolicy {
+        use super::voice::ObservedLifetimePolicy;
+        if self.mono_voice || !self.voice_continuity.is_empty() {
+            ObservedLifetimePolicy::ExplicitContinuity
+        } else {
+            self.observed_lifetime
+                .unwrap_or(ObservedLifetimePolicy::LegacyRoleMasking)
         }
     }
 

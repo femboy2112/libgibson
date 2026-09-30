@@ -1586,7 +1586,7 @@ structure!(score::Score, "score/events/v2";
     sections => "sections", tempo_bpm => "tempo_bpm", beats_per_bar => "beats_per_bar",
     total_beats => "total_beats", melody_repairs => "melody_repairs",
     melody_rejudged => "melody_rejudged",
-    ; ignore mono_voice, voice_continuity, vertical_decisions, support_report,
+    ; ignore observed_lifetime, mono_voice, voice_continuity, vertical_decisions, support_report,
       vertical_repairs, tension_edits, pad_voicing_edits, hearings,
       expression_decisions, occupancy, phrase_plans, support_voicing_decisions
 );
@@ -1605,4 +1605,51 @@ legacy_alias!(
     song::ThematicMap,
     song::HarmonicMap,
     score::Score
+);
+
+macro_rules! policy_enum {
+    ($ty:path, $tag:literal; $($variant:ident => $discriminant:literal),+ $(,)?) => {
+        impl CanonicalFingerprint for $ty {
+            fn encode(&self, w: &mut FingerprintWriter) {
+                w.tag($tag);
+                w.tag(match self { $(Self::$variant => $discriminant),+ });
+            }
+        }
+    };
+}
+policy_enum!(policy::PitchPolicy, "policy/Pitch/v2"; Written => "written", Temporal => "temporal");
+policy_enum!(policy::ContinuationAdmission, "policy/ContinuationAdmission/v2";
+    ReleaseEnvelope => "envelope", ExplicitContinuation => "explicit");
+policy_enum!(policy::OccupancyPolicy, "policy/Occupancy/v2";
+    Acoustic => "acoustic", AuthoredIntent => "authored");
+policy_enum!(policy::SupportPolicy, "policy/Support/v2";
+    Independent => "independent", HeardHarmony => "heard", SourceVoicePath => "voice-path");
+policy_enum!(policy::VoiceLifetimePolicy, "policy/VoiceLifetime/v2";
+    ReleaseEnvelope => "envelope", ExplicitContinuations => "explicit");
+policy_enum!(policy::SourceEvidencePolicy, "policy/SourceEvidence/v2";
+    Events => "events", AuthoredSources => "authored");
+policy_enum!(policy::HistoricalRepair, "policy/HistoricalRepair/v2";
+    None => "none", SupportMass => "support-mass", SoundingTension => "sounding-tension");
+structure!(policy::PulsePolicy, "policy/Pulse/v2";
+    lattice_positions => "lattice_positions", legato_connectives => "legato_connectives",
+    continuation_admission => "continuation_admission", stable_precursors => "stable_precursors",
+);
+impl CanonicalFingerprint for policy::ExpressionPolicy {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        w.tag("policy/Expression/v2");
+        match self {
+            Self::Unchanged => w.tag("unchanged"),
+            Self::LocalConnectives => w.tag("local-connectives"),
+            Self::Phrase => w.tag("phrase"),
+            Self::Pulse(pulse) => {
+                w.tag("pulse");
+                w.field("pulse", pulse);
+            }
+        }
+    }
+}
+structure!(policy::PerformanceProfile, "policy/PerformanceProfile/v2";
+    pitch => "pitch", expression => "expression", occupancy => "occupancy",
+    support => "support", lifetime => "lifetime", observation => "observation",
+    evidence => "evidence", repair => "repair",
 );

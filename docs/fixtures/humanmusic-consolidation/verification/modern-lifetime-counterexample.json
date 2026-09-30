@@ -1,0 +1,17 @@
+{
+  "purpose": "modern-api observer law mutation falsifier",
+  "head": "055f9aed2e082f5dabf07f7c21e826072aac9fa6",
+  "library_sha256": "310ede2904921fbc3270cdd5578844256b3e9e327c6d151a46f2830c8c455f88",
+  "probe_sha256": "0ed086af4b8731bc663ef06512304d7a662c5533d7d77026ed155b6d91c47b85",
+  "compile": "rustc +1.98.1 --edition 2021 /tmp/libgibson-modern-lifetime-probe.rs --extern gibson=target/debug/deps/libgibson.rlib -L dependency=target/debug/deps -o /tmp/libgibson-modern-lifetime-probe",
+  "exit": 0,
+  "stdout": "profile=PerformanceProfile { pitch: Temporal, expression: Pulse(PulsePolicy { lattice_positions: true, legato_connectives: true, continuation_admission: ExplicitContinuation, stable_precursors: false }), occupancy: AuthoredIntent, support: SourceVoicePath, lifetime: ReleaseEnvelope, evidence: AuthoredSources, repair: None }\npolicy=LegacyRoleMasking\nmono=false\nlinks=0\nbefore=1.545759609205760\nafter=1.250000000000000\ncanonical_envelope=1.545759609205760\nCOUNTEREXAMPLE: an unlinked same-role attack changed a modern ReleaseEnvelope observation\n",
+  "stderr": "",
+  "source_boundary": "linked current built library; repository worktree includes ongoing changes, so library content hash is authority rather than clean HEAD claim",
+  "red_test": {
+    "command": "target/debug/deps/audio_realization_policy-2b2d01f129296679 modern_release_envelope_ignores_unlinked_same_role_attacks --exact --nocapture",
+    "binary_sha256": "7aa5d9f9df2c2f0b04ab61fab7e4b9e2def3225a865e50bed3b5a2f5b5078f65",
+    "exit": 101,
+    "output": "modern-lifetime-red.txt"
+  }
+}

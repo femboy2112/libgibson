@@ -872,7 +872,9 @@ pub fn audible_voices(
             VoiceSource::Note(index) => *super::voice::patch(world, score.notes[index].role),
         };
         if let VoiceSource::Note(index) = source {
-            if score.mono_voice || !score.voice_continuity.is_empty() {
+            if score.observed_lifetime_policy()
+                == super::voice::ObservedLifetimePolicy::ExplicitContinuity
+            {
                 voice.end = super::voice::effective_audible_end_at(
                     &score.notes[index],
                     &patch,

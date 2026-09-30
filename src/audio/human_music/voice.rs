@@ -62,6 +62,16 @@ pub enum ObservedLifetimePolicy {
     ExplicitContinuity,
 }
 
+impl super::fingerprint::CanonicalFingerprint for ObservedLifetimePolicy {
+    fn encode(&self, writer: &mut super::fingerprint::FingerprintWriter) {
+        writer.tag("ObservedLifetimePolicy/v2");
+        writer.tag(match self {
+            Self::LegacyRoleMasking => "legacy-role-masking",
+            Self::ExplicitContinuity => "explicit-continuity",
+        });
+    }
+}
+
 /// One immutable acoustic reconstruction shared by observers of the same notes and tempo.
 /// Borrowing the notes prevents in-place edits from making a live reconstruction stale.
 #[derive(Debug)]
@@ -142,9 +152,10 @@ impl<'a> HeardWindows<'a> {
         }
     }
 
-    /// Compatibility interpretation of the historical Score flag and explicit graph.
+    /// Use the declared observation policy, including modern scores with no continuation edges.
+    /// Archived scores retain their explicit compatibility interpretation in Score.
     pub fn of_score(score: &'a Score, world: &MusicWorld) -> Self {
-        if !score.mono_voice && score.voice_continuity.is_empty() {
+        if score.observed_lifetime_policy() == ObservedLifetimePolicy::LegacyRoleMasking {
             Self::historical(&score.notes, world, score.tempo_bpm)
         } else {
             Self::explicit(

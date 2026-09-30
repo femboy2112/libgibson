@@ -123,8 +123,8 @@ pub fn heard_windows(notes: &[Note], world: &MusicWorld, tempo_bpm: f32) -> Vec<
     super::voice::HeardWindows::historical(notes, world, tempo_bpm).into_windows()
 }
 
-/// Score-aware compatibility view. Only explicit continuation edges license direct choke;
-/// the legacy flag selects the historical observation convention when the graph is empty.
+/// Score-aware observation. Modern empty-edge scores retain the canonical envelope lifetime;
+/// only the explicitly archived observation contract applies role masking.
 pub fn heard_windows_score(score: &Score, world: &MusicWorld) -> Vec<(f64, f64)> {
     super::voice::HeardWindows::of_score(score, world).into_windows()
 }
@@ -302,7 +302,9 @@ impl TensionDiagnostics {
         contexts: &[HarmonicContext],
         world: &MusicWorld,
     ) -> TensionDiagnostics {
-        let clashes = if score.mono_voice || !score.voice_continuity.is_empty() {
+        let clashes = if score.observed_lifetime_policy()
+            == super::voice::ObservedLifetimePolicy::ExplicitContinuity
+        {
             clashes_in_windows(
                 &score.notes,
                 contexts,

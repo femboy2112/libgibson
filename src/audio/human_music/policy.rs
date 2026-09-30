@@ -6,6 +6,7 @@
 
 use super::performance::EnsembleCoupling;
 use super::pocket::PocketOptions;
+use super::voice::ObservedLifetimePolicy;
 
 /// How the melodic search justifies pitch paths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -124,7 +125,8 @@ pub(crate) enum HistoricalRepair {
     SoundingTension,
 }
 
-/// Orthogonal laws for realization. The default remains the written historical production path.
+/// Orthogonal laws for realization. The default uses written sources with canonical observation;
+/// the historical `perform` entry point separately retains its archived observation model.
 /// Use [`Self::POCKET`] explicitly for the accepted flagship source/lifetime combination.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PerformanceProfile {
@@ -133,6 +135,9 @@ pub struct PerformanceProfile {
     pub occupancy: OccupancyPolicy,
     pub support: SupportPolicy,
     pub lifetime: VoiceLifetimePolicy,
+    /// Canonical direct-voice observation, or an explicitly requested archived masking model.
+    /// Independent of whether the source actually declares any continuation edges.
+    pub observation: ObservedLifetimePolicy,
     pub evidence: SourceEvidencePolicy,
     pub(crate) repair: HistoricalRepair,
 }
@@ -150,6 +155,7 @@ impl PerformanceProfile {
         occupancy: OccupancyPolicy::Acoustic,
         support: SupportPolicy::Independent,
         lifetime: VoiceLifetimePolicy::ReleaseEnvelope,
+        observation: ObservedLifetimePolicy::ExplicitContinuity,
         evidence: SourceEvidencePolicy::Events,
         repair: HistoricalRepair::None,
     };
@@ -181,6 +187,20 @@ impl PerformanceProfile {
     /// Validate once before planning/realizing a public profile. Historical post-hoc repair
     /// configurations are available only through their compatibility entry points.
     pub fn validate(self, coupling: EnsembleCoupling) -> Result<(), PolicyError> {
+        if self.observation == ObservedLifetimePolicy::LegacyRoleMasking
+            && self.lifetime == VoiceLifetimePolicy::ExplicitContinuations
+        {
+            return Err(PolicyError(
+                "explicit continuation rendering requires explicit continuity observation",
+            ));
+        }
+        if self.observation == ObservedLifetimePolicy::ExplicitContinuity
+            && coupling != EnsembleCoupling::Independent
+        {
+            return Err(PolicyError(
+                "canonical observation requires final-source independent coupling",
+            ));
+        }
         let expressed = self.expression != ExpressionPolicy::Unchanged;
         let phrase = matches!(
             self.expression,

@@ -1375,6 +1375,18 @@ pub fn realize_pad_heard(
     (pad, edits)
 }
 
+/// Heard harmony under canonical direct-voice physics. Empty links mean the full envelope;
+/// another note of the same role does not implicitly mask a released voice.
+pub fn realize_pad_heard_with_continuity(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    band: &[Note],
+    links: &[super::voice::VoiceContinuation],
+) -> (Vec<Note>, Vec<PadVoicingEdit>) {
+    let (_, pad, edits) = heard_pad_path_impl(perf, world, band, Some(links));
+    (pad, edits)
+}
+
 /// Round XVI's pad: retain the Round XIV harmony solution, then select a same-pitch-class
 /// voicing within the source-owned path when the audible register/path witness asks for one.
 /// Trial realizations supply evidence; the selected path is emitted once as the final pad.
@@ -1441,11 +1453,8 @@ fn heard_pad_path_impl(
         let mut all = band.to_vec();
         all.extend(pad.iter().copied());
         let id = if let Some(links) = continuity {
-            let mut trial = super::score::Score::new(world.tempo_bpm, 4.0, perf.total_beats);
-            trial.notes = all;
-            trial.mono_voice = true;
-            trial.voice_continuity = links.to_vec();
-            IdentityDiagnostics::measure_score(&trial, &perf.contexts, world)
+            let heard = super::voice::HeardWindows::explicit(&all, world, world.tempo_bpm, links);
+            IdentityDiagnostics::measure_heard_windows(&heard, &perf.contexts)
         } else {
             IdentityDiagnostics::measure(&all, &perf.contexts, world, world.tempo_bpm)
         };

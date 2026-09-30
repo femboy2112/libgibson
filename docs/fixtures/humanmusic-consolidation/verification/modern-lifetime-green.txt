@@ -1,0 +1,22 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.69s
+     Running tests/audio_consolidation_characterization.rs (target/debug/deps/audio_consolidation_characterization-613028817368349a)
+
+running 1 test
+test accepted_pocket_events_and_causal_evidence_are_frozen ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.06s
+
+     Running tests/audio_realization_policy.rs (target/debug/deps/audio_realization_policy-2b2d01f129296679)
+
+running 8 tests
+test accepted_modern_pocket_retains_archived_events_and_evidence ... ok
+test canonical_lifetime_reaches_support_before_notes_are_chosen ... ok
+test changing_only_render_lifetime_preserves_source_phrases_and_semantic_ownership ... ok
+test explicit_archival_observation_reproduces_historical_adapter_evidence ... ok
+test modern_release_envelope_ignores_unlinked_same_role_attacks ... ok
+test observer_and_render_policy_have_distinct_canonical_coordinates ... ok
+test unavailable_support_factor_remains_an_explicit_archived_non_treatment ... ok
+test unlawful_profiles_are_rejected_at_one_boundary ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.80s

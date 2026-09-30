@@ -625,3 +625,110 @@ correctly says nearest-step projection, including its existing tie/rollover beha
 Exact downloaded external-source bytes are archived unchanged, including upstream
 whitespace in `ode.ly` and the license page; their recorded SHA256 identities take
 precedence over normalizing archival text. No production formatting rule changed.
+
+
+## Future feel seam and decisions awaiting human evidence
+
+The future morphism has source `PocketedPerformance` and target performed timing:
+`FeelTransport` must retain canonical metric identity while correlating timing
+across a phrase and interacting roles. Its identity element changes nothing.
+A future implementation must supply a projection law, bounded groove-domain
+checks and falsifiers for structural displacement; independent jitter is not an
+implementation of this object. This consolidation adds no feel behavior, random
+jitter, arbitrary drift or aesthetic timing thresholds.
+
+The maintainer is away and has authorized reasonable decisions without further
+questions. These unresolved decisions are recorded rather than silently answered:
+
+* R17 preservation and cover recognition/interpretation require actual listening.
+  No generated test substitutes for those observations.
+* The later provisional A-major Swing chart is the working declaration. The earlier
+  pasted D/Am/Em/G chart differs in transposition and post-chorus order. Neither
+  capo nor missing notes are inferred. Confirmation awaits richer lawful evidence.
+* Swing melody/riff, characteristic bass/drums, chord durations, section lengths,
+  rests and exact tempo remain unobserved or provisional. A later local MIDI or
+  melody-plus-rhythm lead sheet would increase identity information most directly.
+* The imported Ode soprano is the explicitly selected melody; the other three
+  named source voices remain observations. Generated accompaniment is not claimed
+  to reconstruct that SATB arrangement or a historically authoritative harmony.
+* The first cover relation pins whole selected role lines, rather than discovering
+  a listener's minimal recognizable hook. Whether this is musically too rigid
+  requires the paired auditions; changing the quotient later requires new tests.
+* Public API promotion and default changes remain outside this mission. The draft
+  PR and experimental opt-in boundary remain in force.
+
+
+## Test architecture and constrained-machine gate
+
+The normal developer loop uses changed-module unit/property tests, the relevant
+integration binary, and `audio_consolidation_characterization` when source events
+may change. `audio_pocket_voice` adds short PCM controls for continuation changes.
+The complete release gate is retained. Never blanket-run ignored tests: they
+include consumed holdouts, historical red probes and hardware-dependent tests.
+
+| Class | Examples | Evidence boundary |
+|---|---|---|
+| Unit / property | rhythm, pitch relations, canonical encoding, cover laws | named executable invariant |
+| Characterization | accepted R17 event/evidence corpus | exact events/receipts, not PCM |
+| Short render | continuation and block-size controls | bounded direct synthesis |
+| Expensive integration | multiworld and paired full PCM tests | full local/CI gate |
+| Listening | pocket/cover lab WAVs | bytes are machine evidence; perception awaits ear |
+| Historical archival | ignored old round sweeps | known data, not fresh validation |
+| Release | package, ABI, cleanroom, MSRV, notices | artifact/consumer boundary |
+
+Use both `CARGO_BUILD_JOBS=1` and `RUST_TEST_THREADS=1` on the constrained
+maintainer machine. This limits concurrency without changing assertions, timeouts
+or coverage. Existing line-table-only debug settings already reduce disk cost.
+A 120-beat, 71-BPM stereo f32 buffer at 48kHz is approximately 39 MB before
+other allocations; paired renders and concurrent tests multiply that cost. This
+is an allocation estimate, not a measured speedup claim.
+
+Source changes in this consolidation remove quadratic historical endpoint scans,
+fragile rescan/rematch in sonority, and repeated chord-membership allocations.
+`HeardWindows` permits several observers to borrow one immutable reconstruction.
+We do not introduce a global mutable cache or weaken final-hearing freshness.
+Repeated clean-room/package/MSRV checks establish different boundaries and stay.
+
+The actual scripts, rather than a generic command list, define the release gate.
+`scripts/release/check-abi.sh` can select an existing release library; explicitly
+build release at final source before preflight to prevent a stale ABI receipt.
+Nested scripts invoke plain cargo, so set `RUSTUP_TOOLCHAIN=1.98.1` as well as
+`STABLE_TOOLCHAIN=+1.98.1`; the active local default is a different nightly.
+The installed `+1.85` alias resolves to 1.85.1. An audit version query additionally
+installed exact 1.85.0; no project dependency or source changed from that query.
+
+Final local commands include the script's fmt, strict all-target/all-feature
+clippy, normal tests, warnings-denied docs, locked MSRV, fresh-resolution MSRV
+consumer, package verification, ABI, C/C++/Python/Go/Rust cleanroom, notices and
+licenses. CI additionally covers explicit FX/UI example tests and isolated serial
+PTY suites. The importer has its own seven Python parser laws and pinned tool
+requirements. All-feature/MSRV extras and final rerender receipts are reported
+separately; prescribed commands are not claimed as executed.
+
+
+## Repaired: canonical empty-edge observation
+
+A red-first mutation exposed a real architectural bug in the new public profile:
+selecting release envelopes with no continuation graph fell through to historical
+same-role masking. An unrelated Pad attack at1.25 shortened an earlier voice from
+1.545759609205760 to1.25 beats although synthesis did not choke that voice.
+`modern-lifetime-counterexample.json` and the failing test output preserve contact.
+
+Modern profiles now select observation explicitly before support chooses notes.
+Only explicit edges shorten canonical direct envelopes; an empty graph means no
+choke. Historical wrappers select the archived interpretation. One validation
+boundary rejects contradictory modern observation/render combinations. The Score
+accessor feeds mass, identity, tension, sonority and source support consistently.
+A long-release source-support falsifier distinguishes a real planner repair from
+merely changing the final diagnostic: support choices change while lead/keys/bass
+remain fixed, and final hearings stay fresh. No synth code changed.
+
+Score is retained as the compatibility container. The explicit observation selector
+is evidence policy, not render physics: synthesis consumes notes and continuation
+edges, never the old mono flag. Event and graph canonical identities remain separate.
+A new RenderContract wrapper would add no authority here and was not introduced.
+Modern Debug appends the selected observer; legacy None preserves exact old Debug.
+The modern BLACK pocket matches the archived full Score receipt after normalizing
+only that new metadata. The isolated snapshot passed21 tests, including short PCM
+controls and complete accepted event/evidence characterization; final full/stem WAV
+equivalence remains a separately required receipt.

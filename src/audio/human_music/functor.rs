@@ -92,7 +92,7 @@ pub fn compose_full(
 /// never re-derived; the performance plan is built from it and every player realizes a projection
 /// of that performance.
 pub fn perform(song: &SongMap, world: &MusicWorld, opts: PerformanceOptions) -> Composition {
-    perform_policy(song, world, opts, PerformanceProfile::WRITTEN)
+    perform_historical(song, world, opts, PerformanceProfile::WRITTEN)
 }
 
 /// Round XII opt-in pitch-path realization of the same song and performance plan.
@@ -102,14 +102,14 @@ pub fn perform_temporal(
     world: &MusicWorld,
     opts: PerformanceOptions,
 ) -> Composition {
-    perform_policy(song, world, opts, PerformanceProfile::TEMPORAL)
+    perform_historical(song, world, opts, PerformanceProfile::TEMPORAL)
 }
 
 /// Round XIII opt-in: the Round XII realization with the support voicings' temporal-mass contract
 /// ([`super::comp::gate_support_mass`]). Same song, same performance plan, same lead and bass;
 /// [`perform_temporal`] remains the exact Round XII listening control.
 pub fn perform_mass(song: &SongMap, world: &MusicWorld, opts: PerformanceOptions) -> Composition {
-    perform_policy(
+    perform_historical(
         song,
         world,
         opts,
@@ -129,7 +129,7 @@ pub fn perform_tension(
     world: &MusicWorld,
     opts: PerformanceOptions,
 ) -> Composition {
-    perform_policy(
+    perform_historical(
         song,
         world,
         opts,
@@ -151,7 +151,7 @@ pub fn perform_coherent(
     world: &MusicWorld,
     opts: PerformanceOptions,
 ) -> Composition {
-    perform_policy(song, world, opts, PerformanceProfile::HEARD)
+    perform_historical(song, world, opts, PerformanceProfile::HEARD)
 }
 
 /// Round XV opt-in: the Round XIV harmonic solution with source-level expressive lead/bass.
@@ -170,7 +170,7 @@ pub fn perform_expressive(
         EnsembleCoupling::Independent,
         "Round XV expression requires Independent coupling; legacy repair arms cannot run after final hearings"
     );
-    perform_policy(song, world, opts, PerformanceProfile::EXPRESSIVE)
+    perform_historical(song, world, opts, PerformanceProfile::EXPRESSIVE)
 }
 
 /// Independent experimental factors. Historical R14/R15 entry points never read these.
@@ -238,7 +238,7 @@ pub fn perform_phrase_experiment(
         EnsembleCoupling::Independent,
         "Round XVI requires Independent coupling and final-source hearings"
     );
-    perform_policy(song, world, opts, phrase_profile(factors))
+    perform_historical(song, world, opts, phrase_profile(factors))
 }
 
 pub use super::pocket::PocketOptions;
@@ -272,7 +272,7 @@ pub fn perform_pocket_experiment(
         EnsembleCoupling::Independent,
         "Round XVII requires Independent coupling"
     );
-    perform_policy(
+    perform_historical(
         song,
         world,
         opts,
@@ -289,17 +289,23 @@ pub fn perform_with_profile(
     profile: PerformanceProfile,
 ) -> Result<Composition, PolicyError> {
     profile.validate(opts.coupling)?;
-    Ok(perform_policy(song, world, opts, profile))
+    let perf = PerformancePlan::from_song(song, world, opts);
+    let score = realize_policy(song, world, &perf, profile, Some(profile.observation));
+    Ok(Composition {
+        score,
+        song: song.clone(),
+        perf,
+    })
 }
 
-fn perform_policy(
+fn perform_historical(
     song: &SongMap,
     world: &MusicWorld,
     opts: PerformanceOptions,
     profile: PerformanceProfile,
 ) -> Composition {
     let perf = PerformancePlan::from_song(song, world, opts);
-    let score = realize_policy(song, world, &perf, profile);
+    let score = realize_policy(song, world, &perf, profile, None);
     Composition {
         score,
         song: song.clone(),
@@ -316,14 +322,20 @@ pub fn realize_with_profile(
     profile: PerformanceProfile,
 ) -> Result<Score, PolicyError> {
     profile.validate(perf.coupling)?;
-    Ok(realize_policy(song, world, perf, profile))
+    Ok(realize_policy(
+        song,
+        world,
+        perf,
+        profile,
+        Some(profile.observation),
+    ))
 }
 
 /// Realize a score from an explicit (possibly hand-mutated) song and performance — the entry the
 /// adversarial probes use to inject a call, veto an arrangement, or license a burst and watch what
 /// the players do with it.
 pub fn realize_performance(song: &SongMap, world: &MusicWorld, perf: &PerformancePlan) -> Score {
-    realize_policy(song, world, perf, PerformanceProfile::WRITTEN)
+    realize_policy(song, world, perf, PerformanceProfile::WRITTEN, None)
 }
 
 /// Causal realization under musical policies; historical names end at their adapters.
@@ -332,10 +344,12 @@ fn realize_policy(
     world: &MusicWorld,
     perf: &PerformancePlan,
     profile: PerformanceProfile,
+    observed_lifetime: Option<super::voice::ObservedLifetimePolicy>,
 ) -> Score {
     let (trace, seed, plan) = (&song.trace, song.seed, &song.plan);
     let total_beats = plan.form.total_beats;
     let mut score = Score::new(world.tempo_bpm, BEATS_PER_BAR, total_beats);
+    score.observed_lifetime = observed_lifetime;
     score.sections = sections_from_plan(plan);
     score.chords = perf.chords.clone();
 
@@ -495,23 +509,33 @@ fn realize_policy(
                 ] {
                     score.hearings.push(Hearing::of("pad", source, notes));
                 }
-                let (pad, edits) = if score.mono_voice {
-                    let (notes, edits, decisions) = super::comp::realize_pad_pocketed(
-                        perf,
-                        world,
-                        &band,
-                        &score.voice_continuity,
-                    );
-                    score.support_voicing_decisions = decisions;
-                    (notes, edits)
-                } else if profile.support == SupportPolicy::SourceVoicePath {
-                    let (notes, edits, decisions) =
-                        super::comp::realize_pad_phrased(perf, plan, world, &band);
-                    score.support_voicing_decisions = decisions;
-                    (notes, edits)
-                } else {
-                    super::comp::realize_pad_heard(perf, plan, world, &band)
-                };
+                let canonical_observation = score.observed_lifetime_policy()
+                    == super::voice::ObservedLifetimePolicy::ExplicitContinuity;
+                let (pad, edits) =
+                    if canonical_observation && profile.support == SupportPolicy::SourceVoicePath {
+                        let (notes, edits, decisions) = super::comp::realize_pad_pocketed(
+                            perf,
+                            world,
+                            &band,
+                            &score.voice_continuity,
+                        );
+                        score.support_voicing_decisions = decisions;
+                        (notes, edits)
+                    } else if profile.support == SupportPolicy::SourceVoicePath {
+                        let (notes, edits, decisions) =
+                            super::comp::realize_pad_phrased(perf, plan, world, &band);
+                        score.support_voicing_decisions = decisions;
+                        (notes, edits)
+                    } else if canonical_observation {
+                        super::comp::realize_pad_heard_with_continuity(
+                            perf,
+                            world,
+                            &band,
+                            &score.voice_continuity,
+                        )
+                    } else {
+                        super::comp::realize_pad_heard(perf, plan, world, &band)
+                    };
                 score.pad_voicing_edits = edits;
                 (pad, keys, bass)
             } else {
