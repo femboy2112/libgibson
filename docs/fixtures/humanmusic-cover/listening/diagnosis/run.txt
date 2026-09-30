@@ -1,0 +1,43 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `release` profile [optimized] target(s) in 35.73s
+     Running `target/release/examples/cover_music_lab --out=target/humanmusic-cover/generated-diagnosis`
+Cover lab: machine invariance and freedom; human recognizability UNVERIFIED.
+CoverMap canonical=fa457015f75ca53f
+  motif: Invariant
+  riff: Free
+  groove: Invariant
+  harmonic-contour: Invariant
+  harmonic-loop: Free
+  form: Invariant
+  orchestration: Free
+  bass-figure: Free
+
+black_seed_1: seed=901 world=BLACK_ICE key=9 tempo=95 language=fusion score=808655b472edf2bc perf=5209952802d33d8b
+CoverConformance: PASS (metric length true)
+  motif: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+  groove: PASS — canonical kick/snare pattern; hats, clap, dynamics and timbre free (exact projection agrees)
+  harmonic-contour: PASS — relative roots, chord quality and exact metric span boundaries (exact projection agrees)
+  form: PASS — phrase boundary and family topology (exact projection agrees)
+Pipeline FAIL (preserved): CoverPipelineReceipt { song: false, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0 }
+
+black_seed_2: seed=902 world=BLACK_ICE key=9 tempo=95 language=fusion score=728b0fda70fb96a4 perf=8e7d9eb812a6ea3e
+CoverConformance: PASS (metric length true)
+  motif: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+  groove: PASS — canonical kick/snare pattern; hats, clap, dynamics and timbre free (exact projection agrees)
+  harmonic-contour: PASS — relative roots, chord quality and exact metric span boundaries (exact projection agrees)
+  form: PASS — phrase boundary and family topology (exact projection agrees)
+Pipeline FAIL (preserved): CoverPipelineReceipt { song: false, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0 }
+Freedom versus first cover: CoverFreedom { support_voicing: true, dynamics: true, percussion_detail: true, interactions: true }
+swiss: INFEASIBLE Invalid("pinned harmony outside target vocabulary")
+
+vapor: seed=904 world=VAPOR95 key=5 tempo=95 language=fusion score=b1a83e9dc44b7c50 perf=8f1cd852a081e297
+CoverConformance: PASS (metric length true)
+  motif: PASS — relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free (exact projection agrees)
+  groove: PASS — canonical kick/snare pattern; hats, clap, dynamics and timbre free (exact projection agrees)
+  harmonic-contour: PASS — relative roots, chord quality and exact metric span boundaries (exact projection agrees)
+  form: PASS — phrase boundary and family topology (exact projection agrees)
+Pipeline FAIL (preserved): CoverPipelineReceipt { song: false, score_validation: None, unclassified: 0, temporal_false: 1, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0 }
+Freedom versus first cover: CoverFreedom { support_voicing: true, dynamics: true, percussion_detail: true, interactions: true }
+transposed_faster: INFEASIBLE Invalid("pinned harmony outside target vocabulary")
+
+Listening questions: is the identified melody unmistakably the same song? Does the free band interpret it rather than merely change patches? The partial chart has no source-melody recognition claim.

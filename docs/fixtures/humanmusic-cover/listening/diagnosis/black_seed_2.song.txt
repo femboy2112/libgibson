@@ -1,0 +1,2 @@
+SongMapConformance: FAIL (song 0xaac7e4e17c66f4b3, performed 0xaac7e4e17c66f4b3; 2 identity sites, 0 landmarks, 0 chord changes checked)
+  unwitnessed_song_obligations: 1

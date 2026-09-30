@@ -15,7 +15,7 @@ use gibson::audio::{
         reference_song::{ReferenceMode, ReferenceSong},
         score::Score,
         semantic::demo_trace,
-        song::SongMap,
+        song::{SongMap, SongMapConformance},
         temporal::TemporalPitchDiagnostics,
         theory::Mode,
         witness, HumanMusicSynth, MusicWorld,
@@ -158,6 +158,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 CoverFreedom::compare(reference, &c)
             )?;
         }
+        std::fs::write(
+            out.join(format!("{name}.song.txt")),
+            SongMapConformance::check(&c.song, &c.perf, &c.score).report(),
+        )?;
         std::fs::write(
             out.join(format!("{name}.temporal.txt")),
             TemporalPitchDiagnostics::measure(&c.perf, &c.score).report(),
