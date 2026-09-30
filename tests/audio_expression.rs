@@ -366,6 +366,15 @@ fn r15_all_eighteen_bass_approaches_are_expressed_with_receipts() {
     ) && e.after_observation.as_ref().unwrap().verdict
         == V::AsWritten));
     assert!(b.score.stale_hearings().is_empty());
+    let keys: Vec<_> = b.score.role_notes(Role::Keys).copied().collect();
+    assert!(b
+        .score
+        .hearings
+        .contains(&gibson::audio::human_music::score::Hearing::of(
+            "bass",
+            Role::Keys,
+            &keys
+        )));
     let wa = witness::audit(&a.perf, &a.score);
     let wb = witness::audit(&b.perf, &b.score);
     for (a, b) in wa.rows.iter().zip(&wb.rows) {

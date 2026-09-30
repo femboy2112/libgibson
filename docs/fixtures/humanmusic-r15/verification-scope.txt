@@ -1,0 +1,25 @@
+Round XV verification scope
+
+Production audio at b9b135a3d0a6d39f5179602cbe149dfca3d11676:
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=1 STABLE_TOOLCHAIN=+1.98.1 MSRV_TOOLCHAIN=+1.85 scripts/release/preflight.sh
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=1 cargo +1.98.1 test --all-features
+cargo +1.85 check --locked --lib --all-features
+All passed. All-features aggregate: 1291 passed, 0 failed, 7 ignored.
+Separate ignored expressive and frozen R14 sweeps each cover 240 performances.
+
+Final receipt-only change records the existing expressive bass consumption of final keys
+in Score.hearings, with an assertion in the existing bass acceptance test. No Note, synth,
+identity observer, or stale-hearing checker changes. After that addition:
+cargo +1.98.1 fmt --check
+CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=1 cargo +1.98.1 test --test audio_expression
+cargo +1.98.1 run --example expressive_music_lab -- --out=target/humanmusic-r15/receipts
+cargo +1.98.1 clippy --all-targets --all-features -- -D warnings
+All passed: 14 expression tests, 1 ignored sweep already run separately.
+Full suites were not repeated for the final hearing-metadata addition.
+Refreshed diagnostics preserve the rendered score fingerprints. Every WAV SHA256 was
+rechecked against final/SHA256SUMS. No WAV regeneration was needed.
+
+See preflight.txt, all-features.txt, msrv-all-features.txt, expression-tests.txt,
+expression-sweep.txt, r14-control-sweep.txt, and final/ for exact outputs.
+Earlier terminal deadline failures are preserved; serial full suites passed without
+modifying the terminal demo or its timeout.

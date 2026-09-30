@@ -1,0 +1,452 @@
+[
+    Witness {
+        action: ActionId(
+            0,
+        ),
+        kind: Fill,
+        witnessed: true,
+        class: Stamped,
+        stamped: 4,
+        evidence: "at least two stamped fill events by the fill's own initiator",
+    },
+    Witness {
+        action: ActionId(
+            1,
+        ),
+        kind: Fill,
+        witnessed: true,
+        class: Stamped,
+        stamped: 4,
+        evidence: "at least two stamped fill events by the fill's own initiator",
+    },
+    Witness {
+        action: ActionId(
+            2,
+        ),
+        kind: Push,
+        witnessed: true,
+        class: Stamped,
+        stamped: 2,
+        evidence: "stamped players on the push step (two for an ensemble push), ahead of the target",
+    },
+    Witness {
+        action: ActionId(
+            3,
+        ),
+        kind: ReEntry,
+        witnessed: true,
+        class: Stamped,
+        stamped: 4,
+        evidence: "stamped entry notes by the player, after silence or as a staged entry",
+    },
+    Witness {
+        action: ActionId(
+            4,
+        ),
+        kind: Fragment,
+        witnessed: true,
+        class: Stamped,
+        stamped: 6,
+        evidence: "stamped notes forming a fragment (fewer events than the identity motif)",
+    },
+    Witness {
+        action: ActionId(
+            33,
+        ),
+        kind: Answer,
+        witnessed: true,
+        class: Stamped,
+        stamped: 8,
+        evidence: "the responder's stamped answer notes, carrying the response's material",
+    },
+    Witness {
+        action: ActionId(
+            5,
+        ),
+        kind: ReEntry,
+        witnessed: true,
+        class: Stamped,
+        stamped: 3,
+        evidence: "stamped entry notes by the player, after silence or as a staged entry",
+    },
+    Witness {
+        action: ActionId(
+            40,
+        ),
+        kind: Answer,
+        witnessed: true,
+        class: Stamped,
+        stamped: 3,
+        evidence: "the responder's stamped answer notes, carrying the response's material",
+    },
+    Witness {
+        action: ActionId(
+            39,
+        ),
+        kind: Answer,
+        witnessed: true,
+        class: Stamped,
+        stamped: 3,
+        evidence: "the responder's stamped answer notes, carrying the response's material",
+    },
+    Witness {
+        action: ActionId(
+            34,
+        ),
+        kind: Call,
+        witnessed: true,
+        class: Stamped,
+        stamped: 8,
+        evidence: "the caller's stamped statement notes",
+    },
+    Witness {
+        action: ActionId(
+            6,
+        ),
+        kind: Fill,
+        witnessed: true,
+        class: Stamped,
+        stamped: 4,
+        evidence: "at least two stamped fill events by the fill's own initiator",
+    },
+    Witness {
+        action: ActionId(
+            41,
+        ),
+        kind: Answer,
+        witnessed: true,
+        class: Stamped,
+        stamped: 3,
+        evidence: "the responder's stamped answer notes, carrying the response's material",
+    },
+    Witness {
+        action: ActionId(
+            7,
+        ),
+        kind: Hold,
+        witnessed: true,
+        class: Stamped,
+        stamped: 3,
+        evidence: "a stamped keys/pad voicing sustained across the hold",
+    },
+    Witness {
+        action: ActionId(
+            8,
+        ),
+        kind: Thicken,
+        witnessed: true,
+        class: Stamped,
+        stamped: 8,
+        evidence: "stamped pad notes adding an upper layer or more simultaneous voices",
+    },
+    Witness {
+        action: ActionId(
+            35,
+        ),
+        kind: Answer,
+        witnessed: true,
+        class: Stamped,
+        stamped: 8,
+        evidence: "the responder's stamped answer notes, carrying the response's material",
+    },
+    Witness {
+        action: ActionId(
+            9,
+        ),
+        kind: Fill,
+        witnessed: true,
+        class: Stamped,
+        stamped: 4,
+        evidence: "at least two stamped fill events by the fill's own initiator",
+    },
+    Witness {
+        action: ActionId(
+            36,
+        ),
+        kind: Answer,
+        witnessed: true,
+        class: Stamped,
+        stamped: 8,
+        evidence: "the responder's stamped answer notes, carrying the response's material",
+    },
+    Witness {
+        action: ActionId(
+            10,
+        ),
+        kind: Break,
+        witnessed: true,
+        class: Absence,
+        stamped: 0,
+        evidence: "silence from non-responders inside the break, after sound",
+    },
+    Witness {
+        action: ActionId(
+            11,
+        ),
+        kind: Hit,
+        witnessed: true,
+        class: Stamped,
+        stamped: 5,
+        evidence: "stamped players striking the hit together (two for an ensemble hit)",
+    },
+    Witness {
+        action: ActionId(
+            12,
+        ),
+        kind: ReEntry,
+        witnessed: true,
+        class: Stamped,
+        stamped: 4,
+        evidence: "stamped entry notes by the player, after silence or as a staged entry",
+    },
+    Witness {
+        action: ActionId(
+            13,
+        ),
+        kind: Resolve,
+        witnessed: true,
+        class: Stamped,
+        stamped: 1,
+        evidence: "a stamped chord-tone arrival on the intended harmony (the expected target or home)",
+    },
+    Witness {
+        action: ActionId(
+            14,
+        ),
+        kind: Thicken,
+        witnessed: true,
+        class: Stamped,
+        stamped: 8,
+        evidence: "stamped pad notes adding an upper layer or more simultaneous voices",
+    },
+    Witness {
+        action: ActionId(
+            15,
+        ),
+        kind: Fill,
+        witnessed: true,
+        class: Stamped,
+        stamped: 4,
+        evidence: "at least two stamped fill events by the fill's own initiator",
+    },
+    Witness {
+        action: ActionId(
+            16,
+        ),
+        kind: Pullback,
+        witnessed: true,
+        class: Stamped,
+        stamped: 14,
+        evidence: "stamped half-/double-time strokes and a drum rate lower/higher than before",
+    },
+    Witness {
+        action: ActionId(
+            17,
+        ),
+        kind: Hit,
+        witnessed: true,
+        class: Stamped,
+        stamped: 5,
+        evidence: "stamped players striking the hit together (two for an ensemble hit)",
+    },
+    Witness {
+        action: ActionId(
+            42,
+        ),
+        kind: Answer,
+        witnessed: true,
+        class: Stamped,
+        stamped: 4,
+        evidence: "the responder's stamped answer notes, carrying the response's material",
+    },
+    Witness {
+        action: ActionId(
+            18,
+        ),
+        kind: Break,
+        witnessed: true,
+        class: Absence,
+        stamped: 0,
+        evidence: "silence from non-responders inside the break, after sound",
+    },
+    Witness {
+        action: ActionId(
+            19,
+        ),
+        kind: Fragment,
+        witnessed: true,
+        class: Stamped,
+        stamped: 3,
+        evidence: "stamped notes forming a fragment (fewer events than the identity motif)",
+    },
+    Witness {
+        action: ActionId(
+            20,
+        ),
+        kind: Push,
+        witnessed: true,
+        class: Stamped,
+        stamped: 7,
+        evidence: "stamped players on the push step (two for an ensemble push), ahead of the target",
+    },
+    Witness {
+        action: ActionId(
+            21,
+        ),
+        kind: ReEntry,
+        witnessed: true,
+        class: Stamped,
+        stamped: 4,
+        evidence: "stamped entry notes by the player, after silence or as a staged entry",
+    },
+    Witness {
+        action: ActionId(
+            22,
+        ),
+        kind: Fragment,
+        witnessed: true,
+        class: Stamped,
+        stamped: 2,
+        evidence: "stamped notes forming a fragment (fewer events than the identity motif)",
+    },
+    Witness {
+        action: ActionId(
+            37,
+        ),
+        kind: Answer,
+        witnessed: true,
+        class: Stamped,
+        stamped: 8,
+        evidence: "the responder's stamped answer notes, carrying the response's material",
+    },
+    Witness {
+        action: ActionId(
+            23,
+        ),
+        kind: Unison,
+        witnessed: true,
+        class: Stamped,
+        stamped: 8,
+        evidence: "stamped keys and bass on the same figure, same onsets, same pitch classes",
+    },
+    Witness {
+        action: ActionId(
+            43,
+        ),
+        kind: Answer,
+        witnessed: true,
+        class: Stamped,
+        stamped: 2,
+        evidence: "the responder's stamped answer notes, carrying the response's material",
+    },
+    Witness {
+        action: ActionId(
+            24,
+        ),
+        kind: Hold,
+        witnessed: true,
+        class: Stamped,
+        stamped: 3,
+        evidence: "a stamped keys/pad voicing sustained across the hold",
+    },
+    Witness {
+        action: ActionId(
+            25,
+        ),
+        kind: Thicken,
+        witnessed: true,
+        class: Stamped,
+        stamped: 8,
+        evidence: "stamped pad notes adding an upper layer or more simultaneous voices",
+    },
+    Witness {
+        action: ActionId(
+            26,
+        ),
+        kind: Break,
+        witnessed: true,
+        class: Absence,
+        stamped: 0,
+        evidence: "silence from non-responders inside the break, after sound",
+    },
+    Witness {
+        action: ActionId(
+            27,
+        ),
+        kind: Hit,
+        witnessed: true,
+        class: Stamped,
+        stamped: 4,
+        evidence: "stamped players striking the hit together (two for an ensemble hit)",
+    },
+    Witness {
+        action: ActionId(
+            28,
+        ),
+        kind: Resolve,
+        witnessed: true,
+        class: Stamped,
+        stamped: 1,
+        evidence: "a stamped chord-tone arrival on the intended harmony (the expected target or home)",
+    },
+    Witness {
+        action: ActionId(
+            29,
+        ),
+        kind: Fragment,
+        witnessed: true,
+        class: Stamped,
+        stamped: 3,
+        evidence: "stamped notes forming a fragment (fewer events than the identity motif)",
+    },
+    Witness {
+        action: ActionId(
+            38,
+        ),
+        kind: Answer,
+        witnessed: true,
+        class: Stamped,
+        stamped: 8,
+        evidence: "the responder's stamped answer notes, carrying the response's material",
+    },
+    Witness {
+        action: ActionId(
+            30,
+        ),
+        kind: Fill,
+        witnessed: true,
+        class: Stamped,
+        stamped: 4,
+        evidence: "at least two stamped fill events by the fill's own initiator",
+    },
+    Witness {
+        action: ActionId(
+            32,
+        ),
+        kind: Hit,
+        witnessed: true,
+        class: Stamped,
+        stamped: 4,
+        evidence: "stamped players striking the hit together (two for an ensemble hit)",
+    },
+    Witness {
+        action: ActionId(
+            31,
+        ),
+        kind: Thin,
+        witnessed: true,
+        class: Absence,
+        stamped: 0,
+        evidence: "fewer onsets from the thinned player than in the preceding window",
+    },
+    Witness {
+        action: ActionId(
+            44,
+        ),
+        kind: Answer,
+        witnessed: true,
+        class: Stamped,
+        stamped: 4,
+        evidence: "the responder's stamped answer notes, carrying the response's material",
+    },
+]

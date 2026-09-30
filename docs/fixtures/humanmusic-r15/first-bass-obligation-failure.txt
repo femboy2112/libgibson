@@ -1,0 +1,61 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.68s
+     Running tests/audio_expression.rs (target/debug/deps/audio_expression-95656cfeceba4d2c)
+
+running 13 tests
+test fuzz_expressive_source_preserves_song_paths_receipts_and_identity ... ignored, bounded Round XV sweep: run release with --ignored --nocapture
+test r15_optional_space_preserves_the_structural_line ... ok
+test r15_compact_run_keeps_contour_destination_and_structure ... ok
+test r15_same_approach_tempo_is_load_bearing_even_for_sustaining_bass ... ok
+test r15_structural_connective_is_never_moved_to_save_ornament ... ok
+test r15_frozen_ruler_distinguishes_worlds_without_production_changes ... ok
+test r15_nonviable_release_and_low_kinetic_choose_legal_space ... ok
+test r15_black_ice_bass_approach_must_be_subordinate ... ok
+test r15_tempo_patch_factorial_and_compressed_neighbor ... ok
+test r15_swiss_accepted_analogue_is_short ... ok
+test r15_black_ice_slow_neighbor_must_be_subordinate ... ok
+test r15_all_eighteen_bass_approaches_are_expressed_with_receipts ... FAILED
+test r15_lead_expression_keeps_skeleton_and_final_hearings ... FAILED
+
+failures:
+
+---- r15_all_eighteen_bass_approaches_are_expressed_with_receipts stdout ----
+
+thread 'r15_all_eighteen_bass_approaches_are_expressed_with_receipts' (2300083) panicked at tests/audio_expression.rs:377:9:
+lost ActionId(2): Witness { action: ActionId(2), kind: Push, witnessed: true, class: Stamped, stamped: 2, evidence: "stamped players on the push step (two for an ensemble push), ahead of the target" } -> Witness { action: ActionId(2), kind: Push, witnessed: false, class: Stamped, stamped: 2, evidence: "stamped players on the push step (two for an ensemble push), ahead of the target" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- r15_lead_expression_keeps_skeleton_and_final_hearings stdout ----
+
+thread 'r15_lead_expression_keeps_skeleton_and_final_hearings' (2300088) panicked at tests/audio_expression.rs:148:9:
+BLACK_ICE BEFORE identity: 330 slices, 8 rival runs, 0 flipped (-0.000 s), hold 0.5 s
+run  18.750-19.091  s  beats  27.500-28.000   chart Am6    rival C#m  0.341 s  passing
+run  40.568-40.909  s  beats  59.500-60.000   chart Am6    rival C#m  0.341 s  passing
+run  42.520-42.784  s  beats  62.362-62.750   chart Am9    rival C    0.264 s  passing
+run  43.295-43.636  s  beats  63.500-64.000   chart Am9    rival E    0.341 s  passing
+run  48.895-49.091  s  beats  71.712-72.000   chart Am9    rival C    0.196 s  passing
+run  50.548-50.625  s  beats  74.137-74.250   chart Am6    rival Bm   0.077 s  passing
+run  72.366-72.443  s  beats 106.137-106.250  chart Am6    rival Bm   0.077 s  passing
+run  73.287-73.295  s  beats 107.487-107.500  chart Am6    rival Bm   0.009 s  passing
+ AFTER identity: 389 slices, 11 rival runs, 0 flipped (-0.000 s), hold 0.5 s
+run  18.945-19.067  s  beats  27.786-27.965   chart Am6    rival C#m  0.121 s  passing
+run  40.764-40.886  s  beats  59.787-59.966   chart Am6    rival C#m  0.122 s  passing
+run  42.520-42.784  s  beats  62.362-62.750   chart Am9    rival C    0.264 s  passing
+run  43.321-43.636  s  beats  63.537-64.000   chart Am9    rival C    0.315 s  passing
+run  48.895-49.091  s  beats  71.712-72.000   chart Am9    rival C    0.196 s  passing
+run  50.548-50.625  s  beats  74.137-74.250   chart Am6    rival Bm   0.077 s  passing
+run  51.585-51.673  s  beats  75.658-75.787   chart Am6    rival Bm   0.088 s  passing
+run  51.797-51.818  s  beats  75.969-76.000   chart Am6    rival Bm   0.021 s  passing
+run  72.366-72.443  s  beats 106.137-106.250  chart Am6    rival Bm   0.077 s  passing
+run  73.287-73.491  s  beats 107.487-107.787  chart Am6    rival Bm   0.204 s  passing
+run  73.618-73.636  s  beats 107.973-108.000  chart Am6    rival Bm   0.018 s  passing
+
+
+
+failures:
+    r15_all_eighteen_bass_approaches_are_expressed_with_receipts
+    r15_lead_expression_keeps_skeleton_and_final_hearings
+
+test result: FAILED. 10 passed; 2 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.56s
+
+error: test failed, to rerun pass `--test audio_expression`

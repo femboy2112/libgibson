@@ -1,0 +1,10 @@
+
+running 1 test
+factorial bpm=118 sustain=false latency=0.5084745762711864 audible=0.09299999801442087 AsWritten
+factorial bpm=118 sustain=true latency=0.5084745762711864 audible=0.3534226918788173 NeedsCompression
+factorial bpm=88 sustain=false latency=0.6818181818181818 audible=0.09299999801442108 NeedsCompression
+factorial bpm=88 sustain=true latency=0.6818181818181818 audible=0.4400944946523162 NeedsCompression
+test r15_tempo_patch_factorial_and_compressed_neighbor ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.52s
+

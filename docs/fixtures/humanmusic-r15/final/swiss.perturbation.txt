@@ -1,0 +1,6 @@
+Independent role-sequence diff; source omissions identified explicitly. Times in beats AND seconds.
+lead: events 80 -> 80; retimed=0 duration=0 velocity=0 pitch_substitute=0 omitted=0 added=0 glide=0
+bass: events 96 -> 96; retimed=0 duration=0 velocity=0 pitch_substitute=0 omitted=0 added=0 glide=0
+keys: events 157 -> 157; retimed=0 duration=0 velocity=0 pitch_substitute=0 omitted=0 added=0 glide=0
+pad: events 116 -> 116; retimed=0 duration=0 velocity=0 pitch_substitute=0 omitted=0 added=0 glide=0
+drums_identical=true sfx_identical=true
