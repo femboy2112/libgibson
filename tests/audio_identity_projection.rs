@@ -374,3 +374,42 @@ fn an_unrelated_note_in_a_pinned_place_does_not_conform() {
         law.report()
     );
 }
+
+/// A song whose contract declares a Motif anchor states its identity wherever the lead is seated
+/// to state it. The theme trajectory's own rule — the first statement a listener hears is the
+/// thesis, before it can be developed (`ThemeSite::is_identity`) — was not enforced: a short song
+/// whose lead only speaks in its dissolving phrase stated a dissolved fragment and never its
+/// thesis, so the declared anchor was unstated.
+#[test]
+fn a_declared_motif_is_stated_as_identity_where_the_lead_is_seated() {
+    let mut songs = 0;
+    for grammar in [
+        CompositionGrammar::HookArc,
+        CompositionGrammar::DeflectedLift,
+    ] {
+        for seed in 78_305_500u64..78_305_530 {
+            for beats in [12.0, 16.0, 30.5] {
+                for trace in [demo_trace(beats), deflected_lift_trace(beats)] {
+                    let song =
+                        SongMap::compose(&trace, seed, Some(grammar), Composer::StructuralR9);
+                    if !song.plan.contract.anchors.contains(&CoherenceAnchor::Motif)
+                        || song.thematic.sites.is_empty()
+                    {
+                        continue;
+                    }
+                    songs += 1;
+                    assert!(
+                        song.thematic.sites.iter().any(|s| s.is_identity()),
+                        "{grammar:?} {seed} {beats}: the lead speaks ({:?}) but never states the thesis",
+                        song.thematic
+                            .sites
+                            .iter()
+                            .map(|s| (s.phrase, s.role, s.handoff))
+                            .collect::<Vec<_>>()
+                    );
+                }
+            }
+        }
+    }
+    assert!(songs > 0);
+}
