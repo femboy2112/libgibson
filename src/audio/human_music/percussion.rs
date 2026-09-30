@@ -62,8 +62,9 @@ pub enum Required {
     /// A stroke carrying a planned action the audit needs (a hit, a push, the minimal fill, a
     /// re-entry, a pickup, the answer's first stroke).
     ActionWitness,
-    /// Any stroke in a bar whose surface verb (pull back / accelerate) is judged by the drum
-    /// onset rate against the preceding window: the whole window keeps its producers' strokes.
+    /// An optional stroke the rate guard re-admitted: a surface verb (pull back / accelerate) is
+    /// judged by the drum onset rate in its window against the preceding one, and arbitration
+    /// may not reverse that comparison.
     SurfaceWindow,
 }
 
@@ -153,7 +154,8 @@ pub const SPOKE_ORNAMENTS: usize = 2;
 pub struct BarEvidence {
     /// The drummer is the bar's foreground, or performs its own figure/answer here.
     pub drummer_floor: bool,
-    /// A surface verb's rate comparison covers this bar.
+    /// A surface verb's rate comparison covers this bar (reported; the rate guard, not the
+    /// band, protects its witness).
     pub surface_window: bool,
     /// The phrase's last bar, the lead silent in its second half, and the drummer has not yet
     /// spoken at length in this phrase.
@@ -171,12 +173,6 @@ pub fn decide(restraint: DrumRestraint, e: &BarEvidence) -> (OrnamentBand, &'sta
     use OrnamentBand::*;
     if restraint == DrumRestraint::Busy {
         return (Open, "busy restraint: every candidate");
-    }
-    if e.surface_window {
-        return (
-            Open,
-            "surface verb window: the onset-rate comparison stays the band's own",
-        );
     }
     let (band, why) = if e.drummer_floor {
         (Conversational, "the drummer has the floor")
@@ -220,6 +216,8 @@ pub struct PercussionReport {
     /// `(kind, offered, admitted)` in [`Ornament::ALL`] order.
     pub ornaments: Vec<(Ornament, usize, usize)>,
     pub required: usize,
+    /// Optional strokes the rate guard re-admitted to keep a surface verb's witness.
+    pub rate_guard: usize,
 }
 
 impl PercussionReport {
@@ -231,11 +229,12 @@ impl PercussionReport {
     }
     pub fn report(&self) -> String {
         let mut text = format!(
-            "PercussionReport restraint={} required={} ornaments admitted {}/{} offered\n",
+            "PercussionReport restraint={} required={} ornaments admitted {}/{} offered (rate guard {})\n",
             self.restraint.label(),
             self.required,
             self.admitted_ornaments(),
-            self.offered_ornaments()
+            self.offered_ornaments(),
+            self.rate_guard
         );
         for (kind, offered, admitted) in &self.ornaments {
             text.push_str(&format!("  {}: {admitted}/{offered}\n", kind.label()));
@@ -309,14 +308,16 @@ mod tests {
             decide(DrumRestraint::Balanced, &floor),
             (OrnamentBand::Conversational, "the drummer has the floor")
         );
-        // A surface verb's window is never thinned, whatever the restraint.
+        // A surface verb's window follows the same ordered decision; its witness is the rate
+        // guard's job, not a licence to open the bar.
         let surface = BarEvidence {
             surface_window: true,
             ..busy
         };
-        assert!(DrumRestraint::ALL
-            .iter()
-            .all(|&r| decide(r, &surface).0 == OrnamentBand::Open));
+        assert_eq!(
+            decide(DrumRestraint::Balanced, &surface).0,
+            OrnamentBand::Silent
+        );
     }
 
     #[test]

@@ -254,3 +254,29 @@ fn a_pinned_cover_groove_ignores_the_dial() {
         assert_eq!(drums(arbitrated(r)), reference, "{r:?}");
     }
 }
+
+/// Foundation means the pocket: an ornament is admitted only in a bar where the drummer has the
+/// floor (at most one there), or by the rate guard keeping a pull-back/acceleration's witness.
+/// A surface verb is not a licence to open the whole bar.
+#[test]
+fn foundation_speaks_only_on_the_floor_or_for_a_surface_witness() {
+    for song in corpus() {
+        for world in [MusicWorld::black_ice(), MusicWorld::vapor95()] {
+            let c = perform(&song, &world, arbitrated(DrumRestraint::Foundation));
+            let report = c.score.percussion.as_ref().unwrap();
+            let floor_bars = report
+                .bars
+                .iter()
+                .filter(|b| b.evidence.drummer_floor)
+                .count();
+            for b in &report.bars {
+                assert!(b.admitted <= usize::from(b.evidence.drummer_floor), "{b:?}");
+            }
+            assert!(
+                report.admitted_ornaments() <= floor_bars + report.rate_guard,
+                "{}",
+                report.report()
+            );
+        }
+    }
+}

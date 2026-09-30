@@ -693,6 +693,7 @@ pub(crate) fn realize_drums_arbitrated(
                 bars: Vec::new(),
                 ornaments: Ornament::ALL.iter().map(|&o| (o, 0, 0)).collect(),
                 required,
+                rate_guard: 0,
             },
         );
     }
@@ -1202,6 +1203,62 @@ pub(crate) fn realize_drums_arbitrated(
             admitted: take,
         });
     }
+    // The rate guard: a pull-back / acceleration is witnessed by the drum onset rate in its window
+    // against the preceding window. Arbitration may not reverse that comparison, so where it would,
+    // optional strokes on the side that must stay denser are re-admitted in priority order.
+    const TOL: f64 = 0.125 + 1e-6;
+    let mut rate_guard = 0usize;
+    for a in perf
+        .actions
+        .actions
+        .iter()
+        .filter(|a| matches!(a.kind, ActionKind::Pullback | ActionKind::Accelerate))
+    {
+        let (s, e) = (a.start_beat, a.end_beat());
+        let before = ((s - (e - s)).max(0.0), s);
+        if e <= s || before.1 <= before.0 {
+            continue;
+        }
+        let rate = |(lo, hi): (f64, f64), admitted: &[bool]| {
+            cands
+                .iter()
+                .enumerate()
+                .filter(|(i, c)| {
+                    (admitted[*i] || c.fallback.is_some()) && c.at >= lo - TOL && c.at < hi - 1e-6
+                })
+                .count() as f64
+                / (hi - lo)
+        };
+        let pull = a.kind == ActionKind::Pullback;
+        let holds = |admitted: &[bool]| {
+            let (now, was) = (rate((s, e), admitted), rate(before, admitted));
+            if pull {
+                now < was
+            } else {
+                now > was
+            }
+        };
+        let side = if pull { before } else { (s, e) };
+        let mut pool: Vec<usize> = (0..cands.len())
+            .filter(|&i| {
+                !admitted_ix[i]
+                    && cands[i].class.is_err()
+                    && cands[i].at >= side.0 - TOL
+                    && cands[i].at < side.1 - 1e-6
+            })
+            .collect();
+        pool.sort_by(|&x, &y| {
+            let (kx, ky) = (cands[x].class.err().unwrap(), cands[y].class.err().unwrap());
+            kx.cmp(&ky).then(cands[x].rank.total_cmp(&cands[y].rank))
+        });
+        for i in pool {
+            if holds(&admitted_ix) {
+                break;
+            }
+            admitted_ix[i] = true;
+            rate_guard += 1;
+        }
+    }
     let mut ornaments: Vec<(Ornament, usize, usize)> =
         Ornament::ALL.iter().map(|&o| (o, 0, 0)).collect();
     let mut hits = Vec::new();
@@ -1252,6 +1309,7 @@ pub(crate) fn realize_drums_arbitrated(
             bars: decisions,
             ornaments,
             required,
+            rate_guard,
         },
     )
 }
