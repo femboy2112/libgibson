@@ -387,3 +387,32 @@ fn swing_partial_reports_its_ceiling_and_stays_the_v1_skeleton() {
         }
     }
 }
+
+/// Only a missing axis is observed absence. An extraction error (here an off-grid kick the legacy
+/// stroke projection cannot place) propagates; it is never reported as "the source sounds none",
+/// which would quietly turn a timing failure into a cover without that identity.
+#[test]
+fn an_extraction_error_is_not_observed_absence() {
+    use gibson::audio::human_music::{
+        form::SectionKind,
+        score::{DrumHit, DrumVoice, Provenance},
+    };
+    let world = MusicWorld::black_ice();
+    let (_, mut c) = generated(77_700_501, CompositionGrammar::HookArc);
+    c.score.drums.push(DrumHit {
+        start_beat: 1.3,
+        voice: DrumVoice::Kick,
+        velocity: 0.5,
+        prov: Provenance::new(SectionKind::A),
+    });
+    let v1 = CoverMap::extract(&c, &world, CoverSpec::new([CoverAxis::Groove]));
+    assert_eq!(v1, Err(CoverError::UnprojectableTiming));
+    let profile = CoverFidelityProfile {
+        groove: GrooveRelation::KickSnare,
+        ..CoverFidelityProfile::FREE
+    };
+    assert_eq!(
+        CoverMap::extract_fidelity(&c, &world, &profile, None).map(|(m, _)| m),
+        Err(CoverError::UnprojectableTiming)
+    );
+}
