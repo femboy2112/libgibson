@@ -14,9 +14,17 @@ import math
 from pathlib import Path
 import re
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / 'docs/fixtures/humanmusic-r16/final'
+sys.path.insert(0, str(ROOT / 'scripts/fixtures'))
+import humanmusic_archive  # noqa: E402  (compacted fixtures are restored on demand)
+
+
+def expand_r16_source():
+    """R16 dumps are stored compacted; restore any missing ones in place (see docs/fixtures/HUMANMUSIC_FIXTURE_MANIFEST.md)."""
+    return humanmusic_archive.ensure_expanded(ROOT, 'docs/fixtures/humanmusic-r16/final/')
 FROZEN_HEAD = 'c9242ff154fc60d9321995126af12f18574dd88e'
 EPS = 1e-6
 SILENCE_LIMIT_MS = 40.0
@@ -109,6 +117,7 @@ def main():
     parser.add_argument('--wav-directory', type=Path, default=ROOT / 'target/humanmusic-r16/final')
     args = parser.parse_args()
     calibration()
+    expand_r16_source()
     args.output.mkdir(parents=True, exist_ok=True)
     inputs = sorted(SOURCE.glob('*.txt')) + [SOURCE / 'SHA256SUMS', SOURCE / 'provenance.json']
     manifest = []

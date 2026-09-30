@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 
-from humanmusic_r17_witnesses import articulation, connective_blip_witness, lattice_witness, parse_note, read_notes
+from humanmusic_r17_witnesses import expand_r16_source, articulation, connective_blip_witness, lattice_witness, parse_note, read_notes
 
 
 def digest(path):
@@ -42,6 +42,7 @@ def main():
     directory = args.directory
     root = Path(__file__).resolve().parents[2]
     historical = root / 'docs/fixtures/humanmusic-r16/final'
+    expand_r16_source()  # r16 dumps are stored compacted; restore missing ones in place
     if args.require_audio:
         stems = ['full', 'lead', 'bass', 'keys', 'pad', 'lead_bass', 'support', 'rhythm']
         expected = {f'{w}_{arm}.{stem}.wav' for w in ['black_ice', 'swiss']

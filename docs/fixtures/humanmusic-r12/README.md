@@ -50,3 +50,20 @@ disconnected-successor rejection and exact-boundary acceptance both pass in
 
 Committed console logs normalize trailing whitespace only; the manifest also
 records their raw pre-normalization SHA256 values. Numeric receipts are unchanged.
+
+## Storage
+
+Large text dumps in this directory, and exact duplicates of dumps kept elsewhere, are stored
+compacted; no byte was discarded. Every original path, byte count and sha256 is in
+`docs/fixtures/humanmusic-archive/MANIFEST.tsv`; the unique bytes are in the solid archive
+`docs/fixtures/humanmusic-archive/blobs.tar.xz` (member name = sha256). See
+[`HUMANMUSIC_FIXTURE_MANIFEST.md`](../HUMANMUSIC_FIXTURE_MANIFEST.md) for the policy.
+
+- List what was compacted here: `grep '^docs/fixtures/humanmusic-r12/' docs/fixtures/humanmusic-archive/MANIFEST.tsv | cut -f1,4,5`
+- Restore every compacted file to its original path and bytes:
+  `python3 scripts/fixtures/expand-humanmusic-archives.py expand` (or add `--dest /tmp/x` to
+  grep a copy instead of touching the tree; expanded files are working copies, do not commit them).
+- Verify all manifest hashes: `python3 scripts/fixtures/expand-humanmusic-archives.py check --expanded`
+  (after `expand`, any older `sha256sum -c` manifest in this directory passes again).
+- Without Python: `mkdir /tmp/blobs && tar -xJf docs/fixtures/humanmusic-archive/blobs.tar.xz -C /tmp/blobs`, then look up the
+  member named by the sha256 in the manifest.
