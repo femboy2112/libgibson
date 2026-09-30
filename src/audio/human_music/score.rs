@@ -390,6 +390,47 @@ pub struct Score {
     /// minor 2nd/9th by octaves; sounding the chart's root where the heard band flipped it).
     /// Empty under every arm but `perform_coherent`.
     pub pad_voicing_edits: Vec<super::comp::PadVoicingEdit>,
+    /// Round XIV: what each dependent player consumed of another's realization, captured when
+    /// it was consumed (see [`Score::stale_hearings`]).
+    pub hearings: Vec<Hearing>,
+}
+
+/// A note as a dependent player consumed it: onset (beats), length (beats), pitch, function.
+pub type HeardNote = (f64, f32, Midi, Option<PitchFunction>);
+
+/// Round XIV: what a dependent player (`listener`) consumed of `source`'s realization, captured
+/// at the moment it was consumed: the keys, the bass and the drums hear the lead; the drums hear
+/// the bass; the Round XIV pad hears the lead, the keys and the bass.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Hearing {
+    pub listener: &'static str,
+    pub source: Role,
+    pub notes: Vec<HeardNote>,
+}
+
+impl Hearing {
+    /// `listener` consuming `notes` of `source`.
+    pub fn of(listener: &'static str, source: Role, notes: &[Note]) -> Hearing {
+        Hearing {
+            listener,
+            source,
+            notes: notes.iter().map(heard_note).collect(),
+        }
+    }
+}
+
+fn heard_note(n: &Note) -> HeardNote {
+    (n.start_beat, n.dur_beats, n.pitch, n.function)
+}
+
+/// A hearing the final score does not honour: `missing` notes the listener heard are not in the
+/// final score, `unheard` final notes of the source were never heard.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StaleHearing {
+    pub listener: &'static str,
+    pub source: Role,
+    pub missing: Vec<HeardNote>,
+    pub unheard: Vec<HeardNote>,
 }
 
 impl Score {
@@ -426,12 +467,50 @@ impl Score {
             vertical_repairs: Vec::new(),
             tension_edits: Vec::new(),
             pad_voicing_edits: Vec::new(),
+            hearings: Vec::new(),
         }
     }
 
     /// Notes of a given role.
     pub fn role_notes(&self, role: Role) -> impl Iterator<Item = &Note> {
         self.notes.iter().filter(move |n| n.role == role)
+    }
+
+    /// Round XIV: every hearing whose source notes are not the final score's, compared in order
+    /// after the piece's end-clip (nothing starts at or after the end, nothing rings past it),
+    /// which every realizer honours. Empty when every dependent player consumed the final
+    /// upstream realization: the score is the band that generated itself.
+    pub fn stale_hearings(&self) -> Vec<StaleHearing> {
+        let end = self.total_beats;
+        self.hearings
+            .iter()
+            .filter_map(|h| {
+                let heard: Vec<HeardNote> = h
+                    .notes
+                    .iter()
+                    .filter(|n| n.0 < end - 1e-9)
+                    .map(|&(s, d, p, f)| {
+                        let d = if s + f64::from(d) > end + 1e-9 {
+                            (end - s) as f32
+                        } else {
+                            d
+                        };
+                        (s, d, p, f)
+                    })
+                    .filter(|n| n.1 > 0.0)
+                    .collect();
+                let fin: Vec<HeardNote> = self.role_notes(h.source).map(heard_note).collect();
+                if heard == fin {
+                    return None;
+                }
+                Some(StaleHearing {
+                    listener: h.listener,
+                    source: h.source,
+                    missing: heard.iter().filter(|n| !fin.contains(n)).copied().collect(),
+                    unheard: fin.iter().filter(|n| !heard.contains(n)).copied().collect(),
+                })
+            })
+            .collect()
     }
 
     /// Count of drum hits of a voice.

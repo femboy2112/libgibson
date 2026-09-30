@@ -6,8 +6,8 @@
 //! beat 28 because the bass sounded C at the pad's onset, but the bass then walks E2 G2 B2 while
 //! the pad holds E4 B4 G5, so 15.3–16.0 s is heard as Em over its own fifth. The falsifiers were
 //! committed failing first (`docs/fixtures/humanmusic-r14/baseline-failures.txt`); each is restated
-//! here against the audit that can see it ([`super::identity`], [`super::gesture`]). The one still
-//! ignored waits for the causal receipt.
+//! here against the audit that can see it ([`super::identity`], [`super::gesture`],
+//! [`Score::stale_hearings`]).
 use super::composer::Composer;
 use super::context::{analyze, HarmonicContext};
 use super::form::SectionKind;
@@ -530,23 +530,47 @@ fn r14_round12_band_heard_its_own_lead() {
     }
 }
 
-/// Round XIIIb re-times and shortens BLACK_ICE lead notes after the keys, the bass and the drums
-/// have heard them: the final score is not the band that generated itself.
+/// Every dependent player must have heard the final upstream realization, and the score says
+/// so itself ([`Score::stale_hearings`]): the keys, the bass and the drums hear the lead, the
+/// drums hear the bass, the Round XIV pad hears lead, keys and bass. Round XIIIb re-times and
+/// shortens 18 BLACK_ICE lead notes after the keys, the bass and the drums consumed them, so its
+/// score is not the band that generated itself. Round XII's and Round XIV's are. (SWISS's Round
+/// XIIIb edits are to the pad, which nobody there hears: its failure is identity, not causality.)
+/// Committed failing against the re-realized lead; it passes on the hearing ledger.
 #[test]
-#[ignore = "Round XIV falsifier: R13b edits the lead after its dependents heard it"]
 fn r14_every_dependent_heard_the_final_lead() {
     let song = stable_song();
-    let world = MusicWorld::black_ice();
-    let x = perform_tension(&song, &world, PerformanceOptions::default());
-    let heard = super::melody::realize_lead_temporal(&x.perf, &song.plan);
-    let fin: Vec<Note> = x.score.role_notes(Role::Lead).copied().collect();
-    let (h, f) = (lead_as_heard(&heard.notes), lead_as_heard(&fin));
-    let stale: Vec<_> = h.iter().filter(|n| !f.contains(n)).collect();
-    assert!(
-        stale.is_empty(),
-        "{} lead notes heard by keys/bass/drums are not in the final score: {stale:?}",
-        stale.len()
+    let opts = PerformanceOptions::default();
+    for world in [MusicWorld::swiss_signal(), MusicWorld::black_ice()] {
+        for x in [
+            perform_temporal(&song, &world, opts),
+            perform_coherent(&song, &world, opts),
+        ] {
+            assert_eq!(x.score.stale_hearings(), [], "{}", world.name);
+            assert!(!x.score.hearings.is_empty());
+        }
+    }
+    let c = perform_tension(&song, &MusicWorld::swiss_signal(), opts);
+    assert_eq!(c.score.stale_hearings(), []);
+    let c = perform_tension(&song, &MusicWorld::black_ice(), opts);
+    let stale: Vec<(&str, Role, usize, usize)> = c
+        .score
+        .stale_hearings()
+        .iter()
+        .map(|h| (h.listener, h.source, h.missing.len(), h.unheard.len()))
+        .collect();
+    assert_eq!(
+        stale,
+        [
+            ("keys", Role::Lead, 18, 18),
+            ("bass", Role::Lead, 18, 18),
+            ("drums", Role::Lead, 18, 18)
+        ]
     );
+    let heard = super::melody::realize_lead_temporal(&c.perf, &song.plan);
+    let fin: Vec<Note> = c.score.role_notes(Role::Lead).copied().collect();
+    let (h, f) = (lead_as_heard(&heard.notes), lead_as_heard(&fin));
+    assert_eq!(h.iter().filter(|n| !f.contains(n)).count(), 18);
 }
 
 /// A pad pitch at an onset: (beat, MIDI).
@@ -804,6 +828,8 @@ fn fuzz_the_coherent_arm_keeps_every_chart_chord() {
                                 + t.unresolved_tendencies
                         };
                         assert!(claims(&d) <= claims(&a), "{what}");
+                        assert_eq!(a.score.stale_hearings(), [], "{what}");
+                        assert_eq!(d.score.stale_hearings(), [], "{what}");
                         assert!(
                             a.score
                                 .notes

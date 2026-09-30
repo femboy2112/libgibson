@@ -15,7 +15,7 @@ use super::ids::ActionId;
 use super::intent::{IntentMorphism, MusicIntent};
 use super::performance::{EnsembleCoupling, PerformanceOptions, PerformancePlan};
 use super::plan::{ArrangementRole, CompositionPlan};
-use super::score::{Note, PitchFunction, Provenance, Score, SfxEvent, SfxKind};
+use super::score::{Hearing, Note, PitchFunction, Provenance, Role, Score, SfxEvent, SfxKind};
 use super::semantic::{EventKind, SemanticTrace, Tone};
 use super::song::SongMap;
 use super::sonority::{plan_sonority, ColorPolicy};
@@ -221,6 +221,12 @@ fn realize_arm(
     };
     score.melody_repairs = lead.repairs;
     score.melody_rejudged = lead.rejudged;
+    // Round XIV: the keys, the bass and the drums consume the lead as it is now.
+    for listener in ["keys", "bass", "drums"] {
+        score
+            .hearings
+            .push(Hearing::of(listener, Role::Lead, &lead.notes));
+    }
     let (pad, keys, bass) = match perf.coupling {
         // The surgical arm realizes the R7b band first, note for note; it repairs afterwards.
         EnsembleCoupling::Independent | EnsembleCoupling::Surgical => {
@@ -241,6 +247,13 @@ fn realize_arm(
                     .chain(&bass)
                     .copied()
                     .collect();
+                for (source, notes) in [
+                    (Role::Lead, &lead.notes),
+                    (Role::Keys, &keys),
+                    (Role::Bass, &bass),
+                ] {
+                    score.hearings.push(Hearing::of("pad", source, notes));
+                }
                 let (pad, edits) = super::comp::realize_pad_heard(perf, plan, world, &band);
                 score.pad_voicing_edits = edits;
                 (pad, keys, bass)
@@ -265,6 +278,7 @@ fn realize_arm(
             (r.pad, r.keys, r.bass)
         }
     };
+    score.hearings.push(Hearing::of("drums", Role::Bass, &bass));
     score.drums = super::groove::realize_drums(perf, plan, world, seed, &bass, &lead.notes);
     score.notes.extend(pad);
     score.notes.extend(keys);
