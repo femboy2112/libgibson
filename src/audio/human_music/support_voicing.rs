@@ -8,7 +8,7 @@
 //! tails remain explicit tradeoffs on the receipt. This is a listening hypothesis.
 
 use super::comp::realize_pad_on;
-use super::expression::{observe, ConnectiveViability, ExpressionEvent};
+use super::expression::{observe_with_voice_contract, ConnectiveViability, ExpressionEvent};
 use super::identity::{keeps_identity, IdentityDiagnostics};
 use super::performance::PerformancePlan;
 use super::score::{Note, PitchFunction, Role, Score};
@@ -203,6 +203,7 @@ fn resolving_bass_contact(
     band: &[Note],
     pad: &[Note],
     contact: &IntervalContact,
+    continuity: Option<&[super::voice::VoiceContinuation]>,
 ) -> Option<ResolvingBassContact> {
     if contact.other_role != Role::Bass || contact.other_is_sfx {
         return None;
@@ -229,7 +230,7 @@ fn resolving_bass_contact(
     {
         return None;
     }
-    let evidence = observe(
+    let evidence = observe_with_voice_contract(
         perf,
         world,
         &ExpressionEvent {
@@ -239,6 +240,7 @@ fn resolving_bass_contact(
         i.checked_sub(1).map(|j| bass[j]),
         Some(target),
         pad,
+        continuity.unwrap_or(&[]),
     );
     if !evidence.pitch_valid || evidence.verdict != ConnectiveViability::AsWritten {
         return None;
@@ -262,6 +264,7 @@ fn resolving_bass_contact(
 /// Compare all contacts including release tails. Only explicit resolving-bass evidence can
 /// exempt a new contact from the original aggregate/held-contact guard; the frozen physical
 /// ruler supplies its exposure limit without changing any threshold here.
+#[allow(clippy::too_many_arguments)]
 fn check_band_contacts(
     perf: &PerformancePlan,
     world: &MusicWorld,
@@ -269,6 +272,7 @@ fn check_band_contacts(
     pad: &[Note],
     before: &VoicingSurfaceDiagnostics,
     after: &VoicingSurfaceDiagnostics,
+    continuity: Option<&[super::voice::VoiceContinuation]>,
 ) -> Option<Vec<ResolvingBassContact>> {
     let contacts = |r: &VoicingSurfaceRow| {
         r.contacts
@@ -300,7 +304,7 @@ fn check_band_contacts(
             if existed {
                 continue;
             }
-            if let Some(evidence) = resolving_bass_contact(perf, world, band, pad, c) {
+            if let Some(evidence) = resolving_bass_contact(perf, world, band, pad, c, continuity) {
                 permitted_seconds += c.overlap_seconds;
                 permissions.push(evidence);
             } else if c.overlap_seconds > 0.3 {
@@ -405,9 +409,15 @@ fn select_impl(
             {
                 continue;
             }
-            let Some(resolving_bass_contacts) =
-                check_band_contacts(perf, world, band, &pad, &surfaces, &next_surfaces)
-            else {
+            let Some(resolving_bass_contacts) = check_band_contacts(
+                perf,
+                world,
+                band,
+                &pad,
+                &surfaces,
+                &next_surfaces,
+                continuity,
+            ) else {
                 continue;
             };
             let next_tails = tail_contacts(&pad, world);
@@ -517,7 +527,8 @@ mod pocket_support_probe {
                 });
                 let ident =
                     keeps_identity(&identity, &next_identity, 0.0, c.perf.total_beats + 64.0);
-                let contacts = check_band_contacts(&c.perf, &world, &band, &pad, &surfaces, &next);
+                let contacts =
+                    check_band_contacts(&c.perf, &world, &band, &pad, &surfaces, &next, None);
                 let tails = tail_contacts(&pad, &world)
                     .iter()
                     .all(|x| original_tails.contains(x) || x.seconds <= 0.3);

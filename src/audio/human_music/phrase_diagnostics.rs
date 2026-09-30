@@ -6,7 +6,7 @@ use super::expression::{annotate, connective, patch};
 use super::performance::{PerformancePlan, StepWeight};
 use super::plan::CompositionPlan;
 use super::score::{Note, Role, Score};
-use super::sonority::audible_end;
+use super::sonority::AUDIBLE_FLOOR_DB;
 use super::world::MusicWorld;
 use std::collections::BTreeMap;
 use std::fmt::Write;
@@ -183,12 +183,8 @@ impl PhraseSurfaceDiagnostics {
                         .skip(i + 1)
                         .find(|x| x.start_beat > n.start_beat + 1e-6);
                     let ioi = next.map(|x| x.start_beat - n.start_beat);
-                    let audible_end = audible_end(
-                        n.start_beat,
-                        f64::from(n.dur_beats),
-                        patch(world, role),
-                        score.tempo_bpm,
-                    );
+                    let audible_end =
+                        audible_end_fn(n, world, score.tempo_bpm, &score.voice_continuity);
                     if !structural && connective(n.function) {
                         if let Some(latency) = ioi {
                             shapes
@@ -200,7 +196,7 @@ impl PhraseSurfaceDiagnostics {
                     let previous_end = all
                         .iter()
                         .take(i)
-                        .map(|p| audible_end_fn(p, world, score.tempo_bpm))
+                        .map(|p| audible_end_fn(p, world, score.tempo_bpm, &score.voice_continuity))
                         .fold(0.0, f64::max);
                     notes.push(SurfaceNote {
                         note: *n,
@@ -226,12 +222,7 @@ impl PhraseSurfaceDiagnostics {
                     .map(|n| {
                         (
                             n.start_beat,
-                            audible_end(
-                                n.start_beat,
-                                f64::from(n.dur_beats),
-                                patch(world, role),
-                                score.tempo_bpm,
-                            ),
+                            audible_end_fn(n, world, score.tempo_bpm, &score.voice_continuity),
                         )
                     })
                     .collect();
@@ -425,11 +416,17 @@ fn distinct_onsets(notes: &[SurfaceNote]) -> Vec<f64> {
     onsets
 }
 
-fn audible_end_fn(note: &Note, world: &MusicWorld, tempo: f32) -> f64 {
-    audible_end(
-        note.start_beat,
-        f64::from(note.dur_beats),
+fn audible_end_fn(
+    note: &Note,
+    world: &MusicWorld,
+    tempo: f32,
+    links: &[super::voice::VoiceContinuation],
+) -> f64 {
+    super::voice::effective_audible_end_at(
+        note,
         patch(world, note.role),
         tempo,
+        AUDIBLE_FLOOR_DB,
+        links,
     )
 }
