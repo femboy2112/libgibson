@@ -770,58 +770,77 @@ impl CoverMap {
     ) -> Result<(CoverMap, FidelityReport), CoverError> {
         requested.validate()?;
         let lane = requested.riff_lane;
-        let has = |axis: CoverAxis| {
-            CoverMap::extract_on_lane(reference, world, CoverSpec::new([axis]), lane).is_ok()
+        // Only a missing axis is observed absence. Any other extraction error (unprojectable
+        // timing, an invalid transport) is an error, never quietly read as "the source has none".
+        let probe = |axis: CoverAxis| -> Result<Option<CoverMap>, CoverError> {
+            match CoverMap::extract_on_lane(reference, world, CoverSpec::new([axis]), lane) {
+                Ok(m) => Ok(Some(m)),
+                Err(CoverError::MissingAxis(_)) => Ok(None),
+                Err(e) => Err(e),
+            }
         };
-        let faithful_line = |axis: CoverAxis| -> Option<LineRelation> {
-            let m =
-                CoverMap::extract_on_lane(reference, world, CoverSpec::new([axis]), lane).ok()?;
-            let line = [m.motif, m.riff, m.bass].into_iter().flatten().next()?;
-            Some(if line.notes.iter().all(|n| n.reserved_until.is_some()) {
-                LineRelation::Faithful
-            } else {
-                LineRelation::Metric
+        let line_avail = |axis: CoverAxis,
+                          want: LineRelation|
+         -> Result<(Option<LineRelation>, &'static str), CoverError> {
+            if want == LineRelation::Free {
+                return Ok((Some(LineRelation::Faithful), "not requested"));
+            }
+            Ok(match probe(axis)? {
+                Some(m) => {
+                    let line = [m.motif, m.riff, m.bass]
+                        .into_iter()
+                        .flatten()
+                        .next()
+                        .expect("an extracted line axis holds its line");
+                    if line.notes.iter().all(|n| n.reserved_until.is_some()) {
+                        (Some(LineRelation::Faithful), "observed rest boundaries")
+                    } else {
+                        (
+                            Some(LineRelation::Metric),
+                            "no observed note/rest boundaries: rests are the band's",
+                        )
+                    }
+                }
+                None => (Some(LineRelation::Free), "the source sounds no such line"),
             })
         };
-        let line_avail = |axis: CoverAxis| -> (Option<LineRelation>, &'static str) {
-            match faithful_line(axis) {
-                Some(LineRelation::Faithful) => {
-                    (Some(LineRelation::Faithful), "observed rest boundaries")
-                }
-                Some(r) => (
-                    Some(r),
-                    "no observed note/rest boundaries: rests are the band's",
-                ),
-                None => (Some(LineRelation::Free), "the source sounds no such line"),
-            }
+        let harmony = if requested.harmony == HarmonyRelation::Free {
+            (
+                Some(HarmonyRelation::Exact),
+                AxisEvidence::Observed,
+                "not requested",
+            )
+        } else if probe(CoverAxis::HarmonicContour)?.is_some() {
+            (
+                Some(HarmonyRelation::Exact),
+                AxisEvidence::Observed,
+                "observed chord spans",
+            )
+        } else {
+            (
+                Some(HarmonyRelation::Free),
+                AxisEvidence::Observed,
+                "the source sounds no chord",
+            )
+        };
+        let groove = if requested.groove == GrooveRelation::Free {
+            (Some(GrooveRelation::KickSnare), "not requested")
+        } else if probe(CoverAxis::Groove)?.is_some() {
+            (Some(GrooveRelation::KickSnare), "observed")
+        } else {
+            (
+                Some(GrooveRelation::Free),
+                "the source sounds no kick or snare",
+            )
         };
         let available = Availability {
             line: [
-                line_avail(CoverAxis::Motif),
-                line_avail(CoverAxis::Riff),
-                line_avail(CoverAxis::BassFigure),
+                line_avail(CoverAxis::Motif, requested.motif)?,
+                line_avail(CoverAxis::Riff, requested.riff)?,
+                line_avail(CoverAxis::BassFigure, requested.bass)?,
             ],
-            harmony: if has(CoverAxis::HarmonicContour) {
-                (
-                    Some(HarmonyRelation::Exact),
-                    AxisEvidence::Observed,
-                    "observed chord spans",
-                )
-            } else {
-                (
-                    Some(HarmonyRelation::Free),
-                    AxisEvidence::Observed,
-                    "the source sounds no chord",
-                )
-            },
-            groove: if has(CoverAxis::Groove) {
-                (Some(GrooveRelation::KickSnare), "observed")
-            } else {
-                (
-                    Some(GrooveRelation::Free),
-                    "the source sounds no kick or snare",
-                )
-            },
+            harmony,
+            groove,
             form: (Some(FormRelation::Exact), "observed"),
             orchestration: (Some(OrchestrationRelation::Exact), "observed"),
         };
