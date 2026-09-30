@@ -1403,12 +1403,39 @@ pub fn realize_pad_phrased(
     (realize_pad_on(perf, world, &path, None), edits, decisions)
 }
 
+/// Round XVII uses the same source support selection with the explicit heard-lifetime law.
+/// This does not promote the localization-pending support-top-voice hypothesis.
+pub fn realize_pad_pocketed(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    band: &[Note],
+    links: &[super::voice::VoiceContinuation],
+) -> (
+    Vec<Note>,
+    Vec<PadVoicingEdit>,
+    Vec<super::support_voicing::VoicingPathDecision>,
+) {
+    let (path, pad, edits) = heard_pad_path_impl(perf, world, band, Some(links));
+    let (path, decisions) =
+        super::support_voicing::select_with_continuity(perf, world, band, path, &pad, links);
+    (realize_pad_on(perf, world, &path, None), edits, decisions)
+}
+
 /// The exact Round XIV algorithm, with its selected source path retained for later source
 /// articulation. The public Round XIV arm returns the same notes and edits as before.
 fn heard_pad_path(
     perf: &PerformancePlan,
     world: &MusicWorld,
     band: &[Note],
+) -> (super::voicing::RolePath, Vec<Note>, Vec<PadVoicingEdit>) {
+    heard_pad_path_impl(perf, world, band, None)
+}
+
+fn heard_pad_path_impl(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    band: &[Note],
+    continuity: Option<&[super::voice::VoiceContinuation]>,
 ) -> (super::voicing::RolePath, Vec<Note>, Vec<PadVoicingEdit>) {
     use super::identity::{keeps_identity, IdentityDiagnostics};
     let mut pp = pad_path(perf, world.voicing_spread);
@@ -1423,7 +1450,15 @@ fn heard_pad_path(
         let pad = realize_pad_on(perf, world, pp, None);
         let mut all = band.to_vec();
         all.extend(pad.iter().copied());
-        let id = IdentityDiagnostics::measure(&all, &perf.contexts, world, world.tempo_bpm);
+        let id = if let Some(links) = continuity {
+            let mut trial = super::score::Score::new(world.tempo_bpm, 4.0, perf.total_beats);
+            trial.notes = all;
+            trial.mono_voice = true;
+            trial.voice_continuity = links.to_vec();
+            IdentityDiagnostics::measure_score(&trial, &perf.contexts, world)
+        } else {
+            IdentityDiagnostics::measure(&all, &perf.contexts, world, world.tempo_bpm)
+        };
         (pad, id)
     };
     let flipped_over = |id: &IdentityDiagnostics, ci: usize| -> f64 {

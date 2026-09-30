@@ -108,14 +108,19 @@ fn measure(
     world: &MusicWorld,
     band: &[Note],
     pad: &[Note],
+    continuity: Option<&[super::voice::VoiceContinuation]>,
 ) -> (VoicingSurfaceDiagnostics, IdentityDiagnostics) {
     // Source-owned candidate instrument, never a mutation of the finished composition.
     let mut trial = Score::new(world.tempo_bpm, 4.0, perf.total_beats);
+    if let Some(links) = continuity {
+        trial.mono_voice = true;
+        trial.voice_continuity = links.to_vec();
+    }
     trial.notes.extend_from_slice(band);
     trial.notes.extend_from_slice(pad);
     (
         VoicingSurfaceDiagnostics::measure(perf, &trial, world),
-        IdentityDiagnostics::measure(&trial.notes, &perf.contexts, world, world.tempo_bpm),
+        IdentityDiagnostics::measure_score(&trial, &perf.contexts, world),
     )
 }
 
@@ -314,10 +319,32 @@ pub(super) fn select(
     perf: &PerformancePlan,
     world: &MusicWorld,
     band: &[Note],
-    mut path: RolePath,
+    path: RolePath,
     initial_pad: &[Note],
 ) -> (RolePath, Vec<VoicingPathDecision>) {
-    let (mut surfaces, mut identity) = measure(perf, world, band, initial_pad);
+    select_impl(perf, world, band, path, initial_pad, None)
+}
+
+pub(super) fn select_with_continuity(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    band: &[Note],
+    path: RolePath,
+    initial_pad: &[Note],
+    links: &[super::voice::VoiceContinuation],
+) -> (RolePath, Vec<VoicingPathDecision>) {
+    select_impl(perf, world, band, path, initial_pad, Some(links))
+}
+
+fn select_impl(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    band: &[Note],
+    mut path: RolePath,
+    initial_pad: &[Note],
+    continuity: Option<&[super::voice::VoiceContinuation]>,
+) -> (RolePath, Vec<VoicingPathDecision>) {
+    let (mut surfaces, mut identity) = measure(perf, world, band, initial_pad, continuity);
     let mut tails = tail_contacts(initial_pad, world);
     let requests: Vec<_> = surfaces
         .rows
@@ -358,7 +385,7 @@ pub(super) fn select(
             let mut trial = path.clone();
             trial.path.voicings[t].voices = after.clone();
             let pad = realize_pad_on(perf, world, &trial, None);
-            let (next_surfaces, next_identity) = measure(perf, world, band, &pad);
+            let (next_surfaces, next_identity) = measure(perf, world, band, &pad, continuity);
             let Some(after_surface) = next_surfaces.rows.iter().find(|r| r.context == ci).cloned()
             else {
                 continue;
@@ -403,4 +430,140 @@ pub(super) fn select(
         }
     }
     (path, decisions)
+}
+
+#[cfg(test)]
+mod pocket_support_probe {
+    use super::*;
+    use crate::audio::human_music::{
+        composer::Composer, functor::perform_phrased, performance::PerformanceOptions,
+        semantic::deflected_lift_trace, song::SongMap,
+    };
+
+    /// Diagnostic source trials only. This neither selects nor emits a production repair.
+    #[test]
+    #[ignore = "bounded Round XVII support enumeration writes explicit diagnostic receipts"]
+    fn pocket_low_root_octave_only_no_go() {
+        let world = MusicWorld::swiss_signal();
+        let song = SongMap::compose(
+            &deflected_lift_trace(120.0),
+            2112,
+            None,
+            Composer::StablePropulsion,
+        );
+        let c = perform_phrased(&song, &world, PerformanceOptions::default());
+        let band: Vec<_> = c
+            .score
+            .notes
+            .iter()
+            .filter(|n| n.role != Role::Pad)
+            .copied()
+            .collect();
+        let original_pad: Vec<_> = c.score.role_notes(Role::Pad).copied().collect();
+        let (surfaces, identity) = measure(&c.perf, &world, &band, &original_pad, None);
+        let original_tails = tail_contacts(&original_pad, &world);
+        // Recover the frozen source path and prove its source emission matches the control.
+        let mut source = super::super::voicing::pad_path(&c.perf, world.voicing_spread);
+        for r in &surfaces.rows {
+            let t = source.context_ix.binary_search(&r.context).unwrap();
+            source.path.voicings[t].voices = r.pad.clone();
+        }
+        let signature = |notes: &[Note]| {
+            let mut rows: Vec<_> = notes
+                .iter()
+                .map(|n| {
+                    (
+                        n.start_beat.to_bits(),
+                        n.pitch,
+                        n.dur_beats.to_bits(),
+                        n.velocity.to_bits(),
+                    )
+                })
+                .collect();
+            rows.sort_unstable();
+            rows
+        };
+        assert_eq!(
+            signature(&realize_pad_on(&c.perf, &world, &source, None)),
+            signature(&original_pad)
+        );
+        let mut table = String::from("beat\tcandidate\tedits\toctave_distance\tremoves_C4\tno_new_high_seventh\tidentity\tband_contacts\ttails\tmotion\told_motion\tstrict_motion_improvement\ttop\tresult\n");
+        let mut detail = String::from("Source-owned trial paths, not finished-score repairs. Same implementation provenance as production guards; no independent listening evidence.\n");
+        let mut summary = String::from(
+            "beat all no_C4 no_high_seventh identity band_contacts tails full_motion_gate\n",
+        );
+        for (site, beat) in [28.0, 36.0, 44.0].into_iter().enumerate() {
+            let old = surfaces.rows.iter().find(|r| r.beat == beat).unwrap();
+            let t = source.context_ix.binary_search(&old.context).unwrap();
+            let mut counts = [0usize; 7];
+            for (edits, distance, after) in alternatives(&old.pad) {
+                counts[0] += 1;
+                if after.contains(&60) {
+                    writeln!(table,"{beat}\t{after:?}\t{edits}\t{distance}\tfalse\tNA\tNA\tNA\tNA\tNA\t{}\tNA\t{}\tretains_human_implicated_C4",adjacent_motion(old),after.last().unwrap()).unwrap();
+                    continue;
+                }
+                counts[1] += 1;
+                let mut trial = source.clone();
+                trial.path.voicings[t].voices = after.clone();
+                let pad = realize_pad_on(&c.perf, &world, &trial, None);
+                let (next, next_identity) = measure(&c.perf, &world, &band, &pad, None);
+                let row = next.rows.iter().find(|r| r.context == old.context).unwrap();
+                let no_high = !next.rows.iter().any(|r| {
+                    r.high_seventh_excursion
+                        && !surfaces
+                            .rows
+                            .iter()
+                            .any(|p| p.context == r.context && p.high_seventh_excursion)
+                });
+                let ident =
+                    keeps_identity(&identity, &next_identity, 0.0, c.perf.total_beats + 64.0);
+                let contacts = check_band_contacts(&c.perf, &world, &band, &pad, &surfaces, &next);
+                let tails = tail_contacts(&pad, &world)
+                    .iter()
+                    .all(|x| original_tails.contains(x) || x.seconds <= 0.3);
+                let motion = adjacent_motion(row);
+                let improved = motion < adjacent_motion(old);
+                let band_ok = contacts.is_some();
+                let flags = [no_high, ident, band_ok, tails, improved];
+                let mut prior = true;
+                for (i, flag) in flags.into_iter().enumerate() {
+                    prior &= flag;
+                    counts[i + 2] += usize::from(prior);
+                }
+                let result = if !no_high {
+                    "high_seventh_excursion"
+                } else if !ident {
+                    "identity"
+                } else if !band_ok {
+                    "unchanged_band_contact_guard"
+                } else if !tails {
+                    "new_tail_over_300ms"
+                } else if !improved {
+                    "unchanged_motion_guard"
+                } else {
+                    "admitted"
+                };
+                writeln!(table,"{beat}\t{after:?}\t{edits}\t{distance}\ttrue\t{no_high}\t{ident}\t{band_ok}\t{tails}\t{motion}\t{}\t{improved}\t{}\t{result}",adjacent_motion(old),after.last().unwrap()).unwrap();
+                writeln!(detail,"beat={beat} candidate={after:?} result={result} root={:?} incoming={:?} outgoing={:?} resolving_permissions={:?}\n  semitone_contacts={:?}",row.root_pitches,row.incoming_motion,row.outgoing_motion,contacts.as_ref().map(Vec::len),row.contacts.iter().filter(|x|x.other_role!=Role::Pad&&matches!(x.semitones,1|13)).collect::<Vec<_>>()).unwrap();
+            }
+            let admitted_band = if site == 0 { 8 } else { 0 };
+            assert_eq!(counts, [58, 32, 24, 24, admitted_band, admitted_band, 0]);
+            writeln!(
+                summary,
+                "{beat} {} {} {} {} {} {} {}",
+                counts[0], counts[1], counts[2], counts[3], counts[4], counts[5], counts[6]
+            )
+            .unwrap();
+        }
+        summary.push_str("Verified finite NO-GO: zero common C4-removing octave-only alternatives under unchanged source guards. No solver treatment implemented. Boundary: not a theorem about all voicings, instruments, omissions, or human acceptance.\n");
+        summary.push_str("Human-observed: b028 mute_G5 retains complaint; mute_C4 removes it. Conjectured: low-root/register involvement. Not established: root/B2 collision versus timbre/masking interaction.\n");
+        let out = std::env::var_os("HUMANMUSIC_SUPPORT_RECEIPT_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| "target/humanmusic-r17/support-no-go".into());
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::write(out.join("candidates.tsv"), table).unwrap();
+        std::fs::write(out.join("contacts.txt"), detail).unwrap();
+        std::fs::write(out.join("summary.txt"), &summary).unwrap();
+        println!("{summary}");
+    }
 }

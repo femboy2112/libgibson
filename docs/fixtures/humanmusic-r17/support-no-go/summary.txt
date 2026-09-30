@@ -1,0 +1,6 @@
+beat all no_C4 no_high_seventh identity band_contacts tails full_motion_gate
+28 58 32 24 24 8 8 0
+36 58 32 24 24 0 0 0
+44 58 32 24 24 0 0 0
+Verified finite NO-GO: zero common C4-removing octave-only alternatives under unchanged source guards. No solver treatment implemented. Boundary: not a theorem about all voicings, instruments, omissions, or human acceptance.
+Human-observed: b028 mute_G5 retains complaint; mute_C4 removes it. Conjectured: low-root/register involvement. Not established: root/B2 collision versus timbre/masking interaction.
