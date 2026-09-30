@@ -973,6 +973,22 @@ pub fn relation(call: &[Heard], resp: &[Heard], transform: Transform) -> f32 {
     }
 }
 
+// Keep every historical material's Debug and v1 receipt byte-exact.
+impl std::fmt::Debug for InteractionMaterial {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("InteractionMaterial");
+        d.field("id", &self.id)
+            .field("owner", &self.owner)
+            .field("source", &self.source)
+            .field("start_beat", &self.start_beat)
+            .field("events", &self.events);
+        if self.pitch_basis != PitchBasis::ScaleSteps {
+            d.field("pitch_basis", &self.pitch_basis);
+        }
+        d.finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::theory::Mode;
@@ -1278,21 +1294,5 @@ mod tests {
         // An inversion relates under Invert, not under Quote.
         let inv = h(&[(4.0, 64), (4.5, 61), (5.0, 59), (5.5, 57)]);
         assert!(relation(&a, &inv, Transform::Invert) > relation(&a, &inv, Transform::Quote));
-    }
-}
-
-// Keep every historical material's Debug and v1 receipt byte-exact.
-impl std::fmt::Debug for InteractionMaterial {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut d = f.debug_struct("InteractionMaterial");
-        d.field("id", &self.id)
-            .field("owner", &self.owner)
-            .field("source", &self.source)
-            .field("start_beat", &self.start_beat)
-            .field("events", &self.events);
-        if self.pitch_basis != PitchBasis::ScaleSteps {
-            d.field("pitch_basis", &self.pitch_basis);
-        }
-        d.finish()
     }
 }

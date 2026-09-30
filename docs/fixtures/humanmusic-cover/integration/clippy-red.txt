@@ -1,0 +1,57 @@
+    Checking alsa-sys v0.4.0
+    Checking alsa v0.11.0
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Checking cpal v0.18.2
+    Checking portable-pty v0.9.0
+    Checking vt100 v0.16.2
+error: items after a test module
+    --> src/audio/human_music/material.rs:977:1
+     |
+ 977 | mod tests {
+     | ^^^^^^^^^
+...
+1285 | impl std::fmt::Debug for InteractionMaterial {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#items_after_test_module
+     = note: `-D clippy::items-after-test-module` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::items_after_test_module)]`
+     = help: move the items to before the test module was defined
+
+error: items after a test module
+    --> src/audio/human_music/motif.rs:1620:1
+     |
+1620 | mod tests {
+     | ^^^^^^^^^
+...
+2098 | impl std::fmt::Debug for Motif {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#items_after_test_module
+     = help: move the items to before the test module was defined
+
+error: items after a test module
+    --> src/audio/human_music/performance.rs:1227:1
+     |
+1227 | mod tests {
+     | ^^^^^^^^^
+...
+1300 | impl std::fmt::Debug for PerformancePlan {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#items_after_test_module
+     = help: move the items to before the test module was defined
+
+error: items after a test module
+   --> src/audio/human_music/reference_song.rs:278:1
+    |
+278 | mod tests {
+    | ^^^^^^^^^
+...
+326 | fn add(a: MetricPosition, b: MetricPosition) -> Result<MetricPosition, CoverError> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#items_after_test_module
+    = help: move the items to before the test module was defined
+
+error: could not compile `libgibson` (lib test) due to 4 previous errors

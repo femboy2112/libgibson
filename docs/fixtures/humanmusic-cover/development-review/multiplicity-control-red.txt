@@ -1,0 +1,25 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.25s
+     Running tests/audio_cover_review.rs (target/debug/deps/audio_cover_review-3d01e1dd2503fc3e)
+
+running 7 tests
+test accepted_maps_require_canonical_set_and_stroke_order ...
+thread 'accepted_maps_require_canonical_set_and_stroke_order' (3467163) panicked at tests/audio_cover_review.rs:175:5:
+assertion failed: groove.validate().is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test cover_score_receipt_rejects_out_of_domain_pitched_event ... ok
+test invalid_form_extent_returns_error_without_arithmetic_panic ... ok
+test invalid_skeleton_schedule_returns_error_without_arithmetic_panic ... ok
+test mutated_reference_metadata_is_revalidated_at_extraction ... ok
+test note_domain_accepts_midi_endpoints_and_rejects_outside_them ... ok
+test source_record_order_is_not_musical_identity ... ok
+
+failures:
+
+failures:
+    accepted_maps_require_canonical_set_and_stroke_order
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test audio_cover_review`

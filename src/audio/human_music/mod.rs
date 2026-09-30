@@ -16,8 +16,10 @@
 //! ([`witness`] audits them; [`song::SongMapConformance`] checks the performance preserves the
 //! song; Round X: [`composer`] can choose a song's content toward the listener plan
 //! [`meaning::MeaningPlan`] its story asks for, and [`meaning::Commutation`] checks that it means
-//! it). See `docs/HUMAN_MUSIC_ARCHITECTURE.md` (§3.20 is the current state); the categorical
-//! vocabulary (`intent.rs`) survives where it is load-bearing.
+//! it). Modern policy and exact cover APIs are opt-in; historical entry points remain controls.
+//! See `docs/HUMAN_MUSIC_CONSOLIDATION.md` for current authorities and
+//! `docs/HUMAN_MUSIC_COVER.md` for source ingestion, invariant projection and checked lifts.
+//! `docs/HUMAN_MUSIC_ARCHITECTURE.md` preserves the experimental lineage.
 
 pub mod action;
 pub mod backbone;
@@ -27,6 +29,7 @@ pub mod comp;
 pub mod composer;
 pub mod context;
 pub mod contract;
+pub mod cover;
 pub mod diagnostics;
 pub mod discourse;
 pub mod ensemble;
@@ -71,6 +74,7 @@ pub mod pocket_diagnostics;
 pub mod policy;
 #[cfg(test)]
 mod probes;
+pub mod reference_song;
 pub mod region;
 pub mod rhythm;
 pub mod rng;

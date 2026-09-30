@@ -1,0 +1,21 @@
+{
+  "purpose": "development mutation controls; not holdout",
+  "command": "CARGO_BUILD_JOBS=1 cargo +1.98.1 test --all-features --test audio_cover_review -- --test-threads=1 --nocapture",
+  "exit": 101,
+  "observed_pass": 2,
+  "observed_fail": 3,
+  "base_head_observed_before_build": "44e2d7efabc28e684701240b5466d06a91d541dd",
+  "head_at_receipt": "38aeba2196a5676c1d995dc1cce71b6e5820a5d2",
+  "test_binary": {
+    "path": "target/debug/deps/audio_cover_review-3d01e1dd2503fc3e",
+    "sha256": "501d9102c1fdbc6f2b8e7e510d1ae040de7e6c8919c8ce2474f9f62cc6939dc1",
+    "mtime_ns": 1790754959732980913
+  },
+  "library_at_receipt": {
+    "path": "target/debug/deps/libgibson.rlib",
+    "sha256": "de0ad1845d970d50071ee74bb7567f51839afdad5ae9a2521f73bedd12fd50a8",
+    "mtime_ns": 1790754958810998850
+  },
+  "source_boundary": "Evolving cover worktree, not clean HEAD. Test executable content is replay authority. The source Score MIDI check and author source guards/arithmetic may already have changed after this red build; no source-HEAD equivalence claim. Library hash is captured at receipt, with mtime for custody rather than assumed provenance.",
+  "captured_utc": "2026-09-30T07:57:24.580428+00:00"
+}

@@ -73,6 +73,20 @@ fn realize_lead_impl(
     phrased: bool,
     pocket: Option<super::pocket::PocketOptions>,
 ) -> LeadRealization {
+    if let Some(notes) = perf
+        .cover_constraints
+        .as_ref()
+        .and_then(|c| c.source_notes(perf, Role::Lead))
+    {
+        return LeadRealization {
+            authored: notes.clone(),
+            notes,
+            phrase_plans: Vec::new(),
+            repairs: 0,
+            rejudged: 0,
+            expression: Vec::new(),
+        };
+    }
     let mut notes = Vec::new();
     let mut repairs = 0usize;
     let mut structural = Vec::new();

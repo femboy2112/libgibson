@@ -45,6 +45,11 @@ impl CanonicalFingerprint for action::ActionCause {
                 w.tag("Statement");
                 w.field("phrase", phrase);
             }
+            Self::Discourse { obligation, phrase } => {
+                w.tag("Discourse");
+                w.field("obligation", obligation);
+                w.field("phrase", phrase);
+            }
         }
     }
 }
@@ -1093,32 +1098,66 @@ impl CanonicalFingerprint for ensemble::PadMode {
     }
 }
 
-structure!(performance::PerformancePlan, "performance/PerformancePlan/v2";
-    language => "language",
-    coupling => "coupling",
-    region => "region",
-    regions => "regions",
-    chords => "chords",
-    contexts => "contexts",
-    deflects => "deflects",
-    edits => "edits",
-    actions => "actions",
-    accent => "accent",
-    statements => "statements",
-    interactions => "interactions",
-    ensemble => "ensemble",
-    bank => "bank",
-    response_mode => "response_mode",
-    call_policy => "call_policy",
-    total_beats => "total_beats",
-    materials => "materials",
-    opportunities => "opportunities",
-    stage => "stage",
-    admissions => "admissions",
-    obligations => "obligations",
-    budget => "budget",
-    ; ignore song_fingerprint
-);
+// Absent cover constraints retain the v2 unconstrained encoding. Present constraints
+// are an explicitly tagged extension, so the pre-cover receipt does not drift.
+impl CanonicalFingerprint for performance::PerformancePlan {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        let Self {
+            song_fingerprint: _,
+            cover_constraints,
+            language,
+            coupling,
+            region,
+            regions,
+            chords,
+            contexts,
+            deflects,
+            edits,
+            actions,
+            accent,
+            statements,
+            interactions,
+            ensemble,
+            bank,
+            response_mode,
+            call_policy,
+            total_beats,
+            materials,
+            opportunities,
+            stage,
+            admissions,
+            obligations,
+            budget,
+        } = self;
+        w.tag("performance/PerformancePlan/v2");
+        w.field("language", language);
+        w.field("coupling", coupling);
+        w.field("region", region);
+        w.field("regions", regions);
+        w.field("chords", chords);
+        w.field("contexts", contexts);
+        w.field("deflects", deflects);
+        w.field("edits", edits);
+        w.field("actions", actions);
+        w.field("accent", accent);
+        w.field("statements", statements);
+        w.field("interactions", interactions);
+        w.field("ensemble", ensemble);
+        w.field("bank", bank);
+        w.field("response_mode", response_mode);
+        w.field("call_policy", call_policy);
+        w.field("total_beats", total_beats);
+        w.field("materials", materials);
+        w.field("opportunities", opportunities);
+        w.field("stage", stage);
+        w.field("admissions", admissions);
+        w.field("obligations", obligations);
+        w.field("budget", budget);
+        if let Some(constraints) = cover_constraints {
+            w.field("cover_constraints", constraints);
+        }
+    }
+}
 
 impl CanonicalFingerprint for phenomenal::PhenomenalRegime {
     fn encode(&self, w: &mut FingerprintWriter) {
@@ -1382,6 +1421,10 @@ impl CanonicalFingerprint for plan::SectionFamily {
             Self::Break => w.tag("Break"),
             Self::Climax => w.tag("Climax"),
             Self::Coda => w.tag("Coda"),
+            Self::Named { identity } => {
+                w.tag("Named");
+                w.field("identity", identity);
+            }
         }
     }
 }

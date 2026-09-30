@@ -45,6 +45,11 @@ pub enum SectionFamily {
     /// The dynamic peak.
     Climax,
     Coda,
+    /// A source-declared family equivalence class, independent of rhetorical role.
+    /// IDs are canonicalized by first occurrence at the reference boundary.
+    Named {
+        identity: u32,
+    },
 }
 
 impl SectionFamily {
@@ -58,6 +63,7 @@ impl SectionFamily {
             SectionFamily::Break => "break",
             SectionFamily::Climax => "climax",
             SectionFamily::Coda => "coda",
+            SectionFamily::Named { .. } => "named",
         }
     }
 
@@ -73,7 +79,9 @@ impl SectionFamily {
     pub fn to_section_kind(self) -> SectionKind {
         match self {
             SectionFamily::Intro => SectionKind::Intro,
-            SectionFamily::A | SectionFamily::APrime { .. } => SectionKind::A,
+            SectionFamily::A | SectionFamily::APrime { .. } | SectionFamily::Named { .. } => {
+                SectionKind::A
+            }
             SectionFamily::B => SectionKind::Contrast,
             SectionFamily::Break => SectionKind::Development,
             SectionFamily::Climax => SectionKind::Climax,
@@ -84,6 +92,9 @@ impl SectionFamily {
     /// True when two phrases belong to the same family root (`A` and its `A'`s match).
     pub fn same_family_as(self, other: SectionFamily) -> bool {
         use SectionFamily::*;
+        if let (Named { identity: a }, Named { identity: b }) = (self, other) {
+            return a == b;
+        }
         matches!(
             (self, other),
             (A, A) | (A, APrime { .. }) | (APrime { .. }, A) | (APrime { .. }, APrime { .. })
@@ -456,13 +467,15 @@ impl ArrangementPlan {
                     lead: Silent,
                     drums: Silent,
                 },
-                SectionFamily::A | SectionFamily::APrime { .. } => PhraseArrangement {
-                    pad: Texture,
-                    keys: Support,
-                    bass: Foundation,
-                    lead: Foreground,
-                    drums: Pulse,
-                },
+                SectionFamily::A | SectionFamily::APrime { .. } | SectionFamily::Named { .. } => {
+                    PhraseArrangement {
+                        pad: Texture,
+                        keys: Support,
+                        bass: Foundation,
+                        lead: Foreground,
+                        drums: Pulse,
+                    }
+                }
                 SectionFamily::B => PhraseArrangement {
                     pad: Texture,
                     keys: Foreground,
@@ -683,6 +696,16 @@ impl CompositionPlan {
         contract: CoherenceContract,
     ) -> CompositionPlan {
         let form = FormGraph::build_for_beats(timeline, total_beats, &contract);
+        Self::from_form(timeline, form, contract)
+    }
+
+    /// Continue planning from an explicitly constrained form, before discourse and
+    /// arrangement choices. Cover generation owns the form's canonical topology.
+    pub fn from_form(
+        timeline: &IntentTimeline,
+        form: FormGraph,
+        contract: CoherenceContract,
+    ) -> CompositionPlan {
         let discourse = DiscoursePlan::build(timeline, &form, &contract);
         let mut arrangement = ArrangementPlan::build(&form, &discourse, &contract);
         // The thematic question/answer must be audible: give the lead a seat on Question/Answer

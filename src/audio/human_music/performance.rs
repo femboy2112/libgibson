@@ -220,7 +220,7 @@ pub struct AdmissionRecord {
 }
 
 /// The whole shared performance.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PerformancePlan {
     /// The fingerprint of the song this performs ([`super::song::SongMap::fingerprint`]) — the
     /// performance's CLAIM; [`super::song::SongMapConformance`] checks the content.
@@ -261,6 +261,8 @@ pub struct PerformancePlan {
     /// The shared complexity allocation per bar (planned before anybody plays; every realizer
     /// consumes its share).
     pub budget: Vec<super::budget::ComplexityAllocation>,
+    /// Optional canonical cover constraints. Absent on every historical path.
+    pub cover_constraints: Option<super::cover::CoverConstraints>,
 }
 
 impl PerformancePlan {
@@ -272,6 +274,33 @@ impl PerformancePlan {
         world: &MusicWorld,
         opts: PerformanceOptions,
     ) -> PerformancePlan {
+        Self::build(song, world, opts, None)
+            .expect("unconstrained planner has no cover domain to reject")
+    }
+
+    /// Apply invariant constraints before any dependent planner makes a choice.
+    pub fn from_song_constrained(
+        song: &super::song::SongMap,
+        world: &MusicWorld,
+        opts: PerformanceOptions,
+        constraints: super::cover::CoverConstraints,
+    ) -> Result<PerformancePlan, super::cover::CoverError> {
+        constraints.identity.validate()?;
+        if constraints.identity.length.is_none() {
+            return Err(super::cover::CoverError::Invalid(
+                "metric constraints require a declared extent",
+            ));
+        }
+        constraints.validate_target()?;
+        Self::build(song, world, opts, Some(constraints))
+    }
+
+    fn build(
+        song: &super::song::SongMap,
+        world: &MusicWorld,
+        opts: PerformanceOptions,
+        cover_constraints: Option<super::cover::CoverConstraints>,
+    ) -> Result<PerformancePlan, super::cover::CoverError> {
         let (timeline, plan, seed) = (&song.timeline, &song.plan, song.seed);
         let lang = opts.language;
         let region = Scale::new(world.tonic_pc, world.mode);
@@ -281,16 +310,25 @@ impl PerformancePlan {
 
         // 1. Harmony: the song's chart realized in this room and language (Round IX: the room
         //    re-modes and colours the chart; it no longer searches its own), or the phrase engine.
-        let (mut chords, mut deflects, home_chord) = match (&plan.backbone, &song.harmonic) {
-            (Some(tl), Some(hm)) => {
-                let r = super::backbone::realize(tl, hm, world, &lang);
-                (r.spans, r.deflects, Some(r.cell.reset))
+        let (mut chords, mut deflects, home_chord) = if let Some(chords) = cover_constraints
+            .as_ref()
+            .map(|c| c.harmony(world, &lang))
+            .transpose()?
+            .flatten()
+        {
+            (chords, Vec::new(), None)
+        } else {
+            match (&plan.backbone, &song.harmonic) {
+                (Some(tl), Some(hm)) => {
+                    let r = super::backbone::realize(tl, hm, world, &lang);
+                    (r.spans, r.deflects, Some(r.cell.reset))
+                }
+                _ => (
+                    HarmonyEngine::new(world, seed).generate(&targets, plan.contract.resolution),
+                    Vec::new(),
+                    None,
+                ),
             }
-            _ => (
-                HarmonyEngine::new(world, seed).generate(&targets, plan.contract.resolution),
-                Vec::new(),
-                None,
-            ),
         };
         // The backbone tiles whole bars; a partial final bar's harmony ends with the piece.
         chords.retain(|c| c.start_beat < total_beats - 1e-9);
@@ -320,8 +358,48 @@ impl PerformancePlan {
         // 2b. ONE orchestration authority: the stage is seeded from the arrangement envelope and
         //     every action is reconciled with it NOW — admitted, recast or rejected — instead of
         //     being realized and then deleted by a stale phrase role.
+        let mut constrained_rejections = Vec::new();
+        if cover_constraints.as_ref().is_some_and(|c| {
+            c.identity.harmony.is_some()
+                || c.identity.line(super::score::Role::Lead).is_some()
+                || c.identity.line(super::score::Role::Bass).is_some()
+        }) {
+            let rejected: Vec<_> = actions
+                .actions
+                .iter()
+                .filter(|a| {
+                    matches!(
+                        a.kind,
+                        ActionKind::Tonicize
+                            | ActionKind::Reharmonize
+                            | ActionKind::Recolor
+                            | ActionKind::Modulate
+                    )
+                })
+                .map(|a| {
+                    constrained_rejections.push(AdmissionRecord {
+                        action: None,
+                        kind: a.kind,
+                        start_beat: a.start_beat,
+                        outcome: Admission::Rejected {
+                            reason: "cover harmonic candidate domain",
+                        },
+                    });
+                    a.id
+                })
+                .collect();
+            // No stage, material or dependent action IDs exist yet.
+            let _remap = actions.remove(&rejected);
+        }
+        if let Some(c) = cover_constraints.as_ref().filter(|_| opts.actions) {
+            c.plan_settlements(plan, &chords, &mut actions);
+        }
         let mut stage = Stage::from_arrangement(plan);
-        let admissions = admit_actions(&mut actions, &mut stage);
+        if let Some(c) = &cover_constraints {
+            c.apply_stage(&mut stage);
+        }
+        let mut admissions = admit_actions(&mut actions, &mut stage);
+        admissions.extend(constrained_rejections);
 
         // 3. Harmonic actions edit the harmony (so they are heard, not merely labelled) and a
         //    Modulate moves the tonal region itself; every context is analysed in its own region,
@@ -348,7 +426,6 @@ impl PerformancePlan {
             })
             .map(|a| a.id)
             .collect();
-        let mut admissions = admissions;
         if !unperformed.is_empty() {
             let reason = "the harmony offers no lawful edit anywhere in its window";
             for &id in &unperformed {
@@ -420,6 +497,7 @@ impl PerformancePlan {
             &opts,
             &stage,
             seed,
+            cover_constraints.as_ref(),
         );
         let (statements, interactions) = (ip.statements, ip.interactions);
         // 5b. A resolution is performed by whoever ARRIVES: the lead when a statement sounds at
@@ -489,6 +567,7 @@ impl PerformancePlan {
             admissions,
             obligations,
             budget: Vec::new(),
+            cover_constraints,
         };
         // 8. The shared complexity budget: the lead's statements and the planned answers and
         //    figures are reserved, the rest is shared out to the accompanists.
@@ -496,13 +575,18 @@ impl PerformancePlan {
         for (eb, a) in perf.ensemble.iter_mut().zip(&perf.budget) {
             eb.budget = a.total;
         }
-        perf
+        Ok(perf)
     }
 
     /// The performance's fingerprint: everything this performance decided (FNV-1a over its full
     /// debug form). Two performances of one song differ here; their songs do not.
     pub fn fingerprint(&self) -> u64 {
         super::song::fnv1a(&format!("{self:?}"))
+    }
+
+    /// Explicit name for the frozen Debug-based v1 receipt formula.
+    pub fn legacy_fingerprint(&self) -> u64 {
+        self.fingerprint()
     }
 
     /// `agent`'s complexity allowance in `bar` minus what the plan already reserved for it (its
@@ -1137,6 +1221,41 @@ fn build_accent_grid(
         }
     }
     AccentGrid { bars, cells }
+}
+
+// Preserve the exact historical Debug stream when no cover constraints exist.
+impl std::fmt::Debug for PerformancePlan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("PerformancePlan");
+        d.field("song_fingerprint", &self.song_fingerprint);
+        d.field("language", &self.language);
+        d.field("coupling", &self.coupling);
+        d.field("region", &self.region);
+        d.field("regions", &self.regions);
+        d.field("chords", &self.chords);
+        d.field("contexts", &self.contexts);
+        d.field("deflects", &self.deflects);
+        d.field("edits", &self.edits);
+        d.field("actions", &self.actions);
+        d.field("accent", &self.accent);
+        d.field("statements", &self.statements);
+        d.field("interactions", &self.interactions);
+        d.field("ensemble", &self.ensemble);
+        d.field("bank", &self.bank);
+        d.field("response_mode", &self.response_mode);
+        d.field("call_policy", &self.call_policy);
+        d.field("total_beats", &self.total_beats);
+        d.field("materials", &self.materials);
+        d.field("opportunities", &self.opportunities);
+        d.field("stage", &self.stage);
+        d.field("admissions", &self.admissions);
+        d.field("obligations", &self.obligations);
+        d.field("budget", &self.budget);
+        if let Some(c) = &self.cover_constraints {
+            d.field("cover_constraints", c);
+        }
+        d.finish()
+    }
 }
 
 #[cfg(test)]

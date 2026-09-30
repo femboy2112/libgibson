@@ -254,6 +254,13 @@ fn realize_drums_impl(
     use super::action::{ActionKind, Agent};
     use super::ids::{ActionId, ActionStamp};
     use super::performance::{AccentGrid, DrumsMode, STEPS, STEP_BEATS};
+    if let Some(hits) = perf
+        .cover_constraints
+        .as_ref()
+        .and_then(|c| c.drums(perf, world))
+    {
+        return hits;
+    }
     let mut rng = Rng::new(seed ^ 0x6300_0E00_0000_0001);
     let subdiv_steps = match perf.language.surface_subdivision.max(world.subdiv) {
         s if s >= 4 => 1usize,

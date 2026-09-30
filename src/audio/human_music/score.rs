@@ -633,6 +633,9 @@ impl Score {
             if !(0.0..=1.0).contains(&n.velocity) {
                 return Err(format!("note velocity {} out of range", n.velocity));
             }
+            if !(0..=127).contains(&n.pitch) {
+                return Err(format!("note pitch {} out of MIDI range", n.pitch));
+            }
         }
         for d in &self.drums {
             if !d.start_beat.is_finite() || !starts_inside(d.start_beat) {

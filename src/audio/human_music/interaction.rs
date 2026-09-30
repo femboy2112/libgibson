@@ -330,6 +330,7 @@ pub(super) fn plan_interactions(
     opts: &PerformanceOptions,
     stage: &Stage,
     seed: u64,
+    cover: Option<&super::cover::CoverConstraints>,
 ) -> InteractionPlan {
     let bank = &thematic.bank;
     let mode = opts.responses;
@@ -390,129 +391,134 @@ pub(super) fn plan_interactions(
     // Statement starts whose Fragment verb passes to the band (before the thesis was stated),
     // with the Fragment action the band's compressed answer will perform.
     let mut band_fragments: Vec<(f64, ActionId)> = Vec::new();
-    for t in plan.targets() {
-        let phrase = t.phrase;
-        let Some(site) = thematic.site(phrase.ix) else {
-            continue;
-        };
-        if !stage.on_stage(Agent::Lead, phrase.start_beat()) {
-            continue;
-        }
-        let (motif, handoff) = (&site.motif, site.handoff);
-        let len = motif.total_beats() as f64;
-        if len < 1e-6 {
-            continue;
-        }
-        let pe = phrase.end_beat();
-        let mut at = phrase.start_beat();
-        let mut guard = 0;
-        while at + len <= pe + 1e-6 && guard < 32 {
-            // A figure call from bass/keys/drums just before this statement: the lead ANSWERS it.
-            let answering = figure_calls
-                .iter()
-                .find(|c| c.end_beat > at - 2.0 && c.end_beat <= at + 1.0 + 1e-6)
-                .copied();
-            let offset = if let Some(c) = answering {
-                // Enter after the figure (a short lawful latency), never on top of it.
-                ((c.end_beat - at).max(0.0) + 0.5)
-                    .min(pe - at - len)
-                    .max(0.0)
-            } else if lang.id == super::language::LanguageId::Simple {
-                0.0
-            } else {
-                // Choose among lawful entries by the grid's pickup/syncopation weight and memory —
-                // never an entry that would put the lead where the stage has it out.
-                let opts: [(f64, i32); 4] = [(0.0, 0), (-0.5, -1), (0.5, 1), (1.0, 2)];
-                let mut best = (f32::INFINITY, 0.0);
-                for (o, q) in opts {
-                    let s = at + o;
-                    if s < 0.0 || s + len > pe + 0.5 + 1e-6 || !stage.on_stage(Agent::Lead, s) {
-                        continue;
-                    }
-                    let w = accent.at_beat(s);
-                    let fit = -(w.structural + w.pickup + w.syncopation);
-                    let used = offset_memory
-                        .iter()
-                        .rev()
-                        .take(3)
-                        .filter(|&&u| u == q)
-                        .count();
-                    let cost = fit + 0.6 * used as f32 + rng.range_f32(0.0, 0.1);
-                    if cost < best.0 {
-                        best = (cost, o);
-                    }
-                }
-                offset_memory.push((best.1 * 2.0).round() as i32);
-                best.1
+    if let Some(c) = cover.filter(|c| c.identity.line(super::score::Role::Lead).is_some()) {
+        c.plan_statements(plan, &mut statements, &mut materials);
+    } else {
+        for t in plan.targets() {
+            let phrase = t.phrase;
+            let Some(site) = thematic.site(phrase.ix) else {
+                continue;
             };
-            let start = (at + offset).max(0.0);
-            if start + len > total_beats + 1e-6 {
-                break;
+            if !stage.on_stage(Agent::Lead, phrase.start_beat()) {
+                continue;
             }
-            // A lead-initiated Fragment action in force here fragments THIS statement: the verb
-            // reaches the thematic material instead of only nudging a scalar. Development
-            // presupposes exposition, and the hook and thesis returns are identity: before the
-            // thesis is stated (or on an identity role) the band carries the fragmentation.
-            let fragment_action = actions
-                .actions
-                .iter()
-                .find(|a| {
-                    a.kind == ActionKind::Fragment && a.initiator == Agent::Lead && a.covers(start)
-                })
-                .map(|a| a.id);
-            // Identity is the SONG's declaration (Round X: a site the song restates to teach it
-            // is identity whatever its role), not re-derived here from the role.
-            let identity_role = site.is_identity();
-            let fragmenting = fragment_action.is_some() && thesis_stated && !identity_role;
-            if let (Some(f), false) = (fragment_action, fragmenting) {
-                band_fragments.push((start, f));
-            }
-            let motif = if fragmenting && motif.len() > 2 {
-                motif.fragment(motif.len().div_ceil(2).max(2))
-            } else {
-                motif.clone()
-            };
+            let (motif, handoff) = (&site.motif, site.handoff);
             let len = motif.total_beats() as f64;
-            let motif_is_full = motif.len() >= bank.identity.len();
-            let mid = MaterialId(materials.len() as u32);
-            materials.push(InteractionMaterial::from_motif(
-                mid,
-                Agent::Lead,
-                &motif,
-                start,
-                MaterialSource::Statement {
-                    statement: statements.len(),
-                    motif: motif.id,
-                },
-            ));
-            statements.push(LeadStatement {
-                phrase: phrase.ix,
-                start_beat: start,
-                motif,
-                handoff,
-                role: t.goal.role,
-                energy: t.goal.energy_target,
-                register: t.goal.register_target,
-                is_rupture: phrase.is_rupture,
-                call: None,
-                material: mid,
-                answers: answering.map(|c| (c.action, c.material)),
-                fragment: if fragmenting { fragment_action } else { None },
-            });
-            if motif_is_full {
-                thesis_stated = true;
+            if len < 1e-6 {
+                continue;
             }
-            let after = start + len;
-            let boundary = (after / two_bar).ceil() * two_bar;
-            at = if boundary > after + 1e-6 {
-                boundary
-            } else {
-                after
-            };
-            guard += 1;
+            let pe = phrase.end_beat();
+            let mut at = phrase.start_beat();
+            let mut guard = 0;
+            while at + len <= pe + 1e-6 && guard < 32 {
+                // A figure call from bass/keys/drums just before this statement: the lead ANSWERS it.
+                let answering = figure_calls
+                    .iter()
+                    .find(|c| c.end_beat > at - 2.0 && c.end_beat <= at + 1.0 + 1e-6)
+                    .copied();
+                let offset = if let Some(c) = answering {
+                    // Enter after the figure (a short lawful latency), never on top of it.
+                    ((c.end_beat - at).max(0.0) + 0.5)
+                        .min(pe - at - len)
+                        .max(0.0)
+                } else if lang.id == super::language::LanguageId::Simple {
+                    0.0
+                } else {
+                    // Choose among lawful entries by the grid's pickup/syncopation weight and memory —
+                    // never an entry that would put the lead where the stage has it out.
+                    let opts: [(f64, i32); 4] = [(0.0, 0), (-0.5, -1), (0.5, 1), (1.0, 2)];
+                    let mut best = (f32::INFINITY, 0.0);
+                    for (o, q) in opts {
+                        let s = at + o;
+                        if s < 0.0 || s + len > pe + 0.5 + 1e-6 || !stage.on_stage(Agent::Lead, s) {
+                            continue;
+                        }
+                        let w = accent.at_beat(s);
+                        let fit = -(w.structural + w.pickup + w.syncopation);
+                        let used = offset_memory
+                            .iter()
+                            .rev()
+                            .take(3)
+                            .filter(|&&u| u == q)
+                            .count();
+                        let cost = fit + 0.6 * used as f32 + rng.range_f32(0.0, 0.1);
+                        if cost < best.0 {
+                            best = (cost, o);
+                        }
+                    }
+                    offset_memory.push((best.1 * 2.0).round() as i32);
+                    best.1
+                };
+                let start = (at + offset).max(0.0);
+                if start + len > total_beats + 1e-6 {
+                    break;
+                }
+                // A lead-initiated Fragment action in force here fragments THIS statement: the verb
+                // reaches the thematic material instead of only nudging a scalar. Development
+                // presupposes exposition, and the hook and thesis returns are identity: before the
+                // thesis is stated (or on an identity role) the band carries the fragmentation.
+                let fragment_action = actions
+                    .actions
+                    .iter()
+                    .find(|a| {
+                        a.kind == ActionKind::Fragment
+                            && a.initiator == Agent::Lead
+                            && a.covers(start)
+                    })
+                    .map(|a| a.id);
+                // Identity is the SONG's declaration (Round X: a site the song restates to teach it
+                // is identity whatever its role), not re-derived here from the role.
+                let identity_role = site.is_identity();
+                let fragmenting = fragment_action.is_some() && thesis_stated && !identity_role;
+                if let (Some(f), false) = (fragment_action, fragmenting) {
+                    band_fragments.push((start, f));
+                }
+                let motif = if fragmenting && motif.len() > 2 {
+                    motif.fragment(motif.len().div_ceil(2).max(2))
+                } else {
+                    motif.clone()
+                };
+                let len = motif.total_beats() as f64;
+                let motif_is_full = motif.len() >= bank.identity.len();
+                let mid = MaterialId(materials.len() as u32);
+                materials.push(InteractionMaterial::from_motif(
+                    mid,
+                    Agent::Lead,
+                    &motif,
+                    start,
+                    MaterialSource::Statement {
+                        statement: statements.len(),
+                        motif: motif.id,
+                    },
+                ));
+                statements.push(LeadStatement {
+                    phrase: phrase.ix,
+                    start_beat: start,
+                    motif,
+                    handoff,
+                    role: t.goal.role,
+                    energy: t.goal.energy_target,
+                    register: t.goal.register_target,
+                    is_rupture: phrase.is_rupture,
+                    call: None,
+                    material: mid,
+                    answers: answering.map(|c| (c.action, c.material)),
+                    fragment: if fragmenting { fragment_action } else { None },
+                });
+                if motif_is_full {
+                    thesis_stated = true;
+                }
+                let after = start + len;
+                let boundary = (after / two_bar).ceil() * two_bar;
+                at = if boundary > after + 1e-6 {
+                    boundary
+                } else {
+                    after
+                };
+                guard += 1;
+            }
         }
     }
-
     if !interact {
         // The mood-without-action probe: the lead still sings, but nobody answers anybody.
         return InteractionPlan {
@@ -540,6 +546,15 @@ pub(super) fn plan_interactions(
         // The lead answers a figure through its own next statement (see the statement pass),
         // never with a free response: the lead realizer plays statements.
         c.retain(|&a| a != initiator && a != Agent::Lead);
+        // A fully pinned source line/pattern has no discretionary response slot.
+        // Admission happens before generating response material or promises.
+        if let Some(pin) = cover {
+            c.retain(|a| match a {
+                Agent::Bass => pin.identity.line(super::score::Role::Bass).is_none(),
+                Agent::Drums => pin.identity.groove.is_none(),
+                _ => true,
+            });
+        }
         c
     };
     let next_statement_after = |b: f64, statements: &[LeadStatement]| -> f64 {

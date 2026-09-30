@@ -245,6 +245,13 @@ fn realize(
     mut floor: Option<&mut HarmonicEnsembleState<'_>>,
     temporal: bool,
 ) -> Vec<Note> {
+    if let Some(notes) = perf
+        .cover_constraints
+        .as_ref()
+        .and_then(|c| c.source_notes(perf, Role::Bass))
+    {
+        return notes;
+    }
     let coupled = floor.is_some();
     let mut out: Vec<Note> = Vec::new();
     let base_vel = (0.62 * world.base_dynamic.max(0.6)).clamp(0.2, 1.0);
@@ -588,6 +595,9 @@ fn realize(
     out.extend(restruck);
     out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
     super::comp::release_at_harmony_change(&mut out, &perf.chords);
+    if perf.cover_constraints.is_some() {
+        super::cover::bound_source_gates(perf, &mut out);
+    }
     if let Some(state) = floor {
         // Coupled, on the notes exactly as they will sound: labels by floor position, then the
         // ledger's hard-hazard gate.

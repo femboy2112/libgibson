@@ -1616,6 +1616,20 @@ fn nearest_chord_tone(p: Midi, chord: Option<Chord>, scale: &Scale) -> Midi {
     }
 }
 
+// Preserve the historical receipt presentation for scale-step motifs.
+impl std::fmt::Debug for Motif {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("Motif");
+        d.field("id", &self.id)
+            .field("degrees", &self.degrees)
+            .field("rhythm", &self.rhythm);
+        if self.pitch_basis != PitchBasis::ScaleSteps {
+            d.field("pitch_basis", &self.pitch_basis);
+        }
+        d.finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::theory::{Function, Quality};
@@ -2091,19 +2105,5 @@ mod tests {
         slots[0].gate = 0.25;
         let released = cost(&slots);
         assert!((released - reaches - 1.1).abs() < 1e-6);
-    }
-}
-
-// Preserve the historical receipt presentation for scale-step motifs.
-impl std::fmt::Debug for Motif {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut d = f.debug_struct("Motif");
-        d.field("id", &self.id)
-            .field("degrees", &self.degrees)
-            .field("rhythm", &self.rhythm);
-        if self.pitch_basis != PitchBasis::ScaleSteps {
-            d.field("pitch_basis", &self.pitch_basis);
-        }
-        d.finish()
     }
 }

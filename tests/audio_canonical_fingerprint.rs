@@ -154,7 +154,10 @@ fn chromatic_and_scale_step_motifs_do_not_alias() {
     chromatic.pitch_basis = PitchBasis::Semitones;
     assert_eq!(diatonic.identity(), chromatic.identity()); // archived untyped descriptor
     assert_ne!(diatonic.typed_identity(), chromatic.typed_identity());
-    assert_ne!(diatonic.typed_identity().canonical_fingerprint(), chromatic.typed_identity().canonical_fingerprint());
+    assert_ne!(
+        diatonic.typed_identity().canonical_fingerprint(),
+        chromatic.typed_identity().canonical_fingerprint()
+    );
     assert_ne!(
         diatonic.canonical_fingerprint(),
         chromatic.canonical_fingerprint()

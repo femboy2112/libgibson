@@ -1,0 +1,22 @@
+Rust (fmt, clippy, test, build)	Format check	﻿2026-09-30T08:09:55.7192303Z ##[group]Run cargo fmt --check
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:55.7192642Z [36;1mcargo fmt --check[0m
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:55.7261079Z shell: /usr/bin/bash -e {0}
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:55.7261352Z env:
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:55.7261564Z   CARGO_TERM_COLOR: always
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:55.7261822Z   CARGO_INCREMENTAL: 0
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:55.7262068Z   CARGO_HOME: /home/runner/.cargo
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:55.7262347Z   CACHE_ON_FAILURE: false
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:55.7262585Z ##[endgroup]
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:59.1470287Z Diff in /home/runner/work/libgibson/libgibson/tests/audio_canonical_fingerprint.rs:154:
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:59.1477994Z      chromatic.pitch_basis = PitchBasis::Semitones;
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:59.1478940Z      assert_eq!(diatonic.identity(), chromatic.identity()); // archived untyped descriptor
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:59.1479825Z      assert_ne!(diatonic.typed_identity(), chromatic.typed_identity());
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:59.1481417Z -    assert_ne!(diatonic.typed_identity().canonical_fingerprint(), chromatic.typed_identity().canonical_fingerprint());
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:59.1482385Z +    assert_ne!(
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:59.1482832Z +        diatonic.typed_identity().canonical_fingerprint(),
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:59.1483475Z +        chromatic.typed_identity().canonical_fingerprint()
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:59.1483986Z +    );
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:59.1484285Z      assert_ne!(
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:59.1484658Z          diatonic.canonical_fingerprint(),
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:59.1485185Z          chromatic.canonical_fingerprint()
+Rust (fmt, clippy, test, build)	Format check	2026-09-30T08:09:59.6287183Z ##[error]Process completed with exit code 1.

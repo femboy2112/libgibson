@@ -150,6 +150,11 @@ pub enum ActionCause {
     /// A planned lead statement in phrase `phrase` (the thematic line itself: a call others may
     /// answer).
     Statement { phrase: u32 },
+    /// A target discourse debt requires an executable settling action.
+    Discourse {
+        obligation: super::ids::ObligationId,
+        phrase: u32,
+    },
 }
 
 /// How much an action does — a small continuous effect vector derived from the semantic state
@@ -1219,6 +1224,9 @@ impl ActionPlan {
                 ActionCause::Gesture { slot, gesture } => format!("slot{slot}:{}", gesture.label()),
                 ActionCause::Interaction { call } => format!("answers {call}"),
                 ActionCause::Statement { phrase } => format!("statement@phrase{phrase}"),
+                ActionCause::Discourse { obligation, phrase } => {
+                    format!("discourse:{obligation}@phrase{phrase}")
+                }
             };
             let resp: Vec<&str> = a.responders.iter().map(|r| r.label()).collect();
             let _ = writeln!(

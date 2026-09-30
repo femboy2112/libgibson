@@ -1,0 +1,21 @@
+{
+  "parent": "3188c6955b88bb7127af2f0b6894b9ae54e28c9c",
+  "state": "integrated worktree source bound by source-manifest.json; not a clean-parent build",
+  "toolchain": "1.98.1",
+  "unit": {
+    "cover": 14,
+    "reference_song": 3
+  },
+  "integration": {
+    "fingerprint": 5,
+    "historical_characterization": 1,
+    "independent_cover_review": 8,
+    "short_pcm_voice": 4,
+    "profile_laws": 8,
+    "rhythm_voice": 4
+  },
+  "strict_all_targets_all_features_clippy": 0,
+  "fmt": 0,
+  "boundary": "47 executed focused controls; not a fresh holdout, full release gate, or human listening",
+  "retained_failures": "Initial clippy items-after-tests fixed by moving implementations before test modules. Pitch-unit CI format failure fixed by rustfmt. Unit log ends with a misspelled integration target command; the corrected integration command is separately green."
+}

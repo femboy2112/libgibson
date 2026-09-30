@@ -107,6 +107,13 @@ impl AuthoredOccupancy {
     /// Capture a player's own source. Drum interlock can read these semantic pulse slots while
     /// its acoustic hearing continues to record only the final bass notes.
     pub fn from_role(perf: &PerformancePlan, source: &[Note], role: Role) -> Self {
+        if let Some(intent) = perf
+            .cover_constraints
+            .as_ref()
+            .and_then(|c| c.occupancy(perf, source, role))
+        {
+            return intent;
+        }
         let source: Vec<_> = source.iter().filter(|n| n.role == role).copied().collect();
         let rhythm = annotate(perf, &source)
             .iter()
@@ -259,4 +266,65 @@ impl AuthoredOccupancy {
         steps.dedup();
         steps
     }
+}
+
+/// Validate the declared semantic ledger independently of acoustic vacancy.
+/// `required` is the selected occupancy policy, not inferred from ledger presence.
+pub fn violations(
+    perf: &PerformancePlan,
+    score: &super::score::Score,
+    required: bool,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    if required {
+        for role in [Role::Lead, Role::Bass] {
+            if score.occupancy.iter().filter(|o| o.role == role).count() != 1 {
+                out.push(format!("expected one authored owner for {role:?}"));
+            }
+        }
+    }
+    for owner in &score.occupancy {
+        if score.role_notes(owner.role).next().is_some() && owner.rhythm.is_empty() {
+            out.push(format!(
+                "sounding role {:?} lost its authored attacks",
+                owner.role
+            ));
+        }
+        if let Some(expected) = perf
+            .cover_constraints
+            .as_ref()
+            .and_then(|c| c.occupancy(perf, &score.notes, owner.role))
+        {
+            if &expected != owner {
+                out.push(format!(
+                    "pinned canonical occupancy changed for {:?}",
+                    owner.role
+                ));
+            }
+        }
+        for slot in &owner.rhythm {
+            if !slot.beat.is_finite()
+                || !slot.end_beat.is_finite()
+                || slot.beat < 0.0
+                || slot.end_beat <= slot.beat
+                || slot.end_beat > perf.total_beats
+            {
+                out.push(format!("invalid reservation for {:?}", owner.role));
+            }
+            if owner.yields_at(slot.beat) || owner.allows_comp_at(slot.beat, &[]) {
+                out.push(format!("reserved attack yields for {:?}", owner.role));
+            }
+        }
+        for span in &owner.spans {
+            if !span.start.is_finite()
+                || !span.end.is_finite()
+                || span.start < 0.0
+                || span.end <= span.start
+                || span.end > perf.total_beats
+            {
+                out.push(format!("invalid ownership span for {:?}", owner.role));
+            }
+        }
+    }
+    out
 }
