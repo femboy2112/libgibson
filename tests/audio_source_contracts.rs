@@ -7,14 +7,15 @@ use gibson::audio::human_music::{
     contract::{CoherenceAnchor, CompositionGrammar},
     cover::{CoverMap, CoverSpec},
     functor::{perform_with_profile, Composition},
+    ids::ActionStamp,
     language::MusicalLanguage,
     occupancy,
-    performance::PerformanceOptions,
-    policy::PerformanceProfile,
+    performance::{Admission, PerformanceOptions, REHEARSAL_REJECTION},
+    policy::{ActionAdmission, PerformanceProfile},
     score::{DrumVoice, Role},
     semantic::{deflected_lift_trace, demo_trace},
     song::{AnchorPresence, AnchorReport, SongMapConformance},
-    MusicWorld, SongMap,
+    witness, MusicWorld, SongMap,
 };
 
 fn song(beats: f64, seed: u64, deflected: bool, grammar: CompositionGrammar) -> SongMap {
@@ -366,7 +367,7 @@ fn u3_historical_planned_admission_leaves_verbs_and_debts_unperformed() {
             MusicalLanguage::fusion_conversation(),
         ] {
             let c = pocket(&s, &MusicWorld::black_ice(), language);
-            for row in gibson::audio::human_music::witness::audit(&c.perf, &c.score).rows {
+            for row in witness::audit(&c.perf, &c.score).rows {
                 if !row.witnessed {
                     kinds.insert(format!("{:?}", row.kind));
                 }
@@ -381,4 +382,124 @@ fn u3_historical_planned_admission_leaves_verbs_and_debts_unperformed() {
         );
     }
     assert!(debts > 0);
+}
+
+fn rehearsed(song: &SongMap, world: &MusicWorld, language: MusicalLanguage) -> Composition {
+    let opts = PerformanceOptions {
+        language,
+        ..PerformanceOptions::default()
+    };
+    let profile = PerformanceProfile::POCKET.with_admission(ActionAdmission::Rehearsed);
+    perform_with_profile(song, world, opts, profile).expect("rehearsed source")
+}
+
+/// U3, the contract: under rehearsed admission every verb left in the plan is performed. A verb
+/// no player performed is struck before the take and recorded as a rejection with its reason —
+/// it is never stamped onto something that was not played.
+#[test]
+fn u3_rehearsed_admission_performs_every_admitted_verb() {
+    let mut struck = 0;
+    for (tag, s) in verb_corpus() {
+        for world in [MusicWorld::black_ice(), MusicWorld::vapor95()] {
+            for language in [
+                MusicalLanguage::simple(),
+                MusicalLanguage::fusion_conversation(),
+            ] {
+                let c = rehearsed(&s, &world, language);
+                let audit = witness::audit(&c.perf, &c.score);
+                let open: Vec<_> = audit.rows.iter().filter(|r| !r.witnessed).collect();
+                assert!(open.is_empty(), "{tag} {}: {open:?}", world.name);
+                struck += c
+                    .perf
+                    .admissions
+                    .iter()
+                    .filter(|r| {
+                        r.outcome
+                            == Admission::Rejected {
+                                reason: REHEARSAL_REJECTION,
+                            }
+                    })
+                    .count();
+            }
+        }
+    }
+    assert!(struck > 0, "the corpus exercises rehearsal rejections");
+}
+
+/// The audit is not weakened by rehearsal: removing the stamps a witnessed verb relies on makes
+/// it unwitnessed again, exactly as before.
+#[test]
+fn u3_rehearsal_leaves_the_audit_able_to_catch_a_forgery() {
+    let (_, s) = &verb_corpus()[20];
+    let c = rehearsed(
+        s,
+        &MusicWorld::black_ice(),
+        MusicalLanguage::fusion_conversation(),
+    );
+    let audit = witness::audit(&c.perf, &c.score);
+    let stamped: Vec<_> = audit
+        .rows
+        .iter()
+        .filter(|r| r.witnessed && r.stamped > 0)
+        .collect();
+    assert!(!stamped.is_empty());
+    for row in stamped {
+        let mut forged = c.score.clone();
+        let strip = |st: ActionStamp| {
+            st.iter()
+                .filter(|&id| id != row.action)
+                .fold(ActionStamp::NONE, ActionStamp::with)
+        };
+        for n in &mut forged.notes {
+            n.prov.actions = strip(n.prov.actions);
+        }
+        for d in &mut forged.drums {
+            d.prov.actions = strip(d.prov.actions);
+        }
+        let again = witness::audit(&c.perf, &forged);
+        let r = again.rows.iter().find(|r| r.action == row.action).unwrap();
+        assert!(
+            !r.witnessed,
+            "{:?} still witnessed with its stamps removed",
+            row.kind
+        );
+    }
+}
+
+/// U3, song obligations under rehearsed admission: each settled debt gets its discharging event
+/// from the source planner (a real drum re-entry, a Resolve on the home chord). What stays
+/// unwitnessed is named, not hidden: a cadence debt settled where no home chord arrives or whose
+/// planned Resolve no player performs, or a motif question no answer reaches. A groove debt is
+/// always paid by the kit's return.
+#[test]
+fn u3_rehearsed_obligations_are_paid_or_named() {
+    use gibson::audio::human_music::discourse::ObligationKind as K;
+    let (mut paid, mut open) = (0, 0);
+    for (tag, s) in verb_corpus() {
+        for language in [
+            MusicalLanguage::simple(),
+            MusicalLanguage::fusion_conversation(),
+        ] {
+            let c = rehearsed(&s, &MusicWorld::black_ice(), language);
+            paid += c
+                .perf
+                .obligations
+                .obligations
+                .iter()
+                .filter(|o| o.settlement.is_some_and(|s| s.witness.is_some()))
+                .count();
+            for o in c.perf.obligations.unwitnessed_settlements() {
+                open += 1;
+                assert!(
+                    matches!(
+                        o.kind,
+                        K::SuspendedCadence | K::HarmonicDeparture | K::MotifQuestion
+                    ),
+                    "{tag}: {:?} settled without a discharging event",
+                    o.kind
+                );
+            }
+        }
+    }
+    assert!(paid > open, "paid {paid}, open {open}");
 }

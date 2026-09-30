@@ -1726,11 +1726,45 @@ impl CanonicalFingerprint for policy::ExpressionPolicy {
         }
     }
 }
-structure!(policy::PerformanceProfile, "policy/PerformanceProfile/v2";
-    pitch => "pitch", expression => "expression", occupancy => "occupancy",
-    support => "support", lifetime => "lifetime", observation => "observation",
-    evidence => "evidence", repair => "repair",
-);
+// Historical laws keep the exact v2 encoding; a non-historical admission (or later
+// law) is an explicitly tagged extension, so no historical profile's receipt drifts.
+impl CanonicalFingerprint for policy::PerformanceProfile {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        w.tag("policy/PerformanceProfile/v2");
+        // Exhaustive destructuring makes a newly added field a schema-review error.
+        let Self {
+            pitch,
+            expression,
+            occupancy,
+            support,
+            lifetime,
+            observation,
+            evidence,
+            admission,
+            repair,
+        } = self;
+        w.field("pitch", pitch);
+        w.field("expression", expression);
+        w.field("occupancy", occupancy);
+        w.field("support", support);
+        w.field("lifetime", lifetime);
+        w.field("observation", observation);
+        w.field("evidence", evidence);
+        w.field("repair", repair);
+        if *admission != policy::ActionAdmission::Planned {
+            w.field("admission", admission);
+        }
+    }
+}
+impl CanonicalFingerprint for policy::ActionAdmission {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        w.tag("policy/ActionAdmission/v1");
+        match self {
+            Self::Planned => w.tag("planned"),
+            Self::Rehearsed => w.tag("rehearsed"),
+        }
+    }
+}
 
 // The legacy float-normalized shape is a diagnostic descriptor. The wrapper retains
 // pitch units; exact cover rhythm uses rational metric positions instead.

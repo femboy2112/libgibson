@@ -118,6 +118,19 @@ pub enum SourceEvidencePolicy {
     AuthoredSources,
 }
 
+/// How the performance plan admits its musical verbs before the take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ActionAdmission {
+    /// Historical: every verb the planner and the stage admit goes into the take; a verb nobody
+    /// performs stays in the plan as an unwitnessed promise.
+    Planned,
+    /// The band runs the chart once before the take. Each settled song obligation receives its
+    /// discharging event from the source planner (the ordinary twin of the cover path's settlement
+    /// planner), and a verb no player performed in the rehearsal is rejected — recorded, with its
+    /// reason — before the take. Nothing is stamped that was not played.
+    Rehearsed,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HistoricalRepair {
     None,
@@ -139,6 +152,8 @@ pub struct PerformanceProfile {
     /// Independent of whether the source actually declares any continuation edges.
     pub observation: ObservedLifetimePolicy,
     pub evidence: SourceEvidencePolicy,
+    /// Planned (every historical profile) or rehearsed verb admission.
+    pub admission: ActionAdmission,
     pub(crate) repair: HistoricalRepair,
 }
 
@@ -157,6 +172,7 @@ impl PerformanceProfile {
         lifetime: VoiceLifetimePolicy::ReleaseEnvelope,
         observation: ObservedLifetimePolicy::ExplicitContinuity,
         evidence: SourceEvidencePolicy::Events,
+        admission: ActionAdmission::Planned,
         repair: HistoricalRepair::None,
     };
     pub const TEMPORAL: Self = Self {
@@ -183,6 +199,11 @@ impl PerformanceProfile {
         lifetime: VoiceLifetimePolicy::ExplicitContinuations,
         ..Self::PHRASED
     };
+
+    /// The same laws with another verb-admission law.
+    pub const fn with_admission(self, admission: ActionAdmission) -> Self {
+        Self { admission, ..self }
+    }
 
     /// Validate once before planning/realizing a public profile. Historical post-hoc repair
     /// configurations are available only through their compatibility entry points.

@@ -289,13 +289,61 @@ pub fn perform_with_profile(
     profile: PerformanceProfile,
 ) -> Result<Composition, PolicyError> {
     profile.validate(opts.coupling)?;
-    let perf = PerformancePlan::from_song(song, world, opts);
-    let score = realize_policy(song, world, &perf, profile, Some(profile.observation));
+    let (perf, score) = plan_and_realize(song, world, opts, None, profile)
+        .expect("unconstrained planner has no cover domain to reject");
     Ok(Composition {
         score,
         song: song.clone(),
         perf,
     })
+}
+
+/// How many times the band may rehearse a chart before the take.
+const REHEARSALS: usize = 3;
+
+/// Plan and realize under `profile`'s verb-admission law (the profile is already validated).
+///
+/// `Planned` is the historical single pass. `Rehearsed` plans each settled song obligation's
+/// discharging event, realizes, audits every verb against the realized score, and strikes the verbs
+/// no player performed from the chart (recorded as rejections) before realizing again — at most
+/// [`REHEARSALS`] times. The final score is an ordinary realization of the final plan; the audit is
+/// unchanged and still judges it.
+pub(crate) fn plan_and_realize(
+    song: &SongMap,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+    constraints: Option<super::cover::CoverConstraints>,
+    profile: PerformanceProfile,
+) -> Result<(PerformancePlan, Score), super::cover::CoverError> {
+    use super::performance::{ActionKey, AdmissionInputs};
+    use super::policy::ActionAdmission;
+    let observed = Some(profile.observation);
+    let mut inputs = AdmissionInputs {
+        settlements: profile.admission == ActionAdmission::Rehearsed,
+        vetoed: Vec::new(),
+    };
+    let mut rehearsals = 0;
+    loop {
+        let perf =
+            PerformancePlan::from_song_admitted(song, world, opts, constraints.clone(), &inputs)?;
+        let score = realize_policy(song, world, &perf, profile, observed);
+        if profile.admission == ActionAdmission::Planned || rehearsals == REHEARSALS {
+            return Ok((perf, score));
+        }
+        let unperformed: Vec<ActionKey> = super::witness::audit(&perf, &score)
+            .rows
+            .iter()
+            .filter(|r| !r.witnessed)
+            .filter_map(|r| perf.actions.get(r.action))
+            .map(ActionKey::of)
+            .filter(|k| !inputs.vetoed.contains(k))
+            .collect();
+        if unperformed.is_empty() {
+            return Ok((perf, score));
+        }
+        inputs.vetoed.extend(unperformed);
+        rehearsals += 1;
+    }
 }
 
 fn perform_historical(

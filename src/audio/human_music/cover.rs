@@ -1500,10 +1500,17 @@ pub fn cover_candidate(map: &CoverMap, target: CoverTarget<'_>) -> Result<Compos
         }
     }
     constraints.validate_target()?;
-    let perf =
-        PerformancePlan::from_song_constrained(&song, target.world, target.options, constraints)?;
-    let score = super::functor::realize_with_profile(&song, target.world, &perf, target.profile)
+    target
+        .profile
+        .validate(target.options.coupling)
         .map_err(|e| CoverError::Policy(e.to_string()))?;
+    let (perf, score) = super::functor::plan_and_realize(
+        &song,
+        target.world,
+        target.options,
+        Some(constraints),
+        target.profile,
+    )?;
     Ok(Composition { score, song, perf })
 }
 
