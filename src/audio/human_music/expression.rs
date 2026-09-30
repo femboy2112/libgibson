@@ -368,7 +368,20 @@ impl ExpressionDiagnostics {
         for role in [Role::Lead, Role::Bass] {
             let mut notes: Vec<_> = score.role_notes(role).copied().collect();
             notes.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
-            let line = annotate(perf, &notes);
+            let mut line = annotate(perf, &notes);
+            // A performed grace no longer sits on its authored motif slot. Recover its source
+            // structural bit from the decision receipt, including downstream shared unisons.
+            for e in &mut line {
+                if let Some(d) = score.expression_decisions.iter().find(|d| {
+                    d.after.is_some_and(|n| {
+                        (n.start_beat - e.note.start_beat).abs() < 1e-6
+                            && ((n.role == role && n.pitch == e.note.pitch)
+                                || e.note.prov.role_note == "unison" && n.role == Role::Lead)
+                    })
+                }) {
+                    e.structural = !d.before.optional;
+                }
+            }
             for (i, e) in line
                 .iter()
                 .enumerate()

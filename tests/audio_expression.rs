@@ -382,6 +382,10 @@ fn r15_all_eighteen_bass_approaches_are_expressed_with_receipts() {
     assert!(tb.false_function_claims <= ta.false_function_claims);
     let d = ExpressionDiagnostics::measure(&b.perf, &b.score, &w);
     assert!(d.rows.iter().all(|r| r.verdict == V::AsWritten));
+    assert!(
+        d.rows.iter().all(|r| r.optional),
+        "retimed events retain their authored optional status"
+    );
 }
 
 #[test]
