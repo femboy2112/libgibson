@@ -398,3 +398,73 @@ fn h12_every_temporal_object_inhabits_the_performance_domain() {
             .join("\n")
     );
 }
+
+/// Mutation controls for the domain law: the plan's own audit and the (unchanged) occupancy
+/// checker still reject a window forged past the end; the clipping authority returns every
+/// in-domain window bit for bit (no archived receipt may drift by rounding).
+#[test]
+fn h12_the_domain_audit_and_the_occupancy_checker_still_catch_a_forged_overrun() {
+    use gibson::audio::human_music::{
+        occupancy::{self, OwnershipKind, OwnershipSpan},
+        performance::PerformanceDomain,
+        score::Role,
+    };
+    let song = SongMap::compose(
+        &deflected_lift_trace(7.25),
+        78_301_031,
+        Some(CompositionGrammar::HookArc),
+        Composer::MeaningDirected,
+    );
+    let world = MusicWorld::black_ice();
+    let mut c = perform_with_profile(
+        &song,
+        &world,
+        options(MusicalLanguage::fusion_conversation()),
+        PerformanceProfile::BAND,
+    )
+    .unwrap();
+    assert!(c.perf.domain_violations().is_empty());
+    assert!(occupancy::violations(&c.perf, &c.score, true).is_empty());
+
+    let total = c.perf.total_beats;
+    let mut forged = c.perf.clone();
+    let a = forged.actions.actions.last_mut().expect("an action");
+    a.dur_beats = total + 1.0 - a.start_beat;
+    assert!(
+        !forged.domain_violations().is_empty(),
+        "an overrun action window must be named"
+    );
+
+    let bass = c
+        .score
+        .occupancy
+        .iter_mut()
+        .find(|o| o.role == Role::Bass)
+        .expect("a bass owner");
+    bass.spans.push(OwnershipSpan {
+        start: total - 0.25,
+        end: total + 0.25,
+        material: None,
+        kind: OwnershipKind::Action,
+    });
+    assert!(
+        occupancy::violations(&c.perf, &c.score, true)
+            .iter()
+            .any(|v| v.contains("invalid ownership span")),
+        "the checker is never loosened"
+    );
+
+    let d = PerformanceDomain::new(7.25);
+    for (start, end) in [(0.1, 0.3), (1.0 / 3.0, 7.25), (6.9, 7.1)] {
+        let (s, e) = d.clip(start, end).unwrap();
+        assert_eq!(
+            (s.to_bits(), e.to_bits()),
+            (f64::to_bits(start), f64::to_bits(end))
+        );
+        assert_eq!(d.fit(start, end - start), Some(end - start));
+    }
+    assert_eq!(d.clip(7.0, 7.5), Some((7.0, 7.25)));
+    assert_eq!(d.fit(7.0, 0.5), Some(0.25));
+    assert_eq!(d.fit(7.25, 0.5), None);
+    assert_eq!(d.clip(8.0, 9.0), None);
+}

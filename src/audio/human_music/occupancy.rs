@@ -191,6 +191,16 @@ impl AuthoredOccupancy {
                 });
             }
         }
+        // Ownership is derived from planned windows; it never outlives the piece they belong to.
+        let domain = perf.domain();
+        let spans = spans
+            .into_iter()
+            .filter_map(|s| {
+                domain
+                    .clip(s.start, s.end)
+                    .map(|(start, end)| OwnershipSpan { start, end, ..s })
+            })
+            .collect();
         Self {
             role,
             rhythm,

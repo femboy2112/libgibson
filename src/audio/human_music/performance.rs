@@ -219,6 +219,64 @@ pub struct AdmissionRecord {
     pub outcome: Admission,
 }
 
+/// The performance's time domain `[0, total_beats]`: every planned window (action, stage,
+/// ownership, material, statement, chord, region) and every realized event inhabits it — an
+/// onset strictly before the end, an end no later than it. The one clipping authority for the
+/// windows the planner creates and derives, so a partial final bar is never outlived by a window
+/// computed from an earlier bar (holdout v2 H12).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PerformanceDomain {
+    total_beats: f64,
+}
+
+impl PerformanceDomain {
+    /// Onsets closer than this to the end have no time left to be performed.
+    pub const EPS: f64 = 1e-6;
+
+    /// The domain of a piece `total_beats` long.
+    pub fn new(total_beats: f64) -> Self {
+        Self { total_beats }
+    }
+
+    /// The piece's length.
+    pub fn total_beats(self) -> f64 {
+        self.total_beats
+    }
+
+    /// The part of a window starting at `start` for `dur` beats that the piece performs: its
+    /// duration, unchanged bit for bit when it already fits, cut at the end otherwise; `None`
+    /// when it starts outside the domain or nothing of it remains.
+    pub fn fit(self, start: f64, dur: f64) -> Option<f64> {
+        if !start.is_finite() || !dur.is_finite() || start < 0.0 {
+            return None;
+        }
+        let left = self.total_beats - start;
+        let dur = if dur > left { left } else { dur };
+        (dur > Self::EPS).then_some(dur)
+    }
+
+    /// `[start, end)` intersected with the domain — returned exactly as given when it already
+    /// fits; `None` when nothing of it remains.
+    pub fn clip(self, start: f64, end: f64) -> Option<(f64, f64)> {
+        if !start.is_finite() || !end.is_finite() {
+            return None;
+        }
+        let start = start.max(0.0);
+        let end = end.min(self.total_beats);
+        (end - start > Self::EPS).then_some((start, end))
+    }
+
+    /// Whether `[start, end)` lies inside the domain as given.
+    pub fn contains(self, start: f64, end: f64) -> bool {
+        start.is_finite()
+            && end.is_finite()
+            && start >= 0.0
+            && start < self.total_beats - Self::EPS
+            && end >= start
+            && end <= self.total_beats + Self::EPS
+    }
+}
+
 /// The whole shared performance.
 #[derive(Clone)]
 pub struct PerformancePlan {
@@ -763,6 +821,65 @@ impl PerformancePlan {
             eb.budget = a.total;
         }
         Ok(perf)
+    }
+
+    /// The performance's time domain `[0, total_beats]`.
+    pub fn domain(&self) -> PerformanceDomain {
+        PerformanceDomain::new(self.total_beats)
+    }
+
+    /// Every planned window outside [`Self::domain`] (actions, stage windows, materials,
+    /// statements, chords, regions), each named. Empty for a lawful plan.
+    pub fn domain_violations(&self) -> Vec<String> {
+        let d = self.domain();
+        let mut out = Vec::new();
+        let mut check = |what: String, start: f64, end: f64| {
+            if !d.contains(start, end) {
+                out.push(format!(
+                    "{what} {start}..{end} outside 0..{}",
+                    d.total_beats()
+                ));
+            }
+        };
+        for a in &self.actions.actions {
+            check(
+                format!("action {:?} {:?}", a.id, a.kind),
+                a.start_beat,
+                a.end_beat(),
+            );
+        }
+        for w in &self.stage.windows {
+            check(
+                format!("stage window {:?}", w.agent),
+                w.start_beat,
+                w.end_beat,
+            );
+        }
+        for m in &self.materials {
+            check(
+                format!("material {:?}", m.id),
+                m.start_beat,
+                m.start_beat + m.length(),
+            );
+        }
+        for st in &self.statements {
+            check(
+                format!("statement {}", st.phrase),
+                st.start_beat,
+                st.end_beat(),
+            );
+        }
+        for c in &self.chords {
+            check(
+                "chord".into(),
+                c.start_beat,
+                c.start_beat + f64::from(c.dur_beats),
+            );
+        }
+        for r in &self.regions.spans {
+            check("region".into(), r.start_beat, r.end_beat);
+        }
+        out
     }
 
     /// The performance's fingerprint: everything this performance decided (FNV-1a over its full

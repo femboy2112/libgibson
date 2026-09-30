@@ -817,6 +817,7 @@ impl ActionPlan {
             ..ActionPlan::default()
         };
         let clamp = |b: f64| b.clamp(0.0, total_beats);
+        let domain = super::performance::PerformanceDomain::new(total_beats);
 
         // --- 1. Path-lift every applied morphism. ---
         for (ti, t) in timeline.transitions.iter().enumerate() {
@@ -980,14 +981,16 @@ impl ActionPlan {
                     });
                     continue;
                 }
-                if dur <= 1e-6 {
+                // Every window inhabits the performance's domain (a cadence hit half a beat
+                // before a partial bar's end is cut there, never left ringing past the piece).
+                let Some(dur) = domain.fit(start, dur) else {
                     plan.deferred.push(Deferral {
                         transition: ti,
                         morphism: m,
                         reason: "fires at the very end of the piece: no time left to witness it",
                     });
                     continue;
-                }
+                };
                 let id = ActionId(plan.actions.len() as u32);
                 // A cadence hit that coincides with a resolution pays that resolution.
                 let pays = if kind == ActionKind::Hit && has_resolve {
@@ -1067,12 +1070,16 @@ impl ActionPlan {
                 });
                 memory.record(slot.gesture, m);
                 for (kind, initiator, start, dur, target, responders, eff) in specs {
+                    let start = start.max(0.0);
+                    let Some(dur) = domain.fit(start, dur) else {
+                        continue;
+                    };
                     let id = ActionId(plan.actions.len() as u32);
                     plan.actions.push(MusicalAction {
                         id,
                         cause,
                         initiator,
-                        start_beat: start.max(0.0),
+                        start_beat: start,
                         dur_beats: dur,
                         kind,
                         target_beat: target,
