@@ -870,3 +870,40 @@ fn perform_checked_admits_lawful_takes_and_names_every_broken_law() {
         .for_each(|d| d.prov.actions = Default::default());
     assert!(judge(&m).unwitnessed_actions > 0);
 }
+
+/// Composer provenance is recorded, never inferred backwards from what a composer tends to
+/// produce: every composer on every grammar reports itself (PropulsiveReturn songs used to report
+/// StablePropulsion whoever composed them), and the record is provenance, not identity — two songs
+/// with equal content keep equal song fingerprints.
+#[test]
+fn a_song_records_who_composed_it() {
+    use gibson::audio::human_music::fingerprint::CanonicalFingerprint;
+    for grammar in GRAMMARS {
+        for composer in [
+            Composer::StructuralR9,
+            Composer::MeaningDirected,
+            Composer::StablePropulsion,
+        ] {
+            let song = SongMap::compose(&demo_trace(32.0), 78_301_070, Some(grammar), composer);
+            assert_eq!(
+                song.composer(),
+                composer,
+                "{grammar:?} composed by {composer:?}"
+            );
+        }
+    }
+    // Provenance is not identity: the same content, recorded differently, is the same song.
+    let a = SongMap::compose(
+        &demo_trace(32.0),
+        78_301_071,
+        Some(CompositionGrammar::HookArc),
+        Composer::StructuralR9,
+    );
+    let b = SongMap::build(
+        &demo_trace(32.0),
+        78_301_071,
+        Some(CompositionGrammar::HookArc),
+    );
+    assert_eq!(a.fingerprint(), b.fingerprint());
+    assert_eq!(a.canonical_fingerprint(), b.canonical_fingerprint());
+}
