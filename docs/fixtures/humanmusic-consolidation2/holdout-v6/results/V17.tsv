@@ -1,0 +1,10 @@
+case	phase	law	status	detail
+V17	source	generation	PASS	performed; its laws are judged separately
+V17	source	declared-grammar	PASS	grammar=RiffDrive
+V17	source	declared-composer	PASS	declared=StructuralR9; recorded=StructuralR9
+V17	source	canonical-inventory	PASS	song=79d626a1352d9819; plan=8662638550445ade; score=48ff19afc5e9f589; notes=33; drums=41; length=13.25; tempo=118
+V17	source	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+V17	source	guard:percussion-law	PASS	PercussionReport restraint=foundation required=41 ornaments admitted 0/0 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/0\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 0/0\n  unison-inner: 0/0\n  bar   0 Silent required=12 ornaments 0/0 — the band is already speaking (lead 5, band 7, prev 0)\n  bar   1 Silent required=12 ornaments 0/0 — supports the pocket (lead 0, band 2, prev 0)\n  bar   2 Silent required=12 ornaments 0/0 — the band is already speaking (lead 5, band 7, prev 0)\n  bar   3 Silent required=5 ornaments 0/0 — phrase end with space: a moment to speak (lead 0, band 1, prev 0)\nbars over allowance=[]
+V17	source	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [], open_debts: [] }
+V17	source	evidence:established	PASS	established=[Riff, Groove, Form, BassFigure]
+V17	extraction	nothing-to-cover	PASS	no song identity survives the selection: spec=[Groove]; expect=nothing\n
