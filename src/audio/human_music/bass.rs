@@ -208,9 +208,21 @@ fn realize_bass_phrase_impl(
     } else {
         super::phrase_expression::realize(perf, world, line, &support, lead_plans)
     };
+    let mut notes: Vec<Note> = result.events.into_iter().map(|e| e.note).collect();
+    // Earned: a bass material onset that the phrase pass landed on an accent may now sit in another
+    // harmony than the one its pitch was chosen for. Judge it where it actually sounds (the coupled
+    // `reland` law, without the floor decision record). The material lines are answers and quotes.
+    if perf.functions == super::policy::FunctionPolicy::Earned {
+        for n in notes
+            .iter_mut()
+            .filter(|n| matches!(n.prov.role_note, "quote" | "answer"))
+        {
+            reland_note(perf, n);
+        }
+    }
     PhraseBass {
         authored,
-        notes: result.events.into_iter().map(|e| e.note).collect(),
+        notes,
         decisions: result.decisions,
         plans: result.plans,
     }
@@ -709,6 +721,36 @@ fn reland(perf: &PerformancePlan, n: &mut Note, state: &mut HarmonicEnsembleStat
     // harmony's root: a 3rd or 5th carried under a new chord nobody else roots is an inversion
     // the phrase never asked for (the root-anchored contour can arrive on the fifth). Judged on
     // the pitch actually emitted, so after any re-pitch above.
+    let end = n.start_beat + n.dur_beats as f64;
+    if let Some(c) = perf.chords.iter().find(|c| {
+        c.start_beat > n.start_beat + 1e-6
+            && c.start_beat < end - 1e-6
+            && c.chord.root_pc != pitch_class(n.pitch)
+    }) {
+        n.dur_beats = ((c.start_beat - n.start_beat) as f32 * 0.97).max(0.1);
+    }
+}
+
+/// [`reland`] without the coupled floor's decision record, for the independent BAND path: a
+/// projected bass material onset that `land_once` moved onto an accent may sit in another harmony
+/// than the one its pitch was chosen for. Judge it where it actually sounds.
+pub(crate) fn reland_note(perf: &PerformancePlan, n: &mut Note) {
+    let Some(ctx) = perf.context_at(n.start_beat) else {
+        return;
+    };
+    let root_pc = ctx.chord.root_pc;
+    if !ctx.chord.contains_pc(pitch_class(n.pitch)) {
+        n.pitch = if n.start_beat < ctx.start_beat + 1.0 - 1e-6 {
+            near(root_pc, n.pitch)
+        } else {
+            (1..=6)
+                .flat_map(|d| [n.pitch - d, n.pitch + d])
+                .filter(|&p| ctx.chord.contains_pc(pitch_class(p)))
+                .min_by_key(|&p| ((p - n.pitch).abs(), pitch_class(p) != root_pc, p > n.pitch))
+                .unwrap_or_else(|| near(root_pc, n.pitch))
+        };
+    }
+    n.function = Some(PitchFunction::ChordTone);
     let end = n.start_beat + n.dur_beats as f64;
     if let Some(c) = perf.chords.iter().find(|c| {
         c.start_beat > n.start_beat + 1e-6

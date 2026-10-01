@@ -361,6 +361,24 @@ pub fn finish_keys(mut out: Vec<Note>, perf: &PerformancePlan) -> Vec<Note> {
     for n in out.iter_mut().filter(|n| n.prov.role_note == "hold") {
         release_with_overhang(std::slice::from_mut(n), &perf.chords, 0.0);
     }
+    // Earned: a projected material onset that `land_once` moved onto an accent may now sit in a
+    // harmony other than the one its pitch was chosen for (the bass's `reland` law, applied to the
+    // keys' material lines). Judge it where it actually sounds: keep the pitch if it is stable
+    // there, otherwise take the nearest stable pitch, and declare the function it earns.
+    if perf.functions == super::policy::FunctionPolicy::Earned {
+        for n in out
+            .iter_mut()
+            .filter(|n| matches!(n.prov.role_note, "answer" | "figure" | "quote"))
+        {
+            let Some(ctx) = perf.context_at(n.start_beat) else {
+                continue;
+            };
+            if function_over(ctx, n.pitch).is_none() {
+                n.pitch = nearest_stable(ctx, n.pitch);
+            }
+            n.function = function_over(ctx, n.pitch);
+        }
+    }
     out
 }
 
@@ -1693,6 +1711,37 @@ pub fn realize_pad_on(
                         0.75
                     };
                     push(p, ctx.start_beat, dur, vm, &mut out);
+                }
+            }
+        }
+    }
+    // BAND support lifetime (`FunctionPolicy::Earned`): a pad note's acoustic tail is justified
+    // only where the pad itself states that exact pitch in the harmony it would ring into — a
+    // held common tone or a re-attacked member. Where it does not, the harmonic situation that
+    // justified the note has ended, and its release must fade under the next harmony's attack
+    // instead of smearing into a sonority the pad is no longer seated in. (Archived arms keep
+    // their byte-exact half-beat behaviour; this is a source law, not an observer change.)
+    if perf.functions == super::policy::FunctionPolicy::Earned {
+        let spb = 60.0 / f64::from(world.tempo_bpm.max(1.0));
+        let tail = super::voice::release_tail_secs(&world.pad, super::voice::AUDIBLE_FLOOR_DB) / spb;
+        let stated: Vec<(f64, Midi)> = out.iter().map(|n| (n.start_beat, n.pitch)).collect();
+        for n in out.iter_mut() {
+            let Some(ctx) = perf.context_at(n.start_beat) else {
+                continue;
+            };
+            let boundary = ctx.start_beat + f64::from(ctx.dur_beats);
+            let continued = stated
+                .iter()
+                .any(|&(at, p)| p == n.pitch && (at - boundary).abs() < 1e-6);
+            if continued {
+                continue;
+            }
+            if n.start_beat + f64::from(n.dur_beats) + tail > boundary + 1e-9 {
+                let short = ((boundary - n.start_beat) - tail - 1e-4) as f32;
+                // A structural context shorter than the tail has no room even for the release:
+                // leave the note valid rather than emitting a non-positive duration.
+                if short >= 0.02 {
+                    n.dur_beats = short;
                 }
             }
         }

@@ -423,8 +423,13 @@ impl SongMap {
             };
             v.push((sl.start_beat(), sl.gesture.label(), root));
             if sl.gesture == G::Lift {
-                let end = sl.end_beat().min(self.plan.form.total_beats);
-                v.push((end - 1e-3, "pointer", c.pointer));
+                // The pointer is the Lift's arrival at the slot's end. A final slot the piece
+                // truncates has no room to reach it, so it is not a landmark this form declares
+                // (the previous code clamped it to the piece end, where the lift chord still
+                // sounds — a pointer the form never got to). A fully realized slot keeps it.
+                if sl.end_beat() <= self.plan.form.total_beats + 1e-9 {
+                    v.push((sl.end_beat() - 1e-3, "pointer", c.pointer));
+                }
             }
         }
         v
@@ -564,6 +569,10 @@ impl AnchorReport {
                         // The theme trajectory restates the thesis wherever a seated phrase can
                         // hold it; none can in this form.
                         StructurallyInapplicable("no lead-seated phrase can hold the thesis")
+                    } else if !identity_sites.iter().any(|s| s.statable(&song.plan)) {
+                        // The site exists, but the FINAL (possibly truncated) form gives it no room
+                        // to state the theme: the form never promised this statement.
+                        StructurallyInapplicable("no seated phrase has room for the thesis")
                     } else {
                         DeclaredButMissing("no identity site is stated")
                     }
@@ -952,10 +961,15 @@ impl SongMapConformance {
             .collect();
         for site in &identity {
             let Some(st) = perf.statements.iter().find(|st| st.phrase == site.phrase) else {
-                missing_theme_sites.push(ThemeMiss {
-                    phrase: site.phrase,
-                    why: "not stated",
-                });
+                // A finite form does not promise an identity statement it has no room to make:
+                // the site must still be statable in the FINAL form to be a miss (a truncated
+                // final phrase can leave a site that was statable when the form was nominal).
+                if site.statable(&song.plan) {
+                    missing_theme_sites.push(ThemeMiss {
+                        phrase: site.phrase,
+                        why: "not stated",
+                    });
+                }
                 continue;
             };
             if st.motif != site.motif {
