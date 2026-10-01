@@ -1584,38 +1584,34 @@ fn heard_pad_path_impl(
             .filter(|_| carry)
             .map(|q| (None, q, voices.clone()));
         // Earned: the edit is judged by the hold law the receipt judges (a sub-hold overlap where
-        // the chord was only implied is lawful), and the first candidate (in preference order)
-        // that REMOVES the flip wins over one that only shortens it — a root placed in a voice
-        // that enters late can leave a held rival before it. Archived: the first candidate that
+        // the chord was only implied is lawful), and a candidate that REMOVES the flip wins over
+        // one that only shortens it ([`choose_rooting`]). Archived: the first candidate that
         // shortens the flip under the strict pointwise rule.
-        let mut chosen = None;
-        for (replaced, root, after) in own_root
-            .into_iter()
-            .chain(rooting_candidates(&perf.contexts[ci], &voices))
-        {
-            let mut trial = pp.clone();
-            trial.path.voicings[t].voices = after.clone();
-            if earned {
-                trial.rooted.push(ci);
-            }
-            let (p2, id2) = heard(&trial);
-            let keeps = if earned {
-                keeps_held_identity(&id, &id2, 0.0, end)
-            } else {
-                keeps_identity(&id, &id2, 0.0, end)
-            };
-            let left = flipped_over(&id2, ci);
-            if left < before - 1e-9 && keeps {
-                let removes = left <= 1e-9;
-                if chosen.is_none() || removes {
-                    chosen = Some((replaced, root, after, trial, p2, id2));
+        let chosen = choose_rooting(
+            own_root
+                .into_iter()
+                .chain(rooting_candidates(&perf.contexts[ci], &voices)),
+            ci,
+            before,
+            earned,
+            |after| {
+                let mut trial = pp.clone();
+                trial.path.voicings[t].voices = after.to_vec();
+                if earned {
+                    trial.rooted.push(ci);
                 }
-                if !earned || removes {
-                    break;
+                let (p2, id2) = heard(&trial);
+                Some(((trial, p2), id2))
+            },
+            |id2| {
+                if earned {
+                    keeps_held_identity(&id, id2, 0.0, end)
+                } else {
+                    keeps_identity(&id, id2, 0.0, end)
                 }
-            }
-        }
-        if let Some((replaced, root, after, trial, p2, id2)) = chosen {
+            },
+        );
+        if let Some((replaced, root, after, (trial, p2), id2)) = chosen {
             edits.push(PadVoicingEdit {
                 context: ci,
                 start_beat: perf.contexts[ci].start_beat,
@@ -1631,6 +1627,47 @@ fn heard_pad_path_impl(
         }
     }
     (pp, pad, edits)
+}
+
+/// One rooting decision over harmony `ci`, shared by every support player that answers for the
+/// chart's identity (the pad, the keys). `candidates` come in preference order; `trial` realizes
+/// and hears the band with a candidate voicing (`None`: the candidate is not a rooting as
+/// realized); `keeps` is the player's identity acceptance. A candidate is admissible when it
+/// shortens the flip over `ci` (from `before` beats) and `keeps` accepts it. Under earned
+/// functions the first admissible candidate that REMOVES the flip wins over one that only shortens
+/// it; archived, the first admissible candidate wins.
+#[allow(clippy::type_complexity)]
+fn choose_rooting<T>(
+    candidates: impl IntoIterator<Item = (Option<Midi>, Midi, Vec<Midi>)>,
+    ci: usize,
+    before: f64,
+    earned: bool,
+    mut trial: impl FnMut(&[Midi]) -> Option<(T, super::identity::IdentityDiagnostics)>,
+    keeps: impl Fn(&super::identity::IdentityDiagnostics) -> bool,
+) -> Option<(
+    Option<Midi>,
+    Midi,
+    Vec<Midi>,
+    T,
+    super::identity::IdentityDiagnostics,
+)> {
+    let mut chosen = None;
+    for (replaced, root, after) in candidates {
+        let Some((t, id2)) = trial(&after) else {
+            continue;
+        };
+        let left = flipped_over(&id2, ci);
+        if left < before - 1e-9 && keeps(&id2) {
+            let removes = left <= 1e-9;
+            if chosen.is_none() || removes {
+                chosen = Some((replaced, root, after, t, id2));
+            }
+            if !earned || removes {
+                break;
+            }
+        }
+    }
+    chosen
 }
 
 /// Beats of held (flipped) identity the band leaves over harmony `ci`.
@@ -1688,26 +1725,32 @@ pub(crate) fn keys_answer_for_identity(
             continue;
         }
         let voices = kp.path.voicings[t].voices.clone();
-        // The pad's preference: the first candidate that removes the flip, else the first that
-        // shortens it.
-        let mut chosen = None;
-        for (replaced, root, after) in
-            rooting_candidates_in(&perf.contexts[ci], &voices, (range.low, range.high), false)
-        {
-            let mut trial = kp.clone();
-            trial.path.voicings[t].voices = after.clone();
-            let id2 = hear(&render(&trial));
-            let left = flipped_over(&id2, ci);
-            if left < before - 1e-9 && keeps_held_identity(&id, &id2, 0.0, end) {
-                let removes = left <= 1e-9;
-                if chosen.is_none() || removes {
-                    chosen = Some((replaced, root, after, trial, id2));
-                }
-                if removes {
-                    break;
-                }
-            }
-        }
+        let ctx = &perf.contexts[ci];
+        let (a, b) = (ctx.start_beat, ctx.start_beat + f64::from(ctx.dur_beats));
+        let root_pc = ctx.chord.root_pc.rem_euclid(12);
+        let chosen = choose_rooting(
+            rooting_candidates_in(ctx, &voices, (range.low, range.high), false),
+            ci,
+            before,
+            true,
+            |after| {
+                let mut trial = kp.clone();
+                trial.path.voicings[t].voices = after.to_vec();
+                let keys = render(&trial);
+                // An edit is a rooting only if the keys, as rendered, sound the root here (a stab
+                // voices a subset of its voicing).
+                let sounds_root = keys.iter().any(|n| {
+                    pitch_class(n.pitch) == root_pc
+                        && n.start_beat < b - 1e-6
+                        && n.start_beat + f64::from(n.dur_beats) > a + 1e-6
+                });
+                sounds_root.then(|| {
+                    let id2 = hear(&keys);
+                    (trial, id2)
+                })
+            },
+            |id2| keeps_held_identity(&id, id2, 0.0, end),
+        );
         if let Some((replaced, root, after, trial, id2)) = chosen {
             edits.push(PadVoicingEdit {
                 context: ci,

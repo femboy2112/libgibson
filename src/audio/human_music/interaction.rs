@@ -368,24 +368,27 @@ pub(super) fn plan_interactions(
                                     start: f64,
                                     end: f64|
      -> bool {
+        let inside = |d: f64, s: f64, e: f64| d >= s - 1e-6 && d < e - 1e-6;
         let borrowed = |d: f64| {
-            let inside = |s: f64, e: f64| d >= s - 1e-6 && d < e - 1e-6;
-            inside(start, end)
-                || materials
-                    .iter()
-                    .filter(|m| {
-                        m.owner == Agent::Bass && matches!(m.source, MaterialSource::Figure { .. })
-                    })
-                    .any(|m| inside(m.start_beat, m.start_beat + m.length()))
+            materials
+                .iter()
+                .filter(|m| {
+                    m.owner == Agent::Bass && matches!(m.source, MaterialSource::Figure { .. })
+                })
+                .any(|m| inside(d, m.start_beat, m.start_beat + m.length()))
                 || interactions
                     .iter()
                     .filter_map(|i| i.response.as_ref())
                     .filter(|r| r.responder == Agent::Bass && r.transform != Transform::Silence)
-                    .any(|r| inside(r.start_beat, r.start_beat + r.dur_beats))
+                    .any(|r| inside(d, r.start_beat, r.start_beat + r.dur_beats))
         };
-        keeps_bass_figure
-            && !bass_downbeats.is_empty()
-            && bass_downbeats.iter().all(|&d| borrowed(d))
+        // The downbeats the bass's own line still has, and whether this window takes all of them.
+        let free: Vec<f64> = bass_downbeats
+            .iter()
+            .copied()
+            .filter(|&d| !borrowed(d))
+            .collect();
+        keeps_bass_figure && !free.is_empty() && free.iter().all(|&d| inside(d, start, end))
     };
 
     // --- 1. Figures: every figure-bearing action gets its material, stated by its initiator

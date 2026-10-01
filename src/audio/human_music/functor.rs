@@ -571,9 +571,12 @@ fn realize_policy(
                     score.phrase_plans.len(),
                     score.expression_decisions.len(),
                 );
-                let mut answered = perf.functions != super::policy::FunctionPolicy::Earned
-                    || !(semantic_occupancy || temporal)
-                    || profile.support != SupportPolicy::SourceVoicePath;
+                let answers = perf.functions == super::policy::FunctionPolicy::Earned
+                    && (semantic_occupancy || temporal)
+                    && profile.support == SupportPolicy::SourceVoicePath;
+                // The keys' path once they have answered (`None`: as authored), and the passes left.
+                let mut answered_path: Option<super::voicing::RolePath> = None;
+                let mut passes = KEYS_ANSWER_PASSES;
                 let bass = loop {
                     let bass = if phrase_expression {
                         score.hearings.push(Hearing::of("bass", Role::Keys, &keys));
@@ -653,20 +656,25 @@ fn realize_policy(
                     } else {
                         super::bass::realize_bass_temporal(perf, plan, world, &lead.notes, &keys)
                     };
-                    if answered {
+                    if !answers || passes == 0 {
                         break bass;
                     }
-                    answered = true;
+                    passes -= 1;
                     // Earned: harmonic identity is the responsibility of the support that sounds the
-                    // harmony. Where the pad voices none, the keys answer for it, at the source; when
-                    // they change, the bass hears the keys as they now are (its first take is undone).
+                    // harmony. Whatever the band, with the pad's answer, still holds as another chord,
+                    // the keys answer for at the source; when they change, the bass hears the keys as
+                    // they now are (its earlier take is undone) and the keys listen again to that
+                    // bass — until they have nothing left to answer. The take always pairs the final
+                    // keys with the bass that heard them.
                     let (kp, edits) = {
-                        let kp = super::voicing::keys_path(
-                            perf,
-                            world.voicing_spread,
-                            &lead.notes,
-                            super::comp::keys_shell_n(perf),
-                        );
+                        let kp = answered_path.clone().unwrap_or_else(|| {
+                            super::voicing::keys_path(
+                                perf,
+                                world.voicing_spread,
+                                &lead.notes,
+                                super::comp::keys_shell_n(perf),
+                            )
+                        });
                         let render = |kp: &super::voicing::RolePath| {
                             if semantic_occupancy {
                                 super::comp::realize_keys_owned_on(
@@ -741,13 +749,16 @@ fn realize_policy(
                         };
                         let (kp, edits) =
                             super::comp::keys_answer_for_identity(perf, world, &kp, &render, &hear);
-                        ((!edits.is_empty()).then(|| render(&kp)), edits)
+                        let keys = (!edits.is_empty() && passes > 0).then(|| render(&kp));
+                        (keys.map(|keys| (kp, keys)), edits)
                     };
-                    let Some(answering) = kp else {
+                    // No edit, or no pass left for the bass to hear one: this bass heard these keys.
+                    let Some((kp, answering)) = kp else {
                         break bass;
                     };
                     keys = answering;
-                    score.keys_voicing_edits = edits;
+                    answered_path = Some(kp);
+                    score.keys_voicing_edits.extend(edits);
                     score.hearings.truncate(mark.0);
                     score.occupancy.truncate(mark.1);
                     score.phrase_plans.truncate(mark.2);
@@ -1043,6 +1054,11 @@ fn clip_to_end(score: &mut Score) {
 
 /// The piece-end law for one note: nothing starts at or after `end`, nothing rings past it.
 /// `false` when the note does not sound inside the piece at all.
+/// Under earned functions: how many times the keys may listen to the bass and answer for the
+/// chart's identity (each answer that changes them is heard by a new bass take). A bound, not a
+/// tuning: the keys only ever add the root where the band holds another chord.
+const KEYS_ANSWER_PASSES: usize = 4;
+
 fn clip_note(n: &mut Note, end: f64) -> bool {
     if n.start_beat >= end - 1e-9 {
         return false;
