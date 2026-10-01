@@ -1981,24 +1981,25 @@ pub fn realize_pad_on(
         let spb = 60.0 / f64::from(world.tempo_bpm.max(1.0));
         let tail =
             super::voice::release_tail_secs(&world.pad, super::voice::AUDIBLE_FLOOR_DB) / spb;
-        let index_at = |beat: f64| {
-            perf.contexts.iter().position(|c| {
-                beat >= c.start_beat - 1e-9 && beat < c.start_beat + f64::from(c.dur_beats) - 1e-9
-            })
-        };
+        // The harmony a note sounds in and the one its tail rings into, looked up exactly as the
+        // archived law does (`context_at`: past the piece's end it answers the final harmony
+        // itself, whose consonant tail therefore rings out).
+        let index_of = |c: &HarmonicContext| perf.contexts.iter().position(|x| std::ptr::eq(x, c));
         for n in out.iter_mut() {
-            let Some(ci) = index_at(n.start_beat) else {
+            let Some(ctx) = perf.context_at(n.start_beat) else {
                 continue;
             };
-            let ctx = &perf.contexts[ci];
+            let ci = index_of(ctx);
             let boundary = ctx.start_beat + f64::from(ctx.dur_beats);
             if n.start_beat + f64::from(n.dur_beats) + tail <= boundary + 1e-9 {
                 continue;
             }
-            let next_ix = index_at(boundary + 1e-6);
-            let next = next_ix.map(|j| &perf.contexts[j]);
+            let next = perf.context_at(boundary + 1e-6);
             let admitted = next.is_some_and(|next| function_over(next, n.pitch).is_some());
-            let released = next_ix.is_some_and(|j| pp.released.contains(&j));
+            // A release concerns another harmony the tail rings into, never the piece's end.
+            let released = next
+                .and_then(index_of)
+                .is_some_and(|j| Some(j) != ci && pp.released.contains(&j));
             if admitted && !released {
                 continue;
             }
