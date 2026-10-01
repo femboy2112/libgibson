@@ -1555,7 +1555,12 @@ fn classify_source(perf: &PerformancePlan, notes: &mut [Note]) {
                 is_strong: n.start_beat.fract() == 0.0,
                 licensed: ctx.map_or(0, |c| super::pitch::pc_mask(&c.palette.tensions)),
             },
-            &perf.region_at(n.start_beat),
+            // Earned: a pinned event's function is judged in the scale of the context it sounds
+            // in (the temporal judge's); archived, in its key region's.
+            &match (perf.functions, ctx) {
+                (super::policy::FunctionPolicy::Earned, Some(c)) => c.palette.scale,
+                _ => perf.region_at(n.start_beat),
+            },
         );
     }
 }
