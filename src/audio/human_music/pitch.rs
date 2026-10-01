@@ -16,6 +16,22 @@ fn in_chord(chord: Option<Chord>, t: Midi) -> bool {
     chord.is_some_and(|c| c.contains_pc(t))
 }
 
+/// Whether `t` is a CORE tone of `chord`: an interval the quality spells below the 9th (root, 3rd
+/// or its sus stand-in, 5th, 7th/6th). The written 9th of an add9/maj9/m9 is colour — a tone a line
+/// can land on, never one that resolves it. Allocation-free.
+fn in_core(chord: Option<Chord>, t: Midi) -> bool {
+    chord.is_some_and(|c| {
+        c.quality
+            .intervals()
+            .iter()
+            .any(|&i| i < 12 && (c.root_pc + i).rem_euclid(12) == pitch_class(t))
+    })
+}
+
+/// How long after an accented tone ends its destination may arrive and still be heard to resolve
+/// it (a later arrival is a new event, not the tone's resolution).
+const RESOLUTION_WINDOW: f64 = 1.0;
+
 /// A pitch-class set as a 12-bit mask (bit `pc` set), for [`PitchContext::licensed`].
 pub fn pc_mask(pcs: &[i32]) -> u16 {
     PitchClassSet::from_pitches(pcs).bits()
@@ -103,15 +119,54 @@ impl PitchContext {
 /// colour precede anticipation and melodic connector syntax. Anticipation must connect to the
 /// arriving harmony through the held note or a timed successor. What none explain is `None`.
 pub fn classify(ctx: &PitchContext, scale: &Scale) -> Option<PitchFunction> {
-    classify_inner(ctx, scale, false)
+    classify_inner(ctx, scale, false, None)
 }
 
 /// Frozen Round XI local semantics for the exact control realization.
 pub(super) fn classify_r11(ctx: &PitchContext, scale: &Scale) -> Option<PitchFunction> {
-    classify_inner(ctx, scale, true)
+    classify_inner(ctx, scale, true, None)
 }
 
-fn classify_inner(ctx: &PitchContext, scale: &Scale, r11: bool) -> Option<PitchFunction> {
+/// Classify under earned functions ([`super::policy::FunctionPolicy::Earned`]) inside the finite
+/// performance `domain`. A relational function names a destination, and is claimed only where that
+/// destination is realized inside the performance and holds the relation the function names;
+/// otherwise the note earns what it earns without it ([`classify`] in every other respect):
+///
+/// - every stepwise-path function (chromatic approach, neighbour, passing tone, appoggiatura,
+///   enclosure) needs its destination — the next realized pitch — to sound inside the domain;
+/// - an appoggiatura resolves within one beat of its own end, by step, onto a CORE
+///   tone of the harmony sounding where the destination sounds (the arriving chord when it sounds
+///   past the boundary). A spelled colour tone — the 9th of a m9 — is not a resolution.
+pub fn classify_earned(
+    ctx: &PitchContext,
+    scale: &Scale,
+    domain: super::performance::PerformanceDomain,
+) -> Option<PitchFunction> {
+    classify_inner(ctx, scale, false, Some(domain.total_beats()))
+}
+
+/// The classifier a performance's function law selects: the archived semantics, or the earned
+/// relational law inside the performance's domain.
+pub fn classify_under(
+    ctx: &PitchContext,
+    scale: &Scale,
+    functions: super::policy::FunctionPolicy,
+    domain: super::performance::PerformanceDomain,
+) -> Option<PitchFunction> {
+    match functions {
+        super::policy::FunctionPolicy::Archived => classify(ctx, scale),
+        super::policy::FunctionPolicy::Earned => classify_earned(ctx, scale, domain),
+    }
+}
+
+/// `earned`: the end of the finite performance under earned functions; `None` on every archived
+/// path (bit-for-bit the historical classifier).
+fn classify_inner(
+    ctx: &PitchContext,
+    scale: &Scale,
+    r11: bool,
+    earned: Option<f64>,
+) -> Option<PitchFunction> {
     let pitch = ctx.pitch;
     if !r11 && in_chord(ctx.cur, pitch) && ctx.crosses_boundary() {
         if let (Some(boundary), Some(next), Some(next_onset)) =
@@ -184,8 +239,13 @@ fn classify_inner(ctx: &PitchContext, scale: &Scale, r11: bool) -> Option<PitchF
         }
     }
 
-    // The stepwise-path functions need both neighbours in time.
-    if let (Some(pp), Some(np)) = (ctx.prev, ctx.next) {
+    // The stepwise-path functions need both neighbours in time — under earned functions, a
+    // destination that sounds inside the performance.
+    let destination_sounds = earned.is_none_or(|end| {
+        ctx.next_onset
+            .is_some_and(|at| at < end - super::performance::PerformanceDomain::EPS)
+    });
+    if let (Some(pp), Some(np), true) = (ctx.prev, ctx.next, destination_sounds) {
         // A structural pitch: a chord tone (now or of the arriving harmony) or a licensed tension.
         let into_target = |t: Midi| {
             in_chord(ctx.cur, t) || in_chord(ctx.next_chord, t) || in_mask(ctx.licensed, t)
@@ -215,13 +275,19 @@ fn classify_inner(ctx: &PitchContext, scale: &Scale, r11: bool) -> Option<PitchF
         }
 
         // 7. Appoggiatura: a strong-beat leap TO the non-chord tone that resolves by step to a
-        //    current chord tone.
-        if ctx.is_strong
-            && d_in.abs() > 2
-            && d_out != 0
-            && d_out.abs() <= 2
-            && in_chord(ctx.cur, np)
-        {
+        //    current chord tone. Earned: the resolution arrives in time onto a core tone of the
+        //    harmony it sounds in.
+        let resolves = match earned {
+            None => in_chord(ctx.cur, np),
+            Some(_) => ctx.next_onset.is_some_and(|at| {
+                let there = match ctx.next_boundary {
+                    Some(b) if at >= b - 1e-6 => ctx.next_chord,
+                    _ => ctx.cur,
+                };
+                at <= ctx.onset + ctx.duration + RESOLUTION_WINDOW + 1e-6 && in_core(there, np)
+            }),
+        };
+        if ctx.is_strong && d_in.abs() > 2 && d_out != 0 && d_out.abs() <= 2 && resolves {
             return Some(PitchFunction::Appoggiatura);
         }
 
@@ -575,5 +641,80 @@ mod tests {
             ..base(63, Some(c_major()))
         };
         assert_eq!(classify(&c, &cmaj_scale()), None);
+    }
+
+    /// The fresh family's shape over Dm9: A5 -> F#6 (accented, leapt into) -> E6, half a beat later.
+    fn over_dm9(next: Midi, next_onset: f64) -> PitchContext {
+        PitchContext {
+            onset: 25.0,
+            duration: 0.45,
+            prev: Some(81),
+            next: Some(next),
+            next_onset: Some(next_onset),
+            ..base(90, Some(Chord::new(2, Quality::Min9)))
+        }
+    }
+
+    fn dm_scale() -> Scale {
+        Scale::new(2, Mode::Dorian)
+    }
+
+    fn earned(end: f64) -> super::super::performance::PerformanceDomain {
+        super::super::performance::PerformanceDomain::new(end)
+    }
+
+    #[test]
+    fn an_earned_appoggiatura_needs_a_core_destination() {
+        // F#6 -> E6: E is Dm9's spelled 9th — colour, not a resolution.
+        let to_ninth = over_dm9(88, 25.5);
+        assert_ne!(
+            classify_earned(&to_ninth, &dm_scale(), earned(64.0)),
+            Some(PitchFunction::Appoggiatura)
+        );
+        // The archived classifier is untouched (byte-exact historical paths).
+        assert_eq!(
+            classify(&to_ninth, &dm_scale()),
+            Some(PitchFunction::Appoggiatura)
+        );
+        // G6 -> F6: F is Dm9's 3rd — a core tone. The genuine relation stands.
+        let to_third = PitchContext {
+            pitch: 91,
+            ..over_dm9(89, 25.5)
+        };
+        assert_eq!(
+            classify_earned(&to_third, &dm_scale(), earned(64.0)),
+            Some(PitchFunction::Appoggiatura)
+        );
+    }
+
+    #[test]
+    fn an_earned_relation_needs_its_destination_inside_the_performance() {
+        let to_third = PitchContext {
+            pitch: 91,
+            ..over_dm9(89, 25.5)
+        };
+        // The piece ends just after the destination's onset: the resolution is performed.
+        assert_eq!(
+            classify_earned(&to_third, &dm_scale(), earned(25.51)),
+            Some(PitchFunction::Appoggiatura)
+        );
+        // The piece ends just before it: no destination, no relational claim.
+        assert_ne!(
+            classify_earned(&to_third, &dm_scale(), earned(25.49)),
+            Some(PitchFunction::Appoggiatura)
+        );
+    }
+
+    #[test]
+    fn an_earned_appoggiatura_resolves_in_time() {
+        // The step onto the 3rd arrives 1.5 beats after the accented tone ends: a new event.
+        let late = PitchContext {
+            pitch: 91,
+            ..over_dm9(89, 26.95)
+        };
+        assert_ne!(
+            classify_earned(&late, &dm_scale(), earned(64.0)),
+            Some(PitchFunction::Appoggiatura)
+        );
     }
 }

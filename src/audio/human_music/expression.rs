@@ -242,7 +242,12 @@ fn reclassify(
         is_strong: (n.start_beat - n.start_beat.round()).abs() < 1e-6,
         licensed: super::pitch::pc_mask(&c.palette.tensions),
     };
-    let f = super::pitch::classify(&ctx, &c.palette.scale)?;
+    let f = super::pitch::classify_under(
+        &ctx,
+        &c.palette.scale,
+        perf.functions,
+        super::performance::PerformanceDomain::new(perf.total_beats),
+    )?;
     let mut proposed = *n;
     proposed.function = Some(f);
     valid_function(perf, prev, &proposed, next).then_some(f)

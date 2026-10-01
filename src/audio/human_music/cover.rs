@@ -1540,7 +1540,7 @@ fn classify_source(perf: &PerformancePlan, notes: &mut [Note]) {
                 .rev()
                 .find(|p| p.start_beat < c.start_beat)
         });
-        n.function = super::pitch::classify(
+        n.function = super::pitch::classify_under(
             &super::pitch::PitchContext {
                 pitch: n.pitch,
                 onset: n.start_beat,
@@ -1561,6 +1561,8 @@ fn classify_source(perf: &PerformancePlan, notes: &mut [Note]) {
                 (super::policy::FunctionPolicy::Earned, Some(c)) => c.palette.scale,
                 _ => perf.region_at(n.start_beat),
             },
+            perf.functions,
+            super::performance::PerformanceDomain::new(perf.total_beats),
         );
     }
 }

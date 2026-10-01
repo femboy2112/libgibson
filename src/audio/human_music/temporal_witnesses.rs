@@ -96,6 +96,7 @@ fn r12_next_targets_have_no_live_reader_at_baseline() {
         style: LineStyle::plain(),
         max_candidates: 6,
         arrival: None,
+        earned: None,
     };
     let a = realize_line(&req);
     let b = realize_line(&LineRequest {

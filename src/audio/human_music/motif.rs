@@ -795,6 +795,10 @@ pub struct LineRequest<'a> {
     /// arrives is unchanged. One arrival per statement (the first Resolve whose window it sounds
     /// in); a second would go unconstrained — the witness audit reports it if it ever fails.
     pub arrival: Option<f64>,
+    /// Under [`super::policy::FunctionPolicy::Earned`], the finite performance the line sounds in:
+    /// a relational pitch function is chosen only where its destination is realized inside it and
+    /// holds the relation ([`super::pitch::classify_earned`]). `None` on every archived path.
+    pub earned: Option<super::performance::PerformanceDomain>,
 }
 
 /// One sounding event with its full harmonic situation, precomputed once.
@@ -954,6 +958,8 @@ struct Engine<'s> {
     prev_pitch: Option<Midi>,
     /// The R11 rhythm/register scaffold. Presence enables temporal pitch selection.
     legacy: Option<&'s [LineNote]>,
+    /// The earned relational law's domain ([`LineRequest::earned`]); temporal selection only.
+    earned: Option<super::performance::PerformanceDomain>,
 }
 
 impl Engine<'_> {
@@ -1005,7 +1011,10 @@ impl Engine<'_> {
             licensed: sl.licensed,
         };
         if self.legacy.is_some() {
-            super::pitch::classify(&ctx, &self.scale)
+            match self.earned {
+                Some(domain) => super::pitch::classify_earned(&ctx, &self.scale, domain),
+                None => super::pitch::classify(&ctx, &self.scale),
+            }
         } else {
             super::pitch::classify_r11(&ctx, &self.scale)
         }
@@ -1377,6 +1386,7 @@ fn realize_line_impl(req: &LineRequest, legacy: Option<&[LineNote]>) -> LineReal
         style: req.style,
         prev_pitch: req.prev_pitch,
         legacy,
+        earned: req.earned,
     };
     let cap = req.max_candidates.max(1);
 
@@ -1551,6 +1561,7 @@ pub fn realize_phrase_reporting(
     let contexts = super::context::analyze(chords, scale);
     let r = realize_line(&LineRequest {
         arrival: None,
+        earned: None,
         motif,
         chords,
         contexts: &contexts,
@@ -1855,6 +1866,7 @@ mod tests {
     ) -> LineRequest<'a> {
         LineRequest {
             arrival: None,
+            earned: None,
             motif,
             chords,
             contexts,
@@ -2096,6 +2108,7 @@ mod tests {
                 style: request.style,
                 prev_pitch: None,
                 legacy: Some(&legacy.notes),
+                earned: None,
             }
             .target_node(0, 69, true, true)
         };

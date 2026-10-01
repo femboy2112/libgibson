@@ -169,6 +169,8 @@ fn realize_lead_impl(
             style: super::motif::LineStyle::for_language(&perf.language),
             max_candidates: 6,
             arrival,
+            earned: (perf.functions == super::policy::FunctionPolicy::Earned)
+                .then(|| super::performance::PerformanceDomain::new(perf.total_beats)),
         };
         let legacy = super::motif::realize_line(&request);
         if let Some(last) = legacy.notes.last() {

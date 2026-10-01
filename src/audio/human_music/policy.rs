@@ -161,7 +161,9 @@ pub enum FunctionPolicy {
     /// Every function the bass and keys declare is earned where it sounds: a note lifts off at a
     /// harmony change it does not belong to (neither player declares suspensions), and a bass
     /// approach is written only where its destination — the bass's own next root — sounds on the
-    /// downbeat it approaches.
+    /// downbeat it approaches. A relational pitch function anywhere (the lead's appoggiatura,
+    /// passing tone, neighbour…) is claimed only where its destination sounds inside the finite
+    /// performance and holds the relation ([`super::pitch::classify_earned`]).
     Earned,
 }
 
