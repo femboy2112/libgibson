@@ -1210,3 +1210,58 @@ fn a_re_struck_pedal_is_judged_by_its_whole_chain() {
         );
     }
 }
+
+/// The Groove anchor is a pattern stated in a full bar (its conformance), so a piece with no
+/// full bar has no room for it: its presence is structurally inapplicable whatever strokes the
+/// kit records there — never "realized" and "deviating" at once.
+#[test]
+fn a_groove_with_no_full_bar_is_inapplicable_not_a_deviation() {
+    use gibson::audio::human_music::{
+        contract::CoherenceAnchor,
+        score::{DrumHit, DrumVoice, StrokeOrigin},
+        song::AnchorPresence,
+    };
+    let song = SongMap::compose(
+        &demo_trace(3.0),
+        78_307_101,
+        Some(CompositionGrammar::HookArc),
+        Composer::StructuralR9,
+    );
+    let world = MusicWorld::black_ice();
+    let mut c = perform_with_profile(
+        &song,
+        &world,
+        options(MusicalLanguage::simple()),
+        PerformanceProfile::BAND,
+    )
+    .unwrap();
+    // Forge the kit's identity strokes into the sub-bar piece: a downbeat kick and a backbeat.
+    let prov = c.score.notes.first().expect("a note").prov;
+    for (at, voice) in [(0.0, DrumVoice::Kick), (1.0, DrumVoice::Snare)] {
+        c.score.drums.push(DrumHit {
+            start_beat: at,
+            voice,
+            velocity: 0.8,
+            prov,
+        });
+        c.score
+            .stroke_origins
+            .get_or_insert_with(Vec::new)
+            .push(StrokeOrigin {
+                voice,
+                performed: at,
+                metric: None,
+                pocket: true,
+            });
+    }
+    let report = AnchorReport::check(&c.song, &c.perf, &c.score);
+    assert!(
+        report
+            .anchors
+            .iter()
+            .any(|(a, p)| *a == CoherenceAnchor::Groove
+                && matches!(p, AnchorPresence::StructurallyInapplicable(_))),
+        "{report:?}"
+    );
+    assert!(report.violations().is_empty(), "{:?}", report.violations());
+}
