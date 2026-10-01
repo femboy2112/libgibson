@@ -1032,3 +1032,67 @@ fn the_historical_pocket_arm_keeps_its_archived_tolerances() {
         );
     }
 }
+
+/// Witnesses from the same sweep: the chart says Cmaj7 / Dm7 while the band is heard holding Em /
+/// F with no chart root anywhere. In both, the pad's voicing for that harmony is a common-tone
+/// carry, which sounds only its held voices and new guide tones - so the pad's own rooting law
+/// (sound the chart root where the heard band flips) could never be heard there.
+fn flip_witnesses() -> [(&'static str, SongMap, MusicWorld, MusicalLanguage); 2] {
+    [
+        (
+            "Cmaj7 heard as Em over the bass's fifth",
+            SongMap::compose(
+                &demo_trace(7.25),
+                78_307_003,
+                Some(CompositionGrammar::DeflectedLift),
+                Composer::MeaningDirected,
+            ),
+            MusicWorld::black_ice(),
+            MusicalLanguage::fusion_conversation(),
+        ),
+        (
+            "Dm7 heard as F with no bass",
+            SongMap::compose(
+                &deflected_lift_trace(16.0),
+                78_307_002,
+                Some(CompositionGrammar::DeflectedLift),
+                Composer::StructuralR9,
+            ),
+            MusicWorld::vapor95(),
+            MusicalLanguage::simple(),
+        ),
+    ]
+}
+
+#[test]
+fn band_holds_the_chart_chord_where_the_pad_carries_common_tones() {
+    use gibson::audio::human_music::identity::IdentityDiagnostics;
+    for (what, song, world, language) in flip_witnesses() {
+        let c = perform_with_profile(&song, &world, options(language), PerformanceProfile::BAND)
+            .unwrap_or_else(|e| panic!("{what}: {e}"));
+        let id = IdentityDiagnostics::measure_score(&c.score, &c.perf.contexts, &world);
+        assert_eq!(
+            id.flips().count(),
+            0,
+            "{what}:\n{}",
+            id.report(&c.score.notes, &c.perf.contexts)
+        );
+    }
+}
+
+/// The accepted R17 arm keeps its archived carry (characterized, byte-exact; not repaired).
+#[test]
+fn the_historical_pocket_arm_keeps_its_archived_carry() {
+    use gibson::audio::human_music::identity::IdentityDiagnostics;
+    for (what, song, world, language) in flip_witnesses() {
+        let c = perform_with_profile(&song, &world, options(language), PerformanceProfile::POCKET)
+            .unwrap_or_else(|e| panic!("{what}: {e}"));
+        assert!(
+            IdentityDiagnostics::measure_score(&c.score, &c.perf.contexts, &world)
+                .flips()
+                .count()
+                > 0,
+            "{what}: the witness no longer exercises the archived carry"
+        );
+    }
+}
