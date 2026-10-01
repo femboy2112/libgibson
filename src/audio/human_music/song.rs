@@ -535,10 +535,12 @@ impl AnchorReport {
                             .iter()
                             .any(|d| matches!(d.voice, DrumVoice::Kick | DrumVoice::Snare)),
                     };
-                    if strokes {
-                        Realized
-                    } else if !full_bar {
+                    // The groove is a pattern a full bar states (its conformance), so room is
+                    // judged first: strokes in a piece with no full bar are not that pattern.
+                    if !full_bar {
                         StructurallyInapplicable("no phrase holds a full bar")
+                    } else if strokes {
+                        Realized
                     } else if pocket.is_some() {
                         DeclaredButMissing("no pocket anchor sounds")
                     } else {
