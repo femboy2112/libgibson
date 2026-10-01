@@ -10,214 +10,249 @@ Labels: **Observed** (read from a committed receipt or a command run at the stat
 
 ## 1. Branch and head
 
-- Branch `feat/v0.4-humanmusic-audio`, draft PR #70 (not ready-for-review, not merged, not tagged).
-- This hardening round: `a84ca08` (mission-writing head) → the commit adding this document. The last commit that changed
-  library source is `1389e71`; every later commit is tests, fixtures or documentation. Gates below ran at
-  `45ffe62` (local) and `5cece5a` (GitHub), which contain all of it.
-- Package `libgibson` 0.3.1, ABI 1, MSRV 1.85 — **unchanged** by this round (Observed: `check-versions.sh`).
-- Everything HumanMusic is under the experimental `gibson::audio::human_music` module; no C/Python/Go ABI
-  surface was added (Observed: the ABI v1 symbol baseline gate).
+- This round (the semantic consolidation) started at `1cd122f` (the head of `feat/v0.4-humanmusic-audio`,
+  draft PR #70) and was developed on `claude/humanmusic-semantic-consolidation-cc4k3o`, which contains
+  `1cd122f` unchanged; fast-forwarding `feat/v0.4-humanmusic-audio` to it is the maintainer's call. Nothing
+  was merged, tagged, released or marked ready; no history was rewritten.
+- The last commit that changed library source is `41fc2eb`; every later commit is documentation.
+- Package `libgibson` 0.3.1, ABI 1, MSRV 1.85 — **unchanged** (Observed: `check-versions.sh`, `check-abi.sh`).
+- Everything HumanMusic is under the experimental `gibson::audio::human_music` module (now 67,969 lines);
+  no C/Python/Go ABI surface was added.
 
 ## 2. Architecture (current)
 
 ```
-SemanticTrace ──► SongMap (the song: IntentTimeline, CompositionPlan{form, discourse+ledger,
-                   arrangement, backbone}, ThematicMap, HarmonicMap) ──────────────┐
-MusicWorld + MusicalLanguage + PerformanceOptions                                   │
-                                                                                     ▼
-PerformancePlan::build  (harmony → actions → [cover constraints] → [settlements / rehearsal veto]
-                         → stage admission → harmonic edits → accent grid → statements &
-                         interactions → ensemble → obligation witnesses → complexity budget)
-                                                                                     │
-realize_policy(profile) : lead → keys → bass → pad → drums ──► Score ──► HumanMusicSynth ──► PCM
-                          (drums: historical producers | ONE arbitrated percussion surface)
+SemanticTrace ──► SongMap (IntentTimeline, CompositionPlan{contract, form, discourse+ledger,
+                   arrangement, backbone}, ThematicMap, HarmonicMap, composed_by) ─────┐
+MusicWorld + MusicalLanguage + PerformanceOptions                                     │
+   └─► HarmonicVocabulary (world × language): admits / conforms chords                 │
+                                                                                       ▼
+PerformancePlan::build (harmony [inside the vocabulary] → actions → [cover constraints]
+     → settlements → rehearsal vetoes/recasts → stage → edits → accent → statements &
+     interactions → ensemble → obligations → budget), every window fit to
+     PerformanceDomain [0, total_beats]
+        ▲                                     │
+        └── rehearsal (finite normalization: ActionKey, RehearsalTrace) ◄── witness::audit
+                                              ▼
+realize_policy(profile): lead → keys → bass → pad (hears the band inside the piece) → drums
+   ──► Score (+ StrokeOrigin sidecar: metric source → performed, pocket identity) ──► PCM
 PerformanceProfile = { pitch, expression, occupancy, support, lifetime, observation, evidence,
-                       admission: Planned|Rehearsed, percussion: Unarbitrated|Arbitrated(restraint) }
+   admission: Planned|Rehearsed, percussion: Unarbitrated|Arbitrated(restraint),
+   harmony: Archived|Vocabulary, functions: Archived|Earned }
 
-Cover:  Composition | ReferenceSong(+DerivedHarmony) | OrderedChart
-          ──► CoverMap (exact quotient κ_I at a CoverFidelityProfile, + FidelityReport ceiling)
-          ──► cover / cover_candidate / cover_skeleton (receives ONLY the map + CoverTarget)
-          ──► CoverConformance (each axis at its own relation) + CoverPipelineReceipt
-Timing: MetricPosition ─► GrooveTransport (pocket) ─► FeelTransport (identity only) ─► PerformedPosition
+perform_candidate ──► PerformanceReceipt (general laws) ──► perform_checked: admit | Rejected | Refused
+
+Identity:  declared anchor ──► identity-bearing material (theme sites' statements, the bass
+           figure, recorded pocket anchors, the lift's pinned events) ──► realized evidence
+           AnchorReport = presence + conformance (each anchor's identity relation)
+
+Cover: Composition | ReferenceSong(+DerivedHarmony) | OrderedChart
+       ──► CoverMap (extract = identity projection; extract_lane = historical lane quotient)
+       ──► cover_candidate / cover_skeleton (map + CoverTarget only)
+       ──► CoverAdmission = PerformanceReceipt + CoverConformance
+           (conformance from primitive relations on the REALIZED cover, never re-extraction)
+Timing: MetricPosition ─► GrooveTransport ─► FeelTransport (identity) ─► PerformedPosition
 ```
 
 ## 3. Public API (experimental module)
 
 | Surface | Entry points | Default behaviour |
 | --- | --- | --- |
-| "Jam" (trace → music) | `human_music::compose`, `render`, `compose_full` | Historical `WRITTEN` realization (the Round XI control). Unchanged. There is no function named `jam`. |
-| Song | `SongMap::build` / `SongMap::compose(trace, seed, grammar, Composer)`, `functor::perform_with_profile(song, world, opts, profile)` | `perform` = historical `WRITTEN`; every newer law is explicit. |
-| Profiles | `PerformanceProfile::{WRITTEN, TEMPORAL, HEARD, EXPRESSIVE, PHRASED, POCKET, BAND}`, `with_admission`, `with_percussion`, `with_drum_restraint` | `POCKET` = the accepted R17 arm (byte-exact). `BAND` = POCKET + rehearsed admission + Balanced drummer (**new general profile, opt-in**). |
-| Cover | `cover` (checked), `cover_candidate` (receipts), `cover_skeleton` (unmetered chart), `CoverMap::{extract, extract_on_lane, extract_fidelity, from_ordered_chart, from_ordered_chart_fidelity}`, `ReferenceSong::{extract, extract_fidelity, derive_harmony}`, `CoverSpec::{from_contract, established}` | Binary `CoverSpec` = v1 relations (byte-exact maps). |
-| Diagnostics | `witness::audit`, `SongMapConformance`, `song::AnchorReport`, `percussion::PercussionReport`, `cover::{CoverConformance, FidelityReport}` | — |
+| "Jam" (trace → music) | `human_music::compose`, `render`, `compose_full` | Historical `WRITTEN` realization. Unchanged. |
+| Song | `SongMap::build` / `SongMap::compose(trace, seed, grammar, Composer)`, `SongMap::composer()` (recorded `composed_by`) | Provenance recorded where content is chosen; not in either song fingerprint. |
+| Performance | `functor::perform_with_profile`, **`perform_candidate`**, **`perform_checked` → `Result<Composition, PerformanceRejection>`**, `receipt::PerformanceReceipt::{measure, measure_under, passes, failures}` | `perform` = historical `WRITTEN`. |
+| Profiles | `PerformanceProfile::{WRITTEN, TEMPORAL, HEARD, EXPRESSIVE, PHRASED, POCKET, BAND}`, `with_admission`, `with_percussion`, `with_drum_restraint`, **`with_harmony`**, **`with_functions`** | `POCKET` = the accepted R17 arm (byte-exact). `BAND` = POCKET + rehearsed admission + Balanced drummer + `HarmonyPolicy::Vocabulary` + `FunctionPolicy::Earned` (**opt-in**). |
+| Cover | `cover` (checked: `CoverAdmission`), `cover_candidate`, `cover_skeleton`, `CoverMap::{extract, extract_on_lane, extract_lane, extract_lane_on, extract_fidelity, from_ordered_chart, from_ordered_chart_fidelity}`, `ReferenceSong::{extract, extract_fidelity, derive_harmony}`, `CoverSpec::{from_contract, established, has_song_identity}` | `extract` reads the identity projection; `extract_lane` is the v1 lane quotient (byte-exact v1 maps). |
+| Diagnostics | `witness::audit`, `SongMapConformance`, `song::AnchorReport` (presence + conformance), `projection::{IdentityMaterial, identity_notes, groove_strokes}`, `percussion::PercussionReport`, `cover::{CoverConformance, FidelityReport}`, `vocabulary::HarmonicVocabulary` | — |
 
-**Default vs explicit POCKET (Disclosed):** the library default is still the oldest control (`WRITTEN`).
-The accepted pocket and the new hardened profile are explicit opt-ins. Promoting `BAND` (or `POCKET`) to the
-default is a maintainer decision and was deliberately not made.
+**Default vs explicit profile (Disclosed):** the library default is still the oldest control (`WRITTEN`).
+`POCKET` and `BAND` are explicit opt-ins. Promoting `BAND` to the default is a maintainer decision and was
+deliberately not made.
 
 ## 4. Fingerprints and historical compatibility (Observed)
 
-- Canonical v2 fingerprints: new profile fields (`admission`, `percussion`) and `CoverMap.fidelity` are
-  encoded **only when non-historical**, so every historical profile and every v1 cover map keeps its v2
-  hash (tests: `audio_canonical_fingerprint`, `audio_cover_fidelity::the_binary_spec_is_the_v1_profile_byte_for_byte`).
-- Legacy Debug/FNV fingerprints: no field was added to a Debug-fingerprinted struct (`PerformancePlan`,
-  `DrumHit`, `Provenance`, `MusicalLanguage`); `Score` gained `percussion`, printed only when `Some`.
-  Pinned characterization fingerprints (`audio_consolidation_characterization`) unchanged.
-- Historical entry points (`perform`, `perform_*`) remain thin adapters over `PerformanceProfile`.
+- Canonical v2 fingerprints: every new field is encoded **only when non-historical** — profile `harmony`,
+  `functions`; plan `rehearsal`, `functions`; `CoverMap.projection` (Lane unencoded). `SongMap.composed_by`
+  is encoded in neither song fingerprint (provenance is not identity). Every historical profile, plan and
+  v1 cover map keeps its hash.
+- Legacy Debug/FNV: `PerformancePlan` and `Score` print new fields (`rehearsal`, `functions`,
+  `stroke_origins`) only when present; pinned characterization fingerprints are unchanged.
+- Historical entry points remain thin adapters over `PerformanceProfile`; nothing historical reads a new law.
 
-## 5. R17 accepted pocket (distinct gate) — Observed
+## 5. R17 accepted pocket and historical evidence (distinct gates) — Observed
 
-At the final source: `pocket_music_lab --render` + `scripts/verify-pocket-freeze.py` → **48/48 WAVs and
-757/757 receipts byte-identical** (BLACK_ICE mix unchanged). The 16 earlier cover-listening WAVs are also
-byte-identical. The same gate passed after every source commit of the round (U1, U2, hold fix, drums,
-fidelity). The known R17 120-case sweep replays exactly: 61 passes / 59 first failures (14/38/5/2), every
-reason and label identical (`docs/fixtures/humanmusic-hardening/known-r17-replay/`).
+At `41fc2eb`: `pocket_music_lab --render` + `scripts/verify-pocket-freeze.py` → **48/48 WAVs and 757/757
+receipts byte-identical**; the 16 cover-listening WAVs byte-identical. Both gates passed after **every**
+library commit of the round. The known R17 120-case sweep (`r17_fresh_world_seed_tempo_sweep`, rustc 1.98.1)
+replays exactly: 61 passes / 59 first failures (14/38/5/2), every reason and every passing label identical
+(at `41fc2eb`).
+
+Disclosed change to **unaccepted** audio: the BAND hardening-listening corpus (`drum_restraint_lab` +
+`cover_fidelity_lab`, 30 WAVs) now has 23 identical, 5 changed (Ode `0_v1-motif-only` ×2,
+`2_interpretive.vapor95`, `3_faithful` ×2) and 2 missing (Ode `4_strict` ×2, now an explicit lawful refusal:
+"a pinned bass event has no lawful pitch function in the target harmony").
 
 ## 6. What this round changed
 
-| Area | Result | Evidence |
-| --- | --- | --- |
-| U1 partial final bar | Repaired at the bass planner; checker unchanged | `tests/audio_source_contracts.rs` (red at `d873961`), `dfa6879` |
-| U2 declared anchor never sounded | Groove seated where a full bar exists; unstatable theme sites never planned; `AnchorReport` {Realized, StructurallyInapplicable, DeclaredButMissing}; `CoverSpec::established` | `a042992` red → `5ad153e` |
-| U3 action receipts / obligations | `ActionAdmission::Rehearsed` (strike unperformed verbs before the take, recorded) + ordinary settlement planner; historical `Planned` characterized, byte-exact | `ad5d7d5` → `fc5c5e2`; 5,656/5,656 verbs performed on a 480-performance probe |
-| G02/G22 held keys | Nonmember hold voices lift at the change | `28e5a06` red → `366dff0` |
-| Cover side | Riff lane, groove-vs-silent-seat refusal, one harmony authority | `07f0b8c` red → `0a6ccea` |
-| Drummer | One arbitrated percussion surface + restraint dial; rate guard for surface verbs | `e397d7f` red → `1b59e59`, `d40dc09` |
-| Fidelity | `CoverFidelityPreset/Profile`, exact relations, ceiling report, v1-compatible | `997544e`, `1389e71` |
-| Derived Ode harmony | Declared analyzer v2 (triads; structural sevenths only) | `c4d5cde` |
-| Feel seam | Typed identity `FeelTransport`, wired nowhere | `7b4bd6d` |
-| Fixtures | 1,491 files / 95.2 MB → 571 files / 8.0 MB (incl. this round's new evidence), all bytes recoverable | `cbd0479`..`abc55e7`, `b09333e`; `docs/fixtures/HUMANMUSIC_FIXTURE_MANIFEST.md` |
+Each repair has a falsifier committed red before it (evidence discipline).
 
-## 7. Drum restraint API and evidence
-
-`PercussionPolicy::{Unarbitrated, Arbitrated(DrumRestraint::{Foundation, Balanced, Expressive, Busy})}`.
-Required strokes (pocket anchors, time-line hats, stamped action witnesses, a fill's first stroke and
-landing, pinned cover strokes) always sound; optional strokes compete for one per-bar allowance chosen by
-an ordered rule (floor > phrase-end space > band already speaking > spoke last bar > support), shifted by
-the restraint; no weighted score. Contracts (Observed): ornaments monotone in the dial; a "band already
-speaking" bar admits none; talking-over-a-busy-lead bars 25 (historical) → 9 (Balanced) on 12 fresh
-songs × 2 worlds; no action witnessed by the historical drummer loses its witness at any restraint;
-pocket anchors identical at every restraint; pinned cover grooves ignore the dial; at Foundation an
-ornament appears only where the drummer has the floor (≤1) or for the rate guard.
-
-Listening A/B (same plan and band per row, proven): generated BLACK_ICE song ornament strokes
-33 (historical) → 0 / 10 / 15 / 35 (Foundation / Balanced / Expressive / Busy); VAPOR95 RiffDrive
-38 → 2 / 13 / 22 / 47. Whether Balanced *sounds* like a band member: **UNVERIFIED** (listen).
-
-## 8. Cover fidelity API and Ode experiment
-
-Relations per axis and presets: see `docs/HUMAN_MUSIC_COVER.md` § Fidelity dial. Ode (Mutopia #528,
-Public Domain) at the v1 map and every preset, BLACK_ICE seed 901 and VAPOR95 seed 904 at 95 BPM, profile
-`BAND` (Observed, `docs/fixtures/humanmusic-hardening/listening/ode-fidelity/report.txt`):
-
-| Level | Pins (effective) | Observational ceiling | Conformance (both worlds) |
+| # | Item | Result | Red → fix |
 | --- | --- | --- | --- |
-| v1 motif-only | melody with notated rests | everything else Unknown | PASS |
-| Loose | the opening 8 beats as the song's identity motif | — | PASS |
-| Interpretive | whole melody (metric), derived harmony by triad family | groove → unknown | PASS |
-| Faithful | melody with rests, bass line (metric), exact derived harmony | groove, form → unknown | PASS |
-| Strict | + bass line with rests | groove, form, seating → unknown | PASS |
+| 1a | H05 vocabulary leak | One `HarmonicVocabulary` law (world × language) for sources and covers; BAND conforms every room's own colour choice or refuses a chart chord it cannot admit (`VOCABULARY_REFUSAL`) | `fe5a311` → `5dfd2d2` |
+| 1b | H12 span past the end | One `PerformanceDomain [0, total_beats]`; every planned window fit at construction; `occupancy::violations` unchanged | `0db2f34` → `e7477e6` |
+| 1c | False settlements (H16/H28/H30) | A settlement stands only when a performed verb discharges it; otherwise the debt stays open, **named** (`OpenDebt`) — never stamped | `df7b729` → `b8c4551` |
+| 2–4, 6 | Identity category error | Projection anchor → identity-bearing material → realized evidence (Motif: identity theme statements; BassFigure: the bass's structural line; Riff: lead identity else bass figure; Groove: recorded pocket anchors). `AnchorReport` = presence **and** conformance; `CoverSpec::established` requires both. Cover verification reads primitive relations on the realized cover (`cover_relations.rs`), never the extractor. `StrokeOrigin` sidecar (metric source → performed). | `14a6e12`, `885bba3` → `0a8e7d0` |
+| 5 | Pinned functions | Every pinned event carries a justified function in the target harmony, or the lift is refused before realization; no post-hoc relabelling | `5383cfc` → `12fbf84` |
+| 8, 10 | Receipts / invariants | General `PerformanceReceipt`; `CoverAdmission = PerformanceReceipt + CoverConformance`; `perform_candidate` / `perform_checked`; release-only `debug_assert` holes are typed errors | `f73e3e2` → `ed2f141` |
+| 9 | Rehearsal | Typed `ActionKey`; `RehearsalTrace` (Performed / Recast / Rejected / Deferred); finite normalization (strict progress, fuel 64, refusal on no progress); a rejected verb never erases an obligation | `df7b729` → `b8c4551` |
+| 11 | Composer provenance | `SongMap.composed_by` recorded where content is chosen; outside identity | `08f584c` → `f9420b8` |
+| 7 | CoherenceContract | Every field's standing documented and proved by perturbation (§7) | `7a833ef` → `c63a660` |
+| — | BAND support truth | `FunctionPolicy::Earned`: bass/keys lift off at a foreign harmony; a bar-end approach aims at the pitch the bass's own line sounds on the downbeat | `18eecec` → `98531f1` |
+| — | BAND chord identity | The pad's rooting law reaches a common-tone carry; the pad hears the band inside the piece | `bfa163c` → `3e8e5cc`; `ad0e982` → `4afc772` |
+| — | Re-struck pedal | The temporal judge reads a pedal by its whole chain, as its stated law says (a forged chain stays false) | `60adbe4` → `3ee353a` |
+| — | Sub-bar Groove | No full bar → Groove structurally inapplicable, never Realized-and-Deviating (found by the v3 pre-freeze review) | `5ad4532` → `362a4dd` |
+| — | After v3 contact | A pinned event's function is judged in the scale it sounds in (V19's family); a pinned theme is stated or the lift is refused (V36's family) — both on fresh seeds | `3bf20fc` → `a20b4c2`; `56e5417` → `41fc2eb` |
+| 12 | Giant files | Not split (semantics first; see §15) | — |
 
-Faithful and Strict are **byte-identical** renders for the Ode (the bass line's notated rests change
-nothing the Faithful lift does not already produce) — Observed. Harmony is **derived analysis**
-(`satb-window-triad/v2`), never presented as the score's. Which level "is the same song": **UNVERIFIED**.
+**Hypotheses refuted this round:** H23/H31/H35 were conjectured groove failures — Refuted: they were
+non-identity triplet material inside lane quotients (the projection fixes them). The BAND reds were
+conjectured to be this round's regressions — Refuted: the same 59–61 / 13 occurred at `1cd122f` and under POCKET.
 
-## 9. Swing & A Miss partial
+### Identity projection, before → after (Observed)
 
-Unchanged behaviour at the v1 path (the maintainer's liked outputs stay byte-identical). Under the dial:
-melody, bass and groove are Unknown at every preset; Loose/Interpretive leave nothing to cover (the chart's
-harmony is pinned only with its section topology); Faithful/Strict pin exactly the v1 partial map and the
-report states the ceiling. No recognition claim; no artist-style code.
+Before: a cover's Motif/BassFigure/Riff was "every event the instrument played" (responses, quotes, fills,
+approach notes included); a Groove was every kick/snare. After: only identity-bearing material counts, and
+two materials on one role at one onset leave the motif well defined (the lead is never forced monophonic).
+36 generated songs that declared Motif had no identity theme site; a thesis-restatement law now states it
+where a seated phrase can hold it, else presence is `StructurallyInapplicable` with its reason. Hostile tests:
+unrelated lead or bass notes never establish Motif, BassFigure or Riff; a wrong harmonic trajectory never
+establishes HarmonicContour (`tests/audio_identity_projection.rs`).
 
-## 10. Holdout v1 (unchanged) and holdout v2
+### AnchorConformance laws (Observed)
 
-- **v1** (`docs/fixtures/humanmusic-consolidation/fresh/`): immutable; 7/36 at first contact. Its families'
-  dispositions are in `docs/HUMAN_MUSIC_CONSOLIDATION.md` § Hardening round.
-- **v2** (`docs/fixtures/humanmusic-hardening/holdout-v2/`): 48 rows declared at `dd924e7` before contact
-  (config SHA256 `3217c518…`), pre-freeze adversarial review, run once: **33/48 pass** (22/36 generated,
-  7/8 Ode, 4/4 Swing; 1,685 checks, 19 failing receipts). No repaired v1 family recurred as such. See
-  `CLASSIFICATION.md` there for each family.
+Motif — planned identity statements sound at their authored onsets (recorded expression omissions excused);
+BassFigure — every figure note is a chord tone or the pedal; HarmonicContour/Loop — landmarks, else phrase
+closures (deferred to a cover's pinned harmony); Groove — some full bar states the pocket kick and backbeat
+(no full bar: inapplicable); Form — sections match the form; Orchestration — no violations and the seats are
+the arrangement's.
 
-## 11. Known reds (not repaired; each named)
+## 7. CoherenceContract standing (Observed, `contract_standing.rs`)
 
-Source generation:
-1. `POCKET`/historical `Planned` admission still admits unperformed verbs (by design: the historical arm is
-   byte-exact); use `BAND` / `ActionAdmission::Rehearsed`. (H18 in v2.)
-2. Remaining unwitnessed song obligations under `Rehearsed`: cadence/departure debts settled where no home
-   chord arrives, planned Resolves no bass/keys attack performs, Simple-language motif questions with no
-   answer (65/480 performances in the development probe; H16/H28/H30 in v2).
-3. Partial-final-bar **Bass ownership span** can be invalid (H12) — adjacent to U1, new.
-4. SWISS_SIGNAL PropulsiveReturn sources sound `Maj6`/`Maj7` Reset chords outside SWISS's no-sevenths
-   vocabulary (H05) — new.
-5. One false temporal function claim on a 48-beat SWISS DeflectedLift source (H16).
-6. Known R17 sweep: 59 first-assertion failures remain (unchanged, classified historically).
+| Field | Standing |
+| --- | --- |
+| `grammar`, `anchors`, `phrase_bars`, `resolution`, `foreground_budget` | **Load-bearing** |
+| `recurrence_bars` | Load-bearing only as DeflectedLift's fixed-tiling rate |
+| `max_transform`, `novelty_budget` | **Descriptive** (demoted; kept because legacy fingerprints pin R17) |
+| `PhraseGoal::thematic_distance` | **Diagnostic** (discourse diagnostic only) |
+| `PhraseGoal::harmonic_distance`, `PhraseGoal::novelty_budget`, `MusicalThesis::anchors`, `TimeScales::phrase_bars` | Descriptive |
 
-Cover:
-7. Pinned bass lines leave a few notes without a pitch function (E04: 3/60; H16, H18) — new.
-8. `UnprojectableTiming` on DeflectedLift grooves (H23/H31/H35; v1 G18) — extraction limit.
-9. Non-monophonic lead at canonical onsets blocks line extraction (H06).
-10. Groove + Orchestration from a source whose kit sounded only in action windows: refused
-    (`ConflictingPins`) — the seat quotient does not record windows (G23/G28).
+Proved under POCKET and BAND across six grammars: moving every Descriptive field leaves plan, score,
+receipt, established spec and diagnostics bit-identical; each Load-bearing field moved alone changes what is
+heard. A mutation (max_transform widening the foreground budget) turns the audit red.
+
+## 8. Rehearsal normalization (Observed)
+
+720-performance development corpus: 0 refusals, ≤2 passes, 270 settlements discharged, 14 recast onto the
+arrival a player made, 30 debts left open — all named ("never sounds home chord"). Fresh 1,080-performance
+BAND sweep (§11): every verb performed.
+
+## 9. Drum restraint, Ode fidelity, Swing partial
+
+Unchanged APIs from the hardening round (see `docs/HUMAN_MUSIC_COVER.md`). Ode at BAND (seed 901/904,
+95 BPM): v1 motif-only, Loose, Interpretive and Faithful lift and conform; **Strict is now an explicit lawful
+refusal** (the frozen SATB bass has no lawful function against the target harmony; formerly it lifted with
+unclassified bass notes). Swing partial: unchanged at the v1 path. Which Ode level "is the same song", and
+whether Balanced sounds like a band member: **UNVERIFIED** (listen).
+
+## 10. Holdouts
+
+- **v1** and **v2** are immutable known evidence; nothing this round was fitted to them.
+- **v3** (`docs/fixtures/humanmusic-consolidation2/holdout-v3/`): 48 rows declared at `721fffe` (config
+  SHA256 `cf96dbe1…`, after a pre-freeze adversarial review), executed once at that commit on a clean tree:
+  **46/48 pass** (853 checks, 2 failing receipts). 36/36 generated BAND sources hold their own
+  PerformanceReceipt and record their declared composer and grammar; identity unchanged under a hostile
+  non-identity event 29/29; 9/9 refusals lawful at their stage; 12/12 `lift` predictions lifted and admitted;
+  35/37 lifts admitted. Failures: **V19** (a pinned passing tone labelled chromatic in a scale that holds it —
+  a false claim in a BAND cover) and **V36** (a Loose theme lifted into a form with no theme site). Both
+  families were repaired after contact on fresh seeds (§6); v3's numbers stand. Coverage gaps stated in
+  `CLASSIFICATION.md`: no swung groove crossed a swing change (Groove alone is not song identity), and no
+  natural identity overlap occurred.
+
+## 11. Remaining internal reds (each named)
+
+1. **BAND sweep** (1,080 fresh performances, `perform_checked`): 1006 admitted before this round's support
+   laws → **1079** after. The one
+   rejection is a held-identity flip POCKET shares: a rootless keys comp (D–C–G) over a bass quote on E while
+   the pad is silent and the previous pad voicing's release tail rings over the change (Am7 heard as C).
+2. **POCKET / historical arms** keep their archived behaviour by design (byte-exact): unperformed verbs under
+   `Planned`, the half-beat support tail, bar-end approaches toward roots the bass does not sound, the carry
+   without root — 58/1080 false-claim and 13/1080 flip performances in the same sweep at `41fc2eb` (61 before
+   the pedal judge read whole chains).
+3. Known R17 sweep: 59 first-assertion failures (unchanged, classified historically).
+4. Cover: `UnprojectableTiming` on DeflectedLift grooves (v1 G18 family); Groove + Orchestration from a kit
+   that played only in action windows (`ConflictingPins`); a swung groove pinned across a swing change is
+   untested by any holdout.
+5. Environment: `tests/pty_demos::hack_shell_commands_trigger_real_effects` fails identically at `1cd122f`
+   and at this head in the release profile whenever its example is already built (it passed in the
+   preflight's debug run); the demo has no audio code. Not addressed.
 
 ## 12. Lawful explicit refusals (not bugs)
 
-- `pinned harmony outside target vocabulary` (Exact) and `pinned harmony family outside target vocabulary`
-  (QualityFamily): e.g. a mode change BLACK_ICE Aeolian → SWISS_SIGNAL Ionian.
-- `no lawful harmony contains the pinned simultaneous attacks`: every pinned attack must be a chord tone of
-  its window (strict; a candidate for a future passing-tone relation).
-- `ConflictingPins` (contradictory pins), `MissingAxis` (the source never sounds the requested axis),
-  "nothing to cover" (the dial's effective profile pins nothing).
+- `VOCABULARY_REFUSAL` — a chart chord outside the world/language vocabulary (BAND planner).
+- `pinned harmony [family] outside target vocabulary`; `no lawful harmony contains the pinned simultaneous attacks`.
+- `a pinned lead/bass event has no lawful pitch function in the target harmony` (e.g. Ode Strict).
+- `a pinned theme has no seated phrase to be stated in the target form`.
+- `ConflictingPins`, `MissingAxis` (the source never established the axis), and "nothing to cover" (the
+  selection pins no song identity).
 
 ## 13. Fixture footprint (Observed)
 
-Tracked `docs/fixtures/humanmusic-*`: **1,491 files / 95,220,730 bytes** at `a84ca08` → **571 files /
-8,013,694 bytes** now, including this round's new evidence (holdout v2, sweep replay, listening receipts).
-994 archival files (manifest: 331 exact duplicates of retained copies, 663 archived as 246 unique blobs) live in a deterministic
-`tar.xz` + manifest; `scripts/fixtures/expand-humanmusic-archives.py` restores every original byte
-(round trip checked independently: 1,483/1,491 byte-identical, the other 8 are READMEs with additive
-"Storage" notes). Git history still holds every old blob (no rewrite).
+Unchanged from the hardening round except this round's holdout v3 declaration and first-contact results
+(56 files, 382,552 bytes under `docs/fixtures/humanmusic-consolidation2/`).
 
 ## 14. Gates at the final source
 
 | Gate | Result | Where |
 | --- | --- | --- |
-| Release preflight (13 steps) | **PASS 13/13** — whitespace, version/ABI consistency, `fmt --check`, strict clippy (all targets, all features), `cargo test` (full suite), rustdoc `-D warnings`, MSRV 1.85 `check --locked --lib`, MSRV declared-range consumer, `cargo package`, ABI v1 symbol baseline, clean-room consumers (C, C++, Python, Go, Rust; all toolchains present, none skipped), third-party notices, license files | local, `45ffe62`, clean tree (Observed) |
-| GitHub CI | **success** | `5cece5a` (Observed) |
-| GitHub Release Preflight | **success** | `5cece5a` (Observed) |
-| R17 PCM freeze (distinct gate) | **48/48 WAV + 757/757 receipts byte-identical** | local, `5cece5a` source (Observed) |
-| Cover listening corpus | **16/16 WAVs byte-identical** to `listening/WAV_SHA256SUMS` | local, `5cece5a` source (Observed) |
-| Known R17 sweep replay | 61/59, all reasons identical | local, `96566a2` source; no library change since except `1389e71` (cover fidelity extraction only) (Observed) |
+| Release preflight (13 steps) | **PASS 13/13** — whitespace, version/ABI consistency, `fmt --check`, strict clippy (all targets, all features, rustc 1.98.1), `cargo test` (full suite), rustdoc `-D warnings`, MSRV 1.85 `check --locked --lib`, MSRV declared-range consumer, `cargo package`, ABI v1 symbol baseline, clean-room consumers (C, C++, Python, Go, Rust), third-party notices, license files | local, `41fc2eb`, clean tree (Observed). Disclosed: this container's system setuptools 68.1.2 cannot build any wheel (`AttributeError: install_layout`), so the run sets `SETUPTOOLS_USE_DISTUTILS=stdlib`; without it only the clean-room Python step fails (bindings untouched this round). A first run failed several steps for lack of disk and was discarded. |
+| GitHub CI | **success** (run 36804212022, `workflow_dispatch`) | `41fc2eb` (Observed) |
+| GitHub Release Preflight | **success** (run 36804214484, `workflow_dispatch`) | `41fc2eb` (Observed) |
+| R17 PCM freeze (distinct gate) | **48/48 WAV + 757/757 receipts byte-identical** | local, `41fc2eb` (Observed) |
+| Cover listening corpus | **16/16 WAVs byte-identical** | local, `41fc2eb` (Observed) |
+| Known R17 sweep replay | 120 executed / 61 / 59 (14/38/5/2); every first reason and every passing label identical | local, `41fc2eb`, rustc 1.98.1 (Observed) |
+| Holdout v3 | 46/48 at first contact (§10) | `721fffe` (Observed) |
 | Package version / ABI | 0.3.1 / ABI 1, unchanged | `check-versions.sh`, `check-abi.sh` |
 
+Not covered by the preflight: `tests/pty_demos::hack_shell_commands_trigger_real_effects` in the
+**release** profile with a prebuilt example (§11.5); it passed in the preflight's debug `cargo test`.
 
 ## 15. Unresolved TODOs
 
 - Choose the library default (`WRITTEN` today; `BAND` is the hardened candidate) — Disclosed decision.
-- The named reds in §11 (each needs its counterexample and a holdout v3).
+- The named reds in §11; a swung-groove-across-swing holdout row with song identity.
+- `cover.rs` (2,286 lines) and `cover_fidelity.rs` (1,033) were not split: the semantics are now fixed, so a
+  split is a pure move for a later, separately reviewable commit.
 - A passing-tone relation for pinned attacks; recording action windows in the seat quotient.
-- `cover.rs` (2,148 lines) + `cover_fidelity.rs` (1,066) were not split further (judged churn before review).
-- `SongMap::composer()` self-report ambiguity (PropulsiveReturn) remains.
-- PR #70 body/title are stale; a suggested replacement is drafted (not posted).
 - Human feel remains only a typed identity seam.
+- PR #70 body/title are stale (not edited; the PR stays draft).
 
 ## 16. Reasons NOT to merge (if any hold for you)
 
-- **Listening is the acceptance test and it is open.** No machine result here shows that the drummer sounds
-  better, that any Ode fidelity is "the same song", or that the Swing outputs remain useful.
-- **The recommended profile is not the default.** Merging ships `BAND` as an opt-in; `compose`/`perform`
-  still use the oldest control. If the intent of merging is "the hardened band is what users get", the
-  default decision must be made first.
-- **Holdout v2 is 33/48**, with new source-side reds (H05 vocabulary leak, H12 ownership span, pinned-bass
-  pitch functions) found only at contact. They are named and preserved, not repaired.
-- The module is large and experimental (HumanMusic `src/audio/human_music` is 63,246 lines); its API is not stabilized.
+- **Listening is the acceptance test and it is open.** No machine result shows that BAND sounds better than
+  POCKET, that the drummer serves the band, or that any Ode fidelity "is the same song".
+- **The recommended profile is not the default.** Merging ships `BAND` as an opt-in.
+- **Holdout v3 is 46/48 at contact**; its two failure families were repaired only after contact, so they are
+  validated by fresh-seed falsifiers, not by a holdout.
+- BAND's sound changed this round (support release, approaches, pad rooting) without a listen; only POCKET's
+  bytes are frozen.
+- The module is large (67,969 lines) and experimental; its API is not stabilized.
 
 ## 17. Listening questions for the maintainer
 
-1. **Drums:** at the default restraint (Balanced), does the drummer feel like part of the band rather than a
-   talented player constantly demonstrating technique?
-2. **Ode:** which fidelity crosses from "new interpretation using Ode material" to "obviously the same song
-   being covered", and which becomes too literal?
-3. **Swing partial:** do the partial-reference outputs remain useful as fresh songs over the supplied
-   harmonic/form skeleton?
-4. **Pocket preservation:** does the accepted BLACK_ICE result still sound right? (It is byte-identical.)
-5. **Merge review:** another hardening round, or is this the branch to merge? *(Not answered here.)*
+1. **Drums:** at Balanced, does the drummer feel like part of the band?
+2. **BAND vs POCKET:** do the earned support laws (no tails into foreign chords, approaches into what the bass
+   actually plays, the carried root) sound like a tighter band, or more cautious?
+3. **Ode:** which fidelity crosses from "new music using Ode material" to "obviously the same song"?
+4. **Swing partial:** are the partial-reference outputs still useful as fresh songs?
+5. **Pocket preservation:** does the accepted BLACK_ICE result still sound right? (It is byte-identical.)
+6. **Merge review:** another round, or is this the branch to merge? *(Not answered here.)*
