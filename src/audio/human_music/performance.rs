@@ -771,6 +771,7 @@ impl PerformancePlan {
             seed,
             cover_constraints.as_ref(),
             &admission.vetoed,
+            admission.functions,
         );
         let (statements, interactions) = (ip.statements, ip.interactions);
         // 5b. A resolution is performed by whoever ARRIVES: the lead when a statement sounds at

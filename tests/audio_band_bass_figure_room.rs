@@ -126,3 +126,78 @@ fn band_admits_the_bass_figure_room_falsifiers() {
         }
     }
 }
+
+fn bass_figure_windows(song: &SongMap, world: MusicWorld) -> Vec<(f64, f64)> {
+    use gibson::audio::human_music::action::Agent;
+    let take = perform_with_profile(song, &world, fusion(), PerformanceProfile::BAND)
+        .expect("lawful candidate");
+    take.perf
+        .figures_for(Agent::Bass)
+        .map(|m| (m.start_beat, m.start_beat + m.length()))
+        .collect()
+}
+
+/// Minimal intervention: only the call that would take the last downbeat yields; the bass's
+/// later borrowed call in the same one-bar form still sounds.
+#[test]
+fn only_the_call_on_the_last_downbeat_yields() {
+    let windows = bass_figure_windows(&song(&FALSIFIERS[0]), MusicWorld::black_ice());
+    assert!(
+        windows.iter().all(|&(s, _)| s > 1e-6) && !windows.is_empty(),
+        "the bass keeps its later borrowed call and gives up only the downbeat: {windows:?}"
+    );
+}
+
+/// Control: a song that does not declare the bass figure keeps its borrowed call on the downbeat.
+#[test]
+fn borrowed_bass_material_stands_where_no_bass_figure_is_declared() {
+    let control = SongMap::compose(
+        &deflected_lift_trace(2.5),
+        96_840_000,
+        Some(CompositionGrammar::HookArc),
+        Composer::StructuralR9,
+    );
+    assert!(!control
+        .plan
+        .contract
+        .anchors
+        .contains(&CoherenceAnchor::BassFigure));
+    let windows = bass_figure_windows(&control, MusicWorld::black_ice());
+    assert!(
+        windows.iter().any(|&(s, _)| s.abs() < 1e-6),
+        "no declared bass figure: the borrowed call keeps the downbeat: {windows:?}"
+    );
+}
+
+/// Control: a declaring song with another downbeat left for its own line keeps the call that
+/// covers the first downbeat, and its own figure sounds on the free one.
+#[test]
+fn a_free_downbeat_leaves_the_borrowed_call_in_place() {
+    let control = SongMap::compose(
+        &deflected_lift_trace(7.25),
+        96_840_000,
+        Some(CompositionGrammar::RiffDrive),
+        Composer::StructuralR9,
+    );
+    assert!(control
+        .plan
+        .contract
+        .anchors
+        .contains(&CoherenceAnchor::BassFigure));
+    let windows = bass_figure_windows(&control, MusicWorld::black_ice());
+    assert!(
+        windows.iter().any(|&(s, _)| s.abs() < 1e-6),
+        "a free downbeat remains (4.0): the call on 0.0 stays: {windows:?}"
+    );
+    let take = perform_with_profile(
+        &control,
+        &MusicWorld::black_ice(),
+        fusion(),
+        PerformanceProfile::BAND,
+    )
+    .expect("lawful candidate");
+    assert!(take
+        .score
+        .role_notes(Role::Bass)
+        .any(|n| OWN_LINE.contains(&n.prov.role_note)));
+}

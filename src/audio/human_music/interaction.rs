@@ -332,6 +332,7 @@ pub(super) fn plan_interactions(
     seed: u64,
     cover: Option<&super::cover::CoverConstraints>,
     vetoed: &[super::rehearsal::ActionKey],
+    functions: super::policy::FunctionPolicy,
 ) -> InteractionPlan {
     let bank = &thematic.bank;
     let mode = opts.responses;
@@ -345,6 +346,47 @@ pub(super) fn plan_interactions(
     let total_beats = plan.form.total_beats;
     let two_bar = 2.0 * BEATS_PER_BAR;
     let calls_open = lang.distributed_agency && interact && mode == ResponseMode::Free;
+
+    // A declared bass figure is part of what makes this song this song. Under earned functions the
+    // bass's BORROWED material — a figure quoting the lead's motif, an answer — never takes the
+    // last bar downbeat its own line could sound on: the downbeat is the one onset the bass's own
+    // line is guaranteed in every bar mode, and the bass never plays its line inside its own
+    // quote. (Responses are judged after their random draw, so the stream is unchanged and only
+    // the guarded decision differs.)
+    let keeps_bass_figure = functions == super::policy::FunctionPolicy::Earned
+        && plan
+            .contract
+            .anchors
+            .contains(&super::contract::CoherenceAnchor::BassFigure);
+    let bass_downbeats: Vec<f64> = (0..)
+        .map(|bar| bar as f64 * BEATS_PER_BAR)
+        .take_while(|&d| d < total_beats - 1e-9)
+        .filter(|&d| stage.on_stage(Agent::Bass, d) && !accent.is_hole(d))
+        .collect();
+    let takes_last_bass_downbeat = |materials: &[InteractionMaterial],
+                                    interactions: &[Interaction],
+                                    start: f64,
+                                    end: f64|
+     -> bool {
+        let borrowed = |d: f64| {
+            let inside = |s: f64, e: f64| d >= s - 1e-6 && d < e - 1e-6;
+            inside(start, end)
+                || materials
+                    .iter()
+                    .filter(|m| {
+                        m.owner == Agent::Bass && matches!(m.source, MaterialSource::Figure { .. })
+                    })
+                    .any(|m| inside(m.start_beat, m.start_beat + m.length()))
+                || interactions
+                    .iter()
+                    .filter_map(|i| i.response.as_ref())
+                    .filter(|r| r.responder == Agent::Bass && r.transform != Transform::Silence)
+                    .any(|r| inside(r.start_beat, r.start_beat + r.dur_beats))
+        };
+        keeps_bass_figure
+            && !bass_downbeats.is_empty()
+            && bass_downbeats.iter().all(|&d| borrowed(d))
+    };
 
     // --- 1. Figures: every figure-bearing action gets its material, stated by its initiator
     //        whether or not anybody answers it. Figures open calls only in the free model. ---
@@ -370,6 +412,16 @@ pub(super) fn plan_interactions(
         let Some(m) = InteractionMaterial::figure(id, a, bank, a.effect.strength) else {
             continue;
         };
+        if a.initiator == Agent::Bass
+            && takes_last_bass_downbeat(
+                &materials,
+                &interactions,
+                m.start_beat,
+                m.start_beat + m.length(),
+            )
+        {
+            continue; // the verb stays; the bass performs it in its own line
+        }
         materials.push(m);
         if calls_open {
             let len = a.dur_beats.clamp(0.5, 2.0);
@@ -625,7 +677,11 @@ pub(super) fn plan_interactions(
             accent,
             stage,
         );
-        let mut verdict = if room.is_empty() {
+        let room_left = room.iter().any(|&(who, lat, dur)| {
+            let at = probe.end_beat + lat;
+            who != Agent::Bass || !takes_last_bass_downbeat(&materials, &interactions, at, at + dur)
+        });
+        let mut verdict = if !room_left {
             Verdict::StandsAlone("nobody on stage has room to answer")
         } else if mode == ResponseMode::Clockwork
             || opts.calls == CallPolicy::EveryStatement
@@ -787,7 +843,11 @@ pub(super) fn plan_interactions(
             accent,
             stage,
         );
-        if call.statement.is_none() && room.is_empty() {
+        let lawful = |who: Agent, lat: f64, dur: f64| {
+            let at = call.end_beat + lat;
+            who != Agent::Bass || !takes_last_bass_downbeat(&materials, &interactions, at, at + dur)
+        };
+        if call.statement.is_none() && !room.iter().any(|&(w, l, d)| lawful(w, l, d)) {
             opportunities.push(InteractionOpportunity {
                 source: OpportunitySource::Figure(call.action),
                 initiator: call.initiator,
@@ -873,6 +933,9 @@ pub(super) fn plan_interactions(
                             + fit
                             + overlap_cost
                             + rng.range_f32(0.0, 0.2);
+                        if !lawful(who, lat, dur) {
+                            continue;
+                        }
                         if best.as_ref().is_none_or(|b| cost < b.0) {
                             best = Some((
                                 cost,
