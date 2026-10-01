@@ -1672,6 +1672,17 @@ pub fn cover_candidate(map: &CoverMap, target: CoverTarget<'_>) -> Result<Compos
             bank.identity = fidelity::theme_motif(&theme);
             bank.hook = bank.identity.clone();
             song.thematic = super::song::ThematicMap::from_bank(&song.plan, bank);
+            // The theme is stated at the song's identity sites; a form with none cannot keep it.
+            if !song
+                .thematic
+                .sites
+                .iter()
+                .any(super::song::ThemeSite::is_identity)
+            {
+                return Err(CoverError::Invalid(
+                    "a pinned theme has no seated phrase to be stated in the target form",
+                ));
+            }
             identity.spec = identity.spec.clone().with(CoverAxis::Motif, false);
             identity.fidelity = identity.fidelity.map(|f| CoverFidelityProfile {
                 motif: LineRelation::Free,
