@@ -10,14 +10,18 @@ Labels: **Observed** (read from a committed receipt or a command run at the stat
 
 ## 1. Branch and head
 
-- This round (the semantic consolidation) started at `1cd122f` (the head of `feat/v0.4-humanmusic-audio`,
-  draft PR #70) and was developed on `claude/humanmusic-semantic-consolidation-cc4k3o`, which contains
-  `1cd122f` unchanged; fast-forwarding `feat/v0.4-humanmusic-audio` to it is the maintainer's call. Nothing
-  was merged, tagged, released or marked ready; no history was rewritten.
-- The last commit that changed library source is `41fc2eb`; every later commit is documentation.
-- Package `libgibson` 0.3.1, ABI 1, MSRV 1.85 — **unchanged** (Observed: `check-versions.sh`, `check-abi.sh`).
-- Everything HumanMusic is under the experimental `gibson::audio::human_music` module (now 67,969 lines);
-  no C/Python/Go ABI surface was added.
+- This round (the final pre-main closeout) started at `15f56d3`, the head of
+  `claude/humanmusic-semantic-consolidation-cc4k3o` (the semantic-consolidation round, draft PR #70).
+  That branch was a clean descendant of `feat/v0.4-humanmusic-audio` (`1cd122f`, 34 ahead / 0 behind),
+  so `feat/v0.4-humanmusic-audio` was **fast-forwarded** to it locally (no merge commit). All work
+  below was then authored on `feat/v0.4-humanmusic-audio`. Nothing was merged to `main`, tagged,
+  released or marked ready; no history was rewritten.
+- The pre-main source was frozen at `006bacf` (the support-lifetime / landed-function / truncated-form
+  laws). A post-contact correction (`§11a`) advanced the source past the holdout-v4 declaration
+  commit `d869f72`; **no v5 was run in this round**.
+- Package `libgibson` 0.3.1, ABI 1, MSRV 1.85 — **unchanged** (`check-versions.sh`, `check-abi.sh`).
+- Everything HumanMusic is under the experimental `gibson::audio::human_music` module; no
+  C/Python/Go ABI surface was added.
 
 ## 2. Architecture (current)
 
@@ -87,10 +91,15 @@ library commit of the round. The known R17 120-case sweep (`r17_fresh_world_seed
 replays exactly: 61 passes / 59 first failures (14/38/5/2), every reason and every passing label identical
 (at `41fc2eb`).
 
+**Re-verified at this round's revised source** (`fe4e681`): the R17 gate again reports 48/48 WAV +
+757/757 receipts byte-identical, and the 16 cover-listening WAVs are byte-identical. Every this-round
+source law that could touch POCKET is gated on `FunctionPolicy::Earned` (BAND); the two un-gated changes
+(`SongMap::landmarks` pointer emission, `transform_material` room clamp, the occupancy epsilon) do not
+alter these bar-aligned historical fixtures.
+
 Disclosed change to **unaccepted** audio: the BAND hardening-listening corpus (`drum_restraint_lab` +
-`cover_fidelity_lab`, 30 WAVs) now has 23 identical, 5 changed (Ode `0_v1-motif-only` ×2,
-`2_interpretive.vapor95`, `3_faithful` ×2) and 2 missing (Ode `4_strict` ×2, now an explicit lawful refusal:
-"a pinned bass event has no lawful pitch function in the target harmony").
+`cover_fidelity_lab`, 30 WAVs) has changed again this round (the earned support lifetime, the landed
+re-pitchings and the metric groove bars); see §14 for the regenerated count.
 
 ## 6. What this round changed
 
@@ -113,6 +122,16 @@ Each repair has a falsifier committed red before it (evidence discipline).
 | — | Sub-bar Groove | No full bar → Groove structurally inapplicable, never Realized-and-Deviating (found by the v3 pre-freeze review) | `5ad4532` → `362a4dd` |
 | — | After v3 contact | A pinned event's function is judged in the scale it sounds in (V19's family); a pinned theme is stated or the lift is refused (V36's family) — both on fresh seeds | `3bf20fc` → `a20b4c2`; `56e5417` → `41fc2eb` |
 | 12 | Giant files | Not split (semantics first; see §15) | — |
+
+### This round (final pre-main closeout) — each repair red-first
+
+| Law | General statement | Red → fix |
+| --- | --- | --- |
+| BAND support lifetime | Under `FunctionPolicy::Earned` a support tail must not sound into a structural harmony that **excludes** its pitch (the bass's and keys' `release_support` membership law, extended to the pad). A tail the next harmony admits is consonant and may be load-bearing (the pad's own root). | `3b28215` → `006bacf`; corrected after contact at seed `90_500_002` (a first, too-strict "stated-continuation" version clipped a root-carrying tail and flipped the chart) |
+| Landed material functions | A projected material onset that `land_once` moved onto an accent is judged where it actually sounds — the bass's `reland` law, now applied to the keys (`comp::finish_keys`) and to the independent BAND bass (`bass::reland_note`): re-pitch to a stable/chord tone when the landed harmony excludes the pitch, then declare the earned function. | `3b28215` → `006bacf` |
+| Truncated-form conformance | A finite form does not promise what it has no room to state: `SongMapConformance` and `AnchorReport` apply `ThemeSite::statable` against the FINAL form, and `SongMap::landmarks()` no longer clamps a Lift pointer into a truncated slot where its arrival was never realized. | `3b28215` → `006bacf` |
+| Groove bar assignment | A pocket stroke belongs to the bar of its recorded **metric** source (`StrokeOrigin.metric`), never its microtimed performed float: an anticipated downbeat is the bar it anticipates. | post-contact correction |
+| Interaction-material domain | A response material's last event is cut at its own room, never inflated past it by the `0.1`-beat floor; the occupancy reservation check uses the domain's own `1e-6` epsilon. | post-contact correction |
 
 **Hypotheses refuted this round:** H23/H31/H35 were conjectured groove failures — Refuted: they were
 non-identity triplet material inside lane quotients (the projection fixes them). The BAND reds were
@@ -169,32 +188,45 @@ whether Balanced sounds like a band member: **UNVERIFIED** (listen).
 - **v1** and **v2** are immutable known evidence; nothing this round was fitted to them.
 - **v3** (`docs/fixtures/humanmusic-consolidation2/holdout-v3/`): 48 rows declared at `721fffe` (config
   SHA256 `cf96dbe1…`, after a pre-freeze adversarial review), executed once at that commit on a clean tree:
-  **46/48 pass** (853 checks, 2 failing receipts). 36/36 generated BAND sources hold their own
-  PerformanceReceipt and record their declared composer and grammar; identity unchanged under a hostile
-  non-identity event 29/29; 9/9 refusals lawful at their stage; 12/12 `lift` predictions lifted and admitted;
-  35/37 lifts admitted. Failures: **V19** (a pinned passing tone labelled chromatic in a scale that holds it —
-  a false claim in a BAND cover) and **V36** (a Loose theme lifted into a form with no theme site). Both
-  families were repaired after contact on fresh seeds (§6); v3's numbers stand. Coverage gaps stated in
-  `CLASSIFICATION.md`: no swung groove crossed a swing change (Groove alone is not song identity), and no
-  natural identity overlap occurred.
+  **46/48 pass** (853 checks, 2 failing receipts). Failures: **V19** and **V36**, both repaired after
+  contact on fresh seeds (§6); v3's numbers stand.
+- **v4** (`docs/fixtures/humanmusic-consolidation2/holdout-v4/`): the merge holdout, 28 rows declared at
+  `d869f72` (config SHA256 `27be8e4a…`, library source frozen at `006bacf`), executed once on a clean tree:
+  **24/28 pass** (472 checks, 4 failing receipts) — see `CLASSIFICATION.md`. **Every failure is a
+  declaration error in the holdout, not an internally invalid performance**: V09/V14/V20 declared a grammar
+  the `StablePropulsion` composer overrides to `PropulsiveReturn`, and O02 predicted a lift the target
+  lawfully refuses (`pinned harmony outside target vocabulary`). Every source receipt and every admitted
+  cover receipt passed. The declared cross-swing gap was exercised: `cross-swing-groove-quotient` PASS on
+  every admitted Groove-pinning cover, with V03/V09/V20 carrying strokes to another performed float while
+  the canonical metric quotient stayed exact.
+- **Broad fresh BAND search** (this round's §1 sweep, at the revised source): **27,624 / 27,648 admitted**,
+  0 refused, **24 rejected** (0.087%) — 16 held-identity flips and 8 false temporal function claims, all
+  pre-existing (`§11`).
 
 ## 11. Remaining internal reds (each named)
 
-1. **BAND sweep** (1,080 fresh performances, `perform_checked`): 1006 admitted before this round's support
-   laws → **1079** after. The one
-   rejection is a held-identity flip POCKET shares: a rootless keys comp (D–C–G) over a bass quote on E while
-   the pad is silent and the previous pad voicing's release tail rings over the change (Am7 heard as C).
-2. **POCKET / historical arms** keep their archived behaviour by design (byte-exact): unperformed verbs under
-   `Planned`, the half-beat support tail, bar-end approaches toward roots the bass does not sound, the carry
-   without root — 58/1080 false-claim and 13/1080 flip performances in the same sweep at `41fc2eb` (61 before
-   the pedal judge read whole chains).
-3. Known R17 sweep: 59 first-assertion failures (unchanged, classified historically).
-4. Cover: `UnprojectableTiming` on DeflectedLift grooves (v1 G18 family); Groove + Orchestration from a kit
-   that played only in action windows (`ConflictingPins`); a swung groove pinned across a swing change is
-   untested by any holdout.
-5. Environment: `tests/pty_demos::hack_shell_commands_trigger_real_effects` fails identically at `1cd122f`
-   and at this head in the release profile whenever its example is already built (it passed in the
-   preflight's debug run); the demo has no audio code. Not addressed.
+1. **Residual held-identity flips (16/27,648, pre-existing).** The broad fresh search still rejects 16
+   performances with 1-2 held-identity flips: `StructuralR9 + DeflectedLift + FusionConversation +
+   VAPOR95`, at 7.25/13.25/16/33.25 beats. The mechanism is the target defect's sibling shape — a
+   **rootless keys comp** (e.g. a held `C F G` over the bass's `A`) completes a rival triad (F major)
+   while the chart root (D) is silent. It is not the pad-tail shape this round fixed (the pad is silent),
+   and it is present at the pre-round head (`15f56d3`). The general repair would extend the pad's
+   root-support repair to the keys (or change the root-support requirement) — a cross-player
+   architecture change the brief forbids expanding into, so it is **preserved and named**, not fitted.
+2. **Residual false temporal function claims (8/27,648, pre-existing).** `StructuralR9 + DeflectedLift +
+   FusionConversation + BLACK_ICE + 33.25` at a truncated length: a lead melody note declares
+   `Appoggiatura` with no independently reconstructed resolution. The lead's pitch-path classification
+   (`temporal.rs`) is untouched by this round; it needs its own round.
+3. **POCKET / historical arms** keep their archived behaviour by design (byte-exact): unperformed verbs
+   under `Planned`, the half-beat support tail, bar-end approaches toward roots the bass does not sound,
+   the carry without root — 58/1080 false-claim and 13/1080 flip performances in the known sweep at
+   `41fc2eb`.
+4. Known R17 sweep: 59 first-assertion failures (unchanged, classified historically).
+5. Cover: `UnprojectableTiming` on DeflectedLift grooves (v1 G18 family); Groove + Orchestration from a
+   kit that played only in action windows (`ConflictingPins`).
+6. Environment: `tests/pty_demos::hack_shell_commands_trigger_real_effects` fails identically at
+   `1cd122f` and at this head in the release profile whenever its example is already built (it passed in
+   the preflight's debug run); the demo has no audio code. Not addressed.
 
 ## 12. Lawful explicit refusals (not bugs)
 
@@ -207,45 +239,69 @@ whether Balanced sounds like a band member: **UNVERIFIED** (listen).
 
 ## 13. Fixture footprint (Observed)
 
-Unchanged from the hardening round except this round's holdout v3 declaration and first-contact results
-(56 files, 382,552 bytes under `docs/fixtures/humanmusic-consolidation2/`).
+The semantic-consolidation round added holdout v3 (56 files, 382,552 bytes). This round adds holdout v4
+under `docs/fixtures/humanmusic-consolidation2/holdout-v4/` (config, README, CLASSIFICATION, and 32
+first-contact receipt files under `results/`).
 
 ## 14. Gates at the final source
 
 | Gate | Result | Where |
 | --- | --- | --- |
-| Release preflight (13 steps) | **PASS 13/13** — whitespace, version/ABI consistency, `fmt --check`, strict clippy (all targets, all features, rustc 1.98.1), `cargo test` (full suite), rustdoc `-D warnings`, MSRV 1.85 `check --locked --lib`, MSRV declared-range consumer, `cargo package`, ABI v1 symbol baseline, clean-room consumers (C, C++, Python, Go, Rust), third-party notices, license files | local, `41fc2eb`, clean tree (Observed). Disclosed: this container's system setuptools 68.1.2 cannot build any wheel (`AttributeError: install_layout`), so the run sets `SETUPTOOLS_USE_DISTUTILS=stdlib`; without it only the clean-room Python step fails (bindings untouched this round). A first run failed several steps for lack of disk and was discarded. |
-| GitHub CI | **success** (run 36804212022, `workflow_dispatch`) | `41fc2eb` (Observed) |
-| GitHub Release Preflight | **success** (run 36804214484, `workflow_dispatch`) | `41fc2eb` (Observed) |
-| R17 PCM freeze (distinct gate) | **48/48 WAV + 757/757 receipts byte-identical** | local, `41fc2eb` (Observed) |
-| Cover listening corpus | **16/16 WAVs byte-identical** | local, `41fc2eb` (Observed) |
+| Release preflight (13 steps) | **PASS 13/13** (see §14a) — whitespace, version/ABI consistency, `fmt --check`, strict clippy (all targets, all features, rustc 1.98.1), `cargo test` (full suite), rustdoc `-D warnings`, MSRV 1.85 `check --locked --lib`, MSRV declared-range consumer, `cargo package`, ABI v1 symbol baseline, clean-room consumers (C, C++, Python, Go, Rust), third-party notices, license files | local, `a4fbb16`, clean tree (Observed). Disclosed: this container's system setuptools 68.1.2 cannot build any wheel (`AttributeError: install_layout`), so the run sets `SETUPTOOLS_USE_DISTUTILS=stdlib`; without it only the clean-room Python step fails. A first run failed several steps for lack of disk and was discarded. |
+| GitHub CI | **success** (run 36804212022, `workflow_dispatch`) at `41fc2eb`; **not re-run this round** | `41fc2eb` (Observed) |
+| GitHub Release Preflight | **success** (run 36804214484, `workflow_dispatch`) at `41fc2eb`; **not re-run this round** | `41fc2eb` (Observed) |
+| R17 PCM freeze (distinct gate) | **48/48 WAV + 757/757 receipts byte-identical** | local, `fe4e681` (the revised source), re-run (Observed) |
+| Cover listening corpus | **16/16 WAVs byte-identical** | local, `fe4e681`, re-run (Observed) |
+| BAND hardening listening corpus | **20/30 identical, 8 changed, 2 missing** — the 20 drum WAVs are byte-identical (drums are untouched this round); the 8 Ode-fidelity mixes changed (the earned support lifetime and landed re-pitchings); the 2 `4_strict` WAVs remain an explicit lawful refusal | local, `a4fbb16`, regenerated (Observed) |
 | Known R17 sweep replay | 120 executed / 61 / 59 (14/38/5/2); every first reason and every passing label identical | local, `41fc2eb`, rustc 1.98.1 (Observed) |
 | Holdout v3 | 46/48 at first contact (§10) | `721fffe` (Observed) |
+| Holdout v4 | 24/28 at first contact, all 4 declaration errors (§10) | `d869f72` (Observed) |
+| Broad fresh BAND search | 27,624/27,648 admitted; 24 rejected (16 flips, 8 temporal-false) — pre-existing (§11) | local, `fe4e681` (Observed) |
+| Falsifier suites | `audio_band_support_lifetime` (2), `audio_band_landed_functions` (4), `audio_band_truncated_form` (5) PASS | local, `fe4e681` (Observed) |
 | Package version / ABI | 0.3.1 / ABI 1, unchanged | `check-versions.sh`, `check-abi.sh` |
 
+### 14a. Preflight detail
+
+The 13-step preflight was run twice at the revised source. The first run (`fe4e681`) passed 12/13 and
+failed only strict clippy on one unused import in the holdout-v4 harness; that import was removed
+(`a4fbb16`) and the second run (at `a4fbb16` with this documentation) reports
+**`RELEASE PREFLIGHT: PASS` 13/13**. GitHub CI and the GitHub Release Preflight workflow were **not**
+re-run this round (no push-triggered job was dispatched).
+
 Not covered by the preflight: `tests/pty_demos::hack_shell_commands_trigger_real_effects` in the
-**release** profile with a prebuilt example (§11.5); it passed in the preflight's debug `cargo test`.
+**release** profile with a prebuilt example (§11.6); it passed in the preflight's debug `cargo test`.
 
 ## 15. Unresolved TODOs
 
+- **The residual internal reds in §11.1–§11.2** (rootless-support held-identity flips; lead
+  `Appoggiatura` false temporal claims). Each needs a round: the first is the cross-player root-support
+  requirement; the second is the lead pitch-path classifier at a truncated end.
+- **A clean one-contact holdout for the final head.** v4 is preserved as a raw first contact whose 4
+  failures are declaration errors; a corrected 28-row declaration (grammar left to `StablePropulsion` for
+  its three rows, O02 expectation lowered to `lawful`) is the obvious next contact, and must be declared
+  before running.
 - Choose the library default (`WRITTEN` today; `BAND` is the hardened candidate) — Disclosed decision.
-- The named reds in §11; a swung-groove-across-swing holdout row with song identity.
-- `cover.rs` (2,286 lines) and `cover_fidelity.rs` (1,033) were not split: the semantics are now fixed, so a
-  split is a pure move for a later, separately reviewable commit.
+- `cover.rs` and `cover_fidelity.rs` were not split: the semantics are fixed, so a split is a pure move.
 - A passing-tone relation for pinned attacks; recording action windows in the seat quotient.
 - Human feel remains only a typed identity seam.
-- PR #70 body/title are stale (not edited; the PR stays draft).
+- PR #70 body/title are stale (see §18; not edited; the PR stays draft).
 
 ## 16. Reasons NOT to merge (if any hold for you)
 
+- **Residual internal reds remain.** The broad fresh BAND search still rejects 24/27,648 performances
+  (§11): 16 pre-existing held-identity flips (rootless keys comp over a bass chord tone, pad silent) and
+  8 pre-existing false temporal function claims (lead `Appoggiatura` with no observed resolution). Both
+  need their own round; neither is a lawful refusal.
+- **The holdout was not clean.** v4 is 24/28 at first contact, with the 4 failures being declaration
+  errors in the holdout (not branch defects) — so this round produced no clean one-contact holdout for the
+  final head. The source was also corrected after contact (§11), so v4's raw result describes an earlier
+  head, and **no v5 was run**.
 - **Listening is the acceptance test and it is open.** No machine result shows that BAND sounds better than
   POCKET, that the drummer serves the band, or that any Ode fidelity "is the same song".
 - **The recommended profile is not the default.** Merging ships `BAND` as an opt-in.
-- **Holdout v3 is 46/48 at contact**; its two failure families were repaired only after contact, so they are
-  validated by fresh-seed falsifiers, not by a holdout.
-- BAND's sound changed this round (support release, approaches, pad rooting) without a listen; only POCKET's
-  bytes are frozen.
-- The module is large (67,969 lines) and experimental; its API is not stabilized.
+- BAND's sound changed this round (support tails, landed re-pitchings, groove metric bars) without a listen;
+  only POCKET's bytes are frozen.
+- The module is large and experimental; its API is not stabilized.
 
 ## 17. Listening questions for the maintainer
 
@@ -256,3 +312,23 @@ Not covered by the preflight: `tests/pty_demos::hack_shell_commands_trigger_real
 4. **Swing partial:** are the partial-reference outputs still useful as fresh songs?
 5. **Pocket preservation:** does the accepted BLACK_ICE result still sound right? (It is byte-identical.)
 6. **Merge review:** another round, or is this the branch to merge? *(Not answered here.)*
+
+## 18. Draft replacement for PR #70 (not applied)
+
+**Title:** `feat(audio): HumanMusic experimental module — BAND profile, checked performances, identity projection, covers`
+
+**Body (draft):** This PR lands the experimental `gibson::audio::human_music` module: a semantic trace
+becomes a song, a song plus a world/language becomes one checked performance, and a checked performance
+can be lifted into a cover. The hardened general profile is `PerformanceProfile::BAND` (rehearsed verb
+admission, an arbitrated Balanced drummer, the world's harmonic vocabulary as a source law, support
+functions earned where they sound); the library default is unchanged (`WRITTEN`), and `POCKET` remains the
+byte-exact accepted R17 arm.
+
+Machine evidence on this head: R17 PCM freeze 48/48 WAVs + 757/757 receipts byte-identical; the 16
+cover-listening WAVs byte-identical; release preflight green (§14); the known R17 sweep replay unchanged;
+holdout v3 46/48 (two families repaired after contact). **Open, and the reason this stays a draft:** the
+broad fresh BAND search still admits 27,624/27,648, with 24 pre-existing internal reds (16 rootless-support
+held-identity flips, 8 lead false-temporal-function claims) that need their own round (§11); holdout v4 is
+24/28 at first contact with all four failures being holdout declaration errors, and no clean one-contact
+holdout exists yet for the final head. Human listening (drums, BAND vs POCKET, Ode fidelity, swing partial)
+is the acceptance test and is open.
