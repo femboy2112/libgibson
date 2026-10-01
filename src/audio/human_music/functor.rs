@@ -660,6 +660,19 @@ fn realize_policy(
                 ] {
                     score.hearings.push(Hearing::of("pad", source, notes));
                 }
+                // Earned: the pad judges the band as it will sound, inside the piece
+                // (`clip_to_end` trims every realizer's tail only after the pad has heard it).
+                let inside: Vec<Note>;
+                let band: &[Note] = if perf.functions == super::policy::FunctionPolicy::Earned {
+                    inside = band
+                        .iter()
+                        .copied()
+                        .filter_map(|mut n| clip_note(&mut n, total_beats).then_some(n))
+                        .collect();
+                    &inside
+                } else {
+                    &band
+                };
                 let canonical_observation = score.observed_lifetime_policy()
                     == super::voice::ObservedLifetimePolicy::ExplicitContinuity;
                 let (pad, edits) =
@@ -667,25 +680,25 @@ fn realize_policy(
                         let (notes, edits, decisions) = super::comp::realize_pad_pocketed(
                             perf,
                             world,
-                            &band,
+                            band,
                             &score.voice_continuity,
                         );
                         score.support_voicing_decisions = decisions;
                         (notes, edits)
                     } else if profile.support == SupportPolicy::SourceVoicePath {
                         let (notes, edits, decisions) =
-                            super::comp::realize_pad_phrased(perf, plan, world, &band);
+                            super::comp::realize_pad_phrased(perf, plan, world, band);
                         score.support_voicing_decisions = decisions;
                         (notes, edits)
                     } else if canonical_observation {
                         super::comp::realize_pad_heard_with_continuity(
                             perf,
                             world,
-                            &band,
+                            band,
                             &score.voice_continuity,
                         )
                     } else {
-                        super::comp::realize_pad_heard(perf, plan, world, &band)
+                        super::comp::realize_pad_heard(perf, plan, world, band)
                     };
                 score.pad_voicing_edits = edits;
                 (pad, keys, bass)
@@ -900,15 +913,7 @@ fn realize_coupled(
 fn clip_to_end(score: &mut Score) {
     let end = score.total_beats;
     let starts_in = |beat: f64| beat < end - 1e-9;
-    score.notes.retain_mut(|n| {
-        if !starts_in(n.start_beat) {
-            return false;
-        }
-        if n.start_beat + n.dur_beats as f64 > end + 1e-9 {
-            n.dur_beats = (end - n.start_beat) as f32;
-        }
-        n.dur_beats > 0.0
-    });
+    score.notes.retain_mut(|n| clip_note(n, end));
     score.drums.retain(|d| starts_in(d.start_beat));
     if let Some(origins) = &mut score.stroke_origins {
         origins.retain(|o| starts_in(o.performed));
@@ -923,6 +928,18 @@ fn clip_to_end(score: &mut Score) {
         }
         c.dur_beats > 0.0
     });
+}
+
+/// The piece-end law for one note: nothing starts at or after `end`, nothing rings past it.
+/// `false` when the note does not sound inside the piece at all.
+fn clip_note(n: &mut Note, end: f64) -> bool {
+    if n.start_beat >= end - 1e-9 {
+        return false;
+    }
+    if n.start_beat + n.dur_beats as f64 > end + 1e-9 {
+        n.dur_beats = (end - n.start_beat) as f32;
+    }
+    n.dur_beats > 0.0
 }
 
 /// Every Score event whose player the stage had OFF at its onset (neither seated nor admitted by
