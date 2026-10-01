@@ -1,0 +1,11 @@
+case	phase	law	status	detail
+E08	extraction	projection	PASS	map=555820a5b3fdcb03; spec=[Motif]; knowledge=[(Motif, Invariant), (Riff, Free), (Groove, Unknown), (HarmonicContour, Unknown), (HarmonicLoop, Unknown), (Form, Unknown), (Orchestration, Unknown), (BassFigure, Unknown)]; expect=lift
+E08	extraction	guard:map-validation	PASS	Ok(())
+E08	reference	unobserved-axes-remain-unknown	PASS	wrongly known axes=[]
+E08	cover	candidate-lift	PASS	lifted; expect=lift
+E08	cover	canonical-inventory	PASS	song=d54d6cdf6d41a266; plan=1ce3793c4fe990f5; score=4a66aebd38b9e166; notes=206; drums=96; length=64; tempo=104
+E08	cover	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+E08	cover	guard:percussion-law	PASS	PercussionReport restraint=balanced required=96 ornaments admitted 0/0 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/0\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 0/0\n  unison-inner: 0/0\n  bar   4 Sparse required=12 ornaments 0/0 — supports the pocket (lead 4, band 6, prev 0)\n  bar   5 Sparse required=12 ornaments 0/0 — supports the pocket (lead 4, band 6, prev 0)\n  bar   6 Sparse required=12 ornaments 0/0 — supports the pocket (lead 4, band 6, prev 0)\n  bar   7 Sparse required=12 ornaments 0/0 — supports the pocket (lead 3, band 5, prev 0)\n  bar   8 Sparse required=12 ornaments 0/0 — supports the pocket (lead 4, band 6, prev 0)\n  bar   9 Silent required=12 ornaments 0/0 — the band is already speaking (lead 5, band 7, prev 0)\n  bar  10 Silent required=12 ornaments 0/0 — the band is already speaking (lead 5, band 7, prev 0)\n  bar  11 Sparse required=12 ornaments 0/0 — supports the pocket (lead 3, band 5, prev 0)\nbars over allowance=[]
+E08	cover	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [], open_debts: [] }
+E08	cover	metric-length	PASS	canonical metric extent
+E08	cover	motif	PASS	relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free; exact projection agrees

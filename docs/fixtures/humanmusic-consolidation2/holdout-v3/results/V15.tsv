@@ -1,0 +1,10 @@
+case	phase	law	status	detail
+V15	source	generation	PASS	performed; its laws are judged separately
+V15	source	declared-grammar	PASS	grammar=WorldSwitch
+V15	source	declared-composer	PASS	declared=StructuralR9; recorded=StructuralR9
+V15	source	canonical-inventory	PASS	song=82feb3e5ea5a22a2; plan=257fb9559f83639a; score=6f5a6bf5588998e5; notes=58; drums=0; length=16; tempo=71
+V15	source	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+V15	source	guard:percussion-law	PASS	PercussionReport restraint=balanced required=0 ornaments admitted 0/0 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/0\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 0/0\n  unison-inner: 0/0\nbars over allowance=[]
+V15	source	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [RehearsedVerb { key: ActionKey { family: Verb(Call), onset: Metric(MetricPosition { ticks: 0, subdivision: 1 }), cause: Statement { phrase: 0 } }, kind: Call, planned_beat: 0.0, pass: 0, outcome: Performed }, RehearsedVerb { key: ActionKey { family: Verb(Answer), onset: Metric(MetricPosition { ticks: 11, subdivision: 2 }), cause: Interaction { call: Some(ActionKey { family: Verb(Call), onset: Metric(MetricPosition { ticks: 0, subdivision: 1 }), cause: Statement { phrase: 0 } }) } }, kind: Answer, planned_beat: 5.5, pass: 0, outcome: Performed }], open_debts: [] }
+V15	source	evidence:established	PASS	established=[Motif, Form, BassFigure]
+V15	extraction	projection	PASS	explicit refusal at extraction: MissingAxis(Groove); expect=lawful
