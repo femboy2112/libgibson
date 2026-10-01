@@ -8,10 +8,12 @@
 //! held-identity flip survives into the take and the receipt rejects it.
 //!
 //! The law this file falsifies (stated independently of the library's own predicate): under BAND
-//! (`FunctionPolicy::Earned`) a pad note's acoustic lifetime must not cross a structural harmony
-//! boundary unless the pad itself states that exact pitch in the harmony it would ring into (a
-//! held common tone / re-attacked member). A support tail with no such continuation is a tail
-//! whose harmonic situation has ended.
+//! (`FunctionPolicy::Earned`) a support tail must not sound into a structural harmony that
+//! EXCLUDES its pitch — that is a smear and a false function. This is the bass's and keys' own
+//! release law (`release_support`'s membership test) extended to the pad. A tail the next harmony
+//! ADMITS (a chord tone or licensed tension) is consonant and may be load-bearing — the pad's own
+//! root ringing under a bar it does not re-voice — and must be kept: clipping it removed the root
+//! and flipped the chart at a fresh VAPOR95 case (seed `90_500_002`).
 use gibson::audio::human_music::{
     composer::Composer,
     contract::CompositionGrammar,
@@ -21,6 +23,7 @@ use gibson::audio::human_music::{
     policy::PerformanceProfile,
     score::Role,
     semantic::deflected_lift_trace,
+    theory::pitch_class,
     voice::{effective_audible_end_at, patch, AUDIBLE_FLOOR_DB},
     MusicWorld, SongMap,
 };
@@ -60,12 +63,16 @@ fn unjustified_support_tails(c: &Composition, world: &MusicWorld) -> Vec<String>
         if boundary <= n.start_beat + 1e-6 || end <= boundary + 1e-6 {
             continue;
         }
-        let stated = c.score.notes.iter().any(|m| {
-            m.role == Role::Pad && m.pitch == n.pitch && (m.start_beat - boundary).abs() < 1e-6
-        });
-        if !stated {
+        // The next harmony admits the pitch (a chord tone or a palette tension): the tail is
+        // consonant there and may be load-bearing (the pad's own root). Excluded: it is a smear.
+        let pc = pitch_class(n.pitch);
+        let admitted = c
+            .perf
+            .context_at(boundary + 1e-6)
+            .is_some_and(|next| next.chord.contains_pc(pc) || next.palette.tensions.contains(&pc));
+        if !admitted {
             out.push(format!(
-                "pad {} at {} rings to {} past boundary {} with no stated continuation",
+                "pad {} at {} rings to {} past boundary {} into a harmony that excludes it",
                 n.pitch, n.start_beat, end, boundary
             ));
         }
@@ -83,7 +90,7 @@ fn band_admits_the_fresh_support_tail_falsifier() {
 }
 
 #[test]
-fn band_support_tails_are_justified_by_a_stated_continuation() {
+fn band_support_tails_do_not_smear_into_a_harmony_that_excludes_them() {
     let (song, world, opts) = falsifier();
     let c = perform_with_profile(&song, &world, opts, PerformanceProfile::BAND)
         .expect("the falsifier is a lawful performance");

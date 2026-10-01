@@ -317,7 +317,7 @@ pub fn violations(
                 || !slot.end_beat.is_finite()
                 || slot.beat < 0.0
                 || slot.end_beat <= slot.beat
-                || slot.end_beat > perf.total_beats
+                || slot.end_beat > perf.total_beats + 1e-6
             {
                 out.push(format!("invalid reservation for {:?}", owner.role));
             }

@@ -1715,34 +1715,37 @@ pub fn realize_pad_on(
             }
         }
     }
-    // BAND support lifetime (`FunctionPolicy::Earned`): a pad note's acoustic tail is justified
-    // only where the pad itself states that exact pitch in the harmony it would ring into — a
-    // held common tone or a re-attacked member. Where it does not, the harmonic situation that
-    // justified the note has ended, and its release must fade under the next harmony's attack
-    // instead of smearing into a sonority the pad is no longer seated in. (Archived arms keep
-    // their byte-exact half-beat behaviour; this is a source law, not an observer change.)
+    // BAND support lifetime (`FunctionPolicy::Earned`): a pad note's acoustic tail is justified in
+    // the next harmony only where that harmony admits the pitch (a chord tone or licensed tension)
+    // — the bass's and keys' own release law ([`release_support`]'s membership test), extended to
+    // the pad. A tail into a harmony that EXCLUDES the pitch is a smear (a false function and, with
+    // the rest of the band, a contradictory heard identity); it fades under the next harmony's
+    // attack. A consonant tail is kept: it can be load-bearing (the pad's own root ringing under a
+    // bar the pad does not re-voice). (Archived arms keep their byte-exact half-beat behaviour;
+    // this is a source law, not an observer change.)
     if perf.functions == super::policy::FunctionPolicy::Earned {
         let spb = 60.0 / f64::from(world.tempo_bpm.max(1.0));
-        let tail = super::voice::release_tail_secs(&world.pad, super::voice::AUDIBLE_FLOOR_DB) / spb;
-        let stated: Vec<(f64, Midi)> = out.iter().map(|n| (n.start_beat, n.pitch)).collect();
+        let tail =
+            super::voice::release_tail_secs(&world.pad, super::voice::AUDIBLE_FLOOR_DB) / spb;
         for n in out.iter_mut() {
             let Some(ctx) = perf.context_at(n.start_beat) else {
                 continue;
             };
             let boundary = ctx.start_beat + f64::from(ctx.dur_beats);
-            let continued = stated
-                .iter()
-                .any(|&(at, p)| p == n.pitch && (at - boundary).abs() < 1e-6);
-            if continued {
+            if n.start_beat + f64::from(n.dur_beats) + tail <= boundary + 1e-9 {
                 continue;
             }
-            if n.start_beat + f64::from(n.dur_beats) + tail > boundary + 1e-9 {
-                let short = ((boundary - n.start_beat) - tail - 1e-4) as f32;
-                // A structural context shorter than the tail has no room even for the release:
-                // leave the note valid rather than emitting a non-positive duration.
-                if short >= 0.02 {
-                    n.dur_beats = short;
-                }
+            let admitted = perf
+                .context_at(boundary + 1e-6)
+                .is_some_and(|next| function_over(next, n.pitch).is_some());
+            if admitted {
+                continue;
+            }
+            let short = ((boundary - n.start_beat) - tail - 1e-4) as f32;
+            // A structural context shorter than the tail has no room even for the release:
+            // leave the note valid rather than emitting a non-positive duration.
+            if short >= 0.02 {
+                n.dur_beats = short;
             }
         }
     }

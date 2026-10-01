@@ -93,6 +93,78 @@ fn band_admits_the_truncated_pointer_falsifier() {
     admit(&truncated_pointer());
 }
 
+/// Family 3: a swung/deflected short form whose kit enters late — the pocket's downbeat kick is
+/// anticipated onto 7.99, so counting strokes by their performed float put the kick in the previous
+/// bar and no full bar stated kick AND backbeat (`no full bar states the pocket's kick and backbeat
+/// together`, 120 fresh cases). A pocket stroke belongs to the bar of its recorded METRIC source.
+fn metric_groove() -> (SongMap, MusicWorld, PerformanceOptions) {
+    case(
+        deflected_lift_trace(13.25),
+        90_500_002,
+        CompositionGrammar::DeflectedLift,
+        Composer::StructuralR9,
+        MusicWorld::black_ice(),
+        MusicalLanguage::fusion_conversation(),
+    )
+}
+
+#[test]
+fn band_admits_the_metric_groove_bar_falsifier() {
+    admit(&metric_groove());
+    let (song, world, opts) = metric_groove();
+    let c = perform_with_profile(&song, &world, opts, PerformanceProfile::BAND).expect("lawful");
+    let report = AnchorReport::check(&c.song, &c.perf, &c.score);
+    let groove = report
+        .conformance
+        .iter()
+        .find(|(a, _)| {
+            matches!(
+                a,
+                gibson::audio::human_music::contract::CoherenceAnchor::Groove
+            )
+        })
+        .map(|(_, c)| c.clone())
+        .unwrap();
+    assert!(
+        !matches!(
+            groove,
+            gibson::audio::human_music::song::AnchorConformance::Deviates(_)
+        ),
+        "the groove deviates: {groove:?}"
+    );
+}
+
+/// Family 4: at a truncated 33.25-bar a response material's last event was inflated past its own
+/// room by the 0.1-beat floor (`material MaterialId(8) 32.5..33.266 outside 0..33.25`), and the
+/// bass's reservation read from it tripped the strict occupancy check by 2.5e-9. Both are the H12
+/// domain law: a planned window inhabits `[0, total_beats]`, with the domain's own epsilon.
+fn interaction_material_domain() -> (SongMap, MusicWorld, PerformanceOptions) {
+    case(
+        demo_trace(33.25),
+        90_500_001,
+        CompositionGrammar::DeflectedLift,
+        Composer::MeaningDirected,
+        MusicWorld::black_ice(),
+        MusicalLanguage::fusion_conversation(),
+    )
+}
+
+#[test]
+fn band_admits_the_interaction_material_domain_falsifier() {
+    admit(&interaction_material_domain());
+    let (song, world, opts) = interaction_material_domain();
+    let c = perform_with_profile(&song, &world, opts, PerformanceProfile::BAND).expect("lawful");
+    let bad: Vec<_> = c
+        .perf
+        .materials
+        .iter()
+        .filter(|m| m.start_beat + m.length() > c.score.total_beats + 1e-6)
+        .map(|m| format!("{:?} {}..{}", m.id, m.start_beat, m.start_beat + m.length()))
+        .collect();
+    assert!(bad.is_empty(), "{bad:?}");
+    assert!(c.perf.domain_violations().is_empty());
+}
+
 /// The restated law: a site the FINAL form has no room to state is not a "missing theme site", and
 /// an element the piece truncates is not a wrong landmark.
 #[test]
@@ -118,7 +190,12 @@ fn a_truncated_form_promises_nothing_it_has_no_room_to_state() {
     let presence = report
         .anchors
         .iter()
-        .find(|(a, _)| matches!(a, gibson::audio::human_music::contract::CoherenceAnchor::Motif))
+        .find(|(a, _)| {
+            matches!(
+                a,
+                gibson::audio::human_music::contract::CoherenceAnchor::Motif
+            )
+        })
         .map(|(_, p)| *p)
         .unwrap();
     assert!(

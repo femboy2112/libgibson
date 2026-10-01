@@ -284,8 +284,12 @@ pub fn transform_material(
     // identity; the responder chooses its own pitches.
     events.retain(|e| e.onset < room - 1e-6);
     for e in &mut events {
-        e.dur = e.dur.min(room - e.onset).max(0.1);
+        // The event lives inside its window: a note near the room's end is cut at the room, never
+        // inflated past it by the 0.1-beat floor (H12: every planned window inhabits the domain).
+        let upper = (room - e.onset).max(0.0);
+        e.dur = e.dur.min(upper).max(0.1_f64.min(upper));
     }
+    events.retain(|e| e.dur > 0.0);
     if events.is_empty() {
         return None;
     }

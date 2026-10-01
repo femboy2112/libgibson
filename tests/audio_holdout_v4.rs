@@ -464,11 +464,7 @@ fn check_ceiling(map: &CoverMap, report: &FidelityReport, receipt: &mut Receipt<
 /// carried through the target's declared swing transport, must sound as a realized pinned stroke of
 /// the same voice. The performed float onsets are NOT required to match across worlds; the harness
 /// reports how many moved (the transport actually applied) and never asserts equality of the floats.
-fn cross_swing_groove_quotient(
-    candidate: &Composition,
-    map: &CoverMap,
-    receipt: &mut Receipt<'_>,
-) {
+fn cross_swing_groove_quotient(candidate: &Composition, map: &CoverMap, receipt: &mut Receipt<'_>) {
     let Some(expected) = &map.groove else {
         return;
     };

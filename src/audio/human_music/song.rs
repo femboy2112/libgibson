@@ -762,7 +762,10 @@ impl AnchorReport {
                 return AnchorConformance::Conforms; // a historical drummer records no classes
             };
             // The groove is a pattern, not a stroke: some full bar states the pocket's kick AND
-            // its backbeat. (A fill or a figure-only bar is lawful time off the pocket.)
+            // its backbeat. (A fill or a figure-only bar is lawful time off the pocket.) A pocket
+            // stroke belongs to the bar of its recorded METRIC source, not of its performed float:
+            // an anticipated downbeat (7.99) is the bar it anticipates, and identity is the
+            // canonical quotient the round's `StrokeOrigin` records, never the microtimed onset.
             let bars = (total / BEATS_PER_BAR).floor() as u32;
             let stated = (0..bars).any(|bar| {
                 let (s, e) = (
@@ -770,8 +773,9 @@ impl AnchorReport {
                     f64::from(bar + 1) * BEATS_PER_BAR,
                 );
                 let has = |v: DrumVoice| {
-                    pocket.iter().any(|(d, _)| {
-                        d.voice == v && d.start_beat >= s - 1e-6 && d.start_beat < e - 1e-6
+                    pocket.iter().any(|(d, o)| {
+                        let at = o.metric.map_or(d.start_beat, |m| m.beats());
+                        d.voice == v && at >= s - 1e-6 && at < e - 1e-6
                     })
                 };
                 has(DrumVoice::Kick) && has(DrumVoice::Snare)
