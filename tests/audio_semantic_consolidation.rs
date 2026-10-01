@@ -1265,3 +1265,93 @@ fn a_groove_with_no_full_bar_is_inapplicable_not_a_deviation() {
     );
     assert!(report.violations().is_empty(), "{:?}", report.violations());
 }
+
+/// A lift's pinned passing tone is diatonic or chromatic by the scale of the context it sounds
+/// in - the same scale the temporal judge reads - not by its key region's. Witness (fresh seed,
+/// the family holdout v3's V19 found): a pinned lead A#5 stepping A5 -> A#5 -> C6 over Cm inside a
+/// region whose scale lacks A#.
+fn pinned_passing_witness(profile: PerformanceProfile) -> Composition {
+    use gibson::audio::human_music::cover::{
+        cover_candidate, CoverFidelityPreset, CoverFidelityProfile, CoverTarget,
+    };
+    let world = MusicWorld::black_ice();
+    let song = SongMap::compose(
+        &demo_trace(52.0),
+        78_307_301,
+        Some(CompositionGrammar::HookArc),
+        Composer::MeaningDirected,
+    );
+    let source = perform_with_profile(
+        &song,
+        &world,
+        options(MusicalLanguage::fusion_conversation()),
+        PerformanceProfile::BAND,
+    )
+    .unwrap();
+    let p = CoverFidelityPreset::Faithful;
+    let (map, _) =
+        CoverMap::extract_fidelity(&source, &world, &CoverFidelityProfile::preset(p), Some(p))
+            .unwrap();
+    let mut target = MusicWorld::vapor95();
+    target.tonic_pc = 0;
+    cover_candidate(
+        &map,
+        CoverTarget {
+            world: &target,
+            seed: 78_308_301,
+            grammar: CompositionGrammar::HookArc,
+            options: options(MusicalLanguage::fusion_conversation()),
+            profile,
+        },
+    )
+    .unwrap()
+}
+
+/// Restated: pinned passing tones whose diatonic/chromatic label disagrees with the scale of the
+/// context they sound in.
+fn mislabelled_passing(c: &Composition) -> Vec<String> {
+    use gibson::audio::human_music::score::PitchFunction;
+    c.score
+        .notes
+        .iter()
+        .filter(|n| n.prov.role_note == "cover-identity")
+        .filter_map(|n| {
+            let ctx = c
+                .perf
+                .contexts
+                .iter()
+                .rev()
+                .find(|x| x.start_beat <= n.start_beat + 1e-9)?;
+            let in_scale = ctx.palette.scale.contains_pc(n.pitch.rem_euclid(12));
+            let wrong = match n.function? {
+                PitchFunction::DiatonicPassing => !in_scale,
+                PitchFunction::ChromaticPassing => in_scale,
+                _ => false,
+            };
+            wrong.then(|| {
+                format!(
+                    "{:?} {} at {} labelled {:?}",
+                    n.role, n.pitch, n.start_beat, n.function
+                )
+            })
+        })
+        .collect()
+}
+
+#[test]
+fn a_pinned_passing_tone_is_judged_by_the_scale_it_sounds_in() {
+    use gibson::audio::human_music::temporal::TemporalPitchDiagnostics;
+    let c = pinned_passing_witness(PerformanceProfile::BAND);
+    let wrong = mislabelled_passing(&c);
+    assert!(wrong.is_empty(), "{wrong:#?}");
+    assert_eq!(
+        TemporalPitchDiagnostics::measure(&c.perf, &c.score).false_function_claims,
+        0
+    );
+    // The accepted R17 arm's cover keeps its archived (region) classification: characterized.
+    let archived = pinned_passing_witness(PerformanceProfile::POCKET);
+    assert!(
+        !mislabelled_passing(&archived).is_empty(),
+        "the witness no longer exercises the archived classification"
+    );
+}
