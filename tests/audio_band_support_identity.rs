@@ -352,3 +352,49 @@ fn band_admits_the_third_wave_of_support_identity() {
         .collect();
     assert!(failures.is_empty(), "{failures:#?}");
 }
+
+/// Regression found by the closeout listening diff, after holdout v5's contact: the pad's tail
+/// law looked up "the next harmony" with a lookup that has NO harmony past the piece's end, so
+/// the final harmony's consonant tail counted as excluded and was cut before the end — in 360 of
+/// 450 BAND performances (0 of 450 before). No law states that. The final harmony's pad, when
+/// nothing released it, keeps its written gate and rings out as before.
+#[test]
+fn the_final_harmony_rings_out_unless_a_law_releases_it() {
+    use gibson::audio::human_music::comp::PadVoicingReason;
+    let mut shortened = Vec::new();
+    for seed in 96_950_000u64..96_950_006 {
+        for (beats, world) in [
+            (64.0, MusicWorld::vapor95()),
+            (16.0, MusicWorld::black_ice()),
+        ] {
+            let song = SongMap::compose(
+                &demo_trace(beats),
+                seed,
+                Some(CompositionGrammar::HookArc),
+                Composer::StructuralR9,
+            );
+            let take = perform_with_profile(&song, &world, fusion(), PerformanceProfile::BAND)
+                .expect("lawful candidate");
+            let last = take.perf.contexts.last().expect("a harmony");
+            let released = take
+                .score
+                .pad_voicing_edits
+                .iter()
+                .any(|e| matches!(e.reason, PadVoicingReason::Release { .. }));
+            let nominal = 0.98 * f64::from(last.dur_beats);
+            for n in take
+                .score
+                .role_notes(Role::Pad)
+                .filter(|n| n.start_beat >= last.start_beat - EPS)
+            {
+                if !released && f64::from(n.dur_beats) < nominal - 0.05 {
+                    shortened.push((seed, beats, n.start_beat, n.pitch, n.dur_beats));
+                }
+            }
+        }
+    }
+    assert!(
+        shortened.is_empty(),
+        "final pad notes cut short with no release: {shortened:?}"
+    );
+}
