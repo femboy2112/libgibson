@@ -35,7 +35,7 @@ use gibson::audio::human_music::{
     receipt::PerformanceReceipt,
     reference_song::{ReferenceSong, DERIVED_HARMONY_METHOD},
     rhythm::MetricPosition,
-    score::{DrumVoice, Note, Provenance, Role, StrokeOrigin},
+    score::{DrumVoice, Note, Provenance, Role},
     semantic::{deflected_lift_trace, demo_trace},
     song::{AnchorReport, SongMap},
     vocabulary::VOCABULARY_REFUSAL,
