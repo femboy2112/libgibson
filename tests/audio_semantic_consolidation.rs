@@ -1037,7 +1037,10 @@ fn the_historical_pocket_arm_keeps_its_archived_tolerances() {
 /// F with no chart root anywhere. In both, the pad's voicing for that harmony is a common-tone
 /// carry, which sounds only its held voices and new guide tones - so the pad's own rooting law
 /// (sound the chart root where the heard band flips) could never be heard there.
-fn flip_witnesses() -> [(&'static str, SongMap, MusicWorld, MusicalLanguage); 2] {
+///
+/// The third flips in the final release: the realizers' tails past the piece's end are trimmed
+/// only after the pad has judged the band, so the pad heard keys that ring longer than they do.
+fn flip_witnesses() -> [(&'static str, SongMap, MusicWorld, MusicalLanguage); 3] {
     [
         (
             "Cmaj7 heard as Em over the bass's fifth",
@@ -1060,6 +1063,17 @@ fn flip_witnesses() -> [(&'static str, SongMap, MusicWorld, MusicalLanguage); 2]
             ),
             MusicWorld::vapor95(),
             MusicalLanguage::simple(),
+        ),
+        (
+            "Am7 heard as C in the final release",
+            SongMap::compose(
+                &demo_trace(7.25),
+                78_307_003,
+                Some(CompositionGrammar::DeflectedLift),
+                Composer::MeaningDirected,
+            ),
+            MusicWorld::vapor95(),
+            MusicalLanguage::fusion_conversation(),
         ),
     ]
 }
