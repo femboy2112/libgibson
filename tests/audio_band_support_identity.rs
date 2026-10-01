@@ -284,3 +284,71 @@ fn a_forged_rival_identity_is_still_detected() {
         receipt.failures()
     );
 }
+
+/// The third wave, from the broad fresh search after the support law (16 of 195,264
+/// performances, three songs): the responsible support's answer was there but could not land.
+///
+/// - 96_900_010 (BLACK_ICE, Am9 at 40): the pad's root removes E minor, but its tail joins the
+///   NEXT harmony's flip, which the same sweep answers one step later — a single sweep vetoes it.
+/// - 96_910_000 (VAPOR95 at 66 BPM, Fmaj7 at 4): every root the pad can add rings its tail into the
+///   next harmony and completes a new F major there — a flip traded for a flip.
+/// - 96_910_002 (VAPOR95 at 96 BPM, a 1.25-beat final F6): the pad is silent, but its consonant
+///   Am7 tails from the harmony before complete A minor over a bass that leaves the root.
+struct Wave {
+    beats: f64,
+    seed: u64,
+    grammar: CompositionGrammar,
+    composer: Composer,
+    world: fn() -> MusicWorld,
+    tempo: Option<f32>,
+}
+
+const THIRD_WAVE: [Wave; 3] = [
+    Wave {
+        beats: 64.0,
+        seed: 96_900_010,
+        grammar: CompositionGrammar::DeflectedLift,
+        composer: Composer::MeaningDirected,
+        world: MusicWorld::black_ice,
+        tempo: None,
+    },
+    Wave {
+        beats: 64.0,
+        seed: 96_910_000,
+        grammar: CompositionGrammar::DeflectedLift,
+        composer: Composer::MeaningDirected,
+        world: MusicWorld::vapor95,
+        tempo: Some(66.0),
+    },
+    Wave {
+        beats: 33.25,
+        seed: 96_910_002,
+        grammar: CompositionGrammar::PropulsiveReturn,
+        composer: Composer::StructuralR9,
+        world: MusicWorld::vapor95,
+        tempo: Some(96.0),
+    },
+];
+
+#[test]
+fn band_admits_the_third_wave_of_support_identity() {
+    let failures: Vec<String> = THIRD_WAVE
+        .iter()
+        .filter_map(|w| {
+            let song = SongMap::compose(
+                &deflected_lift_trace(w.beats),
+                w.seed,
+                Some(w.grammar),
+                w.composer,
+            );
+            let mut world = (w.world)();
+            if let Some(t) = w.tempo {
+                world.tempo_bpm = t;
+            }
+            perform_checked(&song, &world, fusion(), PerformanceProfile::BAND)
+                .err()
+                .map(|e| format!("seed {}: {e}", w.seed))
+        })
+        .collect();
+    assert!(failures.is_empty(), "{failures:#?}");
+}
