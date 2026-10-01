@@ -1129,6 +1129,7 @@ impl CanonicalFingerprint for performance::PerformancePlan {
             obligations,
             budget,
             rehearsal,
+            functions,
         } = self;
         w.tag("performance/PerformancePlan/v2");
         w.field("language", language);
@@ -1159,6 +1160,9 @@ impl CanonicalFingerprint for performance::PerformancePlan {
         }
         if let Some(trace) = rehearsal {
             w.field("rehearsal", trace);
+        }
+        if *functions != super::super::policy::FunctionPolicy::Archived {
+            w.field("functions", functions);
         }
     }
 }
@@ -1749,6 +1753,7 @@ impl CanonicalFingerprint for policy::PerformanceProfile {
             admission,
             percussion,
             harmony,
+            functions,
             repair,
         } = self;
         w.field("pitch", pitch);
@@ -1767,6 +1772,9 @@ impl CanonicalFingerprint for policy::PerformanceProfile {
         }
         if *harmony != policy::HarmonyPolicy::Archived {
             w.field("harmony", harmony);
+        }
+        if *functions != policy::FunctionPolicy::Archived {
+            w.field("functions", functions);
         }
     }
 }
@@ -1788,6 +1796,15 @@ impl CanonicalFingerprint for super::super::percussion::PercussionPolicy {
                 w.tag("arbitrated");
                 w.tag(restraint.label());
             }
+        }
+    }
+}
+impl CanonicalFingerprint for policy::FunctionPolicy {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        w.tag("policy/FunctionPolicy/v1");
+        match self {
+            Self::Archived => w.tag("archived"),
+            Self::Earned => w.tag("earned"),
         }
     }
 }

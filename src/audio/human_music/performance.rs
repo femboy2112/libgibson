@@ -324,6 +324,9 @@ pub struct PerformancePlan {
     /// Rehearsed admission's record: every planned verb's outcome and every debt left open.
     /// Absent on every historical (`Planned`) path.
     pub rehearsal: Option<super::rehearsal::RehearsalTrace>,
+    /// The law the bass and keys realize their pitch functions under. Archived on every
+    /// historical path.
+    pub functions: super::policy::FunctionPolicy,
 }
 
 /// The ordinary twin of the cover path's settlement planner: a song obligation the discourse
@@ -395,7 +398,8 @@ fn plan_settlements(
 
 pub use super::rehearsal::ActionKey;
 
-/// Plan-time admission inputs chosen by the realization profile. Never stored in the plan, so a
+/// Plan-time admission inputs chosen by the realization profile. Only the function law is
+/// stored in the plan (its realizers read it), and only when it is not the archived one, so a
 /// historical (`Planned`) build is the exact historical plan.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct AdmissionInputs {
@@ -410,6 +414,8 @@ pub(crate) struct AdmissionInputs {
     pub recast: Vec<super::rehearsal::Recast>,
     /// The archived colours, or the world/language harmonic vocabulary as a source law.
     pub harmony: super::policy::HarmonyPolicy,
+    /// The archived support tolerances, or support functions earned where they sound.
+    pub functions: super::policy::FunctionPolicy,
 }
 
 /// The reason a rehearsed verb is struck from the chart before the take.
@@ -862,6 +868,7 @@ impl PerformancePlan {
             budget: Vec::new(),
             cover_constraints,
             rehearsal,
+            functions: admission.functions,
         };
         // 8. The shared complexity budget: the lead's statements and the planned answers and
         //    figures are reserved, the rest is shared out to the accompanists.
@@ -1614,6 +1621,9 @@ impl std::fmt::Debug for PerformancePlan {
         }
         if let Some(r) = &self.rehearsal {
             d.field("rehearsal", r);
+        }
+        if self.functions != super::policy::FunctionPolicy::Archived {
+            d.field("functions", &self.functions);
         }
         d.finish()
     }

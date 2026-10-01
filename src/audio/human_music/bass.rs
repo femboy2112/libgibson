@@ -281,6 +281,49 @@ fn realize(
             })
     };
 
+    // The pedal a bar holds: the root at the start of its gesture slot.
+    let pedal_root = |bar: u32, fallback: i32| {
+        let Some(eb) = perf.bar(bar) else {
+            return fallback;
+        };
+        let mut sb = bar;
+        while sb > 0
+            && perf.bar(sb - 1).is_some_and(|p| {
+                p.gesture == eb.gesture && p.cycle == eb.cycle && p.bass == BassMode::Pedal
+            })
+        {
+            sb -= 1;
+        }
+        perf.context_at(AccentGrid::beat_of(sb, 0))
+            .map(|c| c.chord.root_pc)
+            .unwrap_or(fallback)
+    };
+    // Earned functions: the pitch this line itself sounds on the downbeat `at`, if it sounds
+    // there at all (it may be quoting, resting in a hole, off stage, or past the piece's end).
+    let own_downbeat = |at: f64| -> Option<i32> {
+        let bar = perf
+            .ensemble
+            .iter()
+            .find(|x| (AccentGrid::beat_of(x.bar, 0) - at).abs() < 1e-6)?;
+        if at >= perf.total_beats - 1e-9
+            || !perf.on_stage(Agent::Bass, at)
+            || perf.accent.is_hole(at)
+            || in_quote(at)
+        {
+            return None;
+        }
+        let root = perf.context_at(at)?.chord.root_pc;
+        Some(near(
+            if bar.bass == BassMode::Pedal {
+                pedal_root(bar.bar, root)
+            } else {
+                root
+            },
+            CENTER,
+        ))
+    };
+    let earned = perf.functions == super::policy::FunctionPolicy::Earned;
+
     for eb in &perf.ensemble {
         let bar = eb.bar;
         let bs = AccentGrid::beat_of(bar, 0);
@@ -372,6 +415,13 @@ fn realize(
             let next_ctx = perf.context_at(be).filter(|c| c.start_beat >= be - 1e-6);
             let last_in_bar = k + 1 == onsets.len();
             let root = near(ctx.chord.root_pc, CENTER);
+            // Where an approach lands: archived, the next chord's root (sounded or not); earned,
+            // the pitch this line sounds on that downbeat, and no approach where it sounds none.
+            let destination = if earned {
+                next_ctx.and_then(|_| own_downbeat(be))
+            } else {
+                next_ctx.map(|c| near(c.chord.root_pc, if temporal { CENTER } else { root }))
+            };
             let (pitch, f, tag) = match eb.bass {
                 BassMode::Pedal => {
                     // Hold the slot's first root under the changing harmony.
@@ -398,12 +448,9 @@ fn realize(
                     };
                     (p, f, "pedal")
                 }
-                BassMode::Walk if last_in_bar && next_ctx.is_some() => {
+                BassMode::Walk if last_in_bar && destination.is_some() => {
                     // Step into the next root by a semitone: a bounded chromatic approach.
-                    let nr = near(
-                        next_ctx.unwrap().chord.root_pc,
-                        if temporal { CENTER } else { root },
-                    );
+                    let nr = destination.unwrap();
                     let dir = if nr >= root { 1 } else { -1 };
                     (nr - dir, PitchFunction::ChromaticApproach, "approach")
                 }
@@ -437,11 +484,8 @@ fn realize(
                         (near(pc, CENTER + 7), PitchFunction::ChordTone, "counter")
                     }
                 }
-                _ if k > 0 && last_in_bar && s >= 14 && next_ctx.is_some() => {
-                    let nr = near(
-                        next_ctx.unwrap().chord.root_pc,
-                        if temporal { CENTER } else { root },
-                    );
+                _ if k > 0 && last_in_bar && s >= 14 && destination.is_some() => {
+                    let nr = destination.unwrap();
                     let dir = if nr >= root { 1 } else { -1 };
                     (nr - dir, PitchFunction::ChromaticApproach, "approach")
                 }
@@ -597,7 +641,7 @@ fn realize(
     }
     out.extend(restruck);
     out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
-    super::comp::release_at_harmony_change(&mut out, &perf.chords);
+    super::comp::release_support(&mut out, perf);
     // The authored line lives inside the piece. Every emission path (onsets, figures, answers,
     // unisons, restrikes) is bounded here, at the source, so a reservation read from this line
     // and the final clipped note agree on one domain. A piece that fits its bars is untouched.

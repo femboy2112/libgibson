@@ -362,6 +362,7 @@ pub(crate) fn plan_and_realize(
         vetoed: Vec::new(),
         recast: Vec::new(),
         harmony: profile.harmony,
+        functions: profile.functions,
     };
     let mut judged: Vec<RehearsedVerb> = Vec::new();
     for pass in 0..=REHEARSAL_FUEL {

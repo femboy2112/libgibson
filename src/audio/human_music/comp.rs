@@ -96,6 +96,30 @@ pub fn release_with_overhang(
     released
 }
 
+/// The support release the plan's [`super::policy::FunctionPolicy`] declares, for the bass and
+/// the keys (neither declares a suspension). Archived: [`release_at_harmony_change`], a tail may
+/// ring half a beat into a harmony it does not belong to. Earned: a note lifts off at the first
+/// harmony change it does not belong to, however short its tail.
+pub fn release_support(notes: &mut [Note], perf: &PerformancePlan) {
+    match perf.functions {
+        super::policy::FunctionPolicy::Archived => {
+            release_at_harmony_change(notes, &perf.chords);
+        }
+        super::policy::FunctionPolicy::Earned => {
+            for n in notes.iter_mut() {
+                let end = n.start_beat + n.dur_beats as f64;
+                if let Some(foreign) = perf.chords.iter().find(|c| {
+                    c.start_beat > n.start_beat + 1e-6
+                        && c.start_beat < end - 1e-9
+                        && !c.chord.contains_pc(pitch_class(n.pitch))
+                }) {
+                    n.dur_beats = (foreign.start_beat - n.start_beat) as f32 * 0.97;
+                }
+            }
+        }
+    }
+}
+
 /// The keys' base velocity in `world`.
 pub fn keys_velocity(world: &MusicWorld) -> f32 {
     (0.35 * world.base_dynamic).clamp(0.05, 1.0)
@@ -329,10 +353,11 @@ fn gate_role_mass(
 /// The keys' final pass: onset order (stable), then lift off at harmony changes. A hold is a
 /// voicing chosen FOR its harmony: a held voice that is not a member of the next harmony lifts
 /// off AT the change (the coupled keys' rule), while its member voices sustain the hold. Other
-/// notes keep the tolerated half-beat tail.
+/// notes keep the plan's support release ([`release_support`]: a half-beat tail archived, none
+/// when earned).
 pub fn finish_keys(mut out: Vec<Note>, perf: &PerformancePlan) -> Vec<Note> {
     out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
-    release_at_harmony_change(&mut out, &perf.chords);
+    release_support(&mut out, perf);
     for n in out.iter_mut().filter(|n| n.prov.role_note == "hold") {
         release_with_overhang(std::slice::from_mut(n), &perf.chords, 0.0);
     }
