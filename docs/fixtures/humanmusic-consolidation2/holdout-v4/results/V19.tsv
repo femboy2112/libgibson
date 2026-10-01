@@ -1,0 +1,21 @@
+case	phase	law	status	detail
+V19	source	generation	PASS	performed; its laws are judged separately
+V19	source	declared-grammar	PASS	grammar=LoopEvolution
+V19	source	declared-composer	PASS	declared=StructuralR9; recorded=StructuralR9
+V19	source	canonical-inventory	PASS	song=6e4c9ebe87ecb786; plan=add1a3f872a85278; score=a1038ed3c58d6931; notes=11; drums=12; length=4; tempo=88
+V19	source	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+V19	source	guard:percussion-law	PASS	PercussionReport restraint=balanced required=12 ornaments admitted 0/0 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/0\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 0/0\n  unison-inner: 0/0\n  bar   0 Silent required=12 ornaments 0/0 — the band is already speaking (lead 5, band 7, prev 0)\nbars over allowance=[]
+V19	source	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [], open_debts: [] }
+V19	source	evidence:established	PASS	established=[Groove, HarmonicLoop, Form, Orchestration]
+V19	extraction	evidence:natural-overlap	PASS	(role, identity events, non-identity events at an identity onset)=[(Lead, 5, 0)]
+V19	extraction	identity-under-overlap	PASS	added non-identity events [(Lead, 0.0)]; re-extraction identical
+V19	extraction	projection	PASS	map=89d7c108142f6327; spec=[Motif]; knowledge=[(Motif, Invariant), (Riff, Free), (Groove, Free), (HarmonicContour, Free), (HarmonicLoop, Free), (Form, Free), (Orchestration, Free), (BassFigure, Free)]; expect=lawful
+V19	extraction	guard:map-validation	PASS	Ok(())
+V19	cover	candidate-lift	PASS	lifted; expect=lawful
+V19	cover	canonical-inventory	PASS	song=596c7d91fa416887; plan=ed03ae72d6c7b567; score=5b6c2f20930e0141; notes=15; drums=12; length=4; tempo=88
+V19	cover	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+V19	cover	guard:percussion-law	PASS	PercussionReport restraint=balanced required=12 ornaments admitted 0/0 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/0\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 0/0\n  unison-inner: 0/0\n  bar   0 Silent required=12 ornaments 0/0 — the band is already speaking (lead 5, band 7, prev 0)\nbars over allowance=[]
+V19	cover	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [], open_debts: [] }
+V19	cover	metric-length	PASS	canonical metric extent
+V19	cover	motif	PASS	relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free; the realized pin holds the exact relation
+V19	cover	guard:anti-replay-vs-source	PASS	CoverFreedom { support_voicing: true, dynamics: true, percussion_detail: true, interactions: false }; machine variation only, no listening claim
