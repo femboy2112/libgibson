@@ -160,7 +160,7 @@ fn run_ffmpeg(spec: &BakeSpec, out: &Path) -> Result<(), String> {
         let _ = std::fs::remove_file(&tmp);
         msg
     };
-    let status = status.map_err(&scrub)?;
+    let status = status.map_err(scrub)?;
     if !status.success() {
         return Err(scrub(format!("ffmpeg exited with {status}")));
     }

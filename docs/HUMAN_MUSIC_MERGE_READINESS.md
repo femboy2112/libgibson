@@ -192,6 +192,7 @@ each, ~284 KB each) and `listening-closeout/` (README, CHANGES, WAV SHA256SUMS; 
 | R17 PCM freeze | **48/48 WAV + 757/757 receipts byte-identical** | local, after every library commit |
 | Cover listening corpus | **16/16 WAVs byte-identical** | local, after every library commit |
 | Known R17 sweep replay | 120 / 61 / 59 (14/38/5/2); all first reasons and passing labels identical | local, `184ad4b` (library source `abc3f9f`); also at `334a70b` |
+| Hosted toolchain drift (Disclosed) | The GitHub runners moved `stable` to **Rust 1.99.0** on 2026-10-01; clippy 1.99's `needless_borrows_for_generic_args` fired on pre-existing, non-audio code (`examples/temporal_video_compositor/bake.rs:163`, `map_err(&scrub)`), turning every hosted CI and Release Preflight run from `239da10` to `39d838d` red (the `a8a527f` CI red is the PTY flake on 1.98.1). Fixed by passing the `Copy` closure by value; strict clippy and fmt are clean locally on **both** 1.99.0 and 1.98.1, rustdoc `-D warnings` clean on 1.99.0. | local |
 | Release preflight (13 steps) | see the PR / final report (run at the final commit) | local |
 | GitHub CI / Release Preflight | see the PR (must be green at the exact final commit) | hosted |
 | Holdout v6 | 28/28 at first contact | `04c5c26` |
