@@ -404,6 +404,37 @@ pub fn keeps_identity(
     a: f64,
     b: f64,
 ) -> bool {
+    every_instant(before, after, a, b, |was, is| is >= was)
+}
+
+/// Under earned functions ([`super::policy::FunctionPolicy::Earned`]): whether a support edit
+/// keeps the chart's identity as the hold law itself judges it, over `[a, b)` beats. No instant
+/// gets worse, except that where the chart's chord was only implied a SUB-HOLD rival may now pass
+/// ([`IdentityStatus::Implied`] → [`IdentityStatus::Passing`]): the momentary overlap the hold law
+/// permits, e.g. an added root's release tail decaying into the next chord. A held rival, a root
+/// lost anywhere, or one more held flip still vetoes the edit. ([`keeps_identity`]'s stricter
+/// pointwise rule stays the archived paths' law.)
+pub fn keeps_held_identity(
+    before: &IdentityDiagnostics,
+    after: &IdentityDiagnostics,
+    a: f64,
+    b: f64,
+) -> bool {
+    after.flips().count() <= before.flips().count()
+        && every_instant(before, after, a, b, |was, is| {
+            is >= was || (was == IdentityStatus::Implied && is == IdentityStatus::Passing)
+        })
+}
+
+/// Whether `ok(before, after)` holds at every instant of `[a, b)` (at the midpoint of every span
+/// between consecutive slice boundaries of either audit).
+fn every_instant(
+    before: &IdentityDiagnostics,
+    after: &IdentityDiagnostics,
+    a: f64,
+    b: f64,
+    ok: impl Fn(IdentityStatus, IdentityStatus) -> bool,
+) -> bool {
     let mut cuts: Vec<f64> = before
         .slices
         .iter()
@@ -417,7 +448,7 @@ pub fn keeps_identity(
     cuts.dedup_by(|x, y| (*x - *y).abs() < EPS);
     cuts.windows(2).all(|w| {
         let mid = 0.5 * (w[0] + w[1]);
-        after.status_at(mid) >= before.status_at(mid)
+        ok(before.status_at(mid), after.status_at(mid))
     })
 }
 

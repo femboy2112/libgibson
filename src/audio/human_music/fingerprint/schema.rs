@@ -1674,7 +1674,7 @@ structure!(score::Score, "score/events/v2";
     total_beats => "total_beats", melody_repairs => "melody_repairs",
     melody_rejudged => "melody_rejudged",
     ; ignore observed_lifetime, mono_voice, voice_continuity, vertical_decisions, support_report,
-      vertical_repairs, tension_edits, pad_voicing_edits, hearings,
+      vertical_repairs, tension_edits, pad_voicing_edits, keys_voicing_edits, hearings,
       expression_decisions, occupancy, phrase_plans, support_voicing_decisions, percussion,
       stroke_origins
 );

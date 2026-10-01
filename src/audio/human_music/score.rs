@@ -399,6 +399,10 @@ pub struct Score {
     /// minor 2nd/9th by octaves; sounding the chart's root where the heard band flipped it).
     /// Empty under every arm but `perform_coherent`.
     pub pad_voicing_edits: Vec<super::comp::PadVoicingEdit>,
+    /// Under earned functions: every root the keys sounded to answer for the chart's chord where
+    /// the band, with the pad's own answer, would still hold another chord (the support identity
+    /// responsibility law). Empty on every archived path (and then not printed).
+    pub keys_voicing_edits: Vec<super::comp::PadVoicingEdit>,
     /// Round XIV: what each dependent player consumed of another's realization, captured when
     /// it was consumed (see [`Score::stale_hearings`]).
     pub hearings: Vec<Hearing>,
@@ -469,6 +473,9 @@ impl std::fmt::Debug for Score {
         d.field("vertical_repairs", &self.vertical_repairs);
         d.field("tension_edits", &self.tension_edits);
         d.field("pad_voicing_edits", &self.pad_voicing_edits);
+        if !self.keys_voicing_edits.is_empty() {
+            d.field("keys_voicing_edits", &self.keys_voicing_edits);
+        }
         d.field("hearings", &self.hearings);
         d.field("expression_decisions", &self.expression_decisions);
         d.field("occupancy", &self.occupancy);
@@ -562,6 +569,7 @@ impl Score {
             vertical_repairs: Vec::new(),
             tension_edits: Vec::new(),
             pad_voicing_edits: Vec::new(),
+            keys_voicing_edits: Vec::new(),
             hearings: Vec::new(),
             expression_decisions: Vec::new(),
             occupancy: Vec::new(),

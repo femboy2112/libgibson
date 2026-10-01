@@ -60,7 +60,7 @@ fn held_rivals(score: &Score) -> Vec<(f64, i32, bool, f64)> {
         cuts.sort_by(f64::total_cmp);
         cuts.dedup_by(|x, y| (*x - *y).abs() < EPS);
         let mut run: Option<(i32, bool, f64)> = None;
-        let mut close = |run: &mut Option<(i32, bool, f64)>, out: &mut Vec<_>| {
+        let close = |run: &mut Option<(i32, bool, f64)>, out: &mut Vec<_>| {
             if let Some((r, minor, beats)) = run.take() {
                 let secs = beats * 60.0 / f64::from(score.tempo_bpm);
                 if secs >= HOLD_SECS - EPS {
@@ -197,4 +197,90 @@ fn band_admits_the_support_identity_falsifiers() {
         })
         .collect();
     assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// The second-wave falsifier the fresh full grid found after the pad's law alone: Dm7 at 48, the
+/// pad silent (a Thin bar), the keys holding C-F-G and the pad's E5 tail from the bar before
+/// completing C major. The keys answer: G gives way to the root.
+fn keys_answer() -> gibson::audio::human_music::functor::Composition {
+    let song = SongMap::compose(
+        &deflected_lift_trace(64.0),
+        96_860_001,
+        Some(CompositionGrammar::DeflectedLift),
+        Composer::StructuralR9,
+    );
+    perform_checked(
+        &song,
+        &MusicWorld::vapor95(),
+        fusion(),
+        PerformanceProfile::BAND,
+    )
+    .expect("admitted")
+}
+
+/// Control: rootless voicings are not banned. The keys answer for the one harmony the band would
+/// hear as another chord and leave every other rootless voicing as it was.
+#[test]
+fn a_rootless_voicing_nobody_hears_as_another_chord_stays_rootless() {
+    let c = keys_answer();
+    let edits = &c.score.keys_voicing_edits;
+    assert_eq!(edits.len(), 1, "{edits:?}");
+    assert!((edits[0].start_beat - 48.0).abs() < EPS);
+    assert_eq!(
+        edits[0].before.len(),
+        edits[0].after.len(),
+        "one voice replaced, none added: {edits:?}"
+    );
+    let rootless_elsewhere = c
+        .score
+        .chords
+        .iter()
+        .filter(|s| (s.start_beat - 48.0).abs() > EPS)
+        .filter(|s| {
+            let (a, b) = (s.start_beat, s.start_beat + f64::from(s.dur_beats));
+            let keys: Vec<i32> = c
+                .score
+                .role_notes(Role::Keys)
+                .filter(|n| n.start_beat >= a - EPS && n.start_beat < b - EPS)
+                .map(|n| n.pitch.rem_euclid(12))
+                .collect();
+            !keys.is_empty() && !keys.contains(&s.chord.root_pc.rem_euclid(12))
+        })
+        .count();
+    assert!(
+        rootless_elsewhere >= 3,
+        "rootless keys voicings elsewhere stay rootless (found {rootless_elsewhere})"
+    );
+}
+
+/// Control: a forged rival is still detected — put the keys' G back in place of the root they
+/// sounded, and both the oracle and the receipt hear C major again.
+#[test]
+fn a_forged_rival_identity_is_still_detected() {
+    use gibson::audio::human_music::receipt::PerformanceReceipt;
+    let mut c = keys_answer();
+    let edit = c.score.keys_voicing_edits[0].clone();
+    let (root, replaced) = match edit.reason {
+        gibson::audio::human_music::comp::PadVoicingReason::Rooting { root, replaced, .. } => {
+            (root, replaced.expect("a voice was replaced"))
+        }
+        other => panic!("unexpected edit {other:?}"),
+    };
+    let mut forged = 0;
+    for n in c.score.notes.iter_mut().filter(|n| {
+        n.role == Role::Keys && n.pitch == root && (n.start_beat - edit.start_beat).abs() < EPS
+    }) {
+        n.pitch = replaced;
+        forged += 1;
+    }
+    assert!(forged > 0, "the keys' root sounds at the edit");
+    // This rival is completed by the pad's E5 release TAIL from the bar before, which the
+    // written-duration oracle never hears by construction; the receipt hears tails.
+    let receipt =
+        PerformanceReceipt::measure_under(&c, &MusicWorld::vapor95(), PerformanceProfile::BAND);
+    assert!(
+        receipt.held_identity_flips > 0,
+        "the receipt still rejects a forged rival: {:?}",
+        receipt.failures()
+    );
 }

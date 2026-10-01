@@ -564,83 +564,194 @@ fn realize_policy(
             if profile.support != SupportPolicy::Independent {
                 // Round XIV keeps temporal bass; Round XV also hears final keys when expressing
                 // its connectives. The frozen coherent pad comes last and hears the band.
-                let bass = if phrase_expression {
-                    score.hearings.push(Hearing::of("bass", Role::Keys, &keys));
-                    let result = if let Some(factors) = pocket {
-                        super::bass::realize_bass_pocketed(
-                            perf,
-                            plan,
-                            world,
-                            &lead.notes,
-                            &keys,
-                            &lead.phrase_plans,
-                            agency,
-                            factors,
-                        )
-                    } else {
-                        super::bass::realize_bass_phrased(
-                            perf,
-                            plan,
-                            world,
-                            &lead.notes,
-                            &keys,
-                            &lead.phrase_plans,
-                            agency,
-                        )
-                    };
-                    let bass_intent = if pulse.is_some_and(|p| p.changes_source()) {
-                        // The final lead's unison can shorten/lengthen its predecessor at the
-                        // bass source. Recover the whole authored reservation stream, not only
-                        // the explicitly retimed event. This is intent, never an acoustic hearing.
-                        let source = super::bass::realize_bass_temporal_owned(
-                            perf,
-                            plan,
-                            world,
-                            &lead.authored,
-                            agency,
-                        );
-                        super::occupancy::AuthoredOccupancy::from_bass(perf, &source, &[])
-                    } else {
-                        super::occupancy::AuthoredOccupancy::from_bass(
-                            perf,
-                            &result.authored,
-                            &score.expression_decisions,
-                        )
-                    };
-                    score.occupancy.push(bass_intent);
-                    score.phrase_plans.extend(result.plans);
-                    score.expression_decisions.extend(result.decisions);
-                    result.notes
-                } else if profile.expression == ExpressionPolicy::LocalConnectives {
-                    score.hearings.push(Hearing::of("bass", Role::Keys, &keys));
-                    if phrase_evidence {
-                        let source = super::bass::realize_bass_temporal_owned(
-                            perf,
-                            plan,
-                            world,
-                            &lead.notes,
-                            agency,
-                        );
-                        score
-                            .occupancy
-                            .push(super::occupancy::AuthoredOccupancy::from_bass(
+                let mut keys = keys;
+                let mark = (
+                    score.hearings.len(),
+                    score.occupancy.len(),
+                    score.phrase_plans.len(),
+                    score.expression_decisions.len(),
+                );
+                let mut answered = perf.functions != super::policy::FunctionPolicy::Earned
+                    || !(semantic_occupancy || temporal)
+                    || profile.support != SupportPolicy::SourceVoicePath;
+                let bass = loop {
+                    let bass = if phrase_expression {
+                        score.hearings.push(Hearing::of("bass", Role::Keys, &keys));
+                        let result = if let Some(factors) = pocket {
+                            super::bass::realize_bass_pocketed(
                                 perf,
-                                &source,
+                                plan,
+                                world,
+                                &lead.notes,
+                                &keys,
+                                &lead.phrase_plans,
+                                agency,
+                                factors,
+                            )
+                        } else {
+                            super::bass::realize_bass_phrased(
+                                perf,
+                                plan,
+                                world,
+                                &lead.notes,
+                                &keys,
+                                &lead.phrase_plans,
+                                agency,
+                            )
+                        };
+                        let bass_intent = if pulse.is_some_and(|p| p.changes_source()) {
+                            // The final lead's unison can shorten/lengthen its predecessor at the
+                            // bass source. Recover the whole authored reservation stream, not only
+                            // the explicitly retimed event. This is intent, never an acoustic hearing.
+                            let source = super::bass::realize_bass_temporal_owned(
+                                perf,
+                                plan,
+                                world,
+                                &lead.authored,
+                                agency,
+                            );
+                            super::occupancy::AuthoredOccupancy::from_bass(perf, &source, &[])
+                        } else {
+                            super::occupancy::AuthoredOccupancy::from_bass(
+                                perf,
+                                &result.authored,
                                 &score.expression_decisions,
-                            ));
+                            )
+                        };
+                        score.occupancy.push(bass_intent);
+                        score.phrase_plans.extend(result.plans);
+                        score.expression_decisions.extend(result.decisions);
+                        result.notes
+                    } else if profile.expression == ExpressionPolicy::LocalConnectives {
+                        score.hearings.push(Hearing::of("bass", Role::Keys, &keys));
+                        if phrase_evidence {
+                            let source = super::bass::realize_bass_temporal_owned(
+                                perf,
+                                plan,
+                                world,
+                                &lead.notes,
+                                agency,
+                            );
+                            score
+                                .occupancy
+                                .push(super::occupancy::AuthoredOccupancy::from_bass(
+                                    perf,
+                                    &source,
+                                    &score.expression_decisions,
+                                ));
+                        }
+                        let (notes, decisions) = super::bass::realize_bass_expressive_owned(
+                            perf,
+                            plan,
+                            world,
+                            &lead.notes,
+                            &keys,
+                            agency,
+                        );
+                        score.expression_decisions.extend(decisions);
+                        notes
+                    } else {
+                        super::bass::realize_bass_temporal(perf, plan, world, &lead.notes, &keys)
+                    };
+                    if answered {
+                        break bass;
                     }
-                    let (notes, decisions) = super::bass::realize_bass_expressive_owned(
-                        perf,
-                        plan,
-                        world,
-                        &lead.notes,
-                        &keys,
-                        agency,
-                    );
-                    score.expression_decisions.extend(decisions);
-                    notes
-                } else {
-                    super::bass::realize_bass_temporal(perf, plan, world, &lead.notes, &keys)
+                    answered = true;
+                    // Earned: harmonic identity is the responsibility of the support that sounds the
+                    // harmony. Where the pad voices none, the keys answer for it, at the source; when
+                    // they change, the bass hears the keys as they now are (its first take is undone).
+                    let (kp, edits) = {
+                        let kp = super::voicing::keys_path(
+                            perf,
+                            world.voicing_spread,
+                            &lead.notes,
+                            super::comp::keys_shell_n(perf),
+                        );
+                        let render = |kp: &super::voicing::RolePath| {
+                            if semantic_occupancy {
+                                super::comp::realize_keys_owned_on(
+                                    perf,
+                                    world,
+                                    &lead.notes,
+                                    &lead_occupancy,
+                                    seed,
+                                    kp,
+                                )
+                            } else {
+                                super::comp::realize_keys_temporal_on(
+                                    perf,
+                                    world,
+                                    &lead.notes,
+                                    seed,
+                                    kp,
+                                )
+                            }
+                        };
+                        let hear = |keys: &[Note]| {
+                            let band: Vec<Note> = lead
+                                .notes
+                                .iter()
+                                .chain(keys)
+                                .chain(&bass)
+                                .copied()
+                                .collect();
+                            let mut inside: Vec<Note> = band
+                                .iter()
+                                .copied()
+                                .filter_map(|mut n| clip_note(&mut n, total_beats).then_some(n))
+                                .collect();
+                            let canonical = score.observed_lifetime_policy()
+                                == super::voice::ObservedLifetimePolicy::ExplicitContinuity;
+                            let links = if score.mono_voice {
+                                super::pocket::continuations(&band, &score.phrase_plans)
+                            } else {
+                                score.voice_continuity.clone()
+                            };
+                            // The pad as it will answer this band: its tails sound into the
+                            // harmonies it leaves to the keys.
+                            let pad = if canonical {
+                                super::comp::realize_pad_pocketed(perf, world, &inside, &links).0
+                            } else {
+                                super::comp::realize_pad_phrased(perf, plan, world, &inside).0
+                            };
+                            inside.extend(
+                                pad.into_iter().filter_map(|mut n| {
+                                    clip_note(&mut n, total_beats).then_some(n)
+                                }),
+                            );
+                            if canonical {
+                                let heard = super::voice::HeardWindows::explicit(
+                                    &inside,
+                                    world,
+                                    world.tempo_bpm,
+                                    &links,
+                                );
+                                super::identity::IdentityDiagnostics::measure_heard_windows(
+                                    &heard,
+                                    &perf.contexts,
+                                )
+                            } else {
+                                super::identity::IdentityDiagnostics::measure(
+                                    &inside,
+                                    &perf.contexts,
+                                    world,
+                                    world.tempo_bpm,
+                                )
+                            }
+                        };
+                        let (kp, edits) =
+                            super::comp::keys_answer_for_identity(perf, world, &kp, &render, &hear);
+                        ((!edits.is_empty()).then(|| render(&kp)), edits)
+                    };
+                    let Some(answering) = kp else {
+                        break bass;
+                    };
+                    keys = answering;
+                    score.keys_voicing_edits = edits;
+                    score.hearings.truncate(mark.0);
+                    score.occupancy.truncate(mark.1);
+                    score.phrase_plans.truncate(mark.2);
+                    score.expression_decisions.truncate(mark.3);
                 };
                 let band: Vec<Note> = lead
                     .notes

@@ -158,7 +158,18 @@ pub fn realize_keys_temporal(
     seed: u64,
 ) -> Vec<Note> {
     let kp = keys_path(perf, world.voicing_spread, lead, keys_shell_n(perf));
-    let mut out = keys_comp_impl(perf, world, lead, seed, &kp, true, None);
+    realize_keys_temporal_on(perf, world, lead, seed, &kp)
+}
+
+/// [`realize_keys_temporal`] on the voice path `kp`.
+pub(crate) fn realize_keys_temporal_on(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    lead: &[Note],
+    seed: u64,
+    kp: &super::voicing::RolePath,
+) -> Vec<Note> {
+    let mut out = keys_comp_impl(perf, world, lead, seed, kp, true, None);
     out.extend(keys_lines_impl(perf, lead, keys_velocity(world), true));
     finish_keys(out, perf)
 }
@@ -175,7 +186,19 @@ pub fn realize_keys_owned(
     seed: u64,
 ) -> Vec<Note> {
     let kp = keys_path(perf, world.voicing_spread, lead, keys_shell_n(perf));
-    let mut out = keys_comp_impl(perf, world, lead, seed, &kp, true, Some(ownership));
+    realize_keys_owned_on(perf, world, lead, ownership, seed, &kp)
+}
+
+/// [`realize_keys_owned`] on the voice path `kp`.
+pub(crate) fn realize_keys_owned_on(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    lead: &[Note],
+    ownership: &super::occupancy::AuthoredOccupancy,
+    seed: u64,
+    kp: &super::voicing::RolePath,
+) -> Vec<Note> {
+    let mut out = keys_comp_impl(perf, world, lead, seed, kp, true, Some(ownership));
     out.extend(keys_lines_impl(perf, lead, keys_velocity(world), true));
     finish_keys(out, perf)
 }
@@ -1302,7 +1325,12 @@ fn cluster(v: &[Midi]) -> Option<(Midi, Midi)> {
 /// Whether `q` could join `others` in the pad: in its register, not already there, and no minor
 /// 2nd or minor 9th against any of them.
 fn fits(q: Midi, others: &[Midi]) -> bool {
-    (PAD_SPAN.0..=PAD_SPAN.1).contains(&q)
+    fits_in(q, others, PAD_SPAN)
+}
+
+/// [`fits`] in the register `span` of the player voicing it.
+fn fits_in(q: Midi, others: &[Midi], span: (Midi, Midi)) -> bool {
+    (span.0..=span.1).contains(&q)
         && !others.contains(&q)
         && others
             .iter()
@@ -1369,6 +1397,17 @@ fn space_voicing(ctx: &HarmonicContext, ci: usize, v: &mut [Midi]) -> Vec<PadVoi
 /// where it clashes with no remaining member. Written chord tones other than the 5th, and
 /// written extensions, are never given up, and an upper-structure voicing keeps its upper layer.
 fn rooting_candidates(ctx: &HarmonicContext, v: &[Midi]) -> Vec<(Option<Midi>, Midi, Vec<Midi>)> {
+    rooting_candidates_in(ctx, v, PAD_SPAN, true)
+}
+
+/// [`rooting_candidates`] for the support player whose register is `span`; `upper`: whether the
+/// player's voicings carry an upper-structure layer that must survive (the pad's).
+fn rooting_candidates_in(
+    ctx: &HarmonicContext,
+    v: &[Midi],
+    span: (Midi, Midi),
+    upper: bool,
+) -> Vec<(Option<Midi>, Midi, Vec<Midi>)> {
     let root = ctx.chord.root_pc.rem_euclid(12);
     let fifth = (root + 7) % 12;
     let mut give: Vec<Midi> = v
@@ -1387,15 +1426,15 @@ fn rooting_candidates(ctx: &HarmonicContext, v: &[Midi]) -> Vec<(Option<Midi>, M
         .filter_map(|out| {
             let rest: Vec<Midi> = v.iter().copied().filter(|&p| Some(p) != out).collect();
             let near = out.unwrap_or(middle);
-            (PAD_SPAN.0..=PAD_SPAN.1)
-                .filter(|&q| pitch_class(q) == root && fits(q, &rest))
+            (span.0..=span.1)
+                .filter(|&q| pitch_class(q) == root && fits_in(q, &rest, span))
                 .map(|q| {
                     let mut after = rest.clone();
                     after.push(q);
                     after.sort_unstable();
                     (out, q, after)
                 })
-                .filter(|(_, _, after)| keeps_upper_layer(v, after))
+                .filter(|(_, _, after)| !upper || keeps_upper_layer(v, after))
                 .min_by_key(|&(_, q, _)| ((q - near).abs(), q))
         })
         .collect()
@@ -1488,7 +1527,7 @@ fn heard_pad_path_impl(
     band: &[Note],
     continuity: Option<&[super::voice::VoiceContinuation]>,
 ) -> (super::voicing::RolePath, Vec<Note>, Vec<PadVoicingEdit>) {
-    use super::identity::{keeps_identity, IdentityDiagnostics};
+    use super::identity::{keeps_held_identity, keeps_identity, IdentityDiagnostics};
     let mut pp = pad_path(perf, world.voicing_spread);
     let mut edits = Vec::new();
     for t in 0..pp.path.voicings.len() {
@@ -1508,14 +1547,6 @@ fn heard_pad_path_impl(
             IdentityDiagnostics::measure(&all, &perf.contexts, world, world.tempo_bpm)
         };
         (pad, id)
-    };
-    let flipped_over = |id: &IdentityDiagnostics, ci: usize| -> f64 {
-        id.flips()
-            .flat_map(|r| r.slices.iter())
-            .map(|&k| &id.slices[k])
-            .filter(|s| s.context == ci)
-            .map(|s| s.end_beat - s.start_beat)
-            .sum()
     };
     let (mut pad, mut id) = heard(&pp);
     let mut flipped: Vec<(usize, super::theory::Chord)> = id
@@ -1552,6 +1583,12 @@ fn heard_pad_path_impl(
             .find(|&p| pitch_class(p) == perf.contexts[ci].chord.root_pc.rem_euclid(12))
             .filter(|_| carry)
             .map(|q| (None, q, voices.clone()));
+        // Earned: the edit is judged by the hold law the receipt judges (a sub-hold overlap where
+        // the chord was only implied is lawful), and the first candidate (in preference order)
+        // that REMOVES the flip wins over one that only shortens it — a root placed in a voice
+        // that enters late can leave a held rival before it. Archived: the first candidate that
+        // shortens the flip under the strict pointwise rule.
+        let mut chosen = None;
         for (replaced, root, after) in own_root
             .into_iter()
             .chain(rooting_candidates(&perf.contexts[ci], &voices))
@@ -1562,24 +1599,131 @@ fn heard_pad_path_impl(
                 trial.rooted.push(ci);
             }
             let (p2, id2) = heard(&trial);
-            if flipped_over(&id2, ci) < before - 1e-9 && keeps_identity(&id, &id2, 0.0, end) {
-                edits.push(PadVoicingEdit {
-                    context: ci,
-                    start_beat: perf.contexts[ci].start_beat,
-                    before: voices,
-                    after,
-                    reason: PadVoicingReason::Rooting {
-                        rival,
-                        replaced,
-                        root,
-                    },
-                });
-                (pp, pad, id) = (trial, p2, id2);
-                break;
+            let keeps = if earned {
+                keeps_held_identity(&id, &id2, 0.0, end)
+            } else {
+                keeps_identity(&id, &id2, 0.0, end)
+            };
+            let left = flipped_over(&id2, ci);
+            if left < before - 1e-9 && keeps {
+                let removes = left <= 1e-9;
+                if chosen.is_none() || removes {
+                    chosen = Some((replaced, root, after, trial, p2, id2));
+                }
+                if !earned || removes {
+                    break;
+                }
             }
+        }
+        if let Some((replaced, root, after, trial, p2, id2)) = chosen {
+            edits.push(PadVoicingEdit {
+                context: ci,
+                start_beat: perf.contexts[ci].start_beat,
+                before: voices,
+                after,
+                reason: PadVoicingReason::Rooting {
+                    rival,
+                    replaced,
+                    root,
+                },
+            });
+            (pp, pad, id) = (trial, p2, id2);
         }
     }
     (pp, pad, edits)
+}
+
+/// Beats of held (flipped) identity the band leaves over harmony `ci`.
+fn flipped_over(id: &super::identity::IdentityDiagnostics, ci: usize) -> f64 {
+    id.flips()
+        .flat_map(|r| r.slices.iter())
+        .map(|&k| &id.slices[k])
+        .filter(|s| s.context == ci)
+        .map(|s| s.end_beat - s.start_beat)
+        .sum()
+}
+
+/// Under earned functions ([`super::policy::FunctionPolicy::Earned`]) harmonic identity is the
+/// responsibility of the support that sounds the harmony. The pad answers first, for every harmony
+/// it voices (its rooting law, [`realize_pad_pocketed`]). Whatever the band still holds as another
+/// chord once the pad has answered — a harmony the pad leaves silent (a Thin bar) or cannot root
+/// in time (a swell whose root enters late) — the keys answer for under the same law: `hear`
+/// measures the band as it will sound (the lead, these keys, the bass, and the pad as it answers
+/// them, inside the piece); where it flips the chart's chord over a harmony the keys voice, the
+/// keys sound its root, in place of a colour, then of the 5th, else added ([`rooting_candidates`],
+/// in the keys' register). The first candidate that removes the flip is kept, else the first that
+/// shortens it — only when it keeps the identity as the hold law judges it
+/// ([`super::identity::keeps_held_identity`]). A rootless voicing nobody hears as another chord is
+/// never touched; nothing is decided after the keys are emitted (`render` realizes a trial path at
+/// the source). Returns the keys' path and the edits made.
+pub(crate) fn keys_answer_for_identity(
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    kp: &super::voicing::RolePath,
+    render: &dyn Fn(&super::voicing::RolePath) -> Vec<Note>,
+    hear: &dyn Fn(&[Note]) -> super::identity::IdentityDiagnostics,
+) -> (super::voicing::RolePath, Vec<PadVoicingEdit>) {
+    use super::identity::keeps_held_identity;
+    let range = super::voicing::VoiceRange::keys(keys_shell_n(perf), world.voicing_spread);
+    let end = perf
+        .chords
+        .last()
+        .map_or(0.0, |c| c.start_beat + f64::from(c.dur_beats))
+        + 64.0;
+    let mut kp = kp.clone();
+    let mut id = hear(&render(&kp));
+    let mut flipped: Vec<(usize, super::theory::Chord)> = id
+        .flips()
+        .flat_map(|r| r.slices.iter().map(move |&k| (k, r.rival)))
+        .map(|(k, rival)| (id.slices[k].context, rival))
+        .collect();
+    flipped.dedup_by_key(|x| x.0);
+    let mut edits = Vec::new();
+    for (ci, rival) in flipped {
+        let Ok(t) = kp.context_ix.binary_search(&ci) else {
+            continue; // the keys do not voice this harmony
+        };
+        let before = flipped_over(&id, ci);
+        if before <= 0.0 {
+            continue;
+        }
+        let voices = kp.path.voicings[t].voices.clone();
+        // The pad's preference: the first candidate that removes the flip, else the first that
+        // shortens it.
+        let mut chosen = None;
+        for (replaced, root, after) in
+            rooting_candidates_in(&perf.contexts[ci], &voices, (range.low, range.high), false)
+        {
+            let mut trial = kp.clone();
+            trial.path.voicings[t].voices = after.clone();
+            let id2 = hear(&render(&trial));
+            let left = flipped_over(&id2, ci);
+            if left < before - 1e-9 && keeps_held_identity(&id, &id2, 0.0, end) {
+                let removes = left <= 1e-9;
+                if chosen.is_none() || removes {
+                    chosen = Some((replaced, root, after, trial, id2));
+                }
+                if removes {
+                    break;
+                }
+            }
+        }
+        if let Some((replaced, root, after, trial, id2)) = chosen {
+            edits.push(PadVoicingEdit {
+                context: ci,
+                start_beat: perf.contexts[ci].start_beat,
+                before: voices,
+                after,
+                reason: PadVoicingReason::Rooting {
+                    rival,
+                    replaced,
+                    root,
+                },
+            });
+            (kp, id) = (trial, id2);
+        }
+    }
+    (kp, edits)
 }
 
 /// Whether a pad pitch's release tail over `[a, b)` would meet ANOTHER player a minor 2nd / 9th
@@ -2389,5 +2533,86 @@ mod r12_landing_witness {
         let ctx = &contexts[0];
         let p = 60 + ctx.palette.tensions[0];
         assert!(chord.contains_pc(pitch_class(super::nearest_chord_tone(ctx, p))));
+    }
+}
+
+#[cfg(test)]
+mod keys_identity_responsibility {
+    use crate::audio::human_music::{
+        composer::Composer,
+        contract::CompositionGrammar,
+        functor::perform_with_profile,
+        identity::IdentityDiagnostics,
+        language::MusicalLanguage,
+        performance::PerformanceOptions,
+        policy::PerformanceProfile,
+        score::{Note, Role},
+        semantic::deflected_lift_trace,
+        voicing::{keys_path, RolePath},
+        MusicWorld, SongMap,
+    };
+
+    /// The keys' decision on fresh seed 96_860_001 (Dm7 at 48, the pad silent, the keys holding
+    /// C-F-G over a bass that leaves the root after half a beat), A/B on the bass alone.
+    fn decide(bass_holds_root: bool) -> Vec<super::PadVoicingEdit> {
+        let song = SongMap::compose(
+            &deflected_lift_trace(64.0),
+            96_860_001,
+            Some(CompositionGrammar::DeflectedLift),
+            Composer::StructuralR9,
+        );
+        let world = MusicWorld::vapor95();
+        let opts = PerformanceOptions {
+            language: MusicalLanguage::fusion_conversation(),
+            ..PerformanceOptions::default()
+        };
+        let c = perform_with_profile(&song, &world, opts, PerformanceProfile::BAND)
+            .expect("lawful candidate");
+        let lead: Vec<Note> = c.score.role_notes(Role::Lead).copied().collect();
+        let pad: Vec<Note> = c.score.role_notes(Role::Pad).copied().collect();
+        let mut bass: Vec<Note> = c.score.role_notes(Role::Bass).copied().collect();
+        if bass_holds_root {
+            // The bass supplies the discriminating evidence: D2 held through the harmony.
+            let mut d = bass[0];
+            (d.start_beat, d.dur_beats, d.pitch) = (48.0, 3.9, 38);
+            bass.retain(|n| n.start_beat < 48.0 - 1e-6 || n.start_beat >= 52.0 - 1e-6);
+            bass.push(d);
+        }
+        let kp = keys_path(
+            &c.perf,
+            world.voicing_spread,
+            &lead,
+            super::keys_shell_n(&c.perf),
+        );
+        let render = |kp: &RolePath| super::realize_keys_temporal_on(&c.perf, &world, &lead, 0, kp);
+        let hear = |keys: &[Note]| {
+            let band: Vec<Note> = lead
+                .iter()
+                .chain(keys)
+                .chain(&bass)
+                .chain(&pad)
+                .copied()
+                .collect();
+            IdentityDiagnostics::measure(&band, &c.perf.contexts, &world, world.tempo_bpm)
+        };
+        super::keys_answer_for_identity(&c.perf, &world, &kp, &render, &hear).1
+    }
+
+    #[test]
+    fn the_keys_answer_where_the_band_would_hold_another_chord() {
+        let edits = decide(false);
+        assert!(
+            edits.iter().any(|e| (e.start_beat - 48.0).abs() < 1e-6),
+            "{edits:?}"
+        );
+    }
+
+    #[test]
+    fn a_bass_that_holds_the_root_leaves_the_keys_rootless() {
+        let edits = decide(true);
+        assert!(
+            edits.iter().all(|e| (e.start_beat - 48.0).abs() > 1e-6),
+            "the bass states the root, so nothing asks the keys to: {edits:?}"
+        );
     }
 }
