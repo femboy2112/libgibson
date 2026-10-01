@@ -1319,6 +1319,10 @@ pub struct RolePath {
     /// sounds there whatever the pad's mode, a common-tone carry included. Set only under
     /// [`super::policy::FunctionPolicy::Earned`]; empty on every archived path.
     pub(crate) rooted: Vec<usize>,
+    /// Harmonies (context indices) at whose start the pad lets its incoming release tails go: its
+    /// rooting law found that, with the band, those consonant tails complete another chord there.
+    /// Set only under [`super::policy::FunctionPolicy::Earned`]; empty on every archived path.
+    pub(crate) released: Vec<usize>,
 }
 
 impl RolePath {
@@ -1336,6 +1340,7 @@ impl RolePath {
             context_ix: ix,
             range,
             rooted: Vec::new(),
+            released: Vec::new(),
         }
     }
 
@@ -1346,6 +1351,7 @@ impl RolePath {
             context_ix: ix,
             range,
             rooted: Vec::new(),
+            released: Vec::new(),
         }
     }
 

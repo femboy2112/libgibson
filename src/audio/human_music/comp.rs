@@ -1289,6 +1289,10 @@ pub enum PadVoicingReason {
         replaced: Option<Midi>,
         root: Midi,
     },
+    /// Under earned functions: the band heard over this harmony was `rival`, completed by the
+    /// pad's own consonant release tails from the harmony before; the pad lets them go at this
+    /// harmony's start.
+    Release { rival: super::theory::Chord },
 }
 
 /// One Round XIV pad voicing change: harmony `context` (starting at `start_beat`), the voicing
@@ -1563,71 +1567,130 @@ fn heard_pad_path_impl(
     // Earned: the rooting law reaches a common-tone carry too (archived, the carry renders only
     // its held voices and new guide tones, so a root it was asked for never sounds there).
     let earned = perf.functions == super::policy::FunctionPolicy::Earned;
-    for (ci, rival) in flipped {
-        let Ok(t) = pp.context_ix.binary_search(&ci) else {
-            continue;
-        };
-        let before = flipped_over(&id, ci);
-        if before <= 0.0 {
-            continue;
+    // Earned: the pad answers until it has nothing left to answer (a root vetoed only because a
+    // neighbouring harmony was still flipped is judged again once that neighbour is answered);
+    // archived, one sweep.
+    let passes = if earned { PAD_ANSWER_PASSES } else { 1 };
+    for pass in 0..passes {
+        if pass > 0 {
+            flipped = id
+                .flips()
+                .flat_map(|r| r.slices.iter().map(move |&k| (k, r.rival)))
+                .map(|(k, rival)| (id.slices[k].context, rival))
+                .collect();
+            flipped.dedup_by_key(|x| x.0);
         }
-        let voices = pp.path.voicings[t].voices.clone();
-        let carry = earned
-            && perf
-                .bar_at(perf.contexts[ci].start_beat)
-                .is_some_and(|b| b.pad == PadMode::CommonToneCarry);
-        // A carry first sounds the root its own voicing already holds; then the usual edits.
-        let own_root = voices
-            .iter()
-            .copied()
-            .find(|&p| pitch_class(p) == perf.contexts[ci].chord.root_pc.rem_euclid(12))
-            .filter(|_| carry)
-            .map(|q| (None, q, voices.clone()));
-        // Earned: the edit is judged by the hold law the receipt judges (a sub-hold overlap where
-        // the chord was only implied is lawful), and a candidate that REMOVES the flip wins over
-        // one that only shortens it ([`choose_rooting`]). Archived: the first candidate that
-        // shortens the flip under the strict pointwise rule.
-        let chosen = choose_rooting(
-            own_root
-                .into_iter()
-                .chain(rooting_candidates(&perf.contexts[ci], &voices)),
-            ci,
-            before,
-            earned,
-            |after| {
+        let answered = edits.len();
+        for (ci, rival) in flipped.iter().copied() {
+            let before = flipped_over(&id, ci);
+            if before <= 0.0 {
+                continue;
+            }
+            let voiced = pp.context_ix.binary_search(&ci).ok();
+            if let Some(t) = voiced {
+                let voices = pp.path.voicings[t].voices.clone();
+                let carry = earned
+                    && perf
+                        .bar_at(perf.contexts[ci].start_beat)
+                        .is_some_and(|b| b.pad == PadMode::CommonToneCarry);
+                // A carry first sounds the root its own voicing already holds; then the usual edits.
+                let own_root = voices
+                    .iter()
+                    .copied()
+                    .find(|&p| pitch_class(p) == perf.contexts[ci].chord.root_pc.rem_euclid(12))
+                    .filter(|_| carry)
+                    .map(|q| (None, q, voices.clone()));
+                // Earned: the edit is judged by the hold law the receipt judges (a sub-hold
+                // overlap where the chord was only implied is lawful), and a candidate that
+                // REMOVES the flip wins over one that only shortens it ([`choose_rooting`]).
+                // Archived: the first candidate that shortens the flip under the strict
+                // pointwise rule.
+                let chosen = choose_rooting(
+                    own_root
+                        .into_iter()
+                        .chain(rooting_candidates(&perf.contexts[ci], &voices)),
+                    ci,
+                    before,
+                    earned,
+                    |after| {
+                        let mut trial = pp.clone();
+                        trial.path.voicings[t].voices = after.to_vec();
+                        if earned {
+                            trial.rooted.push(ci);
+                        }
+                        let (p2, id2) = heard(&trial);
+                        // Earned: the root answers for THIS harmony. Where its tail would complete
+                        // another chord in the next one, the next harmony lets the pad's tails go.
+                        let next = ci + 1;
+                        if earned
+                            && next < perf.contexts.len()
+                            && !trial.released.contains(&next)
+                            && flipped_over(&id2, next) > flipped_over(&id, next) + 1e-9
+                        {
+                            trial.released.push(next);
+                            let (p3, id3) = heard(&trial);
+                            return Some(((trial, p3), id3));
+                        }
+                        Some(((trial, p2), id2))
+                    },
+                    |id2| {
+                        if earned {
+                            keeps_held_identity(&id, id2, 0.0, end)
+                        } else {
+                            keeps_identity(&id, id2, 0.0, end)
+                        }
+                    },
+                );
+                if let Some((replaced, root, after, (trial, p2), id2)) = chosen {
+                    edits.push(PadVoicingEdit {
+                        context: ci,
+                        start_beat: perf.contexts[ci].start_beat,
+                        before: voices,
+                        after,
+                        reason: PadVoicingReason::Rooting {
+                            rival,
+                            replaced,
+                            root,
+                        },
+                    });
+                    (pp, pad, id) = (trial, p2, id2);
+                    continue;
+                }
+            }
+            // Earned: where the rival is completed by the pad's own consonant tails from the
+            // harmony before (a harmony it may not voice at all), the pad lets them go at this
+            // harmony's start — judged exactly like a rooting.
+            if earned && !pp.released.contains(&ci) {
                 let mut trial = pp.clone();
-                trial.path.voicings[t].voices = after.to_vec();
-                if earned {
-                    trial.rooted.push(ci);
-                }
+                trial.released.push(ci);
                 let (p2, id2) = heard(&trial);
-                Some(((trial, p2), id2))
-            },
-            |id2| {
-                if earned {
-                    keeps_held_identity(&id, id2, 0.0, end)
-                } else {
-                    keeps_identity(&id, id2, 0.0, end)
+                if flipped_over(&id2, ci) < before - 1e-9
+                    && keeps_held_identity(&id, &id2, 0.0, end)
+                {
+                    let voices = voiced
+                        .map(|t| pp.path.voicings[t].voices.clone())
+                        .unwrap_or_default();
+                    edits.push(PadVoicingEdit {
+                        context: ci,
+                        start_beat: perf.contexts[ci].start_beat,
+                        before: voices.clone(),
+                        after: voices,
+                        reason: PadVoicingReason::Release { rival },
+                    });
+                    (pp, pad, id) = (trial, p2, id2);
                 }
-            },
-        );
-        if let Some((replaced, root, after, (trial, p2), id2)) = chosen {
-            edits.push(PadVoicingEdit {
-                context: ci,
-                start_beat: perf.contexts[ci].start_beat,
-                before: voices,
-                after,
-                reason: PadVoicingReason::Rooting {
-                    rival,
-                    replaced,
-                    root,
-                },
-            });
-            (pp, pad, id) = (trial, p2, id2);
+            }
+        }
+        if edits.len() == answered {
+            break;
         }
     }
     (pp, pad, edits)
 }
+
+/// Under earned functions: how many sweeps the pad's identity law may make over the harmonies the
+/// band still flips (it stops as soon as a sweep answers nothing). A bound, not a tuning.
+const PAD_ANSWER_PASSES: usize = 4;
 
 /// One rooting decision over harmony `ci`, shared by every support player that answers for the
 /// chart's identity (the pad, the keys). `candidates` come in preference order; `trial` realizes
@@ -1910,22 +1973,33 @@ pub fn realize_pad_on(
     // attack. A consonant tail is kept: it can be load-bearing (the pad's own root ringing under a
     // bar the pad does not re-voice). (Archived arms keep their byte-exact half-beat behaviour;
     // this is a source law, not an observer change.)
+    //
+    // The pad's identity law (`heard_pad_path_impl`) reaches the same source: a harmony it
+    // RELEASED — where, with the band, the pad's consonant tails complete another chord — lets
+    // every incoming tail go at its start.
     if perf.functions == super::policy::FunctionPolicy::Earned {
         let spb = 60.0 / f64::from(world.tempo_bpm.max(1.0));
         let tail =
             super::voice::release_tail_secs(&world.pad, super::voice::AUDIBLE_FLOOR_DB) / spb;
+        let index_at = |beat: f64| {
+            perf.contexts.iter().position(|c| {
+                beat >= c.start_beat - 1e-9 && beat < c.start_beat + f64::from(c.dur_beats) - 1e-9
+            })
+        };
         for n in out.iter_mut() {
-            let Some(ctx) = perf.context_at(n.start_beat) else {
+            let Some(ci) = index_at(n.start_beat) else {
                 continue;
             };
+            let ctx = &perf.contexts[ci];
             let boundary = ctx.start_beat + f64::from(ctx.dur_beats);
             if n.start_beat + f64::from(n.dur_beats) + tail <= boundary + 1e-9 {
                 continue;
             }
-            let admitted = perf
-                .context_at(boundary + 1e-6)
-                .is_some_and(|next| function_over(next, n.pitch).is_some());
-            if admitted {
+            let next_ix = index_at(boundary + 1e-6);
+            let next = next_ix.map(|j| &perf.contexts[j]);
+            let admitted = next.is_some_and(|next| function_over(next, n.pitch).is_some());
+            let released = next_ix.is_some_and(|j| pp.released.contains(&j));
+            if admitted && !released {
                 continue;
             }
             let short = ((boundary - n.start_beat) - tail - 1e-4) as f32;

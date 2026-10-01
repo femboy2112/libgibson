@@ -706,6 +706,8 @@ fn r14_coherent_arm_keeps_every_chart_chord() {
                     assert_eq!(pitch_class(root), chart);
                     assert!(!x.before.iter().any(|&m| pitch_class(m) == chart));
                 }
+                // A release lets incoming tails go; the voicing is unchanged.
+                R::Release { .. } => assert_eq!(x.before, x.after),
             }
         }
         let (gone, came) = pad_moves(&a.score, &d.score);
@@ -852,6 +854,7 @@ fn fuzz_the_coherent_arm_keeps_every_chart_chord() {
                                         "{what}"
                                     );
                                 }
+                                R::Release { .. } => assert_eq!(e.before, e.after, "{what}"),
                             }
                         }
                         for r in id_.flips() {

@@ -456,6 +456,10 @@ fn main() -> std::io::Result<()> {
                     note_name(*root),
                     replaced.map_or("nothing (added)".to_string(), note_name)
                 ),
+                PadVoicingReason::Release { rival } => format!(
+                    "release: heard as {}; the pad's incoming tails let go",
+                    rival.label()
+                ),
             };
             let _ = writeln!(
                 tsv,
