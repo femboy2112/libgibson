@@ -1511,6 +1511,9 @@ fn heard_pad_path_impl(
         .last()
         .map_or(0.0, |c| c.start_beat + f64::from(c.dur_beats))
         + 64.0;
+    // Earned: the rooting law reaches a common-tone carry too (archived, the carry renders only
+    // its held voices and new guide tones, so a root it was asked for never sounds there).
+    let earned = perf.functions == super::policy::FunctionPolicy::Earned;
     for (ci, rival) in flipped {
         let Ok(t) = pp.context_ix.binary_search(&ci) else {
             continue;
@@ -1520,9 +1523,26 @@ fn heard_pad_path_impl(
             continue;
         }
         let voices = pp.path.voicings[t].voices.clone();
-        for (replaced, root, after) in rooting_candidates(&perf.contexts[ci], &voices) {
+        let carry = earned
+            && perf
+                .bar_at(perf.contexts[ci].start_beat)
+                .is_some_and(|b| b.pad == PadMode::CommonToneCarry);
+        // A carry first sounds the root its own voicing already holds; then the usual edits.
+        let own_root = voices
+            .iter()
+            .copied()
+            .find(|&p| pitch_class(p) == perf.contexts[ci].chord.root_pc.rem_euclid(12))
+            .filter(|_| carry)
+            .map(|q| (None, q, voices.clone()));
+        for (replaced, root, after) in own_root
+            .into_iter()
+            .chain(rooting_candidates(&perf.contexts[ci], &voices))
+        {
             let mut trial = pp.clone();
             trial.path.voicings[t].voices = after.clone();
+            if earned {
+                trial.rooted.push(ci);
+            }
             let (p2, id2) = heard(&trial);
             if flipped_over(&id2, ci) < before - 1e-9 && keeps_identity(&id, &id2, 0.0, end) {
                 edits.push(PadVoicingEdit {
@@ -1634,10 +1654,14 @@ pub fn realize_pad_on(
             }
             PadMode::CommonToneCarry => {
                 // Hold, at the exact same pitch, what the previous voicing shares; add the new
-                // guide tones.
+                // guide tones - and the chart root where the rooting law asked for it.
                 let prev = pp.previous(ci).map(|p| p.voices).unwrap_or_default();
+                let rooted = pp.rooted.contains(&ci);
                 for &p in &v.voices {
-                    if prev.contains(&p) || ctx.palette.guide_tones.contains(&pitch_class(p)) {
+                    if prev.contains(&p)
+                        || ctx.palette.guide_tones.contains(&pitch_class(p))
+                        || (rooted && pitch_class(p) == ctx.chord.root_pc.rem_euclid(12))
+                    {
                         push(p, ctx.start_beat, dur, 0.9, &mut out);
                     }
                 }

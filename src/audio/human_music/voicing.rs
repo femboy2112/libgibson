@@ -1315,6 +1315,10 @@ pub struct RolePath {
     pub re_entry: Vec<bool>,
     pub path: VoicePath,
     range: VoiceRange,
+    /// Harmonies (context indices) where the pad's rooting law asked for the chart root: it
+    /// sounds there whatever the pad's mode, a common-tone carry included. Set only under
+    /// [`super::policy::FunctionPolicy::Earned`]; empty on every archived path.
+    pub(crate) rooted: Vec<usize>,
 }
 
 impl RolePath {
@@ -1331,6 +1335,7 @@ impl RolePath {
             path,
             context_ix: ix,
             range,
+            rooted: Vec::new(),
         }
     }
 
@@ -1340,6 +1345,7 @@ impl RolePath {
             path: voice_path(steps, &PathWeights::default()),
             context_ix: ix,
             range,
+            rooted: Vec::new(),
         }
     }
 
