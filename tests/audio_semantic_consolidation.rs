@@ -1110,3 +1110,103 @@ fn the_historical_pocket_arm_keeps_its_archived_carry() {
         );
     }
 }
+
+/// Restated: whether bass note `i` (of `bass`, in time order) repeats an unbroken chain of equal
+/// bass pitches that began as the root of the harmony sounding at its onset.
+fn pedal_established(
+    c: &Composition,
+    bass: &[&gibson::audio::human_music::score::Note],
+    i: usize,
+) -> bool {
+    let pitch = bass[i].pitch;
+    (0..i)
+        .rev()
+        .take_while(|&j| bass[j].pitch == pitch)
+        .any(|j| {
+            c.score.chords.iter().any(|s| {
+                bass[j].start_beat >= s.start_beat - 1e-9
+                    && bass[j].start_beat < s.start_beat + f64::from(s.dur_beats) - 1e-9
+                    && s.chord.root_pc.rem_euclid(12) == pitch.rem_euclid(12)
+            })
+        })
+}
+
+/// A pedal re-struck bar after bar is one pedal: established once as its harmony's root, it
+/// stays a pedal through every re-strike. The temporal judge states exactly that law ("an actual
+/// repeated/held pitch established as a prior root") but checked only the immediately previous
+/// note, so the second re-strike was judged false. A chain that never was a root stays false.
+#[test]
+fn a_re_struck_pedal_is_judged_by_its_whole_chain() {
+    use gibson::audio::human_music::{
+        score::{PitchFunction, Role},
+        temporal::TemporalPitchDiagnostics,
+    };
+    for world in [MusicWorld::black_ice(), MusicWorld::vapor95()] {
+        let song = SongMap::compose(
+            &demo_trace(64.0),
+            78_307_001,
+            Some(CompositionGrammar::DeflectedLift),
+            Composer::MeaningDirected,
+        );
+        let c = perform_with_profile(
+            &song,
+            &world,
+            options(MusicalLanguage::simple()),
+            PerformanceProfile::BAND,
+        )
+        .unwrap();
+        let mut bass: Vec<_> = c.score.role_notes(Role::Bass).collect();
+        bass.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+        let restruck: Vec<usize> = (0..bass.len())
+            .filter(|&i| {
+                bass[i].function == Some(PitchFunction::PedalTone)
+                    && i > 1
+                    && bass[i - 1].pitch == bass[i].pitch
+                    && bass[i - 2].pitch == bass[i].pitch
+            })
+            .collect();
+        assert!(!restruck.is_empty(), "{}: no re-struck pedal", world.name);
+        assert!(
+            restruck.iter().all(|&i| pedal_established(&c, &bass, i)),
+            "{}: a re-struck pedal was never a root",
+            world.name
+        );
+        assert_eq!(
+            TemporalPitchDiagnostics::measure(&c.perf, &c.score).false_function_claims,
+            0,
+            "{}",
+            world.name
+        );
+        // Mutation: break every chain where it was established (the root re-pitched a step up);
+        // the re-strikes are no longer a pedal, and the judge must say so.
+        let mut forged = Composition {
+            score: c.score.clone(),
+            song: c.song.clone(),
+            perf: c.perf.clone(),
+        };
+        let roots: Vec<(f64, i32)> = restruck
+            .iter()
+            .filter_map(|&i| {
+                (0..i)
+                    .rev()
+                    .take_while(|&j| bass[j].pitch == bass[i].pitch)
+                    .last()
+                    .map(|j| (bass[j].start_beat, bass[j].pitch))
+            })
+            .collect();
+        for n in forged.score.notes.iter_mut().filter(|n| {
+            n.role == Role::Bass
+                && roots
+                    .iter()
+                    .any(|&(at, p)| n.start_beat.to_bits() == at.to_bits() && n.pitch == p)
+        }) {
+            n.pitch += 2;
+        }
+        assert!(
+            TemporalPitchDiagnostics::measure(&forged.perf, &forged.score).false_function_claims
+                > 0,
+            "{}: a pedal chain that was never a root is judged true",
+            world.name
+        );
+    }
+}
