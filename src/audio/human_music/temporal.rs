@@ -348,16 +348,28 @@ impl TemporalPitchDiagnostics {
                         }
                     }
                 }
-                // Pedal requires an actual repeated/held pitch established as a prior root.
-                if n.role == Role::Bass
-                    && (chord(c, n.pitch)
-                        || p.is_some_and(|x| {
-                            x.pitch == n.pitch
-                                && context_index(perf, x.start_beat).is_some_and(|j| {
-                                    perf.contexts[j].chord.root_pc == pitch_class(x.pitch)
-                                })
-                        }))
-                {
+                // Pedal requires an actual repeated/held pitch established as a prior root: an
+                // unbroken chain of the same pitch in this line, back to a note that was the root
+                // of its harmony (a pedal re-struck bar after bar stays the pedal it began as).
+                let established = {
+                    let mut at = pi;
+                    let mut found = false;
+                    while let Some(j) = at {
+                        let x = &score.notes[j];
+                        if x.pitch != n.pitch {
+                            break;
+                        }
+                        if context_index(perf, x.start_beat)
+                            .is_some_and(|k| perf.contexts[k].chord.root_pc == pitch_class(x.pitch))
+                        {
+                            found = true;
+                            break;
+                        }
+                        at = previous[j];
+                    }
+                    found
+                };
+                if n.role == Role::Bass && (chord(c, n.pitch) || established) {
                     row.supported.push(F::PedalTone);
                 }
                 // Slide is ONE attack gliding through a monotonic chain into a written chord tone.
