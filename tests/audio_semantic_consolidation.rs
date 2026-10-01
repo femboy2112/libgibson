@@ -1355,3 +1355,53 @@ fn a_pinned_passing_tone_is_judged_by_the_scale_it_sounds_in() {
         "the witness no longer exercises the archived classification"
     );
 }
+
+/// A theme relation pins the source's opening statement as the cover's identity motif, to be
+/// stated where the target's own form allows. Where the target form has no phrase that can state
+/// it, the lift refuses with a typed reason instead of returning a cover that drops the theme
+/// (the family holdout v3's V36 found after contact; fresh seed here).
+#[test]
+fn a_pinned_theme_is_stated_or_the_lift_is_refused() {
+    use gibson::audio::human_music::cover::{
+        cover_candidate, CoverConformance, CoverFidelityPreset, CoverFidelityProfile, CoverTarget,
+    };
+    let world = MusicWorld::vapor95();
+    let song = SongMap::compose(
+        &deflected_lift_trace(18.5),
+        78_307_400,
+        Some(CompositionGrammar::PropulsiveReturn),
+        Composer::StablePropulsion,
+    );
+    let source = perform_with_profile(
+        &song,
+        &world,
+        options(MusicalLanguage::fusion_conversation()),
+        PerformanceProfile::BAND,
+    )
+    .unwrap();
+    let p = CoverFidelityPreset::Loose;
+    let (map, _) =
+        CoverMap::extract_fidelity(&source, &world, &CoverFidelityProfile::preset(p), Some(p))
+            .unwrap();
+    assert!(map.spec.has_song_identity(), "the witness pins its theme");
+    match cover_candidate(
+        &map,
+        CoverTarget {
+            world: &world,
+            seed: 78_308_400,
+            grammar: CompositionGrammar::PropulsiveReturn,
+            options: options(MusicalLanguage::fusion_conversation()),
+            profile: PerformanceProfile::BAND,
+        },
+    ) {
+        Ok(c) => {
+            let law = CoverConformance::check(&map, &c, &world);
+            assert!(
+                law.passes(),
+                "a lifted cover dropped its pinned theme: {law:?}"
+            );
+        }
+        Err(CoverError::Invalid(why)) => assert!(why.contains("pinned theme"), "{why}"),
+        Err(e) => panic!("unexpected refusal: {e:?}"),
+    }
+}
