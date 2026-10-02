@@ -28,6 +28,9 @@
 //! ```
 //!
 //! Run: `cargo test --release --test audio_band_search -- --ignored --nocapture`.
+#[path = "common/vapor95_v1.rs"]
+mod vapor95_v1;
+
 use gibson::audio::human_music::{
     composer::Composer,
     contract::CompositionGrammar,
@@ -57,6 +60,8 @@ fn world(name: &str, tempo: &str) -> MusicWorld {
         "BLACK_ICE" => MusicWorld::black_ice(),
         "SWISS_SIGNAL" => MusicWorld::swiss_signal(),
         "VAPOR95" => MusicWorld::vapor95(),
+        // The archival VAPOR95 v1 world (before the palette revision), for like-for-like searches.
+        "VAPOR95_V1" => vapor95_v1::vapor95_v1(),
         _ => panic!("unknown world {name}"),
     };
     if tempo != "nominal" {
