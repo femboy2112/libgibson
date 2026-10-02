@@ -1,0 +1,82 @@
+# HumanMusic merge holdout v7 (VAPORIZE, final head): 28 rows; PREDECLARED, NOT YET EXECUTED. One contact, no fitting.
+# WHY v7: the library source changed AFTER v6's first contact (v6 = 28/28 at 04c5c26, source
+#   abc3f9f, preserved as recorded): the VAPOR95 world was deliberately revised (palette, the typed
+#   WorldProduction law, 84 BPM) at d175090. v7 repeats v6's reviewed 28-row design, moves every seed
+#   to the unused 984xxxxx range, and biases three rows toward the revised VAPOR95 (all `lawful`, no
+#   new `lift` prediction): V02 SWISS_SIGNAL -> VAPOR95 (PropulsiveReturn), V06 the one-bar
+#   bass-figure stress now VAPOR95 -> VAPOR95, V17 VAPOR95 (swung) -> SWISS_SIGNAL straight
+#   (groove-only, nothing). 15 of 28 rows have VAPOR95 as source or target.
+# "VAPOR95" is MusicWorld::vapor95() AT THE EXECUTED SOURCE (the revised world, nominal 84 BPM); the
+#   archival v1 world is never used here.
+# Every generated source and every target plays BAND at a declared drum restraint
+#   (band-<restraint> = PerformanceProfile::BAND.with_drum_restraint(<restraint>)): rehearsed
+#   admission, arbitrated percussion, the harmonic vocabulary as a source law, earned support
+#   functions (incl. the closeout laws: the sounding support answers for harmonic identity;
+#   relational pitch functions name a destination that sounds and resolves; a declared bass figure
+#   keeps the downbeat its own line needs). No historical (POCKET) arm: R17 is judged by its own gate.
+# Source law (generated): the consolidated PerformanceReceipt under the source profile must pass
+#   (perform_checked): song conformance, score domains, pitch functions present and true in time,
+#   no held-identity flip, causal hearings, lawful continuations, occupancy, every verb performed,
+#   nobody off stage, the performance domain, every declared anchor established, the vocabulary.
+#   A red source still proceeds to extraction and lift, so its evidence is kept.
+# Declared grammar: a StablePropulsion composer selects PropulsiveReturn by design, so every
+#   StablePropulsion row declares PropulsiveReturn (v4's V09/V14/V20 declaration error is not repeated).
+# Identity under overlap: wherever the map pins Motif, Riff or BassFigure, a non-identity event of
+#   that instrument's own kind added at an identity onset must leave the extracted map unchanged.
+# Cover law: a lift is admitted only as CoverAdmission = PerformanceReceipt + CoverConformance,
+#   with every pinned axis receipted, and must not replay its source. A refusal must be in the
+#   declared family, at the stage that may make it.
+# Stress rows for the closeout laws: rootless-support identity (V03 VAPOR95 fusion deflected 33.25,
+#   V04 demo 7.25, V19 demo 64); truncated relational function (V05 BLACK_ICE fusion deflected
+#   33.25); bass figure room at one-bar forms (V06 VAPOR95 RiffDrive 2.5 bass-only, V07 WorldSwitch
+#   4.0). The revised VAPOR95 palette changes the sounding tails these laws read, so the VAPOR95 rows
+#   also exercise the laws under the new world physics.
+# Cross-swing Groove with another identity axis: V09 (VAPOR95 swung -> BLACK_ICE straight,
+#   groove+motif), V10 (BLACK_ICE -> VAPOR95, groove+bass), V19 (VAPOR95 -> VAPOR95 same-swing
+#   control). The canonical groove QUOTIENT must survive the target's swing transport; performed
+#   float onsets are NOT required to match across worlds.
+# Ode -> SWISS derived harmony (O02) is declared `lawful`: the SWISS vocabulary may refuse it.
+# Refusal-bearing rows: V16 and V21 (a fusion source at preset-strict lifted into SWISS simple)
+#   and O02 are expected to exercise the vocabulary refusal; V08 may refuse its pinned attacks.
+#   O03 (Ode Strict -> BLACK_ICE fusion) is `lawful`, NOT a predicted refusal.
+# Boundary: each stress row is ONE seed of a shape whose mechanism fired in ~1-8% of matching
+#   fresh cases before the closeout laws; a row exercises the shape, it does not guarantee the
+#   mechanism triggers. The exploratory searches carry the mechanism evidence.
+# Expectation families: lift (a real prediction: the cover must be admitted; used sparingly),
+#   nothing (the selection pins no song identity), lawful (a refusal in the declared family,
+#   nothing to cover, or an admitted lift).
+# Lawful refusal family: ConflictingPins / MissingAxis (an axis the source never established) at
+#   extraction; at lift, "pinned harmony ... outside target vocabulary", "no lawful harmony contains
+#   the pinned simultaneous attacks", "no lawful pitch function in the target harmony", and the
+#   planner's VOCABULARY_REFUSAL, and "a pinned theme has no seated phrase to be stated in the
+#   target form" (a documented lawful refusal). UnprojectableTiming and "a pinned stroke has no
+#   drum seat" are NOT in the family: either would be a defect.
+id	source	story	source_seed	source_world	source_grammar	composer	beats	source_tempo	source_language	source_profile	selection	expect	target_seed	target_world	target_grammar	target_tempo	target_tonic	target_language	target_profile
+V01	generated	demo	98400101	BLACK_ICE	HookArc	StructuralR9	7.25	nominal	simple	band-balanced	established	lift	98410101	BLACK_ICE	HookArc	nominal	9	simple	band-balanced
+V02	generated	deflected	98400102	SWISS_SIGNAL	PropulsiveReturn	StablePropulsion	16.0	nominal	fusion	band-balanced	established	lawful	98410102	VAPOR95	PropulsiveReturn	nominal	5	fusion	band-balanced
+V03	generated	deflected	98400103	VAPOR95	DeflectedLift	StructuralR9	33.25	nominal	fusion	band-balanced	established	lawful	98410103	VAPOR95	DeflectedLift	nominal	5	fusion	band-balanced
+V04	generated	demo	98400104	VAPOR95	DeflectedLift	StructuralR9	7.25	nominal	fusion	band-foundation	motif-only	lawful	98410104	VAPOR95	DeflectedLift	nominal	5	fusion	band-foundation
+V05	generated	deflected	98400105	BLACK_ICE	DeflectedLift	StructuralR9	33.25	nominal	fusion	band-expressive	established	lawful	98410105	BLACK_ICE	DeflectedLift	nominal	9	fusion	band-expressive
+V06	generated	deflected	98400106	VAPOR95	RiffDrive	StructuralR9	2.5	nominal	fusion	band-balanced	bass-only	lawful	98410106	VAPOR95	RiffDrive	nominal	5	fusion	band-balanced
+V07	generated	deflected	98400107	SWISS_SIGNAL	WorldSwitch	MeaningDirected	4.0	nominal	fusion	band-busy	established	lawful	98410107	SWISS_SIGNAL	WorldSwitch	nominal	0	fusion	band-busy
+V08	generated	demo	98400108	SWISS_SIGNAL	LoopEvolution	MeaningDirected	13.25	nominal	simple	band-foundation	motif-only	lawful	98410108	SWISS_SIGNAL	LoopEvolution	nominal	0	simple	band-foundation
+V09	generated	deflected	98400109	VAPOR95	PropulsiveReturn	StablePropulsion	16.0	nominal	fusion	band-balanced	groove+motif	lawful	98410109	BLACK_ICE	PropulsiveReturn	nominal	9	fusion	band-balanced
+V10	generated	demo	98400110	BLACK_ICE	WorldSwitch	StructuralR9	33.25	nominal	simple	band-balanced	groove+bass	lawful	98410110	VAPOR95	WorldSwitch	nominal	5	fusion	band-balanced
+V11	generated	deflected	98400111	BLACK_ICE	PropulsiveReturn	StructuralR9	64.0	nominal	fusion	band-balanced	established	lift	98410111	BLACK_ICE	PropulsiveReturn	104	9	fusion	band-balanced
+V12	generated	demo	98400112	VAPOR95	DeflectedLift	MeaningDirected	13.25	nominal	simple	band-foundation	established	lift	98410112	VAPOR95	DeflectedLift	nominal	5	simple	band-foundation
+V13	generated	deflected	98400113	SWISS_SIGNAL	HookArc	StructuralR9	32.0	nominal	simple	band-balanced	preset-faithful	lift	98410113	BLACK_ICE	HookArc	nominal	9	simple	band-balanced
+V14	generated	demo	98400114	VAPOR95	RiffDrive	MeaningDirected	33.25	nominal	fusion	band-busy	preset-interpretive	lawful	98410114	VAPOR95	RiffDrive	nominal	5	fusion	band-busy
+V15	generated	deflected	98400115	BLACK_ICE	DeflectedLift	MeaningDirected	16.0	nominal	fusion	band-expressive	preset-loose	lift	98410115	BLACK_ICE	DeflectedLift	nominal	9	fusion	band-expressive
+V16	generated	demo	98400116	VAPOR95	PropulsiveReturn	StablePropulsion	32.0	nominal	fusion	band-balanced	preset-strict	lawful	98410116	SWISS_SIGNAL	PropulsiveReturn	nominal	0	simple	band-balanced
+V17	generated	demo	98400117	VAPOR95	RiffDrive	StructuralR9	13.25	nominal	simple	band-foundation	groove-only	nothing	98410117	SWISS_SIGNAL	RiffDrive	nominal	0	simple	band-foundation
+V18	generated	deflected	98400118	VAPOR95	LoopEvolution	MeaningDirected	64.0	132	fusion	band-busy	established	lawful	98410118	VAPOR95	LoopEvolution	nominal	5	fusion	band-busy
+V19	generated	demo	98400119	VAPOR95	DeflectedLift	StructuralR9	64.0	nominal	fusion	band-balanced	groove+motif	lawful	98410119	VAPOR95	DeflectedLift	nominal	5	fusion	band-balanced
+V20	generated	demo	98400120	BLACK_ICE	RiffDrive	StructuralR9	16.0	nominal	fusion	band-balanced	riff-only	lawful	98410120	VAPOR95	RiffDrive	nominal	5	fusion	band-balanced
+V21	generated	deflected	98400121	BLACK_ICE	DeflectedLift	StructuralR9	16.0	nominal	fusion	band-balanced	preset-strict	lawful	98410121	SWISS_SIGNAL	DeflectedLift	nominal	0	simple	band-balanced
+O01	ode	v1	98410201	BLACK_ICE	HookArc	StructuralR9	0.0	nominal	fusion	band-balanced	v1-motif-only	lift	98410201	BLACK_ICE	HookArc	nominal	9	fusion	band-balanced
+O02	ode	v1	98410202	SWISS_SIGNAL	LoopEvolution	StructuralR9	0.0	nominal	fusion	band-balanced	preset-faithful-derived	lawful	98410202	SWISS_SIGNAL	LoopEvolution	nominal	0	fusion	band-balanced
+O03	ode	v1	98410203	BLACK_ICE	HookArc	StructuralR9	0.0	nominal	fusion	band-balanced	preset-strict	lawful	98410203	BLACK_ICE	HookArc	nominal	9	fusion	band-balanced
+O04	ode	v1	98410204	VAPOR95	DeflectedLift	StructuralR9	0.0	nominal	fusion	band-balanced	preset-interpretive	lawful	98410204	VAPOR95	DeflectedLift	nominal	5	fusion	band-balanced
+S01	swing	v1	98410301	BLACK_ICE	HookArc	StructuralR9	0.0	nominal	fusion	band-balanced	preset-faithful	lawful	98410301	BLACK_ICE	HookArc	nominal	9	fusion	band-balanced
+S02	swing	v1	98410302	SWISS_SIGNAL	PropulsiveReturn	StructuralR9	0.0	nominal	simple	band-balanced	preset-strict	lawful	98410302	SWISS_SIGNAL	PropulsiveReturn	nominal	0	simple	band-balanced
+S03	swing	v1	98410303	VAPOR95	LoopEvolution	StructuralR9	0.0	nominal	fusion	band-balanced	preset-loose	nothing	98410303	VAPOR95	LoopEvolution	nominal	5	fusion	band-balanced
