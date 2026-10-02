@@ -1,0 +1,8 @@
+   Compiling pkg-config v0.3.34
+   Compiling cpal v0.18.2
+    Checking dasp_sample v0.11.0
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Checking rtrb v0.3.5
+   Compiling alsa-sys v0.4.0
+    Checking alsa v0.11.0
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.70s

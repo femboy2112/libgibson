@@ -1,0 +1,14 @@
+black_ice_r14.full.wav: exact SHA256 matches committed Round XV receipt for black_ice_r14.wav
+black_ice_r15.full.wav: exact SHA256 matches committed Round XV receipt for black_ice_expressive.wav
+swiss_r14.full.wav: exact SHA256 matches committed Round XV receipt for swiss_r14.wav
+swiss_r15.full.wav: exact SHA256 matches committed Round XV receipt for swiss_expressive.wav
+SWISS lead: R15 == R16 bytes
+SWISS bass: R15 == R16 bytes
+SWISS keys: R15 == R16 bytes
+SWISS lead_bass: R15 == R16 bytes
+SWISS rhythm: R15 == R16 bytes
+BLACK pad: R14 == R16 bytes
+black_ice_r14.lead.wav: exact SHA256 matches committed Round XV stem receipt
+black_ice_r14.bass.wav: exact SHA256 matches committed Round XV stem receipt
+black_ice_r15.lead.wav: exact SHA256 matches committed Round XV stem receipt
+black_ice_r15.bass.wav: exact SHA256 matches committed Round XV stem receipt

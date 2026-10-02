@@ -1,0 +1,38 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.19s
+     Running unittests src/lib.rs (target/debug/deps/gibson-bb7570885a984e62)
+
+running 31 tests
+test audio::human_music::motif::tests::temporal_extension_cost_distinguishes_owned_color_from_a_leap ... ok
+test audio::human_music::motif::tests::temporal_next_targets_change_an_ambiguous_structural_choice ... ok
+test audio::human_music::material::tests::temporal_weak_connector_crossing_harmony_is_a_joint_gate_target ... ok
+test audio::human_music::motif::tests::temporal_search_keeps_an_extension_that_becomes_a_common_core_tone ... ok
+test audio::human_music::material::tests::temporal_closed_endpoint_earns_arrival_without_time_edits ... ok
+test audio::human_music::temporal_probes::a_monophonic_approach_can_resolve_into_the_next_material ... ok
+test audio::human_music::temporal_probes::approach_cannot_resolve_by_pitch_class_across_an_octave_jump ... ok
+test audio::human_music::temporal_probes::anticipation_requires_actual_arrival_and_continuation ... ok
+test audio::human_music::temporal_probes::actual_common_tone_and_forward_step_own_the_same_color ... ok
+test audio::human_music::motif::tests::temporal_terminal_color_earns_ownership_only_when_its_gate_reaches_arrival ... ok
+test audio::human_music::material::tests::temporal_projection_joint_search_observes_future_harmony ... ok
+test audio::human_music::temporal_probes::approach_to_orphan_color_is_locally_true_but_globally_unexplained ... ok
+test audio::human_music::temporal_probes::chromatic_approach_and_passing_controls_keep_good_wrong_notes ... ok
+test audio::human_music::temporal_probes::historical_membership_cannot_make_a_new_attack_a_suspension ... ok
+test audio::human_music::temporal_probes::genuine_held_suspension_is_observed_across_boundary ... ok
+test audio::human_music::temporal_probes::endpoint_position_does_not_prove_closed_arrival ... ok
+test audio::human_music::temporal_probes::ii_v_i_retains_and_resolves_guide_path ... ok
+test audio::human_music::temporal_probes::open_closure_annotation_alone_does_not_select_a_color ... ok
+test audio::human_music::temporal_probes::polyphonic_voice_cannot_borrow_convenient_nonadjacent_resolution ... ok
+test audio::human_music::temporal_probes::labels_cannot_make_a_nonmember_into_a_chord_tone ... ok
+test audio::human_music::temporal_witnesses::r12_false_suspension ... ok
+test audio::human_music::temporal_probes::repeated_attacks_are_not_a_physical_suspension ... ok
+test audio::human_music::temporal_probes::unrelated_legal_extensions_differ_from_smooth_i_iv_i_voice ... ok
+test audio::human_music::temporal_witnesses::r12_fake_arrival ... ok
+test audio::human_music::temporal_witnesses::r12_local_license_cannot_distinguish_orphan_from_owned_color ... ok
+test audio::human_music::temporal_probes::locally_licensed_thirteenth_can_be_orphaned ... ok
+test temporal::tests::uniform_rgb_projector_uses_stable_background_without_temporal_churn ... ok
+test audio::human_music::temporal_witnesses::r12_next_targets_have_no_live_reader_at_baseline ... ok
+test temporal::tests::rgb_projector_temporal_line_never_worse_than_static_partition ... ok
+test audio::human_music::motif::tests::temporal_search_preserves_gates_and_connective_motion ... ok
+test audio::human_music::temporal_probes::r12_matched_scores_preserve_identity_and_reduce_path_defects ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 655 filtered out; finished in 1.47s

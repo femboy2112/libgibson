@@ -1,0 +1,4 @@
+Verified swiss_r16_b028_baseline.wav == frozen swiss_r16.b028.full.wav: aced46537947404c1f85b40d98e5491eae840542fb0667497554079467e02a1b
+Verified swiss_r16_b036_baseline.wav == frozen swiss_r16.b036.full.wav: 0b06244ee6f33ef92fb00270c3e9d02d221445add59d04fb34d028d88b5243f8
+Verified swiss_r16_b044_baseline.wav == frozen swiss_r16.b044.full.wav: dc7f8d53d7f8cbb37402903d07d90292137785bf98453ef93ea5e3eb6d9fd47f
+Verified swiss_r16_b060_baseline.wav == frozen swiss_r16.b060.full.wav: 4a07782f80c4ff27928cec98382bbf65e5a2b9a365aad24da80802b95dccb70e

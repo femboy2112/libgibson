@@ -1,0 +1,16 @@
+PercussionReport restraint=expressive required=120 ornaments admitted 15/35 offered (rate guard 0)
+  landing: 0/0
+  interlock: 0/0
+  open-hat: 0/0
+  fill-flourish: 0/0
+  answer-echo: 0/0
+  ghost: 15/35
+  unison-inner: 0/0
+  bar   4 Conversational required=12 ornaments 3/6 — supports the pocket (lead 2, band 8, prev 0)
+  bar   5 Sparse required=20 ornaments 1/3 — spoke last bar: leaves room (lead 1, band 10, prev 3)
+  bar   6 Conversational required=12 ornaments 2/2 — supports the pocket (lead 1, band 9, prev 1)
+  bar   7 Sparse required=20 ornaments 1/2 — spoke last bar: leaves room (lead 0, band 10, prev 2)
+  bar   8 Sparse required=12 ornaments 1/3 — the band is already speaking (lead 5, band 11, prev 1)
+  bar   9 Conversational required=20 ornaments 3/6 — supports the pocket (lead 0, band 10, prev 1)
+  bar  10 Sparse required=12 ornaments 1/5 — spoke last bar: leaves room (lead 4, band 11, prev 3)
+  bar  11 Conversational required=12 ornaments 3/8 — supports the pocket (lead 1, band 11, prev 1)

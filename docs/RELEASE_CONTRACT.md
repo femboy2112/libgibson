@@ -57,11 +57,26 @@ surface is versioned as a minor to signal its scope — not because anything bro
   the milestone, not an ABI break. `gibson::ui` is EXPERIMENTAL (§2) and Rust-only: it
   is not part of the C ABI or any language wrapper, and moving to 0.2.0 does not
   promote it to CORE.
+- **0.4.0** (intended; in progress on `feat/v0.4-humanmusic-audio` — **not yet
+  released**): adds the experimental `gibson::audio` realization axis — a deterministic,
+  device-free offline audio engine (sample-accurate transport, DSP synthesis, an FDN
+  reverb / bus compressor / limiter) plus **HumanMusic**, a fully self-synthesized
+  procedural music + SFX system driven by semantic style/story state (see
+  [`HUMAN_MUSIC_ARCHITECTURE.md`](HUMAN_MUSIC_ARCHITECTURE.md)). A new realization axis of
+  this size earns a deliberate minor. It is additive and Rust-only; **the C ABI is
+  unchanged (`GIBSON_ABI_VERSION` stays 1)** and audio is not exposed through it this
+  milestone. A real-audio-device backend is the optional `audio-cpal` feature, so the
+  mandatory build, `cargo test` and CI never need system audio libraries. **The package
+  version stays `0.3.1` until this work is reviewed and a release is cut** — the current
+  round is an architecture + audible-proof round on a *draft* PR, with no version bump,
+  tag, or release.
 
 The conceptual progression: `0.1.x` established the framebuffer / renderer / terminal
-substrate; `0.2.x` adds the semantic UI / design-system layer; later `0.x` milestones
-continue resolving architecture, portability and stability debt; `1.0` waits until the
-CORE public contract (§3) is genuinely stable and frozen.
+substrate; `0.2.x` adds the semantic UI / design-system layer; `0.3.x` adds the
+experimental temporal display axis; `0.4.x` (intended) adds the experimental audio /
+HumanMusic axis; later `0.x` milestones continue resolving architecture, portability and
+stability debt; `1.0` waits until the CORE public contract (§3) is genuinely stable and
+frozen.
 
 ---
 

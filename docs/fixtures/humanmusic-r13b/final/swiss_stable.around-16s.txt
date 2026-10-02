@@ -1,0 +1,32 @@
+regime=stable world=swiss seed=2112 beats=120 tempo=118 arm=mass
+song=0xaf5360442b9b6729 performance=0x1e99b6d9458ab484 score=0xcc5a3c30a90fcd5f
+regime=stable world=swiss seed=2112 beats=120 tempo=118 arm=tension
+song=0xaf5360442b9b6729 performance=0x1e99b6d9458ab484 score=0x19c45672092a000b
+before (mass) -> after (tension), within 1.5 s of 16 s
+sounding at 15.00 s
+  before: pad: E4 B4 C5 G5  keys: -  bass: C2  lead: -
+  after:  pad: E4 B4 G5  keys: -  bass: C2  lead: -
+sounding at 15.50 s
+  before: pad: E4 B4 C5 G5  keys: -  bass: E2  lead: -
+  after:  pad: E4 B4 G5  keys: -  bass: E2  lead: -
+sounding at 16.00 s
+  before: pad: E4 B4 C5 G5  keys: -  bass: B2  lead: -
+  after:  pad: E4 B4 G5  keys: -  bass: B2  lead: -
+sounding at 16.50 s
+  before: pad: E4 A4 C5 G5  keys: -  bass: C2  lead: -
+  after:  pad: E4 A4 C5 G5  keys: -  bass: C2  lead: -
+sounding at 17.00 s
+  before: pad: E4 A4 C5 G5  keys: -  bass: C2  lead: -
+  after:  pad: E4 A4 C5 G5  keys: -  bass: C2  lead: -
+clashes before (beat, seconds, responsible note, partner, exposure, verdict):
+  28.000  14.237s pad:pad       B4    3.92  vs pad:pad       C5    int=1  overlap=2.034s sal=1.50 exposure=3.051 Asserted next=C5 Unjustified
+  31.500  16.017s pad:pad       B4    3.92  vs keys:answer   C5    int=1  overlap=0.127s sal=1.00 exposure=0.127 Fleeting next=C5 Transient
+  28.500  14.492s keys:comp     B4    0.90  vs pad:pad       C5    int=1  overlap=0.137s sal=1.00 exposure=0.137 Fleeting next=- Transient
+  30.500  15.508s keys:comp     B4    0.20  vs pad:pad       C5    int=1  overlap=0.127s sal=1.00 exposure=0.127 Fleeting next=B4 Transient
+  30.750  15.636s keys:comp     B4    0.45  vs pad:pad       C5    int=1  overlap=0.137s sal=1.00 exposure=0.137 Fleeting next=C5 Transient
+  33.500  17.034s lead:melody   F4    0.50  vs pad:pad       E4    int=1  overlap=0.093s sal=1.00 exposure=0.093 Fleeting next=- Transient
+clashes after:
+  31.500  16.017s pad:pad       B4    3.92  vs keys:answer   C5    int=1  overlap=0.127s sal=1.00 exposure=0.127 Fleeting next=C5 Transient
+  33.500  17.034s lead:melody   F4    0.50  vs pad:pad       E4    int=1  overlap=0.093s sal=1.00 exposure=0.093 Fleeting next=- Transient
+edits:
+  beat 28.000 (14.237 s) pad pad C5 3.92 beats -> OmittedCovered (clash B4 vs C5, exposure 3.051 Asserted)

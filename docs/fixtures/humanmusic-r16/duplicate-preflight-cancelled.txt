@@ -1,0 +1,16 @@
+CANCELLED duplicate local run after exact production-source GitHub CI and Release Preflight passed at 3f3eaa28486dd114b354a6c9040f204925d086e1. This incomplete run is not counted as PASS. The complete local all-feature suite also passed 1327 tests.
+
+
+==== worktree whitespace ====
+  [PASS] git diff --check
+
+==== version + ABI consistency ====
+  [PASS] scripts/release/check-versions.sh
+
+==== format ====
+  [PASS] cargo +1.98.1 fmt --check
+
+==== clippy (-D warnings) ====
+  [PASS] cargo +1.98.1 clippy --all-targets --all-features -- -D warnings
+
+==== tests ====

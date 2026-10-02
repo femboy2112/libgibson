@@ -1,0 +1,27 @@
+# pitched_notes=401 pitch_changed=6 duration_changed=0 omitted=19 added=0 changed_events=25 affected=6.234%
+beat	seconds	role	role_note	chord	old	action	new	old_mass	old_class	old_verdict	new_mass	new_verdict
+2.0000	1.364	pad	pad	E7	F#4 1.96	Omitted	-	1.705	Asserted	UnownedAssertedColor	-	-
+28.0000	19.091	pad	pad	E7	C#5 3.92	Omitted	-	4.567	Asserted	UnownedAssertedColor	-	-
+36.0000	24.545	pad	pad	Bm7b5	E5 3.92	Omitted	-	4.091	Asserted	UnownedAssertedColor	-	-
+36.0000	24.545	pad	pad	Bm7b5	G5 3.92	Moved(77)	F5 3.92	4.091	Asserted	UnownedAssertedColor	4.091	Carried
+40.0000	27.273	pad	pad	Fmaj7	G5 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+44.0000	30.000	pad	pad	Bm7b5	E5 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+44.0000	30.000	pad	pad	Bm7b5	G5 3.92	Moved(77)	F5 3.92	7.091	Asserted	UnownedAssertedColor	4.091	Carried
+52.0000	35.455	pad	pad	Dm7	E5 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+52.0000	35.455	pad	pad	Dm7	G5 3.92	Moved(77)	F5 3.92	4.091	Asserted	UnownedAssertedColor	7.091	Carried
+56.0000	38.182	pad	pad	Dm9	G5 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+60.0000	40.909	pad	pad	Dm7	E5 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+60.0000	40.909	pad	pad	Dm7	G5 3.92	Moved(77)	F5 3.92	7.091	Asserted	UnownedAssertedColor	7.091	Carried
+88.0000	60.000	pad	pad	Fmaj7	D5 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+88.0000	60.000	pad	pad	Fmaj7	G5 3.92	Moved(77)	F5 3.92	4.091	Asserted	UnownedAssertedColor	4.091	Carried
+92.0000	62.727	pad	pad	Bm7b5	E5 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+92.0000	62.727	pad	pad	Bm7b5	G5 3.92	Moved(77)	F5 3.92	7.091	Asserted	UnownedAssertedColor	7.091	Carried
+100.0000	68.182	pad	pad	Dm7	E5 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+104.0000	70.909	pad	pad	Dm7	E5 3.92	Omitted	-	7.091	Asserted	UnownedAssertedColor	-	-
+108.0000	73.636	pad	pad	Dm7	E5 3.92	Omitted	-	7.567	Asserted	UnownedAssertedColor	-	-
+4.0000	2.727	keys	hold	Fmaj7	D5 3.90	Omitted	-	0.162	Asserted	UnownedAssertedColor	-	-
+32.0000	21.818	keys	hold	Fmaj7	G5 3.90	Omitted	-	0.162	Asserted	UnownedAssertedColor	-	-
+64.0000	43.636	keys	comp	Am6	B5 0.45	Omitted	-	0.162	Asserted	UnownedAssertedColor	-	-
+88.0000	60.000	keys	hold	Fmaj7	G5 3.90	Omitted	-	0.162	Asserted	UnownedAssertedColor	-	-
+100.0000	68.182	keys	comp	Dm7	E5 0.45	Omitted	-	0.324	Asserted	UnownedAssertedColor	-	-
+112.0000	76.364	keys	comp	Am6	B5 0.45	Omitted	-	0.162	Asserted	UnownedAssertedColor	-	-

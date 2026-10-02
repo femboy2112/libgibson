@@ -1,0 +1,13 @@
+beat   4.00 ( 2.034 s) Cmaj7  pad r12 [C4 G4 B4 E5] r14 [C4 G4 B4 E5]  worst heard identity: r12 rooted | r13b rooted | r14 rooted
+beat  12.00 ( 6.102 s) Cmaj7  pad r12 [C4 G4 B4 E5] r14 [C4 G4 B4 E5]  worst heard identity: r12 rooted | r13b rooted | r14 rooted
+beat  28.00 (14.237 s) Cmaj7  pad r12 [E4 B4 C5 G5] r14 [E4 C5 G5 B5]  worst heard identity: r12 rooted | r13b FLIPPED | r14 rooted  (edited)
+beat  36.00 (18.305 s) Cmaj7  pad r12 [E4 B4 C5 G5] r14 [E4 C5 G5 B5]  worst heard identity: r12 rooted | r13b passing | r14 rooted  (edited)
+beat  44.00 (22.373 s) Cmaj7  pad r12 [E4 B4 C5 G5] r14 [E4 C5 G5 B5]  worst heard identity: r12 rooted | r13b FLIPPED | r14 rooted  (edited)
+beat  60.00 (30.508 s) Cmaj7  pad r12 [C4 G4 B4 E5] r14 [C4 G4 B4 E5]  worst heard identity: r12 rooted | r13b rooted | r14 rooted
+beat  68.00 (34.576 s) Cmaj7  pad r12 [C4 G4 B4 E5] r14 [C4 G4 B4 E5]  worst heard identity: r12 rooted | r13b rooted | r14 rooted
+beat  76.00 (38.644 s) Cmaj7  pad r12 [C4 G4 B4 E5] r14 [C4 G4 B4 E5]  worst heard identity: r12 rooted | r13b rooted | r14 rooted
+beat  84.00 (42.712 s) Fmaj9  pad r12 [A4 C5 E5 G5] r14 [F4 A4 E5 G5]  worst heard identity: r12 FLIPPED | r13b FLIPPED | r14 rooted  (edited)
+beat  92.00 (46.780 s) Cmaj7  pad r12 [B4 D5 E5 G5] r14 [B4 D5 E5 G5]  worst heard identity: r12 passing | r13b passing | r14 passing
+beat 100.00 (50.847 s) Cmaj7  pad r12 [C4 G4 B4 E5] r14 [C4 G4 B4 E5]  worst heard identity: r12 rooted | r13b rooted | r14 rooted
+beat 108.00 (54.915 s) Cmaj7  pad r12 [C4 G4 B4 E5] r14 [C4 G4 B4 E5]  worst heard identity: r12 rooted | r13b rooted | r14 rooted
+beat 116.00 (58.983 s) Cmaj7  pad r12 [B3 A4 C5 E5] r14 [A4 C5 E5 B5]  worst heard identity: r12 rooted | r13b passing | r14 rooted  (edited)

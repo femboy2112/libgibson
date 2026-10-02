@@ -1,0 +1,4 @@
+swiss_r14.wav: byte-identical to preserved Round XIV WAV
+black_ice_r14.wav: byte-identical to preserved Round XIV WAV
+swiss_r14.wav == swiss_expressive.wav byte-for-byte
+BLACK full, lead, bass WAVs all differ from R14

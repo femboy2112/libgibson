@@ -1,0 +1,11 @@
+field	value
+source_commit	d869f72b43d6ea4d2bef762dd17bdc22304e13f7
+tree	clean
+debug_assertions	false
+package_version	0.3.1
+config_bytes	7487
+config_fingerprint	ebdc1dc5e2976099
+ode_fixture_fingerprint	07aba5a680a60a7d
+swing_fixture_fingerprint	6d4c9b93198ae6bc
+profile_band	f1c75065ae41c0f4
+expected_cases	28

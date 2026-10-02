@@ -1,0 +1,16 @@
+    Blocking waiting for file lock on build directory
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 17s
+     Running tests/audio_phrase_surface.rs (target/debug/deps/audio_phrase_surface-85a9b13394d69b53)
+
+running 7 tests
+test degenerate_space_grace_target_is_distinct_from_legitimate_repeating_eighths ... ok
+test keys_occupation_is_union_not_polyphonic_note_count ... ok
+test ruler_distinguishes_real_subdivision_changes_from_float_jitter ... ok
+test phrase_boundary_does_not_hide_bass_target_relationships ... ok
+test empty_surface_is_not_a_repetition_failure ... ok
+test r16_acceptance_requires_more_than_repeated_individually_legal_graces ... ok
+test frozen_r15_individually_viable_connectives_repeat_one_temporal_shape ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.71s
+

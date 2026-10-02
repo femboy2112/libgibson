@@ -1,0 +1,63 @@
+{
+  "schema": "cover-listening-diagnosis/v1",
+  "library_source": "04e81fc34a32644a223567cae6165d194027952f",
+  "scope": "One identical-input diagnostic-only generated lab run; no --render, no replacement inputs, no library modification. Example only adds SongMapConformance sidecars.",
+  "command": "CARGO_BUILD_JOBS=1 cargo +1.98.1 run --release --example cover_music_lab -- --out=target/humanmusic-cover/generated-diagnosis",
+  "exit_code": 0,
+  "example_sha256": "6d4d1e343c417794dc344b756b3dfbb14b188b926882a54f519f5a0e994efb1d",
+  "reporting_patch_sha256": "4865fd6baf4cd380b4983cdc8f5d12c90516df61959aff8eed148400501e76dc",
+  "original_vs_diagnostic_report_identical": true,
+  "original_report_sha256": "0ac61536fd353eeb517992a6544a09f4247b33de37130bdd7868c627fd4de355",
+  "diagnostic_report_sha256": "0ac61536fd353eeb517992a6544a09f4247b33de37130bdd7868c627fd4de355",
+  "artifacts": [
+    {
+      "source": "target/humanmusic-cover/generated-diagnosis/black_seed_1.song.txt",
+      "receipt": "docs/fixtures/humanmusic-cover/listening/diagnosis/black_seed_1.song.txt",
+      "source_sha256": "8f3a0fed0c107b502ea7d4c300fc0ca69fc1320525b8c74101b24ed9d9cc4bcb",
+      "receipt_sha256": "e4f90cc38a5a8ea291d17a938e3a0124b0b68d63b2f2422cd7c4e913ecf88182",
+      "source_bytes": 170,
+      "normalized_trailing_whitespace": true,
+      "raw_gzip": "docs/fixtures/humanmusic-cover/listening/raw/diagnosis/black_seed_1.song.txt.gz",
+      "raw_gzip_sha256": "21d4fcda7036b86efe8f38ab27022878864e46375ed48a0a5ab9b5ec12c3cbbd"
+    },
+    {
+      "source": "target/humanmusic-cover/generated-diagnosis/black_seed_2.song.txt",
+      "receipt": "docs/fixtures/humanmusic-cover/listening/diagnosis/black_seed_2.song.txt",
+      "source_sha256": "8f8b298faed8aa8052977de91d718d262b41c153ac4fa1366942619e4678893b",
+      "receipt_sha256": "786e5af80163f3942c86500d48f6337a3bed6edd3432fe4bf6e4f5eea76c0669",
+      "source_bytes": 170,
+      "normalized_trailing_whitespace": true,
+      "raw_gzip": "docs/fixtures/humanmusic-cover/listening/raw/diagnosis/black_seed_2.song.txt.gz",
+      "raw_gzip_sha256": "c26354955a6eee0e67de3144226f287d6702d2e2f179c7d149549697f130ebb6"
+    },
+    {
+      "source": "target/humanmusic-cover/generated-diagnosis/vapor.song.txt",
+      "receipt": "docs/fixtures/humanmusic-cover/listening/diagnosis/vapor.song.txt",
+      "source_sha256": "d167615b31ae9a56f9c15a6772ef11d80f8bfc9d8dd629263070458db0ec1a94",
+      "receipt_sha256": "f6a67c5da6c35243e90c195fa45f1ee74aeb364d4c00954b8f839a43388c3485",
+      "source_bytes": 170,
+      "normalized_trailing_whitespace": true,
+      "raw_gzip": "docs/fixtures/humanmusic-cover/listening/raw/diagnosis/vapor.song.txt.gz",
+      "raw_gzip_sha256": "11bb22bc8773256e25e6ab50510234b19c135716e04a4deeeba76efca743867a"
+    },
+    {
+      "source": "target/humanmusic-consolidation/final-logs/generated-diagnosis.txt",
+      "receipt": "docs/fixtures/humanmusic-cover/listening/diagnosis/run.txt",
+      "source_sha256": "fdcd73f985d70f70bdff932b691094a5718849ce328ab3fcff95a1977749684c",
+      "receipt_sha256": "fdcd73f985d70f70bdff932b691094a5718849ce328ab3fcff95a1977749684c",
+      "source_bytes": 3764,
+      "normalized_trailing_whitespace": false
+    },
+    {
+      "source": "target/humanmusic-cover/generated-diagnosis/report.txt",
+      "receipt": "docs/fixtures/humanmusic-cover/listening/diagnosis/report.txt",
+      "source_sha256": "0ac61536fd353eeb517992a6544a09f4247b33de37130bdd7868c627fd4de355",
+      "receipt_sha256": "0ac61536fd353eeb517992a6544a09f4247b33de37130bdd7868c627fd4de355",
+      "source_bytes": 3543,
+      "normalized_trailing_whitespace": false
+    }
+  ],
+  "observed_failure": "All three realized generated-source candidates have only one unwitnessed_song_obligations in SongMapConformance; VAPOR also retains the independently reported temporal claim.",
+  "source_path_inference": "New neutral target timeline plus pinned four-phrase form yields Establish,Culminate,Withhold,Dissolve. Withhold opens groove debt; Dissolve claims its settlement. Pinned groove makes plan_settlements skip ReEntry. No pinned kick/snare exists in coda>=48.",
+  "no_repair_claim": true
+}

@@ -1,0 +1,8 @@
+swiss r12 score=0x8ab3cd9fa10d751c wav=target/humanmusic-r14/final/swiss_r12.wav frames=3048814 peak=0.7252635 rms=0.067076035
+swiss r12 pad-stem wav=target/humanmusic-r14/final/swiss_r12.pad.wav frames=3048814 peak=0.08009799 rms=0.011773637
+swiss r14 score=0xbeb08c057ed87d94 wav=target/humanmusic-r14/final/swiss_r14.wav frames=3048814 peak=0.7209068 rms=0.06706261
+swiss r14 pad-stem wav=target/humanmusic-r14/final/swiss_r14.pad.wav frames=3048814 peak=0.0745384 rms=0.011731641
+black_ice r12 score=0x06446ebcbbd14038 wav=target/humanmusic-r14/final/black_ice_r12.wav frames=4047273 peak=0.86481947 rms=0.119601846
+black_ice r12 pad-stem wav=target/humanmusic-r14/final/black_ice_r12.pad.wav frames=4047273 peak=0.1702716 rms=0.02083136
+black_ice r14 score=0x562462b4c3c7e728 wav=target/humanmusic-r14/final/black_ice_r14.wav frames=4047273 peak=0.8648741 rms=0.11956436
+black_ice r14 pad-stem wav=target/humanmusic-r14/final/black_ice_r14.pad.wav frames=4047273 peak=0.13331111 rms=0.020385837

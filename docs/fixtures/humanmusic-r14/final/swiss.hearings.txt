@@ -1,0 +1,23 @@
+r12: 4 hearings recorded
+    keys <- lead (80 notes)
+    bass <- lead (80 notes)
+    drums <- lead (80 notes)
+    drums <- bass (96 notes)
+r13: 4 hearings recorded
+    keys <- lead (80 notes)
+    bass <- lead (80 notes)
+    drums <- lead (80 notes)
+    drums <- bass (96 notes)
+r13b: 4 hearings recorded
+    keys <- lead (80 notes)
+    bass <- lead (80 notes)
+    drums <- lead (80 notes)
+    drums <- bass (96 notes)
+r14: 7 hearings recorded
+    keys <- lead (80 notes)
+    bass <- lead (80 notes)
+    drums <- lead (80 notes)
+    pad <- lead (80 notes)
+    pad <- keys (157 notes)
+    pad <- bass (96 notes)
+    drums <- bass (96 notes)

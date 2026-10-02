@@ -1,0 +1,25 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.47s
+     Running unittests src/lib.rs (target/debug/deps/gibson-bb7570885a984e62)
+
+running 18 tests
+test audio::human_music::pitch::tests::a_broken_slide_that_leaps_out_is_rejected ... ok
+test audio::human_music::pitch::tests::a_broken_suspension_that_resolves_upward_is_rejected ... ok
+test audio::human_music::pitch::tests::a_chord_tone_is_a_chord_tone ... ok
+test audio::human_music::pitch::tests::a_common_tone_tied_across_the_boundary_is_accepted ... ok
+test audio::human_music::pitch::tests::a_diatonic_passing_tone_walks_between_chord_tones ... ok
+test audio::human_music::pitch::tests::a_licensed_tension_is_colour_not_a_wrong_note ... ok
+test audio::human_music::pitch::tests::a_lone_non_chord_tone_with_no_neighbours_is_none ... ok
+test audio::human_music::pitch::tests::a_neighbour_leaves_and_returns ... ok
+test audio::human_music::pitch::tests::a_sustained_chord_tone_that_turns_dissonant_across_the_boundary_is_unjustified ... ok
+test audio::human_music::pitch::tests::an_enclosure_surrounds_the_target ... ok
+test audio::human_music::pitch::tests::an_unjustified_strong_beat_leap_is_none ... ok
+test audio::human_music::pitch::tests::anticipation_belongs_to_the_next_chord_when_close ... ok
+test audio::human_music::pitch::tests::anticipation_can_end_exactly_at_the_actual_harmonic_arrival ... ok
+test audio::human_music::pitch::tests::anticipation_must_connect_to_the_actual_arrival ... ok
+test audio::human_music::pitch::tests::anticipation_needs_the_harmony_to_be_close ... ok
+test audio::human_music::pitch::tests::chromatic_approach_leads_by_semitone_into_a_chord_tone ... ok
+test audio::human_music::pitch::tests::historical_membership_does_not_prove_a_suspension ... ok
+test audio::human_music::pitch::tests::suspension_holds_from_the_previous_chord_and_resolves_down ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 668 filtered out; finished in 0.00s

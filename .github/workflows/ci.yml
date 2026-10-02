@@ -20,6 +20,20 @@ env:
   CARGO_INCREMENTAL: "0"
 
 jobs:
+  symbolic-import:
+    name: Symbolic source parser laws
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned parser tools
+        run: |
+          python3 -m venv "$RUNNER_TEMP/symbolic-parser"
+          "$RUNNER_TEMP/symbolic-parser/bin/python" -m pip install -r scripts/audio/requirements-symbolic.txt
+      - name: Test symbolic observations and unsupported-input rejection
+        run: '"$RUNNER_TEMP/symbolic-parser/bin/python" -m unittest discover -s scripts/audio -p test_import_symbolic.py'
+
   rust:
     name: Rust (fmt, clippy, test, build)
     runs-on: ubuntu-latest
@@ -38,6 +52,13 @@ jobs:
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      # The `--all-features` clippy pass below enables the OPTIONAL `audio-cpal` backend,
+      # which links ALSA on Linux (cpal -> alsa-sys, a pkg-config build script). The
+      # mandatory build and `cargo test` use default features and need none of this; only
+      # the all-features completeness check does, so the dev headers live here.
+      - name: Install ALSA dev headers (for the optional audio-cpal feature)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
       - name: Format check
         run: cargo fmt --check

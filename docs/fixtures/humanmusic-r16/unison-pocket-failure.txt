@@ -1,0 +1,19 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s
+     Running tests/audio_phrase_integration.rs (target/debug/deps/audio_phrase_integration-bd1973359036143d)
+
+running 1 test
+
+thread 'expressive_unison_moves_shared_accents_but_not_the_ordinary_drum_pocket' (2537202) panicked at tests/audio_phrase_integration.rs:179:5:
+an inherited grace changed the non-unison pocket: Some((309, ("DrumHit { start_beat: 84.4936222312972, voice: Kick, velocity: 0.63579994, prov: Provenance { section: A, phrase: Some(5), family: Some(\"A'\"), anchor: None, role_kind: Some(\"pulse\"), motif_id: None, motif_xform: None, groove_variation: Some(\"kick\"), role: Some(\"restate\"), closure: Some(\"weak\"), morphism: None, role_note: \"\", actions: ActionStamp { ids: [None, None, None] }, interaction: None, material: None, obligation: None } }", "DrumHit { start_beat: 84.4936222312972, voice: ClosedHat, velocity: 0.3161825, prov: Provenance { section: A, phrase: Some(5), family: Some(\"A'\"), anchor: None, role_kind: Some(\"pulse\"), motif_id: None, motif_xform: None, groove_variation: Some(\"hat\"), role: Some(\"restate\"), closure: Some(\"weak\"), morphism: None, role_note: \"\", actions: ActionStamp { ids: [None, None, None] }, interaction: None, material: None, obligation: None } }")))
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test expressive_unison_moves_shared_accents_but_not_the_ordinary_drum_pocket ... FAILED
+
+failures:
+
+failures:
+    expressive_unison_moves_shared_accents_but_not_the_ordinary_drum_pocket
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.70s
+
+error: test failed, to rerun pass `--test audio_phrase_integration`

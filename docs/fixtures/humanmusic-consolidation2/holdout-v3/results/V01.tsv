@@ -1,0 +1,20 @@
+case	phase	law	status	detail
+V01	source	generation	PASS	performed; its laws are judged separately
+V01	source	declared-grammar	PASS	grammar=HookArc
+V01	source	declared-composer	PASS	declared=StructuralR9; recorded=StructuralR9
+V01	source	canonical-inventory	PASS	song=9708390287b9f4e0; plan=12c1099f26e7b0e1; score=6fc0f0dafdf1c86e; notes=14; drums=0; length=3; tempo=88
+V01	source	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+V01	source	guard:percussion-law	PASS	PercussionReport restraint=balanced required=0 ornaments admitted 0/0 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/0\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 0/0\n  unison-inner: 0/0\nbars over allowance=[]
+V01	source	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [], open_debts: [] }
+V01	source	evidence:established	PASS	established=[HarmonicContour, Form]
+V01	extraction	projection	PASS	map=f70bfda494f3afb6; spec=[HarmonicContour, Form]; knowledge=[(Motif, Free), (Riff, Free), (Groove, Free), (HarmonicContour, Invariant), (HarmonicLoop, Free), (Form, Invariant), (Orchestration, Free), (BassFigure, Free)]; expect=lawful
+V01	extraction	guard:map-validation	PASS	Ok(())
+V01	cover	candidate-lift	PASS	lifted; expect=lawful
+V01	cover	canonical-inventory	PASS	song=f1522c95f7d76452; plan=8ee0923d8bdd4011; score=1a33229e5ccc89b9; notes=14; drums=0; length=3; tempo=88
+V01	cover	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+V01	cover	guard:percussion-law	PASS	PercussionReport restraint=balanced required=0 ornaments admitted 0/0 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/0\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 0/0\n  unison-inner: 0/0\nbars over allowance=[]
+V01	cover	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [], open_debts: [] }
+V01	cover	metric-length	PASS	canonical metric extent
+V01	cover	harmonic-contour	PASS	relative roots, chord quality and exact metric span boundaries; the realized pin holds the exact relation
+V01	cover	form	PASS	phrase boundary and family topology; the realized pin holds the exact relation
+V01	cover	guard:anti-replay-vs-source	PASS	CoverFreedom { support_voicing: true, dynamics: false, percussion_detail: false, interactions: false }; machine variation only, no listening claim

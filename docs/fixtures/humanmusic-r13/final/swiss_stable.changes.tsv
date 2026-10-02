@@ -1,0 +1,8 @@
+# pitched_notes=449 pitch_changed=0 duration_changed=0 omitted=6 added=0 changed_events=6 affected=1.336%
+beat	seconds	role	role_note	chord	old	action	new	old_mass	old_class	old_verdict	new_mass	new_verdict
+20.0000	10.169	pad	pad	Fmaj9	D6 3.92	Omitted	-	3.051	Asserted	UnownedAssertedColor	-	-
+92.0000	46.780	pad	pad	Cmaj7	D5 3.92	Omitted	-	3.051	Asserted	UnownedAssertedColor	-	-
+116.0000	58.983	pad	pad	Cmaj7	A4 3.92	Omitted	-	3.439	Asserted	UnownedAssertedColor	-	-
+32.0000	16.271	keys	hold	C6	D5 1.94	Omitted	-	0.617	Asserted	UnownedAssertedColor	-	-
+88.0000	44.746	keys	hold	C6	D5 3.90	Omitted	-	0.602	Asserted	UnownedAssertedColor	-	-
+112.0000	56.949	keys	comp	C6	D5 0.90	Omitted	-	0.602	Asserted	UnownedAssertedColor	-	-

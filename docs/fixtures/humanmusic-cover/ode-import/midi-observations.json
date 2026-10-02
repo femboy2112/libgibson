@@ -1,0 +1,6038 @@
+{
+  "schema": "humanmusic-midi-observations/v1",
+  "source_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+  "parser": "mido 1.3.3",
+  "format": 1,
+  "ticks_per_quarter": 384,
+  "metadata": [
+    {
+      "tick": 0,
+      "origin": {
+        "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+        "track": 0,
+        "event": 3
+      },
+      "event": {
+        "type": "time_signature",
+        "numerator": 4,
+        "denominator": 4,
+        "clocks_per_click": 18,
+        "notated_32nd_notes_per_beat": 8,
+        "time": 0
+      }
+    },
+    {
+      "tick": 0,
+      "origin": {
+        "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+        "track": 0,
+        "event": 4
+      },
+      "event": {
+        "type": "set_tempo",
+        "tempo": 600000,
+        "time": 0
+      }
+    },
+    {
+      "tick": 0,
+      "origin": {
+        "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+        "track": 1,
+        "event": 3
+      },
+      "event": {
+        "type": "key_signature",
+        "key": "G",
+        "time": 0
+      }
+    },
+    {
+      "tick": 0,
+      "origin": {
+        "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+        "track": 2,
+        "event": 3
+      },
+      "event": {
+        "type": "key_signature",
+        "key": "G",
+        "time": 0
+      }
+    }
+  ],
+  "tracks": [
+    {
+      "track": 0,
+      "name": "control track",
+      "notes": []
+    },
+    {
+      "track": 1,
+      "name": "upper",
+      "notes": [
+        {
+          "onset": [
+            0,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 1
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 4
+            }
+          ]
+        },
+        {
+          "onset": [
+            0,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 2
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 5
+            }
+          ]
+        },
+        {
+          "onset": [
+            1,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 6
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 8
+            }
+          ]
+        },
+        {
+          "onset": [
+            1,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 7
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 9
+            }
+          ]
+        },
+        {
+          "onset": [
+            2,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 72,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 10
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 12
+            }
+          ]
+        },
+        {
+          "onset": [
+            2,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 11
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 13
+            }
+          ]
+        },
+        {
+          "onset": [
+            3,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 74,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 14
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 16
+            }
+          ]
+        },
+        {
+          "onset": [
+            3,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 15
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 17
+            }
+          ]
+        },
+        {
+          "onset": [
+            4,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 74,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 18
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 20
+            }
+          ]
+        },
+        {
+          "onset": [
+            4,
+            1
+          ],
+          "duration": [
+            3,
+            2
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 19
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 22
+            }
+          ]
+        },
+        {
+          "onset": [
+            5,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 72,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 21
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 24
+            }
+          ]
+        },
+        {
+          "onset": [
+            11,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 23
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 25
+            }
+          ]
+        },
+        {
+          "onset": [
+            6,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 26
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 28
+            }
+          ]
+        },
+        {
+          "onset": [
+            6,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 27
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 29
+            }
+          ]
+        },
+        {
+          "onset": [
+            7,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 30
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 32
+            }
+          ]
+        },
+        {
+          "onset": [
+            7,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 66,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 31
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 33
+            }
+          ]
+        },
+        {
+          "onset": [
+            8,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 34
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 36
+            }
+          ]
+        },
+        {
+          "onset": [
+            8,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 35
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 37
+            }
+          ]
+        },
+        {
+          "onset": [
+            9,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 38
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 40
+            }
+          ]
+        },
+        {
+          "onset": [
+            9,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 39
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 41
+            }
+          ]
+        },
+        {
+          "onset": [
+            10,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 42
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 44
+            }
+          ]
+        },
+        {
+          "onset": [
+            10,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 66,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 43
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 45
+            }
+          ]
+        },
+        {
+          "onset": [
+            11,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 46
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 48
+            }
+          ]
+        },
+        {
+          "onset": [
+            11,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 47
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 49
+            }
+          ]
+        },
+        {
+          "onset": [
+            12,
+            1
+          ],
+          "duration": [
+            3,
+            2
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 50
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 52
+            }
+          ]
+        },
+        {
+          "onset": [
+            12,
+            1
+          ],
+          "duration": [
+            3,
+            2
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 51
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 53
+            }
+          ]
+        },
+        {
+          "onset": [
+            27,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 54
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 56
+            }
+          ]
+        },
+        {
+          "onset": [
+            27,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 66,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 55
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 57
+            }
+          ]
+        },
+        {
+          "onset": [
+            14,
+            1
+          ],
+          "duration": [
+            2,
+            1
+          ],
+          "pitch": 66,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 58
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 60
+            }
+          ]
+        },
+        {
+          "onset": [
+            14,
+            1
+          ],
+          "duration": [
+            2,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 59
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 61
+            }
+          ]
+        },
+        {
+          "onset": [
+            16,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 62
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 64
+            }
+          ]
+        },
+        {
+          "onset": [
+            16,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 63
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 65
+            }
+          ]
+        },
+        {
+          "onset": [
+            17,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 66
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 68
+            }
+          ]
+        },
+        {
+          "onset": [
+            17,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 67
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 69
+            }
+          ]
+        },
+        {
+          "onset": [
+            18,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 72,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 70
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 72
+            }
+          ]
+        },
+        {
+          "onset": [
+            18,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 71
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 73
+            }
+          ]
+        },
+        {
+          "onset": [
+            19,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 74,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 74
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 76
+            }
+          ]
+        },
+        {
+          "onset": [
+            19,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 75
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 77
+            }
+          ]
+        },
+        {
+          "onset": [
+            20,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 74,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 78
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 80
+            }
+          ]
+        },
+        {
+          "onset": [
+            20,
+            1
+          ],
+          "duration": [
+            3,
+            2
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 79
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 82
+            }
+          ]
+        },
+        {
+          "onset": [
+            21,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 72,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 81
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 84
+            }
+          ]
+        },
+        {
+          "onset": [
+            43,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 83
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 85
+            }
+          ]
+        },
+        {
+          "onset": [
+            22,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 86
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 88
+            }
+          ]
+        },
+        {
+          "onset": [
+            22,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 87
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 89
+            }
+          ]
+        },
+        {
+          "onset": [
+            23,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 66,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 90
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 92
+            }
+          ]
+        },
+        {
+          "onset": [
+            23,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 91
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 93
+            }
+          ]
+        },
+        {
+          "onset": [
+            24,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 94
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 96
+            }
+          ]
+        },
+        {
+          "onset": [
+            24,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 95
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 97
+            }
+          ]
+        },
+        {
+          "onset": [
+            25,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 98
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 100
+            }
+          ]
+        },
+        {
+          "onset": [
+            25,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 99
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 101
+            }
+          ]
+        },
+        {
+          "onset": [
+            26,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 102
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 104
+            }
+          ]
+        },
+        {
+          "onset": [
+            26,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 66,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 103
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 105
+            }
+          ]
+        },
+        {
+          "onset": [
+            27,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 106
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 108
+            }
+          ]
+        },
+        {
+          "onset": [
+            27,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 107
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 109
+            }
+          ]
+        },
+        {
+          "onset": [
+            28,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 111
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 112
+            }
+          ]
+        },
+        {
+          "onset": [
+            28,
+            1
+          ],
+          "duration": [
+            3,
+            2
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 110
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 114
+            }
+          ]
+        },
+        {
+          "onset": [
+            29,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 66,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 113
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 116
+            }
+          ]
+        },
+        {
+          "onset": [
+            59,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 115
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 117
+            }
+          ]
+        },
+        {
+          "onset": [
+            30,
+            1
+          ],
+          "duration": [
+            2,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 118
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 120
+            }
+          ]
+        },
+        {
+          "onset": [
+            30,
+            1
+          ],
+          "duration": [
+            2,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 119
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 121
+            }
+          ]
+        },
+        {
+          "onset": [
+            32,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 122
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 124
+            }
+          ]
+        },
+        {
+          "onset": [
+            32,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 123
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 125
+            }
+          ]
+        },
+        {
+          "onset": [
+            33,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 126
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 128
+            }
+          ]
+        },
+        {
+          "onset": [
+            33,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 127
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 129
+            }
+          ]
+        },
+        {
+          "onset": [
+            34,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 130
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 132
+            }
+          ]
+        },
+        {
+          "onset": [
+            34,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 131
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 133
+            }
+          ]
+        },
+        {
+          "onset": [
+            35,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 134
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 136
+            }
+          ]
+        },
+        {
+          "onset": [
+            35,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 135
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 137
+            }
+          ]
+        },
+        {
+          "onset": [
+            36,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 138
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 140
+            }
+          ]
+        },
+        {
+          "onset": [
+            36,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 139
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 141
+            }
+          ]
+        },
+        {
+          "onset": [
+            37,
+            1
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 142
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 144
+            }
+          ]
+        },
+        {
+          "onset": [
+            37,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 143
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 146
+            }
+          ]
+        },
+        {
+          "onset": [
+            75,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 72,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 145
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 147
+            }
+          ]
+        },
+        {
+          "onset": [
+            38,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 148
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 150
+            }
+          ]
+        },
+        {
+          "onset": [
+            38,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 149
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 151
+            }
+          ]
+        },
+        {
+          "onset": [
+            39,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 152
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 154
+            }
+          ]
+        },
+        {
+          "onset": [
+            39,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 153
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 155
+            }
+          ]
+        },
+        {
+          "onset": [
+            40,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 156
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 158
+            }
+          ]
+        },
+        {
+          "onset": [
+            40,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 157
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 159
+            }
+          ]
+        },
+        {
+          "onset": [
+            41,
+            1
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 160
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 162
+            }
+          ]
+        },
+        {
+          "onset": [
+            41,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 161
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 164
+            }
+          ]
+        },
+        {
+          "onset": [
+            83,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 72,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 163
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 165
+            }
+          ]
+        },
+        {
+          "onset": [
+            42,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 166
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 168
+            }
+          ]
+        },
+        {
+          "onset": [
+            42,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 66,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 167
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 169
+            }
+          ]
+        },
+        {
+          "onset": [
+            43,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 170
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 172
+            }
+          ]
+        },
+        {
+          "onset": [
+            43,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 66,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 171
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 173
+            }
+          ]
+        },
+        {
+          "onset": [
+            44,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 174
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 176
+            }
+          ]
+        },
+        {
+          "onset": [
+            44,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 64,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 175
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 177
+            }
+          ]
+        },
+        {
+          "onset": [
+            45,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 178
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 180
+            }
+          ]
+        },
+        {
+          "onset": [
+            45,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 61,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 179
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 181
+            }
+          ]
+        },
+        {
+          "onset": [
+            46,
+            1
+          ],
+          "duration": [
+            2,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 182
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 183
+            }
+          ]
+        },
+        {
+          "onset": [
+            48,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 184
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 186
+            }
+          ]
+        },
+        {
+          "onset": [
+            48,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 185
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 187
+            }
+          ]
+        },
+        {
+          "onset": [
+            49,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 188
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 190
+            }
+          ]
+        },
+        {
+          "onset": [
+            49,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 189
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 191
+            }
+          ]
+        },
+        {
+          "onset": [
+            50,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 72,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 192
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 194
+            }
+          ]
+        },
+        {
+          "onset": [
+            50,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 193
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 195
+            }
+          ]
+        },
+        {
+          "onset": [
+            51,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 74,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 196
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 198
+            }
+          ]
+        },
+        {
+          "onset": [
+            51,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 197
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 199
+            }
+          ]
+        },
+        {
+          "onset": [
+            52,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 74,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 200
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 202
+            }
+          ]
+        },
+        {
+          "onset": [
+            52,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 201
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 203
+            }
+          ]
+        },
+        {
+          "onset": [
+            53,
+            1
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 205
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 206
+            }
+          ]
+        },
+        {
+          "onset": [
+            53,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 72,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 204
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 208
+            }
+          ]
+        },
+        {
+          "onset": [
+            107,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 207
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 209
+            }
+          ]
+        },
+        {
+          "onset": [
+            54,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 210
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 212
+            }
+          ]
+        },
+        {
+          "onset": [
+            54,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 211
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 213
+            }
+          ]
+        },
+        {
+          "onset": [
+            55,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 64,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 214
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 216
+            }
+          ]
+        },
+        {
+          "onset": [
+            55,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 215
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 217
+            }
+          ]
+        },
+        {
+          "onset": [
+            56,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 218
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 220
+            }
+          ]
+        },
+        {
+          "onset": [
+            56,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 64,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 219
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 221
+            }
+          ]
+        },
+        {
+          "onset": [
+            57,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 222
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 224
+            }
+          ]
+        },
+        {
+          "onset": [
+            57,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 223
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 225
+            }
+          ]
+        },
+        {
+          "onset": [
+            58,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 226
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 228
+            }
+          ]
+        },
+        {
+          "onset": [
+            58,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 66,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 227
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 229
+            }
+          ]
+        },
+        {
+          "onset": [
+            59,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 71,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 230
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 232
+            }
+          ]
+        },
+        {
+          "onset": [
+            59,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 231
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 233
+            }
+          ]
+        },
+        {
+          "onset": [
+            60,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 235
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 236
+            }
+          ]
+        },
+        {
+          "onset": [
+            60,
+            1
+          ],
+          "duration": [
+            3,
+            2
+          ],
+          "pitch": 69,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 234
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 238
+            }
+          ]
+        },
+        {
+          "onset": [
+            61,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 66,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 237
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 240
+            }
+          ]
+        },
+        {
+          "onset": [
+            123,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 239
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 241
+            }
+          ]
+        },
+        {
+          "onset": [
+            62,
+            1
+          ],
+          "duration": [
+            2,
+            1
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 1,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 242
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 1,
+              "event": 243
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "track": 2,
+      "name": "lower",
+      "notes": [
+        {
+          "onset": [
+            0,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 1
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 4
+            }
+          ]
+        },
+        {
+          "onset": [
+            0,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 2
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 5
+            }
+          ]
+        },
+        {
+          "onset": [
+            1,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 6
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 8
+            }
+          ]
+        },
+        {
+          "onset": [
+            1,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 7
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 9
+            }
+          ]
+        },
+        {
+          "onset": [
+            2,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 60,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 10
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 12
+            }
+          ]
+        },
+        {
+          "onset": [
+            2,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 11
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 13
+            }
+          ]
+        },
+        {
+          "onset": [
+            3,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 59,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 14
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 16
+            }
+          ]
+        },
+        {
+          "onset": [
+            3,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 15
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 17
+            }
+          ]
+        },
+        {
+          "onset": [
+            4,
+            1
+          ],
+          "duration": [
+            3,
+            2
+          ],
+          "pitch": 64,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 18
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 20
+            }
+          ]
+        },
+        {
+          "onset": [
+            4,
+            1
+          ],
+          "duration": [
+            3,
+            2
+          ],
+          "pitch": 52,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 19
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 21
+            }
+          ]
+        },
+        {
+          "onset": [
+            11,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 22
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 24
+            }
+          ]
+        },
+        {
+          "onset": [
+            11,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 54,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 23
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 25
+            }
+          ]
+        },
+        {
+          "onset": [
+            6,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 26
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 28
+            }
+          ]
+        },
+        {
+          "onset": [
+            6,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 27
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 29
+            }
+          ]
+        },
+        {
+          "onset": [
+            7,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 30
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 32
+            }
+          ]
+        },
+        {
+          "onset": [
+            7,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 31
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 33
+            }
+          ]
+        },
+        {
+          "onset": [
+            8,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 59,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 34
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 35
+            }
+          ]
+        },
+        {
+          "onset": [
+            9,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 59,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 36
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 37
+            }
+          ]
+        },
+        {
+          "onset": [
+            10,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 38
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 40
+            }
+          ]
+        },
+        {
+          "onset": [
+            10,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 57,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 39
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 41
+            }
+          ]
+        },
+        {
+          "onset": [
+            11,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 42
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 44
+            }
+          ]
+        },
+        {
+          "onset": [
+            11,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 43
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 45
+            }
+          ]
+        },
+        {
+          "onset": [
+            12,
+            1
+          ],
+          "duration": [
+            3,
+            2
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 46
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 48
+            }
+          ]
+        },
+        {
+          "onset": [
+            12,
+            1
+          ],
+          "duration": [
+            3,
+            2
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 47
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 49
+            }
+          ]
+        },
+        {
+          "onset": [
+            27,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 50
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 52
+            }
+          ]
+        },
+        {
+          "onset": [
+            27,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 51
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 53
+            }
+          ]
+        },
+        {
+          "onset": [
+            14,
+            1
+          ],
+          "duration": [
+            2,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 54
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 56
+            }
+          ]
+        },
+        {
+          "onset": [
+            14,
+            1
+          ],
+          "duration": [
+            2,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 55
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 57
+            }
+          ]
+        },
+        {
+          "onset": [
+            16,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 58
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 60
+            }
+          ]
+        },
+        {
+          "onset": [
+            16,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 59
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 61
+            }
+          ]
+        },
+        {
+          "onset": [
+            17,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 62
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 64
+            }
+          ]
+        },
+        {
+          "onset": [
+            17,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 63
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 65
+            }
+          ]
+        },
+        {
+          "onset": [
+            18,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 60,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 66
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 68
+            }
+          ]
+        },
+        {
+          "onset": [
+            18,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 67
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 69
+            }
+          ]
+        },
+        {
+          "onset": [
+            19,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 59,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 70
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 72
+            }
+          ]
+        },
+        {
+          "onset": [
+            19,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 71
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 73
+            }
+          ]
+        },
+        {
+          "onset": [
+            20,
+            1
+          ],
+          "duration": [
+            3,
+            2
+          ],
+          "pitch": 64,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 74
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 76
+            }
+          ]
+        },
+        {
+          "onset": [
+            20,
+            1
+          ],
+          "duration": [
+            3,
+            2
+          ],
+          "pitch": 52,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 75
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 77
+            }
+          ]
+        },
+        {
+          "onset": [
+            43,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 78
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 80
+            }
+          ]
+        },
+        {
+          "onset": [
+            43,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 54,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 79
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 81
+            }
+          ]
+        },
+        {
+          "onset": [
+            22,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 82
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 84
+            }
+          ]
+        },
+        {
+          "onset": [
+            22,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 83
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 85
+            }
+          ]
+        },
+        {
+          "onset": [
+            23,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 86
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 88
+            }
+          ]
+        },
+        {
+          "onset": [
+            23,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 87
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 89
+            }
+          ]
+        },
+        {
+          "onset": [
+            24,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 59,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 90
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 91
+            }
+          ]
+        },
+        {
+          "onset": [
+            25,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 59,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 92
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 93
+            }
+          ]
+        },
+        {
+          "onset": [
+            26,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 94
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 96
+            }
+          ]
+        },
+        {
+          "onset": [
+            26,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 57,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 95
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 97
+            }
+          ]
+        },
+        {
+          "onset": [
+            27,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 98
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 100
+            }
+          ]
+        },
+        {
+          "onset": [
+            27,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 99
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 101
+            }
+          ]
+        },
+        {
+          "onset": [
+            28,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 102
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 104
+            }
+          ]
+        },
+        {
+          "onset": [
+            28,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 103
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 105
+            }
+          ]
+        },
+        {
+          "onset": [
+            29,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 106
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 108
+            }
+          ]
+        },
+        {
+          "onset": [
+            29,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 107
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 109
+            }
+          ]
+        },
+        {
+          "onset": [
+            30,
+            1
+          ],
+          "duration": [
+            2,
+            1
+          ],
+          "pitch": 59,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 110
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 112
+            }
+          ]
+        },
+        {
+          "onset": [
+            30,
+            1
+          ],
+          "duration": [
+            2,
+            1
+          ],
+          "pitch": 43,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 111
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 113
+            }
+          ]
+        },
+        {
+          "onset": [
+            32,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 114
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 116
+            }
+          ]
+        },
+        {
+          "onset": [
+            32,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 54,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 115
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 117
+            }
+          ]
+        },
+        {
+          "onset": [
+            33,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 54,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 118
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 120
+            }
+          ]
+        },
+        {
+          "onset": [
+            33,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 119
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 121
+            }
+          ]
+        },
+        {
+          "onset": [
+            34,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 122
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 124
+            }
+          ]
+        },
+        {
+          "onset": [
+            34,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 123
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 125
+            }
+          ]
+        },
+        {
+          "onset": [
+            35,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 52,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 126
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 128
+            }
+          ]
+        },
+        {
+          "onset": [
+            35,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 127
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 129
+            }
+          ]
+        },
+        {
+          "onset": [
+            36,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 54,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 130
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 132
+            }
+          ]
+        },
+        {
+          "onset": [
+            36,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 131
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 133
+            }
+          ]
+        },
+        {
+          "onset": [
+            37,
+            1
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 134
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 136
+            }
+          ]
+        },
+        {
+          "onset": [
+            37,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 135
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 138
+            }
+          ]
+        },
+        {
+          "onset": [
+            75,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 57,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 137
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 139
+            }
+          ]
+        },
+        {
+          "onset": [
+            38,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 140
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 142
+            }
+          ]
+        },
+        {
+          "onset": [
+            38,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 141
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 143
+            }
+          ]
+        },
+        {
+          "onset": [
+            39,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 144
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 146
+            }
+          ]
+        },
+        {
+          "onset": [
+            39,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 52,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 145
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 147
+            }
+          ]
+        },
+        {
+          "onset": [
+            40,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 54,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 148
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 150
+            }
+          ]
+        },
+        {
+          "onset": [
+            40,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 149
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 151
+            }
+          ]
+        },
+        {
+          "onset": [
+            41,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 54,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 152
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 154
+            }
+          ]
+        },
+        {
+          "onset": [
+            41,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 153
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 155
+            }
+          ]
+        },
+        {
+          "onset": [
+            42,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 54,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 156
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 158
+            }
+          ]
+        },
+        {
+          "onset": [
+            42,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 51,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 157
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 159
+            }
+          ]
+        },
+        {
+          "onset": [
+            43,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 59,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 160
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 162
+            }
+          ]
+        },
+        {
+          "onset": [
+            43,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 51,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 161
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 163
+            }
+          ]
+        },
+        {
+          "onset": [
+            44,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 59,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 164
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 166
+            }
+          ]
+        },
+        {
+          "onset": [
+            44,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 52,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 165
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 167
+            }
+          ]
+        },
+        {
+          "onset": [
+            45,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 57,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 168
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 170
+            }
+          ]
+        },
+        {
+          "onset": [
+            45,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 45,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 169
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 171
+            }
+          ]
+        },
+        {
+          "onset": [
+            46,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 172
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 174
+            }
+          ]
+        },
+        {
+          "onset": [
+            46,
+            1
+          ],
+          "duration": [
+            2,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 173
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 176
+            }
+          ]
+        },
+        {
+          "onset": [
+            47,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 54,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 175
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 177
+            }
+          ]
+        },
+        {
+          "onset": [
+            48,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 178
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 179
+            }
+          ]
+        },
+        {
+          "onset": [
+            49,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 180
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 182
+            }
+          ]
+        },
+        {
+          "onset": [
+            49,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 181
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 183
+            }
+          ]
+        },
+        {
+          "onset": [
+            50,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 65,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 184
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 186
+            }
+          ]
+        },
+        {
+          "onset": [
+            50,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 53,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 185
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 187
+            }
+          ]
+        },
+        {
+          "onset": [
+            51,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 65,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 188
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 190
+            }
+          ]
+        },
+        {
+          "onset": [
+            51,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 53,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 189
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 191
+            }
+          ]
+        },
+        {
+          "onset": [
+            52,
+            1
+          ],
+          "duration": [
+            3,
+            2
+          ],
+          "pitch": 67,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 192
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 194
+            }
+          ]
+        },
+        {
+          "onset": [
+            52,
+            1
+          ],
+          "duration": [
+            3,
+            2
+          ],
+          "pitch": 52,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 193
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 195
+            }
+          ]
+        },
+        {
+          "onset": [
+            107,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 196
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 198
+            }
+          ]
+        },
+        {
+          "onset": [
+            107,
+            2
+          ],
+          "duration": [
+            1,
+            2
+          ],
+          "pitch": 54,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 197
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 199
+            }
+          ]
+        },
+        {
+          "onset": [
+            54,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 200
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 202
+            }
+          ]
+        },
+        {
+          "onset": [
+            54,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 201
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 203
+            }
+          ]
+        },
+        {
+          "onset": [
+            55,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 48,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 204
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 206
+            }
+          ]
+        },
+        {
+          "onset": [
+            55,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 60,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 205
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 207
+            }
+          ]
+        },
+        {
+          "onset": [
+            56,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 208
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 210
+            }
+          ]
+        },
+        {
+          "onset": [
+            56,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 48,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 209
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 211
+            }
+          ]
+        },
+        {
+          "onset": [
+            57,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 55,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 212
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 214
+            }
+          ]
+        },
+        {
+          "onset": [
+            57,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 47,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 213
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 215
+            }
+          ]
+        },
+        {
+          "onset": [
+            58,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 60,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 216
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 218
+            }
+          ]
+        },
+        {
+          "onset": [
+            58,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 45,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 217
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 219
+            }
+          ]
+        },
+        {
+          "onset": [
+            59,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 220
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 222
+            }
+          ]
+        },
+        {
+          "onset": [
+            59,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 43,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 221
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 223
+            }
+          ]
+        },
+        {
+          "onset": [
+            60,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 224
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 226
+            }
+          ]
+        },
+        {
+          "onset": [
+            60,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 225
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 227
+            }
+          ]
+        },
+        {
+          "onset": [
+            61,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 62,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 228
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 230
+            }
+          ]
+        },
+        {
+          "onset": [
+            61,
+            1
+          ],
+          "duration": [
+            1,
+            1
+          ],
+          "pitch": 50,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 229
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 231
+            }
+          ]
+        },
+        {
+          "onset": [
+            62,
+            1
+          ],
+          "duration": [
+            2,
+            1
+          ],
+          "pitch": 59,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 232
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 234
+            }
+          ]
+        },
+        {
+          "onset": [
+            62,
+            1
+          ],
+          "duration": [
+            2,
+            1
+          ],
+          "pitch": 43,
+          "velocity": 127,
+          "channel": 2,
+          "origins": [
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 233
+            },
+            {
+              "artifact_sha256": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+              "track": 2,
+              "event": 235
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Tracks/channels do not establish logical voice identity.",
+    "Durations are encoded note gates; pedal and synthesis are not inferred.",
+    "Overlapping same-pitch events pair FIFO; no expressive voice inference."
+  ]
+}

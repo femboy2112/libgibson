@@ -1,0 +1,5 @@
+# pitched_notes=387 pitch_changed=2 duration_changed=0 retimed=0 omitted=1 added=0 changed_events=3 affected=0.775%
+beat	seconds	role	role_note	note	beats	action	tension	partner	interval	exposure	class
+28.0000	14.237	pad	pad	B4	3.920	Displaced(83)	pad B4 @28.000	keys C5 @32.000	1	0.206	Gestural
+100.0000	50.847	pad	pad	F5	3.920	OmittedCovered	keys E4 @100.000	pad F5 @100.000	13	0.206	Gestural
+108.0000	54.915	pad	pad	F5	3.920	Displaced(53)	pad F5 @108.000	keys E4 @112.000	13	0.206	Gestural

@@ -1,0 +1,68 @@
+[
+  {
+    "actual": "7ced9ff01a3cc22f6998dc021a9d1c56650430ebc687e76faf458103eaf66e96",
+    "expected": "7ced9ff01a3cc22f6998dc021a9d1c56650430ebc687e76faf458103eaf66e96",
+    "match": true,
+    "path": "docs/fixtures/humanmusic-cover/ode-import/observations.json"
+  },
+  {
+    "actual": "046aa5976e54bdaabcfce1aca759391db54b3780d008e7b0c27e61643def55c3",
+    "expected": "046aa5976e54bdaabcfce1aca759391db54b3780d008e7b0c27e61643def55c3",
+    "match": true,
+    "path": "docs/fixtures/humanmusic-cover/ode-import/midi-observations.json"
+  },
+  {
+    "actual": "b1a1e0e4fa98c060bfcc8bd04cacb6235a864dbdf9b33895b684c38863a92f45",
+    "expected": "b1a1e0e4fa98c060bfcc8bd04cacb6235a864dbdf9b33895b684c38863a92f45",
+    "match": true,
+    "path": "docs/fixtures/humanmusic-cover/ode-import/cross-check.json"
+  },
+  {
+    "actual": "69f3ec4fe4d51e9d840f706f5fe933efe1b0f316fcc541d4afd72405ea24396b",
+    "expected": "69f3ec4fe4d51e9d840f706f5fe933efe1b0f316fcc541d4afd72405ea24396b",
+    "match": true,
+    "path": "docs/fixtures/humanmusic-cover/ode-import/first-cross-check.json"
+  },
+  {
+    "actual": "4724a1e4f9e3202578aa3b7156f603ec63b90d17a1770e8fc7a9d77d04bd8678",
+    "expected": "4724a1e4f9e3202578aa3b7156f603ec63b90d17a1770e8fc7a9d77d04bd8678",
+    "match": true,
+    "path": "docs/fixtures/humanmusic-cover/ode-import/reference.tsv"
+  },
+  {
+    "actual": "3a660964bf73924e2de64ede448f67559a08247bb0b2aa9efde71f1eb21c2952",
+    "expected": "3a660964bf73924e2de64ede448f67559a08247bb0b2aa9efde71f1eb21c2952",
+    "match": true,
+    "path": "docs/fixtures/humanmusic-cover/ode-import/parser-tests.txt"
+  },
+  {
+    "actual": "7e34e9eeb7c66b08cb952ab0fa54365e89cd212205b561534e7e5595e22b071e",
+    "expected": "7e34e9eeb7c66b08cb952ab0fa54365e89cd212205b561534e7e5595e22b071e",
+    "match": true,
+    "path": "scripts/audio/import_symbolic.py"
+  },
+  {
+    "actual": "a0c865aa9f71221605362622d281405071e0734540e86ce131131757cc803a71",
+    "expected": "a0c865aa9f71221605362622d281405071e0734540e86ce131131757cc803a71",
+    "match": true,
+    "path": "docs/fixtures/humanmusic-cover/sources/mutopia-528/ode.ly"
+  },
+  {
+    "actual": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+    "expected": "fb1604c08c865b275b464d74e5a7c526ff1a8acccdf9853cb92f0778daaed14b",
+    "match": true,
+    "path": "docs/fixtures/humanmusic-cover/sources/mutopia-528/ode.mid"
+  },
+  {
+    "actual": "858fa8d6ba0868eab2cff036e9d69599d2781227f90083e311ecca5fd9f41857",
+    "expected": "858fa8d6ba0868eab2cff036e9d69599d2781227f90083e311ecca5fd9f41857",
+    "match": true,
+    "path": "docs/fixtures/humanmusic-cover/sources/mutopia-528/catalog.html"
+  },
+  {
+    "actual": "21dd9566f45b2b238be3e79c449d03fb964854e85e5d1d6e6c244d3352136aa3",
+    "expected": "21dd9566f45b2b238be3e79c449d03fb964854e85e5d1d6e6c244d3352136aa3",
+    "match": true,
+    "path": "docs/fixtures/humanmusic-cover/sources/mutopia-528/license.html"
+  }
+]

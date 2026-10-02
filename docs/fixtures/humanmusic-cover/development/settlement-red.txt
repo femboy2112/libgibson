@@ -1,0 +1,13 @@
+Development counterexample, before cover source settlement planning.
+Command: CARGO_BUILD_JOBS=1 cargo +1.98.1 test --lib audio::human_music::cover::tests -- --nocapture
+Source: Ode normalized soprano, Motif pin, target BLACK_ICE tonic+3 tempo+11 seed711 POCKET HookArc.
+Observed result: CoverConformance PASS; SongMapConformance FAIL:
+  song 0x230c1722e3bbb1d6, performed 0x230c1722e3bbb1d6
+  4 identity sites, 0 landmarks, 0 chord changes checked
+  unwitnessed_song_obligations: 1
+  unclassified=0 temporal_false=0 held_identity_flips=0 stale_hearings=0
+  invalid_continuations=0 unwitnessed_actions=0 stage_violations=0
+The generic target discourse claimed GrooveDestabilization settled in phrase3 after Withhold in phrase2, without a planned concrete kit re-entry.
+The initial harmonic-departure hypothesis was REFUTED by inspecting the exact obligation ledger.
+Fix hypothesis: plan an explicit discourse-caused ReEntry for the drummer before stage admission/source generation; the ordinary material/figure source carries and independently witnesses the action. No obligations are deleted or reclassified. Unsatisfiable targets retain failed admission.
+This is development contact, not holdout evidence.

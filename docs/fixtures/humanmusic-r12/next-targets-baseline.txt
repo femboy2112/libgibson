@@ -1,0 +1,3 @@
+205:    pub next_targets: Vec<i32>,
+406:        next_targets: next.map(guide_tones).unwrap_or_default(),
+778:        assert_eq!(ctx[0].palette.next_targets, guide_tones(&am));

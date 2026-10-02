@@ -1,0 +1,19 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.10s
+     Running tests/audio_expression.rs (target/debug/deps/audio_expression-95656cfeceba4d2c)
+
+running 1 test
+test fuzz_expressive_source_preserves_song_paths_receipts_and_identity has been running for over 60 seconds
+
+thread 'fuzz_expressive_source_preserves_song_paths_receipts_and_identity' (2315521) panicked at tests/audio_expression.rs:483:29:
+new flip demo=true beats=120 seed=7 MeaningDirected VAPOR95: IdentityRun { start_beat: 80.25, end_beat: 81.41564056205695, secs: 0.9850483623016479, chart: Chord { root_pc: 0, quality: Maj7 }, rival: Chord { root_pc: 7, quality: Min }, slices: [202, 203, 204], flipped: true }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test fuzz_expressive_source_preserves_song_paths_receipts_and_identity ... FAILED
+
+failures:
+
+failures:
+    fuzz_expressive_source_preserves_song_paths_receipts_and_identity
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 93.98s
+
+error: test failed, to rerun pass `--test audio_expression`

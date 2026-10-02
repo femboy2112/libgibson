@@ -1,0 +1,23 @@
+{
+  "source": "44e2d7efabc28e684701240b5466d06a91d541dd",
+  "known_not_holdout": true,
+  "build_command": "CARGO_TARGET_DIR=/home/leah/LibGibson/target CARGO_BUILD_JOBS=1 cargo +1.98.1 test --release --all-features --test audio_pocket_integration --no-run --message-format=json",
+  "build_exit": 0,
+  "binary_sha256": "b9c60cbc30b2b21bbee554baaf010b143160adf65303bdeaf715ddecc8e45427",
+  "binary": "/tmp/libgibson-known-r17-44e2d7e-test",
+  "command": [
+    "/tmp/libgibson-known-r17-44e2d7e-test",
+    "r17_fresh_world_seed_tempo_sweep",
+    "--exact",
+    "--ignored",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "source_guard_files": 136,
+  "started_utc": "2026-09-30T07:49:23.225023+00:00",
+  "exit": 101,
+  "elapsed_seconds": 18.377390350040514,
+  "ended_utc": "2026-09-30T07:49:41.672974+00:00",
+  "source_guard_after_run": true,
+  "post_run_worktree_status": ""
+}

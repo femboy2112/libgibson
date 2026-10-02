@@ -1,0 +1,18 @@
+$ cargo +1.98.1 test --lib -- r13_ round_xii_observer_is_time_blind --nocapture --test-threads=1
+
+running 10 tests
+test audio::human_music::mass_witnesses::r13_black_ice_holds_expose_more_real_time_than_swiss ... ok
+test audio::human_music::mass_witnesses::r13_long_orphan_ninth_is_not_a_short_stab ... ok
+test audio::human_music::mass_witnesses::r13_long_suspension_is_carried ... ok
+test audio::human_music::mass_witnesses::r13_mass_is_monotone_in_its_evidence ... ok
+test audio::human_music::mass_witnesses::r13_percussive_ping_does_not_dilate ... ok
+test audio::human_music::mass_witnesses::r13_repetition_accumulates_exposure ... ok
+test audio::human_music::mass_witnesses::r13_slow_staircase_owes_its_own_justification ... ok
+test audio::human_music::mass_witnesses::r13_swiss_witnesses_outweigh_the_offbeat_stab ... ok
+test audio::human_music::mass_witnesses::r13_tempo_dilation_changes_the_proof ... tempo-proof onset 0.5 len 0.5: 160 BPM 0.188 s -> 0.188 Fleeting | 118 BPM 0.254 s -> 0.254 Gestural | 88 BPM 0.341 s -> 0.341 Gestural
+tempo-proof onset 2 len 1: 160 BPM 0.375 s -> 0.469 Gestural | 118 BPM 0.508 s -> 0.636 Gestural | 88 BPM 0.682 s -> 0.852 Asserted
+tempo-proof onset 1 len 1: 160 BPM 0.375 s -> 0.375 Gestural | 118 BPM 0.508 s -> 0.508 Gestural | 88 BPM 0.682 s -> 0.682 Gestural
+ok
+test audio::human_music::mass_witnesses::round_xii_observer_is_time_blind ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 686 filtered out; finished in 0.82s

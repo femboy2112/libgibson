@@ -1,0 +1,15 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.49s
+     Running tests/audio_cover_review.rs (target/debug/deps/audio_cover_review-3d01e1dd2503fc3e)
+
+running 8 tests
+test accepted_maps_require_canonical_set_and_stroke_order ... ok
+test cover_score_receipt_rejects_out_of_domain_pitched_event ... ok
+test groove_transport_must_preserve_distinct_metric_attacks ... ok
+test invalid_form_extent_returns_error_without_arithmetic_panic ... ok
+test invalid_skeleton_schedule_returns_error_without_arithmetic_panic ... ok
+test mutated_reference_metadata_is_revalidated_at_extraction ... ok
+test note_domain_accepts_midi_endpoints_and_rejects_outside_them ... ok
+test source_record_order_is_not_musical_identity ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

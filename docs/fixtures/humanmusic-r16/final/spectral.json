@@ -1,0 +1,294 @@
+{
+  "instrument": "PCM i16; mono mean; Hann 8192; hop4096; 32 largest local spectral peaks",
+  "boundary": "Deterministic spectral exposure/interference proxy; not perceptual roughness or musical quality. Shared synthesis lineage; no independent audition.",
+  "rows": [
+    {
+      "file": "swiss_r14.b028.full.wav",
+      "fft_frames": 46,
+      "rms": 0.07738377952605607,
+      "centroid_hz": 2395.4624427240587,
+      "power_fraction_above_2khz": 0.17236909226117023,
+      "nearby_peak_pair_crosspower_20_80hz": 0.3854318232852704
+    },
+    {
+      "file": "swiss_r14.b036.full.wav",
+      "fft_frames": 46,
+      "rms": 0.07462117008414909,
+      "centroid_hz": 2162.019225217415,
+      "power_fraction_above_2khz": 0.14468433464913985,
+      "nearby_peak_pair_crosspower_20_80hz": 0.3559275285556994
+    },
+    {
+      "file": "swiss_r14.b044.full.wav",
+      "fft_frames": 46,
+      "rms": 0.06967589732012208,
+      "centroid_hz": 2044.4484016926676,
+      "power_fraction_above_2khz": 0.1278419486400908,
+      "nearby_peak_pair_crosspower_20_80hz": 0.3609403165720561
+    },
+    {
+      "file": "swiss_r14.b060.full.wav",
+      "fft_frames": 46,
+      "rms": 0.0724329425559962,
+      "centroid_hz": 2482.249168238157,
+      "power_fraction_above_2khz": 0.16876049280293862,
+      "nearby_peak_pair_crosspower_20_80hz": 0.3879858075171627
+    },
+    {
+      "file": "swiss_r14.b028.pad.wav",
+      "fft_frames": 46,
+      "rms": 0.012075723964370145,
+      "centroid_hz": 573.5856660181075,
+      "power_fraction_above_2khz": 0.0022280032591362304,
+      "nearby_peak_pair_crosspower_20_80hz": 0.00923135851256038
+    },
+    {
+      "file": "swiss_r14.b036.pad.wav",
+      "fft_frames": 46,
+      "rms": 0.012341361223190718,
+      "centroid_hz": 574.1795465766216,
+      "power_fraction_above_2khz": 0.002129118665198224,
+      "nearby_peak_pair_crosspower_20_80hz": 0.007734759803540813
+    },
+    {
+      "file": "swiss_r14.b044.pad.wav",
+      "fft_frames": 46,
+      "rms": 0.013441144167783962,
+      "centroid_hz": 574.8683996823711,
+      "power_fraction_above_2khz": 0.002112970343376371,
+      "nearby_peak_pair_crosspower_20_80hz": 0.017230333109447646
+    },
+    {
+      "file": "swiss_r14.b060.pad.wav",
+      "fft_frames": 46,
+      "rms": 0.013006036539718303,
+      "centroid_hz": 442.0784720040232,
+      "power_fraction_above_2khz": 0.00035226267623942464,
+      "nearby_peak_pair_crosspower_20_80hz": 0.19255917072824721
+    },
+    {
+      "file": "swiss_r14.b028.support.wav",
+      "fft_frames": 46,
+      "rms": 0.040090301939719436,
+      "centroid_hz": 134.32195492889778,
+      "power_fraction_above_2khz": 0.00021236968686859806,
+      "nearby_peak_pair_crosspower_20_80hz": 0.504617667606199
+    },
+    {
+      "file": "swiss_r14.b036.support.wav",
+      "fft_frames": 46,
+      "rms": 0.03758452808528958,
+      "centroid_hz": 132.93494242144362,
+      "power_fraction_above_2khz": 0.0002484629153952821,
+      "nearby_peak_pair_crosspower_20_80hz": 0.49654943208643304
+    },
+    {
+      "file": "swiss_r14.b044.support.wav",
+      "fft_frames": 46,
+      "rms": 0.03732339832096517,
+      "centroid_hz": 158.13130065959774,
+      "power_fraction_above_2khz": 0.000316305177402906,
+      "nearby_peak_pair_crosspower_20_80hz": 0.4772319002882675
+    },
+    {
+      "file": "swiss_r14.b060.support.wav",
+      "fft_frames": 46,
+      "rms": 0.0378108494685273,
+      "centroid_hz": 131.98142017890808,
+      "power_fraction_above_2khz": 5.140893388045454e-05,
+      "nearby_peak_pair_crosspower_20_80hz": 0.526347937409999
+    },
+    {
+      "file": "swiss_r15.b028.full.wav",
+      "fft_frames": 46,
+      "rms": 0.07738377952605607,
+      "centroid_hz": 2395.4624427240587,
+      "power_fraction_above_2khz": 0.17236909226117023,
+      "nearby_peak_pair_crosspower_20_80hz": 0.3854318232852704
+    },
+    {
+      "file": "swiss_r15.b036.full.wav",
+      "fft_frames": 46,
+      "rms": 0.07462117008414909,
+      "centroid_hz": 2162.019225217415,
+      "power_fraction_above_2khz": 0.14468433464913985,
+      "nearby_peak_pair_crosspower_20_80hz": 0.3559275285556994
+    },
+    {
+      "file": "swiss_r15.b044.full.wav",
+      "fft_frames": 46,
+      "rms": 0.06967589732012208,
+      "centroid_hz": 2044.4484016926676,
+      "power_fraction_above_2khz": 0.1278419486400908,
+      "nearby_peak_pair_crosspower_20_80hz": 0.3609403165720561
+    },
+    {
+      "file": "swiss_r15.b060.full.wav",
+      "fft_frames": 46,
+      "rms": 0.0724329425559962,
+      "centroid_hz": 2482.249168238157,
+      "power_fraction_above_2khz": 0.16876049280293862,
+      "nearby_peak_pair_crosspower_20_80hz": 0.3879858075171627
+    },
+    {
+      "file": "swiss_r15.b028.pad.wav",
+      "fft_frames": 46,
+      "rms": 0.012075723964370145,
+      "centroid_hz": 573.5856660181075,
+      "power_fraction_above_2khz": 0.0022280032591362304,
+      "nearby_peak_pair_crosspower_20_80hz": 0.00923135851256038
+    },
+    {
+      "file": "swiss_r15.b036.pad.wav",
+      "fft_frames": 46,
+      "rms": 0.012341361223190718,
+      "centroid_hz": 574.1795465766216,
+      "power_fraction_above_2khz": 0.002129118665198224,
+      "nearby_peak_pair_crosspower_20_80hz": 0.007734759803540813
+    },
+    {
+      "file": "swiss_r15.b044.pad.wav",
+      "fft_frames": 46,
+      "rms": 0.013441144167783962,
+      "centroid_hz": 574.8683996823711,
+      "power_fraction_above_2khz": 0.002112970343376371,
+      "nearby_peak_pair_crosspower_20_80hz": 0.017230333109447646
+    },
+    {
+      "file": "swiss_r15.b060.pad.wav",
+      "fft_frames": 46,
+      "rms": 0.013006036539718303,
+      "centroid_hz": 442.0784720040232,
+      "power_fraction_above_2khz": 0.00035226267623942464,
+      "nearby_peak_pair_crosspower_20_80hz": 0.19255917072824721
+    },
+    {
+      "file": "swiss_r15.b028.support.wav",
+      "fft_frames": 46,
+      "rms": 0.040090301939719436,
+      "centroid_hz": 134.32195492889778,
+      "power_fraction_above_2khz": 0.00021236968686859806,
+      "nearby_peak_pair_crosspower_20_80hz": 0.504617667606199
+    },
+    {
+      "file": "swiss_r15.b036.support.wav",
+      "fft_frames": 46,
+      "rms": 0.03758452808528958,
+      "centroid_hz": 132.93494242144362,
+      "power_fraction_above_2khz": 0.0002484629153952821,
+      "nearby_peak_pair_crosspower_20_80hz": 0.49654943208643304
+    },
+    {
+      "file": "swiss_r15.b044.support.wav",
+      "fft_frames": 46,
+      "rms": 0.03732339832096517,
+      "centroid_hz": 158.13130065959774,
+      "power_fraction_above_2khz": 0.000316305177402906,
+      "nearby_peak_pair_crosspower_20_80hz": 0.4772319002882675
+    },
+    {
+      "file": "swiss_r15.b060.support.wav",
+      "fft_frames": 46,
+      "rms": 0.0378108494685273,
+      "centroid_hz": 131.98142017890808,
+      "power_fraction_above_2khz": 5.140893388045454e-05,
+      "nearby_peak_pair_crosspower_20_80hz": 0.526347937409999
+    },
+    {
+      "file": "swiss_r16.b028.full.wav",
+      "fft_frames": 46,
+      "rms": 0.0773900017288586,
+      "centroid_hz": 2392.796562418532,
+      "power_fraction_above_2khz": 0.17274027499096847,
+      "nearby_peak_pair_crosspower_20_80hz": 0.39559173239459644
+    },
+    {
+      "file": "swiss_r16.b036.full.wav",
+      "fft_frames": 46,
+      "rms": 0.07465205091134765,
+      "centroid_hz": 2153.617421527484,
+      "power_fraction_above_2khz": 0.14441545520108084,
+      "nearby_peak_pair_crosspower_20_80hz": 0.3722709020194611
+    },
+    {
+      "file": "swiss_r16.b044.full.wav",
+      "fft_frames": 46,
+      "rms": 0.06968276775914434,
+      "centroid_hz": 2041.5868332979733,
+      "power_fraction_above_2khz": 0.1281411587873154,
+      "nearby_peak_pair_crosspower_20_80hz": 0.37608226597735195
+    },
+    {
+      "file": "swiss_r16.b060.full.wav",
+      "fft_frames": 46,
+      "rms": 0.07205461004248394,
+      "centroid_hz": 2512.3988639596428,
+      "power_fraction_above_2khz": 0.17156264457217024,
+      "nearby_peak_pair_crosspower_20_80hz": 0.38906066342419426
+    },
+    {
+      "file": "swiss_r16.b028.pad.wav",
+      "fft_frames": 46,
+      "rms": 0.012417076600183909,
+      "centroid_hz": 490.10340752155423,
+      "power_fraction_above_2khz": 0.001536945129402404,
+      "nearby_peak_pair_crosspower_20_80hz": 0.17547387851964175
+    },
+    {
+      "file": "swiss_r16.b036.pad.wav",
+      "fft_frames": 46,
+      "rms": 0.012535374299794356,
+      "centroid_hz": 488.41614199317416,
+      "power_fraction_above_2khz": 0.001576645849851426,
+      "nearby_peak_pair_crosspower_20_80hz": 0.1731708719044092
+    },
+    {
+      "file": "swiss_r16.b044.pad.wav",
+      "fft_frames": 46,
+      "rms": 0.013752810882106694,
+      "centroid_hz": 484.7306207707015,
+      "power_fraction_above_2khz": 0.0015410173743770064,
+      "nearby_peak_pair_crosspower_20_80hz": 0.19463491512353312
+    },
+    {
+      "file": "swiss_r16.b060.pad.wav",
+      "fft_frames": 46,
+      "rms": 0.012831890677009654,
+      "centroid_hz": 444.1383445279937,
+      "power_fraction_above_2khz": 0.0003607789590601737,
+      "nearby_peak_pair_crosspower_20_80hz": 0.19469996646787333
+    },
+    {
+      "file": "swiss_r16.b028.support.wav",
+      "fft_frames": 46,
+      "rms": 0.040186058870932885,
+      "centroid_hz": 129.2850839048443,
+      "power_fraction_above_2khz": 0.00015774282653207845,
+      "nearby_peak_pair_crosspower_20_80hz": 0.5203171581831085
+    },
+    {
+      "file": "swiss_r16.b036.support.wav",
+      "fft_frames": 46,
+      "rms": 0.03765161332607916,
+      "centroid_hz": 124.69707784929231,
+      "power_fraction_above_2khz": 0.00019886776326279168,
+      "nearby_peak_pair_crosspower_20_80hz": 0.5167367381341998
+    },
+    {
+      "file": "swiss_r16.b044.support.wav",
+      "fft_frames": 46,
+      "rms": 0.03746382866997448,
+      "centroid_hz": 146.47612747571978,
+      "power_fraction_above_2khz": 0.0002371711665602049,
+      "nearby_peak_pair_crosspower_20_80hz": 0.5026770638702746
+    },
+    {
+      "file": "swiss_r16.b060.support.wav",
+      "fft_frames": 46,
+      "rms": 0.037559606486446864,
+      "centroid_hz": 129.00045382177368,
+      "power_fraction_above_2khz": 5.1981753628813335e-05,
+      "nearby_peak_pair_crosspower_20_80hz": 0.5299698558662981
+    }
+  ]
+}

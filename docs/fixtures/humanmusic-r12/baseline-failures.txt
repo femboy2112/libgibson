@@ -1,0 +1,50 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.14s
+     Running unittests src/lib.rs (target/debug/deps/gibson-bb7570885a984e62)
+
+running 5 tests
+test audio::human_music::temporal_witnesses::r12_local_license_cannot_distinguish_orphan_from_owned_color ... ok
+test audio::human_music::temporal_witnesses::r12_false_suspension ... FAILED
+test audio::human_music::comp::r12_landing_witness::chord_landing_must_choose_a_chord_member ... FAILED
+test audio::human_music::temporal_witnesses::r12_next_targets_have_no_live_reader_at_baseline ... FAILED
+test audio::human_music::temporal_witnesses::r12_fake_arrival ... FAILED
+
+failures:
+
+---- audio::human_music::temporal_witnesses::r12_false_suspension stdout ----
+
+thread 'audio::human_music::temporal_witnesses::r12_false_suspension' (1069047) panicked at src/audio/human_music/temporal_witnesses.rs:31:5:
+assertion `left != right` failed
+  left: Some(Suspension)
+ right: Some(Suspension)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- audio::human_music::comp::r12_landing_witness::chord_landing_must_choose_a_chord_member stdout ----
+
+thread 'audio::human_music::comp::r12_landing_witness::chord_landing_must_choose_a_chord_member' (1069045) panicked at src/audio/human_music/comp.rs:1674:9:
+assertion failed: chord.contains_pc(pitch_class(super::nearest_stable(ctx, p)))
+
+---- audio::human_music::temporal_witnesses::r12_next_targets_have_no_live_reader_at_baseline stdout ----
+
+thread 'audio::human_music::temporal_witnesses::r12_next_targets_have_no_live_reader_at_baseline' (1069049) panicked at src/audio/human_music/temporal_witnesses.rs:107:5:
+assertion `left != right` failed
+  left: "[LineNote { start: 0.0, dur: 0.5, pitch: 59, function: Some(ChordTone), accent: 1.0, structural: true }, LineNote { start: 0.5, dur: 0.5, pitch: 67, function: Some(ChordTone), accent: 0.8, structural: false }, LineNote { start: 1.0, dur: 1.0, pitch: 64, function: Some(ChordTone), accent: 1.0, structural: true }, LineNote { start: 2.0, dur: 1.0, pitch: 71, function: Some(ChordTone), accent: 1.0, structural: true }, LineNote { start: 3.0, dur: 1.0, pitch: 64, function: Some(ChordTone), accent: 1.0, structural: true }]"
+ right: "[LineNote { start: 0.0, dur: 0.5, pitch: 59, function: Some(ChordTone), accent: 1.0, structural: true }, LineNote { start: 0.5, dur: 0.5, pitch: 67, function: Some(ChordTone), accent: 0.8, structural: false }, LineNote { start: 1.0, dur: 1.0, pitch: 64, function: Some(ChordTone), accent: 1.0, structural: true }, LineNote { start: 2.0, dur: 1.0, pitch: 71, function: Some(ChordTone), accent: 1.0, structural: true }, LineNote { start: 3.0, dur: 1.0, pitch: 64, function: Some(ChordTone), accent: 1.0, structural: true }]"
+
+---- audio::human_music::temporal_witnesses::r12_fake_arrival stdout ----
+
+thread 'audio::human_music::temporal_witnesses::r12_fake_arrival' (1069046) panicked at src/audio/human_music/temporal_witnesses.rs:58:5:
+assertion `left != right` failed
+  left: Arrival
+ right: Arrival
+
+
+failures:
+    audio::human_music::comp::r12_landing_witness::chord_landing_must_choose_a_chord_member
+    audio::human_music::temporal_witnesses::r12_fake_arrival
+    audio::human_music::temporal_witnesses::r12_false_suspension
+    audio::human_music::temporal_witnesses::r12_next_targets_have_no_live_reader_at_baseline
+
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 652 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--lib`

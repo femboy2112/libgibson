@@ -1,0 +1,26 @@
+{
+  "starting_sha": "9ccb84b4462607eb04e10f0f98ecc6f9e5585c03",
+  "protected_files": {
+    "Cargo.toml": "8c0a76f55ccf9568321f4970948b3534e49957eb4ee279171fac8ad27df76e46",
+    "Cargo.lock": "37b91fa4abf9d3fdd858dc277c6420961e4cd4bbdbe3e8ee2ca5378e804f0c69",
+    "src/audio/human_music/world.rs": "530920a1229f26785e8f2cea119a81bed4441cbc1af2aa125491c518d36c18de",
+    "src/audio/human_music/language.rs": "f3251a3a774759783726562d98e8e8e838bb1f1f021185154849d50d467070fb",
+    "src/audio/human_music/song.rs": "e44856be0f74cc55c203d17671d3125e0404a89f8445d500537aba7aca2fd984",
+    "src/audio/human_music/performance.rs": "e3a3dcf2ac22a1d95b3430690710e37dd9886cac5b852b27203d930a3fcf4cf9",
+    "src/audio/human_music/interaction.rs": "4b1568f23ee8b732a93d8a8ab02181d4d898de816d4b7a6f0879c7fdd21295a0",
+    "src/audio/human_music/voicing.rs": "2ef2bbba387624b00e1c050a345cce10f2c2ce0e06620531cb4d1b640fd1339e",
+    "src/audio/human_music/synth.rs": "bce6c913d9aa18db6f67e507fda9df7d0bcac8e9153967130842f163dfaf0a9b",
+    "src/audio/human_music/groove.rs": "2a1843499a69e8a1908d17ccbae6c83197c141ffc481641506bc221b41dfab8c",
+    "src/audio/human_music/phenomenal.rs": "b745f4024ad31a748b3d6d48e85913bde3548e76c5652de90195bb5f17fdc9ef"
+  },
+  "r11_audio": {
+    "target/humanmusic-r11/black_ice/stable_propulsion.harmonic_reference.wav": "e28983254251d3347ef692c3892a13bf6f5c76908b4ac737ab7f1c448016f826",
+    "target/humanmusic-r11/black_ice/tension_deflection.wav": "b869820e817ec35947e71cdc45798e6d70eb93c311633e559d938739989494e5",
+    "target/humanmusic-r11/black_ice/stable_propulsion.wav": "fcef360a78bb6c657803ed3b7e60d9a7f41a0a34dd587cd134734d94c15dd47a",
+    "target/humanmusic-r11/black_ice/tension_deflection.harmonic_reference.wav": "1fee3e1a509d1bb9aea9202606ff23524eea8a398414168cb7b26a2b3ddb7e04",
+    "target/humanmusic-r11/swiss_signal/stable_propulsion.harmonic_reference.wav": "39817d7b850db11d2c33c0e25a2d023d481bb65825f5b3caa12bd59de7204332",
+    "target/humanmusic-r11/swiss_signal/tension_deflection.wav": "0055edb4e1a3b01a221d2388e33564d4416180ce6f03dbc2445788443fea8860",
+    "target/humanmusic-r11/swiss_signal/stable_propulsion.wav": "c03ddd14197710e981ada36d01c83c6af3348991cd1d929976c967f5381ba728",
+    "target/humanmusic-r11/swiss_signal/tension_deflection.harmonic_reference.wav": "28c0ef21b2ce47903cd88c221e2cecdb737be6a3d1f6c4f9f5aef96d1181826e"
+  }
+}

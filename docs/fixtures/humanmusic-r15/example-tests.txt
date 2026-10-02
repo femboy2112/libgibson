@@ -1,0 +1,51 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.41s
+     Running unittests examples/fx_lab.rs (target/debug/examples/fx_lab-93490a0c5d92204b)
+
+running 3 tests
+test rgb::tests::shaded_core_has_volume_and_rgb_diversity ... ok
+test rgb::tests::all_graphical_scenes_resize_and_have_mono_density ... ok
+test rgb::tests::feedback_is_ticked_once_and_frozen_reads_are_exact ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.65s
+
+     Running unittests examples/large_collection.rs (target/debug/examples/large_collection-e5c95c0ddff26c2e)
+
+running 5 tests
+test tests::end_and_home_jump_and_reveal ... ok
+test tests::filter_remove_transfers_selection_to_surviving_neighbour_by_identity ... ok
+test tests::removing_the_last_selected_row_falls_back_within_bounds ... ok
+test tests::selection_cursor_scrolls_to_stay_visible ... ok
+test tests::window_is_bounded_by_viewport_not_dataset ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+     Running unittests examples/polished_agent_ui.rs (target/debug/examples/polished_agent_ui-cd28b1c8896dc07e)
+
+running 5 tests
+test tests::both_approval_scopes_run_failure_and_recovery ... ok
+test tests::background_notification_preserves_unicode_draft ... ok
+test tests::permission_buttons_route_through_the_real_typed_runtime ... ok
+test tests::cancellation_stops_runner_and_retains_truthful_partial_result ... ok
+test tests::permission_precedes_every_simulated_mutation ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests examples/skin_gallery.rs (target/debug/examples/skin_gallery-d8129bb8739db3cf)
+
+running 1 test
+test gallery::tests::every_gallery_page_retains_primary_controls_across_sizes_and_skins ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+     Running unittests examples/ui_showcase.rs (target/debug/examples/ui_showcase-08f4e85a75753c6f)
+
+running 5 tests
+test tests::custom_surface_cache_reuses_and_invalidates_actual_inputs ... ok
+test tests::notification_keeps_editor_and_primary_controls_visible ... ok
+test tests::success_and_error_agree_across_status_table_and_compact_summary ... ok
+test tests::focused_editor_and_primary_controls_survive_all_requested_sizes ... ok
+test tests::transition_capture_is_deterministic_and_settles_to_no_motion ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.00s
+

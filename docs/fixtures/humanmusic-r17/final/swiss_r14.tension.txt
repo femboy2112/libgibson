@@ -1,0 +1,3 @@
+clashes=39 transient=37 foreshadowing=2 suspension=0 anticipation=0 unjustified=0
+   7.000   3.559s bass:quote    B2    0.45  vs pad:pad       C4    int=13 overlap=0.254s sal=1.00 exposure=0.254 Gestural next=C3 Foreshadowing
+ 111.000  56.441s bass:quote    B2    0.45  vs pad:pad       C4    int=13 overlap=0.254s sal=1.00 exposure=0.254 Gestural next=C3 Foreshadowing

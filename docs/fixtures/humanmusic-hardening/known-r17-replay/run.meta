@@ -1,0 +1,4 @@
+source_commit	96566a2b3de95289ab1f99759e38b1e95df95d2f (clean except untracked holdout-v2 files, which do not enter this test build)
+toolchain	rustc 1.98.1 (48a229cea 2026-09-01)
+command	CARGO_BUILD_JOBS=2 cargo +1.98.1 test --release --all-features --test audio_pocket_integration r17_fresh_world_seed_tempo_sweep -- --exact --ignored --nocapture --test-threads=1
+exit	101 (preserved known-red result)

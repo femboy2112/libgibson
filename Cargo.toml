@@ -28,6 +28,22 @@ exclude = [
 name = "gibson"
 crate-type = ["cdylib", "rlib", "staticlib"]
 
+[features]
+default = []
+# Optional real-audio-device output backend for the experimental `gibson::audio` axis.
+# The pure-Rust audio core (DSP, scoring, the deterministic OFFLINE renderer, WAV output)
+# needs NONE of this and is always compiled — so `cargo test`, headless builds, and CI
+# runners without system audio libraries are unaffected. Enabling `audio-cpal` pulls cpal
+# (real device I/O) and rtrb (a realtime-safe SPSC queue for the callback). On Linux cpal
+# links ALSA unconditionally and requires `libasound2-dev` at BUILD time; that is exactly
+# why this is opt-in and off by default.
+#
+# MSRV discipline: cpal 0.18.2 declares `rust-version = "1.85"` — the same value as our
+# floor, i.e. ZERO headroom. It is pinned exactly here and MUST be re-verified against
+# Rust 1.85 on any bump (a future cpal/alsa point release could raise its MSRV without a
+# semver-major, silently breaking our floor). rtrb has a 1.38 MSRV (ample headroom).
+audio-cpal = ["dep:cpal", "dep:rtrb"]
+
 [dependencies]
 taffy = "0.14"
 crossterm = "0.29"
@@ -36,6 +52,9 @@ unicode-width = "0.2"
 compact_str = "0.10"
 bitflags = "2.4"
 libc = "0.2"
+# Optional — only compiled under the `audio-cpal` feature (see [features] above).
+cpal = { version = "=0.18.2", optional = true }
+rtrb = { version = "0.3", optional = true }
 
 [dev-dependencies]
 portable-pty = "0.9"

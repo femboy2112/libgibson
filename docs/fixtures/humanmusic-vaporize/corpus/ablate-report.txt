@@ -1,0 +1,38 @@
+Ablations of the current world (one factor removed each).
+
+hookarc.normal: song=d96ffb15a7127e56 score=29841c535e96b34d perf=d895bca104f69394 tempo=84 swing=0.16
+  full: peak -5.31 dBFS, rms -22.36 dBFS, at-ceiling 0 samples, low-band side -20.7 dB, tail -38.3 dB
+  bus rms/peak dBFS: pad  -26.4/-11.8 keys  -17.7/  2.2 bass  -20.9/ -7.9 lead  -23.4/ -5.9 drums  -24.1/  0.7
+hookarc.nochorus: song=d96ffb15a7127e56 score=29841c535e96b34d perf=d895bca104f69394 tempo=84 swing=0.16
+  full: peak -4.30 dBFS, rms -20.35 dBFS, at-ceiling 0 samples, low-band side -20.8 dB, tail -40.3 dB
+  bus rms/peak dBFS: pad  -26.4/-11.8 keys  -17.7/  2.2 bass  -20.9/ -7.9 lead  -23.4/ -5.9 drums  -24.1/  0.7
+hookarc.noecho: song=d96ffb15a7127e56 score=29841c535e96b34d perf=d895bca104f69394 tempo=84 swing=0.16
+  full: peak -5.41 dBFS, rms -22.38 dBFS, at-ceiling 0 samples, low-band side -20.8 dB, tail -73.5 dB
+  bus rms/peak dBFS: pad  -26.4/-11.8 keys  -17.7/  2.2 bass  -20.9/ -7.9 lead  -23.4/ -5.9 drums  -24.1/  0.7
+hookarc.fullband: song=d96ffb15a7127e56 score=29841c535e96b34d perf=d895bca104f69394 tempo=84 swing=0.16
+  full: peak -5.27 dBFS, rms -22.37 dBFS, at-ceiling 0 samples, low-band side -11.8 dB, tail -38.3 dB
+  bus rms/peak dBFS: pad  -26.4/-11.8 keys  -17.7/  2.2 bass  -20.9/ -7.9 lead  -23.4/ -5.9 drums  -24.1/  0.7
+hookarc.nosat: song=d96ffb15a7127e56 score=29841c535e96b34d perf=d895bca104f69394 tempo=84 swing=0.16
+  full: peak -6.13 dBFS, rms -24.99 dBFS, at-ceiling 0 samples, low-band side -20.6 dB, tail -35.7 dB
+  bus rms/peak dBFS: pad  -26.4/-11.8 keys  -17.7/  2.2 bass  -20.9/ -7.9 lead  -23.4/ -5.9 drums  -24.1/  0.7
+hookarc.dry: song=d96ffb15a7127e56 score=29841c535e96b34d perf=d895bca104f69394 tempo=84 swing=0.16
+  full: peak -2.59 dBFS, rms -20.13 dBFS, at-ceiling 0 samples, low-band side -26.9 dB, tail -38.3 dB
+  bus rms/peak dBFS: pad  -26.4/-11.8 keys  -17.7/  2.2 bass  -20.9/ -7.9 lead  -23.4/ -5.9 drums  -24.1/  0.7
+deflected.normal: song=cae24c0d6789d120 score=6c104831707c2ae2 perf=6098d0909d4d99bd tempo=84 swing=0.16
+  full: peak -4.66 dBFS, rms -21.80 dBFS, at-ceiling 0 samples, low-band side -18.7 dB, tail -66.5 dB
+  bus rms/peak dBFS: pad  -27.9/-13.1 keys  -20.0/  4.6 bass  -18.9/ -8.4 lead  -22.6/ -6.1 drums  -22.3/  1.5
+deflected.nochorus: song=cae24c0d6789d120 score=6c104831707c2ae2 perf=6098d0909d4d99bd tempo=84 swing=0.16
+  full: peak -4.09 dBFS, rms -20.62 dBFS, at-ceiling 0 samples, low-band side -18.6 dB, tail -67.4 dB
+  bus rms/peak dBFS: pad  -27.9/-13.1 keys  -20.0/  4.6 bass  -18.9/ -8.4 lead  -22.6/ -6.1 drums  -22.3/  1.5
+deflected.noecho: song=cae24c0d6789d120 score=6c104831707c2ae2 perf=6098d0909d4d99bd tempo=84 swing=0.16
+  full: peak -4.69 dBFS, rms -21.83 dBFS, at-ceiling 0 samples, low-band side -18.7 dB, tail -78.2 dB
+  bus rms/peak dBFS: pad  -27.9/-13.1 keys  -20.0/  4.6 bass  -18.9/ -8.4 lead  -22.6/ -6.1 drums  -22.3/  1.5
+deflected.fullband: song=cae24c0d6789d120 score=6c104831707c2ae2 perf=6098d0909d4d99bd tempo=84 swing=0.16
+  full: peak -4.50 dBFS, rms -21.67 dBFS, at-ceiling 0 samples, low-band side -10.7 dB, tail -66.2 dB
+  bus rms/peak dBFS: pad  -27.9/-13.1 keys  -20.0/  4.6 bass  -18.9/ -8.4 lead  -22.6/ -6.1 drums  -22.3/  1.5
+deflected.nosat: song=cae24c0d6789d120 score=6c104831707c2ae2 perf=6098d0909d4d99bd tempo=84 swing=0.16
+  full: peak -2.97 dBFS, rms -24.25 dBFS, at-ceiling 0 samples, low-band side -18.6 dB, tail -64.2 dB
+  bus rms/peak dBFS: pad  -27.9/-13.1 keys  -20.0/  4.6 bass  -18.9/ -8.4 lead  -22.6/ -6.1 drums  -22.3/  1.5
+deflected.dry: song=cae24c0d6789d120 score=6c104831707c2ae2 perf=6098d0909d4d99bd tempo=84 swing=0.16
+  full: peak -2.32 dBFS, rms -19.52 dBFS, at-ceiling 0 samples, low-band side -30.8 dB, tail -67.2 dB
+  bus rms/peak dBFS: pad  -27.9/-13.1 keys  -20.0/  4.6 bass  -18.9/ -8.4 lead  -22.6/ -6.1 drums  -22.3/  1.5

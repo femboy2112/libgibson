@@ -1,0 +1,15 @@
+Round XIV final engineering receipts (tree = cb28c02 + the Round XIV lab, docs and receipts; the only source change after the gate's clippy step removed one unused variable from the lab, re-checked below and by preflight)
+
+PASS: cargo +1.98.1 fmt -- --check
+PASS: cargo +1.98.1 clippy --all-targets --all-features -- -D warnings (re-run after removing the lab's unused variable)
+PASS: RUSTDOCFLAGS="-D warnings" cargo +1.98.1 doc --no-deps
+PASS: RUST_TEST_THREADS=1 cargo +1.98.1 test --all-features (1277 passed, 0 failed, 6 ignored, 60 suites)
+PASS: RUST_TEST_THREADS=1 cargo +1.98.1 test --release --lib fuzz_the_ -- --ignored --nocapture (4 passed: coupled 1152 compositions, receipts lost 0; surgical 1152, lost silently 0, deferred 9; tension 240 performances, unjustified 2609 -> 0; coherent 240 performances, identity flips 1225 (1347.2 s) -> 96 (102.8 s), identity no worse than Round XII at any instant, no receipt lost, no stale hearing, no declared slide, lead/keys/bass/drums/SFX unchanged)
+PASS: cargo +1.85 check --locked --lib --all-features
+PASS: RUST_TEST_THREADS=1 cargo +1.98.1 test --example fx_lab --example skin_gallery --example polished_agent_ui --example ui_showcase --example large_collection (19 passed)
+PASS: RUSTUP_TOOLCHAIN=1.98.1 STABLE_TOOLCHAIN=+1.98.1 MSRV_TOOLCHAIN=+1.85 RUST_TEST_THREADS=1 scripts/release/preflight.sh (RELEASE PREFLIGHT: PASS, 13/13 on the final tree)
+PASS: cargo +1.98.1 run --release --example heard_object_lab -- --render --out=target/humanmusic-r14/gate (every lab assertion; every WAV re-renders byte-identically to final/; the final receipts re-generate byte-identically after the lab fix)
+
+The full suite includes every prior HumanMusic regression (Round IX SongMap conformance, Round X meaning, Round XI phenomenal, Round XII temporal pitch, Round XIII mass, Round XIIIb tension controls) and 13 Round XIV tests (heard_witnesses), 1 of them the ignored sweep.
+The six ignored tests are the four release-mode HumanMusic sweeps (run explicitly above), the real output-device test and the known upstream issue #15 input-delivery acceptance; the latter two remain unverified.
+Source, protected-file, audio and receipt hashes: final-manifest.json. No merge, tag, release, version or ABI change. Audio remains Rust-only. No human audition is claimed.

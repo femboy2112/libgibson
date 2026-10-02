@@ -1,0 +1,51 @@
+# Round XIV baseline: the falsifiers fail on the tree they were written against
+# base 2820ea96b7a847c20f172fa3f27dd61da2f70094 + src/audio/human_music/heard_witnesses.rs (this commit)
+# cargo test --release --lib heard_witnesses -- --include-ignored
+
+
+running 6 tests
+test audio::human_music::heard_witnesses::r14_coverage_must_hold_for_as_long_as_the_note_is_needed ... FAILED
+test audio::human_music::heard_witnesses::r14_attacked_notes_are_never_a_slide ... FAILED
+test audio::human_music::heard_witnesses::r14_the_r13b_band_at_sixteen_seconds_sounds_no_c ... ok
+test audio::human_music::heard_witnesses::r14_identity_law_hears_the_r13b_flip ... FAILED
+test audio::human_music::heard_witnesses::r14_every_dependent_heard_the_final_lead ... FAILED
+test audio::human_music::heard_witnesses::r14_round12_band_heard_its_own_lead ... ok
+
+failures:
+
+---- audio::human_music::heard_witnesses::r14_coverage_must_hold_for_as_long_as_the_note_is_needed stdout ----
+
+thread 'audio::human_music::heard_witnesses::r14_coverage_must_hold_for_as_long_as_the_note_is_needed' (1968776) panicked at src/audio/human_music/heard_witnesses.rs:220:9:
+Pad 72 removed as covered over [0, 4.509493661759155), but its pitch class stops sounding
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- audio::human_music::heard_witnesses::r14_attacked_notes_are_never_a_slide stdout ----
+
+thread 'audio::human_music::heard_witnesses::r14_attacked_notes_are_never_a_slide' (1968775) panicked at src/audio/human_music/heard_witnesses.rs:256:9:
+attacked note 48 certified as a slide: beat 3.0000 role bass pitch C3 (48) duration 0.2000
+  current C @ 0.00 previous none next none next_structural none destination none
+  declared Some(ChordTone); local [ChordTone, PedalTone, SlidePath]; vertical: {"structural"} (written ensemble slices; world-free lenient color budget); path Stable None
+  previous note none; next note C#3 @ 3.25 dur 0.20; structural_proxy=true ambiguous_voice=false
+  reason: observed path supports the claim
+
+
+---- audio::human_music::heard_witnesses::r14_identity_law_hears_the_r13b_flip stdout ----
+
+thread 'audio::human_music::heard_witnesses::r14_identity_law_hears_the_r13b_flip' (1968778) panicked at src/audio/human_music/heard_witnesses.rs:190:5:
+R12 flip beats 0.5, R13b flip beats 0.5: the removed root is inaudible to the law
+
+---- audio::human_music::heard_witnesses::r14_every_dependent_heard_the_final_lead stdout ----
+
+thread 'audio::human_music::heard_witnesses::r14_every_dependent_heard_the_final_lead' (1968777) panicked at src/audio/human_music/heard_witnesses.rs:303:5:
+18 lead notes heard by keys/bass/drums are not in the final score: [(18.5, 0.45, 71, Some(LicensedExtension)), (24.5, 0.5, 73, Some(Neighbor)), (27.5, 0.45, 73, Some(ChromaticApproach)), (34.5, 0.45, 71, Some(LicensedExtension)), (36.5, 0.45, 73, Some(ChromaticApproach)), (42.5, 0.45, 71, Some(LicensedExtension)), (44.5, 0.45, 73, Some(ChromaticApproach)), (49.0, 0.5, 73, Some(Neighbor)), (51.0, 0.5, 73, Some(ChromaticApproach)), (56.5, 0.5, 73, Some(Neighbor)), (59.5, 0.45, 73, Some(ChromaticApproach)), (82.5, 0.45, 71, Some(LicensedExtension)), (89.0, 0.5, 73, Some(Neighbor)), (91.0, 0.5, 73, Some(ChromaticApproach)), (96.5, 0.5, 73, Some(Neighbor)), (99.5, 0.45, 73, Some(ChromaticApproach)), (106.5, 0.45, 71, Some(LicensedExtension)), (108.5, 0.45, 70, Some(ChromaticApproach))]
+
+
+failures:
+    audio::human_music::heard_witnesses::r14_attacked_notes_are_never_a_slide
+    audio::human_music::heard_witnesses::r14_coverage_must_hold_for_as_long_as_the_note_is_needed
+    audio::human_music::heard_witnesses::r14_every_dependent_heard_the_final_lead
+    audio::human_music::heard_witnesses::r14_identity_law_hears_the_r13b_flip
+
+test result: FAILED. 2 passed; 4 failed; 0 ignored; 0 measured; 710 filtered out; finished in 0.24s
+
+error: test failed, to rerun pass `--lib`

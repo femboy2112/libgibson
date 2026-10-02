@@ -1,0 +1,5 @@
+identity: 256 slices, 4 rival runs, 0 flipped (-0.000 s), hold 0.5 s
+run   4.520-4.737   s  beats   7.156-7.500    chart Am7    rival C    0.217 s  passing
+run  26.211-26.236  s  beats  41.500-41.540   chart A#maj7 rival Am   0.025 s  passing
+run  26.735-27.158  s  beats  42.331-43.000   chart A#maj7 rival F    0.423 s  passing
+run  34.918-35.053  s  beats  55.287-55.500   chart Am7    rival C    0.135 s  passing

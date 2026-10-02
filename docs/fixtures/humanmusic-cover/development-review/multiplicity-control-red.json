@@ -1,0 +1,10 @@
+{
+  "purpose": "development review assumption falsifier; not holdout",
+  "exit": 101,
+  "pass": 6,
+  "fail": 1,
+  "failing_assumption": "A duplicate canonical groove attack must be rejected. The declared ordered multiset relation permits multiplicity; retaining duplicates is semantic data, not an ordering bug. Corrected control tests that multiplicity moves the canonical fingerprint.",
+  "test_binary_sha256": "52941e8ad080f270be9789e8de8abd4b9163a24d2eb62c83406f6896dcf5f3f2",
+  "library_at_receipt_sha256": "8dd360e7238dfe7a85a0d39b4ce5775d68d8f6f27a4b9730ba3d65e88e9d5c78",
+  "source_boundary": "evolving cover implementation; binary hash is result authority"
+}

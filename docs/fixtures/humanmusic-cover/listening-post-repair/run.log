@@ -1,0 +1,19 @@
+head=ced9833c3fc2cf55eae2bd4cd573aceb972777b6
+== ode start=2026-09-30T11:19:57Z
+Pipeline FAIL (preserved): CoverPipelineReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 3, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0 }
+Freedom versus first cover: CoverFreedom { support_voicing: true, dynamics: true, percussion_detail: true, interactions: true }
+
+Listening questions: is the identified melody unmistakably the same song? Does the free band interpret it rather than merely change patches? The partial chart has no source-melody recognition claim.
+exit_ode=0
+== swing-partial start=2026-09-30T11:20:40Z
+Pipeline PASS: CoverPipelineReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0 }
+Freedom versus first cover: CoverFreedom { support_voicing: true, dynamics: true, percussion_detail: true, interactions: true }
+
+Listening questions: is the identified melody unmistakably the same song? Does the free band interpret it rather than merely change patches? The partial chart has no source-melody recognition claim.
+exit_swing-partial=0
+== generated start=2026-09-30T11:20:53Z
+Freedom versus first cover: CoverFreedom { support_voicing: true, dynamics: true, percussion_detail: true, interactions: true }
+transposed_faster: INFEASIBLE Invalid("pinned harmony outside target vocabulary")
+
+Listening questions: is the identified melody unmistakably the same song? Does the free band interpret it rather than merely change patches? The partial chart has no source-melody recognition claim.
+exit_generated=0

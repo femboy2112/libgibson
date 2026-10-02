@@ -1,0 +1,21 @@
+    Blocking waiting for file lock on build directory
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 31.27s
+     Running tests/audio_occupancy.rs (target/debug/deps/audio_occupancy-125d76644bd83a56)
+
+running 9 tests
+test r16_null_source_has_no_phantom_phrase_ownership ... ok
+test r16_authored_internal_rests_and_real_yields_are_distinct ... ok
+test r16_retiming_or_omitting_a_sound_does_not_transfer_ownership ... ok
+test r16_swiss_existing_comp_opportunities_remain_legal ... ok
+test r16_semantic_bass_pulses_are_not_retimed_acoustic_attacks ... ok
+test r16_frozen_r15_micro_holes_are_not_authored_opportunities ... ok
+test r16_owned_drums_preserve_pocket_under_bass_retiming ... ok
+test r16_owned_keys_reject_micro_holes_at_source ... ok
+phrase=false ownership=false comp_attacks=52 stale=0
+phrase=false ownership=true comp_attacks=48 stale=0
+phrase=true ownership=false comp_attacks=52 stale=0
+phrase=true ownership=true comp_attacks=48 stale=0
+test r16_phrase_and_ownership_factors_are_independent_and_final_hearings_are_current ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.79s

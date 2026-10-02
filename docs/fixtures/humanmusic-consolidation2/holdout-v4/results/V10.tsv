@@ -1,0 +1,10 @@
+case	phase	law	status	detail
+V10	source	generation	PASS	performed; its laws are judged separately
+V10	source	declared-grammar	PASS	grammar=LoopEvolution
+V10	source	declared-composer	PASS	declared=MeaningDirected; recorded=MeaningDirected
+V10	source	canonical-inventory	PASS	song=9a519f62b3855038; plan=eeeaffd831306f66; score=3516eb80c1c466af; notes=11; drums=0; length=2.5; tempo=118
+V10	source	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+V10	source	guard:percussion-law	PASS	PercussionReport restraint=busy required=0 ornaments admitted 0/0 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/0\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 0/0\n  unison-inner: 0/0\nbars over allowance=[]
+V10	source	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [], open_debts: [] }
+V10	source	evidence:established	PASS	established=[HarmonicLoop, Form, Orchestration]
+V10	extraction	projection	PASS	explicit refusal at extraction: MissingAxis(Motif); expect=lawful

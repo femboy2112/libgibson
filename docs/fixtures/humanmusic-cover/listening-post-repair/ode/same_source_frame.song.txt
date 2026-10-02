@@ -1,0 +1,1 @@
+SongMapConformance: PASS (song 0xbf81fa4770caedfe, performed 0xbf81fa4770caedfe; 4 identity sites, 0 landmarks, 0 chord changes checked)

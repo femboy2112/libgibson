@@ -1,0 +1,3 @@
+ Documenting libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.67s
+   Generated /home/leah/LibGibson/target/doc/gibson/index.html

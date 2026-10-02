@@ -1,0 +1,109 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.59s
+     Running unittests src/lib.rs (target/debug/deps/gibson-bb7570885a984e62)
+
+running 14 tests
+test audio::human_music::cover::tests::actual_motif_mutation_fails_while_free_voicing_does_not ... ok
+test audio::human_music::cover::tests::all_axes_freeze_identity_but_not_articulation_and_none_is_not_a_cover ... ok
+test audio::human_music::cover::tests::chromatic_caller_is_the_same_exact_object_in_song_material_and_score ... ok
+test audio::human_music::cover::tests::conflicting_stage_and_motif_constraints_are_rejected_before_planning ... ok
+test audio::human_music::cover::tests::equal_quotients_cannot_leak_free_reference_data ... ok
+test audio::human_music::cover::tests::external_melody_survives_three_worlds_key_tempo_and_seed ... ok
+test audio::human_music::cover::tests::generated_default_pins_contract_and_mutations_are_localized ... ok
+test audio::human_music::cover::tests::hostile_source_leak_would_fail_the_output_equality_witness ... ok
+test audio::human_music::cover::tests::observed_rest_is_not_filled_by_free_articulation ... ok
+test audio::human_music::cover::tests::occupancy_evidence_is_required_and_canonical_rest_never_yields ... ok
+test audio::human_music::cover::tests::ordered_unknown_chart_retains_family_equivalence ... ok
+test audio::human_music::cover::tests::source_carry_law_releases_foreign_tone_without_changing_attack_or_pitch ... ok
+test audio::human_music::cover::tests::sparse_swing_collision_is_rejected_before_source ... ok
+test audio::human_music::cover::tests::target_vocabulary_does_not_secretly_allow_mixture_or_extensions ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 735 filtered out; finished in 2.11s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running unittests src/lib.rs (target/debug/deps/gibson-bb7570885a984e62)
+
+running 3 tests
+test audio::human_music::reference_song::tests::excluded_voices_remain_observed_without_entering_the_quotient ... ok
+test audio::human_music::reference_song::tests::malformed_and_polyphonic_sources_are_rejected ... ok
+test audio::human_music::reference_song::tests::omitted_harmony_is_unknown_and_freed_melody_is_free ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 746 filtered out; finished in 0.00s
+
+error: no test target named `audio_performance_policy` in default-run packages
+help: available test targets:
+    acid_architecture
+    acid_battle
+    acid_battlefield
+    acid_battlefield_goldens
+    acid_graphics
+    acid_presentation
+    acid_render
+    acid_story
+    audio_canonical_fingerprint
+    audio_consolidated_holdout
+    audio_consolidation_characterization
+    audio_cover_review
+    audio_expression
+    audio_humanmusic
+    audio_occupancy
+    audio_phrase_expression
+    audio_phrase_hostile
+    audio_phrase_integration
+    audio_phrase_surface
+    audio_pitch_relations
+    audio_pocket_integration
+    audio_pocket_phase
+    audio_pocket_voice
+    audio_realization_policy
+    audio_rhythm_voice_core
+    audio_voicing_surface
+    capability_fallback
+    cinematic_paths
+    commit_invariance
+    compositor
+    demo_render
+    diff_golden
+    effects_perf
+    event_pressure_pty
+    event_pressure_trace
+    event_pressure_visual
+    ffi_lifecycle
+    geometry_diff_contract
+    glyph_realization
+    headless_capture
+    intro_cinema
+    intro_prologue
+    intro_pty
+    intro_reaction
+    non_tty_redirection
+    pty_demos
+    pty_integration
+    pty_resize_torture
+    raster3d
+    raster_fx
+    regression_v0_2_1
+    regression_v0_2_2
+    regression_v0_2_3
+    regression_v0_2_4
+    regression_v0_2_5
+    regression_v0_3_0
+    resize_torture
+    runtime_observatory_live
+    safety_api
+    scene
+    scene_algebra
+    scene_cinematic
+    screen_state_vt100
+    story_reactions
+    structured_output
+    surface_fx
+    terminal_ownership
+    ui_controls
+    ui_goldens
+    ui_layer
+    video_bake
+    video_composite
+    video_keying
+    visual_goldens
+    whole_renderer_vt100

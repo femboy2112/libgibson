@@ -1,0 +1,21 @@
+case	phase	law	status	detail
+H32	source	generation	PASS	returned a candidate; admission checked separately
+H32	source	declared-grammar	PASS	grammar=HookArc; declared_composer=MeaningDirected; self_reported_composer=MeaningDirected
+H32	source	canonical-inventory	PASS	song=374489bdeedb4b5c; plan=e759762784abee1a; score=1c3034031d5156b6; notes=29; drums=28; length=11; tempo=71
+H32	source	score-domain	PASS	all score domains valid
+H32	source	song-projection	PASS	SongMapConformance: PASS (song 0x3f7582d84f92da40, performed 0x3f7582d84f92da40; 0 identity sites, 0 landmarks, 0 chord changes checked)
+H32	source	pitch-function-presence	PASS	unclassified=[]
+H32	source	temporal-function	PASS	false_function_claims=0\nfalse_suspensions=0\nbroken_anticipations=0\norphan_extensions=1\norphan_structural_extensions=1\nunresolved_tendencies=0\nbad_arrivals=0\nguide_path_misses=0\npath_breaks_at_harmony_changes=0\nlocally_legal_globally_unexplained=1\nambiguous_voices=0\nbeat 10.0000 role pad pitch G5 (79) duration 0.9800\n  current F @ 10.00 previous C7 @ 8.00 next none next_structural none destination none\n  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)\n  previous note G5 @ 8.00 dur 1.96; next note none; structural_proxy=true ambiguous_voice=false\n  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint\n
+H32	source	held-identity	PASS	identity: 12 slices, 0 rival runs, 0 flipped (-0.000 s), hold 0.5 s\n
+H32	source	action-receipts	PASS	causal witnesses (events stamped with the action's id, held to its contract — NOT a quality score):\n  witnessed 3/3 actions  (stamped 3/3, absence 0, harmonic 0)\n  hold=2/2 thicken=1/1\n
+H32	source	stage-boundary	PASS	authoritative violations=[]; diagnostic raw-onset disagreements=[]
+H32	source	causal-hearing	PASS	stale=[]
+H32	source	guard:hearing-ledger-coverage	PASS	missing=[]; ledgers=9
+H32	source	continuation-identity	PASS	violations=[]; edges=[]
+H32	source	guard:direct-voice-lifetime	PASS	failures=[]
+H32	source	occupancy-contract	PASS	violations=[]
+H32	source	guard:semantic-occupancy	PASS	failures=[]; ownership=[AuthoredOccupancy { role: Lead, rhythm: [], spans: [] }, AuthoredOccupancy { role: Bass, rhythm: [RhythmReservation { beat: 8.0, end_beat: 10.700000047683716, structural: true, material: None, actions: ActionStamp { ids: [None, None, None] } }], spans: [] }]
+H32	source	phrase-destinations	PASS	missing=[]
+H32	source	anchor-report	PASS	AnchorReport { anchors: [(Motif, StructurallyInapplicable("no seated phrase can hold a motif statement")), (HarmonicContour, Realized), (Groove, Realized)] }
+H32	source	guard:percussion-law	PASS	PercussionReport restraint=foundation required=28 ornaments admitted 0/0 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/0\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 0/0\n  unison-inner: 0/0\n  bar   0 Silent required=14 ornaments 0/0 — supports the pocket (lead 0, band 4, prev 0)\n  bar   1 Silent required=14 ornaments 0/0 — phrase end with space: a moment to speak (lead 0, band 4, prev 0)\nbars over allowance=[]
+H32	extraction	projection	FAIL	explicit refusal at extraction: MissingAxis(Motif); expect=lawful

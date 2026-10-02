@@ -1,0 +1,24 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.06s
+     Running unittests src/lib.rs (target/debug/deps/gibson-bb7570885a984e62)
+
+running 17 tests
+test audio::human_music::meaning_probes::the_instrument_reads_every_story ... ok
+test audio::human_music::meaning_probes::a_hanging_answer_hangs_nearby ... ok
+test audio::human_music::meaning_probes::groove_extremes_are_lawful_and_the_prior_aims_between ... ok
+test audio::human_music::meaning_probes::the_control_is_untouched_and_shares_the_form ... ok
+test audio::human_music::meaning_probes::the_composer_now_hears_the_story ... ok
+test audio::human_music::meaning_probes::the_r9_composer_cannot_mean_two_stories ... ok
+test audio::human_music::meaning_probes::the_r9_song_does_not_mean_its_story ... ok
+test audio::human_music::meaning_probes::witness_development_before_exposition ... ok
+test audio::human_music::meaning_probes::witness_expectation_before_home ... ok
+test audio::human_music::meaning_probes::witness_the_composer_is_meaning_blind ... ok
+test audio::human_music::meaning_probes::the_listener_model_sees_what_it_used_to_miss ... ok
+test audio::human_music::meaning_probes::a_return_pivot_is_read_in_the_region_it_leaves ... ok
+test audio::human_music::meaning_probes::a_hand_written_song_can_mean_its_story ... ok
+test audio::human_music::meaning_probes::scrambled_meaning_breaks_the_law ... ok
+test audio::human_music::meaning_probes::the_meaning_directed_flagship ... ok
+test audio::human_music::meaning_probes::the_prior_says_why_a_melody_is_unusual ... ok
+test audio::human_music::meaning_probes::the_meaning_composer_across_songs ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 635 filtered out; finished in 18.83s
+

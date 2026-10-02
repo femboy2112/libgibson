@@ -1,0 +1,121 @@
+{
+  "starting_sha": "5ac53ad365efce762cc6b6bc55952d30a10e227d",
+  "implementation_parent": "b09613a5288553c2e4a626710ea2b5932abe1d6e",
+  "note": "Final commit contains these source bytes; hashes avoid a self-referential commit receipt.",
+  "seed": 2112,
+  "beats": 120,
+  "source_sha256": {
+    "examples/human_music_lab.rs": "b5d0d9247de340907237dbab6dc180cc912759738459bb97c21338e55b757a75",
+    "src/audio/human_music/backbone.rs": "824d4cd96e20a741ab5e5f0bf8628c2d16d0b96248d829abd9d807cfc435e2ab",
+    "src/audio/human_music/composer.rs": "965c696dd74368ae2335d94f0652e49c6b1ad9902bc223f43ccea110767182d7",
+    "src/audio/human_music/contract.rs": "54dc29472f08053d6553fb6635bc6a3a34182f9fb52a9338151286d1798fb3c6",
+    "src/audio/human_music/discourse.rs": "497c6aaf8781ae24b292af331ff112756e9c9857514b84d63c5d73b21936b30b",
+    "src/audio/human_music/mod.rs": "6ae7af77abeb4ce0ee9c9b4f6fdf62617030087222d12e907959f8d3912adc5e",
+    "src/audio/human_music/phenomenal.rs": "b745f4024ad31a748b3d6d48e85913bde3548e76c5652de90195bb5f17fdc9ef",
+    "src/audio/human_music/phenomenal_probes.rs": "1ec2eafeb5d58e4e195012f9a3b5a9c4e0b81dfea397de7043319906691202d4",
+    "src/audio/human_music/plan.rs": "4ecd2927f179f31935284aba77934127b1a978b85f1b188247fe402fda41bd35",
+    "src/audio/human_music/song.rs": "e44856be0f74cc55c203d17671d3125e0404a89f8445d500537aba7aca2fd984"
+  },
+  "protected_sha256": {
+    "Cargo.toml": "8c0a76f55ccf9568321f4970948b3534e49957eb4ee279171fac8ad27df76e46",
+    "Cargo.lock": "37b91fa4abf9d3fdd858dc277c6420961e4cd4bbdbe3e8ee2ca5378e804f0c69",
+    "include/gibson.h": "986e0d821b6e27735ab2fa343ea1119ade4ced89190fa033e85d14f5e6638d73",
+    "src/audio/human_music/world.rs": "530920a1229f26785e8f2cea119a81bed4441cbc1af2aa125491c518d36c18de",
+    "src/audio/human_music/language.rs": "f3251a3a774759783726562d98e8e8e838bb1f1f021185154849d50d467070fb",
+    "src/audio/human_music/performance.rs": "e3a3dcf2ac22a1d95b3430690710e37dd9886cac5b852b27203d930a3fcf4cf9",
+    "src/audio/human_music/interaction.rs": "4b1568f23ee8b732a93d8a8ab02181d4d898de816d4b7a6f0879c7fdd21295a0",
+    "src/audio/human_music/action.rs": "279782d072c763105773a62ec0c0ac6261a4269e901f7b30d09af7b0c0cf78ab",
+    "src/audio/human_music/ensemble.rs": "32cc666bd48da368f924e4bc5f0d4e16c97bc157c4031cae4826caa09d960d15",
+    "src/audio/human_music/synth.rs": "bce6c913d9aa18db6f67e507fda9df7d0bcac8e9153967130842f163dfaf0a9b",
+    "src/audio/human_music/bass.rs": "d48f689774c089f6c8bfff1c6c8e45dde5555ee40448b6eae153f260d394a1f3",
+    "src/audio/human_music/comp.rs": "bb70de18576d4504c241e279d9aa2011d25cc4950d8ff0d67a7696ca653b24f9",
+    "src/audio/human_music/groove.rs": "2a1843499a69e8a1908d17ccbae6c83197c141ffc481641506bc221b41dfab8c",
+    "src/audio/human_music/voicing.rs": "2ef2bbba387624b00e1c050a345cce10f2c2ce0e06620531cb4d1b640fd1339e"
+  },
+  "audio": [
+    {
+      "path": "/home/leah/LibGibson/target/humanmusic-r11/black_ice/stable_propulsion.harmonic_reference.wav",
+      "sha256": "e28983254251d3347ef692c3892a13bf6f5c76908b4ac737ab7f1c448016f826",
+      "bytes": 16189136,
+      "channels": 2,
+      "sample_width": 2,
+      "sample_rate": 48000,
+      "frames": 4047273,
+      "identical_after_short_fragment_observer_fix": true
+    },
+    {
+      "path": "/home/leah/LibGibson/target/humanmusic-r11/black_ice/stable_propulsion.wav",
+      "sha256": "fcef360a78bb6c657803ed3b7e60d9a7f41a0a34dd587cd134734d94c15dd47a",
+      "bytes": 16189136,
+      "channels": 2,
+      "sample_width": 2,
+      "sample_rate": 48000,
+      "frames": 4047273,
+      "identical_after_short_fragment_observer_fix": true
+    },
+    {
+      "path": "/home/leah/LibGibson/target/humanmusic-r11/black_ice/tension_deflection.harmonic_reference.wav",
+      "sha256": "1fee3e1a509d1bb9aea9202606ff23524eea8a398414168cb7b26a2b3ddb7e04",
+      "bytes": 16189136,
+      "channels": 2,
+      "sample_width": 2,
+      "sample_rate": 48000,
+      "frames": 4047273,
+      "identical_to_pre_seating_control": true,
+      "identical_after_short_fragment_observer_fix": true
+    },
+    {
+      "path": "/home/leah/LibGibson/target/humanmusic-r11/black_ice/tension_deflection.wav",
+      "sha256": "b869820e817ec35947e71cdc45798e6d70eb93c311633e559d938739989494e5",
+      "bytes": 16189136,
+      "channels": 2,
+      "sample_width": 2,
+      "sample_rate": 48000,
+      "frames": 4047273,
+      "identical_to_pre_seating_control": true,
+      "identical_after_short_fragment_observer_fix": true
+    },
+    {
+      "path": "/home/leah/LibGibson/target/humanmusic-r11/swiss_signal/stable_propulsion.harmonic_reference.wav",
+      "sha256": "39817d7b850db11d2c33c0e25a2d023d481bb65825f5b3caa12bd59de7204332",
+      "bytes": 12195300,
+      "channels": 2,
+      "sample_width": 2,
+      "sample_rate": 48000,
+      "frames": 3048814,
+      "identical_after_short_fragment_observer_fix": true
+    },
+    {
+      "path": "/home/leah/LibGibson/target/humanmusic-r11/swiss_signal/stable_propulsion.wav",
+      "sha256": "c03ddd14197710e981ada36d01c83c6af3348991cd1d929976c967f5381ba728",
+      "bytes": 12195300,
+      "channels": 2,
+      "sample_width": 2,
+      "sample_rate": 48000,
+      "frames": 3048814,
+      "identical_after_short_fragment_observer_fix": true
+    },
+    {
+      "path": "/home/leah/LibGibson/target/humanmusic-r11/swiss_signal/tension_deflection.harmonic_reference.wav",
+      "sha256": "28c0ef21b2ce47903cd88c221e2cecdb737be6a3d1f6c4f9f5aef96d1181826e",
+      "bytes": 12195300,
+      "channels": 2,
+      "sample_width": 2,
+      "sample_rate": 48000,
+      "frames": 3048814,
+      "identical_to_pre_seating_control": true,
+      "identical_after_short_fragment_observer_fix": true
+    },
+    {
+      "path": "/home/leah/LibGibson/target/humanmusic-r11/swiss_signal/tension_deflection.wav",
+      "sha256": "0055edb4e1a3b01a221d2388e33564d4416180ce6f03dbc2445788443fea8860",
+      "bytes": 12195300,
+      "channels": 2,
+      "sample_width": 2,
+      "sample_rate": 48000,
+      "frames": 3048814,
+      "identical_to_pre_seating_control": true,
+      "identical_after_short_fragment_observer_fix": true
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+Round XVI preregistered experiment boundary
+Starting local/remote HEAD: bc9fbd7c1ea1c2688708a48ec37b493f7e6a2583
+Origin: git@github.com:femboy2112/libgibson.git
+Branch: feat/v0.4-humanmusic-audio
+Base/main: 7b4efdc4c7fc6523d890a28f2aa8e27a6ba59286
+
+Human contact: maintainer rejected the recurring SWISS Cmaj7 around 16 seconds and
+heard improved but stuttering BLACK R15. This refutes the earlier SWISS acceptance
+premise. It does not identify a unique acoustic cause.
+
+Frozen controls: perform_coherent (R14), perform_expressive (R15), default options,
+StablePropulsion seed 2112, 120-beat deflected_lift_trace, FusionConversation.
+BLACK R14 score 562462b4c3c7e728; R15 score 32cecf0800d51ce5.
+SWISS R14/R15 score beb08c057ed87d94. Song af5360442b9b6729.
+
+BLACK rivals:
+A. Local physical viability alone produces coherent phrases.
+B. Repeated destination-adjacent morphology can fail despite local viability.
+C. Keys/drums amplify the surface by treating retimed slots as new semantic rhythm.
+Probes: raw phrase sequences and repeated morphology; source semantic occupancy
+separated from final acoustic collisions; phrase-planning x occupancy ablation.
+Local viability thresholds remain frozen. No arbitrary random jitter or canned licks.
+
+SWISS rivals:
+A. Harmonic identity remains wrong.
+B. Same identity is realized with exposed register/inversion/voice-path differences.
+C. Cross-role contacts/attack fusion alone explain the reported family.
+Probes: within-song Cmaj7 controls; interval/time/contact decomposition, previous/next
+pad displacement, same-PC candidate register inversions, full vs pad/support windows.
+Preserve distinct evidence fields; no aggregate musical-goodness score. Identity is a
+gate, not a substitute for the other fields. Source voicings selected before emission.
+
+Holdout boundary: flagship Swiss/Black seed2112 is calibration, not validation.
+After candidate selection test multiple fresh seeds in all three worlds, with VAPOR95
+reserved from candidate fitting; tempo/patch perturbations; phrase cardinality, rests,
+yield, action/unison, kinetic extremes and harmony/stage boundaries.
+
+All diagnostics share implementation lineage and same-model reasoning. The maintainer's
+ear is the independent musical acceptance bearing. No render is claimed to have been
+heard by the agent. No truth probabilities or physical quantum inference.

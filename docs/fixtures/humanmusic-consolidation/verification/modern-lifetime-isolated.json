@@ -1,0 +1,15 @@
+{
+  "boundary": "isolated index snapshot at a06c370 plus observer patch; unrelated evolving cover source excluded",
+  "command": "CARGO_BUILD_JOBS=1 CARGO_TARGET_DIR=/home/leah/LibGibson/target cargo +1.98.1 test --test audio_realization_policy --test audio_consolidation_characterization --test audio_rhythm_voice_core --test audio_pocket_voice --test audio_canonical_fingerprint",
+  "exit": 0,
+  "tests": {
+    "audio_realization_policy": 8,
+    "audio_consolidation_characterization": 1,
+    "audio_rhythm_voice_core": 4,
+    "audio_pocket_voice": 4,
+    "audio_canonical_fingerprint": 4
+  },
+  "passed": 21,
+  "failed": 0,
+  "scope": "event/evidence, profile, audibility and short voice PCM controls; full accepted corpus rerender still separate"
+}

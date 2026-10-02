@@ -1,0 +1,5 @@
+StablePropulsion seed=2112 FusionConversation default options song=af5360442b9b6729
+black_ice r14 tempo=88 score=562462b4c3c7e728 perf=dd68e9d7339daba4 notes=449 decisions=0 flips=0 flip_seconds=-0 stale_hearings=0 temporal_false_claims=0 receipts=45/45
+black_ice expressive tempo=88 score=32cecf0800d51ce5 perf=dd68e9d7339daba4 notes=458 decisions=34 flips=0 flip_seconds=-0 stale_hearings=0 temporal_false_claims=0 receipts=45/45
+swiss r14 tempo=118 score=beb08c057ed87d94 perf=1e99b6d9458ab484 notes=449 decisions=0 flips=0 flip_seconds=-0 stale_hearings=0 temporal_false_claims=0 receipts=45/45
+swiss expressive tempo=118 score=beb08c057ed87d94 perf=1e99b6d9458ab484 notes=449 decisions=0 flips=0 flip_seconds=-0 stale_hearings=0 temporal_false_claims=0 receipts=45/45

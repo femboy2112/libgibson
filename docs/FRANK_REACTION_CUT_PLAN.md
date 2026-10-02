@@ -1,6 +1,6 @@
 # Filthy Frank reaction cut — LibGibson intro v2
 
-**Status:** planning/hardening artifact on `feat/temporal-visual-supremacy`. This is not part of main and is not a release claim.
+**Status:** **Shipped in v0.3.1** (visual reaction cut, silent) and merged to `main`. The `feat/v0.4-humanmusic-audio` branch now extends it with an audio soundtrack — see the [Audio](#audio) section and [`HUMAN_MUSIC_ARCHITECTURE.md`](HUMAN_MUSIC_ARCHITECTURE.md). The shipped implementation uses a **continuous intro spine + reaction beat windows + final-frame hold** (described below), *not* the earlier per-cue `Continue | Hold | Slow` model this document first sketched; that stale language is preserved only as historical rationale.
 
 ## Goal
 
@@ -68,14 +68,16 @@ The original film remains:
 | 53–60 s | Ascent |
 | 60–72 s | Earth / title / final hold |
 
-The reaction cut may have a longer **edit clock** than 72 seconds. Keep the original intro's narrative clock separate from the reaction-edit clock so a reaction can freeze/slow/continue the base film without corrupting the existing deterministic intro semantics.
+The reaction cut has a longer **edit clock** than the original ~72 s intro. **As shipped in v0.3.1**, the intro plays as a *continuous spine*: the intro-narrative clock advances 1:1 with the edit clock, monotonically (`intro_seconds(edit) = edit.clamp(0, INTRO_LAST)`), and holds its final frame once the intro completes so the sting can land. Reaction cues are *beat windows* over that spine, not per-cue freezes.
+
+> **Historical note (superseded).** An earlier draft of this plan proposed a per-cue `Continue | Hold | Slow` base-film time policy (sketched below). It was tried and **rejected**: pinning cues to discrete intro moments made the base film lurch between freeze-frames ("clips and skips", caught by running the demo live). The continuous-spine model replaced it. `Continue | Hold | Slow` references that remain below are kept only as historical rationale.
 
 Conceptually:
 
 ```text
 reaction edit time
       │
-      ├── maps to intro narrative time (continue / hold / slow)
+      ├── maps to intro narrative time (continuous 1:1 spine, holds final frame)
       └── maps to source reaction clip time
 ```
 
@@ -202,7 +204,7 @@ A cue may specify:
 
 - source in/out time;
 - intro anchor time;
-- base-film time policy: `Continue | Hold | Slow(factor)`;
+- base-film time policy — *superseded*: the shipped director uses a global continuous intro spine (`intro_seconds(edit) = edit.clamp(0, INTRO_LAST)`), not a per-cue `Continue | Hold | Slow(factor)`;
 - placement anchor;
 - scale;
 - x/y offset;
@@ -292,15 +294,19 @@ This is essential for tests and polish.
 
 ## Audio
 
-Do not introduce an audio dependency into LibGibson core.
+**Update (v0.4 / `feat/v0.4-humanmusic-audio`).** Audio is now in scope as a *separate, optional, experimental* realization axis (`gibson::audio`). The original constraint below did its job — v0.3.1 shipped visual-only — and its spirit still governs the design:
 
-The flagship must work visually without synchronized audio.
+- The audio subsystem is Rust-only and additive. The pure-Rust core (DSP, scoring, offline render, WAV) adds **no new mandatory dependencies** and is not exposed through the C ABI (`GIBSON_ABI_VERSION` stays 1). Real-device output is an optional `audio-cpal` feature, so `cargo test` / headless / CI never need system audio libraries.
+- The flagship still works visually without audio. The audio soundtrack renders **separately** in `examples/reaction_soundtrack.rs`, on the same `edit_seconds` clock the visual director uses, so the two stay A/V-aligned.
+- The only recorded audio is the local source clip itself (never committed, never shipped); the underscore (HumanMusic) and SFX are fully synthesized.
 
-If optional source audio playback is explored, keep it strictly example-local / external-tool driven and do not let it block the visual release. The core acceptance test is the rendered reaction edit.
+See [`HUMAN_MUSIC_ARCHITECTURE.md`](HUMAN_MUSIC_ARCHITECTURE.md).
+
+> Original v0.3.x constraint, kept for the record: *"Do not introduce an audio dependency into LibGibson core. The flagship must work visually without synchronized audio. … keep it strictly example-local / external-tool driven and do not let it block the visual release."*
 
 ## Hardening before merge
 
-PR #67 is currently a draft research branch. Before it becomes merge/release material:
+*Historical — all items below were resolved and PR #67 merged as **v0.3.1**.* The original pre-merge checklist:
 
 1. Resolve issue #68: `set_target_region` must not perform O(total cells) eligibility/active rescans for every small region update. Keep a full-grid reference/oracle test and prove incremental accounting matches it.
 2. Audit/cache-source identity as described above.
@@ -326,7 +332,7 @@ The new demo should include synthetic/hermetic tests for:
 - untouched base cells remain bit-identical;
 - sparse overlay composite equals a full reference composite inside the dirty union;
 - deterministic edit-time seeking;
-- hold/continue/slow intro-time mapping;
+- continuous intro-spine mapping (edit==narrative 1:1, monotonic, final-frame hold);
 - cue-boundary continuity or deliberate smash-cut semantics;
 - no stale residual after moving regions settle/reacquire.
 

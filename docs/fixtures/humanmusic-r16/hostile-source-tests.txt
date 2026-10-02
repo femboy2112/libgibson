@@ -1,0 +1,12 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.94s
+     Running tests/audio_phrase_hostile.rs (target/debug/deps/audio_phrase_hostile-d5c0c1030d784a2b)
+
+running 5 tests
+test r16_a_later_connector_cannot_move_its_stamped_push ... ok
+test r16_zero_and_one_structural_event_are_identity_cases ... ok
+test r16_phrase_candidates_respect_frozen_physics_across_tempo_patch_and_kinetic ... ok
+test r16_fallback_omission_must_revalidate_the_surviving_connective_path ... ok
+test r16_harmony_boundary_and_stage_hole_do_not_move_the_destination ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s

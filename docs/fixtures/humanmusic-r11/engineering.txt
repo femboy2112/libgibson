@@ -1,0 +1,43 @@
+Round XI engineering receipt — final source bytes pinned in manifest.json
+
+PASS: RUSTUP_TOOLCHAIN=1.98.1 STABLE_TOOLCHAIN=+1.98.1 MSRV_TOOLCHAIN=+1.85 scripts/release/preflight.sh
+  git whitespace; version/ABI; cargo fmt --check;
+  clippy --all-targets --all-features -- -D warnings;
+  full default cargo test; RUSTDOCFLAGS=-D warnings cargo doc --no-deps;
+  locked MSRV 1.85 library; fresh-resolution MSRV consumer;
+  cargo package; ABI v1 symbol baseline;
+  cleanroom C, C++, Python, Go, Rust consumers; notices and licenses.
+
+PASS: RUST_TEST_THREADS=1 cargo +1.98.1 test --all-features
+  60 test groups, 1208 passed, 0 failed, 4 ignored by their declarations.
+  Two ignored HumanMusic sweeps were run explicitly below.
+  Real audio-device playback and known upstream terminal-input acceptance #15
+  remain ignored; this round does not claim a real-device test or an input fix.
+
+PASS: cargo +1.85 check --locked --lib --all-features
+PASS: cargo +1.98.1 build --examples
+PASS: cargo +1.98.1 test --example fx_lab --example skin_gallery --example polished_agent_ui --example ui_showcase --example large_collection
+  19 passed across 5 example groups.
+PASS: cargo +1.98.1 test --release --lib fuzz_the_ -- --ignored --nocapture
+  2 passed; coupled: 1152 compositions per arm, 0 receipts lost, 61 gained;
+  surgical: 1152 compositions, 9 deferred receipts reported, 0 lost silently.
+PASS: cargo +1.98.1 test --lib phenomenal_probes
+  7 passed, including the short-fragment observer mutation.
+PASS: Round IX song_probes (6); Round X meaning_probes (17), also included in full gates.
+PASS: cargo +1.98.1 run --release --example human_music_lab -- --phenomenal --beats=120 --seed=2112 --language=fusion --out=target/humanmusic-r11
+  4/4 performance conformance checks; identical orchestration envelopes;
+  8 finite stereo PCM16/48k WAVs; all hashes and frames verified.
+  The observer short-fragment repair changed none of the eight audio hashes.
+
+RETAINED FAILED ATTEMPT (not a repaired UI defect):
+  cargo +1.98.1 test --all-features during concurrent gate/build execution
+  failed fx_lab_wireframe_scene_structure and fx_lab_plasma_scene_structure
+  because their 1.6-second PTY captures lacked the FX LAB header.
+  The earlier full run passed. No UI code changed. DUMP_SCREEN=1 cargo +1.98.1
+  test --all-features --test demo_render -- --test-threads=1 --nocapture passed 7/7;
+  the final serial full suite above passed. Load sensitivity is an inference,
+  not a proven root cause. Raw failed and isolated logs are retained.
+
+Package version 0.3.1, GIBSON_ABI_VERSION=1, MSRV=1.85 unchanged.
+World/language/performance/action/interaction/ensemble/synthesis/mix paths unchanged.
+No merge, tag, release or default promotion. Human listening remains unverified.

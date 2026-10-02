@@ -1,0 +1,18 @@
+A — same Score, new palette. Each Score is the v1 world's BAND take (its score= equals the
+v1 record's); only the synth's world (patches, drums, mix, production) is the current one.
+
+hookarc: song=d96ffb15a7127e56 score=9c2168ffcbb584b5 perf=d895bca104f69394 tempo=71 swing=0.16
+  full: peak -5.01 dBFS, rms -22.66 dBFS, at-ceiling 0 samples, low-band side -20.9 dB, tail -33.9 dB
+  bus rms/peak dBFS: pad  -26.6/-11.5 keys  -18.3/  2.4 bass  -20.9/ -6.9 lead  -23.9/ -6.0 drums  -24.8/  0.2
+deflected: song=cae24c0d6789d120 score=bf074393da268fce perf=6098d0909d4d99bd tempo=71 swing=0.16
+  full: peak -4.32 dBFS, rms -22.06 dBFS, at-ceiling 0 samples, low-band side -18.6 dB, tail -65.1 dB
+  bus rms/peak dBFS: pad  -28.0/-12.9 keys  -20.5/  4.5 bass  -18.9/ -8.1 lead  -22.7/ -6.4 drums  -22.9/  1.9
+propulsive: song=13a777933325508d score=67ed22ecb14fe5af perf=9d88acff2c2aa731 tempo=71 swing=0.16
+  full: peak -5.31 dBFS, rms -22.70 dBFS, at-ceiling 0 samples, low-band side -19.7 dB, tail -76.8 dB
+  bus rms/peak dBFS: pad  -26.7/-11.6 keys  -24.0/  2.6 bass  -20.2/-10.1 lead  -19.5/ -5.9 drums  -23.8/ -1.3
+riffdrive: song=ae4aa70a0a230d4f score=061efbd891484ba5 perf=cc3854fd39a86ede tempo=71 swing=0.16
+  full: peak -4.94 dBFS, rms -22.57 dBFS, at-ceiling 0 samples, low-band side -19.9 dB, tail -35.2 dB
+  bus rms/peak dBFS: pad  -26.3/-11.8 keys  -18.7/  2.3 bass  -20.6/ -9.8 lead  -21.3/ -6.1 drums  -24.6/ -0.3
+ode_faithful: song=055e9e78012b0137 score=ac74ede2de546ada perf=1c7b7b2e032bee4d tempo=71 swing=0.16
+  full: peak -5.41 dBFS, rms -18.11 dBFS, at-ceiling 0 samples, low-band side -19.8 dB, tail -37.0 dB
+  bus rms/peak dBFS: pad  -26.0/-10.6 keys  -18.2/  3.7 bass  -13.1/ -3.2 lead  -16.5/ -7.0 drums  -24.6/ -1.1

@@ -1,0 +1,21 @@
+case	phase	law	status	detail
+V05	source	generation	PASS	performed; its laws are judged separately
+V05	source	declared-grammar	PASS	grammar=HookArc
+V05	source	declared-composer	PASS	declared=MeaningDirected; recorded=MeaningDirected
+V05	source	canonical-inventory	PASS	song=7ec50145f9aae721; plan=b5a02b2ba3039b1d; score=b5dd8dd42d6f430a; notes=14; drums=27; length=4; tempo=71
+V05	source	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+V05	source	guard:percussion-law	PASS	PercussionReport restraint=expressive required=22 ornaments admitted 5/5 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/0\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 5/5\n  unison-inner: 0/0\n  bar   0 Open required=22 ornaments 5/5 — phrase end with space: a moment to speak (lead 0, band 10, prev 0)\nbars over allowance=[]
+V05	source	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [], open_debts: [] }
+V05	source	evidence:established	PASS	established=[Groove, HarmonicContour, Form]
+V05	extraction	evidence:natural-overlap	PASS	(role, identity events, non-identity events at an identity onset)=[(Bass, 2, 0)]
+V05	extraction	identity-under-overlap	PASS	added non-identity events [(Bass, 0.0)]; re-extraction identical
+V05	extraction	projection	PASS	map=04762aea6f5db09c; spec=[BassFigure]; knowledge=[(Motif, Free), (Riff, Free), (Groove, Free), (HarmonicContour, Free), (HarmonicLoop, Free), (Form, Free), (Orchestration, Free), (BassFigure, Invariant)]; expect=lift
+V05	extraction	guard:map-validation	PASS	Ok(())
+V05	cover	candidate-lift	PASS	lifted; expect=lift
+V05	cover	canonical-inventory	PASS	song=f23f7b3391f58eb4; plan=498021ef3168a911; score=600c31ea58c09e5e; notes=15; drums=19; length=4; tempo=71
+V05	cover	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+V05	cover	guard:percussion-law	PASS	PercussionReport restraint=expressive required=15 ornaments admitted 4/4 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/0\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 1/1\n  ghost: 3/3\n  unison-inner: 0/0\n  bar   0 Open required=15 ornaments 4/4 — the drummer has the floor (lead 4, band 11, prev 0)\nbars over allowance=[]
+V05	cover	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [RehearsedVerb { key: ActionKey { family: Verb(Call), onset: Metric(MetricPosition { ticks: 0, subdivision: 1 }), cause: Statement { phrase: 0 } }, kind: Call, planned_beat: 0.0, pass: 0, outcome: Performed }, RehearsedVerb { key: ActionKey { family: Verb(Answer), onset: Metric(MetricPosition { ticks: 3, subdivision: 1 }), cause: Interaction { call: Some(ActionKey { family: Verb(Call), onset: Metric(MetricPosition { ticks: 0, subdivision: 1 }), cause: Statement { phrase: 0 } }) } }, kind: Answer, planned_beat: 3.0, pass: 0, outcome: Performed }], open_debts: [] }
+V05	cover	metric-length	PASS	canonical metric extent
+V05	cover	bass-figure	PASS	relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free; the realized pin holds the exact relation
+V05	cover	guard:anti-replay-vs-source	PASS	CoverFreedom { support_voicing: true, dynamics: true, percussion_detail: true, interactions: true }; machine variation only, no listening claim

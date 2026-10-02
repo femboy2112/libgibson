@@ -1,0 +1,25 @@
+case	phase	law	status	detail
+V12	source	generation	PASS	performed; its laws are judged separately
+V12	source	declared-grammar	PASS	grammar=DeflectedLift
+V12	source	declared-composer	PASS	declared=MeaningDirected; recorded=MeaningDirected
+V12	source	canonical-inventory	PASS	song=91b2a7a41024d50c; plan=da04e661a9bca2b8; score=d3e9ec3ea65c38d0; notes=43; drums=50; length=13.25; tempo=71
+V12	source	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+V12	source	guard:percussion-law	PASS	PercussionReport restraint=foundation required=46 ornaments admitted 0/5 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/1\n  open-hat: 0/4\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 0/0\n  unison-inner: 0/0\n  bar   0 Silent required=14 ornaments 0/2 — the band is already speaking (lead 6, band 12, prev 0)\n  bar   1 Silent required=13 ornaments 0/2 — supports the pocket (lead 0, band 4, prev 0)\n  bar   2 Silent required=13 ornaments 0/1 — supports the pocket (lead 0, band 5, prev 0)\n  bar   3 Silent required=6 ornaments 0/0 — phrase end with space: a moment to speak (lead 0, band 4, prev 0)\nbars over allowance=[]
+V12	source	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [RehearsedVerb { key: ActionKey { family: Verb(Push), onset: Metric(MetricPosition { ticks: 7, subdivision: 2 }), cause: Gesture { slot: 0, gesture: Lift } }, kind: Push, planned_beat: 3.5, pass: 0, outcome: Performed }, RehearsedVerb { key: ActionKey { family: Verb(Hit), onset: Metric(MetricPosition { ticks: 4, subdivision: 1 }), cause: Gesture { slot: 1, gesture: Deflect } }, kind: Hit, planned_beat: 4.0, pass: 0, outcome: Performed }, RehearsedVerb { key: ActionKey { family: Verb(Deflect), onset: Metric(MetricPosition { ticks: 4, subdivision: 1 }), cause: Gesture { slot: 1, gesture: Deflect } }, kind: Deflect, planned_beat: 4.0, pass: 0, outcome: Performed }, RehearsedVerb { key: ActionKey { family: Verb(ReEntry), onset: Metric(MetricPosition { ticks: 8, subdivision: 1 }), cause: Gesture { slot: 2, gesture: Open } }, kind: ReEntry, planned_beat: 8.0, pass: 0, outcome: Performed }], open_debts: [] }
+V12	source	evidence:established	PASS	established=[Motif, Groove, HarmonicLoop, Form]
+V12	extraction	evidence:natural-overlap	PASS	(role, identity events, non-identity events at an identity onset)=[(Lead, 6, 0)]
+V12	extraction	identity-under-overlap	PASS	added non-identity events [(Lead, 0.0)]; re-extraction identical
+V12	extraction	projection	PASS	map=0e07e3d4340bf5f9; spec=[Motif, Groove, HarmonicLoop, Form]; knowledge=[(Motif, Invariant), (Riff, Free), (Groove, Invariant), (HarmonicContour, Free), (HarmonicLoop, Invariant), (Form, Invariant), (Orchestration, Free), (BassFigure, Free)]; expect=lift
+V12	extraction	guard:map-validation	PASS	Ok(())
+V12	cover	candidate-lift	PASS	lifted; expect=lift
+V12	cover	canonical-inventory	PASS	song=902a3287a3a10ef4; plan=5ad54c2ac430832c; score=8fc03bf554576a2b; notes=33; drums=41; length=13.25; tempo=71
+V12	cover	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+V12	cover	guard:percussion-law	PASS	PercussionReport restraint=foundation required=41 ornaments admitted 0/0 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/0\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 0/0\n  unison-inner: 0/0\nbars over allowance=[]
+V12	cover	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [], open_debts: [] }
+V12	cover	metric-length	PASS	canonical metric extent
+V12	cover	motif	PASS	relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free; the realized pin holds the exact relation
+V12	cover	groove	PASS	canonical kick/snare pattern; hats, clap, dynamics and timbre free; the realized pin holds the exact relation
+V12	cover	harmonic-loop	PASS	relative roots, chord quality and exact metric span boundaries; the realized pin holds the exact relation
+V12	cover	form	PASS	phrase boundary and family topology; the realized pin holds the exact relation
+V12	cover	guard:anti-replay-vs-source	PASS	CoverFreedom { support_voicing: true, dynamics: true, percussion_detail: true, interactions: false }; machine variation only, no listening claim
+V12	cover	cross-swing-groove-quotient	PASS	14 pinned strokes; 0 carried to another performed float by the transport; missing=[]

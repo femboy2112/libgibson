@@ -1,0 +1,63 @@
+# Hardening holdout v2: 48 rows; PREDECLARED, NOT YET EXECUTED. One contact, no fitting.
+# Profiles: pocket = PerformanceProfile::POCKET (the byte-exact historical arm, Planned admission,
+#   unarbitrated drummer); band-<restraint> = PerformanceProfile::BAND with that drum restraint
+#   (rehearsed admission + arbitrated percussion).
+# Selections: established = CoverSpec::established(AnchorReport) (v1 relations);
+#   groove-free-established = the same without Groove; motif-only / v1-motif-only = binary v1 spec;
+#   preset-<p> = CoverFidelityProfile::preset(p); -derived = Ode harmony from derive_harmony(2 beats),
+#   labelled DerivedAnalysis. Swing rows use CoverMap::from_ordered_chart_fidelity + cover_skeleton.
+# expect (declared before contact): lift = must lift and conform; refusal = must be an explicit
+#   typed lawful refusal; lawful = either; nothing = no map survives the preset (Swing loose/interp.).
+#   Lawful refusal family: vocabulary ('pinned harmony [family] outside target vocabulary',
+#   'no lawful harmony contains the pinned simultaneous attacks') or ConflictingPins at extraction.
+# nominal preserves the named world preset tempo. Target tonic is an absolute pitch class.
+# Seeds: 92xxxxxx, absent from src/tests/examples/docs/scripts before this file was written.
+id	source	story	source_seed	source_world	source_grammar	composer	beats	source_tempo	source_language	source_profile	selection	expect	target_seed	target_world	target_grammar	target_tempo	target_tonic	target_language	target_profile
+H01	generated	demo	92000101	BLACK_ICE	HookArc	StructuralR9	3.0	nominal	fusion	band-balanced	established	lift	92100101	SWISS_SIGNAL	HookArc	nominal	2	simple	band-balanced
+H02	generated	deflected	92000202	SWISS_SIGNAL	RiffDrive	MeaningDirected	6.5	nominal	simple	band-foundation	established	lift	92100202	VAPOR95	RiffDrive	nominal	5	fusion	band-foundation
+H03	generated	demo	92000303	VAPOR95	LoopEvolution	StructuralR9	12.0	nominal	fusion	band-balanced	motif-only	lawful	92100303	BLACK_ICE	HookArc	88	9	fusion	band-expressive
+H04	generated	deflected	92000404	BLACK_ICE	DeflectedLift	StructuralR9	13.5	nominal	simple	band-balanced	preset-interpretive	lift	92100404	BLACK_ICE	DeflectedLift	nominal	0	simple	band-balanced
+H05	generated	demo	92000505	SWISS_SIGNAL	PropulsiveReturn	StablePropulsion	17.25	nominal	fusion	band-expressive	established	lift	92100505	SWISS_SIGNAL	PropulsiveReturn	104	7	fusion	band-busy
+H06	generated	deflected	92000606	VAPOR95	HookArc	MeaningDirected	24.0	nominal	fusion	band-busy	preset-faithful	lawful	92100606	VAPOR95	HookArc	nominal	3	simple	band-balanced
+H07	generated	demo	92000707	BLACK_ICE	RiffDrive	StructuralR9	30.75	nominal	fusion	band-balanced	preset-strict	lawful	92100707	VAPOR95	RiffDrive	92	10	fusion	band-foundation
+H08	generated	deflected	92000808	SWISS_SIGNAL	LoopEvolution	StructuralR9	40.0	nominal	simple	band-balanced	groove-free-established	lawful	92100808	BLACK_ICE	LoopEvolution	nominal	4	simple	band-balanced
+H09	generated	demo	92000909	VAPOR95	DeflectedLift	MeaningDirected	56.5	nominal	fusion	band-foundation	preset-loose	lift	92100909	SWISS_SIGNAL	DeflectedLift	100	6	fusion	band-balanced
+H10	generated	deflected	92001010	BLACK_ICE	PropulsiveReturn	StablePropulsion	64.0	nominal	fusion	band-balanced	established	lift	92101010	BLACK_ICE	PropulsiveReturn	nominal	1	fusion	band-expressive
+H11	generated	demo	92001111	SWISS_SIGNAL	HookArc	StructuralR9	9.0	nominal	simple	band-balanced	motif-only	lawful	92101111	BLACK_ICE	HookArc	nominal	11	simple	band-balanced
+H12	generated	deflected	92001212	BLACK_ICE	HookArc	MeaningDirected	7.25	nominal	fusion	band-expressive	established	lift	92101212	BLACK_ICE	HookArc	90	0	fusion	band-balanced
+H13	generated	demo	92001313	VAPOR95	RiffDrive	StructuralR9	20.0	nominal	simple	band-balanced	preset-interpretive	lawful	92101313	SWISS_SIGNAL	RiffDrive	nominal	8	simple	band-balanced
+H14	generated	deflected	92001414	BLACK_ICE	HookArc	StructuralR9	28.0	nominal	fusion	band-balanced	preset-faithful	refusal	92101414	SWISS_SIGNAL	HookArc	nominal	2	simple	band-balanced
+H15	generated	demo	92001515	VAPOR95	HookArc	MeaningDirected	32.0	nominal	fusion	band-balanced	preset-interpretive	lawful	92101515	SWISS_SIGNAL	HookArc	nominal	0	simple	band-balanced
+H16	generated	deflected	92001616	SWISS_SIGNAL	DeflectedLift	StructuralR9	48.0	nominal	fusion	band-balanced	preset-strict	lawful	92101616	VAPOR95	DeflectedLift	nominal	5	fusion	band-balanced
+H17	generated	demo	92001717	BLACK_ICE	LoopEvolution	MeaningDirected	15.0	nominal	simple	pocket	established	lift	92101717	BLACK_ICE	LoopEvolution	nominal	0	simple	pocket
+H18	generated	deflected	92001818	VAPOR95	RiffDrive	StructuralR9	22.5	nominal	fusion	pocket	preset-faithful	lawful	92101818	VAPOR95	RiffDrive	100	7	fusion	pocket
+H19	generated	demo	92001919	SWISS_SIGNAL	HookArc	StructuralR9	44.25	nominal	fusion	pocket	motif-only	lawful	92101919	BLACK_ICE	HookArc	nominal	9	fusion	band-balanced
+H20	generated	deflected	92002020	BLACK_ICE	RiffDrive	MeaningDirected	36.0	nominal	simple	band-busy	established	lift	92102020	BLACK_ICE	RiffDrive	nominal	3	simple	band-foundation
+H21	generated	demo	92002121	VAPOR95	HookArc	StructuralR9	5.0	nominal	fusion	band-balanced	established	lift	92102121	VAPOR95	HookArc	nominal	0	fusion	band-balanced
+H22	generated	deflected	92002222	SWISS_SIGNAL	PropulsiveReturn	StablePropulsion	10.75	nominal	simple	band-balanced	preset-loose	lift	92102222	BLACK_ICE	HookArc	nominal	4	fusion	band-balanced
+H23	generated	demo	92002323	BLACK_ICE	DeflectedLift	StructuralR9	26.5	nominal	fusion	band-foundation	preset-strict	lawful	92102323	BLACK_ICE	DeflectedLift	nominal	0	fusion	band-foundation
+H24	generated	deflected	92002424	VAPOR95	LoopEvolution	MeaningDirected	52.0	nominal	fusion	band-expressive	preset-interpretive	lawful	92102424	VAPOR95	LoopEvolution	110	2	simple	band-busy
+H25	generated	demo	92002525	SWISS_SIGNAL	RiffDrive	StructuralR9	60.0	nominal	simple	band-balanced	established	lift	92102525	SWISS_SIGNAL	RiffDrive	nominal	10	simple	band-balanced
+H26	generated	deflected	92002626	BLACK_ICE	HookArc	StructuralR9	16.0	nominal	fusion	band-balanced	preset-loose	lift	92102626	VAPOR95	HookArc	nominal	7	fusion	band-expressive
+H27	generated	demo	92002727	VAPOR95	PropulsiveReturn	StablePropulsion	18.75	nominal	fusion	band-balanced	preset-faithful	lawful	92102727	BLACK_ICE	PropulsiveReturn	nominal	5	fusion	band-balanced
+H28	generated	deflected	92002828	SWISS_SIGNAL	HookArc	MeaningDirected	34.25	nominal	fusion	band-expressive	groove-free-established	lift	92102828	SWISS_SIGNAL	HookArc	96	1	fusion	band-expressive
+H29	generated	demo	92002929	BLACK_ICE	LoopEvolution	StructuralR9	42.0	nominal	fusion	band-balanced	preset-strict	lawful	92102929	SWISS_SIGNAL	LoopEvolution	nominal	3	simple	band-balanced
+H30	generated	deflected	92003030	VAPOR95	HookArc	StructuralR9	64.0	nominal	fusion	band-balanced	established	lift	92103030	VAPOR95	HookArc	nominal	0	fusion	band-balanced
+H31	generated	demo	92003131	SWISS_SIGNAL	DeflectedLift	MeaningDirected	64.0	nominal	fusion	band-busy	preset-faithful	lawful	92103131	SWISS_SIGNAL	DeflectedLift	nominal	0	fusion	band-busy
+H32	generated	deflected	92003232	VAPOR95	HookArc	MeaningDirected	11.0	nominal	simple	band-foundation	motif-only	lawful	92103232	SWISS_SIGNAL	HookArc	120	6	simple	band-foundation
+H33	generated	demo	92003333	BLACK_ICE	RiffDrive	StructuralR9	8.0	nominal	fusion	band-balanced	established	lift	92103333	BLACK_ICE	RiffDrive	nominal	0	fusion	band-balanced
+H34	generated	deflected	92003434	SWISS_SIGNAL	LoopEvolution	StructuralR9	4.0	nominal	fusion	band-balanced	established	lift	92103434	VAPOR95	LoopEvolution	nominal	0	fusion	band-balanced
+H35	generated	demo	92003535	VAPOR95	DeflectedLift	StructuralR9	38.5	nominal	simple	band-balanced	preset-interpretive	lawful	92103535	BLACK_ICE	DeflectedLift	nominal	8	simple	band-balanced
+H36	generated	deflected	92003636	BLACK_ICE	PropulsiveReturn	StablePropulsion	21.0	nominal	fusion	band-balanced	motif-only	lawful	92103636	VAPOR95	PropulsiveReturn	nominal	11	fusion	band-balanced
+E01	ode	external	-	-	-	-	64	100	-	-	preset-loose	lift	92200101	BLACK_ICE	HookArc	95	7	fusion	band-balanced
+E02	ode	external	-	-	-	-	64	100	-	-	preset-interpretive-derived	lawful	92200202	VAPOR95	HookArc	nominal	2	fusion	band-balanced
+E03	ode	external	-	-	-	-	64	100	-	-	preset-faithful-derived	lawful	92200303	SWISS_SIGNAL	HookArc	100	0	simple	band-foundation
+E04	ode	external	-	-	-	-	64	100	-	-	preset-strict-derived	lawful	92200404	BLACK_ICE	HookArc	80	9	fusion	band-expressive
+E05	ode	external	-	-	-	-	64	100	-	-	preset-strict	lawful	92200505	VAPOR95	HookArc	120	5	simple	band-balanced
+E06	ode	external	-	-	-	-	64	100	-	-	preset-faithful	lawful	92200606	BLACK_ICE	LoopEvolution	nominal	4	fusion	band-busy
+E07	ode	external	-	-	-	-	64	100	-	-	preset-interpretive	lawful	92200707	SWISS_SIGNAL	DeflectedLift	nominal	11	fusion	band-balanced
+E08	ode	external	-	-	-	-	64	100	-	-	v1-motif-only	lift	92200808	VAPOR95	HookArc	90	3	fusion	pocket
+S01	swing	partial	-	-	-	-	-	-	-	-	preset-loose	nothing	92300101	BLACK_ICE	HookArc	95	9	fusion	band-balanced
+S02	swing	partial	-	-	-	-	-	-	-	-	preset-interpretive	nothing	92300202	SWISS_SIGNAL	HookArc	95	9	simple	band-balanced
+S03	swing	partial	-	-	-	-	-	-	-	-	preset-faithful	lift	92300303	VAPOR95	HookArc	95	9	fusion	band-balanced
+S04	swing	partial	-	-	-	-	-	-	-	-	preset-strict	lift	92300404	BLACK_ICE	HookArc	95	0	simple	band-foundation

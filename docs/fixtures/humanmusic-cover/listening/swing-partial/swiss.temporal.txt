@@ -1,0 +1,148 @@
+false_function_claims=0
+false_suspensions=0
+broken_anticipations=0
+orphan_extensions=23
+orphan_structural_extensions=23
+unresolved_tendencies=0
+bad_arrivals=0
+guide_path_misses=0
+path_breaks_at_harmony_changes=10
+locally_legal_globally_unexplained=23
+ambiguous_voices=0
+beat 4.0000 role pad pitch A4 (69) duration 3.9200
+  current G @ 4.00 previous C @ 0.00 next Dm @ 8.00 next_structural Dm @ 8.00 destination Am @ 12.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note G4 @ 0.00 dur 3.92; next note D5 @ 8.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [5]
+beat 8.0000 role pad pitch E5 (76) duration 3.9200
+  current Dm @ 8.00 previous G @ 4.00 next Am @ 12.00 next_structural Am @ 12.00 destination C @ 16.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"UNOWNED", "stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note D5 @ 4.00 dur 3.92; next note B5 @ 12.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint; extension jumps across a structural harmony without common-tone or step continuation
+  next guide targets: [0]
+beat 12.0000 role pad pitch B5 (83) duration 3.9200
+  current Am @ 12.00 previous Dm @ 8.00 next C @ 16.00 next_structural C @ 16.00 destination G @ 20.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note E5 @ 8.00 dur 3.92; next note C5 @ 16.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint; extension jumps across a structural harmony without common-tone or step continuation
+  next guide targets: [4]
+beat 24.0000 role pad pitch E5 (76) duration 3.9200
+  current Dm @ 24.00 previous G @ 20.00 next Am @ 28.00 next_structural Am @ 28.00 destination C @ 32.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note B4 @ 20.00 dur 3.92; next note B5 @ 28.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint; extension jumps across a structural harmony without common-tone or step continuation
+  next guide targets: [0]
+beat 28.0000 role pad pitch B5 (83) duration 3.9200
+  current Am @ 28.00 previous Dm @ 24.00 next C @ 32.00 next_structural C @ 32.00 destination G @ 36.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note E5 @ 24.00 dur 3.92; next note C5 @ 32.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint; extension jumps across a structural harmony without common-tone or step continuation
+  next guide targets: [4]
+beat 44.0000 role pad pitch G4 (67) duration 3.9200
+  current F @ 44.00 previous Dm @ 40.00 next C @ 48.00 next_structural C @ 48.00 destination G @ 52.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note F4 @ 40.00 dur 3.92; next note E4 @ 48.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [4]
+beat 52.0000 role pad pitch A4 (69) duration 3.9200
+  current G @ 52.00 previous C @ 48.00 next Dm @ 56.00 next_structural Dm @ 56.00 destination Am @ 60.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note G4 @ 48.00 dur 3.92; next note D5 @ 56.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [5]
+beat 56.0000 role pad pitch E5 (76) duration 3.9200
+  current Dm @ 56.00 previous G @ 52.00 next Am @ 60.00 next_structural Am @ 60.00 destination C @ 64.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note D5 @ 52.00 dur 3.92; next note B5 @ 60.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint; extension jumps across a structural harmony without common-tone or step continuation
+  next guide targets: [0]
+beat 60.0000 role pad pitch B5 (83) duration 3.9200
+  current Am @ 60.00 previous Dm @ 56.00 next C @ 64.00 next_structural C @ 64.00 destination G @ 68.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note E5 @ 56.00 dur 3.92; next note C5 @ 64.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint; extension jumps across a structural harmony without common-tone or step continuation
+  next guide targets: [4]
+beat 72.0000 role pad pitch E5 (76) duration 3.9200
+  current Dm @ 72.00 previous G @ 68.00 next Am @ 76.00 next_structural Am @ 76.00 destination C @ 80.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"UNOWNED", "stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note B4 @ 68.00 dur 3.92; next note B5 @ 76.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint; extension jumps across a structural harmony without common-tone or step continuation
+  next guide targets: [0]
+beat 76.0000 role pad pitch B5 (83) duration 3.9200
+  current Am @ 76.00 previous Dm @ 72.00 next C @ 80.00 next_structural C @ 80.00 destination G @ 84.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note E5 @ 72.00 dur 3.92; next note C5 @ 80.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint; extension jumps across a structural harmony without common-tone or step continuation
+  next guide targets: [4]
+beat 92.0000 role pad pitch G4 (67) duration 3.9200
+  current F @ 92.00 previous Dm @ 88.00 next C @ 96.00 next_structural C @ 96.00 destination Dm @ 100.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note F4 @ 88.00 dur 3.92; next note E4 @ 96.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [4]
+beat 96.0000 role pad pitch D5 (74) duration 3.9200
+  current C @ 96.00 previous F @ 92.00 next Dm @ 100.00 next_structural Dm @ 100.00 destination F @ 104.00
+  declared Some(LicensedExtension); local [LicensedExtension, Enclosure]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note F5 @ 92.00 dur 3.92; next note E5 @ 100.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [5]
+beat 100.0000 role pad pitch E5 (76) duration 3.9200
+  current Dm @ 100.00 previous C @ 96.00 next F @ 104.00 next_structural F @ 104.00 destination C @ 108.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"UNOWNED", "stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note D5 @ 96.00 dur 3.92; next note C5 @ 104.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [9]
+beat 112.0000 role pad pitch A4 (69) duration 3.9200
+  current G @ 112.00 previous C @ 108.00 next Am @ 116.00 next_structural Am @ 116.00 destination F @ 120.00
+  declared Some(LicensedExtension); local [LicensedExtension, DiatonicPassing]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note G4 @ 108.00 dur 3.92; next note B4 @ 116.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [0]
+beat 120.0000 role pad pitch G4 (67) duration 3.9200
+  current F @ 120.00 previous Am @ 116.00 next C @ 124.00 next_structural C @ 124.00 destination G @ 128.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note A4 @ 116.00 dur 3.92; next note E4 @ 124.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [4]
+beat 128.0000 role pad pitch A4 (69) duration 3.9200
+  current G @ 128.00 previous C @ 124.00 next Dm @ 132.00 next_structural Dm @ 132.00 destination Am @ 136.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note G4 @ 124.00 dur 3.92; next note D5 @ 132.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [5]
+beat 132.0000 role pad pitch E5 (76) duration 3.9200
+  current Dm @ 132.00 previous G @ 128.00 next Am @ 136.00 next_structural Am @ 136.00 destination C @ 140.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note D5 @ 128.00 dur 3.92; next note B5 @ 136.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint; extension jumps across a structural harmony without common-tone or step continuation
+  next guide targets: [0]
+beat 136.0000 role pad pitch B5 (83) duration 3.9200
+  current Am @ 136.00 previous Dm @ 132.00 next C @ 140.00 next_structural C @ 140.00 destination G @ 144.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note E5 @ 132.00 dur 3.92; next note C5 @ 140.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint; extension jumps across a structural harmony without common-tone or step continuation
+  next guide targets: [4]
+beat 152.0000 role pad pitch G4 (67) duration 3.9200
+  current F @ 152.00 previous Dm @ 148.00 next C @ 156.00 next_structural C @ 156.00 destination Dm @ 160.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note F4 @ 148.00 dur 3.92; next note E4 @ 156.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [4]
+beat 156.0000 role pad pitch D5 (74) duration 3.9200
+  current C @ 156.00 previous F @ 152.00 next Dm @ 160.00 next_structural Dm @ 160.00 destination F @ 164.00
+  declared Some(LicensedExtension); local [LicensedExtension, Enclosure]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note F5 @ 152.00 dur 3.92; next note E5 @ 160.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [5]
+beat 160.0000 role pad pitch E5 (76) duration 3.9200
+  current Dm @ 160.00 previous C @ 156.00 next F @ 164.00 next_structural F @ 164.00 destination C @ 168.00
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note D5 @ 156.00 dur 3.92; next note C5 @ 164.00 dur 3.92; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint
+  next guide targets: [9]
+beat 172.0000 role pad pitch A4 (69) duration 3.9200
+  current G @ 172.00 previous C @ 168.00 next none next_structural none destination none
+  declared Some(LicensedExtension); local [LicensedExtension]; vertical: {"stable-color"} (written ensemble slices; world-free lenient color budget); path Orphaned Some(OrphanColor)
+  previous note G4 @ 168.00 dur 3.92; next note none; structural_proxy=true ambiguous_voice=false
+  reason: available extension has no retained common tone, bounded core resolution, or explicit open endpoint

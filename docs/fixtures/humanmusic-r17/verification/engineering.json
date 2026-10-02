@@ -1,0 +1,51 @@
+{
+  "production_source": "f886e16008b8b87315270a7d4ca7bc51f6efd52c",
+  "source_manifest": "fresh-source.json",
+  "passed": 1344,
+  "failed": 0,
+  "ignored": 10,
+  "result_groups": 70,
+  "commands": [
+    {
+      "command": "cargo +1.98.1 fmt --check",
+      "exit_code": 0,
+      "log": null
+    },
+    {
+      "command": "cargo +1.98.1 clippy --all-targets --all-features -- -D warnings",
+      "exit_code": 0,
+      "log": "receipt-clippy.txt"
+    },
+    {
+      "command": "cargo +1.98.1 test --all-features",
+      "exit_code": 0,
+      "log": "full-suite.txt"
+    },
+    {
+      "command": "RUSTDOCFLAGS='-D warnings' cargo +1.98.1 doc --no-deps --all-features",
+      "exit_code": 0,
+      "log": "rustdoc.txt"
+    },
+    {
+      "command": "cargo +1.85 check --locked --lib --all-features",
+      "exit_code": 0,
+      "log": "msrv.txt"
+    }
+  ],
+  "boundary": "Normal full suite green; intentionally ignored fresh sweep was run separately and FAILED, never laundered into this engineering pass.",
+  "full_suite_log_storage": {
+    "normalization": "Trailing empty lines removed; test output otherwise unchanged.",
+    "original_sha256": "8956a98ebdcb66a914a3eb7f5b1aa67d11cad9d449c302165de84e118b015dbf"
+  },
+  "ci": {
+    "receipt": "ci.json",
+    "head": "616a037db45c768a5da35228727a91dd4cb11698",
+    "conclusion": "success",
+    "source_equivalence": "git diff --quiet f886e16 616a037 -- src Cargo.toml Cargo.lock build.rs; frozen manifest hashes all match"
+  },
+  "release_preflight": {
+    "receipt": "release-preflight.json",
+    "head": "f886e16008b8b87315270a7d4ca7bc51f6efd52c",
+    "conclusion": "success"
+  }
+}

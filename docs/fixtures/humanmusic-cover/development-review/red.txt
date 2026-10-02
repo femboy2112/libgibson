@@ -1,0 +1,37 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 25.85s
+     Running tests/audio_cover_review.rs (target/debug/deps/audio_cover_review-3d01e1dd2503fc3e)
+
+running 5 tests
+test cover_score_receipt_rejects_out_of_domain_pitched_event ...
+thread 'cover_score_receipt_rejects_out_of_domain_pitched_event' (3446384) panicked at tests/audio_cover_review.rs:113:5:
+pitch128 is outside the declared MIDI event domain
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test invalid_form_extent_returns_error_without_arithmetic_panic ...
+thread 'invalid_form_extent_returns_error_without_arithmetic_panic' (3446388) panicked at src/audio/human_music/cover.rs:615:17:
+attempt to add with overflow
+
+thread 'invalid_form_extent_returns_error_without_arithmetic_panic' (3446388) panicked at tests/audio_cover_review.rs:63:5:
+invalid form metadata escaped the Result boundary as a panic
+FAILED
+test invalid_skeleton_schedule_returns_error_without_arithmetic_panic ...
+thread 'invalid_skeleton_schedule_returns_error_without_arithmetic_panic' (3446389) panicked at src/audio/human_music/cover.rs:1584:13:
+attempt to add with overflow
+
+thread 'invalid_skeleton_schedule_returns_error_without_arithmetic_panic' (3446389) panicked at tests/audio_cover_review.rs:84:5:
+invalid target schedule escaped the Result boundary as a panic
+FAILED
+test mutated_reference_metadata_is_revalidated_at_extraction ... ok
+test source_record_order_is_not_musical_identity ... ok
+
+failures:
+
+failures:
+    cover_score_receipt_rejects_out_of_domain_pitched_event
+    invalid_form_extent_returns_error_without_arithmetic_panic
+    invalid_skeleton_schedule_returns_error_without_arithmetic_panic
+
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test audio_cover_review`

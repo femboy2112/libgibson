@@ -15,7 +15,52 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-Nothing yet.
+Work in progress on `feat/v0.4-humanmusic-audio` (draft PR #70) toward the intended 0.4.0
+milestone. **Not released**: the package version stays **0.3.1**, `GIBSON_ABI_VERSION` stays
+**1**, MSRV stays **1.85**, and nothing below is exposed through the C ABI.
+
+### Added (experimental, Rust-only)
+
+- **`gibson::audio`** — an offline/real-time audio substrate (sample-accurate time, buffers,
+  a block renderer, WAV writer, DSP building blocks) with an optional `audio-cpal` output
+  backend (feature-gated; no new mandatory dependencies).
+- **HumanMusic** (`gibson::audio::human_music`) — a procedural composer driven by LibGibson's
+  semantic style/story state, with three sonic worlds (BLACK_ICE, VAPOR95, SWISS_SIGNAL), no
+  prerecorded musical assets, and a structural/causal diagnostics suite. Rounds I–VIII are
+  documented in [docs/HUMAN_MUSIC_ARCHITECTURE.md](docs/HUMAN_MUSIC_ARCHITECTURE.md). Round VIIb
+  made the performance causal: calls own their material and answers derive from it, one stage
+  decides who plays before anybody plays, every event is stamped with the exact actions it
+  performs, Modulate really changes the tonal region, the band shares one complexity budget,
+  gestures vary their manifestation per cycle, semantic state deltas size the actions, quiet is
+  declared, obligations settle named debts by deadline, pad and keys are voiced by a bounded
+  voice-path DP, SFX sit in the local harmony, and a requested length is rendered exactly.
+  Round VIII built one vertical theory (`sonority.rs` — owned vs unowned minor 2nds/9ths,
+  tension specs, bass function, a per-world colour budget, audible lifetimes,
+  `EnsembleSonorityDiagnostics`), a harmonic ledger (`harmonic_state.rs`) and a coupled band
+  whose pad and keys are voiced as one joint decision (`support.rs`). The listen rejected that
+  coupled bed as the default — it revoiced most of the pad to satisfy the collision count — so
+  Round VIIIb restores the R7b band as the default (`EnsembleCoupling::Independent`), keeps the
+  Round VIII band as the pinned negative control (`EnsembleCoupling::CoupledR8`), and adds
+  `EnsembleCoupling::Surgical`: the R7b realization with only its real hard vertical defects
+  (measured over actual audible overlap) repaired, one note each, every edit on a ledger
+  (`surgical.rs`, `Score::vertical_repairs`). On the flagship the surgical arm clears 22/49/29
+  hard defects to 0/1/1 per world while editing 3.5–6.7 % of the notes and leaving the pad's
+  motion and common tones at R7b's; every action is still witnessed. `voicing::HarmonicStability`
+  reports bed motion beside the collision numbers.
+- `examples/human_music_lab.rs` — renders the flagship (and A/B probes, stems, pitched-role pair
+  stems, a neutral harmonic reference, calibration grammars) with every receipt printed next to
+  the WAV paths.
+
+### Fixed (experimental audio)
+
+- The vertical audit (`sonority::classify_heard`) no longer calls the rootless "B-form" — a minor
+  chord's 9th a semitone under its minor 3rd in the pad/keys — a collision.
+
+- The FM oscillator (`dsp::osc::FmOsc`) clamps its modulation index to the alias-free bound, so
+  a high note no longer folds sidebands back under Nyquist as inharmonic partials (BLACK_ICE's
+  lead climax carried one at −14.5 dB).
+
+Perceptual quality is **unverified** until the maintainer's listening gate.
 
 ## [0.3.1] - 2026-09-28
 

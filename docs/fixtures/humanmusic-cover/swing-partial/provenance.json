@@ -1,0 +1,25 @@
+{
+  "schema": "humanmusic-partial-reference/v1",
+  "title": "Swing & A Miss",
+  "artist": "Oliver Tree",
+  "authority": "maintainer-supplied provisional skeleton in the consolidation conversation",
+  "source_type": "ordered chord and section observations; not a transcription",
+  "observed_or_asserted": {
+    "reference_tonic_pc": 9,
+    "mode": "Ionian (maintainer assertion)",
+    "meter": "4/4 (maintainer assertion)",
+    "tempo_bpm_approximate": 95,
+    "duration_seconds_approximate": 179,
+    "groove": "straight (explicit assumption, not measured)"
+  },
+  "unobserved": ["exact section lengths", "chord durations", "repetition counts within sections", "melody", "melody rhythm", "bass figure", "drum pattern", "intro harmony", "actual arrangement"],
+  "superseded_source_discrepancy": {
+    "earlier_chart": "opening/verse D-Am-Em-G; chorus D-Am-C-G; post D-Am-C-G; bridge Em-C-G; header said Key A",
+    "current_authority": "verse/pre E-Bm-F#m-A; chorus E-Bm-D-A; post Bm-D-A-E; bridge F#m-D-A",
+    "resolution": "later maintainer skeleton is used provisionally; discrepancy preserved, not independently resolved"
+  },
+  "generator_boundary": "ordered-chart.tsv enters CoverMap as partial invariants; bars per chord and unknown intro harmony are explicitly generated target decisions",
+  "claim": "partial-cover skeleton only; recognizable song identity UNVERIFIED without observed melody",
+  "lyrics_retained": false,
+  "audio_downloaded_or_transcribed": false
+}

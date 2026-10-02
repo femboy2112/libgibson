@@ -1,0 +1,13 @@
+   Compiling libgibson v0.3.1 (/home/leah/LibGibson)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.84s
+     Running tests/audio_occupancy.rs (target/debug/deps/audio_occupancy-125d76644bd83a56)
+
+running 6 tests
+test r16_null_source_has_no_phantom_phrase_ownership ... ok
+test r16_swiss_existing_comp_opportunities_remain_legal ... ok
+test r16_authored_internal_rests_and_real_yields_are_distinct ... ok
+test r16_retiming_or_omitting_a_sound_does_not_transfer_ownership ... ok
+test r16_semantic_bass_pulses_are_not_retimed_acoustic_attacks ... ok
+test r16_frozen_r15_micro_holes_are_not_authored_opportunities ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s

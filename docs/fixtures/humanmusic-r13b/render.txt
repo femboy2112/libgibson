@@ -1,0 +1,29 @@
+$ cargo +1.98.1 run --release --example sounding_tension_lab -- --render --pitched --dump-notes --around-seconds=16 --around-seconds=44 --out=target/humanmusic-r13b/final
+swiss/stable r12:     clashes=42 transient=36 foreshadowing=2 suspension=0 anticipation=0 unjustified=4
+swiss/stable mass:    clashes=42 transient=36 foreshadowing=2 suspension=0 anticipation=0 unjustified=4
+swiss/stable tension: clashes=26 transient=24 foreshadowing=2 suspension=0 anticipation=0 unjustified=0
+swiss/stable pitched_notes=443 pitch_changed=0 duration_changed=0 retimed=0 omitted=4 added=0 changed_events=4 affected=0.903%
+swiss/stable witnesses 45/45 (stamped 41; lost 0, gained 0), R12 claims 0, SongMapConformance: PASS (song 0xaf5360442b9b6729, performed 0xaf5360442b9b6729; 6 identity sites, 15 landmarks, 30 chord changes checked)
+wav=target/humanmusic-r13b/final/swiss_mass.wav frames=3048814 peak=0.71410376 rms=0.0670787
+wav=target/humanmusic-r13b/final/swiss_mass.pitched.wav frames=3048814 peak=0.30492577 rms=0.039492097
+wav=target/humanmusic-r13b/final/swiss_tension.wav frames=3048814 peak=0.7182269 rms=0.06701451
+wav=target/humanmusic-r13b/final/swiss_tension.pitched.wav frames=3048814 peak=0.30481762 rms=0.039407507
+black_ice/stable r12:     clashes=92 transient=43 foreshadowing=4 suspension=0 anticipation=7 unjustified=38
+black_ice/stable mass:    clashes=75 transient=36 foreshadowing=4 suspension=0 anticipation=2 unjustified=33
+black_ice/stable tension: clashes=59 transient=54 foreshadowing=3 suspension=0 anticipation=2 unjustified=0
+black_ice/stable pitched_notes=432 pitch_changed=9 duration_changed=9 retimed=11 omitted=0 added=0 changed_events=29 affected=6.713%
+black_ice/stable witnesses 44/45 (stamped 40; lost 0, gained 0), R12 claims 0, SongMapConformance: PASS (song 0xaf5360442b9b6729, performed 0xaf5360442b9b6729; 6 identity sites, 15 landmarks, 30 chord changes checked)
+wav=target/humanmusic-r13b/final/black_ice_mass.wav frames=4047273 peak=0.97 rms=0.11931102
+wav=target/humanmusic-r13b/final/black_ice_mass.pitched.wav frames=4047273 peak=0.619672 rms=0.0952704
+wav=target/humanmusic-r13b/final/black_ice_tension.wav frames=4047273 peak=0.95342994 rms=0.11815742
+wav=target/humanmusic-r13b/final/black_ice_tension.pitched.wav frames=4047273 peak=0.60423636 rms=0.09387275
+swiss/deflected r12:     clashes=27 transient=23 foreshadowing=0 suspension=0 anticipation=0 unjustified=4
+swiss/deflected mass:    clashes=27 transient=24 foreshadowing=0 suspension=0 anticipation=0 unjustified=3
+swiss/deflected tension: clashes=21 transient=21 foreshadowing=0 suspension=0 anticipation=0 unjustified=0
+swiss/deflected pitched_notes=387 pitch_changed=2 duration_changed=0 retimed=0 omitted=1 added=0 changed_events=3 affected=0.775%
+swiss/deflected witnesses 48/49 (stamped 42; lost 0, gained 0), R12 claims 0, SongMapConformance: PASS (song 0x8d901e3de29190a2, performed 0x8d901e3de29190a2; 6 identity sites, 15 landmarks, 31 chord changes checked)
+black_ice/deflected r12:     clashes=15 transient=10 foreshadowing=3 suspension=0 anticipation=0 unjustified=2
+black_ice/deflected mass:    clashes=22 transient=17 foreshadowing=3 suspension=0 anticipation=0 unjustified=2
+black_ice/deflected tension: clashes=19 transient=16 foreshadowing=3 suspension=0 anticipation=0 unjustified=0
+black_ice/deflected pitched_notes=382 pitch_changed=1 duration_changed=0 retimed=0 omitted=1 added=0 changed_events=2 affected=0.524%
+black_ice/deflected witnesses 47/49 (stamped 41; lost 0, gained 0), R12 claims 0, SongMapConformance: PASS (song 0x8d901e3de29190a2, performed 0x8d901e3de29190a2; 6 identity sites, 15 landmarks, 31 chord changes checked)

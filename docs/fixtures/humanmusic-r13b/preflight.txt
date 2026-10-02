@@ -1,0 +1,30 @@
+$ RUSTUP_TOOLCHAIN=1.98.1 STABLE_TOOLCHAIN=+1.98.1 MSRV_TOOLCHAIN=+1.85 RUST_TEST_THREADS=1 scripts/release/preflight.sh
+preflight exit 0
+
+==== worktree whitespace ====
+  [PASS] git diff --check
+==== version + ABI consistency ====
+  [PASS] scripts/release/check-versions.sh
+==== format ====
+  [PASS] cargo +1.98.1 fmt --check
+==== clippy (-D warnings) ====
+  [PASS] cargo +1.98.1 clippy --all-targets --all-features -- -D warnings
+==== tests ====
+  [PASS] cargo +1.98.1 test
+==== rustdoc (-D warnings) ====
+  [PASS] rustdoc
+==== MSRV library check — resolved-release floor (+1.85, committed lock) ====
+  [PASS] MSRV +1.85 check --locked --lib
+==== MSRV declared-range consumer — fresh resolution (+1.85) ====
+  [PASS] declared dependency ranges resolve to a +1.85-buildable graph
+==== cargo package ====
+  [PASS] cargo +1.98.1 package --allow-dirty
+==== ABI v1 symbol baseline ====
+  [PASS] scripts/release/check-abi.sh
+==== clean-room external consumers (C, C++, Python, Go, Rust) ====
+  [PASS] scripts/release/cleanroom.sh
+==== third-party notices freshness ====
+  [PASS] THIRD-PARTY-NOTICES.md matches generated
+==== license files present ====
+  [PASS] license/notice files present
+RELEASE PREFLIGHT: PASS

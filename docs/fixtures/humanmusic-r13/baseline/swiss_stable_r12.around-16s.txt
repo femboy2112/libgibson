@@ -1,0 +1,183 @@
+regime=stable world=swiss seed=2112 beats=120 tempo=118 arm=r12-temporal
+song=0xaf5360442b9b6729 performance=0x1e99b6d9458ab484 score=0x8ab3cd9fa10d751c
+window 14.50..17.50 s (beats 28.52..34.42) at 118 BPM
+beat 28.0000 (14.237 s) role bass pitch C2 (36)
+  written 1.900 beats = 0.966 s; audible 1.017 s; recurrence 0.965 s; accent Downbeat (x1.50); fused yes; velocity 0.383; mass 2.973 weighted-s -> Asserted
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone, PedalTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 28.0000 (14.237 s) role lead pitch C4 (60)
+  written 1.350 beats = 0.686 s; audible 0.093 s; recurrence 0.000 s; accent Downbeat (x1.50); fused no; velocity 0.790; mass 0.139 weighted-s -> Fleeting
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 28.0000 (14.237 s) role pad pitch E4 (64)
+  written 3.920 beats = 1.993 s; audible 2.034 s; recurrence 2.000 s; accent Downbeat (x1.50); fused yes; velocity 0.216; mass 6.051 weighted-s -> Asserted
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 28.0000 (14.237 s) role pad pitch B4 (71)
+  written 3.920 beats = 1.993 s; audible 2.034 s; recurrence 0.000 s; accent Downbeat (x1.50); fused yes; velocity 0.216; mass 3.051 weighted-s -> Asserted
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone, Neighbor]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 28.0000 (14.237 s) role pad pitch C5 (72)
+  written 3.920 beats = 1.993 s; audible 2.034 s; recurrence 2.000 s; accent Downbeat (x1.50); fused yes; velocity 0.216; mass 6.051 weighted-s -> Asserted
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 28.0000 (14.237 s) role pad pitch G5 (79)
+  written 3.920 beats = 1.993 s; audible 2.034 s; recurrence 2.000 s; accent Downbeat (x1.50); fused yes; velocity 0.216; mass 6.051 weighted-s -> Asserted
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 28.5000 (14.492 s) role keys pitch E4 (64)
+  written 0.900 beats = 0.458 s; audible 0.137 s; recurrence 0.137 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.274 weighted-s -> Gestural
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 28.5000 (14.492 s) role keys pitch B4 (71)
+  written 0.900 beats = 0.458 s; audible 0.137 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.137 weighted-s -> Fleeting
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 28.5000 (14.492 s) role keys pitch D5 (74)
+  written 0.900 beats = 0.458 s; audible 0.137 s; recurrence 0.137 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.274 weighted-s -> Gestural
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict SoftOrphan: gestural orphan colour: a soft suspect, not asserted
+beat 30.0000 (15.254 s) role bass pitch E2 (40)
+  written 0.450 beats = 0.229 s; audible 0.254 s; recurrence 0.000 s; accent MidBar (x1.25); fused no; velocity 0.390; mass 0.318 weighted-s -> Gestural
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone, PedalTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 30.5000 (15.508 s) role bass pitch G2 (43)
+  written 0.450 beats = 0.229 s; audible 0.254 s; recurrence 0.475 s; accent Weak (x1.00); fused no; velocity 0.397; mass 0.729 weighted-s -> Gestural
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone, PedalTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 30.5000 (15.508 s) role keys pitch E4 (64)
+  written 0.200 beats = 0.102 s; audible 0.127 s; recurrence 0.137 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.264 weighted-s -> Gestural
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 30.5000 (15.508 s) role keys pitch B4 (71)
+  written 0.200 beats = 0.102 s; audible 0.127 s; recurrence 0.137 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.264 weighted-s -> Gestural
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 30.7500 (15.636 s) role keys pitch E4 (64)
+  written 0.450 beats = 0.229 s; audible 0.137 s; recurrence 0.264 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.401 weighted-s -> Gestural
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 30.7500 (15.636 s) role keys pitch B4 (71)
+  written 0.450 beats = 0.229 s; audible 0.137 s; recurrence 0.264 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.401 weighted-s -> Gestural
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone, SlidePath]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 30.7500 (15.636 s) role keys pitch D5 (74)
+  written 0.450 beats = 0.229 s; audible 0.137 s; recurrence 0.137 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.274 weighted-s -> Gestural
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict SoftOrphan: gestural orphan colour: a soft suspect, not asserted
+beat 31.0000 (15.763 s) role bass pitch B2 (47)
+  written 0.450 beats = 0.229 s; audible 0.254 s; recurrence 0.254 s; accent Weak (x1.00); fused no; velocity 0.404; mass 0.508 weighted-s -> Gestural
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone, ChromaticApproach, Appoggiatura, PedalTone, SlidePath]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 31.5000 (16.017 s) role bass pitch C3 (48)
+  written 0.450 beats = 0.229 s; audible 0.254 s; recurrence 1.017 s; accent Weak (x1.00); fused no; velocity 0.411; mass 1.271 weighted-s -> Asserted
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone, PedalTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 31.5000 (16.017 s) role keys pitch C5 (72)
+  written 0.250 beats = 0.127 s; audible 0.127 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.246; mass 0.127 weighted-s -> Fleeting
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 31.7500 (16.144 s) role keys pitch E5 (76)
+  written 0.250 beats = 0.127 s; audible 0.127 s; recurrence 0.401 s; accent Weak (x1.00); fused no; velocity 0.239; mass 0.528 weighted-s -> Gestural
+  current Cmaj7 @ 28.00 next C6 @ 32.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone, Anticipation]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 32.0000 (16.271 s) role bass pitch C2 (36)
+  written 2.025 beats = 1.030 s; audible 1.114 s; recurrence 1.237 s; accent Downbeat (x1.50); fused yes; velocity 0.401; mass 3.526 weighted-s -> Asserted
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone, PedalTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 32.0000 (16.271 s) role keys pitch E4 (64)
+  written 1.940 beats = 0.986 s; audible 0.137 s; recurrence 0.528 s; accent Downbeat (x1.50); fused yes; velocity 0.201; mass 0.998 weighted-s -> Asserted
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 32.0000 (16.271 s) role keys pitch A4 (69)
+  written 1.940 beats = 0.986 s; audible 0.137 s; recurrence 0.000 s; accent Downbeat (x1.50); fused yes; velocity 0.201; mass 0.206 weighted-s -> Asserted
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 32.0000 (16.271 s) role keys pitch D5 (74)
+  written 1.940 beats = 0.986 s; audible 0.137 s; recurrence 0.274 s; accent Downbeat (x1.50); fused yes; velocity 0.201; mass 0.617 weighted-s -> Asserted
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict UnownedAssertedColor: asserted colour the sounding harmony does not write and no suspension, appoggiatura, anticipation or selection owns: accidental reharmonization
+beat 32.0000 (16.271 s) role keys pitch G5 (79)
+  written 0.500 beats = 0.254 s; audible 0.137 s; recurrence 0.000 s; accent Downbeat (x1.50); fused yes; velocity 0.232; mass 0.206 weighted-s -> Asserted
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 32.0000 (16.271 s) role pad pitch E4 (64)
+  written 3.920 beats = 1.993 s; audible 2.034 s; recurrence 2.000 s; accent Downbeat (x1.50); fused yes; velocity 0.191; mass 6.051 weighted-s -> Asserted
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 32.0000 (16.271 s) role pad pitch A4 (69)
+  written 3.920 beats = 1.993 s; audible 2.034 s; recurrence 0.000 s; accent Downbeat (x1.50); fused yes; velocity 0.191; mass 3.051 weighted-s -> Asserted
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone, Neighbor]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 32.0000 (16.271 s) role pad pitch C5 (72)
+  written 3.920 beats = 1.993 s; audible 2.034 s; recurrence 2.000 s; accent Downbeat (x1.50); fused yes; velocity 0.191; mass 6.051 weighted-s -> Asserted
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 32.0000 (16.271 s) role pad pitch G5 (79)
+  written 3.920 beats = 1.993 s; audible 2.034 s; recurrence 2.000 s; accent Downbeat (x1.50); fused yes; velocity 0.191; mass 6.051 weighted-s -> Asserted
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 32.5000 (16.525 s) role lead pitch C4 (60)
+  written 0.450 beats = 0.229 s; audible 0.093 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.790; mass 0.093 weighted-s -> Fleeting
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 33.0000 (16.780 s) role lead pitch E4 (64)
+  written 0.450 beats = 0.229 s; audible 0.093 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.774; mass 0.093 weighted-s -> Fleeting
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 33.5000 (17.034 s) role lead pitch F4 (65)
+  written 0.500 beats = 0.254 s; audible 0.093 s; recurrence 0.000 s; accent Weak (x1.00); fused no; velocity 0.774; mass 0.093 weighted-s -> Fleeting
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(Neighbor); Round XII path Resolved None; supported [ChromaticApproach, Neighbor, SlidePath]
+  ownership Local; mass verdict Carried: ownership meets the exposure's demand
+beat 34.2500 (17.415 s) role bass pitch G2 (43)
+  written 1.125 beats = 0.572 s; audible 0.636 s; recurrence 0.254 s; accent Weak (x1.00); fused no; velocity 0.341; mass 0.890 weighted-s -> Asserted
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone, PedalTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 34.2500 (17.415 s) role keys pitch E4 (64)
+  written 0.450 beats = 0.229 s; audible 0.137 s; recurrence 0.528 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.665 weighted-s -> Gestural
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 34.2500 (17.415 s) role keys pitch A4 (69)
+  written 0.450 beats = 0.229 s; audible 0.137 s; recurrence 0.137 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.274 weighted-s -> Gestural
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(ChordTone); Round XII path Stable None; supported [ChordTone]
+  ownership Harmonic; mass verdict Carried: ownership meets the exposure's demand
+beat 34.2500 (17.415 s) role keys pitch D5 (74)
+  written 0.450 beats = 0.229 s; audible 0.137 s; recurrence 0.274 s; accent Weak (x1.00); fused no; velocity 0.223; mass 0.411 weighted-s -> Gestural
+  current C6 @ 32.00 next Cmaj7 @ 36.00
+  declared Some(LicensedExtension); Round XII path Orphaned Some(OrphanColor); supported [LicensedExtension]
+  ownership Licensed; mass verdict SoftOrphan: gestural orphan colour: a soft suspect, not asserted

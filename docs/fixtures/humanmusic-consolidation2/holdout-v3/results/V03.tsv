@@ -1,0 +1,10 @@
+case	phase	law	status	detail
+V03	source	generation	PASS	performed; its laws are judged separately
+V03	source	declared-grammar	PASS	grammar=RiffDrive
+V03	source	declared-composer	PASS	declared=MeaningDirected; recorded=MeaningDirected
+V03	source	canonical-inventory	PASS	song=b4f11b379732027c; plan=13932de5f4b605ee; score=2a1b20b152a72776; notes=28; drums=38; length=6.75; tempo=71
+V03	source	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+V03	source	guard:percussion-law	PASS	PercussionReport restraint=busy required=28 ornaments admitted 10/10 offered (rate guard 0)\n  landing: 0/0\n  interlock: 1/1\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 9/9\n  unison-inner: 0/0\n  bar   0 Open required=14 ornaments 5/5 — busy restraint: every candidate (lead 4, band 9, prev 0)\n  bar   1 Open required=14 ornaments 5/5 — busy restraint: every candidate (lead 0, band 11, prev 5)\nbars over allowance=[]
+V03	source	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [RehearsedVerb { key: ActionKey { family: Verb(Call), onset: Metric(MetricPosition { ticks: 0, subdivision: 1 }), cause: Statement { phrase: 0 } }, kind: Call, planned_beat: 0.0, pass: 0, outcome: Performed }, RehearsedVerb { key: ActionKey { family: Verb(Answer), onset: Metric(MetricPosition { ticks: 6, subdivision: 1 }), cause: Interaction { call: Some(ActionKey { family: Verb(Call), onset: Metric(MetricPosition { ticks: 0, subdivision: 1 }), cause: Statement { phrase: 0 } }) } }, kind: Answer, planned_beat: 6.0, pass: 0, outcome: Performed }], open_debts: [] }
+V03	source	evidence:established	PASS	established=[Riff, Groove, Form, BassFigure]
+V03	extraction	nothing-to-cover	PASS	no song identity survives the selection: spec=[Groove]; expect=lawful\n

@@ -1,0 +1,19 @@
+    Blocking waiting for file lock on build directory
+   Compiling libgibson v0.3.1 (/tmp/libgibson-canonical-check)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 39.72s
+     Running tests/audio_canonical_fingerprint.rs (/home/leah/LibGibson/target/debug/deps/audio_canonical_fingerprint-29edf77cf0c51959)
+
+running 4 tests
+test canonical_primitives_have_unambiguous_boundaries_and_float_rules ... ok
+test debug_is_not_semantic_identity ... ok
+test song_coordinates_move_identity_but_free_seed_does_not ... ok
+test performance_and_events_have_distinct_explicit_schemas ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s
+
+     Running tests/audio_consolidation_characterization.rs (/home/leah/LibGibson/target/debug/deps/audio_consolidation_characterization-421215bb0db186d1)
+
+running 1 test
+test accepted_pocket_events_and_causal_evidence_are_frozen ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.48s

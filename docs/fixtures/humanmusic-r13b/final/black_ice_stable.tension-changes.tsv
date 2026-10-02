@@ -1,0 +1,31 @@
+# pitched_notes=432 pitch_changed=9 duration_changed=9 retimed=11 omitted=0 added=0 changed_events=29 affected=6.713%
+beat	seconds	role	role_note	note	beats	action	tension	partner	interval	exposure	class
+4.0000	2.727	pad	pad	B3	3.920	Displaced(83)	pad B3 @4.000	pad C5 @4.000	13	4.091	Asserted
+12.0000	8.182	pad	pad	B4	3.920	Displaced(83)	pad B4 @12.000	pad C5 @12.000	1	4.091	Asserted
+18.5000	12.614	lead	melody	B4	0.450	Ornament { start_beat: 18.875, dur_beats: 0.125 }	lead B4 @18.500	pad C5 @17.000	1	0.341	Gestural
+17.0000	11.591	pad	pad	E5	2.920	Shortened(1.5)	pad E5 @17.000	lead F5 @19.000	1	0.341	Gestural
+24.5000	16.705	lead	melody	C#5	0.500	Shortened(0.125)	lead C#5 @24.500	pad C5 @24.000	1	0.440	Gestural
+27.5000	18.750	lead	melody	C#5	0.450	Ornament { start_beat: 27.875, dur_beats: 0.125 }	lead C#5 @27.500	pad C5 @24.000	1	0.341	Gestural
+28.0000	19.091	pad	pad	B4	3.920	Displaced(83)	pad B4 @28.000	pad C5 @28.000	1	4.091	Asserted
+34.5000	23.523	lead	melody	B4	0.450	Ornament { start_beat: 34.875, dur_beats: 0.125 }	lead B4 @34.500	pad C5 @32.000	1	0.341	Gestural
+36.5000	24.886	lead	melody	C#5	0.450	Ornament { start_beat: 36.875, dur_beats: 0.125 }	lead C#5 @36.500	pad C5 @36.000	1	0.341	Gestural
+42.5000	28.977	lead	melody	B4	0.450	Ornament { start_beat: 42.875, dur_beats: 0.125 }	lead B4 @42.500	pad C5 @40.000	1	0.341	Gestural
+44.0000	30.000	pad	pad	B4	3.920	Displaced(83)	pad B4 @44.000	pad C5 @44.000	1	4.091	Asserted
+44.5000	30.341	lead	melody	C#5	0.450	Ornament { start_beat: 44.875, dur_beats: 0.125 }	lead C#5 @44.500	pad C5 @44.000	1	0.341	Gestural
+49.0000	33.409	lead	melody	C#5	0.500	Shortened(0.125)	lead C#5 @49.000	pad C5 @49.000	1	0.440	Gestural
+51.0000	34.773	lead	melody	C#5	0.500	Shortened(0.125)	lead C#5 @51.000	pad C5 @49.000	1	0.440	Gestural
+56.5000	38.523	lead	melody	C#5	0.500	Shortened(0.125)	lead C#5 @56.500	pad C5 @56.000	1	0.440	Gestural
+59.5000	40.568	lead	melody	C#5	0.450	Ornament { start_beat: 59.875, dur_beats: 0.125 }	lead C#5 @59.500	pad C5 @56.000	1	0.341	Gestural
+60.0000	40.909	pad	pad	B4	3.920	Displaced(83)	pad B4 @60.000	pad C5 @60.000	1	4.091	Asserted
+68.0000	46.364	pad	pad	B4	3.920	Displaced(83)	pad B4 @68.000	pad C5 @68.000	1	4.091	Asserted
+76.0000	51.818	pad	pad	B4	3.920	Displaced(83)	pad B4 @76.000	pad C5 @76.000	1	4.091	Asserted
+82.5000	56.250	lead	melody	B4	0.450	Ornament { start_beat: 82.875, dur_beats: 0.125 }	lead B4 @82.500	pad C5 @81.000	1	0.341	Gestural
+81.0000	55.227	pad	pad	E5	2.920	Shortened(1.5)	pad E5 @81.000	lead F5 @83.000	1	0.341	Gestural
+89.0000	60.682	lead	melody	C#5	0.500	Shortened(0.125)	lead C#5 @89.000	pad C5 @88.000	1	0.440	Gestural
+91.0000	62.045	lead	melody	C#5	0.500	Shortened(0.125)	lead C#5 @91.000	pad C5 @88.000	1	0.440	Gestural
+96.5000	65.795	lead	melody	C#5	0.500	Shortened(0.125)	lead C#5 @96.500	pad C5 @96.000	1	0.440	Gestural
+99.5000	67.841	lead	melody	C#5	0.450	Ornament { start_beat: 99.875, dur_beats: 0.125 }	lead C#5 @99.500	pad C5 @96.000	1	0.341	Gestural
+100.0000	68.182	pad	pad	B4	3.920	Displaced(83)	pad B4 @100.000	pad C5 @100.000	1	4.091	Asserted
+106.5000	72.614	lead	melody	B4	0.450	Ornament { start_beat: 106.875, dur_beats: 0.125 }	lead B4 @106.500	pad C5 @104.000	1	0.341	Gestural
+108.0000	73.636	pad	pad	B4	3.920	Displaced(83)	pad B4 @108.000	pad C5 @108.000	1	4.567	Asserted
+108.5000	73.977	lead	melody	A#4	0.450	Ornament { start_beat: 108.875, dur_beats: 0.125 }	lead A#4 @108.500	pad A4 @108.000	1	0.341	Gestural

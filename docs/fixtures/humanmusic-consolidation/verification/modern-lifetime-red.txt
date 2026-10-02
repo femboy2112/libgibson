@@ -1,0 +1,17 @@
+
+running 1 test
+test modern_release_envelope_ignores_unlinked_same_role_attacks ... FAILED
+
+failures:
+
+failures:
+    modern_release_envelope_ignores_unlinked_same_role_attacks
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.04s
+
+
+thread 'modern_release_envelope_ignores_unlinked_same_role_attacks' (3373123) panicked at tests/audio_realization_policy.rs:165:5:
+assertion `left == right` failed: an unlinked same-role attack cannot shorten a canonical voice
+  left: 1.25
+ right: 1.54575960920576
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

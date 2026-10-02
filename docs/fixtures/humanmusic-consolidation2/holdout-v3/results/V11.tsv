@@ -1,0 +1,22 @@
+case	phase	law	status	detail
+V11	source	generation	PASS	performed; its laws are judged separately
+V11	source	declared-grammar	PASS	grammar=WorldSwitch
+V11	source	declared-composer	PASS	declared=MeaningDirected; recorded=MeaningDirected
+V11	source	canonical-inventory	PASS	song=fa20c4c9e2e5133f; plan=31c6315a594e3dcd; score=80dbe7b75e0d9756; notes=11; drums=0; length=5.5; tempo=118
+V11	source	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+V11	source	guard:percussion-law	PASS	PercussionReport restraint=balanced required=0 ornaments admitted 0/0 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/0\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 0/0\n  unison-inner: 0/0\nbars over allowance=[]
+V11	source	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [], open_debts: [] }
+V11	source	evidence:established	PASS	established=[Form, BassFigure]
+V11	extraction	evidence:natural-overlap	PASS	(role, identity events, non-identity events at an identity onset)=[(Bass, 3, 0)]
+V11	extraction	identity-under-overlap	PASS	added non-identity events [(Bass, 0.0)]; re-extraction identical
+V11	extraction	projection	PASS	map=8249311c028e09c6; spec=[Form, BassFigure]; knowledge=[(Motif, Free), (Riff, Free), (Groove, Free), (HarmonicContour, Free), (HarmonicLoop, Free), (Form, Invariant), (Orchestration, Free), (BassFigure, Invariant)]; expect=lawful
+V11	extraction	guard:map-validation	PASS	Ok(())
+V11	cover	candidate-lift	PASS	lifted; expect=lawful
+V11	cover	canonical-inventory	PASS	song=202fa56838cd0f60; plan=1ee886c313c2f7ed; score=bb069c7d847dda52; notes=16; drums=0; length=5.5; tempo=118
+V11	cover	performance-receipt	PASS	failures=[]; receipt=PerformanceReceipt { song: true, score_validation: None, unclassified: 0, temporal_false: 0, held_identity_flips: 0, stale_hearings: 0, invalid_continuations: 0, occupancy_violations: [], unwitnessed_actions: 0, stage_violations: 0, domain_violations: [], anchor_violations: [], vocabulary_violations: [] }
+V11	cover	guard:percussion-law	PASS	PercussionReport restraint=balanced required=0 ornaments admitted 0/0 offered (rate guard 0)\n  landing: 0/0\n  interlock: 0/0\n  open-hat: 0/0\n  fill-flourish: 0/0\n  answer-echo: 0/0\n  ghost: 0/0\n  unison-inner: 0/0\nbars over allowance=[]
+V11	cover	evidence:rehearsal	PASS	RehearsalTrace { passes: 0, verbs: [], open_debts: [] }
+V11	cover	metric-length	PASS	canonical metric extent
+V11	cover	form	PASS	phrase boundary and family topology; the realized pin holds the exact relation
+V11	cover	bass-figure	PASS	relative chromatic contour, canonical onsets and observed rest boundaries; global octave and shorter gates free; the realized pin holds the exact relation
+V11	cover	guard:anti-replay-vs-source	PASS	CoverFreedom { support_voicing: true, dynamics: true, percussion_detail: false, interactions: false }; machine variation only, no listening claim
