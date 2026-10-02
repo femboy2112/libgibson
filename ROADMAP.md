@@ -2,12 +2,18 @@
 
 This document outlines completed work and the planned future milestones for LibGibson.
 
-> **Current status (2026-09-28):** **v0.3.1** is released on GitHub (Engineering Alpha,
-> Linux x86_64; tag → `v0.3.1` at `1010209`, prerelease-flagged) — **Temporal hardening +
-> keyed compositing**: incremental region accounting (fixes #68), keyed greenscreen
-> compositing and a surface-local reaction-cut flagship that composites a keyed subject
-> into the existing intro film, all **additive** to the experimental Rust-only
-> `gibson::temporal` axis (C ABI unchanged at v1; MSRV 1.85; 850 tests). It builds on
+> **Current status (2026-10-02):** **v0.4.0** is released on GitHub (Engineering Alpha,
+> Linux x86_64; tag → `v0.4.0` at `c2f6483`, prerelease-flagged) — **HumanMusic & Audio**:
+> a deliberate additive minor that adds the experimental, Rust-only `gibson::audio` axis
+> (deterministic offline synthesis, DSP, WAV, optional `audio-cpal` device output) and
+> HumanMusic, a procedural composer and checked band driven by semantic style/story state,
+> with Cover Mode and three sonic worlds (see
+> [docs/HUMAN_MUSIC_ARCHITECTURE.md](docs/HUMAN_MUSIC_ARCHITECTURE.md)). C ABI unchanged at
+> v1; MSRV 1.85; 1,522 tests (18 ignored). It builds on **v0.3.1** (tag → `v0.3.1` at
+> `1010209`) — **Temporal hardening + keyed compositing**: incremental region accounting
+> (fixes #68), keyed greenscreen compositing and a surface-local reaction-cut flagship that
+> composites a keyed subject into the existing intro film, all **additive** to the
+> experimental Rust-only `gibson::temporal` axis (850 tests) — and on
 > **v0.3.0** (tag → `v0.3.0` at `e57cdb2`), the **Temporal
 > Rendering Milestone**: high-cadence phase-locked frame pacing (`FramePacing`) and
 > split generation/write per-frame diagnostics (`FrameReport`) as CORE infrastructure,
@@ -19,9 +25,9 @@ This document outlines completed work and the planned future milestones for LibG
 > v0.2.5 (tag → `6b7096a`), v0.2.4 (`d991c93`), v0.2.3 (`e219841`), v0.2.2 (`0052dbe`),
 > v0.2.1 (`219a592`) — over the experimental semantic UI milestone v0.2.0 (2026-09-26;
 > tag → `7a10e60`), itself a deliberate additive minor over v0.1.1 (tag → `3789332`) and
-> v0.1.0 (2026-09-25). The C ABI is unchanged (`GIBSON_ABI_VERSION` 1); `gibson::temporal`
-> and `gibson::ui` are EXPERIMENTAL, not CORE. The full suite is **792 tests (296 unit +
-> 494 integration + 2 doctests)**.
+> v0.1.0 (2026-09-25). The C ABI is unchanged (`GIBSON_ABI_VERSION` 1); `gibson::audio`,
+> `gibson::temporal` and `gibson::ui` are EXPERIMENTAL, not CORE. The v0.3.0 suite was
+> **792 tests (296 unit + 494 integration + 2 doctests)**.
 > Ecosystem-registry publication (crates.io / PyPI / Go module proxy) remains deferred.
 > The checkpoint counts and CI run ids below are historical development evidence,
 > preserved as measured.

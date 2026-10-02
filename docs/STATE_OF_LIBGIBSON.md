@@ -12,12 +12,19 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
-**Current status (2026-09-28):** **v0.3.1** is released on GitHub as an Engineering Alpha
-(tag → `v0.3.1` at `1010209`, prerelease-flagged, Linux x86_64; native SDK archive + the
-Python wrapper wheel/sdist attached) — **Temporal hardening + keyed compositing**:
-incremental region accounting (fixes #68), keyed greenscreen compositing and a
-surface-local reaction-cut flagship, all **additive** to the experimental Rust-only
-`gibson::temporal` axis (C ABI unchanged at v1; MSRV 1.85; 850 tests). It builds on
+**Current status (2026-10-02):** **v0.4.0** is released on GitHub as an Engineering Alpha
+(tag → `v0.4.0` at `c2f6483`, prerelease-flagged, Linux x86_64; native SDK archive + the
+Python wrapper wheel/sdist attached) — **HumanMusic & Audio**: a deliberate additive minor
+that adds the experimental, Rust-only `gibson::audio` axis (deterministic offline
+synthesis, DSP, WAV, optional `audio-cpal` device output) and HumanMusic, a procedural
+composer and checked band driven by semantic style/story state, with Cover Mode and three
+sonic worlds (see [HUMAN_MUSIC_ARCHITECTURE.md](HUMAN_MUSIC_ARCHITECTURE.md)). Audio is not
+exposed through the C ABI (unchanged at v1); MSRV 1.85; 1,522 tests (18 ignored: the #15
+acceptance plus HumanMusic's explicitly-run holdouts, sweeps and listening devices). It
+builds on **v0.3.1** (tag → `v0.3.1` at `1010209`) — **Temporal hardening + keyed
+compositing**: incremental region accounting (fixes #68), keyed greenscreen compositing and
+a surface-local reaction-cut flagship, all **additive** to the experimental Rust-only
+`gibson::temporal` axis (850 tests) — and on
 **v0.3.0** (tag → `v0.3.0` at `e57cdb2`), the **Temporal
 Rendering Milestone**: high-cadence phase-locked frame pacing (`FramePacing`) and split
 generation/write per-frame diagnostics (`FrameReport`) as CORE infrastructure, plus an
@@ -31,9 +38,9 @@ follows the Europa v0.2.x patch train — v0.2.5 (tag → `6b7096a`), v0.2.4 (`d
 v0.2.3 (`e219841`), v0.2.2 (`0052dbe`), v0.2.1 (`219a592`) — over the experimental semantic
 UI milestone v0.2.0 (2026-09-26; tag → `7a10e60`), itself a deliberate additive minor over
 v0.1.1 (2026-09-26; tag → `3789332`) and v0.1.0 (2026-09-25; tag → `a3f1e29`); the C ABI is
-unchanged (`GIBSON_ABI_VERSION` 1) and `gibson::temporal`/`gibson::ui` are EXPERIMENTAL and
-Rust-only, not CORE. The release baseline suite is **792 tests (296 unit + 494 integration +
-2 doctests)**, with one known-red collision acceptance ignored.
+unchanged (`GIBSON_ABI_VERSION` 1) and `gibson::audio`/`gibson::temporal`/`gibson::ui` are
+EXPERIMENTAL and Rust-only, not CORE. The v0.3.0 release baseline suite was **792 tests (296
+unit + 494 integration + 2 doctests)**, with one known-red collision acceptance ignored.
 Ecosystem-registry publication (crates.io / PyPI / Go module proxy) remains deferred. The
 per-checkpoint test counts and CI run ids below are historical development evidence,
 preserved as measured (the historical command tables below preserve the checkpoint they
