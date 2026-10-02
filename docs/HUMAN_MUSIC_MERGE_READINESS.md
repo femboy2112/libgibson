@@ -10,12 +10,20 @@ Labels: **Observed** (read from a committed receipt or a command run at the stat
 
 ## 1. Branch and head
 
-- The closeout round started at `9204ef4` (remote = local; the semantic-consolidation and pre-main
-  rounds' head). Everything below was authored on `feat/v0.4-humanmusic-audio`, pushed in coherent
-  increments. Nothing was merged to `main`, tagged, released or version-bumped; no history was
-  rewritten; PR #70 stays a draft.
-- **Final library source: `abc3f9f`** (frozen; every later commit is test/docs only). Holdout v6 was
-  declared at `04c5c26` and contacted once there; the listening corpus and this document follow.
+- **Machine state before this round (VAPORIZE):** head `ef6a7e0`, final closeout library source
+  `abc3f9f`; holdout v6 28/28 (503 checks, 0 failing); 485,568 / 485,568 fresh BAND performances
+  admitted; R17 48/48 WAV + 757/757 receipts and the 16-WAV cover corpus byte-identical; hosted CI and
+  Release Preflight green. The semantic architecture was closed.
+- **Why VAPOR95 was reopened (Disclosed):** the maintainer's listen called the VAPOR95 palette "kinda
+  trash" — generic lush synthwave, not classic vaporwave. This round is the one deliberate pre-main
+  aesthetic intervention: the VAPOR95 *world* (its dialect) and the production physics every world may
+  declare. No feature, no composer change, no song change (§6).
+- Commits (all pushed in order): `8e99c14` v1 before-image · `1268e1d` audit · `081512f`
+  `WorldProduction` (byte-exact refactor) · `d175090` the VAPOR95 revision · `e5e5969` search device ·
+  `64664bc` post-freeze search · `6512cd3` holdout v7 declaration · `7d5399d` v7 first contact ·
+  `c02a3e3` known R17 sweep on the archival world · this document. Nothing was merged to `main`,
+  tagged, released or version-bumped; no history was rewritten; PR #70 stays a draft.
+- **Final library source: `d175090`** (frozen; every later commit is test/docs only).
 - Package `libgibson` 0.3.1, ABI 1, MSRV 1.85 — **unchanged**. Everything HumanMusic is under the
   experimental `gibson::audio::human_music` module; no C/Python/Go ABI surface was added.
 
@@ -67,6 +75,15 @@ bass figure room:   interaction planner — the bass's borrowed material never t
                     downbeat its own line could sound on where BassFigure is declared
 ```
 
+World production law (`world::WorldProduction`, declared by the world, executed by the synth; a
+`None` stage is not computed — BLACK_ICE and SWISS_SIGNAL declare none of the new stages):
+
+```
+pad + keys + lead ─► MemoryChorus ─┐
+bass ──────────────────────────────┼─► + drums ─► tanh ─► + TempoEcho returns ─► Space (input low-cut) ─► comp ─► limiter
+keys + lead (send) ─► tone LP ─► L/R damped delays at note values (EchoTime → seconds at the DSP boundary)
+```
+
 ## 3. Public API (experimental module)
 
 | Surface | Entry points | Default behaviour |
@@ -81,6 +98,7 @@ bass figure room:   interaction planner — the bass's borrowed material never t
 **Default vs explicit profile (Disclosed):** the library default is still the oldest control (`WRITTEN`).
 `POCKET` and `BAND` are explicit opt-ins. Promoting `BAND` to the default is a maintainer decision and was
 deliberately not made.
+| VAPORIZE additions | `world::{WorldProduction, Space, MemoryChorus, TempoEcho, EchoTime}` (the `MusicWorld` fields `reverb_size`/`reverb_damp`/`reverb_mix`/`saturation` moved into `production` — a breaking change inside the experimental module), `synth::ProductionControl::{no_chorus, no_echo, full_band_space}` (`nochorus`, `noecho`, `fullband`), `dsp::fx::Delay::set_damping`, `dsp::fx::Reverb::process_stereo_send` | Neutral production is skipped, not computed: BLACK_ICE, SWISS_SIGNAL and the archival VAPOR95 v1 render byte-identically. |
 | Closeout additions | `pitch::{classify_earned, classify_under}`, `identity::keeps_held_identity`, `Score::keys_voicing_edits` (printed only when non-empty; outside the canonical event fingerprint), `comp::PadVoicingReason::Release`, `motif::LineRequest::earned` | Archived paths call the unchanged `classify` / `keeps_identity`; `keys_voicing_edits` is empty off BAND. |
 
 ## 4. Fingerprints and historical compatibility (Observed)
@@ -92,21 +110,61 @@ deliberately not made.
 - Legacy Debug/FNV: `PerformancePlan` and `Score` print new fields (`rehearsal`, `functions`,
   `stroke_origins`) only when present; pinned characterization fingerprints are unchanged.
 - Historical entry points remain thin adapters over `PerformanceProfile`; nothing historical reads a new law.
+- **VAPOR95 v1 (archival) → VAPOR95 (current)** is an intentional sonic-world revision
+  (`docs/HUMAN_MUSIC_VAPOR95.md` §4). The archival world is a fixture, never a `WorldId`:
+  `tests/common/vapor95_v1.rs` (tests and lab examples, via `#[path]`) and a `#[cfg(test)]` copy for unit
+  tests, both pinned to one committed dump (`humanmusic-vaporize/v1-baseline/world-v1.txt`). Every record
+  derived under v1 reproduces through it (§5); every test whose VAPOR95 case was derived under v1 (R7b/R8
+  pins, closeout and earlier falsifiers, the consolidation flip witnesses, the R15 expression window,
+  the closeout listening device, the known R17 sweep) runs under it.
 
-## 5. R17 accepted pocket and historical evidence (distinct gates) — Observed
+## 5. Historical evidence after the intentional world change (distinct gates) — Observed
 
-After **every** library commit of this round (`a8a527f`, `6652663`, `fb8e907`, `239da10`, `938ab3e`,
-`abc3f9f`): `pocket_music_lab --render` + `scripts/verify-pocket-freeze.py` → **48/48 WAVs and 757/757
-receipts byte-identical**; the 16 cover-listening WAVs byte-identical. The known R17 120-case sweep
-(`r17_fresh_world_seed_tempo_sweep`, rustc 1.98.1) replays exactly at the final source (run at `184ad4b`,
-whose library source is `abc3f9f`; also at `938ab3e`): 61 passes / 59 first failures (14/38/5/2), every
-first reason and every passing label identical (calibrated `parse` of
-`humanmusic-consolidation/known-r17-replay/classify.py`). Every
-new branch is gated on `FunctionPolicy::Earned`; un-gated refactors (`rooting_candidates_in`,
-`choose_rooting`, `flipped_over`, the keys `*_on` realizers, `PitchContext` call sites) are
-behaviour-identical, as the byte gates show.
+| Evidence | Disposition | Result (library source `d175090`) |
+| --- | --- | --- |
+| R17 accepted pocket (BLACK_ICE + SWISS_SIGNAL) | must stay exact | `pocket_music_lab --render` + `verify-pocket-freeze.py`: **48/48 WAV + 757/757 receipts byte-identical** (after `081512f` and `d175090`) |
+| Cover listening corpus (16 WAVs, 3 VAPOR95) | exact via the archival world | `cover_music_lab --vapor95=v1` ×3: **16/16 byte-identical** |
+| VAPOR95 v1 style baseline (30 WAVs, 5 BAND takes) | exact via the archival world | `vapor95_style_lab --record --world=v1`: **30/30 + every fingerprint** |
+| Closeout listening corpus | exact via the archival world | falsifiers **25/25**, drum A/B **20/20**, Ode fidelity **8/8** (`--vapor95=v1`) |
+| Known R17 sweep | exact via the archival world | 120 / 61 / 59 (14/38/5/2); every first reason and passing label identical (`c02a3e3`) |
+| Default VAPOR95 renders, VAPOR95 listening hashes | **intentionally replaced** | new corpus `humanmusic-vaporize/corpus/` (110 WAV hashes) |
+| Holdouts v1–v6 | preserved at their declaration commits | their harnesses call the product world; re-running them at a later head is not their evidence |
 
-## 6. What the closeout round changed — every repair red-first
+The `WorldProduction` refactor (`081512f`) was proven byte-exact before any VAPOR95 value changed
+(R17, cover 16/16, v1 30/30, bit-exact unit tests of the extended `Delay`/`Reverb`). An adversarial
+regression audit (fork B) found no production leak into the Score: nothing outside `synth.rs`/`world.rs`
+reads `WorldProduction` or `ProductionControl`; timbre and mix knobs are read only by the synth (plus one
+report-only exposure proxy); the legitimate world-relative changes are the patch envelopes (sounding
+tails feed the BAND laws) and the tempo. It found six v1-derived falsifier tables still on the product
+world; all were moved to the fixture before the revision was committed.
+
+## 6. What VAPORIZE changed
+
+Full record: `docs/HUMAN_MUSIC_VAPOR95.md` (audit §1, production law §2, ranges §3, revision record §4).
+
+- **Production law** (`081512f`): `WorldProduction { saturation, space { size, damp, mix, low_cut_hz },
+  chorus: Option<MemoryChorus>, echo: Option<TempoEcho> }`; echo times are note values (`EchoTime`),
+  converted with the Score's tempo at the DSP boundary; every repeat darker (`Delay::set_damping`); the
+  room's input low-cut keeps the low end dry and mono (`Reverb::process_stereo_send`); bass and drums
+  never enter the chorus or the echo. Reuses `Chorus`, `Delay`, `Reverb`, `Svf`, `soft_saturate`,
+  `Compressor`, `Limiter`; new glue: the types and the synth's `TempoEchoUnit`.
+- **The VAPOR95 world** (`d175090`): keys become the source object (glassy ratio-3 FM EP, bright
+  filter-envelope attack); a supportive two-saw pad; a soft `Fm{2, .15}` lead; a filtered-saw bass at
+  the written pitch (no sub-octave); a softer machine kit; memory chorus 0.32 Hz / 3.5 ms; tempo echo
+  L dotted eighth / R quarter, feedback .38, darker each repeat; room 1.2 / damp .55 / .28 with a
+  180 Hz low-cut; saturation 2.2 → 1.4; mix level-matched to v1 within ~1 dB; **tempo 71 → 84 BPM, swing
+  kept 0.16 (54 %)**. Key, mode, vocabulary, voicing spread, groove family, drum density and dynamics
+  are unchanged; the SongMap is untouched (a world is a dialect, not a composer).
+- **Measured** (five takes, v1 → current): low band L/R correlation 0.66–0.80 → 0.97–0.99; pad − keys
+  where both sound −0.1…−1.3 → −5.6…−7.0 dB; bass 120–500 Hz energy 1.2–2.7 % → 23–27 %; drums centroid
+  1.0–1.7 → 1.9–3.0 kHz; drums − keys +2.0…+9.3 → −1.7…+4.4 dB; ceiling contact 0 → 0.
+- **Same-Score palette A/B:** the five v1 Scores rendered through the new palette keep their `score=`
+  fingerprints. **Full world:** 5/5 BAND-admitted under the new world, SongMap and PerformancePlan
+  fingerprints unchanged. **Natural transformation** (`tests/audio_vapor95_palette.rs`): v1 / VAPOR95 /
+  BLACK_ICE / SWISS_SIGNAL takes of each SongMap keep identical song coordinates.
+- Aesthetic success: **UNVERIFIED** — the maintainer listens (§17).
+
+## 6b. What the closeout round changed — every repair red-first
 
 | Family | Mechanism (Observed) | Law (source level, BAND) | Red → fix |
 | --- | --- | --- | --- |
@@ -145,7 +203,8 @@ member: **UNVERIFIED** (listen).
 
 ## 10. Holdouts and searches
 
-- **v1-v4** are immutable known evidence; nothing this round was fitted to them.
+- **v1-v6** are immutable known evidence; nothing this round was fitted to them (the closeout-round
+  entries below are kept as they were recorded).
 - **v5** (`holdout-v5/`): 28 rows declared at `7110cee` (config SHA256 `c52d0421…`; source `3146438`)
   after an adversarial pre-contact declaration review (no row change; harness corrections applied).
   First contact **28/28, 503 checks, 0 failing** — preserved. Not final-head evidence: the source changed
@@ -155,6 +214,17 @@ member: **UNVERIFIED** (listen).
   BAND sources pass their own receipt; 6/6 predicted lifts admitted; every admitted cover passes
   `PerformanceReceipt + CoverConformance`; 4 lawful refusals in the family (V08 pinned attacks; V16,
   V21, O02 vocabulary); V17/S03 nothing to cover; cross-swing quotient PASS on all 12 Groove covers.
+- **v7** (`humanmusic-vaporize/holdout-v7/`): v6's design on fresh `984xxxxx` seeds, three rows biased
+  toward the revised VAPOR95 (V02 SWISS → VAPOR95, V06 VAPOR95 one-bar bass figure, V17 VAPOR95 →
+  SWISS straight; VAPOR95 in 15/28 rows), declared at `6512cd3` (config SHA256 `3eb9b3a2…`) after a
+  pre-contact review that ran v7's own `run_case` on 112 probe cases (no 984 seed; 112/112, no row
+  change). First contact at the final library source `d175090`: **28/28, 510 checks, 0 failing** — 21/21
+  sources pass their receipt; 6/6 predicted lifts admitted (incl. V12 VAPOR95 → VAPOR95); lawful
+  refusals V16, V21, O02 (vocabulary); V17, S03 nothing to cover; cross-swing quotient 12/12.
+- **Post-freeze broad BAND search** at `d175090` (`humanmusic-vaporize/search/`): **1,824,756 /
+  1,824,768 admitted, 0 refused, 12 rejected, 0 panicked** — F all worlds nominal 165,888/165,888;
+  G VAPOR95 nominal/66/96/120/150 552,948/552,960; H VAPOR95 + archival v1 at 96–150 884,736/884,736;
+  I BLACK_ICE + SWISS at 132/150 221,184/221,184. The 12 are one pre-existing song (§11).
 - **Exploratory BAND searches** (`tests/audio_band_search.rs`, `perform_checked` under BAND, every
   world × language × grammar × composer × trace × length × drum restraint; seeds `968xxxxx`-`969xxxxx`,
   unused by v1-v6): at the final source, sets A-D (re-validation of the sets that guided the third
@@ -164,12 +234,23 @@ member: **UNVERIFIED** (listen).
 
 ## 11. Remaining internal reds
 
-**None observed** at the final source: 485,568 BAND performances on seeds unused by any holdout admitted
-(0 refused, 0 rejected), holdout v6 28/28.
+**One pre-existing family, preserved and classified, not repaired** (`humanmusic-vaporize/search/`):
+VAPOR95 above ~90 BPM, one song in the post-freeze search — seed `98300007`, deflected trace, 33.25 beats,
+DeflectedLift, StructuralR9, fusion — rejected with one held-identity flip at 96, 120 and 150 BPM under
+every drum restraint (12 / 1,824,768); admitted at 66 and the nominal 84. **Not introduced by this
+round:** the archival v1 world rejects the same song at the same tempi (present at the closeout
+source), and 884,736 further fast-tempo performances (set H, both worlds) admit. Mechanism (instrumented
+probe, nothing kept): a Thin bar (pad silent), the keys hold rootless F4-C5-E5, the bass leaves D for
+A2 → A minor held 1.4 s; the keys' identity law offers the right root (E5 → D5, accepted at 84 BPM), but
+the hold-law acceptance vetoes it because the D5 release tail crosses 0.72 beats into the next harmony,
+where four instants turn from Rooted to a sub-hold Passing F major (longest 0.498 s). The closeout rule
+permits only Implied → Passing ("a root lost anywhere vetoes"). Repairing it means widening that
+deliberate rule — a semantic change this aesthetic round was not licensed to make. No v7 row exercised it.
+
 Historical arms keep their archived behaviour by design (POCKET/R17 byte-exact; the known R17 sweep's
 59 first failures are characterized, not regressions). Cover: `UnprojectableTiming` on DeflectedLift
 grooves and `ConflictingPins` for a kit heard only in action windows remain known (outside the
-lawful family by design — v5/v6 never hit them).
+lawful family by design — v5/v6/v7 never hit them).
 
 ## 12. Lawful explicit refusals (not bugs)
 
@@ -181,56 +262,87 @@ lawful family by design — v5/v6 never hit them).
 
 ## 13. Fixture footprint (Observed)
 
-This round adds `holdout-v5/` and `holdout-v6/` (config, README, CLASSIFICATION, 31 first-contact files
+VAPORIZE adds `humanmusic-vaporize/` (396 KB: `v1-baseline/` record + 30 hashes + world dump,
+`corpus/` 5 lab reports + 110 hashes, `search/` summary + 12 rows, `holdout-v7/` config, README,
+CLASSIFICATION and 31 first-contact files); every WAV stays local under `target/`. The closeout round
+added `holdout-v5/` and `holdout-v6/` (config, README, CLASSIFICATION, 31 first-contact files
 each, ~284 KB each) and `listening-closeout/` (README, CHANGES, WAV SHA256SUMS; WAVs stay local).
 
 ## 14. Gates at the final source
 
 | Gate | Result | Where |
 | --- | --- | --- |
-| Full test suite (release, all features, no fail-fast) | **1,516 passed, 1 failed, 17 ignored**: the one failure is `pty_demos::hack_shell_commands_trigger_real_effects` (a 3 s PTY round-trip timing assertion under full-suite load; no audio code; unchanged since `9204ef4`), which **passes when run alone** (Observed twice) | local, `abc3f9f` |
-| R17 PCM freeze | **48/48 WAV + 757/757 receipts byte-identical** | local, after every library commit |
-| Cover listening corpus | **16/16 WAVs byte-identical** | local, after every library commit |
-| Known R17 sweep replay | 120 / 61 / 59 (14/38/5/2); all first reasons and passing labels identical | local, `184ad4b` (library source `abc3f9f`); also at `334a70b` |
-| Hosted toolchain drift (Disclosed) | The GitHub runners moved `stable` to **Rust 1.99.0** on 2026-10-01; clippy 1.99's `needless_borrows_for_generic_args` fired on pre-existing, non-audio code (`examples/temporal_video_compositor/bake.rs:163`, `map_err(&scrub)`), turning every hosted CI and Release Preflight run from `239da10` to `39d838d` red (the `a8a527f` CI red is the PTY flake on 1.98.1). Fixed by passing the `Copy` closure by value; strict clippy and fmt are clean locally on **both** 1.99.0 and 1.98.1, rustdoc `-D warnings` clean on 1.99.0. | local |
-| Release preflight (13 steps) | see the PR / final report (run at the final commit) | local |
-| GitHub CI / Release Preflight | see the PR (must be green at the exact final commit) | hosted |
-| Holdout v6 | 28/28 at first contact | `04c5c26` |
-| Broad fresh BAND search | 485,568 / 485,568 admitted | `abc3f9f` |
+| Full test suite (all features, no fail-fast) | **1,519 passed, 0 failed, 17 ignored** (97 binaries; the known PTY flake did not fire) | local, library source `d175090` (before the test-only commits; the preflight re-runs it at the final head) |
+| Strict clippy, all targets/features | clean (1.98.1) | local |
+| R17 PCM freeze | **48/48 WAV + 757/757 receipts byte-identical** | local, after `081512f` and `d175090` |
+| Cover listening corpus | **16/16 WAVs byte-identical** (`--vapor95=v1`) | local, after `081512f` and `d175090` |
+| VAPOR95 v1 baseline / closeout corpus | 30/30; 25/25 + 20/20 + 8/8 (archival world) | local, `d175090` |
+| Known R17 sweep replay | 120 / 61 / 59 (14/38/5/2); all first reasons and passing labels identical | local, `c02a3e3` |
+| Holdout v7 | **28/28 at first contact, 510 checks, 0 failing** | `6512cd3` (library `d175090`) |
+| Post-freeze broad BAND search | 1,824,756 / 1,824,768 admitted; 12 rejected = one pre-existing song (§11) | `d175090` |
+| Release preflight (13 steps), GitHub CI, Release Preflight | see the PR / final report (run at the exact final commit) | local + hosted |
 
 ## 15. Unresolved technical debt (exact)
 
+- **Fast-tempo VAPOR95 identity veto (§11).** The keys' hold-law acceptance forbids trading a held
+  flip for sub-hold passing rivals in a neighbouring harmony; at ≥ 96 BPM a long keys release can make
+  the right answer look like that trade. 12 / 1,824,768 performances, one song; pre-existing.
+- **Production is outside the Score model (Disclosed).** BAND receipts reason over the Score's notes
+  and patch release tails; echo repeats, chorus and room tails are acoustic treatment, as the reverb
+  always was. An echo of a previous chord can sound into the next harmony; no receipt hears it.
+- **Render tail.** The synth renders a fixed 2.5 s after the last beat; with the new echo the last
+  second of a render sits about 38 dB below the render's mean level (hookarc; v1: about 51 dB), so the
+  final repeats are still decaying when the file ends. The tail length is not production-aware.
+- **Historical harnesses on the product world.** Holdout harnesses v1–v6 and the ignored
+  `r16_hostile_world_seed_tempo_sweep` call `MusicWorld::vapor95()`; re-running them at a later head is
+  not their recorded evidence (each is preserved at its declaration commit).
+- **API break inside the experimental module.** `MusicWorld.{reverb_size, reverb_damp, reverb_mix,
+  saturation}` moved into `MusicWorld.production`.
 - **Approach side of the earned appoggiatura.** The source bounds the destination (≤ 1 beat, core tone,
   in domain); the observer also requires the approach note to end ≤ 1 beat before and come from an
-  unambiguous bundle. Pre-existing; never observed in 485,568 performances.
-- **Bass-figure guard vs the bass realizer.** The planner's guard reads the planner's stage and the
-  bass's own calls/answers; the realizer additionally excludes unison lines. A unison on the only free
-  downbeat would make the receipt reject (never falsely admit). Never observed.
-- **A tail release triggered inside a rooting trial** is carried on the pad's path but itemized only as
-  the Rooting edit at the harmony before (no separate `Release` edit for the next harmony).
-- **Responsibility bounds:** `PAD_ANSWER_PASSES = 4`, `KEYS_ANSWER_PASSES = 4` (fixed points that
-  converged in every observed case; a non-converging case would be a receipt rejection, not an admit).
-- **PTY demo flake** (§14) is environmental and unrelated to audio.
+  unambiguous bundle. Pre-existing; never observed.
+- **Bass-figure guard vs the bass realizer.** The planner's guard ignores unison lines; a unison on
+  the only free downbeat would make the receipt reject (never falsely admit). Never observed.
+- **A tail release triggered inside a rooting trial** is itemized only as the Rooting edit.
+- **Responsibility bounds:** `PAD_ANSWER_PASSES = 4`, `KEYS_ANSWER_PASSES = 4`.
+- **PTY demo flake** (`pty_demos::hack_shell_commands_trigger_real_effects`, a 3 s PTY timing
+  assertion under full-suite load; passes alone) — environmental, unrelated to audio.
 - Library default is still `WRITTEN`; `BAND` is the hardened candidate — a maintainer decision.
 - `cover.rs` / `cover_fidelity.rs` / `comp.rs` not split (semantics first); human feel remains a typed seam.
 
 ## 16. Reasons NOT to merge (if any hold for you)
 
-- **Listening is the acceptance test and it is open.** No machine result shows that BAND sounds better
-  than POCKET, that the keys' or pad's identity answers sound musical, or that the drummer serves the band.
-- **BAND changed again this round** (12 audition songs in `listening-closeout/`), and the merge ships
-  `BAND` as an opt-in, not the default.
-- **The round found an accidental change after its first holdout** (the ring-out) — caught by listening
-  diffs, not by any gate. Repaired and re-held out (v6), but it shows the gates do not see everything
-  that sounds.
-- The module is large and experimental; its API is not stabilized.
+- **Listening is the acceptance test and it is open.** No machine result shows that the new VAPOR95
+  sounds like vaporwave, that BAND sounds better than POCKET, or that the drummer serves the band.
+- **VAPOR95 changed this round**, deliberately and audibly; the maintainer may want a final parameter
+  adjustment (tempo cell, echo amount, pad level) before it ships.
+- **One known internal BAND red** (§11), pre-existing and rare, in the fast-tempo VAPOR95 regime.
+- BAND ships as an opt-in, not the default; the module is large and experimental; its API is not
+  stabilized.
 
-## 17. Listening questions for the maintainer
+## 17. Listening — the files the maintainer actually needs (8)
 
-1. **Support identity:** do the keys' and the pad's added roots (`identity_*`, before/after) sound like
-   a band keeping the chord, or like a correction?
-2. **Bass figure:** in the one-bar forms, is the bass stating its root on the downbeat (instead of
-   quoting the lead) right — and is the keys' resulting hold acceptable?
-3. **Relational function:** the lead's F#6→E6 became E6→D6 at beat 25 — a loss or a fix?
-4. Unchanged and still open: drums (does Balanced feel like part of the band?), Ode fidelity (which
-   level is "the same song"?), Swing partial usefulness, BAND vs POCKET, whether this branch goes to main.
+All under `target/humanmusic-vaporize/corpus/` (regenerate with `vapor95_style_lab`; hashes in
+`docs/fixtures/humanmusic-vaporize/corpus/WAV_SHA256SUMS`). One song (`hookarc`) through every step, then
+a familiar tune:
+
+1. `v1/hookarc.full.wav` — the old VAPOR95.
+2. `palette/hookarc.full.wav` — **the same notes**, new palette.
+3. `current/hookarc.full.wav` — the new world (84 BPM, light swing): the landed default.
+4. `candidates/hookarc.t78_s16.full.wav` — candidate: slower, 78 BPM.
+5. `candidates/hookarc.t84_s32.full.wav` — candidate: more swing (58 %).
+6. `candidates/hookarc.t90_s00.full.wav` — candidate: 90 BPM straight.
+7. `v1/ode_faithful.full.wav` and 8. `current/ode_faithful.full.wav` — Ode to Joy, old vs new world.
+
+Stems and single-factor ablations beside them localize anything that sounds wrong. Questions:
+
+1. Does new VAPOR95 finally feel like a half-remembered euphoric 80s/R&B recording being reconstituted by
+   a computer, rather than a generic "vapor synth" preset?
+2. Is the pulse slow and narcotic while still bouncing?
+3. Are chorus/echo/reverb creating MEMORY rather than mud?
+4. Are the FM/keys/source-object foreground enough, with the pad supporting rather than swallowing it?
+5. Does the drum machine sit behind the remembered song rather than trying to be the song?
+6. Which candidate, if more than one survives, deserves to be canonical VAPOR95?
+
+Still open from earlier rounds: the closeout's BAND changes (`listening-closeout/`), drums, Ode fidelity
+levels, Swing partial, BAND vs POCKET, and whether this branch goes to main.
