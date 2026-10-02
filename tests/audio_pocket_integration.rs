@@ -1,4 +1,7 @@
 //! Round XVII independent score/lattice witnesses and finite fresh-case invariants.
+#[path = "common/vapor95_v1.rs"]
+mod vapor95_v1;
+
 use gibson::audio::human_music::{
     composer::Composer,
     expression::{annotate, connective, valid_function},
@@ -397,7 +400,8 @@ fn r17_fresh_world_seed_tempo_sweep() {
                 for mut world in [
                     MusicWorld::swiss_signal(),
                     MusicWorld::black_ice(),
-                    MusicWorld::vapor95(),
+                    // The sweep characterizes the archival VAPOR95 v1 world.
+                    vapor95_v1::vapor95_v1(),
                 ] {
                     for delta in [0.0, -12.0] {
                         let original = world.tempo_bpm;
