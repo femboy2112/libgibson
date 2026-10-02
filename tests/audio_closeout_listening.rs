@@ -9,6 +9,12 @@
 //!
 //! Run: `HUMANMUSIC_CLOSEOUT_LISTENING_OUT=<new dir> cargo test --release --test
 //! audio_closeout_listening -- --ignored --nocapture`.
+//!
+//! The closeout corpus was rendered under the archival VAPOR95 v1 world; its VAPOR95 cases use the
+//! fixture so the recorded hashes stay reproducible after the palette revision.
+#[path = "common/vapor95_v1.rs"]
+mod vapor95_v1;
+
 use gibson::audio::{
     human_music::{
         composer::Composer,
@@ -51,7 +57,7 @@ const CASES: [Case; 12] = [
         seed: 96_800_019,
         grammar: CompositionGrammar::DeflectedLift,
         composer: Composer::StructuralR9,
-        world: MusicWorld::vapor95,
+        world: vapor95_v1::vapor95_v1,
         fusion: true,
         tempo: None,
         stems: &["pad"],
@@ -63,7 +69,7 @@ const CASES: [Case; 12] = [
         seed: 96_800_001,
         grammar: CompositionGrammar::DeflectedLift,
         composer: Composer::StructuralR9,
-        world: MusicWorld::vapor95,
+        world: vapor95_v1::vapor95_v1,
         fusion: true,
         tempo: None,
         stems: &["keys"],
@@ -75,7 +81,7 @@ const CASES: [Case; 12] = [
         seed: 96_860_001,
         grammar: CompositionGrammar::DeflectedLift,
         composer: Composer::StructuralR9,
-        world: MusicWorld::vapor95,
+        world: vapor95_v1::vapor95_v1,
         fusion: true,
         tempo: None,
         stems: &["keys"],
@@ -87,7 +93,7 @@ const CASES: [Case; 12] = [
         seed: 96_860_007,
         grammar: CompositionGrammar::DeflectedLift,
         composer: Composer::MeaningDirected,
-        world: MusicWorld::vapor95,
+        world: vapor95_v1::vapor95_v1,
         fusion: true,
         tempo: None,
         stems: &["pad", "keys"],
@@ -111,7 +117,7 @@ const CASES: [Case; 12] = [
         seed: 96_910_000,
         grammar: CompositionGrammar::DeflectedLift,
         composer: Composer::MeaningDirected,
-        world: MusicWorld::vapor95,
+        world: vapor95_v1::vapor95_v1,
         fusion: true,
         tempo: Some(66.0),
         stems: &["pad"],
@@ -123,7 +129,7 @@ const CASES: [Case; 12] = [
         seed: 96_910_002,
         grammar: CompositionGrammar::PropulsiveReturn,
         composer: Composer::StructuralR9,
-        world: MusicWorld::vapor95,
+        world: vapor95_v1::vapor95_v1,
         fusion: true,
         tempo: Some(96.0),
         stems: &["pad"],
@@ -173,7 +179,7 @@ const CASES: [Case; 12] = [
         seed: 96_810_002,
         grammar: CompositionGrammar::WorldSwitch,
         composer: Composer::StructuralR9,
-        world: MusicWorld::vapor95,
+        world: vapor95_v1::vapor95_v1,
         fusion: true,
         tempo: None,
         stems: &["bass"],

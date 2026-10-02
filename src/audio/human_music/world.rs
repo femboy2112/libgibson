@@ -15,7 +15,8 @@ use super::theory::Mode;
 pub enum WorldId {
     /// Dark, sub-heavy, crisp, chromatic — an expensive cybernetic instrument.
     BlackIce,
-    /// Lush, swung, saturated, extension-rich — a vaporwave workstation.
+    /// A half-remembered euphoric 80s pop/R&B record replayed by a computer — glassy source,
+    /// soft machine pocket, chorus, note-value echoes and haze.
     Vapor95,
     /// Sparse, clean, articulated, restrained — Swiss/Bauhaus information design.
     SwissSignal,
@@ -274,12 +275,18 @@ impl MusicWorld {
         }
     }
 
-    /// VAPOR95 — lush F-major, swung, detuned pads + FM keys, big soft reverb.
+    /// VAPOR95 — a half-remembered euphoric 80s pop/R&B record replayed by a computer: a glassy
+    /// FM workstation keys voice as the source object, a soft drum-machine pocket behind it, and
+    /// production as an instrument — memory-bus chorus, note-value echoes that come back darker,
+    /// a damped room the low end stays out of. F major, lightly swung, slowed but bouncing.
+    ///
+    /// Revised from the archival v1 palette (Round I to `abc3f9f`; see
+    /// `docs/HUMAN_MUSIC_VAPOR95.md`): the world's dialect changed, not what a song is.
     pub fn vapor95() -> MusicWorld {
         MusicWorld {
             id: WorldId::Vapor95,
             name: "VAPOR95",
-            tempo_bpm: 71.0,
+            tempo_bpm: 84.0,
             tonic_pc: 5, // F
             mode: Mode::Ionian,
             swing: 0.16,
@@ -289,95 +296,112 @@ impl MusicWorld {
             allow_modal_mixture: true,
             allow_secondary_dominant: true,
             voicing_spread: 0.6,
+            // Supportive atmosphere: two lightly detuned saws, filtered low, shorter tail — the
+            // chorus supplies the width the v1 supersaw got from detune.
             pad: Patch {
                 osc: OscKind::Shape(Wave::Saw),
                 sub: false,
-                unison: 3,
-                detune_cents: 16.0,
-                cutoff_hz: 2200.0,
-                cutoff_env: 700.0,
-                resonance: 0.15,
-                adsr: (0.4, 0.8, 0.7, 1.2),
-                gain: 0.6,
+                unison: 2,
+                detune_cents: 7.0,
+                cutoff_hz: 1400.0,
+                cutoff_env: 250.0,
+                resonance: 0.06,
+                adsr: (0.4, 1.0, 0.65, 0.7),
+                gain: 0.55,
                 pan: 0.0,
             },
+            // Warm and defined: a filtered saw at the written pitch (no sub-octave rumble), mono.
             bass: Patch {
-                osc: OscKind::Shape(Wave::Triangle),
-                sub: true,
+                osc: OscKind::Shape(Wave::Saw),
+                sub: false,
                 unison: 1,
                 detune_cents: 0.0,
-                cutoff_hz: 900.0,
-                cutoff_env: 300.0,
-                resonance: 0.15,
-                adsr: (0.01, 0.2, 0.7, 0.25),
-                gain: 0.8,
+                cutoff_hz: 560.0,
+                cutoff_env: 360.0,
+                resonance: 0.18,
+                adsr: (0.006, 0.22, 0.72, 0.16),
+                gain: 0.9,
                 pan: 0.0,
             },
+            // A smooth melodic source for the haze to ghost: soft odd-harmonic FM, no whistle.
             lead: Patch {
                 osc: OscKind::Fm {
-                    ratio: 1.0,
-                    index: 1.4,
+                    ratio: 2.0,
+                    index: 0.15,
                 },
                 sub: false,
                 unison: 1,
                 detune_cents: 0.0,
-                cutoff_hz: 3500.0,
-                cutoff_env: 800.0,
-                resonance: 0.12,
-                adsr: (0.01, 0.6, 0.35, 0.6),
-                gain: 0.6,
+                cutoff_hz: 2600.0,
+                cutoff_env: 700.0,
+                resonance: 0.08,
+                adsr: (0.018, 0.5, 0.62, 0.5),
+                gain: 0.56,
                 pan: -0.1,
             },
+            // The source object: a glassy digital EP — ratio-3 FM (harmonics 1 2 4 5 7 8 over the
+            // fundamental) whose bright attack the filter envelope lets through, then closes.
             keys: Patch {
                 osc: OscKind::Fm {
-                    ratio: 2.0,
-                    index: 1.0,
+                    ratio: 3.0,
+                    index: 0.25,
                 },
                 sub: false,
                 unison: 1,
                 detune_cents: 0.0,
-                cutoff_hz: 4000.0,
-                cutoff_env: 500.0,
-                resonance: 0.1,
-                adsr: (0.005, 0.5, 0.25, 0.5),
-                gain: 0.58,
+                cutoff_hz: 2200.0,
+                cutoff_env: 4200.0,
+                resonance: 0.12,
+                adsr: (0.003, 0.6, 0.22, 0.45),
+                gain: 0.72,
                 pan: 0.15,
             },
+            // A soft machine pocket: tighter round kick, softer snare, airier hats.
             kick: KickParams {
-                base_hz: 52.0,
-                pitch_sweep_hz: 140.0,
-                pitch_tau: 0.04,
-                amp_tau: 0.18,
-                click: 0.15,
+                base_hz: 54.0,
+                pitch_sweep_hz: 150.0,
+                pitch_tau: 0.03,
+                amp_tau: 0.13,
+                click: 0.22,
             },
             snare: SnareParams {
-                noise_hp_hz: 1200.0,
-                noise_tau: 0.14,
-                tone_tau: 0.1,
-                tone_lo_hz: 170.0,
-                tone_hi_hz: 300.0,
-                noise_mix: 0.6,
+                noise_hp_hz: 1700.0,
+                noise_tau: 0.12,
+                tone_tau: 0.08,
+                tone_lo_hz: 190.0,
+                tone_hi_hz: 320.0,
+                noise_mix: 0.68,
             },
-            hat_cutoff: 6500.0,
+            hat_cutoff: 7800.0,
             ghost_amount: 0.2,
             drum_density: 0.5,
             production: WorldProduction {
-                saturation: 2.2,
+                saturation: 1.4,
                 space: Space {
-                    size: 1.3,
-                    damp: 0.25,
-                    mix: 0.34,
-                    low_cut_hz: None,
+                    size: 1.2,
+                    damp: 0.55,
+                    mix: 0.28,
+                    low_cut_hz: Some(180.0),
                 },
-                chorus: None,
-                echo: None,
+                chorus: Some(MemoryChorus {
+                    rate_hz: 0.32,
+                    depth_ms: 3.5,
+                    mix: 0.4,
+                }),
+                echo: Some(TempoEcho {
+                    left: EchoTime::DottedEighth,
+                    right: EchoTime::Quarter,
+                    feedback: 0.38,
+                    send: 0.2,
+                    tone_hz: 2600.0,
+                }),
             },
             master_ceiling: 0.95,
             base_dynamic: 0.7,
-            pad_mix: 0.8,
-            lead_mix: 0.62,
-            keys_mix: 0.9,
-            bass_mix: 0.82,
+            pad_mix: 1.4,
+            lead_mix: 0.56,
+            keys_mix: 2.1,
+            bass_mix: 1.4,
         }
     }
 
@@ -483,6 +507,127 @@ impl MusicWorld {
     }
 }
 
+/// The archival **VAPOR95 v1** world (Round I to `abc3f9f`) for in-crate tests that pin
+/// historical VAPOR95 behaviour. Test-only: not a `WorldId`, not public API. It is the same
+/// literal as the integration fixture `tests/common/vapor95_v1.rs`; both are checked against one
+/// committed dump (`docs/fixtures/humanmusic-vaporize/v1-baseline/world-v1.txt`).
+#[cfg(test)]
+pub(crate) fn vapor95_v1() -> MusicWorld {
+    MusicWorld {
+        id: WorldId::Vapor95,
+        name: "VAPOR95",
+        tempo_bpm: 71.0,
+        tonic_pc: 5, // F
+        mode: Mode::Ionian,
+        swing: 0.16,
+        subdiv: 2,
+        use_sevenths: true,
+        allow_chromatic_mediant: true,
+        allow_modal_mixture: true,
+        allow_secondary_dominant: true,
+        voicing_spread: 0.6,
+        pad: Patch {
+            osc: OscKind::Shape(Wave::Saw),
+            sub: false,
+            unison: 3,
+            detune_cents: 16.0,
+            cutoff_hz: 2200.0,
+            cutoff_env: 700.0,
+            resonance: 0.15,
+            adsr: (0.4, 0.8, 0.7, 1.2),
+            gain: 0.6,
+            pan: 0.0,
+        },
+        bass: Patch {
+            osc: OscKind::Shape(Wave::Triangle),
+            sub: true,
+            unison: 1,
+            detune_cents: 0.0,
+            cutoff_hz: 900.0,
+            cutoff_env: 300.0,
+            resonance: 0.15,
+            adsr: (0.01, 0.2, 0.7, 0.25),
+            gain: 0.8,
+            pan: 0.0,
+        },
+        lead: Patch {
+            osc: OscKind::Fm {
+                ratio: 1.0,
+                index: 1.4,
+            },
+            sub: false,
+            unison: 1,
+            detune_cents: 0.0,
+            cutoff_hz: 3500.0,
+            cutoff_env: 800.0,
+            resonance: 0.12,
+            adsr: (0.01, 0.6, 0.35, 0.6),
+            gain: 0.6,
+            pan: -0.1,
+        },
+        keys: Patch {
+            osc: OscKind::Fm {
+                ratio: 2.0,
+                index: 1.0,
+            },
+            sub: false,
+            unison: 1,
+            detune_cents: 0.0,
+            cutoff_hz: 4000.0,
+            cutoff_env: 500.0,
+            resonance: 0.1,
+            adsr: (0.005, 0.5, 0.25, 0.5),
+            gain: 0.58,
+            pan: 0.15,
+        },
+        kick: KickParams {
+            base_hz: 52.0,
+            pitch_sweep_hz: 140.0,
+            pitch_tau: 0.04,
+            amp_tau: 0.18,
+            click: 0.15,
+        },
+        snare: SnareParams {
+            noise_hp_hz: 1200.0,
+            noise_tau: 0.14,
+            tone_tau: 0.1,
+            tone_lo_hz: 170.0,
+            tone_hi_hz: 300.0,
+            noise_mix: 0.6,
+        },
+        hat_cutoff: 6500.0,
+        ghost_amount: 0.2,
+        drum_density: 0.5,
+        production: WorldProduction {
+            saturation: 2.2,
+            space: Space {
+                size: 1.3,
+                damp: 0.25,
+                mix: 0.34,
+                low_cut_hz: None,
+            },
+            chorus: None,
+            echo: None,
+        },
+        master_ceiling: 0.95,
+        base_dynamic: 0.7,
+        pad_mix: 0.8,
+        lead_mix: 0.62,
+        keys_mix: 0.9,
+        bass_mix: 0.82,
+    }
+}
+
+/// `MusicWorld::all()` as it was before the VAPOR95 revision: BLACK_ICE, VAPOR95 v1, SWISS_SIGNAL.
+#[cfg(test)]
+pub(crate) fn archival_worlds() -> [MusicWorld; 3] {
+    [
+        MusicWorld::black_ice(),
+        vapor95_v1(),
+        MusicWorld::swiss_signal(),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -498,6 +643,31 @@ mod tests {
         assert!(w[1].swing > 0.1);
         assert_eq!(w[0].swing, 0.0);
         assert!(w[2].voicing_spread > w[0].voicing_spread); // open vs tighter
+    }
+
+    #[test]
+    fn the_archival_v1_world_is_the_committed_dump() {
+        assert_eq!(
+            format!("{:#?}\n", vapor95_v1()),
+            include_str!("../../../docs/fixtures/humanmusic-vaporize/v1-baseline/world-v1.txt")
+        );
+    }
+
+    #[test]
+    fn only_vapor95_declares_the_new_production_stages() {
+        // BLACK_ICE and SWISS_SIGNAL keep their historical production exactly: no chorus, no
+        // echo, a full-band room (their audio is byte-identical across the revision).
+        for w in [
+            MusicWorld::black_ice(),
+            MusicWorld::swiss_signal(),
+            vapor95_v1(),
+        ] {
+            assert_eq!(w.production.chorus, None, "{}", w.name);
+            assert_eq!(w.production.echo, None, "{}", w.name);
+            assert_eq!(w.production.space.low_cut_hz, None, "{}", w.name);
+        }
+        let v = MusicWorld::vapor95().production;
+        assert!(v.chorus.is_some() && v.echo.is_some() && v.space.low_cut_hz.is_some());
     }
 
     #[test]

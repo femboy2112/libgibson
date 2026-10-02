@@ -22,6 +22,12 @@
 //! at least 0.5 s, is the band playing another chord. Written durations are the conservative
 //! reading: seed 96_800_016 at 13.25 beats flips only through release tails, so there only the
 //! receipt (which hears tails) names it; the other three are held rivals even without a tail.
+//!
+//! Every VAPOR95 case here was derived under the archival VAPOR95 v1 world (before the palette
+//! revision) and is performed under it, so each falsifier keeps exercising its mechanism.
+#[path = "common/vapor95_v1.rs"]
+mod vapor95_v1;
+
 use gibson::audio::human_music::{
     composer::Composer,
     contract::CompositionGrammar,
@@ -165,7 +171,7 @@ fn band_support_preserves_the_charted_identity() {
     for c in &FALSIFIERS {
         let take = perform_with_profile(
             &song(c),
-            &MusicWorld::vapor95(),
+            &vapor95_v1::vapor95_v1(),
             fusion(),
             PerformanceProfile::BAND,
         )
@@ -188,7 +194,7 @@ fn band_admits_the_support_identity_falsifiers() {
         .filter_map(|c| {
             perform_checked(
                 &song(c),
-                &MusicWorld::vapor95(),
+                &vapor95_v1::vapor95_v1(),
                 fusion(),
                 PerformanceProfile::BAND,
             )
@@ -211,7 +217,7 @@ fn keys_answer() -> gibson::audio::human_music::functor::Composition {
     );
     perform_checked(
         &song,
-        &MusicWorld::vapor95(),
+        &vapor95_v1::vapor95_v1(),
         fusion(),
         PerformanceProfile::BAND,
     )
@@ -277,7 +283,7 @@ fn a_forged_rival_identity_is_still_detected() {
     // This rival is completed by the pad's E5 release TAIL from the bar before, which the
     // written-duration oracle never hears by construction; the receipt hears tails.
     let receipt =
-        PerformanceReceipt::measure_under(&c, &MusicWorld::vapor95(), PerformanceProfile::BAND);
+        PerformanceReceipt::measure_under(&c, &vapor95_v1::vapor95_v1(), PerformanceProfile::BAND);
     assert!(
         receipt.held_identity_flips > 0,
         "the receipt still rejects a forged rival: {:?}",
@@ -317,7 +323,7 @@ const THIRD_WAVE: [Wave; 3] = [
         seed: 96_910_000,
         grammar: CompositionGrammar::DeflectedLift,
         composer: Composer::MeaningDirected,
-        world: MusicWorld::vapor95,
+        world: vapor95_v1::vapor95_v1,
         tempo: Some(66.0),
     },
     Wave {
@@ -325,7 +331,7 @@ const THIRD_WAVE: [Wave; 3] = [
         seed: 96_910_002,
         grammar: CompositionGrammar::PropulsiveReturn,
         composer: Composer::StructuralR9,
-        world: MusicWorld::vapor95,
+        world: vapor95_v1::vapor95_v1,
         tempo: Some(96.0),
     },
 ];
@@ -364,7 +370,7 @@ fn the_final_harmony_rings_out_unless_a_law_releases_it() {
     let mut shortened = Vec::new();
     for seed in 96_950_000u64..96_950_006 {
         for (beats, world) in [
-            (64.0, MusicWorld::vapor95()),
+            (64.0, vapor95_v1::vapor95_v1()),
             (16.0, MusicWorld::black_ice()),
         ] {
             let song = SongMap::compose(

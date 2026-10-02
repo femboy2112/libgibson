@@ -6,6 +6,8 @@
 //! durations per voice. Harmony is NOT in the source; the chord spans pinned by the stronger
 //! presets are our declared analyzer's reading of the observed SATB simultaneities and are
 //! labelled `DerivedAnalysis` in every receipt. Human recognition is UNVERIFIED.
+#[path = "../tests/common/vapor95_v1.rs"]
+mod vapor95_v1;
 use gibson::audio::{
     human_music::{
         contract::{CoherenceContract, CompositionGrammar},
@@ -47,6 +49,16 @@ fn render(
     }
     write_wav_i16(path, &audio.audio, rate)?;
     Ok(())
+}
+
+/// VAPOR95 as this run asks for it: the product world, or with `--vapor95=v1` the archival v1
+/// world (`tests/common/vapor95_v1.rs`), which reproduces historical VAPOR95 audio and receipts.
+fn vapor95_world() -> MusicWorld {
+    if std::env::args().any(|a| a == "--vapor95=v1") {
+        vapor95_v1::vapor95_v1()
+    } else {
+        MusicWorld::vapor95()
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -109,7 +121,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let targets = [
         ("black_ice", MusicWorld::black_ice(), 901u64, 95.0f32),
-        ("vapor95", MusicWorld::vapor95(), 904, 95.0),
+        ("vapor95", vapor95_world(), 904, 95.0),
     ];
     let profile = PerformanceProfile::BAND;
     writeln!(

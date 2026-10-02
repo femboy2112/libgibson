@@ -16,6 +16,11 @@
 //! The restated invariant (independent of the library's full temporal reconstruction): every note
 //! declared `ChordTone` must sound a member of the chord sounding at its actual onset, and every
 //! note declared `LicensedExtension` must sound a palette tension there.
+//!
+//! The VAPOR95 cases were derived under the archival VAPOR95 v1 world and are performed under it.
+#[path = "common/vapor95_v1.rs"]
+mod vapor95_v1;
+
 use gibson::audio::human_music::{
     composer::Composer,
     contract::CompositionGrammar,
@@ -37,7 +42,7 @@ fn falsifier() -> (SongMap, MusicWorld, PerformanceOptions) {
         Some(CompositionGrammar::PropulsiveReturn),
         Composer::StablePropulsion,
     );
-    let world = MusicWorld::vapor95();
+    let world = vapor95_v1::vapor95_v1();
     let opts = PerformanceOptions {
         language: MusicalLanguage::fusion_conversation(),
         ..PerformanceOptions::default()
@@ -100,7 +105,7 @@ fn bass_falsifier() -> (SongMap, MusicWorld, PerformanceOptions) {
         Some(CompositionGrammar::HookArc),
         Composer::StructuralR9,
     );
-    let world = MusicWorld::vapor95();
+    let world = vapor95_v1::vapor95_v1();
     let opts = PerformanceOptions {
         language: MusicalLanguage::fusion_conversation(),
         ..PerformanceOptions::default()

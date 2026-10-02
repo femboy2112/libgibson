@@ -1,0 +1,159 @@
+world: MusicWorld {
+    id: Vapor95,
+    name: "VAPOR95",
+    tempo_bpm: 84.0,
+    tonic_pc: 5,
+    mode: Ionian,
+    swing: 0.16,
+    subdiv: 2,
+    use_sevenths: true,
+    allow_chromatic_mediant: true,
+    allow_modal_mixture: true,
+    allow_secondary_dominant: true,
+    voicing_spread: 0.6,
+    pad: Patch {
+        osc: Shape(
+            Saw,
+        ),
+        sub: false,
+        unison: 2,
+        detune_cents: 7.0,
+        cutoff_hz: 1400.0,
+        cutoff_env: 250.0,
+        resonance: 0.06,
+        adsr: (
+            0.4,
+            1.0,
+            0.65,
+            0.7,
+        ),
+        gain: 0.55,
+        pan: 0.0,
+    },
+    bass: Patch {
+        osc: Shape(
+            Saw,
+        ),
+        sub: false,
+        unison: 1,
+        detune_cents: 0.0,
+        cutoff_hz: 560.0,
+        cutoff_env: 360.0,
+        resonance: 0.18,
+        adsr: (
+            0.006,
+            0.22,
+            0.72,
+            0.16,
+        ),
+        gain: 0.9,
+        pan: 0.0,
+    },
+    lead: Patch {
+        osc: Fm {
+            ratio: 2.0,
+            index: 0.15,
+        },
+        sub: false,
+        unison: 1,
+        detune_cents: 0.0,
+        cutoff_hz: 2600.0,
+        cutoff_env: 700.0,
+        resonance: 0.08,
+        adsr: (
+            0.018,
+            0.5,
+            0.62,
+            0.5,
+        ),
+        gain: 0.56,
+        pan: -0.1,
+    },
+    keys: Patch {
+        osc: Fm {
+            ratio: 3.0,
+            index: 0.25,
+        },
+        sub: false,
+        unison: 1,
+        detune_cents: 0.0,
+        cutoff_hz: 2200.0,
+        cutoff_env: 4200.0,
+        resonance: 0.12,
+        adsr: (
+            0.003,
+            0.6,
+            0.22,
+            0.45,
+        ),
+        gain: 0.72,
+        pan: 0.15,
+    },
+    kick: KickParams {
+        base_hz: 54.0,
+        pitch_sweep_hz: 150.0,
+        pitch_tau: 0.03,
+        amp_tau: 0.13,
+        click: 0.22,
+    },
+    snare: SnareParams {
+        noise_hp_hz: 1700.0,
+        noise_tau: 0.12,
+        tone_tau: 0.08,
+        tone_lo_hz: 190.0,
+        tone_hi_hz: 320.0,
+        noise_mix: 0.68,
+    },
+    hat_cutoff: 7800.0,
+    ghost_amount: 0.2,
+    drum_density: 0.5,
+    production: WorldProduction {
+        saturation: 1.4,
+        space: Space {
+            size: 1.2,
+            damp: 0.55,
+            mix: 0.28,
+            low_cut_hz: Some(
+                180.0,
+            ),
+        },
+        chorus: Some(
+            MemoryChorus {
+                rate_hz: 0.32,
+                depth_ms: 3.5,
+                mix: 0.4,
+            },
+        ),
+        echo: Some(
+            TempoEcho {
+                left: DottedEighth,
+                right: Quarter,
+                feedback: 0.38,
+                send: 0.2,
+                tone_hz: 2600.0,
+            },
+        ),
+    },
+    master_ceiling: 0.95,
+    base_dynamic: 0.7,
+    pad_mix: 1.4,
+    lead_mix: 0.56,
+    keys_mix: 2.1,
+    bass_mix: 1.4,
+}
+
+hookarc: song=d96ffb15a7127e56 score=29841c535e96b34d perf=d895bca104f69394 tempo=84 swing=0.16
+  full: peak -5.31 dBFS, rms -22.36 dBFS, at-ceiling 0 samples, low-band side -20.7 dB, tail -38.3 dB
+  bus rms/peak dBFS: pad  -26.4/-11.8 keys  -17.7/  2.2 bass  -20.9/ -7.9 lead  -23.4/ -5.9 drums  -24.1/  0.7
+deflected: song=cae24c0d6789d120 score=6c104831707c2ae2 perf=6098d0909d4d99bd tempo=84 swing=0.16
+  full: peak -4.66 dBFS, rms -21.80 dBFS, at-ceiling 0 samples, low-band side -18.7 dB, tail -66.5 dB
+  bus rms/peak dBFS: pad  -27.9/-13.1 keys  -20.0/  4.6 bass  -18.9/ -8.4 lead  -22.6/ -6.1 drums  -22.3/  1.5
+propulsive: song=13a777933325508d score=6674a52d3a9de1f3 perf=9d88acff2c2aa731 tempo=84 swing=0.16
+  full: peak -4.95 dBFS, rms -22.46 dBFS, at-ceiling 0 samples, low-band side -19.3 dB, tail -78.7 dB
+  bus rms/peak dBFS: pad  -26.6/-12.5 keys  -23.6/  3.2 bass  -20.2/ -9.5 lead  -19.3/ -5.8 drums  -23.1/ -1.4
+riffdrive: song=ae4aa70a0a230d4f score=fa9cb2aae373dfa0 perf=cc3854fd39a86ede tempo=84 swing=0.16
+  full: peak -5.42 dBFS, rms -22.31 dBFS, at-ceiling 0 samples, low-band side -19.7 dB, tail -37.4 dB
+  bus rms/peak dBFS: pad  -26.2/-11.8 keys  -18.1/  2.3 bass  -20.6/ -8.7 lead  -21.1/ -6.0 drums  -23.9/ -0.1
+ode_faithful: song=055e9e78012b0137 score=2f334b1860141054 perf=1c7b7b2e032bee4d tempo=84 swing=0.16
+  full: peak -5.14 dBFS, rms -18.06 dBFS, at-ceiling 0 samples, low-band side -19.5 dB, tail -41.8 dB
+  bus rms/peak dBFS: pad  -25.8/-11.5 keys  -17.7/  3.5 bass  -13.1/ -3.0 lead  -16.4/ -6.6 drums  -23.9/  0.0

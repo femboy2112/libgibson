@@ -4,6 +4,9 @@
 //! fresh. Where a law is checked, the test restates what the world or language DECLARES
 //! (world.rs / language.rs documentation) instead of calling the library's own predicate, so a
 //! wrong law cannot certify itself.
+#[path = "common/vapor95_v1.rs"]
+mod vapor95_v1;
+
 use gibson::audio::human_music::{
     composer::Composer,
     contract::CompositionGrammar,
@@ -1040,6 +1043,8 @@ fn the_historical_pocket_arm_keeps_its_archived_tolerances() {
 ///
 /// The third flips in the final release: the realizers' tails past the piece's end are trimmed
 /// only after the pad has judged the band, so the pad heard keys that ring longer than they do.
+/// (The VAPOR95 witnesses were derived under the archival VAPOR95 v1 world and are performed
+/// under it.)
 fn flip_witnesses() -> [(&'static str, SongMap, MusicWorld, MusicalLanguage); 3] {
     [
         (
@@ -1061,7 +1066,7 @@ fn flip_witnesses() -> [(&'static str, SongMap, MusicWorld, MusicalLanguage); 3]
                 Some(CompositionGrammar::DeflectedLift),
                 Composer::StructuralR9,
             ),
-            MusicWorld::vapor95(),
+            vapor95_v1::vapor95_v1(),
             MusicalLanguage::simple(),
         ),
         (
@@ -1072,7 +1077,7 @@ fn flip_witnesses() -> [(&'static str, SongMap, MusicWorld, MusicalLanguage); 3]
                 Some(CompositionGrammar::DeflectedLift),
                 Composer::MeaningDirected,
             ),
-            MusicWorld::vapor95(),
+            vapor95_v1::vapor95_v1(),
             MusicalLanguage::fusion_conversation(),
         ),
     ]

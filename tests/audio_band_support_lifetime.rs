@@ -14,6 +14,11 @@
 //! ADMITS (a chord tone or licensed tension) is consonant and may be load-bearing — the pad's own
 //! root ringing under a bar it does not re-voice — and must be kept: clipping it removed the root
 //! and flipped the chart at a fresh VAPOR95 case (seed `90_500_002`).
+//!
+//! The VAPOR95 case was derived under the archival VAPOR95 v1 world and is performed under it.
+#[path = "common/vapor95_v1.rs"]
+mod vapor95_v1;
+
 use gibson::audio::human_music::{
     composer::Composer,
     contract::CompositionGrammar,
@@ -36,7 +41,7 @@ fn falsifier() -> (SongMap, MusicWorld, PerformanceOptions) {
         Some(CompositionGrammar::DeflectedLift),
         Composer::MeaningDirected,
     );
-    let world = MusicWorld::vapor95();
+    let world = vapor95_v1::vapor95_v1();
     let opts = PerformanceOptions {
         language: MusicalLanguage::fusion_conversation(),
         ..PerformanceOptions::default()

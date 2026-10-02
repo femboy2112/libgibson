@@ -2,6 +2,8 @@
 //! percussion law changes (the historical unarbitrated drummer, then the arbitrated surface at
 //! each restraint). Full mixes and drums-only stems. The lab proves the isolation before it
 //! renders: every non-drum note is identical to the historical take.
+#[path = "../tests/common/vapor95_v1.rs"]
+mod vapor95_v1;
 use gibson::audio::{
     human_music::{
         composer::Composer,
@@ -54,6 +56,16 @@ fn ornaments(c: &Composition) -> usize {
         .count()
 }
 
+/// VAPOR95 as this run asks for it: the product world, or with `--vapor95=v1` the archival v1
+/// world (`tests/common/vapor95_v1.rs`), which reproduces historical VAPOR95 audio and receipts.
+fn vapor95_world() -> MusicWorld {
+    if std::env::args().any(|a| a == "--vapor95=v1") {
+        vapor95_v1::vapor95_v1()
+    } else {
+        MusicWorld::vapor95()
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
     let out = Path::new(
@@ -77,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Some(CompositionGrammar::RiffDrive),
                 Composer::StructuralR9,
             ),
-            MusicWorld::vapor95(),
+            vapor95_world(),
         ),
     ];
     let mut arms: Vec<(String, PerformanceProfile)> =

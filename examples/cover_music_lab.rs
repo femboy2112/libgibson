@@ -1,4 +1,6 @@
 //! Cover quotient and free-band listening lab. No external song-specific generator code.
+#[path = "../tests/common/vapor95_v1.rs"]
+mod vapor95_v1;
 use gibson::audio::{
     human_music::{
         contract::{CoherenceContract, CompositionGrammar},
@@ -61,6 +63,17 @@ fn render_masked(
     write_wav_i16(path, &audio.audio, rate)?;
     Ok(())
 }
+
+/// VAPOR95 as this run asks for it: the product world, or with `--vapor95=v1` the archival v1
+/// world (`tests/common/vapor95_v1.rs`), which reproduces historical VAPOR95 audio and receipts.
+fn vapor95_world() -> MusicWorld {
+    if std::env::args().any(|a| a == "--vapor95=v1") {
+        vapor95_v1::vapor95_v1()
+    } else {
+        MusicWorld::vapor95()
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
     let value = |prefix: &str| args.iter().find_map(|a| a.strip_prefix(prefix));
@@ -131,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ("black_seed_1", MusicWorld::black_ice(), 901, false, 0, 95.0),
         ("black_seed_2", MusicWorld::black_ice(), 902, false, 0, 95.0),
         ("swiss", MusicWorld::swiss_signal(), 903, true, 0, 100.0),
-        ("vapor", MusicWorld::vapor95(), 904, false, 0, 95.0),
+        ("vapor", vapor95_world(), 904, false, 0, 95.0),
         (
             "transposed_faster",
             MusicWorld::swiss_signal(),

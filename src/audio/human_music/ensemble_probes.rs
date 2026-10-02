@@ -58,7 +58,7 @@ fn fingerprint(c: &Composition) -> u64 {
 /// BLACK_ICE's R7b-era pin was `0xb458_00e8_b7ec_8bb7` (theme moved: `0xeade_0b75_3df1_5370`).
 #[test]
 fn the_independent_control_is_the_r7b_composition() {
-    let got: Vec<(String, u64, bool)> = MusicWorld::all()
+    let got: Vec<(String, u64, bool)> = super::world::archival_worlds()
         .iter()
         .map(|world| {
             let c = flagship(world, EnsembleCoupling::Independent);
@@ -84,7 +84,8 @@ fn r8_pairs(world: super::world::WorldId) -> Vec<usize> {
     }
 }
 
-/// `MusicWorld::all()` order: BLACK_ICE, VAPOR95, SWISS_SIGNAL.
+/// `archival_worlds()` order: BLACK_ICE, VAPOR95 (the archival v1 world), SWISS_SIGNAL — the
+/// pins are historical compositions, so they are read under the world they were made in.
 const R7B_PINS: [u64; 3] = [
     0xb195_8b4b_761c_df10,
     0xf987_f0cf_fd6b_0f4b,
@@ -96,14 +97,18 @@ const R7B_PINS: [u64; 3] = [
 /// the negative control; nothing in Round VIIIb may drift it.
 #[test]
 fn the_r8_control_is_the_composition_the_listen_rejected() {
-    let got: Vec<u64> = MusicWorld::all()
+    let got: Vec<u64> = super::world::archival_worlds()
         .iter()
         .map(|world| fingerprint(&flagship(world, EnsembleCoupling::CoupledR8)))
         .collect();
-    for (world, fp) in MusicWorld::all().iter().zip(&got) {
+    for (world, fp) in super::world::archival_worlds().iter().zip(&got) {
         eprintln!("{}: r8 fingerprint {fp:#018x}", world.name);
     }
-    for ((world, fp), pin) in MusicWorld::all().iter().zip(&got).zip(R8_PINS) {
+    for ((world, fp), pin) in super::world::archival_worlds()
+        .iter()
+        .zip(&got)
+        .zip(R8_PINS)
+    {
         assert_eq!(*fp, pin, "{}: the R8 control drifted", world.name);
     }
 }
@@ -116,7 +121,7 @@ fn the_default_is_the_r7b_band_again() {
         PerformanceOptions::default().coupling,
         EnsembleCoupling::Independent
     );
-    for (world, pin) in MusicWorld::all().iter().zip(R7B_PINS) {
+    for (world, pin) in super::world::archival_worlds().iter().zip(R7B_PINS) {
         let c = compose_full(
             &deflected_lift_trace(120.0),
             world,
@@ -308,7 +313,7 @@ fn the_surgical_band_is_r7b_minus_its_garbage() {
     }
 }
 
-/// `MusicWorld::all()` order: BLACK_ICE, VAPOR95, SWISS_SIGNAL. Round IX re-pinned BLACK_ICE only
+/// `archival_worlds()` order: BLACK_ICE, VAPOR95 (archival v1), SWISS_SIGNAL. Round IX re-pinned BLACK_ICE only
 /// (its song changed, the frozen R8 solver did not); its 5644c96 pin was `0x1f97_14ee_5fea_d745`
 /// (theme moved: `0x99f8_9e8f_9be1_9f49`).
 const R8_PINS: [u64; 3] = [

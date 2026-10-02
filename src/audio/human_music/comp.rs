@@ -2667,7 +2667,7 @@ mod keys_identity_responsibility {
         score::{Note, Role},
         semantic::deflected_lift_trace,
         voicing::{keys_path, RolePath},
-        MusicWorld, SongMap,
+        SongMap,
     };
 
     /// The keys' decision on fresh seed 96_860_001 (Dm7 at 48, the pad silent, the keys holding
@@ -2679,7 +2679,8 @@ mod keys_identity_responsibility {
             Some(CompositionGrammar::DeflectedLift),
             Composer::StructuralR9,
         );
-        let world = MusicWorld::vapor95();
+        // The closeout falsifier was derived under the archival VAPOR95 v1 world.
+        let world = super::super::world::vapor95_v1();
         let opts = PerformanceOptions {
             language: MusicalLanguage::fusion_conversation(),
             ..PerformanceOptions::default()

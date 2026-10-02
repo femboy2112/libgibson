@@ -1,4 +1,7 @@
 //! Round XV human-calibration falsifiers, committed before the production ruler.
+#[path = "common/vapor95_v1.rs"]
+mod vapor95_v1;
+
 use gibson::audio::human_music::{
     composer::Composer,
     expression::{annotate, project, ConnectiveViability as V, ExpressionDiagnostics},
@@ -582,7 +585,8 @@ fn r15_vapor_holdout_keeps_chart_root_during_expression() {
         Some(CompositionGrammar::DeflectedLift),
         Composer::MeaningDirected,
     );
-    let w = MusicWorld::vapor95();
+    // The window was found under the archival VAPOR95 v1 world (71 BPM).
+    let w = vapor95_v1::vapor95_v1();
     let a = perform_coherent(&song, &w, PerformanceOptions::default());
     let b = perform_expressive(&song, &w, PerformanceOptions::default());
     let ia = IdentityDiagnostics::measure(&a.score.notes, &a.perf.contexts, &w, w.tempo_bpm);

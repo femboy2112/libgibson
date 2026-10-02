@@ -7,7 +7,7 @@
 //!   dynamics (the Score fingerprint is printed for both sides and must agree); only timbre, mix
 //!   and production differ.
 //! - **World (B):** the same SongMap performed (BAND, checked) under the v1 world and under the
-//!   current world. Everything the world law may change — tempo, swing, voicing, harmony colour,
+//!   current world — the two `--record` runs. Everything the world law may change — tempo, swing, voicing, harmony colour,
 //!   and the performance laws' reaction to the new patches' sounding tails — is allowed to differ;
 //!   the song (SongMap fingerprint) may not.
 //!
@@ -16,9 +16,9 @@
 //! claims a musical result — the maintainer listens.
 //!
 //! ```sh
-//! cargo run --release --example vapor95_style_lab -- --record=<dir> --world=v1     # style baseline
-//! cargo run --release --example vapor95_style_lab -- --palette=<dir>               # A
-//! cargo run --release --example vapor95_style_lab -- --world-ab=<dir>              # B
+//! cargo run --release --example vapor95_style_lab -- --record=<dir> --world=v1      # baseline; A/B left
+//! cargo run --release --example vapor95_style_lab -- --record=<dir> --world=current # B right
+//! cargo run --release --example vapor95_style_lab -- --palette=<dir>               # A right
 //! cargo run --release --example vapor95_style_lab -- --ablate=<dir>                # production factors
 //! cargo run --release --example vapor95_style_lab -- --candidates=<dir>            # tempo/swing cells
 //! ```
@@ -118,7 +118,12 @@ const STEMS: [&str; 5] = ["keys", "pad", "bass", "lead", "drums"];
 const ABLATIONS: [&str; 5] = ["nochorus", "noecho", "fullband", "nosat", "dry"];
 
 /// Tempo/swing cells of the current palette: (label, bpm, swing).
-const CELLS: [(&str, f32, f32); 1] = [("t71_s16", 71.0, 0.16)];
+const CELLS: [(&str, f32, f32); 4] = [
+    ("t78_s16", 78.0, 0.16),
+    ("t84_s16", 84.0, 0.16),
+    ("t84_s32", 84.0, 0.32),
+    ("t90_s00", 90.0, 0.0),
+];
 
 fn world_named(name: &str) -> Result<MusicWorld, Error> {
     match name {
@@ -356,12 +361,14 @@ fn record(out: &Path, world: &MusicWorld) -> Result<String, Error> {
     Ok(report)
 }
 
-/// A: the v1 world's Score rendered through the v1 palette and the current palette.
+/// A: each v1 take's Score — the exact Score of the v1 record — rendered through the current
+/// palette. The other side of the A/B is the v1 record itself (`--record --world=v1`); the
+/// `score=` fingerprints of the two reports are equal take for take.
 fn palette(out: &Path) -> Result<String, Error> {
     let (v1, now) = (vapor95_v1::vapor95_v1(), MusicWorld::vapor95());
     let mut report = String::from(
-        "A — same Score, two palettes. Each Score is the v1 world's BAND take; only the synth's\n\
-         world (patches, drums, mix, production) changes between the two renders.\n\n",
+        "A — same Score, new palette. Each Score is the v1 world's BAND take (its score= equals the\n\
+         v1 record's); only the synth's world (patches, drums, mix, production) is the current one.\n\n",
     );
     let mut takes: Vec<(&str, Result<Composition, Error>)> = SONGS
         .iter()
@@ -370,67 +377,16 @@ fn palette(out: &Path) -> Result<String, Error> {
     takes.push(("ode_faithful", perform_cover(&v1)));
     for (name, take) in takes {
         match take {
-            Ok(c) => {
-                render_take(
-                    out,
-                    &format!("{name}.v1"),
-                    &c,
-                    &v1,
-                    ProductionControl::NORMAL,
-                    true,
-                    &mut report,
-                )?;
-                render_take(
-                    out,
-                    &format!("{name}.current"),
-                    &c,
-                    &now,
-                    ProductionControl::NORMAL,
-                    true,
-                    &mut report,
-                )?;
-            }
-            Err(e) => writeln!(report, "{name}: NOT RETURNED under v1: {e}")?,
-        }
-    }
-    Ok(report)
-}
-
-/// B: each song performed under the v1 world and under the current world.
-fn world_ab(out: &Path) -> Result<String, Error> {
-    let mut report = String::from(
-        "B — full world. The same SongMap performed (BAND, checked) under each world; the song\n\
-         fingerprint must agree, everything the world law governs may differ.\n\n",
-    );
-    for (label, world) in [
-        ("v1", vapor95_v1::vapor95_v1()),
-        ("current", MusicWorld::vapor95()),
-    ] {
-        for song in &SONGS {
-            match perform(song, &world) {
-                Ok(c) => render_take(
-                    out,
-                    &format!("{}.{label}", song.name),
-                    &c,
-                    &world,
-                    ProductionControl::NORMAL,
-                    true,
-                    &mut report,
-                )?,
-                Err(e) => writeln!(report, "{}.{label}: NOT RETURNED: {e}", song.name)?,
-            }
-        }
-        match perform_cover(&world) {
             Ok(c) => render_take(
                 out,
-                &format!("ode_faithful.{label}"),
+                name,
                 &c,
-                &world,
+                &now,
                 ProductionControl::NORMAL,
                 true,
                 &mut report,
             )?,
-            Err(e) => writeln!(report, "ode_faithful.{label}: NOT RETURNED: {e}")?,
+            Err(e) => writeln!(report, "{name}: NOT RETURNED under v1: {e}")?,
         }
     }
     Ok(report)
@@ -486,9 +442,8 @@ fn candidates(out: &Path) -> Result<String, Error> {
 fn main() -> Result<(), Error> {
     let args: Vec<String> = std::env::args().collect();
     let value = |prefix: &str| args.iter().find_map(|a| a.strip_prefix(prefix));
-    let modes: [(&str, Mode); 4] = [
+    let modes: [(&str, Mode); 3] = [
         ("--palette=", palette),
-        ("--world-ab=", world_ab),
         ("--ablate=", ablate),
         ("--candidates=", candidates),
     ];
@@ -513,7 +468,10 @@ fn main() -> Result<(), Error> {
         }
     }
     if !ran {
-        return Err("give --record=<dir> [--world=v1|current], --palette=, --world-ab=, --ablate= or --candidates=".into());
+        return Err(
+            "give --record=<dir> [--world=v1|current], --palette=, --ablate= or --candidates="
+                .into(),
+        );
     }
     Ok(())
 }

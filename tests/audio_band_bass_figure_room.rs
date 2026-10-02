@@ -18,6 +18,11 @@
 //! identity projection's bass law independently: a bass note carries the figure iff it was voiced
 //! as part of the bass's own line (root / fifth / pedal / walk / counter / octave), never a quote or
 //! an answer.
+//!
+//! The VAPOR95 falsifier was derived under the archival VAPOR95 v1 world and is performed under it.
+#[path = "common/vapor95_v1.rs"]
+mod vapor95_v1;
+
 use gibson::audio::human_music::{
     composer::Composer,
     contract::{CoherenceAnchor, CompositionGrammar},
@@ -55,7 +60,7 @@ const FALSIFIERS: [Case; 3] = [
         seed: 96_810_002,
         grammar: CompositionGrammar::WorldSwitch,
         composer: Composer::StructuralR9,
-        world: MusicWorld::vapor95,
+        world: vapor95_v1::vapor95_v1,
     },
     Case {
         beats: 2.5,
