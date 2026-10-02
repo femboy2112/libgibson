@@ -27,7 +27,7 @@ steps on its own. What a release promises is defined in
 
 - Confirm `Cargo.toml` `[package] version` is the intended release version.
 - The crate, native SDK, Python wrapper, and Go module release in lockstep at that
-  version (0.1.x). `scripts/release/check-versions.sh` verifies the derived metadata
+  one version. `scripts/release/check-versions.sh` verifies the derived metadata
   agrees; the preflight runs it too.
 
 ## 3. Run the release preflight

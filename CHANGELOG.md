@@ -15,52 +15,132 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-Work in progress on `feat/v0.4-humanmusic-audio` (draft PR #70) toward the intended 0.4.0
-milestone. **Not released**: the package version stays **0.3.1**, `GIBSON_ABI_VERSION` stays
-**1**, MSRV stays **1.85**, and nothing below is exposed through the C ABI.
+## [0.4.0] - 2026-10-02
 
-### Added (experimental, Rust-only)
+**HumanMusic & Audio** — a deliberate minor milestone that adds a new **experimental,
+Rust-only** realization axis: deterministic audio synthesis, and **HumanMusic**, a
+procedural composer and band driven by LibGibson's semantic style/story state. All work
+is additive. **No C ABI change** (`GIBSON_ABI_VERSION` stays 1; audio is not exposed
+through C, C++, Python or Go); MSRV stays 1.85; existing terminal/TUI behaviour is
+unchanged. HumanMusic's default realization is the historical `WRITTEN` profile; the
+hardened `BAND` profile is opt-in. All music is synthesized at render time; no
+prerecorded musical assets ship.
 
-- **`gibson::audio`** — an offline/real-time audio substrate (sample-accurate time, buffers,
-  a block renderer, WAV writer, DSP building blocks) with an optional `audio-cpal` output
-  backend (feature-gated; no new mandatory dependencies).
-- **HumanMusic** (`gibson::audio::human_music`) — a procedural composer driven by LibGibson's
-  semantic style/story state, with three sonic worlds (BLACK_ICE, VAPOR95, SWISS_SIGNAL), no
-  prerecorded musical assets, and a structural/causal diagnostics suite. Rounds I–VIII are
-  documented in [docs/HUMAN_MUSIC_ARCHITECTURE.md](docs/HUMAN_MUSIC_ARCHITECTURE.md). Round VIIb
-  made the performance causal: calls own their material and answers derive from it, one stage
-  decides who plays before anybody plays, every event is stamped with the exact actions it
-  performs, Modulate really changes the tonal region, the band shares one complexity budget,
-  gestures vary their manifestation per cycle, semantic state deltas size the actions, quiet is
-  declared, obligations settle named debts by deadline, pad and keys are voiced by a bounded
-  voice-path DP, SFX sit in the local harmony, and a requested length is rendered exactly.
-  Round VIII built one vertical theory (`sonority.rs` — owned vs unowned minor 2nds/9ths,
-  tension specs, bass function, a per-world colour budget, audible lifetimes,
-  `EnsembleSonorityDiagnostics`), a harmonic ledger (`harmonic_state.rs`) and a coupled band
-  whose pad and keys are voiced as one joint decision (`support.rs`). The listen rejected that
-  coupled bed as the default — it revoiced most of the pad to satisfy the collision count — so
-  Round VIIIb restores the R7b band as the default (`EnsembleCoupling::Independent`), keeps the
-  Round VIII band as the pinned negative control (`EnsembleCoupling::CoupledR8`), and adds
-  `EnsembleCoupling::Surgical`: the R7b realization with only its real hard vertical defects
-  (measured over actual audible overlap) repaired, one note each, every edit on a ledger
-  (`surgical.rs`, `Score::vertical_repairs`). On the flagship the surgical arm clears 22/49/29
-  hard defects to 0/1/1 per world while editing 3.5–6.7 % of the notes and leaving the pad's
-  motion and common tones at R7b's; every action is still witnessed. `voicing::HarmonicStability`
-  reports bed motion beside the collision numbers.
-- `examples/human_music_lab.rs` — renders the flagship (and A/B probes, stems, pitched-role pair
-  stems, a neutral harmonic reference, calibration grammars) with every receipt printed next to
-  the WAV paths.
+### Added — audio substrate (`gibson::audio`, experimental)
+- A deterministic, device-free **offline renderer** (`OfflineRenderer`) on an integer
+  sample clock with beat↔sample tempo mapping, so the same score renders the same PCM
+  with no audio hardware.
+- **DSP** primitives: oscillators including an alias-bounded FM oscillator, ADSR and
+  exponential envelopes, a state-variable filter, synthesized drums, and production
+  effects (chorus, damped delay, reverb, saturation, compressor, limiter), mixed through
+  a bounded bus graph (`Dialogue` / `Music` / `Sfx` / `Master`).
+- Pure-Rust **WAV** output (`i16` / `f32`).
+- Media-clip audio for edit timelines: decodes a span of a **local, host-provided** clip
+  via `ffmpeg` and plays it monotonically with a dialogue-ducking sidechain (used by the
+  `reaction_soundtrack` example; no recorded audio is committed or shipped).
+- Optional real-device output behind the **`audio-cpal`** feature (`cpal` 0.18.2 +
+  `rtrb`; building it on Linux needs `libasound2-dev`). Off by default: the pure-Rust
+  core adds **no mandatory dependency**, so default builds, `cargo test` and CI need no
+  system audio libraries.
 
-### Fixed (experimental audio)
+### Added — HumanMusic (`gibson::audio::human_music`, experimental)
+- **Semantic trace → song → performance.** A `SemanticTrace` composes a `SongMap` (intent
+  timeline, form, discourse plan and obligation ledger, theme, harmonic chart, charted
+  rhythm, and recorded `composed_by` provenance). A performance is a separate fiber over
+  that map, so one song can be played in any world, language, tempo or profile without
+  becoming a different song.
+- **Three sonic worlds**: BLACK_ICE, SWISS_SIGNAL and VAPOR95, each a dialect with its
+  own instruments, harmonic vocabulary and production.
+- **Performance profiles** (`PerformanceProfile`): `WRITTEN` (the default, historical
+  realization), `POCKET` (the accepted pocket arm, kept byte-exact), and **`BAND`** (opt-in:
+  rehearsed verb admission, an arbitrated *Balanced* drummer, the world's harmonic
+  vocabulary as a source law, and pitch functions earned where they sound).
+- **Checked performances**: `perform_checked` returns
+  `Result<Composition, PerformanceRejection>`. A `PerformanceReceipt` measures the realized
+  `Score` against the general performance laws, then admits, rejects or refuses it. Release
+  invariants are typed errors, not debug assertions.
+- **Causal ensemble behaviour**: players hear each other in a fixed causal order (lead →
+  keys → bass → pad → drums). Calls own their material and answers derive from it. Voice
+  lifetimes are shared by synthesis and hearing, and the sounding support answers for the
+  chart's harmonic identity.
+- **Harmonic and function laws**: every realized note carries a `PitchFunction` that must
+  be earned where the note actually sounds (chord tone, passing, neighbour, an appoggiatura
+  that resolves onto a core tone, …). Each world × language has a harmonic vocabulary.
+  Planned settlements count only when a performed action discharges them.
+- **Groove and expression**: a charted groove on indexed pocket positions, with timing
+  transported metric → groove → feel → performed. Feel is a typed seam that is the
+  identity in this release. Phrasing is expressive.
+- **Percussion restraint**: a single arbitrated percussion surface, so drum ornaments yield
+  where the band speaks (`with_drum_restraint`).
+- **Identity by material**: what makes a song recognizable is declared anchors →
+  identity-bearing material → realized evidence (`AnchorReport`), not which instrument
+  played it.
+- Diagnostics (witness audits, sonority, voicing, percussion and conformance reports) and
+  listening labs under `examples/` (`human_music_lab`, `pocket_music_lab`,
+  `cover_music_lab`, `cover_fidelity_lab`, `drum_restraint_lab`, `vapor95_style_lab`, …)
+  that render WAVs with their receipts printed beside them.
+- `reaction_soundtrack` example: an original HumanMusic score for the keyed reaction cut,
+  ducking under the clip's dialogue, rendered on the same edit clock as the visuals.
 
-- The vertical audit (`sonority::classify_heard`) no longer calls the rootless "B-form" — a minor
-  chord's 9th a semitone under its minor 3rd in the pad/keys — a collision.
+### Added — Cover Mode (experimental)
+- **`CoverMap`**: extraction is an identity projection of a reference (a `Composition`, a
+  `ReferenceSong`, or an ordered chart). A cover is a fresh performance constrained only by
+  that map and a `CoverTarget`.
+- **Per-axis fidelity**: the `Loose`, `Interpretive`, `Faithful` and `Strict` presets select
+  exact relations per axis, bounded by what the reference actually established
+  (`FidelityReport`).
+- **Noninterference**: after extraction the generator never reads the discarded reference.
+  `CoverAdmission` = `PerformanceReceipt` + `CoverConformance`, measured on the realized cover
+  rather than by re-extracting it.
+- **Symbolic reference ingestion**: a `ReferenceSong` is built from attributed symbolic
+  observations produced offline by a pinned parser (LilyPond and Standard MIDI File routes,
+  checked in CI). The calibration reference is *Ode to Joy* (Mutopia #528, Public Domain).
+- **Partial references**: axes a source never established stay unknown, and the cover
+  writes new material inside the known scaffold. An impossible lift is a typed, lawful
+  refusal (outside the target vocabulary, unplayable pinned attacks, a theme with nowhere to
+  be stated) rather than best-effort output.
 
-- The FM oscillator (`dsp::osc::FmOsc`) clamps its modulation index to the alias-free bound, so
-  a high note no longer folds sidebands back under Nyquist as inharmonic partials (BLACK_ICE's
-  lead climax carried one at −14.5 dB).
+### Added — worlds and production
+- **`WorldProduction`**: production is a typed world law, declared by the world and
+  executed by the synth. It covers a memory-bus chorus, a tempo echo timed in note values,
+  and a room with an input low-cut. A world that declares no stage computes none.
+- **VAPOR95** is a revised world: a glassy FM keys source object, a supportive pad, a
+  defined bass and a softer machine kit, with chorus, echo and space as memory, at 84 BPM.
+- No prerecorded musical assets. The only musical source file in the repository is the
+  public-domain symbolic score behind the Ode ingestion fixture (under `docs/fixtures/`,
+  not shipped in the crate or the SDK).
 
-Perceptual quality is **unverified** until the maintainer's listening gate.
+### CI
+- The `--all-features` build installs the ALSA development headers for `audio-cpal`.
+- A new **Symbolic source parser laws** job checks the pinned offline parser.
+
+### Unchanged
+- C ABI (`GIBSON_ABI_VERSION` = 1) and the C / C++ / Python / Go wrappers, MSRV 1.85
+  (with and without `audio-cpal`), the single rendering pipeline, and terminal/TUI
+  behaviour. Outside `gibson::audio`, the only library change is the new module
+  declaration.
+- Distribution: GitHub source plus the native SDK archive. LibGibson is still not
+  published to crates.io, PyPI or the Go module proxy.
+
+### Known limitations
+- `gibson::audio` and HumanMusic are **experimental, Rust-only APIs**. They may change
+  incompatibly between releases.
+- **One classified checked-performance rejection.** A 1,824,768-performance `BAND` search
+  produced 12 rejections, all from one song in VAPOR95 at ≥ 96 BPM across drummer
+  settings. `perform_checked` rejects it (a held-identity flip) instead of admitting it.
+  It is tracked as known debt.
+- Production effects (chorus, echo, room tails) are acoustic treatment outside the
+  `Score`, so performance receipts do not hear them. The fixed 2.5 s render tail can end
+  while the last echo repeats are still decaying.
+- Receipts certify the stated musical laws, not musical quality. Quality is judged by
+  listening.
+- Linux x86_64 is the only release target.
+
+Design record and evidence:
+[docs/HUMAN_MUSIC_ARCHITECTURE.md](docs/HUMAN_MUSIC_ARCHITECTURE.md),
+[docs/HUMAN_MUSIC_MERGE_READINESS.md](docs/HUMAN_MUSIC_MERGE_READINESS.md),
+[docs/HUMAN_MUSIC_COVER.md](docs/HUMAN_MUSIC_COVER.md),
+[docs/HUMAN_MUSIC_VAPOR95.md](docs/HUMAN_MUSIC_VAPOR95.md).
 
 ## [0.3.1] - 2026-09-28
 
@@ -576,7 +656,8 @@ The contents and exact cut procedure for a release are documented in
 [`docs/RELEASING.md`](docs/RELEASING.md). Ecosystem-registry publication
 (crates.io, PyPI, Go module proxy) remains a separate, later decision.
 
-[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/femboy2112/libgibson/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/femboy2112/libgibson/releases/tag/v0.4.0
 [0.3.1]: https://github.com/femboy2112/libgibson/releases/tag/v0.3.1
 [0.3.0]: https://github.com/femboy2112/libgibson/releases/tag/v0.3.0
 [0.2.5]: https://github.com/femboy2112/libgibson/releases/tag/v0.2.5
