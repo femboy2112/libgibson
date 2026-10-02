@@ -163,3 +163,73 @@ Descriptive, not a composite score. Record each per run:
 - [ ] Maintainer renders the verdict; apply the §7 decision rule.
 - [ ] Record the outcome and the decision (ship docs / open API review) as a new
       dated results doc; link it here.
+
+## 10. Pre-contact protocol clarification (amended before first contact)
+
+> **Added 2026-10-02, before any subject run.** This section corrects three
+> methodological defects in §§2–9. It changes only the *experiment protocol*; it
+> does **not** touch the treatment (the guide, the recipes, `AGENTS.md`, the
+> `UI_LAYER.md` callout), which stay frozen at the branch tip. It is recorded here
+> as a timestamped amendment so the design still cannot be retrofitted to a
+> result: at the time of writing, **zero subjects had been contacted.**
+
+### 10A. Sanitized treatment delivery (fixes the channel in §2/§6)
+
+§2 says the treatment docs are "files in the repo the agent is working in," but
+the guide lives in the upstream LibGibson research branch while subjects build in
+the **lab** repo. Concretely:
+
+- Each subject workspace contains a **read-only** reference tree at
+  `libgibson-reference/`. It is documentation/source lookup ONLY. Both arms get
+  one.
+- The consumer's Cargo dependency is, in both arms, exactly
+  `libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.4.0" }`
+  — no path override, no patch, no dependency on the research branch.
+- **CONTROL** `libgibson-reference/` = an exact checkout of released `v0.4.0`
+  documentation/source.
+- **TREATMENT** `libgibson-reference/` = the same `v0.4.0` tree, plus ONLY this
+  overlay: `AGENTS.md`, `docs/AI_VISUAL_AUTHORING.md`, the modified
+  `docs/UI_LAYER.md` (treatment version), the five `examples/recipe_*.rs`, and
+  `examples/recipes_support/mod.rs`.
+- The sanitized tree contains **zero** research files describing the hypothesis.
+  Subjects are never exposed to `AI_VISUAL_AUTHORING_AUDIT.md`, this holdout file,
+  `VISUAL_INTENT_API_PROPOSAL.md`, any prior consumer analysis, Chronoscope's
+  source or screenshots, the phrase "panel farm" outside the treatment guide
+  itself, or any experiment mapping.
+- A manifest records every treatment-overlay file with its SHA256; the CONTROL
+  source commit SHA and the overlay hashes are recorded with the results.
+
+### 10B. Blinded human visual review (fixes verdict bias in §5)
+
+The maintainer already knows the hypothesis, so the primary readout is collected
+blind. Before the maintainer sees anything:
+
+- each completed subject is renamed to an opaque candidate id;
+- model name, arm, branch name, and grouping-revealing timestamps are stripped;
+- source, objective metrics, and model commentary are withheld.
+
+The blind packet contains ONLY the normalized rendered captures plus the review
+form. The maintainer judges each candidate independently FIRST. Unblinding
+(candidate → arm/model) happens only in a separate later round. The id→arm
+mapping is kept in a local, untracked coordinator file until then; it is not
+committed or pushed.
+
+### 10C. Failure-mode classification (replaces the §7 docs-vs-API binary)
+
+"No visual shift under treatment" does **not** automatically imply "build the
+`VisualIntent` API." Before any decision, classify which mode actually occurred:
+
+1. **Never finds/reads the guide** → discoverability / routing failure (fix the
+   router, not the API).
+2. **Reads the guide but stays widget/panel-first** → doctrine-transfer failure.
+3. **Chooses world-first but repeatedly fights the same LibGibson seam** →
+   candidate API / ergonomic gap (the only mode that points at an API).
+4. **Builds world-first but it is still aesthetically poor** → art-direction /
+   visual-feedback problem, not an API gap.
+5. **Copies a recipe near-literally without transferring the abstraction** →
+   docs helped imitation, not abstraction transfer.
+6. **Independently derives a strong new visual metaphor** → strongest evidence
+   that the docs taught composition rather than a look.
+
+The post-holdout decision must name the mode. No automatic API promotion; the
+charter rule "no core feature promotion from one consumer" still binds.
