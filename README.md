@@ -7,7 +7,8 @@
 **Treat a terminal like a small character-cell framebuffer.**
 
 A cell-framebuffer terminal UI engine with native scrollback / live-region
-semantics — plus experimental compositional animation and software graphics.
+semantics — plus experimental compositional animation, software graphics, and
+procedural audio.
 
 [![release](https://img.shields.io/github/v/release/femboy2112/libgibson?include_prereleases&sort=semver&label=release&color=8a2be2)](https://github.com/femboy2112/libgibson/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/femboy2112/libgibson/ci.yml?branch=main&label=CI)](https://github.com/femboy2112/libgibson/actions/workflows/ci.yml)
@@ -16,15 +17,15 @@ semantics — plus experimental compositional animation and software graphics.
 
 </div>
 
-> **Current release: [v0.3.1 — Temporal hardening + keyed compositing](https://github.com/femboy2112/libgibson/releases/tag/v0.3.1)** (2026-09-28).
+> **Current release: [v0.4.0 — HumanMusic & Audio](https://github.com/femboy2112/libgibson/releases/tag/v0.4.0)** (2026-10-02).
 > Linux x86_64. A native SDK archive is attached to the release. LibGibson is
 > distributed as **GitHub source + that SDK** — it is *not* on crates.io, PyPI, or
 > the Go module proxy. See the [changelog](CHANGELOG.md) and
 > [install options](#install--use) below.
 
 > **Engineering alpha.** Linux x86_64 is the best-tested environment. The core
-> engine is implemented and tested; Scene, Story, and software graphics are
-> experimental, Rust-only APIs. *Capability is not an API-stability promise* — see
+> engine is implemented and tested; Scene, Story, software graphics, and audio /
+> HumanMusic are experimental, Rust-only APIs. *Capability is not an API-stability promise* — see
 > [status & support](#status--support).
 
 ---
@@ -104,6 +105,11 @@ The core engine is **implemented and tested on Linux x86_64**. A few of the load
   [`gibson::ui`](docs/UI_LAYER.md): semantic components, three design skins, typed
   interaction and finite motion, lowering to ordinary Nodes. The UI layer is an
   experimental, Rust-only API introduced in v0.2.0.
+- **Experimental audio & HumanMusic** (Rust-only, new in v0.4.0) — semantic procedural
+  composition, checked `BAND` performances, three sonic worlds, deterministic synthesis,
+  and cover generation with selectable identity fidelity. All music is synthesized; no
+  audio is exposed through the C ABI, and the terminal engine does not depend on it. See
+  [`docs/HUMAN_MUSIC_ARCHITECTURE.md`](docs/HUMAN_MUSIC_ARCHITECTURE.md).
 
 📖 **Full tested-feature catalog: [`docs/FEATURES.md`](docs/FEATURES.md).**
 
@@ -130,7 +136,7 @@ of this film ([how it was captured](docs/assets/README.md)).
 ## Install & use
 
 LibGibson ships as **GitHub source plus a native SDK archive** on the
-[release](https://github.com/femboy2112/libgibson/releases/tag/v0.3.1). It is not
+[release](https://github.com/femboy2112/libgibson/releases/tag/v0.4.0). It is not
 published to any package registry.
 
 ### Rust
@@ -140,7 +146,7 @@ crate you `use` is `gibson`:
 
 ```toml
 [dependencies]
-libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.3.1" }
+libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.4.0" }
 ```
 
 ```rust
@@ -178,14 +184,14 @@ animation is throttled by `ctx.animation_interval()`.
 
 ### Native SDK (C / C++ / Python / Go)
 
-The release attaches `libgibson-0.3.1-linux-x86_64.tar.gz` (with a `.sha256`): headers,
+The release attaches `libgibson-0.4.0-linux-x86_64.tar.gz` (with a `.sha256`): headers,
 `libgibson.a`, the versioned shared object (`libgibson.so.1` + a `libgibson.so` dev
 symlink), and a relocatable `pkg-config` file.
 
 ```bash
-sha256sum -c libgibson-0.3.1-linux-x86_64.tar.gz.sha256
-tar -xzf libgibson-0.3.1-linux-x86_64.tar.gz          # -> ./libgibson-0.3.1-linux-x86_64/
-export PKG_CONFIG_PATH="$PWD/libgibson-0.3.1-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
+sha256sum -c libgibson-0.4.0-linux-x86_64.tar.gz.sha256
+tar -xzf libgibson-0.4.0-linux-x86_64.tar.gz          # -> ./libgibson-0.4.0-linux-x86_64/
+export PKG_CONFIG_PATH="$PWD/libgibson-0.4.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 cc app.c $(pkg-config --cflags --libs libgibson) -o app   # C consumer
 ```
@@ -216,8 +222,8 @@ int main(void) {
 - **Go** — a cgo module that consumes the same SDK via `#cgo pkg-config: libgibson`. Not
   on the Go module proxy. See [`bindings/go/README.md`](bindings/go/README.md).
 
-> These wrappers expose the established UI/output subset of the C ABI. Scene/Story and
-> software graphics are Rust-only.
+> These wrappers expose the established UI/output subset of the C ABI. Scene/Story,
+> software graphics, and audio/HumanMusic are Rust-only.
 
 ## Try the demos
 
@@ -234,6 +240,7 @@ cargo run --example ui_showcase -- --skin=black-ice # operations workspace + det
 cargo run --release --example acid_vs_crash         # maximalist RGB cinematic (release build!)
 cargo run --release --example fx_lab -- --scene=filled-3d --truecolor   # developer FX gallery
 cargo run --example hack_the_gibson                 # a *Hackers* (1995) homage on the same primitives
+cargo run --release --example human_music_lab      # HumanMusic: one song, three worlds -> WAVs + receipts
 
 # ── Diagnostics ──────────────────────────────────────────────
 cargo run --release --example runtime_observatory -- --help   # runtime-contract instrument
@@ -255,9 +262,11 @@ Deep dives: [introductory cinema](docs/INTRODUCTORY_CINEMA.md) ·
 
 ## Status & support
 
-Core engine behaviour is **IMPLEMENTED + TESTED on Linux x86_64 only**. The v0.3.1
-suite has **850 tests** (1 ignored — the #15 acceptance); `cargo clippy --all-targets
---all-features -D warnings`, `cargo fmt --check`, and `cargo build --release` are clean.
+Core engine behaviour is **IMPLEMENTED + TESTED on Linux x86_64 only**. The v0.4.0
+`cargo test` suite passes **1,522 tests** (18 ignored: the #15 acceptance, plus
+HumanMusic's one-time holdouts, fuzz sweeps and listening devices, which run explicitly);
+`cargo clippy --all-targets --all-features -D warnings`, `cargo fmt --check`, and
+`cargo build --release` are clean.
 C/C++ examples run under ASan + UBSan (LSan disabled); the Python `ctypes` example runs;
 the Go bindings pass local + public Linux build/vet/example smoke (no Go unit tests
 exist). Public CI exercises Rust, MSRV 1.85, C/C++/Python, native sanitizers, PTYs, and
@@ -293,7 +302,7 @@ experimental, blockers, priorities).
 | [CHANGELOG](CHANGELOG.md) | [ROADMAP](ROADMAP.md) | [RUNTIME_OBSERVATORY](docs/RUNTIME_OBSERVATORY.md) |
 | [SECURITY](SECURITY.md) | [VALIDATION_INDEX](docs/VALIDATION_INDEX.md) | [EVENT_PRESSURE_LAB](docs/EVENT_PRESSURE_LAB.md) |
 | [STATE_OF_LIBGIBSON](docs/STATE_OF_LIBGIBSON.md) | [third-party licenses](LICENSES-THIRD-PARTY.md) | [expressivity campaign](docs/research/AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md) |
-| [UI_LAYER](docs/UI_LAYER.md) | [UI validation](docs/UI_LAYER_VALIDATION.md) | |
+| [UI_LAYER](docs/UI_LAYER.md) | [UI validation](docs/UI_LAYER_VALIDATION.md) | [HUMAN_MUSIC_ARCHITECTURE](docs/HUMAN_MUSIC_ARCHITECTURE.md) |
 
 The [validation index](docs/VALIDATION_INDEX.md) preserves the historical evidence
 trail; the [expressivity campaign](docs/research/AGENT_NATIVE_UI_CAMPAIGN_RESULTS_2026-09-24.md)
@@ -306,6 +315,7 @@ expressivity or stable APIs).
 src/          engine: cell/surface/layout/node/diff/ansi/transaction/renderer/
               session/input/scheduler/context/ffi + canvas/glyph/capability/
               scene/story/replication + ui + raster & FX (geom/particles/field/…)
+              + audio (DSP, offline renderer, HumanMusic)
 include/      gibson.h (canonical C ABI) · gibson.hpp · termframe.h (compat aliases)
 bindings/     c/ · cpp/ · python/ · go/    (native-SDK consumers)
 examples/     runnable demos, semantic UI galleries and engineering probes
