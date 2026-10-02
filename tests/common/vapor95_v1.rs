@@ -14,7 +14,7 @@ use gibson::audio::dsp::osc::Wave;
 use gibson::audio::human_music::{
     instrument::{OscKind, Patch},
     theory::Mode,
-    world::WorldId,
+    world::{Space, WorldId, WorldProduction},
     MusicWorld,
 };
 
@@ -105,10 +105,17 @@ pub fn vapor95_v1() -> MusicWorld {
         hat_cutoff: 6500.0,
         ghost_amount: 0.2,
         drum_density: 0.5,
-        reverb_size: 1.3,
-        reverb_damp: 0.25,
-        reverb_mix: 0.34,
-        saturation: 2.2,
+        production: WorldProduction {
+            saturation: 2.2,
+            space: Space {
+                size: 1.3,
+                damp: 0.25,
+                mix: 0.34,
+                low_cut_hz: None,
+            },
+            chorus: None,
+            echo: None,
+        },
         master_ceiling: 0.95,
         base_dynamic: 0.7,
         pad_mix: 0.8,

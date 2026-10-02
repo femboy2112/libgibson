@@ -21,6 +21,94 @@ pub enum WorldId {
     SwissSignal,
 }
 
+/// A tempo-relative echo time: a note value, never seconds. The world states the musical
+/// duration; the synthesizer converts it with the Score's tempo at the DSP boundary, so the same
+/// echo stays locked to the pulse at any tempo (musical identity first, physical time second).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EchoTime {
+    /// Half a beat.
+    Eighth,
+    /// Three quarters of a beat.
+    DottedEighth,
+    /// One beat.
+    Quarter,
+    /// One and a half beats.
+    DottedQuarter,
+}
+
+impl EchoTime {
+    /// The duration in beats.
+    pub fn beats(self) -> f64 {
+        match self {
+            EchoTime::Eighth => 0.5,
+            EchoTime::DottedEighth => 0.75,
+            EchoTime::Quarter => 1.0,
+            EchoTime::DottedQuarter => 1.5,
+        }
+    }
+}
+
+/// The world's shared acoustic space (the FDN reverb).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Space {
+    /// Room size `[0.3, 1.5]`.
+    pub size: f32,
+    /// High-frequency damping `[0, 1]` (higher = darker tail).
+    pub damp: f32,
+    /// Wet mix `[0, 1]`.
+    pub mix: f32,
+    /// Below this frequency nothing enters the space, so the bass and kick stay dry and mono while
+    /// the room still answers everything above. `None` = the whole band enters (historical).
+    pub low_cut_hz: Option<f32>,
+}
+
+/// Slow modulation of the **memory bus** — pad, keys and lead, never bass or drums: the
+/// unstable-memory smear. Peak pitch deviation is about `depth · 2π · rate` (relative).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MemoryChorus {
+    /// LFO rate (Hz).
+    pub rate_hz: f32,
+    /// Modulation depth (ms).
+    pub depth_ms: f32,
+    /// Wet mix `[0, 1]`.
+    pub mix: f32,
+}
+
+/// A tempo-synchronous stereo echo fed by the articulated foreground (keys and lead — a held pad
+/// would only thicken the wash, and the bass and drums keep the pocket dry). Each side repeats at
+/// its own note value, so the remembered phrase moves across the stereo field; every repeat passes
+/// the tone filter again and comes back darker.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TempoEcho {
+    /// Left repeat time.
+    pub left: EchoTime,
+    /// Right repeat time.
+    pub right: EchoTime,
+    /// Feedback per repeat `[0, 0.9]`.
+    pub feedback: f32,
+    /// Send level of the keys+lead signal into the echo `[0, 1]`.
+    pub send: f32,
+    /// Low-pass corner of the send and of each repeat (Hz).
+    pub tone_hz: f32,
+}
+
+/// A world's **production law**: what the synthesizer does to the music bus after the voices.
+/// The world declares the physics; the synth executes them. Order of the chain:
+/// memory bus (pad, keys, lead) → [`MemoryChorus`] → joins bass and drums → `tanh` saturation →
+/// [`TempoEcho`] returns join → [`Space`] (input low-cut) → bus compressor → limiter. A stage that
+/// is `None` is not computed at all, so a world without it renders exactly as before it existed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WorldProduction {
+    /// Music-bus `tanh` drive (`>= 1`).
+    pub saturation: f32,
+    /// The shared space.
+    pub space: Space,
+    /// Memory-bus chorus, if the world has one.
+    pub chorus: Option<MemoryChorus>,
+    /// Tempo echo, if the world has one.
+    pub echo: Option<TempoEcho>,
+}
+
 /// A sonic world.
 #[derive(Debug, Clone)]
 pub struct MusicWorld {
@@ -52,10 +140,8 @@ pub struct MusicWorld {
     pub ghost_amount: f32,
     pub drum_density: f32,
     // --- production ---
-    pub reverb_size: f32,
-    pub reverb_damp: f32,
-    pub reverb_mix: f32,
-    pub saturation: f32,
+    /// The world's production law: saturation, space, memory chorus and tempo echo.
+    pub production: WorldProduction,
     pub master_ceiling: f32,
     // --- arrangement mix ---
     pub base_dynamic: f32,
@@ -168,10 +254,17 @@ impl MusicWorld {
             hat_cutoff: 8500.0,
             ghost_amount: 0.35,
             drum_density: 0.8,
-            reverb_size: 0.6,
-            reverb_damp: 0.5,
-            reverb_mix: 0.14,
-            saturation: 1.6,
+            production: WorldProduction {
+                saturation: 1.6,
+                space: Space {
+                    size: 0.6,
+                    damp: 0.5,
+                    mix: 0.14,
+                    low_cut_hz: None,
+                },
+                chorus: None,
+                echo: None,
+            },
             master_ceiling: 0.97,
             base_dynamic: 0.85,
             pad_mix: 0.62,
@@ -268,10 +361,17 @@ impl MusicWorld {
             hat_cutoff: 6500.0,
             ghost_amount: 0.2,
             drum_density: 0.5,
-            reverb_size: 1.3,
-            reverb_damp: 0.25,
-            reverb_mix: 0.34,
-            saturation: 2.2,
+            production: WorldProduction {
+                saturation: 2.2,
+                space: Space {
+                    size: 1.3,
+                    damp: 0.25,
+                    mix: 0.34,
+                    low_cut_hz: None,
+                },
+                chorus: None,
+                echo: None,
+            },
             master_ceiling: 0.95,
             base_dynamic: 0.7,
             pad_mix: 0.8,
@@ -362,10 +462,17 @@ impl MusicWorld {
             hat_cutoff: 9500.0,
             ghost_amount: 0.1,
             drum_density: 0.4,
-            reverb_size: 0.5,
-            reverb_damp: 0.6,
-            reverb_mix: 0.1,
-            saturation: 1.15,
+            production: WorldProduction {
+                saturation: 1.15,
+                space: Space {
+                    size: 0.5,
+                    damp: 0.6,
+                    mix: 0.1,
+                    low_cut_hz: None,
+                },
+                chorus: None,
+                echo: None,
+            },
             master_ceiling: 0.98,
             base_dynamic: 0.75,
             pad_mix: 0.6,

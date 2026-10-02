@@ -115,7 +115,7 @@ const COVER_SEED: u64 = 904;
 const STEMS: [&str; 5] = ["keys", "pad", "bass", "lead", "drums"];
 
 /// Single-factor production ablations of the current world (each removes exactly one factor).
-const ABLATIONS: [&str; 2] = ["nosat", "dry"];
+const ABLATIONS: [&str; 5] = ["nochorus", "noecho", "fullband", "nosat", "dry"];
 
 /// Tempo/swing cells of the current palette: (label, bpm, swing).
 const CELLS: [(&str, f32, f32); 1] = [("t71_s16", 71.0, 0.16)];

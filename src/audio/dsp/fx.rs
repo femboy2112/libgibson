@@ -63,6 +63,9 @@ pub struct Delay {
     time: f32,
     feedback: f32,
     mix: f32,
+    // One-pole low-pass coefficient inside the feedback loop; `None` = undamped (historical).
+    damp: Option<f32>,
+    damp_state: f32,
 }
 
 impl Delay {
@@ -74,6 +77,8 @@ impl Delay {
             time: sr * 0.25,
             feedback: 0.3,
             mix: 0.25,
+            damp: None,
+            damp_state: 0.0,
         }
     }
 
@@ -84,10 +89,24 @@ impl Delay {
         self.mix = mix.clamp(0.0, 1.0);
     }
 
+    /// Darken every repeat: a one-pole low-pass at `corner_hz` inside the feedback loop, so each
+    /// echo is duller than the last (tape/memory decay). `None` restores the undamped loop.
+    pub fn set_damping(&mut self, corner_hz: Option<f32>) {
+        self.damp = corner_hz.map(|hz| {
+            let hz = hz.clamp(20.0, 0.45 * self.sr);
+            1.0 - (-std::f32::consts::TAU * hz / self.sr).exp()
+        });
+        self.damp_state = 0.0;
+    }
+
     /// Process one mono sample.
     #[inline]
     pub fn process(&mut self, x: f32) -> f32 {
-        let echo = self.line.tap(self.time);
+        let mut echo = self.line.tap(self.time);
+        if let Some(a) = self.damp {
+            self.damp_state += a * (echo - self.damp_state);
+            echo = self.damp_state;
+        }
         self.line.write(x + echo * self.feedback);
         x * (1.0 - self.mix) + echo * self.mix
     }
@@ -200,7 +219,15 @@ impl Reverb {
     /// Process one stereo frame.
     #[inline]
     pub fn process_stereo(&mut self, l: f32, r: f32) -> (f32, f32) {
-        let input = (l + r) * 0.5;
+        self.process_stereo_send(l, r, (l + r) * 0.5)
+    }
+
+    /// Process one stereo frame whose room input is `send` (mono) instead of the frame's own mid —
+    /// e.g. a high-passed copy, so the low end stays out of the room while the dry path is whole.
+    /// `process_stereo(l, r)` is exactly `process_stereo_send(l, r, (l + r) * 0.5)`.
+    #[inline]
+    pub fn process_stereo_send(&mut self, l: f32, r: f32, send: f32) -> (f32, f32) {
+        let input = send;
         for i in 0..4 {
             let d = (self.base_ms[i] * 0.001 * self.sr * self.size).max(1.0);
             let raw = self.lines[i].tap(d);
@@ -382,6 +409,53 @@ mod tests {
         // index 480; check a small window to be robust to the fractional-tap boundary).
         let echo = out[478..=483].iter().fold(0.0f32, |a, &s| a.max(s.abs()));
         assert!(echo > 0.1, "expected echo near sample 480, got {echo}");
+    }
+
+    #[test]
+    fn damped_repeats_get_darker_and_undamped_is_unchanged() {
+        // Undamped: set_damping(None) is the historical loop, sample for sample.
+        let (mut a, mut b) = (Delay::new(SR, 1.0), Delay::new(SR, 1.0));
+        a.set(0.01, 0.6, 1.0);
+        b.set(0.01, 0.6, 1.0);
+        b.set_damping(None);
+        for i in 0..4000 {
+            let x = if i % 97 == 0 { 1.0 } else { 0.0 };
+            assert_eq!(a.process(x).to_bits(), b.process(x).to_bits());
+        }
+        // Damped: a high tone's successive repeats lose energy faster than an undamped loop's.
+        let energy = |damp: Option<f32>| {
+            let mut d = Delay::new(SR, 1.0);
+            d.set(0.05, 0.7, 1.0);
+            d.set_damping(damp);
+            let mut e = 0.0f32;
+            for i in 0..(SR as usize) {
+                let x = if i < 2400 {
+                    (i as f32 * 0.9).sin()
+                } else {
+                    0.0
+                };
+                let y = d.process(x);
+                assert!(y.is_finite());
+                if i > 4 * 2400 {
+                    e += y * y;
+                }
+            }
+            e
+        };
+        assert!(energy(Some(1500.0)) < 0.5 * energy(None));
+    }
+
+    #[test]
+    fn reverb_send_with_the_mid_is_the_stereo_reverb() {
+        let (mut a, mut b) = (Reverb::new(SR), Reverb::new(SR));
+        a.set(1.2, 0.5, 0.3);
+        b.set(1.2, 0.5, 0.3);
+        for i in 0..6000 {
+            let (l, r) = ((i as f32 * 0.013).sin(), (i as f32 * 0.021).cos());
+            let (al, ar) = a.process_stereo(l, r);
+            let (bl, br) = b.process_stereo_send(l, r, (l + r) * 0.5);
+            assert_eq!((al.to_bits(), ar.to_bits()), (bl.to_bits(), br.to_bits()));
+        }
     }
 
     #[test]

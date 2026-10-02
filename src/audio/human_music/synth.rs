@@ -4,15 +4,15 @@
 //!
 //! Events are pre-scheduled to sample-accurate positions; the render loop triggers them as
 //! its monotonic playhead crosses them, drives per-role voice pools and synthesized drums,
-//! applies world production (saturation → reverb → bus compression → limiter) and writes
-//! the master into the output block. It is designed for sequential offline rendering start to
+//! applies the world's production law ([`WorldProduction`]: memory chorus → saturation → tempo
+//! echo → space → bus compression → limiter) and writes the master into the output block. It is designed for sequential offline rendering start to
 //! finish; [`HumanMusicSynth::rewind`] rewinds the transport, but a *bit-exact* re-render
 //! should use a fresh synth (`rewind` does not zero DSP tails — see its docs).
 
 use super::super::dsp::drums::{Clap, Hat, Kick, Snare};
 use super::super::dsp::env::Adsr;
 use super::super::dsp::filter::Svf;
-use super::super::dsp::fx::{pan, soft_saturate, Compressor, Limiter, Reverb};
+use super::super::dsp::fx::{pan, soft_saturate, Chorus, Compressor, Delay, Limiter, Reverb};
 use super::super::dsp::osc::{FmOsc, Osc, Wave};
 use super::super::render::{AudioSource, RenderCtx};
 use super::super::time::{SampleRate, SampleTime, TempoMap};
@@ -21,7 +21,7 @@ use super::instrument::{OscKind, Patch};
 use super::score::{DrumVoice, Role, Score, SfxKind};
 use super::theory::{midi_to_hz, Midi, Scale};
 use super::voice::{VoiceEventId, MONO_CHOKE_SECS};
-use super::world::MusicWorld;
+use super::world::{MusicWorld, WorldProduction};
 
 /// A single polyphonic synth voice built from a [`Patch`].
 struct SynthVoice {
@@ -427,6 +427,12 @@ pub struct ProductionControl {
     /// for about its NOMINAL Score duration and a long pad tail cannot ring under the next harmony.
     /// A pluck (sustain 0) still decays inside its written length.
     pub short_release: bool,
+    /// The world's memory-bus chorus bypassed.
+    pub no_chorus: bool,
+    /// The world's tempo echo bypassed.
+    pub no_echo: bool,
+    /// The space's input low-cut bypassed (the whole band enters the reverb, as historically).
+    pub full_band_space: bool,
 }
 
 impl ProductionControl {
@@ -438,10 +444,14 @@ impl ProductionControl {
         dry: false,
         no_bus_comp: false,
         short_release: false,
+        no_chorus: false,
+        no_echo: false,
+        full_band_space: false,
     };
 
     /// The neutral harmonic reference: every production factor removed — clean zero-detune
-    /// triangles, no saturation, dry, no bus compression, releases capped — the same exact Score.
+    /// triangles, no saturation, dry, no bus compression, releases capped, no chorus, no echo —
+    /// the same exact Score.
     pub const HARMONIC_REFERENCE: ProductionControl = ProductionControl {
         clean_waves: true,
         zero_detune: true,
@@ -449,11 +459,15 @@ impl ProductionControl {
         dry: true,
         no_bus_comp: true,
         short_release: true,
+        no_chorus: true,
+        no_echo: true,
+        full_band_space: true,
     };
 
     /// The toggle names, for CLI parsing (`--production=nosat,nodetune`).
-    pub const NAMES: [&'static str; 6] =
-        ["clean", "nodetune", "nosat", "dry", "nocomp", "shortrel"];
+    pub const NAMES: [&'static str; 9] = [
+        "clean", "nodetune", "nosat", "dry", "nocomp", "shortrel", "nochorus", "noecho", "fullband",
+    ];
 
     /// Parse a comma-separated toggle list (`"nosat,dry"`), `"reference"` or `"normal"`. Unknown
     /// names are an error (a typo must not silently render the normal mix).
@@ -472,6 +486,9 @@ impl ProductionControl {
                 "dry" => c.dry = true,
                 "nocomp" => c.no_bus_comp = true,
                 "shortrel" => c.short_release = true,
+                "nochorus" => c.no_chorus = true,
+                "noecho" => c.no_echo = true,
+                "fullband" => c.full_band_space = true,
                 other => return Err(format!("unknown production toggle `{other}`")),
             }
         }
@@ -493,6 +510,9 @@ impl ProductionControl {
             self.dry,
             self.no_bus_comp,
             self.short_release,
+            self.no_chorus,
+            self.no_echo,
+            self.full_band_space,
         ];
         ProductionControl::NAMES
             .iter()
@@ -540,7 +560,10 @@ pub struct HumanMusicSynth {
     clap: Clap,
     // SFX voices (simple two-osc gestures).
     sfx_voices: Vec<SfxVoice>,
-    // Production.
+    // Production (the world's law, minus any stage the debug control bypasses).
+    chorus: Option<Chorus>,
+    echo: Option<TempoEchoUnit>,
+    space_cut: Option<Svf>,
     reverb: Reverb,
     sat_drive: f32,
     comp: Compressor,
@@ -655,16 +678,31 @@ impl HumanMusicSynth {
             .collect();
         sfx.sort_by_key(|e| e.at);
 
+        let law: WorldProduction = world.production;
         let mut reverb = Reverb::new(srf);
         reverb.set(
-            world.reverb_size,
-            world.reverb_damp,
-            if production.dry {
-                0.0
-            } else {
-                world.reverb_mix
-            },
+            law.space.size,
+            law.space.damp,
+            if production.dry { 0.0 } else { law.space.mix },
         );
+        let space_cut = law
+            .space
+            .low_cut_hz
+            .filter(|_| !production.dry && !production.full_band_space)
+            .map(|hz| {
+                let mut f = Svf::new(srf);
+                f.set(hz, BUTTERWORTH);
+                f
+            });
+        let chorus = law.chorus.filter(|_| !production.no_chorus).map(|c| {
+            let mut ch = Chorus::new(srf);
+            ch.set(c.rate_hz, c.depth_ms, c.mix);
+            ch
+        });
+        let echo = law
+            .echo
+            .filter(|_| !production.no_echo)
+            .map(|e| TempoEchoUnit::new(&e, &tempo, srf));
         let mut comp = Compressor::new(srf);
         comp.set(-14.0, 2.5, 12.0, 140.0, 1.5);
         let mut limiter = Limiter::new(srf);
@@ -685,8 +723,11 @@ impl HumanMusicSynth {
             hat: Hat::with_cutoff(srf, world.hat_cutoff),
             clap: Clap::new(srf),
             sfx_voices: (0..4).map(|_| SfxVoice::new(srf, production)).collect(),
+            chorus,
+            echo,
+            space_cut,
             reverb,
-            sat_drive: world.saturation,
+            sat_drive: law.saturation,
             comp,
             limiter,
             music_gain: world.base_dynamic.clamp(0.4, 1.0),
@@ -814,6 +855,10 @@ impl AudioSource for HumanMusicSynth {
             // --- Sum the music bus (melodic voices + drums). ---
             let mut ml = 0.0f32;
             let mut mr = 0.0f32;
+            // The memory bus (pad, keys, lead) and the echo send (keys, lead), when the world has
+            // the stage that reads them; without one, every bus joins `ml/mr` in the historical order.
+            let memory = self.chorus.is_some();
+            let (mut mem_l, mut mem_r, mut send) = (0.0f32, 0.0f32, 0.0f32);
             // Each role pool gets the world's tuned *_mix before it joins the bus — this is
             // the knob BLACK_ICE turns up on bass and VAPOR95 eases off on, not just four
             // numbers that sat in the struct looking pretty.
@@ -842,9 +887,23 @@ impl AudioSource for HumanMusicSynth {
                 }
                 self.meter.tap(bus, bl, br);
                 if on {
-                    ml += bl;
-                    mr += br;
+                    // Index 2 is the bass: it never enters the memory bus or the echo.
+                    if bus == 1 || bus == 3 {
+                        send += 0.5 * (bl + br);
+                    }
+                    if memory && bus != 2 {
+                        mem_l += bl;
+                        mem_r += br;
+                    } else {
+                        ml += bl;
+                        mr += br;
+                    }
                 }
+            }
+            if let Some(ch) = &mut self.chorus {
+                let (cl, cr) = ch.process_stereo(mem_l, mem_r);
+                ml += cl;
+                mr += cr;
             }
             // Drums (center-ish placement).
             let k = self.kick.next();
@@ -859,8 +918,9 @@ impl AudioSource for HumanMusicSynth {
                 mr += dr;
             }
 
-            // Music production: saturation -> reverb send. (The harmonic reference bypasses the
-            // tanh — same 0.6 trim, no intermodulation — and the reverb's mix is 0 when dry.)
+            // Music production: saturation -> echo returns -> space. (The harmonic reference
+            // bypasses the tanh — same 0.6 trim, no intermodulation — and the reverb's mix is 0 when
+            // dry.) The echo joins after the tanh, so repeats never intermodulate with the chord.
             if self.production.no_saturation {
                 ml *= 0.6;
                 mr *= 0.6;
@@ -868,7 +928,18 @@ impl AudioSource for HumanMusicSynth {
                 ml = soft_saturate(ml * 0.6, self.sat_drive);
                 mr = soft_saturate(mr * 0.6, self.sat_drive);
             }
-            let (ml, mr) = self.reverb.process_stereo(ml, mr);
+            if let Some(echo) = &mut self.echo {
+                let (el, er) = echo.process(send * 0.6);
+                ml += el;
+                mr += er;
+            }
+            let (ml, mr) = match &mut self.space_cut {
+                Some(cut) => {
+                    let room = cut.process_modes((ml + mr) * 0.5).hp;
+                    self.reverb.process_stereo_send(ml, mr, room)
+                }
+                None => self.reverb.process_stereo(ml, mr),
+            };
 
             // Duck the music under dialogue if a curve is set.
             let duck = self
@@ -925,6 +996,46 @@ impl AudioSource for HumanMusicSynth {
 
     fn is_finished(&self, at: SampleTime) -> bool {
         at.0 >= self.total_samples
+    }
+}
+
+/// Resonance giving the production filters a Butterworth (Q ≈ 0.707) response.
+const BUTTERWORTH: f32 = 0.29;
+
+/// The executed [`TempoEcho`](super::world::TempoEcho): the world's note values converted to
+/// samples with the Score's tempo (the DSP boundary), a tone-filtered mono send, and one damped
+/// feedback delay per side.
+struct TempoEchoUnit {
+    tone: Svf,
+    send: f32,
+    left: Delay,
+    right: Delay,
+}
+
+impl TempoEchoUnit {
+    fn new(law: &super::world::TempoEcho, tempo: &TempoMap, sr: f32) -> TempoEchoUnit {
+        let secs_per_beat = tempo.samples_per_beat() / f64::from(sr);
+        let side = |time: super::world::EchoTime| {
+            let secs = (time.beats() * secs_per_beat) as f32;
+            let mut d = Delay::new(sr, secs + 0.05);
+            d.set(secs, law.feedback.clamp(0.0, 0.9), 1.0);
+            d.set_damping(Some(law.tone_hz));
+            d
+        };
+        let mut tone = Svf::new(sr);
+        tone.set(law.tone_hz, BUTTERWORTH);
+        TempoEchoUnit {
+            tone,
+            send: law.send.clamp(0.0, 1.0),
+            left: side(law.left),
+            right: side(law.right),
+        }
+    }
+
+    /// The wet returns (left, right) for one sample of the mono foreground send.
+    fn process(&mut self, x: f32) -> (f32, f32) {
+        let fed = self.tone.process(x * self.send);
+        (self.left.process(fed), self.right.process(fed))
     }
 }
 
