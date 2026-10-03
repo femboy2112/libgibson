@@ -254,6 +254,9 @@ numbers should be quoted as typography.
 
 ## Reproduction
 
+One-shot: `scripts/dev/run_research_labs.sh` (or `--quick`) runs this lab and the
+temporal lab into `target/research-labs/<timestamp>/`.
+
 ```sh
 cargo build --release --example terminal_to_1080p_lab
 ./target/release/examples/terminal_to_1080p_lab --mode=rank

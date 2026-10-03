@@ -284,6 +284,9 @@ is unproven.
 
 ## Reproduction
 
+One-shot: `scripts/dev/run_research_labs.sh` builds both labs, runs every
+non-interactive mode into `target/research-labs/<timestamp>/`, and runs the tests.
+
 ```sh
 cargo build --release --example temporal_braille_persistence_lab
 ./target/release/examples/temporal_braille_persistence_lab --mode=matrix
