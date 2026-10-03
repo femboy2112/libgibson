@@ -41,7 +41,7 @@ Pick a matching starting point from the recipes:
 | Your domain | Start from |
 |---|---|
 | A spatial/cinematic world owning the frame | [`examples/recipe_hero_with_hud.rs`](examples/recipe_hero_with_hud.rs) |
-| One system shown in several representations / a cinematic sequence | [`examples/recipe_identity_transport.rs`](examples/recipe_identity_transport.rs) + [`examples/recipe_directed_atlas.rs`](examples/recipe_directed_atlas.rs) |
+| One system shown in several representations / a cinematic sequence | start with [`examples/recipe_atlas_skeleton.rs`](examples/recipe_atlas_skeleton.rs); full exemplars [`recipe_identity_transport.rs`](examples/recipe_identity_transport.rs) + [`recipe_directed_atlas.rs`](examples/recipe_directed_atlas.rs) only for detail |
 | One space navigated at many scales | [`examples/recipe_continuous_world.rs`](examples/recipe_continuous_world.rs) |
 | Must work wide → tiny | [`examples/recipe_semantic_zoom.rs`](examples/recipe_semantic_zoom.rs) |
 | Drill-in without losing place | [`examples/recipe_cinematic_overlay.rs`](examples/recipe_cinematic_overlay.rs) |

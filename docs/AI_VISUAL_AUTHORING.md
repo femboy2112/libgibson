@@ -28,7 +28,8 @@ You do **not** need to read the whole codebase. Read this, in order, and stop:
 
 1. **This file** (`docs/AI_VISUAL_AUTHORING.md`) — the method. ~480 lines.
 2. **One matching recipe** from `examples/recipe_*.rs` — pick by the decision
-   tree in [§7](#7-decision-tree). ~100 lines.
+   tree in [§7](#7-decision-tree). The five single-frame composition recipes are
+   ~110–150 lines each.
 3. **[`docs/UI_LAYER.md`](UI_LAYER.md), §"Local escape hatches and custom
    components"** (the `raw` / `surface` / `raster` / `Component` section) and
    §"Theme is a palette; Skin is a design grammar" — for the chrome layer. Skim,
@@ -36,9 +37,19 @@ You do **not** need to read the whole codebase. Read this, in order, and stop:
 4. **Public API docs you reach from the recipe** — `Node::canvas`, `RgbRaster`,
    `Surface`, `Camera` — on demand.
 
-Total: **~700 lines to a correct architecture.** If you find yourself reading
-`src/` to figure out *what to build*, stop — that's an architecture question, and
-it is answered here, not in the source.
+Total: **under ~900 lines to a correct architecture.** If you find yourself
+reading `src/` to figure out *what to build*, stop — that's an architecture
+question, and it is answered here, not in the source.
+
+> **Building a *multi-representation* piece** (one system shown in several visual
+> bases — a cinematic sequence)? Take the atlas sub-route instead, in this order:
+> this file → **[§6](#6-directed-representation-the-atlas)** → plan it with
+> **[`docs/AI_VISUAL_ATLAS_PLAN.md`](AI_VISUAL_ATLAS_PLAN.md)** → copy the compact
+> **[`recipe_atlas_skeleton.rs`](../examples/recipe_atlas_skeleton.rs)** (~170
+> lines: two anchors, two bases, one transport, `frame = f(t)`). Open the two full
+> atlas exemplars (`recipe_identity_transport.rs` 295 lines,
+> `recipe_directed_atlas.rs` 378 lines) **only when you need implementation
+> detail** — do not ingest them to start drawing.
 
 ---
 
@@ -218,9 +229,12 @@ world, chrome as one-line text and overlays. It is not a required aesthetic — 
 
 ## 5. Five composition laws (one recipe each)
 
-Each recipe is tiny (~100 lines), teaches exactly one law, and has a
-deterministic `--capture WxH[:mono|:ansi16|:ansi256]` mode so you can render and
-**look at** the result (see [§9](#9-visual-acceptance-is-load-bearing)).
+Each of these five composition recipes is small (~110–150 lines), teaches exactly
+one law, and has a deterministic `--capture WxH[:mono|:ansi16|:ansi256]` mode so
+you can render and **look at** the result (see
+[§9](#9-visual-acceptance-is-load-bearing)). (The two *atlas* recipes in
+[§6](#6-directed-representation-the-atlas) are larger exemplars, not single-law
+recipes — start from the compact skeleton there instead.)
 
 ### HERO WITH HUD — the world owns the frame
 ```
@@ -324,18 +338,37 @@ reaching for, and the one most agents never name.
 
 ### What the atlas buys — and what it does not
 
-Four of these are *checkable invariants* — the flagship tests them, and so can you
-(the `recipe_directed_atlas.rs --selftest` below is a template):
+Some of this is **structural** — mechanically checkable — and some is
+**perceptual** — only your eye can rule on it. Keep the two apart; do not dress a
+taste judgement up as a passing test.
+
+**Structural (a machine can assert these).** The `recipe_directed_atlas.rs
+--selftest` is a template for the first four, which it checks directly:
 
 - **director determinism** — same `t` ⇒ identical frame;
 - **direct seek** — seeking to `t` equals running to `t` (keep the clock in state);
-- **frozen-hold zero-diff** — a held frame emits 0 cell / 0 byte delta;
-- **editorial locality** — a bounded overlay touches only its own region.
+- **boundary continuity** — no identity teleports across a cue boundary (hard cuts
+  must be *declared*, not stumbled into);
+- **frozen-hold zero-diff** — a held frame emits 0 cell / 0 byte delta.
 
-The other two — *identity surviving every basis change* and *a transition reading
-as a transformation rather than a scene cut* — the flagship does **not** assert in
-code. Its own test file says so: *"Cinematic correctness witnesses, not substitutes
-for human art direction."* Those are **taste**.
+Two more are mechanizable but the atlas selftest does **not** cover them, so do
+not claim it does:
+
+- **anchor-mapping totality** — every anchor you promised has a manifestation in
+  every basis (check it against your [atlas plan](AI_VISUAL_ATLAS_PLAN.md));
+- **editorial locality** — a bounded overlay touches only its own region. This is
+  the `CINEMATIC OVERLAY` contract ([§5](#5-five-composition-laws-one-recipe-each)):
+  `recipe_cinematic_overlay.rs` *demonstrates* it (toggle the modal, the world
+  never reflows), and the intro's reaction compositor *enforces* it — but it is a
+  compositional contract you verify by capture + the overlay pattern, **not** a
+  line in the atlas selftest.
+
+**Perceptual (only a human rules on these).** Whether identity actually *survives*
+every basis change, whether a transition *reads as a transformation* rather than a
+scene cut, and recognizability, hierarchy, beauty, surprise, payoff — the "how the
+fuck did they do that." The flagship does **not** assert these in code; its own
+test file says so: *"Cinematic correctness witnesses, not substitutes for human
+art direction."* That is **taste**, and no green check earns it.
 
 > The atlas buys **coherence** — identity persists, time is deterministic, holds
 > are free, overlays are local. It does **not** buy **spectacle**. The flagship's
@@ -344,15 +377,26 @@ for human art direction."* Those are **taste**.
 > transforms. The last mile to "how did they *do* that" is authored by eye — so
 > render your acts and **look** ([§9](#9-visual-acceptance-is-load-bearing)).
 
-### Two recipes
+### The recipes — start compact, open the exemplars only for detail
 
-- **IDENTITY TRANSPORT** — the same three marks in three distinct bases (ledger →
-  graph → field), visibly travelling between them.
+**Start here:**
+
+- **ATLAS SKELETON** — the smallest honest atlas: two anchors, two bases, one
+  transport, an explicit cue sheet, pure `frame = f(t)`. Copy it and grow it.
+  → [`recipe_atlas_skeleton.rs`](../examples/recipe_atlas_skeleton.rs)
+  (`--at=T`, `--capture WxH[:mono]`)
+
+**Open these only when you need production detail** (they are full exemplars, not
+single-law recipes):
+
+- **IDENTITY TRANSPORT** (295 lines) — the same three marks in three distinct
+  bases (ledger → graph → field), visibly travelling between them.
   → [`recipe_identity_transport.rs`](../examples/recipe_identity_transport.rs)
   (`--at=PHASE`, `--capture WxH[:mono]`)
-- **DIRECTED ATLAS** — a tiny seekable film (establish → transform → reveal → hold
-  → payoff) with an explicit cue sheet and `frame = f(t)`. `--selftest` mechanically
-  asserts determinism, direct-seek, boundary continuity and frozen-hold zero-diff.
+- **DIRECTED ATLAS** (378 lines) — a seekable film (establish → transform → reveal
+  → hold → payoff) with an explicit cue sheet and `frame = f(t)`. `--selftest`
+  mechanically asserts determinism, direct-seek, boundary continuity and
+  frozen-hold zero-diff (it does **not** assert editorial locality — see above).
   → [`recipe_directed_atlas.rs`](../examples/recipe_directed_atlas.rs)
   (`--at=T`, `--selftest`, `--capture WxH[:mono]`)
 
@@ -460,8 +504,11 @@ unrecognizable there, color was carrying meaning it should not have been. Do thi
       subject.
 - [ ] The information is **in** the world (projected labels, geometry,
       color/position), not stranded in side panels.
-- [ ] One coordinate space; state changes **deform** the object, they don't swap
-      views or refill panels.
+- [ ] Continuity is **semantic, not coordinate**. Within one world: state changes
+      **deform** the object (one coordinate space + a camera), they don't swap
+      views or refill panels. Across a basis change: the *model and identity set*
+      stay continuous and identity is **transported** (next item), not page-swapped.
+      [§5, §6]
 - [ ] If the piece changes visual basis, the same 2–5 identity anchors are
       **transported** across every change (not a page-swap), carried by shape and
       position — not colour alone. [§6]
