@@ -22,9 +22,18 @@
 //!   --mode=reach       H3 reachable-space / rank demonstration
 //!   --mode=decompose   H1/H2 energy decomposition with a rigorous floor bracket
 //!   --mode=color       temporal-aware colour-choice headroom
-//!   --mode=live        gated A/B live demo (requires a TTY)
+//!   --mode=live        interactive A/B/grain live demo (requires a TTY)
 //!
 //! Flags: `--cols=`, `--rows=`, `--k=`, `--n=`, `--seed=`, `--quick`.
+//!
+//! Live flags (`--mode=live`):
+//!   --measured-hz=<hz>  real presentation cadence (honest profile)
+//!   --assume-hz=<hz>    assumed cadence if unmeasured (default 120; labelled ASSUMED!)
+//!   --no-temporal       static fallback only
+//!   --force             visualize modulation even if the gate is not Enabled (demo only)
+//!   --slowmo=<hz>       advance the PDM phase at `hz` so the eye can resolve it
+//!   --dwell=<s>         seconds per A/B/grain arm (default 3)
+//!   --seconds=<s>       total run length (default 24)
 
 // Research lab: several helpers exercise the full measurement surface and are
 // only used from opt-in modes or the unit tests, so dead-code analysis is off.
@@ -1510,6 +1519,75 @@ fn resolved_swing(style: Style, depth: ColorDepth) -> Option<f32> {
     Some((lum(color_linear_opt(fg)?) - lum(color_linear_opt(bg)?)).abs())
 }
 
+/// Short, stable label for a gate state, for the live header.
+fn gate_tag(g: gibson::TemporalGate) -> &'static str {
+    match g {
+        gibson::TemporalGate::Enabled => "gate:on",
+        gibson::TemporalGate::ReducedMotion => "gate:reduced",
+        gibson::TemporalGate::Unmeasured => "gate:unmeasured",
+        gibson::TemporalGate::CadenceTooLow => "gate:slow",
+        gibson::TemporalGate::SurvivalTooLow => "gate:lossy",
+        gibson::TemporalGate::JitterTooHigh => "gate:jitter",
+        gibson::TemporalGate::DepthTooHigh => "gate:deep",
+        _ => "gate:?",
+    }
+}
+
+/// The Braille dot mask a cell encodes, or 0 for a space/non-Braille glyph.
+fn glyph_mask(c: &gibson::Cell) -> u8 {
+    c.glyph
+        .grapheme
+        .chars()
+        .next()
+        .and_then(|ch| {
+            let u = ch as u32;
+            if (0x2800..=0x28FF).contains(&u) {
+                Some((u - 0x2800) as u8)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0)
+}
+
+fn cells_differ(a: &gibson::Cell, b: &gibson::Cell) -> bool {
+    a.glyph.grapheme != b.glyph.grapheme || a.style != b.style
+}
+
+/// Number of cells whose glyph or style differs — the live "is it moving?" probe.
+fn changed_cells(a: &gibson::Surface, b: &gibson::Surface) -> usize {
+    a.cells
+        .iter()
+        .zip(&b.cells)
+        .filter(|(x, y)| cells_differ(x, y))
+        .count()
+}
+
+/// Renders the XOR of two Braille frames, hot-on-dark. The actual modulation is
+/// designed to vanish after eye integration; this makes the pulse structure
+/// visible on an ordinary display so a human can confirm it is really changing.
+fn amplified_diff(a: &gibson::Surface, b: &gibson::Surface, hot: Style) -> gibson::Surface {
+    let mut out = gibson::Surface::new(a.width, a.height);
+    for y in 0..a.height {
+        for x in 0..a.width {
+            let (Some(ca), Some(cb)) = (a.get(x, y), b.get(x, y)) else {
+                continue;
+            };
+            let d = glyph_mask(ca) ^ glyph_mask(cb);
+            let (glyph, style) = if d == 0 {
+                (gibson::Glyph::space(), Style::default())
+            } else {
+                (
+                    gibson::Glyph::from_char(char::from_u32(0x2800 + d as u32).unwrap_or(' ')),
+                    hot,
+                )
+            };
+            out.set_cell(x, y, gibson::Cell::new(glyph, style));
+        }
+    }
+    out
+}
+
 fn run_live(cfg: &Config) -> io::Result<()> {
     use gibson::{
         BorderType, Context, FramePacing, Node, PresentationProfile, TemporalDisplayProcessor,
@@ -1517,8 +1595,14 @@ fn run_live(cfg: &Config) -> io::Result<()> {
     use std::sync::Arc;
     use std::time::Duration;
 
-    let temporal = has("--temporal");
+    // Temporal is ON by default: without it the "live" demo is static by
+    // construction and looks broken. An honest caller passes `--measured-hz`;
+    // otherwise we ASSUME a profile and say so, loudly, everywhere.
+    let temporal = !has("--no-temporal");
     let measured_hz = arg_str("measured-hz").and_then(|v| v.parse::<f32>().ok());
+    let assume_hz = arg_str("assume-hz")
+        .and_then(|v| v.parse::<f32>().ok())
+        .unwrap_or(120.0);
     let survival = arg_str("survival")
         .and_then(|v| v.parse::<f32>().ok())
         .unwrap_or(0.95);
@@ -1527,6 +1611,8 @@ fn run_live(cfg: &Config) -> io::Result<()> {
         .unwrap_or(0.5);
     let depth_cap = arg_str("depth-cap").and_then(|v| v.parse::<f32>().ok());
     let reduced = has("--reduced-motion");
+    let force = has("--force");
+    let slowmo = arg_str("slowmo").and_then(|v| v.parse::<f32>().ok());
     let sync = !has("--no-sync");
 
     let (cols, rows) = (cfg.cols, cfg.rows);
@@ -1538,12 +1624,25 @@ fn run_live(cfg: &Config) -> io::Result<()> {
         processor.set_policy(policy);
     }
     processor.set_reduced_motion(reduced);
+
+    let mut profile_label = "UNMEASURED";
     if temporal {
         if let Some(hz) = measured_hz {
             processor.set_profile(PresentationProfile::measured(hz, survival, jitter));
+            profile_label = "MEASURED";
         } else {
-            eprintln!("note: --temporal ignored without --measured-hz; rendering static.");
+            processor.set_profile(PresentationProfile::measured(assume_hz, survival, jitter));
+            profile_label = "ASSUMED!";
+            eprintln!(
+                "WARNING: assuming a {assume_hz:.0} Hz / {survival:.2} survival / {jitter:.2} ms-jitter"
+            );
+            eprintln!(
+                "         presentation profile. This is NOT a measurement. Pass --measured-hz=<hz>"
+            );
+            eprintln!("         for an honest profile, or --no-temporal to render static only.");
         }
+    } else {
+        eprintln!("--no-temporal: rendering the static fallback only.");
     }
 
     // A designed "world": a vaporwave-ish gradient with a radial sun, a horizon
@@ -1603,7 +1702,7 @@ fn run_live(cfg: &Config) -> io::Result<()> {
     processor.set_color_depth(ctx.capabilities().color_depth);
 
     let enabled = matches!(processor.gate(), gibson::TemporalGate::Enabled);
-    let k = ((measured_hz.unwrap_or(120.0) / 30.0).round() as usize).clamp(2, 8);
+    let k = ((measured_hz.unwrap_or(assume_hz) / 30.0).round() as usize).clamp(2, 8);
     let sched = FrameLocalScheduler::new(k, ScheduleKind::WindowedErrorFeedback, cfg.seed);
     let proj = project(&LogicalImage::new(
         cols,
@@ -1613,49 +1712,95 @@ fn run_live(cfg: &Config) -> io::Result<()> {
     ));
     let depth = ctx.capabilities().color_depth;
     let cap = depth_cap.unwrap_or(0.10);
+    let stat = processor.static_fallback();
+    let hot = Style::default()
+        .fg(Color::BrightWhite)
+        .bg(Color::Black)
+        .bold();
 
     eprintln!(
-        "temporal braille persistence lab (live): {cols}x{rows}; gate={:?}; temporal={}; K={k}.",
+        "temporal braille persistence lab (live): {cols}x{rows}; profile={profile_label}; gate={:?} ({}); temporal={enabled}; K={k}.",
         processor.gate(),
-        enabled
+        gate_tag(processor.gate())
     );
+    if !enabled {
+        eprintln!("gate is NOT Enabled -> the library arm falls back to static.");
+        if force {
+            eprintln!(
+                "--force: the visualization arms (GRAIN/DIFF) modulate anyway. UNSAFE, demo only."
+            );
+        } else {
+            eprintln!("pass --force to visualize the modulation anyway, or fix the profile gate.");
+        }
+    }
+    if let Some(hz) = slowmo {
+        eprintln!(
+            "--slowmo={hz}: PDM phase advanced at {hz} Hz so the eye can resolve it (visualization only)."
+        );
+    }
     eprintln!(
-        "A/B auto-cycles STATIC / TEMPORAL-FIDELITY / TEMPORAL-GRAIN every ~4s. Ctrl-C to quit."
+        "A/B/grain: STATIC / TEMPORAL-LIB / TEMPORAL-GRAIN / DIFF(x8). The header ticks every frame."
     );
 
-    let modes = ["STATIC", "TEMPORAL/FIDELITY", "TEMPORAL/GRAIN"];
-    let mut frame: u64 = 0;
+    let modes = ["STATIC", "TEMPORAL-LIB", "TEMPORAL-GRAIN", "DIFF(x8)"];
+    let per_mode = arg_u32("dwell", 3).max(1) as u64 * 120;
     let total = arg_u32("seconds", 24) as u64 * 120;
+    let mut frame: u64 = 0;
+    let mut prev: Option<Arc<gibson::Surface>> = None;
     while frame < total {
-        let mode = ((frame / 480) % modes.len() as u64) as usize;
+        let mode = ((frame / per_mode) % modes.len() as u64) as usize;
         let missed = ctx.missed_periods_last_frame();
+        // Phase clock for the explicit schedule. At the shipping cadence this is
+        // `frame` exactly; `--slowmo=<hz>` stretches each of the K phases so a
+        // human can resolve the pulse pattern instead of integrating it away.
+        let phase = match slowmo {
+            Some(hz) if hz > 0.0 => (frame as f64 * hz as f64 / 120.0).round() as u64,
+            _ => frame,
+        };
+        let temporal_surface =
+            |phase: u64| grain_surface(&proj, &sched, &stat, depth, cap, force, enabled, phase);
         let surface = match mode {
-            0 => processor.static_fallback(),
-            1 => processor.advance(missed),
-            _ => {
-                if !enabled {
-                    processor.static_fallback()
+            0 => stat.clone(),
+            1 => {
+                if enabled {
+                    processor.advance(missed)
                 } else {
-                    grain_surface(&proj, &sched, depth, cap, &mut processor, frame, cols, rows)
+                    stat.clone()
                 }
             }
-        };
-        let header = format!(
-            "TERMINAL -> PULSE-DENSITY   [{:<17}]   K={}  gate={:?}  {}",
-            modes[mode],
-            k,
-            processor.gate(),
-            if mode == 2 {
-                "grain(safety-mirrored)"
-            } else {
-                ""
+            2 => temporal_surface(phase),
+            _ => {
+                let t = if enabled || force {
+                    temporal_surface(phase)
+                } else {
+                    stat.clone()
+                };
+                amplified_diff(&t, &stat, hot)
             }
+        };
+        let vs_prev = prev
+            .as_ref()
+            .map_or(0, |p| changed_cells(p.as_ref(), &surface));
+        let vs_static = changed_cells(&stat, &surface);
+        let gate = processor.gate();
+
+        let header = format!(
+            "[{:<14}] {:>5.1}s f={:<6} {} {} K={} d={:<4} vs={:<4}",
+            modes[mode],
+            frame as f64 / 120.0,
+            frame,
+            gate_tag(gate),
+            profile_label,
+            k,
+            vs_prev,
+            vs_static,
         );
+        let arc = Arc::new(surface);
+        prev = Some(arc.clone());
         let root = Node::col()
             .child(Node::text(header, Style::default()))
             .child(
-                Node::panel("", BorderType::Rounded, Style::default())
-                    .child(Node::surface(Arc::new(surface))),
+                Node::panel("", BorderType::Rounded, Style::default()).child(Node::surface(arc)),
             );
         ctx.set_root(root);
         while !ctx.render_if_due()? {
@@ -1674,25 +1819,28 @@ fn run_live(cfg: &Config) -> io::Result<()> {
 
 /// Builds the experimental grain frame: the frame-local schedule, but each cell
 /// whose emitted swing exceeds the cap (or is unknown) is held to its exact
-/// static mask — the same freeze the safety controller would apply. The caller
-/// has already checked the profile gate.
+/// static mask — the same freeze the safety controller would apply.
+///
+/// `force` bypasses the *profile* gate for the visualization arms only (the
+/// per-cell safety mirror still applies); `enabled` is the real library gate.
+/// `phase` is the scheduler clock, which `--slowmo` stretches.
 #[allow(clippy::too_many_arguments)]
 fn grain_surface(
     proj: &BrailleImageProjection,
     sched: &FrameLocalScheduler,
+    stat: &gibson::Surface,
     depth: ColorDepth,
     cap: f32,
-    processor: &mut gibson::TemporalDisplayProcessor,
-    frame: u64,
-    _cols: u16,
-    _rows: u16,
+    force: bool,
+    enabled: bool,
+    phase: u64,
 ) -> gibson::Surface {
-    if !matches!(processor.gate(), gibson::TemporalGate::Enabled) {
-        return processor.static_fallback();
+    if !enabled && !force {
+        return stat.clone();
     }
     let k = sched.k.max(1);
-    let window = frame / k as u64;
-    let sub = (frame % k as u64) as usize;
+    let window = phase / k as u64;
+    let sub = (phase % k as u64) as usize;
     let plan = sched.plan(proj, window);
     let w = proj.width() as usize;
     let mut masks = plan.masks[sub.min(plan.masks.len() - 1)].clone();
@@ -1718,6 +1866,9 @@ fn main() -> io::Result<()> {
     if has("--help") || cfg.mode == "help" {
         println!(
             "modes: matrix montecarlo spectrum pareto loss framelocal reach decompose color live"
+        );
+        println!(
+            "live flags: --measured-hz= --assume-hz= --no-temporal --force --slowmo=<hz> --dwell=<s> --seconds=<s>"
         );
         return Ok(());
     }
@@ -1880,5 +2031,75 @@ mod tests {
             "k8={} line={line}",
             k8.rmse_source
         );
+    }
+
+    #[test]
+    fn live_arms_actually_animate_and_diff_is_nonempty() {
+        // Headless proxy for the live demo: the demo "looked static" because it
+        // was run without a profile, so every arm fell back to static. Prove the
+        // pieces the demo relies on do move once the gate is satisfied, and that
+        // the XOR view exposes structure the integrated image hides.
+        use gibson::{SubcellGlyphMode, TemporalDisplayProcessor};
+        let (cols, rows) = (16u16, 8u16);
+        let world = |lx: u16, ly: u16| -> [u8; 3] {
+            let v = ((lx as f32 / (2.0 * cols as f32)) * 255.0) as u8;
+            let w = ((ly as f32 / (4.0 * rows as f32)) * 255.0) as u8;
+            [v, w, 128]
+        };
+        let mut processor =
+            TemporalDisplayProcessor::new(cols, rows, SubcellGlyphMode::Braille2x4, 3);
+        processor.set_target_image(world, ResetPolicy::Reset);
+        let stat = processor.static_fallback();
+        let proj = project(&LogicalImage::new(
+            cols,
+            rows,
+            targets::TargetKind::Portrait,
+            world,
+        ));
+        let k = 4usize;
+        let sched = FrameLocalScheduler::new(k, ScheduleKind::WindowedErrorFeedback, 3);
+
+        // Gate off, no force: the arm is exactly static — the failure mode the
+        // live demo hit when no measured profile was supplied.
+        let off = grain_surface(
+            &proj,
+            &sched,
+            &stat,
+            ColorDepth::Ansi256,
+            0.10,
+            false,
+            false,
+            0,
+        );
+        assert_eq!(changed_cells(&off, &stat), 0, "gated arm must be static");
+
+        // Forced, it must change between consecutive phases.
+        let frames: Vec<_> = (0..(k as u64 * 4))
+            .map(|p| {
+                grain_surface(
+                    &proj,
+                    &sched,
+                    &stat,
+                    ColorDepth::Ansi256,
+                    1.0,
+                    true,
+                    false,
+                    p,
+                )
+            })
+            .collect();
+        let moving = frames
+            .windows(2)
+            .filter(|w| changed_cells(&w[0], &w[1]) > 0)
+            .count();
+        assert!(moving > 0, "forced temporal arm never changes");
+
+        let hot = Style::default()
+            .fg(Color::BrightWhite)
+            .bg(Color::Black)
+            .bold();
+        let diff = amplified_diff(&frames[0], &stat, hot);
+        let lit = diff.cells.iter().filter(|c| glyph_mask(c) != 0).count();
+        assert!(lit > 0, "amplified diff is empty");
     }
 }

@@ -269,12 +269,36 @@ not the single best RMSE: `naive-aligned` buys its extra 1.4 points with a
 
 ## Live harness (HUMAN UNVERIFIED)
 
-`--mode=live` runs an A/B/grain demo on a real terminal: AUTO-cycling
-STATIC / TEMPORAL-FIDELITY / TEMPORAL-GRAIN. The grain arm mirrors the shipping
-safety gate (`quantize_color` + bounded per-cell luminance swing) and falls back
-to static when the measured `PresentationProfile` is not `Enabled`. It was **not
-run** here (no interactive TTY in this environment), so every perceptual
-statement remains **HUMAN UNVERIFIED**.
+`--mode=live` runs an interactive A/B/grain demo on a real terminal, cycling
+STATIC / TEMPORAL-LIB / TEMPORAL-GRAIN / DIFF(x8). The grain arm mirrors the
+shipping safety gate (`quantize_color` + bounded per-cell luminance swing). It
+was **not run** here (no interactive TTY in this environment), so every
+perceptual statement remains **HUMAN UNVERIFIED**.
+
+**Why the first report was "it never changed":** the old harness defaulted to
+static and only enabled temporal when both `--temporal` *and* `--measured-hz`
+were passed. Without them the `PresentationProfile` was `Unmeasured`, the gate
+returned `Unmeasured`, and *every* arm rendered the static fallback — a static
+screen by construction. That is now fixed: temporal is on by default; if no
+`--measured-hz` is supplied the harness assumes a 120 Hz profile and labels it
+`ASSUMED!` on screen and on stderr. Even so, a correct temporal render of a
+*static* target is *supposed* to look unchanging — the flicker is integrated by
+the eye — and on a truecolor terminal the static frame already has no visible
+banding to remove, so there is little to see either way.
+
+Two new arms make the otherwise-invisible modulation observable:
+
+- `DIFF(x8)` renders the XOR of the temporal and static Braille masks,
+  hot-on-dark, so the pulse pattern is visible on an ordinary display.
+- `--slowmo=<hz>` advances the PDM phase at a human-resolvable rate (e.g. 6–12
+  Hz) instead of the shipping cadence, so the K phases are seen one at a time.
+- The header ticks every frame (`f=`, elapsed time, gate, per-frame changed-cell
+  counts) so liveness is unambiguous even on the STATIC arm.
+
+`grain_surface(...)` is covered by a headless regression test
+(`live_arms_actually_animate_and_diff_is_nonempty`) which asserts that the gated
+arm is exactly static, that the forced arm changes between consecutive phases,
+and that the XOR view is non-empty.
 
 The cheapest falsifying probe that would upgrade these labels: run
 `--mode=live` behind `temporal_cadence_beacon` and capture with a camera or
@@ -298,7 +322,8 @@ cargo build --release --example temporal_braille_persistence_lab
 ./target/release/examples/temporal_braille_persistence_lab --mode=reach
 ./target/release/examples/temporal_braille_persistence_lab --mode=decompose
 ./target/release/examples/temporal_braille_persistence_lab --mode=color
-cargo test --example temporal_braille_persistence_lab   # 32 tests
+./target/release/examples/temporal_braille_persistence_lab --mode=live --slowmo=8 --seconds=60  # interactive
+cargo test --example temporal_braille_persistence_lab   # 33 tests
 ```
 
 ## Bottom line
