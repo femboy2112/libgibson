@@ -184,3 +184,36 @@ start from the [README](../README.md).
 - **Real replication primitive** (TESTED): `Replication` is a bounded, deterministic
   branching graph with freeze and neutralize; the Hackers rabbit/cookie interaction is
   a real entity, not a generic particle burst.
+
+## Planned / in development
+
+> These are development targets, **not shipped capability**. The package version
+> is not bumped and no release is implied until a target lands and is validated.
+
+- **v0.5.0 — Scientific plotting / Observable Geometry** (IN DEVELOPMENT,
+  EXPERIMENTAL, Rust-only; branch `feat/v0.5-scientific-plotting`). A *semantic
+  plotting layer*, not a chart-widget toolkit: `gibson::plot` turns an indexed set
+  of observables into terminal geometry through validated axis transforms and
+  reports, via a `PlotReport` receipt, exactly what happened to every sample. It
+  owns **realization**, never **analysis** — FFT, regression, statistics and
+  simulation stay in the application (permanently out of scope). The pipeline is
+  `PlotSpec + PlotView + Rect → compile → PlotLayout → render → Surface`, so
+  semantic compilation is separated from glyph realization (a testable seam), and
+  it reuses the existing substrate (`BrailleCanvas` for subpixel line/scatter,
+  `Surface`/`SurfaceClip` for axes/ticks/labels, the existing clipping and glyph
+  fallback) — **no second renderer, no raw ANSI, no external dependency**. Initial
+  surface: validated 2-D axes, `Linear` + `Log10` scales as partial morphisms,
+  explicit `PlotView` ranges (pan/zoom changes the view, never the data), line and
+  scatter series, a monotone-X extrema-preserving reducer (opt-in), data-coordinate
+  annotations (vertical/horizontal reference lines, point labels), deterministic
+  nice-number / power-of-ten ticks, axis title/unit text, capability-safe rendering,
+  and the `PlotReport`. It composes as any `Surface` does — a hero in
+  `Node::canvas`, chrome in `gibson::ui`, or **one representation inside a
+  Representation Atlas** (see [AI_VISUAL_AUTHORING.md §6](AI_VISUAL_AUTHORING.md#6-directed-representation-the-atlas)):
+  observables are the semantic model, the axes a basis, a view change a seekable
+  transport. **No C ABI change this round.** Deferred (addable later, not present):
+  bar/pie charts, histograms, heatmaps/scalar fields, vector fields, 3-D plots,
+  error-bar/band fibers, dual-Y and polar axes, `SymLog`, adaptive reducers beyond
+  the extrema envelope, and interactive tooltips. Architecture and algebraic-law
+  contract: [PLOT_OBSERVABLE_GEOMETRY.md](PLOT_OBSERVABLE_GEOMETRY.md); exerciser:
+  `examples/scientific_plot_lab.rs`.
