@@ -17,10 +17,14 @@ pub struct FiniteRange {
 }
 
 impl FiniteRange {
-    /// `Some` iff both ends are finite and `min < max`; `None` otherwise
-    /// (NaN, ±∞, `min == max`, or `min > max`).
+    /// `Some` iff both ends are finite, `min < max`, **and the span
+    /// `max - min` is itself finite**; `None` otherwise (NaN, ±∞, `min == max`,
+    /// `min > max`, or a span that overflows `f64` — e.g. `-1e308..1e308`, whose
+    /// width exceeds `f64::MAX`). The span gate is load-bearing: without it
+    /// `span()` can be `+∞`, and a Linear projection then produces `NaN`/`∞` that
+    /// reaches raster math (§4).
     pub fn new(min: f64, max: f64) -> Option<FiniteRange> {
-        if min.is_finite() && max.is_finite() && min < max {
+        if min.is_finite() && max.is_finite() && min < max && (max - min).is_finite() {
             Some(FiniteRange { min, max })
         } else {
             None
@@ -81,22 +85,26 @@ impl AxisTransform {
     }
 
     /// Normalized coordinate in `[0,1]` (or outside it, for out-of-range data).
-    /// `None` for a non-finite value, or a non-positive value under `Log10`.
+    /// `None` for a non-finite value, a non-positive value under `Log10`, or any
+    /// value whose projection is not finite (e.g. a far out-of-range datum whose
+    /// numerator overflows). The output is **guaranteed finite** when `Some` — no
+    /// `NaN`/`∞` ever reaches quantization (§4).
     pub fn project(&self, v: f64) -> Option<f64> {
         if !v.is_finite() {
             return None;
         }
-        match self.scale {
-            AxisScale::Linear => Some((v - self.range.min()) / self.range.span()),
+        let u = match self.scale {
+            AxisScale::Linear => (v - self.range.min()) / self.range.span(),
             AxisScale::Log10 => {
                 if v <= 0.0 {
                     return None;
                 }
                 let lo = self.range.min().log10();
                 let hi = self.range.max().log10();
-                Some((v.log10() - lo) / (hi - lo))
+                (v.log10() - lo) / (hi - lo)
             }
-        }
+        };
+        u.is_finite().then_some(u)
     }
 
     /// Inverse of [`project`](Self::project) for a finite normalized coordinate.
@@ -214,6 +222,43 @@ mod tests {
         assert!(AxisTransform::new(AxisScale::Log10, r(1.0, 1000.0)).is_some());
         // Linear is fine across zero / negatives.
         assert!(AxisTransform::new(AxisScale::Linear, r(-5.0, 5.0)).is_some());
+    }
+
+    // ---- adversary regressions (dalembert audit 2026-10-03) --------------
+
+    #[test]
+    fn finite_range_rejects_overflowing_span_break1() {
+        // min very negative AND max very positive: max - min overflows f64 to
+        // +inf. Such a range must NOT construct — otherwise span() is inf, and a
+        // Linear project/unproject produces NaN that reaches raster math (break
+        // #1, silent corruption; violates §4 and the span() "always finite"
+        // contract).
+        assert!(
+            FiniteRange::new(-1e308, 1e308).is_none(),
+            "overflowing-span range must not construct"
+        );
+        // And the span of every range that DOES construct is finite & positive.
+        for (lo, hi) in [(-1e308, 0.0), (0.0, 1e308), (-1e300, 1e300), (-3.0, 7.0)] {
+            if let Some(fr) = FiniteRange::new(lo, hi) {
+                assert!(fr.span().is_finite() && fr.span() > 0.0, "span {lo}..{hi}");
+            }
+        }
+    }
+
+    #[test]
+    fn project_output_is_finite_or_none_break3() {
+        // Finite span (1e308, so the range constructs), but a finite OUT-OF-RANGE
+        // datum whose numerator (v - min) overflows. §4 postcondition: project
+        // yields Some(finite) or None — never Some(inf/NaN) into quantization
+        // (break #3).
+        let t =
+            AxisTransform::new(AxisScale::Linear, FiniteRange::new(-1e308, 0.0).unwrap()).unwrap();
+        match t.project(1e308) {
+            None => {}
+            Some(u) => assert!(u.is_finite(), "project returned Some({u}), not finite"),
+        }
+        // In-range values still project to a finite coordinate.
+        assert!(t.project(-5e307).map(|u| u.is_finite()).unwrap_or(false));
     }
 
     // ---- law A: inverse (doc §8.A) ---------------------------------------

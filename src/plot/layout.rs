@@ -144,12 +144,21 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
     let px_w = plot_rect.width.saturating_mul(2);
     let px_h = plot_rect.height.saturating_mul(4);
 
-    // Build the transform (None if the view is not a valid domain for a scale).
-    let transform = match (
+    // The axis transforms are a property of (scale, view) ALONE — independent of
+    // terminal size. `None` only when a view is outside a scale's domain (e.g.
+    // Log10 over a non-positive range). Domain rejection is counted from these.
+    let axes = match (
         AxisTransform::new(spec.x.scale, view.x),
         AxisTransform::new(spec.y.scale, view.y),
     ) {
-        (Some(xt), Some(yt)) if px_w > 0 && px_h > 0 => Some(PlotTransform2D::new(
+        (Some(xt), Some(yt)) => Some((xt, yt)),
+        _ => None,
+    };
+    // The full device transform additionally requires a non-degenerate plot
+    // rectangle. A zero-area rect leaves `transform == None` with `axes` still
+    // valid: nothing is *realized*, but nothing is *rejected* either (law E).
+    let transform = match axes {
+        Some((xt, yt)) if px_w > 0 && px_h > 0 => Some(PlotTransform2D::new(
             xt,
             yt,
             Viewport {
@@ -168,21 +177,33 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
 
     for s in &spec.series {
         report.samples_seen += s.points.len();
+        // Acceptance counts (size- AND reduction-independent, law E): a finite
+        // sample is domain-rejected iff an axis transform has no image for it.
         for &(x, y) in &s.points {
             if x.is_finite() && y.is_finite() {
                 report.finite_samples += 1;
+                let in_domain = matches!(
+                    axes,
+                    Some((xt, yt)) if xt.project(x).is_some() && yt.project(y).is_some()
+                );
+                if !in_domain {
+                    report.scale_domain_rejected += 1;
+                }
             } else {
                 report.nonfinite_rejected += 1;
             }
         }
 
+        // Realization requires a viewport. Without one the acceptance counts
+        // above stand and no geometry is emitted (an empty layer, not a reject).
         let Some(t) = transform else {
-            // No valid transform: every finite sample is domain-rejected.
-            report.scale_domain_rejected += s.points.len()
-                - s.points
-                    .iter()
-                    .filter(|(x, y)| !x.is_finite() || !y.is_finite())
-                    .count();
+            proj_series.push(ProjectedSeries {
+                color: s.color,
+                prims: match s.kind {
+                    SeriesKind::Scatter => Prims::Scatter(Vec::new()),
+                    SeriesKind::Line => Prims::Segments(Vec::new()),
+                },
+            });
             continue;
         };
 
@@ -207,7 +228,7 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
                         continue; // already counted; scatter drops gaps
                     }
                     match t.project(x, y) {
-                        None => report.scale_domain_rejected += 1,
+                        None => {} // domain-rejected: already counted (first pass)
                         Some((px, py)) => {
                             let (ix, iy) = (px.round() as i32, py.round() as i32);
                             if ix >= 0 && ix <= max_x && iy >= 0 && iy <= max_y {
@@ -232,8 +253,8 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
                     }
                     match t.project(x, y) {
                         None => {
-                            report.scale_domain_rejected += 1;
-                            prev = None; // log-invalid also breaks the path
+                            // domain-rejected (already counted); breaks the path
+                            prev = None;
                         }
                         Some((px, py)) => {
                             let cur = (px.round() as i32, py.round() as i32);
@@ -501,6 +522,29 @@ mod tests {
         );
         assert!(la.transform.is_none());
         assert_eq!(rep.scale_domain_rejected, 2);
+    }
+
+    #[test]
+    fn reject_counts_size_independent_degenerate_break2() {
+        // Valid Linear scale, valid in-domain data. A ZERO-AREA plot rect must
+        // NOT reclassify finite, in-domain samples as scale_domain_rejected —
+        // that count is an axis property, independent of terminal size (law E;
+        // dalembert break #2, receipt misattribution).
+        let spec = lin_spec().series(Series::scatter(vec![(0.0, 0.0), (0.5, 0.5), (1.0, 1.0)]));
+        let v = view(0.0, 1.0, 0.0, 1.0);
+        let (_, big) = compile(&spec, &v, Rect::new(0, 0, 80, 24));
+        let (_, zero_w) = compile(&spec, &v, Rect::new(0, 0, 0, 24));
+        let (_, zero_h) = compile(&spec, &v, Rect::new(0, 0, 80, 0));
+        for (name, rep) in [("big", big), ("zero_w", zero_w), ("zero_h", zero_h)] {
+            assert_eq!(
+                rep.finite_samples, 3,
+                "{name}: finite count size-independent"
+            );
+            assert_eq!(
+                rep.scale_domain_rejected, 0,
+                "{name}: zero-area must not fabricate domain rejections"
+            );
+        }
     }
 
     #[test]

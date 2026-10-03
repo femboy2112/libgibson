@@ -67,7 +67,7 @@ same transform the renderer used.
 
 | Type | Role |
 |---|---|
-| `FiniteRange` | validated `[min, max]`, both finite, `min < max` |
+| `FiniteRange` | validated `[min, max]`, both finite, `min < max`, **and span `max - min` finite** (no overflow) |
 | `AxisScale` | `Linear` \| `Log10` |
 | `AxisTransform` | σ for one axis over a view range: `project`/`unproject`, validated |
 | `PlotTransform2D` | the product σx × σy ∘ viewport; `project(x,y)->Option<(f64,f64)>` cell coords |
@@ -93,12 +93,15 @@ u·(log10 b − log10 a))`.
 
 Validation rules (enforced at construction / rejected at project time):
 
-- range finite, `min < max`;
+- range ends finite, `min < max`, **and span `max - min` finite** (a range whose
+  width overflows `f64`, e.g. `-1e308..1e308`, fails construction — otherwise the
+  span is `+∞` and a Linear projection yields `NaN`);
 - `Log10` requires `min > 0` (range construction fails otherwise);
 - non-finite samples → `None` (rejected, counted);
 - invalid log-domain samples (`v ≤ 0`) → `None` (rejected, counted);
-- **no NaN ever reaches raster/integer math** — projection returns `Option`, and
-  only `Some(finite)` is quantized.
+- **no NaN or ∞ ever reaches raster/integer math** — `project` returns `Option`,
+  and the `Some` case is **guaranteed finite**: any value whose projection is not
+  finite (e.g. a far out-of-range datum whose `v - min` overflows) returns `None`.
 
 ## 5. The receipt — `PlotReport`
 
@@ -107,8 +110,10 @@ Plotting must never silently eat data. Every `compile` returns a bounded report:
 - `samples_seen` — inputs offered;
 - `finite_samples` — inputs with both coords finite;
 - `nonfinite_rejected` — dropped for NaN/±∞;
-- `scale_domain_rejected` — dropped for being outside the scale domain (e.g.
-  `x ≤ 0` under `Log10`);
+- `scale_domain_rejected` — finite samples with **no image under the axis
+  transform**: outside the scale domain (e.g. `x ≤ 0` under `Log10`), or a
+  projection that overflows to non-finite. Counted from the axis transforms
+  alone, so it is independent of terminal size and of any reduction (law E);
 - `segments_considered` / `segments_clipped` — line adjacency pairs examined vs.
   clipped away at the plot boundary;
 - `primitives_emitted` — points/segments actually drawn;

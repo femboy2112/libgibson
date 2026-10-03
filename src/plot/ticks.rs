@@ -49,7 +49,14 @@ fn decimals_for(step: f64) -> usize {
 }
 
 fn fmt_fixed(v: f64, decimals: usize) -> String {
+    // Fixed-point has an unbounded integer side: `{:.0}` of 1e308 is 309 chars.
+    // For extreme magnitudes fall back to scientific so a label stays short. 1e16
+    // is far above any sane scientific axis and any value a log label routes here
+    // (k ∈ -4..=5), so normal labels are unaffected.
     let v = if v == 0.0 { 0.0 } else { v }; // avoid "-0"
+    if v.abs() >= 1e16 {
+        return format!("{v:.1e}");
+    }
     format!("{v:.decimals$}")
 }
 
@@ -238,6 +245,25 @@ mod tests {
         assert!(t.iter().all(|x| x.label.is_empty()));
         assert!(t.iter().any(|x| (x.value - 20.0).abs() < 1e-9));
         assert!(t.iter().all(|x| x.value >= 1.0 && x.value <= 100.0));
+    }
+
+    #[test]
+    fn linear_labels_bounded_length_break4() {
+        // Astronomically large (but finite-span) ranges must not emit absurd
+        // fixed-point labels (~300 digits); the integer side is otherwise
+        // unbounded (dalembert break #4). Values stay finite & in range.
+        for (lo, hi) in [(0.0, 1e308), (-1e300, 1e300)] {
+            let t = linear_ticks(r(lo, hi), 6);
+            for tk in &t {
+                assert!(tk.value.is_finite(), "value finite for {lo}..{hi}");
+                assert!(
+                    tk.label.chars().count() <= 24,
+                    "label {:?} is {} chars for {lo}..{hi}",
+                    tk.label,
+                    tk.label.chars().count()
+                );
+            }
+        }
     }
 
     #[test]
