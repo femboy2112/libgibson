@@ -176,6 +176,11 @@ overfit. The selector picks different *names* per fold but the same *families*
 (halves, diagonals, fractional blocks), which is the sign of a stable direction
 set.
 
+Restricting the selector to **universally-portable** glyphs (`--mode=cv
+--portable`) costs almost nothing: **+4.7 % static, +12.0 % temporal**. A basis
+that can be built from glyphs every common mono font has is essentially as good
+as the unconstrained one, which matters for a real terminal.
+
 ## Dot-shape falsification: which "new directions" are real? (SIMULATED)
 
 This is the round's most important addendum result. The whole basis argument rests
@@ -255,6 +260,7 @@ cargo build --release --example terminal_to_1080p_lab
 ./target/release/examples/terminal_to_1080p_lab --mode=wall
 ./target/release/examples/terminal_to_1080p_lab --mode=search
 ./target/release/examples/terminal_to_1080p_lab --mode=cv
+./target/release/examples/terminal_to_1080p_lab --mode=cv --portable
 ./target/release/examples/terminal_to_1080p_lab --mode=ablations
 ./target/release/examples/terminal_to_1080p_lab --mode=lattice
 ./target/release/examples/terminal_to_1080p_lab --mode=shape
