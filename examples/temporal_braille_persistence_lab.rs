@@ -1717,7 +1717,7 @@ fn main() -> io::Result<()> {
     let cfg = Config::parse();
     if has("--help") || cfg.mode == "help" {
         println!(
-            "modes: matrix montecarlo spectrum pareto loss framelocal floors reach decompose color live"
+            "modes: matrix montecarlo spectrum pareto loss framelocal reach decompose color live"
         );
         return Ok(());
     }

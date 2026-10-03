@@ -152,6 +152,80 @@ Findings:
    (0.4824 → 0.3153): when no per-cell background colour exists, temporal is
    doing the fill's job. With colour available, the gain shrinks.
 
+## Cross-validation: does the selected basis generalize? (SIMULATED)
+
+`--mode=cv` — **leave-one-family-out**: for each of the six target families
+(checker, curve, edge, line, noise, zone) the selector is re-run on every *other*
+family and the held-out family is measured. This is the check the earlier
+train/holdout split could not make, because the selector had already seen the
+holdout family's structure through the shared candidate bank.
+
+| held-out family | n | base static | aug static | base temporal | aug temporal |
+| --- | --- | --- | --- | --- | --- |
+| checker | 4 | 0.48062 | 0.48062 | 0.48060 | 0.48018 |
+| curve | 5 | 0.27489 | 0.27182 | 0.27489 | 0.24935 |
+| edge | 8 | 0.35351 | 0.30077 | 0.35193 | 0.23732 |
+| line | 5 | 0.24629 | 0.24252 | 0.24610 | 0.22403 |
+| noise | 3 | 0.11736 | 0.11552 | 0.11457 | 0.11027 |
+| zone | 4 | 0.33543 | 0.31606 | 0.33501 | 0.26824 |
+| **mean** | | **0.30135** | **0.28788** | **0.30052** | **0.26157** |
+
+**SIMULATED:** the augmentation basis generalizes — held-out gain **+4.5 %
+static, +13.0 % temporal** — so the earlier holdout number was not pure selection
+overfit. The selector picks different *names* per fold but the same *families*
+(halves, diagonals, fractional blocks), which is the sign of a stable direction
+set.
+
+## Dot-shape falsification: which "new directions" are real? (SIMULATED)
+
+This is the round's most important addendum result. The whole basis argument rests
+on the round-gapped-disc dot shape. `--mode=shape` brackets it with round discs at
+r=1.0/1.5/1.9 and axis-aligned **squares** at r=1.5/2.0 (squares tile exactly at
+half-pitch), and measures each candidate's out-of-span fraction under every model:
+
+| glyph | disc 1.0 | disc 1.5 | disc 1.9 | square 1.5 | square 2.0 | worst |
+| --- | --- | --- | --- | --- | --- | --- |
+| upper/lower/left/right half | 37.5 | 37.5 | 12.5 | **0.0** | **0.0** | 0.0 |
+| quadrants | 56.2 | 56.2 | 18.8 | **0.0** | **0.0** | 0.0 |
+| lower-1/4 | 56.2 | 56.2 | 18.8 | **0.0** | **0.0** | 0.0 |
+| lower-3/4 | 18.8 | 18.8 | 6.2 | **0.0** | **0.0** | 0.0 |
+| left-1/2b | 37.5 | 37.5 | 12.5 | **0.0** | **0.0** | 0.0 |
+| left-1/8 | 83.3 | 83.3 | 79.2 | 75.0 | 75.0 | 75.0 |
+| left-3/8 | 44.4 | 44.4 | 26.4 | 25.0 | 25.0 | 25.0 |
+| hbar | 83.3 | 83.3 | 79.2 | 75.0 | 75.0 | 75.0 |
+| vbar | 66.7 | 66.7 | 66.7 | 75.0 | 75.0 | 66.7 |
+| corner-tl / tee-left | 45.1 | 45.1 | 45.5 | 48.9 | 48.9 | 45.1 |
+| diag-fwd / diag-back | 69.9 | 69.9 | 56.3 | 58.7 | 58.7 | 56.3 |
+
+- **Robust (>5 % under every model):** fine fractional blocks (`left-1/8` …
+  `left-7/8`), thin rules (`hbar`/`vbar`), corners, tees, diagonals. These are
+  genuine new spatial directions.
+- **Shape artifacts (<1 % once the dots tile):** all halves, all quadrants, and
+  the coarse vertical/horizontal fractions (`lower-1/4`, `lower-3/4`, `left-1/2b`).
+  They add a direction only because round discs leave gaps; once the dots tile,
+  they are a union of dot blobs.
+
+**REFUTED (in-model):** the coarse fill split is *not* a new spatial direction. It
+was the round-gap assumption talking. The earlier `--mode=lattice` table (discs
+only, radii 1.0–2.4) caught the halves and quadrants; the square bracket additionally
+demotes the coarse fractional blocks that disc-only sweeps had defended.
+
+Held-out error is nearly identical across dot models (0.268 → 0.252 static), but
+the *named* basis shifts (`lower-half`/`lower-1/4`/`right-half` →
+`sextant-2`/`sextant-4`/`disc-small`). Only the robust list is safe to promote.
+
+## Convergence guarantee (MEASURED-in-model)
+
+Two small rigor fixes so the numbers cannot hide a local optimum:
+
+- `temporal_error` now **dominates `static_error` by construction**: a single
+  glyph is a feasible point of the temporal problem, so the routine returns
+  `min(temporal, static)`. A randomized test checks `temporal ≤ static` on 40
+  inputs.
+- `hull_gap` computes the Frank-Wolfe **duality gap** `<q-t, q-s*>` at the returned
+  point, a nonnegative bound on `f(q) − f*`. On a reachable target it is `< 1e-9`;
+  the test also checks it is never negative on an unreachable one.
+
 ## Practical minimal basis (SIMULATED, boundary stated)
 
 If the goal is "more spatial directions per cell, cheaply", the model supports a
@@ -160,18 +234,18 @@ small portable basis:
 - **fine fractional blocks** (`U+258F` left-1/8, `U+2581` lower-1/8, and
   neighbours) — sub-cell edges at eighth positions;
 - **box-drawing rules** (`U+2500` horizontal, `U+2502` vertical) — centre rules;
-- **diagonals** (`U+2571`/`U+2572`) — slope edges;
-- optionally **quadrants** (`U+2596`–`U+259F`) — a 2x2 subdivision.
+- **diagonals** (`U+2571`/`U+2572`) — slope edges.
 
-Coarse blocks and shades are **not** part of the basis: they are fill variants.
-Sextants/octants give finer 2x3/2x4 edges but are lower portability; they are the
-next rung, not the first.
+Coarse blocks, shades **and quadrants** are **not** part of the basis: they are
+fill variants, and the square-dot bracket shows the coarse fractional blocks are
+too. Sextants/octants give finer 2x3/2x4 edges but are lower portability; they are
+the next rung, not the first.
 
 **Boundary:** these are coverage-model conclusions under a gapped-disc dot shape.
 The *relative ordering* (fine > coarse; rules/diagonals genuinely new) is
-calibration-robust across radii 1.0–2.4; the absolute percentages are not. A real
-font calibration is required before these numbers should be quoted as
-typography.
+calibration-robust across radii 1.0–2.4 **and across the disc/square shape choice**;
+the absolute percentages are not. A real font calibration is required before these
+numbers should be quoted as typography.
 
 ## Reproduction
 
@@ -180,11 +254,15 @@ cargo build --release --example terminal_to_1080p_lab
 ./target/release/examples/terminal_to_1080p_lab --mode=rank
 ./target/release/examples/terminal_to_1080p_lab --mode=wall
 ./target/release/examples/terminal_to_1080p_lab --mode=search
+./target/release/examples/terminal_to_1080p_lab --mode=cv
 ./target/release/examples/terminal_to_1080p_lab --mode=ablations
 ./target/release/examples/terminal_to_1080p_lab --mode=lattice
+./target/release/examples/terminal_to_1080p_lab --mode=shape
+# portability-constrained selection:
+./target/release/examples/terminal_to_1080p_lab --mode=search --portable
 # calibration sensitivity:
 ./target/release/examples/terminal_to_1080p_lab --mode=lattice --radius=2.4
-cargo test --example terminal_to_1080p_lab          # 17 tests
+cargo test --example terminal_to_1080p_lab          # 20 tests
 ```
 
 ## Bottom line
@@ -192,6 +270,9 @@ cargo test --example terminal_to_1080p_lab          # 17 tests
 "Terminal -> 1080p" is not reachable by Unicode brute force and not by time
 alone. The honest statement is: Braille already spans all eight per-dot
 directions; a small basis of **fine fractional blocks, thin rules and diagonals**
-adds the missing sub-cell edges and lines, and coarse blocks/quadrants/shades add
-nothing but fill. All numbers are SIMULATED in a coverage model; human
-perception is **HUMAN UNVERIFIED**.
+adds the missing sub-cell edges and lines. Coarse blocks, quadrants **and the
+coarse fractional blocks** add nothing but fill — and the square-dot bracket shows
+the last of those was an artifact of the round-gap assumption, not a real
+direction. Cross-validation confirms the surviving basis generalizes to held-out
+target families (+13 % temporal). All numbers are SIMULATED in a coverage model;
+human perception is **HUMAN UNVERIFIED**.

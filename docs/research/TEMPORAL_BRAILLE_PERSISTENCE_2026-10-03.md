@@ -3,7 +3,7 @@
 **Branch:** `research/temporal-braille-persistence-2026-10-03`
 **Base:** `origin/main` = `80706c91b88e59495b131bfd8ab23aa3ed013414`
 **Instrument:** `examples/temporal_braille_persistence_lab.rs` (+
-`examples/temporal_braille_persistence_lab/{targets,schedules,metrics,framelocal}.rs`)
+`examples/temporal_braille_persistence_lab/{targets,schedules,metrics,framelocal,floors}.rs`)
 
 > This note is engineering evidence, not a perceptual claim. The perceptual
 > question ("does it *look* like a 2W x 4H field?") cannot be settled from this
@@ -165,12 +165,107 @@ Findings:
 - Temporal masks live in `{0,1}^8`; the equal-weight K-phase average is in
   `[0,1]^8`, the convex hull of `{0,1}^8`. **No phase sequence leaves that hull.**
 - Static vs K=8 vs infinite-K (free per-dot duty), per target: the static/inf-K
-  ratio is **1.37–1.76** for shaped targets.
+  ratio is **1.37–1.76** for shaped targets. *(Superseded by §E2: that number
+  measured the static partition's own colour segment, not the free-duty floor,
+  which is zero for collinear grayscale targets.)*
 
 **Verdict:** **H1 confirmed**, **H2 REFUTED**. Time changes each dot's intensity,
-not its position. Spatial rank stays 8 for any pulse sequence. The tonal gain on
-the fixed lattice is bounded by ~1.8x on this corpus; a 2W x 4H *spatial* field is
-not reachable by time alone. This is the honest ceiling on the "2W x 4H" framing.
+not its position. Spatial rank stays 8 for any pulse sequence. A 2W x 4H
+*spatial* field is not reachable by time alone. This is the honest ceiling on
+the "2W x 4H" framing.
+
+## E2. The infinite-K floor, rigorously bracketed and decomposed (MEASURED)
+
+`--mode=reach`, `--mode=decompose`. The single most important correction of the
+second round: the earlier "static/inf-K ratio 1.37–1.76" was **not** the free-duty
+floor. It was the continuous error along the *static-optimal partition's own*
+background-to-foreground colour segment. The new `floors.rs` brackets the true
+floor from below (PCA affine-line residual) and above (best clamped segment),
+and `--mode=decompose` splits the static error into three energy fractions:
+
+| corpus | tonal% (H1, time removes) | colr% (colour quantization + two-colour model) | floor% (unreachable) |
+| --- | --- | --- | --- |
+| grayscale (11 targets) | 56.1 | 43.9 | **0.0** |
+| chromatic (3 targets) | 40.7 | 47.0 | **12.3** |
+| all | 49.8 | 45.2 | 5.0 |
+
+Per-target chromatic floors: `color-ramp` 1.6 %, `chroma-zone` 9.4 %,
+`chroma-edge` **35.1 %**. Grayscale targets (including every shaped target in the
+corpus) have `segFree = pcaLo = 0.00000`: their eight per-cell samples are
+collinear on the grey axis, so *free per-dot duty with optimal colours reaches
+them exactly*. The entire remaining static error is finite-K plus 8-bit colour
+quantization.
+
+**Correction to §E:** for collinear (grayscale) targets the infinite-K floor is
+**zero**, not ~1.8× below static. The practical bound on this corpus is set by
+finite `K` (the matrix mode's K=8) and by 8-bit colour, not by the fixed lattice.
+The fixed lattice bounds only *spatial* directions (H2), which stays refuted.
+
+## F. Static/temporal colour tradeoff frontier (MEASURED)
+
+`--mode=color`. A cell's background/foreground pair fixes the *line* along which
+per-dot duty moves, and the shipping projector picks that pair to minimise the
+**static** error — which is not the pair that minimises the temporal floor. For a
+range of allowed static-inflation factors `mu`, the mode picks, per cell, the
+lowest-floor pair whose static error stays within `mu` times the projector's.
+
+Mean over all targets (RMS, and fraction of static error energy recovered):
+
+| mu | floor RMS | committed static RMS | floor/emit | recov% |
+| --- | --- | --- | --- | --- |
+| 1.00 | 0.01321 | 0.01865 | 100.0 % | 0.0 |
+| 1.25 | 0.01268 | 0.01896 | 92.2 % | 3.9 |
+| 1.50 | 0.01226 | 0.01954 | 86.1 % | 6.9 |
+| 2.00 | 0.01140 | 0.02116 | 74.5 % | 12.8 |
+| 5.00 | 0.00992 | 0.02692 | 56.4 % | 21.8 |
+| inf | 0.00899 | 0.09083 | 46.3 % | 26.9 |
+
+**MEASURED** — the static-optimal colour choice leaves ~44 % of the grayscale
+temporal error energy on the table; a temporal-first choice can recover it, and
+the frontier prices the static fallback. The knee is at `mu ≈ 1.5–3` (recover
+7–19 % of error energy for a 5–29 % static inflation). `mu = inf`
+(black/white, the extreme) destroys the static fallback and is not a
+recommendation. This is a concrete optimisation for a temporal-first renderer
+that keeps an exact static fallback.
+
+## A2/B2. Fidelity spread and the coherence Pareto frontier (MEASURED)
+
+`--mode=montecarlo --k=8 --seeds=48` and `--mode=pareto --k=8 --n=512`. Every
+schedule except `naive-aligned` is a deterministic function of its seed, so the
+headline improvement carries a seed-to-seed spread:
+
+| schedule | mean RMSE | std | impr% | win% |
+| --- | --- | --- | --- | --- |
+| naive-aligned | 0.00277 | 0.000000 | 30.87 | 100 |
+| lib-full-sigma-delta | 0.00283 | 0.000003 | 29.46 | 0 |
+| windowed-ef | 0.00283 | 0.000003 | 29.43 | 0 |
+| vdc-balanced | 0.00283 | 0.000003 | 29.43 | 0 |
+| residual-windowed-ef | 0.00295 | 0.000005 | 26.30 | 0 |
+| lib-residual-sigma-delta | 0.00295 | 0.000005 | 26.36 | 0 |
+| stochastic-round | 0.00324 | 0.000018 | 19.25 | 0 |
+| lib-dithered-residual | 0.00860 | 0.000085 | −114.56 | 0 |
+
+The fidelity spread is tiny for the balanced schedules (std ~3e-6), so their
+~29.4 % is a solid number. But fidelity alone misleads, because the winner is
+the coherent-flicker loser. The Pareto frontier (max improvement, min `dotCorr`,
+min `flashVar`):
+
+| schedule | impr% | dotCorr | flashVar | Pareto |
+| --- | --- | --- | --- | --- |
+| naive-aligned | 30.87 | 0.5051 | 8.9e-4 | **YES** |
+| windowed-ef | 29.44 | 0.0009 | 3e-6 | **YES** |
+| lib-full-sigma-delta | 29.44 | −0.0050 | 2e-6 | **YES** |
+| stochastic-round | 19.43 | 0.0028 | 2e-6 | **YES** |
+| residual-windowed-ef | 26.29 | 0.0117 | 2e-5 | no |
+| vdc-balanced | 29.41 | 0.0029 | 7e-6 | no |
+| lib-residual-sigma-delta | 26.38 | −0.0045 | 3e-6 | no |
+| lib-dithered-residual | −114.66 | 0.0816 | 5.2e-5 | no |
+
+**MEASURED** — the shipping `lib-full-sigma-delta` sits on the Pareto frontier:
+it matches the best fidelity (29.4 %, within the seed noise of `windowed-ef`)
+with near-zero coherence (`dotCorr` −0.005). The honest headline is the frontier,
+not the single best RMSE: `naive-aligned` buys its extra 1.4 points with a
+`dotCorr` of 0.51.
 
 ## Live harness (HUMAN UNVERIFIED)
 
@@ -192,19 +287,28 @@ is unproven.
 ```sh
 cargo build --release --example temporal_braille_persistence_lab
 ./target/release/examples/temporal_braille_persistence_lab --mode=matrix
+./target/release/examples/temporal_braille_persistence_lab --mode=montecarlo --k=8 --seeds=48
 ./target/release/examples/temporal_braille_persistence_lab --mode=spectrum
+./target/release/examples/temporal_braille_persistence_lab --mode=pareto --k=8 --n=512
 ./target/release/examples/temporal_braille_persistence_lab --mode=loss
 ./target/release/examples/temporal_braille_persistence_lab --mode=framelocal
 ./target/release/examples/temporal_braille_persistence_lab --mode=reach
-cargo test --example temporal_braille_persistence_lab   # 23 tests
+./target/release/examples/temporal_braille_persistence_lab --mode=decompose
+./target/release/examples/temporal_braille_persistence_lab --mode=color
+cargo test --example temporal_braille_persistence_lab   # 32 tests
 ```
 
 ## Bottom line
 
 - The **tonal** half of the hypothesis is real and MEASURED (~30 % RMSE over
-  static; bounded ~1.8x by the fixed lattice).
+  static). The infinite-K floor for grayscale is **zero** (collinear samples);
+  the practical limits are finite `K` and 8-bit colour, not the lattice.
 - The **spatial** half is REFUTED: rank stays 8; no new dot positions.
 - The **grain vs flicker** half is MEASURED as a spectral difference
-  (`dotCorr` 0.58 → ~0) but **HUMAN UNVERIFIED** as a perception.
+  (`dotCorr` 0.58 → ~0) and as a fidelity/coherence Pareto frontier on which the
+  shipping full sigma-delta is optimal; but the *perception* remains **HUMAN
+  UNVERIFIED**.
+- A temporal-first colour choice recovers ~44 % of the grayscale temporal error
+  energy the static-optimal colours leave behind; the frontier prices the cost.
 - The dominant real-world cost is ANSI bandwidth and the presentation-loss
   sensitivity of the duty estimate, not the reconstruction maths.
