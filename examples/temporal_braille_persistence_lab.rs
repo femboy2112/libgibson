@@ -14,7 +14,9 @@
 //!
 //! Modes:
 //!   --mode=matrix      static vs temporal reconstruction matrix (A)
+//!   --mode=montecarlo  seed-to-seed spread of the fidelity claim (A2)
 //!   --mode=spectrum    residual spectrum / coherent-flicker proxies (B)
+//!   --mode=pareto      fidelity vs coherence Pareto frontier (B2)
 //!   --mode=loss        dropped-phase presentation hostility (C)
 //!   --mode=framelocal  frame-local temporal video (D)
 //!   --mode=reach       H3 reachable-space / rank demonstration
@@ -78,6 +80,7 @@ struct Config {
     k: usize,
     n: usize,
     seed: u64,
+    seeds: usize,
     quick: bool,
 }
 
@@ -93,6 +96,7 @@ impl Config {
             k: arg_u32("k", 4) as usize,
             n: arg_u32("n", 256) as usize,
             seed: arg_u32("seed", 0x7E5) as u64,
+            seeds: arg_u32("seeds", 48).max(2) as usize,
             quick,
         }
     }
@@ -221,29 +225,48 @@ fn mean_metric(stats: &[ReconStats], f: impl Fn(&ReconStats) -> f32) -> f32 {
     stats.iter().map(f).sum::<f32>() / stats.len() as f32
 }
 
-fn run_matrix(cfg: &Config) {
-    let targets = named_targets(cfg.cols, cfg.rows, cfg.seed);
-    // Precompute projections + per-cell data once per target.
-    struct T {
-        name: String,
-        proj: BrailleImageProjection,
-        data: Vec<CellDatum>,
-        static_stats: ReconStats,
-    }
-    let prepared: Vec<T> = targets
+/// A projected target plus its per-cell data and emitted static baseline.
+struct Prepared {
+    name: String,
+    proj: BrailleImageProjection,
+    data: Vec<CellDatum>,
+    static_stats: ReconStats,
+}
+
+fn prepare_targets(cfg: &Config) -> Vec<Prepared> {
+    named_targets(cfg.cols, cfg.rows, cfg.seed)
         .into_iter()
         .map(|(name, img)| {
             let proj = project(&img);
             let data = per_cell_data(&img, &proj);
             let static_stats = recon_stats(&data, &[static_masks(&proj)]);
-            T {
+            Prepared {
                 name,
                 proj,
                 data,
                 static_stats,
             }
         })
-        .collect();
+        .collect()
+}
+
+fn mean_and_ci(xs: &[f32]) -> (f32, f32, f32, f32, f32) {
+    let n = xs.len().max(1) as f32;
+    let mean = xs.iter().sum::<f32>() / n;
+    let var = if xs.len() > 1 {
+        xs.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / (n - 1.0)
+    } else {
+        0.0
+    };
+    let std = var.sqrt();
+    let ci95 = 1.96 * std / n.sqrt();
+    let lo = xs.iter().cloned().fold(f32::INFINITY, f32::min);
+    let hi = xs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    (mean, std, ci95, lo, hi)
+}
+
+fn run_matrix(cfg: &Config) {
+    let prepared = prepare_targets(cfg);
     println!(
         "== A. static vs temporal reconstruction ({}x{} cells, {} targets) ==",
         cfg.cols,
@@ -313,12 +336,144 @@ fn run_matrix(cfg: &Config) {
 }
 
 // ---------------------------------------------------------------------------
+// A2. Monte Carlo robustness of the fidelity claim
+// ---------------------------------------------------------------------------
+
+fn run_montecarlo(cfg: &Config) {
+    let prepared = prepare_targets(cfg);
+    let base = mean_metric(
+        &prepared.iter().map(|t| t.static_stats).collect::<Vec<_>>(),
+        |s| s.rmse_source,
+    );
+    let seeds = cfg.seeds;
+    println!(
+        "== A2. Monte Carlo over {seeds} seeds (K={}, {} targets, static baseline {base:.5}) ==",
+        cfg.k,
+        prepared.len()
+    );
+    println!("Every schedule but naive-aligned is a deterministic function of its seed, so the");
+    println!("headline improvement must be reported with its seed-to-seed spread, not one draw.\n");
+    println!(
+        "{:<24} {:>9} {:>9} {:>9} {:>8} {:>9} {:>9} {:>7}",
+        "schedule", "meanRMSE", "std", "ci95", "impr%", "imprLo", "imprHi", "win%"
+    );
+    let mut all_rmse: Vec<Vec<f32>> = Vec::with_capacity(SCHEDS.len());
+    for sched in SCHEDS {
+        let mut vals = Vec::with_capacity(seeds);
+        for s in 0..seeds {
+            let seed = cfg.seed ^ (s as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            let stats: Vec<ReconStats> = prepared
+                .iter()
+                .map(|t| recon_stats(&t.data, &sched.masks(&t.proj, cfg.k, seed, 0)))
+                .collect();
+            vals.push(mean_metric(&stats, |s| s.rmse_source));
+        }
+        all_rmse.push(vals);
+    }
+    // Win rate: which schedule has the lowest mean RMSE on each seed.
+    let mut wins = vec![0usize; SCHEDS.len()];
+    for s in 0..seeds {
+        let mut best = 0usize;
+        for (i, v) in all_rmse.iter().enumerate() {
+            if v[s] < all_rmse[best][s] {
+                best = i;
+            }
+        }
+        wins[best] += 1;
+    }
+    for (i, sched) in SCHEDS.iter().enumerate() {
+        let (mean, std, ci, lo, hi) = mean_and_ci(&all_rmse[i]);
+        let impr = if base > 0.0 {
+            100.0 * (base - mean) / base
+        } else {
+            0.0
+        };
+        let lo_i = if base > 0.0 {
+            100.0 * (base - hi) / base
+        } else {
+            0.0
+        };
+        let hi_i = if base > 0.0 {
+            100.0 * (base - lo) / base
+        } else {
+            0.0
+        };
+        let _ = (ci, lo_i);
+        println!(
+            "{:<24} {:>9.5} {:>9.6} {:>9.6} {:>8.2} {:>9.2} {:>9.2} {:>7.1}",
+            sched.as_str(),
+            mean,
+            std,
+            ci,
+            impr,
+            lo_i,
+            hi_i,
+            100.0 * wins[i] as f32 / seeds as f32,
+        );
+    }
+    println!();
+    println!("imprLo/imprHi bracket the per-seed improvement range, not a confidence interval;");
+    println!("ci95 is the standard error of the mean times 1.96. win% counts seeds where the");
+    println!("schedule had the lowest mean RMSE. A schedule whose ci95 swamps its margin over");
+    println!("the next is not distinguishable on this corpus.");
+}
+
+// ---------------------------------------------------------------------------
 // B. Residual spectrum
 // ---------------------------------------------------------------------------
 
 struct SpectrumRow {
     name: &'static str,
     stats: metrics::SpectrumStats,
+}
+
+/// `n` frames of a library long-horizon field, from a fresh install.
+fn library_frames(
+    proj: &BrailleImageProjection,
+    n: usize,
+    dither: bool,
+    residual: bool,
+    seed: u64,
+) -> Vec<Vec<u8>> {
+    let mut field = TemporalBrailleField::new(proj.width(), proj.height(), seed);
+    assert!(proj.install_into(&mut field, ResetPolicy::Reset));
+    field.set_dither(dither);
+    let mut frames = Vec::with_capacity(n);
+    for _ in 0..n {
+        let s = if residual {
+            field.advance_residual_styled(SubcellGlyphMode::Braille2x4)
+        } else {
+            field.advance_styled(SubcellGlyphMode::Braille2x4)
+        };
+        frames.push(metrics::surface_masks(&s));
+    }
+    frames
+}
+
+/// `n` frames of any schedule: pure schedules are chained window over window,
+/// library schedules advance a real `TemporalBrailleField`.
+fn schedule_spectrum_frames(
+    sched: Sched,
+    proj: &BrailleImageProjection,
+    k: usize,
+    n: usize,
+    seed: u64,
+) -> Vec<Vec<u8>> {
+    match sched {
+        Sched::Pure(kind) => {
+            let mut frames = Vec::with_capacity(n);
+            let mut window = 0u64;
+            while frames.len() < n {
+                frames.extend(pure_plan(proj, kind, k, seed, window));
+                window += 1;
+            }
+            frames.truncate(n);
+            frames
+        }
+        Sched::LibraryFull => library_frames(proj, n, false, false, seed),
+        Sched::LibraryResidual => library_frames(proj, n, false, true, seed),
+        Sched::LibraryDithered => library_frames(proj, n, true, true, seed),
+    }
 }
 
 fn run_spectrum(cfg: &Config) {
@@ -342,52 +497,13 @@ fn run_spectrum(cfg: &Config) {
         "schedule", "meanLit", "lfRatio", "acf1", "flashVar", "dotCorr"
     );
 
-    let mut rows = Vec::new();
-
-    // Library long-horizon schedules.
-    for (nm, dither, residual) in [
-        ("lib-full-sigma-delta", false, false),
-        ("lib-residual-sigma-delta", false, true),
-        ("lib-dithered-residual", true, true),
-    ] {
-        let mut field = TemporalBrailleField::new(proj.width(), proj.height(), cfg.seed);
-        assert!(proj.install_into(&mut field, ResetPolicy::Reset));
-        field.set_dither(dither);
-        let mut frames = Vec::with_capacity(n);
-        for _ in 0..n {
-            let s = if residual {
-                field.advance_residual_styled(SubcellGlyphMode::Braille2x4)
-            } else {
-                field.advance_styled(SubcellGlyphMode::Braille2x4)
-            };
-            frames.push(metrics::surface_masks(&s));
-        }
-        rows.push(SpectrumRow {
-            name: nm,
-            stats: spectrum_stats(&frames),
-        });
-    }
-
-    // Pure frame-local schedules, chained window over window.
-    for kind in [
-        ScheduleKind::NaiveAligned,
-        ScheduleKind::WindowedErrorFeedback,
-        ScheduleKind::ResidualWindowedEF,
-        ScheduleKind::StochasticRound,
-        ScheduleKind::VdcBalanced,
-    ] {
-        let mut frames = Vec::with_capacity(n);
-        let mut window = 0u64;
-        while frames.len() < n {
-            frames.extend(pure_plan(&proj, kind, k, cfg.seed, window));
-            window += 1;
-        }
-        frames.truncate(n);
-        rows.push(SpectrumRow {
-            name: kind.as_str(),
-            stats: spectrum_stats(&frames),
-        });
-    }
+    let rows: Vec<SpectrumRow> = SCHEDS
+        .iter()
+        .map(|&sched| SpectrumRow {
+            name: sched.as_str(),
+            stats: spectrum_stats(&schedule_spectrum_frames(sched, &proj, k, n, cfg.seed)),
+        })
+        .collect();
 
     for r in &rows {
         println!(
@@ -406,6 +522,99 @@ fn run_spectrum(cfg: &Config) {
     );
     println!("flashVar = variance of the whole-region lit fraction (global breathing);");
     println!("dotCorr = mean within-cell pairwise dot correlation of the temporal residual.");
+}
+
+// ---------------------------------------------------------------------------
+// B2. Fidelity / coherence Pareto frontier
+// ---------------------------------------------------------------------------
+
+fn run_pareto(cfg: &Config) {
+    let prepared = prepare_targets(cfg);
+    let base = mean_metric(
+        &prepared.iter().map(|t| t.static_stats).collect::<Vec<_>>(),
+        |s| s.rmse_source,
+    );
+    let n = cfg.n.max(64);
+    let seeds = cfg.seeds.clamp(1, 16);
+    let (name, img) = if cfg.quick {
+        (
+            "smooth-gradient",
+            targets::smooth_gradient(cfg.cols, cfg.rows, cfg.seed),
+        )
+    } else {
+        ("portrait", targets::portrait(cfg.cols, cfg.rows, cfg.seed))
+    };
+    let proj = project(&img);
+    println!(
+        "== B2. fidelity vs coherence Pareto frontier (K={}, {name}, n={n}, {seeds} fidelity seeds) ==",
+        cfg.k
+    );
+    println!("Fidelity is the mean reconstruction improvement over the targets; coherence is the");
+    println!("temporal residual's self-similarity. We want high improvement AND low dotCorr and");
+    println!("flashVar. A schedule is *dominated* if another beats it on all three.\n");
+
+    struct Pt {
+        name: &'static str,
+        impr: f32,
+        dot_corr: f32,
+        flash_var: f32,
+        lf_ratio: f32,
+    }
+    let mut pts: Vec<Pt> = Vec::with_capacity(SCHEDS.len());
+    for &sched in SCHEDS.iter() {
+        let mut acc = 0f32;
+        for s in 0..seeds {
+            let seed = cfg.seed ^ (s as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+            let stats: Vec<ReconStats> = prepared
+                .iter()
+                .map(|t| recon_stats(&t.data, &sched.masks(&t.proj, cfg.k, seed, 0)))
+                .collect();
+            acc += mean_metric(&stats, |s| s.rmse_source);
+        }
+        let rmse = acc / seeds as f32;
+        let impr = if base > 0.0 {
+            100.0 * (base - rmse) / base
+        } else {
+            0.0
+        };
+        let st = spectrum_stats(&schedule_spectrum_frames(sched, &proj, cfg.k, n, cfg.seed));
+        pts.push(Pt {
+            name: sched.as_str(),
+            impr,
+            dot_corr: st.dot_corr,
+            flash_var: st.flash_var,
+            lf_ratio: st.lf_ratio,
+        });
+    }
+    let dominated = |i: usize| -> bool {
+        pts.iter().enumerate().any(|(j, q)| {
+            j != i
+                && q.impr >= pts[i].impr - 1e-4
+                && q.dot_corr <= pts[i].dot_corr + 1e-6
+                && q.flash_var <= pts[i].flash_var + 1e-9
+                && (q.impr > pts[i].impr + 1e-4
+                    || q.dot_corr < pts[i].dot_corr - 1e-6
+                    || q.flash_var < pts[i].flash_var - 1e-9)
+        })
+    };
+    println!(
+        "{:<24} {:>9} {:>9} {:>11} {:>9} {:>6}",
+        "schedule", "impr%", "dotCorr", "flashVar", "lfRatio", "Pareto"
+    );
+    for i in 0..pts.len() {
+        println!(
+            "{:<24} {:>9.2} {:>9.4} {:>11.6} {:>9.4} {:>6}",
+            pts[i].name,
+            pts[i].impr,
+            pts[i].dot_corr,
+            pts[i].flash_var,
+            pts[i].lf_ratio,
+            if dominated(i) { "no" } else { "YES" },
+        );
+    }
+    println!();
+    println!("The frontier is the honest headline: fidelity alone (naive-aligned) is not the");
+    println!("recommendation, because it buys its margin with the most coherent residual.");
 }
 
 // ---------------------------------------------------------------------------
@@ -1507,12 +1716,16 @@ fn grain_surface(
 fn main() -> io::Result<()> {
     let cfg = Config::parse();
     if has("--help") || cfg.mode == "help" {
-        println!("modes: matrix spectrum loss framelocal floors reach decompose color live");
+        println!(
+            "modes: matrix montecarlo spectrum pareto loss framelocal floors reach decompose color live"
+        );
         return Ok(());
     }
     match cfg.mode.as_str() {
         "matrix" => run_matrix(&cfg),
+        "montecarlo" => run_montecarlo(&cfg),
         "spectrum" => run_spectrum(&cfg),
+        "pareto" => run_pareto(&cfg),
         "loss" => run_loss(&cfg),
         "framelocal" => run_framelocal(&cfg),
         "reach" => run_reach(&cfg),
@@ -1601,6 +1814,17 @@ mod tests {
             k8.rmse_source,
             stat.rmse_source
         );
+    }
+
+    #[test]
+    fn mean_and_ci_matches_known_values() {
+        let xs = [1.0f32, 2.0, 3.0, 4.0, 5.0];
+        let (m, s, ci, lo, hi) = mean_and_ci(&xs);
+        assert!((m - 3.0).abs() < 1e-6);
+        assert!((s - 1.581_138_8).abs() < 1e-5, "std {s}");
+        assert!((ci - 1.96 * s / 5f32.sqrt()).abs() < 1e-6);
+        assert_eq!(lo, 1.0);
+        assert_eq!(hi, 5.0);
     }
 
     #[test]
