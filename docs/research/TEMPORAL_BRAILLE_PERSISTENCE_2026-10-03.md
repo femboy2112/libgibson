@@ -267,44 +267,64 @@ with near-zero coherence (`dotCorr` −0.005). The honest headline is the fronti
 not the single best RMSE: `naive-aligned` buys its extra 1.4 points with a
 `dotCorr` of 0.51.
 
-## Live harness (HUMAN UNVERIFIED)
+## Live harness (live observation NEGATIVE — HUMAN UNVERIFIED)
 
 `--mode=live` runs an interactive A/B/grain demo on a real terminal, cycling
 STATIC / TEMPORAL-LIB / TEMPORAL-GRAIN / DIFF(x8). The grain arm mirrors the
-shipping safety gate (`quantize_color` + bounded per-cell luminance swing). It
-was **not run** here (no interactive TTY in this environment), so every
-perceptual statement remains **HUMAN UNVERIFIED**.
+shipping safety gate (`quantize_color` + bounded per-cell luminance swing).
 
-**Why the first report was "it never changed":** the old harness defaulted to
-static and only enabled temporal when both `--temporal` *and* `--measured-hz`
-were passed. Without them the `PresentationProfile` was `Unmeasured`, the gate
-returned `Unmeasured`, and *every* arm rendered the static fallback — a static
-screen by construction. That is now fixed: temporal is on by default; if no
-`--measured-hz` is supplied the harness assumes a 120 Hz profile and labels it
-`ASSUMED!` on screen and on stderr. Even so, a correct temporal render of a
-*static* target is *supposed* to look unchanging — the flicker is integrated by
-the eye — and on a truecolor terminal the static frame already has no visible
-banding to remove, so there is little to see either way.
+**Status: the live observation did not show a usable effect when run by the
+operator. This is a negative result for the harness as it stands; the
+perceptual claim remains HUMAN UNVERIFIED and the live harness needs rework.**
 
-Two new arms make the otherwise-invisible modulation observable:
+**First failure — the harness was static by construction.** The original
+harness only enabled temporal when both `--temporal` *and* `--measured-hz` were
+passed; otherwise the `PresentationProfile` stayed `Unmeasured`, the gate
+returned `Unmeasured`, and *every* arm rendered the static fallback. Fixed:
+temporal is now on by default, and an absent `--measured-hz` uses a clearly
+labelled `ASSUMED!` 120 Hz profile.
+
+**Second failure — the fix still did not read as working.** To separate "the
+modulation is not computed" from "the modulation is not perceived", a headless
+diagnostic was added: `--mode=livediag` (no TTY required). On the live target it
+reports, for the shipping `TemporalDisplayProcessor` at an assumed 120 Hz
+profile:
+
+| depth | gate | modulatable | active | peak cells changed/frame |
+|---|---|---|---|---|
+| TrueColor | Enabled | 961 | 961 | 783 |
+| Ansi256 | Enabled | 945 | 945 | 674 |
+| Ansi16 | Enabled | 701 | 701 | 634 |
+| Mono | Enabled | 0 | 0 | 0 |
+
+**MEASURED** — the modulation *is* computed, and it is large (hundreds of cells
+change per frame) at every colour depth except `Mono`, where no colour reaches
+the wire and every cell is frozen to static (the silent no-op the live demo can
+fall into; the harness now warns about it explicitly). So the second failure is
+not in the schedule or the gate. It is one or more of: (a) the terminal being
+detected as `Mono`; (b) presentation coalescing / synchronized-update buffering
+swallowing the per-frame changes; or (c) the effect being genuinely
+sub-perceptual after eye integration, which is the hypothesis — and which this
+run did **not** confirm.
+
+Arms intended to make the otherwise-invisible modulation observable, and which
+the operator found did not yet do so reliably:
 
 - `DIFF(x8)` renders the XOR of the temporal and static Braille masks,
-  hot-on-dark, so the pulse pattern is visible on an ordinary display.
-- `--slowmo=<hz>` advances the PDM phase at a human-resolvable rate (e.g. 6–12
-  Hz) instead of the shipping cadence, so the K phases are seen one at a time.
-- The header ticks every frame (`f=`, elapsed time, gate, per-frame changed-cell
-  counts) so liveness is unambiguous even on the STATIC arm.
+  hot-on-dark.
+- `--slowmo=<hz>` advances the PDM phase at a human-resolvable rate.
+- The header ticks every frame (`f=`, elapsed, gate, changed-cell counts).
 
-`grain_surface(...)` is covered by a headless regression test
-(`live_arms_actually_animate_and_diff_is_nonempty`) which asserts that the gated
-arm is exactly static, that the forced arm changes between consecutive phases,
-and that the XOR view is non-empty.
+Headless coverage: `grain_surface(...)` is exercised by
+`live_arms_actually_animate_and_diff_is_nonempty` (gated arm exactly static;
+forced arm changes between phases; XOR view non-empty), and `--mode=livediag`
+reports the shipping-path counts above. Neither proves a human can see it.
 
-The cheapest falsifying probe that would upgrade these labels: run
+The cheapest falsifying probe that would upgrade these labels remains: run
 `--mode=live` behind `temporal_cadence_beacon` and capture with a camera or
 photodiode; compare coherent-flicker visibility between `naive-aligned` and
-`windowed-ef` at the same RMSE. Until then, the perceptual half of the hypothesis
-is unproven.
+`windowed-ef` at the same RMSE. Until then the perceptual half is unproven, and
+the interactive demo should be treated as **not working**.
 
 ## Reproduction
 
@@ -322,7 +342,8 @@ cargo build --release --example temporal_braille_persistence_lab
 ./target/release/examples/temporal_braille_persistence_lab --mode=reach
 ./target/release/examples/temporal_braille_persistence_lab --mode=decompose
 ./target/release/examples/temporal_braille_persistence_lab --mode=color
-./target/release/examples/temporal_braille_persistence_lab --mode=live --slowmo=8 --seconds=60  # interactive
+./target/release/examples/temporal_braille_persistence_lab --mode=livediag   # headless live check
+./target/release/examples/temporal_braille_persistence_lab --mode=live --slowmo=8 --seconds=60  # interactive (does NOT reliably show the effect)
 cargo test --example temporal_braille_persistence_lab   # 33 tests
 ```
 
@@ -335,7 +356,10 @@ cargo test --example temporal_braille_persistence_lab   # 33 tests
 - The **grain vs flicker** half is MEASURED as a spectral difference
   (`dotCorr` 0.58 → ~0) and as a fidelity/coherence Pareto frontier on which the
   shipping full sigma-delta is optimal; but the *perception* remains **HUMAN
-  UNVERIFIED**.
+  UNVERIFIED**, and the interactive demo intended to demonstrate it **did not
+  show a usable effect** in live use. `--mode=livediag` confirms the modulation
+  is computed and large at colour depths ≥ Ansi16, so the gap is presentation /
+  perception, not the schedule; the live harness needs rework.
 - A temporal-first colour choice recovers ~44 % of the grayscale temporal error
   energy the static-optimal colours leave behind; the frontier prices the cost.
 - The dominant real-world cost is ANSI bandwidth and the presentation-loss

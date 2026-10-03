@@ -23,6 +23,7 @@
 //!   --mode=decompose   H1/H2 energy decomposition with a rigorous floor bracket
 //!   --mode=color       temporal-aware colour-choice headroom
 //!   --mode=live        interactive A/B/grain live demo (requires a TTY)
+//!   --mode=livediag    headless "does it actually modulate?" diagnostic
 //!
 //! Flags: `--cols=`, `--rows=`, `--k=`, `--n=`, `--seed=`, `--quick`.
 //!
@@ -1519,6 +1520,166 @@ fn resolved_swing(style: Style, depth: ColorDepth) -> Option<f32> {
     Some((lum(color_linear_opt(fg)?) - lum(color_linear_opt(bg)?)).abs())
 }
 
+/// The live demo's target: a vaporwave-ish gradient with a radial sun, a horizon
+/// rule and a receding neon grid. Shared by the interactive and headless paths.
+fn live_world(cols: u16, rows: u16) -> impl Fn(u16, u16) -> [u8; 3] {
+    move |lx: u16, ly: u16| -> [u8; 3] {
+        let w = 2.0 * cols as f32;
+        let h = 4.0 * rows as f32;
+        let x = lx as f32 / w;
+        let y = ly as f32 / h;
+        let horizon = 0.58 + 0.05 * (x * 6.0).sin();
+        if y < horizon {
+            // sun disc
+            let dx = lx as f32 - w * 0.5;
+            let dy = ly as f32 - h * 0.42;
+            let r = ((dx * dx + dy * dy) / (w * 0.22).powi(2)).sqrt();
+            if r < 1.0 {
+                let t = (1.0 - r).clamp(0.0, 1.0);
+                let v = 180.0 + t * 75.0;
+                let g = 90.0 + t * 120.0;
+                let b = 40.0 + t * 90.0;
+                return [v as u8, g as u8, b as u8];
+            }
+            // sky gradient
+            let t = y / horizon;
+            [
+                (26.0 + t * 60.0) as u8,
+                (22.0 + t * 40.0) as u8,
+                (60.0 + t * 90.0) as u8,
+            ]
+        } else {
+            // ground with a receding neon grid
+            let gy = (y - horizon) / (1.0 - horizon);
+            let gx = (x - 0.5).abs();
+            let grid = (gy * 18.0).fract().min(1.0 - (gy * 18.0).fract());
+            let vline = ((gx * 22.0).fract()).min(1.0 - (gx * 22.0).fract());
+            let line = grid.min(vline).min(0.12);
+            if line < 0.05 {
+                [90, 30, 110]
+            } else {
+                [
+                    (14.0 + (1.0 - gy) * 30.0) as u8,
+                    (10.0 + (1.0 - gy) * 12.0) as u8,
+                    (34.0 + (1.0 - gy) * 50.0) as u8,
+                ]
+            }
+        }
+    }
+}
+
+/// Headless diagnostic for the live harness. Answers the question the
+/// interactive demo cannot answer without a TTY: *does a given colour depth and
+/// safety cap actually modulate anything, and how much of the field changes per
+/// phase?* It never touches the terminal, so it is CI-safe. `eligible` counts
+/// cells whose emitted fg/bg luminance swing is within `cap`; `chg/phase` is the
+/// mean number of cells that differ between consecutive PDM phases; `vs-static`
+/// is how many cells of the first phase differ from the static fallback;
+/// `diff-lit` is how many dots the amplified XOR view lights.
+fn run_livediag(cfg: &Config) -> io::Result<()> {
+    let (cols, rows) = (cfg.cols, cfg.rows);
+    let world = live_world(cols, rows);
+    let proj = project(&LogicalImage::new(
+        cols,
+        rows,
+        targets::TargetKind::Portrait,
+        world,
+    ));
+    let k = arg_u32("k", 8).max(2) as usize;
+    let sched = FrameLocalScheduler::new(k, ScheduleKind::WindowedErrorFeedback, cfg.seed);
+    let w = proj.width() as usize;
+    let cells = w * proj.height() as usize;
+    let masks = static_masks(&proj);
+    let stat = metrics::surface_from_masks(proj.width(), proj.height(), &masks, |i| {
+        proj.cell((i % w) as u16, (i / w) as u16).unwrap().style
+    });
+    let hot = Style::default()
+        .fg(Color::BrightWhite)
+        .bg(Color::Black)
+        .bold();
+
+    println!(
+        "live diagnostic (headless): {}x{} cells, K={k}, total={cells}",
+        proj.width(),
+        proj.height()
+    );
+    println!(
+        "{:>10}  {:>5}  {:>9}  {:>10}  {:>10}  {:>8}",
+        "depth", "cap", "eligible", "chg/phase", "vs-static", "diff-lit"
+    );
+    let depths = [
+        ("truecolor", ColorDepth::TrueColor),
+        ("ansi256", ColorDepth::Ansi256),
+        ("ansi16", ColorDepth::Ansi16),
+        ("mono", ColorDepth::Mono),
+    ];
+    for (name, depth) in depths {
+        for &cap in &[0.02f32, 0.05, 0.10, 0.25, 1.0] {
+            let eligible = (0..cells)
+                .filter(|&i| {
+                    let style = proj.cell((i % w) as u16, (i / w) as u16).unwrap().style;
+                    matches!(resolved_swing(style, depth), Some(s) if s <= cap)
+                })
+                .count();
+            let base = 4 * k as u64;
+            let phases: Vec<_> = (0..k as u64)
+                .map(|p| grain_surface(&proj, &sched, &stat, depth, cap, true, false, base + p))
+                .collect();
+            let chg = if phases.len() > 1 {
+                phases
+                    .windows(2)
+                    .map(|a| changed_cells(&a[0], &a[1]))
+                    .sum::<usize>()
+                    / (phases.len() - 1)
+            } else {
+                0
+            };
+            let vs = changed_cells(&phases[0], &stat);
+            let lit = amplified_diff(&phases[0], &stat, hot)
+                .cells
+                .iter()
+                .filter(|c| glyph_mask(c) != 0)
+                .count();
+            println!("{name:>10}  {cap:>5.2}  {eligible:>9}  {chg:>10}  {vs:>10}  {lit:>8}");
+        }
+    }
+    println!();
+    println!("shipping path: TemporalDisplayProcessor (profile=assumed 120Hz)");
+    {
+        use gibson::{PresentationProfile, SubcellGlyphMode, TemporalDisplayProcessor};
+        let world2 = live_world(cols, rows);
+        let mut p =
+            TemporalDisplayProcessor::new(cols, rows, SubcellGlyphMode::Braille2x4, cfg.seed);
+        p.set_profile(PresentationProfile::measured(120.0, 0.95, 0.5));
+        p.set_target_image(&world2, ResetPolicy::Reset);
+        for (name, depth) in depths {
+            p.set_color_depth(depth);
+            let mut prev = p.advance(0);
+            let stat = p.static_fallback();
+            let mut moving = 0usize;
+            for _ in 0..8 {
+                let cur = p.advance(0);
+                moving = moving.max(changed_cells(&prev, &cur));
+                prev = cur;
+            }
+            let d = p.diagnostics();
+            println!(
+                "library {name}: gate={:?} modulatable={} active={} frozen={} peak-move={moving} vs-static={}",
+                p.gate(),
+                d.modulatable_cells,
+                d.active_cells,
+                d.frozen_cells,
+                changed_cells(&stat, &prev),
+            );
+        }
+    }
+    println!();
+    println!("Interpretation: if `eligible` and `chg/phase` are near zero at your");
+    println!("default cap, the shipping safety mirror freezes the field and the live");
+    println!("demo has nothing to show. Raise --depth-cap to see the raw modulation.");
+    Ok(())
+}
+
 /// Short, stable label for a gate state, for the live header.
 fn gate_tag(g: gibson::TemporalGate) -> &'static str {
     match g {
@@ -1645,52 +1806,8 @@ fn run_live(cfg: &Config) -> io::Result<()> {
         eprintln!("--no-temporal: rendering the static fallback only.");
     }
 
-    // A designed "world": a vaporwave-ish gradient with a radial sun, a horizon
-    // rule and a few foreground structures — one dominant image, minimal chrome.
-    let world = move |lx: u16, ly: u16| -> [u8; 3] {
-        let w = 2.0 * cols as f32;
-        let h = 4.0 * rows as f32;
-        let x = lx as f32 / w;
-        let y = ly as f32 / h;
-        let horizon = 0.58 + 0.05 * (x * 6.0).sin();
-        if y < horizon {
-            // sun disc
-            let dx = lx as f32 - w * 0.5;
-            let dy = ly as f32 - h * 0.42;
-            let r = ((dx * dx + dy * dy) / (w * 0.22).powi(2)).sqrt();
-            if r < 1.0 {
-                let t = (1.0 - r).clamp(0.0, 1.0);
-                let v = 180.0 + t * 75.0;
-                let g = 90.0 + t * 120.0;
-                let b = 40.0 + t * 90.0;
-                return [v as u8, g as u8, b as u8];
-            }
-            // sky gradient
-            let t = y / horizon;
-            [
-                (26.0 + t * 60.0) as u8,
-                (22.0 + t * 40.0) as u8,
-                (60.0 + t * 90.0) as u8,
-            ]
-        } else {
-            // ground with a receding neon grid
-            let gy = (y - horizon) / (1.0 - horizon);
-            let gx = (x - 0.5).abs();
-            let grid = (gy * 18.0).fract().min(1.0 - (gy * 18.0).fract());
-            let vline = ((gx * 22.0).fract()).min(1.0 - (gx * 22.0).fract());
-            let line = grid.min(vline).min(0.12);
-            if line < 0.05 {
-                [90, 30, 110]
-            } else {
-                [
-                    (14.0 + (1.0 - gy) * 30.0) as u8,
-                    (10.0 + (1.0 - gy) * 12.0) as u8,
-                    (34.0 + (1.0 - gy) * 50.0) as u8,
-                ]
-            }
-        }
-    };
-    processor.set_target_image(world, ResetPolicy::Reset);
+    let world = live_world(cols, rows);
+    processor.set_target_image(&world, ResetPolicy::Reset);
 
     let mut ctx = Context::fullscreen()?;
     if !ctx.is_interactive() {
@@ -1718,11 +1835,29 @@ fn run_live(cfg: &Config) -> io::Result<()> {
         .bg(Color::Black)
         .bold();
 
+    let diag = processor.diagnostics();
     eprintln!(
         "temporal braille persistence lab (live): {cols}x{rows}; profile={profile_label}; gate={:?} ({}); temporal={enabled}; K={k}.",
         processor.gate(),
         gate_tag(processor.gate())
     );
+    eprintln!(
+        "depth={:?}; modulatable={} active={} frozen={} (mean static RMSE {:.5})",
+        processor.color_depth(),
+        diag.modulatable_cells,
+        diag.active_cells,
+        diag.frozen_cells,
+        diag.mean_emitted_static_rmse,
+    );
+    if processor.color_depth() == ColorDepth::Mono {
+        eprintln!(
+            "WARNING: terminal reported ColorDepth::Mono -- no color attributes reach the wire, so"
+        );
+        eprintln!(
+            "         every cell is frozen to static and NOTHING will modulate. This is the silent no-op."
+        );
+        eprintln!("         Run with a color terminal, or use --mode=livediag to confirm.");
+    }
     if !enabled {
         eprintln!("gate is NOT Enabled -> the library arm falls back to static.");
         if force {
@@ -1865,11 +2000,12 @@ fn main() -> io::Result<()> {
     let cfg = Config::parse();
     if has("--help") || cfg.mode == "help" {
         println!(
-            "modes: matrix montecarlo spectrum pareto loss framelocal reach decompose color live"
+            "modes: matrix montecarlo spectrum pareto loss framelocal reach decompose color live livediag"
         );
         println!(
             "live flags: --measured-hz= --assume-hz= --no-temporal --force --slowmo=<hz> --dwell=<s> --seconds=<s>"
         );
+        println!("livediag flags: --cols= --rows= --k=  (headless; no TTY required)");
         return Ok(());
     }
     match cfg.mode.as_str() {
@@ -1883,6 +2019,7 @@ fn main() -> io::Result<()> {
         "decompose" => run_decompose(&cfg),
         "color" => run_color(&cfg),
         "live" => run_live(&cfg)?,
+        "livediag" => run_livediag(&cfg)?,
         other => {
             eprintln!("unknown --mode={other}; try --help");
             std::process::exit(2);

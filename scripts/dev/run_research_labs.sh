@@ -86,6 +86,7 @@ run framelocal   "$T" --mode=framelocal    "${T_ARGS[@]}"
 run reach        "$T" --mode=reach         "${T_ARGS[@]}"
 run decompose    "$T" --mode=decompose     "${T_ARGS[@]}"
 run color        "$T" --mode=color         "${T_ARGS[@]}"
+run livediag     "$T" --mode=livediag      "${T_ARGS[@]}"
 
 # ---------------------------------------------------------------- glyph lab
 run rank            "$A" --mode=rank
