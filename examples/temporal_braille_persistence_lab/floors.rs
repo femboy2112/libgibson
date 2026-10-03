@@ -220,6 +220,71 @@ pub fn cell_floor(samples: &[[u8; 3]; 8]) -> CellFloor {
     best
 }
 
+/// Minimum continuous-duty source RMSE over every ordered pair of emitted
+/// colours drawn from `palette`, returning the winning `(rmse, bg, fg)`.
+///
+/// This is what a *temporal-aware* per-cell colour choice could reach, in
+/// contrast to the projector's static-optimal pair. Passing a palette that
+/// contains the projector's pair guarantees the result is no worse than
+/// [`quantized_segment_floor`].
+pub fn best_palette_floor(samples: &[[u8; 3]; 8], palette: &[[u8; 3]]) -> (f32, [u8; 3], [u8; 3]) {
+    let p: [[f32; 3]; 8] = samples.map(rgb8_to_linear);
+    let mut best = (f32::INFINITY, [0u8; 3], [0u8; 3]);
+    for (i, c0) in palette.iter().enumerate() {
+        for (j, c1) in palette.iter().enumerate() {
+            if i == j {
+                continue;
+            }
+            let bg = rgb8_to_linear(*c0);
+            let fg = rgb8_to_linear(*c1);
+            let d = [fg[0] - bg[0], fg[1] - bg[1], fg[2] - bg[2]];
+            let alpha = project_alpha(&p, bg, d);
+            let rmse = (sse_segment(&p, bg, d, &alpha) / 24.0).sqrt();
+            if rmse < best.0 {
+                best = (rmse, *c0, *c1);
+            }
+        }
+    }
+    best
+}
+
+/// A coarse 3-level RGB lattice (0/128/255 per channel), the default palette
+/// for the temporal-aware colour experiment. It contains black and white, so
+/// neutral targets can reach the grey axis.
+pub fn coarse_rgb_palette() -> Vec<[u8; 3]> {
+    let mut v = Vec::with_capacity(27);
+    for r in [0u8, 128, 255] {
+        for g in [0u8, 128, 255] {
+            for b in [0u8, 128, 255] {
+                v.push([r, g, b]);
+            }
+        }
+    }
+    v
+}
+
+/// A compact palette for the static/temporal tradeoff frontier: a nine-level
+/// neutral ramp plus the six primaries/secondaries. Small enough that a per-cell
+/// search over every ordered pair, with a full 256-mask static fit for each,
+/// stays cheap, but fine enough that the neutral ramp shows a gradual tradeoff.
+pub fn frontier_palette() -> Vec<[u8; 3]> {
+    let mut v: Vec<[u8; 3]> = (0..9)
+        .map(|i| {
+            let g = (i * 255 / 8) as u8;
+            [g, g, g]
+        })
+        .collect();
+    v.extend_from_slice(&[
+        [255, 0, 0],
+        [0, 255, 0],
+        [0, 0, 255],
+        [255, 255, 0],
+        [0, 255, 255],
+        [255, 0, 255],
+    ]);
+    v
+}
+
 /// Convenience: the projector's own ideal static/line RMSE for a cell, so a
 /// caller can relate the bracket to the shipped projection fields.
 pub fn projector_floor(projection: &TemporalCellProjection) -> (f32, f32) {
@@ -232,6 +297,47 @@ mod tests {
 
     fn gray(v: u8) -> [u8; 3] {
         [v, v, v]
+    }
+
+    #[test]
+    fn neutral_palette_reaches_the_grey_axis() {
+        // Grayscale samples lie on the grey axis, which the black<->white pair
+        // of the coarse palette reproduces exactly with continuous duty.
+        let s = [
+            gray(0),
+            gray(32),
+            gray(64),
+            gray(96),
+            gray(128),
+            gray(160),
+            gray(192),
+            gray(255),
+        ];
+        let (rmse, bg, fg) = best_palette_floor(&s, &coarse_rgb_palette());
+        assert!(rmse < 1e-4, "rmse={rmse} bg={bg:?} fg={fg:?}");
+    }
+
+    #[test]
+    fn palette_floor_is_no_worse_with_the_projection_pair_included() {
+        let s = [
+            gray(10),
+            gray(200),
+            gray(40),
+            gray(180),
+            gray(90),
+            gray(150),
+            gray(70),
+            gray(120),
+        ];
+        let proj = gibson::temporal::project_rgb_subcells(s);
+        let q = quantized_segment_floor(&s, proj.style).unwrap();
+        let mut pal = coarse_rgb_palette();
+        if let (Some(f), Some(b)) = (proj.style.fg, proj.style.bg) {
+            pal.push([f.to_rgb().0, f.to_rgb().1, f.to_rgb().2]);
+            pal.push([b.to_rgb().0, b.to_rgb().1, b.to_rgb().2]);
+        }
+        let (rmse, _, _) = best_palette_floor(&s, &pal);
+        assert!(rmse <= q + 1e-5, "palette {rmse} > emitted {q}");
     }
 
     #[test]

@@ -19,6 +19,7 @@
 //!   --mode=framelocal  frame-local temporal video (D)
 //!   --mode=reach       H3 reachable-space / rank demonstration
 //!   --mode=decompose   H1/H2 energy decomposition with a rigorous floor bracket
+//!   --mode=color       temporal-aware colour-choice headroom
 //!   --mode=live        gated A/B live demo (requires a TTY)
 //!
 //! Flags: `--cols=`, `--rows=`, `--k=`, `--n=`, `--seed=`, `--quick`.
@@ -1027,6 +1028,247 @@ fn run_decompose(cfg: &Config) {
 }
 
 // ---------------------------------------------------------------------------
+// F. Temporal-aware colour choice: headroom left by static-optimal colours
+// ---------------------------------------------------------------------------
+
+const MU_CHOICES: [f64; 9] = [1.0, 1.1, 1.25, 1.5, 2.0, 3.0, 5.0, 10.0, f64::INFINITY];
+
+#[derive(Clone, Copy)]
+struct FrontierRow {
+    n: usize,
+    static_sse: f64,
+    k8_sse: f64,
+    /// Temporal floor for each allowed static-inflation factor `mu`.
+    floor_sse: [f64; MU_CHOICES.len()],
+    /// Static error of the pair actually chosen at each `mu`.
+    chosen_static_sse: [f64; MU_CHOICES.len()],
+}
+
+impl Default for FrontierRow {
+    fn default() -> Self {
+        FrontierRow {
+            n: 0,
+            static_sse: 0.0,
+            k8_sse: 0.0,
+            floor_sse: [0.0; MU_CHOICES.len()],
+            chosen_static_sse: [0.0; MU_CHOICES.len()],
+        }
+    }
+}
+
+impl FrontierRow {
+    fn rms(&self, sse: f64) -> f32 {
+        if self.n == 0 {
+            0.0
+        } else {
+            (sse / (self.n as f64 * 24.0)).sqrt() as f32
+        }
+    }
+    fn add(&mut self, o: &FrontierRow) {
+        self.n += o.n;
+        self.static_sse += o.static_sse;
+        self.k8_sse += o.k8_sse;
+        for m in 0..MU_CHOICES.len() {
+            self.floor_sse[m] += o.floor_sse[m];
+            self.chosen_static_sse[m] += o.chosen_static_sse[m];
+        }
+    }
+}
+
+/// Best binary static fit (over the 256 masks) for a fixed colour pair.
+fn static_sse_fixed(src: &[[f32; 3]; 8], bg: [f32; 3], fg: [f32; 3]) -> f64 {
+    // Per-sample squared distance to bg and to fg, then the cheapest mask.
+    let mut dbg = [0.0f64; 8];
+    let mut dfg = [0.0f64; 8];
+    for (i, p) in src.iter().enumerate() {
+        for c in 0..3 {
+            dbg[i] += (p[c] - bg[c]).powi(2) as f64;
+            dfg[i] += (p[c] - fg[c]).powi(2) as f64;
+        }
+    }
+    let mut best = f64::INFINITY;
+    for mask in 0u16..256 {
+        let mut sse = 0.0f64;
+        for i in 0..8 {
+            sse += if mask & (1 << i) != 0 { dfg[i] } else { dbg[i] };
+        }
+        best = best.min(sse);
+    }
+    best
+}
+
+fn frontier_target(
+    img: &targets::LogicalImage,
+    palette: &[[u8; 3]],
+    k: usize,
+    seed: u64,
+) -> FrontierRow {
+    let proj = project(img);
+    let static_masks_v = static_masks(&proj);
+    let k8_masks = pure_plan(&proj, ScheduleKind::WindowedErrorFeedback, k, seed, 0);
+    let mut row = FrontierRow::default();
+    for y in 0..proj.height() {
+        for x in 0..proj.width() {
+            row.n += 1;
+            let cell = proj.cell(x, y).unwrap();
+            let samples = img.cell_samples(x, y);
+            let src = rgb8_to_linear_vec(&samples);
+            let f = metrics::color_linear(cell.style.fg.unwrap_or(Color::Reset));
+            let b = metrics::color_linear(cell.style.bg.unwrap_or(Color::Reset));
+            let idx = y as usize * proj.width() as usize + x as usize;
+            // Projector static error for this cell.
+            let mut static0 = 0.0f64;
+            for i in 0..8 {
+                let on = static_masks_v[idx] & (1 << i) != 0;
+                for c in 0..3 {
+                    let r = if on { f[c] } else { b[c] };
+                    static0 += (r - src[i][c]).powi(2) as f64;
+                }
+            }
+            row.static_sse += static0;
+            // K-phase schedule error.
+            let mut avg = [0f32; 8];
+            for m in &k8_masks {
+                let mv = m[idx];
+                for i in 0..8 {
+                    if mv & (1 << i) != 0 {
+                        avg[i] += 1.0;
+                    }
+                }
+            }
+            for a in avg.iter_mut() {
+                *a /= k as f32;
+            }
+            for i in 0..8 {
+                for c in 0..3 {
+                    let r = b[c] + avg[i] * (f[c] - b[c]);
+                    row.k8_sse += (r - src[i][c]).powi(2) as f64;
+                }
+            }
+            // Candidate colour pairs: the palette plus the projector's own pair.
+            let mut cand: Vec<(f64, f64)> = Vec::with_capacity(palette.len() * palette.len() + 1);
+            for (ci, c0) in palette.iter().enumerate() {
+                for (cj, c1) in palette.iter().enumerate() {
+                    if ci == cj {
+                        continue;
+                    }
+                    let pbg = metrics::rgb8_to_linear(*c0);
+                    let pfg = metrics::rgb8_to_linear(*c1);
+                    let s = static_sse_fixed(&src, pbg, pfg);
+                    let t = floors::segment_floor_linear(&samples, pbg, pfg);
+                    cand.push((s, (t as f64).powi(2) * 24.0));
+                }
+            }
+            let q = floors::quantized_segment_floor(&samples, cell.style).unwrap_or(0.0);
+            cand.push((static0, (q as f64).powi(2) * 24.0));
+            // Constrained minima, one per allowed static inflation.
+            for (m, mu) in MU_CHOICES.iter().enumerate() {
+                let limit = mu * static0 + 1e-12;
+                let mut best_t = f64::INFINITY;
+                let mut chosen_s = static0;
+                for &(s, t) in &cand {
+                    if s <= limit && t < best_t {
+                        best_t = t;
+                        chosen_s = s;
+                    }
+                }
+                if !best_t.is_finite() {
+                    best_t = (q as f64).powi(2) * 24.0;
+                }
+                row.floor_sse[m] += best_t;
+                row.chosen_static_sse[m] += chosen_s;
+            }
+        }
+    }
+    row
+}
+
+fn run_color(cfg: &Config) {
+    let palette = floors::frontier_palette();
+    let k = cfg.k.max(2);
+    println!("== F. static/temporal colour-pair tradeoff frontier (K={k}) ==");
+    println!("A cell's bg/fg pair fixes the line per-dot duty moves along. The projector");
+    println!("picks that pair to minimise the STATIC error, which need not minimise the");
+    println!("continuous-duty temporal floor. flr@1 keeps the static fallback exactly as");
+    println!("good (mu=1); flr@inf optimises purely for time. st@ is the static error the");
+    println!("chosen pair actually commits to.\n");
+    println!(
+        "{:<18} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>7}",
+        "target",
+        "static",
+        format!("K={k}"),
+        "flr@1",
+        "st@1",
+        "flr@inf",
+        "st@inf",
+        "recov%"
+    );
+    let mut gray = FrontierRow::default();
+    let mut chroma = FrontierRow::default();
+    let mut all = FrontierRow::default();
+    let print_row = |name: &str, r: &FrontierRow| {
+        let last = MU_CHOICES.len() - 1;
+        let recov = 100.0 * (r.floor_sse[0] - r.floor_sse[last]) / r.static_sse.max(1e-12);
+        println!(
+            "{:<18} {:>8.5} {:>8.5} {:>8.5} {:>8.5} {:>8.5} {:>8.5} {:>7.1}",
+            name,
+            r.rms(r.static_sse),
+            r.rms(r.k8_sse),
+            r.rms(r.floor_sse[0]),
+            r.rms(r.chosen_static_sse[0]),
+            r.rms(r.floor_sse[last]),
+            r.rms(r.chosen_static_sse[last]),
+            recov,
+        );
+    };
+    for (name, img) in named_targets(cfg.cols, cfg.rows, cfg.seed) {
+        let r = frontier_target(&img, &palette, k, cfg.seed);
+        print_row(&name, &r);
+        gray.add(&r);
+        all.add(&r);
+    }
+    for (name, img) in targets::chromatic_targets(cfg.cols, cfg.rows, cfg.seed) {
+        let r = frontier_target(&img, &palette, k, cfg.seed);
+        print_row(&name, &r);
+        chroma.add(&r);
+        all.add(&r);
+    }
+    println!();
+    print_row("MEAN gray", &gray);
+    print_row("MEAN chroma", &chroma);
+    print_row("MEAN all", &all);
+    println!();
+    println!("Frontier, mean over all targets: as the allowed static inflation mu grows, how");
+    println!("far the continuous-duty temporal floor falls, and what static error it costs.\n");
+    println!(
+        "{:<8} {:>10} {:>11} {:>12} {:>10}",
+        "mu", "floorRMS", "staticRMS", "floor/emit%", "recov%"
+    );
+    for (m, mu) in MU_CHOICES.iter().enumerate() {
+        let rel = 100.0 * all.floor_sse[m] / all.floor_sse[0].max(1e-12);
+        let recov = 100.0 * (all.floor_sse[0] - all.floor_sse[m]) / all.static_sse.max(1e-12);
+        let label = if mu.is_infinite() {
+            "inf".to_string()
+        } else {
+            format!("{mu:.2}")
+        };
+        println!(
+            "{:<8} {:>10.5} {:>11.5} {:>12.1} {:>10.1}",
+            label,
+            all.rms(all.floor_sse[m]),
+            all.rms(all.chosen_static_sse[m]),
+            rel,
+            recov,
+        );
+    }
+    println!();
+    println!("recov% = (emitFloor^2 - floor^2)/static^2: the temporal error energy recovered");
+    println!("that the static-optimal colour choice leaves on the table. The frontier shows the");
+    println!("price in static fallback error. A temporal-first renderer should sit at the knee,");
+    println!("not at either extreme.");
+}
+
+// ---------------------------------------------------------------------------
 // Live A/B demo
 // ---------------------------------------------------------------------------
 
@@ -1265,7 +1507,7 @@ fn grain_surface(
 fn main() -> io::Result<()> {
     let cfg = Config::parse();
     if has("--help") || cfg.mode == "help" {
-        println!("modes: matrix spectrum loss framelocal floors reach decompose live");
+        println!("modes: matrix spectrum loss framelocal floors reach decompose color live");
         return Ok(());
     }
     match cfg.mode.as_str() {
@@ -1275,6 +1517,7 @@ fn main() -> io::Result<()> {
         "framelocal" => run_framelocal(&cfg),
         "reach" => run_reach(&cfg),
         "decompose" => run_decompose(&cfg),
+        "color" => run_color(&cfg),
         "live" => run_live(&cfg)?,
         other => {
             eprintln!("unknown --mode={other}; try --help");
@@ -1358,6 +1601,24 @@ mod tests {
             k8.rmse_source,
             stat.rmse_source
         );
+    }
+
+    #[test]
+    fn colour_frontier_floor_is_monotone_in_mu() {
+        let img = targets::smooth_gradient(4, 3, 1);
+        let palette = floors::frontier_palette();
+        let r = frontier_target(&img, &palette, 4, 1);
+        // A looser static constraint cannot raise the temporal floor.
+        for m in 1..MU_CHOICES.len() {
+            assert!(
+                r.floor_sse[m] <= r.floor_sse[m - 1] + 1e-9,
+                "floor rose at mu={}",
+                MU_CHOICES[m]
+            );
+        }
+        // The projector's own pair is always a candidate, so mu=1 never commits
+        // to a pair with more static error than the projector already has.
+        assert!(r.chosen_static_sse[0] <= r.static_sse + 1e-6);
     }
 
     #[test]
