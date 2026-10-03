@@ -18,6 +18,10 @@ pub enum TargetKind {
     ZonePlate,
     Portrait,
     MovingBar,
+    /// Full-chroma ramps: per-cell colours non-collinear in RGB.
+    ColorRamp,
+    ChromaEdge,
+    ChromaZone,
 }
 
 impl TargetKind {
@@ -32,6 +36,9 @@ impl TargetKind {
             TargetKind::ZonePlate => "zone-plate",
             TargetKind::Portrait => "portrait",
             TargetKind::MovingBar => "moving-bar",
+            TargetKind::ColorRamp => "color-ramp",
+            TargetKind::ChromaEdge => "chroma-edge",
+            TargetKind::ChromaZone => "chroma-zone",
         }
     }
 }
@@ -213,6 +220,64 @@ pub fn moving_bar(cols: u16, rows: u16, phase: f32) -> LogicalImage {
         let bg = 40.0 + 20.0 * ((lx as f32 * 0.4 + ly as f32 * 0.2).sin());
         gray(bg + bar * (230.0 - bg))
     })
+}
+
+/// A full-chroma RGB sweep: each dot's colour is an independent combination of
+/// the three channels, so the eight samples of a cell are generally
+/// non-collinear in RGB. No single cell-local bg->fg line can fit them, which
+/// exposes the two-colour model's true spatial/chromatic floor.
+pub fn color_ramp(cols: u16, rows: u16, _seed: u64) -> LogicalImage {
+    let span = (2 * cols as u32 + 4 * rows as u32).max(1) as f32;
+    LogicalImage::new(cols, rows, TargetKind::ColorRamp, move |lx, ly| {
+        let t = (lx as f32 + 0.7 * ly as f32) / span;
+        let pi = std::f32::consts::PI;
+        let r = 30.0 + 220.0 * (t * pi).sin().abs();
+        let g = 30.0 + 220.0 * (t * 3.0 * pi).sin().abs();
+        let b = 30.0 + 220.0 * (t * 5.0 * pi).sin().abs();
+        [r as u8, g as u8, b as u8]
+    })
+}
+
+/// A luminance edge that also rotates hue across it: warm above, cool below.
+pub fn chroma_edge(cols: u16, rows: u16, angle_deg: f32) -> LogicalImage {
+    let (w, h) = (2.0 * cols as f32, 4.0 * rows as f32);
+    let (cx, cy) = (w * 0.5, h * 0.5);
+    let (ca, sa) = (angle_deg.to_radians().cos(), angle_deg.to_radians().sin());
+    LogicalImage::new(cols, rows, TargetKind::ChromaEdge, move |lx, ly| {
+        let d = ca * (lx as f32 - cx) + sa * (ly as f32 - cy);
+        let t = (d / 1.5 + 0.5).clamp(0.0, 1.0);
+        let r = 25.0 + t * 210.0;
+        let g = 25.0 + (1.0 - (2.0 * t - 1.0).abs()) * 130.0;
+        let b = 25.0 + (1.0 - t) * 210.0;
+        [r as u8, g as u8, b as u8]
+    })
+}
+
+/// A chroma zone plate: a radial frequency sweep in luminance with an
+/// independent (faster) sweep in the blue channel.
+pub fn chroma_zone(cols: u16, rows: u16, _seed: u64) -> LogicalImage {
+    let (w, h) = (2.0 * cols as f32, 4.0 * rows as f32);
+    let (cx, cy) = (w * 0.5, h * 0.5);
+    LogicalImage::new(cols, rows, TargetKind::ChromaZone, move |lx, ly| {
+        let r2 = (lx as f32 - cx).powi(2) + (ly as f32 - cy).powi(2);
+        let c = 0.5 + 0.5 * (0.35 * r2 / w).cos();
+        let cb = 0.5 + 0.5 * (0.61 * r2 / w).cos();
+        let r = 25.0 + c * 215.0;
+        let g = 25.0 + (0.5 + 0.5 * (0.48 * r2 / w).cos()) * 190.0;
+        let b = 25.0 + cb * 215.0;
+        [r as u8, g as u8, b as u8]
+    })
+}
+
+/// Chromatic targets used only by the energy-decomposition mode. These are
+/// deliberately *not* part of [`named_targets`] so the historical modes keep
+/// their original corpus and numbers.
+pub fn chromatic_targets(cols: u16, rows: u16, _seed: u64) -> Vec<(String, LogicalImage)> {
+    vec![
+        ("color-ramp".into(), color_ramp(cols, rows, _seed)),
+        ("chroma-edge".into(), chroma_edge(cols, rows, 38.0)),
+        ("chroma-zone".into(), chroma_zone(cols, rows, _seed)),
+    ]
 }
 
 /// Per-cell error class used to slice metrics by target structure.

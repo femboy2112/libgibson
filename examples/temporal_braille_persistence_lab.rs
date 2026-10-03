@@ -18,6 +18,7 @@
 //!   --mode=loss        dropped-phase presentation hostility (C)
 //!   --mode=framelocal  frame-local temporal video (D)
 //!   --mode=reach       H3 reachable-space / rank demonstration
+//!   --mode=decompose   H1/H2 energy decomposition with a rigorous floor bracket
 //!   --mode=live        gated A/B live demo (requires a TTY)
 //!
 //! Flags: `--cols=`, `--rows=`, `--k=`, `--n=`, `--seed=`, `--quick`.
@@ -28,6 +29,8 @@
 // rewrite would obscure the maths; that lint is off for this example only.
 #![allow(dead_code, clippy::needless_range_loop, clippy::type_complexity)]
 
+#[path = "temporal_braille_persistence_lab/floors.rs"]
+mod floors;
 #[path = "temporal_braille_persistence_lab/framelocal.rs"]
 mod framelocal;
 #[path = "temporal_braille_persistence_lab/metrics.rs"]
@@ -764,40 +767,263 @@ fn run_reach(cfg: &Config) {
     );
     println!("(the convex hull of {{0,1}}^8). No phase sequence leaves that hull.\n");
 
-    // Show the practical spatial limit on several targets: the infinite-K
-    // floor (`line_rmse`) is the best any temporal mixture can do, and it is
-    // invariant to K.
+    // Practical spatial limit, now with a rigorous bracket on the continuous
+    // duty floor:
+    //   segSP   = projector's `line_rmse` (static-optimal partition, unquantized)
+    //   segFree = tight ALS best-segment floor (upper bound on the true floor)
+    //   pca     = best affine line (rigorous lower bound on the true floor)
     println!(
-        "{:<18} {:>10} {:>10} {:>10} {:>10}",
-        "target", "static", "K=8", "inf-K", "static/inf"
+        "{:<18} {:>9} {:>9} {:>9} {:>9} {:>9} {:>9}",
+        "target", "static", "K=8", "segSP", "segFree", "pcaLo", "static/seg"
     );
     let targets = named_targets(cfg.cols, cfg.rows, cfg.seed);
     for (name, img) in targets.iter().take(if cfg.quick { 5 } else { 12 }) {
         let proj = project(img);
         let data = per_cell_data(img, &proj);
         let static_s = recon_stats(&data, &[static_masks(&proj)]);
-        // Best K=8 temporal using the shipping dithered residual.
         let k8 = recon_stats(&data, &library_masks(&proj, 8, true, true, cfg.seed));
-        // Infinite-K floor: the projector's ideal residual after allowing a
-        // continuous mixture along the fitted bg->fg segment. Time cannot beat it.
-        let mut line = 0f32;
+        let mut seg_sp = 0f32;
+        let mut seg_free = 0f32;
+        let mut pca = 0f32;
+        let mut n = 0usize;
         for y in 0..proj.height() {
             for x in 0..proj.width() {
-                line += proj.cell(x, y).unwrap().line_rmse;
+                let cell = proj.cell(x, y).unwrap();
+                let samples = img.cell_samples(x, y);
+                seg_sp += cell.line_rmse;
+                let floor = floors::cell_floor(&samples);
+                seg_free += floor.upper;
+                pca += floor.lower;
+                n += 1;
             }
         }
-        line /= data.len().max(1) as f32;
+        let n = n.max(1) as f32;
+        seg_sp /= n;
+        seg_free /= n;
+        pca /= n;
         println!(
-            "{:<18} {:>10.5} {:>10.5} {:>10.5} {:>10.2}",
+            "{:<18} {:>9.5} {:>9.5} {:>9.5} {:>9.5} {:>9.5} {:>9.2}",
             name,
             static_s.rmse_source,
             k8.rmse_source,
-            line,
-            static_s.rmse_source / line.max(1e-9),
+            seg_sp,
+            seg_free,
+            pca,
+            static_s.rmse_source / seg_free.max(1e-9),
         );
     }
     println!("\nH3 verdict: pure Braille cannot place samples between the 8 fixed dot rasters;");
     println!("time changes each dot's intensity, not its position. Spatial rank stays 8.");
+    println!("segFree/pca bracket the continuous-duty floor; static/seg is the most time can buy.");
+}
+
+// ---------------------------------------------------------------------------
+// E. Energy decomposition: what time can and cannot remove
+// ---------------------------------------------------------------------------
+
+/// Sums, over every cell of a target, the source energy and the four floors.
+#[derive(Default, Clone, Copy)]
+struct Decomp {
+    /// Cells counted.
+    n: usize,
+    /// (sum of squares) emitted static reconstruction error.
+    static_sse: f64,
+    /// (sum of squares) K=8 windowed-EF reconstruction error.
+    k8_sse: f64,
+    /// (sum of squares) quantized-colour continuous-duty floor.
+    quant_sse: f64,
+    /// (sum of squares) free-colour tight segment floor (upper bound).
+    segfree_sse: f64,
+    /// (sum of squares) free-colour PCA line floor (lower bound).
+    pca_sse: f64,
+    /// (sum of squares) projector's static-partition continuous floor.
+    segsp_sse: f64,
+    /// (sum of squares) source samples' own energy (zero-reconstruction error).
+    src_sse: f64,
+}
+
+impl Decomp {
+    fn add(&mut self, other: &Decomp) {
+        self.n += other.n;
+        self.static_sse += other.static_sse;
+        self.k8_sse += other.k8_sse;
+        self.quant_sse += other.quant_sse;
+        self.segfree_sse += other.segfree_sse;
+        self.pca_sse += other.pca_sse;
+        self.segsp_sse += other.segsp_sse;
+        self.src_sse += other.src_sse;
+    }
+    fn rms(&self, sse: f64) -> f32 {
+        if self.n == 0 {
+            0.0
+        } else {
+            (sse / (self.n as f64 * 24.0)).sqrt() as f32
+        }
+    }
+}
+
+fn decompose_target(img: &targets::LogicalImage, k: usize, seed: u64) -> Decomp {
+    let proj = project(img);
+    let static_masks_v = static_masks(&proj);
+    let k8_masks = pure_plan(&proj, ScheduleKind::WindowedErrorFeedback, k, seed, 0);
+    let mut d = Decomp::default();
+    for y in 0..proj.height() {
+        for x in 0..proj.width() {
+            d.n += 1;
+            let cell = proj.cell(x, y).unwrap();
+            let samples = img.cell_samples(x, y);
+            let src = rgb8_to_linear_vec(&samples);
+            let sty = cell.style;
+            let f = metrics::color_linear(sty.fg.unwrap_or(Color::Reset));
+            let b = metrics::color_linear(sty.bg.unwrap_or(Color::Reset));
+            // Static emitted reconstruction.
+            let idx = y as usize * proj.width() as usize + x as usize;
+            for i in 0..8 {
+                let on = static_masks_v[idx] & (1 << i) != 0;
+                for c in 0..3 {
+                    let r = if on { f[c] } else { b[c] };
+                    d.static_sse += (r - src[i][c]).powi(2) as f64;
+                }
+            }
+            // K=8 schedule reconstruction.
+            let mut avg = [0f32; 8];
+            for m in &k8_masks {
+                let mv = m[idx];
+                for i in 0..8 {
+                    if mv & (1 << i) != 0 {
+                        avg[i] += 1.0;
+                    }
+                }
+            }
+            for a in avg.iter_mut() {
+                *a /= k as f32;
+            }
+            for i in 0..8 {
+                for c in 0..3 {
+                    let r = b[c] + avg[i] * (f[c] - b[c]);
+                    d.k8_sse += (r - src[i][c]).powi(2) as f64;
+                }
+            }
+            // Floors. If the emitted colours are not a complete pair, claim no
+            // headroom for this cell (fall back to the static error).
+            match floors::quantized_segment_floor(&samples, sty) {
+                Some(q) => d.quant_sse += (q as f64).powi(2) * 24.0,
+                None => {
+                    for i in 0..8 {
+                        let on = static_masks_v[idx] & (1 << i) != 0;
+                        for c in 0..3 {
+                            let r = if on { f[c] } else { b[c] };
+                            d.quant_sse += (r - src[i][c]).powi(2) as f64;
+                        }
+                    }
+                }
+            }
+            d.segsp_sse += (cell.line_rmse as f64).powi(2) * 24.0;
+            let floor = floors::cell_floor(&samples);
+            d.segfree_sse += (floor.upper as f64).powi(2) * 24.0;
+            d.pca_sse += (floor.lower as f64).powi(2) * 24.0;
+            for i in 0..8 {
+                for c in 0..3 {
+                    d.src_sse += (src[i][c] as f64).powi(2);
+                }
+            }
+        }
+    }
+    d
+}
+
+fn rgb8_to_linear_vec(samples: &[[u8; 3]; 8]) -> [[f32; 3]; 8] {
+    samples.map(metrics::rgb8_to_linear)
+}
+
+fn print_decomp_row(name: &str, d: &Decomp) {
+    let denom = d.static_sse.max(1e-12);
+    println!(
+        "{:<18} {:>8.5} {:>8.5} {:>8.5} {:>8.5} {:>8.5} {:>7.1} {:>7.1} {:>7.1}",
+        name,
+        d.rms(d.static_sse),
+        d.rms(d.k8_sse),
+        d.rms(d.quant_sse),
+        d.rms(d.segfree_sse),
+        d.rms(d.pca_sse),
+        100.0 * (d.static_sse - d.quant_sse) / denom,
+        100.0 * (d.quant_sse - d.segfree_sse) / denom,
+        100.0 * d.segfree_sse / denom,
+    );
+}
+
+fn run_decompose(cfg: &Config) {
+    let k = cfg.k.max(2);
+    println!("== E. what time can remove vs what is permanently out of reach (K={k}) ==");
+    println!(
+        "{:<18} {:>8} {:>8} {:>8} {:>8} {:>8} {:>7} {:>7} {:>7}",
+        "target",
+        "static",
+        format!("K={k}"),
+        "quantSeg",
+        "segFree",
+        "pcaLo",
+        "tonal%",
+        "colr%",
+        "floor%"
+    );
+    let mut gray_total = Decomp::default();
+    let mut chroma_total = Decomp::default();
+    let mut total = Decomp::default();
+    for (name, img) in named_targets(cfg.cols, cfg.rows, cfg.seed) {
+        let d = decompose_target(&img, k, cfg.seed);
+        print_decomp_row(&name, &d);
+        gray_total.add(&d);
+        total.add(&d);
+    }
+    println!();
+    println!("-- chromatic targets: per-cell colours non-collinear, so no two-colour");
+    println!("   line fits them and a genuine spatial/colour floor appears --");
+    for (name, img) in targets::chromatic_targets(cfg.cols, cfg.rows, cfg.seed) {
+        let d = decompose_target(&img, k, cfg.seed);
+        print_decomp_row(&name, &d);
+        chroma_total.add(&d);
+        total.add(&d);
+    }
+    println!();
+    let mean_row = |label: &str, d: &Decomp| {
+        let denom = d.static_sse.max(1e-12);
+        println!(
+            "{:<18} {:>8.5} {:>8.5} {:>8.5} {:>8.5} {:>8.5} {:>7.1} {:>7.1} {:>7.1}",
+            label,
+            d.rms(d.static_sse),
+            d.rms(d.k8_sse),
+            d.rms(d.quant_sse),
+            d.rms(d.segfree_sse),
+            d.rms(d.pca_sse),
+            100.0 * (d.static_sse - d.quant_sse) / denom,
+            100.0 * (d.quant_sse - d.segfree_sse) / denom,
+            100.0 * d.segfree_sse / denom,
+        );
+    };
+    mean_row("MEAN gray", &gray_total);
+    mean_row("MEAN chroma", &chroma_total);
+    mean_row("MEAN all", &total);
+    println!();
+    println!("All columns are energy fractions of the emitted static error squared:");
+    println!(
+        "  tonal% = (static^2 - quantSeg^2)/static^2 ... removed by time with the emitted colours;"
+    );
+    println!(
+        "  colr%  = (quantSeg^2 - segFree^2)/static^2 ... colour quantization + two-colour model;"
+    );
+    println!("  floor% = segFree^2/static^2                ... out of reach of any duty sequence.");
+    println!(
+        "Unreachable fraction of pure source energy: gray {:.2}%, chroma {:.2}%.",
+        100.0 * gray_total.segfree_sse / gray_total.src_sse.max(1e-12),
+        100.0 * chroma_total.segfree_sse / chroma_total.src_sse.max(1e-12),
+    );
+    println!();
+    println!("Reading: for GRAYSCALE targets the eight per-cell samples are collinear, so");
+    println!("free per-dot duty reaches them exactly (floor 0): the entire static error is");
+    println!("tonal (H1) plus finite-K / 8-bit colour quantization. For CHROMATIC targets a");
+    println!("two-colour cell has a genuine floor (H2): no duty sequence removes it. Time is");
+    println!("a per-dot tonal instrument, not a way to add spatial or chromatic samples.");
 }
 
 // ---------------------------------------------------------------------------
@@ -1039,7 +1265,7 @@ fn grain_surface(
 fn main() -> io::Result<()> {
     let cfg = Config::parse();
     if has("--help") || cfg.mode == "help" {
-        println!("modes: matrix spectrum loss framelocal reach live");
+        println!("modes: matrix spectrum loss framelocal floors reach decompose live");
         return Ok(());
     }
     match cfg.mode.as_str() {
@@ -1048,6 +1274,7 @@ fn main() -> io::Result<()> {
         "loss" => run_loss(&cfg),
         "framelocal" => run_framelocal(&cfg),
         "reach" => run_reach(&cfg),
+        "decompose" => run_decompose(&cfg),
         "live" => run_live(&cfg)?,
         other => {
             eprintln!("unknown --mode={other}; try --help");
@@ -1131,6 +1358,17 @@ mod tests {
             k8.rmse_source,
             stat.rmse_source
         );
+    }
+
+    #[test]
+    fn decomposition_floors_are_ordered() {
+        let img = targets::smooth_gradient(16, 8, 5);
+        let d = decompose_target(&img, 8, 5);
+        // Energy ordering: pca <= segFree <= quantSeg <= static. Each step is a
+        // relaxation of the previous, so the sums of squares must be ordered.
+        assert!(d.pca_sse <= d.segfree_sse + 1e-2, "pca>segfree");
+        assert!(d.segfree_sse <= d.quant_sse + 1e-2, "segfree>quant");
+        assert!(d.quant_sse <= d.static_sse + 1e-2, "quant>static");
     }
 
     #[test]
