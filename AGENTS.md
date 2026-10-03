@@ -8,7 +8,7 @@ If you are an AI agent asked to build a LibGibson app, do this **in order** —
 do not start by reading `src/`:
 
 1. **Read [`docs/AI_VISUAL_AUTHORING.md`](docs/AI_VISUAL_AUTHORING.md).** It is
-   ~400 lines and it is the method. Everything below is a summary of its
+   ~480 lines and it is the method. Everything below is a summary of its
    discipline — the guide is the authority.
 2. **Define the semantic world** (layer 1): what is the thing, as data?
 3. **Define the visual metaphor / law** (layer 2): how does meaning become
@@ -28,11 +28,20 @@ do not start by reading `src/`:
     visual acceptance. Every `examples/recipe_*.rs` has a
     `--capture WxH[:mono]` mode for exactly this.
 
+> **If the piece moves through several visual representations** of one system (a
+> cinematic sequence, like `examples/libgibson_intro`), there is an extra
+> discipline the ten steps above don't cover — a *representation atlas*: 2–5
+> persistent identity anchors **transported** across distinct visual bases,
+> driven by a director (`frame = f(t)`). See
+> [`docs/AI_VISUAL_AUTHORING.md` §6](docs/AI_VISUAL_AUTHORING.md#6-directed-representation-the-atlas)
+> and plan it first with [`docs/AI_VISUAL_ATLAS_PLAN.md`](docs/AI_VISUAL_ATLAS_PLAN.md).
+
 Pick a matching starting point from the recipes:
 
 | Your domain | Start from |
 |---|---|
 | A spatial/cinematic world owning the frame | [`examples/recipe_hero_with_hud.rs`](examples/recipe_hero_with_hud.rs) |
+| One system shown in several representations / a cinematic sequence | [`examples/recipe_identity_transport.rs`](examples/recipe_identity_transport.rs) + [`examples/recipe_directed_atlas.rs`](examples/recipe_directed_atlas.rs) |
 | One space navigated at many scales | [`examples/recipe_continuous_world.rs`](examples/recipe_continuous_world.rs) |
 | Must work wide → tiny | [`examples/recipe_semantic_zoom.rs`](examples/recipe_semantic_zoom.rs) |
 | Drill-in without losing place | [`examples/recipe_cinematic_overlay.rs`](examples/recipe_cinematic_overlay.rs) |
@@ -43,6 +52,9 @@ Pick a matching starting point from the recipes:
 
 - **The `gibson::ui` chrome layer** (components, skins, responsive, motion):
   [`docs/UI_LAYER.md`](docs/UI_LAYER.md).
+- **Directed / multi-representation pieces** (identity transport, a seekable
+  `frame = f(t)` film): [`docs/AI_VISUAL_AUTHORING.md` §6](docs/AI_VISUAL_AUTHORING.md#6-directed-representation-the-atlas),
+  planned with [`docs/AI_VISUAL_ATLAS_PLAN.md`](docs/AI_VISUAL_ATLAS_PLAN.md).
 - **Feature overview / stability tiers:** [`docs/FEATURES.md`](docs/FEATURES.md),
   [`docs/RELEASE_CONTRACT.md`](docs/RELEASE_CONTRACT.md).
 - **Glyph/capability degradation:** [`docs/GLYPHS.md`](docs/GLYPHS.md).

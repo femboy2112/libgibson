@@ -1,7 +1,7 @@
 # Visual Authoring for AI Agents
 
 **You are a coding agent about to build a LibGibson application. Read this first.
-It is ~400 lines and it will save you from reading 30,000 lines of source.**
+It is ~480 lines and it will save you from reading 30,000 lines of source.**
 
 LibGibson can render continuous, cinematic, spatial worlds in a terminal. It can
 *also* render dashboards of bordered boxes. The substrate does not care which you
@@ -17,7 +17,7 @@ guide exists because that decision is almost always made badly by default.
 > below is the plan.
 
 This is not an aesthetic mandate. Panels are correct for some domains (see
-[§7](#7-when-the-panel-farm-is-actually-right)). It is a method for making the
+[§8](#8-when-the-panel-farm-is-actually-right)). It is a method for making the
 *right* choice on purpose instead of the default one by accident.
 
 ---
@@ -26,9 +26,9 @@ This is not an aesthetic mandate. Panels are correct for some domains (see
 
 You do **not** need to read the whole codebase. Read this, in order, and stop:
 
-1. **This file** (`docs/AI_VISUAL_AUTHORING.md`) — the method. ~400 lines.
+1. **This file** (`docs/AI_VISUAL_AUTHORING.md`) — the method. ~480 lines.
 2. **One matching recipe** from `examples/recipe_*.rs` — pick by the decision
-   tree in [§6](#6-decision-tree). ~100 lines.
+   tree in [§7](#7-decision-tree). ~100 lines.
 3. **[`docs/UI_LAYER.md`](UI_LAYER.md), §"Local escape hatches and custom
    components"** (the `raw` / `surface` / `raster` / `Component` section) and
    §"Theme is a palette; Skin is a design grammar" — for the chrome layer. Skim,
@@ -36,7 +36,7 @@ You do **not** need to read the whole codebase. Read this, in order, and stop:
 4. **Public API docs you reach from the recipe** — `Node::canvas`, `RgbRaster`,
    `Surface`, `Camera` — on demand.
 
-Total: **~600 lines to a correct architecture.** If you find yourself reading
+Total: **~700 lines to a correct architecture.** If you find yourself reading
 `src/` to figure out *what to build*, stop — that's an architecture question, and
 it is answered here, not in the source.
 
@@ -220,7 +220,7 @@ world, chrome as one-line text and overlays. It is not a required aesthetic — 
 
 Each recipe is tiny (~100 lines), teaches exactly one law, and has a
 deterministic `--capture WxH[:mono|:ansi16|:ansi256]` mode so you can render and
-**look at** the result (see [§8](#8-visual-acceptance-is-load-bearing)).
+**look at** the result (see [§9](#9-visual-acceptance-is-load-bearing)).
 
 ### HERO WITH HUD — the world owns the frame
 ```
@@ -237,6 +237,13 @@ not because the frame was carved into boxes first.
 One coordinate space. One semantic object. The camera changes scale and position;
 you never swap "pages". Navigating *is* moving the camera.
 → [`recipe_continuous_world.rs`](../examples/recipe_continuous_world.rs)
+
+> This is the *single-world* case of a more general rule. A **cinematic** piece
+> deliberately changes visual basis (a UI becomes a city becomes a planet) — so
+> the law is not "one coordinate space" but **one *semantic* continuity class**:
+> keep the identities and the model continuous, and when you change basis,
+> transport identity across the change instead of swapping pages. See
+> [§6](#6-directed-representation-the-atlas).
 
 ### SEMANTIC ZOOM — simplify meaning, don't squeeze boxes
 ```
@@ -261,7 +268,101 @@ ramp), with color as enhancement — not in hue alone.
 
 ---
 
-## 6. Decision tree
+## 6. Directed representation: the atlas
+
+§§1–5 get you **one coherent world**. The flagship intro
+(`cargo run --release --example libgibson_intro`) does something those five laws
+do not describe: it shows **one system in seven visual representations** — a
+declarative agent UI, a coalescing scalar field, a Braille wireframe city, mounted
+micro-UIs, courier capsules, a perspective ascent, a ray-traced planet — and it
+stays coherent because the **same four identities ride through every one**. That
+is a *representation atlas*, and authoring it is a different skill than composing a
+single frame. This is the level most ambitious terminal pieces are actually
+reaching for, and the one most agents never name.
+
+> **The reframe.** §5's `CONTINUOUS WORLD` law says "one coordinate space, one
+> camera." Right for navigating *one* world; too narrow for a cinematic piece,
+> which *changes* visual basis on purpose. The general rule is **one semantic
+> continuity class**: what stays continuous is the *identity set and the model*,
+> not the pixels. Use one coordinate space when you navigate one world; when you
+> change visual basis, **preserve identity through explicit transport.**
+
+### The seven ingredients (each is real in `examples/libgibson_intro/`)
+
+1. **One semantic model, read by every view.** The flagship's `model.rs` is a
+   finite agent/dependency graph plus four message routes — ~100 lines, explicitly
+   simulated — and the UI *and* the city *and* the planet all read it. Not a model
+   per screen.
+2. **2–5 persistent identity anchors, each carried by ≥2 redundant channels.**
+   `identity.rs` gives each agent an accent colour, a one-cell signature glyph
+   (`⌂ ◇ ▥ ⊞`), and a shared normalized site. The redundancy is load-bearing:
+   colour alone dies in Mono, so identity also rides **shape and position**. This
+   one trick is what lets a viewer track "the same thing" from a UI row to a
+   building to a planetary arc.
+3. **Genuinely distinct visual bases.** Different realizations (`Node` UI →
+   `RgbRaster` field → Braille wireframe → perspective sphere), not one grid
+   re-skinned. If your "representations" are all bordered-box layouts with
+   different titles, you built a slideshow, not an atlas.
+4. **Explicit adjacent transitions — a move, not a cut.** Between basis *i* and
+   *i+1*, transport the anchors *visibly*. The flagship draws literal "identity
+   conduits" from the UI anchors to the same building roofs, and shares one camera
+   basis across city→ascent→planet so the pull-out is a real pullback, not a
+   rescaled screenshot. The anti-pattern is a page-swap where frame *i+1* is
+   unrelated to frame *i*.
+5. **A director: `frame = f(t)`.** `director.rs` is a seekable cue sheet; time is
+   *explicit state*, never a wall-clock read or a paint-time accumulator. That is
+   what makes the piece a *film* — deterministic, seekable (`--at=39 --freeze`),
+   testable — instead of an animation loop you can only watch live. **Put the clock
+   in your model, not in your paint function.**
+6. **A shot/attention grammar inside the bases.** Representation and *direction*
+   are two layers. Cues pick *which basis*; shots pick *where attention goes*
+   inside it (`shots.rs` ties each shot to a `focal_agent` — an identity). What the
+   viewer looks at, and when, is its own pass.
+7. **Holds and payoff.** A deliberate still frame costs zero render delta and gives
+   the eye a landing; an escalation builds to a reveal. Stillness used on purpose
+   is as composed as motion.
+
+### What the atlas buys — and what it does not
+
+Four of these are *checkable invariants* — the flagship tests them, and so can you
+(the `recipe_directed_atlas.rs --selftest` below is a template):
+
+- **director determinism** — same `t` ⇒ identical frame;
+- **direct seek** — seeking to `t` equals running to `t` (keep the clock in state);
+- **frozen-hold zero-diff** — a held frame emits 0 cell / 0 byte delta;
+- **editorial locality** — a bounded overlay touches only its own region.
+
+The other two — *identity surviving every basis change* and *a transition reading
+as a transformation rather than a scene cut* — the flagship does **not** assert in
+code. Its own test file says so: *"Cinematic correctness witnesses, not substitutes
+for human art direction."* Those are **taste**.
+
+> The atlas buys **coherence** — identity persists, time is deterministic, holds
+> are free, overlays are local. It does **not** buy **spectacle**. The flagship's
+> beauty came from a human art-director iterating on rendered frames, pass after
+> pass; expect to do the same. Structure gets you a coherent world that
+> transforms. The last mile to "how did they *do* that" is authored by eye — so
+> render your acts and **look** ([§9](#9-visual-acceptance-is-load-bearing)).
+
+### Two recipes
+
+- **IDENTITY TRANSPORT** — the same three marks in three distinct bases (ledger →
+  graph → field), visibly travelling between them.
+  → [`recipe_identity_transport.rs`](../examples/recipe_identity_transport.rs)
+  (`--at=PHASE`, `--capture WxH[:mono]`)
+- **DIRECTED ATLAS** — a tiny seekable film (establish → transform → reveal → hold
+  → payoff) with an explicit cue sheet and `frame = f(t)`. `--selftest` mechanically
+  asserts determinism, direct-seek, boundary continuity and frozen-hold zero-diff.
+  → [`recipe_directed_atlas.rs`](../examples/recipe_directed_atlas.rs)
+  (`--at=T`, `--selftest`, `--capture WxH[:mono]`)
+
+Plan the atlas *before* you code it, with
+[`docs/AI_VISUAL_ATLAS_PLAN.md`](AI_VISUAL_ATLAS_PLAN.md) — it forces you to name
+the model, the anchors, the bases, and each transition before a line of paint.
+
+---
+
+## 7. Decision tree
 
 Useful, not dogmatic. Answer top-down; the first YES sets your architecture.
 
@@ -278,6 +379,10 @@ Does the semantic state transform continuously over time?
   YES → map state → geometry FIRST; motion interpolates the change.
         Animation deforms the one object; it is not decorative garnish.
 
+Does the piece move through SEVERAL distinct visual representations of one system?
+  YES → build a representation atlas: persistent identity anchors transported
+        across bases, driven by a director (frame = f(t)).   [§6, THE ATLAS]
+
 Will the app run at many sizes?
   YES → plan which meaning is Essential / Secondary / Tertiary.
         Shrinking drops Tertiary, keeps the hero.          [SEMANTIC ZOOM]
@@ -289,7 +394,7 @@ Is a visualization the REASON the application exists?
   YES → give it visual primacy. Chrome serves it, not the reverse.
 
 Is the domain primarily editorial / CRUD / forms / text navigation / an inspector?
-  YES → a semantic gibson::ui layout can legitimately own the frame.  [§7]
+  YES → a semantic gibson::ui layout can legitimately own the frame.  [§8]
 
 More than ~3 major bordered regions and you have NOT hit a YES above?
   → You are probably building a Panel Farm. Re-read §2.
@@ -297,7 +402,7 @@ More than ~3 major bordered regions and you have NOT hit a YES above?
 
 ---
 
-## 7. When the Panel Farm is actually right
+## 8. When the Panel Farm is actually right
 
 Panels are not banned. They are the **correct** primary structure when the domain
 *is* a set of discrete, co-equal textual regions:
@@ -316,7 +421,7 @@ choose accordingly.
 
 ---
 
-## 8. Visual acceptance is load-bearing
+## 9. Visual acceptance is load-bearing
 
 > **"It compiles. Tests pass. Therefore done."** — No. That is how AI-generated
 > visual software ships a panel farm with a green checkmark.
@@ -348,7 +453,7 @@ unrecognizable there, color was carrying meaning it should not have been. Do thi
 
 ---
 
-## 9. The checklist (before you call it done)
+## 10. The checklist (before you call it done)
 
 - [ ] I wrote the visual law (layer 2) in one sentence before touching UI code.
 - [ ] One dominant object owns 60–90% of the frame: big **and** dense **and** the
@@ -357,13 +462,18 @@ unrecognizable there, color was carrying meaning it should not have been. Do thi
       color/position), not stranded in side panels.
 - [ ] One coordinate space; state changes **deform** the object, they don't swap
       views or refill panels.
+- [ ] If the piece changes visual basis, the same 2–5 identity anchors are
+      **transported** across every change (not a page-swap), carried by shape and
+      position — not colour alone. [§6]
+- [ ] If it is time-based, the clock is **explicit state** (`frame = f(t)`): it
+      seeks deterministically and held frames are zero-diff. [§6]
 - [ ] `screen().height(cx.environment.height)` is set (or the world collapses).
 - [ ] Small sizes drop secondary meaning and keep the hero.
 - [ ] Inspectors/detail are overlays; the world never reflows.
 - [ ] The object survives Mono / glyph fallback.
 - [ ] I **rendered captures at ≥3 sizes + Mono and looked at them.**
 - [ ] If I have >3 bordered regions, I confirmed the domain is genuinely a
-      dashboard ([§7](#7-when-the-panel-farm-is-actually-right)).
+      dashboard ([§8](#8-when-the-panel-farm-is-actually-right)).
 
 ---
 
