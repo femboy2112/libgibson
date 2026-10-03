@@ -64,6 +64,7 @@ pub mod temporal;
 // Internal renderer plumbing (the atomic wire transaction). Crate-private: it has
 // no external consumers, is not re-exported, and its stability is the renderer's,
 // not a standalone public API. See docs/RELEASE_CONTRACT.md §2.
+pub mod plot;
 pub(crate) mod transaction;
 pub mod transition;
 /// Experimental Rust-only semantic components, skins, interaction, and motion.
