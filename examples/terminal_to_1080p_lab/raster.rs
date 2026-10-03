@@ -86,19 +86,40 @@ fn dot_center(g: &Grid, dy: usize, dx: usize) -> (f64, f64) {
     (dx as f64 * cw + cw * 0.5, dy as f64 * ch + ch * 0.5)
 }
 
-/// The eight Braille dot blobs: disks of radius `r` samples.
-pub fn braille_dots(g: &Grid, radius: f64) -> Vec<Vec<f32>> {
+/// Braille dot shape used by the raster model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DotShape {
+    /// Round, gapped discs (the default): no two dots tile the cell.
+    Disc,
+    /// Axis-aligned squares of half-width `radius`. With `radius` at or above
+    /// half the dot pitch they tile, removing the inter-dot gaps. Exists purely
+    /// to bracket how much the round-gap assumption drives the results.
+    Square,
+}
+
+/// The eight Braille dot blobs with a selectable shape, disks or squares of
+/// size `radius` samples.
+pub fn braille_dots_shaped(g: &Grid, radius: f64, shape: DotShape) -> Vec<Vec<f32>> {
     let mut out = Vec::with_capacity(8);
     for dy in 0..4 {
         for dx in 0..2 {
             let (cx, cy) = dot_center(g, dy, dx);
             out.push(rect(g, move |x, y| {
-                let d2 = (x as f64 + 0.5 - cx).powi(2) + (y as f64 + 0.5 - cy).powi(2);
-                d2 <= radius * radius
+                let px = x as f64 + 0.5 - cx;
+                let py = y as f64 + 0.5 - cy;
+                match shape {
+                    DotShape::Disc => px * px + py * py <= radius * radius,
+                    DotShape::Square => px.abs() <= radius && py.abs() <= radius,
+                }
             }));
         }
     }
     out
+}
+
+/// The eight Braille dot blobs: disks of radius `r` samples.
+pub fn braille_dots(g: &Grid, radius: f64) -> Vec<Vec<f32>> {
+    braille_dots_shaped(g, radius, DotShape::Disc)
 }
 
 /// The 256 static Braille masks as coverage unions of the eight dot blobs.
@@ -446,6 +467,21 @@ mod tests {
             (light.raster.iter().sum::<f32>() / full.raster.iter().sum::<f32>() - 0.25).abs()
                 < 1e-6
         );
+    }
+
+    #[test]
+    fn square_dots_tile_when_radius_reaches_half_pitch() {
+        let g = Grid::default();
+        let disc = braille_dots_shaped(&g, 2.0, DotShape::Disc);
+        let square = braille_dots_shaped(&g, 2.0, DotShape::Square);
+        // Square dots ink at least as much as discs at the same radius, and a
+        // larger radius inks more.
+        let sd: f32 = disc.iter().map(|d| d.iter().sum::<f32>()).sum();
+        let ss: f32 = square.iter().map(|d| d.iter().sum::<f32>()).sum();
+        assert!(ss >= sd);
+        let square4 = braille_dots_shaped(&g, 4.0, DotShape::Square);
+        let s4: f32 = square4.iter().map(|d| d.iter().sum::<f32>()).sum();
+        assert!(s4 > ss);
     }
 
     #[test]

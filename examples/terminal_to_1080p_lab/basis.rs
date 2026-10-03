@@ -276,6 +276,37 @@ pub fn hull_error(target: &[f64], glyphs: &[VecN], iters: usize) -> f64 {
         .sqrt()
 }
 
+/// Frank-Wolfe duality gap for `0.5 ||target - q||^2` at `q`, for the convex
+/// hull of `glyphs`. It is a nonnegative bound on `f(q) - min f`; zero means `q`
+/// is optimal up to floating point. Used to certify that [`hull_point`] has
+/// actually converged rather than stopped on the iteration budget.
+pub fn hull_gap(target: &[f64], q: &[f64], glyphs: &[VecN]) -> f64 {
+    if glyphs.is_empty() {
+        return 0.0;
+    }
+    // s* = argmin_s <q - target, s>.
+    let mut arg = 0usize;
+    let mut argval = f64::INFINITY;
+    for (i, g) in glyphs.iter().enumerate() {
+        let v: f64 = q
+            .iter()
+            .zip(target)
+            .zip(g)
+            .map(|((qi, ti), gi)| (qi - ti) * gi)
+            .sum();
+        if v < argval {
+            argval = v;
+            arg = i;
+        }
+    }
+    let s = &glyphs[arg];
+    q.iter()
+        .zip(target)
+        .zip(s)
+        .map(|((qi, ti), si)| (qi - ti) * (qi - si))
+        .sum()
+}
+
 /// Temporal reconstruction error **with the same two-level colour model as
 /// [`static_error`]**: minimize over `q` in the glyph convex hull and scalars
 /// `b, c` the quantity `|| target - (b + c q) ||`, with the reconstruction
@@ -329,7 +360,11 @@ pub fn temporal_error(target: &[f64], glyphs: &[VecN], iters: usize) -> f64 {
             .sum();
         best = best.min(sse / nf);
     }
-    best.max(0.0).sqrt()
+    // A single glyph is a hull vertex, so the static fit is always feasible for
+    // the temporal problem. Taking the min makes `temporal <= static` a hard
+    // guarantee rather than a hope that the hull_point search found the vertex.
+    let stat = static_error(target, glyphs).0;
+    best.max(0.0).sqrt().min(stat)
 }
 
 /// Static-only reconstruction error for a pure *binary* basis (no colours),
@@ -470,6 +505,43 @@ mod tests {
         let (rmse, _, b, a) = static_error(&target, std::slice::from_ref(&g));
         assert!(rmse < 1e-9, "rmse={rmse} b={b} a={a}");
         assert!((b - 0.3).abs() < 1e-9 && (a - 0.6).abs() < 1e-9);
+    }
+
+    #[test]
+    fn temporal_error_never_exceeds_static_error() {
+        // A single glyph is feasible for the temporal fit, so the guarantee must
+        // hold on every input, including ones the FW search finds no better.
+        let mut z = 0x1234_5678_9abc_def0u64;
+        let mut rnd = || {
+            z = z.wrapping_mul(6364136223846793005).wrapping_add(1);
+            ((z >> 40) as f64) / ((1u64 << 24) as f64)
+        };
+        for _ in 0..40 {
+            let p = 12;
+            let glyphs: Vec<Vec<f64>> = (0..5).map(|_| (0..p).map(|_| rnd()).collect()).collect();
+            let target: Vec<f64> = (0..p).map(|_| rnd()).collect();
+            let stat = static_error(&target, &glyphs).0;
+            let temp = temporal_error(&target, &glyphs, 32);
+            assert!(temp <= stat + 1e-9, "temp {temp} > stat {stat}");
+        }
+    }
+
+    #[test]
+    fn hull_gap_certifies_convergence() {
+        let glyphs = vec![
+            vec![1.0, 0.0, 0.0, 0.0],
+            vec![0.0, 1.0, 0.0, 0.0],
+            vec![0.0, 0.0, 1.0, 0.0],
+            vec![0.0, 0.0, 0.0, 1.0],
+        ];
+        // Reachable target: the duality gap at the found point is zero.
+        let target = vec![0.6, 0.4, 0.0, 0.0];
+        let q = hull_point(&target, &glyphs, 64);
+        assert!(hull_gap(&target, &q, &glyphs) < 1e-9);
+        // Unreachable direction: the gap is nonnegative.
+        let t2 = vec![0.2, 0.2, 0.2, 0.9];
+        let q2 = hull_point(&t2, &glyphs, 8);
+        assert!(hull_gap(&t2, &q2, &glyphs) >= -1e-12);
     }
 
     #[test]
