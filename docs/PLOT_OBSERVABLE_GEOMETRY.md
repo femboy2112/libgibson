@@ -116,12 +116,27 @@ Plotting must never silently eat data. Every `compile` returns a bounded report:
   alone, so it is independent of terminal size and of any reduction (law E);
 - `segments_considered` / `segments_clipped` — line adjacency pairs examined vs.
   clipped away at the plot boundary;
+- `points_clipped` — scatter points that were finite **and** in the scale domain
+  but projected outside the plot viewport (the scatter analogue of
+  `segments_clipped`). Without it a fit-to-extent scatter could lose points while
+  every rejection count read zero;
 - `primitives_emitted` — points/segments actually drawn;
 - `reduced_from` / `reduced_to` — present only when a `Reduce` policy ran.
 
 This is **not** a quality score. It lets a user distinguish "nothing visible
-because the data is off-viewport" from "nothing visible because every value was
-invalid for the log scale."
+because the data is off-viewport" (`points_clipped`/`segments_clipped`) from
+"nothing visible because every value was invalid for the log scale"
+(`scale_domain_rejected`). For a scatter series every finite sample is accounted
+for: `finite_samples = scale_domain_rejected + primitives_emitted +
+points_clipped`.
+
+### Boundary convention (one last-index)
+
+The drawable subpixel grid is indexed `0..=px-1`, so the normalized square maps
+onto `[0, px-1]`: `u=1` / `v=0` land on the **last valid index**, not one subpixel
+past it. Data, annotations, and tick cells all go through this one map, so a datum
+sitting exactly on the view extent is drawn, an edge reference line draws at either
+bound, and a datum on a tick value realizes in that tick's own cell.
 
 ## 6. Gaps and honest downsampling
 

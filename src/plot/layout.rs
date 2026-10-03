@@ -29,6 +29,12 @@ pub struct PlotReport {
     pub scale_domain_rejected: usize,
     pub segments_considered: usize,
     pub segments_clipped: usize,
+    /// Scatter points that were finite AND inside the scale domain, but projected
+    /// to a pixel outside the plot viewport and so were not drawn. The scatter
+    /// analogue of `segments_clipped`: without it a fit-to-extent scatter could
+    /// lose points with every rejection count reading zero (doc §5 — plotting
+    /// must never silently eat data).
+    pub points_clipped: usize,
     pub primitives_emitted: usize,
     /// Original sample count that entered a reducer (0 if no reduction ran).
     pub reduced_from: usize,
@@ -100,12 +106,30 @@ pub struct PlotLayout {
     pub show_y_labels: bool,
     pub show_x_labels: bool,
     pub show_title: bool,
+    /// Whether there is reserved room for the axis caption (label + unit).
+    pub show_x_title: bool,
+    pub show_y_title: bool,
 }
 
 /// Reserve chrome margins. Responsive: at small sizes labels are dropped and the
 /// plot keeps the space (doc §7 — data outranks chrome). Tick *values* are
 /// unaffected.
-fn reserve(area: Rect, y_ticks: &[Tick], has_title: bool) -> (Rect, bool, bool, bool) {
+struct Chrome {
+    rect: Rect,
+    show_y_labels: bool,
+    show_x_labels: bool,
+    show_title: bool,
+    show_x_title: bool,
+    show_y_title: bool,
+}
+
+fn reserve(
+    area: Rect,
+    y_ticks: &[Tick],
+    has_title: bool,
+    has_x_label: bool,
+    has_y_label: bool,
+) -> Chrome {
     let max_ylab = y_ticks
         .iter()
         .map(|t| t.label.chars().count())
@@ -114,6 +138,10 @@ fn reserve(area: Rect, y_ticks: &[Tick], has_title: bool) -> (Rect, bool, bool, 
     let show_y = area.width >= 24 && max_ylab > 0;
     let show_x = area.height >= 8;
     let show_title = has_title && area.height >= 6;
+    // Axis captions cost a whole margin row each; only reserve them once the plot
+    // has height to spare, so at tiny sizes the data keeps the space (doc §7).
+    let show_x_title = has_x_label && show_x && area.height >= 12;
+    let show_y_title = has_y_label && show_y && area.width >= 30 && area.height >= 12;
 
     let left = if show_y {
         (max_ylab + 1).min(area.width / 3)
@@ -121,13 +149,21 @@ fn reserve(area: Rect, y_ticks: &[Tick], has_title: bool) -> (Rect, bool, bool, 
         0
     };
     let right = if area.width >= 24 { 1 } else { 0 };
-    let bottom = if show_x { 2 } else { 0 }; // axis row + label row
-    let top = if show_title { 1 } else { 0 };
+    // bottom: axis row + tick-label row (+ x-caption row); top: title (+ y-caption).
+    let bottom = (if show_x { 2 } else { 0 }) + u16::from(show_x_title);
+    let top = u16::from(show_title) + u16::from(show_y_title);
 
     let w = area.width.saturating_sub(left + right);
     let h = area.height.saturating_sub(top + bottom);
     let rect = Rect::new(area.x + left, area.y + top, w, h);
-    (rect, show_y && w > 0, show_x && h > 0, show_title)
+    Chrome {
+        rect,
+        show_y_labels: show_y && w > 0,
+        show_x_labels: show_x && h > 0,
+        show_title,
+        show_x_title: show_x_title && h > 0,
+        show_y_title: show_y_title && h > 0,
+    }
 }
 
 /// Compile a spec + view into device geometry and a receipt.
@@ -138,8 +174,14 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
     let x_tick_vals = major_ticks(spec.x.scale, view.x, TARGET_X_TICKS);
     let y_tick_vals = major_ticks(spec.y.scale, view.y, TARGET_Y_TICKS);
 
-    let (plot_rect, show_y_labels, show_x_labels, show_title) =
-        reserve(area, &y_tick_vals, !spec.title.is_empty());
+    let chrome = reserve(
+        area,
+        &y_tick_vals,
+        !spec.title.is_empty(),
+        !spec.x.label.is_empty(),
+        !spec.y.label.is_empty(),
+    );
+    let plot_rect = chrome.rect;
 
     let px_w = plot_rect.width.saturating_mul(2);
     let px_h = plot_rect.height.saturating_mul(4);
@@ -161,11 +203,16 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
         Some((xt, yt)) if px_w > 0 && px_h > 0 => Some(PlotTransform2D::new(
             xt,
             yt,
+            // The drawable subpixel grid is indexed `0..=px-1`, so normalized
+            // `u/v ∈ [0,1]` must map onto the span `[0, px-1]`: `u=1` lands on the
+            // LAST valid index, not one subpixel past it. Passing `px` here was the
+            // single off-by-one behind NEW-1/F2/F3 — a datum on the view extent
+            // rounded to an out-of-bounds pixel and was silently dropped.
             Viewport {
                 ox: 0.0,
                 oy: 0.0,
-                w: px_w as f64,
-                h: px_h as f64,
+                w: (px_w - 1) as f64,
+                h: (px_h - 1) as f64,
             },
         )),
         _ => None,
@@ -234,6 +281,10 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
                             if ix >= 0 && ix <= max_x && iy >= 0 && iy <= max_y {
                                 visible.push((ix, iy));
                                 report.primitives_emitted += 1;
+                            } else {
+                                // Finite and in-domain, but outside the viewport:
+                                // counted, never silently eaten (doc §5).
+                                report.points_clipped += 1;
                             }
                         }
                     }
@@ -282,37 +333,36 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
 
     // Project ticks to absolute cell coordinates (only those inside the view).
     let (x_ticks, y_ticks) = if let Some(t) = transform {
-        let xt = t.x;
-        let yt = t.y;
+        // Project ticks through the SAME device transform + rounding + subcell
+        // reduction the data uses, so a datum sitting on a tick value realizes in
+        // the tick's own cell (one shared last-index convention; fixes F3).
         let xs = x_tick_vals
             .into_iter()
             .filter_map(|tk| {
-                let u = xt.project(tk.value)?;
+                let u = t.x.project(tk.value)?;
                 if !(0.0..=1.0).contains(&u) {
                     return None;
                 }
-                let cell =
-                    plot_rect.x + (u * (plot_rect.width.saturating_sub(1)) as f64).round() as u16;
+                let sx = t.viewport.map(u, 0.0).0.round().clamp(0.0, max_x as f64) as u16;
                 Some(ProjectedTick {
                     value: tk.value,
                     label: tk.label,
-                    cell,
+                    cell: plot_rect.x + sx / 2,
                 })
             })
             .collect();
         let ys = y_tick_vals
             .into_iter()
             .filter_map(|tk| {
-                let v = yt.project(tk.value)?;
+                let v = t.y.project(tk.value)?;
                 if !(0.0..=1.0).contains(&v) {
                     return None;
                 }
-                let row = plot_rect.y
-                    + ((1.0 - v) * (plot_rect.height.saturating_sub(1)) as f64).round() as u16;
+                let sy = t.viewport.map(0.0, v).1.round().clamp(0.0, max_y as f64) as u16;
                 Some(ProjectedTick {
                     value: tk.value,
                     label: tk.label,
-                    cell: row,
+                    cell: plot_rect.y + sy / 4,
                 })
             })
             .collect();
@@ -329,8 +379,10 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
                 Annotation::VLine { x, color } => {
                     if let Some(u) = t.x.project(*x) {
                         if (0.0..=1.0).contains(&u) {
+                            // Same viewport map as the data: `u=1` lands on the
+                            // last drawable column, not one subpixel past it (F2).
                             annotations.push(ProjAnnotation::VLine {
-                                col_px: (u * px_w as f64).round() as i32,
+                                col_px: t.viewport.map(u, 0.0).0.round() as i32,
                                 color: *color,
                             });
                         }
@@ -340,7 +392,7 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
                     if let Some(v) = t.y.project(*y) {
                         if (0.0..=1.0).contains(&v) {
                             annotations.push(ProjAnnotation::HLine {
-                                row_px: ((1.0 - v) * px_h as f64).round() as i32,
+                                row_px: t.viewport.map(0.0, v).1.round() as i32,
                                 color: *color,
                             });
                         }
@@ -376,9 +428,11 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
         title: spec.title.clone(),
         x_axis: spec.x.clone(),
         y_axis: spec.y.clone(),
-        show_y_labels,
-        show_x_labels,
-        show_title,
+        show_y_labels: chrome.show_y_labels,
+        show_x_labels: chrome.show_x_labels,
+        show_title: chrome.show_title,
+        show_x_title: chrome.show_x_title,
+        show_y_title: chrome.show_y_title,
     };
     (layout, report)
 }

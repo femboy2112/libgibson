@@ -129,9 +129,11 @@ pub struct Viewport {
     pub ox: f64,
     /// Device y of normalized `v = 1` (the TOP edge; y is flipped).
     pub oy: f64,
-    /// Device width in pixels (maps `u ∈ [0,1]`).
+    /// Device x-span that `u = 1` maps to (`px → ox + w`). For a discrete grid of
+    /// `n` pixels indexed `0..=n-1` where both endpoints are drawable, this is
+    /// `n - 1`, so `u = 1` lands on the last valid index (not one past it).
     pub w: f64,
-    /// Device height in pixels (maps `v ∈ [0,1]`).
+    /// Device y-span that `v = 0` maps to; `n - 1` for an `n`-pixel grid (see `w`).
     pub h: f64,
 }
 

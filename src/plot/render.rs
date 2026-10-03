@@ -42,6 +42,14 @@ fn putc(s: &mut Surface, x: u16, y: u16, ch: char, style: Style) {
     s.set_cell(x, y, Cell::new(Glyph::from_char(ch), style));
 }
 
+/// `"label"` or `"label (unit)"` — the drawn axis caption.
+fn caption(axis: &super::data::AxisSpec) -> String {
+    match &axis.unit {
+        Some(u) if !u.is_empty() => format!("{} ({})", axis.label, u),
+        _ => axis.label.clone(),
+    }
+}
+
 /// Overlay a canvas's ink onto `dst` through `mode`, preserving each
 /// destination cell's background, touching only cells that carry a dot and only
 /// within `[ox, ox+cw) × [oy, oy+ch)` — the plot rectangle (law G: a primitive
@@ -101,15 +109,28 @@ pub fn render_themed(layout: &PlotLayout, mode: SubcellGlyphMode, theme: &PlotTh
     let ytick = if ascii { '+' } else { '┤' };
     let xtick = if ascii { '+' } else { '┬' };
 
-    // Title (top margin).
-    if layout.show_title && ly >= 1 {
+    // Title: the very top row of the reserved top margin.
+    if layout.show_title {
         let maxw = area.width as usize;
         let t: String = layout.title.chars().take(maxw).collect();
         s.print_str(
             lx.min(area.width.saturating_sub(1)),
-            ly - 1,
+            0,
             &t,
             title_style,
+            None,
+        );
+    }
+
+    // Y-axis caption: horizontal, on the row directly above the plot (F1).
+    if layout.show_y_title && ly >= 1 {
+        let maxw = area.width as usize;
+        let cap: String = caption(&layout.y_axis).chars().take(maxw).collect();
+        s.print_str(
+            lx.min(area.width.saturating_sub(1)),
+            ly - 1,
+            &cap,
+            label_style,
             None,
         );
     }
@@ -151,6 +172,22 @@ pub fn render_themed(layout: &PlotLayout, mode: SubcellGlyphMode, theme: &PlotTh
                 let lab: String = t.label.chars().take(room).collect();
                 s.print_str(startx, label_row, &lab, label_style, None);
             }
+        }
+    }
+
+    // X-axis caption: centered on its reserved row below the tick labels (F1).
+    if layout.show_x_title {
+        let cap_row = ly + h + 2; // axis row, tick-label row, then caption row
+        if cap_row < area.height {
+            let cap = caption(&layout.x_axis);
+            let clen = cap.chars().count() as u16;
+            let center = lx + w / 2;
+            let startx = center
+                .saturating_sub(clen / 2)
+                .min(area.width.saturating_sub(1));
+            let room = (area.width - startx) as usize;
+            let t: String = cap.chars().take(room).collect();
+            s.print_str(startx, cap_row, &t, label_style, None);
         }
     }
 
