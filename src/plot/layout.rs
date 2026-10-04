@@ -19,8 +19,37 @@ use super::ticks::{major_ticks, Tick};
 const TARGET_X_TICKS: usize = 6;
 const TARGET_Y_TICKS: usize = 5;
 
+/// A **configuration** fault: the plot spec + view do not describe a valid
+/// drawing at all, independent of any sample. This is ontologically distinct
+/// from a *sample* that is merely out of a valid scale's domain
+/// (`PlotReport::scale_domain_rejected`) — a malformed request versus a datum
+/// with no image under a well-formed request. `compile` returns `Err(..)` for a
+/// configuration fault and never fabricates per-sample rejections from it (doc
+/// §4; SAI crossover law A — "unknown ≠ free", a bad request is its own state).
+///
+/// A zero-area plot rectangle is **not** a configuration fault: a valid spec can
+/// legitimately compile to an empty realization (transform `None`, nothing
+/// drawn, nothing rejected), so it stays an `Ok` with empty geometry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlotError {
+    /// The X view is not a valid domain for the X scale — e.g. `Log10` over a
+    /// range whose `min ≤ 0`. The X axis transform has no definition, so no
+    /// sample could be placed regardless of its value. Checked before Y.
+    InvalidXAxisDomain,
+    /// The Y view is not a valid domain for the Y scale (checked after X is
+    /// found valid).
+    InvalidYAxisDomain,
+}
+
 /// Execution receipt. Not a quality score — a record of what happened to the
 /// data, so "off-viewport" is distinguishable from "all log-invalid" (doc §5).
+///
+/// The counters divide into two **gates** that never cross (SAI crossover law D):
+/// *acceptance* counts (`finite_samples`, `nonfinite_rejected`,
+/// `scale_domain_rejected`) are a property of (scale, view) alone and are
+/// independent of terminal size, capability, and reduction; *realization* counts
+/// (`segments_*`, `points_clipped`, `primitives_emitted`) depend on the device
+/// rectangle. Terminal size can never move an acceptance counter (law E).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PlotReport {
     pub samples_seen: usize,
@@ -40,6 +69,15 @@ pub struct PlotReport {
     pub reduced_from: usize,
     /// Sample count a reducer produced (0 if no reduction ran).
     pub reduced_to: usize,
+    /// Series on which a reducer was *requested* (`reduce != Reduce::None`).
+    pub reducers_requested: usize,
+    /// Series on which a requested reducer was **declined** and the series
+    /// rendered unreduced, because its precondition was unmet (`ExtremaPerColumn`
+    /// requires nondecreasing X). The scientific reducer is never run outside its
+    /// proven domain; the plot stays correct, just not downsampled (doc §6; SAI
+    /// crossover law C — requested vs effective, with the single lowering reason
+    /// being the only one possible here: non-monotone X).
+    pub reducers_declined: usize,
 }
 
 /// A tick resolved to an absolute cell coordinate along its axis.
@@ -96,8 +134,10 @@ pub struct PlotLayout {
     pub y_ticks: Vec<ProjectedTick>,
     pub series: Vec<ProjectedSeries>,
     pub annotations: Vec<ProjAnnotation>,
-    /// Data→subpixel transform (for hit-testing / readouts). `None` if the view
-    /// was not a valid domain for a scale (e.g. non-positive under `Log10`).
+    /// Data→subpixel transform (for hit-testing / readouts). `None` **only** when
+    /// the plot rectangle has zero area (nothing to realize) — an invalid scale
+    /// *view* is a configuration fault that `compile` rejects with `Err` and so
+    /// never reaches a `PlotLayout` (doc §4).
     pub transform: Option<PlotTransform2D>,
     pub title: String,
     pub x_axis: AxisSpec,
@@ -167,8 +207,28 @@ fn reserve(
 }
 
 /// Compile a spec + view into device geometry and a receipt.
-pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, PlotReport) {
+///
+/// Two failure ontologies are kept strictly apart (doc §4; SAI crossover law A):
+/// a malformed **configuration** — a scale view that is not a valid domain, e.g.
+/// `Log10` over a non-positive range — returns `Err(PlotError)` and reads no
+/// samples; a well-formed configuration always returns `Ok`, and individual
+/// samples with no image under a *valid* scale are counted in
+/// `PlotReport::scale_domain_rejected`. A zero-area rectangle is a valid
+/// configuration that realizes nothing — `Ok` with `transform == None`.
+pub fn compile(
+    spec: &PlotSpec,
+    view: &PlotView,
+    area: Rect,
+) -> Result<(PlotLayout, PlotReport), PlotError> {
     let mut report = PlotReport::default();
+
+    // CONFIGURATION GATE (first, before any sample or tick is read; law A). The
+    // axis transforms are a property of (scale, view) ALONE — independent of
+    // terminal size and of the data. A scale whose view is outside its domain
+    // (e.g. Log10 with min ≤ 0) has no transform at all: that is a malformed
+    // request, NOT a basis for rejecting otherwise-valid samples. X before Y.
+    let xt = AxisTransform::new(spec.x.scale, view.x).ok_or(PlotError::InvalidXAxisDomain)?;
+    let yt = AxisTransform::new(spec.y.scale, view.y).ok_or(PlotError::InvalidYAxisDomain)?;
 
     // Tick VALUES — size-independent.
     let x_tick_vals = major_ticks(spec.x.scale, view.x, TARGET_X_TICKS);
@@ -186,21 +246,12 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
     let px_w = plot_rect.width.saturating_mul(2);
     let px_h = plot_rect.height.saturating_mul(4);
 
-    // The axis transforms are a property of (scale, view) ALONE — independent of
-    // terminal size. `None` only when a view is outside a scale's domain (e.g.
-    // Log10 over a non-positive range). Domain rejection is counted from these.
-    let axes = match (
-        AxisTransform::new(spec.x.scale, view.x),
-        AxisTransform::new(spec.y.scale, view.y),
-    ) {
-        (Some(xt), Some(yt)) => Some((xt, yt)),
-        _ => None,
-    };
     // The full device transform additionally requires a non-degenerate plot
-    // rectangle. A zero-area rect leaves `transform == None` with `axes` still
-    // valid: nothing is *realized*, but nothing is *rejected* either (law E).
-    let transform = match axes {
-        Some((xt, yt)) if px_w > 0 && px_h > 0 => Some(PlotTransform2D::new(
+    // rectangle. A zero-area rect leaves `transform == None` with the axes still
+    // valid: nothing is *realized*, but nothing is *rejected* either (law E) —
+    // the realization gate is independent of the (already-passed) config gate.
+    let transform = if px_w > 0 && px_h > 0 {
+        Some(PlotTransform2D::new(
             xt,
             yt,
             // The drawable subpixel grid is indexed `0..=px-1`, so normalized
@@ -214,8 +265,9 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
                 w: (px_w - 1) as f64,
                 h: (px_h - 1) as f64,
             },
-        )),
-        _ => None,
+        ))
+    } else {
+        None
     };
 
     let mut proj_series = Vec::new();
@@ -229,10 +281,11 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
         for &(x, y) in &s.points {
             if x.is_finite() && y.is_finite() {
                 report.finite_samples += 1;
-                let in_domain = matches!(
-                    axes,
-                    Some((xt, yt)) if xt.project(x).is_some() && yt.project(y).is_some()
-                );
+                // Under a VALID scale (config gate already passed), a finite
+                // sample is domain-rejected iff it has no image — e.g. y ≤ 0 on a
+                // valid Log10 axis. This is a per-sample fact, never a stand-in
+                // for a malformed view (that became an `Err` above; law A).
+                let in_domain = xt.project(x).is_some() && yt.project(y).is_some();
                 if !in_domain {
                     report.scale_domain_rejected += 1;
                 }
@@ -254,15 +307,27 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
             continue;
         };
 
-        // Explicit, opt-in reduction (monotone-X line only).
-        let pts: Vec<(f64, f64)> = if s.kind == SeriesKind::Line
-            && s.reduce == Reduce::ExtremaPerColumn
-        {
-            let r =
-                super::data::reduce_extrema(&s.points, px_w as usize, view.x.min(), view.x.max());
-            report.reduced_from += s.points.len();
-            report.reduced_to += r.len();
-            r
+        // Explicit, opt-in reduction — requested vs effective (law C). The
+        // scientific reducer is only valid on a monotone-X line; outside that
+        // proven domain it is DECLINED (the series renders unreduced) and the
+        // decline is recorded, never run silently on data it would mangle.
+        let requested_reduce = s.kind == SeriesKind::Line && s.reduce == Reduce::ExtremaPerColumn;
+        let pts: Vec<(f64, f64)> = if requested_reduce {
+            report.reducers_requested += 1;
+            if super::data::is_nondecreasing_x(&s.points) {
+                let r = super::data::reduce_extrema(
+                    &s.points,
+                    px_w as usize,
+                    view.x.min(),
+                    view.x.max(),
+                );
+                report.reduced_from += s.points.len();
+                report.reduced_to += r.len();
+                r
+            } else {
+                report.reducers_declined += 1;
+                s.points.clone()
+            }
         } else {
             s.points.clone()
         };
@@ -434,7 +499,7 @@ pub fn compile(spec: &PlotSpec, view: &PlotView, area: Rect) -> (PlotLayout, Plo
         show_x_title: chrome.show_x_title,
         show_y_title: chrome.show_y_title,
     };
-    (layout, report)
+    Ok((layout, report))
 }
 
 #[cfg(test)]
@@ -456,6 +521,19 @@ mod tests {
         )
     }
 
+    fn log_x_spec() -> PlotSpec {
+        PlotSpec::new(
+            AxisSpec::new(AxisScale::Log10, "x"),
+            AxisSpec::new(AxisScale::Linear, "y"),
+        )
+    }
+    fn log_y_spec() -> PlotSpec {
+        PlotSpec::new(
+            AxisSpec::new(AxisScale::Linear, "x"),
+            AxisSpec::new(AxisScale::Log10, "y"),
+        )
+    }
+
     #[test]
     fn receipt_counts_nonfinite() {
         let spec = lin_spec().series(Series::line(vec![
@@ -464,7 +542,7 @@ mod tests {
             (f64::NAN, 5.0),
             (2.0, 2.0),
         ]));
-        let (_, rep) = compile(&spec, &view(0.0, 3.0, 0.0, 3.0), Rect::new(0, 0, 80, 24));
+        let (_, rep) = compile(&spec, &view(0.0, 3.0, 0.0, 3.0), Rect::new(0, 0, 80, 24)).unwrap();
         assert_eq!(rep.samples_seen, 4);
         assert_eq!(rep.finite_samples, 3);
         assert_eq!(rep.nonfinite_rejected, 1);
@@ -480,19 +558,16 @@ mod tests {
             (f64::NAN, f64::NAN),
             (2.0, 2.0),
         ]));
-        let (_, rep) = compile(&spec, &view(0.0, 3.0, 0.0, 3.0), Rect::new(0, 0, 80, 24));
+        let (_, rep) = compile(&spec, &view(0.0, 3.0, 0.0, 3.0), Rect::new(0, 0, 80, 24)).unwrap();
         assert_eq!(rep.segments_considered, 1, "gap must break the path");
     }
 
     #[test]
     fn log_domain_rejection_counted_and_breaks_path() {
-        // y log scale; a zero/negative y is domain-rejected and breaks the line.
-        let spec = PlotSpec::new(
-            AxisSpec::new(AxisScale::Linear, "x"),
-            AxisSpec::new(AxisScale::Log10, "y"),
-        )
-        .series(Series::line(vec![(0.0, 1.0), (1.0, 0.0), (2.0, 100.0)]));
-        let (_, rep) = compile(&spec, &view(0.0, 3.0, 1e-1, 1e3), Rect::new(0, 0, 80, 24));
+        // y log scale (VALID view); a zero/negative y SAMPLE is domain-rejected
+        // and breaks the line — a per-sample fact under a well-formed config.
+        let spec = log_y_spec().series(Series::line(vec![(0.0, 1.0), (1.0, 0.0), (2.0, 100.0)]));
+        let (_, rep) = compile(&spec, &view(0.0, 3.0, 1e-1, 1e3), Rect::new(0, 0, 80, 24)).unwrap();
         assert_eq!(rep.scale_domain_rejected, 1, "y=0 rejected under log");
         // the invalid middle point breaks the path: no segment spans it
         assert_eq!(rep.segments_considered, 0);
@@ -509,8 +584,8 @@ mod tests {
             (5.0, 5.0),
         ]));
         let v = view(0.0, 3.0, 0.0, 3.0);
-        let (la, ra) = compile(&spec, &v, Rect::new(0, 0, 120, 40));
-        let (lb, rb) = compile(&spec, &v, Rect::new(0, 0, 60, 20));
+        let (la, ra) = compile(&spec, &v, Rect::new(0, 0, 120, 40)).unwrap();
+        let (lb, rb) = compile(&spec, &v, Rect::new(0, 0, 60, 20)).unwrap();
         assert_eq!(ra.samples_seen, rb.samples_seen);
         assert_eq!(ra.finite_samples, rb.finite_samples);
         assert_eq!(ra.nonfinite_rejected, rb.nonfinite_rejected);
@@ -523,7 +598,8 @@ mod tests {
         let spec = lin_spec()
             .title("t")
             .series(Series::line(vec![(0.0, 0.0), (10.0, 10.0)]));
-        let (la, _) = compile(&spec, &view(0.0, 10.0, 0.0, 10.0), Rect::new(0, 0, 100, 30));
+        let (la, _) =
+            compile(&spec, &view(0.0, 10.0, 0.0, 10.0), Rect::new(0, 0, 100, 30)).unwrap();
         assert!(!la.x_ticks.is_empty() && !la.y_ticks.is_empty());
         for t in &la.x_ticks {
             assert!(t.cell >= la.plot_rect.x && t.cell < la.plot_rect.x + la.plot_rect.width);
@@ -531,21 +607,6 @@ mod tests {
         for t in &la.y_ticks {
             assert!(t.cell >= la.plot_rect.y && t.cell < la.plot_rect.y + la.plot_rect.height);
         }
-    }
-
-    #[test]
-    fn reduce_records_receipt() {
-        let pts: Vec<(f64, f64)> = (0..5000)
-            .map(|i| (i as f64, (i as f64 * 0.01).sin()))
-            .collect();
-        let spec = lin_spec().series(Series::line(pts).reduce(Reduce::ExtremaPerColumn));
-        let (_, rep) = compile(
-            &spec,
-            &view(0.0, 5000.0, -1.0, 1.0),
-            Rect::new(0, 0, 100, 30),
-        );
-        assert_eq!(rep.reduced_from, 5000);
-        assert!(rep.reduced_to > 0 && rep.reduced_to < 5000);
     }
 
     #[test]
@@ -561,34 +622,79 @@ mod tests {
             Rect::new(0, 0, 3, 2),
             Rect::new(0, 0, 0, 0),
         ] {
-            let (_la, _rep) = compile(&spec, &view(0.0, 1.0, 0.0, 1.0), rect);
+            // Valid linear config at hostile sizes: always Ok, never a panic.
+            let _ = compile(&spec, &view(0.0, 1.0, 0.0, 1.0), rect).unwrap();
         }
-        // invalid log view: everything domain-rejected, no panic
-        let logspec = PlotSpec::new(
-            AxisSpec::new(AxisScale::Log10, "x"),
-            AxisSpec::new(AxisScale::Linear, "y"),
-        )
-        .series(Series::line(vec![(1.0, 1.0), (10.0, 2.0)]));
-        let (la, rep) = compile(
-            &logspec,
-            &view(-5.0, 5.0, 0.0, 3.0),
-            Rect::new(0, 0, 80, 24),
+    }
+
+    // ---- SAI law A: invalid CONFIGURATION is a different thing than an invalid
+    // SAMPLE (doc §4; Round-II seam #1) --------------------------------------
+
+    #[test]
+    fn valid_log_axis_rejects_nonpositive_sample_as_sample() {
+        // VALID Log10 x view (1..1000). A sample x≤0 has no image under a
+        // well-formed log axis → it is a SAMPLE rejection (compile still Ok),
+        // while x=10 (perfectly valid here) is NOT rejected.
+        let spec = log_x_spec().series(Series::scatter(vec![(0.0, 1.0), (10.0, 1.0), (-5.0, 1.0)]));
+        let (_, rep) =
+            compile(&spec, &view(1.0, 1000.0, 0.0, 2.0), Rect::new(0, 0, 80, 24)).unwrap();
+        assert_eq!(rep.finite_samples, 3);
+        assert_eq!(
+            rep.scale_domain_rejected, 2,
+            "x=0 and x=-5 rejected under a VALID log axis; x=10 accepted"
         );
-        assert!(la.transform.is_none());
-        assert_eq!(rep.scale_domain_rejected, 2);
     }
 
     #[test]
-    fn reject_counts_size_independent_degenerate_break2() {
-        // Valid Linear scale, valid in-domain data. A ZERO-AREA plot rect must
-        // NOT reclassify finite, in-domain samples as scale_domain_rejected —
-        // that count is an axis property, independent of terminal size (law E;
-        // dalembert break #2, receipt misattribution).
+    fn invalid_log_x_view_is_config_error_not_sample_reject() {
+        // INVALID Log10 x view (min ≤ 0). The sample x=10 WOULD be valid under a
+        // proper log view, so it must NOT be laundered into scale_domain_rejected:
+        // the VIEW is malformed. Err, and no PlotLayout/receipt at all.
+        let spec = log_x_spec().series(Series::line(vec![(10.0, 1.0), (100.0, 2.0)]));
+        let err = compile(&spec, &view(-5.0, 5.0, 0.0, 3.0), Rect::new(0, 0, 80, 24)).unwrap_err();
+        assert_eq!(err, PlotError::InvalidXAxisDomain);
+    }
+
+    #[test]
+    fn invalid_log_y_view_is_config_error() {
+        let spec = log_y_spec().series(Series::line(vec![(1.0, 10.0), (2.0, 100.0)]));
+        let err =
+            compile(&spec, &view(0.0, 3.0, -1.0, 100.0), Rect::new(0, 0, 80, 24)).unwrap_err();
+        assert_eq!(err, PlotError::InvalidYAxisDomain);
+    }
+
+    #[test]
+    fn config_gate_checks_x_before_y() {
+        // Both axes' views invalid under Log10: X is reported first (deterministic).
+        let spec = PlotSpec::new(
+            AxisSpec::new(AxisScale::Log10, "x"),
+            AxisSpec::new(AxisScale::Log10, "y"),
+        )
+        .series(Series::line(vec![(10.0, 10.0)]));
+        let err = compile(&spec, &view(-1.0, 5.0, -1.0, 5.0), Rect::new(0, 0, 80, 24)).unwrap_err();
+        assert_eq!(err, PlotError::InvalidXAxisDomain);
+    }
+
+    #[test]
+    fn linear_valid_view_compiles_ok() {
+        let spec = lin_spec().series(Series::line(vec![(-5.0, -5.0), (5.0, 5.0)]));
+        assert!(compile(&spec, &view(-5.0, 5.0, -5.0, 5.0), Rect::new(0, 0, 80, 24)).is_ok());
+    }
+
+    #[test]
+    fn zero_area_is_ok_not_config_error_break2() {
+        // Valid Linear scale, valid in-domain data. A ZERO-AREA plot rect is a
+        // valid-but-empty REALIZATION, ontologically distinct from an invalid
+        // CONFIG: it stays Ok (transform None, nothing realized) and must NOT
+        // reclassify finite in-domain samples as scale_domain_rejected — that
+        // count is an axis property, size-independent (law E; dalembert break #2).
         let spec = lin_spec().series(Series::scatter(vec![(0.0, 0.0), (0.5, 0.5), (1.0, 1.0)]));
         let v = view(0.0, 1.0, 0.0, 1.0);
-        let (_, big) = compile(&spec, &v, Rect::new(0, 0, 80, 24));
-        let (_, zero_w) = compile(&spec, &v, Rect::new(0, 0, 0, 24));
-        let (_, zero_h) = compile(&spec, &v, Rect::new(0, 0, 80, 0));
+        let (big_l, big) = compile(&spec, &v, Rect::new(0, 0, 80, 24)).unwrap();
+        let (zw_l, zero_w) = compile(&spec, &v, Rect::new(0, 0, 0, 24)).unwrap();
+        let (_, zero_h) = compile(&spec, &v, Rect::new(0, 0, 80, 0)).unwrap();
+        assert!(big_l.transform.is_some());
+        assert!(zw_l.transform.is_none(), "zero width ⇒ nothing realized");
         for (name, rep) in [("big", big), ("zero_w", zero_w), ("zero_h", zero_h)] {
             assert_eq!(
                 rep.finite_samples, 3,
@@ -601,6 +707,187 @@ mod tests {
         }
     }
 
+    // ---- SAI law C: reducer requested vs effective (doc §6; Round-II seam #2) -
+
+    #[test]
+    fn reduce_records_receipt_on_increasing_x() {
+        let pts: Vec<(f64, f64)> = (0..5000)
+            .map(|i| (i as f64, (i as f64 * 0.01).sin()))
+            .collect();
+        let spec = lin_spec().series(Series::line(pts).reduce(Reduce::ExtremaPerColumn));
+        let (_, rep) = compile(
+            &spec,
+            &view(0.0, 5000.0, -1.0, 1.0),
+            Rect::new(0, 0, 100, 30),
+        )
+        .unwrap();
+        assert_eq!(rep.reducers_requested, 1);
+        assert_eq!(rep.reducers_declined, 0, "strictly increasing X ⇒ applied");
+        assert_eq!(rep.reduced_from, 5000);
+        assert!(rep.reduced_to > 0 && rep.reduced_to < 5000);
+    }
+
+    #[test]
+    fn reduce_applies_on_nondecreasing_x_with_duplicates() {
+        // Duplicate X is still nondecreasing; the column envelope stays faithful.
+        let mut pts: Vec<(f64, f64)> = (0..400).map(|i| (i as f64 / 100.0, 0.0)).collect();
+        pts.insert(200, (2.0, 7.0)); // duplicate x=2.0
+        let spec = lin_spec().series(Series::line(pts).reduce(Reduce::ExtremaPerColumn));
+        let (_, rep) =
+            compile(&spec, &view(0.0, 4.0, -1.0, 8.0), Rect::new(0, 0, 100, 30)).unwrap();
+        assert_eq!(rep.reducers_requested, 1);
+        assert_eq!(rep.reducers_declined, 0, "nondecreasing (dup X) ⇒ applied");
+        assert!(rep.reduced_to < rep.reduced_from);
+    }
+
+    #[test]
+    fn reduce_declines_on_descending_x_and_renders_unreduced() {
+        // Descending X is outside the reducer's proven domain → declined, NOT run.
+        let pts: Vec<(f64, f64)> = (0..500)
+            .rev()
+            .map(|i| (i as f64, (i as f64).sin()))
+            .collect();
+        let v = view(0.0, 500.0, -1.0, 1.0);
+        let area = Rect::new(0, 0, 100, 30);
+        let spec = lin_spec().series(Series::line(pts.clone()).reduce(Reduce::ExtremaPerColumn));
+        let (lr, rep) = compile(&spec, &v, area).unwrap();
+        assert_eq!(rep.reducers_requested, 1);
+        assert_eq!(rep.reducers_declined, 1, "descending X ⇒ declined");
+        assert_eq!(rep.reduced_from, 0, "reducer never ran");
+        assert_eq!(rep.reduced_to, 0);
+        // Declined ⇒ identical geometry to an explicit Reduce::None.
+        let none_spec = lin_spec().series(Series::line(pts).reduce(Reduce::None));
+        let (ln, _) = compile(&none_spec, &v, area).unwrap();
+        let (Prims::Segments(a), Prims::Segments(b)) = (&lr.series[0].prims, &ln.series[0].prims)
+        else {
+            panic!("line series ⇒ segments");
+        };
+        assert_eq!(
+            a, b,
+            "declined reduction renders exactly the unreduced path"
+        );
+    }
+
+    #[test]
+    fn reduce_declines_on_nonmonotone_x() {
+        // Self-intersecting X (up then down) → no silent reduction.
+        let mut pts: Vec<(f64, f64)> = (0..100).map(|i| (i as f64, 0.0)).collect();
+        pts.extend((0..100).map(|i| (100.0 - i as f64, 1.0)));
+        let spec = lin_spec().series(Series::line(pts).reduce(Reduce::ExtremaPerColumn));
+        let (_, rep) = compile(
+            &spec,
+            &view(0.0, 100.0, -1.0, 2.0),
+            Rect::new(0, 0, 100, 30),
+        )
+        .unwrap();
+        assert_eq!(rep.reducers_declined, 1);
+        assert_eq!(rep.reduced_from, 0);
+    }
+
+    #[test]
+    fn reduce_gap_does_not_defeat_monotonicity() {
+        // A NaN gap is transparent to the monotonicity check: a globally
+        // nondecreasing series WITH a gap still applies…
+        let mono = vec![
+            (0.0, 0.0),
+            (1.0, 1.0),
+            (f64::NAN, f64::NAN),
+            (2.0, 2.0),
+            (3.0, 3.0),
+        ];
+        let spec = lin_spec().series(Series::line(mono).reduce(Reduce::ExtremaPerColumn));
+        let (_, rep) = compile(&spec, &view(0.0, 3.0, 0.0, 3.0), Rect::new(0, 0, 100, 30)).unwrap();
+        assert_eq!(
+            rep.reducers_declined, 0,
+            "gap must not block a monotone series"
+        );
+
+        // …but a descending step HIDDEN across a gap is still caught → declined.
+        let hidden = vec![(0.0, 0.0), (5.0, 1.0), (f64::NAN, f64::NAN), (1.0, 2.0)];
+        let spec2 = lin_spec().series(Series::line(hidden).reduce(Reduce::ExtremaPerColumn));
+        let (_, rep2) =
+            compile(&spec2, &view(0.0, 5.0, 0.0, 3.0), Rect::new(0, 0, 100, 30)).unwrap();
+        assert_eq!(
+            rep2.reducers_declined, 1,
+            "a gap must not hide a descending jump (5 → 1)"
+        );
+    }
+
+    #[test]
+    fn declined_reducer_does_not_mutate_source_spec() {
+        let pts: Vec<(f64, f64)> = (0..50).rev().map(|i| (i as f64, 0.0)).collect();
+        let spec = lin_spec().series(Series::line(pts.clone()).reduce(Reduce::ExtremaPerColumn));
+        let _ = compile(&spec, &view(0.0, 50.0, -1.0, 1.0), Rect::new(0, 0, 80, 24)).unwrap();
+        assert_eq!(
+            spec.series[0].points, pts,
+            "compile never mutates source points"
+        );
+    }
+
+    // ---- SAI law D: conservation / separate gates (doc §5; Round-II seam #3) -
+
+    #[test]
+    fn scatter_conservation_law() {
+        // Under a valid config + non-empty area and NO reduction (scatter never
+        // reduces): finite_samples == scale_domain_rejected + primitives_emitted
+        // + points_clipped. One accepted & drawn, one in-domain but far off-view
+        // (clipped), one y≤0 under a valid log-y (domain rejected), one NaN.
+        let spec = log_y_spec().series(Series::scatter(vec![
+            (1.0, 10.0),      // in view → emitted
+            (1.5, 1e9),       // in-domain (y>0) but way above view → clipped
+            (2.0, 0.0),       // y=0 under valid Log10 → domain-rejected
+            (f64::NAN, 10.0), // non-finite → nonfinite_rejected, NOT in the law
+        ]));
+        let (_, r) = compile(&spec, &view(0.0, 3.0, 1.0, 100.0), Rect::new(0, 0, 80, 24)).unwrap();
+        assert_eq!(r.finite_samples, 3);
+        assert_eq!(r.nonfinite_rejected, 1);
+        assert_eq!(r.scale_domain_rejected, 1);
+        assert_eq!(r.points_clipped, 1);
+        assert_eq!(r.primitives_emitted, 1);
+        assert_eq!(
+            r.finite_samples,
+            r.scale_domain_rejected + r.primitives_emitted + r.points_clipped,
+            "scatter conservation under valid config + viewport"
+        );
+    }
+
+    #[test]
+    fn line_segment_accounting_is_separate_from_points() {
+        // Line emits SEGMENTS, not points — a different gate. For a single line
+        // series: segments_considered == primitives_emitted + segments_clipped.
+        // Two points sit far outside the view in the SAME direction, so the
+        // connecting segment is fully off-canvas and clipped away.
+        let spec = lin_spec().series(Series::line(vec![
+            (0.3, 0.3),
+            (0.6, 0.6),     // one visible segment (0.3→0.6)
+            (100.0, 100.0), // leaves the view
+            (200.0, 200.0), // the 100→200 segment is entirely off-canvas
+        ]));
+        let (_, r) = compile(&spec, &view(0.0, 1.0, 0.0, 1.0), Rect::new(0, 0, 80, 24)).unwrap();
+        assert_eq!(
+            r.segments_considered,
+            r.primitives_emitted + r.segments_clipped,
+            "line segment conservation (segments are not points)"
+        );
+        assert!(r.segments_clipped >= 1, "the 100→200 segment is off-canvas");
+    }
+
+    #[test]
+    fn capability_cannot_mutate_acceptance_counters() {
+        // The receipt is produced by compile, which takes no capability/mode —
+        // so realization capability is structurally unable to touch acceptance
+        // counts. Rendering the SAME layout under different modes leaves the
+        // compile-time report untouched (it is the same value).
+        let spec = log_y_spec().series(Series::line(vec![(0.0, 1.0), (1.0, 0.0), (2.0, 50.0)]));
+        let (layout, rep) =
+            compile(&spec, &view(0.0, 3.0, 1e-1, 1e3), Rect::new(0, 0, 80, 24)).unwrap();
+        let _ascii = crate::plot::render(&layout, crate::SubcellGlyphMode::Ascii);
+        let _braille = crate::plot::render(&layout, crate::SubcellGlyphMode::Braille2x4);
+        // rep is unchanged by either render (it predates and is independent of them)
+        assert_eq!(rep.scale_domain_rejected, 1);
+        assert_eq!(rep.finite_samples, 3);
+    }
+
     #[test]
     fn layer_monoid_law_h() {
         // Empty layer list = identity (no projected geometry).
@@ -608,7 +895,8 @@ mod tests {
             &lin_spec(),
             &view(0.0, 1.0, 0.0, 1.0),
             Rect::new(0, 0, 80, 24),
-        );
+        )
+        .unwrap();
         assert!(empty.series.is_empty());
 
         // Layers are ORDERED overlays; z-order is load-bearing (NOT commutative).
@@ -619,8 +907,10 @@ mod tests {
             &lin_spec().series(a.clone()).series(b.clone()),
             &v,
             Rect::new(0, 0, 80, 24),
-        );
-        let (ba, _) = compile(&lin_spec().series(b).series(a), &v, Rect::new(0, 0, 80, 24));
+        )
+        .unwrap();
+        let (ba, _) =
+            compile(&lin_spec().series(b).series(a), &v, Rect::new(0, 0, 80, 24)).unwrap();
         assert_eq!(ab.series.len(), 2);
         assert_eq!(ab.series[0].color, (1, 0, 0));
         assert_eq!(

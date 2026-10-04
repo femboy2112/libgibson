@@ -17,6 +17,16 @@ The one-sentence law: **a scientific plot is a finite diagram of observables in
 coordinate spaces, projected through validated axis transforms into a normalized
 square, placed in a viewport, and realized under the terminal's capabilities.**
 
+And the matching prohibition, so the division of labour is unambiguous: **the plot
+layer may *display* rival hypotheses, uncertainty, intervals or candidate
+structure that the caller supplies as observables — it never *manufactures* them.**
+It infers no peaks, no FFT components, no regressions, no statistics, no semantic
+labels, no uncertainty from raw measurements. Realization explains nothing
+downward about causes; it only places what it was given. (If you came here from an
+analysis/inversion system: that machinery stays in the application — see
+[`docs/research/SAI_ARCHITECTURAL_CROSSOVER.md`](research/SAI_ARCHITECTURAL_CROSSOVER.md)
+for which generic laws crossed over and which emphatically did not.)
+
 ## 2. The mathematical model
 
 For each series `j`:
@@ -74,13 +84,20 @@ same transform the renderer used.
 | `AxisSpec` | semantic axis: `scale`, `label`, optional `unit` (strings; no dimensional analysis) |
 | `PlotView` | currently visible `x`/`y` `FiniteRange` — pan/zoom changes THIS, never the data |
 | `SeriesKind` | `Scatter` \| `Line` |
-| `Reduce` | `None` \| `ExtremaPerColumn` (explicit, monotone-X only) |
+| `Reduce` | `None` \| `ExtremaPerColumn` (explicit, monotone-X only; *requested*, may be *declined* — §6) |
 | `Series` | `kind`, `points: Vec<(f64,f64)>`, `color`, `reduce` |
 | `Annotation` | `VLine{x}` \| `HLine{y}` \| `Point{x,y,label}` — in **data** coords |
 | `PlotSpec` | `x: AxisSpec`, `y: AxisSpec`, `series`, `annotations`, `title` |
 | `Tick` | `{ value: f64, label: String }` |
 | `PlotLayout` | compiled device geometry (plot rect, ticks, projected prims, labels) |
 | `PlotReport` | execution receipt (counts; see §5) |
+| `PlotError` | `InvalidXAxisDomain` \| `InvalidYAxisDomain` — a **configuration** fault (§4) |
+
+`compile` and the `plot` convenience both return `Result<_, PlotError>`: a
+malformed configuration is an `Err`, every valid configuration (including a
+valid-but-empty area) is `Ok`. The low-level extrema reducer is **not** public
+surface — the only reduction entry point is `Series::reduce(Reduce::ExtremaPerColumn)`,
+so the kernel always gets to check the precondition before it runs (§6).
 
 ## 4. Axis transforms as partial morphisms
 
@@ -103,17 +120,43 @@ Validation rules (enforced at construction / rejected at project time):
   and the `Some` case is **guaranteed finite**: any value whose projection is not
   finite (e.g. a far out-of-range datum whose `v - min` overflows) returns `None`.
 
+### Invalid configuration ≠ invalid sample (two ontologies, never conflated)
+
+A `Log10` **view** whose `min ≤ 0` is not a valid domain for the scale: the axis
+transform has no definition at all, so *no* sample — not even one that would be
+perfectly valid under a well-formed log view, like `x = 10` — could be placed.
+That is a **configuration** fault, and `compile` returns
+`Err(PlotError::InvalidXAxisDomain)` / `InvalidYAxisDomain` (X checked first),
+reading not a single sample. It is categorically different from a *sample* with no
+image under a **valid** scale (e.g. `x ≤ 0` on a valid `1..1000` log axis), which
+is an `Ok` compile with that sample counted in `scale_domain_rejected`. The old
+kernel collapsed the two — an invalid log *view* fabricated one
+`scale_domain_rejected` per finite sample, so a malformed request looked like a
+pile of bad data. A bad request and a bad datum are different states and now carry
+different results: `Err` versus a receipt counter. (A **zero-area** plot rectangle
+is a third, distinct thing: a *valid* configuration that simply realizes nothing —
+`Ok`, `transform == None`, zero rejections. Empty is not invalid.)
+
 ## 5. The receipt — `PlotReport`
 
-Plotting must never silently eat data. Every `compile` returns a bounded report:
+Plotting must never silently eat data. Every **successful** `compile` returns a
+bounded report (a configuration fault is an `Err` instead — §4 — and produces no
+receipt, so a malformed request can never masquerade as counted data).
 
+The counters split into two **gates that never cross**: *acceptance* is a property
+of `(scale, view)` alone — size-, capability- and reduction-independent — and
+*realization* depends on the device rectangle. A terminal resize or a glyph-mode
+change can move a realization counter; it can **never** move an acceptance counter.
+
+Acceptance gate:
 - `samples_seen` — inputs offered;
 - `finite_samples` — inputs with both coords finite;
 - `nonfinite_rejected` — dropped for NaN/±∞;
-- `scale_domain_rejected` — finite samples with **no image under the axis
-  transform**: outside the scale domain (e.g. `x ≤ 0` under `Log10`), or a
-  projection that overflows to non-finite. Counted from the axis transforms
-  alone, so it is independent of terminal size and of any reduction (law E);
+- `scale_domain_rejected` — finite samples with **no image under a valid axis
+  transform** (e.g. `x ≤ 0` on a *valid* `Log10` axis), or a projection that
+  overflows to non-finite. Never includes a configuration fault (§4);
+
+Realization gate:
 - `segments_considered` / `segments_clipped` — line adjacency pairs examined vs.
   clipped away at the plot boundary;
 - `points_clipped` — scatter points that were finite **and** in the scale domain
@@ -121,14 +164,31 @@ Plotting must never silently eat data. Every `compile` returns a bounded report:
   `segments_clipped`). Without it a fit-to-extent scatter could lose points while
   every rejection count read zero;
 - `primitives_emitted` — points/segments actually drawn;
-- `reduced_from` / `reduced_to` — present only when a `Reduce` policy ran.
+
+Reduction (requested vs effective — §6):
+- `reducers_requested` — series carrying a `Reduce` policy;
+- `reducers_declined` — requested reducers refused because the precondition was
+  unmet (non-monotone X); those series render unreduced. `requested − declined`
+  were applied;
+- `reduced_from` / `reduced_to` — original and produced counts, summed over the
+  **applied** reducers (both `0` when nothing was applied).
 
 This is **not** a quality score. It lets a user distinguish "nothing visible
-because the data is off-viewport" (`points_clipped`/`segments_clipped`) from
-"nothing visible because every value was invalid for the log scale"
-(`scale_domain_rejected`). For a scatter series every finite sample is accounted
-for: `finite_samples = scale_domain_rejected + primitives_emitted +
-points_clipped`.
+because the data is off-viewport" (`points_clipped` / `segments_clipped`) from
+"nothing visible because every value was invalid for a valid log scale"
+(`scale_domain_rejected`) from "the request itself was malformed" (`Err`).
+
+**Conservation laws** (honest, and kept separate so one success never masks
+another failure — points and segments are not the same object):
+
+- *Scatter*, under a valid configuration, a non-empty viewport, and no reduction
+  (scatter never reduces): `finite_samples = scale_domain_rejected +
+  primitives_emitted + points_clipped`. Every finite sample is drawn, counted-off-
+  view, or counted-out-of-domain — never silently gone.
+- *Line*, per single series: `segments_considered = primitives_emitted +
+  segments_clipped`. This is a **segment** account, not a point account; it is not
+  added to the scatter law. Acceptance of the line's *points* (`finite_samples`,
+  `scale_domain_rejected`) is the separate upstream gate.
 
 ### Boundary convention (one last-index)
 
@@ -143,12 +203,19 @@ bound, and a datum on a tick value realizes in that tick's own cell.
 - **Gaps.** A non-finite sample, or a log-invalid sample, **breaks the path**: a
   `Line` never bridges across it (`A → invalid → B` draws `A`-stub and `B`-stub,
   never `A→B`). Scatter simply drops the invalid point. Tested.
-- **Reduction is explicit and narrow.** `Reduce::ExtremaPerColumn` is the only
-  reducer, valid for **monotone-X line series** only. Per device column it keeps a
-  `first / min / max / last` envelope, so a one-sample spike between sampled
-  columns **cannot vanish** (the `show::sparkline` nearest-neighbour failure). It
-  preserves gaps, and it never claims to handle arbitrary self-intersecting
-  parametric paths. Default is `Reduce::None` (render every segment, O(N)).
+- **Reduction is explicit, narrow, and requested-vs-effective.**
+  `Reduce::ExtremaPerColumn` is the only reducer, valid for **monotone-X line
+  series** only. Per device column it keeps a `first / min / max / last` envelope,
+  so a one-sample spike between sampled columns **cannot vanish** (the
+  `show::sparkline` nearest-neighbour failure). It preserves gaps. The caller
+  *requests* it per series; the kernel checks the precondition (X nondecreasing
+  over the finite samples — a NaN gap is transparent to the check, so it neither
+  blocks a monotone series nor hides a descending step across itself) and only
+  *applies* it when the contract holds. Outside that proven domain (descending or
+  self-intersecting X) the reducer is **declined, not silently run on data it
+  would mangle**: the series renders unreduced (still correct, just O(N)) and the
+  decline is recorded in `reducers_declined`. The low-level reducer is internal;
+  there is no public way to invoke it off-contract. Default is `Reduce::None`.
 
 ## 7. Ticks
 
@@ -177,6 +244,9 @@ reference structure, (3) labels/legend. Scientific data outranks chrome.
 | H | **layer monoid** — empty layer list = identity; concatenation associative; z-order matters (NOT commutative) |
 | I | **gap law** — no segment crosses an explicit/invalid gap |
 | J | **extrema preservation** — a one-sample spike in a dense bucket survives `ExtremaPerColumn` |
+| K | **configuration ≠ sample** — an invalid scale *view* is `Err(PlotError)` reading no samples; a bad *sample* under a valid scale is an `Ok` with a `scale_domain_rejected`; a zero-area rect is an `Ok` with zero rejections |
+| L | **reducer requested-vs-effective** — `ExtremaPerColumn` is applied only on nondecreasing-X; off-contract it is declined and recorded (`reducers_declined`), never run; a declined series is byte-identical to `Reduce::None` |
+| M | **conservation** — scatter: `finite = scale_domain_rejected + primitives_emitted + points_clipped`; line: `segments_considered = primitives_emitted + segments_clipped` (segments ≠ points, laws kept separate) |
 
 ## 9. Composition with the rest of LibGibson
 

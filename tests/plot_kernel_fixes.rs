@@ -64,7 +64,7 @@ fn scatter_on_view_extent_is_drawn_not_silently_lost() {
         (5.0, 5.0),   // interior
     ]));
     let view = PlotView::new(fr(0.0, 10.0), fr(0.0, 10.0));
-    let (_, rep) = plot::compile(&spec, &view, Rect::new(0, 0, 80, 24));
+    let (_, rep) = plot::compile(&spec, &view, Rect::new(0, 0, 80, 24)).unwrap();
 
     assert_eq!(rep.finite_samples, 5);
     assert_eq!(rep.scale_domain_rejected, 0);
@@ -93,7 +93,7 @@ fn scatter_on_view_extent_is_drawn_not_silently_lost() {
 fn off_view_scatter_point_is_counted_as_clipped() {
     let spec = lin_spec().series(Series::scatter(vec![(100.0, 100.0), (0.5, 0.5)]));
     let view = PlotView::new(fr(0.0, 1.0), fr(0.0, 1.0));
-    let (_, rep) = plot::compile(&spec, &view, Rect::new(0, 0, 80, 24));
+    let (_, rep) = plot::compile(&spec, &view, Rect::new(0, 0, 80, 24)).unwrap();
 
     assert_eq!(rep.finite_samples, 2);
     assert_eq!(
@@ -116,7 +116,7 @@ fn edge_annotations_draw_at_both_bounds() {
     let c = (255, 255, 255);
     let drew = |ann: Annotation| {
         let spec = lin_spec().annotate(ann);
-        let (layout, _) = plot::compile(&spec, &view, Rect::new(0, 0, 60, 20));
+        let (layout, _) = plot::compile(&spec, &view, Rect::new(0, 0, 60, 20)).unwrap();
         let s = plot::render(&layout, SubcellGlyphMode::Braille2x4);
         braille_cells_in(&s, layout.plot_rect) > 0
     };
@@ -133,14 +133,14 @@ fn datum_on_tick_value_realizes_in_the_tick_cell() {
     let view = PlotView::new(fr(0.0, 1.0), fr(0.0, 1.0));
     for width in [80u16, 90, 100, 111, 120, 130] {
         // First compile with no series to read the tick columns.
-        let (base, _) = plot::compile(&lin_spec(), &view, Rect::new(0, 0, width, 30));
+        let (base, _) = plot::compile(&lin_spec(), &view, Rect::new(0, 0, width, 30)).unwrap();
         let tick_vals: Vec<f64> = base.x_ticks.iter().map(|t| t.value).collect();
         let tick_cells: Vec<u16> = base.x_ticks.iter().map(|t| t.cell).collect();
 
         // A scatter point at each tick value (y at mid-view).
         let pts: Vec<(f64, f64)> = tick_vals.iter().map(|&v| (v, 0.5)).collect();
         let spec = lin_spec().series(Series::scatter(pts));
-        let (layout, _) = plot::compile(&spec, &view, Rect::new(0, 0, width, 30));
+        let (layout, _) = plot::compile(&spec, &view, Rect::new(0, 0, width, 30)).unwrap();
         let surf = plot::render(&layout, SubcellGlyphMode::Braille2x4);
 
         for (i, &cell) in tick_cells.iter().enumerate() {
@@ -184,7 +184,8 @@ fn axis_captions_are_rendered() {
         &view,
         Rect::new(0, 0, 120, 40),
         SubcellGlyphMode::Braille2x4,
-    );
+    )
+    .unwrap();
     let text = surf.to_visible_lines().join("\n");
     assert!(text.contains("frequency"), "x-axis label rendered");
     assert!(text.contains("Hz"), "x-axis unit rendered");

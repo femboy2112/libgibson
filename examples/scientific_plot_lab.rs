@@ -224,14 +224,23 @@ fn main() {
     };
 
     let (spec, view, desc) = case(&name);
-    let (surface, report) = plot::plot(&spec, &view, Rect::new(0, 0, w, h), mode);
+    // A malformed CONFIGURATION (e.g. a Log10 axis over a non-positive view) is a
+    // distinct outcome from a valid plot that rejected some samples — surface it
+    // honestly rather than drawing an empty frame and pretending all was well.
+    let (surface, report) = match plot::plot(&spec, &view, Rect::new(0, 0, w, h), mode) {
+        Ok(ok) => ok,
+        Err(e) => {
+            eprintln!("# case={name} ({desc})  size={w}x{h}  CONFIGURATION ERROR: {e:?}");
+            std::process::exit(2);
+        }
+    };
 
     for line in surface.to_visible_lines() {
         println!("{}", line.trim_end());
     }
     eprintln!("# case={name} ({desc})  size={w}x{h}  glyphs={mode:?}");
     eprintln!(
-        "# report: seen={} finite={} nonfinite_rej={} domain_rej={} segs={}/{} prims={} reduced={}->{}",
+        "# report: seen={} finite={} nonfinite_rej={} domain_rej={} segs={}/{} prims={} clipped_pts={} reduced={}->{} reducers={}req/{}declined",
         report.samples_seen,
         report.finite_samples,
         report.nonfinite_rejected,
@@ -239,7 +248,10 @@ fn main() {
         report.segments_clipped,
         report.segments_considered,
         report.primitives_emitted,
+        report.points_clipped,
         report.reduced_from,
         report.reduced_to,
+        report.reducers_requested,
+        report.reducers_declined,
     );
 }

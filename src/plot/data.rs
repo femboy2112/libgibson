@@ -190,7 +190,33 @@ fn flush_col(
     }
 }
 
+/// Is the series' X coordinate nondecreasing over its **finite** samples?
+///
+/// The precondition for [`reduce_extrema`]. Non-finite (gap) samples are
+/// transparent to the check — skipped, not compared and not resetting the
+/// running bound — so a gap can neither make a genuinely monotone series look
+/// non-monotone nor hide a descending step across itself (two finite values on
+/// opposite sides of a gap are still compared to each other). Empty / all-gap /
+/// single-finite inputs are vacuously nondecreasing.
+pub(crate) fn is_nondecreasing_x(points: &[(f64, f64)]) -> bool {
+    let mut last = f64::NEG_INFINITY;
+    for &(x, _) in points {
+        if !x.is_finite() {
+            continue;
+        }
+        if x < last {
+            return false;
+        }
+        last = x;
+    }
+    true
+}
+
 /// Extrema-preserving reducer for a **monotone-X** line series.
+///
+/// Internal: the public surface is `Series::reduce(Reduce::ExtremaPerColumn)`,
+/// which `compile` applies only after [`is_nondecreasing_x`] confirms the
+/// precondition (so this is never called on data it would mangle).
 ///
 /// Partitions the x-range into `num_cols` device columns and, per column, keeps
 /// the `first`, `min-y`, `max-y`, and `last` samples (x-ordered, de-duplicated).
@@ -198,9 +224,8 @@ fn flush_col(
 /// that column's `max` (or `min`). A non-finite sample is a **gap**: it flushes
 /// the current column and emits a `(NaN, NaN)` sentinel so the path breaks and is
 /// never bridged. Degenerate inputs (`num_cols == 0` or a collapsed x-range) pass
-/// through unchanged. Non-monotone input never panics (behaviour simply
-/// unspecified beyond "no crash, no NaN into downstream math").
-pub fn reduce_extrema(
+/// through unchanged.
+pub(crate) fn reduce_extrema(
     points: &[(f64, f64)],
     num_cols: usize,
     x_lo: f64,
@@ -329,5 +354,30 @@ mod tests {
         assert_eq!(spec.series[0].reduce, Reduce::ExtremaPerColumn);
         assert_eq!(spec.x.unit.as_deref(), Some("s"));
         assert_eq!(spec.annotations.len(), 1);
+    }
+
+    #[test]
+    fn nondecreasing_x_predicate() {
+        assert!(is_nondecreasing_x(&[(0.0, 9.0), (1.0, 9.0), (2.0, 9.0)]));
+        assert!(
+            is_nondecreasing_x(&[(0.0, 9.0), (1.0, 9.0), (1.0, 9.0)]),
+            "dup X ok"
+        );
+        assert!(!is_nondecreasing_x(&[(2.0, 9.0), (1.0, 9.0)]), "descending");
+        // Gaps are transparent: a monotone series with a gap still passes…
+        assert!(is_nondecreasing_x(&[
+            (0.0, 0.0),
+            (f64::NAN, f64::NAN),
+            (1.0, 0.0)
+        ]));
+        // …but a descending step hidden across a gap is still caught.
+        assert!(!is_nondecreasing_x(&[
+            (5.0, 0.0),
+            (f64::NAN, f64::NAN),
+            (1.0, 0.0)
+        ]));
+        // Degenerate inputs are vacuously nondecreasing.
+        assert!(is_nondecreasing_x(&[]));
+        assert!(is_nondecreasing_x(&[(3.0, 0.0)]));
     }
 }

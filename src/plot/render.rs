@@ -324,7 +324,7 @@ mod tests {
             Rect::new(0, 0, 3, 2),
             Rect::new(0, 0, 1, 1),
         ] {
-            let (layout, _) = compile(&sp, &view(), rect);
+            let (layout, _) = compile(&sp, &view(), rect).unwrap();
             for mode in MODES {
                 let surf = render(&layout, mode);
                 assert_eq!(surf.width, rect.width.max(1));
@@ -336,7 +336,7 @@ mod tests {
     #[test]
     fn draws_something_in_the_plot() {
         let sp = spec(Series::line(vec![(0.0, 0.0), (1.0, 1.0)]));
-        let (layout, _) = compile(&sp, &view(), Rect::new(0, 0, 80, 24));
+        let (layout, _) = compile(&sp, &view(), Rect::new(0, 0, 80, 24)).unwrap();
         let surf = render(&layout, SubcellGlyphMode::Braille2x4);
         assert!(nonspace_count(&surf) > 5, "a line should draw ink + chrome");
     }
@@ -346,7 +346,7 @@ mod tests {
         // A point far outside the view must not draw any geometry in the plot
         // interior, and must not touch the left-margin label columns.
         let far = spec(Series::scatter(vec![(100.0, 100.0)]));
-        let (layout, rep) = compile(&far, &view(), Rect::new(0, 0, 80, 24));
+        let (layout, rep) = compile(&far, &view(), Rect::new(0, 0, 80, 24)).unwrap();
         assert_eq!(rep.primitives_emitted, 0, "off-view point emits nothing");
         let surf = render(&layout, SubcellGlyphMode::Braille2x4);
         let lx = layout.plot_rect.x;
@@ -366,7 +366,7 @@ mod tests {
     #[test]
     fn point_inside_draws_a_dot() {
         let inside = spec(Series::scatter(vec![(0.5, 0.5)]));
-        let (layout, rep) = compile(&inside, &view(), Rect::new(0, 0, 80, 24));
+        let (layout, rep) = compile(&inside, &view(), Rect::new(0, 0, 80, 24)).unwrap();
         assert_eq!(rep.primitives_emitted, 1);
         let surf = render(&layout, SubcellGlyphMode::Braille2x4);
         let lx = layout.plot_rect.x;
@@ -387,7 +387,7 @@ mod tests {
         // Chrome (tick label positions) is identical across glyph modes; only
         // geometry glyphs differ. compile() took no capability at all.
         let sp = spec(Series::line(vec![(0.0, 0.0), (1.0, 1.0)]));
-        let (layout, _) = compile(&sp, &view(), Rect::new(0, 0, 100, 30));
+        let (layout, _) = compile(&sp, &view(), Rect::new(0, 0, 100, 30)).unwrap();
         let braille = render(&layout, SubcellGlyphMode::Braille2x4);
         let ascii = render(&layout, SubcellGlyphMode::Ascii);
         // y label cells identical

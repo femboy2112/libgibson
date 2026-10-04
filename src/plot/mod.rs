@@ -21,10 +21,8 @@ pub mod render;
 pub mod scale;
 pub mod ticks;
 
-pub use data::{
-    reduce_extrema, Annotation, AxisSpec, PlotSpec, PlotView, Reduce, Series, SeriesKind,
-};
-pub use layout::{compile, PlotLayout, PlotReport, ProjectedTick};
+pub use data::{Annotation, AxisSpec, PlotSpec, PlotView, Reduce, Series, SeriesKind};
+pub use layout::{compile, PlotError, PlotLayout, PlotReport, ProjectedTick};
 pub use render::{render, render_themed, PlotTheme};
 pub use scale::{AxisScale, AxisTransform, FiniteRange, PlotTransform2D, Viewport};
 pub use ticks::{log10_major_ticks, log10_minor_ticks, major_ticks, Tick};
@@ -32,13 +30,16 @@ pub use ticks::{log10_major_ticks, log10_minor_ticks, major_ticks, Tick};
 use crate::{Rect, SubcellGlyphMode, Surface};
 
 /// One-call convenience: compile a spec + view into `area` and realize it under
-/// `mode`, returning the drawn `Surface` and the execution [`PlotReport`].
+/// `mode`, returning the drawn `Surface` and the execution [`PlotReport`] — or a
+/// [`PlotError`] if the spec + view is not a valid configuration (e.g. a `Log10`
+/// axis over a non-positive view). A valid-but-empty area is `Ok` with a blank
+/// surface, not an error.
 pub fn plot(
     spec: &PlotSpec,
     view: &PlotView,
     area: Rect,
     mode: SubcellGlyphMode,
-) -> (Surface, PlotReport) {
-    let (layout, report) = compile(spec, view, area);
-    (render(&layout, mode), report)
+) -> Result<(Surface, PlotReport), PlotError> {
+    let (layout, report) = compile(spec, view, area)?;
+    Ok((render(&layout, mode), report))
 }
