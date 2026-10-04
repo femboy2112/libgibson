@@ -344,8 +344,9 @@ pub fn compile(
         // line). This is the realization half: it needs the viewport's column
         // count, and `reduced_*` are therefore device-dependent.
         let pts: Vec<(f64, f64)> = if can_reduce {
-            let r =
-                super::data::reduce_extrema(&s.points, px_w as usize, view.x.min(), view.x.max());
+            // Bucket in the x-axis's projected space so a Log10 axis reduces in
+            // log columns, and out-of-view samples never evict in-view ones.
+            let r = super::data::reduce_extrema(&s.points, &xt, px_w as usize);
             report.reduced_from += s.points.len();
             report.reduced_to += r.len();
             r

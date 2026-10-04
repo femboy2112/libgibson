@@ -5,7 +5,7 @@
 //! *view* (the currently visible ranges). Pan/zoom changes [`PlotView`]; it never
 //! rewrites the data. See `docs/PLOT_OBSERVABLE_GEOMETRY.md` §3, §6.
 
-use super::scale::{AxisScale, FiniteRange};
+use super::scale::{AxisScale, AxisTransform, FiniteRange};
 
 /// Semantic axis: how it is scaled and labelled. Units are a free string; there
 /// is **no** dimensional analysis and **no** silent conversion (doc §12).
@@ -218,38 +218,80 @@ pub(crate) fn is_nondecreasing_x(points: &[(f64, f64)]) -> bool {
 /// which `compile` applies only after [`is_nondecreasing_x`] confirms the
 /// precondition (so this is never called on data it would mangle).
 ///
-/// Partitions the x-range into `num_cols` device columns and, per column, keeps
-/// the `first`, `min-y`, `max-y`, and `last` samples (x-ordered, de-duplicated).
-/// A one-sample spike inside a dense column survives because its value becomes
-/// that column's `max` (or `min`). A non-finite sample is a **gap**: it flushes
-/// the current column and emits a `(NaN, NaN)` sentinel so the path breaks and is
-/// never bridged. Degenerate inputs (`num_cols == 0` or a collapsed x-range) pass
+/// Columns are taken in the axis's **projected** space — the sample's device
+/// column is `floor(xt.project(x) · num_cols)`, so a `Log10` x axis buckets in
+/// log space, one device column per on-screen column (POST-CANARY fix: the old
+/// reducer bucketed linearly in raw x and so mangled the envelope on a log axis).
+/// Per column it keeps the `first`, `min-y`, `max-y`, and `last` samples
+/// (x-ordered, de-duplicated), so a one-sample spike inside a dense column
+/// survives as that column's `max`/`min`.
+///
+/// Samples **outside the view** (`u < 0` or `u > 1`) occupy their own edge
+/// buckets (`-1` on the left, `num_cols` on the right) and so can **never evict**
+/// an in-view column's envelope (POST-CANARY fix: the old reducer *clamped*
+/// out-of-view columns into `0`/`num_cols-1`, letting off-view data silently
+/// steal the first/min/max/last slots of a real in-view column — a one-sample
+/// in-view spike vanished under a zoomed view, violating "never silently eat
+/// data" and law J). The edge buckets keep the path entering/leaving the view
+/// (clipping draws the crossing); segments entirely outside the view clip away.
+///
+/// A non-finite sample, or one with no image under the scale (`x ≤ 0` on
+/// `Log10`), is a **gap**: it flushes the current column and emits a `(NaN, NaN)`
+/// sentinel so the path breaks and is never bridged. `num_cols == 0` passes
 /// through unchanged.
 pub(crate) fn reduce_extrema(
     points: &[(f64, f64)],
+    xt: &AxisTransform,
     num_cols: usize,
-    x_lo: f64,
-    x_hi: f64,
 ) -> Vec<(f64, f64)> {
-    if num_cols == 0 || x_hi <= x_lo || !x_lo.is_finite() || !x_hi.is_finite() {
+    if num_cols == 0 {
         return points.to_vec();
     }
-    let span = x_hi - x_lo;
     let mut out: Vec<(f64, f64)> = Vec::new();
     let mut cur_col: Option<i64> = None;
     let (mut first, mut miny, mut maxy, mut last) = (None, None, None, None);
+    let gap = |out: &mut Vec<(f64, f64)>,
+               first: &mut Option<(f64, f64)>,
+               miny: &mut Option<(f64, f64)>,
+               maxy: &mut Option<(f64, f64)>,
+               last: &mut Option<(f64, f64)>,
+               cur_col: &mut Option<i64>| {
+        flush_col(out, first, miny, maxy, last);
+        *cur_col = None;
+        if out.last().map(|p| !p.0.is_nan()).unwrap_or(true) {
+            out.push((f64::NAN, f64::NAN));
+        }
+    };
 
     for &(x, y) in points {
-        if !x.is_finite() || !y.is_finite() {
-            flush_col(&mut out, &mut first, &mut miny, &mut maxy, &mut last);
-            cur_col = None;
-            if out.last().map(|p| !p.0.is_nan()).unwrap_or(true) {
-                out.push((f64::NAN, f64::NAN));
-            }
+        // A non-finite sample, or one with no image under the scale, breaks the path.
+        let u = if x.is_finite() && y.is_finite() {
+            xt.project(x)
+        } else {
+            None
+        };
+        let Some(u) = u else {
+            gap(
+                &mut out,
+                &mut first,
+                &mut miny,
+                &mut maxy,
+                &mut last,
+                &mut cur_col,
+            );
             continue;
-        }
-        let c = (((x - x_lo) / span) * num_cols as f64).floor() as i64;
-        let c = c.clamp(0, num_cols as i64 - 1);
+        };
+        // In-view u ∈ [0,1] maps onto columns [0, num_cols-1] (u=1 caps to the
+        // last column, preserving the fit-to-extent convention); genuinely
+        // out-of-view samples get their own edge buckets and never touch an
+        // in-view column.
+        let c = if u < 0.0 {
+            -1
+        } else if u > 1.0 {
+            num_cols as i64
+        } else {
+            ((u * num_cols as f64).floor() as i64).min(num_cols as i64 - 1)
+        };
         if cur_col != Some(c) {
             flush_col(&mut out, &mut first, &mut miny, &mut maxy, &mut last);
             cur_col = Some(c);
@@ -273,12 +315,19 @@ pub(crate) fn reduce_extrema(
 mod tests {
     use super::*;
 
+    fn lin_xt(lo: f64, hi: f64) -> AxisTransform {
+        AxisTransform::new(AxisScale::Linear, FiniteRange::new(lo, hi).unwrap()).unwrap()
+    }
+    fn log_xt(lo: f64, hi: f64) -> AxisTransform {
+        AxisTransform::new(AxisScale::Log10, FiniteRange::new(lo, hi).unwrap()).unwrap()
+    }
+
     #[test]
     fn extrema_preserves_single_spike_law_j() {
         // 100 samples in a single column, all y=0 except one spike at y=100.
         let mut pts: Vec<(f64, f64)> = (0..100).map(|i| (i as f64 / 1000.0, 0.0)).collect();
         pts[50] = (0.050, 100.0);
-        let reduced = reduce_extrema(&pts, 4, 0.0, 1.0);
+        let reduced = reduce_extrema(&pts, &lin_xt(0.0, 1.0), 4);
         assert!(
             reduced.iter().any(|&(_, y)| (y - 100.0).abs() < 1e-9),
             "the spike must survive reduction: {reduced:?}"
@@ -290,7 +339,7 @@ mod tests {
     #[test]
     fn extrema_preserves_min_and_max_both() {
         let pts = vec![(0.0, 5.0), (0.01, -9.0), (0.02, 9.0), (0.03, 5.0)];
-        let reduced = reduce_extrema(&pts, 1, 0.0, 0.04);
+        let reduced = reduce_extrema(&pts, &lin_xt(0.0, 0.04), 1);
         assert!(
             reduced.iter().any(|&(_, y)| (y + 9.0).abs() < 1e-9),
             "min kept"
@@ -310,7 +359,7 @@ mod tests {
             (0.2, 3.0),
             (0.3, 4.0),
         ];
-        let reduced = reduce_extrema(&pts, 8, 0.0, 0.4);
+        let reduced = reduce_extrema(&pts, &lin_xt(0.0, 0.4), 8);
         assert!(
             reduced.iter().any(|&(x, y)| x.is_nan() && y.is_nan()),
             "gap sentinel must survive so the path breaks: {reduced:?}"
@@ -318,19 +367,79 @@ mod tests {
     }
 
     #[test]
-    fn reduce_degenerate_passthrough() {
+    fn reduce_zero_cols_passthrough() {
         let pts = vec![(0.0, 1.0), (1.0, 2.0)];
-        assert_eq!(reduce_extrema(&pts, 0, 0.0, 1.0), pts);
-        assert_eq!(reduce_extrema(&pts, 10, 1.0, 1.0), pts); // collapsed x-range
+        assert_eq!(reduce_extrema(&pts, &lin_xt(0.0, 1.0), 0), pts);
     }
 
     #[test]
     fn reduce_bounds_output_count() {
         let pts: Vec<(f64, f64)> = (0..10_000).map(|i| (i as f64, (i as f64).sin())).collect();
-        let reduced = reduce_extrema(&pts, 100, 0.0, 10_000.0);
-        // at most ~4 points per column
-        assert!(reduced.len() <= 100 * 4 + 4, "bounded: {}", reduced.len());
+        let reduced = reduce_extrema(&pts, &lin_xt(0.0, 10_000.0), 100);
+        // at most ~4 points per column, plus the two out-of-view edge buckets
+        assert!(
+            reduced.len() <= (100 + 2) * 4 + 4,
+            "bounded: {}",
+            reduced.len()
+        );
         assert!(reduced.len() >= 100, "but not collapsed");
+    }
+
+    // ---- POST-CANARY (PULSAR-2 defects 1 & 2) --------------------------------
+
+    #[test]
+    fn reduce_out_of_view_samples_do_not_evict_in_view_spike() {
+        // Defect 1: a zoomed view [500, 2000]. Everything left of the view has
+        // huge alternating ±100 values; a lone in-view spike sits at x=505. The
+        // old reducer clamped the off-view columns into column 0 and the ±100
+        // values evicted the spike. It must now survive (edge bucket -1 holds the
+        // off-view data, which clips away and never touches column 0).
+        let mut pts: Vec<(f64, f64)> = (0..2000).map(|i| (i as f64, 0.0)).collect();
+        for (i, p) in pts.iter_mut().enumerate().take(500) {
+            p.1 = if i % 2 == 0 { 100.0 } else { -100.0 };
+        }
+        pts[505].1 = 1.0;
+        let reduced = reduce_extrema(&pts, &lin_xt(500.0, 2000.0), 120);
+        assert!(
+            reduced
+                .iter()
+                .any(|&(x, y)| (x - 505.0).abs() < 1e-9 && (y - 1.0).abs() < 1e-9),
+            "the in-view spike must survive a zoomed view"
+        );
+    }
+
+    #[test]
+    fn reduce_log_x_buckets_in_log_space() {
+        // Defect 2: on a Log10 x axis the device columns are log-spaced. Bucketing
+        // in log space means the low-x decades keep their own envelopes instead of
+        // collapsing into one wide linear bucket. The first point of each decade
+        // boundary must land in a distinct column, so e.g. x=1,10,100,1000 are not
+        // folded together.
+        let pts: Vec<(f64, f64)> = (0..20_000)
+            .map(|i| {
+                let x = 1.0 + i as f64 * 0.05;
+                (x, (x * 6.0).sin())
+            })
+            .collect();
+        let xt = log_xt(1.0, 1000.0);
+        let reduced = reduce_extrema(&pts, &xt, 90);
+        // Count how many of the 90 device columns are represented among the
+        // reduced points. Linear bucketing on a log axis crams almost everything
+        // into the high-x columns and leaves the low-x decades nearly empty; log
+        // bucketing spreads the envelope across the columns.
+        let mut cols = std::collections::BTreeSet::new();
+        for &(x, _) in reduced.iter().filter(|(x, _)| x.is_finite()) {
+            if let Some(u) = xt.project(x) {
+                if (0.0..=1.0).contains(&u) {
+                    cols.insert((u * 90.0).floor() as i64);
+                }
+            }
+        }
+        assert!(
+            cols.len() > 60,
+            "log bucketing should populate most columns, got {}",
+            cols.len()
+        );
     }
 
     #[test]
