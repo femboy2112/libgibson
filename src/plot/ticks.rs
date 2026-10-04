@@ -148,11 +148,64 @@ pub fn log10_minor_ticks(range: FiniteRange) -> Vec<Tick> {
     out
 }
 
+/// Label a bare log value (a minor promoted to a labelled tick), with just
+/// enough decimals for its magnitude and no `-0`.
+fn log_value_label(v: f64) -> String {
+    if v <= 0.0 {
+        return String::new();
+    }
+    let decimals = (-(v.log10().floor())).max(0.0) as usize;
+    fmt_fixed(v, decimals.min(15))
+}
+
+/// Ticks for a `Log10` axis (POST-CANARY fix for PULSAR-2 defect 4). Normally the
+/// powers of ten. But when the view spans **less than two decades** — e.g. `2..8`
+/// (no power of ten at all) or `2..60` (a single major) — powers of ten alone give
+/// zero or one tick and the axis is unreadable, although `log10_minor_ticks` was
+/// already available and simply never called. In that case promote the `2..9×10^k`
+/// minors to labelled ticks (merged with any lone major), thinned toward `target`
+/// so they do not collide. Doc §7: "minors … only if space supports them."
+pub fn log10_ticks(range: FiniteRange, target: usize) -> Vec<Tick> {
+    let majors = log10_major_ticks(range);
+    if majors.len() >= 2 {
+        return majors;
+    }
+    // Keep every major (a power of ten is the most meaningful tick), and thin the
+    // promoted minors into the remaining budget so labels have room to breathe.
+    let target = target.max(2);
+    let budget = target.saturating_sub(majors.len()).max(1);
+    let mut minors: Vec<Tick> = log10_minor_ticks(range)
+        .into_iter()
+        .map(|mut m| {
+            m.label = log_value_label(m.value);
+            m
+        })
+        .collect();
+    if minors.len() > budget {
+        let stride = minors.len().div_ceil(budget);
+        minors = minors
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| *i % stride == 0)
+            .map(|(_, t)| t)
+            .collect();
+    }
+    let mut all = majors;
+    all.append(&mut minors);
+    all.sort_by(|a, b| {
+        a.value
+            .partial_cmp(&b.value)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    all.dedup_by(|a, b| (a.value - b.value).abs() <= b.value.abs() * 1e-12);
+    all
+}
+
 /// Major ticks dispatched by scale.
 pub fn major_ticks(scale: AxisScale, range: FiniteRange, target: usize) -> Vec<Tick> {
     match scale {
         AxisScale::Linear => linear_ticks(range, target),
-        AxisScale::Log10 => log10_major_ticks(range),
+        AxisScale::Log10 => log10_ticks(range, target),
     }
 }
 
@@ -264,6 +317,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn log_sub_decade_view_gets_labelled_minor_ticks_postcanary() {
+        // POST-CANARY (PULSAR-2 defect 4): a log view spanning no power of ten
+        // must not be tick-less. `major_ticks` now promotes labelled minors.
+        let t = major_ticks(AxisScale::Log10, r(2.0, 8.0), 6);
+        assert!(
+            t.len() >= 2,
+            "a 2..8 log axis must have readable ticks: {t:?}"
+        );
+        assert!(
+            t.iter().all(|x| !x.label.is_empty()),
+            "the fallback ticks are labelled"
+        );
+        assert!(t.iter().all(|x| x.value >= 2.0 && x.value <= 8.0));
+        // 2..60: a single major (10) alone is unreadable; minors fill it in.
+        let t = major_ticks(AxisScale::Log10, r(2.0, 60.0), 6);
+        assert!(t.len() > 1, "more than the lone '10' major: {t:?}");
+        assert!(t.iter().any(|x| x.label == "10"));
+        // thinned toward the target, not a wall of 14 labels
+        assert!(t.len() <= 8, "thinned, got {}", t.len());
+        // a normal multi-decade view is unchanged (pure powers of ten)
+        let t = major_ticks(AxisScale::Log10, r(1.0, 1e4), 6);
+        assert!(t.iter().all(|x| (x.value.log10().fract()).abs() < 1e-9));
     }
 
     #[test]

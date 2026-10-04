@@ -144,10 +144,16 @@ pub fn render_themed(layout: &PlotLayout, mode: SubcellGlyphMode, theme: &PlotTh
             for t in &layout.y_ticks {
                 let row = t.cell - area.y;
                 putc(&mut s, lx - 1, row, ytick, axis_style);
+                // Never truncate a number into a *different* number ("-1000000"
+                // → "-100000" is a lie). If the whole label does not fit the
+                // gutter, drop it; the tick mark still shows the position
+                // (POST-CANARY, PULSAR-2 defect 3a; doc §7).
                 let maxw = (lx - 1) as usize;
-                let lab: String = t.label.chars().take(maxw).collect();
-                let startx = (lx - 1).saturating_sub(lab.chars().count() as u16);
-                s.print_str(startx, row, &lab, label_style, None);
+                let len = t.label.chars().count();
+                if len <= maxw {
+                    let startx = (lx - 1).saturating_sub(len as u16);
+                    s.print_str(startx, row, &t.label, label_style, None);
+                }
             }
         }
     }
@@ -162,15 +168,25 @@ pub fn render_themed(layout: &PlotLayout, mode: SubcellGlyphMode, theme: &PlotTh
             putc(&mut s, lx - 1, axis_row, corner, axis_style);
         }
         let label_row = axis_row + 1;
+        // Drop an x label rather than truncate it or run it into its neighbour:
+        // adjacent labels must clear each other by at least one space, and a
+        // label that would overflow the width is dropped whole (POST-CANARY,
+        // PULSAR-2 defect 3b; doc §7 — drop labels, never corrupt a value). The
+        // tick marks themselves are unaffected.
+        let mut last_end: Option<u16> = None;
         for t in &layout.x_ticks {
             let col = t.cell - area.x;
             putc(&mut s, col, axis_row, xtick, axis_style);
             if label_row < area.height {
-                let half = (t.label.chars().count() as u16) / 2;
-                let startx = col.saturating_sub(half).min(area.width.saturating_sub(1));
-                let room = (area.width - startx) as usize;
-                let lab: String = t.label.chars().take(room).collect();
-                s.print_str(startx, label_row, &lab, label_style, None);
+                let len = t.label.chars().count() as u16;
+                let startx = col.saturating_sub(len / 2);
+                let endx = startx + len; // exclusive
+                let fits = endx <= area.width;
+                let clears = last_end.is_none_or(|e| startx > e);
+                if fits && clears {
+                    s.print_str(startx, label_row, &t.label, label_style, None);
+                    last_end = Some(endx);
+                }
             }
         }
     }
@@ -401,5 +417,57 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ---- POST-CANARY (PULSAR-2 defect 3): labels drop, never corrupt ---------
+
+    #[test]
+    fn y_label_too_wide_is_dropped_not_truncated() {
+        // A y range of ±1.2e6 produces a "-1000000" tick; on a 24-col plot the
+        // gutter is too narrow. It must NOT be truncated into "-100000" (a
+        // different number) — the label is dropped whole.
+        let sp = PlotSpec::new(
+            AxisSpec::new(AxisScale::Linear, "x"),
+            AxisSpec::new(AxisScale::Linear, "y"),
+        )
+        .series(Series::line(vec![(0.0, -1.0e6), (1.0, 1.0e6)]));
+        let v = PlotView::new(
+            FiniteRange::new(0.0, 1.0).unwrap(),
+            FiniteRange::new(-1.2e6, 1.2e6).unwrap(),
+        );
+        let (layout, _) = compile(&sp, &v, Rect::new(0, 0, 24, 12)).unwrap();
+        // the tick value/label still exist semantically…
+        assert!(layout
+            .y_ticks
+            .iter()
+            .any(|t| t.value == -1_000_000.0 && t.label == "-1000000"));
+        // …but the rendered text shows neither the full label (no room) nor a
+        // truncated wrong number.
+        let text = render(&layout, SubcellGlyphMode::Braille2x4)
+            .to_visible_lines()
+            .join("\n");
+        assert!(
+            !text.contains("-100000"),
+            "truncated wrong number must not appear:\n{text}"
+        );
+    }
+
+    #[test]
+    fn x_labels_do_not_run_together() {
+        // Six ticks 0.0..1.0 on a 24-col plot: adjacent labels used to render as
+        // "0.00.2". They must now be dropped on collision, never merged.
+        let sp = spec(Series::line(vec![(0.0, 0.0), (1.0, 1.0)]));
+        let (layout, _) = compile(&sp, &view(), Rect::new(0, 0, 24, 12)).unwrap();
+        let text = render(&layout, SubcellGlyphMode::Braille2x4)
+            .to_visible_lines()
+            .join("\n");
+        assert!(
+            !text.contains("0.00.2"),
+            "labels must not run together:\n{text}"
+        );
+        assert!(
+            !text.contains("0.81.0"),
+            "labels must not run together:\n{text}"
+        );
     }
 }

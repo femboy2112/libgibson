@@ -231,6 +231,13 @@ bound, and a datum on a tick value realizes in that tick's own cell.
   would mangle**: the series renders unreduced (still correct, just O(N)) and the
   decline is recorded in `reducers_declined`. The low-level reducer is internal;
   there is no public way to invoke it off-contract. Default is `Reduce::None`.
+  Columns are taken in the **axis's projected space**, so a `Log10` axis reduces
+  in log columns (one device column per on-screen column), and samples **outside
+  the view** occupy their own edge buckets — they can never evict an in-view
+  column's envelope, so a one-sample in-view spike survives even under a zoomed
+  view (POST-CANARY fix for the PULSAR-2 round: the earlier reducer bucketed
+  linearly in raw x and *clamped* out-of-view columns into the edges, silently
+  eating in-view data under zoom and mangling log-axis envelopes).
 
 ## 7. Ticks
 
@@ -238,10 +245,18 @@ Semantic, deterministic, size-independent values:
 
 - **Linear** — a nice-number lattice `1 / 2 / 5 × 10^k` chosen for the view range
   and a target count.
-- **Log10** — majors at powers of ten; minors (`2..9 × 10^k`) only if space
-  supports them.
+- **Log10** — majors at powers of ten. When the view spans **fewer than two
+  decades** (e.g. `2..8`, no power of ten, or `2..60`, a single major) the powers
+  of ten alone give zero or one tick and the axis is unreadable, so the `2..9×10^k`
+  minors are promoted to **labelled** ticks (merged with any major, thinned toward
+  the target so they do not collide). This wiring was missing before the PULSAR-2
+  round — `log10_minor_ticks` existed but `compile` never called it.
 
-Responsive rendering may **drop tick labels** as space shrinks, but never moves a
+Responsive rendering may **drop a tick label** as space shrinks — it **drops it
+whole, never truncating it into a different number** (a right-truncated
+`-1000000` reading `-100000` is a lie, not a smaller label) and never runs two
+labels together (a label that would collide with its neighbour is dropped). It
+never moves a
 semantic tick value. Priority as the plot shrinks: (1) data viewport, (2) major
 reference structure, (3) labels/legend. Scientific data outranks chrome.
 
