@@ -75,13 +75,13 @@ fn scatter_on_view_extent_is_drawn_not_silently_lost() {
     );
     // ...and all five are drawn.
     assert_eq!(
-        rep.primitives_emitted, 5,
+        rep.points_emitted, 5,
         "every corner + interior point must be realized"
     );
     // Receipt completeness for a scatter series: every finite in-domain sample
     // is either emitted or clipped — never silently gone.
     assert_eq!(
-        rep.primitives_emitted + rep.points_clipped + rep.scale_domain_rejected,
+        rep.points_emitted + rep.points_clipped + rep.scale_domain_rejected,
         rep.finite_samples
     );
 }
@@ -100,7 +100,7 @@ fn off_view_scatter_point_is_counted_as_clipped() {
         rep.scale_domain_rejected, 0,
         "off-view is not domain-invalid under Linear"
     );
-    assert_eq!(rep.primitives_emitted, 1, "the in-view point draws");
+    assert_eq!(rep.points_emitted, 1, "the in-view point draws");
     assert_eq!(
         rep.points_clipped, 1,
         "the off-view point is COUNTED, not vanished"

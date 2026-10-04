@@ -240,14 +240,15 @@ fn main() {
     }
     eprintln!("# case={name} ({desc})  size={w}x{h}  glyphs={mode:?}");
     eprintln!(
-        "# report: seen={} finite={} nonfinite_rej={} domain_rej={} segs={}/{} prims={} clipped_pts={} reduced={}->{} reducers={}req/{}declined",
+        "# report: seen={} finite={} nonfinite_rej={} domain_rej={} segs_drawn/considered={}/{} segs_clipped={} pts_drawn={} pts_clipped={} reduced={}->{} reducers={}req/{}declined",
         report.samples_seen,
         report.finite_samples,
         report.nonfinite_rejected,
         report.scale_domain_rejected,
-        report.segments_clipped,
+        report.segments_emitted,
         report.segments_considered,
-        report.primitives_emitted,
+        report.segments_clipped,
+        report.points_emitted,
         report.points_clipped,
         report.reduced_from,
         report.reduced_to,

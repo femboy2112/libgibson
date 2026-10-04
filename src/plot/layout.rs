@@ -46,10 +46,15 @@ pub enum PlotError {
 ///
 /// The counters divide into two **gates** that never cross (SAI crossover law D):
 /// *acceptance* counts (`finite_samples`, `nonfinite_rejected`,
-/// `scale_domain_rejected`) are a property of (scale, view) alone and are
-/// independent of terminal size, capability, and reduction; *realization* counts
-/// (`segments_*`, `points_clipped`, `primitives_emitted`) depend on the device
+/// `scale_domain_rejected`, and the reducer *request* accounting) are a property
+/// of (scale, view, spec) alone and are independent of terminal size, capability,
+/// and the device rectangle; *realization* counts (`segments_*`, `points_clipped`,
+/// `points_emitted`, `segments_emitted`, `reduced_*`) depend on the device
 /// rectangle. Terminal size can never move an acceptance counter (law E).
+///
+/// Realized output is split by **object kind** — points and segments are not the
+/// same object (doc §5), so they are never summed into one counter. A mixed
+/// Line+Scatter plot therefore stays auditable per kind.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PlotReport {
     pub samples_seen: usize,
@@ -64,19 +69,29 @@ pub struct PlotReport {
     /// lose points with every rejection count reading zero (doc §5 — plotting
     /// must never silently eat data).
     pub points_clipped: usize,
-    pub primitives_emitted: usize,
-    /// Original sample count that entered a reducer (0 if no reduction ran).
+    /// Scatter **points** drawn (scatter series only). Kept distinct from
+    /// `segments_emitted` so a mixed plot never conflates the two realization
+    /// kinds into one number (the conflation that broke the §5 conservation law).
+    pub points_emitted: usize,
+    /// Line **segments** drawn (line series only).
+    pub segments_emitted: usize,
+    /// Original sample count that entered a reducer (0 if none applied). Includes
+    /// any gap samples in the input, matching `reduced_to`.
     pub reduced_from: usize,
-    /// Sample count a reducer produced (0 if no reduction ran).
+    /// Output length a reducer produced (0 if none applied). Includes the
+    /// `(NaN,NaN)` gap sentinels the reducer injects to break the path, matching
+    /// `reduced_from`; it is in no conservation equation.
     pub reduced_to: usize,
-    /// Series on which a reducer was *requested* (`reduce != Reduce::None`).
+    /// Series carrying a reduce policy (`reduce != Reduce::None`). An **acceptance**
+    /// count: it is a property of the spec, independent of terminal size — a
+    /// zero-area plot still reports the request (doc §5).
     pub reducers_requested: usize,
-    /// Series on which a requested reducer was **declined** and the series
-    /// rendered unreduced, because its precondition was unmet (`ExtremaPerColumn`
-    /// requires nondecreasing X). The scientific reducer is never run outside its
-    /// proven domain; the plot stays correct, just not downsampled (doc §6; SAI
-    /// crossover law C — requested vs effective, with the single lowering reason
-    /// being the only one possible here: non-monotone X).
+    /// Requested reducers that were **declined** and rendered unreduced because
+    /// they are not applicable: a scatter series (cannot reduce) or a line whose X
+    /// is not nondecreasing (`ExtremaPerColumn`'s proven domain). Also size-
+    /// independent. `reducers_requested − reducers_declined` were applied. The
+    /// scientific reducer is never run outside its domain; the plot stays correct,
+    /// just not downsampled (doc §6; SAI crossover law C — requested vs effective).
     pub reducers_declined: usize,
 }
 
@@ -294,6 +309,24 @@ pub fn compile(
             }
         }
 
+        // Reducer REQUEST accounting — an acceptance-gate fact, computed here so it
+        // is independent of terminal size (a zero-area plot still records that a
+        // reducer was requested; law E / SAI law C). `requested` matches the doc
+        // definition (any non-`None` policy); a request is *applicable* only on a
+        // monotone-X line, and a non-applicable request (scatter, or non-monotone
+        // line) is DECLINED, not silently swallowed. The actual reduction (and its
+        // `reduced_*` counts) is a realization step gated on the viewport below.
+        let requested_reduce = s.reduce != Reduce::None;
+        let can_reduce = s.kind == SeriesKind::Line
+            && s.reduce == Reduce::ExtremaPerColumn
+            && super::data::is_nondecreasing_x(&s.points);
+        if requested_reduce {
+            report.reducers_requested += 1;
+            if !can_reduce {
+                report.reducers_declined += 1;
+            }
+        }
+
         // Realization requires a viewport. Without one the acceptance counts
         // above stand and no geometry is emitted (an empty layer, not a reject).
         let Some(t) = transform else {
@@ -307,27 +340,15 @@ pub fn compile(
             continue;
         };
 
-        // Explicit, opt-in reduction — requested vs effective (law C). The
-        // scientific reducer is only valid on a monotone-X line; outside that
-        // proven domain it is DECLINED (the series renders unreduced) and the
-        // decline is recorded, never run silently on data it would mangle.
-        let requested_reduce = s.kind == SeriesKind::Line && s.reduce == Reduce::ExtremaPerColumn;
-        let pts: Vec<(f64, f64)> = if requested_reduce {
-            report.reducers_requested += 1;
-            if super::data::is_nondecreasing_x(&s.points) {
-                let r = super::data::reduce_extrema(
-                    &s.points,
-                    px_w as usize,
-                    view.x.min(),
-                    view.x.max(),
-                );
-                report.reduced_from += s.points.len();
-                report.reduced_to += r.len();
-                r
-            } else {
-                report.reducers_declined += 1;
-                s.points.clone()
-            }
+        // Apply the reduction only when it was found applicable above (monotone-X
+        // line). This is the realization half: it needs the viewport's column
+        // count, and `reduced_*` are therefore device-dependent.
+        let pts: Vec<(f64, f64)> = if can_reduce {
+            let r =
+                super::data::reduce_extrema(&s.points, px_w as usize, view.x.min(), view.x.max());
+            report.reduced_from += s.points.len();
+            report.reduced_to += r.len();
+            r
         } else {
             s.points.clone()
         };
@@ -345,7 +366,7 @@ pub fn compile(
                             let (ix, iy) = (px.round() as i32, py.round() as i32);
                             if ix >= 0 && ix <= max_x && iy >= 0 && iy <= max_y {
                                 visible.push((ix, iy));
-                                report.primitives_emitted += 1;
+                                report.points_emitted += 1;
                             } else {
                                 // Finite and in-domain, but outside the viewport:
                                 // counted, never silently eaten (doc §5).
@@ -379,7 +400,7 @@ pub fn compile(
                                 match clip_line_to_bounds(p0.0, p0.1, cur.0, cur.1, max_x, max_y) {
                                     Some((a, b)) => {
                                         segs.push((a, b));
-                                        report.primitives_emitted += 1;
+                                        report.segments_emitted += 1;
                                     }
                                     None => report.segments_clipped += 1,
                                 }
@@ -824,14 +845,52 @@ mod tests {
         );
     }
 
+    #[test]
+    fn reducer_request_accounting_is_size_independent_break_evil_morty_f2() {
+        // Evil-Morty Finding 2: `reducers_requested` is a spec property, not a
+        // device property — it must not drop to 0 at zero area (where the series
+        // short-circuits before realization). Same monotone-reduce spec, three
+        // sizes: request/decline counts identical; only the realized reduced_*
+        // move (0 when there is no viewport to reduce into).
+        let pts: Vec<(f64, f64)> = (0..400).map(|i| (i as f64, 0.0)).collect();
+        let spec = lin_spec().series(Series::line(pts).reduce(Reduce::ExtremaPerColumn));
+        let v = view(0.0, 400.0, -1.0, 1.0);
+        let (_, big) = compile(&spec, &v, Rect::new(0, 0, 100, 30)).unwrap();
+        let (_, zero) = compile(&spec, &v, Rect::new(0, 0, 0, 30)).unwrap();
+        assert_eq!(big.reducers_requested, 1);
+        assert_eq!(zero.reducers_requested, 1, "request survives zero area");
+        assert_eq!(big.reducers_declined, 0);
+        assert_eq!(
+            zero.reducers_declined, 0,
+            "monotone ⇒ applicable, not declined"
+        );
+        assert!(big.reduced_to > 0, "applied where there is a viewport");
+        assert_eq!(zero.reduced_from, 0, "nothing realized at zero area");
+        assert_eq!(zero.reduced_to, 0);
+    }
+
+    #[test]
+    fn scatter_with_reduce_is_requested_and_declined_break_evil_morty_f3() {
+        // Evil-Morty Finding 3: a scatter series carrying a reduce policy is a
+        // request the kernel cannot honour (scatter cannot reduce). Per the §5
+        // definition it must count as requested AND declined — never silently
+        // dropped from the accounting.
+        let spec = lin_spec()
+            .series(Series::scatter(vec![(0.0, 0.0), (1.0, 1.0)]).reduce(Reduce::ExtremaPerColumn));
+        let (_, r) = compile(&spec, &view(0.0, 1.0, 0.0, 1.0), Rect::new(0, 0, 80, 24)).unwrap();
+        assert_eq!(r.reducers_requested, 1, "a reduce policy was carried");
+        assert_eq!(r.reducers_declined, 1, "scatter cannot reduce ⇒ declined");
+        assert_eq!(r.reduced_from, 0, "reducer never ran");
+    }
+
     // ---- SAI law D: conservation / separate gates (doc §5; Round-II seam #3) -
 
     #[test]
     fn scatter_conservation_law() {
-        // Under a valid config + non-empty area and NO reduction (scatter never
-        // reduces): finite_samples == scale_domain_rejected + primitives_emitted
-        // + points_clipped. One accepted & drawn, one in-domain but far off-view
-        // (clipped), one y≤0 under a valid log-y (domain rejected), one NaN.
+        // All-scatter plot, valid config + non-empty area, no reduction:
+        // finite_samples == scale_domain_rejected + points_emitted + points_clipped.
+        // One accepted & drawn, one in-domain but far off-view (clipped), one y≤0
+        // under a valid log-y (domain rejected), one NaN.
         let spec = log_y_spec().series(Series::scatter(vec![
             (1.0, 10.0),      // in view → emitted
             (1.5, 1e9),       // in-domain (y>0) but way above view → clipped
@@ -843,20 +902,21 @@ mod tests {
         assert_eq!(r.nonfinite_rejected, 1);
         assert_eq!(r.scale_domain_rejected, 1);
         assert_eq!(r.points_clipped, 1);
-        assert_eq!(r.primitives_emitted, 1);
+        assert_eq!(r.points_emitted, 1);
+        assert_eq!(r.segments_emitted, 0, "no line series ⇒ no segments");
         assert_eq!(
             r.finite_samples,
-            r.scale_domain_rejected + r.primitives_emitted + r.points_clipped,
+            r.scale_domain_rejected + r.points_emitted + r.points_clipped,
             "scatter conservation under valid config + viewport"
         );
     }
 
     #[test]
     fn line_segment_accounting_is_separate_from_points() {
-        // Line emits SEGMENTS, not points — a different gate. For a single line
-        // series: segments_considered == primitives_emitted + segments_clipped.
-        // Two points sit far outside the view in the SAME direction, so the
-        // connecting segment is fully off-canvas and clipped away.
+        // Line emits SEGMENTS, not points — a different gate. For a line series:
+        // segments_considered == segments_emitted + segments_clipped. Two points
+        // sit far outside the view in the SAME direction, so the connecting
+        // segment is fully off-canvas and clipped away.
         let spec = lin_spec().series(Series::line(vec![
             (0.3, 0.3),
             (0.6, 0.6),     // one visible segment (0.3→0.6)
@@ -864,12 +924,42 @@ mod tests {
             (200.0, 200.0), // the 100→200 segment is entirely off-canvas
         ]));
         let (_, r) = compile(&spec, &view(0.0, 1.0, 0.0, 1.0), Rect::new(0, 0, 80, 24)).unwrap();
+        assert_eq!(r.points_emitted, 0, "no scatter series ⇒ no points");
         assert_eq!(
             r.segments_considered,
-            r.primitives_emitted + r.segments_clipped,
+            r.segments_emitted + r.segments_clipped,
             "line segment conservation (segments are not points)"
         );
         assert!(r.segments_clipped >= 1, "the 100→200 segment is off-canvas");
+    }
+
+    #[test]
+    fn mixed_line_scatter_conservation_holds_per_kind_break_evil_morty_f1() {
+        // Evil-Morty Finding 1: with a SHARED emitted counter the §5 laws collapsed
+        // on the canonical "scatter data + fit line" overlay, because a line's
+        // points inflated finite_samples while its segments inflated the same
+        // counter the scatter law read. With points/segments split, each kind's
+        // accounting stays honest in a mixed plot.
+        let spec = lin_spec()
+            .series(Series::scatter(vec![(0.5, 0.5)]))
+            .series(Series::line(vec![(0.1, 0.1), (0.2, 0.2), (0.3, 0.3)]));
+        let (_, r) = compile(&spec, &view(0.0, 1.0, 0.0, 1.0), Rect::new(0, 0, 80, 24)).unwrap();
+        // Counters are NOT conflated: 1 scatter point, 2 line segments, cleanly apart.
+        assert_eq!(r.points_emitted, 1, "only the scatter point");
+        assert_eq!(r.segments_emitted, 2, "only the line segments");
+        // The LINE conservation law holds universally — all line-only quantities.
+        assert_eq!(
+            r.segments_considered,
+            r.segments_emitted + r.segments_clipped,
+            "line law holds even in a mixed plot"
+        );
+        // The SCATTER points are fully accounted among the scatter-kind counters
+        // (the one scatter point was finite, in-domain, in-view → emitted).
+        assert_eq!(r.points_emitted + r.points_clipped, 1);
+        // Guard against the regression: the OLD naive whole-plot scatter equation
+        // (finite == domain_rej + <all emitted> + points_clipped) was false here —
+        // finite_samples(4) ≠ 0 + (1 point + 2 segs) + 0. We no longer sum kinds.
+        assert_eq!(r.finite_samples, 4, "1 scatter + 3 line points");
     }
 
     #[test]

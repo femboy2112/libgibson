@@ -54,9 +54,13 @@ garbled", harmony/groove `unknown`, causal inversion not established) — so it 
   (`finite_samples`, `nonfinite_rejected`, `scale_domain_rejected` — size/
   capability/reduction independent) vs *realization* (`segments_*`,
   `points_clipped`, `primitives_emitted`). Conservation is stated per kind and kept
-  separate (scatter: `finite = domain_rejected + emitted + points_clipped`; line:
-  `segments_considered = emitted + segments_clipped`) — points and segments are not
-  the same object, so there is no single bogus unifying equation.
+  separate, with distinct emitted counters so they survive a mixed plot (scatter,
+  all-scatter: `finite = domain_rejected + points_emitted + points_clipped`; line,
+  any plot: `segments_considered = segments_emitted + segments_clipped`) — points
+  and segments are not the same object, so there is no single bogus unifying
+  equation. (An adversarial pass caught the first cut sharing one `primitives_emitted`
+  counter, which silently voided the law on the scatter+fit-line overlay; the split
+  is the closure.)
 
 ## ADAPTED AS DISCIPLINE ONLY (no new type)
 

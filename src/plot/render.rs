@@ -347,7 +347,7 @@ mod tests {
         // interior, and must not touch the left-margin label columns.
         let far = spec(Series::scatter(vec![(100.0, 100.0)]));
         let (layout, rep) = compile(&far, &view(), Rect::new(0, 0, 80, 24)).unwrap();
-        assert_eq!(rep.primitives_emitted, 0, "off-view point emits nothing");
+        assert_eq!(rep.points_emitted, 0, "off-view point emits nothing");
         let surf = render(&layout, SubcellGlyphMode::Braille2x4);
         let lx = layout.plot_rect.x;
         let ly = layout.plot_rect.y;
@@ -367,7 +367,7 @@ mod tests {
     fn point_inside_draws_a_dot() {
         let inside = spec(Series::scatter(vec![(0.5, 0.5)]));
         let (layout, rep) = compile(&inside, &view(), Rect::new(0, 0, 80, 24)).unwrap();
-        assert_eq!(rep.primitives_emitted, 1);
+        assert_eq!(rep.points_emitted, 1);
         let surf = render(&layout, SubcellGlyphMode::Braille2x4);
         let lx = layout.plot_rect.x;
         let ly = layout.plot_rect.y;

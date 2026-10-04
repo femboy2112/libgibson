@@ -144,9 +144,10 @@ bounded report (a configuration fault is an `Err` instead — §4 — and produc
 receipt, so a malformed request can never masquerade as counted data).
 
 The counters split into two **gates that never cross**: *acceptance* is a property
-of `(scale, view)` alone — size-, capability- and reduction-independent — and
-*realization* depends on the device rectangle. A terminal resize or a glyph-mode
-change can move a realization counter; it can **never** move an acceptance counter.
+of the spec and `(scale, view)` alone — size-, capability- and realization-
+independent — and *realization* depends on the device rectangle. A terminal resize
+or a glyph-mode change can move a realization counter; it can **never** move an
+acceptance counter.
 
 Acceptance gate:
 - `samples_seen` — inputs offered;
@@ -155,23 +156,30 @@ Acceptance gate:
 - `scale_domain_rejected` — finite samples with **no image under a valid axis
   transform** (e.g. `x ≤ 0` on a *valid* `Log10` axis), or a projection that
   overflows to non-finite. Never includes a configuration fault (§4);
+- `reducers_requested` — series carrying a reduce policy (`reduce != Reduce::None`).
+  A property of the **spec**, so it is reported even at zero area (the request was
+  made; it simply wasn't realized);
+- `reducers_declined` — requested reducers that are **not applicable** and render
+  unreduced: a scatter series (cannot reduce) or a line whose X is not nondecreasing
+  (`ExtremaPerColumn`'s proven domain — §6). Also size-independent.
+  `requested − declined` were applied.
 
-Realization gate:
+Realization gate (all device-dependent):
 - `segments_considered` / `segments_clipped` — line adjacency pairs examined vs.
   clipped away at the plot boundary;
 - `points_clipped` — scatter points that were finite **and** in the scale domain
   but projected outside the plot viewport (the scatter analogue of
   `segments_clipped`). Without it a fit-to-extent scatter could lose points while
   every rejection count read zero;
-- `primitives_emitted` — points/segments actually drawn;
-
-Reduction (requested vs effective — §6):
-- `reducers_requested` — series carrying a `Reduce` policy;
-- `reducers_declined` — requested reducers refused because the precondition was
-  unmet (non-monotone X); those series render unreduced. `requested − declined`
-  were applied;
-- `reduced_from` / `reduced_to` — original and produced counts, summed over the
-  **applied** reducers (both `0` when nothing was applied).
+- `points_emitted` — scatter **points** actually drawn (scatter series only);
+- `segments_emitted` — line **segments** actually drawn (line series only). Kept
+  distinct from `points_emitted`: points and segments are not the same object, so
+  they are **never** summed into one counter — a single shared "primitives drawn"
+  count made a mixed Line+Scatter plot un-auditable (one kind's output masked the
+  other's loss). The split keeps each kind independently conserved;
+- `reduced_from` / `reduced_to` — original and produced lengths of the **applied**
+  reducers only (both `0` when nothing was applied, e.g. at zero area). Both include
+  any gap/`(NaN,NaN)` sentinels, so they agree; neither is in a conservation law.
 
 This is **not** a quality score. It lets a user distinguish "nothing visible
 because the data is off-viewport" (`points_clipped` / `segments_clipped`) from
@@ -179,16 +187,23 @@ because the data is off-viewport" (`points_clipped` / `segments_clipped`) from
 (`scale_domain_rejected`) from "the request itself was malformed" (`Err`).
 
 **Conservation laws** (honest, and kept separate so one success never masks
-another failure — points and segments are not the same object):
+another failure — points and segments are not the same object, and are counted
+by distinct fields precisely so these laws survive a mixed plot):
 
-- *Scatter*, under a valid configuration, a non-empty viewport, and no reduction
-  (scatter never reduces): `finite_samples = scale_domain_rejected +
-  primitives_emitted + points_clipped`. Every finite sample is drawn, counted-off-
-  view, or counted-out-of-domain — never silently gone.
-- *Line*, per single series: `segments_considered = primitives_emitted +
-  segments_clipped`. This is a **segment** account, not a point account; it is not
-  added to the scatter law. Acceptance of the line's *points* (`finite_samples`,
-  `scale_domain_rejected`) is the separate upstream gate.
+- *Line* (holds on **any** plot, mixed or not — every term is line-only):
+  `segments_considered = segments_emitted + segments_clipped`.
+- *Scatter* (holds when **every series is Scatter**, so no line points inflate
+  `finite_samples`): `finite_samples = scale_domain_rejected + points_emitted +
+  points_clipped`. Every finite sample is drawn, counted-off-view, or
+  counted-out-of-domain — never silently gone.
+- *Mixed* Line+Scatter: the line law above still holds universally, and the
+  scatter points are conserved within the scatter-kind counters (`points_emitted
+  + points_clipped` + scatter-domain-rejected). What does **not** hold on a mixed
+  plot is a single whole-receipt equation summing both kinds — there is no such
+  equation, by design: a line's points become *segments*, not emitted points, so
+  point-level and segment-level accounts are never added. (The earlier shared
+  `primitives_emitted` made the naive sum look checkable and it silently failed on
+  the commonest overlay, scatter + fit line; the split fields remove that trap.)
 
 ### Boundary convention (one last-index)
 
@@ -246,7 +261,7 @@ reference structure, (3) labels/legend. Scientific data outranks chrome.
 | J | **extrema preservation** — a one-sample spike in a dense bucket survives `ExtremaPerColumn` |
 | K | **configuration ≠ sample** — an invalid scale *view* is `Err(PlotError)` reading no samples; a bad *sample* under a valid scale is an `Ok` with a `scale_domain_rejected`; a zero-area rect is an `Ok` with zero rejections |
 | L | **reducer requested-vs-effective** — `ExtremaPerColumn` is applied only on nondecreasing-X; off-contract it is declined and recorded (`reducers_declined`), never run; a declined series is byte-identical to `Reduce::None` |
-| M | **conservation** — scatter: `finite = scale_domain_rejected + primitives_emitted + points_clipped`; line: `segments_considered = primitives_emitted + segments_clipped` (segments ≠ points, laws kept separate) |
+| M | **conservation** — line (any plot): `segments_considered = segments_emitted + segments_clipped`; scatter (all-scatter plot): `finite = scale_domain_rejected + points_emitted + points_clipped`. Points and segments have distinct emitted counters and are never summed into one whole-receipt equation (segments ≠ points) |
 
 ## 9. Composition with the rest of LibGibson
 
