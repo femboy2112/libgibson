@@ -7,7 +7,7 @@
 use gibson::capability::ColorDepth;
 use gibson::input::{KeyCode, KeyEvent, KeyModifiers};
 use gibson::ui::experience::{
-    apply_intent, handle_key, required_semantics, Action, Content, Destination, Experience,
+    apply_intent, handle_key, required_semantics, Action, Content, Destination, Experience, Facet,
     Grammar, Intent, Item, LawViolation, Media, MediaShelf, PresentationReceipt, PresentationState,
     Presented, Priority, SemanticInput, Standard,
 };
@@ -1246,5 +1246,154 @@ fn blades_declares_the_action_omitted_when_the_viewport_is_too_short() {
     // Every destination and item is still attested while the action is declared.
     for destination in &experience.destinations {
         assert!(presented.receipt.rastered.contains(&destination.key));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Domain independence (§46): a SECOND fixture from an entirely different
+// domain — a system console, with NO Media whatsoever — run through every
+// grammar. If any grammar secretly assumed "albums" (cover art, media seeds,
+// media-shaped collections), it would either misrender or trip the law here.
+// The raster grammars must fall back to seeding their procedural art from the
+// item key, and all four Content kinds must survive.
+// ---------------------------------------------------------------------------
+
+/// A system-operations console: services (collection, no media), a metrics
+/// inspector (detail), live logs (prose), and config toggles (collection).
+fn console_fixture() -> Experience<Msg> {
+    let services = Content::Collection(vec![
+        Item::new("svc-gateway", "api-gateway")
+            .subtitle("healthy · 3 replicas")
+            .priority(Priority::Essential)
+            .action(Action::new(
+                "restart-gw",
+                "Restart",
+                Msg::Play("svc-gateway".into()),
+            )),
+        Item::new("svc-ledger", "ledger")
+            .subtitle("degraded · 1/2 replicas")
+            .priority(Priority::Essential)
+            .action(Action::new(
+                "restart-ld",
+                "Restart",
+                Msg::Play("svc-ledger".into()),
+            )),
+        Item::new("svc-cache", "cache")
+            .subtitle("healthy")
+            .action(Action::new(
+                "restart-ca",
+                "Restart",
+                Msg::Play("svc-cache".into()),
+            )),
+        Item::new("svc-worker", "batch-worker")
+            .subtitle("idle")
+            .priority(Priority::Tertiary)
+            .action(Action::new(
+                "restart-wk",
+                "Restart",
+                Msg::Play("svc-worker".into()),
+            )),
+    ]);
+
+    let metrics = Content::Detail {
+        facets: vec![
+            Facet::new("rps", "Requests/s", "12,480"),
+            Facet::new("p99", "p99 latency", "84ms"),
+            Facet::new("err", "Error rate", "0.02%"),
+        ],
+        actions: vec![Action::new("open-dash", "Dashboard", Msg::Open)],
+    };
+
+    let logs = Content::Prose(vec![
+        "12:04:01 gateway: upstream reconnect ok".into(),
+        "12:04:03 ledger: replica lag 1.2s".into(),
+        "12:04:05 cache: evicted 2k keys".into(),
+    ]);
+
+    let config = Content::Collection(vec![
+        Item::new("cfg-tracing", "Tracing")
+            .subtitle("sampled 10%")
+            .action(Action::new("t-trace", "Cycle", Msg::Toggle("trace".into()))),
+        Item::new("cfg-region", "Primary region")
+            .subtitle("us-east-1")
+            .action(Action::new(
+                "t-region",
+                "Cycle",
+                Msg::Toggle("region".into()),
+            )),
+    ]);
+
+    Experience::new("OPS CONSOLE")
+        .destination(Destination::new("services", "Services", services))
+        .destination(Destination::new("metrics", "Metrics", metrics))
+        .destination(Destination::new("logs", "Logs", logs))
+        .destination(Destination::new("config", "Config", config))
+}
+
+#[test]
+fn every_grammar_preserves_a_non_media_domain_across_the_matrix() {
+    let experience = console_fixture();
+    // No item carries Media — prove it, so a later edit can't quietly reintroduce
+    // the album assumption this fixture exists to rule out.
+    for destination in &experience.destinations {
+        if let Content::Collection(items) = &destination.content {
+            for item in items {
+                assert!(
+                    item.media.is_none(),
+                    "console fixture must stay media-free: {:?}",
+                    item.key
+                );
+            }
+        }
+    }
+
+    let sizes = [(160, 50), (120, 40), (80, 24), (60, 20), (42, 15)];
+    let depths = [
+        ColorDepth::TrueColor,
+        ColorDepth::Ansi256,
+        ColorDepth::Ansi16,
+        ColorDepth::Mono,
+    ];
+    for (name, mut grammar) in all_grammars() {
+        for (w, h) in sizes {
+            for depth in depths {
+                let e = env(w, h, depth);
+                let mut state = PresentationState::new(&experience);
+                for _ in 0..experience.destinations.len() {
+                    let presented =
+                        grammar.present(&experience, &state, &e, Duration::from_millis(300));
+                    let required = required_semantics(&experience, &state);
+                    let violations = presented.check(&required);
+                    assert!(
+                        violations.is_empty(),
+                        "{name} violated the law on the console domain at {w}x{h} {depth:?}: \
+                         {violations:?}"
+                    );
+                    apply_intent(&experience, &mut state, Intent::NextGroup);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_non_media_collection_still_resolves_and_acts() {
+    // The services list navigates and its primary action is reachable by Enter
+    // under every grammar, with no Media to lean on.
+    let experience = console_fixture();
+    for (name, grammar) in all_grammars() {
+        let mut state = PresentationState::new(&experience);
+        // Walk to the second service (grammar-independent) and activate it through
+        // the grammar's OWN Enter binding via handle_key — so each grammar's
+        // interpret path is exercised on a media-free collection.
+        apply_intent(&experience, &mut state, Intent::Next);
+        let selected = state.selected_key(&experience);
+        assert_eq!(selected, Some(key("svc-ledger")), "{name}");
+        let msg = handle_key(&*grammar, &experience, &mut state, &press(KeyCode::Enter));
+        assert_eq!(
+            msg,
+            Some(Msg::Play("svc-ledger".into())),
+            "{name} could not reach the primary action without media"
+        );
     }
 }
