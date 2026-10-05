@@ -1,4 +1,4 @@
-use crate::cell::{Cell, Glyph, Style};
+use crate::cell::{Cell, Color, Glyph, Style};
 use unicode_segmentation::UnicodeSegmentation;
 
 /// A 2D integer rectangle in cell coordinates.
@@ -404,6 +404,71 @@ impl Surface {
         }
     }
 
+    /// The representative RGB of the cell at `(x, y)` — the mean of its two
+    /// half-block pixels (`fg` = top, `bg` = bottom). Cells carrying a palette
+    /// index or `Reset` contribute nothing (no lossy approximation); an empty or
+    /// out-of-bounds cell yields a dark fallback. Used by [`Surface::bake_text`]
+    /// so a glyph's cell background matches the raster already beneath it.
+    pub fn cell_rgb(&self, x: u16, y: u16) -> (u8, u8, u8) {
+        const FALLBACK: (u8, u8, u8) = (10, 8, 18);
+        // Strict: only concrete `Color::Rgb` counts, matching the raster-blend
+        // ethos (a palette index approximated to RGB would be a lie here).
+        let rgb_of = |c: Option<Color>| match c {
+            Some(Color::Rgb(r, g, b)) => Some((r, g, b)),
+            _ => None,
+        };
+        self.get(x, y)
+            .map(
+                |cell| match (rgb_of(cell.style.fg), rgb_of(cell.style.bg)) {
+                    (Some(t), Some(b)) => (t.0 / 2 + b.0 / 2, t.1 / 2 + b.1 / 2, t.2 / 2 + b.2 / 2),
+                    (Some(t), None) => t,
+                    (None, Some(b)) => b,
+                    (None, None) => FALLBACK,
+                },
+            )
+            .unwrap_or(FALLBACK)
+    }
+
+    /// Writes `text` as crisp terminal glyphs starting at cell `(x, y)`, each
+    /// glyph's cell **background sampled from the raster already beneath it**
+    /// (via [`Surface::cell_rgb`]) so the glyph blends into a rendered scene
+    /// instead of punching an opaque terminal block.
+    ///
+    /// This is the public form of the "baked text" rule the experience grammars
+    /// use for crisp UI over a rendered raster: paint an [`crate::raster::RgbRaster`],
+    /// realize it with [`crate::raster::RgbRaster::to_surface`], then bake labels
+    /// on top. One glyph is written per `char`; baking stops at the surface edge.
+    /// `fg` is the glyph colour as `(r, g, b)`.
+    pub fn bake_text(&mut self, x: u16, y: u16, text: &str, fg: (u8, u8, u8), bold: bool) {
+        let mut cx = x;
+        for ch in text.chars() {
+            let (br, bg, bb) = self.cell_rgb(cx, y);
+            let mut style = Style::new()
+                .fg(Color::Rgb(fg.0, fg.1, fg.2))
+                .bg(Color::Rgb(br, bg, bb));
+            if bold {
+                style = style.bold();
+            }
+            if !self.set_cell(cx, y, Cell::new(Glyph::new(&ch.to_string()), style)) {
+                break;
+            }
+            cx = cx.saturating_add(1);
+        }
+    }
+
+    /// Bakes `text` centred on cell column `cx` (see [`Surface::bake_text`]).
+    pub fn bake_text_centered(
+        &mut self,
+        cx: u16,
+        y: u16,
+        text: &str,
+        fg: (u8, u8, u8),
+        bold: bool,
+    ) {
+        let half = (text.chars().count() as u16) / 2;
+        self.bake_text(cx.saturating_sub(half), y, text, fg, bold);
+    }
+
     /// Prints a string at (x, y) respecting grapheme clusters, styles, and wide character boundaries.
     /// Returns the number of columns advanced.
     pub fn print_str(
@@ -692,5 +757,64 @@ mod tests {
         assert_eq!(surface.get(4, 2).unwrap().glyph.grapheme.as_str(), "╯");
         assert_eq!(surface.get(1, 0).unwrap().glyph.grapheme.as_str(), "─");
         assert_eq!(surface.get(0, 1).unwrap().glyph.grapheme.as_str(), "│");
+    }
+
+    #[test]
+    fn cell_rgb_means_the_two_half_block_pixels() {
+        // A half-block cell encodes top pixel as fg, bottom pixel as bg.
+        let mut surface = Surface::new(2, 1);
+        surface.set_cell(
+            0,
+            0,
+            Cell::new(
+                Glyph::new("▀"),
+                Style::new()
+                    .fg(Color::Rgb(100, 40, 200))
+                    .bg(Color::Rgb(0, 80, 60)),
+            ),
+        );
+        assert_eq!(surface.cell_rgb(0, 0), (50, 60, 130));
+        // An out-of-bounds / untouched read yields the dark fallback, never a panic.
+        assert_eq!(surface.cell_rgb(99, 99), (10, 8, 18));
+    }
+
+    #[test]
+    fn bake_text_samples_its_background_from_the_raster_beneath() {
+        // Lay down a uniform raster cell, then bake a glyph on top: the glyph's
+        // cell background must be the sampled raster colour (no opaque block), and
+        // its foreground must be the requested colour.
+        let mut surface = Surface::new(6, 1);
+        let bg = Style::new()
+            .fg(Color::Rgb(20, 20, 20))
+            .bg(Color::Rgb(40, 40, 40));
+        for x in 0..6 {
+            surface.set_cell(x, 0, Cell::new(Glyph::new("▀"), bg));
+        }
+        surface.bake_text(1, 0, "Hi", (255, 255, 255), true);
+        let cell = surface.get(1, 0).unwrap();
+        assert_eq!(cell.glyph.grapheme.as_str(), "H");
+        assert_eq!(cell.style.fg, Some(Color::Rgb(255, 255, 255)));
+        // (20+40)/2 = 30 on every channel — the mean of the half-block beneath.
+        assert_eq!(cell.style.bg, Some(Color::Rgb(30, 30, 30)));
+        assert!(cell.style.bold);
+        assert_eq!(surface.get(2, 0).unwrap().glyph.grapheme.as_str(), "i");
+    }
+
+    #[test]
+    fn bake_text_stops_at_the_surface_edge_without_panicking() {
+        let mut surface = Surface::new(3, 1);
+        // Starts one cell before the edge; only "a" fits, the rest is dropped.
+        surface.bake_text(2, 0, "abcdef", (10, 20, 30), false);
+        assert_eq!(surface.get(2, 0).unwrap().glyph.grapheme.as_str(), "a");
+    }
+
+    #[test]
+    fn bake_text_centered_centres_on_the_column() {
+        let mut surface = Surface::new(9, 1);
+        surface.bake_text_centered(4, 0, "abc", (0, 0, 0), false);
+        // 3 chars, half = 1, so it starts at column 3 and occupies 3,4,5.
+        assert_eq!(surface.get(3, 0).unwrap().glyph.grapheme.as_str(), "a");
+        assert_eq!(surface.get(4, 0).unwrap().glyph.grapheme.as_str(), "b");
+        assert_eq!(surface.get(5, 0).unwrap().glyph.grapheme.as_str(), "c");
     }
 }
