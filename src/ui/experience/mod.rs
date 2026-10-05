@@ -1,18 +1,18 @@
 //! Experimental **semantic experience grammars** — the layer *above*
-//! [`Skin`](crate::ui::skin::Skin).
+//! [`crate::ui::skin::Skin`].
 //!
-//! A [`Skin`](crate::ui::skin::Skin) restyles an element tree (palette, chrome,
+//! A [`crate::ui::skin::Skin`] restyles an element tree (palette, chrome,
 //! density, glyphs, motion tokens). But by the time a skin sees the tree, the
 //! application has already decided its geometry — rows, columns, panels. This
 //! layer sits higher: the application describes itself *semantically* as an
-//! [`Experience`](crate::ui::experience::Experience) (destinations, collections,
-//! items, actions), and a [`Grammar`](crate::ui::experience::Grammar)
+//! [`crate::ui::experience::Experience`] (destinations, collections,
+//! items, actions), and a [`crate::ui::experience::Grammar`]
 //! deterministically realizes that same semantic value as a radically
 //! different interface — a cover shelf, a cross-media bar, an orbital field, a
 //! blade stack, a typographic panorama — **without the application forking per
 //! style**.
 //!
-//! The governing law (see [`receipt`](crate::ui::experience::receipt)) is the
+//! The governing law (see [`crate::ui::experience::receipt`]) is the
 //! Representation Atlas law shared by
 //! the rest of v0.5: a presentation grammar is a change of *representation*, not
 //! of application state. Formally, for a grammar `σ`,
@@ -33,7 +33,7 @@
 //!       -> crate::ui compile -> Node -> layout -> raster -> terminal
 //! ```
 //!
-//! Grammars lower into ordinary [`Element`](crate::ui::element::Element)s and the
+//! Grammars lower into ordinary [`crate::ui::element::Element`]s and the
 //! existing `raster3d` / `Surface` escape hatches; they add no renderer, layout
 //! engine or terminal owner (see the crate's substrate contract).
 //!

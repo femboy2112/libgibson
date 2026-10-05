@@ -28,8 +28,8 @@ use gibson::capability::ColorDepth;
 use gibson::context::{Context, RenderMode};
 use gibson::input::{Event, KeyCode, KeyModifiers};
 use gibson::ui::experience::{
-    Action, Content, Destination, Experience, ExperienceRuntime, ExperienceStyle, Facet, Item,
-    Media,
+    apply_intent, Action, Content, Destination, Experience, ExperienceRuntime, ExperienceStyle,
+    Facet, Intent, Item, Media,
 };
 use gibson::ui::prelude::UiRuntime;
 use gibson::ui::skin::UiEnvironment;
@@ -246,8 +246,119 @@ fn update(lab: &mut Lab, event: AppEvent<Msg>) -> Control {
     }
 }
 
+/// Render one full lab frame (grammar + chrome) to truecolor ANSI bytes, exactly
+/// as the live demo paints it, at a given viewport and presentation time. Shared by
+/// the `ansi` (single still) and `seq` (animation) capture paths.
+fn capture_frame(lab: &Lab, w: u16, h: u16, now: Duration) -> Vec<u8> {
+    let env = UiEnvironment {
+        width: w,
+        height: h,
+        color_depth: ColorDepth::TrueColor,
+        ..UiEnvironment::default()
+    };
+    let mut cx = BuildCx::new(skins::VAPOR95, env);
+    cx.time = now;
+    // `App::fullscreen` forces the root to the viewport; mirror that so the capture
+    // shows the real live framing (the skin's screen fills), not a content clump.
+    let element = view(lab, &cx).height(h);
+    let mut runtime = UiRuntime::new(skins::VAPOR95);
+    let compiled = runtime.frame(&element, env, now).expect("frame lowers");
+    let mut ctx = Context::headless(RenderMode::Fullscreen, w, h);
+    ctx.set_color_depth(ColorDepth::TrueColor);
+    ctx.set_root(compiled.node);
+    ctx.render_now().expect("headless render");
+    ctx.rendered_bytes().to_vec()
+}
+
+/// Drive the active grammar's shared navigation state the way a key press would.
+fn navigate(lab: &Lab, intent: Intent) {
+    apply_intent(&lab.experience, lab.ui.borrow_mut().state_mut(), intent);
+}
+
+/// A scripted capture scenario: emit a sequence of truecolor ANSI frames to
+/// `outdir/frame_NNNN.ans`, advancing presentation time so springy/continuous
+/// grammars actually move, and scripting navigation so settling grammars glide.
+/// Returns the number of frames written. (Milestone §52 temporal sequences.)
+fn capture_sequence(scenario: &str, outdir: &str, w: u16, h: u16) -> io::Result<u32> {
+    std::fs::create_dir_all(outdir)?;
+    let lab = Lab::new();
+    let dt = Duration::from_millis(50); // 20fps edit clock
+    let mut n: u32 = 0;
+    let mut now = Duration::ZERO;
+    let shoot = |lab: &Lab, now: Duration, n: &mut u32| -> io::Result<()> {
+        let bytes = capture_frame(lab, w, h, now);
+        std::fs::write(format!("{outdir}/frame_{:04}.ans", *n), &bytes)?;
+        *n += 1;
+        Ok(())
+    };
+
+    match scenario {
+        // Representation Atlas: the SAME selected item through all six grammars.
+        "tour" => {
+            navigate(&lab, Intent::Next);
+            navigate(&lab, Intent::Next); // select the third library item
+            for style in ExperienceStyle::ALL {
+                lab.ui.borrow_mut().set_style(style);
+                for _ in 0..16 {
+                    shoot(&lab, now, &mut n)?;
+                    now += dt;
+                }
+            }
+        }
+        // Continuous orbital motion, with two ring rotations.
+        "orbital" => {
+            lab.ui.borrow_mut().set_style(ExperienceStyle::Orbital);
+            for i in 0..60 {
+                if i == 20 || i == 38 {
+                    navigate(&lab, Intent::NextCyclic);
+                }
+                shoot(&lab, now, &mut n)?;
+                now += dt;
+            }
+        }
+        // Cover-flow: step through the shelf, watching the spring glide and settle.
+        "shelf" => {
+            lab.ui.borrow_mut().set_style(ExperienceStyle::MediaShelf);
+            for i in 0..66 {
+                if i > 0 && i % 12 == 0 {
+                    navigate(&lab, Intent::Next);
+                }
+                shoot(&lab, now, &mut n)?;
+                now += dt;
+            }
+        }
+        // Blade stack: glide through the destination blades.
+        "blades" => {
+            lab.ui.borrow_mut().set_style(ExperienceStyle::Blades);
+            for i in 0..56 {
+                if i > 0 && i % 13 == 0 {
+                    navigate(&lab, Intent::NextGroup);
+                }
+                shoot(&lab, now, &mut n)?;
+                now += dt;
+            }
+        }
+        other => {
+            eprintln!("unknown scenario '{other}' (tour|orbital|shelf|blades)");
+        }
+    }
+    Ok(n)
+}
+
 fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
+
+    // Animated capture for GIFs / visual acceptance (§52): `experience_lab seq
+    // <scenario> <outdir> [W H]` writes a scripted truecolor ANSI frame sequence.
+    if args.get(1).map(String::as_str) == Some("seq") {
+        let scenario = args.get(2).map(String::as_str).unwrap_or("tour");
+        let outdir = args.get(3).cloned().unwrap_or_else(|| "frames".to_string());
+        let w: u16 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(100);
+        let h: u16 = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(30);
+        let frames = capture_sequence(scenario, &outdir, w, h)?;
+        println!("{scenario}: {frames} frames -> {outdir} ({w}x{h})");
+        return Ok(());
+    }
 
     // Headless text snapshot for visual acceptance (§43) and quick eyeballing:
     // `experience_lab dump [W H]` prints every grammar's frame as visible text at
@@ -305,29 +416,10 @@ fn main() -> io::Result<()> {
             .copied()
             .unwrap_or(ExperienceStyle::Standard);
         lab.ui.borrow_mut().set_style(style);
-        let env = UiEnvironment {
-            width: w,
-            height: h,
-            color_depth: ColorDepth::TrueColor,
-            ..UiEnvironment::default()
-        };
         // A settled clock: springy grammars have parked, so this is the still frame.
-        let now = Duration::from_secs(5);
-        let mut cx = BuildCx::new(skins::VAPOR95, env);
-        cx.time = now;
-        // `App::fullscreen` forces the root to the viewport; mirror that here so the
-        // capture shows the real live framing (the skin's screen fills), not a
-        // content-height clump floating over a black void.
-        let element = view(&lab, &cx).height(h);
-
-        let mut runtime = UiRuntime::new(skins::VAPOR95);
-        let compiled = runtime.frame(&element, env, now).expect("frame lowers");
-        let mut ctx = Context::headless(RenderMode::Fullscreen, w, h);
-        ctx.set_color_depth(ColorDepth::TrueColor);
-        ctx.set_root(compiled.node);
-        ctx.render_now().expect("headless render");
+        let bytes = capture_frame(&lab, w, h, Duration::from_secs(5));
         use std::io::Write;
-        io::stdout().write_all(ctx.rendered_bytes())?;
+        io::stdout().write_all(&bytes)?;
         return Ok(());
     }
 
