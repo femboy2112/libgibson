@@ -29,7 +29,7 @@
 //!
 //! ```text
 //!   Experience (semantic)
-//!       -> Grammar::present  ->  Presented { Element, PresentationReceipt }
+//!       -> Grammar::present  ->  Presented { Element, PresentationReceipt, FrameDemand }
 //!       -> crate::ui compile -> Node -> layout -> raster -> terminal
 //! ```
 //!
@@ -56,21 +56,26 @@ pub mod grammar;
 pub mod intent;
 pub mod media_shelf;
 pub mod model;
+pub(crate) mod motion;
 pub mod orbital;
 pub(crate) mod paint;
 pub mod panorama;
 pub mod receipt;
+pub mod runtime;
 pub mod standard;
 
 pub use blades::Blades;
 pub use cross_media::CrossMedia;
-pub use grammar::{Grammar, Presented};
+pub use grammar::{FrameDemand, Grammar, Presented};
 pub use intent::{apply_intent, Intent, PresentationState, SemanticInput};
 pub use media_shelf::MediaShelf;
-pub use model::{Action, Content, Custom, Destination, Experience, Facet, Item, Media, Priority};
+pub use model::{
+    Action, Content, Custom, CustomCx, Destination, Experience, Facet, Item, Media, Priority,
+};
 pub use orbital::Orbital;
 pub use panorama::Panorama;
 pub use receipt::{required_semantics, LawViolation, PresentationReceipt, RequiredSemantics};
+pub use runtime::{ExperienceRuntime, ExperienceStyle, StyleId};
 pub use standard::Standard;
 
 use crate::input::KeyEvent;

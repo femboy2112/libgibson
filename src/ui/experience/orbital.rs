@@ -28,9 +28,11 @@
 //! caption, dropped (and recorded) only when the viewport is too short for it.
 //! Detail / Prose / Custom destinations degrade to a faithful plain rendering.
 
-use super::grammar::{Grammar, Presented};
+use super::grammar::{FrameDemand, Grammar, Presented};
 use super::intent::{Intent, PresentationState, SemanticInput};
-use super::model::{Content, Experience};
+use super::model::{Content, CustomCx, Experience};
+use super::motion::DampedSpring;
+use super::paint::{hsv, mix, seed_for};
 use super::receipt::PresentationReceipt;
 use crate::capability::ColorDepth;
 use crate::input::{KeyCode, KeyEvent};
@@ -54,35 +56,9 @@ const TRACK: Rgb = (120, 160, 255);
 const OMEGA: f32 = 11.0;
 const ZETA: f32 = 0.74;
 
-fn mix(a: Rgb, b: Rgb, t: f32) -> Rgb {
-    let m = |x: u8, y: u8| {
-        (x as f32 + (y as f32 - x as f32) * t)
-            .round()
-            .clamp(0.0, 255.0) as u8
-    };
-    (m(a.0, b.0), m(a.1, b.1), m(a.2, b.2))
-}
-
 fn scale(c: Rgb, k: f32) -> Rgb {
     let s = |x: u8| (x as f32 * k).round().clamp(0.0, 255.0) as u8;
     (s(c.0), s(c.1), s(c.2))
-}
-
-fn hsv(h: f32, s: f32, v: f32) -> Rgb {
-    let h = h.rem_euclid(360.0) / 60.0;
-    let c = v * s;
-    let x = c * (1.0 - (h % 2.0 - 1.0).abs());
-    let m = v - c;
-    let (r, g, b) = match h as i32 {
-        0 => (c, x, 0.0),
-        1 => (x, c, 0.0),
-        2 => (0.0, c, x),
-        3 => (0.0, x, c),
-        4 => (x, 0.0, c),
-        _ => (c, 0.0, x),
-    };
-    let to = |z: f32| ((z + m) * 255.0).round().clamp(0.0, 255.0) as u8;
-    (to(r), to(g), to(b))
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -315,28 +291,12 @@ fn draw_moons(rz: &mut RgbRaster, count: usize, active: usize) {
     }
 }
 
-// ---- damped-spring motion ------------------------------------------------------------
-
-#[derive(Clone, Copy)]
-struct Spring {
-    x: f32,
-    v: f32,
-}
-
-impl Spring {
-    fn step(&mut self, target: f32, dt: f32) {
-        let accel = -2.0 * ZETA * OMEGA * self.v - OMEGA * OMEGA * (self.x - target);
-        self.v += accel * dt;
-        self.x += self.v * dt;
-    }
-}
-
 // ---- the grammar ---------------------------------------------------------------------
 
 /// The orbital focal grammar. Holds private spring state (the ring's fractional
 /// rotation) and an orb-style cache keyed by media seed.
 pub struct Orbital {
-    spring: Spring,
+    spring: DampedSpring,
     last: Option<Duration>,
     initialized: bool,
     styles: HashMap<u64, OrbStyle>,
@@ -351,23 +311,11 @@ impl Default for Orbital {
 impl Orbital {
     pub fn new() -> Self {
         Self {
-            spring: Spring { x: 0.0, v: 0.0 },
+            spring: DampedSpring::default(),
             last: None,
             initialized: false,
             styles: HashMap::new(),
         }
-    }
-
-    fn seed_for(key: &Key, media_seed: Option<u64>) -> u64 {
-        media_seed.unwrap_or_else(|| {
-            // Deterministic FNV-1a of the key's display string when no media given.
-            let mut hash: u64 = 0xcbf29ce484222325;
-            for byte in key.to_string().bytes() {
-                hash ^= byte as u64;
-                hash = hash.wrapping_mul(0x100000001b3);
-            }
-            hash
-        })
     }
 
     fn style(&mut self, seed: u64) -> OrbStyle {
@@ -376,7 +324,7 @@ impl Orbital {
 
     fn advance(&mut self, target: f32, now: Duration) {
         if !self.initialized {
-            self.spring = Spring { x: target, v: 0.0 };
+            self.spring = DampedSpring::at(target);
             self.initialized = true;
             self.last = Some(now);
             return;
@@ -390,7 +338,7 @@ impl Orbital {
         let steps = (dt / 0.004).ceil().max(1.0) as u32;
         let sub = dt / steps as f32;
         for _ in 0..steps {
-            self.spring.step(target, sub);
+            self.spring.step(target, sub, OMEGA, ZETA);
         }
     }
 
@@ -529,8 +477,14 @@ impl<A: Clone> Grammar<A> for Orbital {
             .max(2)
             .min(env.height);
 
+        // ORBITAL is the one continuously animated grammar: on the orbital field the
+        // ambient swirl and the focus halo breathe with `now` and never reach a fixed
+        // point, so it asks for frames the whole time it is on the ring. The plain
+        // (non-Collection) path draws no field and rests.
+        let mut demand = FrameDemand::OnChange;
         let body = match experience.destinations.get(active_idx).map(|d| &d.content) {
             Some(Content::Collection(items)) if !items.is_empty() => {
+                demand = FrameDemand::fps(60);
                 let selected = state
                     .selected_index(experience)
                     .unwrap_or(0)
@@ -550,7 +504,7 @@ impl<A: Clone> Grammar<A> for Orbital {
 
                 let seeds: Vec<u64> = items
                     .iter()
-                    .map(|item| Self::seed_for(&item.key, item.media.map(|m| m.seed)))
+                    .map(|item| seed_for(&item.key, item.media.as_ref()))
                     .collect();
                 let pw = env.width.saturating_sub(2).max(2);
                 let ph = world_rows.saturating_mul(2).max(2);
@@ -632,7 +586,7 @@ impl<A: Clone> Grammar<A> for Orbital {
                 }
                 orbit
             }
-            Some(content) => present_plain(content, env, &mut receipt),
+            Some(content) => present_plain(content, env, now, &mut receipt),
             None => text::<A>("(no destinations)"),
         };
 
@@ -644,10 +598,7 @@ impl<A: Clone> Grammar<A> for Orbital {
                 .child(body.grow(1.0)),
         );
 
-        Presented {
-            element: root,
-            receipt,
-        }
+        Presented::new(root, receipt).with_demand(demand)
     }
 
     fn interpret(
@@ -679,6 +630,7 @@ impl<A: Clone> Grammar<A> for Orbital {
 fn present_plain<A: Clone>(
     content: &Content<A>,
     env: &UiEnvironment,
+    now: Duration,
     receipt: &mut PresentationReceipt,
 ) -> Element<A> {
     match content {
@@ -714,10 +666,12 @@ fn present_plain<A: Clone>(
             receipt
                 .degraded
                 .push(format!("custom instrument '{}' composited", custom.label));
-            raster::<A>(custom.render(
+            raster::<A>(custom.render(&CustomCx::new(
                 env.width.saturating_sub(2).max(1),
                 env.height.saturating_sub(5).max(1),
-            ))
+                now,
+                env.color_depth,
+            )))
         }
         Content::Collection(_) => text::<A>("(empty)"),
     }

@@ -28,8 +28,8 @@ use gibson::capability::ColorDepth;
 use gibson::context::{Context, RenderMode};
 use gibson::input::{Event, KeyCode, KeyModifiers};
 use gibson::ui::experience::{
-    handle_key, Action, Blades, Content, CrossMedia, Destination, Experience, Facet, Grammar, Item,
-    Media, MediaShelf, Orbital, Panorama, PresentationState, Standard,
+    Action, Content, Destination, Experience, ExperienceRuntime, ExperienceStyle, Facet, Item,
+    Media,
 };
 use gibson::ui::prelude::UiRuntime;
 use gibson::ui::skin::UiEnvironment;
@@ -136,32 +136,17 @@ fn build_experience() -> Experience<Msg> {
         .destination(Destination::new("about", "About", about))
 }
 
-/// A named, swappable grammar. `RefCell` because `present` needs `&mut` (spring
-/// state) while the `view` only borrows the model immutably.
-type GrammarSlot = (&'static str, RefCell<Box<dyn Grammar<Msg>>>);
-
-/// Every grammar the lab can wear, in cycle order. STANDARD is the reference
-/// oracle; the rest are the cinematic styles.
-fn grammars() -> Vec<GrammarSlot> {
-    let mk = |b: Box<dyn Grammar<Msg>>| RefCell::new(b);
-    vec![
-        ("STANDARD", mk(Box::new(Standard::new()))),
-        ("MEDIA_SHELF", mk(Box::new(MediaShelf::new()))),
-        ("CROSS_MEDIA", mk(Box::new(CrossMedia::new()))),
-        ("PANORAMA", mk(Box::new(Panorama::new()))),
-        ("ORBITAL", mk(Box::new(Orbital::new()))),
-        ("BLADES", mk(Box::new(Blades::new()))),
-    ]
-}
-
 /// The application model. Note what is *not* here: no per-style branch, no
-/// per-style layout. Just the semantic value, the identity-keyed navigation state,
-/// and which grammar is currently worn.
+/// per-style layout, and no hand-rolled grammar registry. Just the semantic value
+/// and an [`ExperienceRuntime`] that owns the presentation orchestration (the
+/// grammar-independent navigation state and the persistent grammar instances).
+///
+/// The runtime is behind a `RefCell` only because this App harness hands `view` an
+/// immutable `&Lab` while a grammar's `present` needs `&mut` for its spring state —
+/// one cell around the whole runtime, not the old `Vec<RefCell<Box<dyn Grammar>>>`.
 struct Lab {
     experience: Experience<Msg>,
-    state: PresentationState,
-    grammars: Vec<GrammarSlot>,
-    current: usize,
+    ui: RefCell<ExperienceRuntime<Msg>>,
     last_action: Option<Msg>,
     quit: bool,
 }
@@ -169,27 +154,13 @@ struct Lab {
 impl Lab {
     fn new() -> Self {
         let experience = build_experience();
-        let state = PresentationState::new(&experience);
+        let ui = ExperienceRuntime::with_builtins(&experience);
         Self {
             experience,
-            state,
-            grammars: grammars(),
-            current: 0,
+            ui: RefCell::new(ui),
             last_action: None,
             quit: false,
         }
-    }
-
-    fn style_name(&self) -> &'static str {
-        self.grammars[self.current].0
-    }
-
-    fn set_style(&mut self, index: usize) {
-        self.current = index.min(self.grammars.len() - 1);
-    }
-
-    fn next_style(&mut self) {
-        self.current = (self.current + 1) % self.grammars.len();
     }
 }
 
@@ -197,11 +168,17 @@ impl Lab {
 /// semantic value through it, and overlays a thin lab status line. There is no
 /// `match` on the style here — the grammar is a value, swapped underneath.
 fn view(lab: &Lab, cx: &BuildCx) -> Element<Msg> {
-    let presented = {
-        let mut grammar = lab.grammars[lab.current].1.borrow_mut();
-        grammar.present(&lab.experience, &lab.state, &cx.environment, cx.time)
-    };
+    // One call: present the shared semantic value through the active grammar. The
+    // grammar is a value the runtime swaps underneath — there is no `match style`.
+    let presented = lab
+        .ui
+        .borrow_mut()
+        .present(&lab.experience, &cx.environment, cx.time);
 
+    let (style_name, count) = {
+        let ui = lab.ui.borrow();
+        (ui.style_name().to_string(), ui.style_count())
+    };
     let last = lab
         .last_action
         .as_ref()
@@ -210,10 +187,7 @@ fn view(lab: &Lab, cx: &BuildCx) -> Element<Msg> {
     let bar = row::<Msg>()
         .gap(2)
         .child(status::<Msg>(format!(
-            "EXPERIENCE LAB  [{}/{}] {}",
-            lab.current + 1,
-            lab.grammars.len(),
-            lab.style_name()
+            "EXPERIENCE LAB  {style_name}  ({count} styles)"
         )))
         .child(label::<Msg>(
             "s style · 1-6 pick · arrows nav · ↵ act · Esc back · q quit",
@@ -250,27 +224,20 @@ fn update(lab: &mut Lab, event: AppEvent<Msg>) -> Control {
             // untouched, so the selection survives the switch.
             match key.code {
                 KeyCode::Char('s') | KeyCode::Char('S') => {
-                    lab.next_style();
+                    lab.ui.get_mut().next_style();
                     return Control::Continue;
                 }
                 KeyCode::Char(d @ '1'..='6') => {
-                    lab.set_style(d as usize - '1' as usize);
+                    let style = ExperienceStyle::ALL[d as usize - '1' as usize];
+                    lab.ui.get_mut().set_style(style);
                     return Control::Continue;
                 }
                 _ => {}
             }
             // Everything else: the active grammar decides what the key means, and
-            // `apply_intent` applies it identically for every grammar.
-            let Lab {
-                experience,
-                state,
-                grammars,
-                current,
-                ..
-            } = lab;
-            let grammar = grammars[*current].1.borrow();
-            if let Some(msg) = handle_key(&**grammar, experience, state, &key) {
-                drop(grammar);
+            // the runtime applies it to the shared state identically for every
+            // grammar. The returned `Msg` is the application's to interpret.
+            if let Some(msg) = lab.ui.get_mut().handle_key(&lab.experience, &key) {
                 lab.last_action = Some(msg);
             }
             Control::Continue
@@ -296,13 +263,13 @@ fn main() -> io::Result<()> {
             color_depth: ColorDepth::TrueColor,
             ..UiEnvironment::default()
         };
-        for (name, cell) in &lab.grammars {
-            let presented = cell.borrow_mut().present(
-                &lab.experience,
-                &lab.state,
-                &env,
-                Duration::from_millis(500),
-            );
+        for style in ExperienceStyle::ALL {
+            lab.ui.borrow_mut().set_style(style);
+            let name = style.name();
+            let presented =
+                lab.ui
+                    .borrow_mut()
+                    .present(&lab.experience, &env, Duration::from_millis(500));
             let cx = BuildCx::new(skins::VAPOR95, env);
             let mut node = gibson::ui::compile(&presented.element, &cx)
                 .expect("grammar lowers")
@@ -332,8 +299,12 @@ fn main() -> io::Result<()> {
             .saturating_sub(1);
         let w: u16 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(100);
         let h: u16 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(28);
-        let mut lab = Lab::new();
-        lab.set_style(idx);
+        let lab = Lab::new();
+        let style = ExperienceStyle::ALL
+            .get(idx)
+            .copied()
+            .unwrap_or(ExperienceStyle::Standard);
+        lab.ui.borrow_mut().set_style(style);
         let env = UiEnvironment {
             width: w,
             height: h,
@@ -397,24 +368,30 @@ mod tests {
     /// CI proof that a live switch never retargets the selection.
     #[test]
     fn selection_and_active_survive_every_live_switch() {
-        let mut lab = Lab::new();
+        let lab = Lab::new();
         // Move off the defaults: select the third library item.
-        apply_intent(&lab.experience, &mut lab.state, Intent::Next);
-        apply_intent(&lab.experience, &mut lab.state, Intent::Next);
-        let selected = lab.state.selected_key(&lab.experience);
-        let active = lab.state.active_key(&lab.experience);
+        apply_intent(
+            &lab.experience,
+            lab.ui.borrow_mut().state_mut(),
+            Intent::Next,
+        );
+        apply_intent(
+            &lab.experience,
+            lab.ui.borrow_mut().state_mut(),
+            Intent::Next,
+        );
+        let selected = lab.ui.borrow().state().selected_key(&lab.experience);
+        let active = lab.ui.borrow().state().active_key(&lab.experience);
         assert_eq!(selected, Some(key_named("tidal-automata")));
 
         let e = env(120, 40, ColorDepth::TrueColor);
-        for index in 0..lab.grammars.len() {
-            lab.set_style(index);
-            let name = lab.style_name();
-            let presented = lab.grammars[index].1.borrow_mut().present(
-                &lab.experience,
-                &lab.state,
-                &e,
-                Duration::from_millis(250),
-            );
+        for style in ExperienceStyle::ALL {
+            lab.ui.borrow_mut().set_style(style);
+            let name = style.name();
+            let presented =
+                lab.ui
+                    .borrow_mut()
+                    .present(&lab.experience, &e, Duration::from_millis(250));
             assert_eq!(
                 presented.receipt.selected, selected,
                 "{name} moved the selection on a live switch"
@@ -424,7 +401,7 @@ mod tests {
                 active,
                 "{name} moved the active destination on a live switch"
             );
-            let required = required_semantics(&lab.experience, &lab.state);
+            let required = required_semantics(&lab.experience, lab.ui.borrow().state());
             assert!(
                 presented.check(&required).is_empty(),
                 "{name} violated the preservation law in the lab"
@@ -444,9 +421,9 @@ mod tests {
             ColorDepth::Ansi16,
             ColorDepth::Mono,
         ];
-        for index in 0..grammars().len() {
-            let mut lab = Lab::new();
-            lab.set_style(index);
+        for style in ExperienceStyle::ALL {
+            let lab = Lab::new();
+            lab.ui.borrow_mut().set_style(style);
             for (w, h) in sizes {
                 for depth in depths {
                     let e = env(w, h, depth);
@@ -469,22 +446,22 @@ mod tests {
     #[test]
     fn style_keys_switch_without_disturbing_navigation() {
         let mut lab = Lab::new();
-        apply_intent(&lab.experience, &mut lab.state, Intent::Next); // select 2nd
-        let before = lab.state.selected_key(&lab.experience);
+        apply_intent(&lab.experience, lab.ui.get_mut().state_mut(), Intent::Next); // select 2nd
+        let before = lab.ui.borrow().state().selected_key(&lab.experience);
 
         // Direct style pick and cycle leave the selection alone.
         update(
             &mut lab,
             AppEvent::Input(Event::Key(press(KeyCode::Char('4')))),
         );
-        assert_eq!(lab.style_name(), "PANORAMA");
+        assert_eq!(lab.ui.borrow().style_name(), "PANORAMA");
         update(
             &mut lab,
             AppEvent::Input(Event::Key(press(KeyCode::Char('s')))),
         );
-        assert_eq!(lab.style_name(), "ORBITAL");
+        assert_eq!(lab.ui.borrow().style_name(), "ORBITAL");
         assert_eq!(
-            lab.state.selected_key(&lab.experience),
+            lab.ui.borrow().state().selected_key(&lab.experience),
             before,
             "switching grammar must not move the selection"
         );
@@ -492,7 +469,7 @@ mod tests {
         // A grammar key navigates. ORBITAL binds Right to Next item.
         update(&mut lab, AppEvent::Input(Event::Key(press(KeyCode::Right))));
         assert_ne!(
-            lab.state.selected_key(&lab.experience),
+            lab.ui.borrow().state().selected_key(&lab.experience),
             before,
             "a navigation key should move the selection"
         );

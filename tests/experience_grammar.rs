@@ -189,10 +189,7 @@ impl<A: Clone> Grammar<A> for Minimal {
             }
             _ => {}
         }
-        Presented {
-            element: root,
-            receipt,
-        }
+        Presented::new(root, receipt)
     }
     fn interpret(
         &self,
@@ -246,10 +243,10 @@ impl<A: Clone> Grammar<A> for TitleOnly {
                 }
             }
         }
-        Presented {
-            element: gibson::ui::element::text::<A>(experience.title.clone()),
+        Presented::new(
+            gibson::ui::element::text::<A>(experience.title.clone()),
             receipt,
-        }
+        )
     }
     fn interpret(
         &self,

@@ -207,11 +207,21 @@ code, never an intent.
 
 Some domains should not be squeezed into the semantic vocabulary — a dense
 observatory instrument, a live visualization. `Content::Custom` carries a closure
-`Fn(cols, rows) -> Surface`. The grammar allots a cell rectangle and composites
-the produced `Surface` **verbatim** (via `ui::raster` / `ui::surface` /
-`ui::presented`); it does not reinterpret the contents. This preserves the
-"ordinary `Node`/`Element` APIs remain valid" promise — Experience is an *opt-in*
-higher layer, not a replacement, and raw content is always one hatch away.
+and the grammar allots a cell rectangle, composites the produced `Surface`
+**verbatim** (via `ui::raster` / `ui::surface` / `ui::presented`), and does not
+reinterpret the contents. Two constructors:
+
+- `Custom::new(key, label, Fn(cols, rows) -> Surface)` — a *static* instrument
+  that depends only on its allotted size (automatically time-invariant).
+- `Custom::dynamic(key, label, Fn(&CustomCx) -> Surface)` — a *dynamic* instrument
+  that may also vary with the presentation time and colour depth. `CustomCx`
+  carries `{ width, height, now, color_depth }`; the grammar forwards its own
+  `now`, so a dynamic instrument animates against **presentation time**, never the
+  wall clock, and therefore reproduces exactly under seek or deterministic capture.
+
+This preserves the "ordinary `Node`/`Element` APIs remain valid" promise —
+Experience is an *opt-in* higher layer, not a replacement, and raw content is
+always one hatch away.
 
 ---
 
@@ -260,21 +270,31 @@ To author an **application**:
 2. Build an `Experience<Msg>` once: `.destination(Destination::new(key, title,
    Content::…))`. Use `Collection` for selectable sets (including settings),
    `Detail` for a property page, `Prose` for text, `Custom` for an instrument.
-3. Hold `state: PresentationState` (`PresentationState::new(&experience)`) and
-   `grammar: Box<dyn Grammar<Msg>>`.
-4. View: `grammar.present(&experience, &state, env, now).element`.
-5. Input: `if let Some(msg) = handle_key(&*grammar, &experience, &mut state,
-   &key) { /* update domain */ }`.
-6. Switch style: replace `grammar`. Never branch the app on style.
+3. Hold an `ExperienceRuntime<Msg>`
+   (`ExperienceRuntime::with_builtins(&experience)`). It owns the
+   `PresentationState` and one **persistent** instance of every built-in grammar —
+   no `RefCell` or registry to hand-manage.
+4. View: `ui.present(&experience, env, now)` → `Presented { element, receipt,
+   demand }`. Render `element`; honour `demand` (a `FrameDemand`, §12).
+5. Input: `if let Some(msg) = ui.handle_key(&experience, &key) { /* update domain */ }`.
+6. Switch style in one call: `ui.set_style(ExperienceStyle::Orbital)` /
+   `ui.next_style()` / `ui.previous_style()`. Never branch the app on style.
+
+For a **custom** grammar, `ui.register(name, Box::new(my_grammar))` adds it under a
+`StyleId::Custom(name)` — the built-in set is not closed. For full manual control,
+hold `PresentationState` + `Box<dyn Grammar<Msg>>` yourself and call
+`grammar.present(…)` / `handle_key(&*grammar, …)` directly.
 
 To author a **grammar**, implement `Grammar<A>`:
 
 - `name()` — a stable `&'static str`.
 - `present(&mut self, experience, state, env, now) -> Presented<A>` — build an
-  `Element` *and* a `PresentationReceipt`. Resolve selection via
+  `Element`, a `PresentationReceipt`, **and** a `FrameDemand`. Resolve selection via
   `state.selected_index(experience)` / `state.active_index(experience)` (never
   cache a raw index). Key every node you claim, or list a rastered id in
-  `receipt.rastered`. Record every declared omission.
+  `receipt.rastered`. Record every declared omission. Return
+  `Presented::new(element, receipt)` to rest on change, or
+  `.with_demand(FrameDemand::fps(60))` while settling/animating.
 - `interpret(&self, key, experience, state) -> Option<SemanticInput<A>>` — bind
   your metaphor's keys to intents (or a direct `Invoke` for a secondary action).
 - Reduce only `Tertiary`/decorative content under size pressure, and **declare**
@@ -320,34 +340,45 @@ switch preserves `active_destination` and `selected`.
 |---|---|---|---|---|
 | `STANDARD` | reference list / oracle | Node (`list`/`field set`/`prose`) | ↑↓ item, ←→ group | position + emphasis + the structure itself |
 | `MEDIA_SHELF` | Cover-Flow shelf | raster (`raster3d` textured quads, damped spring) | ←→ item, ↑↓ group | centre focus, size, reflection, caption |
-| `CROSS_MEDIA` | cross-bar | Node (centred cross, no raster) | ←→ group, ↑↓ item | the crossing focus + emphasis + position |
-| `PANORAMA` | typographic panorama | Node (letter-spaced large type, edge-bleed) | ←→ pan sections, ↑↓ column | chevron slivers, ▸ marker, `NN / NN` counter |
+| `CROSS_MEDIA` | cross-bar | raster (XMB world: gradient + aurora ribbon + vertical beam meeting at the focus + focal cover; crisp spine & item column **baked** with raster-matched backgrounds) | ←→ group, ↑↓ item | the crossing focus + emphasis + position |
+| `PANORAMA` | typographic panorama | raster (panned gradient sky + luminous horizon + focal cover with glow & reflection + scanline; crisp kicker/rail/hero/list **baked** with raster-matched backgrounds) | ←→ pan sections, ↑↓ column | chevron slivers, ▸ marker, `NN / NN` counter |
 | `ORBITAL` | focal radial field | raster (2D polar, procedural orbs, spring) | ←→ ring, ↑↓ group | centre/size/halo, `n/N` counter, `◉`/`○` strip |
 | `BLADES` | occluding depth-plane stack | raster (painter's algorithm + per-pixel owner buffer) | ↑↓ blade, ←→ item | stack position, `▲ NN`/`▼ NN` labels, bright rim, reverse-video row |
 
 `STANDARD` is the oracle, not the flagship: it exists to represent *everything*
 so a cinematic grammar's receipt can be compared against ground truth.
 
-Two raster grammars (`ORBITAL`, `BLADES`) and one (`MEDIA_SHELF`) derive their
-procedural art from the item's `Media { seed }` when present, and **fall back to
-a deterministic hash of the item key** when it is absent — so a grammar never
-requires media. This is proven by a second, media-free fixture (an ops console:
-services / metrics / logs / config) run through every grammar; no grammar
-secretly assumes "albums".
+Four grammars (`MEDIA_SHELF`, `CROSS_MEDIA`, `PANORAMA`, `ORBITAL`) derive their
+procedural cover/orb art from the item's `Media { seed }` when present, and **fall
+back to a deterministic hash of the item key** when it is absent — so none of them
+requires media. `BLADES` derives its blade identity from the destination index, so
+it is media-agnostic by construction. All of this shared procedural art (RGB
+`mix`/`hsv`, the deterministic `seed_for`, the golden-angle `cover_art`) and the
+one damped-spring integrator (`DampedSpring`) live in single internal helpers
+(`experience::paint`, `experience::motion`), not re-implemented per grammar. The
+media-independence is proven by a second, media-free fixture (an ops console:
+services / metrics / logs / config) run through every grammar; no grammar secretly
+assumes "albums".
 
 The live demo is `cargo run --example experience_lab`: one semantic application
 rendered through all six grammars, switchable with `s` / `1`–`6`, with the
 selection surviving every switch and **no `match style` anywhere in the app**.
 `cargo run --example experience_lab -- dump [W H]` prints each grammar's frame as
-visible text for headless inspection.
+visible text for headless inspection; `-- ansi <1-6> [W H]` writes one grammar's
+settled frame as truecolor ANSI (the raster/colour the text dump cannot show) for
+PNG visual acceptance.
 
 ---
 
 ## 12. Temporal contract
 
-What a grammar's frame depends on *in time* — so a runtime knows when it may stop
-repainting. Each property is a test (coalescing an obsolete frame is only sound
-when a settled frame is byte-identical):
+What a grammar's frame depends on *in time* — surfaced as a `FrameDemand` on every
+`Presented` frame (`OnChange` = rest until the semantics/environment change;
+`After(dt)` = repaint in `dt`), so the ordinary `Context`/`App` scheduler knows
+when it may stop repainting (the runtime builds no scheduler of its own). The three
+categories below are *emergent* from each grammar's returned `demand`, not a
+hardcoded table; each is a test (coalescing an obsolete frame is only sound when a
+settled frame is byte-identical):
 
 - **Time-invariant** — `STANDARD`, `CROSS_MEDIA`, `PANORAMA` ignore `now`
   entirely. The same semantic state yields a byte-identical frame at any clock;

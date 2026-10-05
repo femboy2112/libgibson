@@ -19,7 +19,7 @@
 
 use super::grammar::{Grammar, Presented};
 use super::intent::{Intent, PresentationState, SemanticInput};
-use super::model::{Content, Experience};
+use super::model::{Content, CustomCx, Experience};
 use super::paint::{bake, cover_art, glow, hsv, mix, scale_blit, seed_for};
 use super::receipt::PresentationReceipt;
 use crate::capability::ColorDepth;
@@ -240,7 +240,7 @@ impl<A: Clone> Grammar<A> for Panorama {
         experience: &Experience<A>,
         state: &PresentationState,
         env: &UiEnvironment,
-        _now: Duration,
+        now: Duration,
     ) -> Presented<A> {
         let active_idx = state.active_index(experience);
         let active = experience.destinations.get(active_idx);
@@ -422,7 +422,11 @@ impl<A: Clone> Grammar<A> for Panorama {
                     .push(format!("custom instrument '{}' composited", custom.label));
                 let iw = (w as i32 - INDENT as i32 - 1).max(1) as u16;
                 let ih = (cells_h - list0 - 1).max(1) as u16;
-                instrument = Some((custom.render(iw, ih), INDENT, list0 as u16));
+                instrument = Some((
+                    custom.render(&CustomCx::new(iw, ih, now, env.color_depth)),
+                    INDENT,
+                    list0 as u16,
+                ));
                 Menu {
                     w: menu_w,
                     top,
@@ -462,10 +466,7 @@ impl<A: Clone> Grammar<A> for Panorama {
         }
 
         let root = screen::<A>().child(raster::<A>(surface).grow(1.0));
-        Presented {
-            element: root,
-            receipt,
-        }
+        Presented::new(root, receipt)
     }
 
     fn interpret(

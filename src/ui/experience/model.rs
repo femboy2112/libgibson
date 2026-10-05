@@ -13,9 +13,11 @@
 //! reinvented, so a semantic id is the same currency the rest of `gibson::ui`
 //! already speaks.
 
+use crate::capability::ColorDepth;
 use crate::ui::element::Key;
 use crate::Surface;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Semantic priority. Drives *declared* responsive omission: an
 /// [`Priority::Essential`] element is never silently dropped, a
@@ -150,21 +152,57 @@ impl Facet {
     }
 }
 
+/// The presentation context a [`Custom`] instrument is rendered in: the cell
+/// rectangle the grammar allotted, the explicit presentation time, and the
+/// realized colour depth. A dynamic instrument may vary with any of these, but it
+/// must be a *pure function* of them — it must never read the wall clock — so that
+/// a seek to presentation time `t`, or a deterministic capture, reproduces the
+/// exact same surface (milestone §9/§39). The grammar decides the rectangle and
+/// forwards its own `now`/capability; it never reinterprets the produced surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CustomCx {
+    /// Width in cells of the rectangle the grammar allotted (always ≥ 1).
+    pub width: u16,
+    /// Height in cells of the rectangle the grammar allotted (always ≥ 1).
+    pub height: u16,
+    /// Explicit presentation time. The instrument may animate against this; it
+    /// must **not** read the wall clock.
+    pub now: Duration,
+    /// The realized colour depth the instrument may adapt its drawing to.
+    pub color_depth: ColorDepth,
+}
+
+impl CustomCx {
+    /// A context for an allotted rectangle at a presentation time and depth. The
+    /// size is clamped to at least 1×1 so an instrument never sees a zero rect.
+    pub fn new(width: u16, height: u16, now: Duration, color_depth: ColorDepth) -> Self {
+        Self {
+            width: width.max(1),
+            height: height.max(1),
+            now,
+            color_depth,
+        }
+    }
+}
+
 /// A custom instrument a destination attaches — the escape hatch for domains the
 /// semantic vocabulary deliberately does not model (a dense observatory panel, a
 /// live visualization). The grammar composites the produced [`Surface`] verbatim
 /// into its world (via [`crate::ui::element::raster`] / `surface` / `presented`);
-/// it does not reinterpret the contents. The closure receives the cell rectangle
-/// the grammar has allotted.
+/// it does not reinterpret the contents. The closure receives the [`CustomCx`] the
+/// grammar has allotted.
 #[derive(Clone)]
 pub struct Custom {
     pub key: Key,
     pub label: String,
     #[allow(clippy::type_complexity)]
-    pub(crate) render: Arc<dyn Fn(u16, u16) -> Surface + Send + Sync>,
+    pub(crate) render: Arc<dyn Fn(&CustomCx) -> Surface + Send + Sync>,
 }
 
 impl Custom {
+    /// A *static* instrument that depends only on its allotted size — the original
+    /// convenience constructor, preserved. The closure sees only cols/rows, so the
+    /// instrument is automatically time-invariant and capability-agnostic.
     pub fn new(
         key: impl Into<Key>,
         label: impl Into<String>,
@@ -173,13 +211,29 @@ impl Custom {
         Self {
             key: key.into(),
             label: label.into(),
+            render: Arc::new(move |cx: &CustomCx| render(cx.width, cx.height)),
+        }
+    }
+
+    /// A *dynamic* instrument that may depend on presentation time and capability
+    /// as well as size (milestone §9). The closure receives the full [`CustomCx`];
+    /// it must remain a pure function of it (no wall-clock reads) so that seeks and
+    /// deterministic captures reproduce exactly.
+    pub fn dynamic(
+        key: impl Into<Key>,
+        label: impl Into<String>,
+        render: impl Fn(&CustomCx) -> Surface + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            key: key.into(),
+            label: label.into(),
             render: Arc::new(render),
         }
     }
 
-    /// Render the instrument at a given cell size.
-    pub fn render(&self, cols: u16, rows: u16) -> Surface {
-        (self.render)(cols.max(1), rows.max(1))
+    /// Render the instrument in the given presentation context.
+    pub fn render(&self, cx: &CustomCx) -> Surface {
+        (self.render)(cx)
     }
 }
 

@@ -10,7 +10,7 @@
 
 use super::grammar::{Grammar, Presented};
 use super::intent::{Intent, PresentationState, SemanticInput};
-use super::model::{Content, Experience};
+use super::model::{Content, CustomCx, Experience};
 use super::receipt::PresentationReceipt;
 use crate::input::{KeyCode, KeyEvent};
 use crate::ui::element::{
@@ -40,7 +40,7 @@ impl<A: Clone> Grammar<A> for Standard {
         experience: &Experience<A>,
         state: &PresentationState,
         env: &UiEnvironment,
-        _now: Duration,
+        now: Duration,
     ) -> Presented<A> {
         let active_idx = state.active_index(experience);
         let active = experience.destinations.get(active_idx);
@@ -135,7 +135,7 @@ impl<A: Clone> Grammar<A> for Standard {
                     "custom instrument '{}' composited at {width}x{height}",
                     custom.label
                 ));
-                raster::<A>(custom.render(width, height))
+                raster::<A>(custom.render(&CustomCx::new(width, height, now, env.color_depth)))
             }
             None => text::<A>("(no destinations)"),
         };
@@ -155,10 +155,7 @@ impl<A: Clone> Grammar<A> for Standard {
                 .child(panel::<A>(active_title).grow(1.0).child(content)),
         );
 
-        Presented {
-            element: root,
-            receipt,
-        }
+        Presented::new(root, receipt)
     }
 
     fn interpret(

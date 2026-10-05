@@ -286,10 +286,7 @@ impl<A: Clone> Grammar<A> for CrossMedia {
         }
 
         let root = screen::<A>().child(raster::<A>(surface).grow(1.0));
-        Presented {
-            element: root,
-            receipt,
-        }
+        Presented::new(root, receipt)
     }
 
     fn interpret(

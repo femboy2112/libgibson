@@ -27,9 +27,11 @@
 //! `▲ 01 NAME` / `▼ 03 NAME` label, a per-blade surface pattern, a bright rim
 //! silhouette, and (in Mono) a reverse-video selection row all survive without it.
 
-use super::grammar::{Grammar, Presented};
+use super::grammar::{FrameDemand, Grammar, Presented};
 use super::intent::{Intent, PresentationState, SemanticInput};
-use super::model::{Content, Experience, Item};
+use super::model::{Content, CustomCx, Experience, Item};
+use super::motion::DampedSpring;
+use super::paint::{hsv, mix};
 use super::receipt::PresentationReceipt;
 use crate::capability::ColorDepth;
 use crate::cell::{Cell, Color, Glyph, Style};
@@ -54,52 +56,6 @@ const INK: Rgb = (246, 247, 252);
 const INK_DIM: Rgb = (200, 204, 222);
 const INK_FAR: Rgb = (176, 180, 200);
 const PAD_X: i32 = 2;
-
-fn mix(a: Rgb, b: Rgb, t: f32) -> Rgb {
-    let m = |x: u8, y: u8| {
-        (x as f32 + (y as f32 - x as f32) * t)
-            .round()
-            .clamp(0.0, 255.0) as u8
-    };
-    (m(a.0, b.0), m(a.1, b.1), m(a.2, b.2))
-}
-
-fn hsv(h: f32, s: f32, v: f32) -> Rgb {
-    let h = h.rem_euclid(360.0) / 60.0;
-    let c = v * s;
-    let x = c * (1.0 - (h % 2.0 - 1.0).abs());
-    let m = v - c;
-    let (r, g, b) = match h as i32 {
-        0 => (c, x, 0.0),
-        1 => (x, c, 0.0),
-        2 => (0.0, c, x),
-        3 => (0.0, x, c),
-        4 => (x, 0.0, c),
-        _ => (c, 0.0, x),
-    };
-    let to = |z: f32| ((z + m) * 255.0).round().clamp(0.0, 255.0) as u8;
-    (to(r), to(g), to(b))
-}
-
-// ---- damped-spring motion (the stack offset) -------------------------------------------
-
-#[derive(Clone, Copy)]
-struct Spring {
-    x: f32,
-    v: f32,
-}
-
-impl Spring {
-    fn step(&mut self, target: f32, dt: f32) {
-        let accel = -2.0 * ZETA * OMEGA * self.v - OMEGA * OMEGA * (self.x - target);
-        self.v += accel * dt;
-        self.x += self.v * dt;
-    }
-
-    fn settled(&self, target: f32) -> bool {
-        (self.x - target).abs() < 1e-3 && self.v.abs() < 1e-3
-    }
-}
 
 // ---- the plane law ---------------------------------------------------------------------
 
@@ -630,7 +586,7 @@ fn put_text(
 
 /// The depth-plane grammar. Holds the private stack-offset spring.
 pub struct Blades {
-    stack: Spring,
+    stack: DampedSpring,
     last: Option<Duration>,
     initialized: bool,
 }
@@ -644,7 +600,7 @@ impl Default for Blades {
 impl Blades {
     pub fn new() -> Self {
         Self {
-            stack: Spring { x: 0.0, v: 0.0 },
+            stack: DampedSpring::default(),
             last: None,
             initialized: false,
         }
@@ -658,7 +614,7 @@ impl Blades {
 
     fn advance(&mut self, target: f32, max: f32, now: Duration) {
         if !self.initialized {
-            self.stack = Spring { x: target, v: 0.0 };
+            self.stack = DampedSpring::at(target);
             self.initialized = true;
             self.last = Some(now);
             return;
@@ -671,7 +627,7 @@ impl Blades {
         let steps = (dt / 0.004).ceil().max(1.0) as u32;
         let sub = dt / steps as f32;
         for _ in 0..steps {
-            self.stack.step(target, sub);
+            self.stack.step(target, sub, OMEGA, ZETA);
         }
         // The stack never slides past its first or last blade.
         self.stack.x = self.stack.x.clamp(0.0, max);
@@ -685,7 +641,15 @@ struct View<'a, A> {
     selected: Option<usize>,
 }
 
-fn compose<A>(view: &View<'_, A>, p: f32, w: i32, rows: i32, mono: bool) -> Surface {
+fn compose<A>(
+    view: &View<'_, A>,
+    p: f32,
+    w: i32,
+    rows: i32,
+    mono: bool,
+    now: Duration,
+    color_depth: ColorDepth,
+) -> Surface {
     let experience = view.experience;
     let n = experience.destinations.len();
     let stack = Stack::new(n, p, w, rows);
@@ -811,6 +775,8 @@ fn compose<A>(view: &View<'_, A>, p: f32, w: i32, rows: i32, mono: bool) -> Surf
             &front,
             list,
             mono,
+            now,
+            color_depth,
         );
     }
     surface
@@ -827,6 +793,7 @@ fn item_row<A>(item: &Item<A>, selected: bool) -> (String, Option<String>) {
     (title, sub)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn paint_body<A>(
     surface: &mut Surface,
     canvas: &Canvas,
@@ -835,6 +802,8 @@ fn paint_body<A>(
     front: &Front,
     list: Option<(usize, usize, usize)>,
     mono: bool,
+    now: Duration,
+    color_depth: ColorDepth,
 ) {
     let width = (front.x1 - front.x0).max(1);
     match content {
@@ -986,7 +955,12 @@ fn paint_body<A>(
         }
         Content::Custom(custom) => {
             // Composited verbatim onto the foremost plane — never reinterpreted.
-            let instrument = custom.render(width as u16, front.body_rows as u16);
+            let instrument = custom.render(&CustomCx::new(
+                width as u16,
+                front.body_rows as u16,
+                now,
+                color_depth,
+            ));
             let clip = Rect {
                 x: front.x0.max(0) as u16,
                 y: front.body_row.max(0) as u16,
@@ -1012,10 +986,10 @@ impl<A: Clone> Grammar<A> for Blades {
     ) -> Presented<A> {
         let active_idx = state.active_index(experience);
         let Some(active) = experience.destinations.get(active_idx) else {
-            return Presented {
-                element: screen::<A>().child(text::<A>("(no destinations)")),
-                receipt: PresentationReceipt::new("BLADES", Key::named("∅")),
-            };
+            return Presented::new(
+                screen::<A>().child(text::<A>("(no destinations)")),
+                PresentationReceipt::new("BLADES", Key::named("∅")),
+            );
         };
         let mut receipt = PresentationReceipt::new("BLADES", active.key.clone());
 
@@ -1085,16 +1059,20 @@ impl<A: Clone> Grammar<A> for Blades {
             active: active_idx,
             selected,
         };
-        let surface = compose(&view, self.stack.x, w, rows, mono);
+        let surface = compose(&view, self.stack.x, w, rows, mono, now, env.color_depth);
 
         let mut body = column::<A>().gap(0).child(raster::<A>(surface).grow(1.0));
         if footer {
             body = body.child(footer_row);
         }
-        Presented {
-            element: screen::<A>().child(body),
-            receipt,
-        }
+        // The blade stack glides toward the active destination; item motion is
+        // instantaneous. Ask for frames only while the stack is still settling.
+        let demand = if self.is_settled(active_idx) {
+            FrameDemand::OnChange
+        } else {
+            FrameDemand::fps(60)
+        };
+        Presented::new(screen::<A>().child(body), receipt).with_demand(demand)
     }
 
     fn interpret(

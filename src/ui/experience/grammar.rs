@@ -21,12 +21,46 @@ use crate::ui::skin::UiEnvironment;
 use std::collections::BTreeSet;
 use std::time::Duration;
 
+/// What a presented frame asks of the scheduler: when, if ever, the *next* frame
+/// is needed assuming the semantic state and environment do not change. This is
+/// the smallest generic temporal contract (milestone §7) — it replaces hardcoding
+/// grammar categories, so a grammar that settles can declare itself finished and a
+/// static grammar never asks for a repaint. The ordinary `Context`/`App` scheduler
+/// executes the demand; this type does not schedule anything itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameDemand {
+    /// No new frame is needed until the semantics or environment change. A static
+    /// grammar — or a settling one that has settled — returns this, and the
+    /// scheduler may stop repainting the experience entirely (0 further bytes).
+    OnChange,
+    /// Another frame is needed after this delay: a grammar still settling toward a
+    /// target, or one that is continuously animated. Missed deadlines coalesce —
+    /// the next frame simply advances motion to the then-current presentation time,
+    /// never replaying a backlog of stale intermediate states.
+    After(Duration),
+}
+
+impl FrameDemand {
+    /// A continuous/settling cadence expressed as frames per second. `fps(60)` is
+    /// `After(≈16ms)`. Clamped to at least 1 fps.
+    pub fn fps(fps: u32) -> Self {
+        FrameDemand::After(Duration::from_nanos(1_000_000_000 / fps.max(1) as u64))
+    }
+
+    /// Whether this frame wants another frame later (vs. resting until change).
+    pub fn is_animating(self) -> bool {
+        matches!(self, FrameDemand::After(_))
+    }
+}
+
 /// A presentation plus the semantic receipt that lets the preservation law be
-/// checked. The application renders `element`; tests and inspectors read
-/// `receipt`.
+/// checked, and the temporal demand that says when the next frame is due. The
+/// application renders `element`; tests and inspectors read `receipt`; the
+/// scheduler reads `demand`.
 pub struct Presented<A> {
     pub element: Element<A>,
     pub receipt: PresentationReceipt,
+    pub demand: FrameDemand,
 }
 
 /// Collect every explicit [`Key`] present in a lowered element tree (children and
@@ -44,6 +78,25 @@ fn collect_element_keys<A>(element: &Element<A>, out: &mut BTreeSet<Key>) {
 }
 
 impl<A> Presented<A> {
+    /// A presentation that rests until the semantics or environment change
+    /// ([`FrameDemand::OnChange`]) — the right default for a static grammar. A
+    /// moving grammar builds this and then declares its cadence with
+    /// [`Presented::with_demand`].
+    pub fn new(element: Element<A>, receipt: PresentationReceipt) -> Self {
+        Self {
+            element,
+            receipt,
+            demand: FrameDemand::OnChange,
+        }
+    }
+
+    /// Set the temporal demand (e.g. [`FrameDemand::fps`] while settling or
+    /// animating). Returns `self` for chaining off [`Presented::new`].
+    pub fn with_demand(mut self, demand: FrameDemand) -> Self {
+        self.demand = demand;
+        self
+    }
+
     /// The real preservation-law gate: the receipt's bookkeeping *and* a
     /// cross-check that every id it claims to represent is actually in the
     /// rendered element tree (as a keyed node) or attested rastered. Empty =
