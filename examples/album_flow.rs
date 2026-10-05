@@ -19,9 +19,10 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
+use gibson::cell::Color;
 use gibson::geom::Vec3;
 use gibson::input::{Event, KeyCode, KeyModifiers};
-use gibson::node::Node;
+use gibson::node::{AlignItems, JustifyContent, Node};
 use gibson::raster::{Rgb, RgbRaster};
 use gibson::raster3d::{Camera, Rasterizer};
 use gibson::surface::Surface;
@@ -39,6 +40,10 @@ const DEPTH_NEAR: f32 = 2.3; // z recession reaching the first neighbour
 const DEPTH_FAR: f32 = 0.45; // z recession per cover beyond it
 const YAW_MAX: f32 = 0.78; // fan angle (~45°) held by all side covers
 const BG: Rgb = (13, 15, 26); // a deep ink-blue, lifted so receding covers keep a dark-on-dark halo
+                              // Cap the live-demo draw region so per-frame cost stays bounded at any window size; the
+                              // capped shelf is centred on a background field. (Offline capture/frames pick their own size.)
+const MAX_COLS: u16 = 140;
+const MAX_ROWS: u16 = 44;
 
 /// A cover's world pose: the centre of its card and its rotation about the vertical axis.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -397,6 +402,43 @@ fn main() -> io::Result<()> {
     result
 }
 
+/// The live-demo root: the cover shelf drawn into a size-capped canvas, centred on a
+/// background field. Bounding the canvas keeps per-frame rasterization cost constant
+/// regardless of window size (fullscreen would otherwise blow the frame budget and tear),
+/// and the canvas MUST be sized — an unsized canvas collapses to zero (a black screen).
+fn demo_root(
+    covers: &Arc<Vec<RgbRaster>>,
+    reflections: &Arc<Vec<RgbRaster>>,
+    sel: f32,
+    term_cols: u16,
+    term_rows: u16,
+) -> Node {
+    let c = Arc::clone(covers);
+    let r = Arc::clone(reflections);
+    let ew = term_cols.clamp(1, MAX_COLS);
+    let eh = term_rows.clamp(1, MAX_ROWS);
+    Node::row()
+        .percent_width(100.0)
+        .percent_height(100.0)
+        .background(Color::Rgb(BG.0, BG.1, BG.2))
+        .align_items(AlignItems::Center)
+        .justify_content(JustifyContent::Center)
+        .child(
+            Node::canvas(move |rect| {
+                render(
+                    &c[..],
+                    &r[..],
+                    sel,
+                    rect.width.max(1),
+                    rect.height.max(1),
+                    false,
+                )
+            })
+            .width(ew as f32)
+            .height(eh as f32),
+        )
+}
+
 fn run_live(
     ctx: &mut Context,
     covers: &Arc<Vec<RgbRaster>>,
@@ -406,24 +448,8 @@ fn run_live(
     let selections = demo_selections();
     loop {
         for &sel in &selections {
-            let c = Arc::clone(covers);
-            let r = Arc::clone(reflections);
-            // The canvas receives the live terminal Rect, so the frame fits exactly.
-            // It MUST fill the screen — an unsized canvas collapses to zero (black screen).
-            ctx.set_root(
-                Node::canvas(move |rect| {
-                    render(
-                        &c[..],
-                        &r[..],
-                        sel,
-                        rect.width.max(1),
-                        rect.height.max(1),
-                        false,
-                    )
-                })
-                .percent_width(100.0)
-                .percent_height(100.0),
-            );
+            let (tw, th) = ctx.session.terminal_size();
+            ctx.set_root(demo_root(covers, reflections, sel, tw, th));
             ctx.render()?;
             if !interactive {
                 // Non-TTY (piped/redirected): run one sweep without busy-pacing, then stop.
@@ -638,38 +664,34 @@ mod tests {
     }
 
     #[test]
-    fn canvas_root_fills_the_screen_and_is_not_blank() {
-        // Guards the black-screen regression: an unsized canvas collapses to zero.
-        let covers: Vec<RgbRaster> = (0..NUM_COVERS).map(|i| cover_art(i as u32)).collect();
-        let refl: Vec<RgbRaster> = covers.iter().map(reflection_texture).collect();
-        let (cols, rows) = (100u16, 32u16);
-        let mut ctx = Context::headless(gibson::RenderMode::Fullscreen, cols, rows);
-        let c = Arc::new(covers);
-        let r = Arc::new(refl);
-        ctx.set_root(
-            Node::canvas(move |rect| {
-                render(
-                    &c[..],
-                    &r[..],
-                    3.0,
-                    rect.width.max(1),
-                    rect.height.max(1),
-                    false,
-                )
-            })
-            .percent_width(100.0)
-            .percent_height(100.0),
+    fn demo_root_is_not_blank_and_caps_the_draw_region() {
+        // Guards two regressions at once: the black screen (an unsized canvas collapses to
+        // zero) and the fullscreen slowdown (the draw region must stay capped, not scale
+        // with the window). Rendered into a window larger than the cap on both axes.
+        let covers = Arc::new(
+            (0..NUM_COVERS)
+                .map(|i| cover_art(i as u32))
+                .collect::<Vec<_>>(),
         );
+        let refl = Arc::new(covers.iter().map(reflection_texture).collect::<Vec<_>>());
+        let (cols, rows) = (200u16, 60u16);
+        let mut ctx = Context::headless(gibson::RenderMode::Fullscreen, cols, rows);
+        ctx.set_root(demo_root(&covers, &refl, 3.0, cols, rows));
         ctx.render().expect("headless render");
         let lines = ctx.last_frame_lines();
-        assert_eq!(lines.len(), rows as usize, "canvas must fill every row");
-        let non_blank: usize = lines
+        assert_eq!(lines.len(), rows as usize, "root fills every row");
+        let drawn: usize = lines
             .iter()
             .map(|l| l.chars().filter(|ch| !ch.is_whitespace()).count())
             .sum();
+        let cap_cells = MAX_COLS as usize * MAX_ROWS as usize;
         assert!(
-            non_blank > (cols as usize * rows as usize) / 4,
-            "a filled canvas paints half-block cells across the screen; got {non_blank} non-blank"
+            drawn > cap_cells / 4,
+            "not a black screen: expected a populated shelf, got {drawn} drawn cells"
+        );
+        assert!(
+            drawn <= cap_cells,
+            "draw region must be capped and centred, not full-screen: {drawn} > {cap_cells}"
         );
     }
 }
