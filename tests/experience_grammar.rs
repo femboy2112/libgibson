@@ -816,13 +816,14 @@ fn media_shelf_preserves_semantics_across_the_responsive_and_capability_matrix()
 // CROSS_MEDIA and the all-grammars parametric contracts.
 // ---------------------------------------------------------------------------
 
-use gibson::ui::experience::CrossMedia;
+use gibson::ui::experience::{CrossMedia, Panorama};
 
 fn all_grammars() -> Vec<(&'static str, Box<dyn Grammar<Msg>>)> {
     vec![
         ("STANDARD", Box::new(Standard::new())),
         ("MEDIA_SHELF", Box::new(MediaShelf::new())),
         ("CROSS_MEDIA", Box::new(CrossMedia::new())),
+        ("PANORAMA", Box::new(Panorama::new())),
     ]
 }
 
@@ -896,4 +897,81 @@ fn cross_media_binds_the_cross_axes() {
     assert_eq!(sel(&state, &experience), 1);
     handle_key(&cm, &experience, &mut state, &press(KeyCode::Up));
     assert_eq!(sel(&state, &experience), 0);
+}
+
+// ---------------------------------------------------------------------------
+// PANORAMA — the typographic, planar panorama (no raster, no perspective).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn panorama_preserves_semantics_across_destinations_and_matrix() {
+    let experience = fixture();
+    let sizes = [(160, 50), (120, 40), (80, 24), (60, 20), (42, 15)];
+    let depths = [
+        ColorDepth::TrueColor,
+        ColorDepth::Ansi256,
+        ColorDepth::Ansi16,
+        ColorDepth::Mono,
+    ];
+    let mut grammar = Panorama::new();
+    assert_eq!(Grammar::<Msg>::name(&grammar), "PANORAMA");
+    for (w, h) in sizes {
+        for depth in depths {
+            let e = env(w, h, depth);
+            let mut state = PresentationState::new(&experience);
+            // Walk every destination, and a non-default selection inside the library.
+            for _ in 0..experience.destinations.len() {
+                for _ in 0..2 {
+                    let presented =
+                        grammar.present(&experience, &state, &e, Duration::from_millis(500));
+                    let required = required_semantics(&experience, &state);
+                    let violations = presented.check(&required);
+                    assert!(
+                        violations.is_empty(),
+                        "PANORAMA violated the law at {w}x{h} {depth:?}: {violations:?}"
+                    );
+                    // A Node grammar: nothing is attested rastered.
+                    assert!(presented.receipt.rastered.is_empty());
+                    apply_intent(&experience, &mut state, Intent::Next);
+                }
+                apply_intent(&experience, &mut state, Intent::NextGroup);
+            }
+        }
+    }
+}
+
+#[test]
+fn panorama_binds_horizontal_pan_and_vertical_items() {
+    let experience = fixture();
+    let pano = Panorama::new();
+    let mut state = PresentationState::new(&experience);
+    // Left/Right pan between sections (destinations).
+    handle_key(&pano, &experience, &mut state, &press(KeyCode::Right));
+    assert_eq!(act(&state, &experience), 1);
+    handle_key(&pano, &experience, &mut state, &press(KeyCode::Left));
+    assert_eq!(act(&state, &experience), 0);
+    // Up/Down move within the item column.
+    handle_key(&pano, &experience, &mut state, &press(KeyCode::Down));
+    assert_eq!(sel(&state, &experience), 1);
+    handle_key(&pano, &experience, &mut state, &press(KeyCode::Up));
+    assert_eq!(sel(&state, &experience), 0);
+    // End/Home jump within the column; Enter activates the primary action.
+    handle_key(&pano, &experience, &mut state, &press(KeyCode::End));
+    assert_eq!(sel(&state, &experience), 4);
+    let msg = handle_key(&pano, &experience, &mut state, &press(KeyCode::Enter));
+    assert_eq!(msg, Some(Msg::Play("alb-4".into())));
+    handle_key(&pano, &experience, &mut state, &press(KeyCode::Home));
+    assert_eq!(sel(&state, &experience), 0);
+    // Esc/Backspace are Back; an unbound key is not interpreted.
+    assert!(matches!(
+        pano.interpret(&press(KeyCode::Esc), &experience, &state),
+        Some(SemanticInput::Navigate(Intent::Back))
+    ));
+    assert!(matches!(
+        pano.interpret(&press(KeyCode::Backspace), &experience, &state),
+        Some(SemanticInput::Navigate(Intent::Back))
+    ));
+    assert!(pano
+        .interpret(&press(KeyCode::Char('z')), &experience, &state)
+        .is_none());
 }
