@@ -179,7 +179,13 @@ Realization gate (all device-dependent):
   other's loss). The split keeps each kind independently conserved;
 - `reduced_from` / `reduced_to` — original and produced lengths of the **applied**
   reducers only (both `0` when nothing was applied, e.g. at zero area). Both include
-  any gap/`(NaN,NaN)` sentinels, so they agree; neither is in a conservation law.
+  any gap/`(NaN,NaN)` sentinels, so they agree; neither is in a conservation law;
+- `annotations_emitted` / `annotations_clipped` — annotations realized into device
+  space vs. not drawn (projected outside the view, no image under the scale, or a
+  zero-area plot). An annotation is data too: before these counters an off-view
+  reference line vanished with no receipt, the one place the "never silently eat
+  data" promise did not reach. Both are realization counts (view- and
+  device-dependent).
 
 This is **not** a quality score. It lets a user distinguish "nothing visible
 because the data is off-viewport" (`points_clipped` / `segments_clipped`) from
@@ -196,6 +202,9 @@ by distinct fields precisely so these laws survive a mixed plot):
   `finite_samples`): `finite_samples = scale_domain_rejected + points_emitted +
   points_clipped`. Every finite sample is drawn, counted-off-view, or
   counted-out-of-domain — never silently gone.
+- *Annotations* (holds on **any** plot): `annotations_emitted + annotations_clipped
+  = spec.annotations.len()`. Every annotation offered is drawn or counted-off — the
+  same honesty the sample laws give, extended to reference geometry.
 - *Mixed* Line+Scatter: the line law above still holds universally, and the
   scatter points are conserved within the scatter-kind counters (`points_emitted
   + points_clipped` + scatter-domain-rejected). What does **not** hold on a mixed
@@ -293,6 +302,56 @@ is a seekable transport.
 Bar charts, pie charts, histograms, heatmaps / scalar fields, vector fields, 3D
 plots, error-bar/interval fibers, bands, dual Y axes, polar plots, SymLog, LTTB or
 any adaptive reducer beyond `ExtremaPerColumn`, floating tooltips, mouse hit-test
-UI, legends beyond a static label list, and any publication/stability promise. The
-model is designed so these are *addable*, not *present*. FFT/regression/statistics
-are **permanently** out of scope — those are the application's observables.
+UI, legends beyond a static label list, a **per-series marker/stroke identity
+channel** (§13), and any publication/stability promise. The model is designed so
+these are *addable*, not *present*. FFT/regression/statistics are **permanently**
+out of scope — those are the application's observables.
+
+## 11. Determinism and equality
+
+Compilation is a pure function: the same `(PlotSpec, PlotView, Rect)` always
+produces the same `PlotLayout` and the same `PlotReport`. That determinism is
+asserted directly — `PlotLayout`, its `ProjectedSeries` / `Prims` / `ProjAnnotation`
+geometry, `ProjectedTick`, and `PlotReport` all derive `PartialEq` — rather than by
+comparing `Debug` strings (which an integration consumer had to resort to).
+
+The equality is **exact and reflexive** because the compiled geometry is gap-free:
+device primitives are integer subpixel coordinates, and tick values / transform
+ranges are finite by construction (a `FiniteRange` cannot hold a non-finite bound).
+The `(NaN, NaN)` gap sentinels that break a line's path during projection (§6) are
+consumed *inside* `compile` and never appear in a `PlotLayout`, so `layout == layout`
+holds even for a series riding a gap.
+
+The **input** types — `Series`, `Annotation`, `PlotSpec` — deliberately do **not**
+derive `PartialEq`. A series may carry a `(NaN, NaN)` gap, and `NaN != NaN`, so a
+derived equality would make a gapped spec unequal to *itself*: a reflexivity lie.
+Equality therefore lives on the compiled, gap-free side; that split is the
+meaningful comparison seam, not an accident.
+
+## 12. Units are labels, not dimensions
+
+An `AxisSpec` carries a free-string `label` and an optional free-string `unit`.
+There is **no** dimensional analysis, **no** unit registry, and **no** silent
+conversion: `unit` is drawn in the caption (`"label (unit)"`) and otherwise inert.
+Sample values are the numbers the application already computed, in whatever units it
+chose; the plot layer realizes them faithfully and never rescales them. Dimensional
+correctness is the application's observable, like all analysis (§1).
+
+## 13. Series identity
+
+In the plot itself, a series is identified by **colour** — a `Series` carries an
+RGB triple and no other visual identity. `Series::label` is **metadata only**: it is
+stored for a caller to build its own identity (an external legend, a lane header, an
+`Annotation::Point`) without a parallel bookkeeping structure, and the renderer never
+draws it. There is no legend; promising one the layer does not realize would be the
+dishonesty the rest of this design avoids.
+
+This leaves one known gap, recorded rather than hidden: under a Mono capability the
+quantizer drops colour, so colour-only identity collapses — several series become
+indistinguishable, and an integration consumer had to rebuild identity out of
+redundant annotations and lanes *outside* the library. A small per-series
+marker/stroke channel (a glyph or dash that survives Mono) would close it, but it
+touches the subpixel substrate — a Braille dot cannot carry a per-series glyph
+without a second rendering path — so it is **deferred** (§10), earning its own design
+rather than a half-measure bolted onto a hygiene pass. The seam is here; the feature
+is not yet claimed.

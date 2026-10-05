@@ -59,7 +59,7 @@ pub enum AxisScale {
 /// the range project outside `[0,1]`, which is legal — clipping handles it). It
 /// returns `None` for a non-finite value, and for a non-positive value under
 /// `Log10`. `unproject` is the inverse for any finite normalized coordinate.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AxisTransform {
     scale: AxisScale,
     range: FiniteRange,
@@ -123,7 +123,7 @@ impl AxisTransform {
 /// Affine map `[0,1]² → device pixels`, with the `y` axis flipped (data-up maps
 /// to screen-down). Pixel units, so it serves both cell and Braille subpixel
 /// grids by choosing the scale.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Viewport {
     /// Device x of normalized `u = 0`.
     pub ox: f64,
@@ -162,7 +162,7 @@ impl Viewport {
 
 /// The product `σx × σy` composed with a [`Viewport`]: data `(x, y)` → device
 /// pixel `(px, py)`. `project` is `None` whenever either axis rejects its input.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlotTransform2D {
     pub x: AxisTransform,
     pub y: AxisTransform,

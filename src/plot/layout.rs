@@ -93,6 +93,16 @@ pub struct PlotReport {
     /// scientific reducer is never run outside its domain; the plot stays correct,
     /// just not downsampled (doc §6; SAI crossover law C — requested vs effective).
     pub reducers_declined: usize,
+    /// Annotations realized into device space (drawn). A **realization** count:
+    /// it depends on the view and the device rectangle, like `points_emitted`.
+    pub annotations_emitted: usize,
+    /// Annotations **not** drawn: projected outside the view, with no image under
+    /// the scale (e.g. a `VLine` at `x ≤ 0` on a `Log10` axis), or on a zero-area
+    /// plot. Closes the receipt hole where an off-view annotation vanished with no
+    /// count — "plotting must never silently eat data" now covers annotations too,
+    /// not only samples. Conservation (doc §5): for every compile,
+    /// `annotations_emitted + annotations_clipped == spec.annotations.len()`.
+    pub annotations_clipped: usize,
 }
 
 /// A tick resolved to an absolute cell coordinate along its axis.
@@ -105,19 +115,23 @@ pub struct ProjectedTick {
 }
 
 /// Device-space primitives for one series (Braille subpixel coordinates).
-#[derive(Clone, Debug)]
+///
+/// Integer device coordinates only — no float gap sentinels survive projection
+/// (a gap breaks the path during `compile`), so `PartialEq` is exact and
+/// reflexive (doc §11).
+#[derive(Clone, Debug, PartialEq)]
 pub enum Prims {
     Scatter(Vec<(i32, i32)>),
     Segments(Vec<((i32, i32), (i32, i32))>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ProjectedSeries {
     pub color: (u8, u8, u8),
     pub prims: Prims,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ProjAnnotation {
     VLine {
         col_px: i32,
@@ -136,7 +150,14 @@ pub enum ProjAnnotation {
 }
 
 /// Compiled, realization-agnostic plot geometry.
-#[derive(Clone, Debug)]
+///
+/// Derives `PartialEq` as the determinism seam: *same (spec, view, area) ⇒ equal
+/// `PlotLayout`*, asserted directly instead of by comparing `Debug` strings. The
+/// equality is exact and reflexive because the compiled geometry is gap-free —
+/// prims are integer device coordinates, and tick values / transform ranges are
+/// finite by construction (doc §11). The `(NaN, NaN)` gap sentinels that break a
+/// path never reach here.
+#[derive(Clone, Debug, PartialEq)]
 pub struct PlotLayout {
     /// The full region compiled into, in CELLS (plot area plus margins).
     pub area: Rect,
@@ -501,6 +522,13 @@ pub fn compile(
             }
         }
     }
+
+    // Annotation receipt (doc §5): everything in `spec.annotations` was either
+    // realized into `annotations` or dropped (off-view, no scale image, or a
+    // zero-area plot where `transform` is None and the loop above never ran).
+    // Conservation holds by construction — no annotation leaves without a count.
+    report.annotations_emitted = annotations.len();
+    report.annotations_clipped = spec.annotations.len() - annotations.len();
 
     let layout = PlotLayout {
         area,

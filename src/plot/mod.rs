@@ -22,7 +22,10 @@ pub mod scale;
 pub mod ticks;
 
 pub use data::{Annotation, AxisSpec, PlotSpec, PlotView, Reduce, Series, SeriesKind};
-pub use layout::{compile, PlotError, PlotLayout, PlotReport, ProjectedTick};
+pub use layout::{
+    compile, PlotError, PlotLayout, PlotReport, Prims, ProjAnnotation, ProjectedSeries,
+    ProjectedTick,
+};
 pub use render::{render, render_themed, PlotTheme};
 pub use scale::{AxisScale, AxisTransform, FiniteRange, PlotTransform2D, Viewport};
 pub use ticks::{log10_major_ticks, log10_minor_ticks, log10_ticks, major_ticks, Tick};

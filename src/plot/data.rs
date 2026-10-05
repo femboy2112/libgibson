@@ -9,7 +9,16 @@ use super::scale::{AxisScale, AxisTransform, FiniteRange};
 
 /// Semantic axis: how it is scaled and labelled. Units are a free string; there
 /// is **no** dimensional analysis and **no** silent conversion (doc §12).
-#[derive(Clone, Debug)]
+///
+/// `PartialEq` is derived here (no float gap sentinels live in an axis spec), and
+/// it rides up into [`PlotLayout`](super::layout::PlotLayout)'s equality. The
+/// *input* types that can carry a
+/// `(NaN, NaN)` gap — [`Series`], [`Annotation`], [`PlotSpec`] — deliberately do
+/// **not** derive `PartialEq`: `NaN != NaN` would make a gapped spec unequal to
+/// itself, so determinism is asserted on the compiled
+/// [`PlotLayout`](super::layout::PlotLayout) (gap-free)
+/// instead (doc §11).
+#[derive(Clone, Debug, PartialEq)]
 pub struct AxisSpec {
     pub scale: AxisScale,
     pub label: String,
@@ -72,6 +81,13 @@ pub struct Series {
     pub points: Vec<(f64, f64)>,
     pub color: (u8, u8, u8),
     pub reduce: Reduce,
+    /// Human name for the series — **metadata only**. The plot layer does not
+    /// render a legend (deferred; doc §13), so `label` is never drawn by
+    /// `render`. It exists so a caller can build its own identity — an external
+    /// legend, a lane header, or an [`Annotation::Point`] — without a parallel
+    /// bookkeeping structure. **Series identity in the plot itself is colour**;
+    /// a per-series marker/stroke channel (so identity survives Mono, where the
+    /// quantizer drops colour) is a recorded gap, not a promise (doc §13).
     pub label: String,
 }
 

@@ -192,3 +192,126 @@ fn axis_captions_are_rendered() {
     assert!(text.contains("power"), "y-axis label rendered");
     assert!(text.contains("dB"), "y-axis unit rendered");
 }
+
+// ---- v0.5 API HYGIENE PASS (milestone Section 4) -------------------------
+//
+// A: the receipt now conserves ANNOTATIONS, not only samples (FRICTION §7 —
+//    off-view annotations vanished with no counter).
+// B: PlotLayout's public field types are re-exported at `gibson::plot::` root.
+// C: PartialEq on the compiled (gap-free) geometry is the determinism seam —
+//    deliberately NOT on the NaN-carrying input types.
+
+#[test]
+fn annotation_receipt_conserves_every_annotation() {
+    // One VLine inside the view, two annotations outside it. The off-view ones
+    // used to disappear with no counter; the receipt now conserves them.
+    let spec = lin_spec()
+        .series(Series::line(vec![(0.0, 0.0), (1.0, 1.0)]))
+        .annotate(Annotation::VLine {
+            x: 0.5,
+            color: (200, 80, 80),
+        }) // in view
+        .annotate(Annotation::VLine {
+            x: 9.0,
+            color: (80, 80, 200),
+        }) // off view
+        .annotate(Annotation::HLine {
+            y: -5.0,
+            color: (80, 200, 80),
+        }); // off view
+    let view = PlotView::new(fr(0.0, 1.0), fr(0.0, 1.0));
+    let (layout, report) = plot::compile(&spec, &view, Rect::new(0, 0, 80, 24)).unwrap();
+    assert_eq!(
+        report.annotations_emitted + report.annotations_clipped,
+        spec.annotations.len(),
+        "receipt must conserve every annotation (seen = emitted + clipped)"
+    );
+    assert_eq!(
+        report.annotations_emitted, 1,
+        "only the in-view VLine draws"
+    );
+    assert_eq!(
+        report.annotations_clipped, 2,
+        "two off-view annotations counted, not eaten"
+    );
+    assert_eq!(layout.annotations.len(), report.annotations_emitted);
+}
+
+#[test]
+fn zero_area_counts_all_annotations_clipped() {
+    // On a zero-area plot `transform` is None and nothing realizes; the receipt
+    // still conserves — every annotation is clipped, none silently lost.
+    let spec = lin_spec()
+        .series(Series::line(vec![(0.0, 0.0), (1.0, 1.0)]))
+        .annotate(Annotation::VLine {
+            x: 0.5,
+            color: (200, 80, 80),
+        });
+    let view = PlotView::new(fr(0.0, 1.0), fr(0.0, 1.0));
+    let (_layout, report) = plot::compile(&spec, &view, Rect::new(0, 0, 0, 0)).unwrap();
+    assert_eq!(report.annotations_emitted, 0);
+    assert_eq!(
+        report.annotations_clipped, 1,
+        "zero-area clips all annotations with a count"
+    );
+}
+
+#[test]
+fn same_input_yields_equal_layout_by_partial_eq() {
+    // Determinism seam (doc §11): same (spec, view, area) ⇒ equal PlotLayout, by
+    // PartialEq, not Debug-string comparison.
+    let spec = lin_spec()
+        .series(Series::line(vec![(0.0, 0.0), (0.5, 0.8), (1.0, 0.3)]))
+        .series(Series::scatter(vec![(0.2, 0.2), (0.9, 0.9)]))
+        .annotate(Annotation::VLine {
+            x: 0.5,
+            color: (200, 80, 80),
+        });
+    let view = PlotView::new(fr(0.0, 1.0), fr(0.0, 1.0));
+    let (a, _) = plot::compile(&spec, &view, Rect::new(0, 0, 80, 24)).unwrap();
+    let (b, _) = plot::compile(&spec, &view, Rect::new(0, 0, 80, 24)).unwrap();
+    assert_eq!(a, b, "same input must compile to an equal layout");
+}
+
+#[test]
+fn layout_equality_is_reflexive_even_with_a_gap() {
+    // The input carries a (NaN,NaN) gap, but the gap breaks the path during
+    // projection and never reaches the compiled geometry — so `layout == layout`
+    // holds. This is *why* PartialEq lives on PlotLayout, not on the gapped spec.
+    let spec = lin_spec().series(Series::line(vec![
+        (0.0, 0.0),
+        (0.3, 0.5),
+        (f64::NAN, f64::NAN),
+        (0.7, 0.2),
+        (1.0, 0.9),
+    ]));
+    let view = PlotView::new(fr(0.0, 1.0), fr(0.0, 1.0));
+    let (layout, _) = plot::compile(&spec, &view, Rect::new(0, 0, 80, 24)).unwrap();
+    assert_eq!(
+        layout,
+        layout.clone(),
+        "compiled geometry equals itself despite a gap"
+    );
+}
+
+#[test]
+fn compiled_geometry_types_are_reexported_at_plot_root() {
+    // Candidate B: PlotLayout's public field types are reachable at `plot::`
+    // root, not only via `plot::layout::`. Binding by the short path is the test.
+    use gibson::plot::{Prims, ProjAnnotation, ProjectedSeries};
+    let spec = lin_spec()
+        .series(Series::scatter(vec![(0.5, 0.5)]))
+        .annotate(Annotation::VLine {
+            x: 0.5,
+            color: (200, 80, 80),
+        });
+    let view = PlotView::new(fr(0.0, 1.0), fr(0.0, 1.0));
+    let (layout, _) = plot::compile(&spec, &view, Rect::new(0, 0, 80, 24)).unwrap();
+    let ser: &ProjectedSeries = &layout.series[0];
+    match &ser.prims {
+        Prims::Scatter(_) | Prims::Segments(_) => {}
+    }
+    for a in &layout.annotations {
+        let _: &ProjAnnotation = a;
+    }
+}
