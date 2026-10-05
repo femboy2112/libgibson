@@ -102,11 +102,22 @@ In plain English, a style may rearrange **everything visible**, but it may not:
 - change an entity's identity;
 - move the selected object merely because the presentation changed.
 
-This is enforced, not aspirational. As a grammar lowers, it records a
-`PresentationReceipt` of exactly what it represented, what it **declared** it
-omitted, and what it degraded. `required_semantics(&experience, &state)` computes
-what is required at the current state. `receipt.check(&required)` returns every
-`LawViolation`:
+This is enforced in **two tiers**, not aspirational. As a grammar lowers, it
+records a `PresentationReceipt` of exactly what it represented, what it drew into
+a raster (`rastered`), what it **declared** it omitted, and what it degraded.
+`required_semantics(&experience, &state)` computes what is required at the current
+state.
+
+- **Bookkeeping tier — `receipt.check(&required)`** — the receipt's claims against
+  the required semantics.
+- **Rendered tier — `presented.check(&required)`** — the bookkeeping tier *plus* a
+  cross-check that every id the receipt claims is actually in the lowered element
+  tree (as a keyed node) or explicitly attested in `receipt.rastered`. This is the
+  gate a grammar must pass. It closes the hole where a receipt describes a render
+  that was never produced: a grammar that draws only a title can no longer pass by
+  writing an honest-*looking* ledger.
+
+Both tiers return `LawViolation`s:
 
 | Violation | Meaning |
 |-----------|---------|
@@ -116,10 +127,16 @@ what is required at the current state. `receipt.check(&required)` returns every
 | `EssentialOmitted` | an `Essential` item was declared omitted — never allowed |
 | `SilentLoss` | a required id is neither represented nor declared omitted |
 | `Invented` | the style represented an id the application never defined |
+| `UnrenderedClaim` | the receipt claims an id that is neither keyed in the tree nor attested rastered (rendered tier only) |
 
 The receipt is a **semantic-honesty ledger, not an aesthetic score.** The only
 omissions it tolerates are the ones the grammar *declares* (and never of an
-`Essential`).
+`Essential`). **Boundary:** the law verifies that a claimed id is *present* (a
+keyed node, or attested as drawn); it does not and cannot verify the *pixel
+content* of a rastered region — that a cover shows the right art, that the right
+blade is highlighted. Pixel faithfulness is covered by visual acceptance (§43–44),
+the milestone's deliberate machine-vs-human split. So `rastered` is an attestation
+the grammar makes; lying in it is possible but now *explicit* rather than silent.
 
 ---
 
@@ -130,14 +147,24 @@ Three owners, kept separate:
 - **Application** owns domain data and business state (the real albums, the real
   playback). It builds the `Experience` from that state.
 - **Runtime** owns `PresentationState` — a tiny bounded value: the active
-  destination and a selection index **per destination**. It is
-  *grammar-independent*.
+  destination and a selection **per destination**, both stored *by identity*
+  (`Key`), not by position. It is *grammar-independent*.
 - **Grammar** owns its private camera / transition interpolation (a spring, a pan
   offset). This never leaks into `PresentationState`.
 
 Because `PresentationState` is grammar-independent, **switching the active grammar
 cannot move the selection.** Select album 7 under the shelf, switch to the
 cross-media bar — still album 7. That is the central guarantee, and it is tested.
+
+Because state is keyed by **identity**, a dynamic application that inserts,
+removes, reorders or filters between frames (the Elm rebuild-in-view pattern)
+never has its selection silently retargeted to a different entity: the active
+destination and selection are re-resolved against the current `Experience` on
+every access through **one** canonical clamping rule (`active_index` /
+`selected_index`). `required_semantics` and every grammar read that same rule, so
+they never disagree about what is selected — if a selected entity is removed, all
+readers fall back to the same clamped position. (A removed selection resetting to
+the first item is the defined behavior, not a bug.)
 
 ---
 
@@ -162,6 +189,13 @@ The single input entry point:
 // Returns the typed application action to dispatch, if Enter activated one.
 let msg: Option<Msg> = handle_key(&*grammar, &experience, &mut state, &key_event);
 ```
+
+Only the **primary** action (an item's first action, a detail's first action) is
+reachable through this vocabulary — `Enter` activates it — and so only the primary
+action is *required* by the law. A grammar that wants to surface and reach a
+secondary action binds a key directly to `SemanticInput::Invoke(action)`; such
+actions are a grammar's optional affordance, represented when the grammar chooses,
+never silently required-but-unreachable.
 
 The grammar decides *which* key means *which* intent; `apply_intent` decides what
 the intent *does*; the application receives back only its own `Msg` — never a key
@@ -237,16 +271,38 @@ To author a **grammar**, implement `Grammar<A>`:
 
 - `name()` — a stable `&'static str`.
 - `present(&mut self, experience, state, env, now) -> Presented<A>` — build an
-  `Element` *and* a `PresentationReceipt` that honestly records what you
-  represented and what you declared omitted. Run your presentation against
-  `STANDARD`'s receipt and `required_semantics` in a test; `receipt.check(...)`
-  must be empty.
+  `Element` *and* a `PresentationReceipt`. Resolve selection via
+  `state.selected_index(experience)` / `state.active_index(experience)` (never
+  cache a raw index). Key every node you claim, or list a rastered id in
+  `receipt.rastered`. Record every declared omission.
 - `interpret(&self, key, experience, state) -> Option<SemanticInput<A>>` — bind
-  your metaphor's keys to intents (or a direct `Invoke`).
+  your metaphor's keys to intents (or a direct `Invoke` for a secondary action).
 - Reduce only `Tertiary`/decorative content under size pressure, and **declare**
   every omission. Carry a non-colour identity channel.
 
 The non-negotiable test for any grammar: for a fixture experience, at every
 destination and across the responsive/capability matrix,
-`present(...).receipt.check(&required_semantics(...))` is empty, and a live switch
-to and from it preserves `active_destination` and `selected`.
+`present(...).check(&required_semantics(...))` (the **rendered** gate) is empty,
+and a live switch to and from it preserves `active_destination` and `selected`.
+
+---
+
+## 10. Known boundaries
+
+Honest limits of the current contract — none a blocker for the planned grammars,
+all worth knowing before you lean on them:
+
+- **The law checks presence, not pixels.** `rastered` is an attestation; the law
+  cannot verify a cover shows the right art or the right blade is lit. That is
+  visual acceptance's job (§43–44). The receipt describes the *semantic target* of
+  a frame, not its instantaneous pixels — during a spring glide the receipt names
+  the destination cover while the camera is still sliding toward it. That is a
+  normal steady state, by design.
+- **`interpret` is keyboard-only and `&self`.** A pointer/spatial grammar that
+  wants to turn a click on an orbital node into a `SemanticInput` has no hook yet,
+  and cannot consult the camera/layout computed in `present`. Keyboard navigation
+  is the current contract; pointer input is a future amendment, not a silent gap.
+- **One `Content` kind per `Destination`.** A destination that wants both a
+  property sheet *and* a scrollable queue is two destinations. A real
+  expressiveness boundary, deliberately accepted to keep the vocabulary at four
+  kinds.

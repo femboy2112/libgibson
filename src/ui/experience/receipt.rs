@@ -1,27 +1,41 @@
 //! The presentation receipt and the semantic-preservation law.
 //!
 //! A grammar records, as it lowers, exactly which semantic ids it represented,
-//! which required ids it *declared* it omitted, and which decisions it degraded.
+//! which it drew into a raster (and so attests rather than keys), which required
+//! ids it *declared* it omitted, and which decisions it degraded.
 //! [`required_semantics`] computes what the application semantically requires at
-//! the current state, and [`PresentationReceipt::check`] enforces the law
+//! the current state, and the law is checked in two tiers:
+//!
+//! - [`PresentationReceipt::check`] — the bookkeeping tier: the receipt's claims
+//!   against `required_semantics`.
+//! - [`PresentationReceipt::check_rendered`] — the bookkeeping tier *plus* a
+//!   cross-check that every id the receipt claims to represent actually appears
+//!   as a keyed node in the lowered element tree, or is explicitly attested in
+//!   [`PresentationReceipt::rastered`]. This is what closes the "a grammar can
+//!   claim anything in its receipt" hole: a grammar that renders only a title can
+//!   no longer pass by writing an honest-looking ledger. (Pixel *content* of a
+//!   rastered region is beyond the law — that is covered by visual acceptance,
+//!   the milestone's deliberate machine-vs-human split.)
+//!
+//! The law, formally:
 //!
 //! ```text
 //!     π_σ(F_σ(A)) = required_semantics(A)   up to declared responsive omission
 //! ```
 //!
-//! In plain terms: a style may rearrange appearance and navigation freely, but it
-//! may not invent actions, silently lose a required action or destination, change
-//! entity identity, or move the selected object merely because the presentation
-//! changed. The receipt is not an aesthetic score; it is a semantic-honesty
-//! ledger, and the only omissions it tolerates are ones the grammar *declared*.
+//! A style may rearrange appearance and navigation freely, but it may not invent
+//! actions, silently lose a required action or destination, change entity
+//! identity, or move the selected object merely because the presentation changed.
 
 use super::intent::PresentationState;
 use super::model::{Content, Experience, Priority};
 use crate::ui::element::Key;
+use std::collections::BTreeSet;
 
 /// What the application semantically requires at a given state. Destinations and
 /// essential items must be represented; the active destination and the current
-/// selection identity are fixed facts a grammar must not alter.
+/// selection identity are fixed facts a grammar must not alter. Only the
+/// *reachable* (primary) action is required — see [`required_semantics`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RequiredSemantics {
     /// Every destination must be represented (reachable) by every grammar.
@@ -34,12 +48,17 @@ pub struct RequiredSemantics {
     pub essential_items: Vec<Key>,
     /// All item ids in the active destination (essential or not).
     pub all_items: Vec<Key>,
-    /// Required action ids reachable at this state (the active destination's
-    /// collection-item primary actions and detail actions).
+    /// Required action ids: the ids the navigation vocabulary can actually
+    /// *reach* at this state (the selection's / detail's primary action). Extra
+    /// actions a grammar surfaces are allowed but not required, and are reachable
+    /// only if that grammar binds them to [`super::intent::SemanticInput::Invoke`].
     pub actions: Vec<Key>,
 }
 
-/// Compute the required semantics at the current presentation state.
+/// Compute the required semantics at the current presentation state. The selection
+/// index is resolved through [`PresentationState::selected_index`] — the one
+/// shared clamping rule — so this never disagrees with a grammar about what is
+/// selected, even after a dynamic rebuild shrinks or reorders a collection.
 pub fn required_semantics<A>(
     experience: &Experience<A>,
     state: &PresentationState,
@@ -49,7 +68,8 @@ pub fn required_semantics<A>(
         .iter()
         .map(|d| d.key.clone())
         .collect();
-    let active = experience.destinations.get(state.active());
+    let active_index = state.active_index(experience);
+    let active = experience.destinations.get(active_index);
     let active_destination = active.map(|d| d.key.clone());
 
     let mut essential_items = Vec::new();
@@ -66,18 +86,20 @@ pub fn required_semantics<A>(
                         essential_items.push(item.key.clone());
                     }
                 }
-                let sel = state.selection();
-                if let Some(item) = items.get(sel) {
-                    selected = Some(item.key.clone());
-                    // Only the *selected* item's actions are reachable right now.
-                    for action in &item.actions {
-                        actions.push(action.key.clone());
+                if let Some(index) = state.selected_index(experience) {
+                    if let Some(item) = items.get(index) {
+                        selected = Some(item.key.clone());
+                        // Only the primary action is reachable (Enter activates it).
+                        if let Some(primary) = item.primary() {
+                            actions.push(primary.key.clone());
+                        }
                     }
                 }
             }
             Content::Detail { actions: acts, .. } => {
-                for action in acts {
-                    actions.push(action.key.clone());
+                // Detail's Enter activates the first action; it alone is required.
+                if let Some(primary) = acts.first() {
+                    actions.push(primary.key.clone());
                 }
             }
             Content::Prose(_) | Content::Custom(_) => {}
@@ -115,11 +137,14 @@ pub enum LawViolation {
     SilentLoss(Key),
     /// The receipt represents an id the application never defined: an invented id.
     Invented(Key),
+    /// The receipt claims to represent an id that appears neither as a keyed node
+    /// in the lowered element tree nor in the attested rastered set: the receipt
+    /// and the render disagree. Only reported by [`PresentationReceipt::check_rendered`].
+    UnrenderedClaim(Key),
 }
 
 /// A grammar's record of what it represented at a given state. Built by the
-/// grammar as it lowers; checked against [`required_semantics`] by
-/// [`PresentationReceipt::check`].
+/// grammar as it lowers; checked against [`required_semantics`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PresentationReceipt {
     /// Grammar name (`STANDARD`, `MEDIA_SHELF`, ...).
@@ -134,6 +159,9 @@ pub struct PresentationReceipt {
     pub items: Vec<Key>,
     /// Action ids represented (surfaced) by the presentation.
     pub actions: Vec<Key>,
+    /// Ids the grammar drew into a raster rather than a keyed node — it attests to
+    /// these (their pixel content is a visual-acceptance matter, not the law's).
+    pub rastered: Vec<Key>,
     /// Ids deliberately omitted for responsive reasons — declared, not silent.
     pub omitted: Vec<Key>,
     /// Human-readable notes on degraded / unsupported presentation decisions.
@@ -150,6 +178,7 @@ impl PresentationReceipt {
             destinations: Vec::new(),
             items: Vec::new(),
             actions: Vec::new(),
+            rastered: Vec::new(),
             omitted: Vec::new(),
             degraded: Vec::new(),
         }
@@ -159,8 +188,9 @@ impl PresentationReceipt {
         self.omitted.contains(key)
     }
 
-    /// Check this receipt against the application's required semantics. Returns
-    /// every violation found (empty = the presentation is semantically faithful).
+    /// The bookkeeping tier: check the receipt's claims against the required
+    /// semantics. Returns every violation found (empty = the receipt's ledger is
+    /// faithful). Does not look at the render — see [`Self::check_rendered`].
     pub fn check(&self, required: &RequiredSemantics) -> Vec<LawViolation> {
         let mut violations = Vec::new();
 
@@ -231,14 +261,38 @@ impl PresentationReceipt {
         violations
     }
 
-    /// Convenience: does this presentation satisfy the preservation law?
+    /// The bookkeeping tier plus a render cross-check: every id the receipt claims
+    /// to represent must appear in `present_keys` (keys actually in the lowered
+    /// element tree) or in [`Self::rastered`] (ids the grammar attests it drew).
+    /// This is the real gate a grammar must pass; it closes the hole where a
+    /// receipt describes a render that was never produced.
+    pub fn check_rendered(
+        &self,
+        present_keys: &BTreeSet<Key>,
+        required: &RequiredSemantics,
+    ) -> Vec<LawViolation> {
+        let mut violations = self.check(required);
+        let rendered = |key: &Key| present_keys.contains(key) || self.rastered.contains(key);
+        for key in self
+            .destinations
+            .iter()
+            .chain(self.items.iter())
+            .chain(self.actions.iter())
+        {
+            if !rendered(key) {
+                violations.push(LawViolation::UnrenderedClaim(key.clone()));
+            }
+        }
+        violations
+    }
+
+    /// Convenience: does this presentation satisfy the bookkeeping law?
     pub fn preserves(&self, required: &RequiredSemantics) -> bool {
         self.check(required).is_empty()
     }
 
     /// The semantic projection π_σ: the represented ids this presentation claims,
-    /// ignoring layout. Two presentations of the same state preserve semantics iff
-    /// their projections (plus declared omissions) cover the same required set.
+    /// ignoring layout.
     pub fn represented(&self) -> impl Iterator<Item = &Key> {
         self.destinations
             .iter()

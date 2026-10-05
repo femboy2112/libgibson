@@ -42,7 +42,7 @@ impl<A: Clone> Grammar<A> for Standard {
         env: &UiEnvironment,
         _now: Duration,
     ) -> Presented<A> {
-        let active_idx = state.active();
+        let active_idx = state.active_index(experience);
         let active = experience.destinations.get(active_idx);
         let active_key = active
             .map(|d| d.key.clone())
@@ -62,7 +62,7 @@ impl<A: Clone> Grammar<A> for Standard {
 
         let content = match active.map(|d| &d.content) {
             Some(Content::Collection(items)) => {
-                let selected = state.selection();
+                let selected = state.selected_index(experience).unwrap_or(0);
                 let mut listing = list::<A>().gap(0);
                 for (index, item) in items.iter().enumerate() {
                     receipt.items.push(item.key.clone());
@@ -74,13 +74,19 @@ impl<A: Clone> Grammar<A> for Standard {
                     if index == selected {
                         entry = entry.selected(true).emphasis(Emphasis::Strong);
                         receipt.selected = Some(item.key.clone());
-                        for action in &item.actions {
-                            receipt.actions.push(action.key.clone());
-                        }
                     }
                     listing = listing.child(entry);
                 }
-                listing
+                // Render the selected item's primary action as a keyed button, so
+                // the action the receipt claims is the action actually on screen
+                // (and reachable via Enter).
+                let mut column = column::<A>().gap(1).child(listing.grow(1.0));
+                if let Some(primary) = items.get(selected).and_then(|item| item.primary()) {
+                    receipt.actions.push(primary.key.clone());
+                    column =
+                        column.child(button(primary.label.clone()).key(primary.key.to_string()));
+                }
+                column
             }
             Some(Content::Detail { facets, actions }) => {
                 let mut fields = column::<A>().gap(0);

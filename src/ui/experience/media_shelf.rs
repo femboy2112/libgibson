@@ -352,7 +352,7 @@ impl<A: Clone> Grammar<A> for MediaShelf {
         env: &UiEnvironment,
         now: Duration,
     ) -> Presented<A> {
-        let active_idx = state.active();
+        let active_idx = state.active_index(experience);
         let active_key = experience
             .destinations
             .get(active_idx)
@@ -364,9 +364,11 @@ impl<A: Clone> Grammar<A> for MediaShelf {
         }
 
         // A subtle destination strip: the active title, dim siblings as position.
+        // Each tab is keyed so the receipt's destination claims are accountable to
+        // the rendered tree.
         let mut strip = row::<A>().gap(2);
         for (index, destination) in experience.destinations.iter().enumerate() {
-            let mut tab = text::<A>(destination.title.clone());
+            let mut tab = text::<A>(destination.title.clone()).key(destination.key.to_string());
             if index == active_idx {
                 tab = tab.selected(true).emphasis(Emphasis::Strong);
             } else {
@@ -377,7 +379,7 @@ impl<A: Clone> Grammar<A> for MediaShelf {
 
         let body = match experience.destinations.get(active_idx).map(|d| &d.content) {
             Some(Content::Collection(items)) if !items.is_empty() => {
-                let selected = state.selection().min(items.len() - 1);
+                let selected = state.selected_index(experience).unwrap_or(0);
 
                 // Cache covers + reflections for every item; collect by index.
                 let seeds: Vec<u64> = items
@@ -387,9 +389,13 @@ impl<A: Clone> Grammar<A> for MediaShelf {
                 for &seed in &seeds {
                     self.ensure_cover(seed);
                 }
-                // Represent every item id (all are reachable in a carousel).
+                // Every item is reachable (Previous/Next walks the shelf), and each
+                // is drawn as a textured cover — represented and attested rastered,
+                // so the receipt is accountable to the render even though a cover is
+                // pixels, not a keyed node.
                 for item in items {
                     receipt.items.push(item.key.clone());
+                    receipt.rastered.push(item.key.clone());
                 }
                 receipt.selected = items.get(selected).map(|item| item.key.clone());
 

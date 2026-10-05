@@ -1,15 +1,15 @@
-//! Experience-grammar freeze contracts (milestone §52, the subset provable before
-//! any cinematic style exists): the semantic model, navigation, the preservation
-//! law (and that it *bites*), per-destination selection retention, live
-//! style-switch state preservation, reachability, determinism, and
-//! capability/responsive naturality of the reference grammar.
+//! Experience-grammar freeze contracts (milestone §52): the semantic model,
+//! identity-keyed navigation, the two-tier preservation law (bookkeeping +
+//! rendered, and that both *bite*), per-destination selection retention, identity
+//! stability under dynamic rebuilds, live style-switch preservation, reachability,
+//! determinism, and capability/responsive naturality.
 
 use gibson::capability::ColorDepth;
 use gibson::input::{KeyCode, KeyEvent, KeyModifiers};
 use gibson::ui::experience::{
     apply_intent, handle_key, required_semantics, Action, Content, Destination, Experience,
-    Grammar, Intent, Item, LawViolation, Media, PresentationReceipt, PresentationState, Presented,
-    Priority, SemanticInput, Standard,
+    Grammar, Intent, Item, LawViolation, Media, MediaShelf, PresentationReceipt, PresentationState,
+    Presented, Priority, SemanticInput, Standard,
 };
 use gibson::ui::skin::UiEnvironment;
 use std::time::Duration;
@@ -21,10 +21,13 @@ enum Msg {
     Open,
 }
 
+fn key(name: &str) -> gibson::ui::element::Key {
+    gibson::ui::element::Key::named(name)
+}
+
 /// A mixed-domain fixture: a media collection, a detail page, a settings
 /// collection (settings as actionable items — not a separate node kind), and
-/// prose. Deliberately exercises every content kind and both essential and
-/// tertiary priority.
+/// prose. Exercises every content kind and essential/tertiary priority.
 fn fixture() -> Experience<Msg> {
     let library = Content::Collection(vec![
         Item::new("alb-0", "Neon Harbour")
@@ -80,6 +83,25 @@ fn fixture() -> Experience<Msg> {
         .destination(Destination::new("about", "About", about))
 }
 
+/// A bare single-collection experience whose item order is the given key list.
+fn library(order: &[&str]) -> Experience<Msg> {
+    let items: Vec<Item<Msg>> = order
+        .iter()
+        .map(|k| {
+            Item::new(*k, *k).action(Action::new(
+                format!("play-{k}"),
+                "Play",
+                Msg::Play((*k).to_string()),
+            ))
+        })
+        .collect();
+    Experience::new("LIB").destination(Destination::new(
+        "library",
+        "Library",
+        Content::Collection(items),
+    ))
+}
+
 fn env(width: u16, height: u16, color_depth: ColorDepth) -> UiEnvironment {
     UiEnvironment {
         width,
@@ -96,12 +118,21 @@ fn press(code: KeyCode) -> KeyEvent {
     }
 }
 
+fn sel(state: &PresentationState, experience: &Experience<Msg>) -> usize {
+    state.selected_index(experience).unwrap_or(0)
+}
+
+fn act(state: &PresentationState, experience: &Experience<Msg>) -> usize {
+    state.active_index(experience)
+}
+
 // ---------------------------------------------------------------------------
-// A second, deliberately different grammar used only in tests, to prove that
-// style switching preserves semantics and that different grammars bind different
-// physical keys to the same semantic intents. It represents everything (a
-// faithful minimal grammar), but navigates with Left/Right instead of Up/Down.
+// Test grammars.
 // ---------------------------------------------------------------------------
+
+/// A faithful minimal grammar: renders a keyed node for every id it claims and
+/// navigates with Left/Right (opposite axis from STANDARD, same intents). Used to
+/// prove style switching preserves semantics with a genuinely different grammar.
 struct Minimal;
 
 impl<A: Clone> Grammar<A> for Minimal {
@@ -115,33 +146,51 @@ impl<A: Clone> Grammar<A> for Minimal {
         _env: &UiEnvironment,
         _now: Duration,
     ) -> Presented<A> {
-        let active_idx = state.active();
+        let active_idx = state.active_index(experience);
         let active = &experience.destinations[active_idx];
         let mut receipt = PresentationReceipt::new("MINIMAL", active.key.clone());
+        let mut root = gibson::ui::element::column::<A>();
         for destination in &experience.destinations {
             receipt.destinations.push(destination.key.clone());
+            root = root.child(
+                gibson::ui::element::text::<A>(destination.title.clone())
+                    .key(destination.key.to_string()),
+            );
         }
         match &active.content {
             Content::Collection(items) => {
+                let selected = state.selected_index(experience).unwrap_or(0);
                 for (index, item) in items.iter().enumerate() {
                     receipt.items.push(item.key.clone());
-                    if index == state.selection() {
+                    root = root.child(
+                        gibson::ui::element::text::<A>(item.title.clone())
+                            .key(item.key.to_string()),
+                    );
+                    if index == selected {
                         receipt.selected = Some(item.key.clone());
-                        for action in &item.actions {
-                            receipt.actions.push(action.key.clone());
+                        if let Some(primary) = item.primary() {
+                            receipt.actions.push(primary.key.clone());
+                            root = root.child(
+                                gibson::ui::element::text::<A>(primary.label.clone())
+                                    .key(primary.key.to_string()),
+                            );
                         }
                     }
                 }
             }
             Content::Detail { actions, .. } => {
-                for action in actions {
-                    receipt.actions.push(action.key.clone());
+                if let Some(primary) = actions.first() {
+                    receipt.actions.push(primary.key.clone());
+                    root = root.child(
+                        gibson::ui::element::text::<A>(primary.label.clone())
+                            .key(primary.key.to_string()),
+                    );
                 }
             }
             _ => {}
         }
         Presented {
-            element: gibson::ui::element::text::<A>(experience.title.clone()),
+            element: root,
             receipt,
         }
     }
@@ -163,8 +212,57 @@ impl<A: Clone> Grammar<A> for Minimal {
     }
 }
 
+/// A DISHONEST grammar: its receipt claims everything, but it renders only the
+/// experience title (no keyed nodes, nothing rastered). Used to prove the
+/// rendered tier of the law catches a receipt describing a render never made.
+struct TitleOnly;
+
+impl<A: Clone> Grammar<A> for TitleOnly {
+    fn name(&self) -> &'static str {
+        "TITLE_ONLY"
+    }
+    fn present(
+        &mut self,
+        experience: &Experience<A>,
+        state: &PresentationState,
+        _env: &UiEnvironment,
+        _now: Duration,
+    ) -> Presented<A> {
+        let active_idx = state.active_index(experience);
+        let active = &experience.destinations[active_idx];
+        let mut receipt = PresentationReceipt::new("TITLE_ONLY", active.key.clone());
+        for destination in &experience.destinations {
+            receipt.destinations.push(destination.key.clone());
+        }
+        if let Content::Collection(items) = &active.content {
+            let selected = state.selected_index(experience).unwrap_or(0);
+            for item in items {
+                receipt.items.push(item.key.clone());
+            }
+            if let Some(item) = items.get(selected) {
+                receipt.selected = Some(item.key.clone());
+                if let Some(primary) = item.primary() {
+                    receipt.actions.push(primary.key.clone());
+                }
+            }
+        }
+        Presented {
+            element: gibson::ui::element::text::<A>(experience.title.clone()),
+            receipt,
+        }
+    }
+    fn interpret(
+        &self,
+        _key: &KeyEvent,
+        _experience: &Experience<A>,
+        _state: &PresentationState,
+    ) -> Option<SemanticInput<A>> {
+        None
+    }
+}
+
 // ---------------------------------------------------------------------------
-// The preservation law, and that it has teeth.
+// The preservation law — both tiers, and that they bite.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -179,7 +277,7 @@ fn standard_presentation_preserves_semantics_in_every_destination() {
         }
         let presented = grammar.present(&experience, &state, &e, Duration::ZERO);
         let required = required_semantics(&experience, &state);
-        let violations = presented.receipt.check(&required);
+        let violations = presented.check(&required);
         assert!(
             violations.is_empty(),
             "destination {destination} violated the law: {violations:?}"
@@ -188,23 +286,24 @@ fn standard_presentation_preserves_semantics_in_every_destination() {
 }
 
 #[test]
-fn required_action_of_the_selected_item_is_always_represented() {
+fn required_action_of_the_selected_item_is_rendered() {
     let experience = fixture();
     let mut grammar = Standard::new();
     let e = env(120, 40, ColorDepth::TrueColor);
-    // Walk every item in the library; the selected item's play action must appear.
     for index in 0..5 {
         let mut state = PresentationState::new(&experience);
         for _ in 0..index {
             apply_intent(&experience, &mut state, Intent::Next);
         }
         let presented = grammar.present(&experience, &state, &e, Duration::ZERO);
-        let expected = gibson::ui::element::Key::named(format!("play-{index}"));
+        let expected = key(&format!("play-{index}"));
         assert!(
             presented.receipt.actions.contains(&expected),
             "selected item {index} did not surface its play action; actions={:?}",
             presented.receipt.actions
         );
+        let required = required_semantics(&experience, &state);
+        assert!(presented.check(&required).is_empty());
     }
 }
 
@@ -213,21 +312,15 @@ fn the_law_catches_a_silently_dropped_item() {
     let experience = fixture();
     let state = PresentationState::new(&experience);
     let required = required_semantics(&experience, &state);
-    // A dishonest receipt that drops a normal item without declaring it.
-    let mut receipt =
-        PresentationReceipt::new("DISHONEST", gibson::ui::element::Key::named("library"));
+    let mut receipt = PresentationReceipt::new("DISHONEST", key("library"));
     receipt.destinations = experience
         .destinations
         .iter()
         .map(|d| d.key.clone())
         .collect();
-    // Represent only the first two of five items; declare no omission.
-    receipt.items = vec![
-        gibson::ui::element::Key::named("alb-0"),
-        gibson::ui::element::Key::named("alb-1"),
-    ];
-    receipt.selected = Some(gibson::ui::element::Key::named("alb-0"));
-    receipt.actions = vec![gibson::ui::element::Key::named("play-0")];
+    receipt.items = vec![key("alb-0"), key("alb-1")]; // dropped alb-2..4, undeclared
+    receipt.selected = Some(key("alb-0"));
+    receipt.actions = vec![key("play-0")];
     let violations = receipt.check(&required);
     assert!(
         violations
@@ -242,22 +335,15 @@ fn the_law_catches_an_omitted_essential() {
     let experience = fixture();
     let state = PresentationState::new(&experience);
     let required = required_semantics(&experience, &state);
-    let mut receipt =
-        PresentationReceipt::new("DISHONEST", gibson::ui::element::Key::named("library"));
+    let mut receipt = PresentationReceipt::new("DISHONEST", key("library"));
     receipt.destinations = experience
         .destinations
         .iter()
         .map(|d| d.key.clone())
         .collect();
-    // Declare the ESSENTIAL item omitted — never allowed.
-    receipt.items = vec![
-        gibson::ui::element::Key::named("alb-1"),
-        gibson::ui::element::Key::named("alb-2"),
-        gibson::ui::element::Key::named("alb-3"),
-        gibson::ui::element::Key::named("alb-4"),
-    ];
-    receipt.omitted = vec![gibson::ui::element::Key::named("alb-0")];
-    receipt.selected = Some(gibson::ui::element::Key::named("alb-1"));
+    receipt.items = vec![key("alb-1"), key("alb-2"), key("alb-3"), key("alb-4")];
+    receipt.omitted = vec![key("alb-0")]; // alb-0 is Essential — may never be omitted
+    receipt.selected = Some(key("alb-1"));
     let violations = receipt.check(&required);
     assert!(
         violations
@@ -272,36 +358,55 @@ fn the_law_catches_an_invented_id() {
     let experience = fixture();
     let state = PresentationState::new(&experience);
     let required = required_semantics(&experience, &state);
-    let mut receipt =
-        PresentationReceipt::new("DISHONEST", gibson::ui::element::Key::named("library"));
+    let mut receipt = PresentationReceipt::new("DISHONEST", key("library"));
     receipt.destinations = experience
         .destinations
         .iter()
         .map(|d| d.key.clone())
         .collect();
-    receipt.items = experience
-        .destinations
-        .iter()
-        .find(|d| d.title == "Library")
-        .map(|_| {
-            vec![
-                gibson::ui::element::Key::named("alb-0"),
-                gibson::ui::element::Key::named("alb-1"),
-                gibson::ui::element::Key::named("alb-2"),
-                gibson::ui::element::Key::named("alb-3"),
-                gibson::ui::element::Key::named("alb-4"),
-                gibson::ui::element::Key::named("ghost-item"), // invented
-            ]
-        })
-        .unwrap();
-    receipt.selected = Some(gibson::ui::element::Key::named("alb-0"));
-    receipt.actions = vec![gibson::ui::element::Key::named("play-0")];
+    receipt.items = vec![
+        key("alb-0"),
+        key("alb-1"),
+        key("alb-2"),
+        key("alb-3"),
+        key("alb-4"),
+        key("ghost-item"), // invented
+    ];
+    receipt.selected = Some(key("alb-0"));
+    receipt.actions = vec![key("play-0")];
     let violations = receipt.check(&required);
     assert!(
         violations
             .iter()
             .any(|v| matches!(v, LawViolation::Invented(_))),
         "expected Invented, got {violations:?}"
+    );
+}
+
+#[test]
+fn the_rendered_law_catches_a_grammar_that_draws_only_a_title() {
+    let experience = fixture();
+    let state = PresentationState::new(&experience);
+    let required = required_semantics(&experience, &state);
+    let mut liar = TitleOnly;
+    let presented = liar.present(
+        &experience,
+        &state,
+        &env(120, 40, ColorDepth::TrueColor),
+        Duration::ZERO,
+    );
+    // Its bookkeeping is internally consistent — the ledger looks honest...
+    assert!(
+        presented.receipt.check(&required).is_empty(),
+        "bookkeeping tier should pass for a self-consistent ledger"
+    );
+    // ...but the RENDERED tier catches it: it claims ids it never drew.
+    let violations = presented.check(&required);
+    assert!(
+        violations
+            .iter()
+            .any(|v| matches!(v, LawViolation::UnrenderedClaim(_))),
+        "expected UnrenderedClaim from the rendered law, got {violations:?}"
     );
 }
 
@@ -313,24 +418,24 @@ fn the_law_catches_an_invented_id() {
 fn item_navigation_clamps_and_never_teleports() {
     let experience = fixture();
     let mut state = PresentationState::new(&experience); // library, 5 items
-    assert_eq!(state.selection(), 0);
+    assert_eq!(sel(&state, &experience), 0);
     apply_intent(&experience, &mut state, Intent::Previous); // clamp at 0
-    assert_eq!(state.selection(), 0);
+    assert_eq!(sel(&state, &experience), 0);
     for _ in 0..10 {
         apply_intent(&experience, &mut state, Intent::Next); // clamp at 4
     }
-    assert_eq!(state.selection(), 4);
+    assert_eq!(sel(&state, &experience), 4);
     apply_intent(&experience, &mut state, Intent::Home);
-    assert_eq!(state.selection(), 0);
+    assert_eq!(sel(&state, &experience), 0);
     apply_intent(&experience, &mut state, Intent::End);
-    assert_eq!(state.selection(), 4);
+    assert_eq!(sel(&state, &experience), 4);
 }
 
 #[test]
 fn rapid_reversal_stays_coherent() {
     let experience = fixture();
     let mut state = PresentationState::new(&experience);
-    let script = [
+    for intent in [
         Intent::Next,
         Intent::Next,
         Intent::Next,
@@ -338,33 +443,29 @@ fn rapid_reversal_stays_coherent() {
         Intent::Next,
         Intent::Previous,
         Intent::Previous,
-    ];
-    for intent in script {
+    ] {
         apply_intent(&experience, &mut state, intent);
     }
     // +1 +1 +1 -1 +1 -1 -1 = 1
-    assert_eq!(state.selection(), 1);
+    assert_eq!(sel(&state, &experience), 1);
 }
 
 #[test]
 fn selection_is_retained_per_destination() {
     let experience = fixture();
     let mut state = PresentationState::new(&experience);
-    // Select item 3 in the library.
     for _ in 0..3 {
-        apply_intent(&experience, &mut state, Intent::Next);
+        apply_intent(&experience, &mut state, Intent::Next); // library item 3
     }
-    assert_eq!(state.selection(), 3);
-    // Move to settings, select item 1.
+    assert_eq!(sel(&state, &experience), 3);
     apply_intent(&experience, &mut state, Intent::NextGroup); // now
     apply_intent(&experience, &mut state, Intent::NextGroup); // settings
     apply_intent(&experience, &mut state, Intent::Next);
-    assert_eq!(state.selection(), 1);
-    // Back to the library — its selection must be exactly where we left it.
+    assert_eq!(sel(&state, &experience), 1);
     apply_intent(&experience, &mut state, Intent::PreviousGroup); // now
     apply_intent(&experience, &mut state, Intent::PreviousGroup); // library
-    assert_eq!(state.active(), 0);
-    assert_eq!(state.selection(), 3);
+    assert_eq!(act(&state, &experience), 0);
+    assert_eq!(sel(&state, &experience), 3); // retained
 }
 
 #[test]
@@ -374,7 +475,6 @@ fn enter_activates_the_selected_items_primary_action() {
     apply_intent(&experience, &mut state, Intent::Next); // select alb-1
     let action = apply_intent(&experience, &mut state, Intent::Enter);
     assert_eq!(action, Some(Msg::Play("alb-1".into())));
-    // Detail destination's Enter activates its action.
     apply_intent(&experience, &mut state, Intent::NextGroup); // now playing
     let action = apply_intent(&experience, &mut state, Intent::Enter);
     assert_eq!(action, Some(Msg::Open));
@@ -383,26 +483,92 @@ fn enter_activates_the_selected_items_primary_action() {
 #[test]
 fn every_destination_and_item_is_reachable_by_walking() {
     let experience = fixture();
-    // Destinations: walking NextGroup must visit all of them.
     let mut state = PresentationState::new(&experience);
-    let mut seen = vec![state.active()];
+    let mut seen = vec![act(&state, &experience)];
     for _ in 0..10 {
         apply_intent(&experience, &mut state, Intent::NextGroup);
-        if !seen.contains(&state.active()) {
-            seen.push(state.active());
+        let a = act(&state, &experience);
+        if !seen.contains(&a) {
+            seen.push(a);
         }
     }
     assert_eq!(seen.len(), experience.destinations.len());
-    // Items: walking Next must visit every library item.
+
     let mut state = PresentationState::new(&experience);
-    let mut visited = vec![state.selection()];
+    let mut visited = vec![sel(&state, &experience)];
     for _ in 0..10 {
         apply_intent(&experience, &mut state, Intent::Next);
-        if !visited.contains(&state.selection()) {
-            visited.push(state.selection());
+        let s = sel(&state, &experience);
+        if !visited.contains(&s) {
+            visited.push(s);
         }
     }
     assert_eq!(visited.len(), 5);
+}
+
+// ---------------------------------------------------------------------------
+// Identity stability under dynamic rebuilds (the F2/F3 adversary findings).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn selection_resolves_consistently_after_a_collection_shrinks() {
+    let full = library(&["a", "b", "c", "d", "e"]);
+    let mut state = PresentationState::new(&full);
+    apply_intent(&full, &mut state, Intent::End); // select "e"
+    assert_eq!(state.selected_key(&full), Some(key("e")));
+
+    let shrunk = library(&["a", "b"]); // "e" no longer exists
+    let required = required_semantics(&shrunk, &state);
+    let e = env(120, 40, ColorDepth::TrueColor);
+
+    // required_semantics and BOTH grammars read the one shared clamping rule, so
+    // they agree on the selection — no divergence, no silent None, no honest
+    // grammar flagged a liar (the F2 failure is gone).
+    let mut standard = Standard::new();
+    let p_std = standard.present(&shrunk, &state, &e, Duration::ZERO);
+    let mut shelf = MediaShelf::new();
+    let p_shelf = shelf.present(&shrunk, &state, &e, Duration::from_millis(500));
+    assert_eq!(p_std.receipt.selected, required.selected);
+    assert_eq!(p_shelf.receipt.selected, required.selected);
+    assert!(
+        p_std.check(&required).is_empty(),
+        "{:?}",
+        p_std.check(&required)
+    );
+    assert!(
+        p_shelf.check(&required).is_empty(),
+        "{:?}",
+        p_shelf.check(&required)
+    );
+}
+
+#[test]
+fn selection_tracks_identity_across_a_reorder() {
+    let before = library(&["a", "b", "c", "d", "e"]);
+    let mut state = PresentationState::new(&before);
+    for _ in 0..2 {
+        apply_intent(&before, &mut state, Intent::Next); // select "c"
+    }
+    assert_eq!(state.selected_key(&before), Some(key("c")));
+    let reordered = library(&["c", "a", "b", "d", "e"]);
+    assert_eq!(state.selected_key(&reordered), Some(key("c")));
+    assert_eq!(sel(&state, &reordered), 0); // "c" is now at index 0
+}
+
+#[test]
+fn active_destination_tracks_identity_across_an_insert() {
+    let base = Experience::<Msg>::new("X")
+        .destination(Destination::new("library", "L", Content::Prose(vec![])))
+        .destination(Destination::new("settings", "S", Content::Prose(vec![])));
+    let mut state = PresentationState::new(&base);
+    apply_intent(&base, &mut state, Intent::NextGroup); // active = settings
+    assert_eq!(state.active_key(&base), Some(key("settings")));
+    let shifted = Experience::<Msg>::new("X")
+        .destination(Destination::new("ghost", "G", Content::Prose(vec![])))
+        .destination(Destination::new("library", "L", Content::Prose(vec![])))
+        .destination(Destination::new("settings", "S", Content::Prose(vec![])));
+    assert_eq!(state.active_key(&shifted), Some(key("settings")));
+    assert_eq!(act(&state, &shifted), 2); // settings is now at index 2
 }
 
 // ---------------------------------------------------------------------------
@@ -414,18 +580,13 @@ fn switching_grammar_preserves_active_destination_and_selection() {
     let experience = fixture();
     let e = env(120, 40, ColorDepth::TrueColor);
     let mut state = PresentationState::new(&experience);
-    // Select item 2 in the library under STANDARD.
     for _ in 0..2 {
-        apply_intent(&experience, &mut state, Intent::Next);
+        apply_intent(&experience, &mut state, Intent::Next); // select alb-2
     }
     let mut standard = Standard::new();
     let before = standard.present(&experience, &state, &e, Duration::ZERO);
-    assert_eq!(
-        before.receipt.selected,
-        Some(gibson::ui::element::Key::named("alb-2"))
-    );
+    assert_eq!(before.receipt.selected, Some(key("alb-2")));
 
-    // Switch to a radically different grammar WITHOUT touching state.
     let mut minimal = Minimal;
     let after = minimal.present(&experience, &state, &e, Duration::ZERO);
     assert_eq!(
@@ -434,40 +595,36 @@ fn switching_grammar_preserves_active_destination_and_selection() {
     );
     assert_eq!(after.receipt.selected, before.receipt.selected);
 
-    // Switch back; projection identical again.
     let back = standard.present(&experience, &state, &e, Duration::ZERO);
     assert_eq!(
         back.receipt.active_destination,
         before.receipt.active_destination
     );
     assert_eq!(back.receipt.selected, before.receipt.selected);
-    // Both grammars satisfy the law at this state.
+
     let required = required_semantics(&experience, &state);
-    assert!(after.receipt.preserves(&required));
-    assert!(back.receipt.preserves(&required));
+    assert!(after.preserves(&required), "{:?}", after.check(&required));
+    assert!(back.preserves(&required), "{:?}", back.check(&required));
 }
 
 #[test]
 fn different_grammars_bind_different_keys_to_the_same_intent() {
     let experience = fixture();
-    // STANDARD: Down advances the item. MINIMAL: Right advances the item.
     let standard = Standard::new();
     let minimal = Minimal;
 
     let mut s1 = PresentationState::new(&experience);
     let msg = handle_key(&standard, &experience, &mut s1, &press(KeyCode::Down));
     assert_eq!(msg, None);
-    assert_eq!(s1.selection(), 1);
+    assert_eq!(sel(&s1, &experience), 1);
 
     let mut s2 = PresentationState::new(&experience);
     let msg = handle_key(&minimal, &experience, &mut s2, &press(KeyCode::Right));
     assert_eq!(msg, None);
-    assert_eq!(s2.selection(), 1);
+    assert_eq!(sel(&s2, &experience), 1);
 
-    // STANDARD's Down and MINIMAL's Right produced the identical semantic effect.
-    assert_eq!(s1.selection(), s2.selection());
+    assert_eq!(sel(&s1, &experience), sel(&s2, &experience));
 
-    // And Enter through handle_key yields the typed application action.
     let msg = handle_key(&standard, &experience, &mut s1, &press(KeyCode::Enter));
     assert_eq!(msg, Some(Msg::Play("alb-1".into())));
 }
@@ -502,11 +659,10 @@ fn standard_preserves_semantics_across_the_responsive_and_capability_matrix() {
         for depth in depths {
             let e = env(w, h, depth);
             let mut state = PresentationState::new(&experience);
-            // Check the law in each destination at this size/capability.
             for _ in 0..experience.destinations.len() {
                 let presented = grammar.present(&experience, &state, &e, Duration::ZERO);
                 let required = required_semantics(&experience, &state);
-                let violations = presented.receipt.check(&required);
+                let violations = presented.check(&required);
                 assert!(
                     violations.is_empty(),
                     "law violated at {w}x{h} {depth:?}: {violations:?}"
@@ -518,12 +674,8 @@ fn standard_preserves_semantics_across_the_responsive_and_capability_matrix() {
 }
 
 // ---------------------------------------------------------------------------
-// MEDIA_SHELF — the first cinematic grammar. Validates the frozen IR end to end:
-// the raster escape hatch, an animated (spring) grammar, and *lawful declared
-// omission*.
+// MEDIA_SHELF — the first cinematic grammar.
 // ---------------------------------------------------------------------------
-
-use gibson::ui::experience::MediaShelf;
 
 #[test]
 fn media_shelf_preserves_semantics_in_every_destination() {
@@ -537,7 +689,7 @@ fn media_shelf_preserves_semantics_in_every_destination() {
         }
         let presented = shelf.present(&experience, &state, &e, Duration::from_millis(500));
         let required = required_semantics(&experience, &state);
-        let violations = presented.receipt.check(&required);
+        let violations = presented.check(&required);
         assert!(
             violations.is_empty(),
             "MEDIA_SHELF violated the law at destination {destination}: {violations:?}"
@@ -549,39 +701,33 @@ fn media_shelf_preserves_semantics_in_every_destination() {
 fn media_shelf_declared_omission_of_the_caption_is_lawful() {
     let experience = fixture();
     let mut shelf = MediaShelf::new();
-    // A viewport too short to carry the action caption.
-    let e = env(40, 8, ColorDepth::TrueColor);
-    let state = PresentationState::new(&experience); // library, item 0 (has play-0)
+    let e = env(40, 8, ColorDepth::TrueColor); // too short for the caption
+    let state = PresentationState::new(&experience);
     let presented = shelf.present(&experience, &state, &e, Duration::from_millis(500));
-    // The action was dropped but DECLARED, so the law still holds.
     assert!(
-        presented
-            .receipt
-            .omitted
-            .contains(&gibson::ui::element::Key::named("play-0")),
+        presented.receipt.omitted.contains(&key("play-0")),
         "expected the caption's action to be a declared omission; omitted={:?}",
         presented.receipt.omitted
     );
     let required = required_semantics(&experience, &state);
     assert!(
-        presented.receipt.check(&required).is_empty(),
-        "a *declared* omission must still satisfy the law: {:?}",
-        presented.receipt.check(&required)
+        presented.check(&required).is_empty(),
+        "a declared omission must still satisfy the law: {:?}",
+        presented.check(&required)
     );
 }
 
 #[test]
-fn media_shelf_represents_the_action_when_there_is_room() {
+fn media_shelf_renders_the_action_when_there_is_room() {
     let experience = fixture();
     let mut shelf = MediaShelf::new();
     let e = env(120, 40, ColorDepth::TrueColor);
     let state = PresentationState::new(&experience);
     let presented = shelf.present(&experience, &state, &e, Duration::from_millis(500));
-    assert!(presented
-        .receipt
-        .actions
-        .contains(&gibson::ui::element::Key::named("play-0")));
+    assert!(presented.receipt.actions.contains(&key("play-0")));
     assert!(presented.receipt.omitted.is_empty());
+    let required = required_semantics(&experience, &state);
+    assert!(presented.check(&required).is_empty());
 }
 
 #[test]
@@ -601,10 +747,7 @@ fn switching_to_media_shelf_preserves_selection() {
         after.receipt.active_destination,
         before.receipt.active_destination
     );
-    assert_eq!(
-        after.receipt.selected,
-        Some(gibson::ui::element::Key::named("alb-3"))
-    );
+    assert_eq!(after.receipt.selected, Some(key("alb-3")));
 }
 
 #[test]
@@ -612,13 +755,12 @@ fn media_shelf_binds_left_right_to_item_motion() {
     let experience = fixture();
     let shelf = MediaShelf::new();
     let mut state = PresentationState::new(&experience);
-    // Right advances the item under the shelf (STANDARD used Down for this).
     let msg = handle_key(&shelf, &experience, &mut state, &press(KeyCode::Right));
     assert_eq!(msg, None);
-    assert_eq!(state.selection(), 1);
+    assert_eq!(sel(&state, &experience), 1);
     let msg = handle_key(&shelf, &experience, &mut state, &press(KeyCode::Left));
     assert_eq!(msg, None);
-    assert_eq!(state.selection(), 0);
+    assert_eq!(sel(&state, &experience), 0);
 }
 
 #[test]
@@ -630,14 +772,13 @@ fn media_shelf_spring_settles_on_the_selection() {
     for _ in 0..4 {
         apply_intent(&experience, &mut state, Intent::Next); // target item 4
     }
-    // Drive ~2.5 s of frames at 60fps toward the fixed target.
     let mut t = 0u64;
     for _ in 0..150 {
         t += 16;
         shelf.present(&experience, &state, &e, Duration::from_millis(t));
     }
     assert!(
-        shelf.is_settled(state.selection()),
+        shelf.is_settled(sel(&state, &experience)),
         "spring should have settled on the selection after 2.5s"
     );
 }
@@ -660,7 +801,7 @@ fn media_shelf_preserves_semantics_across_the_responsive_and_capability_matrix()
             for _ in 0..experience.destinations.len() {
                 let presented = shelf.present(&experience, &state, &e, Duration::from_millis(500));
                 let required = required_semantics(&experience, &state);
-                let violations = presented.receipt.check(&required);
+                let violations = presented.check(&required);
                 assert!(
                     violations.is_empty(),
                     "MEDIA_SHELF law violated at {w}x{h} {depth:?}: {violations:?}"
