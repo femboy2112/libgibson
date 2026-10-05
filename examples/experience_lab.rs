@@ -25,11 +25,13 @@
 //! and that every grammar's rendered frame honours the preservation law.
 
 use gibson::capability::ColorDepth;
+use gibson::context::{Context, RenderMode};
 use gibson::input::{Event, KeyCode, KeyModifiers};
 use gibson::ui::experience::{
     handle_key, Action, Blades, Content, CrossMedia, Destination, Experience, Facet, Grammar, Item,
     Media, MediaShelf, Orbital, Panorama, PresentationState, Standard,
 };
+use gibson::ui::prelude::UiRuntime;
 use gibson::ui::skin::UiEnvironment;
 use gibson::ui::{
     column, label, row, screen, skins, status, App, AppEvent, BuildCx, Control, Element,
@@ -313,6 +315,48 @@ fn main() -> io::Result<()> {
                 println!("{line}");
             }
         }
+        return Ok(());
+    }
+
+    // Truecolor capture for real visual acceptance (§43): `experience_lab ansi <1-6>
+    // [W H]` renders ONE grammar's full lab frame — grammar *and* chrome, exactly as
+    // the live demo paints it — and writes the settled screen as ANSI to stdout. A
+    // Surface flattens to colourless text; this path keeps the colour and the raster
+    // half-block pixels, so an external renderer (docs/assets/render_ui_skins.py) can
+    // turn it into an honest PNG instead of the lossy text dump.
+    if args.get(1).map(String::as_str) == Some("ansi") {
+        let idx = args
+            .get(2)
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(1)
+            .saturating_sub(1);
+        let w: u16 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(100);
+        let h: u16 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(28);
+        let mut lab = Lab::new();
+        lab.set_style(idx);
+        let env = UiEnvironment {
+            width: w,
+            height: h,
+            color_depth: ColorDepth::TrueColor,
+            ..UiEnvironment::default()
+        };
+        // A settled clock: springy grammars have parked, so this is the still frame.
+        let now = Duration::from_secs(5);
+        let mut cx = BuildCx::new(skins::VAPOR95, env);
+        cx.time = now;
+        // `App::fullscreen` forces the root to the viewport; mirror that here so the
+        // capture shows the real live framing (the skin's screen fills), not a
+        // content-height clump floating over a black void.
+        let element = view(&lab, &cx).height(h);
+
+        let mut runtime = UiRuntime::new(skins::VAPOR95);
+        let compiled = runtime.frame(&element, env, now).expect("frame lowers");
+        let mut ctx = Context::headless(RenderMode::Fullscreen, w, h);
+        ctx.set_color_depth(ColorDepth::TrueColor);
+        ctx.set_root(compiled.node);
+        ctx.render_now().expect("headless render");
+        use std::io::Write;
+        io::stdout().write_all(ctx.rendered_bytes())?;
         return Ok(());
     }
 
