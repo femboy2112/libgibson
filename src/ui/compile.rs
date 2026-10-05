@@ -655,7 +655,6 @@ fn lower_role<A>(
         }
         ElementKind::Modal(s) => {
             let w = el.layout.width.unwrap_or(52);
-            let h = el.layout.height.unwrap_or(12);
             let mut panel = container(
                 cx,
                 &chrome_skin,
@@ -666,8 +665,19 @@ fn lower_role<A>(
                 true,
             )
             .percent_width(90.0)
-            .max_width(w as f32)
-            .height(h as f32);
+            .max_width(w as f32);
+            // Height: an explicit `.height(n)` is authoritative; otherwise the
+            // modal sizes to its CONTENT (`Dimension::Auto`, the Node default).
+            // The old fixed-12 default silently capped content at ~9 rows — 12
+            // children showed 9, 30 children still showed 9, with no scroll and
+            // no warning (PULSAR-2 FRICTION §5). Both paths are bounded by the
+            // `max_height: 90%` below, so a modal never exceeds the viewport and
+            // overflow beyond that hard bound clips deterministically — the
+            // smallest coherent contract (not a scroll container / window
+            // manager). It never pretends all children fit when they do not.
+            if let Some(h) = el.layout.height {
+                panel = panel.height(h as f32);
+            }
             panel.layout_style.max_height = Dimension::Percent(90.0);
             if let Some(effects) = cx.motions.get(&id) {
                 panel = panel.post_process(effects.clone());
