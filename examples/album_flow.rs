@@ -12,17 +12,20 @@
 //! are *derived* from each cover (mirrored across its bottom edge, faded), never authored
 //! independently. Motion is a damped spring on the (fractional) selection.
 //!
-//! Run it:  `cargo run --example album_flow`
+//! Run it:  `cargo run --example album_flow`  (Esc / q / Ctrl-C to quit).
+//! Offline:  `album_flow capture <sel> <out.ppm>` / `album_flow frames <dir> [w] [h]`.
 
-use std::io::Write;
+use std::io;
+use std::sync::Arc;
 use std::time::Duration;
 
-use gibson::ansi::AnsiCompiler;
-use gibson::compute_diff;
 use gibson::geom::Vec3;
+use gibson::input::{Event, KeyCode, KeyModifiers};
+use gibson::node::Node;
 use gibson::raster::{Rgb, RgbRaster};
 use gibson::raster3d::{Camera, Rasterizer};
 use gibson::surface::Surface;
+use gibson::Context;
 
 // ---- the arrangement, in world units -------------------------------------------------
 
@@ -345,7 +348,7 @@ fn demo_selections() -> Vec<f32> {
 
 // ---- the live demo --------------------------------------------------------------------
 
-fn main() {
+fn main() -> io::Result<()> {
     let covers: Vec<RgbRaster> = (0..NUM_COVERS).map(|i| cover_art(i as u32)).collect();
     let reflections: Vec<RgbRaster> = covers.iter().map(reflection_texture).collect();
 
@@ -360,7 +363,7 @@ fn main() {
             .write_ppm(std::io::BufWriter::new(file))
             .expect("write ppm");
         eprintln!("captured selection {sel} -> {path}");
-        return;
+        return Ok(());
     }
 
     // Deterministic frame export of the scripted motion: `album_flow frames <dir> [w] [h]`.
@@ -379,26 +382,62 @@ fn main() {
                 .expect("write ppm");
         }
         eprintln!("wrote {} frames to {dir}", demo_selections().len());
-        return;
+        return Ok(());
     }
 
-    let (cols, rows) = (120u16, 40u16);
-    let mut comp = AnsiCompiler::new();
-    let mut prev: Option<Surface> = None;
-    let mut out = std::io::stdout();
-    let _ = out.write_all(b"\x1b[2J\x1b[H");
+    // Live demo: take over the terminal through a fullscreen Context (alternate screen,
+    // raw mode, hidden cursor, synchronized frames, autowrap off) and render the shelf into
+    // a canvas node sized to the ACTUAL terminal, so it is responsive and never wraps.
+    // Esc / q / Ctrl-C quits and restores the terminal; resizing is handled per frame.
+    let covers = Arc::new(covers);
+    let reflections = Arc::new(reflections);
+    let mut ctx = Context::fullscreen()?;
+    let result = run_live(&mut ctx, &covers, &reflections);
+    ctx.restore()?;
+    result
+}
 
-    for sel in demo_selections() {
-        let surf = render(&covers, &reflections, sel, cols, rows, false);
-        let diff = compute_diff(prev.as_ref(), &surf);
-        let bytes = comp.compile(&diff);
-        let _ = out.write_all(b"\x1b[H");
-        let _ = out.write_all(&bytes);
-        let _ = out.flush();
-        prev = Some(surf);
-        std::thread::sleep(Duration::from_millis(33));
+fn run_live(
+    ctx: &mut Context,
+    covers: &Arc<Vec<RgbRaster>>,
+    reflections: &Arc<Vec<RgbRaster>>,
+) -> io::Result<()> {
+    let interactive = ctx.session.is_tty;
+    let selections = demo_selections();
+    loop {
+        for &sel in &selections {
+            let c = Arc::clone(covers);
+            let r = Arc::clone(reflections);
+            // The canvas receives the live terminal Rect, so the frame fits exactly.
+            ctx.set_root(Node::canvas(move |rect| {
+                render(
+                    &c[..],
+                    &r[..],
+                    sel,
+                    rect.width.max(1),
+                    rect.height.max(1),
+                    false,
+                )
+            }));
+            ctx.render()?;
+            if !interactive {
+                // Non-TTY (piped/redirected): run one sweep without busy-pacing, then stop.
+                std::thread::sleep(Duration::from_millis(33));
+                continue;
+            }
+            if let Some(Event::Key(k)) = ctx.poll_event(Duration::from_millis(33))? {
+                let quit = matches!(k.code, KeyCode::Esc | KeyCode::Char('q'))
+                    || (k.code == KeyCode::Char('c')
+                        && k.modifiers.contains(KeyModifiers::CONTROL));
+                if quit {
+                    return Ok(());
+                }
+            }
+        }
+        if !interactive {
+            return Ok(());
+        }
     }
-    let _ = out.write_all(b"\x1b[0m\n");
 }
 
 // ---- tests: the pose law and render invariants ----------------------------------------
