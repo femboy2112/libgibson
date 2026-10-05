@@ -516,3 +516,157 @@ fn standard_preserves_semantics_across_the_responsive_and_capability_matrix() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// MEDIA_SHELF — the first cinematic grammar. Validates the frozen IR end to end:
+// the raster escape hatch, an animated (spring) grammar, and *lawful declared
+// omission*.
+// ---------------------------------------------------------------------------
+
+use gibson::ui::experience::MediaShelf;
+
+#[test]
+fn media_shelf_preserves_semantics_in_every_destination() {
+    let experience = fixture();
+    let mut shelf = MediaShelf::new();
+    let e = env(120, 40, ColorDepth::TrueColor);
+    for destination in 0..experience.destinations.len() {
+        let mut state = PresentationState::new(&experience);
+        for _ in 0..destination {
+            apply_intent(&experience, &mut state, Intent::NextGroup);
+        }
+        let presented = shelf.present(&experience, &state, &e, Duration::from_millis(500));
+        let required = required_semantics(&experience, &state);
+        let violations = presented.receipt.check(&required);
+        assert!(
+            violations.is_empty(),
+            "MEDIA_SHELF violated the law at destination {destination}: {violations:?}"
+        );
+    }
+}
+
+#[test]
+fn media_shelf_declared_omission_of_the_caption_is_lawful() {
+    let experience = fixture();
+    let mut shelf = MediaShelf::new();
+    // A viewport too short to carry the action caption.
+    let e = env(40, 8, ColorDepth::TrueColor);
+    let state = PresentationState::new(&experience); // library, item 0 (has play-0)
+    let presented = shelf.present(&experience, &state, &e, Duration::from_millis(500));
+    // The action was dropped but DECLARED, so the law still holds.
+    assert!(
+        presented
+            .receipt
+            .omitted
+            .contains(&gibson::ui::element::Key::named("play-0")),
+        "expected the caption's action to be a declared omission; omitted={:?}",
+        presented.receipt.omitted
+    );
+    let required = required_semantics(&experience, &state);
+    assert!(
+        presented.receipt.check(&required).is_empty(),
+        "a *declared* omission must still satisfy the law: {:?}",
+        presented.receipt.check(&required)
+    );
+}
+
+#[test]
+fn media_shelf_represents_the_action_when_there_is_room() {
+    let experience = fixture();
+    let mut shelf = MediaShelf::new();
+    let e = env(120, 40, ColorDepth::TrueColor);
+    let state = PresentationState::new(&experience);
+    let presented = shelf.present(&experience, &state, &e, Duration::from_millis(500));
+    assert!(presented
+        .receipt
+        .actions
+        .contains(&gibson::ui::element::Key::named("play-0")));
+    assert!(presented.receipt.omitted.is_empty());
+}
+
+#[test]
+fn switching_to_media_shelf_preserves_selection() {
+    let experience = fixture();
+    let e = env(120, 40, ColorDepth::TrueColor);
+    let mut state = PresentationState::new(&experience);
+    for _ in 0..3 {
+        apply_intent(&experience, &mut state, Intent::Next); // select alb-3
+    }
+    let mut standard = Standard::new();
+    let before = standard.present(&experience, &state, &e, Duration::ZERO);
+    let mut shelf = MediaShelf::new();
+    let after = shelf.present(&experience, &state, &e, Duration::from_millis(16));
+    assert_eq!(after.receipt.selected, before.receipt.selected);
+    assert_eq!(
+        after.receipt.active_destination,
+        before.receipt.active_destination
+    );
+    assert_eq!(
+        after.receipt.selected,
+        Some(gibson::ui::element::Key::named("alb-3"))
+    );
+}
+
+#[test]
+fn media_shelf_binds_left_right_to_item_motion() {
+    let experience = fixture();
+    let shelf = MediaShelf::new();
+    let mut state = PresentationState::new(&experience);
+    // Right advances the item under the shelf (STANDARD used Down for this).
+    let msg = handle_key(&shelf, &experience, &mut state, &press(KeyCode::Right));
+    assert_eq!(msg, None);
+    assert_eq!(state.selection(), 1);
+    let msg = handle_key(&shelf, &experience, &mut state, &press(KeyCode::Left));
+    assert_eq!(msg, None);
+    assert_eq!(state.selection(), 0);
+}
+
+#[test]
+fn media_shelf_spring_settles_on_the_selection() {
+    let experience = fixture();
+    let mut shelf = MediaShelf::new();
+    let e = env(120, 40, ColorDepth::TrueColor);
+    let mut state = PresentationState::new(&experience);
+    for _ in 0..4 {
+        apply_intent(&experience, &mut state, Intent::Next); // target item 4
+    }
+    // Drive ~2.5 s of frames at 60fps toward the fixed target.
+    let mut t = 0u64;
+    for _ in 0..150 {
+        t += 16;
+        shelf.present(&experience, &state, &e, Duration::from_millis(t));
+    }
+    assert!(
+        shelf.is_settled(state.selection()),
+        "spring should have settled on the selection after 2.5s"
+    );
+}
+
+#[test]
+fn media_shelf_preserves_semantics_across_the_responsive_and_capability_matrix() {
+    let experience = fixture();
+    let sizes = [(160, 50), (120, 40), (80, 24), (60, 20), (42, 15)];
+    let depths = [
+        ColorDepth::TrueColor,
+        ColorDepth::Ansi256,
+        ColorDepth::Ansi16,
+        ColorDepth::Mono,
+    ];
+    for (w, h) in sizes {
+        for depth in depths {
+            let mut shelf = MediaShelf::new();
+            let e = env(w, h, depth);
+            let mut state = PresentationState::new(&experience);
+            for _ in 0..experience.destinations.len() {
+                let presented = shelf.present(&experience, &state, &e, Duration::from_millis(500));
+                let required = required_semantics(&experience, &state);
+                let violations = presented.receipt.check(&required);
+                assert!(
+                    violations.is_empty(),
+                    "MEDIA_SHELF law violated at {w}x{h} {depth:?}: {violations:?}"
+                );
+                apply_intent(&experience, &mut state, Intent::NextGroup);
+            }
+        }
+    }
+}

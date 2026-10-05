@@ -52,12 +52,14 @@
 
 pub mod grammar;
 pub mod intent;
+pub mod media_shelf;
 pub mod model;
 pub mod receipt;
 pub mod standard;
 
 pub use grammar::{Grammar, Presented};
 pub use intent::{apply_intent, Intent, PresentationState, SemanticInput};
+pub use media_shelf::MediaShelf;
 pub use model::{Action, Content, Custom, Destination, Experience, Facet, Item, Media, Priority};
 pub use receipt::{required_semantics, LawViolation, PresentationReceipt, RequiredSemantics};
 pub use standard::Standard;
