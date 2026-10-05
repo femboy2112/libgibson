@@ -32,7 +32,7 @@ use super::grammar::{FrameDemand, Grammar, Presented};
 use super::intent::{Intent, PresentationState, SemanticInput};
 use super::model::{Content, CustomCx, Experience};
 use super::motion::DampedSpring;
-use super::paint::{hsv, mix, seed_for};
+use super::paint::{hsv, mix, pill_rail, seed_for};
 use super::receipt::PresentationReceipt;
 use crate::capability::ColorDepth;
 use crate::input::{KeyCode, KeyEvent};
@@ -447,25 +447,25 @@ impl<A: Clone> Grammar<A> for Orbital {
             .unwrap_or_else(|| Key::named("∅"));
         let mut receipt = PresentationReceipt::new("ORBITAL", active_key);
 
-        // The destination strip: every destination a keyed node. The active one is
-        // marked by a glyph (`◉` vs `○`), so the mark survives Mono — not emphasis
-        // alone.
-        let mut strip = row::<A>().gap(2);
-        for (index, destination) in experience.destinations.iter().enumerate() {
-            receipt.destinations.push(destination.key.clone());
-            let glyph = if index == active_idx { '◉' } else { '○' };
-            let mut tab = text::<A>(format!("{glyph} {}", destination.title))
-                .key(destination.key.to_string());
-            if index == active_idx {
-                // Accent colour + the `◉` glyph mark the active destination (both
-                // mono-safe); no filled `selected` bg, so the text blends into the
-                // dark field instead of punching an opaque block.
-                tab = tab.emphasis(Emphasis::Strong).tone(Tone::Accent);
-            } else {
-                tab = tab.emphasis(Emphasis::Faint);
-            }
-            strip = strip.child(tab);
-        }
+        // The destination rail: baked rounded pills (the ethos chip) rather than a
+        // row of opaque text nodes. The active one is bright and marked by `◉` vs
+        // `○` (mono-safe). Rendered, so every destination is attested in
+        // `receipt.rastered` instead of as a keyed node.
+        let rail_entries: Vec<(String, bool)> = experience
+            .destinations
+            .iter()
+            .enumerate()
+            .map(|(index, destination)| {
+                receipt.destinations.push(destination.key.clone());
+                receipt.rastered.push(destination.key.clone());
+                let glyph = if index == active_idx { '◉' } else { '○' };
+                (
+                    format!("{glyph} {}", destination.title),
+                    index == active_idx,
+                )
+            })
+            .collect();
+        let strip = raster::<A>(pill_rail(env.width.saturating_sub(2), &rail_entries));
 
         // Rows the layout leaves for the body: screen padding (2), the strip (1) and
         // the gap under it (1), one row for the caption when it fits.

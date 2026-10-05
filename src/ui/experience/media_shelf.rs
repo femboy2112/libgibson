@@ -21,7 +21,7 @@ use super::grammar::{FrameDemand, Grammar, Presented};
 use super::intent::{Intent, PresentationState, SemanticInput};
 use super::model::{Content, CustomCx, Experience};
 use super::motion::DampedSpring;
-use super::paint::{cover_art, seed_for};
+use super::paint::{cover_art, pill_rail, seed_for};
 use super::receipt::PresentationReceipt;
 use crate::capability::ColorDepth;
 use crate::geom::Vec3;
@@ -213,23 +213,20 @@ impl<A: Clone> Grammar<A> for MediaShelf {
         let mut receipt = PresentationReceipt::new("MEDIA_SHELF", active_key);
         for destination in &experience.destinations {
             receipt.destinations.push(destination.key.clone());
+            // The rail is baked (see below), so each destination is attested rastered.
+            receipt.rastered.push(destination.key.clone());
         }
 
-        // A subtle destination strip: the active title, dim siblings as position.
-        // Each tab is keyed so the receipt's destination claims are accountable to
-        // the rendered tree.
-        let mut strip = row::<A>().gap(2);
-        for (index, destination) in experience.destinations.iter().enumerate() {
-            let mut tab = text::<A>(destination.title.clone()).key(destination.key.to_string());
-            if index == active_idx {
-                // Bold (mono-safe) marks the active destination; no filled `selected`
-                // bg, so the strip blends into the backdrop rather than boxing a word.
-                tab = tab.emphasis(Emphasis::Strong);
-            } else {
-                tab = tab.emphasis(Emphasis::Faint);
-            }
-            strip = strip.child(tab);
-        }
+        // The destination rail: baked rounded pills (the ethos chip) rather than a
+        // row of opaque text nodes — the active title in a bright pill, the others
+        // in faint ones, on a scrim that blends into the backdrop.
+        let rail_entries: Vec<(String, bool)> = experience
+            .destinations
+            .iter()
+            .enumerate()
+            .map(|(index, d)| (d.title.clone(), index == active_idx))
+            .collect();
+        let strip = raster::<A>(pill_rail(env.width.saturating_sub(2), &rail_entries));
 
         // Still settling toward the selection → ask for frames; parked → rest.
         let mut demand = FrameDemand::OnChange;
