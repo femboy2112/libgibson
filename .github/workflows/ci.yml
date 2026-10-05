@@ -80,6 +80,13 @@ jobs:
         # the default `cargo test` suite. Build-only coverage is insufficient.
         run: cargo test --example skin_gallery --example polished_agent_ui --example ui_showcase --example large_collection
 
+      - name: Spatial example tests
+        # Album Flow's pose law, derived reflections, responsive sizing and mono
+        # fallback are demo-local and tested in the example itself. Experience Lab
+        # proves — headlessly — that one semantic app renders through every grammar
+        # and that the selection survives a live style switch (milestone §24).
+        run: cargo test --example album_flow --example experience_lab
+
       - name: Documentation
         env:
           RUSTDOCFLAGS: -D warnings

@@ -32,6 +32,9 @@ fn lerp(a: Point, b: Point, t: f64) -> Point {
         a[2] + (b[2] - a[2]) * t,
     ]
 }
+fn lerp2(a: [f64; 2], b: [f64; 2], t: f64) -> [f64; 2] {
+    [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+}
 
 /// Right-handed look-at camera with positive forward depth; vertical FOV is radians.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -153,6 +156,35 @@ impl View {
                 let db = self.distance(b, plane);
                 if (da >= 0.) != (db >= 0.) {
                     output.push(lerp(a, b, da / (da - db)));
+                }
+                if db >= 0. {
+                    output.push(b);
+                }
+                a = b;
+                da = db;
+            }
+            polygon = output;
+        }
+        polygon
+    }
+    /// Sutherland–Hodgman clip of a UV-carrying triangle against all six camera
+    /// planes. Texture coordinates are interpolated by the same edge parameter as
+    /// the camera-space position, so an attribute stays bound to its geometry
+    /// across a clip (including a near-plane crossing).
+    fn clip_textured(&self, triangle: [(Point, [f64; 2]); 3]) -> Vec<(Point, [f64; 2])> {
+        let mut polygon = triangle.to_vec();
+        for plane in 0..6 {
+            if polygon.is_empty() {
+                break;
+            }
+            let mut output = Vec::with_capacity(10);
+            let mut a = *polygon.last().unwrap();
+            let mut da = self.distance(a.0, plane);
+            for &b in &polygon {
+                let db = self.distance(b.0, plane);
+                if (da >= 0.) != (db >= 0.) {
+                    let t = da / (da - db);
+                    output.push((lerp(a.0, b.0, t), lerp2(a.1, b.1, t)));
                 }
                 if db >= 0. {
                     output.push(b);
@@ -514,5 +546,144 @@ impl Rasterizer {
                 self.write_depth(q[0].floor() as i32, q[1].floor() as i32, depth, color);
             }
         }
+    }
+    /// Draw an existing [`RgbRaster`] as a perspective-correct, depth-tested media
+    /// plane. `corners` are world-space positions in `TL → TR → BR → BL` order,
+    /// mapped to texture coordinates `(0,0) → (1,0) → (1,1) → (0,1)`: `u` grows
+    /// along the first edge, `v` along the last, matching image rows. The quad is
+    /// two triangles sharing the same sampler; it is clipped to all six camera
+    /// planes, occludes and is occluded through the shared z-buffer, and is sampled
+    /// nearest-neighbour. Non-finite corners, a degenerate (zero-area) quad, and a
+    /// zero-sized texture draw nothing and return `false`. The plane is **not**
+    /// backface-culled — a media plane shows its texture from either side. Returns
+    /// whether any pixel was written. Fog, if set, composites as for triangles.
+    pub fn textured_quad(
+        &mut self,
+        corners: [Vec3; 4],
+        texture: &RgbRaster,
+        camera: &Camera,
+    ) -> bool {
+        // Public raster replacement is supported; restore matching depth storage.
+        self.sync_depth();
+        if texture.width() == 0 || texture.height() == 0 {
+            return false;
+        }
+        if corners.iter().any(|v| !v.is_finite()) {
+            return false;
+        }
+        let Some(view) = camera.view(self.raster.width(), self.raster.height()) else {
+            return false;
+        };
+        let uv = [[0., 0.], [1., 0.], [1., 1.], [0., 1.]];
+        let mut drew = false;
+        // Fan the quad into two triangles over the shared diagonal 0–2.
+        for tri in [[0usize, 1, 2], [0, 2, 3]] {
+            self.stats.triangles_submitted = self.stats.triangles_submitted.saturating_add(1);
+            let verts = tri.map(|i| (view.camera(p(corners[i])), uv[i]));
+            if self.textured_triangle(verts, &view, texture) {
+                self.stats.triangles_drawn = self.stats.triangles_drawn.saturating_add(1);
+                drew = true;
+            }
+        }
+        drew
+    }
+    fn textured_triangle(
+        &mut self,
+        verts: [(Point, [f64; 2]); 3],
+        view: &View,
+        texture: &RgbRaster,
+    ) -> bool {
+        let polygon = view.clip_textured(verts);
+        if polygon.len() < 3 {
+            return false;
+        }
+        let mut drawn = false;
+        for i in 1..polygon.len() - 1 {
+            drawn |= self.fill_textured([polygon[0], polygon[i], polygon[i + 1]], view, texture);
+        }
+        drawn
+    }
+    fn fill_textured(
+        &mut self,
+        tri: [(Point, [f64; 2]); 3],
+        view: &View,
+        texture: &RgbRaster,
+    ) -> bool {
+        // Project to pixel space; the third component is reciprocal depth 1/z.
+        let v = [
+            view.project(tri[0].0),
+            view.project(tri[1].0),
+            view.project(tri[2].0),
+        ];
+        let edge = |a: Point, b: Point, x: f64, y: f64| {
+            (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0])
+        };
+        let area = edge(v[0], v[1], v[2][0], v[2][1]);
+        if area.abs() < 1e-12 || !area.is_finite() {
+            return false;
+        }
+        // Carry texture coords divided by z for perspective-correct interpolation:
+        // u = sum(bary_i * u_i / z_i) / sum(bary_i / z_i). v[i][2] already holds 1/z_i.
+        let uz = [
+            [tri[0].1[0] * v[0][2], tri[0].1[1] * v[0][2]],
+            [tri[1].1[0] * v[1][2], tri[1].1[1] * v[1][2]],
+            [tri[2].1[0] * v[2][2], tri[2].1[1] * v[2][2]],
+        ];
+        let (tw, th) = (texture.width() as f64, texture.height() as f64);
+        let x0 = v
+            .iter()
+            .map(|p| p[0])
+            .fold(f64::INFINITY, f64::min)
+            .floor()
+            .max(0.) as i32;
+        let x1 = v
+            .iter()
+            .map(|p| p[0])
+            .fold(f64::NEG_INFINITY, f64::max)
+            .ceil()
+            .min(self.raster.width() as f64 - 1.) as i32;
+        let y0 = v
+            .iter()
+            .map(|p| p[1])
+            .fold(f64::INFINITY, f64::min)
+            .floor()
+            .max(0.) as i32;
+        let y1 = v
+            .iter()
+            .map(|p| p[1])
+            .fold(f64::NEG_INFINITY, f64::max)
+            .ceil()
+            .min(self.raster.height() as f64 - 1.) as i32;
+        let mut drawn = false;
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                let (px, py) = (x as f64 + 0.5, y as f64 + 0.5);
+                let a = edge(v[1], v[2], px, py) / area;
+                let b = edge(v[2], v[0], px, py) / area;
+                let c = 1. - a - b;
+                if a < -1e-10 || b < -1e-10 || c < -1e-10 {
+                    continue;
+                }
+                let inverse = a * v[0][2] + b * v[1][2] + c * v[2][2];
+                if inverse <= 0. || !inverse.is_finite() {
+                    continue;
+                }
+                let depth = 1. / inverse;
+                let u = (a * uz[0][0] + b * uz[1][0] + c * uz[2][0]) / inverse;
+                let w = (a * uz[0][1] + b * uz[1][1] + c * uz[2][1]) / inverse;
+                if !u.is_finite() || !w.is_finite() {
+                    continue;
+                }
+                // Nearest-neighbour sample; clamp UV into the texel grid.
+                let tx = ((u.clamp(0., 1.) * tw).floor() as i64).clamp(0, tw as i64 - 1) as i32;
+                let ty = ((w.clamp(0., 1.) * th).floor() as i64).clamp(0, th as i64 - 1) as i32;
+                let Some(texel) = texture.get(tx, ty) else {
+                    continue;
+                };
+                let color = self.shade((texel.0 as f64, texel.1 as f64, texel.2 as f64), depth);
+                drawn |= self.write_depth(x, y, depth, color);
+            }
+        }
+        drawn
     }
 }
