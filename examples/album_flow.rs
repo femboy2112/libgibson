@@ -12,7 +12,10 @@
 //! are *derived* from each cover (mirrored across its bottom edge, faded), never authored
 //! independently. Motion is a damped spring on the (fractional) selection.
 //!
-//! Run it:  `cargo run --example album_flow`  (Esc / q / Ctrl-C to quit).
+//! Run it:  `cargo run --release --example album_flow`  (Esc / q / Ctrl-C to quit).
+//! Use `--release`: debug rasterization is several times slower and can stutter at large
+//! sizes. The live demo also self-tunes its draw size to the frame budget, so it stays
+//! smooth even then. Diagnostics: `album_flow info`.
 //! Offline:  `album_flow capture <sel> <out.ppm>` / `album_flow frames <dir> [w] [h]`.
 
 use std::io;
@@ -40,10 +43,17 @@ const DEPTH_NEAR: f32 = 2.3; // z recession reaching the first neighbour
 const DEPTH_FAR: f32 = 0.45; // z recession per cover beyond it
 const YAW_MAX: f32 = 0.78; // fan angle (~45°) held by all side covers
 const BG: Rgb = (13, 15, 26); // a deep ink-blue, lifted so receding covers keep a dark-on-dark halo
-                              // Cap the live-demo draw region so per-frame cost stays bounded at any window size; the
-                              // capped shelf is centred on a background field. (Offline capture/frames pick their own size.)
-const MAX_COLS: u16 = 140;
-const MAX_ROWS: u16 = 44;
+
+// Adaptive live-demo draw bounds (cells). The drawn shelf is centred on a background field and
+// sized between MIN and MAX, self-tuned to the frame budget (see run_live). Starting modest
+// keeps frame one smooth; it grows only if there is headroom. (Offline capture/frames pick
+// their own size.)
+const DRAW_MIN_COLS: u16 = 56;
+const DRAW_MIN_ROWS: u16 = 18;
+const DRAW_START_COLS: u16 = 100;
+const DRAW_START_ROWS: u16 = 30;
+const DRAW_MAX_COLS: u16 = 200;
+const DRAW_MAX_ROWS: u16 = 60;
 
 /// A cover's world pose: the centre of its card and its rotation about the vertical axis.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -359,22 +369,18 @@ fn main() -> io::Result<()> {
 
     let args: Vec<String> = std::env::args().collect();
 
-    // Diagnostics: report the terminal size the demo sees and whether the draw cap engages.
-    // `album_flow info`
+    // Diagnostics: report the terminal size and the adaptive draw bounds. `album_flow info`
     if args.get(1).map(String::as_str) == Some("info") {
         let ctx = Context::inline()?;
         let (c, r) = ctx.session.terminal_size();
-        println!("terminal: {c} x {r} cells   is_tty={}", ctx.session.is_tty);
-        println!("draw cap: {MAX_COLS} x {MAX_ROWS} cells");
-        if c > MAX_COLS || r > MAX_ROWS {
-            println!(
-                "capping:  ENGAGED -> drawing {} x {} centred",
-                c.min(MAX_COLS),
-                r.min(MAX_ROWS)
-            );
-        } else {
-            println!("capping:  not engaged (window is at or under the cap)");
-        }
+        let (sc, sr) = clamp_draw(DRAW_START_COLS, DRAW_START_ROWS, c, r);
+        println!(
+            "terminal:   {c} x {r} cells   is_tty={}",
+            ctx.session.is_tty
+        );
+        println!("draw bounds: {DRAW_MIN_COLS}x{DRAW_MIN_ROWS} .. {DRAW_MAX_COLS}x{DRAW_MAX_ROWS} cells (adaptive)");
+        println!("starts at:   {sc} x {sr}, self-tuning to the frame budget");
+        println!("note: run with --release; debug rasterization is several times slower");
         return Ok(());
     }
 
@@ -422,21 +428,20 @@ fn main() -> io::Result<()> {
     result
 }
 
-/// The live-demo root: the cover shelf drawn into a size-capped canvas, centred on a
-/// background field. Bounding the canvas keeps per-frame rasterization cost constant
-/// regardless of window size (fullscreen would otherwise blow the frame budget and tear),
-/// and the canvas MUST be sized — an unsized canvas collapses to zero (a black screen).
+/// The live-demo root: the cover shelf drawn into a canvas of exactly `draw_cols × draw_rows`
+/// cells, centred on a background field that fills the terminal. The canvas MUST be sized —
+/// an unsized canvas collapses to zero (a black screen). The draw size is chosen adaptively
+/// (see [`run_live`]) so per-frame cost stays within budget on any hardware/terminal, and the
+/// shelf is centred with background margins rather than scaling to the whole window.
 fn demo_root(
     covers: &Arc<Vec<RgbRaster>>,
     reflections: &Arc<Vec<RgbRaster>>,
     sel: f32,
-    term_cols: u16,
-    term_rows: u16,
+    draw_cols: u16,
+    draw_rows: u16,
 ) -> Node {
     let c = Arc::clone(covers);
     let r = Arc::clone(reflections);
-    let ew = term_cols.clamp(1, MAX_COLS);
-    let eh = term_rows.clamp(1, MAX_ROWS);
     Node::row()
         .percent_width(100.0)
         .percent_height(100.0)
@@ -454,9 +459,23 @@ fn demo_root(
                     false,
                 )
             })
-            .width(ew as f32)
-            .height(eh as f32),
+            .width(draw_cols.max(1) as f32)
+            .height(draw_rows.max(1) as f32),
         )
+}
+
+/// Clamp a draw size to the window and the adaptive bounds.
+fn clamp_draw(cols: u16, rows: u16, term_cols: u16, term_rows: u16) -> (u16, u16) {
+    (
+        cols.clamp(
+            DRAW_MIN_COLS.min(term_cols.max(1)),
+            DRAW_MAX_COLS.min(term_cols.max(1)),
+        ),
+        rows.clamp(
+            DRAW_MIN_ROWS.min(term_rows.max(1)),
+            DRAW_MAX_ROWS.min(term_rows.max(1)),
+        ),
+    )
 }
 
 fn run_live(
@@ -466,11 +485,42 @@ fn run_live(
 ) -> io::Result<()> {
     let interactive = ctx.session.is_tty;
     let selections = demo_selections();
+    // Adaptive draw size: start modest (smooth from frame one), then grow toward the largest
+    // size that holds the frame budget, or shrink if frames run long. `ctx.render()` includes
+    // the terminal write+flush, so a slow terminal shows up as backpressure here too — the
+    // tuning adapts to render cost AND terminal bandwidth, not just one of them.
+    let (mut draw_cols, mut draw_rows) = {
+        let (tw, th) = ctx.session.terminal_size();
+        clamp_draw(DRAW_START_COLS, DRAW_START_ROWS, tw, th)
+    };
+    let mut ema_ms = 0.0f32;
+    let mut frame = 0u64;
     loop {
         for &sel in &selections {
             let (tw, th) = ctx.session.terminal_size();
-            ctx.set_root(demo_root(covers, reflections, sel, tw, th));
+            let (dc, dr) = clamp_draw(draw_cols, draw_rows, tw, th);
+            ctx.set_root(demo_root(covers, reflections, sel, dc, dr));
+            let t0 = std::time::Instant::now();
             ctx.render()?;
+            let ms = t0.elapsed().as_secs_f32() * 1000.0;
+            ema_ms = if frame == 0 {
+                ms
+            } else {
+                ema_ms * 0.8 + ms * 0.2
+            };
+            frame += 1;
+            // Retune every 10 frames with a wide dead zone (14..26ms) to avoid oscillation.
+            if interactive && frame % 10 == 0 {
+                if ema_ms > 26.0 {
+                    draw_cols = ((draw_cols as f32 * 0.85) as u16).max(DRAW_MIN_COLS);
+                    draw_rows = ((draw_rows as f32 * 0.85) as u16).max(DRAW_MIN_ROWS);
+                } else if ema_ms < 14.0
+                    && (dc < tw.min(DRAW_MAX_COLS) || dr < th.min(DRAW_MAX_ROWS))
+                {
+                    draw_cols = ((draw_cols as f32 * 1.12) as u16).min(DRAW_MAX_COLS);
+                    draw_rows = ((draw_rows as f32 * 1.12) as u16).min(DRAW_MAX_ROWS);
+                }
+            }
             if !interactive {
                 // Non-TTY (piped/redirected): run one sweep without busy-pacing, then stop.
                 std::thread::sleep(Duration::from_millis(33));
@@ -684,19 +734,20 @@ mod tests {
     }
 
     #[test]
-    fn demo_root_is_not_blank_and_caps_the_draw_region() {
+    fn demo_root_is_not_blank_and_bounded_to_its_draw_size() {
         // Guards two regressions at once: the black screen (an unsized canvas collapses to
-        // zero) and the fullscreen slowdown (the draw region must stay capped, not scale
-        // with the window). Rendered into a window larger than the cap on both axes.
+        // zero) and the fullscreen slowdown (the shelf must stay at its draw size, centred,
+        // not scale to fill the window). Draw size is deliberately smaller than the window.
         let covers = Arc::new(
             (0..NUM_COVERS)
                 .map(|i| cover_art(i as u32))
                 .collect::<Vec<_>>(),
         );
         let refl = Arc::new(covers.iter().map(reflection_texture).collect::<Vec<_>>());
+        let (dc, dr) = (120u16, 36u16);
         let (cols, rows) = (200u16, 60u16);
         let mut ctx = Context::headless(gibson::RenderMode::Fullscreen, cols, rows);
-        ctx.set_root(demo_root(&covers, &refl, 3.0, cols, rows));
+        ctx.set_root(demo_root(&covers, &refl, 3.0, dc, dr));
         ctx.render().expect("headless render");
         let lines = ctx.last_frame_lines();
         assert_eq!(lines.len(), rows as usize, "root fills every row");
@@ -704,14 +755,14 @@ mod tests {
             .iter()
             .map(|l| l.chars().filter(|ch| !ch.is_whitespace()).count())
             .sum();
-        let cap_cells = MAX_COLS as usize * MAX_ROWS as usize;
+        let bound = dc as usize * dr as usize;
         assert!(
-            drawn > cap_cells / 4,
+            drawn > bound / 4,
             "not a black screen: expected a populated shelf, got {drawn} drawn cells"
         );
         assert!(
-            drawn <= cap_cells,
-            "draw region must be capped and centred, not full-screen: {drawn} > {cap_cells}"
+            drawn <= bound,
+            "shelf must stay at its draw size and be centred, not fill the window: {drawn} > {bound}"
         );
     }
 }
