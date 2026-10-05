@@ -50,6 +50,7 @@
 //! // switch: grammar = Box::new(OtherGrammar::new());  // selection survives
 //! ```
 
+pub mod blades;
 pub mod cross_media;
 pub mod grammar;
 pub mod intent;
@@ -60,6 +61,7 @@ pub mod panorama;
 pub mod receipt;
 pub mod standard;
 
+pub use blades::Blades;
 pub use cross_media::CrossMedia;
 pub use grammar::{Grammar, Presented};
 pub use intent::{apply_intent, Intent, PresentationState, SemanticInput};

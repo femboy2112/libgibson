@@ -816,7 +816,7 @@ fn media_shelf_preserves_semantics_across_the_responsive_and_capability_matrix()
 // CROSS_MEDIA and the all-grammars parametric contracts.
 // ---------------------------------------------------------------------------
 
-use gibson::ui::experience::{CrossMedia, Orbital, Panorama};
+use gibson::ui::experience::{Blades, CrossMedia, Orbital, Panorama};
 
 fn all_grammars() -> Vec<(&'static str, Box<dyn Grammar<Msg>>)> {
     vec![
@@ -825,6 +825,7 @@ fn all_grammars() -> Vec<(&'static str, Box<dyn Grammar<Msg>>)> {
         ("CROSS_MEDIA", Box::new(CrossMedia::new())),
         ("ORBITAL", Box::new(Orbital::new())),
         ("PANORAMA", Box::new(Panorama::new())),
+        ("BLADES", Box::new(Blades::new())),
     ]
 }
 
@@ -1112,4 +1113,138 @@ fn paint_orbital(
     let mut surface = gibson::Surface::new(e.width, e.height);
     gibson::paint(&node, &mut surface);
     surface
+}
+
+// ---------------------------------------------------------------------------
+// BLADES — the depth-plane grammar.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn blades_preserves_semantics_across_destinations_and_matrix() {
+    let experience = fixture();
+    let sizes = [(160, 50), (120, 40), (80, 24), (60, 20), (42, 15)];
+    let depths = [
+        ColorDepth::TrueColor,
+        ColorDepth::Ansi256,
+        ColorDepth::Ansi16,
+        ColorDepth::Mono,
+    ];
+    for (w, h) in sizes {
+        for depth in depths {
+            let mut blades = Blades::new();
+            let e = env(w, h, depth);
+            let mut state = PresentationState::new(&experience);
+            // Walk every destination; at each, walk every item, so the rendered law
+            // is checked for every (destination, selection) pair — including the
+            // occluded blades, which must stay represented while hidden.
+            let mut now = 0u64;
+            for destination in 0..experience.destinations.len() {
+                let items = experience.destinations[destination]
+                    .content
+                    .selectable_len();
+                for step in 0..items.max(1) {
+                    // Mid-glide frames (the stack still sliding) must be faithful too.
+                    for _ in 0..3 {
+                        now += 40;
+                        let presented =
+                            blades.present(&experience, &state, &e, Duration::from_millis(now));
+                        let required = required_semantics(&experience, &state);
+                        let violations = presented.check(&required);
+                        assert!(
+                            violations.is_empty(),
+                            "BLADES law violated at {w}x{h} {depth:?} dest {destination} \
+                             item {step}: {violations:?}"
+                        );
+                        assert_eq!(presented.receipt.style, "BLADES");
+                    }
+                    apply_intent(&experience, &mut state, Intent::Next);
+                }
+                apply_intent(&experience, &mut state, Intent::NextGroup);
+            }
+        }
+    }
+}
+
+#[test]
+fn blades_navigation_moves_the_stack_and_items() {
+    let experience = fixture();
+    let mut blades = Blades::new();
+    let mut state = PresentationState::new(&experience);
+    let e = env(120, 40, ColorDepth::TrueColor);
+
+    // The stack is vertical: Down/Up change blade (destination)...
+    handle_key(&blades, &experience, &mut state, &press(KeyCode::Down));
+    assert_eq!(act(&state, &experience), 1);
+    handle_key(&blades, &experience, &mut state, &press(KeyCode::Up));
+    assert_eq!(act(&state, &experience), 0);
+    // ...and Right/Left move within the foremost blade's items.
+    handle_key(&blades, &experience, &mut state, &press(KeyCode::Right));
+    assert_eq!(sel(&state, &experience), 1);
+    handle_key(&blades, &experience, &mut state, &press(KeyCode::Left));
+    assert_eq!(sel(&state, &experience), 0);
+    handle_key(&blades, &experience, &mut state, &press(KeyCode::End));
+    assert_eq!(sel(&state, &experience), 4);
+    handle_key(&blades, &experience, &mut state, &press(KeyCode::Home));
+    assert_eq!(sel(&state, &experience), 0);
+    // Enter hands back the primary action; Esc/Backspace are Back (a no-op at top).
+    let msg = handle_key(&blades, &experience, &mut state, &press(KeyCode::Enter));
+    assert_eq!(msg, Some(Msg::Play("alb-0".into())));
+    assert_eq!(
+        handle_key(&blades, &experience, &mut state, &press(KeyCode::Esc)),
+        None
+    );
+    assert_eq!(
+        handle_key(&blades, &experience, &mut state, &press(KeyCode::Backspace)),
+        None
+    );
+    assert!(blades
+        .interpret(&press(KeyCode::Char('x')), &experience, &state)
+        .is_none());
+
+    // The stack genuinely moves: settled at the start, mid-glide right after a
+    // destination change, settled again on the new destination once time passes.
+    let mut now = 0u64;
+    blades.present(&experience, &state, &e, Duration::from_millis(now));
+    assert!(
+        blades.is_settled(0),
+        "first frame starts on the active blade"
+    );
+    handle_key(&blades, &experience, &mut state, &press(KeyCode::Down));
+    handle_key(&blades, &experience, &mut state, &press(KeyCode::Down));
+    assert_eq!(act(&state, &experience), 2);
+    now += 16;
+    blades.present(&experience, &state, &e, Duration::from_millis(now));
+    assert!(!blades.is_settled(2), "the stack should be mid-glide");
+    for _ in 0..200 {
+        now += 16;
+        blades.present(&experience, &state, &e, Duration::from_millis(now));
+    }
+    assert!(blades.is_settled(2), "the stack should settle on the blade");
+
+    // Reversal mid-glide stays coherent: the semantic state, not the animation,
+    // decides what is active.
+    handle_key(&blades, &experience, &mut state, &press(KeyCode::Up));
+    now += 16;
+    let presented = blades.present(&experience, &state, &e, Duration::from_millis(now));
+    assert_eq!(presented.receipt.active_destination, key("now"));
+    assert!(presented
+        .check(&required_semantics(&experience, &state))
+        .is_empty());
+}
+
+#[test]
+fn blades_declares_the_action_omitted_when_the_viewport_is_too_short() {
+    let experience = fixture();
+    let mut blades = Blades::new();
+    let state = PresentationState::new(&experience);
+    let e = env(80, 8, ColorDepth::TrueColor);
+    let presented = blades.present(&experience, &state, &e, Duration::from_millis(16));
+    let required = required_semantics(&experience, &state);
+    assert!(presented.check(&required).is_empty());
+    assert!(presented.receipt.omitted.contains(&key("play-0")));
+    assert!(!presented.receipt.actions.contains(&key("play-0")));
+    // Every destination and item is still attested while the action is declared.
+    for destination in &experience.destinations {
+        assert!(presented.receipt.rastered.contains(&destination.key));
+    }
 }
