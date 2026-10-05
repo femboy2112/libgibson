@@ -357,8 +357,28 @@ fn main() -> io::Result<()> {
     let covers: Vec<RgbRaster> = (0..NUM_COVERS).map(|i| cover_art(i as u32)).collect();
     let reflections: Vec<RgbRaster> = covers.iter().map(reflection_texture).collect();
 
-    // Deterministic still capture: `album_flow capture <selection> <path.ppm>`.
     let args: Vec<String> = std::env::args().collect();
+
+    // Diagnostics: report the terminal size the demo sees and whether the draw cap engages.
+    // `album_flow info`
+    if args.get(1).map(String::as_str) == Some("info") {
+        let ctx = Context::inline()?;
+        let (c, r) = ctx.session.terminal_size();
+        println!("terminal: {c} x {r} cells   is_tty={}", ctx.session.is_tty);
+        println!("draw cap: {MAX_COLS} x {MAX_ROWS} cells");
+        if c > MAX_COLS || r > MAX_ROWS {
+            println!(
+                "capping:  ENGAGED -> drawing {} x {} centred",
+                c.min(MAX_COLS),
+                r.min(MAX_ROWS)
+            );
+        } else {
+            println!("capping:  not engaged (window is at or under the cap)");
+        }
+        return Ok(());
+    }
+
+    // Deterministic still capture: `album_flow capture <selection> <path.ppm>`.
     if args.get(1).map(String::as_str) == Some("capture") {
         let sel = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(3.0);
         let path = args.get(3).map(String::as_str).unwrap_or("album_flow.ppm");
