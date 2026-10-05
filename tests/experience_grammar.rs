@@ -1397,3 +1397,129 @@ fn a_non_media_collection_still_resolves_and_acts() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Temporal contract (§29-39): what each grammar's frame depends on in TIME,
+// so a terminal runtime knows when it may stop repainting. Verified by
+// painting through the real compile -> layout -> paint path and comparing the
+// resulting Surfaces (coalescing obsolete frames is only sound if a settled
+// frame is byte-identical).
+// ---------------------------------------------------------------------------
+
+/// Paint one grammar frame through the real pipeline, for Surface-level equality.
+fn paint_frame(
+    grammar: &mut dyn Grammar<Msg>,
+    experience: &Experience<Msg>,
+    state: &PresentationState,
+    e: &UiEnvironment,
+    now: Duration,
+) -> gibson::Surface {
+    let presented = grammar.present(experience, state, e, now);
+    let cx = gibson::ui::BuildCx::new(gibson::ui::skins::VAPOR95, *e);
+    let mut node = gibson::ui::compile(&presented.element, &cx)
+        .expect("grammar lowers to a valid element tree")
+        .node;
+    gibson::compute_layout(&mut node, e.width, e.height).unwrap();
+    let mut surface = gibson::Surface::new(e.width, e.height);
+    gibson::paint(&node, &mut surface);
+    surface
+}
+
+#[test]
+fn time_invariant_grammars_never_shimmer() {
+    // STANDARD, CROSS_MEDIA and PANORAMA ignore `now` entirely: the same semantic
+    // state yields a byte-identical frame no matter the clock, so a runtime may
+    // paint once and coalesce every later frame until the state changes.
+    let experience = fixture();
+    let e = env(120, 40, ColorDepth::TrueColor);
+    let state = PresentationState::new(&experience);
+    let stateless: Vec<(&str, Box<dyn Grammar<Msg>>)> = vec![
+        ("STANDARD", Box::new(Standard::new())),
+        ("CROSS_MEDIA", Box::new(CrossMedia::new())),
+        ("PANORAMA", Box::new(Panorama::new())),
+    ];
+    for (name, mut grammar) in stateless {
+        let a = paint_frame(&mut *grammar, &experience, &state, &e, Duration::ZERO);
+        let b = paint_frame(
+            &mut *grammar,
+            &experience,
+            &state,
+            &e,
+            Duration::from_secs(9),
+        );
+        assert_eq!(a, b, "{name} shimmered despite no state change");
+    }
+}
+
+#[test]
+fn springy_grammars_settle_to_a_still_frame() {
+    // MEDIA_SHELF and BLADES animate a damped spring, then settle. Once settled on
+    // a target, further frames at later times are byte-identical: the settle point
+    // is a true 0-diff, so the runtime can stop repainting.
+    let experience = fixture();
+    let e = env(120, 40, ColorDepth::TrueColor);
+    let state = PresentationState::new(&experience); // active destination 0
+
+    let mut shelf = MediaShelf::new();
+    let mut blades = Blades::new();
+    // Drive enough frames to let both springs settle on destination/selection 0.
+    let mut now = 0u64;
+    for _ in 0..400 {
+        now += 16;
+        shelf.present(&experience, &state, &e, Duration::from_millis(now));
+        blades.present(&experience, &state, &e, Duration::from_millis(now));
+    }
+    assert!(blades.is_settled(0), "BLADES spring did not settle");
+    assert!(shelf.is_settled(0), "MEDIA_SHELF spring did not settle");
+
+    // Two further frames at different times must be identical now.
+    let t1 = Duration::from_millis(now + 16);
+    let t2 = Duration::from_millis(now + 2000);
+    assert_eq!(
+        paint_frame(&mut shelf, &experience, &state, &e, t1),
+        paint_frame(&mut shelf, &experience, &state, &e, t2),
+        "MEDIA_SHELF shimmered after settling"
+    );
+    assert_eq!(
+        paint_frame(&mut blades, &experience, &state, &e, t1),
+        paint_frame(&mut blades, &experience, &state, &e, t2),
+        "BLADES shimmered after settling"
+    );
+}
+
+#[test]
+fn orbital_is_the_one_continuously_animated_grammar() {
+    // ORBITAL's ambient field (swirl, drifting motes, halo breathe) is a function
+    // of `now` with no settle point — so its frame genuinely differs over time
+    // even at a fixed selection. This is a declared boundary: a runtime must keep
+    // repainting ORBITAL while it is on screen. (Still deterministic at a fixed
+    // time, which the orbital determinism test already pins.)
+    let experience = fixture();
+    let e = env(120, 40, ColorDepth::TrueColor);
+    let state = PresentationState::new(&experience);
+    let mut orbital = Orbital::new();
+    // Prime the spring so the difference is the ambient field, not the entry glide.
+    let mut now = 0u64;
+    for _ in 0..200 {
+        now += 16;
+        orbital.present(&experience, &state, &e, Duration::from_millis(now));
+    }
+    let a = paint_frame(
+        &mut orbital,
+        &experience,
+        &state,
+        &e,
+        Duration::from_millis(now + 16),
+    );
+    let b = paint_frame(
+        &mut orbital,
+        &experience,
+        &state,
+        &e,
+        Duration::from_millis(now + 700),
+    );
+    assert_ne!(
+        a, b,
+        "ORBITAL is expected to animate continuously over time"
+    );
+}
