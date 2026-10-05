@@ -325,6 +325,24 @@ impl Spring {
     }
 }
 
+/// The scripted demo motion as a deterministic sequence of (fractional) selections: a
+/// damped-spring sweep forward across the whole shelf and part-way back, holding on each
+/// cover. Shared by the live animation and the frame-export mode so both move identically.
+fn demo_selections() -> Vec<f32> {
+    let mut script: Vec<f32> = (0..NUM_COVERS).map(|i| i as f32).collect();
+    script.extend((2..NUM_COVERS).rev().map(|i| i as f32));
+    let mut spring = Spring { x: 0.0, v: 0.0 };
+    let dt = 1.0 / 30.0;
+    let mut selections = Vec::new();
+    for target in script {
+        for _ in 0..16 {
+            spring.step(target, dt, 13.0, 0.72);
+            selections.push(spring.x);
+        }
+    }
+    selections
+}
+
 // ---- the live demo --------------------------------------------------------------------
 
 fn main() {
@@ -345,30 +363,40 @@ fn main() {
         return;
     }
 
+    // Deterministic frame export of the scripted motion: `album_flow frames <dir> [w] [h]`.
+    // Writes frame_0000.ppm … following the exact sequence the live demo animates.
+    if args.get(1).map(String::as_str) == Some("frames") {
+        let dir = args.get(2).map(String::as_str).unwrap_or(".");
+        let w: u16 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(360);
+        let h: u16 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(220);
+        std::fs::create_dir_all(dir).expect("create frame dir");
+        for (i, sel) in demo_selections().iter().enumerate() {
+            let raster = render_raster(&covers, &reflections, *sel, w, h);
+            let path = format!("{dir}/frame_{i:04}.ppm");
+            let file = std::fs::File::create(&path).expect("create frame file");
+            raster
+                .write_ppm(std::io::BufWriter::new(file))
+                .expect("write ppm");
+        }
+        eprintln!("wrote {} frames to {dir}", demo_selections().len());
+        return;
+    }
+
     let (cols, rows) = (120u16, 40u16);
-    let mut spring = Spring { x: 0.0, v: 0.0 };
     let mut comp = AnsiCompiler::new();
     let mut prev: Option<Surface> = None;
     let mut out = std::io::stdout();
     let _ = out.write_all(b"\x1b[2J\x1b[H");
 
-    // A scripted sweep across the shelf and part-way back, holding on each cover.
-    let mut script: Vec<f32> = (0..NUM_COVERS).map(|i| i as f32).collect();
-    script.extend((2..NUM_COVERS).rev().map(|i| i as f32));
-    let dt = 1.0 / 30.0;
-
-    for target in script {
-        for _ in 0..16 {
-            spring.step(target, dt, 13.0, 0.72);
-            let surf = render(&covers, &reflections, spring.x, cols, rows, false);
-            let diff = compute_diff(prev.as_ref(), &surf);
-            let bytes = comp.compile(&diff);
-            let _ = out.write_all(b"\x1b[H");
-            let _ = out.write_all(&bytes);
-            let _ = out.flush();
-            prev = Some(surf);
-            std::thread::sleep(Duration::from_millis(33));
-        }
+    for sel in demo_selections() {
+        let surf = render(&covers, &reflections, sel, cols, rows, false);
+        let diff = compute_diff(prev.as_ref(), &surf);
+        let bytes = comp.compile(&diff);
+        let _ = out.write_all(b"\x1b[H");
+        let _ = out.write_all(&bytes);
+        let _ = out.flush();
+        prev = Some(surf);
+        std::thread::sleep(Duration::from_millis(33));
     }
     let _ = out.write_all(b"\x1b[0m\n");
 }
@@ -545,5 +573,23 @@ mod tests {
         }
         assert!((s.x - 5.0).abs() < 1e-2, "spring settled at {}", s.x);
         assert!(s.v.abs() < 1e-2, "spring came to rest");
+    }
+
+    #[test]
+    fn demo_motion_is_deterministic_and_sweeps_the_shelf() {
+        let a = demo_selections();
+        let b = demo_selections();
+        assert_eq!(a, b, "scripted motion must be deterministic");
+        assert!(!a.is_empty());
+        assert!(
+            a[0].abs() < 0.5,
+            "starts near the first cover, got {}",
+            a[0]
+        );
+        let reach = a.iter().cloned().fold(f32::MIN, f32::max);
+        assert!(
+            reach > (NUM_COVERS - 2) as f32,
+            "motion must sweep out to the far end of the shelf, reached {reach}"
+        );
     }
 }
