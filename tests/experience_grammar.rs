@@ -902,7 +902,8 @@ fn cross_media_binds_the_cross_axes() {
 }
 
 // ---------------------------------------------------------------------------
-// PANORAMA — the typographic, planar panorama (no raster, no perspective).
+// PANORAMA — a rendered world (GL sky + focal cover + rasterised menu) with the
+// UI text baked into the surface; every semantic id is attested rastered.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -932,8 +933,16 @@ fn panorama_preserves_semantics_across_destinations_and_matrix() {
                         violations.is_empty(),
                         "PANORAMA violated the law at {w}x{h} {depth:?}: {violations:?}"
                     );
-                    // A Node grammar: nothing is attested rastered.
-                    assert!(presented.receipt.rastered.is_empty());
+                    // PANORAMA renders its UI into one raster surface, so every
+                    // destination it represents is attested rastered (the law above
+                    // already accepts keyed-node OR rastered; this pins the design).
+                    assert!(
+                        experience
+                            .destinations
+                            .iter()
+                            .all(|d| presented.receipt.rastered.contains(&d.key)),
+                        "every destination must be attested rastered at {w}x{h} {depth:?}"
+                    );
                     apply_intent(&experience, &mut state, Intent::Next);
                 }
                 apply_intent(&experience, &mut state, Intent::NextGroup);
@@ -1052,7 +1061,8 @@ fn orbital_navigation_rotates_the_ring() {
     let experience = fixture();
     let orbital = Orbital::new();
     let mut state = PresentationState::new(&experience);
-    // Left/Right turn the ring: Previous/Next item, clamped at the ends.
+    // Left/Right turn the ring; an orbit has no end, so the ring WRAPS (cyclic),
+    // unlike a shelf or a list.
     handle_key(&orbital, &experience, &mut state, &press(KeyCode::Right));
     assert_eq!(sel(&state, &experience), 1);
     handle_key(&orbital, &experience, &mut state, &press(KeyCode::Right));
@@ -1064,8 +1074,14 @@ fn orbital_navigation_rotates_the_ring() {
     handle_key(&orbital, &experience, &mut state, &press(KeyCode::Left));
     assert_eq!(
         sel(&state, &experience),
+        4,
+        "an orbit wraps: Left past the first lands on the last"
+    );
+    handle_key(&orbital, &experience, &mut state, &press(KeyCode::Right));
+    assert_eq!(
+        sel(&state, &experience),
         0,
-        "ring motion clamps, never wraps"
+        "and Right past the last wraps back to the first"
     );
     handle_key(&orbital, &experience, &mut state, &press(KeyCode::End));
     assert_eq!(sel(&state, &experience), 4);
@@ -1093,6 +1109,33 @@ fn orbital_navigation_rotates_the_ring() {
         at0,
         paint_orbital(&experience, &first, &e, t),
         "ORBITAL is deterministic at a fixed state and time"
+    );
+}
+
+/// The clamp-vs-wrap contract lives in `apply_intent`, grammar-independent: the
+/// plain item intents clamp at the ends, the cyclic ones wrap. A grammar chooses
+/// which pair to emit (a shelf clamps, an orbit wraps); the law is the same here.
+#[test]
+fn cyclic_intents_wrap_where_plain_intents_clamp() {
+    let experience = fixture();
+    let mut state = PresentationState::new(&experience);
+    for _ in 0..10 {
+        apply_intent(&experience, &mut state, Intent::Next);
+    }
+    assert_eq!(sel(&state, &experience), 4, "walked to the last item");
+    apply_intent(&experience, &mut state, Intent::Next);
+    assert_eq!(sel(&state, &experience), 4, "Next clamps at the last item");
+    apply_intent(&experience, &mut state, Intent::NextCyclic);
+    assert_eq!(
+        sel(&state, &experience),
+        0,
+        "NextCyclic wraps past the last to the first"
+    );
+    apply_intent(&experience, &mut state, Intent::PreviousCyclic);
+    assert_eq!(
+        sel(&state, &experience),
+        4,
+        "PreviousCyclic wraps past the first to the last"
     );
 }
 

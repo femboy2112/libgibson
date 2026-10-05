@@ -14,10 +14,10 @@ use super::model::{Content, Experience};
 use super::receipt::PresentationReceipt;
 use crate::input::{KeyCode, KeyEvent};
 use crate::ui::element::{
-    button, column, divider, heading, label, list, raster, row, screen, text, Key,
+    button, choice, column, heading, label, list, panel, raster, row, screen, tabs, text, Key,
 };
 use crate::ui::skin::UiEnvironment;
-use crate::ui::style::Emphasis;
+use crate::ui::style::{Emphasis, Tone};
 use std::time::Duration;
 
 /// The reference presentation grammar. Stateless.
@@ -49,30 +49,45 @@ impl<A: Clone> Grammar<A> for Standard {
             .unwrap_or_else(|| Key::named("∅"));
         let mut receipt = PresentationReceipt::new("STANDARD", active_key);
 
-        // Destination nav bar — every destination represented and reachable.
-        let mut nav = row().gap(2);
+        // Destination nav bar — a styled tab strip (every destination a keyed,
+        // reachable choice), not a hand-rolled row of bold words.
+        let mut nav = tabs::<A>();
         for (index, destination) in experience.destinations.iter().enumerate() {
             receipt.destinations.push(destination.key.clone());
-            let mut tab = text::<A>(destination.title.clone()).key(destination.key.to_string());
-            if index == active_idx {
-                tab = tab.selected(true).emphasis(Emphasis::Strong);
-            }
-            nav = nav.child(tab);
+            nav = nav.child(
+                choice::<A>(destination.title.clone(), index == active_idx)
+                    .key(destination.key.to_string()),
+            );
         }
 
         let content = match active.map(|d| &d.content) {
             Some(Content::Collection(items)) => {
                 let selected = state.selected_index(experience).unwrap_or(0);
+                // Pad titles to a common column so subtitles align into a second
+                // column — a clean list, not title and subtitle mashed together.
+                let title_w = items
+                    .iter()
+                    .map(|item| item.title.chars().count())
+                    .max()
+                    .unwrap_or(0);
                 let mut listing = list::<A>().gap(0);
                 for (index, item) in items.iter().enumerate() {
                     receipt.items.push(item.key.clone());
-                    let mut entry = row::<A>().gap(1).key(item.key.to_string());
-                    entry = entry.child(text(item.title.clone()));
-                    if let Some(subtitle) = &item.subtitle {
-                        entry = entry.child(label(subtitle.clone()));
-                    }
+                    let line = match &item.subtitle {
+                        Some(subtitle) => {
+                            format!("{:<title_w$}    {}", item.title, subtitle)
+                        }
+                        None => item.title.clone(),
+                    };
+                    // One clean row, keyed so the receipt's claimed item is the node
+                    // actually on screen. The selected row carries a single selection
+                    // bar (no per-row button brackets).
+                    let mut entry = text::<A>(line).key(item.key.to_string());
                     if index == selected {
-                        entry = entry.selected(true).emphasis(Emphasis::Strong);
+                        entry = entry
+                            .selected(true)
+                            .emphasis(Emphasis::Strong)
+                            .tone(Tone::Accent);
                         receipt.selected = Some(item.key.clone());
                     }
                     listing = listing.child(entry);
@@ -125,14 +140,19 @@ impl<A: Clone> Grammar<A> for Standard {
             None => text::<A>("(no destinations)"),
         };
 
+        // Frame the active destination's content on a raised panel surface (filled
+        // body + accent title bar), the way a composed app would — depth and
+        // hierarchy, not flat text on the bare screen. Plain, but not bare-metal.
+        let active_title = active
+            .map(|d| d.title.to_uppercase())
+            .unwrap_or_else(|| "—".to_string());
         let root = screen::<A>().child(
             column::<A>()
                 .padding(1)
                 .gap(1)
                 .child(heading(experience.title.clone()))
                 .child(nav)
-                .child(divider())
-                .child(content.grow(1.0)),
+                .child(panel::<A>(active_title).grow(1.0).child(content)),
         );
 
         Presented {

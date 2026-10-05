@@ -31,6 +31,13 @@ pub enum Intent {
     Next,
     /// Previous item within the active destination's collection.
     Previous,
+    /// Next item, wrapping past the last back to the first — a *ring* traversal for
+    /// grammars whose item axis is genuinely cyclic (an orbit has no end to clamp
+    /// at). Distinct from [`Next`](Intent::Next), which clamps.
+    NextCyclic,
+    /// Previous item, wrapping past the first back to the last. The cyclic
+    /// counterpart of [`Previous`](Intent::Previous).
+    PreviousCyclic,
     /// Activate the current selection (returns its primary action, if any).
     Enter,
     /// Leave the current context. Top-level `Back` is a no-op (no history stack).
@@ -172,9 +179,13 @@ fn item_key_index<A>(destination: &super::model::Destination<A>, key: &Key) -> O
 /// does, and only the selection's *primary* action). The effect is deterministic
 /// and identical for every grammar.
 ///
-/// Item motion clamps at the ends — it never wraps and never teleports — so
-/// direction reversal mid-motion and rapid input stay coherent. Destination
-/// motion clamps likewise; every destination is still reachable by walking.
+/// Item motion clamps at the ends — [`Next`](Intent::Next)/[`Previous`](Intent::Previous)
+/// never wrap and never teleport — so direction reversal mid-motion and rapid input
+/// stay coherent. A grammar whose item axis is genuinely cyclic instead emits
+/// [`NextCyclic`](Intent::NextCyclic)/[`PreviousCyclic`](Intent::PreviousCyclic),
+/// which wrap around the collection; the choice of clamp vs. wrap is the grammar's,
+/// the resolved selection remains identity-keyed either way. Destination motion
+/// always clamps; every destination is still reachable by walking.
 pub fn apply_intent<A: Clone>(
     experience: &Experience<A>,
     state: &mut PresentationState,
@@ -198,6 +209,19 @@ pub fn apply_intent<A: Clone>(
         Intent::Previous => {
             if len > 0 {
                 state.set_selected_index(experience, current.saturating_sub(1));
+            }
+            None
+        }
+        Intent::NextCyclic => {
+            if len > 0 {
+                state.set_selected_index(experience, (current + 1) % len);
+            }
+            None
+        }
+        Intent::PreviousCyclic => {
+            if len > 0 {
+                // `+ len` keeps the subtraction in-range before the modulo.
+                state.set_selected_index(experience, (current + len - 1) % len);
             }
             None
         }

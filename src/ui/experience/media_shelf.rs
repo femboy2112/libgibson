@@ -370,7 +370,9 @@ impl<A: Clone> Grammar<A> for MediaShelf {
         for (index, destination) in experience.destinations.iter().enumerate() {
             let mut tab = text::<A>(destination.title.clone()).key(destination.key.to_string());
             if index == active_idx {
-                tab = tab.selected(true).emphasis(Emphasis::Strong);
+                // Bold (mono-safe) marks the active destination; no filled `selected`
+                // bg, so the strip blends into the backdrop rather than boxing a word.
+                tab = tab.emphasis(Emphasis::Strong);
             } else {
                 tab = tab.emphasis(Emphasis::Faint);
             }

@@ -258,21 +258,57 @@ fn pattern(index: usize, x: i32, y: i32) -> f32 {
 
 fn plane_base(index: usize, depth: f32, t: f32, x: i32, y: i32) -> Rgb {
     let shade = (1.0 - 0.17 * depth.min(3.0)).max(0.42);
-    let v = (0.50 - 0.12 * t + pattern(index, x, y)) * shade;
-    hsv(blade_hue(index), 0.58, v)
+    // A glossier vertical gradient — brighter near the top, a soft specular band,
+    // then falling away toward the base — so the blade reads as a lit surface, not a
+    // flat colour block.
+    let grad = 0.60 - 0.26 * t;
+    let gloss = (1.0 - ((t - 0.16) * 4.2).abs()).clamp(0.0, 1.0) * 0.13;
+    let v = (grad + gloss + pattern(index, x, y)) * shade;
+    hsv(blade_hue(index), 0.56, v)
 }
 
 /// Paint one plane: a soft shadow cast on whatever lies behind it, the gradient +
 /// pattern body, a one-pixel highlight under the top edge and a bright rim (the
 /// silhouette that survives Mono).
+/// The corner radius for a blade, in raster pixels — shared by the painter and the
+/// content layout, so text is always inset clear of the rounded corners.
+fn corner_rad(plane: &Plane) -> i32 {
+    let (w, h) = (plane.xr - plane.xl, (plane.bot - plane.top) * 2);
+    (w.min(h) / 5).clamp(3, 7)
+}
+
 fn paint_plane(canvas: &mut Canvas, index: usize, plane: &Plane, mono: bool) {
     let (xl, xr) = (plane.xl, plane.xr);
     let (yt, yb) = (plane.top * 2, plane.bot * 2);
     if yb - yt < 2 || xr - xl < 2 {
         return;
     }
+    // Rounded corners with a one-pixel anti-aliased band: coverage is 1 in the body,
+    // ramps to 0 across the quarter-circle boundary, so the silhouette reads as a
+    // smooth rounded rectangle rather than a stair-stepped box.
+    let rad = corner_rad(plane);
+    let coverage = |x: i32, y: i32| -> f32 {
+        if x < xl || x >= xr || y < yt || y >= yb {
+            return 0.0;
+        }
+        let center = match (x < xl + rad, x >= xr - rad, y < yt + rad, y >= yb - rad) {
+            (true, _, true, _) => Some((xl + rad, yt + rad)),
+            (_, true, true, _) => Some((xr - 1 - rad, yt + rad)),
+            (true, _, _, true) => Some((xl + rad, yb - 1 - rad)),
+            (_, true, _, true) => Some((xr - 1 - rad, yb - 1 - rad)),
+            _ => None,
+        };
+        match center {
+            Some((cx, cy)) => {
+                let (dx, dy) = ((x - cx) as f32, (y - cy) as f32);
+                (rad as f32 + 0.5 - (dx * dx + dy * dy).sqrt()).clamp(0.0, 1.0)
+            }
+            None => 1.0,
+        }
+    };
+    // Soft drop shadow, inset at the rounded top/bottom so it hugs the silhouette.
     for (d, amount) in [(1, 0.46), (2, 0.28), (3, 0.14)] {
-        for x in xl..xr {
+        for x in (xl + rad)..(xr - rad) {
             canvas.raster.blend(x, yt - d, (0, 0, 0), amount);
             canvas.raster.blend(x, yb - 1 + d, (0, 0, 0), amount);
         }
@@ -281,13 +317,19 @@ fn paint_plane(canvas: &mut Canvas, index: usize, plane: &Plane, mono: bool) {
     for y in yt..yb {
         let t = (y - yt) as f32 / span;
         for x in xl..xr {
+            let cov = coverage(x, y);
+            if cov <= 0.0 {
+                continue;
+            }
             let mut base = plane_base(index, plane.depth, t, x, y);
             if mono {
                 // Braille density follows luminance: keep the body sparse so the
                 // bright rim, the pattern and the typography read cleanly.
                 base = mix(BG, base, 0.42);
             }
-            let edge = x == xl || x == xr - 1 || y == yt || y == yb - 1;
+            // The rim follows the (rounded) silhouette: a straight outer edge or any
+            // partially-covered corner pixel.
+            let edge = x == xl || x == xr - 1 || y == yt || y == yb - 1 || cov < 1.0;
             let c = if edge {
                 mix(base, WHITE, if mono { 0.85 } else { 0.58 })
             } else if y == yt + 1 {
@@ -295,7 +337,13 @@ fn paint_plane(canvas: &mut Canvas, index: usize, plane: &Plane, mono: bool) {
             } else {
                 base
             };
-            canvas.put(index, x, y, c);
+            if cov >= 1.0 {
+                canvas.put(index, x, y, c);
+            } else {
+                // Anti-aliased corner: blend over whatever lies behind.
+                let blended = mix(canvas.px(x, y), c, cov);
+                canvas.put(index, x, y, blended);
+            }
         }
     }
 }
@@ -368,6 +416,8 @@ fn title_width(chars: i32, scale: i32) -> i32 {
 /// Bake `text` into the plane's texture at pixel `(x, y)`: a dark offset shadow,
 /// then the bright face. Both belong to blade `id`.
 fn bake_title(canvas: &mut Canvas, id: usize, text: &str, x: i32, y: i32, scale: i32) {
+    // Full glyph height in pixels, for the face's top-lit vertical sheen.
+    let title_h = (5 * scale).max(1) as f32;
     for (pass, (dx, dy, color)) in [(1, 1, (8, 8, 18)), (0, 0, INK)].into_iter().enumerate() {
         for (ci, ch) in text.chars().enumerate() {
             let glyph = glyph3x5(ch);
@@ -384,7 +434,15 @@ fn bake_title(canvas: &mut Canvas, id: usize, text: &str, x: i32, y: i32, scale:
                             if pass == 0 && !canvas.owns_px(id, px + sx, py + sy) {
                                 continue;
                             }
-                            canvas.put(id, px + sx, py + sy, color);
+                            // The face carries a top-lit gradient so the big letters
+                            // read as a lit surface rather than flat white blocks.
+                            let paint = if pass == 0 {
+                                color
+                            } else {
+                                let gy = ((r as i32 * scale + sy) as f32 / title_h).clamp(0.0, 1.0);
+                                mix(WHITE, (184, 188, 216), gy)
+                            };
+                            canvas.put(id, px + sx, py + sy, paint);
                         }
                     }
                 }
@@ -410,7 +468,9 @@ struct Front {
 fn front_layout(plane: &Plane, title: &str, want: usize) -> Front {
     let (x0, x1) = (plane.xl + PAD_X, plane.xr - PAD_X);
     let (row0, row1) = (plane.top, plane.bot);
-    let title_row = row0 + 1;
+    // Inset the title below the rounded top corners (a cell is two pixels) so the big
+    // face is never clipped by the corner carve.
+    let title_row = row0 + 1 + (corner_rad(plane) + 1) / 2;
     let chars = title.chars().count() as i32;
     let need = want.min(5) as i32;
     let mut chosen = None;

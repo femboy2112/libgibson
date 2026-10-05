@@ -509,10 +509,10 @@ impl<A: Clone> Grammar<A> for Orbital {
             let mut tab = text::<A>(format!("{glyph} {}", destination.title))
                 .key(destination.key.to_string());
             if index == active_idx {
-                tab = tab
-                    .selected(true)
-                    .emphasis(Emphasis::Strong)
-                    .tone(Tone::Accent);
+                // Accent colour + the `◉` glyph mark the active destination (both
+                // mono-safe); no filled `selected` bg, so the text blends into the
+                // dark field instead of punching an opaque block.
+                tab = tab.emphasis(Emphasis::Strong).tone(Tone::Accent);
             } else {
                 tab = tab.emphasis(Emphasis::Faint);
             }
@@ -656,10 +656,11 @@ impl<A: Clone> Grammar<A> for Orbital {
         _experience: &Experience<A>,
         _state: &PresentationState,
     ) -> Option<SemanticInput<A>> {
-        // Left/Right turn the ring (Previous/Next item); Up/Down change destination.
+        // Left/Right turn the ring; an orbit has no end, so the ring *wraps*
+        // (cyclic), unlike a shelf or list. Up/Down change destination.
         let intent = match key.code {
-            KeyCode::Left => Intent::Previous,
-            KeyCode::Right => Intent::Next,
+            KeyCode::Left => Intent::PreviousCyclic,
+            KeyCode::Right => Intent::NextCyclic,
             KeyCode::Up => Intent::PreviousGroup,
             KeyCode::Down => Intent::NextGroup,
             KeyCode::Enter => Intent::Enter,

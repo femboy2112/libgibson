@@ -57,6 +57,7 @@ pub mod intent;
 pub mod media_shelf;
 pub mod model;
 pub mod orbital;
+pub(crate) mod paint;
 pub mod panorama;
 pub mod receipt;
 pub mod standard;
