@@ -289,8 +289,8 @@ and a live switch to and from it preserves `active_destination` and `selected`.
 
 ## 10. Known boundaries
 
-Honest limits of the current contract — none a blocker for the planned grammars,
-all worth knowing before you lean on them:
+Honest limits of the current contract — none a blocker for the six realized
+grammars, all worth knowing before you lean on them:
 
 - **The law checks presence, not pixels.** `rastered` is an attestation; the law
   cannot verify a cover shows the right art or the right blade is lit. That is
@@ -306,3 +306,62 @@ all worth knowing before you lean on them:
   property sheet *and* a scrollable queue is two destinations. A real
   expressiveness boundary, deliberately accepted to keep the vocabulary at four
   kinds.
+
+---
+
+## 11. The realized grammars
+
+Six grammars ship with the layer. All pass the same non-negotiable test (§9):
+the **rendered** gate `present(...).check(&required_semantics(...))` is empty at
+every destination across the full responsive/capability matrix, and a live
+switch preserves `active_destination` and `selected`.
+
+| Grammar | Axis / metaphor | Technique | Navigation | Identity without colour |
+|---|---|---|---|---|
+| `STANDARD` | reference list / oracle | Node (`list`/`field set`/`prose`) | ↑↓ item, ←→ group | position + emphasis + the structure itself |
+| `MEDIA_SHELF` | Cover-Flow shelf | raster (`raster3d` textured quads, damped spring) | ←→ item, ↑↓ group | centre focus, size, reflection, caption |
+| `CROSS_MEDIA` | cross-bar | Node (centred cross, no raster) | ←→ group, ↑↓ item | the crossing focus + emphasis + position |
+| `PANORAMA` | typographic panorama | Node (letter-spaced large type, edge-bleed) | ←→ pan sections, ↑↓ column | chevron slivers, ▸ marker, `NN / NN` counter |
+| `ORBITAL` | focal radial field | raster (2D polar, procedural orbs, spring) | ←→ ring, ↑↓ group | centre/size/halo, `n/N` counter, `◉`/`○` strip |
+| `BLADES` | occluding depth-plane stack | raster (painter's algorithm + per-pixel owner buffer) | ↑↓ blade, ←→ item | stack position, `▲ NN`/`▼ NN` labels, bright rim, reverse-video row |
+
+`STANDARD` is the oracle, not the flagship: it exists to represent *everything*
+so a cinematic grammar's receipt can be compared against ground truth.
+
+Two raster grammars (`ORBITAL`, `BLADES`) and one (`MEDIA_SHELF`) derive their
+procedural art from the item's `Media { seed }` when present, and **fall back to
+a deterministic hash of the item key** when it is absent — so a grammar never
+requires media. This is proven by a second, media-free fixture (an ops console:
+services / metrics / logs / config) run through every grammar; no grammar
+secretly assumes "albums".
+
+The live demo is `cargo run --example experience_lab`: one semantic application
+rendered through all six grammars, switchable with `s` / `1`–`6`, with the
+selection surviving every switch and **no `match style` anywhere in the app**.
+`cargo run --example experience_lab -- dump [W H]` prints each grammar's frame as
+visible text for headless inspection.
+
+---
+
+## 12. Temporal contract
+
+What a grammar's frame depends on *in time* — so a runtime knows when it may stop
+repainting. Each property is a test (coalescing an obsolete frame is only sound
+when a settled frame is byte-identical):
+
+- **Time-invariant** — `STANDARD`, `CROSS_MEDIA`, `PANORAMA` ignore `now`
+  entirely. The same semantic state yields a byte-identical frame at any clock;
+  paint once and coalesce every later frame until the state changes.
+- **Settling** — `MEDIA_SHELF` and `BLADES` animate a damped spring, then settle
+  to a true **0-diff**. Once `is_settled(target)`, later frames are identical, so
+  repainting can stop. The receipt always names the semantic *target*; during a
+  glide the camera is still sliding toward the cover the receipt already claims —
+  a normal steady state, not a law violation.
+- **Continuously animated** — `ORBITAL` has an ambient field (swirl, drifting
+  motes, halo breathe) that is a function of `now` with **no settle point**. Its
+  frame genuinely differs over time at a fixed selection, so a runtime must keep
+  repainting it while it is on screen. It remains deterministic at a fixed time.
+
+No frame is rebuilt from wall-clock state the law cannot see: every grammar is a
+pure function of `(experience, state, env, now)` plus its own spring, and that
+spring is itself a pure function of the `now` sequence.
