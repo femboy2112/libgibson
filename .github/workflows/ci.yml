@@ -82,8 +82,10 @@ jobs:
 
       - name: Spatial example tests
         # Album Flow's pose law, derived reflections, responsive sizing and mono
-        # fallback are demo-local and tested in the example itself.
-        run: cargo test --example album_flow
+        # fallback are demo-local and tested in the example itself. Experience Lab
+        # proves — headlessly — that one semantic app renders through every grammar
+        # and that the selection survives a live style switch (milestone §24).
+        run: cargo test --example album_flow --example experience_lab
 
       - name: Documentation
         env:
