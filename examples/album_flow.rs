@@ -409,16 +409,21 @@ fn run_live(
             let c = Arc::clone(covers);
             let r = Arc::clone(reflections);
             // The canvas receives the live terminal Rect, so the frame fits exactly.
-            ctx.set_root(Node::canvas(move |rect| {
-                render(
-                    &c[..],
-                    &r[..],
-                    sel,
-                    rect.width.max(1),
-                    rect.height.max(1),
-                    false,
-                )
-            }));
+            // It MUST fill the screen — an unsized canvas collapses to zero (black screen).
+            ctx.set_root(
+                Node::canvas(move |rect| {
+                    render(
+                        &c[..],
+                        &r[..],
+                        sel,
+                        rect.width.max(1),
+                        rect.height.max(1),
+                        false,
+                    )
+                })
+                .percent_width(100.0)
+                .percent_height(100.0),
+            );
             ctx.render()?;
             if !interactive {
                 // Non-TTY (piped/redirected): run one sweep without busy-pacing, then stop.
@@ -629,6 +634,42 @@ mod tests {
         assert!(
             reach > (NUM_COVERS - 2) as f32,
             "motion must sweep out to the far end of the shelf, reached {reach}"
+        );
+    }
+
+    #[test]
+    fn canvas_root_fills_the_screen_and_is_not_blank() {
+        // Guards the black-screen regression: an unsized canvas collapses to zero.
+        let covers: Vec<RgbRaster> = (0..NUM_COVERS).map(|i| cover_art(i as u32)).collect();
+        let refl: Vec<RgbRaster> = covers.iter().map(reflection_texture).collect();
+        let (cols, rows) = (100u16, 32u16);
+        let mut ctx = Context::headless(gibson::RenderMode::Fullscreen, cols, rows);
+        let c = Arc::new(covers);
+        let r = Arc::new(refl);
+        ctx.set_root(
+            Node::canvas(move |rect| {
+                render(
+                    &c[..],
+                    &r[..],
+                    3.0,
+                    rect.width.max(1),
+                    rect.height.max(1),
+                    false,
+                )
+            })
+            .percent_width(100.0)
+            .percent_height(100.0),
+        );
+        ctx.render().expect("headless render");
+        let lines = ctx.last_frame_lines();
+        assert_eq!(lines.len(), rows as usize, "canvas must fill every row");
+        let non_blank: usize = lines
+            .iter()
+            .map(|l| l.chars().filter(|ch| !ch.is_whitespace()).count())
+            .sum();
+        assert!(
+            non_blank > (cols as usize * rows as usize) / 4,
+            "a filled canvas paints half-block cells across the screen; got {non_blank} non-blank"
         );
     }
 }
