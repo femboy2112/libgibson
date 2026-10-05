@@ -34,8 +34,8 @@ const SPREAD_NEAR: f32 = 2.35; // x step from centre to the first neighbour
 const SPREAD_FAR: f32 = 0.85; // x step per cover beyond the first neighbour (tighter packing)
 const DEPTH_NEAR: f32 = 2.3; // z recession reaching the first neighbour
 const DEPTH_FAR: f32 = 0.45; // z recession per cover beyond it
-const YAW_MAX: f32 = 1.02; // fan angle (~58°) held by all side covers
-const BG: Rgb = (7, 9, 15);
+const YAW_MAX: f32 = 0.78; // fan angle (~45°) held by all side covers
+const BG: Rgb = (13, 15, 26); // a deep ink-blue, lifted so receding covers keep a dark-on-dark halo
 
 /// A cover's world pose: the centre of its card and its rotation about the vertical axis.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -98,8 +98,20 @@ fn arrangement(selection: f32, n: usize) -> Vec<Pose> {
 
 const ART_SIZE: u16 = 64;
 
-/// A deterministic abstract "album cover" for a seed. Distinct hue, gradient, one bold
-/// motif, a bright rim. Pure function of the seed.
+/// Linear blend of two colours (`t` = 0 → `a`, 1 → `b`).
+fn mix(a: Rgb, b: Rgb, t: f32) -> Rgb {
+    let m = |x: u8, y: u8| {
+        (x as f32 + (y as f32 - x as f32) * t)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    (m(a.0, b.0), m(a.1, b.1), m(a.2, b.2))
+}
+
+/// A deterministic abstract "album cover" for a seed. Hues walk the colour wheel by the
+/// golden angle so neighbours on the shelf never rhyme; the motif cycles through six bold
+/// shapes; the rim is a one-texel tonal lift of the art itself (never a white frame).
+/// Pure function of the seed.
 fn cover_art(seed: u32) -> RgbRaster {
     let mut r = RgbRaster::new(ART_SIZE, ART_SIZE);
     let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(40_503).max(1);
@@ -109,42 +121,82 @@ fn cover_art(seed: u32) -> RgbRaster {
         state ^= state << 5;
         state
     };
-    let hue = (rng() % 360) as f32;
-    let hue2 = (hue + 70.0 + (rng() % 140) as f32) % 360.0;
-    let motif = rng() % 4;
+    let jitter = (rng() % 24) as f32;
+    let hue = (seed as f32 * 137.508 + 14.0 + jitter) % 360.0;
+    let hue2 = (hue + 150.0 + (rng() % 60) as f32) % 360.0; // a lively near-complement
+    let motif = seed % 6;
+    let wobble = (rng() % 100) as f32 / 100.0; // 0..1 motif variation
     let denom = (ART_SIZE - 1) as f32;
     for y in 0..ART_SIZE {
         for x in 0..ART_SIZE {
             let fx = x as f32 / denom;
             let fy = y as f32 / denom;
-            let t = (fx + fy) * 0.5;
-            let mut c = hsv(hue + (hue2 - hue) * t, 0.55, 0.20 + 0.55 * t);
+            // Rich vertical-ish gradient: bright enough to stay legible when it recedes.
+            let t = fy * 0.7 + fx * 0.3;
+            let mut c = hsv(hue + (hue2 - hue) * 0.35 * t, 0.74, 0.50 + 0.38 * (1.0 - t));
+            let (dx, dy) = (fx - 0.5, fy - 0.5);
+            let d = (dx * dx + dy * dy).sqrt();
+            let ink = hsv(hue2, 0.55, 1.0); // the bright motif colour
+            let pale = hsv(hue + 20.0, 0.18, 0.98); // near-white accent, tinted
             match motif {
+                // Sun disc with a soft halo ring.
                 0 => {
-                    let d = ((fx - 0.5).powi(2) + (fy - 0.5).powi(2)).sqrt();
-                    if d < 0.30 {
-                        c = hsv(hue2, 0.72, 0.96);
+                    let cy = 0.44 + 0.08 * wobble;
+                    let dd = ((fx - 0.5).powi(2) + (fy - cy).powi(2)).sqrt();
+                    if dd < 0.25 {
+                        c = ink;
+                    } else if dd < 0.31 {
+                        c = mix(c, ink, 0.35);
                     }
                 }
+                // Horizon: a half-sun over banded water.
                 1 => {
-                    if (fy - 0.5).abs() < 0.14 {
-                        c = hsv(hue2, 0.66, 0.92);
+                    let horizon = 0.58;
+                    if fy < horizon && ((fx - 0.5).powi(2) + (fy - horizon).powi(2)).sqrt() < 0.30 {
+                        c = ink;
+                    } else if fy >= horizon {
+                        let band = ((fy - horizon) * 17.0) as i32 % 2 == 0;
+                        c = mix(c, hsv(hue2, 0.7, 0.35), if band { 0.65 } else { 0.25 });
                     }
                 }
+                // Bold diagonal slash with a thin companion line.
                 2 => {
-                    if (fx - fy).abs() < 0.12 {
-                        c = hsv(hue2, 0.62, 0.93);
+                    let k = (fx - fy).abs();
+                    if k < 0.13 {
+                        c = ink;
+                    } else if (k - 0.24).abs() < 0.025 {
+                        c = pale;
                     }
                 }
+                // Concentric rings.
+                3 => {
+                    let ring = (d * 7.0) as i32;
+                    if d < 0.43 && ring % 2 == 0 {
+                        c = mix(c, ink, if ring == 0 { 1.0 } else { 0.8 });
+                    }
+                }
+                // A peak: big triangle with a pale snowcap.
+                4 => {
+                    let apex = 0.22 + 0.10 * wobble;
+                    let half = (fy - apex) * 0.62;
+                    if fy > apex && fy < 0.82 && dx.abs() < half {
+                        c = if fy < apex + 0.12 { pale } else { ink };
+                    }
+                }
+                // Equaliser bars.
                 _ => {
-                    if fx + fy < 0.62 {
-                        c = hsv(hue2, 0.70, 0.90);
+                    let col = (fx * 7.0) as usize;
+                    let within = (fx * 7.0).fract();
+                    let h = 0.25 + 0.55 * (((col as f32 * 1.7 + wobble * 6.0).sin() + 1.0) * 0.5);
+                    if within > 0.18 && within < 0.88 && fy > 0.88 - h && fy < 0.88 {
+                        c = if fy < 0.88 - h + 0.05 { pale } else { ink };
                     }
                 }
             }
-            let b = 0.07;
-            if fx < b || fx > 1.0 - b || fy < b || fy > 1.0 - b {
-                c = (232, 236, 244);
+            // A one-texel tonal rim: the art's own colour, lifted — not a white frame.
+            let edge = x == 0 || y == 0 || x == ART_SIZE - 1 || y == ART_SIZE - 1;
+            if edge {
+                c = mix(c, (255, 255, 255), 0.28);
             }
             r.set(x as i32, y as i32, c);
         }
