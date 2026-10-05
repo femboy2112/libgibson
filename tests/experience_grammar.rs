@@ -811,3 +811,89 @@ fn media_shelf_preserves_semantics_across_the_responsive_and_capability_matrix()
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// CROSS_MEDIA and the all-grammars parametric contracts.
+// ---------------------------------------------------------------------------
+
+use gibson::ui::experience::CrossMedia;
+
+fn all_grammars() -> Vec<(&'static str, Box<dyn Grammar<Msg>>)> {
+    vec![
+        ("STANDARD", Box::new(Standard::new())),
+        ("MEDIA_SHELF", Box::new(MediaShelf::new())),
+        ("CROSS_MEDIA", Box::new(CrossMedia::new())),
+    ]
+}
+
+#[test]
+fn every_grammar_preserves_semantics_across_destinations_and_the_matrix() {
+    let experience = fixture();
+    let sizes = [(160, 50), (120, 40), (80, 24), (60, 20), (42, 15)];
+    let depths = [
+        ColorDepth::TrueColor,
+        ColorDepth::Ansi256,
+        ColorDepth::Ansi16,
+        ColorDepth::Mono,
+    ];
+    for (name, mut grammar) in all_grammars() {
+        for (w, h) in sizes {
+            for depth in depths {
+                let e = env(w, h, depth);
+                let mut state = PresentationState::new(&experience);
+                for _ in 0..experience.destinations.len() {
+                    let presented =
+                        grammar.present(&experience, &state, &e, Duration::from_millis(500));
+                    let required = required_semantics(&experience, &state);
+                    let violations = presented.check(&required);
+                    assert!(
+                        violations.is_empty(),
+                        "{name} violated the law at {w}x{h} {depth:?}: {violations:?}"
+                    );
+                    apply_intent(&experience, &mut state, Intent::NextGroup);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn every_grammar_preserves_selection_on_a_live_switch() {
+    let experience = fixture();
+    let e = env(120, 40, ColorDepth::TrueColor);
+    let mut state = PresentationState::new(&experience);
+    for _ in 0..2 {
+        apply_intent(&experience, &mut state, Intent::Next); // select alb-2
+    }
+    // The same semantic state rendered by every grammar keeps identity.
+    for (name, mut grammar) in all_grammars() {
+        let presented = grammar.present(&experience, &state, &e, Duration::from_millis(16));
+        assert_eq!(
+            presented.receipt.selected,
+            Some(key("alb-2")),
+            "{name} lost the selection"
+        );
+        assert_eq!(
+            presented.receipt.active_destination,
+            key("library"),
+            "{name} moved the active destination"
+        );
+    }
+}
+
+#[test]
+fn cross_media_binds_the_cross_axes() {
+    let experience = fixture();
+    let cm = CrossMedia::new();
+    let mut state = PresentationState::new(&experience);
+    // Right/Left move along the destination bar.
+    handle_key(&cm, &experience, &mut state, &press(KeyCode::Right));
+    assert_eq!(act(&state, &experience), 1);
+    handle_key(&cm, &experience, &mut state, &press(KeyCode::Left));
+    assert_eq!(act(&state, &experience), 0);
+    // Up/Down move along the item column.
+    handle_key(&cm, &experience, &mut state, &press(KeyCode::Down));
+    assert_eq!(sel(&state, &experience), 1);
+    handle_key(&cm, &experience, &mut state, &press(KeyCode::Up));
+    assert_eq!(sel(&state, &experience), 0);
+}

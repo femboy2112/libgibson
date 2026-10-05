@@ -50,6 +50,7 @@
 //! // switch: grammar = Box::new(OtherGrammar::new());  // selection survives
 //! ```
 
+pub mod cross_media;
 pub mod grammar;
 pub mod intent;
 pub mod media_shelf;
@@ -57,6 +58,7 @@ pub mod model;
 pub mod receipt;
 pub mod standard;
 
+pub use cross_media::CrossMedia;
 pub use grammar::{Grammar, Presented};
 pub use intent::{apply_intent, Intent, PresentationState, SemanticInput};
 pub use media_shelf::MediaShelf;
