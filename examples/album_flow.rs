@@ -1,0 +1,497 @@
+//! Album Flow — a Cover-Flow spatial browser, the visual-acceptance flagship of the
+//! v0.5 "Observable Instruments" spatial axis.
+//!
+//! This is deliberately NOT three bordered panels labelled PREVIOUS/CURRENT/NEXT. It is
+//! a continuous perspective arrangement of textured cards driven by one pose law and the
+//! `raster3d::Rasterizer::textured_quad` media primitive. The demo owns its art direction;
+//! the only thing it borrows from the library is the generic textured-quad primitive.
+//!
+//! The arrangement obeys a single pose law Φ(d), where d = cover_index − selection. Because
+//! Φ depends only on d, the whole layout is *equivariant* under selection shifts — advancing
+//! the selection by one slides every cover into the pose its neighbour just held. Reflections
+//! are *derived* from each cover (mirrored across its bottom edge, faded), never authored
+//! independently. Motion is a damped spring on the (fractional) selection.
+//!
+//! Run it:  `cargo run --example album_flow`
+
+use std::io::Write;
+use std::time::Duration;
+
+use gibson::ansi::AnsiCompiler;
+use gibson::compute_diff;
+use gibson::geom::Vec3;
+use gibson::raster::{Rgb, RgbRaster};
+use gibson::raster3d::{Camera, Rasterizer};
+use gibson::surface::Surface;
+
+// ---- the arrangement, in world units -------------------------------------------------
+
+const NUM_COVERS: usize = 11; // within the 9–15 the milestone asks for
+const COVER_W: f32 = 2.0;
+const COVER_H: f32 = 2.0;
+const BASE_Z: f32 = 4.2; // depth of the selected cover
+const SPREAD_NEAR: f32 = 2.35; // x step from centre to the first neighbour
+const SPREAD_FAR: f32 = 0.85; // x step per cover beyond the first neighbour (tighter packing)
+const DEPTH_NEAR: f32 = 2.3; // z recession reaching the first neighbour
+const DEPTH_FAR: f32 = 0.45; // z recession per cover beyond it
+const YAW_MAX: f32 = 1.02; // fan angle (~58°) held by all side covers
+const BG: Rgb = (7, 9, 15);
+
+/// A cover's world pose: the centre of its card and its rotation about the vertical axis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Pose {
+    center: Vec3,
+    yaw: f32,
+}
+
+/// The pose law Φ(d), d = cover_index − selection. Depends ONLY on d, so the whole
+/// arrangement is equivariant under selection shifts: Φ((i+1)−(s+1)) = Φ(i−s).
+///
+/// d = 0 is the selected cover: centred, facing the camera, nearest. As |d| grows the
+/// cover steps aside, recedes, and rotates to the fan angle (reached and then held at
+/// |d| ≥ 1). The near region (|d| ≤ 1) is a smooth ramp so motion between slots reads
+/// as a single cover swinging to the front.
+fn pose(d: f32) -> Pose {
+    let side = if d >= 0.0 { 1.0 } else { -1.0 };
+    let a = d.abs();
+    let near = a.min(1.0); // 0..1 inside the central slot
+    let far = (a - 1.0).max(0.0); // beyond the first neighbour
+    let x = side * (SPREAD_NEAR * near + SPREAD_FAR * far);
+    let z = BASE_Z + DEPTH_NEAR * near + DEPTH_FAR * far;
+    let yaw = -side * YAW_MAX * near;
+    Pose {
+        center: Vec3::new(x, 0.0, z),
+        yaw,
+    }
+}
+
+/// The four world corners of a cover in TL → TR → BR → BL order (matching the
+/// textured-quad UV order). The card is rotated about the vertical (Y) axis by `yaw`:
+/// a local offset (lx, ly, 0) maps to the world offset (lx·cos, ly, −lx·sin).
+fn cover_corners(p: Pose) -> [Vec3; 4] {
+    let (hw, hh) = (COVER_W * 0.5, COVER_H * 0.5);
+    let (c, s) = (p.yaw.cos(), p.yaw.sin());
+    let corner =
+        |lx: f32, ly: f32| Vec3::new(p.center.x + lx * c, p.center.y + ly, p.center.z - lx * s);
+    [
+        corner(-hw, hh),  // TL
+        corner(hw, hh),   // TR
+        corner(hw, -hh),  // BR
+        corner(-hw, -hh), // BL
+    ]
+}
+
+/// The reflection corners, DERIVED from the cover by mirroring across its bottom edge.
+/// Geometry (not the texture) is flipped, so sampling the same texture yields a correct
+/// upside-down mirror image hanging below the card.
+fn reflection_corners(p: Pose) -> [Vec3; 4] {
+    let bottom = p.center.y - COVER_H * 0.5;
+    cover_corners(p).map(|v| Vec3::new(v.x, 2.0 * bottom - v.y, v.z))
+}
+
+/// Poses for every cover at a (fractional) selection.
+fn arrangement(selection: f32, n: usize) -> Vec<Pose> {
+    (0..n).map(|i| pose(i as f32 - selection)).collect()
+}
+
+// ---- procedural cover art (no external images, no copyrighted art) --------------------
+
+const ART_SIZE: u16 = 64;
+
+/// A deterministic abstract "album cover" for a seed. Distinct hue, gradient, one bold
+/// motif, a bright rim. Pure function of the seed.
+fn cover_art(seed: u32) -> RgbRaster {
+    let mut r = RgbRaster::new(ART_SIZE, ART_SIZE);
+    let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(40_503).max(1);
+    let mut rng = || {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        state
+    };
+    let hue = (rng() % 360) as f32;
+    let hue2 = (hue + 70.0 + (rng() % 140) as f32) % 360.0;
+    let motif = rng() % 4;
+    let denom = (ART_SIZE - 1) as f32;
+    for y in 0..ART_SIZE {
+        for x in 0..ART_SIZE {
+            let fx = x as f32 / denom;
+            let fy = y as f32 / denom;
+            let t = (fx + fy) * 0.5;
+            let mut c = hsv(hue + (hue2 - hue) * t, 0.55, 0.20 + 0.55 * t);
+            match motif {
+                0 => {
+                    let d = ((fx - 0.5).powi(2) + (fy - 0.5).powi(2)).sqrt();
+                    if d < 0.30 {
+                        c = hsv(hue2, 0.72, 0.96);
+                    }
+                }
+                1 => {
+                    if (fy - 0.5).abs() < 0.14 {
+                        c = hsv(hue2, 0.66, 0.92);
+                    }
+                }
+                2 => {
+                    if (fx - fy).abs() < 0.12 {
+                        c = hsv(hue2, 0.62, 0.93);
+                    }
+                }
+                _ => {
+                    if fx + fy < 0.62 {
+                        c = hsv(hue2, 0.70, 0.90);
+                    }
+                }
+            }
+            let b = 0.07;
+            if fx < b || fx > 1.0 - b || fy < b || fy > 1.0 - b {
+                c = (232, 236, 244);
+            }
+            r.set(x as i32, y as i32, c);
+        }
+    }
+    r
+}
+
+/// The reflection texture: the cover dimmed and faded toward its far (lower) end. The
+/// reflection geometry is flipped, so texture row v=0 (the cover's top) lands at the
+/// reflection's far end — hence the fade brightens with v.
+fn reflection_texture(cover: &RgbRaster) -> RgbRaster {
+    let (w, h) = (cover.width(), cover.height());
+    let mut r = RgbRaster::new(w, h);
+    let denom = (h.max(2) - 1) as f32;
+    for y in 0..h {
+        let v = y as f32 / denom;
+        let f = 0.12 + 0.46 * v;
+        for x in 0..w {
+            let c = cover.get(x as i32, y as i32).unwrap_or_default();
+            r.set(
+                x as i32,
+                y as i32,
+                (
+                    (c.0 as f32 * f) as u8,
+                    (c.1 as f32 * f) as u8,
+                    (c.2 as f32 * f) as u8,
+                ),
+            );
+        }
+    }
+    r
+}
+
+/// HSV (h in degrees, s/v in 0..1) → RGB.
+fn hsv(h: f32, s: f32, v: f32) -> Rgb {
+    let h = h.rem_euclid(360.0) / 60.0;
+    let c = v * s;
+    let x = c * (1.0 - (h % 2.0 - 1.0).abs());
+    let m = v - c;
+    let (r, g, b) = match h as i32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let to = |z: f32| ((z + m) * 255.0).round().clamp(0.0, 255.0) as u8;
+    (to(r), to(g), to(b))
+}
+
+// ---- camera + render ------------------------------------------------------------------
+
+/// The viewing camera: slightly above the row, looking into it, so the reflections read.
+fn camera() -> Camera {
+    Camera {
+        position: Vec3::new(0.0, 0.35, 0.0),
+        target: Vec3::new(0.0, -0.1, BASE_Z),
+        up: Vec3::new(0.0, 1.0, 0.0),
+        fov_y: std::f32::consts::FRAC_PI_3,
+        near: 0.1,
+        far: 100.0,
+    }
+}
+
+/// Render the arrangement into an RGB raster (`pw × ph` pixels). Covers are drawn
+/// far-to-near; the shared z-buffer resolves overlap regardless.
+fn render_raster(
+    covers: &[RgbRaster],
+    reflections: &[RgbRaster],
+    selection: f32,
+    pw: u16,
+    ph: u16,
+) -> RgbRaster {
+    let mut rz = Rasterizer::new(pw, ph);
+    rz.clear(BG);
+    let cam = camera();
+    let poses = arrangement(selection, covers.len());
+    // Draw far-to-near (the shared z-buffer resolves overlap regardless of order).
+    let mut order: Vec<usize> = (0..poses.len()).collect();
+    order.sort_by(|&a, &b| {
+        poses[b]
+            .center
+            .z
+            .partial_cmp(&poses[a].center.z)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    for i in order {
+        let p = poses[i];
+        rz.textured_quad(reflection_corners(p), &reflections[i], &cam);
+        rz.textured_quad(cover_corners(p), &covers[i], &cam);
+    }
+    rz.raster
+}
+
+/// Render to a terminal `Surface` of `cols × rows` cells. `mono` selects the Braille
+/// monochrome fallback for terminals without colour.
+fn render(
+    covers: &[RgbRaster],
+    reflections: &[RgbRaster],
+    selection: f32,
+    cols: u16,
+    rows: u16,
+    mono: bool,
+) -> Surface {
+    let raster = render_raster(covers, reflections, selection, cols, rows.saturating_mul(2));
+    if mono {
+        raster.to_mono_surface()
+    } else {
+        raster.to_surface()
+    }
+}
+
+// ---- damped-spring motion -------------------------------------------------------------
+
+/// A damped spring on the fractional selection. Deterministic given the dt sequence.
+struct Spring {
+    x: f32,
+    v: f32,
+}
+impl Spring {
+    fn step(&mut self, target: f32, dt: f32, omega: f32, zeta: f32) {
+        let accel = -2.0 * zeta * omega * self.v - omega * omega * (self.x - target);
+        self.v += accel * dt;
+        self.x += self.v * dt;
+    }
+}
+
+// ---- the live demo --------------------------------------------------------------------
+
+fn main() {
+    let covers: Vec<RgbRaster> = (0..NUM_COVERS).map(|i| cover_art(i as u32)).collect();
+    let reflections: Vec<RgbRaster> = covers.iter().map(reflection_texture).collect();
+
+    // Deterministic still capture: `album_flow capture <selection> <path.ppm>`.
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("capture") {
+        let sel = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(3.0);
+        let path = args.get(3).map(String::as_str).unwrap_or("album_flow.ppm");
+        let raster = render_raster(&covers, &reflections, sel, 360, 220);
+        let file = std::fs::File::create(path).expect("create capture file");
+        raster
+            .write_ppm(std::io::BufWriter::new(file))
+            .expect("write ppm");
+        eprintln!("captured selection {sel} -> {path}");
+        return;
+    }
+
+    let (cols, rows) = (120u16, 40u16);
+    let mut spring = Spring { x: 0.0, v: 0.0 };
+    let mut comp = AnsiCompiler::new();
+    let mut prev: Option<Surface> = None;
+    let mut out = std::io::stdout();
+    let _ = out.write_all(b"\x1b[2J\x1b[H");
+
+    // A scripted sweep across the shelf and part-way back, holding on each cover.
+    let mut script: Vec<f32> = (0..NUM_COVERS).map(|i| i as f32).collect();
+    script.extend((2..NUM_COVERS).rev().map(|i| i as f32));
+    let dt = 1.0 / 30.0;
+
+    for target in script {
+        for _ in 0..16 {
+            spring.step(target, dt, 13.0, 0.72);
+            let surf = render(&covers, &reflections, spring.x, cols, rows, false);
+            let diff = compute_diff(prev.as_ref(), &surf);
+            let bytes = comp.compile(&diff);
+            let _ = out.write_all(b"\x1b[H");
+            let _ = out.write_all(&bytes);
+            let _ = out.flush();
+            prev = Some(surf);
+            std::thread::sleep(Duration::from_millis(33));
+        }
+    }
+    let _ = out.write_all(b"\x1b[0m\n");
+}
+
+// ---- tests: the pose law and render invariants ----------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pose_close(a: Pose, b: Pose) -> bool {
+        (a.center.x - b.center.x).abs() < 1e-4
+            && (a.center.y - b.center.y).abs() < 1e-4
+            && (a.center.z - b.center.z).abs() < 1e-4
+            && (a.yaw - b.yaw).abs() < 1e-4
+    }
+
+    #[test]
+    fn selected_cover_is_centred_facing_and_nearest() {
+        let p = pose(0.0);
+        assert_eq!(p.center.x, 0.0);
+        assert_eq!(p.yaw, 0.0);
+        assert_eq!(p.center.z, BASE_Z);
+    }
+
+    #[test]
+    fn arrangement_is_equivariant_under_selection_shift() {
+        // Advancing selection by one puts cover i+1 where cover i used to be.
+        for &s in &[0.0f32, 0.3, 1.7, -0.4] {
+            let a = arrangement(s, NUM_COVERS);
+            let b = arrangement(s + 1.0, NUM_COVERS);
+            for i in 0..NUM_COVERS - 1 {
+                assert!(
+                    pose_close(a[i], b[i + 1]),
+                    "equivariance broken at i={i}, s={s}: {:?} vs {:?}",
+                    a[i],
+                    b[i + 1]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recession_is_monotonic_in_distance() {
+        let ds = [0.0f32, 0.5, 1.0, 2.0, 3.0, 4.0];
+        for w in ds.windows(2) {
+            let (near, far) = (pose(w[0]), pose(w[1]));
+            assert!(far.center.z > near.center.z, "z must increase with |d|");
+            assert!(
+                far.center.x.abs() > near.center.x.abs() - 1e-6,
+                "|x| must not decrease with |d|"
+            );
+        }
+    }
+
+    #[test]
+    fn pose_is_antisymmetric_and_yaw_bounded() {
+        for &d in &[0.3f32, 0.8, 1.0, 2.5, 5.0] {
+            let (pos, neg) = (pose(d), pose(-d));
+            assert!(
+                (pos.center.x + neg.center.x).abs() < 1e-5,
+                "x antisymmetric"
+            );
+            assert!((pos.center.z - neg.center.z).abs() < 1e-5, "z symmetric");
+            assert!((pos.yaw + neg.yaw).abs() < 1e-5, "yaw antisymmetric");
+            assert!(pos.yaw.abs() <= YAW_MAX + 1e-6, "yaw bounded by YAW_MAX");
+        }
+    }
+
+    #[test]
+    fn side_covers_rotate_about_the_vertical_axis() {
+        let c = cover_corners(pose(1.0));
+        // Rotation about Y keeps paired top/bottom y-coordinates equal...
+        assert!((c[0].y - c[1].y).abs() < 1e-5, "TL/TR share height");
+        assert!((c[2].y - c[3].y).abs() < 1e-5, "BR/BL share height");
+        // ...and tilts the card in depth (the two vertical edges sit at different z).
+        assert!(
+            (c[0].z - c[1].z).abs() > 1e-3,
+            "a rotated card recedes across its width"
+        );
+    }
+
+    #[test]
+    fn reflection_is_derived_below_the_cover() {
+        let p = pose(0.0);
+        let cover = cover_corners(p);
+        let refl = reflection_corners(p);
+        let bottom = p.center.y - COVER_H * 0.5;
+        for i in 0..4 {
+            assert_eq!(refl[i].x, cover[i].x, "reflection shares x");
+            assert_eq!(refl[i].z, cover[i].z, "reflection shares z");
+            assert!(
+                refl[i].y <= bottom + 1e-6,
+                "reflection hangs at/below the cover bottom"
+            );
+            // Mirror across the bottom edge.
+            assert!((refl[i].y - (2.0 * bottom - cover[i].y)).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn render_is_deterministic() {
+        let covers: Vec<RgbRaster> = (0..NUM_COVERS).map(|i| cover_art(i as u32)).collect();
+        let refl: Vec<RgbRaster> = covers.iter().map(reflection_texture).collect();
+        let a = render(&covers, &refl, 2.3, 120, 40, false);
+        let b = render(&covers, &refl, 2.3, 120, 40, false);
+        assert_eq!(a.to_visible_lines(), b.to_visible_lines());
+    }
+
+    #[test]
+    fn render_is_responsive_across_terminal_sizes() {
+        let covers: Vec<RgbRaster> = (0..NUM_COVERS).map(|i| cover_art(i as u32)).collect();
+        let refl: Vec<RgbRaster> = covers.iter().map(reflection_texture).collect();
+        for &(cols, rows) in &[(160u16, 50u16), (42u16, 15u16), (120u16, 40u16)] {
+            let s = render(&covers, &refl, 4.0, cols, rows, false);
+            assert_eq!(s.width, cols);
+            assert_eq!(s.height, rows);
+            assert_eq!(s.to_visible_lines().len(), rows as usize);
+        }
+    }
+
+    #[test]
+    fn covers_actually_draw_onto_the_frame() {
+        let covers: Vec<RgbRaster> = (0..NUM_COVERS).map(|i| cover_art(i as u32)).collect();
+        let refl: Vec<RgbRaster> = covers.iter().map(reflection_texture).collect();
+        let raster = render_raster(&covers, &refl, 3.0, 160, 80);
+        let painted = raster.pixels().iter().filter(|&&px| px != BG).count();
+        assert!(
+            painted > 1000,
+            "expected a populated shelf, got {painted} non-bg pixels"
+        );
+    }
+
+    #[test]
+    fn mono_fallback_emits_braille_and_is_deterministic() {
+        let covers: Vec<RgbRaster> = (0..NUM_COVERS).map(|i| cover_art(i as u32)).collect();
+        let refl: Vec<RgbRaster> = covers.iter().map(reflection_texture).collect();
+        let a = render(&covers, &refl, 3.0, 120, 40, true);
+        let b = render(&covers, &refl, 3.0, 120, 40, true);
+        assert_eq!(a.to_visible_lines(), b.to_visible_lines());
+        let has_braille = a
+            .to_visible_lines()
+            .iter()
+            .flat_map(|l| l.chars())
+            .any(|ch| ('\u{2800}'..='\u{28FF}').contains(&ch));
+        assert!(has_braille, "mono fallback must emit Braille glyphs");
+    }
+
+    #[test]
+    fn perspective_shrinks_side_covers_relative_to_the_selected_one() {
+        let cam = camera();
+        let width_on_screen = |d: f32| {
+            let c = cover_corners(pose(d));
+            let l = cam.project(c[0], 160, 80);
+            let r = cam.project(c[1], 160, 80);
+            match (l, r) {
+                (Some(l), Some(r)) => Some((r.0 - l.0).abs()),
+                _ => None,
+            }
+        };
+        let front = width_on_screen(0.0).expect("selected cover projects");
+        let side = width_on_screen(2.0).expect("side cover projects");
+        assert!(
+            front > side,
+            "the selected cover ({front}) must be wider on screen than a receded one ({side})"
+        );
+    }
+
+    #[test]
+    fn spring_settles_at_its_target() {
+        let mut s = Spring { x: 0.0, v: 0.0 };
+        for _ in 0..600 {
+            s.step(5.0, 1.0 / 30.0, 13.0, 0.72);
+        }
+        assert!((s.x - 5.0).abs() < 1e-2, "spring settled at {}", s.x);
+        assert!(s.v.abs() < 1e-2, "spring came to rest");
+    }
+}
