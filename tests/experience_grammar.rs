@@ -816,13 +816,14 @@ fn media_shelf_preserves_semantics_across_the_responsive_and_capability_matrix()
 // CROSS_MEDIA and the all-grammars parametric contracts.
 // ---------------------------------------------------------------------------
 
-use gibson::ui::experience::{CrossMedia, Panorama};
+use gibson::ui::experience::{CrossMedia, Orbital, Panorama};
 
 fn all_grammars() -> Vec<(&'static str, Box<dyn Grammar<Msg>>)> {
     vec![
         ("STANDARD", Box::new(Standard::new())),
         ("MEDIA_SHELF", Box::new(MediaShelf::new())),
         ("CROSS_MEDIA", Box::new(CrossMedia::new())),
+        ("ORBITAL", Box::new(Orbital::new())),
         ("PANORAMA", Box::new(Panorama::new())),
     ]
 }
@@ -974,4 +975,141 @@ fn panorama_binds_horizontal_pan_and_vertical_items() {
     assert!(pano
         .interpret(&press(KeyCode::Char('z')), &experience, &state)
         .is_none());
+}
+
+// ---------------------------------------------------------------------------
+// ORBITAL — the focal, radial raster grammar.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn orbital_preserves_semantics_across_destinations_and_matrix() {
+    let experience = fixture();
+    let sizes = [(160, 50), (120, 40), (80, 24), (60, 20), (42, 15)];
+    let depths = [
+        ColorDepth::TrueColor,
+        ColorDepth::Ansi256,
+        ColorDepth::Ansi16,
+        ColorDepth::Mono,
+    ];
+    for (w, h) in sizes {
+        for depth in depths {
+            let mut orbital = Orbital::new();
+            let e = env(w, h, depth);
+            let mut state = PresentationState::new(&experience);
+            for _ in 0..experience.destinations.len() {
+                let presented =
+                    orbital.present(&experience, &state, &e, Duration::from_millis(500));
+                let required = required_semantics(&experience, &state);
+                let violations = presented.check(&required);
+                assert!(
+                    violations.is_empty(),
+                    "ORBITAL law violated at {w}x{h} {depth:?}: {violations:?}"
+                );
+                apply_intent(&experience, &mut state, Intent::NextGroup);
+            }
+        }
+    }
+}
+
+#[test]
+fn orbital_attests_its_orbs_and_declares_the_caption_omission_when_short() {
+    let experience = fixture();
+    let mut orbital = Orbital::new();
+    let state = PresentationState::new(&experience);
+    let required = required_semantics(&experience, &state);
+
+    // Roomy: every item is attested rastered; the primary action is a keyed node.
+    let roomy = orbital.present(
+        &experience,
+        &state,
+        &env(80, 24, ColorDepth::TrueColor),
+        Duration::ZERO,
+    );
+    for item in &required.all_items {
+        assert!(
+            roomy.receipt.rastered.contains(item),
+            "{item:?} not attested"
+        );
+    }
+    assert!(roomy.receipt.actions.contains(&key("play-0")));
+    assert!(roomy.receipt.omitted.is_empty());
+    assert!(roomy.check(&required).is_empty());
+
+    // Too short for the caption: the action is *declared* omitted — lawful, never silent.
+    let short = orbital.present(
+        &experience,
+        &state,
+        &env(40, 8, ColorDepth::Mono),
+        Duration::ZERO,
+    );
+    assert!(short.receipt.omitted.contains(&key("play-0")));
+    assert!(short.check(&required).is_empty());
+}
+
+#[test]
+fn orbital_navigation_rotates_the_ring() {
+    let experience = fixture();
+    let orbital = Orbital::new();
+    let mut state = PresentationState::new(&experience);
+    // Left/Right turn the ring: Previous/Next item, clamped at the ends.
+    handle_key(&orbital, &experience, &mut state, &press(KeyCode::Right));
+    assert_eq!(sel(&state, &experience), 1);
+    handle_key(&orbital, &experience, &mut state, &press(KeyCode::Right));
+    assert_eq!(sel(&state, &experience), 2);
+    handle_key(&orbital, &experience, &mut state, &press(KeyCode::Left));
+    assert_eq!(sel(&state, &experience), 1);
+    handle_key(&orbital, &experience, &mut state, &press(KeyCode::Home));
+    assert_eq!(sel(&state, &experience), 0);
+    handle_key(&orbital, &experience, &mut state, &press(KeyCode::Left));
+    assert_eq!(
+        sel(&state, &experience),
+        0,
+        "ring motion clamps, never wraps"
+    );
+    handle_key(&orbital, &experience, &mut state, &press(KeyCode::End));
+    assert_eq!(sel(&state, &experience), 4);
+    // Up/Down change destination; Enter activates the primary action; Esc is Back.
+    handle_key(&orbital, &experience, &mut state, &press(KeyCode::Down));
+    assert_eq!(act(&state, &experience), 1);
+    handle_key(&orbital, &experience, &mut state, &press(KeyCode::Up));
+    assert_eq!(act(&state, &experience), 0);
+    let msg = handle_key(&orbital, &experience, &mut state, &press(KeyCode::Enter));
+    assert_eq!(msg, Some(Msg::Play("alb-4".into())));
+
+    // The rotation is observable in the painted ring: the world at selection 0 and
+    // at selection 3 differ, and each is deterministic at a fixed state and time.
+    let e = env(80, 24, ColorDepth::TrueColor);
+    let first = PresentationState::new(&experience);
+    let mut third = PresentationState::new(&experience);
+    for _ in 0..3 {
+        apply_intent(&experience, &mut third, Intent::Next);
+    }
+    let t = Duration::from_millis(250);
+    let at0 = paint_orbital(&experience, &first, &e, t);
+    let at3 = paint_orbital(&experience, &third, &e, t);
+    assert_ne!(at0, at3, "turning the ring must change the picture");
+    assert_eq!(
+        at0,
+        paint_orbital(&experience, &first, &e, t),
+        "ORBITAL is deterministic at a fixed state and time"
+    );
+}
+
+/// Run a fresh ORBITAL frame through the real compile -> layout -> paint path (which
+/// also rejects duplicate keys), returning the painted surface.
+fn paint_orbital(
+    experience: &Experience<Msg>,
+    state: &PresentationState,
+    e: &UiEnvironment,
+    now: Duration,
+) -> gibson::Surface {
+    let presented = Orbital::new().present(experience, state, e, now);
+    let cx = gibson::ui::BuildCx::new(gibson::ui::skins::VAPOR95, *e);
+    let mut node = gibson::ui::compile(&presented.element, &cx)
+        .expect("ORBITAL lowers to a valid element tree")
+        .node;
+    gibson::compute_layout(&mut node, e.width, e.height).unwrap();
+    let mut surface = gibson::Surface::new(e.width, e.height);
+    gibson::paint(&node, &mut surface);
+    surface
 }
