@@ -80,6 +80,28 @@ path = "examples/polished_agent.rs"
 name = "fx_lab"
 path = "examples/fx_lab.rs"
 
+# Cinematic authoring recipes (docs/CINEMATIC_AUTHORING.md): each teaches one law,
+# self-contained, built only on public API.
+[[example]]
+name = "show_minimal"
+path = "examples/recipes/show_minimal.rs"
+
+[[example]]
+name = "show_crossfade"
+path = "examples/recipes/show_crossfade.rs"
+
+[[example]]
+name = "show_spatial_plane"
+path = "examples/recipes/show_spatial_plane.rs"
+
+[[example]]
+name = "show_observable"
+path = "examples/recipes/show_observable.rs"
+
+[[example]]
+name = "show_experience"
+path = "examples/recipes/show_experience.rs"
+
 # Dev/test builds keep line tables (so RUST_BACKTRACE still symbolicates file:line)
 # but drop full type/variable DWARF. With ~50 integration-test binaries + examples
 # each statically embedding the crate + a generics-heavy dep graph (taffy), full
