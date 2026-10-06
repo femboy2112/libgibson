@@ -41,3 +41,21 @@ fn full_look_and_stage_pipeline_is_bounded_and_deterministic() {
     assert_eq!((a.width(), a.height()), (pw, ph));
     assert_eq!(a.pixels(), b.pixels(), "the whole frame path must be pure");
 }
+
+/// The interactive congruence law: a camera settled on a panel's dwell pose projects
+/// that panel to *exactly* the baked `hold_rect`. This is what lets the live UI blit
+/// 1:1 over its own texture when `interactive_showcase` zooms in — the same congruence
+/// the film relies on, now reached by a hand-driven camera rather than the edit clock.
+#[test]
+fn interactive_dwell_pose_projects_to_the_hold_rect() {
+    for &(w, h) in &[(120u16, 36u16), (180, 48), (100, 30)] {
+        for i in 0..stage::N_PLANES {
+            let settled = stage::panel_cell_bounds_cam(i, &stage::dwell_camera(i), w, h);
+            let hold = stage::hold_rect(i, w, h);
+            assert_eq!(
+                settled, hold,
+                "panel {i} at {w}x{h}: settled dwell pose must equal the baked hold rect"
+            );
+        }
+    }
+}

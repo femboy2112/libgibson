@@ -55,6 +55,10 @@ pub const REVEAL: f32 = 6.0;
 const D_DWELL: f32 = 3.7;
 /// Camera distance at the wide pose the dolly starts/ends at.
 const D_WIDE: f32 = 9.5;
+/// Vertical field of view at the close/hold pose (the frontal plane nearly fills).
+const FOV_DWELL: f32 = 0.78;
+/// Vertical field of view at the wide pose (frames the panel from outside the ring).
+const FOV_WIDE: f32 = 0.98;
 
 /// Minimum projected rectangle (in cells) for the real UI to be resolved into it.
 const MIN_BW: u16 = 18;
@@ -188,25 +192,25 @@ fn camera_keys() -> Vec<Key> {
             t: base,
             eye: wide_eye(i),
             look: c,
-            fov: 0.98,
+            fov: FOV_WIDE,
         });
         keys.push(Key {
             t: base + TRAVEL_IN,
             eye: dwell_eye(i),
             look: c,
-            fov: 0.78,
+            fov: FOV_DWELL,
         });
         keys.push(Key {
             t: base + TRAVEL_IN + HOLD,
             eye: dwell_eye(i),
             look: c,
-            fov: 0.78,
+            fov: FOV_DWELL,
         });
         keys.push(Key {
             t: base + TRAVEL_IN + HOLD + TRAVEL_OUT,
             eye: wide_eye(i),
             look: c,
-            fov: 0.98,
+            fov: FOV_WIDE,
         });
     }
     let rt = EST + N_PLANES as f32 * PANEL;
@@ -225,6 +229,20 @@ fn camera_keys() -> Vec<Key> {
     keys
 }
 
+/// Assemble a `Camera` from an eye, a look-at target and a vertical fov, with the
+/// ring's fixed up / near / far — the one place a `Camera` is constructed, so the
+/// scripted flight and the interactive poses stay identical in everything but pose.
+fn camera_from(eye: Vec3, look: Vec3, fov: f32) -> Camera {
+    Camera {
+        position: eye,
+        target: look,
+        up: Vec3::new(0.0, 1.0, 0.0),
+        fov_y: fov,
+        near: 0.1,
+        far: 120.0,
+    }
+}
+
 /// The camera at edit time `edit` (seconds), eased (`ease_in_out`) between the
 /// surrounding keyframe pair.
 pub fn camera_at(edit: f32) -> Camera {
@@ -237,14 +255,25 @@ pub fn camera_at(edit: f32) -> Camera {
     let (a, b) = surrounding(&keys, t);
     let span = (b.t - a.t).max(1e-4);
     let e = gibson::clock::ease_in_out(((t - a.t) / span).clamp(0.0, 1.0));
-    Camera {
-        position: v_lerp(a.eye, b.eye, e),
-        target: v_lerp(a.look, b.look, e),
-        up: Vec3::new(0.0, 1.0, 0.0),
-        fov_y: a.fov + (b.fov - a.fov) * e,
-        near: 0.1,
-        far: 120.0,
-    }
+    camera_from(
+        v_lerp(a.eye, b.eye, e),
+        v_lerp(a.look, b.look, e),
+        a.fov + (b.fov - a.fov) * e,
+    )
+}
+
+/// The close, frontal pose featuring panel `i` — the same pose the scripted film
+/// holds on. A settled interactive camera at this pose projects panel `i` to exactly
+/// [`hold_rect`], so its live UI resolves as a 1:1 blit of the master (the congruence
+/// law holds under interaction, not just the scripted flight).
+pub fn dwell_camera(i: usize) -> Camera {
+    camera_from(dwell_eye(i), plane_center(i), FOV_DWELL)
+}
+
+/// The wide orbit pose framing panel `i` from outside the ring (where the film's
+/// per-panel dolly starts and ends) — the resting pose when not zoomed in.
+pub fn orbit_camera(i: usize) -> Camera {
+    camera_from(wide_eye(i), plane_center(i), FOV_WIDE)
 }
 
 fn surrounding(keys: &[Key], t: f32) -> (Key, Key) {
@@ -293,10 +322,16 @@ pub fn focus_at(edit: f32) -> Option<Focus> {
 /// the depth-tested textured plane stands in. This is the intro facade law's
 /// `cell_bounds`, adapted to the ring's outward planes.
 pub fn panel_cell_bounds(i: usize, edit: f32, w: u16, h: u16) -> Option<Rect> {
+    panel_cell_bounds_cam(i, &camera_at(edit), w, h)
+}
+
+/// [`panel_cell_bounds`] for an arbitrary (e.g. interactively driven) camera rather
+/// than the scripted edit clock. The scripted path delegates here, so the facade law
+/// is identical whichever clock drives the camera.
+pub fn panel_cell_bounds_cam(i: usize, cam: &Camera, w: u16, h: u16) -> Option<Rect> {
     if i >= N_PLANES || w == 0 || h == 0 {
         return None;
     }
-    let cam = camera_at(edit);
     let c = plane_corners(i); // TL, TR, BR, BL
     let proj = |p: Vec3| cam.project(p, w, h.saturating_mul(2));
     let (tl, tr, br, bl) = (proj(c[0])?, proj(c[1])?, proj(c[2])?, proj(c[3])?);
@@ -355,7 +390,20 @@ pub fn render_frame(
     textures: &[RgbRaster],
     reflections: &[RgbRaster],
 ) -> RgbRaster {
-    let cam = camera_at(edit);
+    render_frame_cam(&camera_at(edit), pw, ph, backdrop, textures, reflections)
+}
+
+/// [`render_frame`] for an arbitrary (e.g. interactively driven) camera. The scripted
+/// path delegates here, so the ring composites identically whichever clock drives it.
+pub fn render_frame_cam(
+    cam: &Camera,
+    pw: u16,
+    ph: u16,
+    backdrop: RgbRaster,
+    textures: &[RgbRaster],
+    reflections: &[RgbRaster],
+) -> RgbRaster {
+    let cam = *cam;
     let mut rz = Rasterizer::new(pw.max(1), ph.max(1));
     if backdrop.width() == pw.max(1) && backdrop.height() == ph.max(1) {
         rz.raster = backdrop;
