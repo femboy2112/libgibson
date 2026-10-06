@@ -1,17 +1,16 @@
 //! The cinematic showcase's **shot vocabulary** and shared chrome.
 //!
-//! Three things live here, all demo-local art direction (not a general framework,
+//! Two things live here, both demo-local art direction (not a general framework,
 //! per `docs/FRANK_REACTION_CUT_PLAN.md:84`):
 //!
-//! 1. The [`Shot`] enum the [`crate::reel`] cue sheet is built from — a title
-//!    card, one of the six experience [`GrammarId`]s, or one of the Observatory
-//!    [`SceneId`]s. These are the stable payload types every cue carries.
-//! 2. The cinematic HUD (title card + now-showing lower-third), lifted from the
-//!    `experience_lab` flagship so the film frames it the same way — built only on
-//!    the public `Surface::bake_text` / `RgbRaster` ethos primitives.
-//! 3. The two pure Surface effects the frame driver needs: [`title_card`] (a full
-//!    interstitial) and [`dim_toward_black`] (the dip that sells a cut without
-//!    needing to blend two glyph grids — driven by a cue's crossfade weight).
+//! 1. The [`Shot`] enum the [`crate::reel`] cue sheet is built from — the opening
+//!    establish, one of the six experience [`GrammarId`]s, one of the Observatory
+//!    [`SceneId`]s, or the closing reveal. These are the stable payload types every
+//!    cue on the authoritative edit clock carries.
+//! 2. The cinematic HUD ([`cinematic_hud`]: a title bar + now-showing lower-third),
+//!    lifted from the `experience_lab` flagship so the film frames every grammar the
+//!    same way — built only on the public `Surface::bake_text` / `RgbRaster` ethos
+//!    primitives.
 
 #![allow(dead_code)] // the film uses a subset of the chrome per shot kind.
 
@@ -112,31 +111,22 @@ impl SceneId {
     }
 }
 
-/// A single interstitial title card: two lines of baked text centred on a scrim.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TitleCard {
-    pub line1: String,
-    pub line2: String,
-}
-
-impl TitleCard {
-    pub fn new(line1: impl Into<String>, line2: impl Into<String>) -> Self {
-        Self {
-            line1: line1.into(),
-            line2: line2.into(),
-        }
-    }
-}
-
-/// What plays during a cue. The reel is a `ShowTimeline<Shot>`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What plays during a cue on the authoritative edit clock. The reel is a
+/// `ShowTimeline<Shot>`; every window is a hard cut, gapless from establish to
+/// reveal. `Copy` because each variant is a small value type — the title copy for
+/// the two brackets lives in the driver's overlay, not in the payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shot {
-    /// A full-screen interstitial (the film's own title, act breaks).
-    Title(TitleCard),
+    /// The opening establishing wide shot — the ring seen from far, under the film
+    /// title overlay. Carries no panel.
+    Establish,
     /// One of the six experience grammars, presenting the shared library.
     Grammar(GrammarId),
     /// One of the Observatory plot scenes.
     Observatory(SceneId),
+    /// The closing rise-out reveal — the ring opening up, under the sign-off
+    /// overlay. Carries no panel.
+    Reveal,
 }
 
 // ----------------------------- the cinematic HUD -----------------------------
@@ -211,67 +201,4 @@ pub fn cinematic_hud(w: u16, h: u16, title: &str, label: &str, caption: &str) ->
     blit_scrim(&mut layer, w, by, false);
     layer.bake_text(2, by, caption, HUD_STRONG, true);
     layer
-}
-
-/// Render a full-screen interstitial title card to its own Surface: a scrim fill
-/// with two centred baked lines. No grammar underneath — the card *is* the shot.
-pub fn title_card(card: &TitleCard, w: u16, h: u16) -> Surface {
-    // A full-height dark scrim with a faint vertical gradient toward the centre.
-    let ph = h.saturating_mul(2).max(1);
-    let mut raster = RgbRaster::new(w, ph);
-    let denom = ph.saturating_sub(1).max(1) as f32;
-    for y in 0..ph {
-        // Brightest at the vertical centre, falling off toward the edges.
-        let d = (y as f32 / denom - 0.5).abs() * 2.0; // 0 centre .. 1 edge
-        let base = lerp_rgb(HUD_SCRIM, HUD_DARK, d);
-        for x in 0..w {
-            raster.set(x as i32, y as i32, base);
-        }
-    }
-    let mut surface = raster.to_surface();
-    if w >= 8 && h >= 4 {
-        let cx = w / 2;
-        let r1 = h / 2 - 1;
-        surface.bake_text_centered(cx, r1, &card.line1, HUD_STRONG, true);
-        surface.bake_text_centered(cx, r1 + 1, &card.line2, HUD_ACCENT, false);
-    }
-    surface
-}
-
-/// Dim every cell of `surface` toward black by `factor` in `[0, 1]` (1.0 leaves
-/// it untouched, 0.0 is black). This is the dip that sells a cut: the frame
-/// driver feeds it a cue's crossfade weight, so the screen dips to a partial
-/// black at the handover between two shots and rises back up. It blends glyph
-/// grids the only honest way at cell resolution — by luminance, not by trying to
-/// cross-dissolve two different glyphs in one cell.
-pub fn dim_toward_black(surface: &mut Surface, factor: f32) {
-    use gibson::cell::Color;
-    let f = factor.clamp(0.0, 1.0);
-    if f >= 1.0 {
-        return;
-    }
-    let scale = |c: Color| -> Color {
-        match c {
-            Color::Rgb(r, g, b) => Color::Rgb(
-                (r as f32 * f) as u8,
-                (g as f32 * f) as u8,
-                (b as f32 * f) as u8,
-            ),
-            other => other, // palette colors left as-is; the film runs truecolor
-        }
-    };
-    for y in 0..surface.height {
-        for x in 0..surface.width {
-            if let Some(cell) = surface.get(x, y) {
-                let mut cell = cell.clone();
-                if let Some(fg) = cell.style.fg {
-                    cell.style.fg = Some(scale(fg));
-                }
-                if let Some(bg) = cell.style.bg {
-                    cell.style.bg = Some(scale(bg));
-                }
-                surface.set_cell(x, y, cell);
-            }
-        }
-    }
 }

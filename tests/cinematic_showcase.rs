@@ -10,7 +10,7 @@ mod shot;
 #[path = "../examples/cinematic_showcase/show_timeline.rs"]
 mod show_timeline;
 
-use shot::{dim_toward_black, title_card, GrammarId, SceneId, Shot, TitleCard};
+use shot::{GrammarId, SceneId, Shot};
 use show_timeline::ShowTimeline;
 
 /// A tiny float comparison for weights/progress (f32 ramp arithmetic).
@@ -162,29 +162,16 @@ fn fade_ramps_are_clamped_to_the_window() {
 }
 
 #[test]
-fn shot_chrome_renders_bounded_surfaces() {
-    // Title card fills its viewport and does not panic at a sane size.
-    let card = title_card(
-        &TitleCard::new("GIBSON", "one experience, many grammars"),
-        100,
-        30,
-    );
-    assert_eq!((card.width, card.height), (100, 30));
-
-    // The dip effect is a pure, bounded transform (0 = black, 1 = untouched).
-    let mut c = title_card(&TitleCard::new("a", "b"), 40, 12);
-    dim_toward_black(&mut c, 0.5);
-    dim_toward_black(&mut c, 0.0);
-    dim_toward_black(&mut c, 1.0); // no-op
-    assert_eq!((c.width, c.height), (40, 12));
-
-    // The shot payloads are stable value types the reel builds cues from.
+fn shot_payloads_are_stable_value_types() {
+    // The shot payloads the reel builds cues from are small `Copy` value types: the
+    // two brackets carry no data, grammars/scenes carry their id.
     let reel_shots = [
-        Shot::Title(TitleCard::new("x", "y")),
+        Shot::Establish,
         Shot::Grammar(GrammarId::Orbital),
         Shot::Observatory(SceneId::Spectrum),
+        Shot::Reveal,
     ];
-    assert_eq!(reel_shots.len(), 3);
+    assert_eq!(reel_shots.len(), 4);
     assert_eq!(GrammarId::REEL_ORDER.len(), 6);
     assert_eq!(SceneId::ALL.len(), 3);
 }

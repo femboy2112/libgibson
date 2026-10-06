@@ -290,31 +290,6 @@ fn surrounding(keys: &[Key], t: f32) -> (Key, Key) {
     }
 }
 
-/// Which panel the camera is featuring, and the live time to animate it at.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Focus {
-    pub panel: usize,
-    /// Seconds since this panel's hold began (`>= 0`), for live animation.
-    pub local: f32,
-}
-
-/// The panel featured at edit time `edit`, or `None` during the establish / reveal.
-pub fn focus_at(edit: f32) -> Option<Focus> {
-    if !edit.is_finite() || edit < EST || edit >= EST + N_PLANES as f32 * PANEL {
-        return None;
-    }
-    let rel = edit - EST;
-    let i = (rel / PANEL) as usize;
-    if i >= N_PLANES {
-        return None;
-    }
-    let p = rel - i as f32 * PANEL;
-    Some(Focus {
-        panel: i,
-        local: (p - TRAVEL_IN).max(0.0),
-    })
-}
-
 /// The projected screen rectangle (in cells) of panel `i`'s face at edit time
 /// `edit`, for an output of `w × h` cells — or `None` when the plane is too small,
 /// behind the camera, or oblique (the inscribed axis-aligned rect collapses). When
@@ -494,24 +469,6 @@ mod tests {
             prev = Some(cam);
             t += 0.1;
         }
-    }
-
-    #[test]
-    fn focus_covers_every_panel_and_rests_at_the_ends() {
-        assert!(focus_at(0.5).is_none(), "no focus during establish");
-        assert!(
-            focus_at(duration() - 1.0).is_none(),
-            "no focus during reveal"
-        );
-        let mut seen = [false; N_PLANES];
-        let mut t = 0.0;
-        while t <= duration() {
-            if let Some(f) = focus_at(t) {
-                seen[f.panel] = true;
-            }
-            t += 0.05;
-        }
-        assert!(seen.iter().all(|&s| s), "every panel featured: {seen:?}");
     }
 
     #[test]
