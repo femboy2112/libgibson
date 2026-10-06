@@ -9,8 +9,8 @@
 //! This is the compressed form of the flagship's "facade": perspective-map any
 //! surface you can draw, then fly past it. Only public `raster3d` is used.
 //!
-//! Teaches: `Rasterizer`/`textured_quad`, an explicit `Camera`, `Camera::project`,
-//! and a timeline sequencing camera legs.
+//! Teaches: `Rasterizer`/`textured_quad`, an explicit `Camera`, and a timeline
+//! sequencing camera legs.
 //!
 //!   cargo run --example show_spatial_plane            # live, loops the fly-by
 //!   cargo run --example show_spatial_plane -- shot 5.0 out.ppm   # one frame -> PPM

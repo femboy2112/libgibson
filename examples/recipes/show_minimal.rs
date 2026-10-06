@@ -98,6 +98,8 @@ fn main() -> std::io::Result<()> {
         return Ok(());
     }
 
+    // The skin is a choice, not a mandate: `skins::{VAPOR95, BLACK_ICE, SWISS_SIGNAL}`
+    // ship with the crate, or build your own. The look is yours.
     App::fullscreen()
         .skin(skins::VAPOR95)
         .fps(30)

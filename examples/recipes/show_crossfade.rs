@@ -13,7 +13,7 @@
 //! and weight-driven compositing.
 //!
 //!   cargo run --example show_crossfade            # live, loops
-//!   cargo run --example show_crossfade -- at 3.0  # the midpoint of the dissolve
+//!   cargo run --example show_crossfade -- at 2.4  # the dissolve midpoint (both cues ~0.5)
 
 use gibson::input::{Event, KeyCode, KeyModifiers};
 use gibson::raster::RgbRaster;

@@ -77,7 +77,9 @@ moment you want more control.
 
 - **Level 0 — pixels & geometry.** [`Surface`] (cells), [`raster::RgbRaster`]
   (RGB pixels, 2 px rows → 1 half-block cell via `to_surface()`), [`raster3d`]
-  (`Camera`, `Rasterizer`, `textured_quad`). Draw anything.
+  (`Camera`, `Rasterizer`, `textured_quad`). Draw anything. To lay crisp text over a
+  drawn `Surface` (titles, HUD), use `Surface::bake_text` / `bake_text_centered` —
+  that is how every recipe puts words on a raster.
 - **Level 1 — declarative chrome.** [`ui`] nodes (`screen`, `col`/`row`, `panel`,
   `text`) for controls, labels, forms, inspectors. Compose chrome declaratively and
   paint the *drawing* imperatively into a `Surface`.
@@ -167,6 +169,11 @@ rz.textured_quad(
 let surface = rz.raster.to_surface();       // -> terminal cells
 ```
 
+**The `h * 2` is load-bearing, not a typo.** A `RgbRaster` has two pixel rows per
+terminal cell (the half-block `▀`), so a frame that fills `h` cells needs `2 * h`
+pixel rows. Size a raster to `h` instead of `2 * h` and you get a half-height
+picture. Every recipe computes `ph = h * 2` for exactly this reason.
+
 Perspective is correct, depth-tested, and the quad is not backface-culled. To make
 it a *show*, drive `cam.position` from the edit clock (a `Timeline` of camera legs,
 each leg eased by its `progress`). That is the entire trick behind the flagship's
@@ -186,10 +193,33 @@ myshow                 # live, loops
 myshow -- at 7.0       # print the single frame at t = 7 s (text snapshot)
 ```
 
-For a color-accurate frame, render a `RgbRaster` and `write_ppm`, or capture ANSI
-bytes headlessly (the flagship's `cinematic_showcase.rs` shows the
-`UiRuntime::frame` → `Context::headless` → `rendered_bytes` path, and a `seq DIR`
-mode that writes a whole 20-fps sequence for an MP4).
+For a color-accurate single frame, render a `RgbRaster` and `write_ppm` (as
+`show_spatial_plane` does). For a color **sequence** — the path to an MP4 — lower
+each frame to truecolor ANSI headlessly and write it to a numbered file. The
+`show_capture` recipe does exactly this; the core is:
+
+```rust
+use gibson::capability::ColorDepth;
+use gibson::context::{Context, RenderMode};
+use gibson::ui::skin::UiEnvironment;
+use gibson::ui::{raster, screen, skins, UiRuntime};
+
+fn frame_bytes(frame: gibson::Surface, w: u16, h: u16, edit: f32) -> Vec<u8> {
+    let env = UiEnvironment { width: w, height: h, color_depth: ColorDepth::TrueColor, ..Default::default() };
+    let element = screen::<Msg>().child(raster::<Msg>(frame).grow(1.0)).height(h);
+    let mut rt = UiRuntime::new(skins::VAPOR95);
+    let compiled = rt.frame(&element, env, std::time::Duration::from_secs_f32(edit)).expect("lower");
+    let mut ctx = Context::headless(RenderMode::Fullscreen, w, h);
+    ctx.set_color_depth(ColorDepth::TrueColor);
+    ctx.set_root(compiled.node);
+    ctx.render_now().expect("render");
+    ctx.rendered_bytes().to_vec() // truecolor ANSI for this one frame
+}
+```
+
+Loop that over `edit = 0, dt, 2·dt, …`, writing `frame_NNNN.ans`, then convert the
+sequence downstream (terminal → PNG → `ffmpeg`). Produce one with
+`cargo run --example show_capture -- seq ./frames`.
 
 ### The transition corridor
 
@@ -236,7 +266,10 @@ These are art direction and must stay in *your* program, never the library:
 - spiral/ring geometry, panel arrangement, cover-flow spacing;
 - nebula/starfield, bloom values, vignette, the grade;
 - camera shot choices, the "dwell" pose, the punch-zoom;
-- a specific grammar's visual identity, titles, copy, meme timing.
+- a specific grammar's visual identity, titles, copy, meme timing;
+- the **skin**. The recipes pin `skins::VAPOR95` only to have *a* look; it is a
+  choice, not a mandate. `skins::{VAPOR95, BLACK_ICE, SWISS_SIGNAL}` ship with the
+  crate, and you can build your own — don't inherit the house palette by default.
 
 The flagship (`examples/cinematic_showcase.rs` and its `cinematic_showcase/`
 modules) is one *example* of these choices — a reference, not a framework. Read it
