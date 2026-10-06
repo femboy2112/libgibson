@@ -17,11 +17,12 @@
 
 use crate::{look, observatory, stage, texture};
 use gibson::capability::ColorDepth;
+use gibson::input::KeyEvent;
 use gibson::raster::RgbRaster;
 use gibson::raster3d::Camera;
 use gibson::ui::experience::{
-    apply_intent, Action, Content as ExpContent, Destination, Experience, ExperienceRuntime, Facet,
-    Intent, Item, Media,
+    apply_intent, Action, Content as ExpContent, Destination, Experience, ExperienceRuntime,
+    ExperienceStyle, Facet, Intent, Item, Media,
 };
 use gibson::ui::skin::UiEnvironment;
 use gibson::ui::{screen, skins, BuildCx};
@@ -231,6 +232,17 @@ impl Showcase {
         let experience = &self.experience;
         let mut ui = self.ui.borrow_mut();
         apply_intent(experience, ui.state_mut(), intent)
+    }
+
+    /// Drive one physical key through the given grammar's own interaction metaphor
+    /// into the shared state, returning any activated action. The grammar — not the
+    /// caller — decides which key means which axis (STANDARD binds Up/Down to the
+    /// item list, MEDIA SHELF binds Left/Right to the carousel), so arrows always
+    /// match the grammar's visual axis rather than a hardcoded guess.
+    pub fn handle_key(&self, style: ExperienceStyle, key: &KeyEvent) -> Option<Msg> {
+        let mut ui = self.ui.borrow_mut();
+        ui.set_style(style);
+        ui.handle_key(&self.experience, key)
     }
 }
 

@@ -43,7 +43,6 @@ use gibson::cell::{Cell, Color, Style};
 use gibson::geom::Vec3;
 use gibson::input::{Event, KeyCode, KeyModifiers};
 use gibson::raster3d::Camera;
-use gibson::ui::experience::Intent;
 use gibson::ui::{raster, screen, skins, App, AppEvent, BuildCx, Control, Element};
 use gibson::Surface;
 use shot::GrammarId;
@@ -189,7 +188,7 @@ fn overlay_controls(model: &Interactive, surface: &mut Surface, w: u16, h: u16) 
     } else if model.focus_is_grammar() {
         (
             "ZOOM",
-            "←/→ select   ↑/↓ section   Enter play   [ ] tour   Esc back",
+            "arrows navigate   Enter activate   [ ] tour   Esc back",
         )
     } else {
         ("ZOOM", "live instrument   [ ] tour   Esc back")
@@ -285,59 +284,57 @@ fn update(model: &mut Interactive, event: AppEvent<Msg>) -> Control {
     }
 }
 
-/// The input grammar. Arrows are *contextual* (rotate the ring in orbit; drive the UI
-/// in zoom); `[`/`]` always tour panels; `Enter`/`Esc` change mode.
+/// The input grammar. The *shell* keys (quit, zoom in/out, panel tour) are handled
+/// here; everything else, when zoomed on a grammar, is routed through that grammar's
+/// own key→intent binding — so arrows always match the grammar's visual axis (STANDARD
+/// moves its list on Up/Down; MEDIA SHELF moves its carousel on Left/Right) rather than
+/// a hardcoded guess that fights one of them.
 fn handle_key(model: &mut Interactive, key: gibson::input::KeyEvent) -> Control {
     let n = stage::N_PLANES;
     let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+
+    // Shell keys first — these never reach the grammar.
     match key.code {
         KeyCode::Char('q') | KeyCode::Char('Q') => return Control::Quit,
         KeyCode::Char('c') if ctrl => return Control::Quit,
-        KeyCode::Esc => {
+        KeyCode::Esc | KeyCode::Backspace => {
             if model.zoomed {
                 model.zoomed = false;
             } else {
                 return Control::Quit;
             }
-        }
-        KeyCode::Enter | KeyCode::Char(' ') => {
-            if !model.zoomed {
-                model.zoomed = true;
-                model.play_time = 0.0; // start the hand-off congruent with the texture
-            } else if model.focus_is_grammar() {
-                if let Some(msg) = model.show.apply(Intent::Enter) {
-                    model.status = Some((render_msg(&msg), STATUS_TTL));
-                }
-            }
-        }
-        KeyCode::Left | KeyCode::Char('h') => {
-            if model.zoomed && model.focus_is_grammar() {
-                model.show.apply(Intent::Previous);
-            } else if !model.zoomed {
-                model.focus = (model.focus + n - 1) % n;
-            }
-        }
-        KeyCode::Right | KeyCode::Char('l') => {
-            if model.zoomed && model.focus_is_grammar() {
-                model.show.apply(Intent::Next);
-            } else if !model.zoomed {
-                model.focus = (model.focus + 1) % n;
-            }
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            if model.zoomed && model.focus_is_grammar() {
-                model.show.apply(Intent::PreviousGroup);
-            }
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            if model.zoomed && model.focus_is_grammar() {
-                model.show.apply(Intent::NextGroup);
-            }
+            return Control::Continue;
         }
         // Tour to the neighbouring panel without leaving the current zoom.
-        KeyCode::Char('[') => model.focus = (model.focus + n - 1) % n,
-        KeyCode::Char(']') => model.focus = (model.focus + 1) % n,
+        KeyCode::Char('[') => {
+            model.focus = (model.focus + n - 1) % n;
+            return Control::Continue;
+        }
+        KeyCode::Char(']') => {
+            model.focus = (model.focus + 1) % n;
+            return Control::Continue;
+        }
         _ => {}
     }
+
+    if !model.zoomed {
+        // Orbit: arrows rotate the ring; Enter/Space fly in.
+        match key.code {
+            KeyCode::Left | KeyCode::Char('h') => model.focus = (model.focus + n - 1) % n,
+            KeyCode::Right | KeyCode::Char('l') => model.focus = (model.focus + 1) % n,
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                model.zoomed = true;
+                model.play_time = 0.0; // start the hand-off congruent with the texture
+            }
+            _ => {}
+        }
+    } else if model.focus_is_grammar() {
+        // Zoomed on a grammar: let the grammar interpret the key along its own axis.
+        let style = GrammarId::REEL_ORDER[model.focus].style();
+        if let Some(msg) = model.show.handle_key(style, &key) {
+            model.status = Some((render_msg(&msg), STATUS_TTL));
+        }
+    }
+    // Zoomed on an Observatory scene: nothing to navigate (Esc/[ ] handled above).
     Control::Continue
 }
