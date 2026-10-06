@@ -135,9 +135,13 @@ none requires reading another's internals or the flagship's source.
 | `show_spatial_plane` | a `Surface` as a textured quad, an explicit moving `Camera` | `cargo run --example show_spatial_plane` |
 | `show_observable` | `plot` as one directed scene; the data stays *yours* | `cargo run --example show_observable` |
 | `show_experience` | an `ExperienceRuntime` in a timeline; style switches, selection survives | `cargo run --example show_experience` |
+| `show_capture` | headless color capture; the loop that turns `f(edit)` into a sequence | `cargo run --example show_capture -- seq ./frames` |
 
 Each also takes a headless seek argument (`-- at T`, or `-- shot T out.ppm` for the
-spatial one) so you can inspect a single instant without a terminal.
+spatial one, `-- seq DIR` for capture) so you can inspect a single instant without a
+terminal. **Registering is required:** a file under `examples/recipes/` is in a
+subdirectory, so Cargo does not auto-discover it — add an `[[example]]` entry (name +
+path) in `Cargo.toml`, as these recipes do.
 
 ### The compressed spatial recipe, in full shape
 
@@ -193,6 +197,16 @@ myshow                 # live, loops
 myshow -- at 7.0       # print the single frame at t = 7 s (text snapshot)
 ```
 
+**Know what the text snapshot shows you.** `Surface::to_visible_lines()` prints
+*glyphs only* — every half-block cell reads as `▀`, so a color-and-raster scene
+with no text looks blank even when it renders perfectly. Use it to check layout and
+baked text; to actually *see* a raster frame, go to color (below).
+
+**Seeking the very last frame.** A `Timeline` window is half-open `[start, end)`, so
+`top(duration())` (and `resolve(duration())`) return *nothing* — seek to exactly the
+end and your final shot has already ended. If you want the last frame to hold, clamp:
+`show.top(edit.min(show.duration() - 1e-3))`.
+
 For a color-accurate single frame, render a `RgbRaster` and `write_ppm` (as
 `show_spatial_plane` does). For a color **sequence** — the path to an MP4 — lower
 each frame to truecolor ANSI headlessly and write it to a numbered file. The
@@ -217,9 +231,11 @@ fn frame_bytes(frame: gibson::Surface, w: u16, h: u16, edit: f32) -> Vec<u8> {
 }
 ```
 
-Loop that over `edit = 0, dt, 2·dt, …`, writing `frame_NNNN.ans`, then convert the
-sequence downstream (terminal → PNG → `ffmpeg`). Produce one with
-`cargo run --example show_capture -- seq ./frames`.
+Loop that over `edit = 0, dt, 2·dt, …`, writing `frame_NNNN.ans`. Produce one with
+`cargo run --example show_capture -- seq ./frames`. To turn those truecolor `.ans`
+frames into images, run them through `docs/assets/render_ui_skins.py`
+(`render(data, w, h)` → PNG via `pyte` + `Pillow`; install those in a scratch venv),
+then `ffmpeg` the PNGs into an MP4 — the whole terminal → PNG → MP4 path.
 
 ### The transition corridor
 

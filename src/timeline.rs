@@ -231,6 +231,10 @@ impl<T> Timeline<T> {
     /// crossfade weight (ties broken by the later cue, so an incoming shot takes
     /// over the instant it is at least as present as the outgoing one). `None` in a
     /// gap. This is the "which shot is the audience actually watching now" query.
+    ///
+    /// Windows are half-open `[start, end)`, so `top(self.duration())` is `None` —
+    /// seeking to exactly the end lands *past* the final shot. To hold the last
+    /// frame when seeking, clamp: `tl.top(t.min(tl.duration() - 1e-3))`.
     pub fn top(&self, t: f32) -> Option<Active<'_, T>> {
         self.resolve(t)
             .into_iter()
