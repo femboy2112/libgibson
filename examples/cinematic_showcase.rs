@@ -20,8 +20,8 @@
 //!
 //! * the **edit clock** is the only stored time — every frame is a pure function
 //!   of `edit`, nothing on the frame path reads a wall clock;
-//! * the reusable *time* law ([`show_timeline::ShowTimeline`]) stays demo-local
-//!   and promotable, never hardened into a general video editor;
+//! * the reusable *time* law is the public [`gibson::timeline::Timeline`] — the
+//!   edit clock and cue resolution — while which shot plays when stays demo-local;
 //! * the camera cue sheet, the ring geometry and the look are **demo-local art
 //!   direction** ([`stage`], [`look`]), built on public `raster3d`/`RgbRaster`
 //!   primitives only.
@@ -40,8 +40,6 @@ mod observatory;
 mod reel;
 #[path = "cinematic_showcase/shot.rs"]
 mod shot;
-#[path = "cinematic_showcase/show_timeline.rs"]
-mod show_timeline;
 #[path = "cinematic_showcase/showcase.rs"]
 mod showcase;
 #[path = "cinematic_showcase/stage.rs"]

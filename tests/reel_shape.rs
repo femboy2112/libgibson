@@ -10,8 +10,6 @@
 mod reel;
 #[path = "../examples/cinematic_showcase/shot.rs"]
 mod shot;
-#[path = "../examples/cinematic_showcase/show_timeline.rs"]
-mod show_timeline;
 #[path = "../examples/cinematic_showcase/stage.rs"]
 mod stage;
 

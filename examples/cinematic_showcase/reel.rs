@@ -1,7 +1,7 @@
 //! The showcase film's **edit** — the single authoritative clock. One deterministic
 //! cue sheet of hard cuts on one edit clock (seconds; capture runs at 20 fps), pure
 //! data: which shot plays when. Nothing here renders anything; the frame driver
-//! reads it through [`ShowTimeline::top`] to decide the active shot, its HUD and the
+//! reads it through [`Timeline::top`] to decide the active shot, its HUD and the
 //! title overlays, and `stage` realizes the camera for the same edit time.
 //!
 //! Each cue's window is exactly the camera cue sheet's budget for that shot
@@ -26,8 +26,8 @@
 #![allow(dead_code)]
 
 use crate::shot::{GrammarId, SceneId, Shot};
-use crate::show_timeline::ShowTimeline;
 use crate::stage;
+use gibson::timeline::Timeline;
 
 /// The showcase film's edit, as one deterministic cue sheet on a single edit clock.
 ///
@@ -35,8 +35,8 @@ use crate::stage;
 /// (`EST`), the six grammars then the three scenes (each one `PANEL`, laid out in
 /// the order the ring hangs its nine planes), and the reveal (`REVEAL`). The total
 /// equals [`stage::duration`] by construction.
-pub fn reel() -> ShowTimeline<Shot> {
-    let mut tl = ShowTimeline::new().cut(stage::EST, Shot::Establish);
+pub fn reel() -> Timeline<Shot> {
+    let mut tl = Timeline::new().cut(stage::EST, Shot::Establish);
     for g in GrammarId::REEL_ORDER {
         tl = tl.cut(stage::PANEL, Shot::Grammar(g));
     }
