@@ -21,7 +21,7 @@ use super::grammar::{FrameDemand, Grammar, Presented};
 use super::intent::{Intent, PresentationState, SemanticInput};
 use super::model::{Content, CustomCx, Experience};
 use super::motion::DampedSpring;
-use super::paint::{cover_art, seed_for};
+use super::paint::{cover_art, pill_rail, seed_for};
 use super::receipt::PresentationReceipt;
 use crate::capability::ColorDepth;
 use crate::geom::Vec3;
@@ -213,23 +213,20 @@ impl<A: Clone> Grammar<A> for MediaShelf {
         let mut receipt = PresentationReceipt::new("MEDIA_SHELF", active_key);
         for destination in &experience.destinations {
             receipt.destinations.push(destination.key.clone());
+            // The rail is baked (see below), so each destination is attested rastered.
+            receipt.rastered.push(destination.key.clone());
         }
 
-        // A subtle destination strip: the active title, dim siblings as position.
-        // Each tab is keyed so the receipt's destination claims are accountable to
-        // the rendered tree.
-        let mut strip = row::<A>().gap(2);
-        for (index, destination) in experience.destinations.iter().enumerate() {
-            let mut tab = text::<A>(destination.title.clone()).key(destination.key.to_string());
-            if index == active_idx {
-                // Bold (mono-safe) marks the active destination; no filled `selected`
-                // bg, so the strip blends into the backdrop rather than boxing a word.
-                tab = tab.emphasis(Emphasis::Strong);
-            } else {
-                tab = tab.emphasis(Emphasis::Faint);
-            }
-            strip = strip.child(tab);
-        }
+        // The destination rail: baked rounded pills (the ethos chip) rather than a
+        // row of opaque text nodes — the active title in a bright pill, the others
+        // in faint ones, on a scrim that blends into the backdrop.
+        let rail_entries: Vec<(String, bool)> = experience
+            .destinations
+            .iter()
+            .enumerate()
+            .map(|(index, d)| (d.title.clone(), index == active_idx))
+            .collect();
+        let strip = raster::<A>(pill_rail(env.width.saturating_sub(2), &rail_entries));
 
         // Still settling toward the selection → ask for frames; parked → rest.
         let mut demand = FrameDemand::OnChange;
@@ -293,11 +290,49 @@ impl<A: Clone> Grammar<A> for MediaShelf {
                             rz.textured_quad(cover_corners(p), cover, &cam);
                         }
                     }
-                    if env.color_depth == ColorDepth::Mono {
+
+                    // Label the focal cover: its title layered on the cover itself,
+                    // centred and just above the bottom edge (cover-flow style), so the
+                    // title rides the moving cover rather than living only in a caption.
+                    // Project a point near the cover's lower edge to screen pixels.
+                    let title = items
+                        .get(selected)
+                        .map(|it| it.title.as_str())
+                        .unwrap_or("");
+                    let focal = pose(selected as f32 - self.spring.x);
+                    let anchor = Vec3::new(
+                        focal.center.x,
+                        focal.center.y - COVER_H * 0.30,
+                        focal.center.z,
+                    );
+                    let label_xy = cam.project(anchor, pw, ph);
+                    // A soft readability pill behind the title (truecolor/256 only).
+                    if let Some((sx, sy, _)) = label_xy {
+                        if !title.is_empty() && env.color_depth != ColorDepth::Mono {
+                            let wc = (title.chars().count() as i32 + 4).min(pw as i32);
+                            let cell_row = ((sy / 2.0).round() as i32).clamp(0, ph as i32 / 2 - 1);
+                            let px0 =
+                                (sx.round() as i32 - wc / 2).clamp(0, (pw as i32 - wc).max(0));
+                            rz.raster
+                                .round_rect(px0, cell_row * 2, wc, 2, 3.0, (8, 8, 16), 0.60);
+                        }
+                    }
+
+                    let mut surface = if env.color_depth == ColorDepth::Mono {
                         rz.raster.to_mono_surface()
                     } else {
                         rz.raster.to_surface()
+                    };
+                    if let Some((sx, sy, _)) = label_xy {
+                        if !title.is_empty() {
+                            let col = sx.round().max(0.0) as u16;
+                            let row = ((sy / 2.0).round() as i32)
+                                .clamp(0, surface.height as i32 - 1)
+                                as u16;
+                            surface.bake_text_centered(col, row, title, (245, 246, 252), true);
+                        }
                     }
+                    surface
                 };
 
                 let mut shelf = column::<A>().gap(0).child(raster::<A>(surface).grow(1.0));

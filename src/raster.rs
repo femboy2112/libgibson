@@ -122,6 +122,51 @@ impl RgbRaster {
             }
         }
     }
+    /// Filled rounded rectangle, composited at `alpha`, with **anti-aliased
+    /// corners** — a one-pixel analytic coverage band at the edge, so a pill reads
+    /// as a smooth "shrinkwrapped" shape rather than a blocky cell rectangle even
+    /// at half-block terminal scale. `radius` is clamped to half the shorter side
+    /// (a radius ≥ min(w,h)/2 gives a full lozenge/stadium). The rectangle covers
+    /// pixels `[x, x+w) × [y, y+h)`. Non-positive sizes or non-finite inputs do
+    /// nothing. This is the raster primitive beneath baked pill buttons/chips.
+    #[allow(clippy::too_many_arguments)] // a rounded-rect fill: geometry + colour + alpha
+    pub fn round_rect(
+        &mut self,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        radius: f32,
+        color: Rgb,
+        alpha: f32,
+    ) {
+        if w <= 0 || h <= 0 || !radius.is_finite() || !alpha.is_finite() || alpha <= 0.0 {
+            return;
+        }
+        let (fw, fh) = (w as f32, h as f32);
+        let r = radius.max(0.0).min(fw / 2.0).min(fh / 2.0);
+        let (cx, cy) = (x as f32 + fw / 2.0, y as f32 + fh / 2.0);
+        let (bx, by) = (fw / 2.0, fh / 2.0);
+        let px0 = x.max(0);
+        let px1 = (x + w - 1).min(self.width as i32 - 1);
+        let py0 = y.max(0);
+        let py1 = (y + h - 1).min(self.height as i32 - 1);
+        for py in py0..=py1 {
+            for px in px0..=px1 {
+                // Signed distance to a rounded box (IQ's sdRoundBox), sampled at the
+                // pixel centre; coverage is the 1px band straddling the zero contour.
+                let dx = (px as f32 + 0.5 - cx).abs() - bx + r;
+                let dy = (py as f32 + 0.5 - cy).abs() - by + r;
+                let outside = (dx.max(0.0).powi(2) + dy.max(0.0).powi(2)).sqrt();
+                let d = outside + dx.max(dy).min(0.0) - r;
+                let coverage = (0.5 - d).clamp(0.0, 1.0);
+                if coverage > 0.0 {
+                    self.blend(px, py, color, alpha * coverage);
+                }
+            }
+        }
+    }
+
     /// Opaque half-block realization. An unmatched bottom pixel is black.
     /// Color capability quantization remains the ordinary renderer's responsibility.
     pub fn to_surface(&self) -> Surface {
@@ -178,5 +223,56 @@ impl RgbRaster {
             writer.write_all(&[r, g, b])?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_rect_zero_radius_fills_every_pixel_opaque() {
+        let mut r = RgbRaster::new(6, 4);
+        r.round_rect(0, 0, 6, 4, 0.0, (200, 100, 50), 1.0);
+        for y in 0..4 {
+            for x in 0..6 {
+                assert_eq!(r.get(x, y), Some((200, 100, 50)), "pixel ({x},{y})");
+            }
+        }
+    }
+
+    #[test]
+    fn round_rect_rounds_the_corners_but_fills_the_centre() {
+        let mut r = RgbRaster::new(12, 12);
+        // Max radius → a full rounded shape: the extreme corner is (near) untouched,
+        // the centre is fully filled.
+        r.round_rect(0, 0, 12, 12, 6.0, (255, 255, 255), 1.0);
+        assert_eq!(r.get(0, 0), Some((0, 0, 0)), "corner should be cut away");
+        assert_eq!(
+            r.get(6, 6),
+            Some((255, 255, 255)),
+            "centre should be filled"
+        );
+        // A mid-edge pixel sits on the rounded contour: brightly filled but
+        // anti-aliased (not necessarily a solid 255) — the smoothing that makes the
+        // edge read as curved rather than blocky.
+        let (tr, _, _) = r.get(6, 0).unwrap();
+        assert!(
+            tr > 200,
+            "top-centre edge should be brightly filled, got {tr}"
+        );
+    }
+
+    #[test]
+    fn round_rect_is_bounds_safe_and_ignores_degenerate_input() {
+        let mut r = RgbRaster::new(4, 4);
+        // Partly off-canvas (negative origin) must not panic and must clip.
+        r.round_rect(-2, -2, 5, 5, 1.0, (10, 20, 30), 1.0);
+        // Degenerate / non-finite inputs are no-ops.
+        r.round_rect(0, 0, 0, 4, 1.0, (1, 2, 3), 1.0);
+        r.round_rect(0, 0, 4, 4, f32::NAN, (1, 2, 3), 1.0);
+        r.round_rect(0, 0, 4, 4, 1.0, (1, 2, 3), f32::INFINITY);
+        // Something inside the clipped region did get painted.
+        assert_ne!(r.get(0, 0), Some((0, 0, 0)));
     }
 }

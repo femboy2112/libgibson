@@ -8,7 +8,6 @@
 //! the surface cells they land on.
 
 use super::model::Media;
-use crate::cell::{Cell, Color, Glyph, Style};
 use crate::raster::{Rgb, RgbRaster};
 use crate::surface::Surface;
 use crate::ui::element::Key;
@@ -177,55 +176,74 @@ pub(crate) fn glow(dst: &mut RgbRaster, cx: i32, cy: i32, radius: f32, color: Rg
     }
 }
 
-/// The RGB of a concrete colour, or `None` for `Color::Reset` / palette indices.
-pub(crate) fn resolve_rgb(c: Color) -> Option<Rgb> {
-    if let Color::Rgb(r, g, b) = c {
-        Some((r, g, b))
-    } else {
-        None
-    }
-}
-
-/// The representative colour of a (half-block) surface cell — the mean of its two
-/// pixels — used as a baked glyph's background so the glyph's cell blends into the
-/// raster behind it instead of punching an opaque terminal block.
-pub(crate) fn cell_bg(surf: &Surface, x: u16, y: u16) -> Rgb {
-    surf.get(x, y)
-        .map(|cell| {
-            let top = cell.style.fg.and_then(resolve_rgb);
-            let bot = cell.style.bg.and_then(resolve_rgb);
-            match (top, bot) {
-                (Some(t), Some(b)) => (t.0 / 2 + b.0 / 2, t.1 / 2 + b.1 / 2, t.2 / 2 + b.2 / 2),
-                (Some(t), None) => t,
-                (None, Some(b)) => b,
-                (None, None) => (10, 8, 18),
-            }
-        })
-        .unwrap_or((10, 8, 18))
-}
-
 /// Bake `s` onto the surface at `(x0,y)` as crisp glyphs whose backgrounds match the
-/// raster beneath each cell — the block vanishes, only the character shows. Stops at
-/// the surface edge.
+/// raster beneath each cell — the block vanishes, only the character shows. A thin
+/// crate-internal alias for the public [`Surface::bake_text`], which carries the
+/// ethos (background sampled from the raster already painted). Grammars call this;
+/// applications call the method directly.
 pub(crate) fn bake(surf: &mut Surface, x0: u16, y: u16, s: &str, fg: Rgb, bold: bool) {
-    let mut x = x0;
-    for ch in s.chars() {
-        let bg = cell_bg(surf, x, y);
-        let mut style = Style::new()
-            .fg(Color::Rgb(fg.0, fg.1, fg.2))
-            .bg(Color::Rgb(bg.0, bg.1, bg.2));
-        if bold {
-            style = style.bold();
-        }
-        if !surf.set_cell(x, y, Cell::new(Glyph::new(&ch.to_string()), style)) {
+    surf.bake_text(x0, y, s, fg, bold);
+}
+
+/// Bake a string centred on cell column `cx`. Alias for [`Surface::bake_text_centered`].
+pub(crate) fn bake_centered(surf: &mut Surface, cx: u16, y: u16, s: &str, fg: Rgb, bold: bool) {
+    surf.bake_text_centered(cx, y, s, fg, bold);
+}
+
+// ---- rounded-pill navigation rail --------------------------------------------
+
+// Rail palette. The scrim is the Vapor95 screen backdrop (`bg` = 61,35,79) exactly,
+// so the strip vanishes into the chrome and only the pills read — the pills need an
+// opaque backing for their anti-aliased (curved) edges, and this is it. (These
+// experience grammars are demoed on Vapor95; the scrim assumes that backdrop.)
+const RAIL_SCRIM: Rgb = (61, 35, 79);
+const PILL_ACTIVE: Rgb = (120, 64, 172);
+const PILL_FAINT: Rgb = (44, 30, 62);
+const RAIL_TEXT_ON: Rgb = (247, 248, 253);
+const RAIL_TEXT_OFF: Rgb = (176, 168, 198);
+
+/// A baked rounded-pill navigation rail: a one-cell scrim strip carrying one
+/// *shrinkwrapped* pill per entry (`(label, is_active)`), the active one bright,
+/// with the labels baked on top. This is the ethos replacement for a `row` of
+/// opaque `text`-element chips — [`RgbRaster::round_rect`]'s anti-aliased corners
+/// read as curved pills even at half-block scale, and nothing punches a blocky
+/// cell rectangle. Returns the realized one-cell [`Surface`]; the caller wraps it
+/// with [`crate::ui::element::raster`] and attests each destination in
+/// `receipt.rastered` (the rail is rendered, not a keyed node).
+pub(crate) fn pill_rail(max_width: u16, entries: &[(String, bool)]) -> Surface {
+    // Shrink the strip to the pills' own extent (plus a 1-cell gap each), so there
+    // is no empty scrim tail; cap at the available width.
+    let needed: u16 = entries
+        .iter()
+        .map(|(label, _)| label.chars().count() as u16 + 4 + 1)
+        .fold(0u16, |a, b| a.saturating_add(b));
+    let w = needed.min(max_width.max(1)).max(1);
+    let mut band = RgbRaster::new(w, 2);
+    band.clear(RAIL_SCRIM);
+    let mut labels: Vec<(u16, &str, bool)> = Vec::new();
+    let mut x = 0u16;
+    for (label, active) in entries {
+        let wc = label.chars().count() as u16 + 4; // 2 cells of padding each side
+        let fill = if *active { PILL_ACTIVE } else { PILL_FAINT };
+        band.round_rect(
+            x as i32,
+            0,
+            wc as i32,
+            2,
+            3.0,
+            fill,
+            if *active { 0.95 } else { 0.9 },
+        );
+        labels.push((x + 2, label.as_str(), *active));
+        x = x.saturating_add(wc + 1);
+        if x >= w {
             break;
         }
-        x = x.saturating_add(1);
     }
-}
-
-/// Bake a string centred on cell column `cx`.
-pub(crate) fn bake_centered(surf: &mut Surface, cx: u16, y: u16, s: &str, fg: Rgb, bold: bool) {
-    let half = (s.chars().count() as u16) / 2;
-    bake(surf, cx.saturating_sub(half), y, s, fg, bold);
+    let mut surf = band.to_surface();
+    for (bx, label, active) in &labels {
+        let fg = if *active { RAIL_TEXT_ON } else { RAIL_TEXT_OFF };
+        surf.bake_text(*bx, 0, label, fg, *active);
+    }
+    surf
 }

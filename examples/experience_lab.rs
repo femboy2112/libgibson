@@ -27,15 +27,15 @@
 use gibson::capability::ColorDepth;
 use gibson::context::{Context, RenderMode};
 use gibson::input::{Event, KeyCode, KeyModifiers};
+use gibson::raster::RgbRaster;
 use gibson::ui::experience::{
     apply_intent, Action, Content, Destination, Experience, ExperienceRuntime, ExperienceStyle,
-    Facet, Intent, Item, Media,
+    Facet, Intent, Item, Media, PresentationState,
 };
 use gibson::ui::prelude::UiRuntime;
 use gibson::ui::skin::UiEnvironment;
-use gibson::ui::{
-    column, label, row, screen, skins, status, App, AppEvent, BuildCx, Control, Element,
-};
+use gibson::ui::{raster, screen, skins, App, AppEvent, BuildCx, Control, Element};
+use gibson::Surface;
 use std::cell::RefCell;
 use std::io;
 use std::time::Duration;
@@ -149,6 +149,10 @@ struct Lab {
     ui: RefCell<ExperienceRuntime<Msg>>,
     last_action: Option<Msg>,
     quit: bool,
+    /// Whether the HUD carries the live dev affordances (controls hint + last
+    /// action). On for the interactive demo; off for filmic captures, which want
+    /// a clean cinematic frame, not a keybinding legend burned into the video.
+    controls: bool,
 }
 
 impl Lab {
@@ -160,7 +164,127 @@ impl Lab {
             ui: RefCell::new(ui),
             last_action: None,
             quit: false,
+            controls: true,
         }
+    }
+
+    /// A lab whose HUD is the clean cinematic frame (no controls legend, no debug
+    /// readout) — used by the `seq`/`ansi` capture paths.
+    fn capture() -> Self {
+        Self {
+            controls: false,
+            ..Self::new()
+        }
+    }
+}
+
+// ---- the cinematic HUD: title card + lower-third, in the baked-raster ethos ----
+//
+// Built *entirely on the public API* — `Surface::bake_text` (the ethos primitive:
+// crisp glyphs whose cell backgrounds are sampled from the raster beneath, so no
+// opaque terminal block is punched), `RgbRaster` + `to_surface` for the scrim
+// bands, and `stack()` + `raster()` to layer the HUD over the grammar's own
+// presentation. This is the dogfood for the showcase: composing baked overlays on
+// a grammar presentation without reaching into the crate. If this got ugly, the
+// seam would be wrong — it stays this small because the one missing primitive
+// (`bake_text`) now lives on `Surface`.
+
+/// Height, in cells, of each HUD band (title card and lower-third).
+const HUD_BAND: u16 = 2;
+
+const HUD_DARK: (u8, u8, u8) = (10, 7, 20);
+const HUD_SCRIM: (u8, u8, u8) = (48, 23, 72);
+const HUD_SPINE: (u8, u8, u8) = (231, 122, 219);
+const HUD_STRONG: (u8, u8, u8) = (246, 247, 253);
+const HUD_ACCENT: (u8, u8, u8) = (236, 170, 246);
+const HUD_DIM: (u8, u8, u8) = (176, 170, 205);
+
+fn lerp(a: (u8, u8, u8), b: (u8, u8, u8), t: f32) -> (u8, u8, u8) {
+    let m = |x: u8, y: u8| {
+        (x as f32 + (y as f32 - x as f32) * t)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    (m(a.0, b.0), m(a.1, b.1), m(a.2, b.2))
+}
+
+/// Blit a scrim band — a vertical gradient with a bright accent spine on the left
+/// and an accent edge-line — of `HUD_BAND` cells into `layer` at cell-row `cy`.
+/// `bright_bottom` faces the brighter gradient edge toward the grammar (down for
+/// the top band, up for the lower-third).
+fn blit_scrim(layer: &mut Surface, w: u16, cy: u16, bright_bottom: bool) {
+    let ph = (HUD_BAND * 2).max(1);
+    let mut band = RgbRaster::new(w, ph);
+    let denom = ph.saturating_sub(1).max(1) as f32;
+    for y in 0..ph {
+        let t = y as f32 / denom;
+        let v = if bright_bottom { t } else { 1.0 - t };
+        let base = lerp(HUD_DARK, HUD_SCRIM, 0.1 + 0.9 * v);
+        for x in 0..w {
+            band.set(x as i32, y as i32, base);
+        }
+    }
+    for y in 0..ph as i32 {
+        band.blend(0, y, HUD_SPINE, 0.95);
+        band.blend(1, y, HUD_SPINE, 0.40);
+    }
+    let edge = if bright_bottom { ph as i32 - 1 } else { 0 };
+    for x in 0..w as i32 {
+        band.blend(x, edge, HUD_SPINE, 0.55);
+    }
+    layer.blit_transparent_at(&band.to_surface(), 0, cy);
+}
+
+/// Build the HUD overlay layer: a top title card (experience title · active style)
+/// and a bottom lower-third (now-showing caption + optional controls hint),
+/// transparent everywhere else so the grammar shows through untouched.
+fn cinematic_hud(
+    w: u16,
+    h: u16,
+    title: &str,
+    style: &str,
+    caption: &str,
+    controls: Option<&str>,
+) -> Surface {
+    let mut layer = Surface::new_transparent(w, h);
+    if w < 8 || h < 6 {
+        return layer; // too small to frame; leave the grammar bare
+    }
+
+    // Top title card: experience title on the spine, active style right-aligned.
+    blit_scrim(&mut layer, w, 0, true);
+    layer.bake_text(2, 0, title, HUD_STRONG, true);
+    let caps = style.to_uppercase();
+    let sx = w.saturating_sub(caps.chars().count() as u16 + 2);
+    layer.bake_text(sx, 0, &caps, HUD_ACCENT, true);
+
+    // Bottom lower-third: now-showing caption, with the controls hint beneath it.
+    let by = h - HUD_BAND;
+    blit_scrim(&mut layer, w, by, false);
+    layer.bake_text(2, by, caption, HUD_STRONG, true);
+    if let Some(c) = controls {
+        layer.bake_text(2, by + 1, c, HUD_DIM, false);
+    }
+    layer
+}
+
+/// The now-showing caption for the current destination/selection.
+fn hud_caption(exp: &Experience<Msg>, state: &PresentationState) -> String {
+    let Some(active) = exp.destinations.get(state.active_index(exp)) else {
+        return String::new();
+    };
+    match &active.content {
+        Content::Collection(items) if !items.is_empty() => {
+            let si = state.selected_index(exp).unwrap_or(0).min(items.len() - 1);
+            let item = &items[si];
+            match &item.subtitle {
+                Some(s) if !s.is_empty() && s != "\u{2014}" => {
+                    format!("\u{266a} {}   \u{00b7}   {}", item.title, s)
+                }
+                _ => format!("\u{266a} {}", item.title),
+            }
+        }
+        _ => active.title.clone(),
     }
 }
 
@@ -175,31 +299,38 @@ fn view(lab: &Lab, cx: &BuildCx) -> Element<Msg> {
         .borrow_mut()
         .present(&lab.experience, &cx.environment, cx.time);
 
-    let (style_name, count) = {
+    let (w, h) = (cx.environment.width, cx.environment.height);
+    let (style_name, caption) = {
         let ui = lab.ui.borrow();
-        (ui.style_name().to_string(), ui.style_count())
+        (
+            ui.style_name().to_string(),
+            hud_caption(&lab.experience, ui.state()),
+        )
     };
-    let last = lab
-        .last_action
-        .as_ref()
-        .map(|m| format!("{m:?}"))
-        .unwrap_or_else(|| "—".into());
-    let bar = row::<Msg>()
-        .gap(2)
-        .child(status::<Msg>(format!(
-            "EXPERIENCE LAB  {style_name}  ({count} styles)"
-        )))
-        .child(label::<Msg>(
-            "s style · 1-6 pick · arrows nav · ↵ act · Esc back · q quit",
-        ))
-        .child(label::<Msg>(format!("last: {last}")));
+    let controls = lab
+        .controls
+        .then_some("s style · 1-6 pick · arrows nav · ↵ act · Esc back · q quit");
 
-    screen::<Msg>().child(
-        column::<Msg>()
-            .gap(0)
-            .child(bar)
-            .child(presented.element.grow(1.0)),
-    )
+    // Compose the cinematic HUD and layer it over the grammar. The grammar shows
+    // through everywhere the HUD is transparent; the two bands sit on top.
+    let mut hud = cinematic_hud(w, h, &lab.experience.title, &style_name, &caption, controls);
+    if lab.controls && w >= 8 && h >= 6 {
+        if let Some(msg) = &lab.last_action {
+            let readout = format!("last: {msg:?}");
+            let x = w.saturating_sub(readout.chars().count() as u16 + 2);
+            hud.bake_text(x, h - HUD_BAND + 1, &readout, HUD_DIM, false);
+        }
+    }
+
+    // Layer the HUD over the grammar. The overlay host is *our* `screen` (a
+    // guaranteed `Screen`, which the overlay lowering fills to the viewport), so
+    // the full-height HUD spans top-to-bottom regardless of how tall the grammar's
+    // own content is — the lower-third lands at the bottom even for the short
+    // STANDARD floor. The HUD's transparent cells show the grammar through; the
+    // two scrim bands sit on top.
+    screen::<Msg>()
+        .child(presented.element.grow(1.0))
+        .overlay(raster::<Msg>(hud))
 }
 
 /// The one and only update. Lab-global keys (style switch / quit) are handled
@@ -281,7 +412,7 @@ fn navigate(lab: &Lab, intent: Intent) {
 /// Returns the number of frames written. (Milestone §52 temporal sequences.)
 fn capture_sequence(scenario: &str, outdir: &str, w: u16, h: u16) -> io::Result<u32> {
     std::fs::create_dir_all(outdir)?;
-    let lab = Lab::new();
+    let lab = Lab::capture();
     let dt = Duration::from_millis(50); // 20fps edit clock
     let mut n: u32 = 0;
     let mut now = Duration::ZERO;
@@ -410,7 +541,7 @@ fn main() -> io::Result<()> {
             .saturating_sub(1);
         let w: u16 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(100);
         let h: u16 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(28);
-        let lab = Lab::new();
+        let lab = Lab::capture();
         let style = ExperienceStyle::ALL
             .get(idx)
             .copied()

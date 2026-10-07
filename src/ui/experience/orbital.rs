@@ -32,7 +32,7 @@ use super::grammar::{FrameDemand, Grammar, Presented};
 use super::intent::{Intent, PresentationState, SemanticInput};
 use super::model::{Content, CustomCx, Experience};
 use super::motion::DampedSpring;
-use super::paint::{hsv, mix, seed_for};
+use super::paint::{hsv, mix, pill_rail, seed_for};
 use super::receipt::PresentationReceipt;
 use crate::capability::ColorDepth;
 use crate::input::{KeyCode, KeyEvent};
@@ -351,7 +351,7 @@ impl Orbital {
         destinations: (usize, usize),
         (pw, ph): (u16, u16),
         t: f32,
-    ) -> RgbRaster {
+    ) -> (RgbRaster, Vec<OrbAnchor>) {
         let mut rz = RgbRaster::new(pw, ph);
         let (w, h) = (rz.width() as f32, rz.height() as f32);
         let (cx, cy) = (w * 0.5, h * 0.5);
@@ -423,8 +423,29 @@ impl Orbital {
                 );
             }
         }
-        rz
+        let anchors = poses
+            .iter()
+            .map(|p| OrbAnchor {
+                index: p.index,
+                x: p.x,
+                y: p.y,
+                rad: p.rad,
+                focus: p.focus,
+            })
+            .collect();
+        (rz, anchors)
     }
+}
+
+/// Where an orb landed on screen (pixel coords), so `present` can bake that item's
+/// title at the planet — the label travels with the moving part. `focus` runs
+/// 0 (a small ring sibling) to 1 (the centred, focused orb).
+struct OrbAnchor {
+    index: usize,
+    x: f32,
+    y: f32,
+    rad: f32,
+    focus: f32,
 }
 
 impl<A: Clone> Grammar<A> for Orbital {
@@ -447,25 +468,25 @@ impl<A: Clone> Grammar<A> for Orbital {
             .unwrap_or_else(|| Key::named("∅"));
         let mut receipt = PresentationReceipt::new("ORBITAL", active_key);
 
-        // The destination strip: every destination a keyed node. The active one is
-        // marked by a glyph (`◉` vs `○`), so the mark survives Mono — not emphasis
-        // alone.
-        let mut strip = row::<A>().gap(2);
-        for (index, destination) in experience.destinations.iter().enumerate() {
-            receipt.destinations.push(destination.key.clone());
-            let glyph = if index == active_idx { '◉' } else { '○' };
-            let mut tab = text::<A>(format!("{glyph} {}", destination.title))
-                .key(destination.key.to_string());
-            if index == active_idx {
-                // Accent colour + the `◉` glyph mark the active destination (both
-                // mono-safe); no filled `selected` bg, so the text blends into the
-                // dark field instead of punching an opaque block.
-                tab = tab.emphasis(Emphasis::Strong).tone(Tone::Accent);
-            } else {
-                tab = tab.emphasis(Emphasis::Faint);
-            }
-            strip = strip.child(tab);
-        }
+        // The destination rail: baked rounded pills (the ethos chip) rather than a
+        // row of opaque text nodes. The active one is bright and marked by `◉` vs
+        // `○` (mono-safe). Rendered, so every destination is attested in
+        // `receipt.rastered` instead of as a keyed node.
+        let rail_entries: Vec<(String, bool)> = experience
+            .destinations
+            .iter()
+            .enumerate()
+            .map(|(index, destination)| {
+                receipt.destinations.push(destination.key.clone());
+                receipt.rastered.push(destination.key.clone());
+                let glyph = if index == active_idx { '◉' } else { '○' };
+                (
+                    format!("{glyph} {}", destination.title),
+                    index == active_idx,
+                )
+            })
+            .collect();
+        let strip = raster::<A>(pill_rail(env.width.saturating_sub(2), &rail_entries));
 
         // Rows the layout leaves for the body: screen padding (2), the strip (1) and
         // the gap under it (1), one row for the caption when it fits.
@@ -509,18 +530,38 @@ impl<A: Clone> Grammar<A> for Orbital {
                 let pw = env.width.saturating_sub(2).max(2);
                 let ph = world_rows.saturating_mul(2).max(2);
                 let spin = self.spring.x;
-                let world = self.render_world(
+                let (world, anchors) = self.render_world(
                     &seeds,
                     spin,
                     (experience.destinations.len(), active_idx),
                     (pw, ph),
                     now.as_secs_f32(),
                 );
-                let surface = if env.color_depth == ColorDepth::Mono {
+                let mut surface = if env.color_depth == ColorDepth::Mono {
                     world.to_mono_surface()
                 } else {
                     world.to_surface()
                 };
+                // Bake each orb's item title just beneath its planet, so the label
+                // rides the moving part (not only the caption). Brightness tracks
+                // focus: the centred orb's title is bright, ring siblings dim.
+                let rows = surface.height as i32;
+                for a in &anchors {
+                    if let Some(item) = items.get(a.index) {
+                        let col = a.x.round().max(0.0) as u16;
+                        let row =
+                            ((((a.y + a.rad) / 2.0).round() as i32) + 1).clamp(0, rows - 1) as u16;
+                        let b = 0.4 + 0.6 * a.focus;
+                        let v = |base: f32| (base * b).round().clamp(0.0, 255.0) as u8;
+                        surface.bake_text_centered(
+                            col,
+                            row,
+                            &item.title,
+                            (v(235.0), v(236.0), v(248.0)),
+                            a.focus > 0.5,
+                        );
+                    }
+                }
 
                 let mut orbit = column::<A>().gap(0).child(raster::<A>(surface).grow(1.0));
 
