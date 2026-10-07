@@ -197,9 +197,22 @@ impl View {
         polygon
     }
 }
+/// A triangle mesh: one shared vertex list plus index triples into it.
+///
+/// Vertices carry **position only** — there is no per-vertex colour, normal or UV.
+/// A mesh's whole appearance comes from the single [`Material`] passed to
+/// [`Rasterizer::draw_mesh`], so one call paints the entire mesh in one flat-shaded
+/// colour; for differently coloured parts, issue several `draw_mesh` calls. Faces
+/// are wound counter-clockwise as seen from *outside* (the built-in
+/// [`TriangleMesh::cube`] / [`TriangleMesh::box_xyz`] / [`TriangleMesh::octahedron`]
+/// all follow this), which decides both backface culling and which side the light
+/// hits — see [`Rasterizer::draw_mesh`].
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct TriangleMesh {
+    /// Vertex positions in model space (before the per-call transform is applied).
     pub vertices: Vec<Vec3>,
+    /// Faces as index triples into `vertices`, each wound CCW when viewed from
+    /// outside. An out-of-range index skips that triangle rather than panicking.
     pub triangles: Vec<[usize; 3]>,
 }
 impl TriangleMesh {
@@ -236,6 +249,8 @@ impl TriangleMesh {
             ],
         }
     }
+    /// A regular octahedron inscribed in the given radius, centred at the origin,
+    /// outward-wound.
     pub fn octahedron(radius: f32) -> Self {
         let r = radius;
         Self {
@@ -260,11 +275,22 @@ impl TriangleMesh {
         }
     }
 }
+/// Flat-shading parameters for a mesh or triangle: one base colour plus the three
+/// light terms that are combined **per face**. The shaded colour is
+/// `color * (ambient + diffuse·d + emissive)`, where `d` is the one-sided Lambert
+/// term (see [`Rasterizer::draw_mesh`]); the multiplier is clamped so bright or
+/// emissive faces stay bounded rather than overflowing.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Material {
+    /// Base surface colour, before any lighting is applied.
     pub color: Rgb,
+    /// Constant light on every face regardless of orientation — the floor that keeps
+    /// unlit (back-facing) faces visible instead of black. Typically small (~0.2).
     pub ambient: f32,
+    /// Weight of the directional term, scaled by how squarely the face points at
+    /// [`Rasterizer::light`]. A face turned away from the light contributes none of it.
     pub diffuse: f32,
+    /// Self-illumination added regardless of any light — a face that glows on its own.
     pub emissive: f32,
 }
 impl Default for Material {
@@ -291,9 +317,22 @@ pub struct RasterStats {
 }
 #[derive(Debug, Clone)]
 pub struct Rasterizer {
+    /// The RGB framebuffer being drawn into. Public so it can be read back
+    /// (`to_surface`) or swapped between frames.
     pub raster: RgbRaster,
+    /// Direction **toward** the single directional light, in world space (normalized
+    /// internally). Lighting is **one-sided**: a face whose outward normal points
+    /// away from this direction gets no diffuse term — only `ambient + emissive` —
+    /// and the normal is *not* flipped toward the viewer, so a mesh lit from behind
+    /// reads dim rather than bright. There is exactly one light; it has no position
+    /// or falloff (purely directional).
     pub light: Vec3,
+    /// Optional linear distance fog blended into far geometry; `None` disables it.
     pub fog: Option<Fog>,
+    /// When `true`, triangles facing away from the camera (clockwise in screen space
+    /// for an outward-wound mesh) are skipped. Default `false` — both sides draw,
+    /// which is what [`Rasterizer::textured_quad`] relies on to show a plane from
+    /// either face.
     pub cull_backfaces: bool,
     pub stats: RasterStats,
     depth: Vec<f64>,
@@ -333,6 +372,21 @@ impl Rasterizer {
             })
             .map(|z| *z as f32)
     }
+    /// Draw every triangle of `mesh` through `transform`, lit by [`Rasterizer::light`]
+    /// and shaded with a single `material` for the **whole mesh** (no per-vertex or
+    /// per-face colour — see [`TriangleMesh`]). Each face is flat-shaded with a
+    /// **one-sided** Lambert term: the normal comes from the face's world winding, and
+    /// a face turned away from the light receives only `ambient + emissive`, never a
+    /// back-lit highlight.
+    ///
+    /// **Cost scales with triangle count.** This issues one internal rasterization per
+    /// triangle — a mesh of *n* triangles is *n* fills per call, with no batching,
+    /// instancing or spatial culling beyond the per-face near/far clip, the depth test
+    /// and optional [`Rasterizer::cull_backfaces`]. A few thousand triangles per frame
+    /// is comfortable; tens of thousands is not. Non-finite transformed vertices and
+    /// out-of-range indices are skipped per triangle. Depth is shared with
+    /// [`Rasterizer::textured_quad`], so meshes and media planes occlude each other
+    /// correctly in a single scene.
     pub fn draw_mesh(
         &mut self,
         mesh: &TriangleMesh,
@@ -367,6 +421,10 @@ impl Rasterizer {
             self.triangle(vertices.map(p), &view, material);
         }
     }
+    /// Draw a single world-space triangle with `material`, lit exactly as
+    /// [`Rasterizer::draw_mesh`] (one-sided Lambert, flat-shaded). The lower-level path
+    /// when you are generating geometry directly rather than from a [`TriangleMesh`].
+    /// Non-finite vertices are rejected.
     pub fn draw_triangle(&mut self, vertices: [Vec3; 3], camera: &Camera, material: Material) {
         self.sync_depth();
         self.stats.triangles_submitted = self.stats.triangles_submitted.saturating_add(1);
