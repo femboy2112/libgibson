@@ -136,6 +136,8 @@ none requires reading another's internals or the flagship's source.
 | `show_observable` | `plot` as one directed scene; the data stays *yours* | `cargo run --example show_observable` |
 | `show_experience` | an `ExperienceRuntime` in a timeline; style switches, selection survives | `cargo run --example show_experience` |
 | `show_capture` | headless color capture; the loop that turns `f(edit)` into a sequence | `cargo run --example show_capture -- seq ./frames` |
+| `show_interactive` | the edit clock is *yours*: play/pause, seek, step, jump acts — all pure `f(edit)`, no "player" type | `cargo run --example show_interactive` |
+| `show_hud` | crisp chrome over a scene: an alpha-composited rounded plate + baked text, no opaque cells | `cargo run --example show_hud` |
 
 Each also takes a headless seek argument (`-- at T`, or `-- shot T out.ppm` for the
 spatial one, `-- seq DIR` for capture) so you can inspect a single instant without a
@@ -179,9 +181,45 @@ pixel rows. Size a raster to `h` instead of `2 * h` and you get a half-height
 picture. Every recipe computes `ph = h * 2` for exactly this reason.
 
 Perspective is correct, depth-tested, and the quad is not backface-culled. To make
-it a *show*, drive `cam.position` from the edit clock (a `Timeline` of camera legs,
-each leg eased by its `progress`). That is the entire trick behind the flagship's
-fly-by — no texture-mapping framework, just a moving eye.
+it a *show*, drive `cam.position` from the edit clock. That is the entire trick
+behind the flagship's fly-by — no texture-mapping framework, just a moving eye.
+
+### A camera path that flows *through* the cuts
+
+The camera is a second reader of the *same* `edit` the timeline reads — and keeping
+it independent of the cue windows is the point. The tempting mistake is one eased leg
+**per cue**: ease between this shot's pose and the next using `active.progress`. At
+every cut the per-cue local time resets to zero, so the camera **stops dead and
+restarts** at each boundary — it stutters exactly where you wanted it to glide.
+Instead, sample keyframes by *global* edit time, so the eye sweeps continuously
+across cuts:
+
+```rust
+use gibson::clock::ease_in_out;
+use gibson::geom::Vec3;
+
+/// Eased position along keyframes on the GLOBAL edit clock. Sampling by absolute
+/// `edit` — not a per-cue local time — is what lets the path glide through a cut
+/// instead of snapping at the shot boundary.
+fn eye_at(edit: f32, keys: &[(f32, Vec3)]) -> Vec3 {
+    match keys.windows(2).find(|w| edit < w[1].0) {   // the leg still ahead of us
+        Some(w) => {
+            let (t0, a) = w[0];
+            let (t1, b) = w[1];
+            let u = ((edit - t0) / (t1 - t0).max(1e-3)).clamp(0.0, 1.0);
+            a.plus(b.minus(a).scale(ease_in_out(u)))   // Vec3: plus / minus / scale
+        }
+        None => keys.last().map(|k| k.1).unwrap_or_default(),
+    }
+}
+```
+
+The timeline decides *what* is on screen at `edit`; `eye_at` decides *where the eye
+is* at the same `edit`. Two readers of one clock — the two-clock discipline applied
+to the camera. There is deliberately **no `Camera::orbit` or keyframe type in the
+library**: a camera path is choreography, and choreography is yours (§1, §8). The
+flagship's `stage.rs` does exactly this with eased keyframes; its ring geometry and
+dwell poses are art direction and stay demo-local.
 
 ---
 

@@ -106,6 +106,14 @@ path = "examples/recipes/show_experience.rs"
 name = "show_capture"
 path = "examples/recipes/show_capture.rs"
 
+[[example]]
+name = "show_interactive"
+path = "examples/recipes/show_interactive.rs"
+
+[[example]]
+name = "show_hud"
+path = "examples/recipes/show_hud.rs"
+
 # Dev/test builds keep line tables (so RUST_BACKTRACE still symbolicates file:line)
 # but drop full type/variable DWARF. With ~50 integration-test binaries + examples
 # each statically embedding the crate + a generics-heavy dep graph (taffy), full
