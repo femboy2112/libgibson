@@ -33,6 +33,10 @@
 
 pub mod filterbank;
 pub mod listener;
+pub mod onset;
+pub mod temporal;
 
 pub use filterbank::ErbBank;
 pub use listener::{ChannelModel, LevelCalibration, ListenerProfile, ListeningContext};
+pub use onset::onset_salience;
+pub use temporal::{envelope_rms, fine_structure_zcr};
