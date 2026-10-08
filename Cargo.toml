@@ -88,6 +88,13 @@ path = "examples/fx_lab.rs"
 name = "human_music_probe"
 path = "examples/human_music_probe.rs"
 
+# Frozen A/B/C/D auditory-observer experiment (observer MVP): renders HumanMusic, derives
+# three controlled perturbations, and reports per-witness AuditoryTrace distances + WAVs for
+# maintainer listening. Analysis/listening instrument on the beef-up branch, not shipped.
+[[example]]
+name = "observer_abcd"
+path = "examples/observer_abcd.rs"
+
 # Dev/test builds keep line tables (so RUST_BACKTRACE still symbolicates file:line)
 # but drop full type/variable DWARF. With ~50 integration-test binaries + examples
 # each statically embedding the crate + a generics-heavy dep graph (taffy), full

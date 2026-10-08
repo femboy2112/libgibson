@@ -1,4 +1,8 @@
-//! **Auditory observer** (`gibson::audio::perception`) — Phase 0, observer-only.
+//! **Auditory observer** (`gibson::audio::perception`) — observer-only MVP.
+//!
+//! The witnesses (ERB filterbank, envelope, TFS, onset salience) are tied together by
+//! [`trace::AuditoryTrace`] — a multi-witness summary with a per-witness [`trace::TraceDistance`]
+//! and a [`ablation::ablate`] device — with **no** single collapsed quality scalar anywhere.
 //!
 //! This layer answers one question: *given a stream of acoustic samples and an
 //! explicitly declared listening context, what does a deterministic auditory model
@@ -31,12 +35,16 @@
 //! For a fixed PCM input and a fixed [`listener::ListeningContext`], every result here
 //! is bit-reproducible: pure `f32`/`f64` arithmetic, no RNG, no global state.
 
+pub mod ablation;
 pub mod filterbank;
 pub mod listener;
 pub mod onset;
 pub mod temporal;
+pub mod trace;
 
+pub use ablation::{ablate, Ablation};
 pub use filterbank::ErbBank;
 pub use listener::{ChannelModel, LevelCalibration, ListenerProfile, ListeningContext};
 pub use onset::onset_salience;
 pub use temporal::{envelope_rms, fine_structure_zcr};
+pub use trace::{AuditoryTrace, Physical, TraceDistance};
