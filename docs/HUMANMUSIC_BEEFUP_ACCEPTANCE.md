@@ -21,35 +21,55 @@ calibrated instruments in `scripts/humanmusic_beefup/` and the session analysis 
 
 ### Coherence (the #1 finding — all songs cohere on literal long-range recurrence)
 
-| gate | target | HumanMusic today |
-| --- | --- | --- |
-| `selfsim_peak` (bar-level self-similarity) | ≥ 0.65 | ~0.74 (OK) |
-| `longrange_recur` (pitch-class sets that return > 8 beats later) | ≥ 0.70 | ~0.69, drops to 0.50 on some grammars |
-| opening lead motif restated later | **yes** | **no (0 / 9)** ← the gap |
+Reproducible via the committed `scripts/humanmusic_beefup/coherence_metrics.py` (consumes a local
+MIDI or a `human_music_probe` TSV):
+
+| gate | target | references (calibration) | HumanMusic today |
+| --- | --- | --- | --- |
+| opening lead motif restated later | **yes** | **YES** (SOS, I Can't Go For That, Off The Wall) | **no (0 / 9)** ← the gap |
+| `longrange_recur` (bars that recur > 8 beats later) | ≥ 0.70 | 0.69 – 0.91 | **0.29 – 0.71**, grammar-dependent (vapor95/demo = 0.29) |
+| `selfsim_peak` (bar pitch-class self-similarity) | — | ~1.0 | ~1.0 |
 
 Real songs state a riff/hook/section and bring it back **unchanged** (literal), **transposed
 to the chord** (I Can't Go For That), or **ornamented on a fixed contour** (Off The Wall).
 HumanMusic through-composes and develops — the extreme non-repeating end. Closing this is the
 primary coherence lever.
 
+> **Correction (§8, measured 2026-10-08):** the earlier "`selfsim_peak` ~0.74 (OK)" figure came
+> from a session-only contour measure that is **not** reproduced by the committed tool, whose
+> bar-pitch-class `selfsim_peak` **saturates at ~1.0 for references *and* HumanMusic** — it does
+> not discriminate, so it is not a gate. The discriminating coherence signals are **opening-motif
+> return** (the real gap: refs restate, HumanMusic never does) and **`longrange_recur`** (where
+> HumanMusic is in fact *lower and more variable* than previously stated — as low as 0.29). We do
+> not fit the metric to the remembered number.
+
 ### Groove / pocket (two failure modes, a band in between)
 
-Cross-voice **offset scatter** (how differently voices are shifted) and within-voice
-**jitter** (note-to-note wobble), in milibeat (1 beat = 1000 mb; a sixteenth = 250 mb),
-via `scripts/humanmusic_beefup/groove_metrics.py`:
+The corrected `scripts/humanmusic_beefup/groove_metrics.py` (built on `hm_corpus.py`) decomposes
+performed timing — **after** choosing each voice's rhythmic grid, so triplets and swing are not
+charged as error — into four milibeat components (1 beat = 1000 mb; a sixteenth = 250 mb):
+**band_lean** (the ensemble's shared, downbeat-anchored pulse lean), **scatter** (how much the
+per-voice leans disagree), **jitter** (residual per-voice wobble after each voice's own groove is
+removed), and **swing** (lawful per-phase displacement). Verdict and calibrated bands (set by the
+oracle principle — above the calibration envelope, below the negative; see
+`scripts/humanmusic_beefup/CALIBRATION.md`):
 
 | state | scatter | jitter | verdict |
 | --- | --- | --- | --- |
-| **too rigid** (HumanMusic today) | ~0 | ~0 | RIGID — dead grid, no pocket |
-| **the pocket** (funk/pop refs) | ~1–12 | ~2–16 | PASS — coordinated lean |
-| **too loose** (negative reference) | ~26 | ~45 | FAIL — voices trip over each other |
+| **too rigid** (HumanMusic composed Score today) | < 3 | < 3 | RIGID — dead grid, no pocket |
+| **the pocket** (calibration references) | ≤ 26 | ≤ 20 | PASS — coordinated lean / swing / complementary role leans |
+| **too loose** (negative reference) | 37 | 22 | FAIL — voices trip over each other |
 
-A real pocket is a **small, COORDINATED lean** — one anchor voice plus complementary leans
-(Off The Wall: swung bass over straight drums; I Can't Go For That: dragged drum backbeat
-under a straight bass; Tom Sawyer: everyone ~8 mb behind, together). It is **not** zero
-(that is today's robotic state) and it is **not** independent per-voice jitter (that is the
-negative reference). The feel layer must move HumanMusic from RIGID into PASS without ever
-reaching FAIL.
+A real pocket is a **COORDINATED lean** — one anchor voice plus complementary leans (I Can't Go
+For That: a dragged drum backbeat under a straight bass = scatter 18 with **zero** jitter;
+SOS/Limelight: the whole band behind the beat together). It is **not** zero (today's robotic
+state) and it is **not** independent per-voice error (the negative reference — whose failure is
+dominated by **cross-voice scatter**, each voice on its own offset). The feel layer must move
+HumanMusic from RIGID into PASS without ever reaching FAIL. **Note:** this instrument measures
+the positions it is given; HumanMusic's composed Score is metric (hence RIGID even for BLACK_ICE,
+whose accepted pocket is applied at render) — so the Wave-4 feel gate must read **performed**
+positions, which needs a performed-position probe (the current `human_music_probe` dumps the
+composed Score).
 
 ### Negative reference — "Attention" (`AUD_DW0160.mid`)
 
@@ -89,7 +109,11 @@ applies if that ever happens.
 ## Status
 
 - Observer (the measuring ear) Phase 0 + 1 built and green on this branch.
-- Analysis rig: `scripts/humanmusic_beefup/groove_metrics.py` (committed) + session instruments.
+- Analysis rig (committed, reproducible, lattice-aware): `scripts/humanmusic_beefup/` —
+  `hm_corpus.py` (honest SMF parser + timing decomposition), `groove_metrics.py`,
+  `coherence_metrics.py`, `synthetic_controls.py` (§6 self-test), `smf_tests.py` (parser tests),
+  `calibrate.py`, `CALIBRATION.md`. Reference corpus split frozen in `CORPUS_MANIFEST.md`.
+  Engine probe: `examples/human_music_probe.rs` (promoted from the throwaway `gap_dump`).
 - Dials: not yet implemented. Next: `motif_repetition` / `section_return` (the coherence
   levers), then `timing_feel`, each verified against these gates *and* the maintainer's ear.
 - Ultimate acceptance test: a HumanMusic cover of "Attention" that scores PASS (pocket) on

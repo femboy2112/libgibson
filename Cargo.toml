@@ -80,12 +80,13 @@ path = "examples/polished_agent.rs"
 name = "fx_lab"
 path = "examples/fx_lab.rs"
 
-# SCRATCH: note-quality gap analysis instrumentation (HumanMusic vs GOOD_MIDI).
-# Dumps notes+drums WITH velocity to a unified TSV. Throwaway; remove with
-# examples/gap_dump.rs when the beef-up analysis is done.
+# HumanMusic analysis probe (beef-up round): dumps the composed Score — pitched notes + drum
+# lanes WITH velocity and semantic provenance (section family, phrase, motif id/xform, anchor,
+# discourse role, pitch function) to a unified TSV, so scripts/humanmusic_beefup/ can measure the
+# engine with the same instrument as the reference corpus. See that dir's tools.
 [[example]]
-name = "gap_dump"
-path = "examples/gap_dump.rs"
+name = "human_music_probe"
+path = "examples/human_music_probe.rs"
 
 # Dev/test builds keep line tables (so RUST_BACKTRACE still symbolicates file:line)
 # but drop full type/variable DWARF. With ~50 integration-test binaries + examples
