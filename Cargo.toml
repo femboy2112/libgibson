@@ -54,7 +54,7 @@ bitflags = "2.4"
 libc = "0.2"
 # Optional — only compiled under the `audio-cpal` feature (see [features] above).
 cpal = { version = "=0.18.2", optional = true }
-rtrb = { version = "0.3", optional = true }
+rtrb = { version = "0.4", optional = true }
 
 [dev-dependencies]
 portable-pty = "0.9"
