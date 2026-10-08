@@ -27,6 +27,12 @@
 //!   CI, tests, profiling and listening review.
 //! - `wav` — a minimal pure-Rust RIFF/WAVE writer for offline listening artifacts.
 //! - `report` — `AudioReport`, the audio analogue of [`crate::FrameReport`].
+//! - `perception` — the **auditory observer**: a context-indexed, observer-only analysis
+//!   of rendered PCM into multiscale auditory evidence (ERB filterbank, envelope/fine
+//!   structure, onset salience). It is forward and one-directional — it consumes acoustic
+//!   samples plus a declared listening context and never rewrites upstream Score/PCM
+//!   history, and it knows nothing of chords/roles/songs. See
+//!   `docs/HUMAN_MUSIC_AUDITORY_OBSERVER.md`.
 //!
 //! # Backends
 //!
@@ -46,6 +52,7 @@ pub mod dsp;
 pub mod graph;
 pub mod human_music;
 pub mod media;
+pub mod perception;
 pub mod render;
 pub mod report;
 pub mod time;
