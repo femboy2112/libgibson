@@ -95,6 +95,13 @@ path = "examples/human_music_probe.rs"
 name = "observer_abcd"
 path = "examples/observer_abcd.rs"
 
+# Recurrence dial listening renders (Wave 3): the same trace/world/seed/grammar rendered at each
+# motif_repetition position (Develop / Return / Restate) + SongMap fingerprints, for maintainer
+# listening. Listening instrument on the beef-up branch, not shipped.
+[[example]]
+name = "recurrence_ab"
+path = "examples/recurrence_ab.rs"
+
 # Dev/test builds keep line tables (so RUST_BACKTRACE still symbolicates file:line)
 # but drop full type/variable DWARF. With ~50 integration-test binaries + examples
 # each statically embedding the crate + a generics-heavy dep graph (taffy), full

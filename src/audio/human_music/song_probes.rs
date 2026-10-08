@@ -13,10 +13,13 @@ use super::backbone::{ChartCell, ChartRoot, HarmonicGesture};
 use super::contract::CompositionGrammar;
 use super::functor::{perform, Composition};
 use super::language::{HarmonicRhythm, MusicalLanguage};
+use super::motif::Handoff;
 use super::performance::PerformanceOptions;
 use super::score::Role;
 use super::semantic::deflected_lift_trace;
-use super::song::{HarmonicMap, SongMap, SongMapConformance, ThemeSite, CHART_BARS_PER_CHORD};
+use super::song::{
+    HarmonicMap, MotifRepetition, SongMap, SongMapConformance, ThemeSite, CHART_BARS_PER_CHORD,
+};
 use super::theory::Mode;
 use super::world::MusicWorld;
 
@@ -439,3 +442,107 @@ fn the_law_holds_across_songs() {
 /// Performances in [`the_law_holds_across_songs`] that leave a settled song obligation with no
 /// witnessing action — the inherited R7b binding gap (see its doc), measured on 301278e+.
 pub(super) const UNWITNESSED_OBLIGATION_PERFORMANCES: usize = 60;
+
+// ---------------------------------------------------------------------------
+// Wave 3: the `motif_repetition` dial — song-level recurrence, decided upstream of performance.
+// ---------------------------------------------------------------------------
+
+/// The dial governs the song's IDENTITY: changing it changes the SongMap fingerprint (§33), so a
+/// recurrence decision is part of what makes the song this song — never a performance detail. The
+/// decision is taken in [`SongMap::build_with_options`], before any world or performance is known.
+#[test]
+fn motif_repetition_changes_song_identity() {
+    let trace = deflected_lift_trace(96.0);
+    let g = Some(CompositionGrammar::DeflectedLift); // a Motif-anchored grammar
+    let develop = SongMap::build_with_options(&trace, SEED, g, MotifRepetition::Develop);
+    let ret = SongMap::build_with_options(&trace, SEED, g, MotifRepetition::Return);
+    let restate = SongMap::build_with_options(&trace, SEED, g, MotifRepetition::Restate);
+    assert_ne!(
+        develop.fingerprint(),
+        ret.fingerprint(),
+        "Return must be a different song identity than Develop"
+    );
+    assert_ne!(
+        develop.fingerprint(),
+        restate.fingerprint(),
+        "Restate must be a different song identity than Develop"
+    );
+    assert_ne!(
+        ret.fingerprint(),
+        restate.fingerprint(),
+        "Return and Restate must be distinct song identities"
+    );
+}
+
+/// [`MotifRepetition::Develop`] reproduces the historical [`SongMap::build`] exactly — the v0.4
+/// control. (The canonical-fingerprint suite pins the legacy value; this pins that the dial's
+/// default position IS that legacy path, for inferred and forced grammars alike.)
+#[test]
+fn develop_is_the_legacy_control() {
+    let trace = deflected_lift_trace(96.0);
+    for g in [
+        None,
+        Some(CompositionGrammar::DeflectedLift),
+        Some(CompositionGrammar::HookArc),
+        Some(CompositionGrammar::RiffDrive),
+    ] {
+        let legacy = SongMap::build(&trace, SEED, g);
+        let dialed = SongMap::build_with_options(&trace, SEED, g, MotifRepetition::Develop);
+        assert_eq!(
+            legacy.fingerprint(),
+            dialed.fingerprint(),
+            "Develop must equal the legacy build for grammar {g:?}"
+        );
+    }
+}
+
+/// [`MotifRepetition::Restate`] states the germ at EVERY theme site of a Motif-anchored grammar
+/// (the hook recurs across the whole song), using that grammar's OWN generated germ — not a
+/// hardcoded thesis.
+#[test]
+fn restate_states_the_germ_at_every_site() {
+    let trace = deflected_lift_trace(96.0);
+    let song = SongMap::build_with_options(
+        &trace,
+        SEED,
+        Some(CompositionGrammar::DeflectedLift),
+        MotifRepetition::Restate,
+    );
+    assert!(
+        !song.thematic.sites.is_empty(),
+        "the song must state some theme to restate"
+    );
+    let germ = &song.thematic.bank.identity;
+    for site in &song.thematic.sites {
+        assert_eq!(
+            site.handoff,
+            Handoff::Restatement,
+            "every site restates the thesis under Restate"
+        );
+        assert_eq!(
+            &site.motif, germ,
+            "every site states the grammar's own generated germ"
+        );
+    }
+}
+
+/// The dial governs ONLY a Motif-anchored grammar (trap T2): a riff/loop grammar carries its
+/// recurrence on a different anchor, so all three positions are the SAME song there.
+#[test]
+fn dial_is_a_noop_without_a_motif_anchor() {
+    let trace = deflected_lift_trace(96.0);
+    let g = Some(CompositionGrammar::RiffDrive); // anchors Riff/Groove/BassFigure, not Motif
+    let develop = SongMap::build_with_options(&trace, SEED, g, MotifRepetition::Develop);
+    let ret = SongMap::build_with_options(&trace, SEED, g, MotifRepetition::Return);
+    let restate = SongMap::build_with_options(&trace, SEED, g, MotifRepetition::Restate);
+    assert_eq!(
+        develop.fingerprint(),
+        ret.fingerprint(),
+        "no Motif anchor → Return is a no-op"
+    );
+    assert_eq!(
+        develop.fingerprint(),
+        restate.fingerprint(),
+        "no Motif anchor → Restate is a no-op"
+    );
+}
