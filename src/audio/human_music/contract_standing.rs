@@ -22,7 +22,7 @@ use super::super::plan::CompositionPlan;
 use super::super::policy::PerformanceProfile;
 use super::super::receipt::PerformanceReceipt;
 use super::super::semantic::{calm_loop, demo_trace, SemanticTrace};
-use super::super::song::{AnchorReport, SongMap};
+use super::super::song::{AnchorReport, MotifRepetition, SongMap};
 use super::super::world::MusicWorld;
 use super::*;
 
@@ -187,7 +187,13 @@ fn song_under(
     edit(&mut contract);
     let plan =
         CompositionPlan::build_with_contract_for_beats(&timeline, trace.total_beats, contract);
-    SongMap::from_plan(trace, SEED, timeline, plan)
+    SongMap::from_plan_with(
+        trace,
+        SEED,
+        timeline,
+        plan,
+        MotifRepetition::Develop,
+    )
 }
 
 /// Everything a reader of the song can observe of its performance.

@@ -22,7 +22,7 @@ use super::policy::{
 use super::score::{Hearing, Note, Provenance, Role, Score};
 use super::semantic::{EventKind, SemanticTrace, Tone};
 use super::sfx::add_sfx_and_provenance;
-use super::song::SongMap;
+use super::song::{MotifRepetition, SongMap};
 use super::sonority::{plan_sonority, ColorPolicy};
 use super::theory::Midi;
 use super::world::MusicWorld;
@@ -73,6 +73,32 @@ pub fn compose_with_grammar(
         PerformanceOptions::default(),
     );
     (c.score, c.song.plan)
+}
+
+/// Song-level composition options — the aesthetic dials, orthogonal to the world (a recurrence
+/// policy is not a world, §29). `CompositionOptions::default()` composes exactly as [`compose`]
+/// would (inferred grammar, [`MotifRepetition::Develop`]), so the historical path is never
+/// silently changed; a caller opts into stronger recurrence explicitly.
+#[derive(Debug, Clone, Default)]
+pub struct CompositionOptions {
+    /// Force a grammar (the calibration path), or `None` to infer one from the trace's shape.
+    pub grammar: Option<CompositionGrammar>,
+    /// How assertively the song restates its thematic identity (the `motif_repetition` dial).
+    pub motif_repetition: MotifRepetition,
+    /// Performance realization options (language, actions, free vs clockwork responses).
+    pub performance: PerformanceOptions,
+}
+
+/// Compose a score for `trace` under `world` and `opts`, deterministic in `seed`. The opt-in
+/// path for the song-level dials; [`compose`] remains the exact historical default.
+pub fn compose_with_options(
+    trace: &SemanticTrace,
+    world: &MusicWorld,
+    seed: u64,
+    opts: CompositionOptions,
+) -> Score {
+    let song = SongMap::build_with_options(trace, seed, opts.grammar, opts.motif_repetition);
+    perform(&song, world, opts.performance).score
 }
 
 /// The full composition path with every calibration knob: an optional forced grammar and the
