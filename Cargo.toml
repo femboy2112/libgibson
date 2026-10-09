@@ -163,6 +163,14 @@ path = "examples/rick_r0.rs"
 name = "rick_gen3"
 path = "examples/rick_gen3.rs"
 
+# Rick-C137 band-story probe: the ear-accepted rick_probe song with ONE variable changed — who carries
+# which meaning when. Four casts (static / narrative / scrambled / flat) + stem isolations (--no-lead,
+# --lead-only, --rhythm, --support) to test whether the BAND tells the story (the germ identity handed
+# between musicians) rather than a lead singing over backing. Hand-authored listening control. Not shipped.
+[[example]]
+name = "band_story_probe"
+path = "examples/band_story_probe.rs"
+
 # Dev/test builds keep line tables (so RUST_BACKTRACE still symbolicates file:line)
 # but drop full type/variable DWARF. With ~50 integration-test binaries + examples
 # each statically embedding the crate + a generics-heavy dep graph (taffy), full
