@@ -32,6 +32,44 @@ This document outlines completed work and the planned future milestones for LibG
 > The checkpoint counts and CI run ids below are historical development evidence,
 > preserved as measured.
 
+## Forward milestone spine — living plan (2026-10-09)
+
+**Current released base:** v0.4.0. Later version contents are planning targets,
+not merged code or promised dates. New maintainer-requested features may change
+scope and sequence, but source truth, compatibility and explicit acceptance
+remain governing constraints.
+
+- **v0.5 — Observable Instruments + Rick-C137 + cinematic show:** independently
+  reconcile experimental scientific plots (PR #81), spatial presentation and
+  experience grammars (PR #83), the cinematic authoring/one-timeline work
+  (stacked PR #86), auditory observation (PR #84 and C137 branch), and
+  generated HumanMusic ensemble narrative (PR #87). The work is complete **only
+  when the upgraded epic LibGibson MEME INTRO ships as the release finale**:
+  all accepted new capabilities genuinely demonstrated in one directed terminal
+  movie, with the same **local Filthy Frank greenscreen subject keyed ON TOP,
+  reacting to the new film** as in the old `libgibson_intro_reaction`.
+  Require actual executable, seekable deterministic capture, one edit clock,
+  procedural score, optional source dialogue, verified Frank layer, provenance
+  and terminal fidelity gates, and a **maintainer watch/listen ACCEPT** verdict.
+  A no-reaction synthetic CI result alone does not satisfy the full release gate.
+  See [v0.5 milestone coordination](docs/V0_5_OBSERVABLE_INSTRUMENTS.md) and
+  [mandatory meme-intro release flagship](docs/V0_5_MEME_INTRO_FINALE.md).
+- **v0.6–0.7 — reusable C raster/input ABI + real Doom in terminal:** draft
+  research plan [#91](https://github.com/femboy2112/libgibson/pull/91);
+  Doom is a demanding public C consumer, not a private renderer fork.
+- **Parallel/deferred — MeatsackProjection + Genesis/Sound Blaster FM:** physical
+  performance and GSPU-FM remain separately gated; FM research design
+  [#90](https://github.com/femboy2112/libgibson/pull/90). No unaccepted
+  Meatsack/FM feature is implied shipped in v0.5.
+- **v0.8–0.9 — ABI subsystem coverage and parity hardening; v1.0 — full supported
+  language capability parity:** the reviewed stable Rust feature set must be
+  functionally usable from C, C++, Python and Go with equivalent observable
+  contracts and independent tests. See research plan [#91](https://github.com/femboy2112/libgibson/pull/91).
+
+**Release discipline:** none of these research/draft PRs grants permission to
+merge, tag or publish. Merge/release remains a maintainer decision after the
+corresponding integrated-source, CI and human acceptance gates.
+
 ## Post-merge priorities
 
 The approved cinematic branch is merged at `0b673cc`. That checkpoint validated
