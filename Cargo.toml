@@ -148,6 +148,14 @@ path = "examples/songcraft_probe.rs"
 name = "rick_probe"
 path = "examples/rick_probe.rs"
 
+# Rick-C137 R0 baseline diagnostic (no mechanism, no hand-authored notes): renders the GENERATOR's own
+# output — SemanticTrace -> SongMap::compose -> perform — through the WRITTEN (byte-exact v0.4) and BAND
+# (hardened opt-in) profiles across the three product worlds, so the maintainer hears where the engine
+# already stands before any C137 generator-lift rung is built. A measurement, not a proposal. Not shipped.
+[[example]]
+name = "rick_r0"
+path = "examples/rick_r0.rs"
+
 # Dev/test builds keep line tables (so RUST_BACKTRACE still symbolicates file:line)
 # but drop full type/variable DWARF. With ~50 integration-test binaries + examples
 # each statically embedding the crate + a generics-heavy dep graph (taffy), full
