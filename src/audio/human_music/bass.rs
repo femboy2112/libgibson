@@ -32,6 +32,17 @@ fn near(pc: i32, center: Midi) -> Midi {
         .unwrap()
 }
 
+/// The chord tone the §4 carry-substance pass selects for germ degree `deg`: an index into the
+/// chord's pitch classes (`n_tones` of them). Deliberately MODULAR — `deg.rem_euclid(n_tones)` — so
+/// it is NON-INJECTIVE (degrees differing by a multiple of `n_tones` select the same tone) and it
+/// indexes `tones` in chord-storage order, not pitch order. It therefore traces the germ's register
+/// DRIFT over the chord, NOT its exact interval contour (C137-A R2a; see the hardening ledger).
+/// `pub(crate)` so the source-aware narrative witness (R1/R4) reuses the one definition rather than
+/// re-deriving the map.
+pub(crate) fn germ_tone_index(deg: i32, n_tones: usize) -> usize {
+    deg.rem_euclid(n_tones as i32) as usize
+}
+
 fn prov(role_note: &'static str, xform: Option<&'static str>) -> Provenance {
     Provenance {
         role_note,
@@ -250,7 +261,7 @@ pub fn realize_bass_coupled(
 /// the coupled ledger otherwise; every Coupled-only step is gated on it.
 fn realize(
     perf: &PerformancePlan,
-    _plan: &CompositionPlan,
+    plan: &CompositionPlan,
     world: &MusicWorld,
     lead: &[Note],
     ownership: Option<&AuthoredOccupancy>,
@@ -654,6 +665,55 @@ fn realize(
     out.extend(restruck);
     out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
     super::comp::release_support(&mut out, perf);
+
+    // §4 carry-substance (Ensemble narrative only): where the narrative names the bass a CARRIER at
+    // a phrase (a Develop, or a Payoff tutti), the bass does more than sit on roots — it VOICES the
+    // germ the lead taught, tracing the thesis degree PATTERN in the bass register across the
+    // phrase's own onsets. This is the germ's register DRIFT over the chord's tones, not its exact
+    // interval contour: the degree→tone map is modular (`germ_tone_index`, C137-A R2a). Pitches
+    // mostly: the figure keeps its rhythm and dynamics, but it DOES overwrite `function` to
+    // `ChordTone` and does NOT reconcile `prov.role_note` (C137-A R2b — stale on the Ensemble path
+    // only; byte-exact OFF the default path keeps historical fingerprints intact). It is a realizer
+    // substitution, not a new chart verb (no rehearsal admission to satisfy — the exit from the
+    // GEN-STORY-3b wall). Placed before the clip and the coupled hazard-gate below, so the germ
+    // pitches are judged like any other bass note. Byte-exact OFF the narrative: `perf.narrative` is
+    // `None` unless `NarrativePolicy::Ensemble`, and it only touches a phrase the narrative named.
+    if let Some(narr) = &perf.narrative {
+        let germ = &perf.bank.identity;
+        if !germ.degrees.is_empty() {
+            for c in narr
+                .carriages
+                .iter()
+                .filter(|c| c.carriers.contains(&Agent::Bass))
+            {
+                let Some(ph) = plan.form.phrases.iter().find(|p| p.ix == c.phrase) else {
+                    continue;
+                };
+                let (lo, hi) = (ph.start_beat(), ph.end_beat());
+                let in_phrase = out.iter_mut().filter(|n| {
+                    n.role == Role::Bass && n.start_beat >= lo - 1e-6 && n.start_beat < hi - 1e-6
+                });
+                for (i, n) in in_phrase.enumerate() {
+                    // Trace the germ's degree PATTERN over the chord's own tones, so the bass line
+                    // moves in the germ's register shape (a chord-tone approximation of the degree
+                    // pattern — `germ_tone_index`, non-injective, C137-A R2a) while staying
+                    // consonant — a lawful germ-driven bass, not a clashing transcription (the
+                    // receipt's temporal-truth gate rejects a note that claims a function its pitch
+                    // does not have). The function is set to `ChordTone` honestly; `prov.role_note`
+                    // is left as it was (C137-A R2b).
+                    if let Some(ctx) = perf.context_at(n.start_beat) {
+                        let tones = ctx.chord.pitch_classes();
+                        if !tones.is_empty() {
+                            let deg = germ.degrees[i % germ.degrees.len()];
+                            let pc = tones[germ_tone_index(deg, tones.len())];
+                            n.pitch = near(pc, CENTER);
+                            n.function = Some(PitchFunction::ChordTone);
+                        }
+                    }
+                }
+            }
+        }
+    }
     // The authored line lives inside the piece. Every emission path (onsets, figures, answers,
     // unisons, restrikes) is bounded here, at the source, so a reservation read from this line
     // and the final clipped note agree on one domain. A piece that fits its bars is untouched.
@@ -1069,6 +1129,24 @@ mod tests {
     use super::*;
 
     const SEED: u64 = 2112;
+
+    /// C137-A · R2a — the germ→chord-tone map (`germ_tone_index`, bass.rs §4) is non-injective and
+    /// order-blind, so it carries the germ's register DRIFT, not its exact interval contour. This
+    /// documents the §4 limitation at the source; a contour-preserving map would be an opt-in,
+    /// ear-gated alternative, never a silent default. See docs/HUMAN_MUSIC_C137_HARDENING_LEDGER.md.
+    #[test]
+    fn c137a_r2a_germ_tone_map_is_non_injective_and_contour_blind() {
+        // Non-injective over a triad (3 tones): degrees 0, 3, 6 all select the same tone (index 0).
+        assert_eq!(germ_tone_index(0, 3), 0);
+        assert_eq!(germ_tone_index(3, 3), 0);
+        assert_eq!(germ_tone_index(6, 3), 0);
+        // A germ step UP by one degree (2 -> 3) makes the tone index DROP (2 -> 0): the modular wrap
+        // flips contour direction, so ascending germ motion need not give ascending tone selection.
+        assert_eq!(germ_tone_index(2, 3), 2);
+        assert_eq!(germ_tone_index(3, 3), 0);
+        // Negative degrees wrap to the top tone, not "a step below the root".
+        assert_eq!(germ_tone_index(-1, 3), 2);
+    }
 
     fn flagship(world: &MusicWorld, coupling: EnsembleCoupling) -> Composition {
         compose_full(

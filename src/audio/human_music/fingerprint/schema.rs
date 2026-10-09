@@ -1130,6 +1130,8 @@ impl CanonicalFingerprint for performance::PerformancePlan {
             budget,
             rehearsal,
             functions,
+            lead_life,
+            narrative,
         } = self;
         w.tag("performance/PerformancePlan/v2");
         w.field("language", language);
@@ -1163,6 +1165,28 @@ impl CanonicalFingerprint for performance::PerformancePlan {
         }
         if *functions != super::super::policy::FunctionPolicy::Archived {
             w.field("functions", functions);
+        }
+        if *lead_life != super::super::policy::LeadLifePolicy::default() {
+            w.field("lead_life", lead_life);
+        }
+        if let Some(n) = narrative {
+            w.field("narrative", n);
+        }
+    }
+}
+impl CanonicalFingerprint for super::super::narrative::NarrativePlan {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        w.tag("narrative/NarrativePlan/v1");
+        for c in &self.carriages {
+            w.field("at", &c.phrase);
+            w.field("meaning", &c.meaning);
+            match c.lead_role {
+                super::super::narrative::LeadRole::Stating => w.tag("lead/stating"),
+                super::super::narrative::LeadRole::Withheld => w.tag("lead/withheld"),
+            }
+            for a in &c.carriers {
+                w.field("carrier", a);
+            }
         }
     }
 }
@@ -1754,6 +1778,8 @@ impl CanonicalFingerprint for policy::PerformanceProfile {
             percussion,
             harmony,
             functions,
+            lead_life,
+            narrative,
             repair,
         } = self;
         w.field("pitch", pitch);
@@ -1775,6 +1801,40 @@ impl CanonicalFingerprint for policy::PerformanceProfile {
         }
         if *functions != policy::FunctionPolicy::Archived {
             w.field("functions", functions);
+        }
+        if *lead_life != policy::LeadLifePolicy::default() {
+            w.field("lead_life", lead_life);
+        }
+        if *narrative != policy::NarrativePolicy::Archived {
+            w.field("narrative", narrative);
+        }
+    }
+}
+impl CanonicalFingerprint for policy::NarrativePolicy {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        w.tag("policy/NarrativePolicy/v1");
+        match self {
+            Self::Archived => w.tag("archived"),
+            Self::Ensemble => w.tag("ensemble"),
+        }
+    }
+}
+impl CanonicalFingerprint for policy::LeadLifePolicy {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        w.tag("policy/LeadLifePolicy/v1");
+        let Self {
+            development,
+            spacing,
+            dynamics,
+        } = self;
+        if *development {
+            w.tag("development");
+        }
+        if *spacing {
+            w.tag("spacing");
+        }
+        if *dynamics {
+            w.tag("dynamics");
         }
     }
 }

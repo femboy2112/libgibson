@@ -157,6 +157,14 @@ fn realize_lead_impl(
             .find(|&t| t + 1.0 > st.start_beat && t - 0.25 < st_end);
         // Targets first, then connectors justified inside the search, spoken in the
         // performance's language (tension targets, chromatic appetite, internal rests).
+        // GEN-3a: when development is on, keep the injected connective run from being rested back out
+        // (internal_rest -> 0) so it survives as audible motion. The run stays DIATONIC — the
+        // language's own chromatic appetite is left untouched, because chromatic approach tones read
+        // as wrong notes on this lead. Off on the historical path (byte-exact).
+        let mut style = super::motif::LineStyle::for_language(&perf.language);
+        if perf.lead_life.development {
+            style.internal_rest = 0.0;
+        }
         let request = super::motif::LineRequest {
             motif,
             chords: &perf.chords,
@@ -166,7 +174,7 @@ fn realize_lead_impl(
             octave,
             start_beat: st.start_beat,
             prev_pitch: prev_exit,
-            style: super::motif::LineStyle::for_language(&perf.language),
+            style,
             max_candidates: 6,
             arrival,
             earned: (perf.functions == super::policy::FunctionPolicy::Earned)
@@ -196,11 +204,25 @@ fn realize_lead_impl(
             .realizing_opt(st.fragment);
             prov.interaction = interaction;
             prov.material = Some(st.material);
+            // GEN-3c: a per-note dynamic ARC for the lead (a gentle phrase crescendo + the metric
+            // weight of where the note lands), instead of one constant velocity per statement. The
+            // band's bass/keys already breathe per bar; the lead did not. Off on the historical path
+            // (`arc == 1.0`), so WRITTEN velocity is byte-identical.
+            let arc = if perf.lead_life.dynamics {
+                let span = (st.end_beat() - st.start_beat).max(1e-3) as f32;
+                let pos = (((ln.start - st.start_beat) as f32) / span).clamp(0.0, 1.0);
+                let contour = 1.0 + 0.12 * (std::f32::consts::PI * pos).sin() - 0.06 * pos;
+                let w = perf.accent.at_beat(ln.start);
+                let metric = 0.92 + 0.16 * (w.structural + 0.5 * w.syncopation).clamp(0.0, 1.0);
+                (contour * metric).clamp(0.78, 1.18)
+            } else {
+                1.0
+            };
             let mut note = Note::new(
                 ln.start,
                 ln.dur.max(0.1),
                 ln.pitch,
-                (base_vel * (0.9 + 0.1 * ln.accent) * perf.level(Agent::Lead, ln.start))
+                (base_vel * (0.9 + 0.1 * ln.accent) * perf.level(Agent::Lead, ln.start) * arc)
                     .clamp(0.1, 1.0),
                 Role::Lead,
                 prov,

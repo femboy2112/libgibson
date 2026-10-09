@@ -547,6 +547,97 @@ pub fn deflected_lift_trace(total_beats: f64) -> SemanticTrace {
     )
 }
 
+/// Synthetic fixture — **the impossible-demo flight**: a high-energy intro arc built to carry
+/// "amazing, impossible-seeming demo" energy. It opens on an immediate HOOK (grab the ear at
+/// once, no slow fade-in), pulls back for one BREATH (dynamic contrast), climbs through a rising
+/// BUILD into a tension crest, slams a DROP (the impact payoff at peak pressure), then turns that
+/// released energy upward through a REVEAL and a RE-LIFT into a sustained TRIUMPH — a clear global
+/// shape (accumulate → peak → earned bright arrival) with the emphasis swinging the full
+/// `Faint`↔`Strong` range, so the band answers a richer arc with more motion. Unlike
+/// [`deflected_lift_trace`]'s bittersweet bounce it commits to an arrival; unlike [`demo_trace`]'s
+/// single cinematic climb it hooks, breathes, drops and lands. The one stock trace that reaches
+/// the catastrophic `Danger`/`Overlay` vocabulary on purpose — the drop is the point.
+pub fn intro_demo(total_beats: f64) -> SemanticTrace {
+    let t = total_beats;
+    SemanticTrace::new(
+        vec![
+            // HOOK — grab the ear immediately: bright, loud, dense, up front.
+            ev(
+                0.0,
+                Tone::Accent,
+                Emphasis::Strong,
+                Density::Compact,
+                Elevation::Raised,
+                EventKind::ActChanged,
+            ),
+            // BREATH — one quick pull-back for contrast (dynamic range, not a slow intro).
+            ev(
+                t * 0.12,
+                Tone::Info,
+                Emphasis::Faint,
+                Density::Spacious,
+                Elevation::Flat,
+                EventKind::SectionResolved,
+            ),
+            // BUILD — start the climb, foreground sharpening.
+            ev(
+                t * 0.25,
+                Tone::Accent,
+                Emphasis::Normal,
+                Density::Normal,
+                Elevation::Raised,
+                EventKind::FocusAcquired,
+            ),
+            // TENSION — the build tightens toward the edge.
+            ev(
+                t * 0.40,
+                Tone::Warning,
+                Emphasis::Strong,
+                Density::Compact,
+                Elevation::Raised,
+                EventKind::ModalEntered,
+            ),
+            // DROP — the impact: the payoff hit at maximum pressure.
+            ev(
+                t * 0.52,
+                Tone::Danger,
+                Emphasis::Strong,
+                Density::Compact,
+                Elevation::Overlay,
+                EventKind::Impact,
+            ),
+            // REVEAL — the drop opens into light; the world widens.
+            ev(
+                t * 0.64,
+                Tone::Success,
+                Emphasis::Strong,
+                Density::Normal,
+                Elevation::Overlay,
+                EventKind::Confirmation,
+            ),
+            // RE-LIFT — gather again toward the summit (the second reach).
+            ev(
+                t * 0.78,
+                Tone::Accent,
+                Emphasis::Strong,
+                Density::Compact,
+                Elevation::Overlay,
+                EventKind::FocusAcquired,
+            ),
+            // TRIUMPH — the earned, sustained arrival.
+            ev(
+                t * 0.90,
+                Tone::Success,
+                Emphasis::Strong,
+                Density::Normal,
+                Elevation::Raised,
+                EventKind::Confirmation,
+            ),
+        ],
+        total_beats,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -590,6 +681,32 @@ mod tests {
             .all(|e| e.state.elevation != Elevation::Overlay));
         // And it is genuinely bounded, like every fixture.
         assert!(bounce.events.iter().all(|e| e.at_beat < 120.0));
+    }
+
+    #[test]
+    fn intro_demo_drops_to_catastrophe_then_arrives() {
+        let tr = intro_demo(96.0);
+        // The flight commits to its impact: it DOES reach the catastrophic vocabulary (the DROP),
+        // unlike the bittersweet bounce, which never does.
+        assert!(
+            tr.events
+                .iter()
+                .any(|e| e.state.tone == Tone::Danger && e.state.elevation == Elevation::Overlay),
+            "the intro flight must reach its drop"
+        );
+        // It ends arrived, not peaked: the final triumph releases the drop's pressure.
+        let peak = tr
+            .events
+            .iter()
+            .map(|e| e.state.pressure())
+            .fold(0.0f32, f32::max);
+        let last = tr.events.last().unwrap().state.pressure();
+        assert!(
+            last < peak,
+            "triumph should release the drop's pressure (last {last} < peak {peak})"
+        );
+        // And it is genuinely bounded, like every fixture.
+        assert!(tr.events.iter().all(|e| e.at_beat < 96.0));
     }
 
     #[test]

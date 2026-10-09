@@ -22,7 +22,7 @@ use super::policy::{
 use super::score::{Hearing, Note, Provenance, Role, Score};
 use super::semantic::{EventKind, SemanticTrace, Tone};
 use super::sfx::add_sfx_and_provenance;
-use super::song::SongMap;
+use super::song::{MotifRepetition, SongMap};
 use super::sonority::{plan_sonority, ColorPolicy};
 use super::theory::Midi;
 use super::world::MusicWorld;
@@ -73,6 +73,32 @@ pub fn compose_with_grammar(
         PerformanceOptions::default(),
     );
     (c.score, c.song.plan)
+}
+
+/// Song-level composition options — the aesthetic dials, orthogonal to the world (a recurrence
+/// policy is not a world, §29). `CompositionOptions::default()` composes exactly as [`compose`]
+/// would (inferred grammar, [`MotifRepetition::Develop`]), so the historical path is never
+/// silently changed; a caller opts into stronger recurrence explicitly.
+#[derive(Debug, Clone, Default)]
+pub struct CompositionOptions {
+    /// Force a grammar (the calibration path), or `None` to infer one from the trace's shape.
+    pub grammar: Option<CompositionGrammar>,
+    /// How assertively the song restates its thematic identity (the `motif_repetition` dial).
+    pub motif_repetition: MotifRepetition,
+    /// Performance realization options (language, actions, free vs clockwork responses).
+    pub performance: PerformanceOptions,
+}
+
+/// Compose a score for `trace` under `world` and `opts`, deterministic in `seed`. The opt-in
+/// path for the song-level dials; [`compose`] remains the exact historical default.
+pub fn compose_with_options(
+    trace: &SemanticTrace,
+    world: &MusicWorld,
+    seed: u64,
+    opts: CompositionOptions,
+) -> Score {
+    let song = SongMap::build_with_options(trace, seed, opts.grammar, opts.motif_repetition);
+    perform(&song, world, opts.performance).score
 }
 
 /// The full composition path with every calibration knob: an optional forced grammar and the
@@ -363,6 +389,8 @@ pub(crate) fn plan_and_realize(
         recast: Vec::new(),
         harmony: profile.harmony,
         functions: profile.functions,
+        lead_life: profile.lead_life,
+        narrative: profile.narrative,
     };
     let mut judged: Vec<RehearsedVerb> = Vec::new();
     for pass in 0..=REHEARSAL_FUEL {
@@ -1698,6 +1726,213 @@ mod tests {
                 .map(|c| c.chord)
                 .ne(loopy.chords.iter().map(|c| c.chord)),
             "hook and loop produced identical chords"
+        );
+    }
+
+    /// GEN-3 byte-exact floor: the opt-in `LeadLifePolicy` must leave v0.4 untouched. With every
+    /// lead-life axis OFF (WRITTEN and the default BAND), the generator's fingerprints on the R0
+    /// baseline (deflected_lift_trace(96), seed 2112, StablePropulsion, BLACK_ICE) are exactly the
+    /// values R0 recorded. And turning an axis on MUST change the performance, or the opt-in is a
+    /// no-op. If this test ever goes red, a C137 rung broke the v0.4 floor.
+    #[test]
+    fn gen3_lead_life_is_byte_exact_off_and_active_on() {
+        use super::super::composer::Composer;
+        use super::super::policy::{LeadLifePolicy, PerformanceProfile};
+        use super::super::semantic::deflected_lift_trace;
+        use super::super::song::SongMap;
+        use super::super::world::MusicWorld;
+
+        let song = SongMap::compose(
+            &deflected_lift_trace(96.0),
+            2112,
+            None,
+            Composer::StablePropulsion,
+        );
+        let world = MusicWorld::black_ice();
+        let opts = PerformanceOptions::default();
+
+        // The v0.4 floor, recorded by examples/rick_r0 before GEN-3 existed.
+        assert_eq!(song.fingerprint(), 0xbb3d_431d_e657_b92a, "R0 song drifted");
+        let written = perform(&song, &world, opts);
+        assert_eq!(
+            written.score.fingerprint(),
+            0x3dbc_aecb_e918_b5bb,
+            "WRITTEN score drifted — the byte-exact v0.4 floor moved"
+        );
+        assert_eq!(
+            written.perf.fingerprint(),
+            0xacb3_3a0d_d36b_a501,
+            "WRITTEN perf drifted — the byte-exact v0.4 floor moved"
+        );
+
+        // The default BAND (lead_life all off) is unchanged from R0 too.
+        let band = perform_with_profile(&song, &world, opts, PerformanceProfile::BAND).unwrap();
+        assert_eq!(
+            band.score.fingerprint(),
+            0xe734_5d86_02db_3005,
+            "BAND score drifted"
+        );
+        assert_eq!(
+            band.perf.fingerprint(),
+            0x8b39_c7f7_cdf5_8784,
+            "BAND perf drifted"
+        );
+
+        // Each axis, turned on over BAND, must actually change the performance (no silent no-op).
+        for life in [
+            LeadLifePolicy {
+                development: true,
+                ..LeadLifePolicy::default()
+            },
+            LeadLifePolicy {
+                spacing: true,
+                ..LeadLifePolicy::default()
+            },
+            LeadLifePolicy {
+                dynamics: true,
+                ..LeadLifePolicy::default()
+            },
+        ] {
+            let alive = perform_with_profile(
+                &song,
+                &world,
+                opts,
+                PerformanceProfile::BAND.with_lead_life(life),
+            )
+            .unwrap();
+            assert_ne!(
+                alive.score.fingerprint(),
+                band.score.fingerprint(),
+                "a lead-life axis left the score byte-identical to BAND: {life:?}"
+            );
+        }
+    }
+
+    /// GEN-STORY-1 floor: the opt-in `NarrativePolicy` surface exists, defaults OFF, and is VISIBLE to
+    /// the fingerprint when on. The audio-level byte-exact floor is already guarded by
+    /// `gen3_lead_life_is_byte_exact_off_and_active_on` above: adding an *archived* narrative field
+    /// leaves BAND's frozen score/perf fingerprints untouched, because the canonical encoding omits an
+    /// archived narrative entirely and nothing reads the policy until GEN-STORY-2 wires μ(song) into
+    /// the performance. This test proves the remaining half — the opt-in is not invisible.
+    #[test]
+    fn gen_story1_narrative_is_off_by_default_and_fingerprint_visible_on() {
+        use super::super::fingerprint::CanonicalFingerprint;
+        use super::super::policy::{NarrativePolicy, PerformanceProfile};
+
+        // The surface defaults to OFF — the lead carries every site (v0.4).
+        assert_eq!(
+            PerformanceProfile::WRITTEN.narrative,
+            NarrativePolicy::Archived
+        );
+        assert_eq!(
+            PerformanceProfile::BAND.narrative,
+            NarrativePolicy::Archived
+        );
+
+        // Turning it to Ensemble is VISIBLE to the profile fingerprint — an invisible opt-in is a
+        // silent no-op, which is exactly the failure GEN-3 taught us to assert against.
+        assert_ne!(
+            PerformanceProfile::BAND.canonical_fingerprint(),
+            PerformanceProfile::BAND
+                .with_narrative(NarrativePolicy::Ensemble)
+                .canonical_fingerprint(),
+            "Ensemble must change the profile fingerprint"
+        );
+    }
+
+    /// GEN-STORY-2 wire: with `Ensemble`, the performance plan CARRIES a narrative derived from
+    /// μ(song) — `observe`, never F(trace) — and only when μ actually hands the germ off the lead;
+    /// the historical `Archived` path carries none and stays byte-exact (guarded above). The stored
+    /// narrative changes the plan fingerprint, so the wire is visible. (The realizer enacts it in a
+    /// later wave; this proves the plan now knows its story.)
+    #[test]
+    fn gen_story2_plan_carries_narrative_from_mu_under_ensemble_only() {
+        use super::super::composer::Composer;
+        use super::super::meaning::MeaningPlan;
+        use super::super::narrative::NarrativePlan;
+        use super::super::policy::{NarrativePolicy, PerformanceProfile};
+        use super::super::semantic::deflected_lift_trace;
+        use super::super::song::SongMap;
+        use super::super::world::MusicWorld;
+
+        let song = SongMap::compose(
+            &deflected_lift_trace(96.0),
+            2112,
+            None,
+            Composer::MeaningDirected,
+        );
+        let world = MusicWorld::black_ice();
+        let opts = PerformanceOptions::default();
+
+        // Archived (the BAND default) carries no narrative — the historical arrangement.
+        let band = perform_with_profile(&song, &world, opts, PerformanceProfile::BAND).unwrap();
+        assert!(
+            band.perf.narrative.is_none(),
+            "Archived must store no narrative"
+        );
+
+        // Ensemble stores a narrative iff μ(song) hands the germ off the lead; the plan's decision
+        // must agree with μ exactly (the wire reads μ, nothing else).
+        let hands_off = NarrativePlan::from_observation(&MeaningPlan::observe(&song)).hands_off();
+        let ens = perform_with_profile(
+            &song,
+            &world,
+            opts,
+            PerformanceProfile::BAND.with_narrative(NarrativePolicy::Ensemble),
+        )
+        .unwrap();
+        assert_eq!(
+            ens.perf.narrative.is_some(),
+            hands_off,
+            "the stored narrative must match μ's hands-off verdict"
+        );
+        assert!(
+            hands_off,
+            "a meaning-directed song's μ should hand the germ off the lead"
+        );
+
+        // A carried narrative changes the plan fingerprint (the wire is visible).
+        assert_ne!(
+            ens.perf.fingerprint(),
+            band.perf.fingerprint(),
+            "a carried narrative must change the plan fingerprint"
+        );
+    }
+
+    /// GEN-STORY-3 enactment: the realizer ACTS on the carriage. Under `Ensemble`, the named carrier
+    /// answers the lead at carrier phrases and the lead withholds at the Miss — so the realized SCORE
+    /// moves, not just the plan. And the enacted performance must still pass `perform_checked`'s
+    /// receipt: a withheld lead and a directed carrier are lawful performances, not law violations.
+    /// Archived stays byte-exact (guarded by the GEN-3 test above).
+    #[test]
+    fn gen_story3_enactment_moves_the_score_and_survives_the_receipt() {
+        use super::super::composer::Composer;
+        use super::super::policy::{NarrativePolicy, PerformanceProfile};
+        use super::super::semantic::deflected_lift_trace;
+        use super::super::song::SongMap;
+        use super::super::world::MusicWorld;
+
+        let song = SongMap::compose(
+            &deflected_lift_trace(96.0),
+            2112,
+            None,
+            Composer::MeaningDirected,
+        );
+        let world = MusicWorld::black_ice();
+        let opts = PerformanceOptions::default();
+
+        let band = perform_with_profile(&song, &world, opts, PerformanceProfile::BAND).unwrap();
+        let ensemble = PerformanceProfile::BAND.with_narrative(NarrativePolicy::Ensemble);
+
+        // The enacted narrative is a lawful performance — the receipt accepts it.
+        let ens = perform_checked(&song, &world, opts, ensemble)
+            .expect("the ensemble narrative must produce a performance the receipt accepts");
+
+        // The enactment MOVES the realized audio: the band carries the germ and the lead withholds.
+        assert_ne!(
+            ens.score.fingerprint(),
+            band.score.fingerprint(),
+            "Ensemble must change the realized score — the carriage is enacted, not merely carried"
         );
     }
 }

@@ -167,6 +167,64 @@ pub enum FunctionPolicy {
     Earned,
 }
 
+/// Opt-in life for the LEAD voice. The historical default is every axis off: the lead plays its
+/// motif's written rhythm verbatim, one statement per two bars, at a per-statement constant velocity
+/// — the v0.4 behaviour. Each axis is independent so the maintainer's ear can isolate which one
+/// removes the "robotic" quality (the drivers — content repetition vs metronomic spacing — are
+/// confounded, so they are toggled separately, never fused). All three off is byte-exact v0.4.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LeadLifePolicy {
+    /// Develop the motif's RHYTHM per statement — syncopation and pickups drawn from the same accent
+    /// grid the band reads, an antecedent that states and a consequent that answers, later returns
+    /// developed further — instead of restating one fixed rhythm vector. The pitch contour, the note
+    /// count and the total length are preserved, so the statement stays the same recognizable object.
+    pub development: bool,
+    /// Relax the rigid two-bar cadence snap so statements breathe, instead of landing one per two
+    /// bars like a metronome.
+    pub spacing: bool,
+    /// Give the lead a per-note dynamic arc (phrase contour + metric weight + per-bar kinetic), like
+    /// the band's bass and keys, instead of one constant velocity per statement.
+    pub dynamics: bool,
+}
+
+impl LeadLifePolicy {
+    /// All three axes active.
+    pub const ALIVE: Self = Self {
+        development: true,
+        spacing: true,
+        dynamics: true,
+    };
+
+    /// Whether any axis is active (the historical path is taken when none is).
+    pub fn any(self) -> bool {
+        self.development || self.spacing || self.dynamics
+    }
+}
+
+/// Opt-in ENSEMBLE NARRATIVE — who in the band carries which meaning, over the form.
+///
+/// The historical default is [`Self::Archived`]: the lead carries every meaning site and the band's
+/// responsibilities never move across the song — the v0.4 behaviour. [`Self::Ensemble`] lets the
+/// song's MEANING (μ, `SongMap::meaning`, built by `compose_meaning`) assign a carrier to each
+/// phrase, so one thematic identity is handed from musician to musician over the form: taught by the
+/// lead, entered by the keys, developed by the bass, WITHHELD by the lead at the expected arrival
+/// (the keys carry the dark), and returned in an earned ensemble tutti. This narrates μ(song); it
+/// never rewrites meaning at perform time (plan §4/§20).
+///
+/// Ear-proved worth building (Leah, 2026-10-09): the handoff — not density — is what makes the song
+/// breathe, and the story survives a lead-mute. See `docs/HUMAN_MUSIC_BAND_STORY.md`.
+///
+/// [`Self::Archived`] is byte-exact v0.4: the canonical fingerprint omits it entirely, so an archived
+/// profile hashes identically to one built before this policy existed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NarrativePolicy {
+    /// The lead carries every meaning site; the band's roles are fixed across the form (v0.4).
+    #[default]
+    Archived,
+    /// The song's meaning assigns a per-phrase carrier; the theme is handed through the band.
+    Ensemble,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HistoricalRepair {
     None,
@@ -196,6 +254,12 @@ pub struct PerformanceProfile {
     pub harmony: HarmonyPolicy,
     /// The archived support tolerances, or support functions earned where they sound.
     pub functions: FunctionPolicy,
+    /// Opt-in life for the lead voice. Every axis off (the default) is the byte-exact v0.4 lead.
+    pub lead_life: LeadLifePolicy,
+    /// Opt-in ensemble narrative: the song's meaning assigns a per-phrase carrier so a thematic
+    /// identity is handed through the band. [`NarrativePolicy::Archived`] (the default) is byte-exact
+    /// v0.4 — the lead carries every site and the band's roles never move across the form.
+    pub narrative: NarrativePolicy,
     pub(crate) repair: HistoricalRepair,
 }
 
@@ -218,6 +282,12 @@ impl PerformanceProfile {
         percussion: PercussionPolicy::Unarbitrated,
         harmony: HarmonyPolicy::Archived,
         functions: FunctionPolicy::Archived,
+        lead_life: LeadLifePolicy {
+            development: false,
+            spacing: false,
+            dynamics: false,
+        },
+        narrative: NarrativePolicy::Archived,
         repair: HistoricalRepair::None,
     };
     pub const TEMPORAL: Self = Self {
@@ -269,6 +339,16 @@ impl PerformanceProfile {
     /// The same laws with another support-function law.
     pub const fn with_functions(self, functions: FunctionPolicy) -> Self {
         Self { functions, ..self }
+    }
+
+    /// The same laws with opt-in lead life (the lead-rhythm/spacing/dynamics axes).
+    pub const fn with_lead_life(self, lead_life: LeadLifePolicy) -> Self {
+        Self { lead_life, ..self }
+    }
+
+    /// The same laws with opt-in ensemble narrative (the per-phrase carrier handoff through the band).
+    pub const fn with_narrative(self, narrative: NarrativePolicy) -> Self {
+        Self { narrative, ..self }
     }
 
     /// The same laws with another percussion law.

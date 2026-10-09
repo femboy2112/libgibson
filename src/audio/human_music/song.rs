@@ -90,6 +90,29 @@ impl ThemeSite {
     }
 }
 
+/// How assertively a song restates its opening thematic identity — the `motif_repetition` dial
+/// (the acceptance doc's primary coherence lever, gap 5). A SONG-LEVEL decision, made before any
+/// performance: it changes the [`ThematicMap`]'s sites and therefore the song fingerprint, and is
+/// orthogonal to the world and the performance. The dial governs only grammars that anchor on a
+/// [`CoherenceAnchor::Motif`](super::contract::CoherenceAnchor); riff/loop grammars keep their own
+/// (riff/groove) recurrence untouched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MotifRepetition {
+    /// Through-composed: develop the material, restating the thesis only where the trajectory
+    /// would otherwise state no identity at all. **Exactly the v0.4 behavior** (the control).
+    #[default]
+    Develop,
+    /// Guarantee the thesis is heard early — stated before it is developed — for a Motif-anchored
+    /// grammar, then let the discourse bring it home at its Return roles: a recognizable
+    /// thesis-return with development between.
+    Return,
+    /// Literal/structural recurrence: every identity-bearing site states the germ
+    /// ([`MotifBank::identity`]), so the hook recurs across the whole song. (PropulsiveReturn
+    /// already does this with its own pinned thesis; this generalizes it to any Motif-anchored
+    /// grammar, using that grammar's own generated germ.)
+    Restate,
+}
+
 /// The song's thematic identity: the motif bank (germ, hook, cells — every member a declared-unit pitch
 /// contour, no room's pitch in it) and the theme site of every lead-seated phrase, developed along
 /// the discourse by the [`ThematicTrajectory`] exactly once, before any performance.
@@ -100,12 +123,27 @@ pub struct ThematicMap {
 }
 
 impl ThematicMap {
-    fn build(plan: &CompositionPlan, frame: Mode, seed: u64) -> ThematicMap {
-        Self::from_bank(plan, MotifBank::generate(frame, seed ^ 0x3E10_D1E5))
+    /// The theme sites generated from `(frame, seed)` under a [`MotifRepetition`] dial.
+    fn build_with(
+        plan: &CompositionPlan,
+        frame: Mode,
+        seed: u64,
+        rep: MotifRepetition,
+    ) -> ThematicMap {
+        Self::from_bank_with(plan, MotifBank::generate(frame, seed ^ 0x3E10_D1E5), rep)
     }
 
     /// The theme sites `bank`'s trajectory yields over `plan` (only sites a performance can keep).
     pub(crate) fn from_bank(plan: &CompositionPlan, bank: MotifBank) -> ThematicMap {
+        Self::from_bank_with(plan, bank, MotifRepetition::Develop)
+    }
+
+    /// Like [`ThematicMap::from_bank`], under an explicit [`MotifRepetition`] dial.
+    pub(crate) fn from_bank_with(
+        plan: &CompositionPlan,
+        bank: MotifBank,
+        rep: MotifRepetition,
+    ) -> ThematicMap {
         let seated: Vec<_> = plan
             .targets()
             .into_iter()
@@ -135,24 +173,28 @@ impl ThematicMap {
                 .collect()
         };
         let mut sites = develop(None);
-        // A declared Motif anchor is the song's identity: the first statement a listener hears is
-        // the thesis, before it can be developed. When the trajectory would state only
-        // developments (a short song whose lead speaks only in its dissolve), the first seated
-        // phrase that can hold the thesis restates it. Songs that already state their identity
-        // are unchanged.
-        if plan
+        // The `motif_repetition` dial decides how assertively the thesis is (re)stated — a
+        // song-level identity decision, applied only to a Motif-anchored grammar (riff/loop
+        // grammars carry their recurrence on a different anchor). The first statement a listener
+        // hears should be the thesis, before it is developed. `Develop` forces that only when the
+        // trajectory would otherwise state no identity at all (a short song whose lead speaks only
+        // in its dissolve) — the exact v0.4 behavior; `Return` and `Restate` always guarantee an
+        // early thesis wherever the form has room for one.
+        let motif_anchored = plan
             .contract
             .anchors
-            .contains(&super::contract::CoherenceAnchor::Motif)
-            && !sites.iter().any(ThemeSite::is_identity)
-        {
-            if let Some(restated) = seated.iter().find_map(|t| {
+            .contains(&super::contract::CoherenceAnchor::Motif);
+        let force_early = match rep {
+            MotifRepetition::Develop => motif_anchored && !sites.iter().any(ThemeSite::is_identity),
+            MotifRepetition::Return | MotifRepetition::Restate => motif_anchored,
+        };
+        if force_early {
+            for t in &seated {
                 let s = develop(Some(t.phrase.ix));
-                s.iter()
-                    .any(|x| x.phrase == t.phrase.ix && x.is_identity())
-                    .then_some(s)
-            }) {
-                sites = restated;
+                if s.iter().any(|x| x.phrase == t.phrase.ix && x.is_identity()) {
+                    sites = s;
+                    break;
+                }
             }
         }
         ThematicMap { bank, sites }
@@ -214,6 +256,18 @@ impl SongMap {
     /// Compose the song for `trace`, deterministic in `seed`. `grammar` forces a grammar (the
     /// calibration path); `None` infers one from the trace's shape.
     pub fn build(trace: &SemanticTrace, seed: u64, grammar: Option<CompositionGrammar>) -> SongMap {
+        Self::build_with_options(trace, seed, grammar, MotifRepetition::Develop)
+    }
+
+    /// Like [`SongMap::build`], under an explicit [`MotifRepetition`] dial (the song-level
+    /// recurrence policy). [`MotifRepetition::Develop`] reproduces [`SongMap::build`] exactly, so
+    /// the v0.4 control path is unchanged.
+    pub fn build_with_options(
+        trace: &SemanticTrace,
+        seed: u64,
+        grammar: Option<CompositionGrammar>,
+        rep: MotifRepetition,
+    ) -> SongMap {
         // The piece is exactly as long as the request: a partial final bar is represented, not
         // rounded away (9 beats used to render 8, 10.5 → 12, 17 → 16).
         let timeline = IntentTimeline::walk(trace);
@@ -225,19 +279,20 @@ impl SongMap {
             ),
             None => CompositionPlan::build_for_beats(&timeline, trace.total_beats),
         };
-        Self::from_plan(trace, seed, timeline, plan)
+        Self::from_plan_with(trace, seed, timeline, plan, rep)
     }
 
-    /// The song [`SongMap::build`] writes on an already-made `plan` (the contract standing audit
-    /// re-plans under a perturbed contract through this).
-    pub(crate) fn from_plan(
+    /// The song [`SongMap::build`] writes on an already-made `plan`, under a [`MotifRepetition`]
+    /// dial (the contract standing audit re-plans under a perturbed contract through this).
+    pub(crate) fn from_plan_with(
         trace: &SemanticTrace,
         seed: u64,
         timeline: IntentTimeline,
         plan: CompositionPlan,
+        rep: MotifRepetition,
     ) -> SongMap {
         let frame = REFERENCE_FRAME;
-        let mut thematic = ThematicMap::build(&plan, frame, seed);
+        let mut thematic = ThematicMap::build_with(&plan, frame, seed, rep);
         let stable = plan.contract.grammar == CompositionGrammar::PropulsiveReturn;
         if stable {
             // A rhythmic cell, its octave expansion and a tonic landing. Literal recognition
@@ -257,6 +312,22 @@ impl SongMap {
             };
             for site in &mut thematic.sites {
                 site.motif = thesis.clone();
+                site.handoff = Handoff::Restatement;
+            }
+        } else if rep == MotifRepetition::Restate
+            && plan
+                .contract
+                .anchors
+                .contains(&super::contract::CoherenceAnchor::Motif)
+        {
+            // Restate, generalized to any Motif-anchored grammar: every identity-bearing site
+            // states this grammar's OWN generated germ (not PropulsiveReturn's pinned thesis), so
+            // the hook recurs literally across the song. The germ is in scale-degree coordinates,
+            // so each return is realized over its own harmony — a transposed-cell recurrence where
+            // the harmony has moved, a literal one where it has come home.
+            let germ = thematic.bank.identity.clone();
+            for site in &mut thematic.sites {
+                site.motif = germ.clone();
                 site.handoff = Handoff::Restatement;
             }
         }
@@ -334,6 +405,30 @@ impl SongMap {
             Composer::MeaningDirected => compose_meaning(song, &CompositionalPrior::HOOKY_FUSION).0,
             Composer::StablePropulsion => unreachable!("handled before the legacy composers"),
         }
+    }
+
+    /// Like [`SongMap::compose`] with [`Composer::MeaningDirected`], but the thesis and its
+    /// consequent are SUPPLIED by `theme_seed` (the "supply the melodic DNA" seam) instead of
+    /// searched from the thesis grammar: the given germ is stated at the theme sites and becomes
+    /// the song's identity ([`super::motif::MotifBank::identity`]). Same form, same chart search,
+    /// same per-site scheduling as the searched meaning-directed composer — ONLY the germ differs,
+    /// so an A/B against [`SongMap::compose`] isolates melodic SELECTION (is the grammar's chosen
+    /// germ weak?) from DEVELOPMENT (is a known-good germ still not developed into a coherent
+    /// tune?). The supplied germ is stated as written, so a human-proven tune outside the prior's
+    /// bands is honored. Experimental; never a default.
+    pub fn compose_with_germ(
+        trace: &SemanticTrace,
+        seed: u64,
+        grammar: Option<CompositionGrammar>,
+        theme_seed: &super::composer::ThemeSeed,
+    ) -> SongMap {
+        let song = SongMap::build(trace, seed, grammar);
+        super::composer::compose_meaning_seeded(
+            song,
+            &CompositionalPrior::HOOKY_FUSION,
+            Some(theme_seed),
+        )
+        .0
     }
 
     /// Which composer chose this song's content: the provenance recorded by the call that chose

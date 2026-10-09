@@ -318,6 +318,81 @@ fn feasible(
     out
 }
 
+/// GEN-3a: develop a statement with GOAL-DIRECTED connective motion. The motif's notes stay as
+/// structural ANCHORS at their original onsets (the skeleton stays locked in the pocket and the
+/// statement stays recognizable); the span before each anchor's next landing is filled with a short
+/// stepwise run that LEADS from this anchor toward the next one. A leap gets stepwise fill toward the
+/// target; a repeat gets one upper neighbour so it still moves. The run subdivides the anchor's OWN
+/// duration, so the total length and every anchor onset are preserved exactly: the band's pocket is
+/// untouched, and the lead stops skipping between orbit points and instead makes transitions that
+/// arrive somewhere. Connectors come only on longer notes, gated by `energy` and varied per statement
+/// by `salt`. Fully deterministic (seeded by salt + start).
+fn develop_lead_rhythm(
+    motif: &super::motif::Motif,
+    start: f64,
+    energy: f32,
+    salt: usize,
+) -> super::motif::Motif {
+    let n = motif.degrees.len().min(motif.rhythm.len());
+    if n < 2 {
+        return motif.clone(); // too short to connect without erasing its identity
+    }
+    let strength = (0.4 + 0.6 * energy.clamp(0.0, 1.0)).clamp(0.0, 1.0);
+    let mut rng = Rng::new((salt as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ start.to_bits());
+    let mut degrees: Vec<i32> = Vec::with_capacity(n * 2);
+    let mut rhythm: Vec<f32> = Vec::with_capacity(n * 2);
+    for i in 0..n {
+        let d0 = motif.degrees[i];
+        let dur = motif.rhythm[i];
+        // The final note is the cadence landing: keep it whole (identity).
+        if i + 1 >= n {
+            degrees.push(d0);
+            rhythm.push(dur);
+            break;
+        }
+        let d1 = motif.degrees[i + 1];
+        let span = (d1 - d0).abs();
+        // How many connectors lead this anchor toward the next landing: only on longer notes,
+        // gated by energy; a wide gap over a long note earns a two-note run, else one.
+        let mut k = if dur < 0.75 || rng.range_f32(0.0, 1.0) > strength {
+            0
+        } else if dur >= 1.5 && span >= 2 {
+            2
+        } else {
+            1
+        };
+        // Keep each subdivision musical: no sub-sixteenth chatter at these tempos.
+        while k > 0 && dur / (k as f32 + 1.0) < 0.25 {
+            k -= 1;
+        }
+        if k == 0 {
+            degrees.push(d0);
+            rhythm.push(dur);
+            continue;
+        }
+        let sub = dur / (k as f32 + 1.0);
+        degrees.push(d0);
+        rhythm.push(sub);
+        for j in 1..=k {
+            // Step TOWARD the next landing: a leap gets stepwise fill, a repeat an upper neighbour.
+            let step = if span == 0 {
+                d0 + 1
+            } else {
+                let t = j as f32 / (k as f32 + 1.0);
+                d0 + ((d1 - d0) as f32 * t).round() as i32
+            };
+            degrees.push(step);
+            rhythm.push(sub);
+        }
+    }
+    super::motif::Motif {
+        pitch_basis: motif.pitch_basis,
+        id: motif.id,
+        degrees,
+        rhythm,
+    }
+}
+
 /// Plan the lead statements, their materials, the opportunities, the calls and the responses.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn plan_interactions(
@@ -333,6 +408,8 @@ pub(super) fn plan_interactions(
     cover: Option<&super::cover::CoverConstraints>,
     vetoed: &[super::rehearsal::ActionKey],
     functions: super::policy::FunctionPolicy,
+    lead_life: super::policy::LeadLifePolicy,
+    narrative: Option<&super::narrative::NarrativePlan>,
 ) -> InteractionPlan {
     let bank = &thematic.bank;
     let mode = opts.responses;
@@ -458,6 +535,15 @@ pub(super) fn plan_interactions(
             if !stage.on_stage(Agent::Lead, phrase.start_beat()) {
                 continue;
             }
+            // Ensemble narrative: at a WITHHELD site (the Miss), the lead does not state — it
+            // withholds at the expected arrival and a band carrier takes the site instead. No lead
+            // statement is pushed for this phrase; the carrier's response (below) carries the germ.
+            if narrative
+                .and_then(|n| n.at(phrase.ix))
+                .is_some_and(|c| c.lead_role == super::narrative::LeadRole::Withheld)
+            {
+                continue;
+            }
             let (motif, handoff) = (&site.motif, site.handoff);
             let len = motif.total_beats() as f64;
             if len < 1e-6 {
@@ -477,14 +563,23 @@ pub(super) fn plan_interactions(
                     ((c.end_beat - at).max(0.0) + 0.5)
                         .min(pe - at - len)
                         .max(0.0)
-                } else if lang.id == super::language::LanguageId::Simple {
+                } else if lang.id == super::language::LanguageId::Simple && !lead_life.spacing {
                     0.0
                 } else {
                     // Choose among lawful entries by the grid's pickup/syncopation weight and memory —
-                    // never an entry that would put the lead where the stage has it out.
-                    let opts: [(f64, i32); 4] = [(0.0, 0), (-0.5, -1), (0.5, 1), (1.0, 2)];
+                    // never an entry that would put the lead where the stage has it out. GEN-3b: with
+                    // the spacing axis on, widen the lawful entry set (later anacruses are admitted)
+                    // and prefer the best NON-ZERO entry, so statements stop landing on the phrase
+                    // start every two bars; the accent grid still chooses which non-zero entry, and
+                    // the memory keeps consecutive phrases from repeating one. Simple-language songs,
+                    // which historically pin the lead to the downbeat, get the varied entry too.
+                    let wide: [(f64, i32); 6] =
+                        [(0.0, 0), (-0.5, -1), (0.5, 1), (1.0, 2), (1.5, 3), (2.0, 4)];
+                    let narrow: [(f64, i32); 4] = [(0.0, 0), (-0.5, -1), (0.5, 1), (1.0, 2)];
+                    let opts: &[(f64, i32)] = if lead_life.spacing { &wide } else { &narrow };
                     let mut best = (f32::INFINITY, 0.0);
-                    for (o, q) in opts {
+                    let mut best_nonzero: Option<(f32, f64)> = None;
+                    for &(o, q) in opts {
                         let s = at + o;
                         if s < 0.0 || s + len > pe + 0.5 + 1e-6 || !stage.on_stage(Agent::Lead, s) {
                             continue;
@@ -501,9 +596,19 @@ pub(super) fn plan_interactions(
                         if cost < best.0 {
                             best = (cost, o);
                         }
+                        if o != 0.0 && best_nonzero.is_none_or(|(bc, _)| cost < bc) {
+                            best_nonzero = Some((cost, o));
+                        }
                     }
-                    offset_memory.push((best.1 * 2.0).round() as i32);
-                    best.1
+                    // Spacing on: take the best lawful non-zero entry (fall back to 0 only if no
+                    // non-zero entry fits the phrase). Off: the historical best-overall choice.
+                    let chosen = if lead_life.spacing {
+                        best_nonzero.map_or(best.1, |(_, o)| o)
+                    } else {
+                        best.1
+                    };
+                    offset_memory.push((chosen * 2.0).round() as i32);
+                    chosen
                 };
                 let start = (at + offset).max(0.0);
                 if start + len > total_beats + 1e-6 {
@@ -533,6 +638,14 @@ pub(super) fn plan_interactions(
                     motif.fragment(motif.len().div_ceil(2).max(2))
                 } else {
                     motif.clone()
+                };
+                // GEN-3a: develop the statement with goal-directed connective motion — the motif's
+                // notes stay as anchors in the pocket, and short stepwise runs lead from each anchor
+                // into the next landing (smooth transitions, more notes). Off on the historical path.
+                let motif = if lead_life.development && !fragmenting {
+                    develop_lead_rhythm(&motif, start, t.goal.energy_target, statements.len())
+                } else {
+                    motif
                 };
                 let len = motif.total_beats() as f64;
                 let motif_is_full = motif.len() >= bank.identity.len();
@@ -684,11 +797,18 @@ pub(super) fn plan_interactions(
             let at = probe.end_beat + lat;
             who != Agent::Bass || !takes_last_bass_downbeat(&materials, &interactions, at, at + dur)
         });
+        // Ensemble narrative: a statement at a carrier phrase opens a call so the named carrier can
+        // answer it (carrying the germ). Without this the carrier has no response to ride, and the
+        // opportunistic scorer may never open a call there.
+        let narrative_wants_carry = narrative
+            .and_then(|n| n.at(st.phrase))
+            .is_some_and(|c| !c.carriers.is_empty());
         let mut verdict = if !room_left {
             Verdict::StandsAlone("nobody on stage has room to answer")
         } else if mode == ResponseMode::Clockwork
             || opts.calls == CallPolicy::EveryStatement
             || band_fragment
+            || narrative_wants_carry
             || score >= theta
         {
             Verdict::Call
@@ -879,6 +999,21 @@ pub(super) fn plan_interactions(
                 verdict: Verdict::Call,
             });
         }
+        // Ensemble narrative: a lead statement at a carrier phrase is answered by a NAMED carrier
+        // (keys on a Reinforce, bass on a Develop), not the cost+rng pick — this is how the band
+        // carries the germ the lead taught. A multi-carrier meaning (a Payoff names keys AND bass)
+        // biases EVERY named carrier, so across the phrase's calls the germ is distributed over both
+        // rather than always falling to the first — a deliberately multi-carrier handoff. It only
+        // biases agents that already have lawful room; if no carrier has any, the ordinary pick
+        // stands. (Two carriers answering the SAME call — a staggered tutti from one statement —
+        // needs the single-response path restructured through the rehearsal admission; deferred, as
+        // the ear accepts the current payoff.)
+        let narrative_carriers: &[Agent] = call
+            .statement
+            .and_then(|si| statements.get(si))
+            .and_then(|st| narrative.and_then(|n| n.at(st.phrase)))
+            .map(|c| c.carriers.as_slice())
+            .unwrap_or(&[]);
         let response = match mode {
             ResponseMode::Clockwork => {
                 // Same responder, same metric offset (beat 3.5 of the call's last bar), same
@@ -931,11 +1066,25 @@ pub(super) fn plan_interactions(
                         let w = accent.at_beat(start);
                         let fit = -(w.syncopation + w.pickup) * 0.6;
                         let overlap_cost = if lat < 0.0 { 0.35 } else { 0.0 };
+                        // The named carrier wins over any other lawful responder; among its own
+                        // transforms a literal/inverted germ (Quote/Invert) is preferred, so the
+                        // handoff is recognizably the same theme.
+                        let narrative_bias = if narrative_carriers.contains(&who) {
+                            -1000.0
+                                + if matches!(tf, Transform::Quote | Transform::Invert) {
+                                    -1.0
+                                } else {
+                                    0.0
+                                }
+                        } else {
+                            0.0
+                        };
                         let cost = memory.penalty(&sig)
                             + memory.novelty(sig.latency_q)
                             + fit
                             + overlap_cost
-                            + rng.range_f32(0.0, 0.2);
+                            + rng.range_f32(0.0, 0.2)
+                            + narrative_bias;
                         if !lawful(who, lat, dur) {
                             continue;
                         }

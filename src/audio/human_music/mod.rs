@@ -60,6 +60,10 @@ pub mod meaning;
 mod meaning_probes;
 pub mod melody;
 pub mod motif;
+pub mod narrative;
+#[cfg(test)]
+mod narrative_join_probes;
+pub mod narrative_receipt;
 pub mod occupancy;
 pub mod percussion;
 pub mod performance;
@@ -110,10 +114,10 @@ pub mod voicing_diagnostics;
 pub mod witness;
 pub mod world;
 
-pub use functor::{compose, perform};
+pub use functor::{compose, compose_with_options, perform, CompositionOptions};
 pub use score::Score;
 pub use semantic::{demo_trace, SemanticTrace};
-pub use song::SongMap;
+pub use song::{MotifRepetition, SongMap};
 pub use synth::HumanMusicSynth;
 pub use world::{MusicWorld, WorldId};
 
@@ -131,6 +135,23 @@ pub fn render(
     block: usize,
 ) -> (Score, RenderResult) {
     let score = compose(trace, world, seed);
+    let mut synth = HumanMusicSynth::new(&score, world, sr);
+    let frames = synth.total_samples();
+    let out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
+    (score, out)
+}
+
+/// Like [`render`], but composed under explicit [`CompositionOptions`] (the recurrence dial, an
+/// optional forced grammar). `CompositionOptions::default()` renders exactly as [`render`] does.
+pub fn render_with_options(
+    trace: &SemanticTrace,
+    world: &MusicWorld,
+    seed: u64,
+    sr: SampleRate,
+    block: usize,
+    opts: CompositionOptions,
+) -> (Score, RenderResult) {
+    let score = compose_with_options(trace, world, seed, opts);
     let mut synth = HumanMusicSynth::new(&score, world, sr);
     let frames = synth.total_samples();
     let out = OfflineRenderer::new(sr, block).render(&mut synth, frames);
