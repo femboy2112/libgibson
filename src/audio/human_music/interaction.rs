@@ -999,15 +999,21 @@ pub(super) fn plan_interactions(
                 verdict: Verdict::Call,
             });
         }
-        // Ensemble narrative: a lead statement at a carrier phrase is answered by the NAMED carrier
+        // Ensemble narrative: a lead statement at a carrier phrase is answered by a NAMED carrier
         // (keys on a Reinforce, bass on a Develop), not the cost+rng pick — this is how the band
-        // carries the germ the lead taught. It only biases the choice among agents that already have
-        // lawful room; if the carrier has none, the ordinary pick stands.
-        let narrative_carrier: Option<Agent> = call
+        // carries the germ the lead taught. A multi-carrier meaning (a Payoff names keys AND bass)
+        // biases EVERY named carrier, so across the phrase's calls the germ is distributed over both
+        // rather than always falling to the first — a deliberately multi-carrier handoff. It only
+        // biases agents that already have lawful room; if no carrier has any, the ordinary pick
+        // stands. (Two carriers answering the SAME call — a staggered tutti from one statement —
+        // needs the single-response path restructured through the rehearsal admission; deferred, as
+        // the ear accepts the current payoff.)
+        let narrative_carriers: &[Agent] = call
             .statement
             .and_then(|si| statements.get(si))
             .and_then(|st| narrative.and_then(|n| n.at(st.phrase)))
-            .and_then(|c| c.carriers.first().copied());
+            .map(|c| c.carriers.as_slice())
+            .unwrap_or(&[]);
         let response = match mode {
             ResponseMode::Clockwork => {
                 // Same responder, same metric offset (beat 3.5 of the call's last bar), same
@@ -1063,7 +1069,7 @@ pub(super) fn plan_interactions(
                         // The named carrier wins over any other lawful responder; among its own
                         // transforms a literal/inverted germ (Quote/Invert) is preferred, so the
                         // handoff is recognizably the same theme.
-                        let narrative_bias = if Some(who) == narrative_carrier {
+                        let narrative_bias = if narrative_carriers.contains(&who) {
                             -1000.0
                                 + if matches!(tf, Transform::Quote | Transform::Invert) {
                                     -1.0
