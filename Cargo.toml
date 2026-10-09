@@ -102,6 +102,41 @@ path = "examples/observer_abcd.rs"
 name = "recurrence_ab"
 path = "examples/recurrence_ab.rs"
 
+# Song-form listening probe ("prove it by ear first"): bypasses the generator and hand-authors a
+# minimal SONG (fixed chord loop + literally-returning verse/hook + steady groove) directly into the
+# Score IR, rendered through the engine's own synth/world. The controlled discriminator for whether
+# literal song-form — not the voice — is the missing ingredient. Hand-authored control, not shipped.
+[[example]]
+name = "song_form_probe"
+path = "examples/song_form_probe.rs"
+
+# Ensemble-interdependence listening probe (controlled twin of song_form_probe): the SAME song
+# (tempo, form, chord roots, byte-identical verse/hook melodies, identical groove) re-voiced so no
+# single voice states a full chord — split guide-tone inner voice + open-fifth pad + interlocking
+# bass + a cross-voice suspension. Tests whether meaning "completed by the ensemble" (not redundant
+# simultaneous agreement) is the missing ingredient. Hand-authored control, not shipped.
+[[example]]
+name = "ensemble_probe"
+path = "examples/ensemble_probe.rs"
+
+# Groove/feel listening probe (third rung on ensemble_probe): the SAME song, with the time domain
+# given the ensemble treatment — a deterministic global swing + per-instrument pocket offsets + a
+# syncopated rhythm section (shared "and-of-3" push, bass anticipation). Structured, relational
+# feel, NOT random onset jitter; `--straight` zeroes swing+pocket to isolate the feel layer from
+# the composed syncopation. Tests whether groove-as-ensemble lifts the residual. Not shipped.
+[[example]]
+name = "groove_probe"
+path = "examples/groove_probe.rs"
+
+# Songcraft listening probe (fourth rung on groove_probe): the SAME confirmed pocket backing, with a
+# germ-based melody (verse antecedent / hook consequent sharing one "reach upward" germ), an expressive
+# lead (baked velocity arc, light articulation, a varied second pass with a chromatic grace), and a
+# bridge on Dm–F–C–E (the raised-G# dominant) that slams into a biggest final chorus. `--flat` isolates
+# performance (robotic lead); `--no-bridge` isolates the bridge (40-bar form). Not shipped.
+[[example]]
+name = "songcraft_probe"
+path = "examples/songcraft_probe.rs"
+
 # Dev/test builds keep line tables (so RUST_BACKTRACE still symbolicates file:line)
 # but drop full type/variable DWARF. With ~50 integration-test binaries + examples
 # each statically embedding the crate + a generics-heavy dep graph (taffy), full
