@@ -250,7 +250,7 @@ pub fn realize_bass_coupled(
 /// the coupled ledger otherwise; every Coupled-only step is gated on it.
 fn realize(
     perf: &PerformancePlan,
-    _plan: &CompositionPlan,
+    plan: &CompositionPlan,
     world: &MusicWorld,
     lead: &[Note],
     ownership: Option<&AuthoredOccupancy>,
@@ -654,6 +654,48 @@ fn realize(
     out.extend(restruck);
     out.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
     super::comp::release_support(&mut out, perf);
+
+    // §4 carry-substance (Ensemble narrative only): where the narrative names the bass a CARRIER at
+    // a phrase (a Develop, or a Payoff tutti), the bass does more than sit on roots — it VOICES the
+    // germ the lead taught, tracing the thesis contour in the bass register across the phrase's own
+    // onsets. Pitches ONLY: the figure keeps its rhythm, tags and dynamics, so this is a realizer
+    // substitution, not a new chart verb (no rehearsal admission to satisfy — the exit from the
+    // GEN-STORY-3b wall). Placed before the clip and the coupled hazard-gate below, so the germ
+    // pitches are judged like any other bass note. Byte-exact OFF the narrative: `perf.narrative` is
+    // `None` unless `NarrativePolicy::Ensemble`, and it only touches a phrase the narrative named.
+    if let Some(narr) = &perf.narrative {
+        let germ = &perf.bank.identity;
+        if !germ.degrees.is_empty() {
+            for c in narr
+                .carriages
+                .iter()
+                .filter(|c| c.carriers.contains(&Agent::Bass))
+            {
+                let Some(ph) = plan.form.phrases.iter().find(|p| p.ix == c.phrase) else {
+                    continue;
+                };
+                let (lo, hi) = (ph.start_beat(), ph.end_beat());
+                let in_phrase = out.iter_mut().filter(|n| {
+                    n.role == Role::Bass && n.start_beat >= lo - 1e-6 && n.start_beat < hi - 1e-6
+                });
+                for (i, n) in in_phrase.enumerate() {
+                    // Trace the germ's degree PATTERN over the chord's own tones, so the bass line
+                    // moves in the germ's shape while staying consonant — a lawful germ-driven bass,
+                    // not a clashing transcription (the receipt's temporal-truth gate rejects a note
+                    // that claims a function its pitch does not have). The function is set honestly.
+                    if let Some(ctx) = perf.context_at(n.start_beat) {
+                        let tones = ctx.chord.pitch_classes();
+                        if !tones.is_empty() {
+                            let deg = germ.degrees[i % germ.degrees.len()];
+                            let pc = tones[deg.rem_euclid(tones.len() as i32) as usize];
+                            n.pitch = near(pc, CENTER);
+                            n.function = Some(PitchFunction::ChordTone);
+                        }
+                    }
+                }
+            }
+        }
+    }
     // The authored line lives inside the piece. Every emission path (onsets, figures, answers,
     // unisons, restrikes) is bounded here, at the source, so a reservation read from this line
     // and the final clipped note agree on one domain. A piece that fits its bars is untouched.
