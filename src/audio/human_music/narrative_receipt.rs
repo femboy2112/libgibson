@@ -279,7 +279,7 @@ impl NarrativeReceipt {
     /// Source-aware carry witness (C137-A R1/R4): for each carriage naming the Bass germ carrier,
     /// every realized bass note in the phrase whose pitch is NOT a germ-selected chord tone — i.e.
     /// not of the form the §4 germ-voicing emits (a chord tone picked from the germ's degree pattern
-    /// via [`super::bass::germ_tone_index`]). This rejects carrier material that is not the germ (a
+    /// via `germ_tone_index`, bass.rs §4). This rejects carrier material that is not the germ (a
     /// constant scramble, unrelated notes) which the count-summing [`Self::measure`] credits. It
     /// reads the germ (`perf.bank.identity`) and the chart (`perf.context_at`) as the sources of
     /// truth and the realized Score under test — never the plan's claim; and it is membership-based,
