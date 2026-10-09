@@ -69,17 +69,22 @@ use std::{fmt::Write as _, path::Path};
 /// the weak link is DEVELOPMENT. Six beats, so it slots identically to a grammar germ — only the
 /// notes differ.
 fn diagnostic_germ() -> ThemeSeed {
-    let line = |degrees: Vec<i32>| Motif {
+    let line = |degrees: Vec<i32>, rhythm: Vec<f32>| Motif {
         pitch_basis: PitchBasis::ScaleSteps,
         id: 0,
         degrees,
-        rhythm: vec![0.5, 0.5, 0.5, 1.0, 0.5, 3.0],
+        rhythm,
     };
+    // A shape change, not a paint change: a bold leaping gesture (do–sol–octave) with a distinct
+    // dotted rhythm — nothing like the grammar germ's even stepwise run. Thesis and answer share
+    // the leap head (the identity) then take genuinely DIFFERENT shapes: the question holds high
+    // and hangs on the fifth; the answer turns and steps down home. If even THIS does not read as
+    // a different shape over the trace-driven band, the shape lives in the band/trace, not the lead.
     ThemeSeed {
-        // Question: reach to the octave, step down, hang on the fifth (open).
-        thesis: line(vec![0, 2, 4, 7, 5, 4]),
-        // Answer: the same reach, then step down through the second to home (resolved).
-        answer: line(vec![0, 2, 4, 7, 2, 0]),
+        // Question: leap up to the octave, lean on the 7th, hang open on the fifth.
+        thesis: line(vec![0, 4, 7, 6, 4, 4], vec![0.5, 0.5, 1.0, 0.5, 0.5, 3.0]),
+        // Answer: same leap head, then a conclusive stepwise descent home.
+        answer: line(vec![0, 4, 7, 4, 2, 0], vec![0.5, 0.5, 1.0, 1.0, 1.0, 2.0]),
     }
 }
 
