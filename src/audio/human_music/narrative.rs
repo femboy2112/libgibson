@@ -93,6 +93,11 @@ impl NarrativePlan {
         NarrativePlan { carriages }
     }
 
+    /// The carriage for a lead-seated phrase, if the narrative assigns one.
+    pub fn at(&self, phrase: u32) -> Option<&PhraseCarriage> {
+        self.carriages.iter().find(|c| c.phrase == phrase)
+    }
+
     /// Whether any phrase hands the germ off the lead. A plan with none is the historical
     /// lead-carries-everything arrangement and need not be enacted — the band-story layer is a no-op
     /// for a song whose μ never leaves the lead.

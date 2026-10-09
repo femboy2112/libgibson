@@ -409,6 +409,7 @@ pub(super) fn plan_interactions(
     vetoed: &[super::rehearsal::ActionKey],
     functions: super::policy::FunctionPolicy,
     lead_life: super::policy::LeadLifePolicy,
+    narrative: Option<&super::narrative::NarrativePlan>,
 ) -> InteractionPlan {
     let bank = &thematic.bank;
     let mode = opts.responses;
@@ -532,6 +533,15 @@ pub(super) fn plan_interactions(
                 continue;
             };
             if !stage.on_stage(Agent::Lead, phrase.start_beat()) {
+                continue;
+            }
+            // Ensemble narrative: at a WITHHELD site (the Miss), the lead does not state — it
+            // withholds at the expected arrival and a band carrier takes the site instead. No lead
+            // statement is pushed for this phrase; the carrier's response (below) carries the germ.
+            if narrative
+                .and_then(|n| n.at(phrase.ix))
+                .is_some_and(|c| c.lead_role == super::narrative::LeadRole::Withheld)
+            {
                 continue;
             }
             let (motif, handoff) = (&site.motif, site.handoff);
@@ -787,11 +797,18 @@ pub(super) fn plan_interactions(
             let at = probe.end_beat + lat;
             who != Agent::Bass || !takes_last_bass_downbeat(&materials, &interactions, at, at + dur)
         });
+        // Ensemble narrative: a statement at a carrier phrase opens a call so the named carrier can
+        // answer it (carrying the germ). Without this the carrier has no response to ride, and the
+        // opportunistic scorer may never open a call there.
+        let narrative_wants_carry = narrative
+            .and_then(|n| n.at(st.phrase))
+            .is_some_and(|c| !c.carriers.is_empty());
         let mut verdict = if !room_left {
             Verdict::StandsAlone("nobody on stage has room to answer")
         } else if mode == ResponseMode::Clockwork
             || opts.calls == CallPolicy::EveryStatement
             || band_fragment
+            || narrative_wants_carry
             || score >= theta
         {
             Verdict::Call
@@ -982,6 +999,15 @@ pub(super) fn plan_interactions(
                 verdict: Verdict::Call,
             });
         }
+        // Ensemble narrative: a lead statement at a carrier phrase is answered by the NAMED carrier
+        // (keys on a Reinforce, bass on a Develop), not the cost+rng pick — this is how the band
+        // carries the germ the lead taught. It only biases the choice among agents that already have
+        // lawful room; if the carrier has none, the ordinary pick stands.
+        let narrative_carrier: Option<Agent> = call
+            .statement
+            .and_then(|si| statements.get(si))
+            .and_then(|st| narrative.and_then(|n| n.at(st.phrase)))
+            .and_then(|c| c.carriers.first().copied());
         let response = match mode {
             ResponseMode::Clockwork => {
                 // Same responder, same metric offset (beat 3.5 of the call's last bar), same
@@ -1034,11 +1060,25 @@ pub(super) fn plan_interactions(
                         let w = accent.at_beat(start);
                         let fit = -(w.syncopation + w.pickup) * 0.6;
                         let overlap_cost = if lat < 0.0 { 0.35 } else { 0.0 };
+                        // The named carrier wins over any other lawful responder; among its own
+                        // transforms a literal/inverted germ (Quote/Invert) is preferred, so the
+                        // handoff is recognizably the same theme.
+                        let narrative_bias = if Some(who) == narrative_carrier {
+                            -1000.0
+                                + if matches!(tf, Transform::Quote | Transform::Invert) {
+                                    -1.0
+                                } else {
+                                    0.0
+                                }
+                        } else {
+                            0.0
+                        };
                         let cost = memory.penalty(&sig)
                             + memory.novelty(sig.latency_q)
                             + fit
                             + overlap_cost
-                            + rng.range_f32(0.0, 0.2);
+                            + rng.range_f32(0.0, 0.2)
+                            + narrative_bias;
                         if !lawful(who, lat, dur) {
                             continue;
                         }

@@ -1898,4 +1898,41 @@ mod tests {
             "a carried narrative must change the plan fingerprint"
         );
     }
+
+    /// GEN-STORY-3 enactment: the realizer ACTS on the carriage. Under `Ensemble`, the named carrier
+    /// answers the lead at carrier phrases and the lead withholds at the Miss — so the realized SCORE
+    /// moves, not just the plan. And the enacted performance must still pass `perform_checked`'s
+    /// receipt: a withheld lead and a directed carrier are lawful performances, not law violations.
+    /// Archived stays byte-exact (guarded by the GEN-3 test above).
+    #[test]
+    fn gen_story3_enactment_moves_the_score_and_survives_the_receipt() {
+        use super::super::composer::Composer;
+        use super::super::policy::{NarrativePolicy, PerformanceProfile};
+        use super::super::semantic::deflected_lift_trace;
+        use super::super::song::SongMap;
+        use super::super::world::MusicWorld;
+
+        let song = SongMap::compose(
+            &deflected_lift_trace(96.0),
+            2112,
+            None,
+            Composer::MeaningDirected,
+        );
+        let world = MusicWorld::black_ice();
+        let opts = PerformanceOptions::default();
+
+        let band = perform_with_profile(&song, &world, opts, PerformanceProfile::BAND).unwrap();
+        let ensemble = PerformanceProfile::BAND.with_narrative(NarrativePolicy::Ensemble);
+
+        // The enacted narrative is a lawful performance — the receipt accepts it.
+        let ens = perform_checked(&song, &world, opts, ensemble)
+            .expect("the ensemble narrative must produce a performance the receipt accepts");
+
+        // The enactment MOVES the realized audio: the band carries the germ and the lead withholds.
+        assert_ne!(
+            ens.score.fingerprint(),
+            band.score.fingerprint(),
+            "Ensemble must change the realized score — the carriage is enacted, not merely carried"
+        );
+    }
 }
