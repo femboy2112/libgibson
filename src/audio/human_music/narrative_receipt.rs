@@ -207,6 +207,7 @@ mod tests {
     use crate::audio::human_music::composer::Composer;
     use crate::audio::human_music::contract::CompositionGrammar;
     use crate::audio::human_music::functor::perform_with_profile;
+    use crate::audio::human_music::meaning::MeaningPlan;
     use crate::audio::human_music::performance::PerformanceOptions;
     use crate::audio::human_music::policy::{NarrativePolicy, PerformanceProfile};
     use crate::audio::human_music::score::{Note, Score};
@@ -334,6 +335,78 @@ mod tests {
             0,
             "an unchanged performance carries nothing: {}",
             r.report()
+        );
+    }
+
+    /// §13 anti-overfit — the band-story is not a trick of the one fixture. Across genuinely
+    /// different deflecting stories, each realizes at least one real band obligation that the
+    /// control did not, and nothing on the lead-only judged voice (grammar=None) does.
+    #[test]
+    fn the_band_story_generalizes_across_stories() {
+        use crate::audio::human_music::semantic::{deflected_lift_trace, false_climax};
+        let world = MusicWorld::black_ice();
+        let perform = |song: &SongMap, profile| {
+            perform_with_profile(song, &world, PerformanceOptions::default(), profile)
+                .unwrap()
+                .score
+        };
+        // Several different deflecting generated stories.
+        let songs: Vec<(&str, SongMap)> = vec![
+            (
+                "deflected_lift@96",
+                SongMap::compose(
+                    &deflected_lift_trace(96.0),
+                    SEED,
+                    Some(CompositionGrammar::DeflectedLift),
+                    Composer::MeaningDirected,
+                ),
+            ),
+            (
+                "false_climax@96",
+                SongMap::compose(
+                    &false_climax(96.0),
+                    SEED,
+                    Some(CompositionGrammar::DeflectedLift),
+                    Composer::MeaningDirected,
+                ),
+            ),
+            (
+                "rise_unresolved@160",
+                SongMap::compose(
+                    &rise_unresolved(160.0),
+                    SEED,
+                    Some(CompositionGrammar::DeflectedLift),
+                    Composer::MeaningDirected,
+                ),
+            ),
+        ];
+        for (name, song) in &songs {
+            let control = perform(song, PerformanceProfile::BAND);
+            let story = perform(
+                song,
+                PerformanceProfile::BAND.with_narrative(NarrativePolicy::Ensemble),
+            );
+            let plan = NarrativePlan::from_observation(&MeaningPlan::observe(song));
+            let r = NarrativeReceipt::measure(song, &control, &story, &plan);
+            assert!(
+                r.band_obligations_realized() >= 1,
+                "{name}: the band-story must realize a real obligation, not overfit the fixture\n{}",
+                r.report()
+            );
+        }
+
+        // The judged voice (grammar=None) has no harmony lane, so its narrative carries only the
+        // theme; the comparative witness still never fabricates an obligation it did not realize.
+        let none = SongMap::compose(
+            &deflected_lift_trace(96.0),
+            SEED,
+            None,
+            Composer::MeaningDirected,
+        );
+        let plan = NarrativePlan::from_observation(&MeaningPlan::observe(&none));
+        assert!(
+            plan.carriages.iter().all(|c| c.harmonic.is_none()),
+            "the judged voice has no harmonic deflection to carry"
         );
     }
 }
