@@ -8,7 +8,7 @@
 
 1. Read [HUMAN_MUSIC_MEATSACK_PROJECTION.md](HUMAN_MUSIC_MEATSACK_PROJECTION.md) **in full**.
 2. Read [MEATSACK_PROJECTION_VALIDATION.md](MEATSACK_PROJECTION_VALIDATION.md) **in full**.
-3. Inspect the **current** repository head, C137 final accepted SHA and its tests; do not assume the source layout stayed at the v0.4 design-parent. At design time Claude was actively landing GEN-STORY-2 (branch `feat/v0.5-humanmusic-beefup`; latest observed `0c7314fc176f5338336c0c2e82051f6c1d23d7` — refresh before use).
+3. Inspect the **current** repository head, C137 final accepted SHA and its tests; do not assume the source layout stayed at the v0.4 design-parent. At design time Claude was actively landing GEN-STORY-2 (branch `feat/v0.5-humanmusic-beefup`; latest observed `0c7314fc176f5338336c0a2c2e82051f6c1d23d7` — refresh before use).
 4. Examine latest C137 narrative/meaning/score/feel/voice-continuity/PCM authority boundaries. The source notes below are **historical anchors**, not immutable line numbers.
 5. Freeze a new, independent development branch **from the accepted C137 commit**, for example `feat/v0.5-meatsack-projection`; keep this original design branch unmodified as the design provenance. Copy or cherry-pick reviewed docs if desired, not the entire history blindly.
 6. Work toward first-wave falsifiers (drummer + fretted strings) before planning keyboards/winds or rewriting acoustic synthesis.
