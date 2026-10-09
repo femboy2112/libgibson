@@ -18,7 +18,9 @@
 //!
 //! Flags: `--beats=NNN` (default 96), `--world=black_ice|vapor95|swiss_signal` (default black_ice,
 //! the judged voice), `--composer=meaning|propulsion` (default meaning — its μ hands the germ off
-//! the lead), `--out=`. A listening instrument on the beef-up branch, not shipped.
+//! the lead), `--grammar=deflected|none|propulsive` (default deflected — the judged voice ADOPTS
+//! the deflecting grammar so the band can carry the harmonic deflection; `none` = harmony-less
+//! opt-out), `--out=`. A listening instrument on the beef-up branch, not shipped.
 
 use gibson::audio::{
     human_music::{
@@ -88,10 +90,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("propulsion") => Composer::StablePropulsion,
         _ => Composer::MeaningDirected,
     };
-    // The GEN-STORY-5 withhold fixture is `--trace=rise --beats=160 --grammar=deflected`: the only
-    // stock (trace x grammar) whose μ aligns a harmonic Miss with a non-protected Develop lead
-    // phrase, so the band-story's lead-withhold fires from the generator. A song composed with
-    // `--grammar=none` (the default) has NO harmony lane, so the narrative can only carry the theme.
+    // The GEN-STORY-5 withhold fixture is `--trace=rise --beats=160`: the only stock (trace x
+    // grammar) whose μ aligns a harmonic Miss with a non-protected Develop lead phrase, so the
+    // band-story's lead-withhold fires from the generator. The judged voice ADOPTS the deflecting
+    // grammar by default (ear-gate 2026-10-09: "sounds fucking dope"/"in pocket"), so it carries
+    // the harmonic lane the story turns on; pass `--grammar=none` to hear the old harmony-less
+    // voice (theme carry only — the pre-adoption default).
     let trace = match arg("--trace=").as_deref() {
         Some("rise") | Some("rise_unresolved") => rise_unresolved(beats),
         Some("false_climax") => false_climax(beats),
@@ -99,11 +103,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => deflected_lift_trace(beats),
     };
     let grammar = match arg("--grammar=").as_deref() {
-        Some("deflected") | Some("deflected_lift") => Some(CompositionGrammar::DeflectedLift),
+        // Explicit opt-out: the old harmony-less judged voice (theme carry only).
+        Some("none") => None,
         Some("propulsive") | Some("propulsive_return") => {
             Some(CompositionGrammar::PropulsiveReturn)
         }
-        _ => None,
+        // Default (and `--grammar=deflected`): the judged voice adopts the deflecting grammar, so
+        // it gains the harmonic Prepare→Miss lane the band carries. Adoption decision 2026-10-09.
+        _ => Some(CompositionGrammar::DeflectedLift),
     };
     let song = SongMap::compose(&trace, 2112, grammar, composer);
     let wname = arg("--world=").unwrap_or_else(|| "black_ice".to_string());
