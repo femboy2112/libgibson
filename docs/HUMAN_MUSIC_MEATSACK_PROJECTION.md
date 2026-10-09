@@ -209,7 +209,7 @@ At this research branch's parent:
 - `src/audio/human_music/voice.rs`: the source explicitly states that `Role` cannot tell us whether two notes use the same string. `VoiceContinuation` is a source-owned edge; physical re-timing must not corrupt it.
 - `src/audio/human_music/rhythm.rs`: `MetricPosition -> GrooveTransport -> FeelTransport -> PerformedPosition` is already named; `FeelTransport::Identity` was the base state. Re-inspect after C137 completes.
 - `src/audio/human_music/synth.rs`: `HumanMusicSynth` maps Score note/hit times through the tempo map to sample-accurate scheduling and allocates synthetic voices. Use its existing patch renderer as a **control**; no body can be deduced from a synth voice.
-- `src/audio/human_music/world.rs` and `instrument.rs`: ``MusicWorld`/`Patch` are timbre and production choices, not performer rigs.
+- `src/audio/human_music/world.rs` and `instrument.rs`: `MusicWorld`/`Patch` are timbre and production choices, not performer rigs.
 - `src/audio/time.rs`: integer sample positions are the authoritative render clock. Physical gesture timings should be converted to `SampleTime` at the declared boundary, not accumulated with frame-by-frame floating-point wall time.
 - `src/audio/perception/` on C137: the diagnostic auditory observer is downstream of PCM, never the source of physical intentionality.
 
