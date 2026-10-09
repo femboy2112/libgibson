@@ -129,10 +129,21 @@ here means "the weakness is present as described"; the repair flips the assertio
 - **Probe:** `narrative_receipt::tests::c137a_r5_multicarrier_payoff_credited_without_each_carrier`.
 - **Actual (2026-10-09):** **PASS → weakness CONFIRMED.** This is the deferred
   single-response/multi-carrier limitation, now characterized in a test.
-- **Repair (NEXT):** per-carrier outcome — each named carrier must add its own material; a Payoff
-  tutti is fully realized only when every named carrier carries. **Blast radius:** receipt
-  outcome type + method; test updates; no sound change. A tighter witness may reveal the fixture's
-  `p2`/`p6` Payoffs are only *partially* realized — that is a finding to record, not a regression.
+- **Repair — SHIPPED (sound-preserving):** added `NarrativeReceipt::carrier_shortfalls` — a
+  read-only per-carrier witness beside `measure` (the control, kept): for every carriage with named
+  theme carriers, it names each carrier whose OWN `added` is `<= 0`. Test
+  `c137a_r5_repair_per_carrier_names_the_silent_carrier` proves `measure` still credits the
+  one-carrier mutation while `carrier_shortfalls` names the silenced carrier. No sound change (the
+  witness only reads the Score).
+- **★ FINDING — the fixture's Payoff "tuttis" are SINGLE-carrier in realization.** Natural
+  shortfalls on the canonical fixture: **p2 Payoff — Bass `added = −2`** (bass carried *fewer* notes
+  than the control; keys alone carried), **p6 Payoff — Keys `added = 0`** (bass alone carried), p5
+  Develop — Bass `added = 0`, p8 Recognize — Keys `added = −2` (already `Unrealized` in `measure`).
+  So the count-summing `measure` credits both Payoffs as fully Realized, but neither is a true
+  two-carrier tutti — the answer to the audit's "do all named payoff carriers actually fulfil the
+  obligation?" is **no**. A real characterization of the current state, not a regression; whether to
+  make the tuttis genuinely two-carrier is a composition/enactment question (ties to §6), and any
+  realization change is ear-gated.
 
 ### C137-A status summary
 | risk | site | probe | predeclared | actual | repair |
@@ -141,12 +152,13 @@ here means "the weakness is present as described"; the repair flips the assertio
 | R2a | `bass.rs` `germ_tone_index` | `c137a_r2a_…` | non-injective / contour-blind | **PASS→confirmed** | claim narrowed (shipped); contour map = eared A/B |
 | R2b | `bass.rs:689-692` | `c137a_r2b_…` | stale gate-read tag | **PASS→confirmed** | claim narrowed (shipped); reconcile = ear-gated |
 | R3 | `narrative.rs:143-154` | `c137a_r3_…` | global prepare licenses | **PASS→confirmed** | local-predecessor join (ear-gated if a render changes) |
-| R5 | `narrative_receipt.rs:137-142` | `c137a_r5_…` | one carrier suffices | **PASS→confirmed** | per-carrier outcome (no sound change) |
+| R5 | `narrative_receipt.rs:137-142` | `c137a_r5_…` (+repair) | one carrier suffices | **PASS→confirmed** | `carrier_shortfalls` **SHIPPED**; Payoff tuttis found single-carrier |
 
-**Gate:** `fmt` 0 · `clippy --all-targets --all-features` 0 · audio lib **525 passed / 0 failed /
-6 ignored** (5 C137-A probes — R1/R3/R5 + R2a/R2b — the +5 delta from the prior 520). R2a also
-extracts the `germ_tone_index` helper (byte-identical) and narrows the §4 comments; the §4 render is
-unchanged (the behaviour-preserving extraction keeps the full suite green).
+**Gate:** `fmt` 0 · `clippy --all-targets --all-features` 0 · audio lib **526 passed / 0 failed /
+6 ignored** (6 C137-A tests — R1/R3/R5 + R2a/R2b + the R5 repair — the +6 delta from the prior
+520). R2a extracts the `germ_tone_index` helper (byte-identical) and narrows the §4 comments; R5
+adds the read-only `carrier_shortfalls` witness; the §4 render and the shippable library are
+unchanged (behaviour-preserving — the full suite stays green).
 
 ---
 

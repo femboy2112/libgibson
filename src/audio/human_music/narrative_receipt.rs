@@ -60,6 +60,18 @@ pub struct NarrativeReceipt {
     pub outcomes: Vec<CarriageOutcome>,
 }
 
+/// A named theme carrier that did not add its OWN material in a carrying carriage (C137-A R5). The
+/// count-summing [`NarrativeReceipt::measure`] credits a multi-carrier obligation on the SUM across
+/// carriers, so one carrier can cover for a silent other; this names the silent one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CarrierShortfall {
+    pub phrase: u32,
+    pub meaning: MeaningKind,
+    pub carrier: Role,
+    /// story-minus-control note count for this carrier's role in the phrase (`<= 0` ⇒ carried nothing).
+    pub added: i64,
+}
+
 /// The realizer role a narrative [`Agent`] drives, if it is a single pitched voice. `Drums` and
 /// `Ensemble` are not single carrier voices and never name a theme carrier here.
 fn role_of(a: Agent) -> Option<Role> {
@@ -198,6 +210,57 @@ impl NarrativeReceipt {
             ));
         }
         s
+    }
+
+    /// Per-carrier shortfalls (C137-A R5): for every carriage with named theme carriers, each
+    /// carrier whose OWN added material is `<= 0`. A multi-carrier obligation (a Payoff names Keys
+    /// AND Bass) is fully realized only when every named carrier carries — this strengthens the
+    /// count-SUMMING [`Self::measure`] (kept as the comparative control) so one carrier can no
+    /// longer cover for a silent other. Comparative in the same sense as `measure`: story vs the
+    /// BAND control, never the plan's claim. The harmonic dark-carrier has no separate per-carrier
+    /// obligation here (it is covered by `measure`'s combined check).
+    pub fn carrier_shortfalls(
+        song: &SongMap,
+        control: &Score,
+        story: &Score,
+        plan: &NarrativePlan,
+    ) -> Vec<CarrierShortfall> {
+        let window = |phrase: u32| {
+            song.plan
+                .form
+                .phrases
+                .iter()
+                .find(|p| p.ix == phrase)
+                .map(|p| (p.start_beat(), p.end_beat()))
+        };
+        let count = |score: &Score, role: Role, lo: f64, hi: f64| {
+            score
+                .notes
+                .iter()
+                .filter(|n| n.role == role && n.start_beat >= lo - 1e-6 && n.start_beat < hi - 1e-6)
+                .count() as i64
+        };
+        let mut out = Vec::new();
+        for c in &plan.carriages {
+            if c.carriers.is_empty() {
+                continue;
+            }
+            let Some((lo, hi)) = window(c.phrase) else {
+                continue;
+            };
+            for role in c.carriers.iter().filter_map(|a| role_of(*a)) {
+                let added = count(story, role, lo, hi) - count(control, role, lo, hi);
+                if added <= 0 {
+                    out.push(CarrierShortfall {
+                        phrase: c.phrase,
+                        meaning: c.meaning,
+                        carrier: role,
+                        added,
+                    });
+                }
+            }
+        }
+        out
     }
 }
 
@@ -579,6 +642,85 @@ mod tests {
             !gate_read_stale.is_empty(),
             "C137-A R2b: a germ-substituted bass note wears a gate-read stale tag; reconciling \
              role_note flips a gate branch and changes the accepted sound (ear-gated): {tags:?}"
+        );
+    }
+
+    /// C137-A · R5 REPAIR — the per-carrier witness `carrier_shortfalls` NAMES a silent named
+    /// carrier that the count-summing `measure` (the control) credits anyway. On the same
+    /// one-carrier mutation as `c137a_r5_…`, `measure` still reports Realized, but
+    /// `carrier_shortfalls` reports the silenced carrier. Also records the fixture's NATURAL
+    /// shortfalls — the audit's "do all named payoff carriers actually fulfil the obligation?"
+    #[test]
+    fn c137a_r5_repair_per_carrier_names_the_silent_carrier() {
+        let (song, control, story, plan) = fixture();
+        let natural = NarrativeReceipt::carrier_shortfalls(&song, &control, &story, &plan);
+        println!("C137-A R5 repair: natural fixture shortfalls = {natural:?}");
+
+        let in_win =
+            |n: &Note, lo: f64, hi: f64| n.start_beat >= lo - 1e-6 && n.start_beat < hi - 1e-6;
+        let base = NarrativeReceipt::measure(&song, &control, &story, &plan);
+        let multi = plan
+            .carriages
+            .iter()
+            .find(|c| {
+                let roles: Vec<Role> = c.carriers.iter().copied().filter_map(role_of).collect();
+                roles.len() >= 2
+                    && base
+                        .outcomes
+                        .iter()
+                        .any(|o| o.phrase == c.phrase && o.carried == Carried::Realized)
+            })
+            .expect("the fixture realizes a multi-carrier Payoff");
+        let phrase = multi.phrase;
+        let roles: Vec<Role> = multi.carriers.iter().copied().filter_map(role_of).collect();
+        let (lo, hi) = song
+            .plan
+            .form
+            .phrases
+            .iter()
+            .find(|p| p.ix == phrase)
+            .map(|p| (p.start_beat(), p.end_beat()))
+            .unwrap();
+        let count = |sc: &Score, r: Role| {
+            sc.notes
+                .iter()
+                .filter(|n| n.role == r && in_win(n, lo, hi))
+                .count() as i64
+        };
+        let weakest = *roles
+            .iter()
+            .min_by_key(|&&r| count(&story, r) - count(&control, r))
+            .unwrap();
+        let surplus = (count(&story, weakest) - count(&control, weakest)).max(0);
+        let mut story2 = story.clone();
+        let mut dropped = 0;
+        story2.notes.retain(|n| {
+            if n.role == weakest && in_win(n, lo, hi) && dropped < surplus {
+                dropped += 1;
+                false
+            } else {
+                true
+            }
+        });
+
+        // Control: measure() still credits the carriage (it sums across carriers).
+        let m = NarrativeReceipt::measure(&song, &control, &story2, &plan);
+        assert_eq!(
+            m.outcomes
+                .iter()
+                .find(|o| o.phrase == phrase)
+                .unwrap()
+                .carried,
+            Carried::Realized
+        );
+        // Strengthening: the per-carrier witness names the silenced carrier.
+        let shortfalls = NarrativeReceipt::carrier_shortfalls(&song, &control, &story2, &plan);
+        assert!(
+            shortfalls
+                .iter()
+                .any(|s| s.phrase == phrase && s.carrier == weakest && s.added <= 0),
+            "C137-A R5 repair: carrier_shortfalls must name the silenced carrier {weakest:?} at \
+             phrase {phrase}, though measure() still credits the carriage: {shortfalls:?}"
         );
     }
 }
