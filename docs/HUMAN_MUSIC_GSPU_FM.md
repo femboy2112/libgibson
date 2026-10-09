@@ -143,7 +143,7 @@ A source intent may map to several excitations and one excitation to a compiled 
 
 **G5 — C137 + Meatsack vertical integration.** Same generated accepted SongMap and realizer performance under old synth, OPN2, OPL3 and optional HD palettes; no source mutation. Map a limited set of Meatsack effort/attack/contact events to **documented** FM parameters (e.g. modulation index envelope, operator level, noise/transient mix). Test whether one coordinated gesture produces correlated timbre/attack changes, instead of adding random changes. Physical realism not claimed from the FM engine alone.
 
-**G6 — Only if earned:** precise chip-emulation backend(s), HD 6/8-op generalization, optional sample-voice/SNES-style adapter, more sophisticated operator editor. No SNES-HDD/sample milestone is scheduled; no samples are needed or expected. OPN2 DAC support is out of the first FM milestone and must not sneak a sample requirement in.
+**G6 — Only if earned:** precise chip-emulation backend(s), HD 6/8-op generalization, optional sample-voice/SNES-style adapter, more sophisticated operator editor. No SNES-HD/sample milestone is scheduled; no samples are needed or expected. OPN2 DAC support is out of the first FM milestone and must not sneak a sample requirement in.
 
 Each gated round should produce a standalone reversible commit, exact-head hosted CI/test receipts, frozen render hashes (with platform/toolchain scope), controlled WAV/stems and a human listening verdict when sound changes. Never merge, release or change historical defaults without explicit maintainer authorization.
 
@@ -153,7 +153,7 @@ A future implementation **must** defeat negative/mutation controls, not merely s
 
 **Mathematical/DSP probes:** zero index = clean carrier; no ghost sine/output from a modulator-only route; pure 2-op sinusoidal sidebands track the Bessel reference in a controlled low-alias regime; graph topological ordering is stable; a cycle without legal feedback is refused; feedback is finite/bounded/seeded; independent envelopes really change timbre under a fixed musical note; key-off/legato/voice stealing do not fabricate extra attacks. High-frequency aliasing and clipping must be measured, not asserted absent.
 
-**Chip dialect probes:** OP(N)2's 8 algorithms produce distinguishable, correct topologies; OPL2 restrictions and OPL3 pairings/resource modes can reject wrong configurations; strict six-channel OPN2 cannot silently produce a seventh voice; an OPL pairing consumes the correct resources. Compare against two independently implemented/reference routes when feasible; shared library provenance is not independent testimony. Disclose any table/clock/DAC mismatches.
+**Chip dialect probes:** OPN2's 8 algorithms produce distinguishable, correct topologies; OPL2 restrictions and OPL3 pairings/resource modes can reject wrong configurations; strict six-channel OPN2 cannot silently produce a seventh voice; an OPL pairing consumes the correct resources. Compare against two independently implemented/reference routes when feasible; shared library provenance is not independent testimony. Disclose any table/clock/DAC mismatches.
 
 **Musical probes:** swap only the palette for identical generated score/gesture objects; canonical song/performance/identity/cover provenance does not move; narrative carrier withhold remains silent; exposed carrier may change acoustic audibility and gets its **own** downstream witness; release-tail changes must not invalidate upstream acoustic assumptions silently. Mutating program data cannot mutate SongMap.
 
