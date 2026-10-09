@@ -61,6 +61,8 @@ mod meaning_probes;
 pub mod melody;
 pub mod motif;
 pub mod narrative;
+#[cfg(test)]
+mod narrative_join_probes;
 pub mod occupancy;
 pub mod percussion;
 pub mod performance;
