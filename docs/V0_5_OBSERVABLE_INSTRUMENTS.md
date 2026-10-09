@@ -1,14 +1,26 @@
 # v0.5.0 — Observable Instruments
 
-**Status: PLANNED / IN DEVELOPMENT. EXPERIMENTAL. Rust-only. No C ABI change, no
-MSRV change, no version bump, no registry publication.** This document defines the
-milestone before the code; it is a coordination artifact, not a release note.
+**Status: PLANNED / IN DEVELOPMENT. EXPERIMENTAL. Rust-only; no C ABI or MSRV
+change currently planned. NOT YET RELEASED.** Feature/research branches do not bump
+versions, tag, merge to main or publish without the maintainer's final approval.
+This document is a living coordination plan, not a release note.
 
-v0.5 unifies three previously separate research lines into one milestone. They are
-**independent implementation axes** — each on its own branch, each independently
-reviewable and independently green before any integration candidate exists. The
-milestone is *not* uncontrolled feature growth; it is three bounded instruments
-plus the smallest shared law that makes them one milestone.
+**FINAL v0.5 RELEASE GATE (owner directive, 2026-10-09):** v0.5 must conclude with
+an **epic upgraded meme intro film** showcasing the **actual accepted new features**
+with **Filthy Frank chroma-keyed onto the same terminal-rendered visuals, reacting**
+like the previous `libgibson_intro_reaction` demo — not merely a separate clip, or
+a replay of the old intro. The executable, captured soundtrack, full reaction cut,
+source/provenance evidence and the maintainer's watch/listen verdict are mandatory.
+See **[v0.5 Meme Intro Finale — release flagship and acceptance](V0_5_MEME_INTRO_FINALE.md)**.
+No v0.5 release is considered complete before this finale is actually accepted.
+
+The original three research axes below remain distinct and individually reviewable.
+Subsequent v0.5 development also includes the staged cinematic authoring kit
+(PR #86, on spatial PR #83) and the independently moving Rick-C137 HumanMusic
+performance (PR #87). These are **real integration responsibilities**, not fourth
+and fifth data observers to jam into the initial three-axis model. The final movie
+is their artistic and technical integration proof. New features may be added to the
+milestone if they strengthen it and receive their own truthful evidence.
 
 ## The common law
 
@@ -73,10 +85,28 @@ flagship demo. Branch `feat/v0.5-spatial-ui` (draft PR when pushed).
 
 ---
 
+## Cross-axis culmination — the upgraded Filthy Frank meme intro (REQUIRED)
+
+[Read the full executable/cinematic/reaction/audio release gate](V0_5_MEME_INTRO_FINALE.md).
+The final v0.5 demonstration is an evolved `libgibson_intro_reaction`:
+real plotting and audible observation, changing spatial grammars and album flow,
+source-identical cinematic transformations, **C137's genuinely generated band
+story**, and the same locally provided Filthy Frank subject *keyed directly into*
+those visuals. One authoritative edit clock and one renderer; cue-aware soundtrack
+and dialogue with no invented musical evidence; local media kept out of git.
+
+Neither a static montage nor the old v0.3.1 reaction render satisfies this gate.
+The **maintainer watches and listens** before accepting the v0.5 release; tests
+cannot certify the comedy, timing, visuals or musicality. If the local Frank media
+is unavailable, no-reaction/synthetic CI may pass but the **full finale is still
+UNVERIFIED**. The film's shot map is editable as further features land.
+
+---
+
 ## Boundaries (what v0.5 is NOT)
 
-- No version bump, tag, release, or registry publish.
-- No feature PR merged to `main`; no Reverse-HumanMusic merge.
+- No version bump, tag, release, registry publish or merge directly from a feature/research branch **before** integration plus the final meme-intro acceptance and explicit owner approval.
+- No automatic merging of feature PRs to `main`; no Reverse-HumanMusic merge.
 - The observer does not steer synthesis; no full psychoacoustic simulation.
 - No FFT/statistics inside `gibson::plot`; no external image-loader dependency for
   Album Flow; no copyrighted album art; no 50-type texture/material DSL; no enormous
@@ -87,9 +117,17 @@ flagship demo. Branch `feat/v0.5-spatial-ui` (draft PR when pushed).
 
 ## Integration
 
-An `integration/v0.5-observable-instruments` branch is cut from `main` **only after**
-all three feature branches are exact-head green, normal-merging the three histories.
-It is not merged to `main`, not version-bumped, not tagged. A cross-axis example
-(`examples/auditory_observer_lab.rs`) may plot `AuditoryTrace` material, but
-`audio::perception` never depends on `gibson::plot` — the example chooses to plot;
-the modules stay orthogonal.
+Cut or update an `integration/v0.5-observable-instruments` branch from the accepted
+current `main` only when component heads and their dependency graph are audited,
+then reconcile and test the **actual combined commit**. PR #86 is stacked on
+spatial PR #83; HumanMusic C137 PR #87 is independently changing. Do not assume
+separate green branches imply the merged work is green. Freeze only interfaces
+necessary for source-true composition, not the art direction.
+
+First prove a silent integrated cinematic capture, then score the edit with the
+accepted HumanMusic generator, overlay and synchronize the actual local keyed
+Frank reactions, and run the full artistic/technical release gate documented in
+`V0_5_MEME_INTRO_FINALE.md`. **Until the maintainer has watched/listened and
+approved, do not tag, release, or merge as a final v0.5 deliverable.** A cross-axis
+plot of `AuditoryTrace` can live in a consumer example; `audio::perception`
+never depends on `gibson::plot`. Modules remain independently useful.
