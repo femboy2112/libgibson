@@ -49,11 +49,20 @@ here means "the weakness is present as described"; the repair flips the assertio
   leaves the verdict `Realized`.
 - **Probe:** `narrative_receipt::tests::c137a_r1_carry_is_credited_by_count_not_germ_identity`.
 - **Actual (2026-10-09):** **PASS → weakness CONFIRMED.** Pitch-scramble is invisible to the receipt.
-- **Repair (NEXT):** a source-aware witness that checks the carrier's *added* material quotes the
-  germ — pitch-class / interval / contour licensed by the song's germ (`perf.bank.identity`),
-  compared against the control. Non-circular: the germ is the source of truth, never the plan's
-  claim. **Blast radius:** new read-only method on `NarrativeReceipt`; no sound change; flips this
-  assertion. Keep the existing count-based comparative controls beside it (STORY vs BAND).
+- **Repair — SHIPPED (sound-preserving):** added `NarrativeReceipt::germ_carry_shortfalls` — a
+  read-only, source-aware witness for the Bass germ carrier. For each bass-carrier phrase it flags
+  every realized bass note whose pitch class is NOT a germ-selected chord tone (a chord tone the
+  germ's degree pattern would pick via the shared `bass::germ_tone_index`). Non-circular: it reads
+  the germ (`perf.bank.identity`) and the chart (`perf.context_at`) as the sources of truth and the
+  realized Score under test, never the plan's claim; membership-based, so it is robust to the map's
+  known contour loss (R2a). The count-based `measure` is **kept as the comparative control**.
+- **★ FINDING — the witness discriminates cleanly, and the §4 germ voicing survives the coupled
+  gate.** `c137a_r1_repair_source_aware_witness_tells_germ_from_scramble`: on the genuine §4 story
+  the witness finds **0** bass germ-shortfalls (every bass note in a carrier phrase is germ-selected,
+  intact through `reland`/`gate_hazards`/clip); scrambling those 16 notes off the germ yields **16**
+  flags. `measure` is pitch-blind and credits both identically; the source-aware witness tells them
+  apart. **Scope kept honest:** Keys carriers have no germ voicing yet (deferred), so keys carries
+  stay count-based — a documented limitation, not a vacuous pass.
 
 ### R2a — the bass germ-voicing maps degrees MODULO the chord-tone count (non-injective)
 - **Source:** `bass.rs:689-690` (the §4 carry-substance pass):
@@ -148,17 +157,31 @@ here means "the weakness is present as described"; the repair flips the assertio
 ### C137-A status summary
 | risk | site | probe | predeclared | actual | repair |
 |---|---|---|---|---|---|
-| R1/R4 | `narrative_receipt.rs:137-147` | `c137a_r1_…` | fooled | **PASS→confirmed** | source-aware germ-quoting witness (no sound change) |
+| R1/R4 | `narrative_receipt.rs:137-147` | `c137a_r1_…` (+repair) | fooled | **PASS→confirmed** | `germ_carry_shortfalls` **SHIPPED** (real 0 / scramble 16; no sound change) |
 | R2a | `bass.rs` `germ_tone_index` | `c137a_r2a_…` | non-injective / contour-blind | **PASS→confirmed** | claim narrowed (shipped); contour map = eared A/B |
 | R2b | `bass.rs:689-692` | `c137a_r2b_…` | stale gate-read tag | **PASS→confirmed** | claim narrowed (shipped); reconcile = ear-gated |
 | R3 | `narrative.rs:143-154` | `c137a_r3_…` | global prepare licenses | **PASS→confirmed** | local-predecessor join (ear-gated if a render changes) |
 | R5 | `narrative_receipt.rs:137-142` | `c137a_r5_…` (+repair) | one carrier suffices | **PASS→confirmed** | `carrier_shortfalls` **SHIPPED**; Payoff tuttis found single-carrier |
 
-**Gate:** `fmt` 0 · `clippy --all-targets --all-features` 0 · audio lib **526 passed / 0 failed /
-6 ignored** (6 C137-A tests — R1/R3/R5 + R2a/R2b + the R5 repair — the +6 delta from the prior
-520). R2a extracts the `germ_tone_index` helper (byte-identical) and narrows the §4 comments; R5
-adds the read-only `carrier_shortfalls` witness; the §4 render and the shippable library are
-unchanged (behaviour-preserving — the full suite stays green).
+**Gate:** `fmt` 0 · `clippy --all-targets --all-features` 0 · audio lib **527 passed / 0 failed /
+6 ignored** (7 C137-A tests — R1/R3/R5 + R2a/R2b + the R5 and R1/R4 repairs — the +7 delta from the
+prior 520). R2a extracts the `germ_tone_index` helper (byte-identical) and narrows the §4 comments;
+R5 adds the read-only `carrier_shortfalls` witness; R1/R4 adds the read-only source-aware
+`germ_carry_shortfalls` witness; the §4 render and the shippable library are unchanged
+(behaviour-preserving — the full suite stays green).
+
+## C137-A — CLOSE-OUT STATUS
+All five risks probed and CONFIRMED; the two sound-preserving witness strengthenings SHIPPED
+(R1/R4 `germ_carry_shortfalls`, R5 `carrier_shortfalls`), each beside the retained count-based
+control. The sound-CHANGING follow-ups are **ear-gated and NOT taken unilaterally**:
+- **R2a (b)** contour-preserving degree→tone map — opt-in A/B for the ear.
+- **R2b** reconcile `role_note` — flips gate branches ⇒ changes the accepted sound ⇒ eared.
+- **R3** local-predecessor join — may change which phrase withholds ⇒ eared (characterize real-μ
+  Prepare count first; likely latent on single-pair fixtures).
+- **R5 finding** make the Payoff tuttis genuinely two-carrier — composition/enactment + ear.
+C137-A is **closed at the symbolic/witness level**; what remains is explicitly Leah's ear. Next
+mega-round on the program: **C137-B** (generalization + blind listening bundle) and **MP-0** (new
+branch, minimal `AcceptedPerformance` seam).
 
 ---
 

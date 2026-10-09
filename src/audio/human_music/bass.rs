@@ -37,7 +37,9 @@ fn near(pc: i32, center: Midi) -> Midi {
 /// it is NON-INJECTIVE (degrees differing by a multiple of `n_tones` select the same tone) and it
 /// indexes `tones` in chord-storage order, not pitch order. It therefore traces the germ's register
 /// DRIFT over the chord, NOT its exact interval contour (C137-A R2a; see the hardening ledger).
-fn germ_tone_index(deg: i32, n_tones: usize) -> usize {
+/// `pub(crate)` so the source-aware narrative witness (R1/R4) reuses the one definition rather than
+/// re-deriving the map.
+pub(crate) fn germ_tone_index(deg: i32, n_tones: usize) -> usize {
     deg.rem_euclid(n_tones as i32) as usize
 }
 

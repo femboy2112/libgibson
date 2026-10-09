@@ -21,8 +21,10 @@
 use super::action::Agent;
 use super::meaning::MeaningKind;
 use super::narrative::{LeadRole, NarrativePlan};
+use super::performance::PerformancePlan;
 use super::score::{Role, Score};
 use super::song::SongMap;
+use super::theory::pitch_class;
 
 /// What the realized Score did with one carriage's band obligation — a typed outcome, never a bare
 /// pass/fail. `Unrealized` carries the reason the Score did not bear the obligation out.
@@ -70,6 +72,17 @@ pub struct CarrierShortfall {
     pub carrier: Role,
     /// story-minus-control note count for this carrier's role in the phrase (`<= 0` ⇒ carried nothing).
     pub added: i64,
+}
+
+/// A realized bass note, in a phrase where the narrative names the Bass a germ carrier, whose pitch
+/// is NOT a germ-selected chord tone (C137-A R1/R4). The count-summing [`NarrativeReceipt::measure`]
+/// credits a carry by note count and never reads pitch, so it cannot tell the germ from a scramble;
+/// this is the source-aware check that can.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GermShortfall {
+    pub phrase: u32,
+    pub beat: f64,
+    pub pitch: i32,
 }
 
 /// The realizer role a narrative [`Agent`] drives, if it is a single pitched voice. `Drums` and
@@ -256,6 +269,67 @@ impl NarrativeReceipt {
                         meaning: c.meaning,
                         carrier: role,
                         added,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    /// Source-aware carry witness (C137-A R1/R4): for each carriage naming the Bass germ carrier,
+    /// every realized bass note in the phrase whose pitch is NOT a germ-selected chord tone — i.e.
+    /// not of the form the §4 germ-voicing emits (a chord tone picked from the germ's degree pattern
+    /// via [`super::bass::germ_tone_index`]). This rejects carrier material that is not the germ (a
+    /// constant scramble, unrelated notes) which the count-summing [`Self::measure`] credits. It
+    /// reads the germ (`perf.bank.identity`) and the chart (`perf.context_at`) as the sources of
+    /// truth and the realized Score under test — never the plan's claim; and it is membership-based,
+    /// so it is robust to the map's known contour loss (R2a). Keys carriers have no germ voicing yet
+    /// (deferred), so they are not checked here — a documented limitation, not a vacuous pass.
+    pub fn germ_carry_shortfalls(
+        song: &SongMap,
+        perf: &PerformancePlan,
+        story: &Score,
+        plan: &NarrativePlan,
+    ) -> Vec<GermShortfall> {
+        let germ = &perf.bank.identity;
+        let mut out = Vec::new();
+        if germ.degrees.is_empty() {
+            return out;
+        }
+        let window = |phrase: u32| {
+            song.plan
+                .form
+                .phrases
+                .iter()
+                .find(|p| p.ix == phrase)
+                .map(|p| (p.start_beat(), p.end_beat()))
+        };
+        for c in plan
+            .carriages
+            .iter()
+            .filter(|c| c.carriers.contains(&Agent::Bass))
+        {
+            let Some((lo, hi)) = window(c.phrase) else {
+                continue;
+            };
+            for n in story.notes.iter().filter(|n| {
+                n.role == Role::Bass && n.start_beat >= lo - 1e-6 && n.start_beat < hi - 1e-6
+            }) {
+                let Some(ctx) = perf.context_at(n.start_beat) else {
+                    continue;
+                };
+                let tones = ctx.chord.pitch_classes();
+                if tones.is_empty() {
+                    continue;
+                }
+                let germ_selected = germ.degrees.iter().any(|&d| {
+                    tones[super::bass::germ_tone_index(d, tones.len())] == pitch_class(n.pitch)
+                });
+                if !germ_selected {
+                    out.push(GermShortfall {
+                        phrase: c.phrase,
+                        beat: n.start_beat,
+                        pitch: n.pitch,
                     });
                 }
             }
@@ -721,6 +795,78 @@ mod tests {
                 .any(|s| s.phrase == phrase && s.carrier == weakest && s.added <= 0),
             "C137-A R5 repair: carrier_shortfalls must name the silenced carrier {weakest:?} at \
              phrase {phrase}, though measure() still credits the carriage: {shortfalls:?}"
+        );
+    }
+
+    /// C137-A · R1/R4 REPAIR — the source-aware `germ_carry_shortfalls` tells the germ from a
+    /// scramble, which the pitch-blind `measure` (the control) cannot. On the genuine §4 story it
+    /// finds few/no bass shortfalls (the bass notes in a bass-carrier phrase ARE germ-selected chord
+    /// tones); scrambling those notes off the germ makes the source-aware witness flag them, strictly
+    /// more than the genuine story — the discrimination the count-based receipt lacks.
+    #[test]
+    fn c137a_r1_repair_source_aware_witness_tells_germ_from_scramble() {
+        let song = SongMap::compose(
+            &rise_unresolved(160.0),
+            SEED,
+            Some(CompositionGrammar::DeflectedLift),
+            Composer::MeaningDirected,
+        );
+        let world = MusicWorld::black_ice();
+        let story = perform_with_profile(
+            &song,
+            &world,
+            PerformanceOptions::default(),
+            PerformanceProfile::BAND.with_narrative(NarrativePolicy::Ensemble),
+        )
+        .unwrap();
+        let plan = story
+            .perf
+            .narrative
+            .clone()
+            .expect("ensemble plans a narrative");
+
+        let real = NarrativeReceipt::germ_carry_shortfalls(&song, &story.perf, &story.score, &plan);
+
+        let bass_phrase = plan
+            .carriages
+            .iter()
+            .find(|c| c.carriers.contains(&Agent::Bass))
+            .map(|c| c.phrase)
+            .expect("a bass-carrier phrase");
+        let (lo, hi) = song
+            .plan
+            .form
+            .phrases
+            .iter()
+            .find(|p| p.ix == bass_phrase)
+            .map(|p| (p.start_beat(), p.end_beat()))
+            .unwrap();
+        let mut scrambled = story.score.clone();
+        let mut hit = 0;
+        for n in scrambled.notes.iter_mut() {
+            if n.role == Role::Bass && n.start_beat >= lo - 1e-6 && n.start_beat < hi - 1e-6 {
+                n.pitch = 1;
+                hit += 1;
+            }
+        }
+        assert!(hit > 0, "the phrase must have bass notes to scramble");
+        let flagged =
+            NarrativeReceipt::germ_carry_shortfalls(&song, &story.perf, &scrambled, &plan);
+        println!(
+            "C137-A R1 repair: real-story shortfalls={}, scrambled shortfalls={} (scrambled {hit} notes in p{bass_phrase})",
+            real.len(),
+            flagged.len()
+        );
+        assert!(
+            flagged.iter().any(|s| s.phrase == bass_phrase),
+            "the source-aware witness must flag bass scrambled off the germ: {flagged:?}"
+        );
+        assert!(
+            flagged.len() > real.len(),
+            "the source-aware witness must discriminate the scramble from the genuine germ voicing \
+             (real={}, scrambled={})",
+            real.len(),
+            flagged.len()
         );
     }
 }
