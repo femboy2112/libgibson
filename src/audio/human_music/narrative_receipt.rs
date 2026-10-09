@@ -527,4 +527,58 @@ mod tests {
              carriage reads Realized on the other carrier alone — the receipt sums across carriers"
         );
     }
+
+    /// C137-A · R2b — the §4 germ substitution (bass.rs) overwrites `function` to `ChordTone` but
+    /// leaves `prov.role_note` as it was, so a germ-driven chord tone can wear a stale structural
+    /// tag. `role_note` is gate-read and fingerprinted, but the §4 pass is byte-exact-OFF the
+    /// default path, so historical fingerprints are intact; the inconsistency is internal to the
+    /// Ensemble story path. See docs/HUMAN_MUSIC_C137_HARDENING_LEDGER.md.
+    #[test]
+    fn c137a_r2b_germ_substituted_bass_keeps_a_stale_role_note() {
+        use crate::audio::human_music::score::PitchFunction;
+        let (song, _control, story, plan) = fixture();
+        let bass_phrases: Vec<u32> = plan
+            .carriages
+            .iter()
+            .filter(|c| c.carriers.contains(&Agent::Bass))
+            .map(|c| c.phrase)
+            .collect();
+        let mut germ_notes = 0usize;
+        let mut tags: Vec<(u32, &'static str)> = Vec::new();
+        for ph in &bass_phrases {
+            let Some(p) = song.plan.form.phrases.iter().find(|p| p.ix == *ph) else {
+                continue;
+            };
+            let (lo, hi) = (p.start_beat(), p.end_beat());
+            for n in story.notes.iter().filter(|n| {
+                n.role == Role::Bass && n.start_beat >= lo - 1e-6 && n.start_beat < hi - 1e-6
+            }) {
+                if n.function == Some(PitchFunction::ChordTone) {
+                    germ_notes += 1;
+                    tags.push((*ph, n.prov.role_note));
+                }
+            }
+        }
+        println!(
+            "C137-A R2b: {germ_notes} ChordTone bass notes in carrier phrases; role_notes: {tags:?}"
+        );
+        assert!(
+            germ_notes > 0,
+            "the fixture must germ-substitute some bass notes"
+        );
+        // The sharp, load-bearing finding: ≥1 germ-substituted note wears a GATE-READ tag —
+        // "approach" (expression.rs:139), "answer" (temporal.rs:247, material.rs:890), "pedal"
+        // (fingerprinted). Those gates fired on these stale tags IN THE EAR-ACCEPTED render, so
+        // reconciling role_note would flip a gate branch and change the accepted sound: it is
+        // ear-gated, not a free fix (correcting the ledger's earlier "inert fix" speculation).
+        let gate_read_stale: Vec<_> = tags
+            .iter()
+            .filter(|(_, t)| matches!(*t, "approach" | "answer" | "pedal"))
+            .collect();
+        assert!(
+            !gate_read_stale.is_empty(),
+            "C137-A R2b: a germ-substituted bass note wears a gate-read stale tag; reconciling \
+             role_note flips a gate branch and changes the accepted sound (ear-gated): {tags:?}"
+        );
+    }
 }

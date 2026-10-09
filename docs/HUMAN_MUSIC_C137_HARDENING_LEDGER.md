@@ -63,18 +63,20 @@ here means "the weakness is present as described"; the repair flips the assertio
   germ's interval/contour identity is not preserved; only a loose register trace survives. The
   docstring (`bass.rs:658-665`) claims the bass "moves in the germ's shape" and "keeps its rhythm,
   tags and dynamics" — the first is loose, the second is contradicted by R2b.
-- **Status:** NOT yet probed (specified). Probe NEXT: a unit test over the degree→tone map showing
-  (i) two distinct germ degrees map to one pc, and (ii) a monotonic germ-degree run need not map to
-  monotonic output pitches.
-- **CRITICAL — accepted sound:** the §4 render is **ear-accepted** ("in pocket", 2026-10-09,
-  `f5f8137`). Resolution per the program's own rule (*repair smallest mechanism OR narrow its
-  claim; preserve the accepted sound unless a change earns a fresh verdict*):
-  - **(a) narrow the claim** — correct `bass.rs` docstring to "approximates the germ's register
-    drift over the chord's tones, not its exact interval contour." **Docs-only, sound-preserving.**
-    Recommended now.
-  - **(b) contour-preserving map** — sort chord tones ascending and index by the germ degree's
-    *rank* so ascending germ steps give ascending pitches. **Changes bass pitches → changes sound →
-    opt-in A/B for Leah's ear, never a silent default.** Offered later as an eared experiment.
+- **Probe:** `bass::tests::c137a_r2a_germ_tone_map_is_non_injective_and_contour_blind` — against
+  the extracted source helper `germ_tone_index(deg, n_tones)`.
+- **Actual (2026-10-09):** **PASS → CONFIRMED.** Over a triad, degrees 0/3/6 all select tone 0
+  (non-injective); a germ step UP (2→3) drops the tone index (2→0), so the modular wrap flips
+  contour direction; negatives wrap to the top tone.
+- **Resolution — (a) DONE, (b) deferred (ear-gated):** the §4 render is **ear-accepted** ("in
+  pocket", `f5f8137`). Per the program's rule (*repair smallest mechanism OR narrow its claim;
+  preserve accepted sound unless a change earns a fresh verdict*):
+  - **(a) narrow the claim — SHIPPED this checkpoint:** the §4 map extracted to the named, documented
+    `germ_tone_index` helper (byte-identical computation); `bass.rs` comments corrected to "register
+    DRIFT over the chord's tones, not exact interval contour." Docs + inert refactor, sound-preserving.
+  - **(b) contour-preserving map** — sort chord tones ascending, index by germ-degree *rank* so
+    ascending germ steps give ascending pitches. **Changes bass pitches → changes sound → opt-in A/B
+    for Leah's ear, never a silent default.** Offered later as an eared experiment.
 
 ### R2b — stale `prov.role_note` after the germ pitch substitution
 - **Source:** `bass.rs:689-692` sets `n.pitch` and `n.function = Some(ChordTone)` but leaves
@@ -86,11 +88,19 @@ here means "the weakness is present as described"; the repair flips the assertio
   `NarrativePolicy::Ensemble`), so **historical v0.4 fingerprints are NOT corrupted**. The
   inconsistency is internal to the Ensemble *story* path only: a germ-substituted `ChordTone` can
   wear a pre-substitution tag a downstream gate then reads.
-- **Status:** NOT yet probed (specified). Probe NEXT: render the Ensemble story; among bass notes a
-  bass-carrier phrase germ-substituted (`function == ChordTone`), assert ≥1 retains a
-  pre-substitution `role_note`; then test whether any gate's decision actually flips on it.
-- **Resolution:** if no gate decision flips → make `role_note` honest in a provably-inert way
-  (sound-preserving). If a gate flips → a real story-path bug; fix and re-ear the story render.
+- **Probe:** `narrative_receipt::tests::c137a_r2b_germ_substituted_bass_keeps_a_stale_role_note`.
+- **Actual (2026-10-09):** **PASS → CONFIRMED, with a finding that CORRECTS the earlier resolution.**
+  The fixture germ-substitutes **27** bass notes (`function == ChordTone`) across carrier phrases
+  p2/p5/p6, wearing pre-§4 tags: `"root"`, `"fifth"`, `"approach"`, `"quote"`, `"walk"`, `"pedal"`,
+  `"answer"`. Several are **gate-read**: `"approach"` → `expression.rs:139`, `"answer"` →
+  `temporal.rs:247` + `material.rs:890`, `"pedal"` → fingerprint.
+- **Resolution — CORRECTED:** my earlier "inert honesty fix if no gate flips" was too optimistic.
+  Those gates **fired on these stale tags inside the ear-accepted render**, so reconciling
+  `role_note` would flip a gate branch and **change the accepted sound** — it is **ear-gated, not a
+  free fix**. The sound-preserving move is to **narrow the claim** (DONE: the `bass.rs` §4 comment
+  now states the pass overwrites `function` but leaves `role_note`); actual reconciliation is an
+  opt-in, eared experiment. Historical v0.4 fingerprints remain intact (byte-exact-OFF the default
+  path).
 
 ### R3 — the harmony join licenses a Miss by a GLOBAL earliest Prepare, not a local predecessor
 - **Source:** `narrative.rs:143-154`. `first_prepare = min beat over ALL Prepare events`;
@@ -128,13 +138,15 @@ here means "the weakness is present as described"; the repair flips the assertio
 | risk | site | probe | predeclared | actual | repair |
 |---|---|---|---|---|---|
 | R1/R4 | `narrative_receipt.rs:137-147` | `c137a_r1_…` | fooled | **PASS→confirmed** | source-aware germ-quoting witness (no sound change) |
-| R2a | `bass.rs:689-690` | *next* | collapse/scramble | — | narrow claim (docs) now; contour map as eared A/B |
-| R2b | `bass.rs:689-692` | *next* | stale tag | — | inert honesty fix, or ear-gated if a gate flips |
+| R2a | `bass.rs` `germ_tone_index` | `c137a_r2a_…` | non-injective / contour-blind | **PASS→confirmed** | claim narrowed (shipped); contour map = eared A/B |
+| R2b | `bass.rs:689-692` | `c137a_r2b_…` | stale gate-read tag | **PASS→confirmed** | claim narrowed (shipped); reconcile = ear-gated |
 | R3 | `narrative.rs:143-154` | `c137a_r3_…` | global prepare licenses | **PASS→confirmed** | local-predecessor join (ear-gated if a render changes) |
 | R5 | `narrative_receipt.rs:137-142` | `c137a_r5_…` | one carrier suffices | **PASS→confirmed** | per-carrier outcome (no sound change) |
 
-**Gate on this checkpoint:** `fmt` 0 · `clippy --all-targets --all-features` 0 · audio lib
-**523 passed / 0 failed / 6 ignored** (3 new C137-A probes = the +3 delta from the prior 520).
+**Gate:** `fmt` 0 · `clippy --all-targets --all-features` 0 · audio lib **525 passed / 0 failed /
+6 ignored** (5 C137-A probes — R1/R3/R5 + R2a/R2b — the +5 delta from the prior 520). R2a also
+extracts the `germ_tone_index` helper (byte-identical) and narrows the §4 comments; the §4 render is
+unchanged (the behaviour-preserving extraction keeps the full suite green).
 
 ---
 
