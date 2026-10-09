@@ -389,6 +389,7 @@ pub(crate) fn plan_and_realize(
         recast: Vec::new(),
         harmony: profile.harmony,
         functions: profile.functions,
+        lead_life: profile.lead_life,
     };
     let mut judged: Vec<RehearsedVerb> = Vec::new();
     for pass in 0..=REHEARSAL_FUEL {
@@ -1725,5 +1726,84 @@ mod tests {
                 .ne(loopy.chords.iter().map(|c| c.chord)),
             "hook and loop produced identical chords"
         );
+    }
+
+    /// GEN-3 byte-exact floor: the opt-in `LeadLifePolicy` must leave v0.4 untouched. With every
+    /// lead-life axis OFF (WRITTEN and the default BAND), the generator's fingerprints on the R0
+    /// baseline (deflected_lift_trace(96), seed 2112, StablePropulsion, BLACK_ICE) are exactly the
+    /// values R0 recorded. And turning an axis on MUST change the performance, or the opt-in is a
+    /// no-op. If this test ever goes red, a C137 rung broke the v0.4 floor.
+    #[test]
+    fn gen3_lead_life_is_byte_exact_off_and_active_on() {
+        use super::super::composer::Composer;
+        use super::super::policy::{LeadLifePolicy, PerformanceProfile};
+        use super::super::semantic::deflected_lift_trace;
+        use super::super::song::SongMap;
+        use super::super::world::MusicWorld;
+
+        let song = SongMap::compose(
+            &deflected_lift_trace(96.0),
+            2112,
+            None,
+            Composer::StablePropulsion,
+        );
+        let world = MusicWorld::black_ice();
+        let opts = PerformanceOptions::default();
+
+        // The v0.4 floor, recorded by examples/rick_r0 before GEN-3 existed.
+        assert_eq!(song.fingerprint(), 0xbb3d_431d_e657_b92a, "R0 song drifted");
+        let written = perform(&song, &world, opts);
+        assert_eq!(
+            written.score.fingerprint(),
+            0x3dbc_aecb_e918_b5bb,
+            "WRITTEN score drifted — the byte-exact v0.4 floor moved"
+        );
+        assert_eq!(
+            written.perf.fingerprint(),
+            0xacb3_3a0d_d36b_a501,
+            "WRITTEN perf drifted — the byte-exact v0.4 floor moved"
+        );
+
+        // The default BAND (lead_life all off) is unchanged from R0 too.
+        let band = perform_with_profile(&song, &world, opts, PerformanceProfile::BAND).unwrap();
+        assert_eq!(
+            band.score.fingerprint(),
+            0xe734_5d86_02db_3005,
+            "BAND score drifted"
+        );
+        assert_eq!(
+            band.perf.fingerprint(),
+            0x8b39_c7f7_cdf5_8784,
+            "BAND perf drifted"
+        );
+
+        // Each axis, turned on over BAND, must actually change the performance (no silent no-op).
+        for life in [
+            LeadLifePolicy {
+                development: true,
+                ..LeadLifePolicy::default()
+            },
+            LeadLifePolicy {
+                spacing: true,
+                ..LeadLifePolicy::default()
+            },
+            LeadLifePolicy {
+                dynamics: true,
+                ..LeadLifePolicy::default()
+            },
+        ] {
+            let alive = perform_with_profile(
+                &song,
+                &world,
+                opts,
+                PerformanceProfile::BAND.with_lead_life(life),
+            )
+            .unwrap();
+            assert_ne!(
+                alive.score.fingerprint(),
+                band.score.fingerprint(),
+                "a lead-life axis left the score byte-identical to BAND: {life:?}"
+            );
+        }
     }
 }

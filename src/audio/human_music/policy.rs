@@ -167,6 +167,40 @@ pub enum FunctionPolicy {
     Earned,
 }
 
+/// Opt-in life for the LEAD voice. The historical default is every axis off: the lead plays its
+/// motif's written rhythm verbatim, one statement per two bars, at a per-statement constant velocity
+/// — the v0.4 behaviour. Each axis is independent so the maintainer's ear can isolate which one
+/// removes the "robotic" quality (the drivers — content repetition vs metronomic spacing — are
+/// confounded, so they are toggled separately, never fused). All three off is byte-exact v0.4.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LeadLifePolicy {
+    /// Develop the motif's RHYTHM per statement — syncopation and pickups drawn from the same accent
+    /// grid the band reads, an antecedent that states and a consequent that answers, later returns
+    /// developed further — instead of restating one fixed rhythm vector. The pitch contour, the note
+    /// count and the total length are preserved, so the statement stays the same recognizable object.
+    pub development: bool,
+    /// Relax the rigid two-bar cadence snap so statements breathe, instead of landing one per two
+    /// bars like a metronome.
+    pub spacing: bool,
+    /// Give the lead a per-note dynamic arc (phrase contour + metric weight + per-bar kinetic), like
+    /// the band's bass and keys, instead of one constant velocity per statement.
+    pub dynamics: bool,
+}
+
+impl LeadLifePolicy {
+    /// All three axes active.
+    pub const ALIVE: Self = Self {
+        development: true,
+        spacing: true,
+        dynamics: true,
+    };
+
+    /// Whether any axis is active (the historical path is taken when none is).
+    pub fn any(self) -> bool {
+        self.development || self.spacing || self.dynamics
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HistoricalRepair {
     None,
@@ -196,6 +230,8 @@ pub struct PerformanceProfile {
     pub harmony: HarmonyPolicy,
     /// The archived support tolerances, or support functions earned where they sound.
     pub functions: FunctionPolicy,
+    /// Opt-in life for the lead voice. Every axis off (the default) is the byte-exact v0.4 lead.
+    pub lead_life: LeadLifePolicy,
     pub(crate) repair: HistoricalRepair,
 }
 
@@ -218,6 +254,11 @@ impl PerformanceProfile {
         percussion: PercussionPolicy::Unarbitrated,
         harmony: HarmonyPolicy::Archived,
         functions: FunctionPolicy::Archived,
+        lead_life: LeadLifePolicy {
+            development: false,
+            spacing: false,
+            dynamics: false,
+        },
         repair: HistoricalRepair::None,
     };
     pub const TEMPORAL: Self = Self {
@@ -269,6 +310,11 @@ impl PerformanceProfile {
     /// The same laws with another support-function law.
     pub const fn with_functions(self, functions: FunctionPolicy) -> Self {
         Self { functions, ..self }
+    }
+
+    /// The same laws with opt-in lead life (the lead-rhythm/spacing/dynamics axes).
+    pub const fn with_lead_life(self, lead_life: LeadLifePolicy) -> Self {
+        Self { lead_life, ..self }
     }
 
     /// The same laws with another percussion law.

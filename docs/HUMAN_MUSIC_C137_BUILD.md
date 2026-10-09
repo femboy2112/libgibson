@@ -163,6 +163,24 @@ plan like `functions`. Sub-axes, each its own toggle for the A/B:
 under `Language::Simple`. Byte-exact gating per §3: default `Written` + conditional Debug emission
 (`if self.lead_rhythm != Written`), exactly the `functions` precedent.
 
+**GEN-3 OUTCOME (ear-accepted, built as `LeadLifePolicy { development, spacing, dynamics }`).** Shipped
+as three independent opt-in axes so the maintainer's ear isolated each:
+
+- **development** — rebuilt (after a rejected first pass that displaced onsets toward the "liveliest"
+  grid point and sounded "semantically garbled, straddling an inverted pocket") as GOAL-DIRECTED
+  CONNECTIVE MOTION: the motif's notes stay as anchors in the pocket, and the span before each landing
+  fills with a short DIATONIC stepwise run leading into the next anchor. A realizer gotcha was fixed
+  along the way — `melodic_events` rests short interior connectives out (`motif.rs:727-754`), so the
+  lead path sets `internal_rest = 0` to keep the run; the language's chromatic appetite is left alone
+  (chromatic approach tones read as wrong notes here). Result accepted: "much better".
+- **dynamics** — a per-note arc on the lead (`melody.rs`); accepted directly ("more in pocket").
+- **spacing** — minor effect; kept opt-in as an end-stage refinement, not a core lever.
+
+Byte-exact floor held throughout (guard test `gen3_lead_life_is_byte_exact_off_and_active_on`). **Still
+open, the next rung:** genuine global musical SEMANTIC meaning — the lead flows locally now, but phrase-
+and section-level meaning (true antecedent/consequent, a development arc that means something across the
+song) is unbuilt. "It's literally our semantic logic that needs work."
+
 ### GEN-4 — prepared harmonic travel (hardest; solves the open residual)
 
 The composer must **plan** a *motivated, prepared* modulation — a pivot / secondary dominant that

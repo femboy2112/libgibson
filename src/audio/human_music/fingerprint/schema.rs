@@ -1130,6 +1130,7 @@ impl CanonicalFingerprint for performance::PerformancePlan {
             budget,
             rehearsal,
             functions,
+            lead_life,
         } = self;
         w.tag("performance/PerformancePlan/v2");
         w.field("language", language);
@@ -1163,6 +1164,9 @@ impl CanonicalFingerprint for performance::PerformancePlan {
         }
         if *functions != super::super::policy::FunctionPolicy::Archived {
             w.field("functions", functions);
+        }
+        if *lead_life != super::super::policy::LeadLifePolicy::default() {
+            w.field("lead_life", lead_life);
         }
     }
 }
@@ -1754,6 +1758,7 @@ impl CanonicalFingerprint for policy::PerformanceProfile {
             percussion,
             harmony,
             functions,
+            lead_life,
             repair,
         } = self;
         w.field("pitch", pitch);
@@ -1775,6 +1780,28 @@ impl CanonicalFingerprint for policy::PerformanceProfile {
         }
         if *functions != policy::FunctionPolicy::Archived {
             w.field("functions", functions);
+        }
+        if *lead_life != policy::LeadLifePolicy::default() {
+            w.field("lead_life", lead_life);
+        }
+    }
+}
+impl CanonicalFingerprint for policy::LeadLifePolicy {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        w.tag("policy/LeadLifePolicy/v1");
+        let Self {
+            development,
+            spacing,
+            dynamics,
+        } = self;
+        if *development {
+            w.tag("development");
+        }
+        if *spacing {
+            w.tag("spacing");
+        }
+        if *dynamics {
+            w.tag("dynamics");
         }
     }
 }

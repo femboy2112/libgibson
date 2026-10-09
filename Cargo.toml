@@ -156,6 +156,13 @@ path = "examples/rick_probe.rs"
 name = "rick_r0"
 path = "examples/rick_r0.rs"
 
+# Rick-C137 GEN-3 alive-lead A/B matrix: the same R0 song rendered through BAND and each opt-in
+# lead-life axis (development / spacing / dynamics) in isolation, plus all three, so the maintainer's
+# ear can tell which one removes the "robotic" lead. Every axis off is byte-exact v0.4. Not shipped.
+[[example]]
+name = "rick_gen3"
+path = "examples/rick_gen3.rs"
+
 # Dev/test builds keep line tables (so RUST_BACKTRACE still symbolicates file:line)
 # but drop full type/variable DWARF. With ~50 integration-test binaries + examples
 # each statically embedding the crate + a generics-heavy dep graph (taffy), full
