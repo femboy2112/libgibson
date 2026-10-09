@@ -276,15 +276,19 @@ impl NarrativeReceipt {
         out
     }
 
-    /// Source-aware carry witness (C137-A R1/R4): for each carriage naming the Bass germ carrier,
-    /// every realized bass note in the phrase whose pitch is NOT a germ-selected chord tone — i.e.
-    /// not of the form the §4 germ-voicing emits (a chord tone picked from the germ's degree pattern
-    /// via `germ_tone_index`, bass.rs §4). This rejects carrier material that is not the germ (a
-    /// constant scramble, unrelated notes) which the count-summing [`Self::measure`] credits. It
-    /// reads the germ (`perf.bank.identity`) and the chart (`perf.context_at`) as the sources of
-    /// truth and the realized Score under test — never the plan's claim; and it is membership-based,
-    /// so it is robust to the map's known contour loss (R2a). Keys carriers have no germ voicing yet
-    /// (deferred), so they are not checked here — a documented limitation, not a vacuous pass.
+    /// Membership carry witness (C137-A R1/R4 — **weak; superseded by the ordered
+    /// [`Self::germ_contour_shortfalls`]**): for each carriage naming the Bass germ carrier, every
+    /// realized bass note whose pitch class is NOT among the germ-selected chord tones
+    /// `{ tones[germ_tone_index(d, n)] : d ∈ degrees }`. Reads the germ (`perf.bank.identity`) and
+    /// chart (`perf.context_at`), never the plan's claim.
+    ///
+    /// **KNOWN HOLLOWNESS (C137-B).** This is pure set MEMBERSHIP, not ordered germ identity. When
+    /// the germ's degrees span every residue mod `n_tones` — true on the shipped fixture, where
+    /// `[0,1,1,2,7,6,4] mod 4 = {0,1,2,3}` over tetrads — the allowed set IS the whole chord and
+    /// this degenerates to "is it a chord tone", carrying zero germ information: a flattened or
+    /// reordered "germ" that still lands on chord tones passes clean. Retained only as a documented
+    /// control beside the ordered witness, which is the real source-aware check. Keys carriers have
+    /// no germ voicing yet (deferred), so they are unchecked here — a documented limitation.
     pub fn germ_carry_shortfalls(
         song: &SongMap,
         perf: &PerformancePlan,
@@ -326,6 +330,73 @@ impl NarrativeReceipt {
                     tones[super::bass::germ_tone_index(d, tones.len())] == pitch_class(n.pitch)
                 });
                 if !germ_selected {
+                    out.push(GermShortfall {
+                        phrase: c.phrase,
+                        beat: n.start_beat,
+                        pitch: n.pitch,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    /// Ordered germ-contour witness (C137-B): the real source-aware check the membership
+    /// [`Self::germ_carry_shortfalls`] could not deliver. For each carriage naming the Bass germ
+    /// carrier the realized bass notes are taken in onset order, and note `i` must match the germ's
+    /// `i`-th degree voiced into the chord at that beat — `pitch_class(n) ==
+    /// tones[germ_tone_index(degrees[i % len], n_tones)]`. A note that does not is a shortfall.
+    /// Unlike membership this pins each note to its ORDINAL germ degree, so it rejects a flattened or
+    /// reordered "germ" that still lands on chord tones (C137-B KILL 1/2). On the ear-accepted §4
+    /// render it returns empty — §4 lays the germ in exact pitch-class order (verified 15/15 at 96
+    /// beats, 27/27 at 160), so the witness is sound-preserving. Reads germ + chart as the source of
+    /// truth, never the plan. Keys carriers remain unwitnessed (no germ voicing yet).
+    pub fn germ_contour_shortfalls(
+        song: &SongMap,
+        perf: &PerformancePlan,
+        story: &Score,
+        plan: &NarrativePlan,
+    ) -> Vec<GermShortfall> {
+        let germ = &perf.bank.identity;
+        let mut out = Vec::new();
+        if germ.degrees.is_empty() {
+            return out;
+        }
+        let window = |phrase: u32| {
+            song.plan
+                .form
+                .phrases
+                .iter()
+                .find(|p| p.ix == phrase)
+                .map(|p| (p.start_beat(), p.end_beat()))
+        };
+        for c in plan
+            .carriages
+            .iter()
+            .filter(|c| c.carriers.contains(&Agent::Bass))
+        {
+            let Some((lo, hi)) = window(c.phrase) else {
+                continue;
+            };
+            let mut bass: Vec<_> = story
+                .notes
+                .iter()
+                .filter(|n| {
+                    n.role == Role::Bass && n.start_beat >= lo - 1e-6 && n.start_beat < hi - 1e-6
+                })
+                .collect();
+            bass.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+            for (i, n) in bass.iter().enumerate() {
+                let Some(ctx) = perf.context_at(n.start_beat) else {
+                    continue;
+                };
+                let tones = ctx.chord.pitch_classes();
+                if tones.is_empty() {
+                    continue;
+                }
+                let d = germ.degrees[i % germ.degrees.len()];
+                let expected = tones[super::bass::germ_tone_index(d, tones.len())];
+                if expected != pitch_class(n.pitch) {
                     out.push(GermShortfall {
                         phrase: c.phrase,
                         beat: n.start_beat,
@@ -795,6 +866,97 @@ mod tests {
                 .any(|s| s.phrase == phrase && s.carrier == weakest && s.added <= 0),
             "C137-A R5 repair: carrier_shortfalls must name the silenced carrier {weakest:?} at \
              phrase {phrase}, though measure() still credits the carriage: {shortfalls:?}"
+        );
+    }
+
+    /// C137-B — the ordered germ-contour witness catches a flattened "germ" that the membership
+    /// witness (C137-A R1/R4) is blind to. A bass-carrier phrase re-voiced to its chord ROOT on every
+    /// onset stays entirely on chord tones, so `germ_carry_shortfalls` (membership) finds nothing —
+    /// its documented hollowness. The ordered `germ_contour_shortfalls` flags every onset whose
+    /// ordinal germ degree is not the root, because it pins each note to its position in the germ. On
+    /// the genuine §4 render BOTH are empty, so the new witness is sound-preserving.
+    #[test]
+    fn c137b_contour_witness_catches_flattened_germ_membership_misses() {
+        let song = SongMap::compose(
+            &rise_unresolved(160.0),
+            SEED,
+            Some(CompositionGrammar::DeflectedLift),
+            Composer::MeaningDirected,
+        );
+        let world = MusicWorld::black_ice();
+        let story = perform_with_profile(
+            &song,
+            &world,
+            PerformanceOptions::default(),
+            PerformanceProfile::BAND.with_narrative(NarrativePolicy::Ensemble),
+        )
+        .unwrap();
+        let plan = story
+            .perf
+            .narrative
+            .clone()
+            .expect("ensemble plans a narrative");
+
+        // Genuine §4 render: the ordered witness is sound-preserving (membership is clean too).
+        let genuine_contour =
+            NarrativeReceipt::germ_contour_shortfalls(&song, &story.perf, &story.score, &plan);
+        let genuine_member =
+            NarrativeReceipt::germ_carry_shortfalls(&song, &story.perf, &story.score, &plan);
+        assert!(
+            genuine_contour.is_empty(),
+            "ordered contour witness must be empty on the ear-accepted §4 render: {genuine_contour:?}"
+        );
+        assert!(
+            genuine_member.is_empty(),
+            "membership witness is also clean on the genuine render: {genuine_member:?}"
+        );
+
+        // Flatten one bass-carrier phrase to the chord ROOT on every onset: still chord tones (so
+        // membership is blind), but the wrong ORDINAL germ tone (so the contour witness catches it).
+        let bass_phrase = plan
+            .carriages
+            .iter()
+            .find(|c| c.carriers.contains(&Agent::Bass))
+            .map(|c| c.phrase)
+            .expect("a bass-carrier phrase");
+        let (lo, hi) = song
+            .plan
+            .form
+            .phrases
+            .iter()
+            .find(|p| p.ix == bass_phrase)
+            .map(|p| (p.start_beat(), p.end_beat()))
+            .unwrap();
+        let mut flat = story.score.clone();
+        let mut hit = 0;
+        for n in flat.notes.iter_mut() {
+            if n.role == Role::Bass && n.start_beat >= lo - 1e-6 && n.start_beat < hi - 1e-6 {
+                if let Some(ctx) = story.perf.context_at(n.start_beat) {
+                    let tones = ctx.chord.pitch_classes();
+                    if !tones.is_empty() {
+                        n.pitch = 48 + tones[0];
+                        hit += 1;
+                    }
+                }
+            }
+        }
+        assert!(hit > 0, "the phrase must have bass notes to flatten");
+
+        let member = NarrativeReceipt::germ_carry_shortfalls(&song, &story.perf, &flat, &plan);
+        let contour = NarrativeReceipt::germ_contour_shortfalls(&song, &story.perf, &flat, &plan);
+        println!(
+            "C137-B contour: flattened {hit} bass notes in p{bass_phrase} to chord root — \
+             membership shortfalls={}, contour shortfalls={}",
+            member.len(),
+            contour.len()
+        );
+        assert!(
+            member.iter().all(|s| s.phrase != bass_phrase),
+            "membership witness is HOLLOW: a root-flattened germ passes it (C137-B KILL 1/2): {member:?}"
+        );
+        assert!(
+            contour.iter().filter(|s| s.phrase == bass_phrase).count() > 0,
+            "ordered contour witness must flag the flattened germ: {contour:?}"
         );
     }
 
