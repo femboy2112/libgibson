@@ -137,6 +137,15 @@ path = "examples/groove_probe.rs"
 name = "songcraft_probe"
 path = "examples/songcraft_probe.rs"
 
+# Rick-level listening probe (fifth rung on songcraft_probe): the accepted Morty-level song held fixed,
+# with the first density mechanism toward Casiopea-level throughput — COMPLEMENTARY RHYTHM. Extra
+# rhythm-section onsets land in each voice's own metric lane (bass anticipation, keys weak-subdivision
+# comp) so density rises with near-zero added collision; `--no-rhythm-complement` stacks the same onsets
+# onto the drum grid (the clean A/B), `--backing-only` drops the lead to expose the interlock. Not shipped.
+[[example]]
+name = "rick_probe"
+path = "examples/rick_probe.rs"
+
 # Dev/test builds keep line tables (so RUST_BACKTRACE still symbolicates file:line)
 # but drop full type/variable DWARF. With ~50 integration-test binaries + examples
 # each statically embedding the crate + a generics-heavy dep graph (taffy), full
