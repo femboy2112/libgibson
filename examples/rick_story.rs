@@ -20,18 +20,37 @@
 //! the judged voice), `--composer=meaning|propulsion` (default meaning — its μ hands the germ off
 //! the lead), `--grammar=deflected|none|propulsive` (default deflected — the judged voice ADOPTS
 //! the deflecting grammar so the band can carry the harmonic deflection; `none` = harmony-less
-//! opt-out), `--out=`. A listening instrument on the beef-up branch, not shipped.
+//! opt-out), `--out=`.
+//!
+//! The finale-soundtrack dials (opt-in; each changes NO shipped default, exactly like the stock
+//! `--trace=rise` fixtures):
+//!
+//! * `--trace=intro_demo` — the impossible-demo flight arc (hook→breath→build→DROP→reveal→triumph)
+//!   instead of the default bittersweet bounce.
+//! * `--tempo=NNN` — override the world's tempo (the finale baseline dials 108).
+//! * `--mode=ionian|dorian|phrygian|lydian|mixolydian|aeolian|locrian|harmonic_minor` — override
+//!   the world's home mode (the finale baseline dials Lydian for the awe/triumph affect).
+//! * `--chart=travel` — a traveling chart whose journey reaches ♭VII and ♭III (an Am–F–C–G-shaped
+//!   reach, one chord per bar) instead of prolonging home.
+//! * `--germ=seed` — hand the composer a clear hand-authored question→answer hook instead of its
+//!   grammar-searched germ (the chooser-vs-developer diagnostic): if seeding the obvious hook
+//!   coheres, melodic SELECTION is the weak link; if not, DEVELOPMENT is.
+//!
+//! A listening instrument on the beef-up branch, not shipped.
 
 use gibson::audio::{
     human_music::{
-        composer::Composer,
+        backbone::{ChartCell, ChartRoot},
+        composer::{Composer, ThemeSeed},
         contract::CompositionGrammar,
         functor::{perform_with_profile, Composition},
+        motif::Motif,
         performance::PerformanceOptions,
         policy::{NarrativePolicy, PerformanceProfile},
         score::Role,
-        semantic::{calm_loop, deflected_lift_trace, false_climax, rise_unresolved},
+        semantic::{calm_loop, deflected_lift_trace, false_climax, intro_demo, rise_unresolved},
         synth::StemMask,
+        theory::{Mode, PitchBasis},
         HumanMusicSynth, MusicWorld, SongMap,
     },
     render::OfflineRenderer,
@@ -39,6 +58,45 @@ use gibson::audio::{
     SampleRate,
 };
 use std::{fmt::Write as _, path::Path};
+
+/// The hand-seeded diagnostic germ (STEP 3): a deliberately clear question→answer hook in
+/// scale-degree coordinates (the song's Ionian reference frame; each room re-modes it). The
+/// thesis and its consequent share the same opening gesture — a `do–re–mi–octave` reach, the
+/// bugle-call identity — then split: the thesis hangs UNRESOLVED on the fifth (the question), the
+/// consequent steps down and resolves HOME to the tonic (the answer). Supplied to the composer via
+/// [`SongMap::compose_with_germ`] to A/B against the grammar-searched germ: if seeding this
+/// obvious hook makes the song cohere, the weak link is melodic SELECTION; if it still does not,
+/// the weak link is DEVELOPMENT. Six beats, so it slots identically to a grammar germ — only the
+/// notes differ.
+fn diagnostic_germ() -> ThemeSeed {
+    let line = |degrees: Vec<i32>| Motif {
+        pitch_basis: PitchBasis::ScaleSteps,
+        id: 0,
+        degrees,
+        rhythm: vec![0.5, 0.5, 0.5, 1.0, 0.5, 3.0],
+    };
+    ThemeSeed {
+        // Question: reach to the octave, step down, hang on the fifth (open).
+        thesis: line(vec![0, 2, 4, 7, 5, 4]),
+        // Answer: the same reach, then step down through the second to home (resolved).
+        answer: line(vec![0, 2, 4, 7, 2, 0]),
+    }
+}
+
+/// Parse a [`Mode`] name for `--mode=`.
+fn parse_mode(name: &str) -> Option<Mode> {
+    Some(match name.to_ascii_lowercase().as_str() {
+        "ionian" | "major" => Mode::Ionian,
+        "dorian" => Mode::Dorian,
+        "phrygian" => Mode::Phrygian,
+        "lydian" => Mode::Lydian,
+        "mixolydian" => Mode::Mixolydian,
+        "aeolian" | "minor" => Mode::Aeolian,
+        "locrian" => Mode::Locrian,
+        "harmonic_minor" | "harmonicminor" => Mode::HarmonicMinor,
+        _ => return None,
+    })
+}
 
 fn render(
     path: &Path,
@@ -100,6 +158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("rise") | Some("rise_unresolved") => rise_unresolved(beats),
         Some("false_climax") => false_climax(beats),
         Some("calm") | Some("calm_loop") => calm_loop(beats),
+        Some("intro") | Some("intro_demo") => intro_demo(beats),
         _ => deflected_lift_trace(beats),
     };
     let grammar = match arg("--grammar=").as_deref() {
@@ -112,13 +171,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // it gains the harmonic Prepare→Miss lane the band carries. Adoption decision 2026-10-09.
         _ => Some(CompositionGrammar::DeflectedLift),
     };
-    let song = SongMap::compose(&trace, 2112, grammar, composer);
+    // `--germ=seed`: hand the composer a deliberately clear question→answer hook instead of its
+    // grammar-searched germ (the STEP-3 chooser-vs-developer diagnostic). Default: the searched
+    // germ (unchanged behavior).
+    let seed_germ = matches!(arg("--germ=").as_deref(), Some("seed") | Some("seeded"));
+    let germ = diagnostic_germ();
+    let mut song = if seed_germ {
+        SongMap::compose_with_germ(&trace, 2112, grammar, &germ)
+    } else {
+        SongMap::compose(&trace, 2112, grammar, composer)
+    };
+
+    // `--chart=travel`: an opt-in traveling chart — override the composed cell's Lift and Open so
+    // the journey reaches ♭VII (Degree 6) and ♭III (Degree 2) under black_ice's re-moding (an
+    // Am–F–C–G-shaped reach), at one chord per bar. Every default is untouched; the base cell (so
+    // the rest of the vocabulary) stays the composer's own choice.
+    if matches!(
+        arg("--chart=").as_deref(),
+        Some("travel") | Some("traveling")
+    ) {
+        if let Some(h) = song.harmonic.as_mut() {
+            h.cell = ChartCell {
+                lift: ChartRoot::Degree(6),
+                open: ChartRoot::Degree(2),
+                pointer: ChartRoot::Degree(4),
+                ..h.cell
+            };
+            h.bars_per_chord = 1;
+        }
+    }
+
     let wname = arg("--world=").unwrap_or_else(|| "black_ice".to_string());
-    let world = match wname.as_str() {
+    let mut world = match wname.as_str() {
         "vapor95" => MusicWorld::vapor95(),
         "swiss_signal" => MusicWorld::swiss_signal(),
         _ => MusicWorld::black_ice(),
     };
+    // `--tempo=NNN` and `--mode=NAME`: opt-in world overrides (default: the world's own). The
+    // finale diagnostic baseline dials tempo 108 + Lydian; neither changes any shipped default.
+    if let Some(bpm) = arg("--tempo=").and_then(|s| s.parse::<f32>().ok()) {
+        world.tempo_bpm = bpm;
+    }
+    if let Some(m) = arg("--mode=").as_deref().and_then(parse_mode) {
+        world.mode = m;
+    }
 
     let no_lead = {
         let mut m = StemMask::full();
@@ -133,10 +229,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ),
     ];
 
+    let chart_kind = match arg("--chart=").as_deref() {
+        Some("travel") | Some("traveling") => "travel",
+        _ => "composed",
+    };
+    let germ_kind = if seed_germ { "seeded" } else { "searched" };
     let mut summary = format!(
-        "Rick-C137 GEN-STORY — band vs story. world={} song={:016x} beats={beats} composer={composer:?}\n",
+        "Rick-C137 GEN-STORY — band vs story. world={} song={:016x} beats={beats} composer={composer:?}\n\
+         tempo={:.1}bpm mode={:?} germ={germ_kind} chart={chart_kind}\n",
         world.name,
-        song.fingerprint()
+        song.fingerprint(),
+        world.tempo_bpm,
+        world.mode,
     );
     for (name, profile) in arms {
         let c = perform_with_profile(&song, &world, PerformanceOptions::default(), profile)?;

@@ -736,9 +736,12 @@ fn groove_extremes_are_lawful_and_the_prior_aims_between() {
         .collect();
     assert_eq!(levels, vec![Level::Low, Level::Mid, Level::High]);
     assert_eq!(prior.displacement, Level::Mid);
-    assert!(report.themes.iter().any(|c| c.params.long_short
-        && c.profile.displacement == Level::High
-        && c.dropped_by == Some("typical for the prior")));
+    assert!(report
+        .themes
+        .iter()
+        .any(|c| c.params.is_some_and(|p| p.long_short)
+            && c.profile.displacement == Level::High
+            && c.dropped_by == Some("typical for the prior")));
 }
 
 /// Across songs: every stock story (and the modulating impact trace) at three lengths and four

@@ -407,6 +407,30 @@ impl SongMap {
         }
     }
 
+    /// Like [`SongMap::compose`] with [`Composer::MeaningDirected`], but the thesis and its
+    /// consequent are SUPPLIED by `theme_seed` (the "supply the melodic DNA" seam) instead of
+    /// searched from the thesis grammar: the given germ is stated at the theme sites and becomes
+    /// the song's identity ([`super::motif::MotifBank::identity`]). Same form, same chart search,
+    /// same per-site scheduling as the searched meaning-directed composer — ONLY the germ differs,
+    /// so an A/B against [`SongMap::compose`] isolates melodic SELECTION (is the grammar's chosen
+    /// germ weak?) from DEVELOPMENT (is a known-good germ still not developed into a coherent
+    /// tune?). The supplied germ is stated as written, so a human-proven tune outside the prior's
+    /// bands is honored. Experimental; never a default.
+    pub fn compose_with_germ(
+        trace: &SemanticTrace,
+        seed: u64,
+        grammar: Option<CompositionGrammar>,
+        theme_seed: &super::composer::ThemeSeed,
+    ) -> SongMap {
+        let song = SongMap::build(trace, seed, grammar);
+        super::composer::compose_meaning_seeded(
+            song,
+            &CompositionalPrior::HOOKY_FUSION,
+            Some(theme_seed),
+        )
+        .0
+    }
+
     /// Which composer chose this song's content: the provenance recorded by the call that chose
     /// it, never inferred from the song's grammar or requests. [`SongMap::build`] records
     /// [`Composer::StructuralR9`] (a cover's target song is planned by it, pins aside).

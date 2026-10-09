@@ -357,11 +357,31 @@ impl ThemeProfile {
     }
 }
 
-/// A thesis candidate: its grammar point, the thesis and its consequent, its profile, how well
-/// its structural notes sit on the chart where it will be stated, and the filter that dropped it.
+/// An explicit melodic germ handed to the composer, bypassing the thesis-grammar search: the
+/// thesis (the antecedent — the "question") and its consequent (the "answer"). When supplied,
+/// [`compose_meaning_seeded`] states THESE at the theme sites and makes the thesis the song's
+/// identity ([`MotifBank::identity`]), instead of searching [`theme_grammar`]; everything
+/// downstream — the chart search, the scheduling, the per-site development — is identical.
+///
+/// Two jobs: (1) the robust "supply the melodic DNA" seam — seed a song (the finale) from a
+/// known-good or human-proven tune; (2) the chooser-vs-developer diagnostic — an A/B between a
+/// searched germ ([`SongMap::compose`] with [`Composer::MeaningDirected`]) and a hand-seeded one
+/// ([`SongMap::compose_with_germ`]) isolates melodic SELECTION (the grammar's chosen germ is
+/// weak) from DEVELOPMENT (a known-good germ is still not developed into a coherent tune). The
+/// supplied motifs are stated as written — no lawfulness filter rejects them, so a proven tune
+/// outside the prior's bands is honored; the ear decides.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThemeSeed {
+    pub thesis: Motif,
+    pub answer: Motif,
+}
+
+/// A thesis candidate: its grammar point (`None` when the germ was seeded, not searched), the
+/// thesis and its consequent, its profile, how well its structural notes sit on the chart where it
+/// will be stated, and the filter that dropped it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ThemeCandidate {
-    pub params: ThemeParams,
+    pub params: Option<ThemeParams>,
     pub thesis: Motif,
     pub answer: Motif,
     pub profile: ThemeProfile,
@@ -565,9 +585,21 @@ pub struct CompositionReport {
 /// only), its thesis and consequent, and every site's statement. Returns the song with that
 /// content (and its MeaningPlan) and the report of the choice. `song` supplies the form — the
 /// Round IX plan, identical under either composer — and is otherwise replaced.
-pub fn compose_meaning(
+pub fn compose_meaning(song: SongMap, prior: &CompositionalPrior) -> (SongMap, CompositionReport) {
+    compose_meaning_seeded(song, prior, None)
+}
+
+/// Like [`compose_meaning`], but an explicit [`ThemeSeed`] may SUPPLY the thesis and its
+/// consequent instead of searching [`theme_grammar`]. `seed_theme = None` reproduces
+/// [`compose_meaning`] exactly (the grammar search, byte for byte — the chart search, the RNG
+/// draws and the ordering are unchanged); `Some(..)` states the supplied germ at the theme sites
+/// and makes its thesis the song's identity, with the chart still searched as before. The seeded
+/// germ is stated as written — the lawful / typical / fit filters are the grammar search's, not
+/// the seed's, so a proven tune outside the prior's bands is honored.
+pub fn compose_meaning_seeded(
     mut song: SongMap,
     prior: &CompositionalPrior,
+    seed_theme: Option<&ThemeSeed>,
 ) -> (SongMap, CompositionReport) {
     let target = MeaningPlan::target(&song.trace, &song.plan);
     let seed = song.seed;
@@ -735,15 +767,14 @@ pub fn compose_meaning(
             hit as f32 / all as f32
         }
     };
-    let mut themes: Vec<ThemeCandidate> = theme_grammar()
-        .into_iter()
-        .map(|params| {
-            let thesis = build_line(&params, Ending::Antecedent, prior.theme_beats);
-            let answer = build_line(
-                &params,
-                Ending::Consequent(target.resolution),
-                prior.theme_beats,
-            );
+    let (themes, theme_stages, pick): (Vec<ThemeCandidate>, Stages, usize) = match seed_theme {
+        // Seeded: honor the supplied germ as written, bypassing the grammar search. It is reported
+        // as a single candidate carrying its honest profile / chart fit / plan divergences, with
+        // no grammar point (`params = None`) because none was searched; the lawful/typical/fit
+        // filters are the grammar search's and do not gate a supplied tune.
+        Some(ts) => {
+            let thesis = ts.thesis.clone();
+            let answer = ts.answer.clone();
             let mut trial = song.clone();
             trial.thematic = schedule(&song, &target, &thesis, &answer);
             let divergences = Commutation::against(target.clone(), &trial)
@@ -751,79 +782,114 @@ pub fn compose_meaning(
                 .iter()
                 .filter(|d| d.lane == Lane::Theme && d.owner == Owner::Composer)
                 .count();
-            ThemeCandidate {
-                params,
+            let cand = ThemeCandidate {
+                params: None,
                 profile: ThemeProfile::of(&thesis),
                 fit: fit_of(&thesis, &answer),
                 thesis,
                 answer,
                 divergences,
                 dropped_by: None,
-            }
-        })
-        .collect();
-    let mut theme_stages = Vec::new();
-    let mut live: Vec<usize> = (0..themes.len()).collect();
-    theme_stages.push(("grammar", live.len()));
-    let mark = |c: &mut ThemeCandidate, why| c.dropped_by = Some(why);
-    stage(
-        &mut live,
-        &mut themes,
-        "lawful",
-        |c| {
-            c.profile.unlawful(prior).is_none()
-                && ThemeProfile::of(&c.answer).unlawful(prior).is_none()
-        },
-        mark,
-        &mut theme_stages,
-    );
-    // The law: scheduled into the song, the thesis reaches as far as the story's arc, is taught
-    // before it is developed, and its consequent settles as the story does (μ = F, theme lane).
-    stage(
-        &mut live,
-        &mut themes,
-        "means the plan (μ = F)",
-        |c| c.divergences == 0,
-        mark,
-        &mut theme_stages,
-    );
-    // Typical: the thesis inside every soft band; its consequent too, except where it lands —
-    // the story decides that (a hanging answer lands off the tonic triad on purpose).
-    stage(
-        &mut live,
-        &mut themes,
-        "typical for the prior",
-        |c| {
-            c.profile.unusual(prior).is_empty()
-                && ThemeProfile::of(&c.answer)
-                    .unusual(prior)
-                    .iter()
-                    .all(|&why| why == "lands off the tonic triad")
-        },
-        mark,
-        &mut theme_stages,
-    );
-    let bucket = |f: f32| ((f + 1e-4) / prior.fit_bucket).floor() as i32;
-    let best = live
-        .iter()
-        .map(|&i| bucket(themes[i].fit))
-        .max()
-        .unwrap_or(0);
-    stage(
-        &mut live,
-        &mut themes,
-        "sits on the chart",
-        |c| bucket(c.fit) == best,
-        mark,
-        &mut theme_stages,
-    );
-    let pick = live[Rng::new(seed ^ 0x7E3E_50A6).below(live.len())];
-    for &i in &live {
-        if i != pick {
-            themes[i].dropped_by = Some("seed");
+            };
+            (vec![cand], vec![("seeded", 1)], 0)
         }
-    }
-    theme_stages.push(("seed", 1));
+        // Searched: the grammar space, filtered to the plan and the prior, the seed among equals —
+        // byte for byte the Round X selection (unchanged ordering and RNG draws).
+        None => {
+            let mut themes: Vec<ThemeCandidate> = theme_grammar()
+                .into_iter()
+                .map(|params| {
+                    let thesis = build_line(&params, Ending::Antecedent, prior.theme_beats);
+                    let answer = build_line(
+                        &params,
+                        Ending::Consequent(target.resolution),
+                        prior.theme_beats,
+                    );
+                    let mut trial = song.clone();
+                    trial.thematic = schedule(&song, &target, &thesis, &answer);
+                    let divergences = Commutation::against(target.clone(), &trial)
+                        .divergences
+                        .iter()
+                        .filter(|d| d.lane == Lane::Theme && d.owner == Owner::Composer)
+                        .count();
+                    ThemeCandidate {
+                        params: Some(params),
+                        profile: ThemeProfile::of(&thesis),
+                        fit: fit_of(&thesis, &answer),
+                        thesis,
+                        answer,
+                        divergences,
+                        dropped_by: None,
+                    }
+                })
+                .collect();
+            let mut theme_stages: Stages = Vec::new();
+            let mut live: Vec<usize> = (0..themes.len()).collect();
+            theme_stages.push(("grammar", live.len()));
+            let mark = |c: &mut ThemeCandidate, why| c.dropped_by = Some(why);
+            stage(
+                &mut live,
+                &mut themes,
+                "lawful",
+                |c| {
+                    c.profile.unlawful(prior).is_none()
+                        && ThemeProfile::of(&c.answer).unlawful(prior).is_none()
+                },
+                mark,
+                &mut theme_stages,
+            );
+            // The law: scheduled into the song, the thesis reaches as far as the story's arc, is
+            // taught before it is developed, and its consequent settles as the story does (μ = F,
+            // theme lane).
+            stage(
+                &mut live,
+                &mut themes,
+                "means the plan (μ = F)",
+                |c| c.divergences == 0,
+                mark,
+                &mut theme_stages,
+            );
+            // Typical: the thesis inside every soft band; its consequent too, except where it
+            // lands — the story decides that (a hanging answer lands off the tonic triad on
+            // purpose).
+            stage(
+                &mut live,
+                &mut themes,
+                "typical for the prior",
+                |c| {
+                    c.profile.unusual(prior).is_empty()
+                        && ThemeProfile::of(&c.answer)
+                            .unusual(prior)
+                            .iter()
+                            .all(|&why| why == "lands off the tonic triad")
+                },
+                mark,
+                &mut theme_stages,
+            );
+            let bucket = |f: f32| ((f + 1e-4) / prior.fit_bucket).floor() as i32;
+            let best = live
+                .iter()
+                .map(|&i| bucket(themes[i].fit))
+                .max()
+                .unwrap_or(0);
+            stage(
+                &mut live,
+                &mut themes,
+                "sits on the chart",
+                |c| bucket(c.fit) == best,
+                mark,
+                &mut theme_stages,
+            );
+            let pick = live[Rng::new(seed ^ 0x7E3E_50A6).below(live.len())];
+            for &i in &live {
+                if i != pick {
+                    themes[i].dropped_by = Some("seed");
+                }
+            }
+            theme_stages.push(("seed", 1));
+            (themes, theme_stages, pick)
+        }
+    };
 
     let (thesis, answer) = (themes[pick].thesis.clone(), themes[pick].answer.clone());
     song.thematic = schedule(&song, &target, &thesis, &answer);
