@@ -1131,6 +1131,7 @@ impl CanonicalFingerprint for performance::PerformancePlan {
             rehearsal,
             functions,
             lead_life,
+            narrative,
         } = self;
         w.tag("performance/PerformancePlan/v2");
         w.field("language", language);
@@ -1167,6 +1168,25 @@ impl CanonicalFingerprint for performance::PerformancePlan {
         }
         if *lead_life != super::super::policy::LeadLifePolicy::default() {
             w.field("lead_life", lead_life);
+        }
+        if let Some(n) = narrative {
+            w.field("narrative", n);
+        }
+    }
+}
+impl CanonicalFingerprint for super::super::narrative::NarrativePlan {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        w.tag("narrative/NarrativePlan/v1");
+        for c in &self.carriages {
+            w.field("at", &c.phrase);
+            w.field("meaning", &c.meaning);
+            match c.lead_role {
+                super::super::narrative::LeadRole::Stating => w.tag("lead/stating"),
+                super::super::narrative::LeadRole::Withheld => w.tag("lead/withheld"),
+            }
+            for a in &c.carriers {
+                w.field("carrier", a);
+            }
         }
     }
 }

@@ -390,6 +390,7 @@ pub(crate) fn plan_and_realize(
         harmony: profile.harmony,
         functions: profile.functions,
         lead_life: profile.lead_life,
+        narrative: profile.narrative,
     };
     let mut judged: Vec<RehearsedVerb> = Vec::new();
     for pass in 0..=REHEARSAL_FUEL {
@@ -1836,6 +1837,65 @@ mod tests {
                 .with_narrative(NarrativePolicy::Ensemble)
                 .canonical_fingerprint(),
             "Ensemble must change the profile fingerprint"
+        );
+    }
+
+    /// GEN-STORY-2 wire: with `Ensemble`, the performance plan CARRIES a narrative derived from
+    /// μ(song) — `observe`, never F(trace) — and only when μ actually hands the germ off the lead;
+    /// the historical `Archived` path carries none and stays byte-exact (guarded above). The stored
+    /// narrative changes the plan fingerprint, so the wire is visible. (The realizer enacts it in a
+    /// later wave; this proves the plan now knows its story.)
+    #[test]
+    fn gen_story2_plan_carries_narrative_from_mu_under_ensemble_only() {
+        use super::super::composer::Composer;
+        use super::super::meaning::MeaningPlan;
+        use super::super::narrative::NarrativePlan;
+        use super::super::policy::{NarrativePolicy, PerformanceProfile};
+        use super::super::semantic::deflected_lift_trace;
+        use super::super::song::SongMap;
+        use super::super::world::MusicWorld;
+
+        let song = SongMap::compose(
+            &deflected_lift_trace(96.0),
+            2112,
+            None,
+            Composer::MeaningDirected,
+        );
+        let world = MusicWorld::black_ice();
+        let opts = PerformanceOptions::default();
+
+        // Archived (the BAND default) carries no narrative — the historical arrangement.
+        let band = perform_with_profile(&song, &world, opts, PerformanceProfile::BAND).unwrap();
+        assert!(
+            band.perf.narrative.is_none(),
+            "Archived must store no narrative"
+        );
+
+        // Ensemble stores a narrative iff μ(song) hands the germ off the lead; the plan's decision
+        // must agree with μ exactly (the wire reads μ, nothing else).
+        let hands_off = NarrativePlan::from_observation(&MeaningPlan::observe(&song)).hands_off();
+        let ens = perform_with_profile(
+            &song,
+            &world,
+            opts,
+            PerformanceProfile::BAND.with_narrative(NarrativePolicy::Ensemble),
+        )
+        .unwrap();
+        assert_eq!(
+            ens.perf.narrative.is_some(),
+            hands_off,
+            "the stored narrative must match μ's hands-off verdict"
+        );
+        assert!(
+            hands_off,
+            "a meaning-directed song's μ should hand the germ off the lead"
+        );
+
+        // A carried narrative changes the plan fingerprint (the wire is visible).
+        assert_ne!(
+            ens.perf.fingerprint(),
+            band.perf.fingerprint(),
+            "a carried narrative must change the plan fingerprint"
         );
     }
 }

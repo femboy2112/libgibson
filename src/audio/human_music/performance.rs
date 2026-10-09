@@ -329,6 +329,10 @@ pub struct PerformancePlan {
     pub functions: super::policy::FunctionPolicy,
     /// Opt-in life for the lead voice. Every axis off (the default) is the byte-exact v0.4 lead.
     pub lead_life: super::policy::LeadLifePolicy,
+    /// The ensemble narrative this performance enacts — who carries which meaning, derived from
+    /// μ(song) — or `None` on every historical path and whenever μ never leaves the lead. Opt-in via
+    /// [`super::policy::NarrativePolicy::Ensemble`].
+    pub narrative: Option<super::narrative::NarrativePlan>,
 }
 
 /// The ordinary twin of the cover path's settlement planner: a song obligation the discourse
@@ -420,6 +424,9 @@ pub(crate) struct AdmissionInputs {
     pub functions: super::policy::FunctionPolicy,
     /// Opt-in life for the lead voice. Every axis off (the default) is the byte-exact v0.4 lead.
     pub lead_life: super::policy::LeadLifePolicy,
+    /// Opt-in ensemble narrative. [`super::policy::NarrativePolicy::Archived`] (the default) is the
+    /// byte-exact v0.4 arrangement; `Ensemble` derives a per-phrase carrier assignment from μ(song).
+    pub narrative: super::policy::NarrativePolicy,
 }
 
 /// The reason a rehearsed verb is struck from the chart before the take.
@@ -511,6 +518,18 @@ impl PerformancePlan {
         // The exact requested length — a final partial bar ends here, not on the next bar line.
         let total_beats = plan.form.total_beats;
         let targets = plan.targets();
+        // Opt-in ensemble narrative (band-story round): derive who carries which meaning from
+        // μ(song) — what the song ACTUALLY means (`observe`), never F(trace) (plan §4/§20). Kept only
+        // when it hands the germ off the lead; a μ that never leaves the lead is the historical
+        // arrangement, so the plan stores None and the performance is byte-exact v0.4. Carried on the
+        // plan here; the realizer enacts it in a later wave.
+        let narrative = (admission.narrative == super::policy::NarrativePolicy::Ensemble)
+            .then(|| {
+                super::narrative::NarrativePlan::from_observation(
+                    &super::meaning::MeaningPlan::observe(song),
+                )
+            })
+            .filter(super::narrative::NarrativePlan::hands_off);
 
         // 1. Harmony: the song's chart realized in this room and language (Round IX: the room
         //    re-modes and colours the chart; it no longer searches its own), or the phrase engine.
@@ -876,6 +895,7 @@ impl PerformancePlan {
             rehearsal,
             functions: admission.functions,
             lead_life: admission.lead_life,
+            narrative,
         };
         // 8. The shared complexity budget: the lead's statements and the planned answers and
         //    figures are reserved, the rest is shared out to the accompanists.
@@ -1634,6 +1654,9 @@ impl std::fmt::Debug for PerformancePlan {
         }
         if self.lead_life != super::policy::LeadLifePolicy::default() {
             d.field("lead_life", &self.lead_life);
+        }
+        if let Some(n) = &self.narrative {
+            d.field("narrative", n);
         }
         d.finish()
     }

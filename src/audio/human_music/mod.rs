@@ -60,6 +60,7 @@ pub mod meaning;
 mod meaning_probes;
 pub mod melody;
 pub mod motif;
+pub mod narrative;
 pub mod occupancy;
 pub mod percussion;
 pub mod performance;
