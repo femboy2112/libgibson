@@ -59,6 +59,18 @@ Render → `HumanMusicSynth` + `OfflineRenderer` → `write_wav_i16`; `black_ice
 voice the maintainer judges. These are listening controls, **not shipped** — examples excluded from the
 published crate.
 
+## What the ladder proved — and what it bypassed
+
+Every rung above is a **hand-authored `Score` IR rendered through the engine's own synth/worlds** — it
+*bypasses the generator*. So the ladder proves that a sufficiently **relational Score** → existing
+`HumanMusicSynth` → ear-accepted music. It does **not** prove `SemanticTrace → generator → Morty-level
+Score`: the generator was never in the loop. The engineering problem that follows is therefore to **lift the
+proven relations upstream into the real generator** (recurring heard identity, distributed harmonic
+responsibility, correlated pocket, germ question/answer, functional color, structure-coherent dynamics) —
+promoting the *relations*, never the literal note arrays ("Am–F–C–G" is not the algorithm; *recurring
+harmonic identity* is). That lift, mapped to the real generator machinery seam by seam, is
+[`HUMAN_MUSIC_RICK_PLAN.md`](HUMAN_MUSIC_RICK_PLAN.md).
+
 ## Next: Rick-level (the north star)
 
 Morty-level is *correct but sparse* — it reads as "generic mainstream music, in a good way." The gap to
