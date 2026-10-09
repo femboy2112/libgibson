@@ -20,6 +20,7 @@
 //!    none withholds the lead — the ear-proved "keys carry the dark" beat is unreachable from the
 //!    generator.
 
+use super::action::Agent;
 use super::composer::Composer;
 use super::contract::CompositionGrammar;
 use super::meaning::{Lane, MeaningKind as K, MeaningPlan};
@@ -124,34 +125,78 @@ fn prepare_and_miss_are_harmony_only() {
     );
 }
 
-/// CHARACTERIZATION 3 — THE DEFECT. Even on a song full of harmonic `Prepare→Miss`, today's
-/// `NarrativePlan` reads only the theme lane: no carriage carries a deflection and none withholds
-/// the lead. The ear-proved "lead withholds at the Miss, keys carry the dark" is unreachable from
-/// the generator. GEN-STORY-4 (stage 2) replaces this test's assertions with the join's.
+/// GEN-STORY-4 (stage 2) — the join is live. On a song full of harmonic `Prepare→Miss`, the
+/// narrative now carries each prepared deflection: it attaches a `HarmonicCarry` (keys voice the
+/// dark) to the lead phrase sounding at the miss, and withholds the lead there UNLESS the phrase
+/// states something the listener must hear from it. The honest finding stands: on the stock
+/// deflecting traces every miss lands on a protected statement (or before the lead enters), so the
+/// deflection is carried but no lawful withhold fires — the withhold path needs a purpose-built
+/// fixture (stage 5), not a stock seed.
 #[test]
-fn todays_narrative_ignores_the_harmony_lane() {
+fn narrative_carries_the_harmonic_deflection() {
+    let mut total_carries = 0usize;
     for (name, tf) in deflecting_traces() {
-        let song = narrative_song(tf);
-        let obs = MeaningPlan::observe(&song);
-        let np = NarrativePlan::from_observation(&obs);
-
-        // One carriage per theme event — the harmony lane contributes nothing.
-        let theme_events = obs
-            .events
-            .iter()
-            .filter(|w| w.event.lane == Lane::Theme)
-            .count();
-        assert_eq!(
-            np.carriages.len(),
-            theme_events,
-            "{name}: today one carriage per theme event, harmony ignored"
-        );
-        // And despite real Misses, the lead never withholds.
-        assert!(
-            np.carriages
-                .iter()
-                .all(|c| c.lead_role == LeadRole::Stating),
-            "{name}: today the lead never withholds (the Miss arm is dead code)"
-        );
+        let np = NarrativePlan::from_observation(&MeaningPlan::observe(&narrative_song(tf)));
+        for c in &np.carriages {
+            if let Some(h) = c.harmonic {
+                total_carries += 1;
+                assert_eq!(h.carrier, Agent::Keys, "{name}: keys carry the dark");
+            }
+            // Invariant: a withhold needs a deflection to justify it, and never erases a statement
+            // the listener must hear from the lead.
+            if c.lead_role == LeadRole::Withheld {
+                assert!(
+                    c.harmonic.is_some(),
+                    "{name}: a withhold needs a deflection"
+                );
+                assert!(
+                    !matches!(
+                        c.meaning,
+                        K::Learn | K::Payoff | K::Answer(_) | K::Recognize | K::Thesis(_)
+                    ),
+                    "{name}: withholding must not erase a protected statement ({:?})",
+                    c.meaning
+                );
+            }
+        }
     }
+    assert!(
+        total_carries > 0,
+        "the deflecting songs must carry a deflection"
+    );
+
+    // deflected_lift pins the exact join: misses @24 and @72 land on the Payoff (p2) and the
+    // Answer (p7) — both protected — so both are carried by the keys with the lead held in place.
+    let np = NarrativePlan::from_observation(&MeaningPlan::observe(&narrative_song(
+        deflected_lift_trace,
+    )));
+    let p2 = np.at(2).expect("p2 carriage");
+    let p7 = np.at(7).expect("p7 carriage");
+    assert!(p2.harmonic.is_some() && p2.lead_role == LeadRole::Stating);
+    assert!(p7.harmonic.is_some() && p7.lead_role == LeadRole::Stating);
+    assert!(
+        np.carriages
+            .iter()
+            .all(|c| c.lead_role == LeadRole::Stating),
+        "no lawful withhold on this stock song — every miss is protected or pre-lead"
+    );
+}
+
+/// GEN-STORY-4 — the join is a correct NO-OP on the judged voice: at `grammar=None` there is no
+/// harmony lane, so no deflection is carried and nothing withholds.
+#[test]
+fn join_is_a_no_op_on_the_judged_voice() {
+    let song = SongMap::compose(
+        &deflected_lift_trace(BEATS),
+        SEED,
+        None,
+        Composer::MeaningDirected,
+    );
+    let np = NarrativePlan::from_observation(&MeaningPlan::observe(&song));
+    assert!(
+        np.carriages
+            .iter()
+            .all(|c| c.harmonic.is_none() && c.lead_role == LeadRole::Stating),
+        "no harmony lane -> no deflection, no withhold"
+    );
 }

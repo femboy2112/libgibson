@@ -14,7 +14,7 @@
 //! [`super::policy::NarrativePolicy::Ensemble`].
 
 use super::action::Agent;
-use super::meaning::{Lane, MeaningKind, Observation};
+use super::meaning::{Lane, Level, MeaningKind, Observation};
 
 /// The lead's role at a meaning site under an ensemble narrative. The band-story round proved only
 /// these two by ear; a richer countervoice demotion is deliberately not built until an ear asks for
@@ -27,24 +27,58 @@ pub enum LeadRole {
     Withheld,
 }
 
+/// A band carrier making a harmonic deflection intelligible. When the chart lifts a dominant
+/// ([`MeaningKind::Prepare`]) and then misses the expected arrival ([`MeaningKind::Miss`]) while a
+/// lead phrase sounds, the lead may fall silent and this carrier voices the dark, so the deflection
+/// reads as meant rather than as a mistake (the ear-proved "keys carry the dark"). This is the
+/// HARMONY-lane obligation; it lives beside — not inside — the phrase's THEME obligation, so lane
+/// provenance is never lost.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HarmonicCarry {
+    /// The harmony-lane slot index of the missed arrival (its `at` in μ).
+    pub slot: u32,
+    /// How hard the miss lands — the [`MeaningKind::Miss`] surprise level.
+    pub level: Level,
+    /// The band agent that voices the deflection: [`Agent::Keys`], the ear-proved dark-carrier.
+    pub carrier: Agent,
+}
+
 /// Who carries one lead-seated phrase's meaning, and what the lead does there.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PhraseCarriage {
     /// The lead-seated phrase index this is for (the `at` of its theme-lane event in μ).
     pub phrase: u32,
-    /// The meaning the phrase gives, read from μ(song).
+    /// The meaning the phrase gives, read from μ(song) — the THEME obligation.
     pub meaning: MeaningKind,
     /// Band agents BESIDES the lead that also carry the germ here — [`Agent::Keys`] on a Reinforce,
     /// [`Agent::Bass`] on a Develop, both on a Payoff tutti. Empty when the lead carries alone.
     pub carriers: Vec<Agent>,
     /// What the lead does at this phrase.
     pub lead_role: LeadRole,
+    /// A harmonic deflection that lands while this lead phrase sounds — a [`MeaningKind::Miss`] with
+    /// an actual expected arrival before it, joined from the harmony lane. `None` when no prepared
+    /// miss meets the phrase. This is the HARMONY obligation; `meaning`/`carriers` stay the THEME
+    /// obligation, so the two lanes never collapse into one.
+    pub harmonic: Option<HarmonicCarry>,
 }
 
 impl PhraseCarriage {
-    /// Whether this phrase hands the germ off the lead at all (a band carrier, or a withheld lead).
+    /// Whether this phrase hands the germ off the lead at all: a band carrier takes the theme, the
+    /// lead withholds, or a band carrier voices a harmonic deflection here.
     fn hands_off(&self) -> bool {
-        !self.carriers.is_empty() || self.lead_role != LeadRole::Stating
+        !self.carriers.is_empty() || self.lead_role != LeadRole::Stating || self.harmonic.is_some()
+    }
+
+    /// Whether this phrase states something the listener must hear FROM THE LEAD — a statement the
+    /// lead may not withhold without erasing it (the thesis, its learning, a payoff, a settling
+    /// answer, a recognized return). A transformation or repetition (Develop, Reinforce) is not
+    /// protected: the lead may step aside there and let a carrier hold it.
+    fn states_protected_theme(&self) -> bool {
+        use MeaningKind as K;
+        matches!(
+            self.meaning,
+            K::Thesis(_) | K::Learn | K::Payoff | K::Answer(_) | K::Recognize
+        )
     }
 }
 
@@ -63,33 +97,89 @@ impl NarrativePlan {
     /// ignored here.
     pub fn from_observation(obs: &Observation) -> NarrativePlan {
         use MeaningKind as K;
-        let carriages = obs
+        // --- Pass 1: theme carrier obligations ---
+        // One carriage per lead-seated theme event, in μ order. The thesis label co-locates with
+        // Learn on the first site and is not its own obligation, so it is skipped. `Prepare`/`Miss`
+        // are HARMONY-lane kinds and never appear here — the harmony join (pass 2) owns them.
+        let mut carriages: Vec<PhraseCarriage> = obs
             .events
             .iter()
-            .filter(|w| w.event.lane == Lane::Theme)
+            .filter(|w| w.event.lane == Lane::Theme && !matches!(w.event.kind, K::Thesis(_)))
             .map(|w| {
-                let (carriers, lead_role) = match w.event.kind {
+                let carriers = match w.event.kind {
                     // The germ enters the keys — no longer the lead's alone (and building back).
-                    K::Reinforce | K::Prepare(_) => (vec![Agent::Keys], LeadRole::Stating),
+                    K::Reinforce => vec![Agent::Keys],
                     // The bass quotes/develops the contour — same DNA, a new function.
-                    K::Develop => (vec![Agent::Bass], LeadRole::Stating),
+                    K::Develop => vec![Agent::Bass],
                     // The return the band already knows carries it alongside the lead.
-                    K::Recognize => (vec![Agent::Keys], LeadRole::Stating),
-                    // The lead withholds at the expected arrival; the keys carry the dark.
-                    K::Miss(_) => (vec![Agent::Keys], LeadRole::Withheld),
+                    K::Recognize => vec![Agent::Keys],
                     // The earned ensemble octave-tutti.
-                    K::Payoff => (vec![Agent::Keys, Agent::Bass], LeadRole::Stating),
-                    // Learn, the thesis, the lead's consequent, home — the lead states it alone.
-                    _ => (Vec::new(), LeadRole::Stating),
+                    K::Payoff => vec![Agent::Keys, Agent::Bass],
+                    // Learn, the lead's consequent, home — the lead states it alone.
+                    _ => Vec::new(),
                 };
                 PhraseCarriage {
                     phrase: w.event.at,
                     meaning: w.event.kind,
                     carriers,
-                    lead_role,
+                    lead_role: LeadRole::Stating,
+                    harmonic: None,
                 }
             })
             .collect();
+
+        // --- Pass 2: the harmony join ---
+        // Lead-phrase onsets, from the same observation (every theme event of a phrase shares its
+        // onset beat). A deflection is attributed to the phrase sounding when it lands.
+        let mut onsets: Vec<(u32, f64)> = obs
+            .events
+            .iter()
+            .filter(|w| w.event.lane == Lane::Theme)
+            .map(|w| (w.event.at, w.event.beat))
+            .collect();
+        onsets.sort_by(|a, b| a.1.total_cmp(&b.1));
+        onsets.dedup_by_key(|&mut (p, _)| p);
+        // An "actual expected arrival": the chart lifted a dominant somewhere before the miss.
+        let first_prepare = obs
+            .events
+            .iter()
+            .filter(|w| matches!(w.event.kind, K::Prepare(_)))
+            .map(|w| w.event.beat)
+            .fold(f64::INFINITY, f64::min);
+        for w in obs.events.iter().filter(|w| w.event.lane == Lane::Harmony) {
+            let K::Miss(level) = w.event.kind else {
+                continue;
+            };
+            // No prepared arrival before this miss → it is not a narrative deflection to carry.
+            let prepared = first_prepare < w.event.beat - 1e-9;
+            if !prepared {
+                continue;
+            }
+            // The lead phrase sounding at the miss: the latest onset at or before its beat.
+            let Some(&(phrase, _)) = onsets
+                .iter()
+                .rev()
+                .find(|&&(_, beat)| beat <= w.event.beat + 1e-9)
+            else {
+                continue; // the miss lands before the lead ever enters — the chart's own business
+            };
+            let Some(c) = carriages.iter_mut().find(|c| c.phrase == phrase) else {
+                continue;
+            };
+            if c.harmonic.is_some() {
+                continue; // one deflection per phrase; keep the first in μ order
+            }
+            c.harmonic = Some(HarmonicCarry {
+                slot: w.event.at,
+                level,
+                carrier: Agent::Keys,
+            });
+            // The lead withholds ONLY where it would not erase a statement the listener must hear
+            // from it. At a protected statement the keys still voice the dark, but the lead stays.
+            if !c.states_protected_theme() {
+                c.lead_role = LeadRole::Withheld;
+            }
+        }
         NarrativePlan { carriages }
     }
 
@@ -109,31 +199,37 @@ impl NarrativePlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::human_music::meaning::{Level, MeaningEvent, Witness, Witnessed};
+    use crate::audio::human_music::meaning::{Close, MeaningEvent, Witness, Witnessed};
 
-    /// A synthetic theme-lane event carrying `kind` at phrase `at`. `from_observation` reads only the
-    /// lane and kind, so the witness is an arbitrary stand-in.
-    fn theme(at: u32, kind: MeaningKind) -> Witnessed {
+    /// A synthetic event at (`lane`, `at`, `beat`) carrying `kind`. `from_observation` reads only
+    /// the lane, kind, phrase and beat, so the witness is an arbitrary stand-in. These stay FAITHFUL
+    /// to μ's real laning: `Prepare`/`Miss` are only ever made on [`Lane::Harmony`], never Theme
+    /// (the integration witness is `narrative_join_probes`, on real generated songs).
+    fn ev(lane: Lane, at: u32, beat: f64, kind: MeaningKind) -> Witnessed {
         Witnessed {
             event: MeaningEvent {
-                lane: Lane::Theme,
+                lane,
                 at,
-                beat: at as f64 * 8.0,
+                beat,
                 kind,
             },
             witness: Witness::Thesis { widest: 0 },
         }
     }
 
+    fn theme(at: u32, kind: MeaningKind) -> Witnessed {
+        ev(Lane::Theme, at, at as f64 * 8.0, kind)
+    }
+
     #[test]
-    fn maps_each_meaning_to_its_ear_proved_carriers() {
+    fn maps_each_theme_meaning_to_its_ear_proved_carriers() {
         use MeaningKind as K;
         let obs = Observation {
             events: vec![
                 theme(0, K::Learn),
                 theme(1, K::Reinforce),
                 theme(2, K::Develop),
-                theme(3, K::Miss(Level::Mid)),
+                theme(3, K::Recognize),
                 theme(4, K::Payoff),
             ],
         };
@@ -143,24 +239,25 @@ mod tests {
 
         // Learn: the lead teaches it alone.
         assert_eq!(at(0).carriers, Vec::<Agent>::new());
-        assert_eq!(at(0).lead_role, LeadRole::Stating);
-
         // Reinforce: the germ enters the keys.
         assert_eq!(at(1).carriers, vec![Agent::Keys]);
-        assert_eq!(at(1).lead_role, LeadRole::Stating);
-
         // Develop: the bass quotes the contour.
         assert_eq!(at(2).carriers, vec![Agent::Bass]);
-
-        // Miss: the lead WITHHOLDS, the keys carry the dark.
-        assert_eq!(at(3).lead_role, LeadRole::Withheld);
+        // Recognize: the keys carry the known return alongside the lead.
         assert_eq!(at(3).carriers, vec![Agent::Keys]);
-
         // Payoff: the earned ensemble tutti.
         assert_eq!(at(4).carriers, vec![Agent::Keys, Agent::Bass]);
-        assert_eq!(at(4).lead_role, LeadRole::Stating);
 
-        assert!(np.hands_off(), "this story leaves the lead");
+        // No harmony lane here, so nobody withholds and no deflection is carried.
+        assert!(np
+            .carriages
+            .iter()
+            .all(|c| c.lead_role == LeadRole::Stating));
+        assert!(np.carriages.iter().all(|c| c.harmonic.is_none()));
+        assert!(
+            np.hands_off(),
+            "this story leaves the lead (carriers present)"
+        );
     }
 
     #[test]
@@ -168,10 +265,7 @@ mod tests {
         use MeaningKind as K;
         // Learn then Answer: the lead states both; nobody else carries, the lead never withholds.
         let obs = Observation {
-            events: vec![
-                theme(0, K::Learn),
-                theme(1, K::Answer(super::super::meaning::Close::Home)),
-            ],
+            events: vec![theme(0, K::Learn), theme(1, K::Answer(Close::Home))],
         };
         let np = NarrativePlan::from_observation(&obs);
         assert!(
@@ -181,28 +275,85 @@ mod tests {
     }
 
     #[test]
-    fn harmony_lane_events_are_ignored() {
+    fn a_prepared_miss_over_a_transformation_withholds_the_lead() {
         use MeaningKind as K;
+        // The lead develops the germ at phrase 2 (beat 16); the chart lifts (Prepare @12) and then
+        // misses the arrival (@18), while phrase 2 sounds. Develop is not protected → the lead
+        // withholds and the keys voice the dark.
         let obs = Observation {
             events: vec![
-                theme(0, K::Learn),
-                Witnessed {
-                    event: MeaningEvent {
-                        lane: Lane::Harmony,
-                        at: 0,
-                        beat: 0.0,
-                        kind: K::Establish,
-                    },
-                    witness: Witness::Thesis { widest: 0 },
-                },
+                theme(1, K::Learn),
+                theme(2, K::Develop),
+                ev(Lane::Harmony, 3, 12.0, K::Prepare(Level::High)),
+                ev(Lane::Harmony, 4, 18.0, K::Miss(Level::Mid)),
             ],
         };
         let np = NarrativePlan::from_observation(&obs);
+        let p2 = np.at(2).unwrap();
+        assert_eq!(p2.lead_role, LeadRole::Withheld, "the lead steps aside");
         assert_eq!(
-            np.carriages.len(),
-            1,
-            "only the theme-lane event becomes a carriage"
+            p2.harmonic,
+            Some(HarmonicCarry {
+                slot: 4,
+                level: Level::Mid,
+                carrier: Agent::Keys
+            })
         );
-        assert_eq!(np.carriages[0].phrase, 0);
+        // The theme obligation is untouched: Develop still hands the contour to the bass.
+        assert_eq!(p2.carriers, vec![Agent::Bass]);
+        assert!(np.hands_off());
+    }
+
+    #[test]
+    fn a_prepared_miss_over_a_protected_statement_keeps_the_lead() {
+        use MeaningKind as K;
+        // Same deflection, but it lands on a Payoff: the keys still voice the dark, yet the lead
+        // must stay — withholding would erase the payoff the listener is owed.
+        let obs = Observation {
+            events: vec![
+                theme(1, K::Learn),
+                theme(2, K::Payoff),
+                ev(Lane::Harmony, 3, 12.0, K::Prepare(Level::High)),
+                ev(Lane::Harmony, 4, 18.0, K::Miss(Level::Mid)),
+            ],
+        };
+        let np = NarrativePlan::from_observation(&obs);
+        let p2 = np.at(2).unwrap();
+        assert_eq!(p2.lead_role, LeadRole::Stating, "a payoff is protected");
+        assert!(p2.harmonic.is_some(), "but the deflection is still carried");
+    }
+
+    #[test]
+    fn an_unprepared_miss_is_not_a_narrative_deflection() {
+        use MeaningKind as K;
+        // A miss with no Prepare before it is not an expected-arrival-then-deflection; there is
+        // nothing for the band to make intelligible, so no carry and no withhold.
+        let obs = Observation {
+            events: vec![
+                theme(1, K::Learn),
+                theme(2, K::Develop),
+                ev(Lane::Harmony, 4, 18.0, K::Miss(Level::Mid)),
+            ],
+        };
+        let np = NarrativePlan::from_observation(&obs);
+        assert!(np.carriages.iter().all(|c| c.harmonic.is_none()));
+        assert_eq!(np.at(2).unwrap().lead_role, LeadRole::Stating);
+    }
+
+    #[test]
+    fn a_miss_before_the_lead_enters_is_the_charts_business() {
+        use MeaningKind as K;
+        // The chart deflects in the intro, before the lead's first phrase (beat 16). No lead phrase
+        // sounds there, so it is not attached to any carriage — exactly the real deflected_lift
+        // Miss @4 case.
+        let obs = Observation {
+            events: vec![
+                ev(Lane::Harmony, 0, 2.0, K::Prepare(Level::High)),
+                ev(Lane::Harmony, 1, 4.0, K::Miss(Level::Mid)),
+                theme(1, K::Learn),
+            ],
+        };
+        let np = NarrativePlan::from_observation(&obs);
+        assert!(np.carriages.iter().all(|c| c.harmonic.is_none()));
     }
 }
