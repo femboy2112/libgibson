@@ -171,6 +171,14 @@ path = "examples/rick_gen3.rs"
 name = "band_story_probe"
 path = "examples/band_story_probe.rs"
 
+# Rick-C137 GEN-STORY render: the GENERATOR's own song through BAND (control) vs BAND + the opt-in
+# NarrativePolicy::Ensemble (the band carries the germ, directed by μ(song)), full mix + --no-lead
+# stem (the §32 flagship), for maintainer listening. The ear-test of whether the built narrative
+# layer makes the generator tell the story the hand-authored probe proved. Not shipped.
+[[example]]
+name = "rick_story"
+path = "examples/rick_story.rs"
+
 # Dev/test builds keep line tables (so RUST_BACKTRACE still symbolicates file:line)
 # but drop full type/variable DWARF. With ~50 integration-test binaries + examples
 # each statically embedding the crate + a generics-heavy dep graph (taffy), full
