@@ -114,7 +114,7 @@ Keep release metadata/version/tag off-limits until the visual+audio flagship is 
 
 ## 7. Build order and safe parallelism
 
-**Prerequisite:** verify fresh branch heads, reconcile the current 0.5 feature dependency graph and ensure exact-head CI. In particular PR #86 (cinematic) is stacked on #83 (spatial). C137 PR #87 is independent and actively changing. The older v0.5 three-axis research plan predates the dramatic score/narrative additions; treat these documents as evolving.
+**Prerequisite:** verify fresh branch heads, reconcile the current 0.5 feature dependency graph and ensure exact-head CI. In the 2026-10-09 compare against `main`, PR #86 (cinematic) already contains **all 25 changed paths** of PR #83 (spatial) **and all 12 changed paths** of PR #81 (plot). Do **not** blindly merge/cherry-pick all three independent heads: resolve their exact ancestry first and avoid duplicate histories. Auditory observer PR #84 currently changes only documentation, whereas C137 PR #87 contains actual `src/audio/perception/` implementation; do not overwrite that with a scaffold. C137 PR #87 is independent and actively changing, sharing only `Cargo.toml` with the latest cinematic branch diff at this snapshot. These file-overlap facts are **not a mergeability proof**; run a real integration build and tests. The older three-axis research plan predates cinematic score/narrative additions; keep these documents evolving.
 
 **Suggested order:**
 - F0: feature/branch integration census + exact-head red/green tests and freeze the API seams without freezing artistry.
