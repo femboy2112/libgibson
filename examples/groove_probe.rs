@@ -10,15 +10,16 @@
 //! characteristically relative to it, voices syncopating WITH each other and the kick. This is
 //! structured and relational, explicitly NOT random onset jitter (a standing rule): every render is
 //! byte-identical. Two deterministic dials plus composed syncopation:
-//!   * SWING — a single global ratio that moves the off-eighth later (0.5 = straight). Piecewise
-//!     linear and monotonic, so sixteenths drag consistently too. Drives the shuffle in hats/fills
-//!     and every off-beat pitched hit.
-//!   * POCKET — a per-instrument constant offset (in beats): the kick is the anchor (0), the bass
-//!     locks just behind it, the backbeat snare drags a hair, the melody sings a touch late. ~6–26ms
-//!     at this tempo — felt as feel, not heard as error. A shared pocket, each voice's own seat in it.
-//!   * Composed syncopation — the bass and inner voice now share an "and-of-3" push and an
-//!     anticipation of the next chord, so the rhythm section grooves together instead of stating
-//!     downbeats in parallel. This is COMPOSITION (deliberate off-beat placement), not timing noise.
+//!
+//! * SWING — a single global ratio that moves the off-eighth later (0.5 = straight). Piecewise
+//!   linear and monotonic, so sixteenths drag consistently too. Drives the shuffle in hats/fills
+//!   and every off-beat pitched hit.
+//! * POCKET — a per-instrument constant offset (in beats): the kick is the anchor (0), the bass
+//!   locks just behind it, the backbeat snare drags a hair, the melody sings a touch late. ~6–26ms
+//!   at this tempo — felt as feel, not heard as error. A shared pocket, each voice's own seat in it.
+//! * Composed syncopation — the bass and inner voice now share an "and-of-3" push and an
+//!   anticipation of the next chord, so the rhythm section grooves together instead of stating
+//!   downbeats in parallel. This is COMPOSITION (deliberate off-beat placement), not timing noise.
 //!
 //! Held FIXED from `ensemble_probe`: tempo, the 40-bar form, the Am–F–C–G roots, the split
 //! guide-tone / open-fifth harmony, the cross-voice suspension, the drum PATTERN and fills, and the
@@ -27,12 +28,17 @@
 //!   cargo run --release --example groove_probe -- --out=target/humanmusic-beefup/groove
 //!
 //! Flags: `--world=…` (default all three), `--out=`, and a feel mode:
-//!   * default    — `Shuffle`: the original swing + per-voice pocket. This is the one that galloped
-//!     AND frame-dragged (a shuffle fighting a drag; three clocks at once). Kept for reference.
-//!   * `--straight`— `Tight`: no swing, no offsets. The syncopated writing on a dead grid.
-//!   * `--pocket`  — `Pocket`: no swing; the whole band leans behind the tight drums by ONE shared
-//!     amount. The only coherent "laid back" — a single pocket, not a clock per instrument.
+//!
+//! * default — `Shuffle`: the original swing + per-voice pocket. This is the one that galloped
+//!   AND frame-dragged (a shuffle fighting a drag; three clocks at once). Kept for reference.
+//! * `--straight` — `Tight`: no swing, no offsets. The syncopated writing on a dead grid.
+//! * `--pocket` — `Pocket`: no swing; the whole band leans behind the tight drums by ONE shared
+//!   amount. The only coherent "laid back" — a single pocket, not a clock per instrument.
+//!
 //! Not shipped; a hand-authored listening control on the beef-up branch, NOT the generator.
+
+// Hand-authored listening probe: note() legitimately takes many positional musical coordinates.
+#![allow(clippy::too_many_arguments)]
 
 use std::path::PathBuf;
 
@@ -212,16 +218,34 @@ impl Part {
 
 /// VERSE / HOOK pitches — IDENTICAL to the earlier probes (the controlled constant).
 const VERSE: &[(f64, i32, f32)] = &[
-    (0.0, 60, 1.0), (1.0, 64, 1.0), (2.0, 69, 1.0), (3.0, 64, 1.0),
-    (4.0, 60, 1.0), (5.0, 65, 1.0), (6.0, 69, 2.0),
-    (8.0, 67, 1.0), (9.0, 64, 1.0), (10.0, 60, 2.0),
-    (12.0, 62, 1.0), (13.0, 67, 1.0), (14.0, 71, 1.0), (15.0, 62, 1.0),
+    (0.0, 60, 1.0),
+    (1.0, 64, 1.0),
+    (2.0, 69, 1.0),
+    (3.0, 64, 1.0),
+    (4.0, 60, 1.0),
+    (5.0, 65, 1.0),
+    (6.0, 69, 2.0),
+    (8.0, 67, 1.0),
+    (9.0, 64, 1.0),
+    (10.0, 60, 2.0),
+    (12.0, 62, 1.0),
+    (13.0, 67, 1.0),
+    (14.0, 71, 1.0),
+    (15.0, 62, 1.0),
 ];
 const HOOK: &[(f64, i32, f32)] = &[
-    (0.0, 69, 1.0), (1.0, 72, 1.0), (2.0, 76, 2.0),
-    (4.0, 77, 1.0), (5.0, 76, 1.0), (6.0, 72, 2.0),
-    (8.0, 76, 1.0), (9.0, 74, 1.0), (10.0, 72, 2.0),
-    (12.0, 74, 1.0), (13.0, 71, 1.0), (14.0, 74, 2.0),
+    (0.0, 69, 1.0),
+    (1.0, 72, 1.0),
+    (2.0, 76, 2.0),
+    (4.0, 77, 1.0),
+    (5.0, 76, 1.0),
+    (6.0, 72, 2.0),
+    (8.0, 76, 1.0),
+    (9.0, 74, 1.0),
+    (10.0, 72, 2.0),
+    (12.0, 74, 1.0),
+    (13.0, 71, 1.0),
+    (14.0, 74, 2.0),
 ];
 
 fn prov(part: Part) -> Provenance {
@@ -229,7 +253,17 @@ fn prov(part: Part) -> Provenance {
 }
 
 /// Emit a pitched note, placed in the pocket for its role.
-fn note(score: &mut Score, feel: Feel, bar: u32, beat: f64, pitch: i32, dur: f32, vel: f32, role: Role, part: Part) {
+fn note(
+    score: &mut Score,
+    feel: Feel,
+    bar: u32,
+    beat: f64,
+    pitch: i32,
+    dur: f32,
+    vel: f32,
+    role: Role,
+    part: Part,
+) {
     let raw = bar as f64 * BPB + beat;
     let start = feel.place_note(raw, role);
     score
@@ -293,12 +327,50 @@ fn drums(score: &mut Score, feel: Feel, bar: u32, part: Part, fill: Option<bool>
 /// One bar of interdependent backing — now with a grooving, syncopated rhythm section. The harmony
 /// (split guide tones, open-fifth pad, cross-voice suspension) is unchanged; the bass and inner
 /// voice now share an "and-of-3" push and the bass anticipates the next root.
-fn lay_bar(score: &mut Score, feel: Feel, bar: u32, ch: Ch, part: Part, with_pad: bool, last: bool) {
+fn lay_bar(
+    score: &mut Score,
+    feel: Feel,
+    bar: u32,
+    ch: Ch,
+    part: Part,
+    with_pad: bool,
+    last: bool,
+) {
     // Bass: the "one", a syncopated "and-of-3" push, then the late pickup/anticipation.
-    note(score, feel, bar, 0.0, ch.root(), 1.0, 0.82, Role::Bass, part);
-    note(score, feel, bar, 2.5, ch.fifth(), 0.75, 0.70, Role::Bass, part); // and-of-3 (swung)
+    note(
+        score,
+        feel,
+        bar,
+        0.0,
+        ch.root(),
+        1.0,
+        0.82,
+        Role::Bass,
+        part,
+    );
+    note(
+        score,
+        feel,
+        bar,
+        2.5,
+        ch.fifth(),
+        0.75,
+        0.70,
+        Role::Bass,
+        part,
+    ); // and-of-3 (swung)
     if !last {
-        note(score, feel, bar, 3.5, ch.approach_to_next(), 0.5, 0.60, Role::Bass, part);
+        note(
+            score,
+            feel,
+            bar,
+            3.5,
+            ch.approach_to_next(),
+            0.5,
+            0.60,
+            Role::Bass,
+            part,
+        );
     }
 
     // Inner guide voice — states on the "one", then re-hits on the and-of-3 to lock with the bass.
@@ -311,10 +383,50 @@ fn lay_bar(score: &mut Score, feel: Feel, bar: u32, ch: Ch, part: Part, with_pad
         note(score, feel, bar, 2.5, 60, 1.5, 0.44, Role::Keys, part); // low C (and-of-3)
         note(score, feel, bar, 2.5, 67, 1.5, 0.50, Role::Keys, part); // hi G  (settle, and-of-3)
     } else {
-        note(score, feel, bar, 0.0, ch.guide_low(), 1.5, 0.46, Role::Keys, part);
-        note(score, feel, bar, 0.0, ch.guide_hi(), 1.5, 0.52, Role::Keys, part);
-        note(score, feel, bar, 2.5, ch.guide_low(), 1.5, 0.42, Role::Keys, part); // and-of-3
-        note(score, feel, bar, 2.5, ch.guide_hi(), 1.5, 0.48, Role::Keys, part);
+        note(
+            score,
+            feel,
+            bar,
+            0.0,
+            ch.guide_low(),
+            1.5,
+            0.46,
+            Role::Keys,
+            part,
+        );
+        note(
+            score,
+            feel,
+            bar,
+            0.0,
+            ch.guide_hi(),
+            1.5,
+            0.52,
+            Role::Keys,
+            part,
+        );
+        note(
+            score,
+            feel,
+            bar,
+            2.5,
+            ch.guide_low(),
+            1.5,
+            0.42,
+            Role::Keys,
+            part,
+        ); // and-of-3
+        note(
+            score,
+            feel,
+            bar,
+            2.5,
+            ch.guide_hi(),
+            1.5,
+            0.48,
+            Role::Keys,
+            part,
+        );
     }
 
     // Pad: an open fifth (no third), at arrivals only — unchanged.
@@ -326,7 +438,14 @@ fn lay_bar(score: &mut Score, feel: Feel, bar: u32, ch: Ch, part: Part, with_pad
 }
 
 /// Lay a melodic phrase — SAME pitches/rhythm every call; it now rides the pocket (laid back) via `note`.
-fn lead_phrase(score: &mut Score, feel: Feel, start_bar: u32, phrase: &[(f64, i32, f32)], vel: f32, part: Part) {
+fn lead_phrase(
+    score: &mut Score,
+    feel: Feel,
+    start_bar: u32,
+    phrase: &[(f64, i32, f32)],
+    vel: f32,
+    part: Part,
+) {
     for &(b, p, d) in phrase {
         note(score, feel, start_bar, b, p, d, vel, Role::Lead, part);
     }
@@ -382,7 +501,17 @@ fn build_song(feel: Feel) -> Score {
     lead_phrase(&mut score, feel, 24, VERSE, 0.70, Part::Verse);
     lead_phrase(&mut score, feel, 28, HOOK, 0.82, Part::Chorus);
     lead_phrase(&mut score, feel, 32, HOOK, 0.82, Part::Chorus);
-    note(&mut score, feel, 39, 0.0, 69, 4.0, 0.68, Role::Lead, Part::Outro);
+    note(
+        &mut score,
+        feel,
+        39,
+        0.0,
+        69,
+        4.0,
+        0.68,
+        Role::Lead,
+        Part::Outro,
+    );
 
     score
 }
@@ -403,7 +532,8 @@ fn arg(prefix: &str) -> Option<String> {
 }
 
 fn main() -> std::io::Result<()> {
-    let out = PathBuf::from(arg("--out=").unwrap_or_else(|| "target/humanmusic-beefup/groove".into()));
+    let out =
+        PathBuf::from(arg("--out=").unwrap_or_else(|| "target/humanmusic-beefup/groove".into()));
     std::fs::create_dir_all(&out)?;
 
     let mode = if std::env::args().any(|a| a == "--straight") {
@@ -454,7 +584,11 @@ fn main() -> std::io::Result<()> {
         let res = OfflineRenderer::new(sr, block).render(&mut synth, frames);
         let wav = out.join(format!("groove_{name}{suffix}.wav"));
         write_wav_i16(&wav, &res.audio, sr)?;
-        println!("  {name:12} -> {} ({} frames)", wav.display(), res.audio.frames());
+        println!(
+            "  {name:12} -> {} ({} frames)",
+            wav.display(),
+            res.audio.frames()
+        );
     }
     Ok(())
 }

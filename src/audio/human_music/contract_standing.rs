@@ -187,13 +187,7 @@ fn song_under(
     edit(&mut contract);
     let plan =
         CompositionPlan::build_with_contract_for_beats(&timeline, trace.total_beats, contract);
-    SongMap::from_plan_with(
-        trace,
-        SEED,
-        timeline,
-        plan,
-        MotifRepetition::Develop,
-    )
+    SongMap::from_plan_with(trace, SEED, timeline, plan, MotifRepetition::Develop)
 }
 
 /// Everything a reader of the song can observe of its performance.

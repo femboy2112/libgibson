@@ -20,6 +20,9 @@
 //! Flags: `--world=black_ice|vapor95|swiss_signal` (default: all three), `--out=`.
 //! Not shipped; a hand-authored listening control on the beef-up branch, NOT the generator.
 
+// Hand-authored listening probe: note() legitimately takes many positional musical coordinates.
+#![allow(clippy::too_many_arguments)]
+
 use std::path::PathBuf;
 
 use gibson::audio::human_music::form::SectionKind;
@@ -38,10 +41,22 @@ struct Chord {
     triad: [i32; 3],
 }
 // Am – F – C – G, voiced for smooth motion (MIDI; 60 = middle C).
-const AM: Chord = Chord { bass: 45, triad: [57, 60, 64] }; // A2 ; A3 C4 E4
-const F: Chord = Chord { bass: 41, triad: [53, 57, 60] }; // F2 ; F3 A3 C4
-const C: Chord = Chord { bass: 48, triad: [55, 60, 64] }; // C3 ; G3 C4 E4
-const G: Chord = Chord { bass: 43, triad: [55, 59, 62] }; // G2 ; G3 B3 D4
+const AM: Chord = Chord {
+    bass: 45,
+    triad: [57, 60, 64],
+}; // A2 ; A3 C4 E4
+const F: Chord = Chord {
+    bass: 41,
+    triad: [53, 57, 60],
+}; // F2 ; F3 A3 C4
+const C: Chord = Chord {
+    bass: 48,
+    triad: [55, 60, 64],
+}; // C3 ; G3 C4 E4
+const G: Chord = Chord {
+    bass: 43,
+    triad: [55, 59, 62],
+}; // G2 ; G3 B3 D4
 
 #[derive(Clone, Copy, PartialEq)]
 enum Part {
@@ -65,26 +80,53 @@ impl Part {
 /// The VERSE line — lower, conversational (octave 4). One 4-bar (16-beat) phrase; `(beat, pitch,
 /// dur)` within the phrase. Stated identically in both verses.
 const VERSE: &[(f64, i32, f32)] = &[
-    (0.0, 60, 1.0), (1.0, 64, 1.0), (2.0, 69, 1.0), (3.0, 64, 1.0), // Am: C E A E
-    (4.0, 60, 1.0), (5.0, 65, 1.0), (6.0, 69, 2.0), //                F:  C F A—
-    (8.0, 67, 1.0), (9.0, 64, 1.0), (10.0, 60, 2.0), //              C:  G E C—
-    (12.0, 62, 1.0), (13.0, 67, 1.0), (14.0, 71, 1.0), (15.0, 62, 1.0), // G: D G B D
+    (0.0, 60, 1.0),
+    (1.0, 64, 1.0),
+    (2.0, 69, 1.0),
+    (3.0, 64, 1.0), // Am: C E A E
+    (4.0, 60, 1.0),
+    (5.0, 65, 1.0),
+    (6.0, 69, 2.0), //                F:  C F A—
+    (8.0, 67, 1.0),
+    (9.0, 64, 1.0),
+    (10.0, 60, 2.0), //              C:  G E C—
+    (12.0, 62, 1.0),
+    (13.0, 67, 1.0),
+    (14.0, 71, 1.0),
+    (15.0, 62, 1.0), // G: D G B D
 ];
 
 /// The CHORUS HOOK — higher, a reach then a settle (octave 4–5). The thing that must return
 /// recognizably. Stated identically in both choruses.
 const HOOK: &[(f64, i32, f32)] = &[
-    (0.0, 69, 1.0), (1.0, 72, 1.0), (2.0, 76, 2.0), //  Am: A C E——  (the reach)
-    (4.0, 77, 1.0), (5.0, 76, 1.0), (6.0, 72, 2.0), //  F:  F E C——  (peak then settle)
-    (8.0, 76, 1.0), (9.0, 74, 1.0), (10.0, 72, 2.0), // C:  E D C——
-    (12.0, 74, 1.0), (13.0, 71, 1.0), (14.0, 74, 2.0), // G: D B D—— (open, loops home)
+    (0.0, 69, 1.0),
+    (1.0, 72, 1.0),
+    (2.0, 76, 2.0), //  Am: A C E——  (the reach)
+    (4.0, 77, 1.0),
+    (5.0, 76, 1.0),
+    (6.0, 72, 2.0), //  F:  F E C——  (peak then settle)
+    (8.0, 76, 1.0),
+    (9.0, 74, 1.0),
+    (10.0, 72, 2.0), // C:  E D C——
+    (12.0, 74, 1.0),
+    (13.0, 71, 1.0),
+    (14.0, 74, 2.0), // G: D B D—— (open, loops home)
 ];
 
 fn prov(part: Part) -> Provenance {
     Provenance::new(part.section_kind())
 }
 
-fn note(score: &mut Score, bar: u32, beat: f64, pitch: i32, dur: f32, vel: f32, role: Role, part: Part) {
+fn note(
+    score: &mut Score,
+    bar: u32,
+    beat: f64,
+    pitch: i32,
+    dur: f32,
+    vel: f32,
+    role: Role,
+    part: Part,
+) {
     let start = bar as f64 * BPB + beat;
     score
         .notes
@@ -111,7 +153,16 @@ fn backing(score: &mut Score, bar: u32, ch: Chord, part: Part, fill: Option<bool
         note(score, bar, 0.0, p, 4.0, padv, Role::Pad, part);
     }
     if chorus {
-        note(score, bar, 0.0, ch.triad[0] + 12, 4.0, 0.38, Role::Pad, part);
+        note(
+            score,
+            bar,
+            0.0,
+            ch.triad[0] + 12,
+            4.0,
+            0.38,
+            Role::Pad,
+            part,
+        );
     }
     // Bass: root on 1 and 3.
     note(score, bar, 0.0, ch.bass, 1.6, 0.74, Role::Bass, part);
@@ -171,7 +222,13 @@ fn drums(score: &mut Score, bar: u32, part: Part, fill: Option<bool>) {
 }
 
 /// Lay a melodic phrase down starting at `start_bar`. The SAME array every call — literal return.
-fn lead_phrase(score: &mut Score, start_bar: u32, phrase: &[(f64, i32, f32)], vel: f32, part: Part) {
+fn lead_phrase(
+    score: &mut Score,
+    start_bar: u32,
+    phrase: &[(f64, i32, f32)],
+    vel: f32,
+    part: Part,
+) {
     for &(b, p, d) in phrase {
         let start = start_bar as f64 * BPB + b;
         score
@@ -252,7 +309,8 @@ fn arg(prefix: &str) -> Option<String> {
 }
 
 fn main() -> std::io::Result<()> {
-    let out = PathBuf::from(arg("--out=").unwrap_or_else(|| "target/humanmusic-beefup/songform".into()));
+    let out =
+        PathBuf::from(arg("--out=").unwrap_or_else(|| "target/humanmusic-beefup/songform".into()));
     std::fs::create_dir_all(&out)?;
 
     let worlds: Vec<(WorldId, &'static str)> = match arg("--world=") {
@@ -284,7 +342,11 @@ fn main() -> std::io::Result<()> {
         let res = OfflineRenderer::new(sr, block).render(&mut synth, frames);
         let wav = out.join(format!("songform_{name}.wav"));
         write_wav_i16(&wav, &res.audio, sr)?;
-        println!("  {name:12} -> {} ({} frames)", wav.display(), res.audio.frames());
+        println!(
+            "  {name:12} -> {} ({} frames)",
+            wav.display(),
+            res.audio.frames()
+        );
     }
     Ok(())
 }

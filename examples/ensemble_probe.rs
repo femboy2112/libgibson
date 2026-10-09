@@ -15,22 +15,26 @@
 //! Intro·V·C·V·C·Outro form, the Am–F–C–G roots, the **byte-identical VERSE and HOOK melodies**, and
 //! the **identical groove/fills**. Changed — the ONE variable under test — redundant vertical
 //! agreement becomes horizontal interdependence:
-//!   * No voice ever states a full triad. The bass plays roots + a late chromatic approach pickup;
-//!     an inner two-note voice (the 3rd + 7th) carries the harmony BY MOVING; the chorus pad enters
-//!     as a bare open fifth (no 3rd). The major/minor QUALITY of each chord lives only in the inner
-//!     voice — mute it and the pad+bass go modal and ambiguous. The chord exists only in the union.
-//!   * A suspension that crosses voices: the inner voice hangs G7's F over the Am downbeat (a b6) and
-//!     resolves it to E *while the bass has already moved to A* — tension made by one part, resolved
-//!     by another, a sigh no single voice contains.
-//!   * Space + interlock: the bass sings two beats, leaves a hole, answers late; the inner voice
-//!     moves early. They converse instead of stacking.
-//!   * Arrival by ensemble: the pad is withheld the whole verse, so the chorus arrives because the
-//!     texture fills in TOGETHER, not because one voice got louder.
+//!
+//! * No voice ever states a full triad. The bass plays roots + a late chromatic approach pickup;
+//!   an inner two-note voice (the 3rd + 7th) carries the harmony BY MOVING; the chorus pad enters
+//!   as a bare open fifth (no 3rd). The major/minor QUALITY of each chord lives only in the inner
+//!   voice — mute it and the pad+bass go modal and ambiguous. The chord exists only in the union.
+//! * A suspension that crosses voices: the inner voice hangs G7's F over the Am downbeat (a b6) and
+//!   resolves it to E *while the bass has already moved to A* — tension made by one part, resolved
+//!   by another, a sigh no single voice contains.
+//! * Space + interlock: the bass sings two beats, leaves a hole, answers late; the inner voice
+//!   moves early. They converse instead of stacking.
+//! * Arrival by ensemble: the pad is withheld the whole verse, so the chorus arrives because the
+//!   texture fills in TOGETHER, not because one voice got louder.
 //!
 //!   cargo run --release --example ensemble_probe -- --out=target/humanmusic-beefup/ensemble
 //!
 //! Flags: `--world=black_ice|vapor95|swiss_signal` (default: all three), `--out=`.
 //! Not shipped; a hand-authored listening control on the beef-up branch, NOT the generator.
+
+// Hand-authored listening probe: note() legitimately takes many positional musical coordinates.
+#![allow(clippy::too_many_arguments)]
 
 use std::path::PathBuf;
 
@@ -127,26 +131,53 @@ impl Part {
 
 /// The VERSE line — IDENTICAL to `song_form_probe` (the controlled constant). Lower, conversational.
 const VERSE: &[(f64, i32, f32)] = &[
-    (0.0, 60, 1.0), (1.0, 64, 1.0), (2.0, 69, 1.0), (3.0, 64, 1.0), // Am: C E A E
-    (4.0, 60, 1.0), (5.0, 65, 1.0), (6.0, 69, 2.0), //                F:  C F A—
-    (8.0, 67, 1.0), (9.0, 64, 1.0), (10.0, 60, 2.0), //              C:  G E C—
-    (12.0, 62, 1.0), (13.0, 67, 1.0), (14.0, 71, 1.0), (15.0, 62, 1.0), // G: D G B D
+    (0.0, 60, 1.0),
+    (1.0, 64, 1.0),
+    (2.0, 69, 1.0),
+    (3.0, 64, 1.0), // Am: C E A E
+    (4.0, 60, 1.0),
+    (5.0, 65, 1.0),
+    (6.0, 69, 2.0), //                F:  C F A—
+    (8.0, 67, 1.0),
+    (9.0, 64, 1.0),
+    (10.0, 60, 2.0), //              C:  G E C—
+    (12.0, 62, 1.0),
+    (13.0, 67, 1.0),
+    (14.0, 71, 1.0),
+    (15.0, 62, 1.0), // G: D G B D
 ];
 
 /// The CHORUS HOOK — IDENTICAL to `song_form_probe` (the controlled constant). The thing that must
 /// return recognizably.
 const HOOK: &[(f64, i32, f32)] = &[
-    (0.0, 69, 1.0), (1.0, 72, 1.0), (2.0, 76, 2.0), //  Am: A C E——  (the reach)
-    (4.0, 77, 1.0), (5.0, 76, 1.0), (6.0, 72, 2.0), //  F:  F E C——  (peak then settle)
-    (8.0, 76, 1.0), (9.0, 74, 1.0), (10.0, 72, 2.0), // C:  E D C——
-    (12.0, 74, 1.0), (13.0, 71, 1.0), (14.0, 74, 2.0), // G: D B D—— (open, loops home)
+    (0.0, 69, 1.0),
+    (1.0, 72, 1.0),
+    (2.0, 76, 2.0), //  Am: A C E——  (the reach)
+    (4.0, 77, 1.0),
+    (5.0, 76, 1.0),
+    (6.0, 72, 2.0), //  F:  F E C——  (peak then settle)
+    (8.0, 76, 1.0),
+    (9.0, 74, 1.0),
+    (10.0, 72, 2.0), // C:  E D C——
+    (12.0, 74, 1.0),
+    (13.0, 71, 1.0),
+    (14.0, 74, 2.0), // G: D B D—— (open, loops home)
 ];
 
 fn prov(part: Part) -> Provenance {
     Provenance::new(part.section_kind())
 }
 
-fn note(score: &mut Score, bar: u32, beat: f64, pitch: i32, dur: f32, vel: f32, role: Role, part: Part) {
+fn note(
+    score: &mut Score,
+    bar: u32,
+    beat: f64,
+    pitch: i32,
+    dur: f32,
+    vel: f32,
+    role: Role,
+    part: Part,
+) {
     let start = bar as f64 * BPB + beat;
     score
         .notes
@@ -213,7 +244,16 @@ fn lay_bar(score: &mut Score, bar: u32, ch: Ch, part: Part, with_pad: bool, last
     // final home bar, where the root is left to ring.
     note(score, bar, 0.0, ch.root(), 2.0, 0.82, Role::Bass, part);
     if !last {
-        note(score, bar, 3.5, ch.approach_to_next(), 0.5, 0.60, Role::Bass, part);
+        note(
+            score,
+            bar,
+            3.5,
+            ch.approach_to_next(),
+            0.5,
+            0.60,
+            Role::Bass,
+            part,
+        );
     }
 
     // Inner guide voice — the harmony's meaning, carried by motion.
@@ -237,7 +277,13 @@ fn lay_bar(score: &mut Score, bar: u32, ch: Ch, part: Part, with_pad: bool, last
 }
 
 /// Lay a melodic phrase — the SAME array every call (literal return), identical to `song_form_probe`.
-fn lead_phrase(score: &mut Score, start_bar: u32, phrase: &[(f64, i32, f32)], vel: f32, part: Part) {
+fn lead_phrase(
+    score: &mut Score,
+    start_bar: u32,
+    phrase: &[(f64, i32, f32)],
+    vel: f32,
+    part: Part,
+) {
     for &(b, p, d) in phrase {
         let start = start_bar as f64 * BPB + b;
         score
@@ -324,7 +370,8 @@ fn arg(prefix: &str) -> Option<String> {
 }
 
 fn main() -> std::io::Result<()> {
-    let out = PathBuf::from(arg("--out=").unwrap_or_else(|| "target/humanmusic-beefup/ensemble".into()));
+    let out =
+        PathBuf::from(arg("--out=").unwrap_or_else(|| "target/humanmusic-beefup/ensemble".into()));
     std::fs::create_dir_all(&out)?;
 
     let worlds: Vec<(WorldId, &'static str)> = match arg("--world=") {
@@ -356,7 +403,11 @@ fn main() -> std::io::Result<()> {
         let res = OfflineRenderer::new(sr, block).render(&mut synth, frames);
         let wav = out.join(format!("ensemble_{name}.wav"));
         write_wav_i16(&wav, &res.audio, sr)?;
-        println!("  {name:12} -> {} ({} frames)", wav.display(), res.audio.frames());
+        println!(
+            "  {name:12} -> {} ({} frames)",
+            wav.display(),
+            res.audio.frames()
+        );
     }
     Ok(())
 }

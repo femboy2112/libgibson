@@ -17,13 +17,18 @@
 //!   cargo run --release --example songcraft_probe -- --out=target/humanmusic-beefup/songcraft
 //!
 //! Three ISOLATION toggles (each changes ONE axis; everything else is held so the A/B is clean):
-//!   * `--flatvel`  — flatten the lead to one constant velocity (keep grace, rhythm, pocket, bridge).
-//!                    Isolates velocity SHAPING vs her flat baseline.
-//!   * `--grid`     — zero the pocket lean (dead grid), everything else identical. Isolates MICRO-TIMING.
-//!   * `--open`     — the final hook hangs (ends on D, outro holds B) instead of resolving home to A.
-//!                    Isolates the ENDING (open-vs-resolved is a dial).
+//!
+//! * `--flatvel` — flatten the lead to one constant velocity (keep grace, rhythm, pocket, bridge);
+//!   isolates velocity SHAPING vs her flat baseline.
+//! * `--grid` — zero the pocket lean (dead grid), everything else identical; isolates MICRO-TIMING.
+//! * `--open` — the final hook hangs (ends on D, outro holds B) instead of resolving home to A;
+//!   isolates the ENDING (open-vs-resolved is a dial).
+//!
 //! Plus `--no-bridge` (40-bar form), `--world=…`, `--out=`. Not shipped; a hand-authored listening
 //! control on the beef-up branch, NOT the generator.
+
+// Hand-authored listening probe: note() legitimately takes many positional musical coordinates.
+#![allow(clippy::too_many_arguments)]
 
 use std::path::PathBuf;
 
@@ -44,7 +49,7 @@ const FLAT_LEAD: f32 = 0.80;
 /// Per-render configuration. The three isolation axes plus the bridge switch.
 #[derive(Clone, Copy)]
 struct Cfg {
-    lean: f64,     // LEAN normally, 0.0 under --grid
+    lean: f64,      // LEAN normally, 0.0 under --grid
     flat_vel: bool, // --flatvel
     open: bool,     // --open
     bridge: bool,   // !--no-bridge
@@ -153,36 +158,77 @@ impl Part {
 // One germ — "reach upward through the chord" — realized three ways. (beat, pitch, dur, vel); the vel
 // column is the baked phrase arc, the dur column the light articulation (0.92 quarter, 1.9 half).
 const VERSE: &[(f64, i32, f32, f32)] = &[
-    (0.0, 64, 0.92, 0.60), (1.0, 69, 0.92, 0.68), (2.0, 71, 1.9, 0.74),
-    (4.0, 69, 0.92, 0.66), (5.0, 67, 0.92, 0.62), (6.0, 65, 1.9, 0.58),
-    (8.0, 67, 0.92, 0.60), (9.0, 64, 0.92, 0.56), (10.0, 62, 1.9, 0.54),
-    (12.0, 62, 0.92, 0.56), (13.0, 64, 0.92, 0.58), (14.0, 62, 1.9, 0.52),
+    (0.0, 64, 0.92, 0.60),
+    (1.0, 69, 0.92, 0.68),
+    (2.0, 71, 1.9, 0.74),
+    (4.0, 69, 0.92, 0.66),
+    (5.0, 67, 0.92, 0.62),
+    (6.0, 65, 1.9, 0.58),
+    (8.0, 67, 0.92, 0.60),
+    (9.0, 64, 0.92, 0.56),
+    (10.0, 62, 1.9, 0.54),
+    (12.0, 62, 0.92, 0.56),
+    (13.0, 64, 0.92, 0.58),
+    (14.0, 62, 1.9, 0.52),
 ];
 const HOOK: &[(f64, i32, f32, f32)] = &[
-    (0.0, 69, 0.92, 0.80), (1.0, 72, 0.92, 0.86), (2.0, 76, 1.9, 0.92),
-    (4.0, 77, 0.92, 0.88), (5.0, 76, 0.92, 0.82), (6.0, 72, 1.9, 0.74),
-    (8.0, 76, 0.92, 0.78), (9.0, 74, 0.92, 0.74), (10.0, 72, 1.9, 0.70),
-    (12.0, 74, 0.92, 0.70), (13.0, 71, 0.92, 0.66), (14.0, 69, 1.9, 0.64),
+    (0.0, 69, 0.92, 0.80),
+    (1.0, 72, 0.92, 0.86),
+    (2.0, 76, 1.9, 0.92),
+    (4.0, 77, 0.92, 0.88),
+    (5.0, 76, 0.92, 0.82),
+    (6.0, 72, 1.9, 0.74),
+    (8.0, 76, 0.92, 0.78),
+    (9.0, 74, 0.92, 0.74),
+    (10.0, 72, 1.9, 0.70),
+    (12.0, 74, 0.92, 0.70),
+    (13.0, 71, 0.92, 0.66),
+    (14.0, 69, 1.9, 0.64),
 ];
 const BRIDGE: &[(f64, i32, f32, f32)] = &[
-    (0.0, 62, 0.92, 0.60), (1.0, 65, 0.92, 0.64), (2.0, 69, 1.9, 0.68),
-    (4.0, 69, 0.92, 0.70), (5.0, 72, 0.92, 0.74), (6.0, 77, 1.9, 0.80),
-    (8.0, 76, 0.92, 0.82), (9.0, 79, 0.92, 0.86), (10.0, 76, 1.9, 0.86),
-    (12.0, 71, 0.92, 0.88), (13.0, 68, 0.92, 0.90), (14.0, 71, 1.9, 0.92),
+    (0.0, 62, 0.92, 0.60),
+    (1.0, 65, 0.92, 0.64),
+    (2.0, 69, 1.9, 0.68),
+    (4.0, 69, 0.92, 0.70),
+    (5.0, 72, 0.92, 0.74),
+    (6.0, 77, 1.9, 0.80),
+    (8.0, 76, 0.92, 0.82),
+    (9.0, 79, 0.92, 0.86),
+    (10.0, 76, 1.9, 0.86),
+    (12.0, 71, 0.92, 0.88),
+    (13.0, 68, 0.92, 0.90),
+    (14.0, 71, 1.9, 0.92),
 ];
 
 fn prov(part: Part) -> Provenance {
     Provenance::new(part.section_kind())
 }
 
-fn note(score: &mut Score, cfg: Cfg, bar: u32, beat: f64, pitch: i32, dur: f32, vel: f32, role: Role, part: Part) {
+fn note(
+    score: &mut Score,
+    cfg: Cfg,
+    bar: u32,
+    beat: f64,
+    pitch: i32,
+    dur: f32,
+    vel: f32,
+    role: Role,
+    part: Part,
+) {
     let start = place_note(bar as f64 * BPB + beat, cfg);
-    score.notes.push(Note::new(start, dur, pitch, vel, role, prov(part)));
+    score
+        .notes
+        .push(Note::new(start, dur, pitch, vel, role, prov(part)));
 }
 
 fn hit(score: &mut Score, cfg: Cfg, bar: u32, beat: f64, voice: DrumVoice, vel: f32, part: Part) {
     let start = place_drum(bar as f64 * BPB + beat, voice, cfg);
-    score.drums.push(DrumHit { start_beat: start, voice, velocity: vel, prov: prov(part) });
+    score.drums.push(DrumHit {
+        start_beat: start,
+        voice,
+        velocity: vel,
+        prov: prov(part),
+    });
 }
 
 /// The drum PATTERN — verbatim from `groove_probe`. Only its placement in time (the pocket) differs.
@@ -227,9 +273,27 @@ fn drums(score: &mut Score, cfg: Cfg, bar: u32, part: Part, fill: Option<bool>) 
 
 /// One bar of interdependent backing — verbatim from `groove_probe`, with the bass's chromatic approach
 /// GENERIC: a half-step below the *next* root. That gives every junction its leading tone (E→Am = G#→A).
-fn lay_bar(score: &mut Score, cfg: Cfg, bar: u32, ch: Ch, next_root: Option<i32>, part: Part, with_pad: bool) {
+fn lay_bar(
+    score: &mut Score,
+    cfg: Cfg,
+    bar: u32,
+    ch: Ch,
+    next_root: Option<i32>,
+    part: Part,
+    with_pad: bool,
+) {
     note(score, cfg, bar, 0.0, ch.root(), 1.0, 0.82, Role::Bass, part);
-    note(score, cfg, bar, 2.5, ch.fifth(), 0.75, 0.70, Role::Bass, part); // and-of-3
+    note(
+        score,
+        cfg,
+        bar,
+        2.5,
+        ch.fifth(),
+        0.75,
+        0.70,
+        Role::Bass,
+        part,
+    ); // and-of-3
     if let Some(nr) = next_root {
         note(score, cfg, bar, 3.5, nr - 1, 0.5, 0.60, Role::Bass, part); // leading tone into the next root
     }
@@ -241,10 +305,50 @@ fn lay_bar(score: &mut Score, cfg: Cfg, bar: u32, ch: Ch, next_root: Option<i32>
         note(score, cfg, bar, 2.5, 60, 1.5, 0.44, Role::Keys, part); // low C (and-of-3)
         note(score, cfg, bar, 2.5, 67, 1.5, 0.50, Role::Keys, part); // hi G (settle)
     } else {
-        note(score, cfg, bar, 0.0, ch.guide_low(), 1.5, 0.46, Role::Keys, part);
-        note(score, cfg, bar, 0.0, ch.guide_hi(), 1.5, 0.52, Role::Keys, part);
-        note(score, cfg, bar, 2.5, ch.guide_low(), 1.5, 0.42, Role::Keys, part);
-        note(score, cfg, bar, 2.5, ch.guide_hi(), 1.5, 0.48, Role::Keys, part);
+        note(
+            score,
+            cfg,
+            bar,
+            0.0,
+            ch.guide_low(),
+            1.5,
+            0.46,
+            Role::Keys,
+            part,
+        );
+        note(
+            score,
+            cfg,
+            bar,
+            0.0,
+            ch.guide_hi(),
+            1.5,
+            0.52,
+            Role::Keys,
+            part,
+        );
+        note(
+            score,
+            cfg,
+            bar,
+            2.5,
+            ch.guide_low(),
+            1.5,
+            0.42,
+            Role::Keys,
+            part,
+        );
+        note(
+            score,
+            cfg,
+            bar,
+            2.5,
+            ch.guide_hi(),
+            1.5,
+            0.48,
+            Role::Keys,
+            part,
+        );
     }
 
     if with_pad {
@@ -257,7 +361,15 @@ fn lay_bar(score: &mut Score, cfg: Cfg, bar: u32, ch: Ch, next_root: Option<i32>
 /// Lay a melodic phrase. `gain` is the section terrace (verse 0.90 … final chorus 1.12). `varied` adds
 /// the chromatic grace (an ornament a semitone under the phrase's peak, half a beat early). Under
 /// `--flatvel` every lead note (grace included) is one flat level, isolating the velocity contour.
-fn lead_phrase(score: &mut Score, cfg: Cfg, start_bar: u32, phrase: &[(f64, i32, f32, f32)], part: Part, varied: bool, gain: f32) {
+fn lead_phrase(
+    score: &mut Score,
+    cfg: Cfg,
+    start_bar: u32,
+    phrase: &[(f64, i32, f32, f32)],
+    part: Part,
+    varied: bool,
+    gain: f32,
+) {
     for &(b, p, d, v) in phrase {
         let vel = if cfg.flat_vel {
             FLAT_LEAD
@@ -267,10 +379,27 @@ fn lead_phrase(score: &mut Score, cfg: Cfg, start_bar: u32, phrase: &[(f64, i32,
         note(score, cfg, start_bar, b, p, d, vel, Role::Lead, part);
     }
     if varied {
-        let (peak_beat, peak_pitch, _, peak_vel) =
-            phrase.iter().copied().max_by_key(|&(_, p, _, _)| p).unwrap();
-        let gvel = if cfg.flat_vel { FLAT_LEAD } else { (peak_vel * gain * 1.05 * 0.92).min(1.0) };
-        note(score, cfg, start_bar, peak_beat - 0.5, peak_pitch - 1, 0.25, gvel, Role::Lead, part);
+        let (peak_beat, peak_pitch, _, peak_vel) = phrase
+            .iter()
+            .copied()
+            .max_by_key(|&(_, p, _, _)| p)
+            .unwrap();
+        let gvel = if cfg.flat_vel {
+            FLAT_LEAD
+        } else {
+            (peak_vel * gain * 1.05 * 0.92).min(1.0)
+        };
+        note(
+            score,
+            cfg,
+            start_bar,
+            peak_beat - 0.5,
+            peak_pitch - 1,
+            0.25,
+            gvel,
+            Role::Lead,
+            part,
+        );
     }
 }
 
@@ -350,7 +479,11 @@ fn build_song(cfg: Cfg) -> Score {
     for bar in 0..bars {
         let part = part_at(bar);
         let ch = chord_at(bar);
-        let next_root = if bar == last_bar { None } else { Some(chord_at(bar + 1).root()) };
+        let next_root = if bar == last_bar {
+            None
+        } else {
+            Some(chord_at(bar + 1).root())
+        };
         let with_pad = part == Part::Chorus || (part == Part::Outro && ch == Ch::Am);
         lay_bar(&mut score, cfg, bar, ch, next_root, part, with_pad);
         drums(&mut score, cfg, bar, part, fill_at(bar));
@@ -386,7 +519,17 @@ fn build_song(cfg: Cfg) -> Score {
     // Outro: resolve home on A, or hang on B under --open.
     let ov = if cfg.flat_vel { FLAT_LEAD } else { 0.64 };
     let last_pitch = if cfg.open { 71 } else { 69 };
-    note(&mut score, cfg, last_bar, 0.0, last_pitch, 4.0, ov, Role::Lead, Part::Outro);
+    note(
+        &mut score,
+        cfg,
+        last_bar,
+        0.0,
+        last_pitch,
+        4.0,
+        ov,
+        Role::Lead,
+        Part::Outro,
+    );
 
     score
 }
@@ -401,11 +544,14 @@ fn world_from(name: &str) -> Option<(WorldId, &'static str)> {
 }
 
 fn arg(prefix: &str) -> Option<String> {
-    std::env::args().find(|a| a.starts_with(prefix)).map(|a| a[prefix.len()..].to_string())
+    std::env::args()
+        .find(|a| a.starts_with(prefix))
+        .map(|a| a[prefix.len()..].to_string())
 }
 
 fn main() -> std::io::Result<()> {
-    let out = PathBuf::from(arg("--out=").unwrap_or_else(|| "target/humanmusic-beefup/songcraft".into()));
+    let out =
+        PathBuf::from(arg("--out=").unwrap_or_else(|| "target/humanmusic-beefup/songcraft".into()));
     std::fs::create_dir_all(&out)?;
 
     let has = |f: &str| std::env::args().any(|a| a == f);
@@ -417,10 +563,18 @@ fn main() -> std::io::Result<()> {
     };
 
     let mut suffix = String::new();
-    if cfg.flat_vel { suffix.push_str("_flatvel"); }
-    if cfg.lean == 0.0 { suffix.push_str("_grid"); }
-    if cfg.open { suffix.push_str("_open"); }
-    if !cfg.bridge { suffix.push_str("_nobridge"); }
+    if cfg.flat_vel {
+        suffix.push_str("_flatvel");
+    }
+    if cfg.lean == 0.0 {
+        suffix.push_str("_grid");
+    }
+    if cfg.open {
+        suffix.push_str("_open");
+    }
+    if !cfg.bridge {
+        suffix.push_str("_nobridge");
+    }
 
     let worlds: Vec<(WorldId, &'static str)> = match arg("--world=") {
         Some(name) => vec![world_from(&name).unwrap_or((WorldId::BlackIce, "black_ice"))],
@@ -455,7 +609,11 @@ fn main() -> std::io::Result<()> {
         let res = OfflineRenderer::new(sr, block).render(&mut synth, frames);
         let wav = out.join(format!("songcraft_{name}{suffix}.wav"));
         write_wav_i16(&wav, &res.audio, sr)?;
-        println!("  {name:12} -> {} ({} frames)", wav.display(), res.audio.frames());
+        println!(
+            "  {name:12} -> {} ({} frames)",
+            wav.display(),
+            res.audio.frames()
+        );
     }
     Ok(())
 }
