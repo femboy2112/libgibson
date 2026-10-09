@@ -23,11 +23,12 @@
 use gibson::audio::{
     human_music::{
         composer::Composer,
+        contract::CompositionGrammar,
         functor::{perform_with_profile, Composition},
         performance::PerformanceOptions,
         policy::{NarrativePolicy, PerformanceProfile},
         score::Role,
-        semantic::deflected_lift_trace,
+        semantic::{calm_loop, deflected_lift_trace, false_climax, rise_unresolved},
         synth::StemMask,
         HumanMusicSynth, MusicWorld, SongMap,
     },
@@ -87,7 +88,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("propulsion") => Composer::StablePropulsion,
         _ => Composer::MeaningDirected,
     };
-    let song = SongMap::compose(&deflected_lift_trace(beats), 2112, None, composer);
+    // The GEN-STORY-5 withhold fixture is `--trace=rise --beats=160 --grammar=deflected`: the only
+    // stock (trace x grammar) whose μ aligns a harmonic Miss with a non-protected Develop lead
+    // phrase, so the band-story's lead-withhold fires from the generator. A song composed with
+    // `--grammar=none` (the default) has NO harmony lane, so the narrative can only carry the theme.
+    let trace = match arg("--trace=").as_deref() {
+        Some("rise") | Some("rise_unresolved") => rise_unresolved(beats),
+        Some("false_climax") => false_climax(beats),
+        Some("calm") | Some("calm_loop") => calm_loop(beats),
+        _ => deflected_lift_trace(beats),
+    };
+    let grammar = match arg("--grammar=").as_deref() {
+        Some("deflected") | Some("deflected_lift") => Some(CompositionGrammar::DeflectedLift),
+        Some("propulsive") | Some("propulsive_return") => {
+            Some(CompositionGrammar::PropulsiveReturn)
+        }
+        _ => None,
+    };
+    let song = SongMap::compose(&trace, 2112, grammar, composer);
     let wname = arg("--world=").unwrap_or_else(|| "black_ice".to_string());
     let world = match wname.as_str() {
         "vapor95" => MusicWorld::vapor95(),
