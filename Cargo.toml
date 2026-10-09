@@ -137,11 +137,13 @@ path = "examples/groove_probe.rs"
 name = "songcraft_probe"
 path = "examples/songcraft_probe.rs"
 
-# Rick-level listening probe (fifth rung on songcraft_probe): the accepted Morty-level song held fixed,
-# with the first density mechanism toward Casiopea-level throughput — COMPLEMENTARY RHYTHM. Extra
-# rhythm-section onsets land in each voice's own metric lane (bass anticipation, keys weak-subdivision
-# comp) so density rises with near-zero added collision; `--no-rhythm-complement` stacks the same onsets
-# onto the drum grid (the clean A/B), `--backing-only` drops the lead to expose the interlock. Not shipped.
+# Rick-level listening probe (fifth rung on songcraft_probe): the accepted Morty-level song pushed toward
+# Casiopea-level throughput on three ear-confirmed axes — a dense COMPLEMENTARY arrangement (melodic bass +
+# syncopated counter-comp + 16th drive, interlocking rather than piling up), a rhythmically-alive LEAD that
+# develops the germ, and a sophisticated TRAVELING harmony (ii-V-I verse, IV-V-ii-i chorus, and a bridge
+# that modulates DOWN to D minor through an earned A7 pivot and back). Flags: `--sparse` (A/B the thin Morty
+# backing), `--tempo=NNN`, `--backing-only` / `--lead-only` (isolate the interlock or the naked melody),
+# `--world`, `--out`. Hand-authored listening control on the beef-up branch, NOT the generator. Not shipped.
 [[example]]
 name = "rick_probe"
 path = "examples/rick_probe.rs"

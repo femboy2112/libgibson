@@ -6,9 +6,13 @@
 //! density — an active **melodic bass** (chord-tone arpeggiation + chromatic approaches into each
 //! change), a syncopated **counter-comp** of moving guide tones in the holes the bass leaves, and a
 //! **16th-note drive** (busy hats + ghost snares) — all placed *complementarily* so voices interlock
-//! rather than pile up. The germ melody, the Am–F–C–G form, the Dm–F–C–E bridge, the shared pocket and
-//! the structure-coherent dynamics are HELD from the accepted Morty-level song: harmony/form is the
-//! stable identity anchor, and the new information rides on top of it (the coherence-budget principle).
+//! rather than pile up. Two further axes were then lifted by ear: a rhythmically-alive **lead**
+//! (syncopation, 8th/16th runs, pickups, developing the germ — never a static 1-2-3), and a
+//! **sophisticated, traveling harmony** — a ii7–V7–Imaj7–V7/vi verse and a IV–V–ii–i chorus (extended
+//! voicings), with a **bridge that modulates DOWN to D minor through an earned A7 pivot** (the home Am
+//! reinterpreted as its own dominant, V7/Dm), dwells there darker, then pivots home on E7 for the biggest
+//! final chorus. The shared pocket and the structure-coherent dynamics are HELD from the Morty-level song;
+//! the identity anchor is the germ + form, and the new information rides on top of it (coherence budget).
 //!
 //!   cargo run --release --example rick_probe -- --out=target/humanmusic-beefup/rick_probe
 //!
@@ -18,6 +22,7 @@
 //!   backbeat) at the same tempo, to A/B density against a thin rhythm section.
 //! * `--tempo=NNN` — set the tempo in BPM (default 138; the accepted Morty song was 104).
 //! * `--backing-only` — drop the lead so the rhythm-section interplay is audible on its own.
+//! * `--lead-only` — drop the backing so the melody is audible naked.
 //! * `--world=black_ice|vapor95|swiss_signal` (default all three), `--out=`.
 //!
 //! Structured + relational only, never random jitter (standing rule): every render is byte-identical.
@@ -69,6 +74,7 @@ enum Ch {
     G,
     Dm,
     E,
+    A7, // the pivot: Am reinterpreted as its own dominant (V7/Dm) to earn the modulation down to Dm
 }
 
 impl Ch {
@@ -80,6 +86,7 @@ impl Ch {
             Ch::G => 43,
             Ch::Dm => 38,
             Ch::E => 40,
+            Ch::A7 => 45, // A (same root as Am — the pivot)
         }
     }
     fn fifth(self) -> i32 {
@@ -90,6 +97,7 @@ impl Ch {
             Ch::G => 50,
             Ch::Dm => 45,
             Ch::E => 47,
+            Ch::A7 => 52, // E
         }
     }
     /// The chord third (for the melodic bass arpeggio), in the bass octave.
@@ -101,6 +109,7 @@ impl Ch {
             Ch::G => 47,  // B
             Ch::Dm => 41, // F
             Ch::E => 44,  // G# (major third — the colored dominant)
+            Ch::A7 => 49, // C# (major third — the chromatic leading tone into Dm)
         }
     }
     fn pad_fifth(self) -> [i32; 2] {
@@ -111,6 +120,7 @@ impl Ch {
             Ch::G => [55, 62],
             Ch::Dm => [50, 57],
             Ch::E => [52, 59],
+            Ch::A7 => [57, 64],
         }
     }
     fn guide_low(self) -> i32 {
@@ -120,7 +130,8 @@ impl Ch {
             Ch::C => 59,
             Ch::G => 59,
             Ch::Dm => 53,
-            Ch::E => 56, // G#3 — the raised leading tone
+            Ch::E => 56,  // G#3 — the raised leading tone
+            Ch::A7 => 61, // C#4 — the 3rd
         }
     }
     fn guide_hi(self) -> i32 {
@@ -130,7 +141,30 @@ impl Ch {
             Ch::C => 64,
             Ch::G => 65,
             Ch::Dm => 60,
-            Ch::E => 62, // D4 — the dominant's b7
+            Ch::E => 62,  // D4 — the dominant's b7
+            Ch::A7 => 67, // G4 — the dominant's b7
+        }
+    }
+    /// The chord seventh in the bass octave (b7 for minor/dominant, maj7 for C/F) — for the arpeggio.
+    fn seventh(self) -> i32 {
+        self.root()
+            + if matches!(self, Ch::C | Ch::F) {
+                11
+            } else {
+                10
+            }
+    }
+    /// One upper-structure extension (a 9th/13th, or the colored 9th on the dominant) in the comp
+    /// octave — this is what turns the triads into extended, less-elementary chords.
+    fn color(self) -> i32 {
+        match self {
+            Ch::Am => 71, // 9th (B)
+            Ch::F => 67,  // 9th (G) → Fmaj9
+            Ch::C => 62,  // 9th (D) → Cmaj9
+            Ch::G => 64,  // 13th (E) → G13
+            Ch::Dm => 64, // 9th (E) → Dm9
+            Ch::E => 66,  // 9th (F#) → E9 (a chromatic color over the dominant)
+            Ch::A7 => 71, // 9th (B) → A9 (V/Dm)
         }
     }
 }
@@ -183,11 +217,11 @@ const VERSE: &[(f64, i32, f32, f32)] = &[
     (9.5, 72, 0.25, 0.62),
     (9.75, 71, 0.25, 0.60),
     (10.0, 72, 1.0, 0.58),
-    // Bar 3 (G): fall to the unresolved D — the question hangs
+    // Bar 3 (E7): fall through the raised G# to the unresolved D (b7) — the colored question hangs
     (12.0, 71, 0.5, 0.60),
     (12.5, 69, 0.5, 0.58),
-    (13.0, 67, 0.5, 0.56),
-    (13.5, 65, 0.5, 0.54),
+    (13.0, 68, 0.5, 0.56),
+    (13.5, 64, 0.5, 0.54),
     (14.0, 62, 1.5, 0.52),
 ];
 // The consequent — the same reach, answered: a confident line that resolves HOME to A. Rhythmically
@@ -223,36 +257,63 @@ const HOOK: &[(f64, i32, f32, f32)] = &[
     (13.5, 72, 0.5, 0.70),
     (14.0, 69, 1.5, 0.66),
 ];
-// The bridge develops the germ, climbing through Dm–F–C to a high, chromatic, tension peak over the
-// E colored dominant (the raised G# = 80), pulling hard into the biggest final chorus.
-const BRIDGE: &[(f64, i32, f32, f32)] = &[
-    // Bar 0 (Dm): reach to high D, fall
-    (0.0, 62, 0.5, 0.60),
-    (0.5, 65, 0.5, 0.64),
-    (1.0, 69, 0.5, 0.68),
-    (1.5, 74, 1.0, 0.72),
-    (2.5, 72, 0.5, 0.68),
-    (3.0, 69, 0.5, 0.64),
-    (3.5, 65, 0.5, 0.62),
-    // Bar 1 (F): climb to F with a 16th
-    (4.0, 69, 0.5, 0.70),
-    (4.5, 72, 0.5, 0.74),
-    (5.0, 77, 0.5, 0.80),
-    (5.5, 76, 0.25, 0.76),
-    (5.75, 74, 0.25, 0.74),
-    (6.0, 72, 1.0, 0.72),
-    // Bar 2 (C): climb to high G
-    (8.0, 72, 0.5, 0.78),
-    (8.5, 76, 0.5, 0.82),
-    (9.0, 79, 0.5, 0.86),
-    (9.5, 77, 0.5, 0.82),
-    (10.0, 76, 1.0, 0.80),
-    // Bar 3 (E): chromatic climb to the high G# tension peak — pulls home
-    (12.0, 76, 0.5, 0.84),
-    (12.5, 77, 0.5, 0.86),
-    (13.0, 79, 0.5, 0.88),
-    (13.5, 80, 0.5, 0.90),
-    (14.0, 80, 1.5, 0.94),
+// Bridge, first half — over A7 | Dm | C | F: the C# of A7 leads down into D minor, then a D-minor theme.
+const BRIDGE1: &[(f64, i32, f32, f32)] = &[
+    // Bar 0 (A7 pivot): outline A7, C# leads down to D
+    (0.0, 69, 0.5, 0.66),  // A
+    (0.5, 73, 0.5, 0.68),  // C#
+    (1.0, 76, 0.75, 0.72), // E
+    (2.0, 74, 0.5, 0.68),  // D
+    (2.5, 73, 0.5, 0.66),  // C#
+    (3.0, 69, 0.5, 0.64),  // A
+    (3.5, 74, 0.5, 0.68),  // D (into Dm)
+    // Bar 1 (Dm): the darker tonic
+    (4.0, 74, 0.5, 0.70), // D
+    (4.5, 77, 0.5, 0.72), // F
+    (5.0, 76, 0.5, 0.70), // E
+    (5.5, 74, 0.5, 0.68), // D
+    (6.0, 72, 1.0, 0.66), // C
+    // Bar 2 (C):
+    (8.0, 72, 0.5, 0.68),  // C
+    (8.5, 76, 0.5, 0.72),  // E
+    (9.0, 79, 0.5, 0.74),  // G
+    (9.5, 76, 0.5, 0.70),  // E
+    (10.0, 74, 1.0, 0.68), // D
+    // Bar 3 (F):
+    (12.0, 77, 0.5, 0.72), // F
+    (12.5, 76, 0.5, 0.70), // E
+    (13.0, 74, 0.5, 0.68), // D
+    (13.5, 72, 0.5, 0.66), // C
+    (14.0, 69, 1.5, 0.64), // A
+];
+// Bridge, second half — over Dm | A7 | Dm | E7#9: dwell in D minor, then climb the E7 leading tone home.
+const BRIDGE2: &[(f64, i32, f32, f32)] = &[
+    // Bar 0 (Dm):
+    (0.0, 69, 0.5, 0.70),  // A
+    (0.5, 72, 0.5, 0.72),  // C
+    (1.0, 74, 0.75, 0.74), // D
+    (2.0, 77, 0.5, 0.76),  // F
+    (2.5, 76, 0.5, 0.72),  // E
+    (3.0, 74, 0.5, 0.70),  // D
+    (3.5, 72, 0.5, 0.68),  // C
+    // Bar 1 (A7): the C# color, climbing
+    (4.0, 73, 0.5, 0.72), // C#
+    (4.5, 76, 0.5, 0.74), // E
+    (5.0, 79, 0.5, 0.78), // G
+    (5.5, 76, 0.5, 0.74), // E
+    (6.0, 73, 1.0, 0.72), // C#
+    // Bar 2 (Dm):
+    (8.0, 74, 0.5, 0.74),  // D
+    (8.5, 77, 0.5, 0.78),  // F
+    (9.0, 79, 0.5, 0.80),  // G
+    (9.5, 77, 0.5, 0.76),  // F
+    (10.0, 74, 1.0, 0.74), // D
+    // Bar 3 (E7#9): climb to the high G# leading tone — pulls home to A
+    (12.0, 76, 0.5, 0.82), // E
+    (12.5, 80, 0.5, 0.86), // G#
+    (13.0, 79, 0.5, 0.84), // G (the #9, passing)
+    (13.5, 80, 0.5, 0.88), // G#
+    (14.0, 80, 1.5, 0.92), // G# held — leads up to A (home)
 ];
 
 fn prov(part: Part) -> Provenance {
@@ -352,11 +413,12 @@ fn drums_sparse(score: &mut Score, bar: u32, part: Part, fill: Option<bool>) {
 /// Active melodic bass: chord-tone arpeggiation (root / fifth / octave / third) with a two-note
 /// chromatic approach into the next root. The line has contour and a destination — not a random walk.
 fn bass_dense(score: &mut Score, bar: u32, ch: Ch, next_root: Option<i32>, part: Part) {
-    let (r, f, o, t) = (ch.root(), ch.fifth(), ch.root() + 12, ch.third());
+    // Outlines the full 7th chord: root - 3rd - 5th - 7th - 5th - root, then a chromatic approach.
+    let (r, f, sev, t) = (ch.root(), ch.fifth(), ch.seventh(), ch.third());
     note(score, bar, 0.0, r, 0.4, 0.84, Role::Bass, part);
     note(score, bar, 1.0, t, 0.4, 0.66, Role::Bass, part);
     note(score, bar, 1.5, f, 0.4, 0.70, Role::Bass, part);
-    note(score, bar, 2.0, o, 0.4, 0.72, Role::Bass, part);
+    note(score, bar, 2.0, sev, 0.4, 0.72, Role::Bass, part);
     note(score, bar, 2.5, f, 0.4, 0.64, Role::Bass, part);
     note(score, bar, 3.0, r, 0.4, 0.72, Role::Bass, part);
     if let Some(nr) = next_root {
@@ -370,14 +432,16 @@ fn bass_dense(score: &mut Score, bar: u32, ch: Ch, next_root: Option<i32>, part:
 /// Syncopated counter-comp: a guide-tone dyad states the harmony on the downbeat, then moving guide
 /// tones stab the 16th holes the bass leaves (complementary placement — the interlock).
 fn keys_dense(score: &mut Score, bar: u32, ch: Ch, part: Part) {
-    let (gl, gh) = (ch.guide_low(), ch.guide_hi());
+    let (gl, gh, col) = (ch.guide_low(), ch.guide_hi(), ch.color());
+    // Extended voicing on the downbeat: 3rd + 7th + an upper-structure 9th/13th (the color).
     note(score, bar, 0.0, gl, 0.9, 0.46, Role::Keys, part);
     note(score, bar, 0.0, gh, 0.9, 0.50, Role::Keys, part);
+    note(score, bar, 0.0, col, 0.9, 0.42, Role::Keys, part);
     // offbeat 16th comp in the holes between bass onsets (bass owns 0,1,1.5,2,2.5,3,3.5,3.75)
     note(score, bar, 1.25, gh, 0.2, 0.40, Role::Keys, part);
-    note(score, bar, 1.75, gl, 0.2, 0.38, Role::Keys, part);
+    note(score, bar, 1.75, col, 0.2, 0.38, Role::Keys, part);
     note(score, bar, 2.75, gh, 0.2, 0.42, Role::Keys, part);
-    note(score, bar, 3.25, gl, 0.2, 0.38, Role::Keys, part);
+    note(score, bar, 3.25, col, 0.2, 0.38, Role::Keys, part);
 }
 
 /// 16th-note drive: busy hats (accented on the beat, soft on the e/a), kick on 1 & 3 plus a syncopated
@@ -481,18 +545,26 @@ fn build_song(cfg: Cfg) -> Score {
     let bars: u32 = 56;
     let mut score = Score::new(cfg.tempo, BPB, bars as f64 * BPB);
 
-    let seq = [Ch::Am, Ch::F, Ch::C, Ch::G];
-    let bridge_seq = [Ch::Dm, Ch::F, Ch::C, Ch::E];
+    // Sophisticated, coherent changes (extended voicings via Ch::color): the verse is a ii7-V7-Imaj7
+    // then a V7/vi (E7#9) turnaround; the chorus is IV-V-ii-i, landing home on Am; the bridge departs.
+    let verse_seq = [Ch::Dm, Ch::G, Ch::C, Ch::E]; //  ii7 - V7 - Imaj7 - V7/vi
+    let chorus_seq = [Ch::F, Ch::G, Ch::Dm, Ch::Am]; // IV - V - ii - i (hook lands home)
+                                                     // The bridge is the real travel: the Am pivots to A7 (its own dominant) and the music modulates
+                                                     // DOWN to D minor, lives there (darker), then an E7 pivots home for the final chorus.
+    let bridge_seq = [Ch::A7, Ch::Dm, Ch::C, Ch::F, Ch::Dm, Ch::A7, Ch::Dm, Ch::E];
     let last_bar = bars - 1;
 
     let chord_at = |bar: u32| -> Ch {
         match bar {
-            36..=43 => bridge_seq[((bar - 36) % 4) as usize],
+            0..=3 => Ch::Am, // intro vamp
+            4..=11 | 20..=27 => verse_seq[(bar % 4) as usize],
+            12..=19 | 28..=35 | 44..=51 => chorus_seq[(bar % 4) as usize],
+            36..=43 => bridge_seq[(bar - 36) as usize],
             52 => Ch::Am,
             53 => Ch::F,
             54 => Ch::G,
             55 => Ch::Am,
-            _ => seq[(bar % 4) as usize],
+            _ => Ch::Am,
         }
     };
     let part_at = |bar: u32| -> Part {
@@ -543,8 +615,8 @@ fn build_song(cfg: Cfg) -> Score {
         lead_phrase(&mut score, 24, VERSE, v, true, G_VERSE);
         lead_phrase(&mut score, 28, HOOK, c, false, G_CHORUS);
         lead_phrase(&mut score, 32, HOOK, c, true, G_CHORUS);
-        lead_phrase(&mut score, 36, BRIDGE, b, false, G_BRIDGE_1);
-        lead_phrase(&mut score, 40, BRIDGE, b, true, G_BRIDGE_2);
+        lead_phrase(&mut score, 36, BRIDGE1, b, false, G_BRIDGE_1);
+        lead_phrase(&mut score, 40, BRIDGE2, b, true, G_BRIDGE_2);
         lead_phrase(&mut score, 44, HOOK, c, false, G_FINAL);
         lead_phrase(&mut score, 48, HOOK, c, true, G_FINAL);
 
