@@ -409,4 +409,122 @@ mod tests {
             "the judged voice has no harmonic deflection to carry"
         );
     }
+
+    // ─── C137-A red-first audit · characterizations of the receipt's known weaknesses ───
+    // These PASS today: each asserts the CURRENT (count-based) behaviour and so documents the gap
+    // the audit names. The predeclared DESIRED behaviour is the opposite; when the source-aware /
+    // per-carrier witness lands, these assertions flip. See docs/HUMAN_MUSIC_C137_HARDENING_LEDGER.md.
+
+    /// C137-A · R1/R4 — the receipt credits a CARRY by note-count delta and never reads pitch, so
+    /// scrambling the carrier's material off the germ (count + timing preserved) does not change the
+    /// verdict. A source-aware witness must additionally check the added material QUOTES the germ.
+    #[test]
+    fn c137a_r1_carry_is_credited_by_count_not_germ_identity() {
+        let (song, control, story, plan) = fixture();
+        let base = NarrativeReceipt::measure(&song, &control, &story, &plan);
+        let realized = base
+            .outcomes
+            .iter()
+            .find(|o| o.carried == Carried::Realized)
+            .expect("the fixture realizes at least one carry");
+        let phrase = realized.phrase;
+        let c = plan.carriages.iter().find(|c| c.phrase == phrase).unwrap();
+        let (lo, hi) = song
+            .plan
+            .form
+            .phrases
+            .iter()
+            .find(|p| p.ix == phrase)
+            .map(|p| (p.start_beat(), p.end_beat()))
+            .unwrap();
+        let carrier_roles: Vec<Role> = c
+            .carriers
+            .iter()
+            .copied()
+            .chain(c.harmonic.map(|h| h.carrier))
+            .filter_map(role_of)
+            .collect();
+        // Scramble every carrier note in the phrase to an absurd, constant, non-germ pitch — count
+        // and timing untouched. Nothing the ear would call "the germ" survives.
+        let mut scrambled = story.clone();
+        for n in scrambled.notes.iter_mut() {
+            let in_win = n.start_beat >= lo - 1e-6 && n.start_beat < hi - 1e-6;
+            if in_win && carrier_roles.contains(&n.role) {
+                n.pitch = 1;
+            }
+        }
+        let r = NarrativeReceipt::measure(&song, &control, &scrambled, &plan);
+        let still = r.outcomes.iter().find(|o| o.phrase == phrase).unwrap();
+        assert_eq!(
+            still.carried,
+            Carried::Realized,
+            "C137-A R1: the receipt never reads pitch; scrambling the carrier off the germ leaves \
+             the verdict Realized — it credits by count, not identity"
+        );
+    }
+
+    /// C137-A · R5 — a multi-carrier obligation (a Payoff names Keys AND Bass) is credited on the SUM
+    /// of added material across carriers, so it reads Realized when only ONE named carrier carries
+    /// and the other adds nothing. A per-carrier witness must require EACH named carrier to add its
+    /// own material. Demonstrated by zeroing the weaker carrier's contribution.
+    #[test]
+    fn c137a_r5_multicarrier_payoff_credited_without_each_carrier() {
+        let (song, control, story, plan) = fixture();
+        let in_win =
+            |n: &Note, lo: f64, hi: f64| n.start_beat >= lo - 1e-6 && n.start_beat < hi - 1e-6;
+        let base = NarrativeReceipt::measure(&song, &control, &story, &plan);
+        let multi = plan
+            .carriages
+            .iter()
+            .find(|c| {
+                let roles: Vec<Role> = c.carriers.iter().copied().filter_map(role_of).collect();
+                roles.len() >= 2
+                    && base
+                        .outcomes
+                        .iter()
+                        .any(|o| o.phrase == c.phrase && o.carried == Carried::Realized)
+            })
+            .expect("the fixture realizes a multi-carrier Payoff");
+        let phrase = multi.phrase;
+        let roles: Vec<Role> = multi.carriers.iter().copied().filter_map(role_of).collect();
+        let (lo, hi) = song
+            .plan
+            .form
+            .phrases
+            .iter()
+            .find(|p| p.ix == phrase)
+            .map(|p| (p.start_beat(), p.end_beat()))
+            .unwrap();
+        let count = |sc: &Score, r: Role| {
+            sc.notes
+                .iter()
+                .filter(|n| n.role == r && in_win(n, lo, hi))
+                .count() as i64
+        };
+        // The carrier that added the LEAST — zero its contribution (story count down to control
+        // count), leaving the other carrier to drive the sum. One named carrier now carries nothing.
+        let weakest = *roles
+            .iter()
+            .min_by_key(|&&r| count(&story, r) - count(&control, r))
+            .unwrap();
+        let surplus = (count(&story, weakest) - count(&control, weakest)).max(0);
+        let mut story2 = story.clone();
+        let mut dropped = 0;
+        story2.notes.retain(|n| {
+            if n.role == weakest && in_win(n, lo, hi) && dropped < surplus {
+                dropped += 1;
+                false
+            } else {
+                true
+            }
+        });
+        let r = NarrativeReceipt::measure(&song, &control, &story2, &plan);
+        let still = r.outcomes.iter().find(|o| o.phrase == phrase).unwrap();
+        assert_eq!(
+            still.carried,
+            Carried::Realized,
+            "C137-A R5: a named carrier ({weakest:?}) now adds nothing, yet the multi-carrier \
+             carriage reads Realized on the other carrier alone — the receipt sums across carriers"
+        );
+    }
 }

@@ -356,4 +356,32 @@ mod tests {
         let np = NarrativePlan::from_observation(&obs);
         assert!(np.carriages.iter().all(|c| c.harmonic.is_none()));
     }
+
+    /// C137-A · R3 — the harmony join licenses a Miss by the GLOBAL earliest Prepare, not a causally
+    /// relevant predecessor in the Miss's own domain. An early, unrelated Prepare wrongly "prepares"
+    /// a much later, locally-unprepared Miss. This PASSES today, characterizing the
+    /// stale-global-predecessor weakness; a domain-local join must pair a Miss with the Prepare that
+    /// set up ITS arrival. See docs/HUMAN_MUSIC_C137_HARDENING_LEDGER.md.
+    #[test]
+    fn c137a_r3_a_global_prepare_licenses_an_unrelated_later_miss() {
+        use MeaningKind as K;
+        // One early, unrelated Prepare in the intro (beat 6, before the lead enters at beat 8).
+        // Much later, phrase 5 (beat 40) develops the germ, and a Miss lands at beat 42 with NO
+        // Prepare anywhere near it. The only Prepare in the whole song is the early, unrelated one.
+        let obs = Observation {
+            events: vec![
+                theme(1, K::Learn),
+                ev(Lane::Harmony, 2, 6.0, K::Prepare(Level::High)),
+                theme(5, K::Develop),
+                ev(Lane::Harmony, 9, 42.0, K::Miss(Level::Mid)),
+            ],
+        };
+        let np = NarrativePlan::from_observation(&obs);
+        let p5 = np.at(5).expect("phrase 5 is a carriage");
+        assert!(
+            p5.harmonic.is_some(),
+            "C137-A R3: the late Miss is joined to phrase 5 purely because a global-earliest Prepare \
+             (beat 6) precedes it — the join does not require a Prepare in the Miss's own domain"
+        );
+    }
 }
