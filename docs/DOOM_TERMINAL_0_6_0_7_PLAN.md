@@ -141,7 +141,7 @@ Minimal implementation:
 
 ### Audio, intentionally decoupled
 
-**Playable Doom does not depend on GSPU-FM being finished.** v0.7 can be no-audio, or use a lawful separately implemented/optional sound backend if it fits.
+**Playable Doom does not depend on MeatsackProjection's physical implementation or GSPU-FM being finished.** v0.7 can be no-audio, or use a lawful separately implemented/optional sound backend if it fits.
 
 Later, when the independent [GSPU-FM design](https://github.com/femboy2112/libgibson/blob/research/humanmusic-gspu-fm-2026-10-09/docs/HUMAN_MUSIC_GSPU_FM.md) becomes code, route Doom's MUS/GENMIDI-related music intents through an **OPL2/OPL3-compatible** program/channel allocation layer. Generic 4-op Genesis/OPN2 synthesis is *not* the same as authentic Doom Sound Blaster music. Audibly recognizable OPL emulation must use chip-appropriate algorithms, voices, envelopes, rhythm/percussion behavior and instrumentation, with reference tests; do not "convert MUS to MIDI" and declare exact AdLib playback.
 
@@ -155,7 +155,7 @@ Initial proposal, subject to feature additions:
 
 | Proposed milestone | Purpose | Non-negotiable exit |
 |---|---|---|
-| 0.5 | finish current C137/Meatsack and active graphic/temporal work on their own branches | accepted upstream heads, no retroactive promises |
+| 0.5 | C137 and active graphic/temporal closeout; Meatsack handoff remains a separately gated research/implementation program | accepted relevant heads and documented boundaries, no forced Meatsack completion |
 | **0.6** | reusable bulk raster + structured input C API, SDK/C++ wrapper | independent external C/C++ consumer passes |
 | **0.7** | GPL-contained Doomgeneric adapter powered by public C SDK | *real playable game* through LibGibson in a terminal; honest terminal constraints |
 | **0.8** | deliberate feature-family bridge (Scene, Story, temporal, graphics, audio) | foreign-language representation/ownership/controls defined; no decorative parity claims |
