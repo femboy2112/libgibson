@@ -1806,4 +1806,36 @@ mod tests {
             );
         }
     }
+
+    /// GEN-STORY-1 floor: the opt-in `NarrativePolicy` surface exists, defaults OFF, and is VISIBLE to
+    /// the fingerprint when on. The audio-level byte-exact floor is already guarded by
+    /// `gen3_lead_life_is_byte_exact_off_and_active_on` above: adding an *archived* narrative field
+    /// leaves BAND's frozen score/perf fingerprints untouched, because the canonical encoding omits an
+    /// archived narrative entirely and nothing reads the policy until GEN-STORY-2 wires μ(song) into
+    /// the performance. This test proves the remaining half — the opt-in is not invisible.
+    #[test]
+    fn gen_story1_narrative_is_off_by_default_and_fingerprint_visible_on() {
+        use super::super::fingerprint::CanonicalFingerprint;
+        use super::super::policy::{NarrativePolicy, PerformanceProfile};
+
+        // The surface defaults to OFF — the lead carries every site (v0.4).
+        assert_eq!(
+            PerformanceProfile::WRITTEN.narrative,
+            NarrativePolicy::Archived
+        );
+        assert_eq!(
+            PerformanceProfile::BAND.narrative,
+            NarrativePolicy::Archived
+        );
+
+        // Turning it to Ensemble is VISIBLE to the profile fingerprint — an invisible opt-in is a
+        // silent no-op, which is exactly the failure GEN-3 taught us to assert against.
+        assert_ne!(
+            PerformanceProfile::BAND.canonical_fingerprint(),
+            PerformanceProfile::BAND
+                .with_narrative(NarrativePolicy::Ensemble)
+                .canonical_fingerprint(),
+            "Ensemble must change the profile fingerprint"
+        );
+    }
 }

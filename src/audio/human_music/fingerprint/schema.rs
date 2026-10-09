@@ -1759,6 +1759,7 @@ impl CanonicalFingerprint for policy::PerformanceProfile {
             harmony,
             functions,
             lead_life,
+            narrative,
             repair,
         } = self;
         w.field("pitch", pitch);
@@ -1783,6 +1784,18 @@ impl CanonicalFingerprint for policy::PerformanceProfile {
         }
         if *lead_life != policy::LeadLifePolicy::default() {
             w.field("lead_life", lead_life);
+        }
+        if *narrative != policy::NarrativePolicy::Archived {
+            w.field("narrative", narrative);
+        }
+    }
+}
+impl CanonicalFingerprint for policy::NarrativePolicy {
+    fn encode(&self, w: &mut FingerprintWriter) {
+        w.tag("policy/NarrativePolicy/v1");
+        match self {
+            Self::Archived => w.tag("archived"),
+            Self::Ensemble => w.tag("ensemble"),
         }
     }
 }
