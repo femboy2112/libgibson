@@ -35,6 +35,14 @@
 //! * `--germ=seed` — hand the composer a clear hand-authored question→answer hook instead of its
 //!   grammar-searched germ (the chooser-vs-developer diagnostic): if seeding the obvious hook
 //!   coheres, melodic SELECTION is the weak link; if not, DEVELOPMENT is.
+//! * `--matrix` — render the 2×2 `narrative {off,Ensemble}` × `lead_life {off, dev+dynamics}`
+//!   audition instead of the default 2 arms. The default `band`/`story` arms both inherit
+//!   `BAND.lead_life = {off,off,off}` — the v0.4 robotic lead (fixed rhythm, constant velocity).
+//!   This cell turns ON the already-built lead DEVELOPMENT and DYNAMICS axes (spacing held off,
+//!   a separate later contrast) to hear whether a developing, breathing lead is the missing
+//!   information. Every default is untouched; all four cells hold one fixed song/chart/trace/
+//!   world/tempo/seed so only the two policy axes vary. The summary prints the `lead_life` that
+//!   actually reached the PerformancePlan as the witness.
 //!
 //! A listening instrument on the beef-up branch, not shipped.
 
@@ -46,7 +54,7 @@ use gibson::audio::{
         functor::{perform_with_profile, Composition},
         motif::Motif,
         performance::PerformanceOptions,
-        policy::{NarrativePolicy, PerformanceProfile},
+        policy::{LeadLifePolicy, NarrativePolicy, PerformanceProfile},
         score::Role,
         semantic::{calm_loop, deflected_lift_trace, false_climax, intro_demo, rise_unresolved},
         synth::StemMask,
@@ -226,13 +234,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         m.lead = false;
         m
     };
-    let arms: [(&str, PerformanceProfile); 2] = [
-        ("band", PerformanceProfile::BAND),
-        (
-            "story",
-            PerformanceProfile::BAND.with_narrative(NarrativePolicy::Ensemble),
-        ),
-    ];
+    // `--matrix`: the 2×2 discriminating audition (narrative OFF/ON × lead-life OFF/ON). The audit
+    // (PR #93) proved the default `band`/`story` arms both inherit `BAND.lead_life={off,off,off}`,
+    // so the earlier "sounds the same" verdict was rendered on the v0.4 robotic lead. This turns on
+    // the DEVELOPMENT (per-statement rhythm: antecedent states, consequent answers, returns develop
+    // further) and DYNAMICS (per-note arc) axes — spacing held off as a separate later contrast.
+    let lead_devdyn = LeadLifePolicy {
+        development: true,
+        spacing: false,
+        dynamics: true,
+    };
+    let matrix = args.iter().any(|a| a == "--matrix");
+    let arms: Vec<(&str, PerformanceProfile)> = if matrix {
+        vec![
+            // narrative OFF × lead OFF — the v0.4 control (= the old `band` arm).
+            ("band", PerformanceProfile::BAND),
+            // narrative OFF × lead ON — does a living lead alone revive it?
+            (
+                "band_lead",
+                PerformanceProfile::BAND.with_lead_life(lead_devdyn),
+            ),
+            // narrative ON × lead OFF — the arm Leah judged "same shape" (= the old `story` arm).
+            (
+                "story",
+                PerformanceProfile::BAND.with_narrative(NarrativePolicy::Ensemble),
+            ),
+            // narrative ON × lead ON — the audit's proposed combined arm: band handoff + living lead.
+            (
+                "story_lead",
+                PerformanceProfile::BAND
+                    .with_lead_life(lead_devdyn)
+                    .with_narrative(NarrativePolicy::Ensemble),
+            ),
+        ]
+    } else {
+        vec![
+            ("band", PerformanceProfile::BAND),
+            (
+                "story",
+                PerformanceProfile::BAND.with_narrative(NarrativePolicy::Ensemble),
+            ),
+        ]
+    };
 
     let chart_kind = match arg("--chart=").as_deref() {
         Some("travel") | Some("traveling") => "travel",
@@ -261,11 +304,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &world,
             no_lead,
         )?;
+        let ll = c.perf.lead_life;
         writeln!(
             summary,
-            "[{name:<5}] score={:016x} narrative={} {}\n         full: {full}\n         no-lead: {nl}",
+            "[{name:<10}] score={:016x} narrative={} lead_life(dev={} spc={} dyn={}) {}\n         full: {full}\n         no-lead: {nl}",
             c.score.fingerprint(),
             c.perf.narrative.is_some(),
+            ll.development as u8,
+            ll.spacing as u8,
+            ll.dynamics as u8,
             shape(&c),
         )?;
     }
