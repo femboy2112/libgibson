@@ -106,28 +106,62 @@ intent, and deliver for the maintainer's ear. This establishes **where the gener
 versus the probe, so every later rung is real work measured against a known baseline rather than a
 guess. Also surfaces whether `BAND`'s existing pocket / vocabulary already lands.
 
-### GEN-1 — ensemble throughput with provenance
+**R0 ear verdict (2026-10-09, re-scopes the ladder).** The BAND ensemble "sounds real... in the
+pocket"; the information content comes from the **depth/stability of the band's harmonic+rhythmic
+interaction orbit**, NOT raw note count. The LEAD VOCAL is the one degenerate axis ("robotic"). So:
+GEN-1 as density-stacking is **cancelled** (the band already delivers the orbit); GEN-2 (pocket) is
+**confirmed** by ear; **GEN-3 (the lead) is promoted to the priority rung.** "Turning it up to
+Casiopea" (tempo/throughput) is a later knob, after the lead.
 
-The probe's accepted density = melodic bass (chord-tone arpeggio + chromatic approaches),
-syncopated counter-comp in the holes, 16th drive — **interlocking, not piling up**. `SupportPolicy`
-already lets support *hear* the harmony; the gap is **complementary rhythmic density allocated at
-the `budget::allocate` seam** (`performance.rs:876` / `budget.rs:119`), each added onset carrying a
-provenance (whose lane, why), written into a `SonorityPlan`-shaped statement (`sonority.rs:400`).
-New opt-in policy (working name `DensityPolicy`/`ComplementPolicy`). **Invariant:** density must
-have provenance; no voice redundantly states the full chord.
+### GEN-1 — ensemble throughput ✔ banked (do not build)
 
-### GEN-2 — pocket (likely already lifted; verify)
+R0 settled this: the band's information content is the depth of its *interaction orbit*, not onset
+count, and BAND already delivers it (bass/keys re-plan per bar from the shared `AccentGrid` +
+`perf.ensemble` with per-bar kinetic velocity). No density-stacking. If a later Casiopea push wants
+more throughput it rides the *existing* ensemble interaction, never a pile of redundant onsets.
 
-`POCKET`/`BAND` already apply `PulsePolicy::POCKET`. R0 tells us whether the generator's pocket
-already matches the accepted feel; if so, GEN-2 is a confirmation, not a build. Structured /
-relational only — **never** per-note onset jitter (standing rule).
+### GEN-2 — pocket ✔ confirmed (do not build)
 
-### GEN-3 — rhythmically-alive lead / motif development
+`POCKET`/`BAND` already apply `PulsePolicy::POCKET`; R0 confirmed the band is in the pocket by ear.
+Done. Structured / relational only — **never** per-note onset jitter (standing rule).
 
-The probe proved a static 1-2-3 lead is death. The melody/motif generator (`melody.rs`,
-`motif.rs`, `song.rs`) must **develop the germ** with live rhythm (syncopation, 8th/16th runs,
-pickups, antecedent/consequent) rather than restate a fixed figure. New opt-in policy governing
-melodic rhythmic development.
+### GEN-3 — the alive lead (PRIORITY; verified diagnosis below)
+
+**Verified root cause (against source).** The lead's rhythm is **not generated — it is copied.**
+In the `StablePropulsion` regime the thesis is a single pinned vector (`song.rs:300-305`: degrees
+`[0,2,4,2,7,4,2,0]`, rhythm `[0.5,0.5,1,0.5,0.5,1,0.5,1.5]`) and `song.rs:313-316` stamps the
+*identical* motif onto every site. The statement loop (`interaction.rs:453-576`) plays
+`site.motif` verbatim (`:532-536`); realization keeps the motif's onsets exactly
+(`motif.rs` `melodic_events` — "its rhythm and identity are kept"), choosing pitch only. Every lead
+statement therefore carries the same rhythm; measured IOIs are only eighths + quarters, no
+sixteenths, no syncopation, no development. The pocket/expression layer **cannot** fix this: the
+contract protects structural-note onset/duration/velocity (`expression.rs:23-24`, `project`
+`:37-47`) — it only re-grids *optional connective* notes. The band is alive because it re-plans per
+bar from the accent grid; the lead never reads those per-bar signals. **Two confounded drivers of
+"robotic"** (per the recon, unresolved): (1) *content repetition* — the same figure ×7; (2)
+*metronomic spacing* — the 2-bar boundary snap (`interaction.rs:568`). A clean fix exposes them as
+**separate toggles** so the ear isolates the real driver.
+
+**The fix must be a source/plan-time change**, before `melody.rs:254` (`authored = notes.clone()`).
+Mirror the `functions: FunctionPolicy` path — the only existing policy that already reaches the lead
+planner (`interaction.rs:335,356`). New opt-in `LeadRhythmPolicy { #[default] Written, Alive }` (+
+field on `PerformanceProfile` next to `functions`, `policy.rs:198`; `WRITTEN`→`Written`; `BAND`
+chains `with_lead_rhythm(Alive)`), threaded via `AdmissionInputs` (`performance.rs:405-419`) into the
+plan like `functions`. Sub-axes, each its own toggle for the A/B:
+
+- **3a — rhythmic development:** at `interaction.rs:532-536`, derive a per-statement rhythmic variant
+  of `site.motif` — inputs: statement index in the phrase, antecedent/consequent role (first states,
+  second *answers*), and the same `accent.at_beat` syncopation/pickup weights the bass reads. Preserve
+  the degree contour and total length (must still pass `statable` `song.rs:73` and the fit test
+  `interaction.rs:469`). Injecting here propagates to materials/budget/occupancy/answers consistently.
+- **3b — cadence/spacing:** relax the rigid 2-bar snap (`interaction.rs:568`) so statements breathe
+  with varied phrasing instead of one-per-two-bars.
+- **3c — dynamics arc:** at `melody.rs:185-203`, give the lead a per-note velocity arc (phrase contour
+  + metric weight + per-bar kinetic, as `bass.rs:350` does) — the lead currently has none.
+
+**Must stay a no-op** on the cover path (`interaction.rs:450`, `cover_constraints.source_notes`) and
+under `Language::Simple`. Byte-exact gating per §3: default `Written` + conditional Debug emission
+(`if self.lead_rhythm != Written`), exactly the `functions` precedent.
 
 ### GEN-4 — prepared harmonic travel (hardest; solves the open residual)
 
