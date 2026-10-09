@@ -182,6 +182,43 @@ fn narrative_carries_the_harmonic_deflection() {
     );
 }
 
+/// SEARCH (ignored diagnostic) — sweep (trace x seed x beats) for a generated song whose narrative
+/// fires a lawful lead withhold (a Miss landing on a non-protected lead phrase). Run with:
+/// `cargo test -p libgibson --lib narrative_join_probes::search_for_withhold -- --ignored --nocapture`
+#[test]
+#[ignore = "diagnostic search, not a gate"]
+fn search_for_withhold() {
+    let mut hits = 0;
+    for (tn, tf) in deflecting_traces() {
+        for beats in [64.0, 80.0, 96.0, 112.0, 120.0, 128.0, 160.0] {
+            for seed in 0u64..64 {
+                let song = SongMap::compose(
+                    &tf(beats),
+                    seed,
+                    Some(CompositionGrammar::DeflectedLift),
+                    Composer::MeaningDirected,
+                );
+                let np = NarrativePlan::from_observation(&MeaningPlan::observe(&song));
+                if let Some(c) = np
+                    .carriages
+                    .iter()
+                    .find(|c| c.lead_role == LeadRole::Withheld)
+                {
+                    println!(
+                        "WITHHOLD  trace={tn} beats={beats} seed={seed}  phrase={} meaning={:?} harmonic={:?}",
+                        c.phrase, c.meaning, c.harmonic
+                    );
+                    hits += 1;
+                    if hits >= 12 {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    println!("total withhold-firing fixtures found: {hits}");
+}
+
 /// GEN-STORY-4 — the join is a correct NO-OP on the judged voice: at `grammar=None` there is no
 /// harmony lane, so no deflection is carried and nothing withholds.
 #[test]
@@ -198,5 +235,133 @@ fn join_is_a_no_op_on_the_judged_voice() {
             .iter()
             .all(|c| c.harmonic.is_none() && c.lead_role == LeadRole::Stating),
         "no harmony lane -> no deflection, no withhold"
+    );
+}
+
+/// The canonical GEN-STORY withhold fixture: `rise_unresolved` at 160 beats, composed WITH the
+/// deflecting grammar, is the generated song whose μ aligns a harmonic `Miss` with a non-protected
+/// `Develop` lead phrase — so the ear-proved beat (lead withholds, keys carry the dark) fires from
+/// the GENERATOR, not a hand-authored score. Found by `search_for_withhold`; the fixture that the
+/// later stages (enactment, receipt, mutations, render) exercise.
+pub(super) fn withhold_fixture() -> SongMap {
+    SongMap::compose(
+        &rise_unresolved(160.0),
+        SEED,
+        Some(CompositionGrammar::DeflectedLift),
+        Composer::MeaningDirected,
+    )
+}
+
+/// MEASUREMENT (prints; asserts only the honest observed state) — how much does the realized
+/// SCORE actually change when the withhold fires? Perform the fixture under BAND and under
+/// BAND+Ensemble, and count lead/keys notes inside the withheld phrase's window. This is the §3
+/// "eliminate vacuous carrier success" instrument: it REJECTS an overclaim, it never certifies the
+/// ear. Run: `cargo test -p libgibson --lib narrative_join_probes::measure_withhold -- --nocapture`
+#[test]
+fn measure_withhold_enactment() {
+    use super::functor::perform_with_profile;
+    use super::performance::PerformanceOptions;
+    use super::policy::{NarrativePolicy, PerformanceProfile};
+    use super::score::Role;
+    use super::world::MusicWorld;
+
+    let song = withhold_fixture();
+    let np = NarrativePlan::from_observation(&MeaningPlan::observe(&song));
+    let held = np
+        .carriages
+        .iter()
+        .find(|c| c.lead_role == LeadRole::Withheld)
+        .expect("fixture withholds");
+    let phrase = held.phrase;
+    let w = song
+        .plan
+        .form
+        .phrases
+        .iter()
+        .find(|p| p.ix == phrase)
+        .expect("phrase exists");
+    let (lo, hi) = (w.start_beat(), w.end_beat());
+    let world = MusicWorld::black_ice();
+
+    let perform = |profile: PerformanceProfile| {
+        perform_with_profile(&song, &world, PerformanceOptions::default(), profile)
+            .unwrap()
+            .score
+    };
+    let band_score = perform(PerformanceProfile::BAND);
+    let story_score = perform(PerformanceProfile::BAND.with_narrative(NarrativePolicy::Ensemble));
+    let in_window = |score: &super::score::Score, role: Role| -> usize {
+        score
+            .notes
+            .iter()
+            .filter(|n| n.role == role && n.start_beat >= lo - 1e-6 && n.start_beat < hi - 1e-6)
+            .count()
+    };
+    let whole = |score: &super::score::Score, role: Role| -> usize {
+        score.notes.iter().filter(|n| n.role == role).count()
+    };
+    let (bl, bk) = (
+        in_window(&band_score, Role::Lead),
+        in_window(&band_score, Role::Keys),
+    );
+    let (sl, sk) = (
+        in_window(&story_score, Role::Lead),
+        in_window(&story_score, Role::Keys),
+    );
+    println!(
+        "withheld phrase {phrase} @[{lo:.0}..{hi:.0}]  BAND: lead={bl} keys={bk}   STORY: lead={sl} keys={sk}"
+    );
+    println!(
+        "whole song  BAND: lead={} keys={} bass={}   STORY: lead={} keys={} bass={}",
+        whole(&band_score, Role::Lead),
+        whole(&band_score, Role::Keys),
+        whole(&band_score, Role::Bass),
+        whole(&story_score, Role::Lead),
+        whole(&story_score, Role::Keys),
+        whole(&story_score, Role::Bass),
+    );
+    // Pinned honest finding: the withhold is REAL and substantial — the lead genuinely steps aside
+    // in the window (not a cosmetic one-note change) — and the band is still present to hold the
+    // phrase. The ear decides whether it reads as a withhold; this only guards against an overclaim.
+    assert!(
+        sl < bl,
+        "the withhold must genuinely reduce the lead in the window ({sl} vs {bl})"
+    );
+    assert!(
+        sk > 0,
+        "the band must still be present in the withheld phrase"
+    );
+}
+
+/// GEN-STORY-5 — a lawful lead withhold fires on a GENERATED song. Phrase 5 develops the germ while
+/// the chart misses a prepared arrival; the lead steps aside and the keys carry the dark, and a
+/// protected statement elsewhere keeps its lead.
+#[test]
+fn a_generated_song_withholds_the_lead() {
+    let song = withhold_fixture();
+    let np = NarrativePlan::from_observation(&MeaningPlan::observe(&song));
+
+    let held = np
+        .carriages
+        .iter()
+        .find(|c| c.lead_role == LeadRole::Withheld)
+        .expect("the fixture must withhold the lead somewhere");
+    assert_eq!(
+        held.meaning,
+        K::Develop,
+        "the withhold is over a transformation, never a statement"
+    );
+    let h = held
+        .harmonic
+        .expect("a withhold is justified by a carried deflection");
+    assert_eq!(h.carrier, Agent::Keys, "the keys carry the dark");
+
+    // A protected statement still sounds from the lead somewhere in the same song.
+    assert!(
+        np.carriages.iter().any(|c| matches!(
+            c.meaning,
+            K::Learn | K::Payoff | K::Answer(_) | K::Recognize
+        ) && c.lead_role == LeadRole::Stating),
+        "withholding one transformation must not silence the protected statements"
     );
 }
