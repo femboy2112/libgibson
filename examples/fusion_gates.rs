@@ -24,9 +24,11 @@ use gibson::audio::human_music::{
     policy::PerformanceProfile,
     score::{Role, Score},
     semantic::deflected_lift_trace,
+    synth::StemMask,
     theory::Mode,
-    MusicWorld, SongMap,
+    HumanMusicSynth, MusicWorld, SongMap,
 };
+use gibson::audio::{wav::write_wav_i16, OfflineRenderer, SampleRate};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 const BPB: f64 = 4.0;
@@ -644,6 +646,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let path = format!("{dir}/fusion_{seed}.tsv");
             std::fs::write(&path, dump_tsv(&c.score))?;
             println!("dumped calibration-format TSV: {path}");
+        }
+        if let Some(dir) = arg("--wav=") {
+            std::fs::create_dir_all(&dir)?;
+            let rate = SampleRate::new(48_000).ok_or("zero sample rate")?;
+            let mut synth = HumanMusicSynth::new(&c.score, &world, rate);
+            synth.set_stem_mask(StemMask::full());
+            let frames = synth.total_samples();
+            let audio = OfflineRenderer::new(rate, 256)
+                .render(&mut synth, frames)
+                .audio;
+            let path = format!("{dir}/fusion_{seed}_mix.wav");
+            write_wav_i16(&path, &audio, rate)?;
+            println!(
+                "wrote {path} (peak {:.3}, rms {:.3}, {} frames)",
+                audio.peak(),
+                audio.rms(),
+                audio.frames()
+            );
         }
         runs.push(Run {
             seed,
