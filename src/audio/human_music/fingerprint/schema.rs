@@ -1132,6 +1132,7 @@ impl CanonicalFingerprint for performance::PerformancePlan {
             functions,
             lead_life,
             narrative,
+            drive,
         } = self;
         w.tag("performance/PerformancePlan/v2");
         w.field("language", language);
@@ -1171,6 +1172,12 @@ impl CanonicalFingerprint for performance::PerformancePlan {
         }
         if let Some(n) = narrative {
             w.field("narrative", n);
+        }
+        // THE CAR: fold the drive switch in ONLY when engaged, exactly like lead_life/narrative
+        // above. Off is the historical default, so it contributes nothing and every historical
+        // plan fingerprint stays byte-identical; on marks the driving performance apart.
+        if *drive {
+            w.field("drive", drive);
         }
     }
 }

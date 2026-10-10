@@ -473,6 +473,10 @@ fn plan_and_realize_inner(
                     "the argument's required harmonic commitment is infeasible",
                 )
             })?;
+            // THE CAR: this is the ONLY place the drive-chain engages. The argument route — and
+            // nothing else — gets the driving kick/hats/bass. Re-set every rehearsal pass because
+            // `perf` is rebuilt fresh each pass above.
+            perf.drive = true;
         }
         let score = realize_policy_with_argument(song, world, &perf, profile, observed, argument)
             .map_err(|e| super::cover::CoverError::Invalid(e.0))?;

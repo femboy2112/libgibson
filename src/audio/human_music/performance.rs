@@ -333,6 +333,12 @@ pub struct PerformancePlan {
     /// μ(song) — or `None` on every historical path and whenever μ never leaves the lead. Opt-in via
     /// [`super::policy::NarrativePolicy::Ensemble`].
     pub narrative: Option<super::narrative::NarrativePlan>,
+    /// THE CAR: the drive-chain switch. True ONLY on the argument/fusion route — set in
+    /// [`super::functor`]'s planner right after the argument is installed, re-set each rehearsal
+    /// pass. Off (the default) is the byte-exact historical pocket; on lets the kick/hats/bass
+    /// realizers run the teacher's driving pattern. Default false keeps every non-argument render
+    /// sample-for-sample identical — the whole acceptance invariant rides on that.
+    pub drive: bool,
 }
 
 /// The ordinary twin of the cover path's settlement planner: a song obligation the discourse
@@ -897,6 +903,8 @@ impl PerformancePlan {
             functions: admission.functions,
             lead_life: admission.lead_life,
             narrative,
+            // Default OFF: a bare plan drives nothing. The argument route flips it on later.
+            drive: false,
         };
         // 8. The shared complexity budget: the lead's statements and the planned answers and
         //    figures are reserved, the rest is shared out to the accompanists.

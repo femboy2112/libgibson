@@ -560,9 +560,7 @@ fn evaluate(inp: &Input) -> Vec<Gate> {
                 .notes
                 .iter()
                 .filter(|n| {
-                    n.role != Role::Lead
-                        && n.t >= w as f64 * 16.0
-                        && n.t < w as f64 * 16.0 + 16.0
+                    n.role != Role::Lead && n.t >= w as f64 * 16.0 && n.t < w as f64 * 16.0 + 16.0
                 })
                 .map(|n| n.v)
                 .collect();
@@ -664,9 +662,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.iter()
             .find_map(|a| a.strip_prefix(p).map(str::to_string))
     };
+    // THE CAR (edit A, harness only — NOT gated): the teacher drives at 138 BPM; ours idled at
+    // 108. Pure time-scale on the default; --tempo= still overrides.
     let tempo: f32 = arg("--tempo=")
         .and_then(|s| s.parse().ok())
-        .unwrap_or(108.0);
+        .unwrap_or(138.0);
     let beats: f64 = arg("--beats=")
         .and_then(|s| s.parse().ok())
         .unwrap_or(128.0);
