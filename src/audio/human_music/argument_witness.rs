@@ -254,7 +254,7 @@ pub fn verify(compiled: &CompiledArgument, score: &Score) -> Vec<ArgumentViolati
             // symbolic contract property proven in `MusicalArgument::validate`, while this witness
             // still verifies the hook's OWN notes are actually played (below). The antecedent's
             // ordering is enforced via `depends_on`.
-            ArgumentRelation::Consequent { .. } => Vec::new(),
+            ArgumentRelation::Consequent { .. } | ArgumentRelation::Depart { .. } => Vec::new(),
             ArgumentRelation::Reconcile { left, right } => vec![left, right],
         };
         if required.iter().any(|id| !step.depends_on.contains(id)) {

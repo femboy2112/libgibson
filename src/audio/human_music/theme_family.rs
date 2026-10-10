@@ -311,6 +311,33 @@ fn step_rate(events: &[MaterialEvent]) -> f64 {
     steps as f64 / (p.len() - 1) as f64
 }
 
+/// Whether `b` contains a ≥`len`-note interval-sign contour that also appears in `a` (a recycled
+/// cell). The bridge's melodic kinship to the hook is carried by recycled cells, not by a new tune.
+fn shares_contour_cell(a: &[MaterialEvent], b: &[MaterialEvent], len: usize) -> bool {
+    let signs = |ev: &[MaterialEvent]| -> Vec<i32> {
+        let p = pitched(ev);
+        p.windows(2).map(|w| (w[1].1 - w[0].1).signum()).collect()
+    };
+    let sa = signs(a);
+    let sb = signs(b);
+    if len == 0 || sa.len() < len || sb.len() < len {
+        return false;
+    }
+    sb.windows(len).any(|wb| sa.windows(len).any(|wa| wa == wb))
+}
+
+/// The `Departure` law (hook → bridge): a real bridge TAKES the material somewhere different, but —
+/// per the teacher — by HARMONY, register and rhythm, NOT by a melodically unrelated tune. It
+/// recycles a hook cell (shared contour), lifts the register (mean ≥ the hook's), and ends OPEN on a
+/// tendency tone wanting the return. The harmonic departure itself is carried by the route, not here.
+/// A relabelled restatement of the hook (same register, Closed) is rejected.
+pub fn is_departure(hook: &[MaterialEvent], bridge: &[MaterialEvent]) -> bool {
+    shares_contour_cell(hook, bridge, 3)
+        && mean_pitch(bridge) >= mean_pitch(hook)
+        && ArrivalKind::of(bridge) == Some(ArrivalKind::Open)
+        && scale_pool_fraction(bridge) >= 0.95
+}
+
 // ---------------------------------------------------------------------------------------------
 // Generator. Produces fresh seeded material that satisfies the laws above by construction; the
 // predicates remain the independent gate (the builder asserts them before returning).
@@ -535,6 +562,133 @@ fn fallback_pair(span: f64, beats_per_bar: f64) -> ThemePair {
     ThemePair { verse, hook }
 }
 
+/// Generate a bridge phrase that DEPARTS from the hook: it recycles the hook's opening contour cell
+/// (so it still belongs to the song), lifts the register, thins the rhythm to a quarter/eighth grid
+/// (no sixteenths — the teacher's bridge drops its fast motion), and ends OPEN on the leading tone,
+/// wanting the return. The harmonic departure is carried by the route's bridge progression; here the
+/// melody provides the register climb and the open cadence. Asserted to satisfy [`is_departure`].
+pub fn generate_bridge(
+    seed: u64,
+    hook: &[MaterialEvent],
+    span: f64,
+    beats_per_bar: f64,
+) -> Vec<MaterialEvent> {
+    for salt in 0..64u64 {
+        let child = (seed ^ 0xB41D_6EC1_37D0)
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            .wrapping_add(salt.wrapping_mul(0xD1B5_4A32_D192_ED03));
+        let mut r = Rng::new(child);
+        let bridge = try_bridge(&mut r, hook, span, beats_per_bar);
+        if is_departure(hook, &bridge) {
+            return bridge;
+        }
+    }
+    fallback_bridge(hook, span, beats_per_bar)
+}
+
+fn try_bridge(
+    rng: &mut Rng,
+    hook: &[MaterialEvent],
+    span: f64,
+    beats_per_bar: f64,
+) -> Vec<MaterialEvent> {
+    let hp = pitched(hook);
+    // The recycled cell: the hook's opening three-note contour (interval signs), lifted.
+    let cell_signs: Vec<i32> = if hp.len() >= 3 {
+        vec![(hp[1].1 - hp[0].1).signum(), (hp[2].1 - hp[1].1).signum()]
+    } else {
+        vec![1, 1]
+    };
+    let lift = 3 + rng.below(3) as i32; // raise the register above the hook
+    let base_mean = mean_pitch(hook).round() as i32;
+    // Thinned grid: a note on each beat and a couple of off-beats, over `span` beats.
+    let bars = (span / beats_per_bar).round().max(1.0) as usize;
+    let mut out: Vec<MaterialEvent> = Vec::new();
+    let open_tones = [11, 7]; // leading tone, or the fifth: both Open, both tendency tones
+    let open = open_tones[rng.below(open_tones.len())];
+    let mut cur = snap_aeolian(base_mean + lift);
+    for bar in 0..bars {
+        let base = bar as f64 * beats_per_bar;
+        let is_last = bar + 1 == bars;
+        let onsets: &[f64] = if is_last {
+            &[0.0, 1.0, 2.0]
+        } else {
+            &[0.0, 1.0, 2.0, 3.0]
+        };
+        for (i, &o) in onsets.iter().enumerate() {
+            if base + o >= span {
+                break;
+            }
+            let last = is_last && i + 1 == onsets.len();
+            // Recycle the cell contour across the bridge, climbing (ExpandingRamp).
+            let sign = cell_signs[i % cell_signs.len()];
+            let climb = 1 + bar as i32; // each bar reaches a little higher
+            cur = snap_aeolian(
+                (cur + sign * (1 + rng.below(2) as i32) + if i == 0 { climb } else { 0 }).max(0),
+            );
+            let dur = if last {
+                (span - (base + o)).max(1.0)
+            } else {
+                1.0
+            };
+            let accent = if i == 0 { 0.9 } else { 0.76 };
+            out.push(ev(base + o, dur, accent, cur));
+            if last {
+                break;
+            }
+        }
+    }
+    // End OPEN on the chosen tendency tone, a register above the hook.
+    if let Some(e) = out.last_mut() {
+        let octave = (mean_pitch(hook) as i32 + lift).div_euclid(12).max(0);
+        e.step = Some(octave * 12 + open);
+    }
+    out
+}
+
+fn fallback_bridge(hook: &[MaterialEvent], span: f64, beats_per_bar: f64) -> Vec<MaterialEvent> {
+    // A deterministic lawful bridge: a rising cell that recycles the hook's up-contour, thinned, and
+    // ends open on the leading tone an octave up.
+    let lift = 5;
+    let m = (mean_pitch(hook) as i32 + lift).max(5);
+    let bars = (span / beats_per_bar).round().max(1.0) as usize;
+    let mut out = Vec::new();
+    let mut cur = snap_aeolian(m);
+    for bar in 0..bars {
+        let base = bar as f64 * beats_per_bar;
+        let is_last = bar + 1 == bars;
+        let onsets: &[f64] = if is_last {
+            &[0.0, 2.0]
+        } else {
+            &[0.0, 1.0, 2.0, 3.0]
+        };
+        for (i, &o) in onsets.iter().enumerate() {
+            if base + o >= span {
+                break;
+            }
+            let last = is_last && i + 1 == onsets.len();
+            cur = snap_aeolian(
+                (cur + if i % 2 == 0 { 2 } else { -1 } + if i == 0 { bar as i32 } else { 0 })
+                    .max(0),
+            );
+            let dur = if last {
+                (span - (base + o)).max(1.0)
+            } else {
+                1.0
+            };
+            out.push(ev(base + o, dur, if i == 0 { 0.9 } else { 0.76 }, cur));
+            if last {
+                break;
+            }
+        }
+    }
+    if let Some(e) = out.last_mut() {
+        let octave = ((mean_pitch(hook) as i32 + lift).div_euclid(12)).max(1);
+        e.step = Some(octave * 12 + LEADING_TONE);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -662,5 +816,26 @@ mod tests {
         // Only the tonic itself is Closed, regardless of how it was approached.
         let ends_home = vec![ev(0.0, 1.0, 0.9, 7), ev(2.0, 2.0, 0.8, 12)];
         assert_eq!(ArrivalKind::of(&ends_home), Some(ArrivalKind::Closed));
+    }
+
+    #[test]
+    fn generated_bridge_is_a_lawful_departure_of_the_hook() {
+        for seed in [1u64, 2, 19, 701, 2112, 0xDEAD_BEEF] {
+            let hook = generate_pair(seed, SPAN, BPB).hook;
+            let bridge = generate_bridge(seed, &hook, 8.0, BPB);
+            assert!(
+                is_departure(&hook, &bridge),
+                "seed {seed}: bridge is not a lawful departure of the hook"
+            );
+            // It takes the material UP and leaves it OPEN (wanting the return).
+            assert_eq!(ArrivalKind::of(&bridge), Some(ArrivalKind::Open));
+        }
+    }
+
+    #[test]
+    fn a_hook_copy_is_not_a_departure() {
+        let hook = generate_pair(2112, SPAN, BPB).hook;
+        // The hook itself (same register, Closed) is a restatement, never a bridge departure.
+        assert!(!is_departure(&hook, &hook));
     }
 }
