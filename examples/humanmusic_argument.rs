@@ -24,6 +24,7 @@ use gibson::audio::{
         semantic::deflected_lift_trace,
         synth::StemMask,
         theory::Mode,
+        voice::VoiceEventId,
         HumanMusicSynth, MusicWorld, SongMap,
     },
     wav::write_wav_i16,
@@ -56,6 +57,11 @@ fn source_note(note: &Note, compiled: &CompiledArgument) -> bool {
             .filter_map(|a| role(*a))
             .any(|r| inside(note, p, r))
     })
+}
+
+fn prune_continuities(score: &mut Score) {
+    let remaining: Vec<_> = score.notes.iter().map(VoiceEventId::of).collect();
+    score.voice_continuity.retain(|edge| remaining.contains(&edge.from) && remaining.contains(&edge.to));
 }
 
 fn pcm(
@@ -177,7 +183,7 @@ impl Packet<'_> {
         source_only.notes.retain(|n| source_note(n, compiled));
         source_only.drums.clear();
         source_only.sfx.clear();
-        source_only.voice_continuity.clear();
+        prune_continuities(&mut source_only);
         self.emit(
             &source_only,
             world,
@@ -189,7 +195,7 @@ impl Packet<'_> {
         )?;
         let mut ablated = c.score.clone();
         ablated.notes.retain(|n| !source_note(n, compiled));
-        ablated.voice_continuity.clear();
+        prune_continuities(&mut ablated);
         let ablation_pcm = pcm(&ablated, world, StemMask::full(), self.rate, 256)?;
         for placement in &compiled.placements {
             let factor = self.rate.as_f64() * 60.0 / f64::from(c.score.tempo_bpm);
@@ -251,6 +257,7 @@ impl Packet<'_> {
         let mut missing = c.score.clone();
         let last = compiled.placements.last().ok_or("missing return")?;
         missing.notes.retain(|n| !inside(n, last, Role::Keys));
+        prune_continuities(&mut missing);
         if observe_argument(compiled, &missing, world.tonic_pc).valid() {
             return Err("missing carrier falsely accepted".into());
         }

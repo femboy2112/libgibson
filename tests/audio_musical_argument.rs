@@ -387,3 +387,30 @@ fn pcm_exposure_is_a_separate_reject_only_gate_and_metadata_is_pcm_inert() {
         "PCM is block-size reproducible"
     );
 }
+
+#[test]
+fn a_full_generated_score_is_pcm_invariant_under_inactive_family_metadata() {
+    let (compiled, mut score) = composition(ArgumentFamily::CallAndEarnedAnswer, 770_947);
+    let original = render(&score, StemMask::full(), 64);
+    let signature = observe_argument(&compiled, &score, 9).signature().to_vec();
+    let muted = render(&score, StemMask::silent(), 64);
+    assert!(observe_argument(&compiled, &score, 9).valid());
+    assert!(
+        acoustic_exposure(&muted, &muted, 0, muted.frames()).reject_absent_signal,
+        "correct source with hidden PCM exposure was accepted acoustically"
+    );
+    // family is outside VoiceEventId and DSP scheduling. role_note/motif_id
+    // are active continuity identity fields and are not claimed inert here.
+    for note in &mut score.notes {
+        note.prov.family = Some("inactive-family-annotation");
+    }
+    assert_eq!(
+        signature,
+        observe_argument(&compiled, &score, 9).signature()
+    );
+    assert_eq!(
+        original,
+        render(&score, StemMask::full(), 64),
+        "inactive family metadata changed actual full-song PCM"
+    );
+}
