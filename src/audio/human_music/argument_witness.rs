@@ -437,6 +437,14 @@ fn expected_events(
     if source.pitch_basis != PitchBasis::Semitones {
         return None;
     }
+    // The carrier's sounding velocity is its authored accent scaled by this placement's declared
+    // section dynamic (the same product the transport applies). The witness verifies that exact
+    // product rather than the bare accent, so the lead may breathe across sections AND stay checked.
+    let gain = compiled
+        .placements
+        .iter()
+        .find(|p| p.step == id)
+        .map_or(1.0, |p| p.section_gain);
     if step.transform.time_denominator == 0 || step.transform.time_numerator == 0 {
         return None;
     }
@@ -450,7 +458,7 @@ fn expected_events(
                 e.onset * scale,
                 e.dur * scale,
                 e.step? + 12 * i32::from(step.transform.transpose_octaves),
-                e.accent,
+                (e.accent * gain).clamp(0.0, 1.0),
             ))
         })
         .collect::<Option<_>>()?;
@@ -466,7 +474,7 @@ fn expected_events(
             start,
             completion.dur * scale,
             completion.step + 12 * i32::from(step.transform.transpose_octaves),
-            1.0,
+            gain.clamp(0.0, 1.0),
         ));
     }
     Some(result)

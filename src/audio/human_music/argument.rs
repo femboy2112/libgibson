@@ -282,6 +282,29 @@ pub struct ArgumentPlacement {
     pub carriers: Vec<Agent>,
     /// Semitones from the performance world's tonic, fixed for the entire argument.
     pub anchor_semitones: i32,
+    /// A declared section dynamic for this statement: the carrier's sounding velocity is
+    /// `accent * section_gain` (attenuation; `section_gain <= 1.0`). This is the argument's OWN
+    /// dynamic arc — the verse held back, the hook and return at full, the bridge building — planned
+    /// upstream so dependent players hear the dynamics they themselves end up playing, and VERIFIED
+    /// by the independent witness (it is a declared product, never a random per-note jitter).
+    pub section_gain: f32,
+}
+
+/// The declared section dynamic (attenuation, `<= 1.0`) for a statement of this relation — the
+/// argument's own energy arc. The verse is held back; the hook and answer/return arrive at full;
+/// the bridge builds; a denial dips. Structured and relational (standing rule), never random.
+fn section_gain_for(relation: ArgumentRelation) -> f32 {
+    match relation {
+        ArgumentRelation::Establish => 0.74,
+        ArgumentRelation::Question { .. } => 0.74,
+        ArgumentRelation::Develop { .. } => 0.86,
+        ArgumentRelation::Depart { .. } => 0.90,
+        ArgumentRelation::Denial { .. } => 0.70,
+        ArgumentRelation::Consequent { .. } => 0.98,
+        ArgumentRelation::Answer { .. } => 1.0,
+        ArgumentRelation::Return { .. } => 1.0,
+        ArgumentRelation::Reconcile { .. } => 0.90,
+    }
 }
 
 /// A wrapper instead of additional fields in the established public `SongMap` structure.
@@ -618,6 +641,7 @@ impl MusicalArgument {
                 pitch_basis: source.pitch_basis,
                 carriers: step.carriers.clone(),
                 anchor_semitones: 0,
+                section_gain: section_gain_for(step.relation),
             };
             let arrangement = &mut song.plan.arrangement.phrases[phrase_ix];
             // A handed-off statement has one foreground speaker. The old lead must not keep
