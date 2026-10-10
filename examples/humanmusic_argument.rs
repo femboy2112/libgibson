@@ -61,7 +61,9 @@ fn source_note(note: &Note, compiled: &CompiledArgument) -> bool {
 
 fn prune_continuities(score: &mut Score) {
     let remaining: Vec<_> = score.notes.iter().map(VoiceEventId::of).collect();
-    score.voice_continuity.retain(|edge| remaining.contains(&edge.from) && remaining.contains(&edge.to));
+    score
+        .voice_continuity
+        .retain(|edge| remaining.contains(&edge.from) && remaining.contains(&edge.to));
 }
 
 fn pcm(
