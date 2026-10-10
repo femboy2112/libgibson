@@ -59,6 +59,44 @@ fn source_note(note: &Note, compiled: &CompiledArgument) -> bool {
     })
 }
 
+/// C2.3 — the section-energy terrace, derived from the argument's OWN relations (not the trace):
+/// the verse breathes soft, the develop builds, a denial dips, the answer and return pay off.
+/// Ramped linearly between placement starts so every backing note lands at its own level — this is
+/// what turns the generator's flat 5-distinct-velocity band into the teacher's 43-distinct breath.
+/// Structured and relational, never random jitter (standing rule).
+fn section_energy(compiled: &CompiledArgument, beat: f64) -> f32 {
+    let target = |r: &ArgumentRelation| -> f32 {
+        match r {
+            ArgumentRelation::Establish => 0.88,
+            ArgumentRelation::Question { .. } => 0.82,
+            ArgumentRelation::Develop { .. } => 0.92,
+            ArgumentRelation::Denial { .. } => 0.74,
+            ArgumentRelation::Answer { .. } => 1.00,
+            ArgumentRelation::Return { .. } => 1.04,
+            _ => 0.90, // Reconcile (family C) and any future relation: neutral, not used here
+        }
+    };
+    let mut anchors: Vec<(f64, f32)> = compiled
+        .placements
+        .iter()
+        .map(|p| (p.start_beat, target(&p.relation)))
+        .collect();
+    anchors.sort_by(|a, b| a.0.total_cmp(&b.0));
+    if anchors.is_empty() {
+        return 1.0;
+    }
+    if beat <= anchors[0].0 {
+        return 0.80; // intro / pre-roll: the band holds back before the song states itself
+    }
+    for w in anchors.windows(2) {
+        if beat >= w[0].0 && beat <= w[1].0 {
+            let t = ((beat - w[0].0) / (w[1].0 - w[0].0)) as f32;
+            return w[0].1 + (w[1].1 - w[0].1) * t;
+        }
+    }
+    anchors.last().unwrap().1
+}
+
 fn prune_continuities(score: &mut Score) {
     let remaining: Vec<_> = score.notes.iter().map(VoiceEventId::of).collect();
     score
@@ -350,15 +388,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ] {
                 let argument = MusicalArgument::calibration(family, *seed)?;
                 let compiled = argument.compile(&base)?;
-                let c = perform_argument(
+                let mut c = perform_argument(
                     &compiled,
                     &world,
                     PerformanceOptions {
                         actions: false,
                         ..PerformanceOptions::default()
                     },
-                    PerformanceProfile::BAND,
+                    // The lead is the crux: keep it alive (per-statement rhythm development +
+                    // dynamics) so the sung germ breathes instead of restating one frozen shape.
+                    PerformanceProfile::BAND.with_lead_life(LeadLifePolicy {
+                        development: true,
+                        spacing: false,
+                        dynamics: true,
+                    }),
                 )?;
+                // C2.3 — make the band BREATHE. Terrace the NON-source backing velocities (comp,
+                // bass fills, pad, drums) by the section-energy arc; the witnessed source-carrier
+                // notes keep their authored accents exactly, so the independent witness still holds.
+                let energy: Vec<f32> = c
+                    .score
+                    .notes
+                    .iter()
+                    .map(|n| {
+                        if source_note(n, &compiled) {
+                            1.0
+                        } else {
+                            section_energy(&compiled, n.start_beat)
+                        }
+                    })
+                    .collect();
+                for (n, e) in c.score.notes.iter_mut().zip(energy) {
+                    n.velocity = (n.velocity * e).clamp(0.05, 1.0);
+                }
+                for d in c.score.drums.iter_mut() {
+                    d.velocity =
+                        (d.velocity * section_energy(&compiled, d.start_beat)).clamp(0.05, 1.0);
+                }
                 packet.argument(
                     &compiled,
                     &c,

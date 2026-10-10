@@ -671,51 +671,51 @@ impl MusicalArgument {
             return Err(ArgumentError::UnsupportedFamily);
         }
         let mut rng = Rng::new(seed ^ 0xA261_7E57_5EED);
-        let reach = if rng.chance(0.5) { 7 } else { 14 };
-        let pickup = if rng.chance(0.5) { 0.5 } else { 0.75 };
-        let middle = if rng.chance(0.5) { 7 } else { 14 };
-        // A rootless ninth/fifth proposition receives its tonic only in the declared consequence.
-        // Over the prepared V7, this same head consists exclusively of root and fifth. The tonic
-        // and eventual consequence supply home; the source does not smuggle an avoid-eleventh
-        // into the dominant or a major third into a darker world.
-        let steps = [2, reach, 2, middle, 7, 2];
-        let onsets = [0.0, pickup, 1.25, 2.0, 2.75, 3.5];
-        let events = steps
-            .into_iter()
-            .zip(onsets)
-            .enumerate()
-            .map(|(i, (step, onset))| MaterialEvent {
-                onset,
-                dur: if i == 5 {
-                    0.4
-                } else {
-                    0.3 + 0.1 * rng.below(3) as f64
-                },
-                accent: if i == 0 {
-                    1.0
-                } else if i == 3 {
-                    0.9
-                } else {
-                    0.7
-                },
-                step: Some(step),
-            })
-            .collect();
-        let referent = MusicalReferent {
+        // C2.2 — a RICHER melodic theme (the lead crux). NOTE: the argument contract models the
+        // antecedent/consequent of ONE theme (an answer must share the question's head+length, octave
+        // and time-scale aside — `same_head`), so a distinct verse+hook PAIR of two tunes is NOT
+        // expressible here without extending the contract. This is the contract-respecting step: one
+        // reaching ~6.5-beat theme (11 notes, vs the old 6-note germ) that opens on the rootless
+        // 2nd->5th germ leap, reaches the octave peak, and HANGS on the 2nd (step 2 = a question that
+        // wants home). The Answer/Return steps resolve it to the tonic via their completion. Steps are
+        // semitones from the tonic in the world's A-Aeolian; ~6.5 beats fits every phrase span.
+        let peak = if rng.chance(0.5) { 10 } else { 12 };
+        let theme = MusicalReferent {
             id: ReferentId(0),
             pitch_basis: PitchBasis::Semitones,
-            events,
+            events: [
+                (0.0, 2, 0.5, 1.00),
+                (0.5, 7, 0.5, 0.82),
+                (1.0, 10, 0.5, 0.80),
+                (1.5, peak, 0.75, 0.95),
+                (2.25, 10, 0.5, 0.78),
+                (2.75, 7, 0.5, 0.74),
+                (3.25, 5, 0.5, 0.72),
+                (3.75, 7, 0.5, 0.78),
+                (4.25, 5, 0.25, 0.72),
+                (4.5, 2, 0.5, 0.70),
+            ]
+            .into_iter()
+            .map(|(onset, step, dur, accent)| MaterialEvent {
+                onset,
+                dur,
+                accent,
+                step: Some(step),
+            })
+            .collect(),
         };
         let terminal = Completion { step: 0, dur: 1.0 };
         let complete = ArgumentTransform {
             completion: Some(terminal),
             ..ArgumentTransform::default()
         };
-        let augmented = ArgumentTransform {
-            time_numerator: 3,
-            time_denominator: 2,
-            ..ArgumentTransform::default()
-        };
+        // Claude integration fix (pocket drift): the former 3/2 `augmented` time-scale mapped the
+        // source's 0.25-grid onsets onto a 0.125 grid, so the carrier drifted out of phase against
+        // the band's pocket (audible from ~beat 83 of the Develop, and again in the Answer/Return).
+        // The only time ratio that is both pocket-coherent and fits the 8-beat answer/return spans is
+        // 1/1, so the calibration now develops by carrier / relation / register (the hand-authored
+        // teacher's device) and never by a grid-fighting tempo ratio. The general rational
+        // time-scaling capability remains available in `ArgumentTransform` for other arguments.
         let make = |id, transform, relation, depends_on, carriers| ArgumentStep {
             id: ArgumentStepId(id),
             referent: ReferentId(0),
@@ -767,41 +767,39 @@ impl MusicalArgument {
                     source: ArgumentStepId(1),
                 },
                 vec![ArgumentStepId(1)],
-                vec![Agent::Keys],
+                // Teacher-faithful: the lead STAYS singing the germ while keys join (a reinforce,
+                // not a handoff). The tune is the crux; the band develops around it, it does not
+                // replace it. Only family B's Denial drops the lead, as a single dramatic absence.
+                vec![Agent::Lead, Agent::Keys],
             ));
         }
         let development = program.len() as u8;
         program.push(make(
             development,
-            augmented,
+            ArgumentTransform::default(),
             ArgumentRelation::Develop {
                 source: ArgumentStepId(1),
             },
             vec![ArgumentStepId(1)],
-            vec![Agent::Bass],
+            // Lead stays on the tune; bass joins underneath (develop, not handoff).
+            vec![Agent::Lead, Agent::Bass],
         ));
         let answer = program.len() as u8;
         program.push(make(
             answer,
-            ArgumentTransform {
-                completion: Some(terminal),
-                ..augmented
-            },
+            complete,
             ArgumentRelation::Answer {
                 question: ArgumentStepId(1),
             },
             vec![ArgumentStepId(1), ArgumentStepId(development)],
-            vec![Agent::Keys],
+            // Lead answers its own question (resolves to the tonic); keys join for the arrival.
+            vec![Agent::Lead, Agent::Keys],
         ));
         let returning = program.len() as u8;
-        let returned = if family == ArgumentFamily::PromiseDeniedReturn {
-            ArgumentTransform {
-                completion: Some(terminal),
-                ..augmented
-            }
-        } else {
-            complete
-        };
+        // Both families return via `complete` (1/1 + terminal): the A/B contrast is carried by
+        // step 2 (B denies with a substituted completion; A keeps the question open), not by a
+        // drifting time-scale on the return.
+        let returned = complete;
         program.push(make(
             returning,
             returned,
@@ -813,7 +811,7 @@ impl MusicalArgument {
         ));
         let argument = Self {
             family,
-            referents: vec![referent],
+            referents: vec![theme],
             steps: program,
             ending: ArgumentEnding::Resolved,
         };
