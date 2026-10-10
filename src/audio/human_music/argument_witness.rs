@@ -249,6 +249,12 @@ pub fn verify(compiled: &CompiledArgument, score: &Score) -> Vec<ArgumentViolati
             ArgumentRelation::Denial { question } | ArgumentRelation::Answer { question } => {
                 vec![question]
             }
+            // A consequent is intentionally a DIFFERENT referent (the hook, not the verse), so it is
+            // exempt from the same-referent carriage check here; its kinship to the antecedent is a
+            // symbolic contract property proven in `MusicalArgument::validate`, while this witness
+            // still verifies the hook's OWN notes are actually played (below). The antecedent's
+            // ordering is enforced via `depends_on`.
+            ArgumentRelation::Consequent { .. } => Vec::new(),
             ArgumentRelation::Reconcile { left, right } => vec![left, right],
         };
         if required.iter().any(|id| !step.depends_on.contains(id)) {

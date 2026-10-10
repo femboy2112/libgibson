@@ -172,6 +172,13 @@ pub enum ArgumentRelation {
     Return {
         source: ArgumentStepId,
     },
+    /// A distinct-but-related consequent of an earlier phrase: the HOOK answering the VERSE. Unlike
+    /// [`ArgumentRelation::Answer`] (which restates the same theme to pay a literal open question),
+    /// a consequent is a *different tune* that shares the antecedent's defining DNA and lands home.
+    /// Its lawfulness is the [`super::theme_family`] `AlteredConsequent` law, not `same_head`.
+    Consequent {
+        antecedent: ArgumentStepId,
+    },
     /// Reserved, rejected by the current validator instead of falsely certifying simultaneity.
     Reconcile {
         left: ArgumentStepId,
@@ -188,6 +195,7 @@ impl ArgumentRelation {
             Self::Denial { .. } => "denial",
             Self::Answer { .. } => "answer",
             Self::Return { .. } => "return",
+            Self::Consequent { .. } => "consequent",
             Self::Reconcile { .. } => "reconcile",
         }
     }
@@ -199,6 +207,7 @@ impl ArgumentRelation {
                 Some(source)
             }
             Self::Denial { question } | Self::Answer { question } => Some(question),
+            Self::Consequent { antecedent } => Some(antecedent),
             Self::Reconcile { .. } => None,
         }
     }
@@ -209,7 +218,7 @@ impl ArgumentRelation {
             Self::Question { .. } => DiscourseRole::Question,
             Self::Develop { .. } => DiscourseRole::Depart,
             Self::Denial { .. } => DiscourseRole::Withhold,
-            Self::Answer { .. } => DiscourseRole::Answer,
+            Self::Answer { .. } | Self::Consequent { .. } => DiscourseRole::Answer,
             Self::Return { .. } | Self::Reconcile { .. } => DiscourseRole::Return,
         }
     }
@@ -296,7 +305,14 @@ pub enum ArgumentError {
     IncompatibleTonalRegion,
     InsufficientPhrases,
     SourceDoesNotFit(ArgumentStepId),
+    /// A `Consequent` step is not a lawful altered-consequent of its antecedent (it is a
+    /// restatement, a rigid transposition, or an unrelated tune).
+    ConsequentNotRelated(ArgumentStepId),
 }
+
+/// The canonical bar used when measuring thematic kinship on referent material (before the
+/// material is mapped to a concrete phrase span). The teacher writes four-beat bars.
+const KINSHIP_BEATS_PER_BAR: f64 = 4.0;
 
 impl fmt::Display for ArgumentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -398,8 +414,13 @@ impl MusicalArgument {
                     .get(&predecessor)
                     .ok_or(ArgumentError::MissingDependency(step.id))?;
                 let earlier_source = referents[&earlier.referent];
-                if !same_head(&earlier_source.events, &source.events, source.events.len())
-                    || earlier_source.events.len() != source.events.len()
+                // Literal carriage (Question/Answer/Denial/Develop/Return) requires exact source
+                // identity (`same_head`). A Consequent is a genuinely DISTINCT tune, so it is exempt
+                // from exact identity here and instead proven by the `theme_family`
+                // `AlteredConsequent` kinship law in its own match arm below.
+                if !matches!(step.relation, ArgumentRelation::Consequent { .. })
+                    && (!same_head(&earlier_source.events, &source.events, source.events.len())
+                        || earlier_source.events.len() != source.events.len())
                 {
                     return Err(ArgumentError::WrongSource(step.id));
                 }
@@ -451,6 +472,20 @@ impl MusicalArgument {
                             || !same_head(earlier_events, &events, source.events.len())
                         {
                             return Err(ArgumentError::UnpreparedDenial(step.id));
+                        }
+                    }
+                    ArgumentRelation::Consequent { .. } => {
+                        // The hook must be a lawful altered-consequent of the antecedent's performed
+                        // material: it shares the head/skeleton/contour, lands home where the
+                        // antecedent hung open, and is genuinely re-voiced — never a restatement or a
+                        // rigid transposition (the exact clause the archived `same_head` route misses).
+                        let kin = super::theme_family::Kinship::measure(
+                            earlier_events,
+                            &events,
+                            KINSHIP_BEATS_PER_BAR,
+                        );
+                        if !kin.altered_consequent() {
+                            return Err(ArgumentError::ConsequentNotRelated(step.id));
                         }
                     }
                     ArgumentRelation::Return { .. } | ArgumentRelation::Develop { .. }
@@ -547,9 +582,9 @@ impl MusicalArgument {
                 ArgumentRelation::Question { .. } => Closure::Half,
                 ArgumentRelation::Denial { .. } => Closure::Deceptive,
                 ArgumentRelation::Develop { .. } => Closure::Open,
-                ArgumentRelation::Answer { .. } | ArgumentRelation::Return { .. } => {
-                    Closure::Strong
-                }
+                ArgumentRelation::Answer { .. }
+                | ArgumentRelation::Return { .. }
+                | ArgumentRelation::Consequent { .. } => Closure::Strong,
                 _ => Closure::Weak,
             };
             goal.refers_to = relation
@@ -648,7 +683,9 @@ impl MusicalArgument {
                     ArgumentRelation::Question { .. } | ArgumentRelation::Denial { .. } => {
                         Handoff::Call
                     }
-                    ArgumentRelation::Answer { .. } => Handoff::Consequent,
+                    ArgumentRelation::Answer { .. } | ArgumentRelation::Consequent { .. } => {
+                        Handoff::Consequent
+                    }
                     _ => Handoff::Develop,
                 },
             })
@@ -813,6 +850,75 @@ impl MusicalArgument {
             family,
             referents: vec![theme],
             steps: program,
+            ending: ArgumentEnding::Resolved,
+        };
+        argument.validate()?;
+        Ok(argument)
+    }
+
+    /// A generated song argument from a real [`super::theme_family`] VERSE/HOOK pair.
+    ///
+    /// Unlike [`MusicalArgument::calibration`] — one ten-note theme restated six ways, which the
+    /// maintainer heard as a single ambiguous idea — this states a verse that hangs OPEN, then a
+    /// genuinely DISTINCT-but-related hook that lands HOME, and alternates them across the form.
+    /// The two are different tunes that belong to the same song: the thematic-identity count the
+    /// one-theme contract could not reach. `span` is the phrase length the material must fit (the
+    /// base form's phrase span in beats); the pair is generated to fill it. Seeded and reproducible.
+    pub fn fusion(seed: u64, span: f64) -> Result<Self, ArgumentError> {
+        let pair = super::theme_family::generate_pair(seed, span, KINSHIP_BEATS_PER_BAR);
+        let verse = MusicalReferent {
+            id: ReferentId(0),
+            pitch_basis: PitchBasis::Semitones,
+            events: pair.verse,
+        };
+        let hook = MusicalReferent {
+            id: ReferentId(1),
+            pitch_basis: PitchBasis::Semitones,
+            events: pair.hook,
+        };
+        let step = |id: u8, referent, relation, depends_on| ArgumentStep {
+            id: ArgumentStepId(id),
+            referent,
+            transform: ArgumentTransform::default(),
+            relation,
+            depends_on,
+            carriers: vec![Agent::Lead],
+        };
+        // Verse (Open) → Hook (Consequent, Closed), stated three times so the two tunes alternate
+        // and the listener hears a verse and a recognizably different hook, not one idea six ways.
+        let steps = vec![
+            step(0, ReferentId(0), ArgumentRelation::Establish, vec![]),
+            step(
+                1,
+                ReferentId(1),
+                ArgumentRelation::Consequent {
+                    antecedent: ArgumentStepId(0),
+                },
+                vec![ArgumentStepId(0)],
+            ),
+            step(2, ReferentId(0), ArgumentRelation::Establish, vec![]),
+            step(
+                3,
+                ReferentId(1),
+                ArgumentRelation::Consequent {
+                    antecedent: ArgumentStepId(2),
+                },
+                vec![ArgumentStepId(2)],
+            ),
+            step(4, ReferentId(0), ArgumentRelation::Establish, vec![]),
+            step(
+                5,
+                ReferentId(1),
+                ArgumentRelation::Consequent {
+                    antecedent: ArgumentStepId(4),
+                },
+                vec![ArgumentStepId(4)],
+            ),
+        ];
+        let argument = Self {
+            family: ArgumentFamily::CallAndEarnedAnswer,
+            referents: vec![verse, hook],
+            steps,
             ending: ArgumentEnding::Resolved,
         };
         argument.validate()?;
@@ -1082,5 +1188,70 @@ mod tests {
                 .map(|s| s.chord)
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn fusion_states_a_distinct_verse_and_hook_that_is_not_the_same_tune() {
+        let base = SongMap::build(
+            &demo_trace(160.0),
+            17,
+            Some(CompositionGrammar::DeflectedLift),
+        );
+        let span = base
+            .plan
+            .form
+            .phrases
+            .iter()
+            .map(|p| p.end_beat() - p.start_beat())
+            .fold(f64::INFINITY, f64::min);
+        for seed in [1u64, 2, 19, 701, 2112, 0xDEAD_BEEF] {
+            let argument = MusicalArgument::fusion(seed, span).unwrap();
+            // Two distinct referents (verse + hook), not one theme restated.
+            assert_eq!(argument.referents.len(), 2);
+            let verse = &argument.referents[0].events;
+            let hook = &argument.referents[1].events;
+            // The hook is genuinely a DIFFERENT tune: it would FAIL the archived exact-identity
+            // rule (this is the one-theme wall the Consequent relation breaks).
+            assert!(
+                !same_head(verse, hook, verse.len().min(hook.len())),
+                "seed {seed}: the hook must not be an exact-head restatement of the verse"
+            );
+            // But it IS a lawful altered-consequent (shares DNA, lands home where the verse hung open).
+            let kin =
+                super::super::theme_family::Kinship::measure(verse, hook, KINSHIP_BEATS_PER_BAR);
+            assert!(
+                kin.altered_consequent(),
+                "seed {seed}: hook not a lawful consequent: {kin:?}"
+            );
+            // And it compiles onto the production form.
+            let compiled = argument.compile(&base).unwrap();
+            assert_eq!(compiled.placements.len(), argument.steps.len());
+        }
+    }
+
+    #[test]
+    fn a_rigid_transposition_consequent_is_rejected_as_a_restatement() {
+        let base = SongMap::build(
+            &demo_trace(160.0),
+            17,
+            Some(CompositionGrammar::DeflectedLift),
+        );
+        let span = base.plan.form.phrases[0].end_beat() - base.plan.form.phrases[0].start_beat();
+        let mut argument = MusicalArgument::fusion(7, span).unwrap();
+        // Replace the hook referent with a rigid +5-semitone transposition of the verse: it shares
+        // every interval exactly (a restatement in disguise). The contract must refuse it.
+        let shifted: Vec<MaterialEvent> = argument.referents[0]
+            .events
+            .iter()
+            .map(|e| MaterialEvent {
+                step: e.step.map(|s| s + 5),
+                ..*e
+            })
+            .collect();
+        argument.referents[1].events = shifted;
+        assert!(matches!(
+            argument.validate(),
+            Err(ArgumentError::ConsequentNotRelated(_))
+        ));
     }
 }
