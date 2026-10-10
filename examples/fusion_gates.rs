@@ -547,6 +547,43 @@ fn evaluate(inp: &Input) -> Vec<Gate> {
             pass: grids.len() >= 3,
         });
     }
+
+    // R-DYN: the BACKING (every non-lead pitched voice) per-16-beat-window mean-velocity range —
+    // does the whole BAND breathe, or play one flat wall at a single dynamic? This is the band's
+    // analog of R9 (which measures only the lead). A flat backing — every window the same velocity
+    // — collapses to ~0.0 and fails; the teacher's band and the section-energy arc span a real
+    // range. The anti-Goodhart guard for "the band is all going full blast at the same energy":
+    // it rewards dynamic RANGE, never note count, so it cannot be gamed by piling on events.
+    let bm: Vec<f64> = (0..nw)
+        .filter_map(|w| {
+            let v: Vec<f64> = inp
+                .notes
+                .iter()
+                .filter(|n| {
+                    n.role != Role::Lead
+                        && n.t >= w as f64 * 16.0
+                        && n.t < w as f64 * 16.0 + 16.0
+                })
+                .map(|n| n.v)
+                .collect();
+            (!v.is_empty()).then(|| v.iter().sum::<f64>() / v.len() as f64)
+        })
+        .collect();
+    let brange = if bm.is_empty() {
+        0.0
+    } else {
+        bm.iter().copied().fold(f64::MIN, f64::max) - bm.iter().copied().fold(f64::MAX, f64::min)
+    };
+    g.push(Gate {
+        name: "R-DYN backing window mean-vel range",
+        measured: format!(
+            "{} {:?}",
+            round_to(brange, 3),
+            bm.iter().map(|x| round_to(*x, 3)).collect::<Vec<_>>()
+        ),
+        floor: ">=0.08 (the band breathes, not a flat wall)",
+        pass: brange >= 0.08,
+    });
     g
 }
 

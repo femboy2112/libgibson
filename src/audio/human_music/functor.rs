@@ -365,6 +365,30 @@ pub fn perform_argument(
     })
 }
 
+/// Multiply a backing voice's sounding velocity by the argument's declared section energy at each
+/// note's onset — the band's dynamic arc. Structured and relational (the arc is a product of the
+/// discourse relation placed over this beat), never a random per-note jitter. The lead carrier is
+/// shaped by its own `section_gain` and is never passed here.
+fn scale_backing_by_section_energy(
+    notes: &mut [Note],
+    argument: &super::argument::CompiledArgument,
+) {
+    for n in notes.iter_mut() {
+        n.velocity = (n.velocity * argument.backing_energy_at(n.start_beat)).clamp(0.02, 1.0);
+    }
+}
+
+/// The drum-kit companion of [`scale_backing_by_section_energy`]: the kit recedes in the verse and
+/// arrives in the hook and return with the rest of the band.
+fn scale_drums_by_section_energy(
+    hits: &mut [super::score::DrumHit],
+    argument: &super::argument::CompiledArgument,
+) {
+    for h in hits.iter_mut() {
+        h.velocity = (h.velocity * argument.backing_energy_at(h.start_beat)).clamp(0.02, 1.0);
+    }
+}
+
 /// A performance under explicit laws, not yet judged: exactly [`perform_with_profile`]. The
 /// candidate a checked route admits or rejects — kept so a rejected take can still be inspected
 /// and heard.
@@ -668,7 +692,7 @@ fn realize_policy_with_argument(
             .hearings
             .push(Hearing::of(listener, Role::Lead, &lead.notes));
     }
-    let (pad, keys, bass) = match perf.coupling {
+    let (mut pad, mut keys, mut bass) = match perf.coupling {
         // The surgical arm realizes the R7b band first, note for note; it repairs afterwards.
         EnsembleCoupling::Independent | EnsembleCoupling::Surgical => {
             let mut keys = if semantic_occupancy {
@@ -1031,6 +1055,19 @@ fn realize_policy_with_argument(
             super::groove::realize_drums(perf, plan, world, seed, &bass, &lead.notes)
         }
     };
+    // The band breathes. On the opt-in argument route the whole backing — pad, keys, bass and the
+    // drums the band plays under — follows the argument's declared section energy, so the band is
+    // no longer a flat wall at one dynamic with one plan. Applied here, AFTER the drummer has
+    // already heard the band as written (the groove is computed on the written velocities, then the
+    // output recedes), and NOT to `lead.notes` (the carrier keeps its own `section_gain` arc and
+    // the independent witness that checks it). Read only when an argument is present: every
+    // historical route is byte-for-byte unchanged.
+    if let Some(argument) = argument {
+        scale_backing_by_section_energy(&mut pad, argument);
+        scale_backing_by_section_energy(&mut keys, argument);
+        scale_backing_by_section_energy(&mut bass, argument);
+        scale_drums_by_section_energy(&mut score.drums, argument);
+    }
     score.notes.extend(pad);
     score.notes.extend(keys);
     score.notes.extend(bass);

@@ -307,6 +307,28 @@ fn section_gain_for(relation: ArgumentRelation) -> f32 {
     }
 }
 
+/// The band's declared energy arc for a statement of this relation — a steeper companion to
+/// [`section_gain_for`], applied to the BACKING voices (pad/keys/bass/drums) so the whole band
+/// follows the song's dynamics instead of playing one flat wall at a single velocity. The verse
+/// pulls the band right back to let the lead speak into the space; the hook and return arrive
+/// full; the bridge departs held-back and a denial dips. Structured and relational (the standing
+/// rule), never a random per-note jitter — the arc is a product of the argument's own discourse,
+/// read only on the opt-in argument route and byte-exact off it. The range is wider than the
+/// lead's `section_gain` on purpose: the band has room to recede where the carrier does not.
+fn backing_energy_for(relation: ArgumentRelation) -> f32 {
+    match relation {
+        ArgumentRelation::Establish => 0.62,
+        ArgumentRelation::Question { .. } => 0.62,
+        ArgumentRelation::Develop { .. } => 0.78,
+        ArgumentRelation::Depart { .. } => 0.70,
+        ArgumentRelation::Denial { .. } => 0.60,
+        ArgumentRelation::Consequent { .. } => 0.95,
+        ArgumentRelation::Answer { .. } => 1.0,
+        ArgumentRelation::Return { .. } => 1.0,
+        ArgumentRelation::Reconcile { .. } => 0.86,
+    }
+}
+
 /// A wrapper instead of additional fields in the established public `SongMap` structure.
 #[derive(Debug, Clone)]
 pub struct CompiledArgument {
@@ -319,6 +341,26 @@ pub struct CompiledArgument {
     /// dominant across a whole section — the verse moves through a pre-dominant→dominant→tonic→
     /// secondary-dominant loop, the home sections land, the bridge departs and pivots back.
     pub route: Vec<(i32, Quality)>,
+}
+
+impl CompiledArgument {
+    /// The band's section energy at `beat`: the backing dynamic the argument declares where this
+    /// beat falls, carried forward from the most recent placed phrase (a gap prolongs the current
+    /// section exactly as the harmonic [`route`](Self::route) does). Before the first placement the
+    /// verse energy holds. The backing realizer multiplies each pad/keys/bass/drum note's velocity
+    /// by this value so the whole band breathes with the form; the lead carrier keeps its own
+    /// [`section_gain`](ArgumentPlacement::section_gain) and is never rescaled by this.
+    pub fn backing_energy_at(&self, beat: f64) -> f32 {
+        let mut energy = backing_energy_for(ArgumentRelation::Establish);
+        let mut best = f64::NEG_INFINITY;
+        for p in &self.placements {
+            if p.start_beat <= beat + 1e-9 && p.start_beat > best {
+                best = p.start_beat;
+                energy = backing_energy_for(p.relation);
+            }
+        }
+        energy
+    }
 }
 
 /// Region-relative functional progressions (semitones above the tonic, quality), calibrated from
