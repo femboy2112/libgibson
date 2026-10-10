@@ -62,10 +62,17 @@ chord-tone modulo mapping. Prior backing sustains crossing a reservation are cli
 
 The independent observer reads raw Score notes, reconstructs expected contents from the
 original referents with separate arithmetic, checks every carrier and declared dependency,
-and inspects actual chord pitch content at preparation/completion. It does not reuse the
+and inspects the written Score chart's root and pitch content at preparation/completion. It does not reuse the
 compiler's transform or accept IDs/provenance as a content proof. Common-tonic checking
 rejects arbitrary semitone shifts while permitting lawful octave movement. Observation
 precision is one microbeat and one millionth of accent.
+
+`Score.chords` is a written chart; the synth does not consume that field directly.
+Players are planned after the functional pin, and required thematic notes are checked
+independently. This witness does not reconstruct backing-note or PCM harmonic content.
+A chart V7 certificate must not be called an independently observed sounding V7. A
+bounded backing-note/harmonic-exposure witness remains a separate next probe alongside
+the legacy receipt bridge and human listening.
 
 | Calibration family | Current implemented slice | Acceptance boundary |
 | --- | --- | --- |
@@ -119,7 +126,7 @@ All six B comparison cells also reported one unclassified written pitch; A repor
 These limitations are recorded, not hidden by invented chord-tone tags or a target copied
 from the observation. The preserved initial render reports name their working source rather than pretending to have been built at the later commit. `BUILD_SOURCE.json` fingerprints the final replay binary's compiled files; the delivered provenance compares those files with the final committed tree. The general receipt failures remain actual measured outcomes, not green pending work.
 
-The next smallest decisive engineering step is an honest optional **read-side projection**
+The next smallest engineering step for contract integration is an honest optional **read-side projection**
 of the timed source/dependency graph into existing SongMap/performance receipts. Preserve
 pitch units and functional quality; separate any genuinely incompatible old law from a
 missing projection; do not counterfeit IDs or silently relax historic defaults to get

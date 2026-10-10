@@ -28,7 +28,7 @@ Source graph IDs live in the wrapper and transport receipts. They are not forged
 
 ## Independent contract and calibration domain
 
-The raw Score witness independently reconstructs expectations from original referents and declared licenses. It does not call the compiler's transformation or trust provenance as content proof. It checks every required carrier, source intervals in a common tonic frame, timing/gates/accents/rests, ordered dependencies, source-specific answer gluing and actual chord pitch content at the destination. Legal constant octave moves and permitted carrier/timbre changes preserve structural identity; arbitrary semitone displacement does not. The observation lattice is one microbeat and one millionth of accent. Raw matching allows 0.00001 beat float tolerance; this is a bounded observer, not exact real-number equality.
+The raw Score witness independently reconstructs expectations from original referents and declared licenses. It does not call the compiler's transformation or trust provenance as content proof. It checks every required carrier, source intervals in a common tonic frame, timing/gates/accents/rests, ordered dependencies, source-specific answer gluing and the written Score chart's root and pitch content at the destination. Legal constant octave moves and permitted carrier/timbre changes preserve structural identity; arbitrary semitone displacement does not. The observation lattice is one microbeat and one millionth of accent. Raw matching allows 0.00001 beat float tolerance; this is a bounded observer, not exact real-number equality.
 
 The finite contrast domain is A/B across predeclared fresh seeds and supported comparison worlds, plus explicitly malformed counterfactuals. The tests require distinct signatures for different generated trajectories under the same affect source. This is restricted distinguishability, not universal injectivity, a literal-language claim or a psychophysical theorem.
 
@@ -43,7 +43,7 @@ The calibration grammar is intentionally narrow. A distinct related hook exists 
 ## Separate evidence layers and unfinished bridges
 
 1. Source validation checks intention and dependency obligations.
-2. The independent Score witness checks actual source-bound realization and functional destinations.
+2. The independent Score witness checks actual source-bound note realization and the written functional chart. `Score.chords` is a chart: the synth does not read it directly. Required source notes are observed independently, but backing-note harmony and acoustic harmonic preparation are not reconstructed by this witness. Planning the players after pinned harmony is causal evidence, not an independent sounding-harmony certificate.
 3. Existing coarse commutation and general PerformanceReceipt are measured and reported separately. Their historical projections do not yet recognize the new timed-source graph. Passing the new witness does not mean `perform_checked` accepted the take, and coarse failures are not concealed by setting the target equal to the observation.
 4. PCM ablation verifies a finite contribution actually reaches output. It can reject absent/nonfinite contribution. A nonzero residual cannot prove pitch recognition, masking adequacy or comprehension. Bus meters are unsuitable because they stay active under stem muting.
 5. Blind listening records perceived relationship and artistic merit separately. No ACCEPT verdict is inferred.
