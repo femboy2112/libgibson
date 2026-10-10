@@ -329,6 +329,42 @@ pub fn perform_with_profile(
     })
 }
 
+/// Perform an explicitly compiled musical argument through the production planner and players.
+/// Required timed sources are installed before dependent players hear them. Historical entry
+/// points never pass an argument and remain unchanged. Generic ensemble narration is refused:
+/// the argument's own source-bound carrier duties are the authority on this opt-in route.
+pub fn perform_argument(
+    argument: &super::argument::CompiledArgument,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+    profile: PerformanceProfile,
+) -> Result<Composition, PolicyError> {
+    profile.validate(opts.coupling)?;
+    if opts.coupling != EnsembleCoupling::Independent
+        || profile.repair != HistoricalRepair::None
+        || profile.narrative != super::policy::NarrativePolicy::Archived
+    {
+        return Err(PolicyError("argument sources require Independent coupling, no post-hoc repair and argument-owned narration"));
+    }
+    let (perf, score) =
+        plan_and_realize_inner(&argument.song, world, opts, None, profile, Some(argument))
+            .map_err(|e| match e {
+                super::cover::CoverError::Invalid(why) => PolicyError(why),
+                _ => PolicyError("the argument planner refused its plan"),
+            })?;
+    let witness = super::argument_witness::observe_argument(argument, &score, world.tonic_pc);
+    if !witness.valid() {
+        return Err(PolicyError(
+            "the performed notes failed the independent musical-argument witness",
+        ));
+    }
+    Ok(Composition {
+        score,
+        song: argument.song.clone(),
+        perf,
+    })
+}
+
 /// A performance under explicit laws, not yet judged: exactly [`perform_with_profile`]. The
 /// candidate a checked route admits or rejects — kept so a rejected take can still be inspected
 /// and heard.
@@ -378,6 +414,17 @@ pub(crate) fn plan_and_realize(
     constraints: Option<super::cover::CoverConstraints>,
     profile: PerformanceProfile,
 ) -> Result<(PerformancePlan, Score), super::cover::CoverError> {
+    plan_and_realize_inner(song, world, opts, constraints, profile, None)
+}
+
+fn plan_and_realize_inner(
+    song: &SongMap,
+    world: &MusicWorld,
+    opts: PerformanceOptions,
+    constraints: Option<super::cover::CoverConstraints>,
+    profile: PerformanceProfile,
+    argument: Option<&super::argument::CompiledArgument>,
+) -> Result<(PerformancePlan, Score), super::cover::CoverError> {
     use super::performance::{ActionKey, AdmissionInputs};
     use super::policy::ActionAdmission;
     use super::rehearsal::{RehearsalOutcome, RehearsedVerb, REHEARSAL_FUEL};
@@ -396,7 +443,15 @@ pub(crate) fn plan_and_realize(
     for pass in 0..=REHEARSAL_FUEL {
         let mut perf =
             PerformancePlan::from_song_admitted(song, world, opts, constraints.clone(), &inputs)?;
-        let score = realize_policy(song, world, &perf, profile, observed);
+        if let Some(argument) = argument {
+            super::argument::prepare_performance(argument, &mut perf, world).map_err(|_| {
+                super::cover::CoverError::Invalid(
+                    "the argument's required harmonic commitment is infeasible",
+                )
+            })?;
+        }
+        let score = realize_policy_with_argument(song, world, &perf, profile, observed, argument)
+            .map_err(|e| super::cover::CoverError::Invalid(e.0))?;
         admit_take(&perf, &score).map_err(super::cover::CoverError::Invalid)?;
         if !rehearsed {
             return Ok((perf, score));
@@ -525,6 +580,32 @@ fn realize_policy(
     profile: PerformanceProfile,
     observed_lifetime: Option<super::voice::ObservedLifetimePolicy>,
 ) -> Score {
+    realize_policy_with_argument(song, world, perf, profile, observed_lifetime, None)
+        .expect("historical realization has no required argument sources")
+}
+
+fn realize_policy_with_argument(
+    song: &SongMap,
+    world: &MusicWorld,
+    perf: &PerformancePlan,
+    profile: PerformanceProfile,
+    observed_lifetime: Option<super::voice::ObservedLifetimePolicy>,
+    argument: Option<&super::argument::CompiledArgument>,
+) -> Result<Score, PolicyError> {
+    let install = |notes: &mut Vec<Note>, role: Role| -> Result<(), PolicyError> {
+        if let Some(argument) = argument {
+            super::argument_transport::replace_required_role(
+                notes,
+                role,
+                &argument.placements,
+                perf.region.tonic_pc,
+                &perf.contexts,
+                &song.plan,
+            )
+            .map_err(|_| PolicyError("invalid required argument source placement"))?;
+        }
+        Ok(())
+    };
     let (trace, seed, plan) = (&song.trace, song.seed, &song.plan);
     let total_beats = plan.form.total_beats;
     let mut score = Score::new(world.tempo_bpm, BEATS_PER_BAR, total_beats);
@@ -546,7 +627,7 @@ fn realize_policy(
     };
     let pocket = pulse.map(|policy| policy.source_options());
     score.mono_voice = profile.lifetime == VoiceLifetimePolicy::ExplicitContinuations;
-    let lead = match profile.expression {
+    let mut lead = match profile.expression {
         ExpressionPolicy::Pulse(policy) => {
             super::melody::realize_lead_pocketed(perf, plan, world, policy.source_options())
         }
@@ -557,7 +638,22 @@ fn realize_policy(
         ExpressionPolicy::Unchanged if temporal => super::melody::realize_lead_temporal(perf, plan),
         ExpressionPolicy::Unchanged => super::melody::realize_lead(perf, plan),
     };
-    let lead_occupancy = super::occupancy::AuthoredOccupancy::from_lead(perf, &lead.authored);
+    install(&mut lead.notes, Role::Lead)?;
+    if let Some(argument) = argument {
+        install(&mut lead.authored, Role::Lead)?;
+        // Legacy phrase-expression receipts describe the replaced source, so discard those
+        // overlapping plans rather than misreporting them as the argument's intention.
+        lead.phrase_plans.retain(|p| {
+            !argument
+                .placements
+                .iter()
+                .any(|a| Some(a.phrase) == p.phrase)
+        });
+    }
+    let mut lead_occupancy = super::occupancy::AuthoredOccupancy::from_lead(perf, &lead.authored);
+    if let Some(argument) = argument {
+        super::argument_transport::reserve_required_role(&mut lead_occupancy, &argument.placements);
+    }
     let agency = semantic_occupancy.then_some(&lead_occupancy);
     if phrase_evidence {
         score.occupancy.push(lead_occupancy.clone());
@@ -575,7 +671,7 @@ fn realize_policy(
     let (pad, keys, bass) = match perf.coupling {
         // The surgical arm realizes the R7b band first, note for note; it repairs afterwards.
         EnsembleCoupling::Independent | EnsembleCoupling::Surgical => {
-            let keys = if semantic_occupancy {
+            let mut keys = if semantic_occupancy {
                 super::comp::realize_keys_owned(
                     perf,
                     plan,
@@ -589,6 +685,7 @@ fn realize_policy(
             } else {
                 super::comp::realize_keys(perf, plan, world, &lead.notes, seed)
             };
+            install(&mut keys, Role::Keys)?;
             if profile.support != SupportPolicy::Independent {
                 // Round XIV keeps temporal bass; Round XV also hears final keys when expressing
                 // its connectives. The frozen coherent pad comes last and hears the band.
@@ -606,7 +703,7 @@ fn realize_policy(
                 let mut answered_path: Option<super::voicing::RolePath> = None;
                 let mut passes = KEYS_ANSWER_PASSES;
                 let bass = loop {
-                    let bass = if phrase_expression {
+                    let mut bass = if phrase_expression {
                         score.hearings.push(Hearing::of("bass", Role::Keys, &keys));
                         let result = if let Some(factors) = pocket {
                             super::bass::realize_bass_pocketed(
@@ -684,6 +781,31 @@ fn realize_policy(
                     } else {
                         super::bass::realize_bass_temporal(perf, plan, world, &lead.notes, &keys)
                     };
+                    install(&mut bass, Role::Bass)?;
+                    if let Some(argument) = argument {
+                        if let Some(occupancy) = score
+                            .occupancy
+                            .iter_mut()
+                            .rev()
+                            .find(|o| o.role == Role::Bass)
+                        {
+                            *occupancy = super::occupancy::AuthoredOccupancy::from_role(
+                                perf,
+                                &bass,
+                                Role::Bass,
+                            );
+                            super::argument_transport::reserve_required_role(
+                                occupancy,
+                                &argument.placements,
+                            );
+                        }
+                        score.phrase_plans.retain(|p| {
+                            !argument
+                                .placements
+                                .iter()
+                                .any(|a| Some(a.phrase) == p.phrase)
+                        });
+                    }
                     if !answers || passes == 0 {
                         break bass;
                     }
@@ -785,6 +907,7 @@ fn realize_policy(
                         break bass;
                     };
                     keys = answering;
+                    install(&mut keys, Role::Keys)?;
                     answered_path = Some(kp);
                     score.keys_voicing_edits.extend(edits);
                     score.hearings.truncate(mark.0);
@@ -858,11 +981,13 @@ fn realize_policy(
                 if profile.mass() {
                     super::comp::gate_support_mass(perf, world, &mut pad, &mut keys);
                 }
-                let bass = if temporal {
+                let mut bass = if temporal {
                     super::bass::realize_bass_temporal(perf, plan, world, &lead.notes, &keys)
                 } else {
                     super::bass::realize_bass(perf, plan, world, &lead.notes, &keys)
                 };
+                install(&mut keys, Role::Keys)?;
+                install(&mut bass, Role::Bass)?;
                 (pad, keys, bass)
             }
         }
@@ -964,7 +1089,7 @@ fn realize_policy(
         score.vertical_repairs =
             super::surgical::repair(&mut score, &perf.contexts, world, &policy, Some(&witnessed));
     }
-    score
+    Ok(score)
 }
 
 /// A realized take is admitted only when nobody sounds where the stage has them out — the one
