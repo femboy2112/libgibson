@@ -140,6 +140,9 @@ struct PNote {
 struct Input {
     notes: Vec<PNote>,
     chords: Vec<(f64, f64, String)>,
+    /// Per-span chord tones (pitch classes) — the live-render path only; empty on the TSV path.
+    /// Carries what R-ROOT needs: is a strong-beat lead note a chord tone of the chord under it.
+    chord_pcs: Vec<(f64, f64, Vec<i32>)>,
     total: f64,
 }
 
@@ -162,6 +165,11 @@ impl Input {
                 .iter()
                 .map(|c| (c.start_beat, widen(c.dur_beats), c.chord.label()))
                 .collect(),
+            chord_pcs: score
+                .chords
+                .iter()
+                .map(|c| (c.start_beat, widen(c.dur_beats), c.chord.pitch_classes()))
+                .collect(),
             total: score.total_beats,
         }
     }
@@ -172,6 +180,7 @@ impl Input {
         let mut inp = Input {
             notes: vec![],
             chords: vec![],
+            chord_pcs: vec![],
             total: 0.0,
         };
         for line in text.lines() {
@@ -475,6 +484,69 @@ fn evaluate(inp: &Input) -> Vec<Gate> {
         floor: ">=0.15",
         pass: range >= 0.15,
     });
+
+    // --- Diagnostic backstops (Citadel-Rick teacher calibration). NOT folded into the nine: they
+    // prove the lead is COMPOSED, not improvised. A random walk in scale fails R-ROOT (mean ~0.50);
+    // a single-grid loop fails R-GRID. These are the real anti-Goodhart guards — motif-count alone
+    // is gameable, so it is deliberately not a gate here. ---
+    if !inp.chord_pcs.is_empty() {
+        // R-ROOT: pooled strong-beat (beats 1 and 3) lead chord-tone fraction against the chord
+        // playing under that beat. Floor max(0.65, 0.50 + 1.16/sqrt(n)), n >= 30 strong beats.
+        let active_pcs = |t: f64| -> Option<&Vec<i32>> {
+            inp.chord_pcs
+                .iter()
+                .find(|(s, d, _)| t >= *s - 1e-6 && t < *s + *d - 1e-6)
+                .or_else(|| inp.chord_pcs.last())
+                .map(|(_, _, pcs)| pcs)
+        };
+        let mut strong = 0usize;
+        let mut rooted = 0usize;
+        for n in &body {
+            let b = n.t.rem_euclid(4.0);
+            let on_strong = b < 0.25 || (b - 2.0).abs() < 0.25 || b > 3.75;
+            if !on_strong {
+                continue;
+            }
+            strong += 1;
+            if let Some(pcs) = active_pcs(n.t) {
+                if pcs.contains(&n.p.rem_euclid(12)) {
+                    rooted += 1;
+                }
+            }
+        }
+        let frac = if strong == 0 {
+            0.0
+        } else {
+            rooted as f64 / strong as f64
+        };
+        let floor = 0.65f64.max(0.50 + 1.16 / (strong.max(1) as f64).sqrt());
+        g.push(Gate {
+            name: "R-ROOT strong-beat chord-tone fraction",
+            measured: format!("{} ({rooted}/{strong})", round_to(frac, 3)),
+            floor: "pooled >= max(0.65, 0.50+1.16/sqrt(n)), n>=30",
+            pass: strong >= 30 && frac >= floor - 1e-9,
+        });
+
+        // R-GRID: distinct lead onset grids (per-bar onset sets on the 16th grid). A single-grid
+        // loop collapses to 1; the teacher runs 5. Floor >= 3 distinct across the song.
+        use std::collections::BTreeSet;
+        let mut grids: HashSet<Vec<i64>> = HashSet::new();
+        let mut per_bar: HashMap<i64, BTreeSet<i64>> = HashMap::new();
+        for n in &body {
+            let bar = (n.t / 4.0).floor() as i64;
+            let off = ((n.t.rem_euclid(4.0)) * 4.0).round() as i64;
+            per_bar.entry(bar).or_default().insert(off);
+        }
+        for set in per_bar.values() {
+            grids.insert(set.iter().copied().collect());
+        }
+        g.push(Gate {
+            name: "R-GRID distinct lead onset grids",
+            measured: format!("{}", grids.len()),
+            floor: ">=3 across the song",
+            pass: grids.len() >= 3,
+        });
+    }
     g
 }
 
