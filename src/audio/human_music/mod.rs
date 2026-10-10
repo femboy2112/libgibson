@@ -22,6 +22,9 @@
 //! `docs/HUMAN_MUSIC_ARCHITECTURE.md` preserves the experimental lineage.
 
 pub mod action;
+pub mod argument;
+pub mod argument_transport;
+pub mod argument_witness;
 pub mod backbone;
 pub mod bass;
 pub mod budget;
