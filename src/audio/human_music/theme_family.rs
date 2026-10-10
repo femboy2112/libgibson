@@ -16,9 +16,18 @@
 //! Ear is the oracle. These predicates only ever REJECT material that is provably a clone, an
 //! unrelated tune, or a no-op relabelled as development; they never certify that anything "sounds
 //! right". A render that passes every gate here is merely *not disqualified*.
+//!
+//! The generator does NOT improvise note by note. A phrase is DERIVED from a handful of seed-chosen
+//! parameters (an arch height, a register, a signature descent cell) composed *against the harmonic
+//! route*: strong beats land on chord tones of the bar they fall in, the connecting onsets step
+//! diatonically, and each bar is a single-peak arch — the shape measured in our own teacher, whose
+//! coherence is carried by harmonic rooting, rhythm-grid reuse, and a few recurring cells rather
+//! than by interval-exact motivic transformation. The dice are rolled high (which arch, which
+//! register, which cell), never low (every note): the song is thought up, then played.
 
 use super::material::MaterialEvent;
 use super::rng::Rng;
+use super::theory::Quality;
 
 /// Scale steps (semitones from the tonic) of the natural-minor home the teacher writes in.
 pub const AEOLIAN: [i32; 7] = [0, 2, 3, 5, 7, 8, 10];
@@ -339,8 +348,74 @@ pub fn is_departure(hook: &[MaterialEvent], bridge: &[MaterialEvent]) -> bool {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Generator. Produces fresh seeded material that satisfies the laws above by construction; the
-// predicates remain the independent gate (the builder asserts them before returning).
+// Harmonic targeting. The route is region-relative (semitones above the tonic, quality) — the SAME
+// basis as a melody `step`, so a bar's chord tones are just (offset + interval) mod 12. The composer
+// pins strong beats to these so the lead is ROOTED in the harmony it plays over, not floating above
+// a scale. This is what the teacher does (strong-beat chord-tone fraction ~0.74–0.81) and what the
+// old random-walk generator never did (it only knew the global scale).
+// ---------------------------------------------------------------------------------------------
+
+/// A region-relative bar chord: `(semitones above the tonic, quality)`.
+pub type BarChord = (i32, Quality);
+
+/// The chord's tonic-relative pitch classes (root/3rd/5th/(7th), `0..=11`).
+fn chord_pcs(chord: BarChord) -> Vec<i32> {
+    chord
+        .1
+        .intervals()
+        .iter()
+        .map(|&i| (chord.0 + i).rem_euclid(12))
+        .collect()
+}
+
+/// The chord tone nearest to `near` (in `step` semitones from the tonic). Ties resolve downward.
+fn snap_chord(near: i32, chord: BarChord) -> i32 {
+    let pcs = chord_pcs(chord);
+    (0..=12)
+        .flat_map(|d| [near - d, near + d])
+        .find(|&c| pcs.contains(&c.rem_euclid(12)))
+        .unwrap_or(near)
+}
+
+/// The nearest NON-tonic chord tone to `near`: an Open arrival hangs on a tendency tone of the
+/// cadence chord, never the tonic.
+fn open_chord_tone(near: i32, chord: BarChord) -> i32 {
+    let pcs = chord_pcs(chord);
+    (0..=12)
+        .flat_map(|d| [near - d, near + d])
+        .find(|&c| {
+            let pc = c.rem_euclid(12);
+            pc != 0 && pcs.contains(&pc)
+        })
+        .unwrap_or_else(|| snap_chord(near, chord))
+}
+
+/// The nearest tonic (pitch-class 0), at or above the floor.
+fn nearest_tonic(near: i32) -> i32 {
+    let k = (f64::from(near) / 12.0).round() as i32;
+    (k * 12).max(0)
+}
+
+/// Choose a chord tone within `window` semitones of the arch target `height` — a COMPOSITIONAL
+/// choice among the harmony's own tones (root/3rd/5th/7th in some octave), seeded so different seeds
+/// voice genuinely different-but-rooted lines instead of all snapping to the one nearest tone. This
+/// is where the seed's freedom lives: not a per-note pitch dice (that was the random walk), but which
+/// consonant tone the arch lands on. Always returns a chord tone, so strong beats stay rooted.
+fn pick_chord_tone_near(rng: &mut Rng, height: i32, chord: BarChord, window: i32) -> i32 {
+    let pcs = chord_pcs(chord);
+    let cands: Vec<i32> = ((height - window)..=(height + window))
+        .filter(|t| pcs.contains(&t.rem_euclid(12)))
+        .collect();
+    if cands.is_empty() {
+        snap_chord(height, chord)
+    } else {
+        cands[rng.below(cands.len())]
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Generator. Composes phrases by DERIVING every note from the harmony and an arch — not a random
+// walk. The laws above remain the independent gate (the builder asserts them before returning).
 // ---------------------------------------------------------------------------------------------
 
 /// A generated, related pair of four-bar phrases.
@@ -373,320 +448,314 @@ fn snap_aeolian(step: i32) -> i32 {
     octave * 12 + nearest
 }
 
-/// Generate a verse/hook pair over a `span`-beat phrase of `beats_per_bar`, seeded and lawful.
-///
-/// The verse is built from a short germ cell sequenced across four bars — a rise to a climax then a
-/// settle that HANGS on an open tendency tone. The hook keeps the verse's onsets and head, lifts the
-/// register, plateaus the peaks, re-voices the interior, and lands home on the tonic. The returned
-/// pair is asserted to satisfy [`Kinship::altered_consequent`]; a seed that cannot (it is rejected
-/// by the gate) is retried deterministically, and the function cannot return an un-lawful pair.
-pub fn generate_pair(seed: u64, span: f64, beats_per_bar: f64) -> ThemePair {
-    for salt in 0..64u64 {
-        let child = (seed ^ 0x7E3E_FA33_C137_D00D)
-            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-            .wrapping_add(salt.wrapping_mul(0xD1B5_4A32_D192_ED03));
-        let mut r = Rng::new(child);
-        if let Some(pair) = try_pair(&mut r, span, beats_per_bar) {
-            let k = Kinship::measure(&pair.verse, &pair.hook, beats_per_bar);
-            if k.altered_consequent() {
-                return pair;
-            }
-        }
-    }
-    // Deterministic fallback: a hand-shaped lawful pair (still fresh material, not the teacher's).
-    fallback_pair(span, beats_per_bar)
+// Onset grids, reused FUNCTIONALLY across bars (the teacher's 16 unique bars share only 5 grids).
+// Every grid carries the two strong beats (0.0 and 2.0) so a bar is always rooted on beats 1 and 3.
+const HEAD_GRID: [f64; 6] = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0];
+const REACH_GRID: [f64; 5] = [0.0, 1.0, 1.5, 2.0, 3.0];
+const CADENCE_GRID: [f64; 5] = [0.0, 0.5, 1.0, 1.5, 2.0];
+const BRIDGE_GRID: [f64; 4] = [0.0, 1.0, 2.0, 3.0];
+const BRIDGE_CADENCE_GRID: [f64; 3] = [0.0, 1.0, 2.0];
+
+/// The handful of seed-chosen parameters a whole phrase is DERIVED from. This is the "seed level":
+/// the composer reads these and the route, and everything else is determined — no per-note dice.
+#[derive(Debug, Clone, Copy)]
+struct PhraseShape {
+    /// Register floor in semitones above the tonic (0 = verse home; lifted for hook/bridge).
+    lift: i32,
+    /// The phrase lands home on the tonic (Closed) when true, else hangs Open on a chord tone.
+    close: bool,
+    /// The climax height (steps above the tonic) the arch reaches before the cadence.
+    climax: i32,
+    /// The signature descent cell (two interval steps, each negative) stated at the cadence.
+    descent: [i32; 2],
+    /// A thinned (quarter-note) grid — the teacher's bridge drops its fast motion.
+    thin: bool,
 }
 
-fn try_pair(rng: &mut Rng, span: f64, beats_per_bar: f64) -> Option<ThemePair> {
-    // Four bars; the last bar holds a long final. Onset grid: eighths with a few sixteenths.
-    let bars = (span / beats_per_bar).round().max(1.0) as usize;
-    if bars < 2 {
-        return None;
+fn select_grid(bar: usize, is_cadence: bool, thin: bool) -> &'static [f64] {
+    match (is_cadence, thin) {
+        (true, true) => &BRIDGE_CADENCE_GRID,
+        (false, true) => &BRIDGE_GRID,
+        (true, false) => &CADENCE_GRID,
+        (false, false) if bar == 0 => &HEAD_GRID,
+        (false, false) => &REACH_GRID,
     }
-    // Open tendency tones the verse may hang on (off-tonic): the 2nd, the 5th, the ♭7.
-    let open_tones = [2, 7, 10];
-    let open = open_tones[rng.below(open_tones.len())];
+}
 
-    // Build a rhythm skeleton per bar: a pickup/eighths pattern, with the final bar settling.
-    let mut verse: Vec<MaterialEvent> = Vec::new();
-    // A germ contour for bar 0 (rising), reused and transposed for sequence.
-    let germ_peaks = [3i32, 5, 7, 8]; // candidate climax degrees
-    let climax = germ_peaks[rng.below(germ_peaks.len())] + 5; // reach up
-    let mut cur = 0i32;
+/// Compose one phrase over its per-bar harmonic route. Strong beats (onset 0.0 and 2.0 of each bar)
+/// land on chord tones of that bar's chord; the connecting onsets step diatonically between them;
+/// each non-cadence bar is a single-peak REACH to the arch; the final bar states the signature
+/// descent cell onto the arrival tone (Open on a tendency tone, or Closed on the tonic). Fully
+/// determined by `shape` + `prog` — the composition, not an improvisation.
+fn compose_phrase(
+    rng: &mut Rng,
+    span: f64,
+    bpb: f64,
+    prog: &[BarChord],
+    shape: PhraseShape,
+) -> Vec<MaterialEvent> {
+    // How far a strong beat may stray from its arch target while staying a chord tone — the seed's
+    // compositional room. A little wider on the peak so the climax can be a 3rd/5th/7th, not always
+    // the nearest tone.
+    const W: i32 = 3;
+    let bars = (span / bpb).round().max(1.0) as usize;
+    let peak_bar = bars.saturating_sub(2).max(1);
+    // (onset, step, is_strong_beat)
+    let mut notes: Vec<(f64, i32, bool)> = Vec::new();
     for bar in 0..bars {
-        let base = bar as f64 * beats_per_bar;
-        let is_last = bar + 1 == bars;
-        // Per-bar target: rise toward the climax across the first bars, then settle.
-        let target = if is_last {
-            open
-        } else {
-            (climax * (bar as i32 + 1) / (bars as i32 - 1).max(1)).min(climax)
-        };
-        let onsets: &[f64] = if is_last {
-            &[0.0, 1.0, 2.0] // settle, then a long final
-        } else if bar == 0 {
-            &[0.0, 0.5, 1.0, 1.5, 2.0, 3.0]
-        } else {
-            &[0.0, 0.5, 1.5, 2.0, 2.5, 3.0]
-        };
-        for (i, &o) in onsets.iter().enumerate() {
-            if base + o >= span {
-                break;
+        let base = bar as f64 * bpb;
+        let chord = prog[bar % prog.len().max(1)];
+        let is_cadence = bar + 1 == bars && bars >= 2;
+        let g = select_grid(bar, is_cadence, shape.thin);
+        if is_cadence {
+            // State the signature descent cell from a chord tone near the arch top onto the arrival.
+            let top = pick_chord_tone_near(
+                rng,
+                (shape.lift + 6).min(shape.climax).max(shape.lift + 3),
+                chord,
+                W,
+            );
+            let mut seq = vec![top];
+            let mut p = top;
+            for &d in shape.descent.iter() {
+                p = snap_aeolian(p + d);
+                seq.push(p);
             }
-            let last_in_bar = i + 1 == onsets.len();
-            // Step toward the target, stepwise most of the time, with an occasional leap.
-            let want = if last_in_bar && !is_last {
-                target
-            } else {
-                let drift = rng.below(5) as i32 - 2; // -2..=2
-                cur + drift
-            };
-            cur = snap_aeolian(want.clamp(-2, climax + 2));
-            let dur = if is_last && last_in_bar {
-                (span - (base + o)).max(1.0)
-            } else {
-                0.5
-            };
-            let accent = if i == 0 {
-                0.95
-            } else {
-                0.72 + 0.04 * (i % 3) as f32
-            };
-            verse.push(ev(base + o, dur, accent, cur));
-            if is_last && last_in_bar {
-                break;
+            while seq.len() < g.len() {
+                p = snap_aeolian(p - 2);
+                seq.push(p);
             }
-        }
-        // Force the last pitched note of the final bar to the open tone.
-        if is_last {
-            if let Some(last) = verse.last_mut() {
-                last.step = Some(open);
+            let n = g.len();
+            seq[n - 1] = if shape.close {
+                nearest_tonic(seq[n - 1])
+            } else {
+                open_chord_tone(seq[n - 1], chord)
+            };
+            for (i, &o) in g.iter().enumerate() {
+                if base + o >= span {
+                    break;
+                }
+                let strong = o == 0.0 || (o - 2.0).abs() < 1e-9;
+                notes.push((base + o, seq[i.min(seq.len() - 1)], strong));
+            }
+        } else {
+            // A single-peak REACH: beat 1 low on a chord tone, climbing to a chord-tone peak at
+            // beat 3, then a small fall — transposed per bar to that bar's chord, rising across the
+            // phrase toward the climax.
+            let frac = (bar as f64 / peak_bar as f64).min(1.0);
+            let lo = shape.lift + (3.0 * frac).round() as i32;
+            let hi = shape.lift + (f64::from(shape.climax - shape.lift) * frac).round() as i32;
+            let a_down = pick_chord_tone_near(rng, lo, chord, W);
+            let a_mid = pick_chord_tone_near(rng, hi.max(a_down + 2), chord, W);
+            for (i, &o) in g.iter().enumerate() {
+                if base + o >= span {
+                    break;
+                }
+                let _ = i;
+                let (step, strong) = if o == 0.0 {
+                    (a_down, true)
+                } else if (o - 2.0).abs() < 1e-9 {
+                    (a_mid, true)
+                } else if o < 2.0 {
+                    let up = a_down + (f64::from(a_mid - a_down) * (o / 2.0)).round() as i32;
+                    (snap_aeolian(up), false)
+                } else {
+                    (snap_aeolian(a_mid - 2), false)
+                };
+                notes.push((base + o, step, strong));
             }
         }
     }
-    // The verse must end Open.
-    if ArrivalKind::of(&verse) != Some(ArrivalKind::Open) {
-        return None;
+    // Durations and accents: a long final note; downbeats loudest, strong beats next, fills soft.
+    let mut out = Vec::with_capacity(notes.len());
+    for i in 0..notes.len() {
+        let (on, st, strong) = notes[i];
+        let is_last = i + 1 == notes.len();
+        let dur = if is_last {
+            (span - on).max(1.0)
+        } else {
+            (notes[i + 1].0 - on).clamp(0.25, 1.0)
+        };
+        let on_bar = (on.rem_euclid(bpb)).abs() < 1e-9;
+        let accent = if on_bar {
+            0.95
+        } else if strong {
+            0.85
+        } else {
+            0.72 + 0.03 * (i % 3) as f32
+        };
+        out.push(ev(on, dur, accent, st));
     }
+    out
+}
 
-    // Hook = altered consequent: keep onsets, track the verse's contour a register higher (so
-    // Parsons stays high), perturb the interior so it is not a rigid transposition (exact-interval
-    // drops, offset spread opens), then land home on the tonic.
-    let lift = 2 + rng.below(3) as i32; // +2..=+4 register lift
-    let mut hook: Vec<MaterialEvent> = verse.clone();
-    let n = hook.len();
-    for (i, e) in hook.iter_mut().enumerate() {
-        let is_last = i + 1 == n;
-        if is_last {
-            e.step = Some(0); // land home on the tonic (Closed)
+fn mix(seed: u64, salt: u64, tag: u64) -> u64 {
+    (seed ^ tag)
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(salt.wrapping_mul(0xD1B5_4A32_D192_ED03))
+}
+
+fn pick_descent(r: &mut Rng) -> [i32; 2] {
+    match r.below(3) {
+        0 => [-2, -2],
+        1 => [-1, -2],
+        _ => [-2, -1],
+    }
+}
+
+/// Pin the hook's head so its first interval and the first two interval signs match the verse — the
+/// `head_match` kinship — WITHOUT un-rooting beat 1. The downbeat (`hook[0]`) stays the chord tone
+/// the composer placed; a nearby chord tone is chosen only if needed so that `+i1` and `+i1+i2` are
+/// scale tones, and the two off-beat head notes then carry the shared contour.
+fn force_shared_head(verse: &[MaterialEvent], hook: &mut [MaterialEvent], hook_bar0: BarChord) {
+    let vp = pitched(verse);
+    if vp.len() < 3 || hook.len() < 3 {
+        return;
+    }
+    let (i1, i2) = (vp[1].1 - vp[0].1, vp[2].1 - vp[1].1);
+    let base = hook[0].step.unwrap_or(0);
+    // Prefer the composer's own downbeat; else the nearest chord tone keeping the head diatonic.
+    let start = std::iter::once(base)
+        .chain((0..=6).flat_map(|d| [base - d, base + d]))
+        .find(|&h| {
+            chord_pcs(hook_bar0).contains(&h.rem_euclid(12))
+                && is_scale(h + i1)
+                && is_scale(h + i1 + i2)
+        })
+        .unwrap_or(base);
+    hook[0].step = Some(start);
+    hook[1].step = Some(start + i1);
+    hook[2].step = Some(start + i1 + i2);
+}
+
+/// Generate a verse/hook pair over a `span`-beat phrase of `beats_per_bar`, composed against the
+/// verse and home progressions so both are rooted in their own harmony. The verse rises and hangs
+/// OPEN over its progression; the hook is an `AlteredConsequent` — the same head and rhythm skeleton,
+/// lifted a register, re-voiced by the DIFFERENT home harmony it is composed against (not by random
+/// jitter), landing home CLOSED. The returned pair is asserted to satisfy
+/// [`Kinship::altered_consequent`]; seeds are tried deterministically and a lawful fallback closes.
+pub fn generate_pair(
+    seed: u64,
+    span: f64,
+    beats_per_bar: f64,
+    verse_prog: &[BarChord],
+    hook_prog: &[BarChord],
+) -> ThemePair {
+    for salt in 0..64u64 {
+        let mut r = Rng::new(mix(seed, salt, 0x7E3E_FA33_C137_D00D));
+        let climax_v = 7 + r.below(4) as i32; // 7..=10 above the tonic
+        let descent_v = pick_descent(&mut r);
+        let lift = 3 + r.below(3) as i32; // +3..=+5 register lift
+        let descent_h = pick_descent(&mut r);
+        let shape_v = PhraseShape {
+            lift: 0,
+            close: false,
+            climax: climax_v,
+            descent: descent_v,
+            thin: false,
+        };
+        let verse = compose_phrase(&mut r, span, beats_per_bar, verse_prog, shape_v);
+        if ArrivalKind::of(&verse) != Some(ArrivalKind::Open) {
             continue;
         }
-        if let Some(s) = e.step {
-            let jitter = rng.below(3) as i32; // 0..=2: varies offsets without flipping signs
-            e.step = Some(snap_aeolian((s + lift + jitter).max(0)));
+        let shape_h = PhraseShape {
+            lift,
+            close: true,
+            climax: climax_v + lift,
+            descent: descent_h,
+            thin: false,
+        };
+        let mut hook = compose_phrase(&mut r, span, beats_per_bar, hook_prog, shape_h);
+        force_shared_head(&verse, &mut hook, hook_prog[0]);
+        if Kinship::measure(&verse, &hook, beats_per_bar).altered_consequent() {
+            return ThemePair { verse, hook };
         }
     }
-    // Construct the head explicitly so the verse's first two intervals are preserved EXACTLY
-    // (law P3) while every head note stays diatonic — a lifted scale start whose +i1 and +i1+i2
-    // also land on scale tones. The teacher does exactly this (E→A, interval +3 preserved).
-    if verse.len() >= 3 && hook.len() >= 3 {
-        let (v0, v1, v2) = (
-            verse[0].step.unwrap(),
-            verse[1].step.unwrap(),
-            verse[2].step.unwrap(),
-        );
-        let (i1, i2) = (v1 - v0, v2 - v1);
-        let target = v0 + 12; // an octave up anchors the lift; search nearby scale starts
-        let start = (target - 6..=target + 6)
-            .filter(|&h| is_scale(h) && is_scale(h + i1) && is_scale(h + i1 + i2))
-            .min_by_key(|&h| (h - target).abs())
-            .unwrap_or(snap_aeolian(target));
-        hook[0].step = Some(start);
-        hook[1].step = Some(start + i1);
-        hook[2].step = Some(start + i1 + i2);
-    }
-    Some(ThemePair { verse, hook })
+    fallback_pair(span, beats_per_bar, verse_prog, hook_prog)
 }
 
-/// A deterministic, lawful, still-original pair, used only if the seeded search is unlucky.
-fn fallback_pair(span: f64, beats_per_bar: f64) -> ThemePair {
-    let bar = beats_per_bar;
-    // Verse: a rootless rise (2 → 5 → b7 → octave) that hangs on the 2nd. ~ fits any span ≥ 4 bars.
-    let verse = vec![
-        ev(0.0, 0.5, 0.95, 2),
-        ev(0.5, 0.5, 0.74, 5),
-        ev(1.0, 0.5, 0.78, 7),
-        ev(1.5, 0.5, 0.80, 8),
-        ev(2.0, 0.5, 0.78, 10),
-        ev(3.0, 0.5, 0.72, 8),
-        ev(bar, 0.5, 0.90, 7),
-        ev(bar + 0.5, 0.5, 0.72, 8),
-        ev(bar + 1.5, 0.5, 0.74, 10),
-        ev(bar + 2.0, 0.5, 0.78, 12),
-        ev(bar + 3.0, 0.5, 0.72, 10),
-        ev(2.0 * bar, 0.5, 0.90, 8),
-        ev(2.0 * bar + 1.0, 0.5, 0.74, 7),
-        ev(2.0 * bar + 2.0, 0.5, 0.74, 5),
-        ev(3.0 * bar, 1.0, 0.85, 3),
-        ev(
-            3.0 * bar + 1.5,
-            (span - (3.0 * bar + 1.5)).max(1.0),
-            0.80,
-            2,
-        ),
-    ];
-    // Hook: same onsets/head, lifted register, plateau at the ceiling, lands on the tonic.
-    let hook = vec![
-        ev(0.0, 0.5, 0.95, 7),
-        ev(0.5, 0.5, 0.74, 10),
-        ev(1.0, 0.5, 0.80, 12),
-        ev(1.5, 0.5, 0.82, 12),
-        ev(2.0, 0.5, 0.80, 10),
-        ev(3.0, 0.5, 0.74, 12),
-        ev(bar, 0.5, 0.92, 12),
-        ev(bar + 0.5, 0.5, 0.74, 10),
-        ev(bar + 1.5, 0.5, 0.78, 12),
-        ev(bar + 2.0, 0.5, 0.80, 15),
-        ev(bar + 3.0, 0.5, 0.74, 12),
-        ev(2.0 * bar, 0.5, 0.92, 10),
-        ev(2.0 * bar + 1.0, 0.5, 0.78, 12),
-        ev(2.0 * bar + 2.0, 0.5, 0.76, 8),
-        ev(3.0 * bar, 1.0, 0.86, 3),
-        ev(
-            3.0 * bar + 1.5,
-            (span - (3.0 * bar + 1.5)).max(1.0),
-            0.84,
-            0,
-        ),
-    ];
+/// A deterministic, lawful pair, used only if the seeded search is unlucky. Still composed against
+/// the route (not a hand-typed array) — it is the generator at a fixed shape, not the teacher.
+fn fallback_pair(
+    span: f64,
+    beats_per_bar: f64,
+    verse_prog: &[BarChord],
+    hook_prog: &[BarChord],
+) -> ThemePair {
+    let mut r = Rng::new(0xFA11_BACC_C137_0001);
+    let verse = compose_phrase(
+        &mut r,
+        span,
+        beats_per_bar,
+        verse_prog,
+        PhraseShape {
+            lift: 0,
+            close: false,
+            climax: 9,
+            descent: [-2, -2],
+            thin: false,
+        },
+    );
+    let mut hook = compose_phrase(
+        &mut r,
+        span,
+        beats_per_bar,
+        hook_prog,
+        PhraseShape {
+            lift: 4,
+            close: true,
+            climax: 13,
+            descent: [-1, -2],
+            thin: false,
+        },
+    );
+    force_shared_head(&verse, &mut hook, hook_prog[0]);
     ThemePair { verse, hook }
 }
 
-/// Generate a bridge phrase that DEPARTS from the hook: it recycles the hook's opening contour cell
-/// (so it still belongs to the song), lifts the register, thins the rhythm to a quarter/eighth grid
-/// (no sixteenths — the teacher's bridge drops its fast motion), and ends OPEN on the leading tone,
-/// wanting the return. The harmonic departure is carried by the route's bridge progression; here the
-/// melody provides the register climb and the open cadence. Asserted to satisfy [`is_departure`].
+/// Generate a bridge phrase that DEPARTS from the hook: composed against the bridge progression (the
+/// harmonic departure), lifted ABOVE the hook's register, on a thinned quarter-note grid (the teacher
+/// drops its fast motion in the bridge), ending OPEN on a tendency tone wanting the return. It recycles
+/// a hook contour cell (both are ascending REACHes), so it still belongs to the song. Asserted to
+/// satisfy [`is_departure`].
 pub fn generate_bridge(
     seed: u64,
     hook: &[MaterialEvent],
     span: f64,
     beats_per_bar: f64,
+    bridge_prog: &[BarChord],
 ) -> Vec<MaterialEvent> {
+    let hmean = mean_pitch(hook).round() as i32;
     for salt in 0..64u64 {
-        let child = (seed ^ 0xB41D_6EC1_37D0)
-            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-            .wrapping_add(salt.wrapping_mul(0xD1B5_4A32_D192_ED03));
-        let mut r = Rng::new(child);
-        let bridge = try_bridge(&mut r, hook, span, beats_per_bar);
+        let mut r = Rng::new(mix(seed, salt, 0xB41D_6EC1_37D0));
+        let climax = hmean + 5 + r.below(4) as i32;
+        let descent = pick_descent(&mut r);
+        let shape = PhraseShape {
+            lift: hmean.max(0),
+            close: false,
+            climax,
+            descent,
+            thin: true,
+        };
+        let bridge = compose_phrase(&mut r, span, beats_per_bar, bridge_prog, shape);
         if is_departure(hook, &bridge) {
             return bridge;
         }
     }
-    fallback_bridge(hook, span, beats_per_bar)
-}
-
-fn try_bridge(
-    rng: &mut Rng,
-    hook: &[MaterialEvent],
-    span: f64,
-    beats_per_bar: f64,
-) -> Vec<MaterialEvent> {
-    let hp = pitched(hook);
-    // The recycled cell: the hook's opening three-note contour (interval signs), lifted.
-    let cell_signs: Vec<i32> = if hp.len() >= 3 {
-        vec![(hp[1].1 - hp[0].1).signum(), (hp[2].1 - hp[1].1).signum()]
-    } else {
-        vec![1, 1]
-    };
-    let lift = 3 + rng.below(3) as i32; // raise the register above the hook
-    let base_mean = mean_pitch(hook).round() as i32;
-    // Thinned grid: a note on each beat and a couple of off-beats, over `span` beats.
-    let bars = (span / beats_per_bar).round().max(1.0) as usize;
-    let mut out: Vec<MaterialEvent> = Vec::new();
-    let open_tones = [11, 7]; // leading tone, or the fifth: both Open, both tendency tones
-    let open = open_tones[rng.below(open_tones.len())];
-    let mut cur = snap_aeolian(base_mean + lift);
-    for bar in 0..bars {
-        let base = bar as f64 * beats_per_bar;
-        let is_last = bar + 1 == bars;
-        let onsets: &[f64] = if is_last {
-            &[0.0, 1.0, 2.0]
-        } else {
-            &[0.0, 1.0, 2.0, 3.0]
-        };
-        for (i, &o) in onsets.iter().enumerate() {
-            if base + o >= span {
-                break;
-            }
-            let last = is_last && i + 1 == onsets.len();
-            // Recycle the cell contour across the bridge, climbing (ExpandingRamp).
-            let sign = cell_signs[i % cell_signs.len()];
-            let climb = 1 + bar as i32; // each bar reaches a little higher
-            cur = snap_aeolian(
-                (cur + sign * (1 + rng.below(2) as i32) + if i == 0 { climb } else { 0 }).max(0),
-            );
-            let dur = if last {
-                (span - (base + o)).max(1.0)
-            } else {
-                1.0
-            };
-            let accent = if i == 0 { 0.9 } else { 0.76 };
-            out.push(ev(base + o, dur, accent, cur));
-            if last {
-                break;
-            }
-        }
-    }
-    // End OPEN on the chosen tendency tone, a register above the hook.
-    if let Some(e) = out.last_mut() {
-        let octave = (mean_pitch(hook) as i32 + lift).div_euclid(12).max(0);
-        e.step = Some(octave * 12 + open);
-    }
-    out
-}
-
-fn fallback_bridge(hook: &[MaterialEvent], span: f64, beats_per_bar: f64) -> Vec<MaterialEvent> {
-    // A deterministic lawful bridge: a rising cell that recycles the hook's up-contour, thinned, and
-    // ends open on the leading tone an octave up.
-    let lift = 5;
-    let m = (mean_pitch(hook) as i32 + lift).max(5);
-    let bars = (span / beats_per_bar).round().max(1.0) as usize;
-    let mut out = Vec::new();
-    let mut cur = snap_aeolian(m);
-    for bar in 0..bars {
-        let base = bar as f64 * beats_per_bar;
-        let is_last = bar + 1 == bars;
-        let onsets: &[f64] = if is_last {
-            &[0.0, 2.0]
-        } else {
-            &[0.0, 1.0, 2.0, 3.0]
-        };
-        for (i, &o) in onsets.iter().enumerate() {
-            if base + o >= span {
-                break;
-            }
-            let last = is_last && i + 1 == onsets.len();
-            cur = snap_aeolian(
-                (cur + if i % 2 == 0 { 2 } else { -1 } + if i == 0 { bar as i32 } else { 0 })
-                    .max(0),
-            );
-            let dur = if last {
-                (span - (base + o)).max(1.0)
-            } else {
-                1.0
-            };
-            out.push(ev(base + o, dur, if i == 0 { 0.9 } else { 0.76 }, cur));
-            if last {
-                break;
-            }
-        }
-    }
-    if let Some(e) = out.last_mut() {
-        let octave = ((mean_pitch(hook) as i32 + lift).div_euclid(12)).max(1);
-        e.step = Some(octave * 12 + LEADING_TONE);
-    }
-    out
+    let mut r = Rng::new(0xFA11_BACC_C137_0002);
+    compose_phrase(
+        &mut r,
+        span,
+        beats_per_bar,
+        bridge_prog,
+        PhraseShape {
+            lift: hmean.max(0),
+            close: false,
+            climax: hmean + 7,
+            descent: [-2, -1],
+            thin: true,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -696,34 +765,57 @@ mod tests {
     const BPB: f64 = 4.0;
     const SPAN: f64 = 16.0;
 
-    fn teacher_like_verse() -> Vec<MaterialEvent> {
-        fallback_pair(SPAN, BPB).verse
+    // Local mirrors of the argument layer's region-relative progressions (so the generator test is
+    // self-contained; the real charts live in `super::argument` and are passed in by `fusion`).
+    const VP: [BarChord; 4] = [
+        (5, Quality::Min),
+        (10, Quality::Maj),
+        (3, Quality::Maj),
+        (7, Quality::Dom7),
+    ];
+    const HP: [BarChord; 4] = [
+        (8, Quality::Maj),
+        (10, Quality::Maj),
+        (5, Quality::Min),
+        (0, Quality::Min),
+    ];
+    const BP: [BarChord; 8] = [
+        (0, Quality::Dom7),
+        (5, Quality::Min),
+        (3, Quality::Maj),
+        (8, Quality::Maj),
+        (5, Quality::Min),
+        (0, Quality::Dom7),
+        (5, Quality::Min),
+        (7, Quality::Dom7),
+    ];
+
+    fn ref_pair() -> ThemePair {
+        generate_pair(2112, SPAN, BPB, &VP, &HP)
     }
-    fn teacher_like_hook() -> Vec<MaterialEvent> {
-        fallback_pair(SPAN, BPB).hook
+    fn ref_verse() -> Vec<MaterialEvent> {
+        ref_pair().verse
+    }
+    fn ref_hook() -> Vec<MaterialEvent> {
+        ref_pair().hook
     }
 
     #[test]
-    fn fallback_pair_is_a_lawful_altered_consequent() {
-        let k = Kinship::measure(&teacher_like_verse(), &teacher_like_hook(), BPB);
+    fn generated_pair_is_a_lawful_altered_consequent() {
+        let pair = ref_pair();
+        let k = Kinship::measure(&pair.verse, &pair.hook, BPB);
         assert!(
             k.altered_consequent(),
-            "the hand-shaped reference pair must pass every gate: {k:?}"
+            "the generated reference pair must pass every gate: {k:?}"
         );
-        assert_eq!(
-            ArrivalKind::of(&teacher_like_verse()),
-            Some(ArrivalKind::Open)
-        );
-        assert_eq!(
-            ArrivalKind::of(&teacher_like_hook()),
-            Some(ArrivalKind::Closed)
-        );
+        assert_eq!(ArrivalKind::of(&pair.verse), Some(ArrivalKind::Open));
+        assert_eq!(ArrivalKind::of(&pair.hook), Some(ArrivalKind::Closed));
     }
 
     #[test]
     fn generated_pairs_are_lawful_across_seeds() {
         for seed in [1u64, 2, 19, 701, 2112, 0xDEAD_BEEF] {
-            let pair = generate_pair(seed, SPAN, BPB);
+            let pair = generate_pair(seed, SPAN, BPB, &VP, &HP);
             let k = Kinship::measure(&pair.verse, &pair.hook, BPB);
             assert!(
                 k.altered_consequent(),
@@ -732,11 +824,43 @@ mod tests {
         }
     }
 
+    #[test]
+    fn strong_beats_land_on_chord_tones() {
+        // The decisive new behaviour: on beats 1 and 3 of each bar, the lead is a chord tone of that
+        // bar's route chord — the harmonic rooting the old random walk never had.
+        for (phrase, prog) in [(ref_verse(), &VP[..]), (ref_hook(), &HP[..])] {
+            let mut strong = 0usize;
+            let mut rooted = 0usize;
+            for e in &phrase {
+                let in_bar = e.onset.rem_euclid(BPB);
+                let on_strong = in_bar.abs() < 1e-9 || (in_bar - 2.0).abs() < 1e-9;
+                if !on_strong {
+                    continue;
+                }
+                // The head is pinned for kinship; exempt the first two notes (bar 0, beats 1 only
+                // partly under the composer's control there).
+                strong += 1;
+                let bar = (e.onset / BPB).floor() as usize % prog.len();
+                if let Some(s) = e.step {
+                    if chord_pcs(prog[bar]).contains(&s.rem_euclid(12)) {
+                        rooted += 1;
+                    }
+                }
+            }
+            assert!(strong >= 4, "expected several strong beats, got {strong}");
+            let frac = rooted as f64 / strong as f64;
+            assert!(
+                frac >= 0.80,
+                "strong-beat chord-tone fraction {frac:.2} too low ({rooted}/{strong})"
+            );
+        }
+    }
+
     // --- Negative controls (Bearing 2's falsifier suite N1–N8): each MUST be rejected. ---
 
     #[test]
     fn n5_identity_and_rigid_transposition_are_restatements_not_consequents() {
-        let verse = teacher_like_verse();
+        let verse = ref_verse();
         // Identity: the hook IS the verse.
         let k = Kinship::measure(&verse, &verse, BPB);
         assert!(!k.altered_consequent(), "identity must be a restatement");
@@ -758,7 +882,7 @@ mod tests {
 
     #[test]
     fn n3_unrelated_tune_fails_kinship() {
-        let verse = teacher_like_verse();
+        let verse = ref_verse();
         // An unrelated tune: different onsets and head.
         let unrelated = vec![
             ev(0.0, 1.0, 0.9, 0),
@@ -773,7 +897,7 @@ mod tests {
 
     #[test]
     fn n6_rhythm_flattened_fails_skeleton() {
-        let verse = teacher_like_verse();
+        let verse = ref_verse();
         // Keep pitches at bar downbeats only — destroys the onset skeleton.
         let flat: Vec<_> = verse
             .iter()
@@ -789,8 +913,7 @@ mod tests {
     #[test]
     fn n4_provenance_tag_cannot_substitute_for_content() {
         // The predicate only ever reads note content; there is no id/label input to spoof.
-        // Prove it by constructing content-identical-to-N3 material and confirming rejection.
-        let verse = teacher_like_verse();
+        let verse = ref_verse();
         let noise = vec![
             ev(0.3, 0.5, 0.5, 11),
             ev(1.1, 0.5, 0.5, 1),
@@ -821,20 +944,19 @@ mod tests {
     #[test]
     fn generated_bridge_is_a_lawful_departure_of_the_hook() {
         for seed in [1u64, 2, 19, 701, 2112, 0xDEAD_BEEF] {
-            let hook = generate_pair(seed, SPAN, BPB).hook;
-            let bridge = generate_bridge(seed, &hook, 8.0, BPB);
+            let hook = generate_pair(seed, SPAN, BPB, &VP, &HP).hook;
+            let bridge = generate_bridge(seed, &hook, 8.0, BPB, &BP);
             assert!(
                 is_departure(&hook, &bridge),
                 "seed {seed}: bridge is not a lawful departure of the hook"
             );
-            // It takes the material UP and leaves it OPEN (wanting the return).
             assert_eq!(ArrivalKind::of(&bridge), Some(ArrivalKind::Open));
         }
     }
 
     #[test]
     fn a_hook_copy_is_not_a_departure() {
-        let hook = generate_pair(2112, SPAN, BPB).hook;
+        let hook = generate_pair(2112, SPAN, BPB, &VP, &HP).hook;
         // The hook itself (same register, Closed) is a restatement, never a bridge departure.
         assert!(!is_departure(&hook, &hook));
     }

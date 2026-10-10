@@ -983,13 +983,24 @@ impl MusicalArgument {
         }
         let full = spans.iter().copied().fold(0.0_f64, f64::max);
         let short = spans.iter().copied().fold(f64::INFINITY, f64::min);
-        let pair = super::theme_family::generate_pair(seed, full, KINSHIP_BEATS_PER_BAR);
+        // Compose the verse against the verse chart and the hook against the home chart, so each is
+        // ROOTED in the harmony it is actually played over (the route below assigns those same
+        // charts per relation). The bridge departs over the bridge chart. This closes the gap the
+        // ear heard: the lead no longer floats over the changes on a global scale.
+        let pair = super::theme_family::generate_pair(
+            seed,
+            full,
+            KINSHIP_BEATS_PER_BAR,
+            &VERSE_PROG,
+            &HOME_PROG,
+        );
         let bridge_span = if short < full - 1e-9 { short } else { full };
         let bridge_events = super::theme_family::generate_bridge(
             seed,
             &pair.hook,
             bridge_span,
             KINSHIP_BEATS_PER_BAR,
+            &BRIDGE_PROG,
         );
         let referents = vec![
             MusicalReferent {
