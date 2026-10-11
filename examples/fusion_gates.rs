@@ -582,6 +582,72 @@ fn evaluate(inp: &Input) -> Vec<Gate> {
         floor: ">=0.08 (the band breathes, not a flat wall)",
         pass: brange >= 0.08,
     });
+
+    // R-DRONE: the lead's repeated-pitch disease. A bar that collapses to one pitch (69 69 69 69)
+    // reads dead; the teacher's consecutive-same-pitch share sits at 0-8%. Two ways to fail: too
+    // large a zero-interval share, or any same-pitch run of 3+. REJECT-only, measured off the lead.
+    {
+        let pitches: Vec<i32> = body.iter().map(|n| n.p).collect();
+        let pairs = pitches.len().saturating_sub(1);
+        let zeros = pitches.windows(2).filter(|w| w[0] == w[1]).count();
+        let zero_share = if pairs == 0 {
+            0.0
+        } else {
+            zeros as f64 / pairs as f64
+        };
+        let mut longest = if pitches.is_empty() { 0 } else { 1 };
+        let mut run = longest;
+        for w in pitches.windows(2) {
+            run = if w[0] == w[1] { run + 1 } else { 1 };
+            longest = longest.max(run);
+        }
+        g.push(Gate {
+            name: "R-DRONE lead repeated-pitch share / longest run",
+            measured: format!(
+                "{} ({zeros}/{pairs}), run {longest}",
+                round_to(zero_share, 3)
+            ),
+            floor: "<=0.10 share AND run <=2",
+            pass: zero_share <= 0.10 && longest <= 2,
+        });
+
+        // R-LAUNCH: the germ. The teacher opens every non-cadence bar with an ascending skip of a
+        // 3rd/4th/5th (3-5 semitones). A bar's first two lead notes must make that skip. Bars are
+        // floor(onset/4); the last bar of each 16-beat phrase (the cadence) is excluded.
+        use std::collections::BTreeMap;
+        let mut per_bar: BTreeMap<i64, Vec<&LeadNote>> = BTreeMap::new();
+        for n in &body {
+            let bar = (n.t / 4.0).floor() as i64;
+            per_bar.entry(bar).or_default().push(n);
+        }
+        let mut launch_bars = 0usize;
+        let mut launched = 0usize;
+        for (bar, mut ns) in per_bar {
+            if bar.rem_euclid(4) == 3 {
+                continue; // the cadence bar of the 16-beat phrase
+            }
+            if ns.len() < 2 {
+                continue;
+            }
+            ns.sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap());
+            launch_bars += 1;
+            let iv = ns[1].p - ns[0].p;
+            if (3..=5).contains(&iv) {
+                launched += 1;
+            }
+        }
+        let frac = if launch_bars == 0 {
+            0.0
+        } else {
+            launched as f64 / launch_bars as f64
+        };
+        g.push(Gate {
+            name: "R-LAUNCH non-cadence bars opening on an ascending 3rd-5th",
+            measured: format!("{} ({launched}/{launch_bars})", round_to(frac, 3)),
+            floor: ">=0.70",
+            pass: launch_bars > 0 && frac >= 0.70,
+        });
+    }
     g
 }
 

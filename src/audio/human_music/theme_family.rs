@@ -396,21 +396,32 @@ fn nearest_tonic(near: i32) -> i32 {
     (k * 12).max(0)
 }
 
-/// Choose a chord tone within `window` semitones of the arch target `height` — a COMPOSITIONAL
-/// choice among the harmony's own tones (root/3rd/5th/7th in some octave), seeded so different seeds
-/// voice genuinely different-but-rooted lines instead of all snapping to the one nearest tone. This
-/// is where the seed's freedom lives: not a per-note pitch dice (that was the random walk), but which
-/// consonant tone the arch lands on. Always returns a chord tone, so strong beats stay rooted.
-fn pick_chord_tone_near(rng: &mut Rng, height: i32, chord: BarChord, window: i32) -> i32 {
+/// Choose a chord tone within `window` semitones of the arch target `height`, at or above `floor` — a
+/// COMPOSITIONAL choice among the harmony's own tones (root/3rd/5th/7th in some octave), seeded so
+/// different seeds voice genuinely different-but-rooted lines instead of all snapping to the one
+/// nearest tone. This is where the seed's freedom lives: not a per-note pitch dice (that was the
+/// random walk), but which consonant tone the arch lands on. The `floor` is a hard lower bound: with
+/// no floor the "near the low note" call could hand back the low note itself and the bar collapsed to
+/// one repeated pitch — the drone. So if the window holds no chord tone at or above `floor`, the
+/// search WIDENS upward (never downward) until one is found; only then does it snap. Always returns a
+/// chord tone, so strong beats stay rooted.
+fn pick_chord_tone_near(
+    rng: &mut Rng,
+    height: i32,
+    chord: BarChord,
+    window: i32,
+    floor: i32,
+) -> i32 {
     let pcs = chord_pcs(chord);
-    let cands: Vec<i32> = ((height - window)..=(height + window))
-        .filter(|t| pcs.contains(&t.rem_euclid(12)))
-        .collect();
-    if cands.is_empty() {
-        snap_chord(height, chord)
-    } else {
-        cands[rng.below(cands.len())]
+    for up in window..=24 {
+        let cands: Vec<i32> = ((height - window)..=(height + up))
+            .filter(|&t| t >= floor && pcs.contains(&t.rem_euclid(12)))
+            .collect();
+        if !cands.is_empty() {
+            return cands[rng.below(cands.len())];
+        }
     }
+    snap_chord(height.max(floor), chord)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -448,10 +459,24 @@ fn snap_aeolian(step: i32) -> i32 {
     octave * 12 + nearest
 }
 
+/// The next Aeolian scale tone strictly ABOVE `step`. Used to walk a bar's interior onsets up as a
+/// distinct-pitched passing line — a guaranteed climb, so the connective tissue can never round flat
+/// into a repeated pitch (the drone) the way a scaled interpolation did when the peak sat near the
+/// launch. One scale degree is at most a whole tone, so the walk stays stepwise, never a leap.
+fn next_aeolian_above(step: i32) -> i32 {
+    let mut q = step + 1;
+    while !is_scale(q) {
+        q += 1;
+    }
+    q
+}
+
 // Onset grids, reused FUNCTIONALLY across bars (the teacher's 16 unique bars share only 5 grids).
 // Every grid carries the two strong beats (0.0 and 2.0) so a bar is always rooted on beats 1 and 3.
 const HEAD_GRID: [f64; 6] = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0];
-const REACH_GRID: [f64; 5] = [0.0, 1.0, 1.5, 2.0, 3.0];
+// A middle bar breathes: the beat-4 (3.0) onset is dropped, so the last note (beat 3) is held out to
+// the barline and the 4th beat is a REST — the gap the teacher leaves and ours never did.
+const BREATH_GRID: [f64; 4] = [0.0, 1.0, 1.5, 2.0];
 const CADENCE_GRID: [f64; 5] = [0.0, 0.5, 1.0, 1.5, 2.0];
 const BRIDGE_GRID: [f64; 4] = [0.0, 1.0, 2.0, 3.0];
 const BRIDGE_CADENCE_GRID: [f64; 3] = [0.0, 1.0, 2.0];
@@ -470,6 +495,10 @@ struct PhraseShape {
     descent: [i32; 2],
     /// A thinned (quarter-note) grid — the teacher's bridge drops its fast motion.
     thin: bool,
+    /// The opening ascending-skip interval (semitones) that launches each non-cadence bar — the germ.
+    /// It expands across the phrase (`launch + bar`, clamped to 3..=6) so the reach grows as it climbs,
+    /// mirroring the teacher's +3/+4/+5 bar-opening gesture instead of starting every bar flat.
+    launch: i32,
 }
 
 fn select_grid(bar: usize, is_cadence: bool, thin: bool) -> &'static [f64] {
@@ -478,7 +507,7 @@ fn select_grid(bar: usize, is_cadence: bool, thin: bool) -> &'static [f64] {
         (false, true) => &BRIDGE_GRID,
         (true, false) => &CADENCE_GRID,
         (false, false) if bar == 0 => &HEAD_GRID,
-        (false, false) => &REACH_GRID,
+        (false, false) => &BREATH_GRID,
     }
 }
 
@@ -514,6 +543,7 @@ fn compose_phrase(
                 (shape.lift + 6).min(shape.climax).max(shape.lift + 3),
                 chord,
                 W,
+                shape.lift,
             );
             let mut seq = vec![top];
             let mut p = top;
@@ -531,6 +561,13 @@ fn compose_phrase(
             } else {
                 open_chord_tone(seq[n - 1], chord)
             };
+            // Keep the final step into the arrival a real descending step. A flat approach (the note
+            // before the arrival landing on the same pitch) reads dead and, butted against the next
+            // phrase's downbeat, stacks three identical pitches across the seam — the cadence half of
+            // the drone. Nudge the approach to the scale tone just above the arrival so it descends in.
+            if n >= 2 && seq[n - 1] == seq[n - 2] {
+                seq[n - 2] = next_aeolian_above(seq[n - 1]);
+            }
             for (i, &o) in g.iter().enumerate() {
                 if base + o >= span {
                     break;
@@ -543,22 +580,47 @@ fn compose_phrase(
             // beat 3, then a small fall — transposed per bar to that bar's chord, rising across the
             // phrase toward the climax.
             let frac = (bar as f64 / peak_bar as f64).min(1.0);
+            // The germ: an ascending opening skip whose size grows bar by bar across the phrase.
+            let launch_iv = (shape.launch + bar as i32).clamp(3, 6);
             let lo = shape.lift + (3.0 * frac).round() as i32;
             let hi = shape.lift + (f64::from(shape.climax - shape.lift) * frac).round() as i32;
-            let a_down = pick_chord_tone_near(rng, lo, chord, W);
-            let a_mid = pick_chord_tone_near(rng, hi.max(a_down + 2), chord, W);
+            // Beat 1: the low, pinned to the register floor so it can never sink under the phrase.
+            let a_down = pick_chord_tone_near(rng, lo, chord, W, shape.lift);
+            // The germ launch: an ascending skip off the low — the bar opens by leaping up, not flat.
+            let launch_note = snap_aeolian(a_down + launch_iv);
+            // Interior onsets (after the launch, before the beat-3 peak) climb one scale degree each
+            // — a strict diatonic ascent from the launch, every note distinct. Linear interpolation
+            // toward the peak rounded flat whenever the peak sat near the launch, droning the bar;
+            // a stepwise walk cannot. The peak is then floored ABOVE the top passing tone, so the bar
+            // is one clean, distinct-pitched arch — launch, climb, single peak, small fall.
+            let n_fill = g
+                .iter()
+                .enumerate()
+                .filter(|(i, o)| *i > 1 && **o < 2.0)
+                .count();
+            let mut fills: Vec<i32> = Vec::with_capacity(n_fill);
+            let mut p = launch_note;
+            for _ in 0..n_fill {
+                p = next_aeolian_above(p);
+                fills.push(p);
+            }
+            let top_fill = fills.last().copied().unwrap_or(launch_note);
+            let a_mid = pick_chord_tone_near(rng, hi.max(top_fill + 1), chord, W, top_fill + 1);
+            let mut fill_cur = 0usize;
             for (i, &o) in g.iter().enumerate() {
                 if base + o >= span {
                     break;
                 }
-                let _ = i;
                 let (step, strong) = if o == 0.0 {
                     (a_down, true)
                 } else if (o - 2.0).abs() < 1e-9 {
                     (a_mid, true)
+                } else if i == 1 {
+                    (launch_note, false)
                 } else if o < 2.0 {
-                    let up = a_down + (f64::from(a_mid - a_down) * (o / 2.0)).round() as i32;
-                    (snap_aeolian(up), false)
+                    let f = fills[fill_cur];
+                    fill_cur += 1;
+                    (f, false)
                 } else {
                     (snap_aeolian(a_mid - 2), false)
                 };
@@ -647,12 +709,14 @@ pub fn generate_pair(
         let descent_v = pick_descent(&mut r);
         let lift = 3 + r.below(3) as i32; // +3..=+5 register lift
         let descent_h = pick_descent(&mut r);
+        let launch = 3 + r.below(2) as i32; // +3 or +4 opening skip — the germ, shared verse↔hook
         let shape_v = PhraseShape {
             lift: 0,
             close: false,
             climax: climax_v,
             descent: descent_v,
             thin: false,
+            launch,
         };
         let verse = compose_phrase(&mut r, span, beats_per_bar, verse_prog, shape_v);
         if ArrivalKind::of(&verse) != Some(ArrivalKind::Open) {
@@ -664,6 +728,7 @@ pub fn generate_pair(
             climax: climax_v + lift,
             descent: descent_h,
             thin: false,
+            launch,
         };
         let mut hook = compose_phrase(&mut r, span, beats_per_bar, hook_prog, shape_h);
         force_shared_head(&verse, &mut hook, hook_prog[0]);
@@ -694,6 +759,7 @@ fn fallback_pair(
             climax: 9,
             descent: [-2, -2],
             thin: false,
+            launch: 3,
         },
     );
     let mut hook = compose_phrase(
@@ -707,6 +773,7 @@ fn fallback_pair(
             climax: 13,
             descent: [-1, -2],
             thin: false,
+            launch: 3,
         },
     );
     force_shared_head(&verse, &mut hook, hook_prog[0]);
@@ -736,6 +803,7 @@ pub fn generate_bridge(
             climax,
             descent,
             thin: true,
+            launch: 3,
         };
         let bridge = compose_phrase(&mut r, span, beats_per_bar, bridge_prog, shape);
         if is_departure(hook, &bridge) {
@@ -754,6 +822,7 @@ pub fn generate_bridge(
             climax: hmean + 7,
             descent: [-2, -1],
             thin: true,
+            launch: 3,
         },
     )
 }
