@@ -171,10 +171,12 @@ pub fn validate_required_placements(
         {
             return Err(CarrierTransportError::InvalidSpan { step });
         }
-        if placement.start_beat < phrase.start_beat()
-            || end > phrase.end_beat() + 1e-9
-            || end > plan.form.total_beats + 1e-9
-        {
+        // The reservation must begin at or after its (first) phrase and end within the song. A
+        // narrative-arc section legitimately spans several phrases, so the end is bounded by the
+        // piece — NOT by the single phrase the placement is tagged to. Carrier collisions across
+        // sections are caught by the overlap check below; legacy single-phrase placements, whose
+        // span equals their phrase, satisfy this identically.
+        if placement.start_beat < phrase.start_beat() || end > plan.form.total_beats + 1e-9 {
             return Err(CarrierTransportError::OutsidePhrase { step });
         }
         if placement.events.is_empty() {

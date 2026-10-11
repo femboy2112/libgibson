@@ -266,6 +266,30 @@ pub struct MusicalArgument {
     pub referents: Vec<MusicalReferent>,
     pub steps: Vec<ArgumentStep>,
     pub ending: ArgumentEnding,
+    /// Optional higher-order narrative arc over the [`super::plan::FormGraph`]. When present, each step `i` is a
+    /// typed SECTION (`arc[i]`) that may span several consecutive form phrases — phrase length is a
+    /// capacity constraint, not a story-type classifier. This decouples the narrative order (verse →
+    /// hook → depart → return) from where the form happened to subdivide around salient events, so a
+    /// `Resolved` program closes on a Return instead of ending departed, and a section's harmonic
+    /// route advances continuously across short-phrase seams. `None` keeps the legacy per-phrase
+    /// placement (the even-spread `compile`), under which the calibration path is byte-identical.
+    pub arc: Option<Vec<ArcSpan>>,
+}
+
+/// One typed section of a [`MusicalArgument::arc`]: a narrative role bound to a contiguous run of
+/// form phrases, independent of their individual lengths.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ArcSpan {
+    /// The step (and thus relation/referent) this section realizes; parallel to `steps[i]`.
+    pub step: ArgumentStepId,
+    /// First form-phrase index this section covers.
+    pub start_phrase: u32,
+    /// How many consecutive phrases it covers (>= 1).
+    pub phrase_count: u32,
+    /// Absolute first beat (the start phrase's start).
+    pub start_beat: f64,
+    /// Total span in beats across all the section's phrases.
+    pub span_beats: f64,
 }
 
 /// A required source statement with an explicit reservation, including its written silence.
@@ -449,6 +473,55 @@ impl std::error::Error for ArgumentError {}
 
 fn material_length(events: &[MaterialEvent]) -> f64 {
     events.iter().map(|e| e.onset + e.dur).fold(0.0, f64::max)
+}
+
+/// Collapse an FM-grade performance intent onto the carrier material.
+///
+/// The generated lead is "8-bit robotic" because every note hits with a flat, equal touch. A singer
+/// PHRASES: the line swells toward its highest note and settles into the cadence (dynamics), and
+/// long notes sing through while short ones lift (articulation). That intent is resolution-
+/// independent — under FM it drives continuous envelopes, portamento and vibrato; here it COLLAPSES,
+/// coherently, onto the dimensions this synth renders: note accent and gate. The same intent renders
+/// richer under FM later with no redesign. Structured and relational — derived from the line's own
+/// melodic contour and metric position — NEVER a random jitter. (A structured off-grid timing feel
+/// touches the consequent-kinship `onset_iou`, so it is deferred to a later pass that re-checks it;
+/// dur and accent are read by neither kinship predicate, so they are safe to shape here.)
+///
+/// Baked into the GENERATED referent material — the generator produces expressive material and the
+/// independent witness (which derives its expectation from the referent) then audits that the
+/// carrier performs exactly it. The FINAL event (the cadence, whose gate the closure check reads)
+/// keeps its written gate; length never grows, so the fit and reservation guards still hold.
+/// Generalizes to any monophonic voice; applied to the lead carrier first (the most exposed).
+fn collapse_expression(events: &mut [MaterialEvent], span: f64) {
+    let n = events.len();
+    if n < 3 {
+        return;
+    }
+    // Dynamic apex: the phrase's highest step. Swell toward it; settle into the cadence.
+    let peak = (0..n)
+        .max_by_key(|&i| events[i].step.unwrap_or(i32::MIN))
+        .unwrap_or(0);
+    for (i, e) in events.iter_mut().enumerate() {
+        let to_peak = (i as f64 - peak as f64).abs() / (n - 1) as f64;
+        let frac = i as f64 / (n - 1) as f64;
+        let swell = ((1.0 - 0.16 * to_peak) * (1.0 - 0.07 * frac)).clamp(0.78, 1.12);
+        e.accent = (f64::from(e.accent) * swell).clamp(0.0, 1.0) as f32;
+    }
+    // Articulation on the INTERIOR only (the cadence keeps its written gate). Onsets are left on the
+    // grid for now — a structured timing feel touches `onset_iou`, so it is deferred to a pass that
+    // re-checks the consequent kinship; dur and accent are read by neither kinship predicate.
+    for i in 1..n - 1 {
+        // A long note sings through to just under the next onset (tenuto); a short one lifts a touch
+        // (separation), so the line phrases instead of marching in equal lengths.
+        let gap = events[i + 1].onset - events[i].onset;
+        let dur = events[i].dur;
+        let shaped = if dur >= 0.75 {
+            (gap * 0.97).max(dur)
+        } else {
+            (gap * 0.72).min(dur).max(0.2)
+        };
+        events[i].dur = shaped.clamp(0.05, span - events[i].onset);
+    }
 }
 
 fn validate_material(source: &MusicalReferent) -> Result<(), ArgumentError> {
@@ -656,19 +729,33 @@ impl MusicalArgument {
         }
         let mut placements = Vec::with_capacity(self.steps.len());
         for (i, step) in self.steps.iter().enumerate() {
-            let phrase_ix = if self.steps.len() == 1 {
-                0
+            // Where this step lands. An arc section is a contiguous run of phrases whose combined
+            // span is the capacity the material must fit; legacy placement picks one phrase by even
+            // spreading. `phrase_count` is how many phrases the section's carriers occupy.
+            let (phrase_ix, span, phrase_count) = if let Some(arc) = &self.arc {
+                let s = &arc[i];
+                (
+                    s.start_phrase as usize,
+                    s.span_beats,
+                    s.phrase_count as usize,
+                )
             } else {
-                i * (count - 1) / (self.steps.len() - 1)
+                let phrase_ix = if self.steps.len() == 1 {
+                    0
+                } else {
+                    i * (count - 1) / (self.steps.len() - 1)
+                };
+                let p = &song.plan.form.phrases[phrase_ix];
+                (phrase_ix, p.end_beat() - p.start_beat(), 1)
             };
             let phrase = &song.plan.form.phrases[phrase_ix];
+            let (phrase_ix_val, start_beat) = (phrase.ix, phrase.start_beat());
             let source = self
                 .referents
                 .iter()
                 .find(|s| s.id == step.referent)
                 .unwrap();
             let events = step.transform.apply(source)?;
-            let span = phrase.end_beat() - phrase.start_beat();
             if material_length(&events) > span + 1e-9 {
                 return Err(ArgumentError::SourceDoesNotFit(step.id));
             }
@@ -676,8 +763,8 @@ impl MusicalArgument {
                 step: step.id,
                 referent: step.referent,
                 relation: step.relation,
-                phrase: phrase.ix,
-                start_beat: phrase.start_beat(),
+                phrase: phrase_ix_val,
+                start_beat,
                 span_beats: span,
                 events,
                 pitch_basis: source.pitch_basis,
@@ -685,41 +772,72 @@ impl MusicalArgument {
                 anchor_semitones: 0,
                 section_gain: section_gain_for(step.relation),
             };
-            let arrangement = &mut song.plan.arrangement.phrases[phrase_ix];
-            // A handed-off statement has one foreground speaker. The old lead must not keep
-            // reciting an unrelated motif over a keys/bass question or its written silence.
-            if !step.carriers.contains(&Agent::Lead) {
-                arrangement.lead = ArrangementRole::Silent;
-            }
-            for carrier in &step.carriers {
-                // Supporting seats preserve the foreground budget, while guaranteeing opportunity.
-                match carrier {
-                    Agent::Lead => arrangement.lead = ArrangementRole::Support,
-                    Agent::Keys => arrangement.keys = ArrangementRole::Support,
-                    Agent::Bass => arrangement.bass = ArrangementRole::Foundation,
-                    _ => unreachable!("validated carrier"),
+            // The section's carriers own the foreground across EVERY phrase it spans. The old lead
+            // must not keep reciting an unrelated motif over the handoff or its written silence.
+            for off in 0..phrase_count {
+                let ix = phrase_ix + off;
+                if ix >= count {
+                    break;
+                }
+                let arrangement = &mut song.plan.arrangement.phrases[ix];
+                if !step.carriers.contains(&Agent::Lead) {
+                    arrangement.lead = ArrangementRole::Silent;
+                }
+                for carrier in &step.carriers {
+                    // Supporting seats preserve the foreground budget, while guaranteeing opportunity.
+                    match carrier {
+                        Agent::Lead => arrangement.lead = ArrangementRole::Support,
+                        Agent::Keys => arrangement.keys = ArrangementRole::Support,
+                        Agent::Bass => arrangement.bass = ArrangementRole::Foundation,
+                        _ => unreachable!("validated carrier"),
+                    }
                 }
             }
             placements.push(placement);
         }
 
-        // One phrase-aligned harmonic commitment per phrase. Gaps prolong the previous gesture;
-        // the final question pointer is never replaced by an unrelated chart picked beforehand.
-        let mut relation = ArgumentRelation::Establish;
+        // Per-phrase narrative relation and the bar its SECTION began on. With an arc, a section
+        // spans several phrases and the harmonic route advances CONTINUOUSLY across them (an 8-bar
+        // bridge plays all eight chords and ends on its open home-dominant, instead of restarting
+        // every short phrase). Legacy: the relation is carried forward from the latest placement
+        // and the route is phrase-local — byte-identical to the historical behavior.
+        let mut phrase_rel = vec![ArgumentRelation::Establish; count];
+        let mut section_start_bar: Vec<u32> =
+            song.plan.form.phrases.iter().map(|p| p.start_bar).collect();
+        if let Some(arc) = &self.arc {
+            for (i, s) in arc.iter().enumerate() {
+                let secbar = song.plan.form.phrases[s.start_phrase as usize].start_bar;
+                for off in 0..s.phrase_count as usize {
+                    let ix = s.start_phrase as usize + off;
+                    if ix < count {
+                        phrase_rel[ix] = self.steps[i].relation;
+                        section_start_bar[ix] = secbar;
+                    }
+                }
+            }
+        } else {
+            // Gaps prolong the previous gesture rather than snapping to a default.
+            let mut relation = ArgumentRelation::Establish;
+            for phrase in &song.plan.form.phrases {
+                if let Some(p) = placements.iter().find(|p| p.phrase == phrase.ix) {
+                    relation = p.relation;
+                }
+                phrase_rel[phrase.ix as usize] = relation;
+            }
+        }
+
         let mut slots = Vec::with_capacity(count);
-        // Per-bar harmonic route: a gap prolongs the previous phrase's section, so an unplaced
-        // phrase keeps travelling in the current section rather than snapping to a default.
         let mut route: Vec<(i32, Quality)> =
             vec![(0, Quality::Min); song.plan.form.total_bars as usize];
         for phrase in &song.plan.form.phrases {
-            if let Some(p) = placements.iter().find(|p| p.phrase == phrase.ix) {
-                relation = p.relation;
-            }
+            let relation = phrase_rel[phrase.ix as usize];
             let prog = section_progression(relation);
+            let secbar = section_start_bar[phrase.ix as usize];
             for b in 0..phrase.bars {
-                let bar = (phrase.start_bar + b) as usize;
-                if bar < route.len() {
-                    route[bar] = prog[(b as usize) % prog.len()];
+                let bar = phrase.start_bar + b;
+                if (bar as usize) < route.len() {
+                    let idx = (bar - secbar) as usize % prog.len();
+                    route[bar as usize] = prog[idx];
                 }
             }
             let goal = &mut song.plan.discourse.goals[phrase.ix as usize];
@@ -998,6 +1116,7 @@ impl MusicalArgument {
             referents: vec![theme],
             steps: program,
             ending: ArgumentEnding::Resolved,
+            arc: None,
         };
         argument.validate()?;
         Ok(argument)
@@ -1013,6 +1132,27 @@ impl MusicalArgument {
     /// The lead sings in EVERY phrase (no dead windows), and the harmony travels with it. Seeded and
     /// reproducible; the material is sized to the form's full and short phrase spans so it fits.
     pub fn fusion(seed: u64, base: &SongMap) -> Result<Self, ArgumentError> {
+        if base.plan.form.phrases.is_empty() {
+            return Err(ArgumentError::InsufficientPhrases);
+        }
+        // Preferred path: a narrative ARC over the form (verse → hook → depart → RETURN). It binds
+        // each relation to a POSITION in the song rather than to a phrase's length, so a `Resolved`
+        // program closes on its return instead of ending departed, and the bridge route travels
+        // continuously across short-phrase seams. Legacy per-phrase placement is the fallback only
+        // for forms too short to carry the full arc.
+        if let Some((referents, steps, arc)) = Self::fusion_arc(seed, base) {
+            let argument = Self {
+                family: ArgumentFamily::CallAndEarnedAnswer,
+                referents,
+                steps,
+                ending: ArgumentEnding::Resolved,
+                arc: Some(arc),
+            };
+            argument.validate()?;
+            return Ok(argument);
+        }
+
+        // --- legacy per-phrase fallback (historical length-based ordering; degenerate forms) ---
         let spans: Vec<f64> = base
             .plan
             .form
@@ -1020,9 +1160,6 @@ impl MusicalArgument {
             .iter()
             .map(|p| p.end_beat() - p.start_beat())
             .collect();
-        if spans.is_empty() {
-            return Err(ArgumentError::InsufficientPhrases);
-        }
         let full = spans.iter().copied().fold(0.0_f64, f64::max);
         let short = spans.iter().copied().fold(f64::INFINITY, f64::min);
         // Compose the verse against the verse chart and the hook against the home chart, so each is
@@ -1118,9 +1255,241 @@ impl MusicalArgument {
             referents,
             steps,
             ending: ArgumentEnding::Resolved,
+            arc: None,
         };
         argument.validate()?;
         Ok(argument)
+    }
+
+    /// Build the narrative arc: group the form's phrases by POSITION into contiguous sections —
+    /// an opening that alternates verse/hook in one-theme chunks, a middle `Depart` bridge, and a
+    /// final hook `Return`. Each section may span several phrases; the verse/hook theme is sized to
+    /// one 4-bar chart cycle and the hook is reused by the return so its identity is constant.
+    ///
+    /// Returns `None` (→ legacy placement) when the form cannot carry a well-formed arc: it needs a
+    /// verse, a hook, and a terminal return section, each at least one theme long.
+    fn fusion_arc(
+        seed: u64,
+        base: &SongMap,
+    ) -> Option<(Vec<MusicalReferent>, Vec<ArgumentStep>, Vec<ArcSpan>)> {
+        const THEME_SPAN: f64 = 4.0 * KINSHIP_BEATS_PER_BAR; // one 4-bar chart cycle = 16 beats
+        let phrases = &base.plan.form.phrases;
+        let n = phrases.len();
+        let total = base.plan.form.total_beats;
+        if total < 4.0 * THEME_SPAN - 1e-9 {
+            return None; // too short for verse|hook|bridge|return quarters that each fit a theme
+        }
+        let bridge_start = 0.5 * total;
+        let return_start = 0.75 * total;
+        let dur = |j: usize| phrases[j].end_beat() - phrases[j].start_beat();
+        // 0 = opening, 1 = bridge, 2 = return. Phrases are in start order, so this is monotonic.
+        let region = |start: f64| -> u8 {
+            if start >= return_start - 1e-9 {
+                2
+            } else if start >= bridge_start - 1e-9 {
+                1
+            } else {
+                0
+            }
+        };
+
+        enum Role {
+            Verse,
+            Hook,
+            Bridge,
+            Return,
+        }
+        struct Sec {
+            role: Role,
+            first: usize,
+            count: usize,
+            start_beat: f64,
+            span: f64,
+        }
+        let mut secs: Vec<Sec> = Vec::new();
+
+        // Opening: alternate verse/hook, starting a new section each time one theme's worth of
+        // phrases has accumulated. A sub-theme remainder is absorbed into the current section so no
+        // opening section is shorter than the theme it must carry.
+        let mut i = 0usize;
+        let mut hook_turn = false;
+        while i < n && region(phrases[i].start_beat()) == 0 {
+            let first = i;
+            let mut span = 0.0;
+            while i < n && region(phrases[i].start_beat()) == 0 && span < THEME_SPAN - 1e-9 {
+                span += dur(i);
+                i += 1;
+            }
+            let remaining: f64 = (i..n)
+                .take_while(|&j| region(phrases[j].start_beat()) == 0)
+                .map(&dur)
+                .sum();
+            if remaining < THEME_SPAN - 1e-9 {
+                while i < n && region(phrases[i].start_beat()) == 0 {
+                    span += dur(i);
+                    i += 1;
+                }
+            }
+            let role = if hook_turn { Role::Hook } else { Role::Verse };
+            hook_turn = !hook_turn;
+            secs.push(Sec {
+                role,
+                first,
+                count: i - first,
+                start_beat: phrases[first].start_beat(),
+                span,
+            });
+        }
+
+        // Bridge: the whole middle region as one continuous departure.
+        let bridge_begin = i;
+        let mut bridge_span = 0.0;
+        while i < n && region(phrases[i].start_beat()) == 1 {
+            bridge_span += dur(i);
+            i += 1;
+        }
+        if i > bridge_begin {
+            secs.push(Sec {
+                role: Role::Bridge,
+                first: bridge_begin,
+                count: i - bridge_begin,
+                start_beat: phrases[bridge_begin].start_beat(),
+                span: bridge_span,
+            });
+        }
+
+        // Return: all remaining phrases as one hook restatement/coda — the terminal section.
+        let ret_begin = i;
+        let mut ret_span = 0.0;
+        while i < n {
+            ret_span += dur(i);
+            i += 1;
+        }
+        if i > ret_begin {
+            secs.push(Sec {
+                role: Role::Return,
+                first: ret_begin,
+                count: i - ret_begin,
+                start_beat: phrases[ret_begin].start_beat(),
+                span: ret_span,
+            });
+        }
+
+        // Well-formedness: a verse, a hook, a terminal Return, and every themed section long enough.
+        let has_verse = secs.iter().any(|s| matches!(s.role, Role::Verse));
+        let has_hook = secs.iter().any(|s| matches!(s.role, Role::Hook));
+        let ends_return = matches!(secs.last().map(|s| &s.role), Some(Role::Return));
+        if !has_verse || !has_hook || !ends_return {
+            return None;
+        }
+        if secs.iter().any(|s| {
+            matches!(s.role, Role::Verse | Role::Hook | Role::Return) && s.span < THEME_SPAN - 1e-9
+        }) {
+            return None;
+        }
+
+        // A matched verse/hook pair at the theme span; the bridge derives from that hook.
+        let pair = super::theme_family::generate_pair(
+            seed,
+            THEME_SPAN,
+            KINSHIP_BEATS_PER_BAR,
+            &VERSE_PROG,
+            &HOME_PROG,
+        );
+        let bsp = secs
+            .iter()
+            .find(|s| matches!(s.role, Role::Bridge))
+            .map_or(THEME_SPAN, |s| s.span);
+        let mut bridge_events = super::theme_family::generate_bridge(
+            seed,
+            &pair.hook,
+            bsp,
+            KINSHIP_BEATS_PER_BAR,
+            &BRIDGE_PROG,
+        );
+        // Make the GENERATED material sing: a dynamic arch + phrased articulation on each referent
+        // (the bridge derived from the plain hook first, above, so its pitch kinship is unperturbed).
+        // Shapes only accent and gate — invisible to both kinship predicates — so the altered-
+        // consequent and departure laws, and the independent carrier witness, still hold exactly.
+        let mut verse = pair.verse;
+        let mut hook = pair.hook;
+        collapse_expression(&mut verse, THEME_SPAN);
+        collapse_expression(&mut hook, THEME_SPAN);
+        collapse_expression(&mut bridge_events, bsp);
+        let referents = vec![
+            MusicalReferent {
+                id: ReferentId(0),
+                pitch_basis: PitchBasis::Semitones,
+                events: verse,
+            },
+            MusicalReferent {
+                id: ReferentId(1),
+                pitch_basis: PitchBasis::Semitones,
+                events: hook,
+            },
+            MusicalReferent {
+                id: ReferentId(2),
+                pitch_basis: PitchBasis::Semitones,
+                events: bridge_events,
+            },
+        ];
+
+        // One step + one ArcSpan per section. Verse establishes; hook is its consequent; the bridge
+        // departs from the latest hook; the return restates that same hook (identity preserved).
+        let mut steps = Vec::with_capacity(secs.len());
+        let mut arc = Vec::with_capacity(secs.len());
+        let mut last_verse: Option<ArgumentStepId> = None;
+        let mut last_hook: Option<ArgumentStepId> = None;
+        for (k, s) in secs.iter().enumerate() {
+            let sid = ArgumentStepId(k as u8);
+            let (referent, relation, depends_on) = match s.role {
+                Role::Verse => {
+                    last_verse = Some(sid);
+                    (ReferentId(0), ArgumentRelation::Establish, vec![])
+                }
+                Role::Hook => {
+                    let ant = last_verse.unwrap_or(ArgumentStepId(0));
+                    last_hook = Some(sid);
+                    (
+                        ReferentId(1),
+                        ArgumentRelation::Consequent { antecedent: ant },
+                        vec![ant],
+                    )
+                }
+                Role::Bridge => {
+                    let src = last_hook.or(last_verse).unwrap_or(ArgumentStepId(0));
+                    (
+                        ReferentId(2),
+                        ArgumentRelation::Depart { source: src },
+                        vec![src],
+                    )
+                }
+                Role::Return => {
+                    let src = last_hook.unwrap_or(ArgumentStepId(0));
+                    (
+                        ReferentId(1),
+                        ArgumentRelation::Return { source: src },
+                        vec![src],
+                    )
+                }
+            };
+            steps.push(ArgumentStep {
+                id: sid,
+                referent,
+                transform: ArgumentTransform::default(),
+                relation,
+                depends_on,
+                carriers: vec![Agent::Lead],
+            });
+            arc.push(ArcSpan {
+                step: sid,
+                start_phrase: phrases[s.first].ix,
+                phrase_count: s.count as u32,
+                start_beat: s.start_beat,
+                span_beats: s.span,
+            });
+        }
+        Some((referents, steps, arc))
     }
 }
 
@@ -1434,8 +1803,27 @@ mod tests {
                 super::super::theme_family::is_departure(hook, bridge),
                 "seed {seed}: bridge not a lawful departure"
             );
-            // The lead sings in every phrase, and the form has a bridge departure and a return.
-            assert_eq!(argument.steps.len(), base.plan.form.phrases.len());
+            // The narrative arc states FEWER sections than phrases (each section may span several),
+            // but the sections TILE the whole form contiguously — so the lead (every section's
+            // carrier) still sings in every phrase — and the arc departs in the middle then returns.
+            let arc = argument
+                .arc
+                .as_ref()
+                .expect("fusion takes the arc path at 160 beats");
+            assert_eq!(arc.len(), argument.steps.len());
+            let mut next = 0u32;
+            for s in arc {
+                assert_eq!(
+                    s.start_phrase, next,
+                    "seed {seed}: sections must tile from phrase 0"
+                );
+                next += s.phrase_count;
+            }
+            assert_eq!(
+                next as usize,
+                base.plan.form.phrases.len(),
+                "seed {seed}: sections must cover every phrase"
+            );
             assert!(argument
                 .steps
                 .iter()
