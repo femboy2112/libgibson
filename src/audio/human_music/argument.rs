@@ -475,6 +475,55 @@ fn material_length(events: &[MaterialEvent]) -> f64 {
     events.iter().map(|e| e.onset + e.dur).fold(0.0, f64::max)
 }
 
+/// Collapse an FM-grade performance intent onto the carrier material.
+///
+/// The generated lead is "8-bit robotic" because every note hits with a flat, equal touch. A singer
+/// PHRASES: the line swells toward its highest note and settles into the cadence (dynamics), and
+/// long notes sing through while short ones lift (articulation). That intent is resolution-
+/// independent — under FM it drives continuous envelopes, portamento and vibrato; here it COLLAPSES,
+/// coherently, onto the dimensions this synth renders: note accent and gate. The same intent renders
+/// richer under FM later with no redesign. Structured and relational — derived from the line's own
+/// melodic contour and metric position — NEVER a random jitter. (A structured off-grid timing feel
+/// touches the consequent-kinship `onset_iou`, so it is deferred to a later pass that re-checks it;
+/// dur and accent are read by neither kinship predicate, so they are safe to shape here.)
+///
+/// Baked into the GENERATED referent material — the generator produces expressive material and the
+/// independent witness (which derives its expectation from the referent) then audits that the
+/// carrier performs exactly it. The FINAL event (the cadence, whose gate the closure check reads)
+/// keeps its written gate; length never grows, so the fit and reservation guards still hold.
+/// Generalizes to any monophonic voice; applied to the lead carrier first (the most exposed).
+fn collapse_expression(events: &mut [MaterialEvent], span: f64) {
+    let n = events.len();
+    if n < 3 {
+        return;
+    }
+    // Dynamic apex: the phrase's highest step. Swell toward it; settle into the cadence.
+    let peak = (0..n)
+        .max_by_key(|&i| events[i].step.unwrap_or(i32::MIN))
+        .unwrap_or(0);
+    for (i, e) in events.iter_mut().enumerate() {
+        let to_peak = (i as f64 - peak as f64).abs() / (n - 1) as f64;
+        let frac = i as f64 / (n - 1) as f64;
+        let swell = ((1.0 - 0.16 * to_peak) * (1.0 - 0.07 * frac)).clamp(0.78, 1.12);
+        e.accent = (f64::from(e.accent) * swell).clamp(0.0, 1.0) as f32;
+    }
+    // Articulation on the INTERIOR only (the cadence keeps its written gate). Onsets are left on the
+    // grid for now — a structured timing feel touches `onset_iou`, so it is deferred to a pass that
+    // re-checks the consequent kinship; dur and accent are read by neither kinship predicate.
+    for i in 1..n - 1 {
+        // A long note sings through to just under the next onset (tenuto); a short one lifts a touch
+        // (separation), so the line phrases instead of marching in equal lengths.
+        let gap = events[i + 1].onset - events[i].onset;
+        let dur = events[i].dur;
+        let shaped = if dur >= 0.75 {
+            (gap * 0.97).max(dur)
+        } else {
+            (gap * 0.72).min(dur).max(0.2)
+        };
+        events[i].dur = shaped.clamp(0.05, span - events[i].onset);
+    }
+}
+
 fn validate_material(source: &MusicalReferent) -> Result<(), ArgumentError> {
     if source.pitch_basis != PitchBasis::Semitones
         || source.events.len() < 3
@@ -1351,23 +1400,32 @@ impl MusicalArgument {
             .iter()
             .find(|s| matches!(s.role, Role::Bridge))
             .map_or(THEME_SPAN, |s| s.span);
-        let bridge_events = super::theme_family::generate_bridge(
+        let mut bridge_events = super::theme_family::generate_bridge(
             seed,
             &pair.hook,
             bsp,
             KINSHIP_BEATS_PER_BAR,
             &BRIDGE_PROG,
         );
+        // Make the GENERATED material sing: a dynamic arch + phrased articulation on each referent
+        // (the bridge derived from the plain hook first, above, so its pitch kinship is unperturbed).
+        // Shapes only accent and gate — invisible to both kinship predicates — so the altered-
+        // consequent and departure laws, and the independent carrier witness, still hold exactly.
+        let mut verse = pair.verse;
+        let mut hook = pair.hook;
+        collapse_expression(&mut verse, THEME_SPAN);
+        collapse_expression(&mut hook, THEME_SPAN);
+        collapse_expression(&mut bridge_events, bsp);
         let referents = vec![
             MusicalReferent {
                 id: ReferentId(0),
                 pitch_basis: PitchBasis::Semitones,
-                events: pair.verse,
+                events: verse,
             },
             MusicalReferent {
                 id: ReferentId(1),
                 pitch_basis: PitchBasis::Semitones,
-                events: pair.hook,
+                events: hook,
             },
             MusicalReferent {
                 id: ReferentId(2),
