@@ -172,6 +172,19 @@ pub enum ArgumentRelation {
     Return {
         source: ArgumentStepId,
     },
+    /// A distinct-but-related consequent of an earlier phrase: the HOOK answering the VERSE. Unlike
+    /// [`ArgumentRelation::Answer`] (which restates the same theme to pay a literal open question),
+    /// a consequent is a *different tune* that shares the antecedent's defining DNA and lands home.
+    /// Its lawfulness is the [`super::theme_family`] `AlteredConsequent` law, not `same_head`.
+    Consequent {
+        antecedent: ArgumentStepId,
+    },
+    /// A bridge: a DEPARTURE from an earlier phrase (the hook). Per the teacher, the melody recycles
+    /// a hook cell and the departure is carried by harmony/register/rhythm, ending OPEN and wanting
+    /// the return. Its lawfulness is the [`super::theme_family`] `Departure` law, not `same_head`.
+    Depart {
+        source: ArgumentStepId,
+    },
     /// Reserved, rejected by the current validator instead of falsely certifying simultaneity.
     Reconcile {
         left: ArgumentStepId,
@@ -188,6 +201,8 @@ impl ArgumentRelation {
             Self::Denial { .. } => "denial",
             Self::Answer { .. } => "answer",
             Self::Return { .. } => "return",
+            Self::Consequent { .. } => "consequent",
+            Self::Depart { .. } => "depart",
             Self::Reconcile { .. } => "reconcile",
         }
     }
@@ -195,10 +210,12 @@ impl ArgumentRelation {
     fn predecessor(self) -> Option<ArgumentStepId> {
         match self {
             Self::Establish => None,
-            Self::Question { source, .. } | Self::Develop { source } | Self::Return { source } => {
-                Some(source)
-            }
+            Self::Question { source, .. }
+            | Self::Develop { source }
+            | Self::Return { source }
+            | Self::Depart { source } => Some(source),
             Self::Denial { question } | Self::Answer { question } => Some(question),
+            Self::Consequent { antecedent } => Some(antecedent),
             Self::Reconcile { .. } => None,
         }
     }
@@ -207,9 +224,9 @@ impl ArgumentRelation {
         match self {
             Self::Establish => DiscourseRole::Establish,
             Self::Question { .. } => DiscourseRole::Question,
-            Self::Develop { .. } => DiscourseRole::Depart,
+            Self::Develop { .. } | Self::Depart { .. } => DiscourseRole::Depart,
             Self::Denial { .. } => DiscourseRole::Withhold,
-            Self::Answer { .. } => DiscourseRole::Answer,
+            Self::Answer { .. } | Self::Consequent { .. } => DiscourseRole::Answer,
             Self::Return { .. } | Self::Reconcile { .. } => DiscourseRole::Return,
         }
     }
@@ -218,7 +235,7 @@ impl ArgumentRelation {
         match self {
             Self::Question { .. } => HarmonicGesture::Lift,
             Self::Denial { .. } => HarmonicGesture::Deflect,
-            Self::Develop { .. } => HarmonicGesture::Open,
+            Self::Develop { .. } | Self::Depart { .. } => HarmonicGesture::Open,
             _ => HarmonicGesture::Reset,
         }
     }
@@ -265,6 +282,51 @@ pub struct ArgumentPlacement {
     pub carriers: Vec<Agent>,
     /// Semitones from the performance world's tonic, fixed for the entire argument.
     pub anchor_semitones: i32,
+    /// A declared section dynamic for this statement: the carrier's sounding velocity is
+    /// `accent * section_gain` (attenuation; `section_gain <= 1.0`). This is the argument's OWN
+    /// dynamic arc — the verse held back, the hook and return at full, the bridge building — planned
+    /// upstream so dependent players hear the dynamics they themselves end up playing, and VERIFIED
+    /// by the independent witness (it is a declared product, never a random per-note jitter).
+    pub section_gain: f32,
+}
+
+/// The declared section dynamic (attenuation, `<= 1.0`) for a statement of this relation — the
+/// argument's own energy arc. The verse is held back; the hook and answer/return arrive at full;
+/// the bridge builds; a denial dips. Structured and relational (standing rule), never random.
+fn section_gain_for(relation: ArgumentRelation) -> f32 {
+    match relation {
+        ArgumentRelation::Establish => 0.74,
+        ArgumentRelation::Question { .. } => 0.74,
+        ArgumentRelation::Develop { .. } => 0.86,
+        ArgumentRelation::Depart { .. } => 0.90,
+        ArgumentRelation::Denial { .. } => 0.70,
+        ArgumentRelation::Consequent { .. } => 0.98,
+        ArgumentRelation::Answer { .. } => 1.0,
+        ArgumentRelation::Return { .. } => 1.0,
+        ArgumentRelation::Reconcile { .. } => 0.90,
+    }
+}
+
+/// The band's declared energy arc for a statement of this relation — a steeper companion to
+/// [`section_gain_for`], applied to the BACKING voices (pad/keys/bass/drums) so the whole band
+/// follows the song's dynamics instead of playing one flat wall at a single velocity. The verse
+/// pulls the band right back to let the lead speak into the space; the hook and return arrive
+/// full; the bridge departs held-back and a denial dips. Structured and relational (the standing
+/// rule), never a random per-note jitter — the arc is a product of the argument's own discourse,
+/// read only on the opt-in argument route and byte-exact off it. The range is wider than the
+/// lead's `section_gain` on purpose: the band has room to recede where the carrier does not.
+fn backing_energy_for(relation: ArgumentRelation) -> f32 {
+    match relation {
+        ArgumentRelation::Establish => 0.62,
+        ArgumentRelation::Question { .. } => 0.62,
+        ArgumentRelation::Develop { .. } => 0.78,
+        ArgumentRelation::Depart { .. } => 0.70,
+        ArgumentRelation::Denial { .. } => 0.60,
+        ArgumentRelation::Consequent { .. } => 0.95,
+        ArgumentRelation::Answer { .. } => 1.0,
+        ArgumentRelation::Return { .. } => 1.0,
+        ArgumentRelation::Reconcile { .. } => 0.86,
+    }
 }
 
 /// A wrapper instead of additional fields in the established public `SongMap` structure.
@@ -273,6 +335,75 @@ pub struct CompiledArgument {
     pub song: SongMap,
     pub placements: Vec<ArgumentPlacement>,
     pub argument: MusicalArgument,
+    /// A per-bar functional harmonic route (one entry per bar of the form), region-relative:
+    /// `(semitones above the region tonic, quality)`. Resolved to concrete chords in
+    /// [`prepare_performance`]. This is what makes the harmony TRAVEL instead of prolonging one
+    /// dominant across a whole section — the verse moves through a pre-dominant→dominant→tonic→
+    /// secondary-dominant loop, the home sections land, the bridge departs and pivots back.
+    pub route: Vec<(i32, Quality)>,
+}
+
+impl CompiledArgument {
+    /// The band's section energy at `beat`: the backing dynamic the argument declares where this
+    /// beat falls, carried forward from the most recent placed phrase (a gap prolongs the current
+    /// section exactly as the harmonic [`route`](Self::route) does). Before the first placement the
+    /// verse energy holds. The backing realizer multiplies each pad/keys/bass/drum note's velocity
+    /// by this value so the whole band breathes with the form; the lead carrier keeps its own
+    /// [`section_gain`](ArgumentPlacement::section_gain) and is never rescaled by this.
+    pub fn backing_energy_at(&self, beat: f64) -> f32 {
+        let mut energy = backing_energy_for(ArgumentRelation::Establish);
+        let mut best = f64::NEG_INFINITY;
+        for p in &self.placements {
+            if p.start_beat <= beat + 1e-9 && p.start_beat > best {
+                best = p.start_beat;
+                energy = backing_energy_for(p.relation);
+            }
+        }
+        energy
+    }
+}
+
+/// Region-relative functional progressions (semitones above the tonic, quality), calibrated from
+/// the hand-authored teacher's functional grammar (ii–V–I–V7/vi verse; IV–V–ii–i home landing;
+/// a pivoting bridge through the relative minor and home dominant). Region-relative so a world
+/// transposition transposes the chart. One chord per bar; a section cycles its loop.
+const VERSE_PROG: [(i32, Quality); 4] = [
+    (5, Quality::Min),  // pre-dominant (iv)
+    (10, Quality::Maj), // subtonic (bVII)
+    (3, Quality::Maj),  // mediant (III)
+    (7, Quality::Dom7), // dominant (V7) — the verse hangs here, open
+];
+const HOME_PROG: [(i32, Quality); 4] = [
+    (8, Quality::Maj),  // submediant (VI)
+    (10, Quality::Maj), // subtonic (bVII)
+    (5, Quality::Min),  // pre-dominant (iv)
+    (0, Quality::Min),  // tonic (i) — the hook lands home
+];
+const BRIDGE_PROG: [(i32, Quality); 8] = [
+    (0, Quality::Dom7), // the tonic turns into its own dominant (V7/iv) — the pivot
+    (5, Quality::Min),  // tonicised relative minor region (iv)
+    (3, Quality::Maj),  // III
+    (8, Quality::Maj),  // VI
+    (5, Quality::Min),  // iv
+    (0, Quality::Dom7), // the pivot again
+    (5, Quality::Min),  // iv
+    (7, Quality::Dom7), // home dominant (V7) — the bridge ends open, wanting the return
+];
+
+/// The per-bar progression a phrase of this discourse relation travels through.
+fn section_progression(relation: ArgumentRelation) -> &'static [(i32, Quality)] {
+    match relation {
+        // Home-landing phrases resolve to the tonic.
+        ArgumentRelation::Consequent { .. }
+        | ArgumentRelation::Answer { .. }
+        | ArgumentRelation::Return { .. } => &HOME_PROG,
+        // A denial or a bridge departs through the pivot region.
+        ArgumentRelation::Denial { .. }
+        | ArgumentRelation::Reconcile { .. }
+        | ArgumentRelation::Depart { .. } => &BRIDGE_PROG,
+        // Establish / Question / Develop state and open the material over the verse travel.
+        _ => &VERSE_PROG,
+    }
 }
 
 /// A precise failed source commitment, not a numerical meaning-quality score.
@@ -296,7 +427,17 @@ pub enum ArgumentError {
     IncompatibleTonalRegion,
     InsufficientPhrases,
     SourceDoesNotFit(ArgumentStepId),
+    /// A `Consequent` step is not a lawful altered-consequent of its antecedent (it is a
+    /// restatement, a rigid transposition, or an unrelated tune).
+    ConsequentNotRelated(ArgumentStepId),
+    /// A `Depart` (bridge) step is not a lawful departure of its source (it does not recycle a cell,
+    /// does not lift the register, or does not end open — a relabelled restatement).
+    DepartureNotRelated(ArgumentStepId),
 }
+
+/// The canonical bar used when measuring thematic kinship on referent material (before the
+/// material is mapped to a concrete phrase span). The teacher writes four-beat bars.
+const KINSHIP_BEATS_PER_BAR: f64 = 4.0;
 
 impl fmt::Display for ArgumentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -398,8 +539,15 @@ impl MusicalArgument {
                     .get(&predecessor)
                     .ok_or(ArgumentError::MissingDependency(step.id))?;
                 let earlier_source = referents[&earlier.referent];
-                if !same_head(&earlier_source.events, &source.events, source.events.len())
-                    || earlier_source.events.len() != source.events.len()
+                // Literal carriage (Question/Answer/Denial/Develop/Return) requires exact source
+                // identity (`same_head`). A Consequent is a genuinely DISTINCT tune, so it is exempt
+                // from exact identity here and instead proven by the `theme_family`
+                // `AlteredConsequent` kinship law in its own match arm below.
+                if !matches!(
+                    step.relation,
+                    ArgumentRelation::Consequent { .. } | ArgumentRelation::Depart { .. }
+                ) && (!same_head(&earlier_source.events, &source.events, source.events.len())
+                    || earlier_source.events.len() != source.events.len())
                 {
                     return Err(ArgumentError::WrongSource(step.id));
                 }
@@ -451,6 +599,27 @@ impl MusicalArgument {
                             || !same_head(earlier_events, &events, source.events.len())
                         {
                             return Err(ArgumentError::UnpreparedDenial(step.id));
+                        }
+                    }
+                    ArgumentRelation::Consequent { .. } => {
+                        // The hook must be a lawful altered-consequent of the antecedent's performed
+                        // material: it shares the head/skeleton/contour, lands home where the
+                        // antecedent hung open, and is genuinely re-voiced — never a restatement or a
+                        // rigid transposition (the exact clause the archived `same_head` route misses).
+                        let kin = super::theme_family::Kinship::measure(
+                            earlier_events,
+                            &events,
+                            KINSHIP_BEATS_PER_BAR,
+                        );
+                        if !kin.altered_consequent() {
+                            return Err(ArgumentError::ConsequentNotRelated(step.id));
+                        }
+                    }
+                    ArgumentRelation::Depart { .. } => {
+                        // The bridge must be a lawful departure of the hook's performed material:
+                        // recycles a cell, lifts the register, ends open — not a relabelled restate.
+                        if !super::theme_family::is_departure(earlier_events, &events) {
+                            return Err(ArgumentError::DepartureNotRelated(step.id));
                         }
                     }
                     ArgumentRelation::Return { .. } | ArgumentRelation::Develop { .. }
@@ -514,6 +683,7 @@ impl MusicalArgument {
                 pitch_basis: source.pitch_basis,
                 carriers: step.carriers.clone(),
                 anchor_semitones: 0,
+                section_gain: section_gain_for(step.relation),
             };
             let arrangement = &mut song.plan.arrangement.phrases[phrase_ix];
             // A handed-off statement has one foreground speaker. The old lead must not keep
@@ -537,19 +707,30 @@ impl MusicalArgument {
         // the final question pointer is never replaced by an unrelated chart picked beforehand.
         let mut relation = ArgumentRelation::Establish;
         let mut slots = Vec::with_capacity(count);
+        // Per-bar harmonic route: a gap prolongs the previous phrase's section, so an unplaced
+        // phrase keeps travelling in the current section rather than snapping to a default.
+        let mut route: Vec<(i32, Quality)> =
+            vec![(0, Quality::Min); song.plan.form.total_bars as usize];
         for phrase in &song.plan.form.phrases {
             if let Some(p) = placements.iter().find(|p| p.phrase == phrase.ix) {
                 relation = p.relation;
+            }
+            let prog = section_progression(relation);
+            for b in 0..phrase.bars {
+                let bar = (phrase.start_bar + b) as usize;
+                if bar < route.len() {
+                    route[bar] = prog[(b as usize) % prog.len()];
+                }
             }
             let goal = &mut song.plan.discourse.goals[phrase.ix as usize];
             goal.role = relation.role();
             goal.closure = match relation {
                 ArgumentRelation::Question { .. } => Closure::Half,
                 ArgumentRelation::Denial { .. } => Closure::Deceptive,
-                ArgumentRelation::Develop { .. } => Closure::Open,
-                ArgumentRelation::Answer { .. } | ArgumentRelation::Return { .. } => {
-                    Closure::Strong
-                }
+                ArgumentRelation::Develop { .. } | ArgumentRelation::Depart { .. } => Closure::Open,
+                ArgumentRelation::Answer { .. }
+                | ArgumentRelation::Return { .. }
+                | ArgumentRelation::Consequent { .. } => Closure::Strong,
                 _ => Closure::Weak,
             };
             goal.refers_to = relation
@@ -648,7 +829,9 @@ impl MusicalArgument {
                     ArgumentRelation::Question { .. } | ArgumentRelation::Denial { .. } => {
                         Handoff::Call
                     }
-                    ArgumentRelation::Answer { .. } => Handoff::Consequent,
+                    ArgumentRelation::Answer { .. } | ArgumentRelation::Consequent { .. } => {
+                        Handoff::Consequent
+                    }
                     _ => Handoff::Develop,
                 },
             })
@@ -661,6 +844,7 @@ impl MusicalArgument {
             song,
             placements,
             argument: self.clone(),
+            route,
         })
     }
 
@@ -818,6 +1002,126 @@ impl MusicalArgument {
         argument.validate()?;
         Ok(argument)
     }
+
+    /// A generated full song from a real [`super::theme_family`] VERSE/HOOK/BRIDGE family, laid onto
+    /// the base form one statement per phrase.
+    ///
+    /// Unlike [`MusicalArgument::calibration`] — one ten-note theme restated six ways, which the
+    /// maintainer heard as a single ambiguous idea — this states a verse that hangs OPEN, a genuinely
+    /// DISTINCT-but-related hook that lands HOME, a BRIDGE that departs (recycling a hook cell, lifted
+    /// and open) through the contrasting middle the form naturally subdivides, and a returning hook.
+    /// The lead sings in EVERY phrase (no dead windows), and the harmony travels with it. Seeded and
+    /// reproducible; the material is sized to the form's full and short phrase spans so it fits.
+    pub fn fusion(seed: u64, base: &SongMap) -> Result<Self, ArgumentError> {
+        let spans: Vec<f64> = base
+            .plan
+            .form
+            .phrases
+            .iter()
+            .map(|p| p.end_beat() - p.start_beat())
+            .collect();
+        if spans.is_empty() {
+            return Err(ArgumentError::InsufficientPhrases);
+        }
+        let full = spans.iter().copied().fold(0.0_f64, f64::max);
+        let short = spans.iter().copied().fold(f64::INFINITY, f64::min);
+        // Compose the verse against the verse chart and the hook against the home chart, so each is
+        // ROOTED in the harmony it is actually played over (the route below assigns those same
+        // charts per relation). The bridge departs over the bridge chart. This closes the gap the
+        // ear heard: the lead no longer floats over the changes on a global scale.
+        let pair = super::theme_family::generate_pair(
+            seed,
+            full,
+            KINSHIP_BEATS_PER_BAR,
+            &VERSE_PROG,
+            &HOME_PROG,
+        );
+        let bridge_span = if short < full - 1e-9 { short } else { full };
+        let bridge_events = super::theme_family::generate_bridge(
+            seed,
+            &pair.hook,
+            bridge_span,
+            KINSHIP_BEATS_PER_BAR,
+            &BRIDGE_PROG,
+        );
+        let referents = vec![
+            MusicalReferent {
+                id: ReferentId(0),
+                pitch_basis: PitchBasis::Semitones,
+                events: pair.verse,
+            },
+            MusicalReferent {
+                id: ReferentId(1),
+                pitch_basis: PitchBasis::Semitones,
+                events: pair.hook,
+            },
+            MusicalReferent {
+                id: ReferentId(2),
+                pitch_basis: PitchBasis::Semitones,
+                events: bridge_events,
+            },
+        ];
+        let step = |id: u8, referent, relation, depends_on| ArgumentStep {
+            id: ArgumentStepId(id),
+            referent,
+            transform: ArgumentTransform::default(),
+            relation,
+            depends_on,
+            carriers: vec![Agent::Lead],
+        };
+        // One statement per phrase (step i lands on phrase i). Full phrases alternate verse/hook,
+        // the final full phrase RETURNS the hook, and the short middle block DEPARTS (the bridge).
+        let total_full = spans.iter().filter(|&&s| s >= full - 1e-9).count();
+        let mut steps = Vec::with_capacity(spans.len());
+        let mut last_verse: Option<ArgumentStepId> = None;
+        let mut a_hook: Option<ArgumentStepId> = None;
+        let mut full_seen = 0usize;
+        for (i, &span) in spans.iter().enumerate() {
+            let id = i as u8;
+            let sid = ArgumentStepId(id);
+            if span < full - 1e-9 {
+                // Short phrase → bridge departure of the most recent hook (fall back to the verse).
+                let src = a_hook.or(last_verse).unwrap_or(ArgumentStepId(0));
+                steps.push(step(
+                    id,
+                    ReferentId(2),
+                    ArgumentRelation::Depart { source: src },
+                    vec![src],
+                ));
+            } else {
+                let is_last_full = full_seen + 1 == total_full;
+                if let (true, Some(src)) = (is_last_full, a_hook) {
+                    steps.push(step(
+                        id,
+                        ReferentId(1),
+                        ArgumentRelation::Return { source: src },
+                        vec![src],
+                    ));
+                } else if full_seen % 2 == 0 {
+                    steps.push(step(id, ReferentId(0), ArgumentRelation::Establish, vec![]));
+                    last_verse = Some(sid);
+                } else {
+                    let ant = last_verse.unwrap_or(ArgumentStepId(0));
+                    steps.push(step(
+                        id,
+                        ReferentId(1),
+                        ArgumentRelation::Consequent { antecedent: ant },
+                        vec![ant],
+                    ));
+                    a_hook = Some(sid);
+                }
+                full_seen += 1;
+            }
+        }
+        let argument = Self {
+            family: ArgumentFamily::CallAndEarnedAnswer,
+            referents,
+            steps,
+            ending: ArgumentEnding::Resolved,
+        };
+        argument.validate()?;
+        Ok(argument)
+    }
 }
 
 // Motif rhythm is an inter-onset page used by existing planning. It cannot represent sounding
@@ -873,19 +1177,17 @@ pub fn prepare_performance(
         if region != performance.region {
             return Err(ArgumentError::IncompatibleTonalRegion);
         }
-        let relation = argument
-            .placements
-            .iter()
-            .rev()
-            .find(|p| p.start_beat <= span.start_beat + 1e-9)
-            .map_or(ArgumentRelation::Establish, |p| p.relation);
-        let desired = match relation {
-            ArgumentRelation::Question { .. } | ArgumentRelation::Develop { .. } => {
-                Chord::new(chart.cell.pointer.root_pc(&region), Quality::Dom7)
-            }
-            ArgumentRelation::Denial { .. } => chart.cell.deflect.chord(&region),
-            _ => chart.cell.reset.chord(&region),
-        };
+        // The harmony TRAVELS per bar along the compiled route (a pre-dominant→dominant→tonic→
+        // secondary-dominant verse loop, a home-landing hook loop, a pivoting bridge), instead of
+        // prolonging one dominant across a whole section. The route is region-relative, so it is
+        // realised against the performance region here.
+        let bar = (span.start_beat / 4.0).floor() as usize;
+        let (offset, quality) = argument
+            .route
+            .get(bar)
+            .copied()
+            .unwrap_or((0, Quality::Min));
+        let desired = Chord::new(region.tonic_pc + offset, quality);
         if !vocabulary.admits(desired) {
             return Err(ArgumentError::IncompatibleHarmonicVocabulary);
         }
@@ -1051,17 +1353,33 @@ mod tests {
             let mut performance = PerformancePlan::from_song(&compiled.song, &world, options);
             prepare_performance(&compiled, &mut performance, &world).unwrap();
             let question = &compiled.placements[1];
-            let chord = performance
+            // The harmony now TRAVELS through the question/verse phrase (it no longer prolongs one
+            // dominant across the whole slot). The real prepared dominant still SOUNDS within the
+            // phrase — at its dominant bar, as the teacher writes it — and the phrase moves.
+            let in_phrase: Vec<_> = performance
                 .chords
                 .iter()
-                .find(|s| {
-                    question.start_beat >= s.start_beat
-                        && question.start_beat < s.start_beat + f64::from(s.dur_beats)
+                .filter(|s| {
+                    s.start_beat >= question.start_beat - 1e-9
+                        && s.start_beat < question.start_beat + question.span_beats - 1e-9
                 })
-                .unwrap()
-                .chord;
-            let evidence = PullEvidence::of(&chord, world.tonic_pc);
-            assert!(evidence.leading_tone && evidence.resolving_tritone);
+                .map(|s| s.chord)
+                .collect();
+            assert!(
+                in_phrase.iter().any(|c| {
+                    let e = PullEvidence::of(c, world.tonic_pc);
+                    e.leading_tone && e.resolving_tritone
+                }),
+                "the verse phrase must still sound a real prepared dominant somewhere"
+            );
+            let distinct: std::collections::BTreeSet<_> = in_phrase
+                .iter()
+                .map(|c| (c.root_pc, c.quality.label()))
+                .collect();
+            assert!(
+                distinct.len() >= 2,
+                "the harmony must travel across the phrase, not prolong one chord: {distinct:?}"
+            );
         }
         let world = MusicWorld::swiss_signal();
         let mut performance = PerformancePlan::from_song(&compiled.song, &world, options);
@@ -1082,5 +1400,78 @@ mod tests {
                 .map(|s| s.chord)
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn fusion_states_a_distinct_verse_and_hook_that_is_not_the_same_tune() {
+        let base = SongMap::build(
+            &demo_trace(160.0),
+            17,
+            Some(CompositionGrammar::DeflectedLift),
+        );
+        for seed in [1u64, 2, 19, 701, 2112, 0xDEAD_BEEF] {
+            let argument = MusicalArgument::fusion(seed, &base).unwrap();
+            // Three distinct referents (verse + hook + bridge), not one theme restated.
+            assert_eq!(argument.referents.len(), 3);
+            let verse = &argument.referents[0].events;
+            let hook = &argument.referents[1].events;
+            let bridge = &argument.referents[2].events;
+            // The hook is genuinely a DIFFERENT tune: it would FAIL the archived exact-identity
+            // rule (this is the one-theme wall the Consequent relation breaks).
+            assert!(
+                !same_head(verse, hook, verse.len().min(hook.len())),
+                "seed {seed}: the hook must not be an exact-head restatement of the verse"
+            );
+            // But it IS a lawful altered-consequent (shares DNA, lands home where the verse hung open).
+            let kin =
+                super::super::theme_family::Kinship::measure(verse, hook, KINSHIP_BEATS_PER_BAR);
+            assert!(
+                kin.altered_consequent(),
+                "seed {seed}: hook not a lawful consequent: {kin:?}"
+            );
+            // The bridge is a lawful departure of the hook.
+            assert!(
+                super::super::theme_family::is_departure(hook, bridge),
+                "seed {seed}: bridge not a lawful departure"
+            );
+            // The lead sings in every phrase, and the form has a bridge departure and a return.
+            assert_eq!(argument.steps.len(), base.plan.form.phrases.len());
+            assert!(argument
+                .steps
+                .iter()
+                .any(|s| matches!(s.relation, ArgumentRelation::Depart { .. })));
+            assert!(argument
+                .steps
+                .iter()
+                .any(|s| matches!(s.relation, ArgumentRelation::Return { .. })));
+            // And it compiles onto the production form.
+            let compiled = argument.compile(&base).unwrap();
+            assert_eq!(compiled.placements.len(), argument.steps.len());
+        }
+    }
+
+    #[test]
+    fn a_rigid_transposition_consequent_is_rejected_as_a_restatement() {
+        let base = SongMap::build(
+            &demo_trace(160.0),
+            17,
+            Some(CompositionGrammar::DeflectedLift),
+        );
+        let mut argument = MusicalArgument::fusion(7, &base).unwrap();
+        // Replace the hook referent with a rigid +5-semitone transposition of the verse: it shares
+        // every interval exactly (a restatement in disguise). The contract must refuse it.
+        let shifted: Vec<MaterialEvent> = argument.referents[0]
+            .events
+            .iter()
+            .map(|e| MaterialEvent {
+                step: e.step.map(|s| s + 5),
+                ..*e
+            })
+            .collect();
+        argument.referents[1].events = shifted;
+        assert!(matches!(
+            argument.validate(),
+            Err(ArgumentError::ConsequentNotRelated(_))
+        ));
     }
 }

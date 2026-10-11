@@ -366,7 +366,10 @@ pub fn replace_required_role(
                             + i64::from(event.step.unwrap()),
                     )
                     .expect("validated carrier pitch fits MIDI and i32"),
-                    event.accent,
+                    // The carrier sounds at its authored accent scaled by the statement's declared
+                    // section dynamic — the argument's own energy arc, planned upstream and checked
+                    // by the independent witness (velocity == accent * section_gain).
+                    (event.accent * placement.section_gain).clamp(0.0, 1.0),
                     role,
                     provenance,
                 )
@@ -660,6 +663,7 @@ mod tests {
             pitch_basis: PitchBasis::Semitones,
             carriers: vec![Agent::Lead],
             anchor_semitones: 0,
+            section_gain: 1.0,
         };
         (plan, contexts, placement)
     }

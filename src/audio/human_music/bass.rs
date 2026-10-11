@@ -366,6 +366,13 @@ fn realize(
             // A walk costs four onsets; when the allowance cannot pay for them it walks in halves.
             BassMode::Walk if perf.free_allowance(Agent::Bass, bar) < 3.2 => onsets = vec![0, 8],
             BassMode::Walk => onsets = vec![0, 4, 8, 12],
+            BassMode::Foundation | BassMode::Counter | BassMode::Quote if perf.drive => {
+                // THE CAR (edit D): the drive path runs steady eighth-note onsets (16th-grid steps
+                // 0,2,4,..,14). The kick was already decoupled (edit B) so the pocket survives. The
+                // downbeat 0 is already seeded; dedup folds the overlap. Pitch tagging and duration
+                // logic below are untouched — root/fifth/approach by onset index, exactly as before.
+                onsets.extend((0..STEPS).step_by(2));
+            }
             BassMode::Foundation | BassMode::Counter | BassMode::Quote => {
                 // The bass's own subset of the grid: strong eighth off-beats of the gesture cell
                 // (the ones the kick does NOT take: the kick keeps the downbeat and beat 3).

@@ -85,8 +85,16 @@ pub fn observe_argument(
     }
 }
 
-// The argument compiler reserves functional V7 preparation and tonic completion.
-// Inspect actual chord pitches in the Score; function/gesture labels are not proof.
+/// One section cycle of the traveling chart: four bars of four beats. A verse/home loop resolves
+/// (to its V7 / tonic) only on the last bar of a full cycle; a phrase shorter than this truncates
+/// the progression before that resolving bar.
+const BEATS_PER_BAR: f64 = 4.0;
+const SECTION_CYCLE_BEATS: f64 = BEATS_PER_BAR * 4.0;
+
+// The argument compiler reserves functional V7 preparation and tonic completion. Under R3 the chart
+// TRAVELS, so the destination is realized at the phrase's cadence bar (its last bar), not at the
+// theme's early last-event beat — the material states in the opening bars while the chart keeps
+// moving to its functional goal. Inspect actual chord pitches in the Score; labels are not proof.
 fn harmonic_violations(
     compiled: &CompiledArgument,
     score: &Score,
@@ -94,6 +102,15 @@ fn harmonic_violations(
 ) -> Vec<ArgumentViolation> {
     let mut failures = Vec::new();
     let tonic = tonic_pc.rem_euclid(12);
+    let dominant = (tonic + 7).rem_euclid(12);
+    // The prepared dominant seventh: root on the dominant, with the leading tone and the resolving
+    // tritone fifth. Reconstructed from theory and the fixed tonic, never from the compiler's chart.
+    let is_dominant = |c: super::theory::Chord| {
+        let pcs = c.pitch_classes();
+        c.root_pc == dominant
+            && pcs.contains(&(tonic + 11).rem_euclid(12))
+            && pcs.contains(&(tonic + 5).rem_euclid(12))
+    };
     for step in &compiled.argument.steps {
         let Some(placement) = compiled.placements.iter().find(|p| p.step == step.id) else {
             continue;
@@ -104,23 +121,30 @@ fn harmonic_violations(
         let Some(last) = events.last() else {
             continue;
         };
-        let at = placement.start_beat + last.0;
+        // A sub-cycle phrase never renders the progression's resolving bar, so it makes no cadential
+        // claim and is not checked. The full-cycle phrases carry the destination, unchanged.
+        if placement.span_beats < SECTION_CYCLE_BEATS - EPS {
+            continue;
+        }
+        let cadence_bar =
+            ((placement.start_beat + placement.span_beats - EPS) / BEATS_PER_BAR).floor();
+        let at = cadence_bar * BEATS_PER_BAR;
         let chord = score
             .chords
             .iter()
             .find(|c| c.start_beat <= at + EPS && c.start_beat + f64::from(c.dur_beats) > at + EPS)
             .map(|c| c.chord);
         let valid = match step.relation {
-            ArgumentRelation::Question { .. } => chord.is_some_and(|c| {
-                let pcs = c.pitch_classes();
-                c.root_pc == (tonic + 7).rem_euclid(12)
-                    && pcs.contains(&(tonic + 11).rem_euclid(12))
-                    && pcs.contains(&(tonic + 5).rem_euclid(12))
-            }),
+            ArgumentRelation::Question { .. } => chord.is_some_and(is_dominant),
+            // The opening STATES the theme over the verse travel and hangs on its prepared dominant
+            // just as the question does; the chart no longer prolongs a tonic home under it. Guarded
+            // by its own completion so the fusion verse — which carries no completion and makes no
+            // such cadential claim — never enters this branch and its render is untouched.
+            ArgumentRelation::Establish if step.transform.completion.is_some() => {
+                chord.is_some_and(is_dominant)
+            }
             ArgumentRelation::Denial { .. } => chord.is_some_and(|c| c.root_pc != tonic),
-            ArgumentRelation::Establish
-            | ArgumentRelation::Answer { .. }
-            | ArgumentRelation::Return { .. }
+            ArgumentRelation::Answer { .. } | ArgumentRelation::Return { .. }
                 if step.transform.completion.is_some() =>
             {
                 chord.is_some_and(|c| c.root_pc == tonic && c.contains_pc(tonic + last.2))
@@ -249,6 +273,12 @@ pub fn verify(compiled: &CompiledArgument, score: &Score) -> Vec<ArgumentViolati
             ArgumentRelation::Denial { question } | ArgumentRelation::Answer { question } => {
                 vec![question]
             }
+            // A consequent is intentionally a DIFFERENT referent (the hook, not the verse), so it is
+            // exempt from the same-referent carriage check here; its kinship to the antecedent is a
+            // symbolic contract property proven in `MusicalArgument::validate`, while this witness
+            // still verifies the hook's OWN notes are actually played (below). The antecedent's
+            // ordering is enforced via `depends_on`.
+            ArgumentRelation::Consequent { .. } | ArgumentRelation::Depart { .. } => Vec::new(),
             ArgumentRelation::Reconcile { left, right } => vec![left, right],
         };
         if required.iter().any(|id| !step.depends_on.contains(id)) {
@@ -347,12 +377,33 @@ pub fn verify(compiled: &CompiledArgument, score: &Score) -> Vec<ArgumentViolati
                         / f64::from(qstep.transform.time_denominator);
                     let ascale = f64::from(step.transform.time_numerator)
                         / f64::from(step.transform.time_denominator);
+                    // `expected_events` bakes `accent * section_gain` into the accent field (R4b: the
+                    // lead breathes across sections). Head identity is the motif SHAPE, not the
+                    // section loudness — the same head restated at the answer's full gain must still
+                    // read as the question's head at its held-back gain. Divide each side back out by
+                    // its own section dynamic so the comparison is between raw motif accents; a
+                    // genuinely wrong accent shape still fails. Gains are the structured 0.70–1.0 arc,
+                    // never zero.
+                    let qgain = f64::from(
+                        compiled
+                            .placements
+                            .iter()
+                            .find(|p| p.step == question)
+                            .map_or(1.0_f32, |p| p.section_gain),
+                    );
+                    let again = f64::from(
+                        compiled
+                            .placements
+                            .iter()
+                            .find(|p| p.step == step.id)
+                            .map_or(1.0_f32, |p| p.section_gain),
+                    );
                     let head_matches = q.iter().zip(&expected).all(|(a, b)| {
                         (a.0 / qscale - b.0 / ascale).abs() <= EPS
                             && (a.1 / qscale - b.1 / ascale).abs() <= EPS
                             && a.2 - 12 * i32::from(qstep.transform.transpose_octaves)
                                 == b.2 - 12 * i32::from(step.transform.transpose_octaves)
-                            && (a.3 - b.3).abs() <= EPS as f32
+                            && (f64::from(a.3) / qgain - f64::from(b.3) / again).abs() <= EPS
                     });
                     let final_event = expected.last().expect("nonempty answer");
                     head_matches
@@ -431,6 +482,14 @@ fn expected_events(
     if source.pitch_basis != PitchBasis::Semitones {
         return None;
     }
+    // The carrier's sounding velocity is its authored accent scaled by this placement's declared
+    // section dynamic (the same product the transport applies). The witness verifies that exact
+    // product rather than the bare accent, so the lead may breathe across sections AND stay checked.
+    let gain = compiled
+        .placements
+        .iter()
+        .find(|p| p.step == id)
+        .map_or(1.0, |p| p.section_gain);
     if step.transform.time_denominator == 0 || step.transform.time_numerator == 0 {
         return None;
     }
@@ -444,7 +503,7 @@ fn expected_events(
                 e.onset * scale,
                 e.dur * scale,
                 e.step? + 12 * i32::from(step.transform.transpose_octaves),
-                e.accent,
+                (e.accent * gain).clamp(0.0, 1.0),
             ))
         })
         .collect::<Option<_>>()?;
@@ -460,7 +519,7 @@ fn expected_events(
             start,
             completion.dur * scale,
             completion.step + 12 * i32::from(step.transform.transpose_octaves),
-            1.0,
+            gain.clamp(0.0, 1.0),
         ));
     }
     Some(result)

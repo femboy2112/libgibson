@@ -850,7 +850,14 @@ pub(crate) fn realize_drums_arbitrated(
                 DrumsMode::HalfTime => (s == 0 || (s == 10 && eb.kinetic > 0.5), true),
                 DrumsMode::Break => (w.hit >= 0.9, false),
                 _ => {
-                    let anchor = s == 0 || (s == 8 && !bsteps.iter().any(|&b| b == 6 || b == 10));
+                    // THE CAR (edit B, done BEFORE the bass densifies): the teacher's pocket fires
+                    // the kick on steps 0, 6, 8, 11 UNCONDITIONALLY — decoupled from the bass, so
+                    // densifying the bass can't steal the beat-3 kick. Historical path unchanged.
+                    let anchor = if perf.drive {
+                        matches!(s, 0 | 6 | 8 | 11)
+                    } else {
+                        s == 0 || (s == 8 && !bsteps.iter().any(|&b| b == 6 || b == 10))
+                    };
                     let accent = w.push >= 0.9 || w.hit >= 0.9;
                     let interlock = s % 2 == 0
                         && s % 4 != 0
@@ -973,7 +980,10 @@ pub(crate) fn realize_drums_arbitrated(
                 DrumsMode::HalfTime => 4,
                 DrumsMode::DoubleTime => 1,
                 DrumsMode::Break => 99,
-                _ if tight => subdiv_steps.max(2),
+                // THE CAR (edit C): on the drive path the closed-hat line runs 16ths regardless of
+                // the tight budget — hat_every = the unthinned subdiv_steps, not thinned to 8ths.
+                // Historical path keeps the `tight`-thinned 8ths exactly as before.
+                _ if tight && !perf.drive => subdiv_steps.max(2),
                 _ => subdiv_steps,
             };
             if s % hat_every == 0 && !in_fill {

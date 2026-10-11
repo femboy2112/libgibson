@@ -365,6 +365,42 @@ pub fn perform_argument(
     })
 }
 
+/// Multiply a backing voice's sounding velocity by the argument's declared section energy at each
+/// note's onset — the band's dynamic arc. Structured and relational (the arc is a product of the
+/// discourse relation placed over this beat), never a random per-note jitter. The lead-seated
+/// carrier is shaped by its own `section_gain` and is never passed here; a carrier that has
+/// developed down into a backing seat (keys/bass) IS passed but is skipped below, for the same
+/// reason — it owns its declared dynamic and answers to the witness, not the band's arc.
+fn scale_backing_by_section_energy(
+    notes: &mut [Note],
+    argument: &super::argument::CompiledArgument,
+) {
+    for n in notes.iter_mut() {
+        // The argument's thematic carrier declares its OWN `accent * section_gain` and is audited by
+        // the independent witness — so it is exempt from the band's energy arc even when the theme
+        // has developed by register down into a backing instrument's seat (develop -> keys, depart
+        // -> bass). The band breathes; the carried theme keeps the dynamic it was authored at,
+        // exactly as the lead-seated carrier already does. Without this exemption the backing arc
+        // double-attenuates a migrated carrier (section_gain THEN backing_energy) and the witness
+        // rightly refuses the performance.
+        if n.prov.role_note == "argument" {
+            continue;
+        }
+        n.velocity = (n.velocity * argument.backing_energy_at(n.start_beat)).clamp(0.02, 1.0);
+    }
+}
+
+/// The drum-kit companion of [`scale_backing_by_section_energy`]: the kit recedes in the verse and
+/// arrives in the hook and return with the rest of the band.
+fn scale_drums_by_section_energy(
+    hits: &mut [super::score::DrumHit],
+    argument: &super::argument::CompiledArgument,
+) {
+    for h in hits.iter_mut() {
+        h.velocity = (h.velocity * argument.backing_energy_at(h.start_beat)).clamp(0.02, 1.0);
+    }
+}
+
 /// A performance under explicit laws, not yet judged: exactly [`perform_with_profile`]. The
 /// candidate a checked route admits or rejects — kept so a rejected take can still be inspected
 /// and heard.
@@ -449,6 +485,10 @@ fn plan_and_realize_inner(
                     "the argument's required harmonic commitment is infeasible",
                 )
             })?;
+            // THE CAR: this is the ONLY place the drive-chain engages. The argument route — and
+            // nothing else — gets the driving kick/hats/bass. Re-set every rehearsal pass because
+            // `perf` is rebuilt fresh each pass above.
+            perf.drive = true;
         }
         let score = realize_policy_with_argument(song, world, &perf, profile, observed, argument)
             .map_err(|e| super::cover::CoverError::Invalid(e.0))?;
@@ -668,7 +708,7 @@ fn realize_policy_with_argument(
             .hearings
             .push(Hearing::of(listener, Role::Lead, &lead.notes));
     }
-    let (pad, keys, bass) = match perf.coupling {
+    let (mut pad, mut keys, mut bass) = match perf.coupling {
         // The surgical arm realizes the R7b band first, note for note; it repairs afterwards.
         EnsembleCoupling::Independent | EnsembleCoupling::Surgical => {
             let mut keys = if semantic_occupancy {
@@ -1031,6 +1071,19 @@ fn realize_policy_with_argument(
             super::groove::realize_drums(perf, plan, world, seed, &bass, &lead.notes)
         }
     };
+    // The band breathes. On the opt-in argument route the whole backing — pad, keys, bass and the
+    // drums the band plays under — follows the argument's declared section energy, so the band is
+    // no longer a flat wall at one dynamic with one plan. Applied here, AFTER the drummer has
+    // already heard the band as written (the groove is computed on the written velocities, then the
+    // output recedes), and NOT to `lead.notes` (the carrier keeps its own `section_gain` arc and
+    // the independent witness that checks it). Read only when an argument is present: every
+    // historical route is byte-for-byte unchanged.
+    if let Some(argument) = argument {
+        scale_backing_by_section_energy(&mut pad, argument);
+        scale_backing_by_section_energy(&mut keys, argument);
+        scale_backing_by_section_energy(&mut bass, argument);
+        scale_drums_by_section_energy(&mut score.drums, argument);
+    }
     score.notes.extend(pad);
     score.notes.extend(keys);
     score.notes.extend(bass);
