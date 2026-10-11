@@ -1,23 +1,17 @@
-//! R0 (OPERATION HUMANMUSIC) — independent Rust reproduction of the false-finale defect.
+//! OPERATION HUMANMUSIC — the global-argument arc witness (R0 reproduction → R1 acceptance).
 //!
 //! These tests read the REAL `MusicalArgument::fusion` + `compile` objects for the actual
 //! `examples/fusion_gates.rs` default construction (`deflected_lift_trace(beats)`, seed 2112,
-//! `DeflectedLift`/`MeaningDirected`, black_ice A-Aeolian). They are NOT a transcription of the
-//! `research/c137_semantic_density` Python model — they execute the pinned Rust and assert what it
-//! actually produces. The observed sequences match that model exactly (receipt: PR #99).
+//! `DeflectedLift`/`MeaningDirected`). They are NOT a transcription of the
+//! `research/c137_semantic_density` Python model (PR #99) — they execute the Rust.
 //!
-//! The defect, confirmed from live objects:
-//!   * **F0** — the fusion argument declares `ArgumentEnding::Resolved`, yet at every tested length
-//!     except 160 it ENDS on a bridge `Depart` and (112/120/128/144) sounds its `Return` BEFORE the
-//!     final departures. The last thing the "resolved" piece says is a departure, not a return.
-//!   * **F1** — `compile` indexes the 8-bar `BRIDGE_PROG` by each phrase's LOCAL bar, so the four
-//!     short `Depart` phrases of the 128-beat tail each restart at bar 0: only the first two bridge
-//!     chords (`Dom7@0`, `Min@5`) ever sound. The open home-dominant that *wants the return*
-//!     (`BRIDGE_PROG[7]` = `Dom7@7`) never plays. The bridge forgets its cumulative phase.
-//!
-//! These assertions document the CURRENT (defective) behavior so the macroform repair (R1) has a
-//! red-to-green pivot: R1 inverts them (a Resolved fusion program must discharge its departure and
-//! close on a Return/Coda; the bridge route must advance through all eight chords).
+//! R0 reproduced the false-finale defect from live objects: the `fusion` argument declared
+//! `ArgumentEnding::Resolved` yet ended on a bridge `Depart` (128: Return@80 then Depart@96/104/112/
+//! 120), and the 8-bar `BRIDGE_PROG` restarted inside each short tail phrase so only two of its
+//! eight chords sounded. R1 repaired it with a narrative ARC over the form (`MusicalArgument::arc`):
+//! a `Resolved` program now closes on its Return, the bridge sits in the middle, and its harmonic
+//! route advances continuously through all eight chords — ending on the open home-dominant that
+//! pulls into the return. These assertions are the corrected (green) acceptance witness.
 use gibson::audio::human_music::{
     argument::{ArgumentEnding, ArgumentRelation, CompiledArgument, MusicalArgument},
     composer::Composer,
@@ -28,6 +22,20 @@ use gibson::audio::human_music::{
 };
 
 const SEED: u64 = 2112;
+
+/// The intended 8-bar bridge departure (mirrors `argument.rs::BRIDGE_PROG`): the tonic turns into
+/// its own dominant, travels the relative-minor region, and ends OPEN on the home dominant (V7)
+/// that wants the return.
+const BRIDGE_PROG: [(i32, Quality); 8] = [
+    (0, Quality::Dom7),
+    (5, Quality::Min),
+    (3, Quality::Maj),
+    (8, Quality::Maj),
+    (5, Quality::Min),
+    (0, Quality::Dom7),
+    (5, Quality::Min),
+    (7, Quality::Dom7),
+];
 
 fn compiled_fusion(beats: f64) -> (MusicalArgument, CompiledArgument) {
     let base = SongMap::compose(
@@ -74,20 +82,20 @@ fn print_arc(beats: f64, c: &CompiledArgument) {
     }
 }
 
-fn ends_departed(c: &CompiledArgument) -> bool {
+fn ends_on_return(c: &CompiledArgument) -> bool {
     matches!(
         c.placements.last().map(|p| p.relation),
-        Some(ArgumentRelation::Depart { .. })
+        Some(ArgumentRelation::Return { .. })
     )
 }
 
-fn has_return(c: &CompiledArgument) -> bool {
+fn has_depart(c: &CompiledArgument) -> bool {
     c.placements
         .iter()
-        .any(|p| matches!(p.relation, ArgumentRelation::Return { .. }))
+        .any(|p| matches!(p.relation, ArgumentRelation::Depart { .. }))
 }
 
-/// A `Depart` whose onset is strictly after the last `Return` — the audible false finale.
+/// A `Depart` whose onset is strictly after the last `Return` — the audible false finale R0 found.
 fn return_precedes_departure(c: &CompiledArgument) -> bool {
     let last_return = c
         .placements
@@ -102,15 +110,31 @@ fn return_precedes_departure(c: &CompiledArgument) -> bool {
         })
 }
 
+/// The route bars the (first) `Depart` section spans, in order.
+fn bridge_route(c: &CompiledArgument) -> Vec<(i32, Quality)> {
+    let dep = c
+        .placements
+        .iter()
+        .find(|p| matches!(p.relation, ArgumentRelation::Depart { .. }))
+        .expect("a bridge section");
+    let first_bar = (dep.start_beat / 4.0).round() as usize;
+    let bars = (dep.span_beats / 4.0).round() as usize;
+    c.route[first_bar..first_bar + bars].to_vec()
+}
+
 #[test]
-fn f0_the_128_default_returns_at_beat_80_then_ends_on_four_bridge_departures() {
+fn f0_the_128_default_is_a_closed_verse_hook_depart_return_arc() {
     let (argument, c) = compiled_fusion(128.0);
     print_arc(128.0, &c);
 
-    // The program PROMISES resolution...
+    // The program promises resolution...
     assert_eq!(argument.ending, ArgumentEnding::Resolved);
+    assert!(
+        argument.arc.is_some(),
+        "the arc path is taken for the default"
+    );
 
-    // ...yet the realized order is verse/hook ×3, an early Return, then four departures.
+    // ...and now the realized order is a closed verse/hook, a middle departure, then a return.
     assert_eq!(
         relations(&c),
         vec![
@@ -118,93 +142,78 @@ fn f0_the_128_default_returns_at_beat_80_then_ends_on_four_bridge_departures() {
             "Consequent(hook)",
             "Establish(verse)",
             "Consequent(hook)",
-            "Establish(verse)",
-            "Return(hook)",   // beat 80
-            "Depart(bridge)", // beat 96
-            "Depart(bridge)", // beat 104
-            "Depart(bridge)", // beat 112
-            "Depart(bridge)", // beat 120 — last word is a departure
+            "Depart(bridge)", // beats 64..96 — the departure is in the MIDDLE
+            "Return(hook)",   // beats 96..128 — the last word is the return
         ],
     );
     assert!(
-        return_precedes_departure(&c),
-        "F0: the Return (beat 80) is followed by bridge departures"
-    );
-    assert!(
-        ends_departed(&c),
-        "F0: a Resolved program ends on a Depart, not a Return/Coda"
-    );
-}
-
-#[test]
-fn f1_the_bridge_progression_restarts_each_short_phrase_so_only_two_of_eight_chords_sound() {
-    let (_argument, c) = compiled_fusion(128.0);
-    // Bars 24..32 (beats 96..128) are the four 8-beat Depart phrases.
-    let bridge: Vec<(i32, Quality)> = c.route[24..32].to_vec();
-    println!("\n128-beat bridge route (bars 24..32): {bridge:?}");
-
-    // Intended: the full 8-bar BRIDGE_PROG, eight distinct steps ending on the home dominant.
-    // Actual: each 2-bar phrase restarts at local bar 0, so it is `[Dom7@0, Min@5]` vamped 4×.
-    let vamp: Vec<(i32, Quality)> = vec![(0, Quality::Dom7), (5, Quality::Min)];
-    let expected: Vec<(i32, Quality)> = vamp.iter().cycle().take(8).copied().collect();
-    assert_eq!(
-        bridge, expected,
-        "F1: the bridge is a 2-chord vamp, not an 8-bar journey"
-    );
-
-    let mut distinct = bridge.clone();
-    distinct.sort_by_key(|&(d, _)| d);
-    distinct.dedup();
-    assert_eq!(
-        distinct.len(),
-        2,
-        "F1: only two distinct chords sound across the bridge"
-    );
-
-    // The chord that makes the return feel earned — the open home dominant — never plays.
-    assert!(
-        !bridge.contains(&(7, Quality::Dom7)),
-        "F1: BRIDGE_PROG[7] (the open home dominant) is lost to the restart"
-    );
-}
-
-#[test]
-fn positive_control_the_160_fixture_ends_in_a_return() {
-    let (_argument, c) = compiled_fusion(160.0);
-    print_arc(160.0, &c);
-    assert!(has_return(&c));
-    assert!(
-        !ends_departed(&c),
-        "160-beat control: the final placement is a Return, not a Depart"
+        ends_on_return(&c),
+        "a Resolved program closes on its Return, not a Depart"
     );
     assert!(
         !return_precedes_departure(&c),
-        "160-beat control: no departure falls after the last Return"
+        "no departure falls after the return"
     );
-    assert!(matches!(
-        c.placements.last().map(|p| p.relation),
-        Some(ArgumentRelation::Return { .. })
-    ));
 }
 
 #[test]
-fn the_false_finale_is_systemic_not_a_single_length_artifact() {
-    for &beats in &[96.0_f64, 112.0, 120.0, 128.0, 144.0] {
+fn f1_the_bridge_travels_its_full_progression_and_ends_on_the_home_dominant() {
+    let (_argument, c) = compiled_fusion(128.0);
+    let bridge = bridge_route(&c);
+    println!("\n128-beat bridge route: {bridge:?}");
+
+    // The 128 bridge spans 32 beats = 8 bars, so it plays the whole BRIDGE_PROG exactly once —
+    // no restart. The route advances continuously (section-local bar indexing).
+    assert_eq!(
+        bridge.len(),
+        8,
+        "the 128 bridge is eight bars (two coalesced 16-beat phrases)"
+    );
+    for (k, chord) in bridge.iter().enumerate() {
+        assert_eq!(
+            *chord,
+            BRIDGE_PROG[k % BRIDGE_PROG.len()],
+            "bridge bar {k} must follow the continuous progression"
+        );
+    }
+    // The chord that makes the return feel earned — the open home dominant — now sounds, last.
+    assert_eq!(
+        *bridge.last().unwrap(),
+        (7, Quality::Dom7),
+        "the bridge ends open on the home dominant that pulls into the return"
+    );
+}
+
+#[test]
+fn positive_control_the_160_fixture_still_ends_in_a_return() {
+    let (_argument, c) = compiled_fusion(160.0);
+    print_arc(160.0, &c);
+    assert!(ends_on_return(&c));
+    assert!(!return_precedes_departure(&c));
+}
+
+#[test]
+fn every_tested_length_closes_on_a_return_after_a_middle_departure() {
+    for &beats in &[96.0_f64, 112.0, 120.0, 128.0, 144.0, 160.0] {
         let (argument, c) = compiled_fusion(beats);
         print_arc(beats, &c);
         assert_eq!(argument.ending, ArgumentEnding::Resolved);
         assert!(
-            ends_departed(&c),
-            "@{beats}: a Resolved program ends on a Depart"
+            ends_on_return(&c),
+            "@{beats}: a Resolved program ends on its Return"
         );
+        assert!(
+            has_depart(&c),
+            "@{beats}: the arc departs (a bridge) before it returns"
+        );
+        assert!(
+            !return_precedes_departure(&c),
+            "@{beats}: the return is the final gesture"
+        );
+        // Whatever its length, the bridge advances continuously through BRIDGE_PROG.
+        let bridge = bridge_route(&c);
+        for (k, chord) in bridge.iter().enumerate() {
+            assert_eq!(*chord, BRIDGE_PROG[k % BRIDGE_PROG.len()]);
+        }
     }
-    // 96 is its own pathology: a Resolved program that never returns at all.
-    let (_argument, c96) = compiled_fusion(96.0);
-    assert!(
-        !has_return(&c96),
-        "@96: the Resolved program contains no Return whatsoever"
-    );
-    // 160 alone, by luck of the partition, closes correctly.
-    let (_argument, c160) = compiled_fusion(160.0);
-    assert!(!ends_departed(&c160));
 }
