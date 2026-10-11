@@ -367,13 +367,25 @@ pub fn perform_argument(
 
 /// Multiply a backing voice's sounding velocity by the argument's declared section energy at each
 /// note's onset — the band's dynamic arc. Structured and relational (the arc is a product of the
-/// discourse relation placed over this beat), never a random per-note jitter. The lead carrier is
-/// shaped by its own `section_gain` and is never passed here.
+/// discourse relation placed over this beat), never a random per-note jitter. The lead-seated
+/// carrier is shaped by its own `section_gain` and is never passed here; a carrier that has
+/// developed down into a backing seat (keys/bass) IS passed but is skipped below, for the same
+/// reason — it owns its declared dynamic and answers to the witness, not the band's arc.
 fn scale_backing_by_section_energy(
     notes: &mut [Note],
     argument: &super::argument::CompiledArgument,
 ) {
     for n in notes.iter_mut() {
+        // The argument's thematic carrier declares its OWN `accent * section_gain` and is audited by
+        // the independent witness — so it is exempt from the band's energy arc even when the theme
+        // has developed by register down into a backing instrument's seat (develop -> keys, depart
+        // -> bass). The band breathes; the carried theme keeps the dynamic it was authored at,
+        // exactly as the lead-seated carrier already does. Without this exemption the backing arc
+        // double-attenuates a migrated carrier (section_gain THEN backing_energy) and the witness
+        // rightly refuses the performance.
+        if n.prov.role_note == "argument" {
+            continue;
+        }
         n.velocity = (n.velocity * argument.backing_energy_at(n.start_beat)).clamp(0.02, 1.0);
     }
 }
