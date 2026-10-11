@@ -260,6 +260,11 @@ pub struct PerformanceProfile {
     /// identity is handed through the band. [`NarrativePolicy::Archived`] (the default) is byte-exact
     /// v0.4 — the lead carries every site and the band's roles never move across the form.
     pub narrative: NarrativePolicy,
+    /// Opt-in counterpoint: a germ-derived countersubject (the verse germ inverted — a contrary-motion
+    /// partner, same DNA) woven into the keys voice in the lead's silent gaps, so a second voice
+    /// ANSWERS the lead instead of the band merely comping under it. `false` (the default) is byte-exact
+    /// — the band is unchanged. Read only on the opt-in argument route.
+    pub counterpoint: bool,
     pub(crate) repair: HistoricalRepair,
 }
 
@@ -288,6 +293,7 @@ impl PerformanceProfile {
             dynamics: false,
         },
         narrative: NarrativePolicy::Archived,
+        counterpoint: false,
         repair: HistoricalRepair::None,
     };
     pub const TEMPORAL: Self = Self {
@@ -349,6 +355,14 @@ impl PerformanceProfile {
     /// The same laws with opt-in ensemble narrative (the per-phrase carrier handoff through the band).
     pub const fn with_narrative(self, narrative: NarrativePolicy) -> Self {
         Self { narrative, ..self }
+    }
+
+    /// The same laws with opt-in counterpoint (a germ-derived countersubject woven into the band).
+    pub const fn with_counterpoint(self, counterpoint: bool) -> Self {
+        Self {
+            counterpoint,
+            ..self
+        }
     }
 
     /// The same laws with another percussion law.

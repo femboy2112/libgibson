@@ -61,6 +61,123 @@ fn lead_in(lead: &[Note], a: f64, b: f64) -> Vec<Note> {
         .collect()
 }
 
+/// Beats of lead silence below which the counter-voice stays quiet (shorter rests are just the
+/// lead's own phrasing, not an opening for a second voice).
+const COUNTER_MIN_GAP: f64 = 0.5;
+/// A lead note held at least this long is sustained enough to carry a MOVING counter-line against
+/// it — the classic fugal texture of one voice singing over another's held tone. Below this it is
+/// just a note, and the counter waits for a rest instead.
+const COUNTER_HOLD: f64 = 1.5;
+/// How far into a window (after the lead stops, or after a held note begins) the counter waits
+/// before it enters — a breath, so the two voices answer rather than collide on the same instant.
+const COUNTER_LEAD_IN: f64 = 0.25;
+/// The degree octave the countersubject is realized in before register separation drops it clear
+/// of the lead.
+const COUNTER_OCTAVE: i32 = 4;
+/// The counter-voice's base velocity: a second voice CONVERSING with the lead — in its rests and
+/// against its held tones — deliberately under the lead, never competing with it. It still rides
+/// the band's section-energy arc.
+const COUNTER_VEL: f32 = 0.6;
+
+/// The lead pitch nearest in time to `beat` — the reference the counter-voice separates below.
+fn nearest_lead_pitch(lead: &[Note], beat: f64) -> Option<Midi> {
+    lead.iter()
+        .min_by(|a, b| {
+            (a.start_beat - beat)
+                .abs()
+                .total_cmp(&(b.start_beat - beat).abs())
+        })
+        .map(|n| n.pitch)
+}
+
+/// A germ-derived **countersubject**, woven against the lead — the minimal fugal cell.
+///
+/// The verse germ the listener actually hears (`perf.bank.identity`, set on the fusion route from
+/// the carrier) turned upside down (`Motif::invert` — a contrary-motion partner: a different surface
+/// shape, the *same* DNA), laid into the LEAD'S OPEN WINDOWS so the two voices converse: its silent
+/// rests (the voices take turns) *and* the sustains of its long held notes (one voice moving against
+/// the other's held tone — the classic fugal texture). Each note is snapped to a consonance of the
+/// harmony it lands in (`nearest_stable`) and kept clearly below the lead so the ear separates the
+/// two streams instead of fusing them. The idea UNFOLDS across the song (the degree cursor advances
+/// window to window) rather than looping — developing variation, not a repeat.
+///
+/// Tagged `role_note = "counter"`, so the independent argument witness (which audits only the
+/// `"argument"` carrier) never sees it: this is free realizer territory. The caller gates it to the
+/// opt-in argument route; off, the band is byte-for-byte unchanged.
+pub(crate) fn realize_countersubject(
+    perf: &PerformancePlan,
+    lead: &[Note],
+    total_beats: f64,
+) -> Vec<Note> {
+    let subject = &perf.bank.identity;
+    if subject.is_empty() || lead.is_empty() {
+        return Vec::new();
+    }
+    let counter = subject.invert();
+    if counter.degrees.is_empty() {
+        return Vec::new();
+    }
+    // The lead's open windows: (a) its silent rests between successive onsets (plus the opening and
+    // the final tail — the return's empty tail is exactly such a rest), and (b) the SUSTAIN of each
+    // long held note, where a moving counter sings against the held tone. A breath (COUNTER_LEAD_IN)
+    // is folded into each window's start so the counter answers rather than collides on the onset.
+    let mut sorted: Vec<&Note> = lead.iter().collect();
+    sorted.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+    let mut gaps: Vec<(f64, f64)> = Vec::new();
+    let mut cursor = 0.0_f64;
+    for n in &sorted {
+        if n.start_beat - cursor >= COUNTER_MIN_GAP {
+            gaps.push((cursor + COUNTER_LEAD_IN, n.start_beat));
+        }
+        let end = n.start_beat + n.dur_beats as f64;
+        if n.dur_beats as f64 >= COUNTER_HOLD {
+            gaps.push((n.start_beat + COUNTER_LEAD_IN, end));
+        }
+        cursor = cursor.max(end);
+    }
+    if total_beats - cursor >= COUNTER_MIN_GAP {
+        gaps.push((cursor + COUNTER_LEAD_IN, total_beats));
+    }
+    gaps.sort_by(|a, b| a.0.total_cmp(&b.0));
+    // Lay the inverted germ across the windows, advancing its degree cursor so the counter-idea
+    // develops over the whole song rather than resetting each window.
+    let mut out: Vec<Note> = Vec::new();
+    let mut di = 0usize;
+    for (g0, g1) in gaps {
+        let mut at = g0;
+        while at < g1 - 0.2 {
+            let idx = di % counter.degrees.len();
+            let deg = counter.degrees[idx];
+            let step = counter.rhythm.get(idx).copied().unwrap_or(0.5).max(0.25) as f64;
+            let Some(ctx) = perf.context_at(at) else {
+                break;
+            };
+            let raw = perf.region_at(at).degree_pitch(deg, COUNTER_OCTAVE);
+            let mut p = nearest_stable(ctx, raw);
+            if let Some(ln) = nearest_lead_pitch(lead, at) {
+                // Keep the counter clearly below the lead so the ear hears two streams, not one.
+                while p >= ln - 2 {
+                    p -= 12;
+                }
+            }
+            let dur = ((g1 - at).min(step) * 0.9).clamp(0.2, 2.0);
+            let function = function_over(ctx, p);
+            out.push(Note {
+                start_beat: at,
+                dur_beats: dur as f32,
+                pitch: p,
+                velocity: COUNTER_VEL,
+                role: Role::Keys,
+                prov: prov("counter", Some("invert")),
+                function,
+            });
+            at += step;
+            di += 1;
+        }
+    }
+    out
+}
+
 /// Release any note whose sustain would carry it more than half a beat into a harmony it does not
 /// belong to: it ends at the harmony change instead (a player lifts off when the chord moves). A
 /// pedal is re-struck by its realizer rather than smeared. Returns how many notes were released.

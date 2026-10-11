@@ -737,6 +737,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(128.0);
     let table_only = args.iter().any(|a| a == "--table-only");
+    // Opt-in A/B arm: weave a germ-derived countersubject into the band (keys ANSWERS the lead in its
+    // silent gaps). Default off = the byte-exact BAND render; the ear adjudicates the arm against it.
+    let counterpoint = args.iter().any(|a| a == "--counterpoint");
     let seeds: Vec<u64> = match arg("--seeds=") {
         Some(list) => list.split(',').map(str::parse).collect::<Result<_, _>>()?,
         None => vec![arg("--seed=").and_then(|s| s.parse().ok()).unwrap_or(2112)],
@@ -775,16 +778,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("fusion_gates: black_ice, A Aeolian, {tempo} BPM, {beats} beats, {nphrases} phrases");
     println!("REJECTION gates only: PASS = not auto-disqualified, NEVER 'sounds good'. The ear is the oracle.");
 
+    let profile = PerformanceProfile::BAND.with_counterpoint(counterpoint);
+    if counterpoint {
+        println!("COUNTERPOINT arm ON: a germ-derived countersubject woven into the keys voice.");
+    }
     let mut runs: Vec<Run> = Vec::new();
     for &seed in &seeds {
         let argument = MusicalArgument::fusion(seed, &base)?;
         let compiled = argument.compile(&base)?;
-        let c = match perform_argument(
-            &compiled,
-            &world,
-            PerformanceOptions::default(),
-            PerformanceProfile::BAND,
-        ) {
+        let c = match perform_argument(&compiled, &world, PerformanceOptions::default(), profile) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("perform_argument ERROR (seed {seed}): {e:?}");
