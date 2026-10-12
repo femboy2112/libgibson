@@ -1,0 +1,14 @@
+   Compiling libgibson v0.4.0 (/home/leah/LibGibson.kernel-authority)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 19.39s
+     Running tests/audio_c137_source_authority.rs (target/debug/deps/audio_c137_source_authority-d56d3372b91ca4a4)
+
+running 6 tests
+test red_source_preparation_should_refuse_a_foreign_plan_owner ... ignored, preserved R0 red oracle: legacy preparation does not refuse a foreign owner
+test existing_material_transport_distinguishes_equal_count_equal_energy_calls ... ok
+test legacy_preparation_silently_fills_missing_source_route_with_tonic ... ok
+test root_mutation_does_not_establish_stale_accent_ensemble_or_budget ... ok
+test legacy_preparation_accepts_a_foreign_plan_owner ... ok
+test legacy_source_harmony_invalidates_a_previously_planned_home_arrival ... ok
+
+test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 4.03s
+

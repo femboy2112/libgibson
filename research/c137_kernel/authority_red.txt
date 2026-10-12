@@ -1,0 +1,22 @@
+   Compiling libgibson v0.4.0 (/home/leah/LibGibson.kernel-authority)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.01s
+     Running tests/audio_c137_source_authority.rs (target/debug/deps/audio_c137_source_authority-d56d3372b91ca4a4)
+
+running 1 test
+test red_source_preparation_should_refuse_a_foreign_plan_owner ... FAILED
+
+failures:
+
+---- red_source_preparation_should_refuse_a_foreign_plan_owner stdout ----
+
+thread 'red_source_preparation_should_refuse_a_foreign_plan_owner' (648576) panicked at tests/audio_c137_source_authority.rs:223:5:
+source authority must refuse a performance owned by another song
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    red_source_preparation_should_refuse_a_foreign_plan_owner
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.08s
+
+error: test failed, to rerun pass `--test audio_c137_source_authority`
