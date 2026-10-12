@@ -372,6 +372,26 @@ fn realize(
                 // downbeat 0 is already seeded; dedup folds the overlap. Pitch tagging and duration
                 // logic below are untouched — root/fifth/approach by onset index, exactly as before.
                 onsets.extend((0..STEPS).step_by(2));
+                // Bass WITHHOLD (Round XVI): an unbroken eighth-note stream through every bar is the
+                // most mechanical, most "averaged" part of the band. When the NEXT bar lands a new
+                // harmony, the bass clears its last eighth so the new chord's downbeat arrives on
+                // open air — the player anticipating the change by leaving space for it, not running
+                // the stream straight through. Causal on the harmonic route; fusion-drive only.
+                // Trimming the trailing step never disturbs the root/fifth-by-index pitch logic
+                // below and only ever REMOVES a note, so the argument witness and stage are untouched.
+                // Only in a DRIVING bar (`kinetic >= 0.55`, the same line the mode uses to call a bar
+                // low): there the eighth-stream is full and mechanical and the dropped beat reads as
+                // a held breath, whereas an already-thin bar (the bridge) needs its notes to keep its
+                // harmonic variety alive. This keeps the anticipation gesture where it belongs.
+                let new_harmony_next = eb.kinetic >= 0.55
+                    && perf
+                        .context_at(be)
+                        .is_some_and(|c| c.start_beat >= be - 1e-6)
+                    && perf.context_at(bs).map(|c| c.chord.root_pc)
+                        != perf.context_at(be).map(|c| c.chord.root_pc);
+                if new_harmony_next {
+                    onsets.retain(|&s| s < 14);
+                }
             }
             BassMode::Foundation | BassMode::Counter | BassMode::Quote => {
                 // The bass's own subset of the grid: strong eighth off-beats of the gesture cell
