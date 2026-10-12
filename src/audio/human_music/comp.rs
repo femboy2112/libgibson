@@ -640,12 +640,15 @@ fn keys_comp_impl(
                 // The shared complexity budget: the keys spend only their own allowance (the lead's
                 // statements and every planned answer and figure were reserved first). A stab
                 // costs about one weighted onset.
+                //
+                // On the fusion drive path the lead now BREATHES (cell-boundary rests), so the band
+                // gets one more stab per bar to converse in that opened space — more information
+                // density, landing (`allows_comp_at`) off the lead's own onsets, in its rests. Gated
+                // on `perf.drive` so the non-fusion BAND path is byte-for-byte unchanged, and still
+                // capped by the language's voicing limit (never beyond what the harmony licenses).
                 let free = perf.free_allowance(Agent::Keys, bar);
-                ((free / 1.1).floor() as usize).min(if perf.language.shell_voicings {
-                    3
-                } else {
-                    2
-                })
+                ((free / 1.1).floor() as usize + usize::from(perf.drive))
+                    .min(if perf.language.shell_voicings { 3 } else { 2 })
             }
             _ => 0,
         };
