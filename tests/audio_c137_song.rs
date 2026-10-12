@@ -6,7 +6,7 @@ mod source;
 use gibson::audio::human_music::{
     kernel::{self, CommittedSong},
     plan::ArrangementRole,
-    score::{Role, Score},
+    score::{DrumVoice, Role, Score},
     theory::Mode,
     MusicWorld,
 };
@@ -247,6 +247,90 @@ fn the_developed_lead_is_a_played_line_not_a_quantized_skeleton() {
             assert!(
                 (n.start_beat - lattice).abs() <= 0.06 + 1e-9,
                 "seed {seed}: a lead onset escaped the bounded pocket tolerance"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_band_density_follows_the_harmony() {
+    // Ensemble density is ALLOCATED by the song's own state — not held flat with every voice maxed
+    // at once (the "virtuosos competing" texture). Three falsifiable consequences, on all seeds.
+    // The route is seeded-independent, so the harmonic classification is identical across seeds; the
+    // melody that the band must make room for is not.
+    for seed in [2112u64, 7, 99] {
+        let a = take(seed);
+        let s = a.score();
+        let comp = a.composition();
+
+        // The harmony the model itself computes, bar by bar (tonic_pc = 9 in this world): a bar sits
+        // on "home" exactly when its chord root IS the tonic.
+        let is_home = |bar: usize| {
+            (comp
+                .perf
+                .context_at(bar as f64 * 4.0)
+                .unwrap()
+                .chord
+                .root_pc
+                - 9)
+            .rem_euclid(12)
+                == 0
+        };
+        let home_bar = (0..8).find(|&b| is_home(b)).expect("a tonic (home) bar");
+        let walk_bar = (0..8)
+            .find(|&b| !is_home(b))
+            .expect("a non-tonic (walking) bar");
+
+        // (1) The bass lays back on the tonic (root + fifth, a breath) and walks everywhere else.
+        let bass_in = |bar: usize| {
+            s.role_notes(Role::Bass)
+                .filter(|n| {
+                    n.start_beat >= bar as f64 * 4.0 && n.start_beat < bar as f64 * 4.0 + 4.0
+                })
+                .count()
+        };
+        assert!(
+            bass_in(home_bar) < bass_in(walk_bar),
+            "seed {seed}: bass should lay back at home (bar {home_bar}={}) vs walk (bar {walk_bar}={})",
+            bass_in(home_bar),
+            bass_in(walk_bar)
+        );
+
+        // (2) The ride breathes: eighths at home, sixteenths in motion — fewer hats in a home bar.
+        let hats_in = |bar: usize| {
+            s.drums
+                .iter()
+                .filter(|d| {
+                    matches!(d.voice, DrumVoice::ClosedHat | DrumVoice::OpenHat)
+                        && d.start_beat >= bar as f64 * 4.0
+                        && d.start_beat < bar as f64 * 4.0 + 4.0
+                })
+                .count()
+        };
+        assert!(
+            hats_in(home_bar) < hats_in(walk_bar),
+            "seed {seed}: ride should open up at home (bar {home_bar}={}) vs fill in (bar {walk_bar}={})",
+            hats_in(home_bar),
+            hats_in(walk_bar)
+        );
+
+        // (3) The drummer's comping MAKES ROOM: every conversational "comp" stroke sits in a crack the
+        // lead left open — it never doubles a lead attack. The band interlocks instead of competing.
+        let lead: Vec<f64> = s.role_notes(Role::Lead).map(|n| n.start_beat).collect();
+        let comp_hits: Vec<f64> = s
+            .drums
+            .iter()
+            .filter(|d| d.prov.role_note == "comp")
+            .map(|d| d.start_beat)
+            .collect();
+        assert!(
+            !comp_hits.is_empty(),
+            "seed {seed}: the drummer never comps — no interplay with the lead at all"
+        );
+        for c in &comp_hits {
+            assert!(
+                !lead.iter().any(|l| (l - c).abs() < 0.2475),
+                "seed {seed}: a comp stroke at {c} doubles a lead attack instead of making room"
             );
         }
     }

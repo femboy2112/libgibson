@@ -13,6 +13,7 @@ use super::harmony::ChordSpan;
 use super::ids::{ActionId, InteractionId, MaterialId};
 use super::interaction::{Call, Interaction, InteractionPlan, LeadStatement, Response, Transform};
 use super::material::{InteractionMaterial, MaterialSource};
+use super::occupancy::AuthoredOccupancy;
 use super::performance::{AdmissionInputs, PerformanceOptions, PerformancePlan};
 use super::score::{DrumHit, DrumVoice, Note, PitchFunction, Provenance, Role, Score};
 use super::theory::{Chord, PitchBasis, Quality, Scale};
@@ -991,6 +992,43 @@ fn longform_domain(argument: &CompiledArgument) -> Result<(), KernelError> {
 /// Perform one admitted source-driven long-form song: two causally-connected episodes in one
 /// continuous 32-beat Score. The lead carries a full VERSE (open) then a distinct HOOK (home); the
 /// band answers per episode under the memory law; the pulse is one shared pocket across the seam.
+/// How hard the song's OWN harmony is pushing at a given bar — read from the committed per-bar
+/// chord, never an external energy fader. This is the endogenous "semantic situation" the whole
+/// ensemble allocates its density around: the tonic is the point of rest where the band opens up
+/// and lets the chord breathe; a dominant is the point of maximum drive; the harmony in between
+/// builds. Bass figure, ride subdivision, comp budget and the shared dynamic all follow it, so the
+/// band rises and falls together on the song's energy instead of each voice running flat-out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HarmonicDrive {
+    /// On the tonic — harmonic rest. The band anchors and breathes.
+    Home,
+    /// Pre-dominant / passing harmony — the band walks and rides, carrying motion.
+    Building,
+    /// A dominant — maximum tension. The band leans in hardest toward the resolution.
+    Driving,
+}
+
+fn harmonic_drive(chord: &Chord, tonic_pc: i32) -> HarmonicDrive {
+    let degree = (chord.root_pc - tonic_pc).rem_euclid(12);
+    if degree == 0 {
+        HarmonicDrive::Home
+    } else if matches!(chord.quality, Quality::Dom7 | Quality::Dom9) || degree == 7 {
+        HarmonicDrive::Driving
+    } else {
+        HarmonicDrive::Building
+    }
+}
+
+/// The shared ensemble dynamic for a bar's harmonic drive: eased at home, leaning in on the
+/// dominant. One curve every voice rides, so the whole band breathes together.
+fn drive_energy(drive: HarmonicDrive) -> f32 {
+    match drive {
+        HarmonicDrive::Home => 0.82,
+        HarmonicDrive::Building => 0.92,
+        HarmonicDrive::Driving => 1.0,
+    }
+}
+
 pub fn perform_song(
     argument: &CompiledArgument,
     world: &MusicWorld,
@@ -1211,15 +1249,20 @@ pub fn perform_song(
         ));
     }
 
-    // --- BASS: one uninterrupted WALKING foundation over all eight bars — a quarter-note line that
-    // spells the travelling harmony (root, fifth, third) and steps into each next downbeat — plus a
-    // chromatic approach planned against the hook's downbeat (the only episode seam here). ---
+    // --- BASS: a foundation whose DENSITY follows the harmony it is spelling. On the tonic the bass
+    // ANCHORS and lets the chord ring (root + fifth — a breath at the point of rest); as the harmony
+    // builds and drives it WALKS the changes in punchy quarters (root, fifth, third) and steps into
+    // the next downbeat. The downbeat root is the required harmonic anchor in EVERY bar, and every
+    // note's velocity rides the shared ensemble energy (eased at home, leaning in on the dominant).
+    // A chromatic approach is planned against the hook's downbeat (the only episode seam here). ---
     let mut bass = Vec::new();
     let bars_per_episode = (EPISODE_BEATS / 4.0) as usize;
     let total_bars = episodes * bars_per_episode;
     for bar in 0..total_bars {
         let at = bar as f64 * 4.0;
         let ctx = perf.context_at(at).unwrap();
+        let drive = harmonic_drive(&ctx.chord, world.tonic_pc);
+        let energy = drive_energy(drive);
         let tones = ctx.chord.pitch_classes();
         let root = register(ctx.chord.root_pc, 36);
         let fifth = register(tones[2.min(tones.len().saturating_sub(1))], 36);
@@ -1233,15 +1276,20 @@ pub fn perform_song(
             Some(next) => next + 1,
             None => fifth,
         };
-        // Root on the downbeat is the required harmonic anchor (held a touch longer); the three
-        // walking tones are punchy quarters. One monophonic line in the bass register — motion that
-        // voices the changes, never a doubled or sub-octave weave.
-        for (offset, pitch, dur, velocity) in [
-            (0.0, root, 0.8_f32, 0.76_f32),
-            (1.0, fifth, 0.45, 0.56),
-            (2.0, third, 0.45, 0.60),
-            (3.0, beat_four.clamp(36, 55), 0.45, 0.54),
-        ] {
+        // At HOME the bass lays back: the root rings and the fifth answers on beat three, leaving the
+        // tonic room to breathe (the fifth is clipped short of beat four, clearing any planned seam
+        // pickup). Everywhere else it walks the changes. One monophonic line in the bass register —
+        // motion that voices the harmony, never a doubled or sub-octave weave.
+        let figure: Vec<(f64, i32, f32, f32)> = match drive {
+            HarmonicDrive::Home => vec![(0.0, root, 1.8, 0.70), (2.0, fifth, 1.4, 0.52)],
+            _ => vec![
+                (0.0, root, 0.8, 0.76),
+                (1.0, fifth, 0.45, 0.56),
+                (2.0, third, 0.45, 0.60),
+                (3.0, beat_four.clamp(36, 55), 0.45, 0.54),
+            ],
+        };
+        for (offset, pitch, dur, velocity) in figure {
             let prov = provenance(&perf, at + offset, "foundation");
             bass.push(pitched(
                 &perf,
@@ -1249,7 +1297,7 @@ pub fn perform_song(
                 at + offset,
                 dur,
                 pitch,
-                velocity,
+                velocity * energy,
                 prov,
             ));
         }
@@ -1292,60 +1340,88 @@ pub fn perform_song(
         .collect();
     score = commit_role(score, &perf, world, Role::Bass, bass, bass_links)?;
 
-    // --- DRUMS: one shared pocket played like a fusion KIT, not a drum machine — sixteenth hats with
-    // a beat/and/e-a accent hierarchy, a kick that syncopates into the bass, ghost snares in the
-    // pocket, an open hat on the "and of four", and a rising fill into each phrase boundary. Every
-    // stroke is on the exact grid (structured dynamics and placement, NEVER random jitter) and
-    // deterministic in beat — keys-independent — so the pulse stays bit-identical regardless of any
-    // band response (the causal witness depends on this). The per-episode `swell` is a gentle
-    // crescendo toward each cadence: a dynamic shape, not a per-section energy fader. Plus a
-    // per-episode heard-keys fill (below) that consumes ONLY that episode's completed keys window. ---
+    // --- DRUMS: one shared pocket played like a fusion KIT whose density is ALLOCATED by the song's
+    // state, not held flat with every limb maxed. A steady spine (kick on 1 & 3, backbeat on 2 & 4)
+    // locks the band's time in every bar. The ride BREATHES with the harmony — eighths when it is home
+    // and resting, sixteenths as it builds and drives — and the whole kit's dynamics ride the shared
+    // ensemble energy. Over that, the drummer COMPS into the off-beats the lead leaves open, reading
+    // the lead's authored occupancy: softer inside a live phrase, fuller where the phrase has yielded
+    // (an answer), and silent where the melody is speaking (make room). A rising fill lifts into each
+    // phrase boundary. Every stroke is on the exact grid (structured dynamics/placement, NEVER random
+    // jitter) and derived from the LEAD and HARMONY only — never the keys — so the pulse stays bit-
+    // identical regardless of any keys response (the causal witness depends on this). A separate
+    // heard-keys fill (below) carries the keys law and consumes ONLY that episode's keys window. ---
+    let lead_notes: Vec<Note> = score.role_notes(Role::Lead).copied().collect();
+    let lead_occ = AuthoredOccupancy::from_role(&perf, &score.notes, Role::Lead);
     for bar in 0..total_bars {
         let bar_start = bar as f64 * 4.0;
-        let swell = 0.86 + 0.18 * (bar_start.rem_euclid(EPISODE_BEATS) / EPISODE_BEATS) as f32;
-        // A two-bar cell: the odd bar carries the syncopation, ghosts and open hat — a recognizable
-        // groove that VARIES rather than repeating a bar identically.
-        let varied = bar % 2 == 1;
+        let drive = harmonic_drive(&perf.context_at(bar_start).unwrap().chord, world.tonic_pc);
+        let energy = drive_energy(drive);
         // A fill lands because the NEXT bar opens a new phrase (the hook seam, then the final cadence).
         let fill_bar = (bar + 1) % bars_per_episode == 0;
-        let mut push = |voice: DrumVoice, at: f64, vel: f32| {
+        let mut push = |voice: DrumVoice, at: f64, vel: f32, label: &'static str| {
             score.drums.push(DrumHit {
                 start_beat: at,
                 voice,
-                velocity: (vel * swell).clamp(0.02, 1.0),
-                prov: provenance(&perf, at, "pulse"),
+                velocity: (vel * energy).clamp(0.02, 1.0),
+                prov: provenance(&perf, at, label),
             });
         };
-        // Kick: downbeat and beat three, plus the "and of three"/"and of four" anticipations on the
-        // varied bar — the holes a fusion bassist's walking line drops into.
-        push(DrumVoice::Kick, bar_start, 0.95);
-        push(DrumVoice::Kick, bar_start + 2.0, 0.78);
-        if varied {
-            push(DrumVoice::Kick, bar_start + 2.5, 0.58);
-            push(DrumVoice::Kick, bar_start + 3.5, 0.55);
-        }
-        // Snare: the backbeat on two and four, with soft ghost strokes leading into it on varied bars.
-        push(DrumVoice::Snare, bar_start + 1.0, 0.80);
-        push(DrumVoice::Snare, bar_start + 3.0, 0.84);
-        if varied {
-            push(DrumVoice::Snare, bar_start + 1.75, 0.18);
-            push(DrumVoice::Snare, bar_start + 2.75, 0.20);
-        }
-        // Hats: straight sixteenths with a down/and/e-a accent hierarchy — the ride that carries the
-        // information the old eighth-note metronome could not. The "and of four" opens on varied bars.
-        for s in 0..16u32 {
+        // The steady pocket — always present, locking the shared time across the whole song.
+        push(DrumVoice::Kick, bar_start, 0.95, "pulse");
+        push(DrumVoice::Kick, bar_start + 2.0, 0.78, "pulse");
+        push(DrumVoice::Snare, bar_start + 1.0, 0.80, "pulse");
+        push(DrumVoice::Snare, bar_start + 3.0, 0.84, "pulse");
+        // The ride carpet: its SUBDIVISION follows the harmonic drive — eighths at rest, sixteenths in
+        // motion — with the down/and/e-a accent hierarchy and the hat opening on the "and of four".
+        let sixteenths = !matches!(drive, HarmonicDrive::Home);
+        let stride: usize = if sixteenths { 1 } else { 2 };
+        for s in (0..16u32).step_by(stride) {
             let at = bar_start + s as f64 * 0.25;
             let accent = match s % 4 {
                 0 => 0.40, // the beat
                 2 => 0.32, // the "and"
                 _ => 0.15, // the "e" and "a"
             };
-            let voice = if varied && s == 14 {
+            let voice = if sixteenths && s == 14 {
                 DrumVoice::OpenHat // the "and of four"
             } else {
                 DrumVoice::ClosedHat
             };
-            push(voice, at, accent);
+            push(voice, at, accent, "pulse");
+        }
+        // The conversation: comp strokes dropped into the off-beats the lead left open, up to the
+        // budget the harmonic drive allows (home lays out; building comps; a dominant drives hardest).
+        // A kick leans on the "ands" (a syncopated push with the bass), a ghost snare on the "a" — but
+        // ONLY where the lead is not attacking (make room), softer inside a live phrase and fuller
+        // where the phrase has yielded. This is the make-room law that turns competing voices into
+        // interplay, and it reads the lead only, so it never perturbs the keys-independent pulse.
+        let budget = match drive {
+            HarmonicDrive::Home => 0,
+            HarmonicDrive::Building => 2,
+            HarmonicDrive::Driving => 3,
+        };
+        let mut placed = 0;
+        for s in [2u32, 6, 10, 14, 7, 11] {
+            if placed >= budget {
+                break;
+            }
+            let at = bar_start + s as f64 * 0.25;
+            if !lead_occ.allows_comp_at(at, &lead_notes) {
+                continue; // the lead is speaking here — leave the space
+            }
+            let (voice, base) = if s % 4 == 2 {
+                (DrumVoice::Kick, 0.56) // on the "and"
+            } else {
+                (DrumVoice::Snare, 0.40) // a ghost on the "a"
+            };
+            let vel = if lead_occ.yields_at(at) {
+                base
+            } else {
+                base * 0.5
+            };
+            push(voice, at, vel, "comp");
+            placed += 1;
         }
         // Phrase-end fill: rising sixteenth snares across the last half-bar because the phrase is
         // ending (into the hook, then into the final cadence) — not on a coin flip.
@@ -1355,6 +1431,7 @@ pub fn perform_song(
                     DrumVoice::Snare,
                     bar_start + 2.0 + k as f64 * 0.5,
                     0.42 + 0.12 * k as f32,
+                    "pulse",
                 );
             }
         }
