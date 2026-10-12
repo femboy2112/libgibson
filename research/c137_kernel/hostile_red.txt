@@ -1,0 +1,86 @@
+   Compiling libgibson v0.4.0 (/home/leah/LibGibson.kernel-hostile)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 42s
+     Running tests/audio_c137_kernel_hostile.rs (/home/leah/LibGibson.kernel/target/debug/deps/audio_c137_kernel_hostile-959637c42b92e0bb)
+
+running 16 tests
+
+thread 'committed_kit_cannot_be_deleted_wholesale' (653380) panicked at tests/audio_c137_kernel_hostile.rs:116:5:
+missing shared beat still admitted
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'bass_duty_cannot_be_shifted_off_its_declared_pulse' (653378) panicked at tests/audio_c137_kernel_hostile.rs:91:5:
+off-phase bass duty admitted
+
+thread 'compiled_return_cannot_claim_the_opening_phrase_identity' (653381) panicked at tests/audio_c137_kernel_hostile.rs:177:5:
+incoherent compiled source metadata admitted
+
+thread 'audible_foundation_cannot_be_replaced_with_zero_velocity_markers' (653376) panicked at tests/audio_c137_kernel_hostile.rs:47:5:
+silent bass markers passed foundation duty
+
+thread 'consumed_keys_response_cannot_leave_a_missing_drum_consequence' (653382) panicked at tests/audio_c137_kernel_hostile.rs:105:5:
+heard-keys dependency survived deletion of its consequence
+
+thread 'bass_foundation_cannot_be_relabelled_as_an_unowned_counterline' (653379) panicked at tests/audio_c137_kernel_hostile.rs:59:5:
+unowned foundation source label admitted
+
+thread 'bass_arpeggio_cannot_become_an_unjustified_chromatic_pitch' (653377) panicked at tests/audio_c137_kernel_hostile.rs:75:5:
+off-chord bass falsely retained ChordTone duty
+
+thread 'arbitrary_off_phase_drum_cannot_claim_a_committed_cue' (653375) panicked at tests/audio_c137_kernel_hostile.rs:133:5:
+undeclared extra drum reply admitted
+test compiled_return_cannot_claim_the_opening_phrase_identity ... FAILED
+test bass_duty_cannot_be_shifted_off_its_declared_pulse ... FAILED
+test committed_kit_cannot_be_deleted_wholesale ... FAILED
+test audible_foundation_cannot_be_replaced_with_zero_velocity_markers ... FAILED
+test consumed_keys_response_cannot_leave_a_missing_drum_consequence ... FAILED
+test bass_foundation_cannot_be_relabelled_as_an_unowned_counterline ... FAILED
+test bass_arpeggio_cannot_become_an_unjustified_chromatic_pitch ... FAILED
+test arbitrary_off_phase_drum_cannot_claim_a_committed_cue ... FAILED
+test source_pitch_basis_must_match_the_compiled_interpretation ... ok
+test effective_hearing_rejects_dynamic_and_false_withholding_mutations ... ok
+
+thread 'source_arc_must_agree_with_compiled_placement_time' (653387) panicked at tests/audio_c137_kernel_hostile.rs:177:5:
+incoherent compiled source metadata admitted
+
+thread 'declared_metric_base_cannot_change_after_commit' (653383) panicked at tests/audio_c137_kernel_hostile.rs:157:5:
+3/4 score admitted against frozen four-bar common base
+
+thread 'final_drum_dynamics_are_part_of_the_committed_response' (653385) panicked at tests/audio_c137_kernel_hostile.rs:146:5:
+silent kit admitted as completed performance
+
+thread 'source_arc_must_have_a_span_for_each_step' (653388) panicked at tests/audio_c137_kernel_hostile.rs:177:5:
+incoherent compiled source metadata admitted
+
+thread 'source_arc_must_not_reference_a_nonexistent_phrase' (653389) panicked at tests/audio_c137_kernel_hostile.rs:177:5:
+incoherent compiled source metadata admitted
+test source_arc_must_agree_with_compiled_placement_time ... FAILED
+test declared_metric_base_cannot_change_after_commit ... FAILED
+test final_drum_dynamics_are_part_of_the_committed_response ... FAILED
+test source_arc_must_have_a_span_for_each_step ... FAILED
+test source_arc_must_not_reference_a_nonexistent_phrase ... FAILED
+
+thread 'final_harmonic_base_cannot_disappear_after_commit' (653386) panicked at tests/audio_c137_kernel_hostile.rs:168:5:
+empty score harmony admitted against final source route
+test final_harmonic_base_cannot_disappear_after_commit ... FAILED
+
+failures:
+
+failures:
+    arbitrary_off_phase_drum_cannot_claim_a_committed_cue
+    audible_foundation_cannot_be_replaced_with_zero_velocity_markers
+    bass_arpeggio_cannot_become_an_unjustified_chromatic_pitch
+    bass_duty_cannot_be_shifted_off_its_declared_pulse
+    bass_foundation_cannot_be_relabelled_as_an_unowned_counterline
+    committed_kit_cannot_be_deleted_wholesale
+    compiled_return_cannot_claim_the_opening_phrase_identity
+    consumed_keys_response_cannot_leave_a_missing_drum_consequence
+    declared_metric_base_cannot_change_after_commit
+    final_drum_dynamics_are_part_of_the_committed_response
+    final_harmonic_base_cannot_disappear_after_commit
+    source_arc_must_agree_with_compiled_placement_time
+    source_arc_must_have_a_span_for_each_step
+    source_arc_must_not_reference_a_nonexistent_phrase
+
+test result: FAILED. 2 passed; 14 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test audio_c137_kernel_hostile`
