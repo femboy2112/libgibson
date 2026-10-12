@@ -1278,31 +1278,70 @@ pub fn perform_song(
         .collect();
     score = commit_role(score, &perf, world, Role::Bass, bass, bass_links)?;
 
-    // --- DRUMS: the fixed pulse over every half-beat step, plus a per-episode heard-keys fill that
-    // consumes ONLY that episode's completed keys window (the causal law, preserved per episode). ---
-    for step in 0..(32 * episodes) {
-        let at = step as f64 * 0.5;
-        // One shared pocket that BREATHES: a gentle crescendo across each episode toward its
-        // cadence, reset at the seam. This is a dynamic shape, not a per-section energy fader — the
-        // pattern is unchanged, only its loudness leans forward. Deterministic in `at`, so the pulse
-        // stays bit-identical regardless of any band response (the causal witness depends on this).
-        let swell = 0.86 + 0.18 * (at.rem_euclid(EPISODE_BEATS) / EPISODE_BEATS) as f32;
-        for (play, voice, velocity) in [
-            (
-                true,
-                DrumVoice::ClosedHat,
-                if step % 2 == 0 { 0.38 } else { 0.25 },
-            ),
-            (step % 8 == 0 || step % 8 == 4, DrumVoice::Kick, 0.78),
-            (step % 8 == 2 || step % 8 == 6, DrumVoice::Snare, 0.65),
-        ] {
-            if play {
-                score.drums.push(DrumHit {
-                    start_beat: at,
-                    voice,
-                    velocity: (velocity * swell).min(1.0),
-                    prov: provenance(&perf, at, "pulse"),
-                });
+    // --- DRUMS: one shared pocket played like a fusion KIT, not a drum machine — sixteenth hats with
+    // a beat/and/e-a accent hierarchy, a kick that syncopates into the bass, ghost snares in the
+    // pocket, an open hat on the "and of four", and a rising fill into each phrase boundary. Every
+    // stroke is on the exact grid (structured dynamics and placement, NEVER random jitter) and
+    // deterministic in beat — keys-independent — so the pulse stays bit-identical regardless of any
+    // band response (the causal witness depends on this). The per-episode `swell` is a gentle
+    // crescendo toward each cadence: a dynamic shape, not a per-section energy fader. Plus a
+    // per-episode heard-keys fill (below) that consumes ONLY that episode's completed keys window. ---
+    for bar in 0..total_bars {
+        let bar_start = bar as f64 * 4.0;
+        let swell = 0.86 + 0.18 * (bar_start.rem_euclid(EPISODE_BEATS) / EPISODE_BEATS) as f32;
+        // A two-bar cell: the odd bar carries the syncopation, ghosts and open hat — a recognizable
+        // groove that VARIES rather than repeating a bar identically.
+        let varied = bar % 2 == 1;
+        // A fill lands because the NEXT bar opens a new phrase (the hook seam, then the final cadence).
+        let fill_bar = (bar + 1) % bars_per_episode == 0;
+        let mut push = |voice: DrumVoice, at: f64, vel: f32| {
+            score.drums.push(DrumHit {
+                start_beat: at,
+                voice,
+                velocity: (vel * swell).clamp(0.02, 1.0),
+                prov: provenance(&perf, at, "pulse"),
+            });
+        };
+        // Kick: downbeat and beat three, plus the "and of three"/"and of four" anticipations on the
+        // varied bar — the holes a fusion bassist's walking line drops into.
+        push(DrumVoice::Kick, bar_start, 0.95);
+        push(DrumVoice::Kick, bar_start + 2.0, 0.78);
+        if varied {
+            push(DrumVoice::Kick, bar_start + 2.5, 0.58);
+            push(DrumVoice::Kick, bar_start + 3.5, 0.55);
+        }
+        // Snare: the backbeat on two and four, with soft ghost strokes leading into it on varied bars.
+        push(DrumVoice::Snare, bar_start + 1.0, 0.80);
+        push(DrumVoice::Snare, bar_start + 3.0, 0.84);
+        if varied {
+            push(DrumVoice::Snare, bar_start + 1.75, 0.18);
+            push(DrumVoice::Snare, bar_start + 2.75, 0.20);
+        }
+        // Hats: straight sixteenths with a down/and/e-a accent hierarchy — the ride that carries the
+        // information the old eighth-note metronome could not. The "and of four" opens on varied bars.
+        for s in 0..16u32 {
+            let at = bar_start + s as f64 * 0.25;
+            let accent = match s % 4 {
+                0 => 0.40, // the beat
+                2 => 0.32, // the "and"
+                _ => 0.15, // the "e" and "a"
+            };
+            let voice = if varied && s == 14 {
+                DrumVoice::OpenHat // the "and of four"
+            } else {
+                DrumVoice::ClosedHat
+            };
+            push(voice, at, accent);
+        }
+        // Phrase-end fill: rising sixteenth snares across the last half-bar because the phrase is
+        // ending (into the hook, then into the final cadence) — not on a coin flip.
+        if fill_bar {
+            for k in 0..4u32 {
+                push(
+                    DrumVoice::Snare,
+                    bar_start + 2.0 + k as f64 * 0.5,
+                    0.42 + 0.12 * k as f32,
+                );
             }
         }
     }
