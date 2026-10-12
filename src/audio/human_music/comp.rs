@@ -216,18 +216,26 @@ fn weave_voice(
     out
 }
 
+/// Controls whether the WEAVE puts a germ-derived counter-line in the BASS seat as well as the keys.
+///
+/// HELD `false`: a low melodic bass counter (B1-E2 region) reads as muddy/"fucked up" by ear even
+/// though every note is a chord tone and the mono voice is overlap- and re-strike-clean — a melodic
+/// line that low is the wrong register for this material, and holding it across a chord change weakens
+/// the downbeat. The keys weave (mid register, polyphonic) is clean and stays on. Re-enable once the
+/// bass answer has a register/placement model that doesn't smear the low end (energy/duty model work).
+const BASS_WEAVE: bool = false;
+
 /// The band WEAVE — the minimal fugal cell extended across the ensemble so the musicians weave around
 /// each other, not just the keys around the lead.
 ///
-/// Two germ-derived voices TRADE the lead's open windows: the keys sing the identity inverted (a
-/// contrary-motion partner — a different surface shape, the *same* DNA; mid register) in every other
-/// window, the bass answers with its own germ cell (`bass_cell`, the identity dropped a register —
-/// "same blood") in the windows between. One idea, voiced as three independent lines (lead, keys,
-/// bass) taking turns — counterpoint in service of the one song, never all answering at once (that
-/// is mud, not a conversation). Returns `(keys_counter, bass_counter, bass_windows)`: the caller
-/// installs each on the stage the orchestration authority allows and uses the bass windows to step
-/// the foundation aside where the bass is singing its answer. Off (the default BAND), unused — the
-/// band is byte-for-byte unchanged.
+/// The keys sing the identity inverted (a contrary-motion partner — a different surface shape, the
+/// *same* DNA; mid register) in the lead's open windows. When [`BASS_WEAVE`] is on, a second voice —
+/// the bass, singing its own germ cell (`bass_cell`, the identity dropped a register, "same blood") —
+/// TRADES those windows with the keys so the two answer around the lead by turns (counterpoint in
+/// service of the one song, never all at once = mud). Returns `(keys_counter, bass_counter,
+/// bass_windows)`: the caller installs each on the stage the orchestration authority allows and uses
+/// the bass windows to step the foundation aside where the bass is singing its answer. Off (the
+/// default BAND), unused — the band is byte-for-byte unchanged.
 pub(crate) fn realize_band_weave(
     perf: &PerformancePlan,
     lead: &[Note],
@@ -237,8 +245,17 @@ pub(crate) fn realize_band_weave(
         return (Vec::new(), Vec::new(), Vec::new());
     }
     let windows = lead_open_windows(lead, total_beats);
-    let keys_win: Vec<(f64, f64)> = windows.iter().copied().step_by(2).collect();
-    let bass_win: Vec<(f64, f64)> = windows.iter().copied().skip(1).step_by(2).collect();
+    // With the bass weave held, the keys answer every open window; with it on, the two voices split
+    // the windows and trade.
+    let keys_win: Vec<(f64, f64)>;
+    let bass_win: Vec<(f64, f64)>;
+    if BASS_WEAVE {
+        keys_win = windows.iter().copied().step_by(2).collect();
+        bass_win = windows.iter().copied().skip(1).step_by(2).collect();
+    } else {
+        keys_win = windows.clone();
+        bass_win = Vec::new();
+    }
     let keys_motif = perf.bank.identity.invert();
     let keys = weave_voice(
         perf,
