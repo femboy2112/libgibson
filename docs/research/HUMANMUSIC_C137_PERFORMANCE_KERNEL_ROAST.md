@@ -1,7 +1,7 @@
 # HUMANMUSIC C137 — THE PERFORMANCE KERNEL ROAST
 ## Why a green, complicated model can sound worse than the teacher
 
-**Scope:** source-grounded audit and implementation handoff, not a coded Rust repair, not an accepted render. Pinned at feat/humanmusic-c137-ensemble-agency commit 29527a891ed7bfed9657a99046884a61670897e3, draft PR #102. Historical main remains on v0.4. At initial inspection CI on the pinned head was in progress; earlier parent 2c945b5 was green. Recheck exact-head CI before implementation.
+**Scope:** source-grounded audit and implementation handoff, not a coded Rust repair, not an accepted render. Pinned at feat/humanmusic-c137-ensemble-agency commit 29527a891ed7bfed9657a99046884a61670897e3, draft PR #102. Historical main remains on v0.4. Final hosted CI on this exact pinned head subsequently completed **successfully**: GitHub Actions run 38197706708. Earlier parent 2c945b5 was also green. These are tests of the existing code, not evidence that the music sounds golden. Recheck exact-head CI before implementation.
 
 **User's finding:** Almost C137 but not teacher_golden7; the musicians are individually too aligned, dynamics statistically averaged, and a recent bass countermelody had to be withdrawn after stutter and mud. The real question is whether source, plan, playing, observing and reporting are the CORRECT categories of objects, or whether mutually inconsistent layers now certify different snapshots. The original seven accepted golden WAVs were not verified as GitHub-tracked media. NEVER invent their hashes or claim to have listened to them here.
 
