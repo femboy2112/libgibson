@@ -1787,6 +1787,7 @@ impl CanonicalFingerprint for policy::PerformanceProfile {
             functions,
             lead_life,
             narrative,
+            counterpoint,
             repair,
         } = self;
         w.field("pitch", pitch);
@@ -1814,6 +1815,11 @@ impl CanonicalFingerprint for policy::PerformanceProfile {
         }
         if *narrative != policy::NarrativePolicy::Archived {
             w.field("narrative", narrative);
+        }
+        // Opt-in counterpoint is off by default, so an off profile's receipt is byte-exact v2; the
+        // arm is a tagged extension that is visible to the fingerprint only when on.
+        if *counterpoint {
+            w.field("counterpoint", counterpoint);
         }
     }
 }

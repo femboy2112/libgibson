@@ -670,6 +670,220 @@ fn nine(g: &[Gate]) -> [bool; 9] {
     ]
 }
 
+// ---------------------------------------------------------------------------------------------
+// WEAVE GATE (reject-only, dual-scale): does the counterpoint read as ONE justified song — the
+// voices RELATED yet INDEPENDENT — at both the whole-song and the local-window scale? Like R1..R9
+// these can only REJECT; the ear is the oracle. Floors sit BELOW the ear-approved render (8b619c0)
+// so the gate codifies "do not get WORSE than what already sounds good", never "optimise to a
+// number". Read straight off the live Score (needs provenance to find the "counter" voice), so it
+// is kept out of the R1..R9 / gates.py TSV port above.
+// ---------------------------------------------------------------------------------------------
+
+/// Sounding pitch of a monophonic voice at beat `t` (the note whose span covers it).
+fn sounding_at(voice: &[(f64, f64, i32)], t: f64) -> Option<i32> {
+    voice
+        .iter()
+        .rev()
+        .find(|(a, b, _)| *a <= t + 1e-6 && t < *b - 1e-6)
+        .map(|(_, _, p)| *p)
+}
+
+/// Lowest sounding pitch of a (possibly chordal) voice at `t` — the outer BOTTOM.
+fn sounding_floor(voice: &[(f64, f64, i32)], t: f64) -> Option<i32> {
+    voice
+        .iter()
+        .filter(|(a, b, _)| *a <= t + 1e-6 && t < *b - 1e-6)
+        .map(|(_, _, p)| *p)
+        .min()
+}
+
+fn role_voice(score: &Score, role: Role) -> Vec<(f64, f64, i32)> {
+    let mut v: Vec<(f64, f64, i32)> = score
+        .notes
+        .iter()
+        .filter(|n| n.role == role)
+        .map(|n| (n.start_beat, n.start_beat + widen(n.dur_beats), n.pitch))
+        .collect();
+    v.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    v
+}
+
+/// The chord pitch classes sounding under beat `t`, if any.
+fn chord_pcs_at(score: &Score, t: f64) -> Option<Vec<i32>> {
+    score
+        .chords
+        .iter()
+        .find(|c| c.start_beat <= t + 1e-6 && t < c.start_beat + widen(c.dur_beats) - 1e-6)
+        .map(|c| c.chord.pitch_classes())
+}
+
+/// A perfect interval class: unison/octave (0) or fifth (7), the two intervals whose parallel
+/// motion collapses two voices into one.
+fn perfect_class(top: i32, bottom: i32) -> Option<i32> {
+    let m = (top - bottom).rem_euclid(12);
+    (m == 0 || m == 7).then_some(m)
+}
+
+/// The longest run of consecutive parallel perfects (same perfect interval class, both voices
+/// moving the same direction) across a sequence of (top, bottom) simultaneities.
+fn max_parallel_run(seq: &[(i32, i32)]) -> usize {
+    let mut best = 0usize;
+    let mut run = 0usize;
+    for w in seq.windows(2) {
+        let (l0, b0) = w[0];
+        let (l1, b1) = w[1];
+        let parallel = l1 != l0
+            && b1 != b0
+            && (l1 - l0).signum() == (b1 - b0).signum()
+            && match (perfect_class(l0, b0), perfect_class(l1, b1)) {
+                (Some(a), Some(c)) => a == c,
+                _ => false,
+            };
+        if parallel {
+            run += 1;
+            best = best.max(run);
+        } else {
+            run = 0;
+        }
+    }
+    best
+}
+
+fn weave_gates(score: &Score) -> Vec<Gate> {
+    let total = score.total_beats;
+    let lead = role_voice(score, Role::Lead);
+    let bass = role_voice(score, Role::Bass);
+    let mut counter: Vec<(f64, f64, i32)> = score
+        .notes
+        .iter()
+        .filter(|n| n.role == Role::Keys && n.prov.role_note == "counter")
+        .map(|n| (n.start_beat, n.start_beat + widen(n.dur_beats), n.pitch))
+        .collect();
+    counter.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    let mut g: Vec<Gate> = Vec::new();
+
+    // W1 — outer-pair parallel perfects (lead over bass). Whole-song worst run AND worst 16-beat
+    // window. A run of 3+ parallel 5ths/8ves is the audible collapse of the outer frame.
+    let outer_seq = |lo: f64, hi: f64| -> Vec<(i32, i32)> {
+        let mut times: Vec<f64> = lead
+            .iter()
+            .chain(bass.iter())
+            .map(|(a, _, _)| *a)
+            .filter(|t| *t >= lo - 1e-6 && *t < hi - 1e-6)
+            .collect();
+        times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        times.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+        times
+            .iter()
+            .filter_map(|&t| Some((sounding_at(&lead, t)?, sounding_floor(&bass, t)?)))
+            .collect()
+    };
+    let whole_run = max_parallel_run(&outer_seq(0.0, total));
+    let mut worst_win = 0usize;
+    let mut w = 0.0;
+    while w < total - 1e-6 {
+        worst_win = worst_win.max(max_parallel_run(&outer_seq(w, (w + 16.0).min(total))));
+        w += 16.0;
+    }
+    g.push(Gate {
+        name: "W1 outer-pair parallel-perfect run (lead/bass)",
+        measured: format!("whole {whole_run}, worst window {worst_win}"),
+        floor: "<=2 (whole and every window)",
+        pass: whole_run <= 2 && worst_win <= 2,
+    });
+
+    // W2 — counter vs lead INDEPENDENCE: of the counter's moves that sound against a live lead note,
+    // the fraction that are contrary or oblique (not shadowing the lead in parallel/similar motion).
+    // W3 — counter HARMONIC belonging: fraction of counter notes consonant with the chord under them.
+    if counter.len() < 2 {
+        g.push(Gate {
+            name: "W2 counter-lead independence (contrary+oblique)",
+            measured: "n/a (no counter voice)".into(),
+            floor: ">=0.55 whole, >=0.40 worst window",
+            pass: true,
+        });
+        g.push(Gate {
+            name: "W3 counter harmonic consonance",
+            measured: "n/a (no counter voice)".into(),
+            floor: ">=0.85 whole, >=0.70 worst window",
+            pass: true,
+        });
+        return g;
+    }
+    // Per-pair independence class, tagged with the window of the earlier onset.
+    let indep: Vec<(f64, bool)> = counter
+        .windows(2)
+        .filter_map(|p| {
+            let (t0, t1) = (p[0].0, p[1].0);
+            let (l0, l1) = (sounding_at(&lead, t0)?, sounding_at(&lead, t1)?);
+            let cd = (p[1].2 - p[0].2).signum();
+            let ld = (l1 - l0).signum();
+            let independent = ld == 0 || cd == 0 || cd != ld; // oblique or contrary
+            Some((t0, independent))
+        })
+        .collect();
+    let share = |rows: &[(f64, bool)]| -> f64 {
+        if rows.is_empty() {
+            return 1.0;
+        }
+        rows.iter().filter(|(_, ok)| *ok).count() as f64 / rows.len() as f64
+    };
+    let w2_whole = share(&indep);
+    let mut w2_worst = 1.0_f64;
+    let mut w = 0.0;
+    while w < total - 1e-6 {
+        let win: Vec<(f64, bool)> = indep
+            .iter()
+            .copied()
+            .filter(|(t, _)| *t >= w && *t < w + 16.0)
+            .collect();
+        if win.len() >= 2 {
+            w2_worst = w2_worst.min(share(&win));
+        }
+        w += 16.0;
+    }
+    g.push(Gate {
+        name: "W2 counter-lead independence (contrary+oblique)",
+        measured: format!("whole {:.2}, worst window {:.2}", w2_whole, w2_worst),
+        floor: ">=0.55 whole, >=0.40 worst window",
+        pass: w2_whole >= 0.55 && w2_worst >= 0.40,
+    });
+
+    // Chord-tone fraction, NOT a chord-tone *requirement*: a melodic line is ~2/3 chord tones with
+    // passing/neighbour tones between — the ear-approved render sits at ~0.66-0.71 whole, 0.50 worst,
+    // and that SOUNDS GOOD, so the floor sits below it. This only rejects the counter DEGENERATING
+    // into mostly-dissonant noise (a realizer regression), never ordinary melodic non-chord tones.
+    // Per-window only judged where there are enough notes to mean something (>=3), else too noisy.
+    let cons: Vec<(f64, bool)> = counter
+        .iter()
+        .map(|&(t, _, p)| {
+            let ok = chord_pcs_at(score, t).is_some_and(|pcs| pcs.contains(&p.rem_euclid(12)));
+            (t, ok)
+        })
+        .collect();
+    let w3_whole = share(&cons);
+    let mut w3_worst = 1.0_f64;
+    let mut w = 0.0;
+    while w < total - 1e-6 {
+        let win: Vec<(f64, bool)> = cons
+            .iter()
+            .copied()
+            .filter(|(t, _)| *t >= w && *t < w + 16.0)
+            .collect();
+        if win.len() >= 3 {
+            w3_worst = w3_worst.min(share(&win));
+        }
+        w += 16.0;
+    }
+    g.push(Gate {
+        name: "W3 counter chord-tone fraction (gross-dissonance guard)",
+        measured: format!("whole {:.2}, worst window {:.2}", w3_whole, w3_worst),
+        floor: ">=0.50 whole, >=0.33 worst window(>=3)",
+        pass: w3_whole >= 0.50 && w3_worst >= 0.33,
+    });
+    g
+}
+
 /// Calibration-format TSV (T/N/D/C lines) so the Python `gates.py` can cross-check this port.
 fn dump_tsv(score: &Score) -> String {
     use std::fmt::Write as _;
@@ -720,6 +934,7 @@ struct Run {
     lead_shape: Vec<i32>,
     lead_count: usize,
     verdict: [bool; 9],
+    weave: Vec<(String, bool)>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -729,14 +944,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .find_map(|a| a.strip_prefix(p).map(str::to_string))
     };
     // THE CAR (edit A, harness only — NOT gated): the teacher drives at 138 BPM; ours idled at
-    // 108. Pure time-scale on the default; --tempo= still overrides.
+    // 108, then 138. Nudged a touch higher for more paced energy now the lead breathes and the band
+    // converses in the gaps. Pure time-scale on the default; --tempo= still overrides.
     let tempo: f32 = arg("--tempo=")
         .and_then(|s| s.parse().ok())
-        .unwrap_or(138.0);
+        .unwrap_or(144.0);
     let beats: f64 = arg("--beats=")
         .and_then(|s| s.parse().ok())
         .unwrap_or(128.0);
     let table_only = args.iter().any(|a| a == "--table-only");
+    // Opt-in A/B arm: weave a germ-derived countersubject into the band (keys ANSWERS the lead in its
+    // silent gaps). Default off = the byte-exact BAND render; the ear adjudicates the arm against it.
+    let counterpoint = args.iter().any(|a| a == "--counterpoint");
     let seeds: Vec<u64> = match arg("--seeds=") {
         Some(list) => list.split(',').map(str::parse).collect::<Result<_, _>>()?,
         None => vec![arg("--seed=").and_then(|s| s.parse().ok()).unwrap_or(2112)],
@@ -775,16 +994,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("fusion_gates: black_ice, A Aeolian, {tempo} BPM, {beats} beats, {nphrases} phrases");
     println!("REJECTION gates only: PASS = not auto-disqualified, NEVER 'sounds good'. The ear is the oracle.");
 
+    let profile = PerformanceProfile::BAND.with_counterpoint(counterpoint);
+    if counterpoint {
+        println!("COUNTERPOINT arm ON: a germ-derived countersubject woven into the keys voice.");
+    }
     let mut runs: Vec<Run> = Vec::new();
     for &seed in &seeds {
         let argument = MusicalArgument::fusion(seed, &base)?;
         let compiled = argument.compile(&base)?;
-        let c = match perform_argument(
-            &compiled,
-            &world,
-            PerformanceOptions::default(),
-            PerformanceProfile::BAND,
-        ) {
+        let c = match perform_argument(&compiled, &world, PerformanceOptions::default(), profile) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("perform_argument ERROR (seed {seed}): {e:?}");
@@ -793,14 +1011,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
         let gates = evaluate(&Input::from_score(&c.score));
         let verdict = nine(&gates);
+        let weave = weave_gates(&c.score);
         if !table_only {
             println!(
                 "\n== seed {seed}  (Score fingerprint {:016x}) ==",
                 c.score.fingerprint()
             );
-            for gt in &gates {
+            for gt in gates.iter().chain(weave.iter()) {
                 println!(
-                    "  {:<42} measured: {}  | floor: {}  => {}",
+                    "  {:<48} measured: {}  | floor: {}  => {}",
                     gt.name,
                     gt.measured,
                     gt.floor,
@@ -808,7 +1027,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
             let k = verdict.iter().filter(|b| **b).count();
-            println!("  PASSED {k}/9");
+            let wk = weave.iter().filter(|gt| gt.pass).count();
+            println!("  PASSED {k}/9   WEAVE {wk}/{}", weave.len());
         }
         let lead_pitches: Vec<i32> = c
             .score
@@ -847,6 +1067,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             lead_count: lead_pitches.len(),
             lead_pitches,
             verdict,
+            weave: weave
+                .into_iter()
+                .map(|gt| (gt.name.to_string(), gt.pass))
+                .collect(),
         });
     }
 
@@ -869,6 +1093,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             cells,
             r.verdict.iter().filter(|b| **b).count()
         );
+    }
+    if runs.iter().any(|r| !r.weave.is_empty()) {
+        println!(
+            "\n== weave gate (reject-only; does the counterpoint read as ONE justified song) =="
+        );
+        for r in &runs {
+            let wk = r.weave.iter().filter(|(_, p)| *p).count();
+            let cells: String = r
+                .weave
+                .iter()
+                .map(|(name, p)| format!("{}={}  ", &name[..2], if *p { "ok" } else { "REJ" }))
+                .collect();
+            println!("seed {:<8} {}WEAVE {wk}/{}", r.seed, cells, r.weave.len());
+        }
     }
     if runs.len() > 1 {
         let fps: HashSet<u64> = runs.iter().map(|r| r.fingerprint).collect();
