@@ -467,6 +467,7 @@ fn plan_and_realize_inner(
     let observed = Some(profile.observation);
     let rehearsed = profile.admission == ActionAdmission::Rehearsed;
     let mut inputs = AdmissionInputs {
+        argument: None,
         rehearsed,
         vetoed: Vec::new(),
         recast: Vec::new(),

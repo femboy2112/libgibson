@@ -53,6 +53,7 @@ pub mod ids;
 pub mod instrument;
 pub mod intent;
 pub mod interaction;
+pub mod kernel;
 pub mod language;
 pub mod mass;
 #[cfg(test)]

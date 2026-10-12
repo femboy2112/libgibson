@@ -415,6 +415,8 @@ pub use super::rehearsal::ActionKey;
 /// historical (`Planned`) build is the exact historical plan.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct AdmissionInputs {
+    /// Opt-in final source, admitted before harmony-dependent decisions.
+    pub argument: Option<super::argument::CompiledArgument>,
     /// Rehearsed admission: each settled song obligation gets its discharging verb from the source
     /// planner, and a settlement stands only while a performed verb discharges it (otherwise the
     /// debt is left open, named — [`super::rehearsal::OpenDebt`]).
@@ -539,7 +541,18 @@ impl PerformancePlan {
 
         // 1. Harmony: the song's chart realized in this room and language (Round IX: the room
         //    re-modes and colours the chart; it no longer searches its own), or the phrase engine.
-        let (mut chords, mut deflects, home_chord) = if let Some(chords) = cover_constraints
+        let (mut chords, mut deflects, home_chord) = if let Some(argument) = &admission.argument {
+            if argument.song.fingerprint() != song.fingerprint() || cover_constraints.is_some() {
+                return Err(super::cover::CoverError::Invalid(
+                    "foreign or competing source authority",
+                ));
+            }
+            (
+                super::kernel::source_harmony(argument, world, &lang)?,
+                Vec::new(),
+                None,
+            )
+        } else if let Some(chords) = cover_constraints
             .as_ref()
             .map(|c| c.harmony(world, &lang))
             .transpose()?
@@ -590,11 +603,13 @@ impl PerformancePlan {
         //     every action is reconciled with it NOW — admitted, recast or rejected — instead of
         //     being realized and then deleted by a stale phrase role.
         let mut constrained_rejections = Vec::new();
-        if cover_constraints.as_ref().is_some_and(|c| {
-            c.identity.harmony.is_some()
-                || c.identity.line(super::score::Role::Lead).is_some()
-                || c.identity.line(super::score::Role::Bass).is_some()
-        }) {
+        if admission.argument.is_some()
+            || cover_constraints.as_ref().is_some_and(|c| {
+                c.identity.harmony.is_some()
+                    || c.identity.line(super::score::Role::Lead).is_some()
+                    || c.identity.line(super::score::Role::Bass).is_some()
+            })
+        {
             let rejected: Vec<_> = actions
                 .actions
                 .iter()
@@ -788,22 +803,26 @@ impl PerformancePlan {
         // The song's own theme: the bank and every site come from the SongMap (Round IX), never
         // from this room's mode.
         let bank = song.thematic.bank.clone();
-        let ip = plan_interactions(
-            plan,
-            &mut actions,
-            &accent,
-            &chords,
-            &song.thematic,
-            &lang,
-            &opts,
-            &stage,
-            seed,
-            cover_constraints.as_ref(),
-            &admission.vetoed,
-            admission.functions,
-            admission.lead_life,
-            narrative.as_ref(),
-        );
+        let ip = if let Some(argument) = &admission.argument {
+            super::kernel::source_plan(argument, &mut actions)
+        } else {
+            plan_interactions(
+                plan,
+                &mut actions,
+                &accent,
+                &chords,
+                &song.thematic,
+                &lang,
+                &opts,
+                &stage,
+                seed,
+                cover_constraints.as_ref(),
+                &admission.vetoed,
+                admission.functions,
+                admission.lead_life,
+                narrative.as_ref(),
+            )
+        };
         let (statements, interactions) = (ip.statements, ip.interactions);
         // 5b. A resolution is performed by whoever ARRIVES: the lead when a statement sounds at
         //     the target, otherwise the bass (or keys) who are there — never a silent lead.
