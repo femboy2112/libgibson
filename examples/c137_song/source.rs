@@ -18,7 +18,7 @@ use gibson::audio::human_music::{
     contract::CompositionGrammar,
     plan::ArrangementRole,
     semantic::{EventKind, SemanticEvent, SemanticState, SemanticTrace, Tone},
-    theme_family::generate_pair,
+    theme_family::generate_developed_pair,
     theory::{PitchBasis, Quality},
     SongMap,
 };
@@ -69,10 +69,12 @@ pub fn source(seed: u64) -> CompiledArgument {
         p.drums = ArrangementRole::Support;
         p.pad = ArrangementRole::Silent;
     }
-    // The full generated phrases, used as-is: the verse rises and ends Open, the hook is its
-    // AlteredConsequent and ends Closed. No cropping, no re-clamping — those obligations ARE the
-    // referents (and the kinship law is measured over the whole phrase, not a prefix).
-    let pair = generate_pair(seed, 16.0, 4.0, &VERSE_PROG, &HOOK_PROG);
+    // The full generated phrases, DEVELOPED: each is embellished into a played line (diatonic
+    // sixteenth passing/neighbour motion between its structural notes) and laid into a structured
+    // pocket, with the kinship law re-checked on the developed pair. The verse rises and ends Open,
+    // the hook is its AlteredConsequent and ends Closed. No cropping — those obligations ARE the
+    // referents (and the kinship law is measured over the whole developed phrase, not a prefix).
+    let pair = generate_developed_pair(seed, 16.0, 4.0, &VERSE_PROG, &HOOK_PROG);
     let verse = MusicalReferent {
         id: ReferentId(0),
         pitch_basis: PitchBasis::Semitones,

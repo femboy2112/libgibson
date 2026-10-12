@@ -866,6 +866,12 @@ impl CommittedSong {
 /// How many beats one episode owns. The long-form domain is an integer number of these.
 const EPISODE_BEATS: f64 = 16.0;
 
+/// The maximum a source onset may sit off its sixteenth-grid lattice position and still be admitted
+/// — the budget for a STRUCTURED performance pocket (a melody laid a few milliseconds behind the
+/// beat), never random jitter. At 144 BPM, 0.06 beat ≈ 25 ms. Bounds the deliberate relaxation of
+/// the long-form grid guard so a wild onset still fails.
+const LONGFORM_POCKET_BEATS: f64 = 0.06;
+
 /// Generalize `source_domain` to N contiguous episodes (here N = 2). The per-placement source
 /// checks are the same source-fidelity guards, with the four-event CELL constraints dropped (the
 /// long-form carrier is a complete generated phrase, not a one-bar prefix): the `onset + dur > 3.75`
@@ -927,12 +933,20 @@ fn longform_domain(argument: &CompiledArgument) -> Result<(), KernelError> {
             || p.carriers != [Agent::Lead]
             || p.pitch_basis != PitchBasis::Semitones
             || p.events.is_empty()
-            || p.events
-                .iter()
-                .any(|e| e.accent <= 0.0 || e.onset < 0.0 || (e.onset * 4.0).fract().abs() > 1e-8)
+            || p.events.iter().any(|e| {
+                // The metric lattice is still the quarter-beat (sixteenth) grid, but a source may
+                // now carry a bounded STRUCTURED pocket — a melody laid a few milliseconds behind
+                // the grid — so an onset is admitted if it sits within `LONGFORM_POCKET_BEATS` of a
+                // lattice position. This is a deliberate relaxation (a named tolerance), not the
+                // removal of the grid: a wild or random onset still fails.
+                let lattice = (e.onset * 4.0).round() / 4.0;
+                e.accent <= 0.0
+                    || e.onset < 0.0
+                    || (e.onset - lattice).abs() > LONGFORM_POCKET_BEATS
+            })
         {
             return Err(KernelError::Source(
-                "source must fit its own quarter-beat phrase lattice",
+                "source must fit its quarter-beat lattice within the pocket tolerance",
             ));
         }
         let step = argument

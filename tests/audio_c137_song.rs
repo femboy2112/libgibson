@@ -216,3 +216,38 @@ fn muted_cue_changes_only_its_later_drum_response_per_episode() {
     // The pulse is identical — only the causal keys-dependent fill of the muted episode changed.
     assert_eq!(pulse(&a), pulse(&b));
 }
+
+#[test]
+fn the_developed_lead_is_a_played_line_not_a_quantized_skeleton() {
+    for seed in [2112u64, 7, 99] {
+        // perform_song succeeds only if the DEVELOPED verse/hook still satisfy every source guard,
+        // including the kinship law (the hook a lawful altered consequent of the verse) on the
+        // developed pair and the relaxed-but-bounded grid/pocket guard.
+        let take = kernel::perform_song(&source::source(seed), &world())
+            .unwrap_or_else(|e| panic!("seed {seed}: developed source refused: {e:?}"));
+        let lead: Vec<_> = take.score().role_notes(Role::Lead).collect();
+        // Denser than the old stated skeleton (38 notes across the whole song) — a played line.
+        assert!(
+            lead.len() >= 60,
+            "seed {seed}: developed lead is only {} notes, not a played line",
+            lead.len()
+        );
+        // The structured pocket laid part of the line off the exact sixteenth grid (de-quantized),
+        // yet every onset stays within the bounded pocket tolerance of the lattice (never random).
+        let off_grid = lead
+            .iter()
+            .filter(|n| ((n.start_beat * 4.0).round() - n.start_beat * 4.0).abs() > 1e-6)
+            .count();
+        assert!(
+            off_grid > 0,
+            "seed {seed}: lead is still perfectly quantized"
+        );
+        for n in &lead {
+            let lattice = (n.start_beat * 4.0).round() / 4.0;
+            assert!(
+                (n.start_beat - lattice).abs() <= 0.06 + 1e-9,
+                "seed {seed}: a lead onset escaped the bounded pocket tolerance"
+            );
+        }
+    }
+}

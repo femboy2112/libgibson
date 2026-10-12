@@ -471,6 +471,14 @@ fn next_aeolian_above(step: i32) -> i32 {
     q
 }
 
+fn next_aeolian_below(step: i32) -> i32 {
+    let mut q = step - 1;
+    while !is_scale(q) {
+        q -= 1;
+    }
+    q
+}
+
 // Onset grids, reused FUNCTIONALLY across bars (the teacher's 16 unique bars share only 5 grids).
 // Every grid carries the two strong beats (0.0 and 2.0) so a bar is always rooted on beats 1 and 3.
 const HEAD_GRID: [f64; 6] = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0];
@@ -737,6 +745,144 @@ pub fn generate_pair(
         }
     }
     fallback_pair(span, beats_per_bar, verse_prog, hook_prog)
+}
+
+/// Develop a bounded phrase into a denser, embellished LINE: fill the gaps between its structural
+/// notes with diatonic (in-scale) passing/neighbour motion on the sixteenth grid. The head cell
+/// (the first two intervals) and the final arrival are left untouched, and every inserted tone is
+/// diatonic and stepwise — so an `AlteredConsequent` pair stays lawful (shared onset skeleton,
+/// preserved head, preserved Open→Closed arrival, ≥95% in-scale, ≥50% stepwise) while the interior
+/// gains the information a stated skeleton lacks. This is where the melody stops being a lead-sheet
+/// reduction and becomes a played line.
+pub fn embellish_phrase(events: &[MaterialEvent]) -> Vec<MaterialEvent> {
+    if events.len() < 3 {
+        return events.to_vec();
+    }
+    let last = events.len() - 1;
+    let mut out: Vec<MaterialEvent> = Vec::new();
+    for (i, &e) in events.iter().enumerate() {
+        out.push(e);
+        // Preserve the head cell (first two gaps) and never insert past the final arrival.
+        if i < 2 || i + 1 >= last {
+            continue;
+        }
+        let next = events[i + 1];
+        let (Some(a), Some(b)) = (e.step, next.step) else {
+            continue;
+        };
+        let gap = next.onset - e.onset;
+        let slots = ((gap / 0.25).round() as i64 - 1).max(0); // interior sixteenth positions
+        let dir = (b - a).signum();
+        let mut prev = a;
+        for k in 1..=slots {
+            // A static tone takes a single upper neighbour; a moving gap takes a strictly monotonic
+            // diatonic walk toward its destination, kept STRICTLY between the two structural pitches
+            // so no inserted tone repeats a neighbour or an endpoint inside the no-repeat window.
+            if dir == 0 && k > 1 {
+                break;
+            }
+            let onset = e.onset + k as f64 * 0.25;
+            if onset >= next.onset - 1e-9 {
+                break;
+            }
+            let cand = if dir < 0 {
+                next_aeolian_below(prev)
+            } else {
+                next_aeolian_above(prev)
+            };
+            let past_destination = (dir > 0 && cand >= b) || (dir < 0 && cand <= b);
+            if cand == prev || past_destination {
+                break;
+            }
+            out.push(ev(onset, 0.25, (e.accent * 0.7).max(0.3), cand));
+            prev = cand;
+        }
+    }
+    out
+}
+
+/// A structured, deterministic pocket: downbeats stay exact, the "and" leans a hair behind the grid
+/// and the "e/a" sixteenths a touch more — a relational feel (a fixed function of metric position,
+/// NEVER a random draw) applied identically to every phrase, so a consequent keeps its antecedent's
+/// shared onsets. Magnitudes are a few milliseconds at tempo. Durations re-tile to the shifted grid
+/// so the line stays legato and never overlaps itself.
+pub fn pocket_phrase(events: &[MaterialEvent], span: f64) -> Vec<MaterialEvent> {
+    let mut out = events.to_vec();
+    for e in &mut out {
+        let within = e.onset.rem_euclid(1.0);
+        let lay = if within < 1e-9 {
+            0.0
+        } else if (within - 0.5).abs() < 1e-9 {
+            0.03
+        } else {
+            0.045
+        };
+        e.onset += lay;
+    }
+    let n = out.len();
+    for i in 0..n {
+        out[i].dur = if i + 1 < n {
+            (out[i + 1].onset - out[i].onset).clamp(0.1, 2.0)
+        } else {
+            (span - out[i].onset).max(0.5)
+        };
+    }
+    out
+}
+
+/// The long-form lead: the same seeded verse/hook pair as [`generate_pair`], but DEVELOPED — each
+/// phrase embellished into a played line and laid into a structured pocket — with the kinship law
+/// re-checked on the DEVELOPED pair so the hook is still a lawful altered consequent of the verse.
+pub fn generate_developed_pair(
+    seed: u64,
+    span: f64,
+    beats_per_bar: f64,
+    verse_prog: &[BarChord],
+    hook_prog: &[BarChord],
+) -> ThemePair {
+    let develop = |e: &[MaterialEvent]| pocket_phrase(&embellish_phrase(e), span);
+    for salt in 0..64u64 {
+        let mut r = Rng::new(mix(seed, salt, 0x7E3E_FA33_C137_D00D));
+        let climax_v = 7 + r.below(4) as i32;
+        let descent_v = pick_descent(&mut r);
+        let lift = 3 + r.below(3) as i32;
+        let descent_h = pick_descent(&mut r);
+        let launch = 3 + r.below(2) as i32;
+        let shape_v = PhraseShape {
+            lift: 0,
+            close: false,
+            climax: climax_v,
+            descent: descent_v,
+            thin: false,
+            launch,
+        };
+        let verse = compose_phrase(&mut r, span, beats_per_bar, verse_prog, shape_v);
+        if ArrivalKind::of(&verse) != Some(ArrivalKind::Open) {
+            continue;
+        }
+        let shape_h = PhraseShape {
+            lift,
+            close: true,
+            climax: climax_v + lift,
+            descent: descent_h,
+            thin: false,
+            launch,
+        };
+        let mut hook = compose_phrase(&mut r, span, beats_per_bar, hook_prog, shape_h);
+        force_shared_head(&verse, &mut hook, hook_prog[0]);
+        let (verse_d, hook_d) = (develop(&verse), develop(&hook));
+        if Kinship::measure(&verse_d, &hook_d, beats_per_bar).altered_consequent() {
+            return ThemePair {
+                verse: verse_d,
+                hook: hook_d,
+            };
+        }
+    }
+    let fb = fallback_pair(span, beats_per_bar, verse_prog, hook_prog);
+    ThemePair {
+        verse: develop(&fb.verse),
+        hook: develop(&fb.hook),
+    }
 }
 
 /// A deterministic, lawful pair, used only if the seeded search is unlucky. Still composed against
