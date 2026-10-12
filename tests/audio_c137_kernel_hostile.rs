@@ -16,6 +16,43 @@ fn take() -> CommittedPerformance {
     kernel::perform(&source::source(2112), &MusicWorld::black_ice()).unwrap()
 }
 
+#[test]
+fn thematic_projection_cannot_advertise_another_source() {
+    let mut s = source::source(2112);
+    s.song.thematic.sites[0].motif.degrees[0] += 1;
+    assert!(kernel::perform(&s, &MusicWorld::black_ice()).is_err());
+    let mut s = source::source(2112);
+    s.song.thematic.sites[0].phrase = 1;
+    assert!(kernel::perform(&s, &MusicWorld::black_ice()).is_err());
+}
+
+#[test]
+fn a_source_call_cannot_be_a_silent_or_invalid_gain_marker() {
+    for gain in [-1.0, 0.0, 1.1, f32::NAN] {
+        let mut s = source::source(2112);
+        s.placements[0].section_gain = gain;
+        assert!(kernel::perform(&s, &MusicWorld::black_ice()).is_err());
+    }
+    let mut s = source::source(2112);
+    for e in &mut s.argument.referents[0].events {
+        e.accent = 0.0;
+    }
+    let mut compiled = s.argument.compile(&s.song).unwrap();
+    compiled.route = s.route;
+    assert!(kernel::perform(&compiled, &MusicWorld::black_ice()).is_err());
+}
+
+#[test]
+fn an_unrelated_new_statement_cannot_claim_the_source_return() {
+    use gibson::audio::human_music::argument::ArgumentRelation;
+    let mut s = source::source(2112);
+    s.argument.steps[1].relation = ArgumentRelation::Establish;
+    s.argument.steps[1].depends_on.clear();
+    let mut compiled = s.argument.compile(&s.song).unwrap();
+    compiled.route = s.route;
+    assert!(kernel::perform(&compiled, &MusicWorld::black_ice()).is_err());
+}
+
 fn change_note_identity(
     score: &mut Score,
     index: usize,

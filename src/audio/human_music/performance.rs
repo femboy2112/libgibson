@@ -542,7 +542,10 @@ impl PerformancePlan {
         // 1. Harmony: the song's chart realized in this room and language (Round IX: the room
         //    re-modes and colours the chart; it no longer searches its own), or the phrase engine.
         let (mut chords, mut deflects, home_chord) = if let Some(argument) = &admission.argument {
-            if argument.song.fingerprint() != song.fingerprint() || cover_constraints.is_some() {
+            // The legacy song hash deliberately omits seed, trace and some provenance. This
+            // private admission seam needs the complete in-process owner, not that projection.
+            if format!("{:?}", argument.song) != format!("{song:?}") || cover_constraints.is_some()
+            {
                 return Err(super::cover::CoverError::Invalid(
                     "foreign or competing source authority",
                 ));
@@ -804,7 +807,7 @@ impl PerformancePlan {
         // from this room's mode.
         let bank = song.thematic.bank.clone();
         let ip = if let Some(argument) = &admission.argument {
-            super::kernel::source_plan(argument, &mut actions)
+            super::kernel::source_plan(argument, &mut actions)?
         } else {
             plan_interactions(
                 plan,
@@ -1359,19 +1362,17 @@ fn admit_actions(actions: &mut ActionPlan, stage: &mut Stage) -> Vec<AdmissionRe
                         reject.push((a.id, "nobody is on stage for an ensemble accent"));
                     }
                 }
-                ActionKind::Deflect => {
+                ActionKind::Deflect if !stage.on_stage(Agent::Bass, s) => {
                     // The miss is made concrete by the bass arriving on the ACTUAL root. With the
                     // bass out, it enters for the miss's first beat (if anybody pitched is there
                     // to deflect at all); with nobody pitched on stage the miss cannot sound.
-                    if !stage.on_stage(Agent::Bass, s) {
-                        let pitched =
-                            stage.present(&[Agent::Pad, Agent::Keys, Agent::Lead], s, s + 0.25);
-                        if pitched.is_empty() {
-                            reject.push((a.id, "nobody pitched is on stage to sound the miss"));
-                        } else {
-                            stage.admit(Agent::Bass, s, s + 1.0, a.id);
-                            record(Admission::Admitted { agent: Agent::Bass });
-                        }
+                    let pitched =
+                        stage.present(&[Agent::Pad, Agent::Keys, Agent::Lead], s, s + 0.25);
+                    if pitched.is_empty() {
+                        reject.push((a.id, "nobody pitched is on stage to sound the miss"));
+                    } else {
+                        stage.admit(Agent::Bass, s, s + 1.0, a.id);
+                        record(Admission::Admitted { agent: Agent::Bass });
                     }
                 }
                 ActionKind::Unison => {

@@ -314,6 +314,30 @@ pub struct ArgumentPlacement {
     pub section_gain: f32,
 }
 
+impl ArgumentPlacement {
+    /// Canonical planning projection; sounding gates remain owned by the placement.
+    pub(crate) fn theme_site(&self) -> ThemeSite {
+        let p = self;
+        ThemeSite {
+            phrase: p.phrase,
+            role: p.relation.role(),
+            motif: motif_for(p),
+            handoff: match p.relation {
+                ArgumentRelation::Establish | ArgumentRelation::Return { .. } => {
+                    Handoff::Restatement
+                }
+                ArgumentRelation::Question { .. } | ArgumentRelation::Denial { .. } => {
+                    Handoff::Call
+                }
+                ArgumentRelation::Answer { .. } | ArgumentRelation::Consequent { .. } => {
+                    Handoff::Consequent
+                }
+                _ => Handoff::Develop,
+            },
+        }
+    }
+}
+
 /// The declared section dynamic (attenuation, `<= 1.0`) for a statement of this relation — the
 /// argument's own energy arc. The verse is held back; the hook and answer/return arrive at full;
 /// the bridge builds; a denial dips. Structured and relational (standing rule), never random.
@@ -712,12 +736,12 @@ impl MusicalArgument {
                             return Err(ArgumentError::ConsequentNotRelated(step.id));
                         }
                     }
-                    ArgumentRelation::Depart { .. } => {
+                    ArgumentRelation::Depart { .. }
+                        if !super::theme_family::is_departure(earlier_events, &events) =>
+                    {
                         // The bridge must be a lawful departure of the hook's performed material:
                         // recycles a cell, lifts the register, ends open — not a relabelled restate.
-                        if !super::theme_family::is_departure(earlier_events, &events) {
-                            return Err(ArgumentError::DepartureNotRelated(step.id));
-                        }
+                        return Err(ArgumentError::DepartureNotRelated(step.id));
                     }
                     ArgumentRelation::Return { .. } | ArgumentRelation::Develop { .. }
                         if !same_head(earlier_events, &events, source.events.len()) =>
@@ -960,23 +984,7 @@ impl MusicalArgument {
         };
         song.thematic.sites = placements
             .iter()
-            .map(|p| ThemeSite {
-                phrase: p.phrase,
-                role: p.relation.role(),
-                motif: motif_for(p),
-                handoff: match p.relation {
-                    ArgumentRelation::Establish | ArgumentRelation::Return { .. } => {
-                        Handoff::Restatement
-                    }
-                    ArgumentRelation::Question { .. } | ArgumentRelation::Denial { .. } => {
-                        Handoff::Call
-                    }
-                    ArgumentRelation::Answer { .. } | ArgumentRelation::Consequent { .. } => {
-                        Handoff::Consequent
-                    }
-                    _ => Handoff::Develop,
-                },
-            })
+            .map(ArgumentPlacement::theme_site)
             .collect();
         // The old coarse target is still computed from its declared input and the actual new
         // plan. It is not replaced with observation to force a green commutation check, and

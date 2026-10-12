@@ -27,6 +27,7 @@ pub enum KernelError {
     Capacity(Role),
     StaleObservation(usize),
     InvalidScore(String),
+    ChangedCommitment(Agent),
 }
 impl std::fmt::Display for KernelError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -106,12 +107,52 @@ impl CommittedPerformance {
     }
     /// Judge exported mutations without blessing or modifying them. This is an event/source
     /// contract, not a claim about perception, mastering or general musical quality.
+    /// Every emitted event is a commitment, including events nobody else consumed. A different
+    /// valid source must be performed again; exporting and changing a Score cannot reseal it.
     pub fn validate_candidate(&self, score: &Score) -> Result<(), KernelError> {
         validate(score, &self.composition.perf, &self.source, &self.world)?;
         for (i, h) in self.hearings.iter().enumerate() {
             if !h.matches(score) {
                 return Err(KernelError::StaleObservation(i));
             }
+        }
+        let committed = self.score();
+        for (role, agent) in [
+            (Role::Lead, Agent::Lead),
+            (Role::Keys, Agent::Keys),
+            (Role::Bass, Agent::Bass),
+            (Role::Pad, Agent::Pad),
+        ] {
+            let signature = |n: &Note| {
+                (
+                    n.start_beat,
+                    n.dur_beats,
+                    n.pitch,
+                    n.velocity,
+                    n.role,
+                    n.prov,
+                    n.function,
+                )
+            };
+            if !score
+                .role_notes(role)
+                .map(signature)
+                .eq(committed.role_notes(role).map(signature))
+            {
+                return Err(KernelError::ChangedCommitment(agent));
+            }
+        }
+        let stroke = |h: &DrumHit| (h.start_beat, h.voice, h.velocity, h.prov);
+        if !score
+            .drums
+            .iter()
+            .map(stroke)
+            .eq(committed.drums.iter().map(stroke))
+        {
+            return Err(KernelError::ChangedCommitment(Agent::Drums));
+        }
+        if score.voice_continuity != committed.voice_continuity {
+            return Err(KernelError::Source("changed committed voice ownership"));
         }
         Ok(())
     }
@@ -138,7 +179,7 @@ pub(crate) fn source_harmony(
         .iter()
         .enumerate()
         .map(|(bar, &(offset, quality))| {
-            let chord = Chord::new(region.tonic_pc + offset, quality);
+            let chord = Chord::new(region.tonic_pc + offset.rem_euclid(12), quality);
             if !vocabulary.admits(chord) {
                 return Err(err());
             }
@@ -185,11 +226,19 @@ fn action(
 pub(super) fn source_plan(
     argument: &CompiledArgument,
     actions: &mut ActionPlan,
-) -> InteractionPlan {
+) -> Result<InteractionPlan, super::cover::CoverError> {
     let mut statements = Vec::new();
     let mut materials = Vec::new();
     for (i, p) in argument.placements.iter().enumerate() {
-        let site = &argument.song.thematic.sites[i];
+        let site = argument
+            .song
+            .thematic
+            .sites
+            .iter()
+            .find(|s| s.phrase == p.phrase)
+            .ok_or(super::cover::CoverError::Invalid(
+                "source has no matching thematic site",
+            ))?;
         let id = MaterialId(materials.len() as u32);
         let length = p.events.iter().map(|e| e.onset + e.dur).fold(0.0, f64::max);
         let call = action(
@@ -227,12 +276,12 @@ pub(super) fn source_plan(
             fragment: None,
         });
     }
-    InteractionPlan {
+    Ok(InteractionPlan {
         statements,
         materials,
         interactions: Vec::new(),
         opportunities: Vec::new(),
-    }
+    })
 }
 
 fn provenance(perf: &PerformancePlan, at: f64, label: &'static str) -> Provenance {
@@ -285,6 +334,60 @@ fn source_domain(argument: &CompiledArgument) -> Result<(), KernelError> {
     let [first, last] = argument.placements.as_slice() else {
         unreachable!()
     };
+    if first.relation != super::argument::ArgumentRelation::Establish
+        || last.relation != (super::argument::ArgumentRelation::Return { source: first.step })
+        || argument.argument.ending != super::argument::ArgumentEnding::Resolved
+    {
+        return Err(KernelError::Source(
+            "conversation requires an established source and its resolved return",
+        ));
+    }
+    let arc = argument.argument.arc.as_ref().ok_or(KernelError::Source(
+        "conversation requires source-bound reservations",
+    ))?;
+    if argument.argument.steps.len() != 2 || arc.len() != 2 {
+        return Err(KernelError::Source("inconsistent source arc"));
+    }
+    for ((p, span), step) in argument
+        .placements
+        .iter()
+        .zip(arc)
+        .zip(&argument.argument.steps)
+    {
+        let phrase = argument
+            .song
+            .plan
+            .form
+            .phrases
+            .get(p.phrase as usize)
+            .ok_or(KernelError::Source("foreign source phrase"))?;
+        let final_ix = span
+            .start_phrase
+            .checked_add(span.phrase_count)
+            .and_then(|i| i.checked_sub(1))
+            .ok_or(KernelError::Source("invalid source span"))?;
+        let final_phrase = argument
+            .song
+            .plan
+            .form
+            .phrases
+            .get(final_ix as usize)
+            .ok_or(KernelError::Source("source span exceeds form"))?;
+        if span.phrase_count == 0
+            || span.step != step.id
+            || p.step != step.id
+            || span.start_phrase != p.phrase
+            || span.start_beat != p.start_beat
+            || span.span_beats != p.span_beats
+            || phrase.start_beat() != p.start_beat
+            || final_phrase.end_beat() != p.start_beat + p.span_beats
+        {
+            return Err(KernelError::Source(
+                "compiled reservation differs from source arc",
+            ));
+        }
+    }
+
     if first.start_beat != 0.0
         || last.start_beat != 12.0
         || first.span_beats != 12.0
@@ -295,11 +398,28 @@ fn source_domain(argument: &CompiledArgument) -> Result<(), KernelError> {
         ));
     }
     for p in &argument.placements {
-        if p.carriers != [Agent::Lead]
+        if !argument
+            .song
+            .thematic
+            .sites
+            .iter()
+            .any(|s| *s == p.theme_site())
+        {
+            return Err(KernelError::Source(
+                "thematic projection differs from its source",
+            ));
+        }
+        if p.anchor_semitones != 0
+            || !p.section_gain.is_finite()
+            || !(0.0 < p.section_gain && p.section_gain <= 1.0)
+            || p.carriers != [Agent::Lead]
             || p.pitch_basis != PitchBasis::Semitones
             || p.events.is_empty()
             || p.events.iter().any(|e| {
-                e.onset < 0.0 || e.onset + e.dur > 3.75 || (e.onset * 4.0).fract().abs() > 1e-8
+                e.accent <= 0.0
+                    || e.onset < 0.0
+                    || e.onset + e.dur > 3.75
+                    || (e.onset * 4.0).fract().abs() > 1e-8
             })
         {
             return Err(KernelError::Source(
@@ -354,6 +474,9 @@ pub fn perform(
     world: &MusicWorld,
 ) -> Result<CommittedPerformance, KernelError> {
     source_domain(argument)?;
+    if !world.tempo_bpm.is_finite() || world.tempo_bpm <= 0.0 {
+        return Err(KernelError::Source("invalid shared pulse"));
+    }
     let inputs = AdmissionInputs {
         argument: Some(argument.clone()),
         harmony: super::policy::HarmonyPolicy::Vocabulary,
@@ -381,9 +504,11 @@ pub fn perform(
     score.chords = perf.chords.clone();
     score.mono_voice = true;
     score.observed_lifetime = Some(super::voice::ObservedLifetimePolicy::ExplicitContinuity);
+    let mut lead = Vec::new();
+    let mut lead_links = Vec::new();
     // Required source transport into an EMPTY lane: nothing is generated then deleted.
     super::argument_transport::replace_required_role(
-        &mut score.notes,
+        &mut lead,
         Role::Lead,
         &argument.placements,
         world.tonic_pc,
@@ -392,8 +517,7 @@ pub fn perform(
     )
     .map_err(|_| KernelError::Source("source realization refused"))?;
     for (i, p) in argument.placements.iter().enumerate() {
-        let notes: Vec<_> = score
-            .notes
+        let notes: Vec<_> = lead
             .iter_mut()
             .filter(|n| n.start_beat >= p.start_beat && n.start_beat < p.start_beat + p.span_beats)
             .collect();
@@ -404,18 +528,16 @@ pub fn perform(
     }
     // Explicit links only inside a single declared lead gesture, never across its breath.
     for p in &argument.placements {
-        let ns: Vec<_> = score
-            .role_notes(Role::Lead)
+        let ns: Vec<_> = lead
+            .iter()
             .filter(|n| n.start_beat >= p.start_beat && n.start_beat < p.start_beat + p.span_beats)
             .copied()
             .collect();
         for pair in ns.windows(2) {
-            score
-                .voice_continuity
-                .push(VoiceContinuation::new(&pair[0], &pair[1]).unwrap());
+            lead_links.push(VoiceContinuation::new(&pair[0], &pair[1]).unwrap());
         }
     }
-    validate_lane(&score, Role::Lead)?;
+    score = commit_role(score, &perf, world, Role::Lead, lead, lead_links)?;
     let lead_hearing = EffectiveHearing::capture(Agent::Keys, Role::Lead, 0.0, 4.0, &score);
     let heard: Vec<_> = score
         .role_notes(Role::Lead)
@@ -456,6 +578,7 @@ pub fn perform(
         material: None,
         realizes: None,
     };
+    let mut keys = Vec::new();
     if let Some(material) = super::material::transform_material(
         MaterialId(perf.materials.len() as u32),
         &call_material,
@@ -485,7 +608,7 @@ pub fn perform(
             let mut prov = provenance(&perf, at, "answer").realizing(aid);
             prov.material = Some(material.id);
             prov.interaction = Some(InteractionId(0));
-            score.notes.push(pitched(
+            keys.push(pitched(
                 &perf,
                 Role::Keys,
                 at,
@@ -517,9 +640,11 @@ pub fn perform(
             ..response
         }),
     });
+    score = commit_role(score, &perf, world, Role::Keys, keys, Vec::new())?;
     let keys_hearing = EffectiveHearing::capture(Agent::Drums, Role::Keys, 4.0, 8.0, &score);
     // The bassist owns one uninterrupted foundation lane. The optional approach is planned
     // against the next source chord, not spliced into an already sounded melody.
+    let mut bass = Vec::new();
     for bar in 0..4 {
         let at = bar as f64 * 4.0;
         let ctx = perf.context_at(at).unwrap();
@@ -534,7 +659,7 @@ pub fn perform(
             ),
         ] {
             let prov = provenance(&perf, at + offset, "foundation");
-            score.notes.push(pitched(
+            bass.push(pitched(
                 &perf,
                 Role::Bass,
                 at + offset,
@@ -567,16 +692,14 @@ pub fn perform(
             provenance(&perf, 11.5, "approach").realizing(id),
         );
         note.function = Some(PitchFunction::ChromaticApproach);
-        score.notes.push(note);
+        bass.push(note);
     }
-    let mut bass: Vec<_> = score.role_notes(Role::Bass).copied().collect();
     bass.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
-    for pair in bass.windows(2) {
-        score
-            .voice_continuity
-            .push(VoiceContinuation::new(&pair[0], &pair[1]).unwrap());
-    }
-    validate_lane(&score, Role::Bass)?;
+    let bass_links = bass
+        .windows(2)
+        .map(|pair| VoiceContinuation::new(&pair[0], &pair[1]).unwrap())
+        .collect();
+    score = commit_role(score, &perf, world, Role::Bass, bass, bass_links)?;
     // Kit anchors own the shared beat. Only the later fill consumes the completed keys window.
     for step in 0..32 {
         let at = step as f64 * 0.5;
@@ -649,7 +772,74 @@ pub fn perform(
     Ok(take)
 }
 
-fn validate_lane(score: &Score, role: Role) -> Result<(), KernelError> {
+// The partial union consumes a completed lane once. No role can revise an earlier lane or
+// borrow its continuity endpoints; errors yield no partially committed performance.
+fn commit_role(
+    mut score: Score,
+    perf: &PerformancePlan,
+    world: &MusicWorld,
+    role: Role,
+    notes: Vec<Note>,
+    links: Vec<VoiceContinuation>,
+) -> Result<Score, KernelError> {
+    if score.role_notes(role).next().is_some()
+        || notes.iter().any(|n| n.role != role)
+        || links.iter().any(|e| {
+            !notes.iter().any(|n| VoiceEventId::of(n) == e.from)
+                || !notes.iter().any(|n| VoiceEventId::of(n) == e.to)
+        })
+    {
+        return Err(KernelError::Capacity(role));
+    }
+    score.notes.extend(notes);
+    score.voice_continuity.extend(links);
+    validate_role(&score, perf, role, world)?;
+    Ok(score)
+}
+
+// Partial composition: the source lane must inhabit the shared domain and stage before any
+// dependent can consume it. Independent role identity is retained; no vertical consonance solver.
+fn validate_role(
+    score: &Score,
+    perf: &PerformancePlan,
+    role: Role,
+    world: &MusicWorld,
+) -> Result<(), KernelError> {
+    let agent = match role {
+        Role::Lead => Agent::Lead,
+        Role::Keys => Agent::Keys,
+        Role::Bass => Agent::Bass,
+        Role::Pad => Agent::Pad,
+    };
+    for n in score.role_notes(role) {
+        if !n.start_beat.is_finite()
+            || !n.dur_beats.is_finite()
+            || n.dur_beats <= 0.0
+            || !n.velocity.is_finite()
+            || !(0.0..=1.0).contains(&n.velocity)
+            || !(0..=127).contains(&n.pitch)
+            || !perf
+                .domain()
+                .contains(n.start_beat, n.start_beat + f64::from(n.dur_beats))
+        {
+            return Err(KernelError::InvalidScore(
+                "event outside the performance domain".into(),
+            ));
+        }
+        if !perf
+            .stage
+            .on_stage_span(agent, n.start_beat, n.start_beat + f64::from(n.dur_beats))
+        {
+            return Err(KernelError::Stage(agent));
+        }
+    }
+    if matches!(role, Role::Lead | Role::Bass) {
+        validate_lane(score, role, world)?;
+    }
+    Ok(())
+}
+
+fn validate_lane(score: &Score, role: Role, world: &MusicWorld) -> Result<(), KernelError> {
     let mut notes: Vec<_> = score.role_notes(role).collect();
     notes.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
     if notes
@@ -658,11 +848,18 @@ fn validate_lane(score: &Score, role: Role) -> Result<(), KernelError> {
         || notes.windows(2).any(|w| {
             w[0].start_beat + f64::from(w[0].dur_beats) > w[1].start_beat + 1e-6
                 || (w[0].pitch == w[1].pitch && w[1].start_beat - w[0].start_beat < 0.5)
-                || !score
-                    .voice_continuity
-                    .iter()
-                    .any(|e| e.from == VoiceEventId::of(w[0]) && e.to == VoiceEventId::of(w[1]))
-                    && w[1].start_beat - (w[0].start_beat + f64::from(w[0].dur_beats)) < 1.0
+                || {
+                    let linked = score.voice_continuity.iter().any(|e| {
+                        e.from == VoiceEventId::of(w[0]) && e.to == VoiceEventId::of(w[1])
+                    });
+                    let choke = if linked {
+                        super::voice::MONO_CHOKE_SECS * f64::from(world.tempo_bpm) / 60.0
+                    } else {
+                        0.0
+                    };
+                    super::voice::effective_audible_end(w[0], world, &score.voice_continuity)
+                        > w[1].start_beat + choke + 1e-6
+                }
         })
     {
         return Err(KernelError::Capacity(role));
@@ -678,10 +875,21 @@ fn validate(
     score.validate().map_err(KernelError::InvalidScore)?;
     if score.tempo_bpm != world.tempo_bpm
         || score.total_beats != 16.0
+        || score.beats_per_bar != 4.0
+        || score.observed_lifetime != Some(super::voice::ObservedLifetimePolicy::ExplicitContinuity)
         || !score.mono_voice
         || !score.sfx.is_empty()
     {
         return Err(KernelError::Source("changed performance domain"));
+    }
+    let chord = |c: &ChordSpan| (c.start_beat, c.dur_beats, c.chord, c.function, c.degree);
+    if !score
+        .chords
+        .iter()
+        .map(chord)
+        .eq(perf.chords.iter().map(chord))
+    {
+        return Err(KernelError::Source("changed final harmonic base"));
     }
     if !super::argument_witness::observe_argument(source, score, world.tonic_pc).valid() {
         return Err(KernelError::Source(
@@ -691,8 +899,9 @@ fn validate(
     if !super::voice::continuity_violations(&score.notes, &score.voice_continuity).is_empty() {
         return Err(KernelError::Capacity(Role::Bass));
     }
-    validate_lane(score, Role::Bass)?;
-    validate_lane(score, Role::Lead)?;
+    for role in [Role::Lead, Role::Keys, Role::Bass, Role::Pad] {
+        validate_role(score, perf, role, world)?;
+    }
     for n in &score.notes {
         let agent = match n.role {
             Role::Lead => Agent::Lead,
@@ -726,4 +935,87 @@ fn validate(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio::human_music::{
+        argument::{ArgumentFamily, MusicalArgument},
+        composer::Composer,
+        contract::CompositionGrammar,
+        semantic::deflected_lift_trace,
+        SongMap,
+    };
+
+    fn source() -> CompiledArgument {
+        let song = SongMap::compose(
+            &deflected_lift_trace(128.0),
+            2112,
+            Some(CompositionGrammar::DeflectedLift),
+            Composer::MeaningDirected,
+        );
+        MusicalArgument::calibration(ArgumentFamily::CallAndEarnedAnswer, 91)
+            .unwrap()
+            .compile(&song)
+            .unwrap()
+    }
+    #[test]
+    fn source_harmony_precedes_the_first_pitch_sensitive_settlement() {
+        let mut source = source();
+        // In the archived planner this debt chose beat120 against the intermediate A chord.
+        // The source instead declares F there, then home at124: only the latter can pay it.
+        source.route[30] = (8, Quality::Maj);
+        source.route[31] = (0, Quality::Min);
+        let world = MusicWorld::black_ice();
+        let inputs = AdmissionInputs {
+            argument: Some(source.clone()),
+            rehearsed: true,
+            ..Default::default()
+        };
+        let perf = PerformancePlan::from_song_admitted(
+            &source.song,
+            &world,
+            PerformanceOptions::default(),
+            None,
+            &inputs,
+        )
+        .unwrap();
+        let resolves: Vec<_> = perf
+            .actions
+            .of_kind(ActionKind::Resolve)
+            .filter(|a| matches!(a.cause, ActionCause::Discourse { .. }))
+            .collect();
+        assert!(!resolves.is_empty());
+        assert!(resolves.iter().all(|a| perf
+            .context_at(a.target_beat.unwrap())
+            .unwrap()
+            .chord
+            .root_pc
+            == world.tonic_pc));
+        assert!(!resolves.iter().any(|a| a.target_beat == Some(120.0)));
+        assert!(resolves.iter().any(|a| a.target_beat == Some(124.0)));
+    }
+    #[test]
+    fn frozen_planner_refuses_foreign_owner_and_missing_route() {
+        let source = source();
+        let world = MusicWorld::black_ice();
+        let mut foreign = source.song.clone();
+        foreign.seed += 1;
+        let inputs = AdmissionInputs {
+            argument: Some(source.clone()),
+            ..Default::default()
+        };
+        assert!(PerformancePlan::from_song_admitted(
+            &foreign,
+            &world,
+            PerformanceOptions::default(),
+            None,
+            &inputs
+        )
+        .is_err());
+        let mut broken = source.clone();
+        broken.route.pop();
+        assert!(source_harmony(&broken, &world, &Default::default()).is_err());
+    }
 }

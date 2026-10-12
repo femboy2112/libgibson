@@ -85,3 +85,18 @@ The bounded kernel does not yet replace full fusion performance, establish a
 general theory of bass agency, or prove musical quality. Those are outside this
 review. Hard refusal of false source identity and broken commitments is inside
 the claimed four-bar domain and must hold before its receipts are trusted.
+
+## Integrated correction
+
+The first 16 mutants now pass, and three added cases reject forged thematic
+projections, silent/invalid source gain markers, and an unrelated statement
+claiming the return. `hostile_green.txt` records 9 conversation tests, 19 hostile
+tests and 2 private planner tests passing. The original red output is unchanged.
+
+The correction seals all committed musical events, validates each lane before
+consumption, and reuses the argument compiler's canonical thematic projection.
+It does not repair a changed candidate or replace the historical Hearing tuple.
+The song's legacy content hash excludes seed and trace; private planner owner
+admission therefore compares the complete in-process owner, leaving that hash
+unchanged. Strict all-target/all-feature clippy passed on the installed nightly;
+five pre-existing match/Boolean expressions were simplified equivalently.

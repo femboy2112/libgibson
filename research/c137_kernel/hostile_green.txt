@@ -1,0 +1,52 @@
+   Compiling libgibson v0.4.0 (/home/leah/LibGibson.kernel)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 29.01s
+     Running tests/audio_c137_conversation.rs (target/debug/deps/audio_c137_conversation-9f5fb2c419b15c7d)
+
+running 9 tests
+test first_conversation_is_a_real_committed_score ... ok
+test dynamic_and_source_changes_cannot_keep_the_final_hearing ... ok
+test source_owner_route_register_and_stage_refuse_before_a_take_exists ... ok
+test muted_cue_changes_only_its_later_drum_response ... ok
+test consumed_velocity_changes_a_real_downstream_fill ... ok
+test different_equal_count_equal_energy_calls_make_different_choices ... ok
+test relative_phase_recovers_and_available_keys_opportunity_stays_silent ... ok
+test source_silence_and_bass_capacity_are_partial_composition_boundaries ... ok
+test fresh_sources_and_transposed_rooms_preserve_the_bounded_contract ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/audio_c137_kernel_hostile.rs (target/debug/deps/audio_c137_kernel_hostile-959637c42b92e0bb)
+
+running 19 tests
+test an_unrelated_new_statement_cannot_claim_the_source_return ... ok
+test audible_foundation_cannot_be_replaced_with_zero_velocity_markers ... ok
+test bass_duty_cannot_be_shifted_off_its_declared_pulse ... ok
+test arbitrary_off_phase_drum_cannot_claim_a_committed_cue ... ok
+test bass_arpeggio_cannot_become_an_unjustified_chromatic_pitch ... ok
+test compiled_return_cannot_claim_the_opening_phrase_identity ... ok
+test a_source_call_cannot_be_a_silent_or_invalid_gain_marker ... ok
+test bass_foundation_cannot_be_relabelled_as_an_unowned_counterline ... ok
+test consumed_keys_response_cannot_leave_a_missing_drum_consequence ... ok
+test declared_metric_base_cannot_change_after_commit ... ok
+test committed_kit_cannot_be_deleted_wholesale ... ok
+test effective_hearing_rejects_dynamic_and_false_withholding_mutations ... ok
+test final_drum_dynamics_are_part_of_the_committed_response ... ok
+test source_arc_must_have_a_span_for_each_step ... ok
+test source_arc_must_agree_with_compiled_placement_time ... ok
+test source_arc_must_not_reference_a_nonexistent_phrase ... ok
+test source_pitch_basis_must_match_the_compiled_interpretation ... ok
+test final_harmonic_base_cannot_disappear_after_commit ... ok
+test thematic_projection_cannot_advertise_another_source ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Compiling libgibson v0.4.0 (/home/leah/LibGibson.kernel)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 56.31s
+     Running unittests src/lib.rs (target/debug/deps/gibson-a5f6ecdaf156ec4d)
+
+running 2 tests
+test audio::human_music::kernel::tests::frozen_planner_refuses_foreign_owner_and_missing_route ... ok
+test audio::human_music::kernel::tests::source_harmony_precedes_the_first_pitch_sensitive_settlement ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 871 filtered out; finished in 0.03s
+
