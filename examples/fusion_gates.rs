@@ -24,7 +24,7 @@ use gibson::audio::human_music::{
     policy::PerformanceProfile,
     score::{Role, Score},
     semantic::deflected_lift_trace,
-    synth::StemMask,
+    synth::{ProductionControl, StemMask},
     theory::Mode,
     HumanMusicSynth, MusicWorld, SongMap,
 };
@@ -956,6 +956,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Opt-in A/B arm: weave a germ-derived countersubject into the band (keys ANSWERS the lead in its
     // silent gaps). Default off = the byte-exact BAND render; the ear adjudicates the arm against it.
     let counterpoint = args.iter().any(|a| a == "--counterpoint");
+    // Arm F audit (harness only, NOT a default): render the SAME Score under an alternate
+    // `ProductionControl` (e.g. `--production=nocomp,dry`) to isolate whether the mastering chain
+    // flattens role dynamics vs. the Score itself. `normal` = the shipped mix.
+    let production = ProductionControl::parse(arg("--production=").as_deref().unwrap_or("normal"))
+        .map_err(|e| format!("--production=: {e}"))?;
     let seeds: Vec<u64> = match arg("--seeds=") {
         Some(list) => list.split(',').map(str::parse).collect::<Result<_, _>>()?,
         None => vec![arg("--seed=").and_then(|s| s.parse().ok()).unwrap_or(2112)],
@@ -1045,13 +1050,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some(dir) = arg("--wav=") {
             std::fs::create_dir_all(&dir)?;
             let rate = SampleRate::new(48_000).ok_or("zero sample rate")?;
-            let mut synth = HumanMusicSynth::new(&c.score, &world, rate);
+            let mut synth = HumanMusicSynth::with_production(&c.score, &world, rate, production);
             synth.set_stem_mask(StemMask::full());
             let frames = synth.total_samples();
             let audio = OfflineRenderer::new(rate, 256)
                 .render(&mut synth, frames)
                 .audio;
-            let path = format!("{dir}/fusion_{seed}_mix.wav");
+            let plabel = production.label();
+            let path = if plabel == "normal" {
+                format!("{dir}/fusion_{seed}_mix.wav")
+            } else {
+                format!("{dir}/fusion_{seed}_mix_{plabel}.wav")
+            };
             write_wav_i16(&path, &audio, rate)?;
             println!(
                 "wrote {path} (peak {:.3}, rms {:.3}, {} frames)",
