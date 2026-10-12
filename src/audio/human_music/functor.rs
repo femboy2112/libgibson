@@ -1115,6 +1115,16 @@ fn realize_policy_with_argument(
                 });
                 bass.append(&mut bc);
                 bass.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+                // A mono-voice bass cannot sound two notes at once. The counter answers land between
+                // the foundation eighths, and some foundation tails stretch across the onsets the weave
+                // removed, so clip each note's tail to the next onset — otherwise the overlapping notes
+                // re-trigger the single voice and the bass "trips over itself".
+                for i in 0..bass.len().saturating_sub(1) {
+                    let gap = (bass[i + 1].start_beat - bass[i].start_beat) as f32;
+                    if gap > 0.0 && bass[i].dur_beats > gap {
+                        bass[i].dur_beats = gap;
+                    }
+                }
             }
             if score.mono_voice {
                 // The bass sings a melodic answer where it dropped its foundation, so the mono-voice
