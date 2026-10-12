@@ -1,0 +1,3905 @@
+{
+  "schema": "c137-candidate-independent-summary-v1",
+  "source_revision": "ac97bccba88beb768720c67ac64200f6778d0584",
+  "artifact_root": "/home/leah/LibGibson.kernel/target/c137-audition-ac97bcc",
+  "analyzer_sha256": "a5213b1a276a06513b3f442db4066774d2b20bc32f1de2f57eff444b4a743899",
+  "manifest": {
+    "files_including_manifest": 178,
+    "listed_files": 177,
+    "all_listed_sizes_and_fnv_verified": true,
+    "unexpected_or_missing_files": [],
+    "sha256_file": "candidate_sha256.txt"
+  },
+  "run": {
+    "example": "c137_conversation",
+    "code_revision_caller_supplied": "ac97bccba88beb768720c67ac64200f6778d0584",
+    "seeds": "[2112, 7, 99]",
+    "tempo": "144",
+    "sample_rate": "48000",
+    "encoding": "stereo_PCM16",
+    "normalization": "none",
+    "source_debug_checksum": "FNV1a64_of_exact_dump_not_cryptographic",
+    "file_checksum": "FNV1a64_of_exact_bytes_not_cryptographic",
+    "source_controls": "replanned",
+    "exported_mute_controls": "uncommitted_velocity_mutations",
+    "solo_stems": "individual_synth_buses_with_shared_production_chain_not_additive_separation",
+    "human_listening": "pending_against_teacher_golden7",
+    "teacher_media": "not_generated_or_substituted_by_this_example"
+  },
+  "unique_wav_sha256": 33,
+  "takes": {
+    "seed-2112/candidate": {
+      "receipt": {
+        "status": "committed_event_contract_pass",
+        "human_listening": "pending",
+        "source_debug_fnv1a64": "bf1be50c542248e9",
+        "song_fingerprint": "c98735ed499f9f20",
+        "performance_fingerprint": "37753f2f7879396a",
+        "score_fingerprint": "468ddeeb851c6101",
+        "legacy_stale_hearings": "0",
+        "effective_hearings": "2",
+        "effective_hearings_matching": "2",
+        "keys_events": "4",
+        "keys_dependent_drum_hits": "2",
+        "bass_approaches": "1",
+        "pad_events": "0"
+      },
+      "block_independence_emitter_receipt": {
+        "block_frames": "256,127",
+        "comparison": "every_float32_sample_bit",
+        "identical": "true",
+        "frames": "440000"
+      },
+      "same_score_fingerprint_across_eight_renders": "468ddeeb851c6101",
+      "score": {
+        "tempo_bpm": 144.0,
+        "beats_per_bar": 4.0,
+        "total_beats": 16.0,
+        "chord_count": 4,
+        "roles": {
+          "bass": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.57,
+              "max": 0.76,
+              "mean": 0.6599999999999999,
+              "population_sd": 0.09067647005823631
+            },
+            "distinct_stored_velocities": 3,
+            "attacks_per_bar": [
+              2,
+              2,
+              3,
+              2
+            ],
+            "stored_velocity_sum_per_bar": [
+              1.33,
+              1.33,
+              1.9500000000000002,
+              1.33
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 36.0,
+              "max": 45.0,
+              "mean": 41.888888888888886,
+              "population_sd": 3.247030932489435
+            },
+            "written_gate_beats": 8.5,
+            "written_occupancy_fraction": 0.5312500000000001,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          },
+          "drums": {
+            "events": 50,
+            "stored_velocity": {
+              "count": 50,
+              "min": 0.25,
+              "max": 0.78,
+              "mean": 0.4410926294,
+              "population_sd": 0.19862571251947114
+            },
+            "distinct_stored_velocities": 6,
+            "attacks_per_bar": [
+              12,
+              12,
+              14,
+              12
+            ],
+            "stored_velocity_sum_per_bar": [
+              5.38,
+              5.38,
+              5.91463147,
+              5.38
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0
+          },
+          "keys": {
+            "events": 4,
+            "stored_velocity": {
+              "count": 4,
+              "min": 0.39480478,
+              "max": 0.52092296,
+              "mean": 0.43867197750000003,
+              "population_sd": 0.04889150654180356
+            },
+            "distinct_stored_velocities": 4,
+            "attacks_per_bar": [
+              0,
+              4,
+              0,
+              0
+            ],
+            "stored_velocity_sum_per_bar": [
+              0.0,
+              1.7546879100000001,
+              0.0,
+              0.0
+            ],
+            "active_bars": 1,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 4,
+              "min": 50.0,
+              "max": 62.0,
+              "mean": 55.5,
+              "population_sd": 4.5
+            },
+            "written_gate_beats": 1.6,
+            "written_occupancy_fraction": 0.10000000000000009,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          },
+          "lead": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.5328,
+              "max": 1.0,
+              "mean": 0.7297777877777778,
+              "population_sd": 0.1555953513514245
+            },
+            "distinct_stored_velocities": 9,
+            "attacks_per_bar": [
+              4,
+              0,
+              0,
+              5
+            ],
+            "stored_velocity_sum_per_bar": [
+              2.36800006,
+              0.0,
+              0.0,
+              4.20000003
+            ],
+            "active_bars": 2,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 69.0,
+              "max": 76.0,
+              "mean": 72.33333333333333,
+              "population_sd": 2.70801280154532
+            },
+            "written_gate_beats": 4.75,
+            "written_occupancy_fraction": 0.296875,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          }
+        },
+        "limits": "TSV stored velocity and written gates only; effective gain, voice choke/release, bus levels, source identity, hearings, and acoustic masking are not reconstructed. A polyphonic role can legitimately have overlapping written gates."
+      },
+      "keys_attack_phase_relative_to_eighth_beat_lattice": [
+        0.0625,
+        0.0625,
+        0.0625,
+        0.0625
+      ],
+      "bass_source_approach": [
+        {
+          "at": 11.5,
+          "gate": 0.3,
+          "pitch": 44,
+          "velocity": 0.62,
+          "function": "Some(ChromaticApproach)",
+          "duty": "approach"
+        }
+      ],
+      "heard_keys_drum_events": [
+        {
+          "voice": "Snare",
+          "at": 10.5,
+          "velocity": 0.27800837,
+          "duty": "heard-keys"
+        },
+        {
+          "voice": "Snare",
+          "at": 10.75,
+          "velocity": 0.2566231,
+          "duty": "heard-keys"
+        }
+      ],
+      "acoustic_spans": {
+        "full.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.14449438373595913,
+          "tail_rms": 0.00048373439462235925,
+          "bar_rms": [
+            0.14193951045570694,
+            0.1431894884317854,
+            0.14664830600018708,
+            0.14614625498606457
+          ]
+        },
+        "full.nocomp": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.14306849090507107,
+          "tail_rms": 0.00040705865032825985,
+          "bar_rms": [
+            0.13918162518529253,
+            0.1433658062637463,
+            0.14093299926093286,
+            0.14861689972497147
+          ]
+        },
+        "full.harmonic-reference": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.1021264815442132,
+          "tail_rms": 0.0002938536155606042,
+          "bar_rms": [
+            0.09893362530581579,
+            0.10312952125896921,
+            0.10396256601663477,
+            0.10240848317587366
+          ]
+        },
+        "lead.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.04798511051117969,
+          "tail_rms": 5.501634636633284e-07,
+          "bar_rms": [
+            0.04979487558271959,
+            0.0,
+            0.0,
+            0.08204117069363398
+          ]
+        },
+        "keys.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.024122399148127086,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.04824479829625417,
+            0.0,
+            0.0
+          ]
+        },
+        "bass.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.09888525818293063,
+          "tail_rms": 6.212220149481898e-06,
+          "bar_rms": [
+            0.09494864705117696,
+            0.0983177758908581,
+            0.10601257155153784,
+            0.0958795138894409
+          ]
+        },
+        "drums.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.12191031338533546,
+          "tail_rms": 0.00048368258184846024,
+          "bar_rms": [
+            0.12184943306220743,
+            0.12139198525104869,
+            0.12318980032290279,
+            0.12120013496062601
+          ]
+        },
+        "pad.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    "seed-2112/keys-withheld-replanned": {
+      "receipt": {
+        "status": "committed_event_contract_pass",
+        "human_listening": "pending",
+        "source_debug_fnv1a64": "483064aed2015155",
+        "song_fingerprint": "fdfd316baba46af4",
+        "performance_fingerprint": "98f0779ffb057045",
+        "score_fingerprint": "8756338f73c4cc9a",
+        "legacy_stale_hearings": "0",
+        "effective_hearings": "2",
+        "effective_hearings_matching": "2",
+        "keys_events": "0",
+        "keys_dependent_drum_hits": "0",
+        "bass_approaches": "1",
+        "pad_events": "0"
+      },
+      "block_independence_emitter_receipt": {
+        "block_frames": "256,127",
+        "comparison": "every_float32_sample_bit",
+        "identical": "true",
+        "frames": "440000"
+      },
+      "same_score_fingerprint_across_eight_renders": "8756338f73c4cc9a",
+      "score": {
+        "tempo_bpm": 144.0,
+        "beats_per_bar": 4.0,
+        "total_beats": 16.0,
+        "chord_count": 4,
+        "roles": {
+          "bass": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.57,
+              "max": 0.76,
+              "mean": 0.6599999999999999,
+              "population_sd": 0.09067647005823631
+            },
+            "distinct_stored_velocities": 3,
+            "attacks_per_bar": [
+              2,
+              2,
+              3,
+              2
+            ],
+            "stored_velocity_sum_per_bar": [
+              1.33,
+              1.33,
+              1.9500000000000002,
+              1.33
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 36.0,
+              "max": 45.0,
+              "mean": 41.888888888888886,
+              "population_sd": 3.247030932489435
+            },
+            "written_gate_beats": 8.5,
+            "written_occupancy_fraction": 0.5312500000000001,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          },
+          "drums": {
+            "events": 48,
+            "stored_velocity": {
+              "count": 48,
+              "min": 0.25,
+              "max": 0.78,
+              "mean": 0.4483333333333333,
+              "population_sd": 0.1994506343824345
+            },
+            "distinct_stored_velocities": 4,
+            "attacks_per_bar": [
+              12,
+              12,
+              12,
+              12
+            ],
+            "stored_velocity_sum_per_bar": [
+              5.38,
+              5.38,
+              5.38,
+              5.38
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0
+          },
+          "lead": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.5328,
+              "max": 1.0,
+              "mean": 0.7297777877777778,
+              "population_sd": 0.1555953513514245
+            },
+            "distinct_stored_velocities": 9,
+            "attacks_per_bar": [
+              4,
+              0,
+              0,
+              5
+            ],
+            "stored_velocity_sum_per_bar": [
+              2.36800006,
+              0.0,
+              0.0,
+              4.20000003
+            ],
+            "active_bars": 2,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 69.0,
+              "max": 76.0,
+              "mean": 72.33333333333333,
+              "population_sd": 2.70801280154532
+            },
+            "written_gate_beats": 4.75,
+            "written_occupancy_fraction": 0.296875,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          }
+        },
+        "limits": "TSV stored velocity and written gates only; effective gain, voice choke/release, bus levels, source identity, hearings, and acoustic masking are not reconstructed. A polyphonic role can legitimately have overlapping written gates."
+      },
+      "keys_attack_phase_relative_to_eighth_beat_lattice": [],
+      "bass_source_approach": [
+        {
+          "at": 11.5,
+          "gate": 0.3,
+          "pitch": 44,
+          "velocity": 0.62,
+          "function": "Some(ChromaticApproach)",
+          "duty": "approach"
+        }
+      ],
+      "heard_keys_drum_events": [],
+      "acoustic_spans": {
+        "full.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.14377603923793167,
+          "tail_rms": 0.00048373439462235925,
+          "bar_rms": [
+            0.14193951045570694,
+            0.14113243307565201,
+            0.14581570601918556,
+            0.1461464656420277
+          ]
+        },
+        "full.nocomp": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.14182530178988653,
+          "tail_rms": 0.00040705865032825985,
+          "bar_rms": [
+            0.13918162518529253,
+            0.13936398481411255,
+            0.139917266000237,
+            0.1486168850894845
+          ]
+        },
+        "full.harmonic-reference": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.10159629575178561,
+          "tail_rms": 0.0002938536155606042,
+          "bar_rms": [
+            0.09893362530581579,
+            0.1018395544614704,
+            0.10315316159232164,
+            0.10240848317587366
+          ]
+        },
+        "lead.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.04798511051117969,
+          "tail_rms": 5.501634636633284e-07,
+          "bar_rms": [
+            0.04979487558271959,
+            0.0,
+            0.0,
+            0.08204117069363398
+          ]
+        },
+        "keys.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "bass.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.09888525818293063,
+          "tail_rms": 6.212220149481898e-06,
+          "bar_rms": [
+            0.09494864705117696,
+            0.0983177758908581,
+            0.10601257155153784,
+            0.0958795138894409
+          ]
+        },
+        "drums.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.1214783201140469,
+          "tail_rms": 0.00048368258184846024,
+          "bar_rms": [
+            0.12184943306220743,
+            0.12139198525104869,
+            0.12146947033612511,
+            0.12120147848278272
+          ]
+        },
+        "pad.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    "seed-2112/closed-call-replanned": {
+      "receipt": {
+        "status": "committed_event_contract_pass",
+        "human_listening": "pending",
+        "source_debug_fnv1a64": "2c0cf7b3903960ea",
+        "song_fingerprint": "fe0f7fb7a9ad8a95",
+        "performance_fingerprint": "764d4510b9628d3b",
+        "score_fingerprint": "4158b5ab339204b2",
+        "legacy_stale_hearings": "0",
+        "effective_hearings": "2",
+        "effective_hearings_matching": "2",
+        "keys_events": "0",
+        "keys_dependent_drum_hits": "0",
+        "bass_approaches": "1",
+        "pad_events": "0"
+      },
+      "block_independence_emitter_receipt": {
+        "block_frames": "256,127",
+        "comparison": "every_float32_sample_bit",
+        "identical": "true",
+        "frames": "440000"
+      },
+      "same_score_fingerprint_across_eight_renders": "4158b5ab339204b2",
+      "score": {
+        "tempo_bpm": 144.0,
+        "beats_per_bar": 4.0,
+        "total_beats": 16.0,
+        "chord_count": 4,
+        "roles": {
+          "bass": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.57,
+              "max": 0.76,
+              "mean": 0.6599999999999999,
+              "population_sd": 0.09067647005823631
+            },
+            "distinct_stored_velocities": 3,
+            "attacks_per_bar": [
+              2,
+              2,
+              3,
+              2
+            ],
+            "stored_velocity_sum_per_bar": [
+              1.33,
+              1.33,
+              1.9500000000000002,
+              1.33
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 36.0,
+              "max": 45.0,
+              "mean": 41.888888888888886,
+              "population_sd": 3.247030932489435
+            },
+            "written_gate_beats": 8.5,
+            "written_occupancy_fraction": 0.5312500000000001,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          },
+          "drums": {
+            "events": 48,
+            "stored_velocity": {
+              "count": 48,
+              "min": 0.25,
+              "max": 0.78,
+              "mean": 0.4483333333333333,
+              "population_sd": 0.1994506343824345
+            },
+            "distinct_stored_velocities": 4,
+            "attacks_per_bar": [
+              12,
+              12,
+              12,
+              12
+            ],
+            "stored_velocity_sum_per_bar": [
+              5.38,
+              5.38,
+              5.38,
+              5.38
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0
+          },
+          "lead": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.5328,
+              "max": 1.0,
+              "mean": 0.7297777877777778,
+              "population_sd": 0.1555953513514245
+            },
+            "distinct_stored_velocities": 9,
+            "attacks_per_bar": [
+              4,
+              0,
+              0,
+              5
+            ],
+            "stored_velocity_sum_per_bar": [
+              2.36800006,
+              0.0,
+              0.0,
+              4.20000003
+            ],
+            "active_bars": 2,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 69.0,
+              "max": 74.0,
+              "mean": 70.77777777777777,
+              "population_sd": 2.096440251568134
+            },
+            "written_gate_beats": 4.75,
+            "written_occupancy_fraction": 0.296875,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          }
+        },
+        "limits": "TSV stored velocity and written gates only; effective gain, voice choke/release, bus levels, source identity, hearings, and acoustic masking are not reconstructed. A polyphonic role can legitimately have overlapping written gates."
+      },
+      "keys_attack_phase_relative_to_eighth_beat_lattice": [],
+      "bass_source_approach": [
+        {
+          "at": 11.5,
+          "gate": 0.3,
+          "pitch": 44,
+          "velocity": 0.62,
+          "function": "Some(ChromaticApproach)",
+          "duty": "approach"
+        }
+      ],
+      "heard_keys_drum_events": [],
+      "acoustic_spans": {
+        "full.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.1438185484357741,
+          "tail_rms": 0.0004837365284660312,
+          "bar_rms": [
+            0.14202296036203016,
+            0.14113243305305068,
+            0.14581570567744198,
+            0.14623267263171186
+          ]
+        },
+        "full.nocomp": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.14186035357583648,
+          "tail_rms": 0.00040706647688759537,
+          "bar_rms": [
+            0.13929376396803933,
+            0.13936398646458417,
+            0.13991726542524205,
+            0.14864563599003866
+          ]
+        },
+        "full.harmonic-reference": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.10161254030171248,
+          "tail_rms": 0.0002938536155606042,
+          "bar_rms": [
+            0.09896477101410293,
+            0.1018395544614704,
+            0.10315316159232164,
+            0.10244285180036874
+          ]
+        },
+        "lead.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.048164189432226154,
+          "tail_rms": 5.675230307114003e-07,
+          "bar_rms": [
+            0.05005750551119482,
+            0.0,
+            0.0,
+            0.08230068478846432
+          ]
+        },
+        "keys.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "bass.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.09888525818293063,
+          "tail_rms": 6.212220149481898e-06,
+          "bar_rms": [
+            0.09494864705117696,
+            0.0983177758908581,
+            0.10601257155153784,
+            0.0958795138894409
+          ]
+        },
+        "drums.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.1214783201140469,
+          "tail_rms": 0.00048368258184846024,
+          "bar_rms": [
+            0.12184943306220743,
+            0.12139198525104869,
+            0.12146947033612511,
+            0.12120147848278272
+          ]
+        },
+        "pad.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    "seed-7/candidate": {
+      "receipt": {
+        "status": "committed_event_contract_pass",
+        "human_listening": "pending",
+        "source_debug_fnv1a64": "dc68c5455f46a91a",
+        "song_fingerprint": "c98735ed499f9f20",
+        "performance_fingerprint": "5a86f0ea1c6d138b",
+        "score_fingerprint": "468ddeeb851c6101",
+        "legacy_stale_hearings": "0",
+        "effective_hearings": "2",
+        "effective_hearings_matching": "2",
+        "keys_events": "4",
+        "keys_dependent_drum_hits": "2",
+        "bass_approaches": "1",
+        "pad_events": "0"
+      },
+      "block_independence_emitter_receipt": {
+        "block_frames": "256,127",
+        "comparison": "every_float32_sample_bit",
+        "identical": "true",
+        "frames": "440000"
+      },
+      "same_score_fingerprint_across_eight_renders": "468ddeeb851c6101",
+      "score": {
+        "tempo_bpm": 144.0,
+        "beats_per_bar": 4.0,
+        "total_beats": 16.0,
+        "chord_count": 4,
+        "roles": {
+          "bass": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.57,
+              "max": 0.76,
+              "mean": 0.6599999999999999,
+              "population_sd": 0.09067647005823631
+            },
+            "distinct_stored_velocities": 3,
+            "attacks_per_bar": [
+              2,
+              2,
+              3,
+              2
+            ],
+            "stored_velocity_sum_per_bar": [
+              1.33,
+              1.33,
+              1.9500000000000002,
+              1.33
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 36.0,
+              "max": 45.0,
+              "mean": 41.888888888888886,
+              "population_sd": 3.247030932489435
+            },
+            "written_gate_beats": 8.5,
+            "written_occupancy_fraction": 0.5312500000000001,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          },
+          "drums": {
+            "events": 50,
+            "stored_velocity": {
+              "count": 50,
+              "min": 0.25,
+              "max": 0.78,
+              "mean": 0.4410926294,
+              "population_sd": 0.19862571251947114
+            },
+            "distinct_stored_velocities": 6,
+            "attacks_per_bar": [
+              12,
+              12,
+              14,
+              12
+            ],
+            "stored_velocity_sum_per_bar": [
+              5.38,
+              5.38,
+              5.91463147,
+              5.38
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0
+          },
+          "keys": {
+            "events": 4,
+            "stored_velocity": {
+              "count": 4,
+              "min": 0.39480478,
+              "max": 0.52092296,
+              "mean": 0.43867197750000003,
+              "population_sd": 0.04889150654180356
+            },
+            "distinct_stored_velocities": 4,
+            "attacks_per_bar": [
+              0,
+              4,
+              0,
+              0
+            ],
+            "stored_velocity_sum_per_bar": [
+              0.0,
+              1.7546879100000001,
+              0.0,
+              0.0
+            ],
+            "active_bars": 1,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 4,
+              "min": 50.0,
+              "max": 62.0,
+              "mean": 55.5,
+              "population_sd": 4.5
+            },
+            "written_gate_beats": 1.6,
+            "written_occupancy_fraction": 0.10000000000000009,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          },
+          "lead": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.5328,
+              "max": 1.0,
+              "mean": 0.7297777877777778,
+              "population_sd": 0.1555953513514245
+            },
+            "distinct_stored_velocities": 9,
+            "attacks_per_bar": [
+              4,
+              0,
+              0,
+              5
+            ],
+            "stored_velocity_sum_per_bar": [
+              2.36800006,
+              0.0,
+              0.0,
+              4.20000003
+            ],
+            "active_bars": 2,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 69.0,
+              "max": 76.0,
+              "mean": 72.33333333333333,
+              "population_sd": 2.70801280154532
+            },
+            "written_gate_beats": 4.75,
+            "written_occupancy_fraction": 0.296875,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          }
+        },
+        "limits": "TSV stored velocity and written gates only; effective gain, voice choke/release, bus levels, source identity, hearings, and acoustic masking are not reconstructed. A polyphonic role can legitimately have overlapping written gates."
+      },
+      "keys_attack_phase_relative_to_eighth_beat_lattice": [
+        0.0625,
+        0.0625,
+        0.0625,
+        0.0625
+      ],
+      "bass_source_approach": [
+        {
+          "at": 11.5,
+          "gate": 0.3,
+          "pitch": 44,
+          "velocity": 0.62,
+          "function": "Some(ChromaticApproach)",
+          "duty": "approach"
+        }
+      ],
+      "heard_keys_drum_events": [
+        {
+          "voice": "Snare",
+          "at": 10.5,
+          "velocity": 0.27800837,
+          "duty": "heard-keys"
+        },
+        {
+          "voice": "Snare",
+          "at": 10.75,
+          "velocity": 0.2566231,
+          "duty": "heard-keys"
+        }
+      ],
+      "acoustic_spans": {
+        "full.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.14449438373595913,
+          "tail_rms": 0.00048373439462235925,
+          "bar_rms": [
+            0.14193951045570694,
+            0.1431894884317854,
+            0.14664830600018708,
+            0.14614625498606457
+          ]
+        },
+        "full.nocomp": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.14306849090507107,
+          "tail_rms": 0.00040705865032825985,
+          "bar_rms": [
+            0.13918162518529253,
+            0.1433658062637463,
+            0.14093299926093286,
+            0.14861689972497147
+          ]
+        },
+        "full.harmonic-reference": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.1021264815442132,
+          "tail_rms": 0.0002938536155606042,
+          "bar_rms": [
+            0.09893362530581579,
+            0.10312952125896921,
+            0.10396256601663477,
+            0.10240848317587366
+          ]
+        },
+        "lead.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.04798511051117969,
+          "tail_rms": 5.501634636633284e-07,
+          "bar_rms": [
+            0.04979487558271959,
+            0.0,
+            0.0,
+            0.08204117069363398
+          ]
+        },
+        "keys.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.024122399148127086,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.04824479829625417,
+            0.0,
+            0.0
+          ]
+        },
+        "bass.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.09888525818293063,
+          "tail_rms": 6.212220149481898e-06,
+          "bar_rms": [
+            0.09494864705117696,
+            0.0983177758908581,
+            0.10601257155153784,
+            0.0958795138894409
+          ]
+        },
+        "drums.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.12191031338533546,
+          "tail_rms": 0.00048368258184846024,
+          "bar_rms": [
+            0.12184943306220743,
+            0.12139198525104869,
+            0.12318980032290279,
+            0.12120013496062601
+          ]
+        },
+        "pad.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    "seed-7/keys-withheld-replanned": {
+      "receipt": {
+        "status": "committed_event_contract_pass",
+        "human_listening": "pending",
+        "source_debug_fnv1a64": "9ec8a24428540b06",
+        "song_fingerprint": "fdfd316baba46af4",
+        "performance_fingerprint": "16eae770a2635f68",
+        "score_fingerprint": "8756338f73c4cc9a",
+        "legacy_stale_hearings": "0",
+        "effective_hearings": "2",
+        "effective_hearings_matching": "2",
+        "keys_events": "0",
+        "keys_dependent_drum_hits": "0",
+        "bass_approaches": "1",
+        "pad_events": "0"
+      },
+      "block_independence_emitter_receipt": {
+        "block_frames": "256,127",
+        "comparison": "every_float32_sample_bit",
+        "identical": "true",
+        "frames": "440000"
+      },
+      "same_score_fingerprint_across_eight_renders": "8756338f73c4cc9a",
+      "score": {
+        "tempo_bpm": 144.0,
+        "beats_per_bar": 4.0,
+        "total_beats": 16.0,
+        "chord_count": 4,
+        "roles": {
+          "bass": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.57,
+              "max": 0.76,
+              "mean": 0.6599999999999999,
+              "population_sd": 0.09067647005823631
+            },
+            "distinct_stored_velocities": 3,
+            "attacks_per_bar": [
+              2,
+              2,
+              3,
+              2
+            ],
+            "stored_velocity_sum_per_bar": [
+              1.33,
+              1.33,
+              1.9500000000000002,
+              1.33
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 36.0,
+              "max": 45.0,
+              "mean": 41.888888888888886,
+              "population_sd": 3.247030932489435
+            },
+            "written_gate_beats": 8.5,
+            "written_occupancy_fraction": 0.5312500000000001,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          },
+          "drums": {
+            "events": 48,
+            "stored_velocity": {
+              "count": 48,
+              "min": 0.25,
+              "max": 0.78,
+              "mean": 0.4483333333333333,
+              "population_sd": 0.1994506343824345
+            },
+            "distinct_stored_velocities": 4,
+            "attacks_per_bar": [
+              12,
+              12,
+              12,
+              12
+            ],
+            "stored_velocity_sum_per_bar": [
+              5.38,
+              5.38,
+              5.38,
+              5.38
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0
+          },
+          "lead": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.5328,
+              "max": 1.0,
+              "mean": 0.7297777877777778,
+              "population_sd": 0.1555953513514245
+            },
+            "distinct_stored_velocities": 9,
+            "attacks_per_bar": [
+              4,
+              0,
+              0,
+              5
+            ],
+            "stored_velocity_sum_per_bar": [
+              2.36800006,
+              0.0,
+              0.0,
+              4.20000003
+            ],
+            "active_bars": 2,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 69.0,
+              "max": 76.0,
+              "mean": 72.33333333333333,
+              "population_sd": 2.70801280154532
+            },
+            "written_gate_beats": 4.75,
+            "written_occupancy_fraction": 0.296875,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          }
+        },
+        "limits": "TSV stored velocity and written gates only; effective gain, voice choke/release, bus levels, source identity, hearings, and acoustic masking are not reconstructed. A polyphonic role can legitimately have overlapping written gates."
+      },
+      "keys_attack_phase_relative_to_eighth_beat_lattice": [],
+      "bass_source_approach": [
+        {
+          "at": 11.5,
+          "gate": 0.3,
+          "pitch": 44,
+          "velocity": 0.62,
+          "function": "Some(ChromaticApproach)",
+          "duty": "approach"
+        }
+      ],
+      "heard_keys_drum_events": [],
+      "acoustic_spans": {
+        "full.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.14377603923793167,
+          "tail_rms": 0.00048373439462235925,
+          "bar_rms": [
+            0.14193951045570694,
+            0.14113243307565201,
+            0.14581570601918556,
+            0.1461464656420277
+          ]
+        },
+        "full.nocomp": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.14182530178988653,
+          "tail_rms": 0.00040705865032825985,
+          "bar_rms": [
+            0.13918162518529253,
+            0.13936398481411255,
+            0.139917266000237,
+            0.1486168850894845
+          ]
+        },
+        "full.harmonic-reference": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.10159629575178561,
+          "tail_rms": 0.0002938536155606042,
+          "bar_rms": [
+            0.09893362530581579,
+            0.1018395544614704,
+            0.10315316159232164,
+            0.10240848317587366
+          ]
+        },
+        "lead.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.04798511051117969,
+          "tail_rms": 5.501634636633284e-07,
+          "bar_rms": [
+            0.04979487558271959,
+            0.0,
+            0.0,
+            0.08204117069363398
+          ]
+        },
+        "keys.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "bass.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.09888525818293063,
+          "tail_rms": 6.212220149481898e-06,
+          "bar_rms": [
+            0.09494864705117696,
+            0.0983177758908581,
+            0.10601257155153784,
+            0.0958795138894409
+          ]
+        },
+        "drums.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.1214783201140469,
+          "tail_rms": 0.00048368258184846024,
+          "bar_rms": [
+            0.12184943306220743,
+            0.12139198525104869,
+            0.12146947033612511,
+            0.12120147848278272
+          ]
+        },
+        "pad.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    "seed-7/closed-call-replanned": {
+      "receipt": {
+        "status": "committed_event_contract_pass",
+        "human_listening": "pending",
+        "source_debug_fnv1a64": "3c5428e85ca6c519",
+        "song_fingerprint": "fe0f7fb7a9ad8a95",
+        "performance_fingerprint": "5e64097fe2423726",
+        "score_fingerprint": "4158b5ab339204b2",
+        "legacy_stale_hearings": "0",
+        "effective_hearings": "2",
+        "effective_hearings_matching": "2",
+        "keys_events": "0",
+        "keys_dependent_drum_hits": "0",
+        "bass_approaches": "1",
+        "pad_events": "0"
+      },
+      "block_independence_emitter_receipt": {
+        "block_frames": "256,127",
+        "comparison": "every_float32_sample_bit",
+        "identical": "true",
+        "frames": "440000"
+      },
+      "same_score_fingerprint_across_eight_renders": "4158b5ab339204b2",
+      "score": {
+        "tempo_bpm": 144.0,
+        "beats_per_bar": 4.0,
+        "total_beats": 16.0,
+        "chord_count": 4,
+        "roles": {
+          "bass": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.57,
+              "max": 0.76,
+              "mean": 0.6599999999999999,
+              "population_sd": 0.09067647005823631
+            },
+            "distinct_stored_velocities": 3,
+            "attacks_per_bar": [
+              2,
+              2,
+              3,
+              2
+            ],
+            "stored_velocity_sum_per_bar": [
+              1.33,
+              1.33,
+              1.9500000000000002,
+              1.33
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 36.0,
+              "max": 45.0,
+              "mean": 41.888888888888886,
+              "population_sd": 3.247030932489435
+            },
+            "written_gate_beats": 8.5,
+            "written_occupancy_fraction": 0.5312500000000001,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          },
+          "drums": {
+            "events": 48,
+            "stored_velocity": {
+              "count": 48,
+              "min": 0.25,
+              "max": 0.78,
+              "mean": 0.4483333333333333,
+              "population_sd": 0.1994506343824345
+            },
+            "distinct_stored_velocities": 4,
+            "attacks_per_bar": [
+              12,
+              12,
+              12,
+              12
+            ],
+            "stored_velocity_sum_per_bar": [
+              5.38,
+              5.38,
+              5.38,
+              5.38
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0
+          },
+          "lead": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.5328,
+              "max": 1.0,
+              "mean": 0.7297777877777778,
+              "population_sd": 0.1555953513514245
+            },
+            "distinct_stored_velocities": 9,
+            "attacks_per_bar": [
+              4,
+              0,
+              0,
+              5
+            ],
+            "stored_velocity_sum_per_bar": [
+              2.36800006,
+              0.0,
+              0.0,
+              4.20000003
+            ],
+            "active_bars": 2,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 69.0,
+              "max": 74.0,
+              "mean": 70.77777777777777,
+              "population_sd": 2.096440251568134
+            },
+            "written_gate_beats": 4.75,
+            "written_occupancy_fraction": 0.296875,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          }
+        },
+        "limits": "TSV stored velocity and written gates only; effective gain, voice choke/release, bus levels, source identity, hearings, and acoustic masking are not reconstructed. A polyphonic role can legitimately have overlapping written gates."
+      },
+      "keys_attack_phase_relative_to_eighth_beat_lattice": [],
+      "bass_source_approach": [
+        {
+          "at": 11.5,
+          "gate": 0.3,
+          "pitch": 44,
+          "velocity": 0.62,
+          "function": "Some(ChromaticApproach)",
+          "duty": "approach"
+        }
+      ],
+      "heard_keys_drum_events": [],
+      "acoustic_spans": {
+        "full.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.1438185484357741,
+          "tail_rms": 0.0004837365284660312,
+          "bar_rms": [
+            0.14202296036203016,
+            0.14113243305305068,
+            0.14581570567744198,
+            0.14623267263171186
+          ]
+        },
+        "full.nocomp": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.14186035357583648,
+          "tail_rms": 0.00040706647688759537,
+          "bar_rms": [
+            0.13929376396803933,
+            0.13936398646458417,
+            0.13991726542524205,
+            0.14864563599003866
+          ]
+        },
+        "full.harmonic-reference": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.10161254030171248,
+          "tail_rms": 0.0002938536155606042,
+          "bar_rms": [
+            0.09896477101410293,
+            0.1018395544614704,
+            0.10315316159232164,
+            0.10244285180036874
+          ]
+        },
+        "lead.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.048164189432226154,
+          "tail_rms": 5.675230307114003e-07,
+          "bar_rms": [
+            0.05005750551119482,
+            0.0,
+            0.0,
+            0.08230068478846432
+          ]
+        },
+        "keys.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "bass.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.09888525818293063,
+          "tail_rms": 6.212220149481898e-06,
+          "bar_rms": [
+            0.09494864705117696,
+            0.0983177758908581,
+            0.10601257155153784,
+            0.0958795138894409
+          ]
+        },
+        "drums.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.1214783201140469,
+          "tail_rms": 0.00048368258184846024,
+          "bar_rms": [
+            0.12184943306220743,
+            0.12139198525104869,
+            0.12146947033612511,
+            0.12120147848278272
+          ]
+        },
+        "pad.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    "seed-99/candidate": {
+      "receipt": {
+        "status": "committed_event_contract_pass",
+        "human_listening": "pending",
+        "source_debug_fnv1a64": "e8afbc370ae1b4b3",
+        "song_fingerprint": "550a2b211f26488c",
+        "performance_fingerprint": "6e0d1f2ee13bdde7",
+        "score_fingerprint": "32509f436ee58573",
+        "legacy_stale_hearings": "0",
+        "effective_hearings": "2",
+        "effective_hearings_matching": "2",
+        "keys_events": "4",
+        "keys_dependent_drum_hits": "2",
+        "bass_approaches": "1",
+        "pad_events": "0"
+      },
+      "block_independence_emitter_receipt": {
+        "block_frames": "256,127",
+        "comparison": "every_float32_sample_bit",
+        "identical": "true",
+        "frames": "440000"
+      },
+      "same_score_fingerprint_across_eight_renders": "32509f436ee58573",
+      "score": {
+        "tempo_bpm": 144.0,
+        "beats_per_bar": 4.0,
+        "total_beats": 16.0,
+        "chord_count": 4,
+        "roles": {
+          "bass": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.57,
+              "max": 0.76,
+              "mean": 0.6599999999999999,
+              "population_sd": 0.09067647005823631
+            },
+            "distinct_stored_velocities": 3,
+            "attacks_per_bar": [
+              2,
+              2,
+              3,
+              2
+            ],
+            "stored_velocity_sum_per_bar": [
+              1.33,
+              1.33,
+              1.9500000000000002,
+              1.33
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 36.0,
+              "max": 45.0,
+              "mean": 41.888888888888886,
+              "population_sd": 3.247030932489435
+            },
+            "written_gate_beats": 8.5,
+            "written_occupancy_fraction": 0.5312500000000001,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          },
+          "drums": {
+            "events": 50,
+            "stored_velocity": {
+              "count": 50,
+              "min": 0.25,
+              "max": 0.78,
+              "mean": 0.4410926294,
+              "population_sd": 0.19862571251947114
+            },
+            "distinct_stored_velocities": 6,
+            "attacks_per_bar": [
+              12,
+              12,
+              14,
+              12
+            ],
+            "stored_velocity_sum_per_bar": [
+              5.38,
+              5.38,
+              5.91463147,
+              5.38
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0
+          },
+          "keys": {
+            "events": 4,
+            "stored_velocity": {
+              "count": 4,
+              "min": 0.39480478,
+              "max": 0.52092296,
+              "mean": 0.43867197750000003,
+              "population_sd": 0.04889150654180356
+            },
+            "distinct_stored_velocities": 4,
+            "attacks_per_bar": [
+              0,
+              4,
+              0,
+              0
+            ],
+            "stored_velocity_sum_per_bar": [
+              0.0,
+              1.7546879100000001,
+              0.0,
+              0.0
+            ],
+            "active_bars": 1,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 4,
+              "min": 50.0,
+              "max": 62.0,
+              "mean": 55.5,
+              "population_sd": 4.5
+            },
+            "written_gate_beats": 1.6,
+            "written_occupancy_fraction": 0.10000000000000009,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          },
+          "lead": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.5328,
+              "max": 1.0,
+              "mean": 0.7297777877777778,
+              "population_sd": 0.1555953513514245
+            },
+            "distinct_stored_velocities": 9,
+            "attacks_per_bar": [
+              4,
+              0,
+              0,
+              5
+            ],
+            "stored_velocity_sum_per_bar": [
+              2.36800006,
+              0.0,
+              0.0,
+              4.20000003
+            ],
+            "active_bars": 2,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 69.0,
+              "max": 77.0,
+              "mean": 74.11111111111111,
+              "population_sd": 2.5579698740491863
+            },
+            "written_gate_beats": 4.75,
+            "written_occupancy_fraction": 0.296875,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          }
+        },
+        "limits": "TSV stored velocity and written gates only; effective gain, voice choke/release, bus levels, source identity, hearings, and acoustic masking are not reconstructed. A polyphonic role can legitimately have overlapping written gates."
+      },
+      "keys_attack_phase_relative_to_eighth_beat_lattice": [
+        0.0625,
+        0.0625,
+        0.0625,
+        0.0625
+      ],
+      "bass_source_approach": [
+        {
+          "at": 11.5,
+          "gate": 0.3,
+          "pitch": 44,
+          "velocity": 0.62,
+          "function": "Some(ChromaticApproach)",
+          "duty": "approach"
+        }
+      ],
+      "heard_keys_drum_events": [
+        {
+          "voice": "Snare",
+          "at": 10.5,
+          "velocity": 0.27800837,
+          "duty": "heard-keys"
+        },
+        {
+          "voice": "Snare",
+          "at": 10.75,
+          "velocity": 0.2566231,
+          "duty": "heard-keys"
+        }
+      ],
+      "acoustic_spans": {
+        "full.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.14402825378150005,
+          "tail_rms": 0.0004836915994429798,
+          "bar_rms": [
+            0.14148882956396733,
+            0.14318949895011643,
+            0.14664830600018708,
+            0.14473598168977006
+          ]
+        },
+        "full.nocomp": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.14256613620276032,
+          "tail_rms": 0.00040702903959597883,
+          "bar_rms": [
+            0.13923620444395768,
+            0.14336580264664148,
+            0.14093299883077612,
+            0.1466213784249252
+          ]
+        },
+        "full.harmonic-reference": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.10212618140248872,
+          "tail_rms": 0.0002938536155606042,
+          "bar_rms": [
+            0.0989578503080799,
+            0.10312952125896921,
+            0.10396256601663477,
+            0.1023838770800972
+          ]
+        },
+        "lead.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.046899395174262094,
+          "tail_rms": 5.248964294573541e-07,
+          "bar_rms": [
+            0.04829842245554226,
+            0.0,
+            0.0,
+            0.08040818029996928
+          ]
+        },
+        "keys.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.024122399148127086,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.04824479829625417,
+            0.0,
+            0.0
+          ]
+        },
+        "bass.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.09888525818293063,
+          "tail_rms": 6.212220149481898e-06,
+          "bar_rms": [
+            0.09494864705117696,
+            0.0983177758908581,
+            0.10601257155153784,
+            0.0958795138894409
+          ]
+        },
+        "drums.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.12191031338533546,
+          "tail_rms": 0.00048368258184846024,
+          "bar_rms": [
+            0.12184943306220743,
+            0.12139198525104869,
+            0.12318980032290279,
+            0.12120013496062601
+          ]
+        },
+        "pad.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    "seed-99/keys-withheld-replanned": {
+      "receipt": {
+        "status": "committed_event_contract_pass",
+        "human_listening": "pending",
+        "source_debug_fnv1a64": "90565b54e2302b6f",
+        "song_fingerprint": "b6cb5ad8294e5ea8",
+        "performance_fingerprint": "822f25f73483090a",
+        "score_fingerprint": "c0a1caefa936ee08",
+        "legacy_stale_hearings": "0",
+        "effective_hearings": "2",
+        "effective_hearings_matching": "2",
+        "keys_events": "0",
+        "keys_dependent_drum_hits": "0",
+        "bass_approaches": "1",
+        "pad_events": "0"
+      },
+      "block_independence_emitter_receipt": {
+        "block_frames": "256,127",
+        "comparison": "every_float32_sample_bit",
+        "identical": "true",
+        "frames": "440000"
+      },
+      "same_score_fingerprint_across_eight_renders": "c0a1caefa936ee08",
+      "score": {
+        "tempo_bpm": 144.0,
+        "beats_per_bar": 4.0,
+        "total_beats": 16.0,
+        "chord_count": 4,
+        "roles": {
+          "bass": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.57,
+              "max": 0.76,
+              "mean": 0.6599999999999999,
+              "population_sd": 0.09067647005823631
+            },
+            "distinct_stored_velocities": 3,
+            "attacks_per_bar": [
+              2,
+              2,
+              3,
+              2
+            ],
+            "stored_velocity_sum_per_bar": [
+              1.33,
+              1.33,
+              1.9500000000000002,
+              1.33
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 36.0,
+              "max": 45.0,
+              "mean": 41.888888888888886,
+              "population_sd": 3.247030932489435
+            },
+            "written_gate_beats": 8.5,
+            "written_occupancy_fraction": 0.5312500000000001,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          },
+          "drums": {
+            "events": 48,
+            "stored_velocity": {
+              "count": 48,
+              "min": 0.25,
+              "max": 0.78,
+              "mean": 0.4483333333333333,
+              "population_sd": 0.1994506343824345
+            },
+            "distinct_stored_velocities": 4,
+            "attacks_per_bar": [
+              12,
+              12,
+              12,
+              12
+            ],
+            "stored_velocity_sum_per_bar": [
+              5.38,
+              5.38,
+              5.38,
+              5.38
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0
+          },
+          "lead": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.5328,
+              "max": 1.0,
+              "mean": 0.7297777877777778,
+              "population_sd": 0.1555953513514245
+            },
+            "distinct_stored_velocities": 9,
+            "attacks_per_bar": [
+              4,
+              0,
+              0,
+              5
+            ],
+            "stored_velocity_sum_per_bar": [
+              2.36800006,
+              0.0,
+              0.0,
+              4.20000003
+            ],
+            "active_bars": 2,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 69.0,
+              "max": 77.0,
+              "mean": 74.11111111111111,
+              "population_sd": 2.5579698740491863
+            },
+            "written_gate_beats": 4.75,
+            "written_occupancy_fraction": 0.296875,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          }
+        },
+        "limits": "TSV stored velocity and written gates only; effective gain, voice choke/release, bus levels, source identity, hearings, and acoustic masking are not reconstructed. A polyphonic role can legitimately have overlapping written gates."
+      },
+      "keys_attack_phase_relative_to_eighth_beat_lattice": [],
+      "bass_source_approach": [
+        {
+          "at": 11.5,
+          "gate": 0.3,
+          "pitch": 44,
+          "velocity": 0.62,
+          "function": "Some(ChromaticApproach)",
+          "duty": "approach"
+        }
+      ],
+      "heard_keys_drum_events": [],
+      "acoustic_spans": {
+        "full.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.1433075705807528,
+          "tail_rms": 0.0004836915994429798,
+          "bar_rms": [
+            0.14148882956396733,
+            0.14113243543998555,
+            0.14581570556297527,
+            0.14473619426252166
+          ]
+        },
+        "full.nocomp": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.1413185216752324,
+          "tail_rms": 0.00040702903959597883,
+          "bar_rms": [
+            0.13923620444395768,
+            0.13936398665581276,
+            0.13991726596314924,
+            0.14662133390038687
+          ]
+        },
+        "full.harmonic-reference": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.10159599404375058,
+          "tail_rms": 0.0002938536155606042,
+          "bar_rms": [
+            0.0989578503080799,
+            0.1018395544614704,
+            0.10315316159232164,
+            0.1023838770800972
+          ]
+        },
+        "lead.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.046899395174262094,
+          "tail_rms": 5.248964294573541e-07,
+          "bar_rms": [
+            0.04829842245554226,
+            0.0,
+            0.0,
+            0.08040818029996928
+          ]
+        },
+        "keys.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "bass.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.09888525818293063,
+          "tail_rms": 6.212220149481898e-06,
+          "bar_rms": [
+            0.09494864705117696,
+            0.0983177758908581,
+            0.10601257155153784,
+            0.0958795138894409
+          ]
+        },
+        "drums.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.1214783201140469,
+          "tail_rms": 0.00048368258184846024,
+          "bar_rms": [
+            0.12184943306220743,
+            0.12139198525104869,
+            0.12146947033612511,
+            0.12120147848278272
+          ]
+        },
+        "pad.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    "seed-99/closed-call-replanned": {
+      "receipt": {
+        "status": "committed_event_contract_pass",
+        "human_listening": "pending",
+        "source_debug_fnv1a64": "0ada94e59afe2efb",
+        "song_fingerprint": "892083b4d9eda76f",
+        "performance_fingerprint": "ed0e119a531da58c",
+        "score_fingerprint": "ad149de80ee9950e",
+        "legacy_stale_hearings": "0",
+        "effective_hearings": "2",
+        "effective_hearings_matching": "2",
+        "keys_events": "0",
+        "keys_dependent_drum_hits": "0",
+        "bass_approaches": "1",
+        "pad_events": "0"
+      },
+      "block_independence_emitter_receipt": {
+        "block_frames": "256,127",
+        "comparison": "every_float32_sample_bit",
+        "identical": "true",
+        "frames": "440000"
+      },
+      "same_score_fingerprint_across_eight_renders": "ad149de80ee9950e",
+      "score": {
+        "tempo_bpm": 144.0,
+        "beats_per_bar": 4.0,
+        "total_beats": 16.0,
+        "chord_count": 4,
+        "roles": {
+          "bass": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.57,
+              "max": 0.76,
+              "mean": 0.6599999999999999,
+              "population_sd": 0.09067647005823631
+            },
+            "distinct_stored_velocities": 3,
+            "attacks_per_bar": [
+              2,
+              2,
+              3,
+              2
+            ],
+            "stored_velocity_sum_per_bar": [
+              1.33,
+              1.33,
+              1.9500000000000002,
+              1.33
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 36.0,
+              "max": 45.0,
+              "mean": 41.888888888888886,
+              "population_sd": 3.247030932489435
+            },
+            "written_gate_beats": 8.5,
+            "written_occupancy_fraction": 0.5312500000000001,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          },
+          "drums": {
+            "events": 48,
+            "stored_velocity": {
+              "count": 48,
+              "min": 0.25,
+              "max": 0.78,
+              "mean": 0.4483333333333333,
+              "population_sd": 0.1994506343824345
+            },
+            "distinct_stored_velocities": 4,
+            "attacks_per_bar": [
+              12,
+              12,
+              12,
+              12
+            ],
+            "stored_velocity_sum_per_bar": [
+              5.38,
+              5.38,
+              5.38,
+              5.38
+            ],
+            "active_bars": 4,
+            "attacks_outside_declared_span": 0
+          },
+          "lead": {
+            "events": 9,
+            "stored_velocity": {
+              "count": 9,
+              "min": 0.5328,
+              "max": 1.0,
+              "mean": 0.7297777877777778,
+              "population_sd": 0.1555953513514245
+            },
+            "distinct_stored_velocities": 9,
+            "attacks_per_bar": [
+              4,
+              0,
+              0,
+              5
+            ],
+            "stored_velocity_sum_per_bar": [
+              2.36800006,
+              0.0,
+              0.0,
+              4.20000003
+            ],
+            "active_bars": 2,
+            "attacks_outside_declared_span": 0,
+            "pitch": {
+              "count": 9,
+              "min": 69.0,
+              "max": 76.0,
+              "mean": 72.33333333333333,
+              "population_sd": 2.70801280154532
+            },
+            "written_gate_beats": 4.75,
+            "written_occupancy_fraction": 0.296875,
+            "attacks_overlapping_prior_written_gate": 0,
+            "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+          }
+        },
+        "limits": "TSV stored velocity and written gates only; effective gain, voice choke/release, bus levels, source identity, hearings, and acoustic masking are not reconstructed. A polyphonic role can legitimately have overlapping written gates."
+      },
+      "keys_attack_phase_relative_to_eighth_beat_lattice": [],
+      "bass_source_approach": [
+        {
+          "at": 11.5,
+          "gate": 0.3,
+          "pitch": 44,
+          "velocity": 0.62,
+          "function": "Some(ChromaticApproach)",
+          "duty": "approach"
+        }
+      ],
+      "heard_keys_drum_events": [],
+      "acoustic_spans": {
+        "full.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.14372941569458172,
+          "tail_rms": 0.00048368186380323605,
+          "bar_rms": [
+            0.1421041068792305,
+            0.14113243783250884,
+            0.14581570543152314,
+            0.1458026666170411
+          ]
+        },
+        "full.nocomp": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.14167660651877872,
+          "tail_rms": 0.0004070370812297355,
+          "bar_rms": [
+            0.13972441097677685,
+            0.13936398679080256,
+            0.13991726560874618,
+            0.14753633547789088
+          ]
+        },
+        "full.harmonic-reference": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.10160694099447595,
+          "tail_rms": 0.0002938536155606042,
+          "bar_rms": [
+            0.09894058142457776,
+            0.1018395544614704,
+            0.10315316159232164,
+            0.10244400217183897
+          ]
+        },
+        "lead.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.04838717554346291,
+          "tail_rms": 5.430642828385066e-07,
+          "bar_rms": [
+            0.05029347737787738,
+            0.0,
+            0.0,
+            0.08267914586845052
+          ]
+        },
+        "keys.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "bass.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.09888525818293063,
+          "tail_rms": 6.212220149481898e-06,
+          "bar_rms": [
+            0.09494864705117696,
+            0.0983177758908581,
+            0.10601257155153784,
+            0.0958795138894409
+          ]
+        },
+        "drums.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.1214783201140469,
+          "tail_rms": 0.00048368258184846024,
+          "bar_rms": [
+            0.12184943306220743,
+            0.12139198525104869,
+            0.12146947033612511,
+            0.12120147848278272
+          ]
+        },
+        "pad.normal": {
+          "musical_span_frames": 320000,
+          "musical_span_rms": 0.0,
+          "tail_rms": 0.0,
+          "bar_rms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    }
+  },
+  "comparisons": {
+    "seed-2112": {
+      "withholding_lead_notes_equal": true,
+      "withholding_bass_notes_equal": true,
+      "withholding_chords_equal": true,
+      "withholding_anchor_drums_equal": true,
+      "closed_call_initial_timing_gate_velocity_equal": true,
+      "closed_call_initial_pitches_changed": [
+        [
+          69,
+          72,
+          74,
+          76
+        ],
+        [
+          69,
+          72,
+          74,
+          69
+        ]
+      ],
+      "closed_call_bass_notes_equal": true,
+      "closed_call_anchor_drums_equal": true,
+      "source_control_receipt": {
+        "candidate_source_call": "[MaterialEvent { onset: 0.0, dur: 0.5, accent: 0.95, step: Some(0) }, MaterialEvent { onset: 0.5, dur: 0.5, accent: 0.75, step: Some(3) }, MaterialEvent { onset: 1.0, dur: 0.5, accent: 0.78000003, step: Some(5) }, MaterialEvent { onset: 1.5, dur: 0.5, accent: 0.72, step: Some(7) }]",
+        "closed_source_call": "[MaterialEvent { onset: 0.0, dur: 0.5, accent: 0.95, step: Some(0) }, MaterialEvent { onset: 0.5, dur: 0.5, accent: 0.75, step: Some(3) }, MaterialEvent { onset: 1.0, dur: 0.5, accent: 0.78000003, step: Some(5) }, MaterialEvent { onset: 1.5, dur: 0.5, accent: 0.72, step: Some(0) }]",
+        "withheld_source_argument_byte_equal": "true",
+        "withheld_route_equal": "true",
+        "closed_route_equal": "true",
+        "candidate_keys_events": "4",
+        "withheld_keys_events": "0",
+        "closed_keys_events": "0",
+        "candidate_keys_dependent_drum_hits": "2",
+        "withheld_keys_dependent_drum_hits": "0",
+        "closed_keys_dependent_drum_hits": "0"
+      },
+      "pcm_withheld_vs_exported_keys_mute": {
+        "identical": false,
+        "differing_stereo_frames": 30713,
+        "first_difference_seconds": 4.375,
+        "last_difference_seconds": 6.165104166666667
+      },
+      "pcm_withheld_vs_candidate_lead_solo": {
+        "identical": true,
+        "differing_stereo_frames": 0,
+        "first_difference_seconds": null,
+        "last_difference_seconds": null
+      },
+      "pcm_withheld_vs_candidate_bass_solo": {
+        "identical": true,
+        "differing_stereo_frames": 0,
+        "first_difference_seconds": null,
+        "last_difference_seconds": null
+      },
+      "pcm_withheld_vs_candidate_drums_solo": {
+        "identical": false,
+        "differing_stereo_frames": 31691,
+        "first_difference_seconds": 4.375,
+        "last_difference_seconds": 6.403770833333334
+      },
+      "exported_mutes": {
+        "keys": {
+          "receipt": {
+            "status": "exported_mutation_not_committed",
+            "operation": "selected_event_velocity_zero",
+            "events_changed": "4",
+            "parent_score_fingerprint": "468ddeeb851c6101",
+            "score_fingerprint": "870295bab195dc0f",
+            "validate_candidate": "Err(StaleObservation(1))",
+            "effective_hearings_matching": "1",
+            "effective_hearings_total": "2",
+            "source_and_plan": "parent_candidate_unchanged",
+            "causal_dependents": "not_replanned",
+            "human_listening": "pending"
+          },
+          "pcm_vs_candidate": {
+            "identical": false,
+            "differing_stereo_frames": 62938,
+            "first_difference_seconds": 1.6927291666666666,
+            "last_difference_seconds": 6.227645833333334
+          },
+          "drum_event_list_unchanged": true,
+          "bass_event_list_unchanged": true,
+          "lead_event_list_unchanged": true
+        },
+        "bass-approach": {
+          "receipt": {
+            "status": "exported_mutation_not_committed",
+            "operation": "selected_event_velocity_zero",
+            "events_changed": "1",
+            "parent_score_fingerprint": "468ddeeb851c6101",
+            "score_fingerprint": "787629ebd9013971",
+            "validate_candidate": "Err(ChangedCommitment(Bass))",
+            "effective_hearings_matching": "2",
+            "effective_hearings_total": "2",
+            "source_and_plan": "parent_candidate_unchanged",
+            "causal_dependents": "not_replanned",
+            "human_listening": "pending"
+          },
+          "pcm_vs_candidate": {
+            "identical": false,
+            "differing_stereo_frames": 39317,
+            "first_difference_seconds": 4.7916875,
+            "last_difference_seconds": 6.227645833333334
+          },
+          "drum_event_list_unchanged": true,
+          "bass_event_list_unchanged": false,
+          "lead_event_list_unchanged": true
+        },
+        "drum-fill": {
+          "receipt": {
+            "status": "exported_mutation_not_committed",
+            "operation": "selected_event_velocity_zero",
+            "events_changed": "2",
+            "parent_score_fingerprint": "468ddeeb851c6101",
+            "score_fingerprint": "6ca162fa85868c83",
+            "validate_candidate": "Err(ChangedCommitment(Drums))",
+            "effective_hearings_matching": "2",
+            "effective_hearings_total": "2",
+            "source_and_plan": "parent_candidate_unchanged",
+            "causal_dependents": "not_replanned",
+            "human_listening": "pending"
+          },
+          "pcm_vs_candidate": {
+            "identical": false,
+            "differing_stereo_frames": 30715,
+            "first_difference_seconds": 4.375,
+            "last_difference_seconds": 6.227645833333334
+          },
+          "drum_event_list_unchanged": false,
+          "bass_event_list_unchanged": true,
+          "lead_event_list_unchanged": true
+        }
+      }
+    },
+    "seed-7": {
+      "withholding_lead_notes_equal": true,
+      "withholding_bass_notes_equal": true,
+      "withholding_chords_equal": true,
+      "withholding_anchor_drums_equal": true,
+      "closed_call_initial_timing_gate_velocity_equal": true,
+      "closed_call_initial_pitches_changed": [
+        [
+          69,
+          72,
+          74,
+          76
+        ],
+        [
+          69,
+          72,
+          74,
+          69
+        ]
+      ],
+      "closed_call_bass_notes_equal": true,
+      "closed_call_anchor_drums_equal": true,
+      "source_control_receipt": {
+        "candidate_source_call": "[MaterialEvent { onset: 0.0, dur: 0.5, accent: 0.95, step: Some(0) }, MaterialEvent { onset: 0.5, dur: 0.5, accent: 0.75, step: Some(3) }, MaterialEvent { onset: 1.0, dur: 0.5, accent: 0.78000003, step: Some(5) }, MaterialEvent { onset: 1.5, dur: 0.5, accent: 0.72, step: Some(7) }]",
+        "closed_source_call": "[MaterialEvent { onset: 0.0, dur: 0.5, accent: 0.95, step: Some(0) }, MaterialEvent { onset: 0.5, dur: 0.5, accent: 0.75, step: Some(3) }, MaterialEvent { onset: 1.0, dur: 0.5, accent: 0.78000003, step: Some(5) }, MaterialEvent { onset: 1.5, dur: 0.5, accent: 0.72, step: Some(0) }]",
+        "withheld_source_argument_byte_equal": "true",
+        "withheld_route_equal": "true",
+        "closed_route_equal": "true",
+        "candidate_keys_events": "4",
+        "withheld_keys_events": "0",
+        "closed_keys_events": "0",
+        "candidate_keys_dependent_drum_hits": "2",
+        "withheld_keys_dependent_drum_hits": "0",
+        "closed_keys_dependent_drum_hits": "0"
+      },
+      "pcm_withheld_vs_exported_keys_mute": {
+        "identical": false,
+        "differing_stereo_frames": 30713,
+        "first_difference_seconds": 4.375,
+        "last_difference_seconds": 6.165104166666667
+      },
+      "pcm_withheld_vs_candidate_lead_solo": {
+        "identical": true,
+        "differing_stereo_frames": 0,
+        "first_difference_seconds": null,
+        "last_difference_seconds": null
+      },
+      "pcm_withheld_vs_candidate_bass_solo": {
+        "identical": true,
+        "differing_stereo_frames": 0,
+        "first_difference_seconds": null,
+        "last_difference_seconds": null
+      },
+      "pcm_withheld_vs_candidate_drums_solo": {
+        "identical": false,
+        "differing_stereo_frames": 31691,
+        "first_difference_seconds": 4.375,
+        "last_difference_seconds": 6.403770833333334
+      },
+      "exported_mutes": {
+        "keys": {
+          "receipt": {
+            "status": "exported_mutation_not_committed",
+            "operation": "selected_event_velocity_zero",
+            "events_changed": "4",
+            "parent_score_fingerprint": "468ddeeb851c6101",
+            "score_fingerprint": "870295bab195dc0f",
+            "validate_candidate": "Err(StaleObservation(1))",
+            "effective_hearings_matching": "1",
+            "effective_hearings_total": "2",
+            "source_and_plan": "parent_candidate_unchanged",
+            "causal_dependents": "not_replanned",
+            "human_listening": "pending"
+          },
+          "pcm_vs_candidate": {
+            "identical": false,
+            "differing_stereo_frames": 62938,
+            "first_difference_seconds": 1.6927291666666666,
+            "last_difference_seconds": 6.227645833333334
+          },
+          "drum_event_list_unchanged": true,
+          "bass_event_list_unchanged": true,
+          "lead_event_list_unchanged": true
+        },
+        "bass-approach": {
+          "receipt": {
+            "status": "exported_mutation_not_committed",
+            "operation": "selected_event_velocity_zero",
+            "events_changed": "1",
+            "parent_score_fingerprint": "468ddeeb851c6101",
+            "score_fingerprint": "787629ebd9013971",
+            "validate_candidate": "Err(ChangedCommitment(Bass))",
+            "effective_hearings_matching": "2",
+            "effective_hearings_total": "2",
+            "source_and_plan": "parent_candidate_unchanged",
+            "causal_dependents": "not_replanned",
+            "human_listening": "pending"
+          },
+          "pcm_vs_candidate": {
+            "identical": false,
+            "differing_stereo_frames": 39317,
+            "first_difference_seconds": 4.7916875,
+            "last_difference_seconds": 6.227645833333334
+          },
+          "drum_event_list_unchanged": true,
+          "bass_event_list_unchanged": false,
+          "lead_event_list_unchanged": true
+        },
+        "drum-fill": {
+          "receipt": {
+            "status": "exported_mutation_not_committed",
+            "operation": "selected_event_velocity_zero",
+            "events_changed": "2",
+            "parent_score_fingerprint": "468ddeeb851c6101",
+            "score_fingerprint": "6ca162fa85868c83",
+            "validate_candidate": "Err(ChangedCommitment(Drums))",
+            "effective_hearings_matching": "2",
+            "effective_hearings_total": "2",
+            "source_and_plan": "parent_candidate_unchanged",
+            "causal_dependents": "not_replanned",
+            "human_listening": "pending"
+          },
+          "pcm_vs_candidate": {
+            "identical": false,
+            "differing_stereo_frames": 30715,
+            "first_difference_seconds": 4.375,
+            "last_difference_seconds": 6.227645833333334
+          },
+          "drum_event_list_unchanged": false,
+          "bass_event_list_unchanged": true,
+          "lead_event_list_unchanged": true
+        }
+      }
+    },
+    "seed-99": {
+      "withholding_lead_notes_equal": true,
+      "withholding_bass_notes_equal": true,
+      "withholding_chords_equal": true,
+      "withholding_anchor_drums_equal": true,
+      "closed_call_initial_timing_gate_velocity_equal": true,
+      "closed_call_initial_pitches_changed": [
+        [
+          72,
+          74,
+          76,
+          77
+        ],
+        [
+          72,
+          74,
+          76,
+          69
+        ]
+      ],
+      "closed_call_bass_notes_equal": true,
+      "closed_call_anchor_drums_equal": true,
+      "source_control_receipt": {
+        "candidate_source_call": "[MaterialEvent { onset: 0.0, dur: 0.5, accent: 0.95, step: Some(3) }, MaterialEvent { onset: 0.5, dur: 0.5, accent: 0.75, step: Some(5) }, MaterialEvent { onset: 1.0, dur: 0.5, accent: 0.78000003, step: Some(7) }, MaterialEvent { onset: 1.5, dur: 0.5, accent: 0.72, step: Some(8) }]",
+        "closed_source_call": "[MaterialEvent { onset: 0.0, dur: 0.5, accent: 0.95, step: Some(3) }, MaterialEvent { onset: 0.5, dur: 0.5, accent: 0.75, step: Some(5) }, MaterialEvent { onset: 1.0, dur: 0.5, accent: 0.78000003, step: Some(7) }, MaterialEvent { onset: 1.5, dur: 0.5, accent: 0.72, step: Some(0) }]",
+        "withheld_source_argument_byte_equal": "true",
+        "withheld_route_equal": "true",
+        "closed_route_equal": "true",
+        "candidate_keys_events": "4",
+        "withheld_keys_events": "0",
+        "closed_keys_events": "0",
+        "candidate_keys_dependent_drum_hits": "2",
+        "withheld_keys_dependent_drum_hits": "0",
+        "closed_keys_dependent_drum_hits": "0"
+      },
+      "pcm_withheld_vs_exported_keys_mute": {
+        "identical": false,
+        "differing_stereo_frames": 30672,
+        "first_difference_seconds": 4.375,
+        "last_difference_seconds": 6.010604166666667
+      },
+      "pcm_withheld_vs_candidate_lead_solo": {
+        "identical": true,
+        "differing_stereo_frames": 0,
+        "first_difference_seconds": null,
+        "last_difference_seconds": null
+      },
+      "pcm_withheld_vs_candidate_bass_solo": {
+        "identical": true,
+        "differing_stereo_frames": 0,
+        "first_difference_seconds": null,
+        "last_difference_seconds": null
+      },
+      "pcm_withheld_vs_candidate_drums_solo": {
+        "identical": false,
+        "differing_stereo_frames": 31691,
+        "first_difference_seconds": 4.375,
+        "last_difference_seconds": 6.403770833333334
+      },
+      "exported_mutes": {
+        "keys": {
+          "receipt": {
+            "status": "exported_mutation_not_committed",
+            "operation": "selected_event_velocity_zero",
+            "events_changed": "4",
+            "parent_score_fingerprint": "32509f436ee58573",
+            "score_fingerprint": "92d02e95571c18fd",
+            "validate_candidate": "Err(StaleObservation(1))",
+            "effective_hearings_matching": "1",
+            "effective_hearings_total": "2",
+            "source_and_plan": "parent_candidate_unchanged",
+            "causal_dependents": "not_replanned",
+            "human_listening": "pending"
+          },
+          "pcm_vs_candidate": {
+            "identical": false,
+            "differing_stereo_frames": 62938,
+            "first_difference_seconds": 1.6927291666666666,
+            "last_difference_seconds": 5.68975
+          },
+          "drum_event_list_unchanged": true,
+          "bass_event_list_unchanged": true,
+          "lead_event_list_unchanged": true
+        },
+        "bass-approach": {
+          "receipt": {
+            "status": "exported_mutation_not_committed",
+            "operation": "selected_event_velocity_zero",
+            "events_changed": "1",
+            "parent_score_fingerprint": "32509f436ee58573",
+            "score_fingerprint": "e3f44572547eccef",
+            "validate_candidate": "Err(ChangedCommitment(Bass))",
+            "effective_hearings_matching": "2",
+            "effective_hearings_total": "2",
+            "source_and_plan": "parent_candidate_unchanged",
+            "causal_dependents": "not_replanned",
+            "human_listening": "pending"
+          },
+          "pcm_vs_candidate": {
+            "identical": false,
+            "differing_stereo_frames": 39347,
+            "first_difference_seconds": 4.7916875,
+            "last_difference_seconds": 6.3039375
+          },
+          "drum_event_list_unchanged": true,
+          "bass_event_list_unchanged": false,
+          "lead_event_list_unchanged": true
+        },
+        "drum-fill": {
+          "receipt": {
+            "status": "exported_mutation_not_committed",
+            "operation": "selected_event_velocity_zero",
+            "events_changed": "2",
+            "parent_score_fingerprint": "32509f436ee58573",
+            "score_fingerprint": "2d8e1b59fa3fb745",
+            "validate_candidate": "Err(ChangedCommitment(Drums))",
+            "effective_hearings_matching": "2",
+            "effective_hearings_total": "2",
+            "source_and_plan": "parent_candidate_unchanged",
+            "causal_dependents": "not_replanned",
+            "human_listening": "pending"
+          },
+          "pcm_vs_candidate": {
+            "identical": false,
+            "differing_stereo_frames": 30677,
+            "first_difference_seconds": 4.375,
+            "last_difference_seconds": 6.010604166666667
+          },
+          "drum_event_list_unchanged": false,
+          "bass_event_list_unchanged": true,
+          "lead_event_list_unchanged": true
+        }
+      }
+    }
+  },
+  "duplicate_candidates": {
+    "seed2112_vs_seed7_score_tsv_identical": true,
+    "seed2112_vs_seed7_source_debug_identical": false,
+    "seed2112_vs_seed7_all_eight_wav_hashes_identical": true,
+    "seed2112_vs_seed99_pcm": {
+      "identical": false,
+      "differing_stereo_frames": 152054,
+      "first_difference_seconds": 4.1666666666666665e-05,
+      "last_difference_seconds": 7.019416666666666
+    },
+    "solo_buses_identical_across_all_three_seeds": {
+      "lead": false,
+      "keys": true,
+      "bass": true,
+      "drums": true,
+      "pad": true
+    }
+  },
+  "limits": [
+    "Written PCM/source TSV independently measured; finite integer PCM does not certify prequantization floats.",
+    "Reported float/block checks are renderer receipts; this scout did not rebuild or rerender candidates.",
+    "Spectral occupancy and RMS do not identify perceptual masking, recognition, enjoyment, or artistic success.",
+    "Exported bass-approach mute does not replan or alter another musician decision; only keys withholding is a cue-dependency intervention.",
+    "Solo buses pass through shared production; their waveforms are not additive pre-master stems.",
+    "Three seeds produce only two distinct candidate Score/PCM cases; no held-out generalization established."
+  ],
+  "baseline_comparison": {
+    "provenance_note": "acoustic_baseline.md and bass_teacher.md; baseline runtime 29527a891ed7bfed9657a99046884a61670897e3; selected recorded input hashes independently rechecked in this turn",
+    "selected_artifacts": [
+      {
+        "path": "/home/leah/LibGibson.kernel-bass/target/c137-controls/counterpoint-off/normal/fusion_2112_mix.wav",
+        "sha256": "a8925a00d110e106583f713b9be1f0a538caf75eb785fa6544c256be376d28e2",
+        "bytes": 10720044,
+        "kind": "wav",
+        "measurement": {
+          "encoding": "signed PCM16",
+          "sample_rate": 48000,
+          "channels": 2,
+          "frames": 2680000,
+          "duration_seconds": 55.833333333333336,
+          "finite_decoded_pcm": true,
+          "peak": 0.823760986328125,
+          "rms_all_channels": 0.13326468732759852,
+          "complete_one_second_windows": 55,
+          "window_rms": {
+            "count": 55,
+            "min": 3.066203577386059e-05,
+            "max": 0.17892557704054907,
+            "mean": 0.12909712823431166,
+            "population_sd": 0.03691194052519753
+          },
+          "window_rms_p10": 0.07662669973837266,
+          "window_rms_p90": 0.1661783715913749,
+          "spectral_occupancy": {
+            "method": "summed per-channel one-second Hann-window rFFT power; per-window DC removed",
+            "numpy_version": "2.5.0",
+            "windows": 55,
+            "relative_to": "20 Hz to min(20000 Hz, Nyquist)",
+            "fraction_20_80_hz": 0.38564808318903504,
+            "fraction_80_200_hz": 0.2727600328213465,
+            "fraction_200_1000_hz": 0.23110983514914066
+          },
+          "limits": "Written integer PCM only: finite decoded samples cannot establish that pre-quantization float render was finite. RMS is unweighted, not perceptual loudness. Spectral occupancy is not masking, role attribution, intelligibility, or musical acceptance."
+        }
+      },
+      {
+        "path": "/home/leah/LibGibson.kernel-bass/target/c137-controls/counterpoint-on/normal/fusion_2112_mix.wav",
+        "sha256": "03bbe35ea057f538fdf4a9ba86e88a36b739a22164a5366fc6130a8c910740f2",
+        "bytes": 10720044,
+        "kind": "wav",
+        "measurement": {
+          "encoding": "signed PCM16",
+          "sample_rate": 48000,
+          "channels": 2,
+          "frames": 2680000,
+          "duration_seconds": 55.833333333333336,
+          "finite_decoded_pcm": true,
+          "peak": 0.806732177734375,
+          "rms_all_channels": 0.1356429932636789,
+          "complete_one_second_windows": 55,
+          "window_rms": {
+            "count": 55,
+            "min": 3.061485680687517e-05,
+            "max": 0.18044912323089177,
+            "mean": 0.131893911846475,
+            "population_sd": 0.03580210460624352
+          },
+          "window_rms_p10": 0.07810587376791953,
+          "window_rms_p90": 0.16714628286955754,
+          "spectral_occupancy": {
+            "method": "summed per-channel one-second Hann-window rFFT power; per-window DC removed",
+            "numpy_version": "2.5.0",
+            "windows": 55,
+            "relative_to": "20 Hz to min(20000 Hz, Nyquist)",
+            "fraction_20_80_hz": 0.3715778477008249,
+            "fraction_80_200_hz": 0.26779917422153837,
+            "fraction_200_1000_hz": 0.2509434208380489
+          },
+          "limits": "Written integer PCM only: finite decoded samples cannot establish that pre-quantization float render was finite. RMS is unweighted, not perceptual loudness. Spectral occupancy is not masking, role attribution, intelligibility, or musical acceptance."
+        }
+      },
+      {
+        "path": "/home/leah/LibGibson.kernel-bass/target/c137-controls/counterpoint-off/normal/fusion_2112.tsv",
+        "sha256": "fed6d95830e2d5fbc32c375f978a1a0776d4dc69c5fd10fb3df463ece4b65994",
+        "bytes": 63576,
+        "kind": "tsv",
+        "measurement": {
+          "tempo_bpm": 144.0,
+          "beats_per_bar": 4.0,
+          "total_beats": 128.0,
+          "chord_count": 32,
+          "roles": {
+            "bass": {
+              "events": 246,
+              "stored_velocity": {
+                "count": 246,
+                "min": 0.22204433,
+                "max": 0.48240015,
+                "mean": 0.3096977774390244,
+                "population_sd": 0.06872809670323937
+              },
+              "distinct_stored_velocities": 58,
+              "attacks_per_bar": [
+                8,
+                8,
+                8,
+                8,
+                8,
+                8,
+                8,
+                8,
+                7,
+                7,
+                7,
+                8,
+                8,
+                7,
+                8,
+                8,
+                8,
+                6,
+                8,
+                8,
+                8,
+                8,
+                8,
+                8,
+                7,
+                8,
+                7,
+                7,
+                8,
+                8,
+                7,
+                8
+              ],
+              "stored_velocity_sum_per_bar": [
+                1.8155389300000002,
+                1.8155389300000002,
+                1.8155389300000002,
+                2.0625172099999998,
+                2.80897987,
+                2.78187406,
+                2.78187406,
+                2.8104063900000003,
+                1.62005292,
+                1.62005292,
+                1.62005292,
+                2.0720286199999998,
+                2.78187406,
+                2.4773306799999997,
+                2.78187406,
+                2.8104063900000003,
+                2.0655698099999995,
+                1.8173683,
+                2.0436002899999997,
+                2.0235228200000006,
+                2.0655698099999995,
+                2.0714565,
+                2.0445461,
+                2.0650442,
+                2.6222149,
+                3.3415981500000003,
+                2.6241919999999994,
+                2.6235327699999997,
+                3.3930634100000003,
+                3.3419816100000004,
+                2.6381629199999996,
+                2.92828871
+              ],
+              "active_bars": 32,
+              "attacks_outside_declared_span": 0,
+              "pitch": {
+                "count": 246,
+                "min": 35.0,
+                "max": 50.0,
+                "mean": 40.98780487804878,
+                "population_sd": 3.5008497311333153
+              },
+              "written_gate_beats": 113.9,
+              "written_occupancy_fraction": 0.8898437500000035,
+              "attacks_overlapping_prior_written_gate": 0,
+              "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+            },
+            "drums": {
+              "events": 539,
+              "stored_velocity": {
+                "count": 539,
+                "min": 0.12734926,
+                "max": 0.7181057,
+                "mean": 0.3213022710018553,
+                "population_sd": 0.15496619704832243
+              },
+              "distinct_stored_velocities": 58,
+              "attacks_per_bar": [
+                0,
+                0,
+                0,
+                2,
+                22,
+                22,
+                23,
+                17,
+                21,
+                22,
+                23,
+                22,
+                23,
+                23,
+                22,
+                18,
+                22,
+                7,
+                6,
+                23,
+                21,
+                24,
+                22,
+                22,
+                23,
+                21,
+                24,
+                17,
+                24,
+                23,
+                0,
+                0
+              ],
+              "stored_velocity_sum_per_bar": [
+                0.0,
+                0.0,
+                0.0,
+                0.68547444,
+                7.7240299299999995,
+                7.99865385,
+                8.174873709999998,
+                7.285478800000001,
+                4.649706569999999,
+                5.024504749999999,
+                5.335181009999999,
+                5.02450475,
+                8.51772573,
+                8.180636510000001,
+                7.499803709999999,
+                7.624488500000002,
+                5.381493109999999,
+                2.26467332,
+                1.78094181,
+                5.527842069999999,
+                5.442935569999999,
+                6.680610799999999,
+                5.498521029999999,
+                5.893745089999999,
+                8.60513044,
+                7.709035800000001,
+                9.302565329999998,
+                7.147801380000001,
+                9.31573044,
+                8.905835620000001,
+                0.0,
+                0.0
+              ],
+              "active_bars": 27,
+              "attacks_outside_declared_span": 0
+            },
+            "keys": {
+              "events": 156,
+              "stored_velocity": {
+                "count": 156,
+                "min": 0.15678252,
+                "max": 0.30983695,
+                "mean": 0.22807340435897436,
+                "population_sd": 0.04346449275161692
+              },
+              "distinct_stored_velocities": 15,
+              "attacks_per_bar": [
+                0,
+                0,
+                0,
+                0,
+                3,
+                8,
+                8,
+                3,
+                0,
+                8,
+                8,
+                1,
+                0,
+                0,
+                8,
+                3,
+                11,
+                0,
+                0,
+                8,
+                8,
+                3,
+                8,
+                8,
+                5,
+                8,
+                3,
+                8,
+                8,
+                10,
+                10,
+                8
+              ],
+              "stored_velocity_sum_per_bar": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.72069384,
+                1.9218502399999997,
+                1.9218502399999997,
+                0.72069384,
+                0.0,
+                1.25426016,
+                1.25426016,
+                0.16050607,
+                0.0,
+                0.0,
+                1.9218502399999997,
+                0.72069384,
+                2.38716974,
+                0.0,
+                0.0,
+                1.6660000000000001,
+                1.41610016,
+                0.53103756,
+                1.41610016,
+                1.41610016,
+                1.26437515,
+                2.02300024,
+                0.87934131,
+                2.02300024,
+                2.3799999999999994,
+                2.9944025499999993,
+                2.56316494,
+                2.02300024
+              ],
+              "active_bars": 23,
+              "attacks_outside_declared_span": 0,
+              "pitch": {
+                "count": 156,
+                "min": 59.0,
+                "max": 81.0,
+                "mean": 68.37820512820512,
+                "population_sd": 4.545133983974663
+              },
+              "written_gate_beats": 72.775,
+              "written_occupancy_fraction": 0.2244140625000006,
+              "attacks_overlapping_prior_written_gate": 97,
+              "adjacent_same_pitch_retriggers_within_quarter_beat": 2
+            },
+            "lead": {
+              "events": 126,
+              "stored_velocity": {
+                "count": 126,
+                "min": 0.4797766,
+                "max": 0.89029306,
+                "mean": 0.6581609667460318,
+                "population_sd": 0.10421313768222333
+              },
+              "distinct_stored_velocities": 88,
+              "attacks_per_bar": [
+                6,
+                4,
+                4,
+                5,
+                6,
+                4,
+                4,
+                5,
+                6,
+                4,
+                4,
+                5,
+                6,
+                4,
+                4,
+                5,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                3,
+                6,
+                4,
+                4,
+                5,
+                0,
+                0,
+                0,
+                0
+              ],
+              "stored_velocity_sum_per_bar": [
+                3.2075331700000005,
+                2.18695283,
+                2.2113712999999997,
+                2.7370512099999997,
+                4.2478141,
+                2.89623495,
+                2.92857289,
+                3.6247434000000003,
+                3.2075331700000005,
+                2.18695283,
+                2.2113712999999997,
+                2.7370512099999997,
+                4.2478141,
+                2.89623495,
+                2.92857289,
+                3.6247434000000003,
+                2.54857434,
+                2.6342642,
+                2.6480225600000002,
+                2.65943598,
+                2.7435701,
+                2.7527760999999997,
+                2.75327348,
+                2.13091427,
+                4.3345041,
+                2.95534162,
+                2.9883396400000004,
+                3.6987177200000003,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "active_bars": 28,
+              "attacks_outside_declared_span": 0,
+              "pitch": {
+                "count": 126,
+                "min": 64.0,
+                "max": 89.0,
+                "mean": 77.3015873015873,
+                "population_sd": 5.66424295684114
+              },
+              "written_gate_beats": 94.3,
+              "written_occupancy_fraction": 0.7367187499999998,
+              "attacks_overlapping_prior_written_gate": 0,
+              "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+            },
+            "pad": {
+              "events": 124,
+              "stored_velocity": {
+                "count": 124,
+                "min": 0.10281601,
+                "max": 0.24480002,
+                "mean": 0.1819138576612903,
+                "population_sd": 0.05005205469697472
+              },
+              "distinct_stored_velocities": 14,
+              "attacks_per_bar": [
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                0,
+                4
+              ],
+              "stored_velocity_sum_per_bar": [
+                0.60710408,
+                0.60710408,
+                0.60710408,
+                0.60710408,
+                0.93024004,
+                0.93024004,
+                0.93024004,
+                0.93024004,
+                0.51066301,
+                0.51066301,
+                0.51066301,
+                0.71672004,
+                0.93024004,
+                0.93024004,
+                0.93024004,
+                0.93024004,
+                0.58262405,
+                0.48837601,
+                0.48837600999999997,
+                0.48837601,
+                0.58262405,
+                0.51408,
+                0.48837600999999997,
+                0.51408,
+                0.6976800500000001,
+                0.6976800500000001,
+                0.97920008,
+                0.97920008,
+                0.97920008,
+                0.97920008,
+                0.0,
+                0.97920008
+              ],
+              "active_bars": 31,
+              "attacks_outside_declared_span": 0,
+              "pitch": {
+                "count": 124,
+                "min": 52.0,
+                "max": 88.0,
+                "mean": 72.10483870967742,
+                "population_sd": 7.315271860521676
+              },
+              "written_gate_beats": 450.36670929999997,
+              "written_occupancy_fraction": 0.9493750000000004,
+              "attacks_overlapping_prior_written_gate": 93,
+              "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+            }
+          },
+          "limits": "TSV stored velocity and written gates only; effective gain, voice choke/release, bus levels, source identity, hearings, and acoustic masking are not reconstructed. A polyphonic role can legitimately have overlapping written gates."
+        }
+      },
+      {
+        "path": "/home/leah/LibGibson.kernel-bass/target/c137-controls/counterpoint-on/normal/fusion_2112.tsv",
+        "sha256": "73e747846421cb6923b826a7a348b82ae3d65030df183402d8291c581e5f1b04",
+        "bytes": 65285,
+        "kind": "tsv",
+        "measurement": {
+          "tempo_bpm": 144.0,
+          "beats_per_bar": 4.0,
+          "total_beats": 128.0,
+          "chord_count": 32,
+          "roles": {
+            "bass": {
+              "events": 246,
+              "stored_velocity": {
+                "count": 246,
+                "min": 0.22204433,
+                "max": 0.48240015,
+                "mean": 0.3096977774390244,
+                "population_sd": 0.06872809670323937
+              },
+              "distinct_stored_velocities": 58,
+              "attacks_per_bar": [
+                8,
+                8,
+                8,
+                8,
+                8,
+                8,
+                8,
+                8,
+                7,
+                7,
+                7,
+                8,
+                8,
+                7,
+                8,
+                8,
+                8,
+                6,
+                8,
+                8,
+                8,
+                8,
+                8,
+                8,
+                7,
+                8,
+                7,
+                7,
+                8,
+                8,
+                7,
+                8
+              ],
+              "stored_velocity_sum_per_bar": [
+                1.8155389300000002,
+                1.8155389300000002,
+                1.8155389300000002,
+                2.0625172099999998,
+                2.80897987,
+                2.78187406,
+                2.78187406,
+                2.8104063900000003,
+                1.62005292,
+                1.62005292,
+                1.62005292,
+                2.0720286199999998,
+                2.78187406,
+                2.4773306799999997,
+                2.78187406,
+                2.8104063900000003,
+                2.0655698099999995,
+                1.8173683,
+                2.0436002899999997,
+                2.0235228200000006,
+                2.0655698099999995,
+                2.0714565,
+                2.0445461,
+                2.0650442,
+                2.6222149,
+                3.3415981500000003,
+                2.6241919999999994,
+                2.6235327699999997,
+                3.3930634100000003,
+                3.3419816100000004,
+                2.6381629199999996,
+                2.92828871
+              ],
+              "active_bars": 32,
+              "attacks_outside_declared_span": 0,
+              "pitch": {
+                "count": 246,
+                "min": 35.0,
+                "max": 50.0,
+                "mean": 40.98780487804878,
+                "population_sd": 3.5008497311333153
+              },
+              "written_gate_beats": 113.9,
+              "written_occupancy_fraction": 0.8898437500000035,
+              "attacks_overlapping_prior_written_gate": 0,
+              "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+            },
+            "drums": {
+              "events": 539,
+              "stored_velocity": {
+                "count": 539,
+                "min": 0.12734926,
+                "max": 0.7181057,
+                "mean": 0.3213022710018553,
+                "population_sd": 0.15496619704832243
+              },
+              "distinct_stored_velocities": 58,
+              "attacks_per_bar": [
+                0,
+                0,
+                0,
+                2,
+                22,
+                22,
+                23,
+                17,
+                21,
+                22,
+                23,
+                22,
+                23,
+                23,
+                22,
+                18,
+                22,
+                7,
+                6,
+                23,
+                21,
+                24,
+                22,
+                22,
+                23,
+                21,
+                24,
+                17,
+                24,
+                23,
+                0,
+                0
+              ],
+              "stored_velocity_sum_per_bar": [
+                0.0,
+                0.0,
+                0.0,
+                0.68547444,
+                7.7240299299999995,
+                7.99865385,
+                8.174873709999998,
+                7.285478800000001,
+                4.649706569999999,
+                5.024504749999999,
+                5.335181009999999,
+                5.02450475,
+                8.51772573,
+                8.180636510000001,
+                7.499803709999999,
+                7.624488500000002,
+                5.381493109999999,
+                2.26467332,
+                1.78094181,
+                5.527842069999999,
+                5.442935569999999,
+                6.680610799999999,
+                5.498521029999999,
+                5.893745089999999,
+                8.60513044,
+                7.709035800000001,
+                9.302565329999998,
+                7.147801380000001,
+                9.31573044,
+                8.905835620000001,
+                0.0,
+                0.0
+              ],
+              "active_bars": 27,
+              "attacks_outside_declared_span": 0
+            },
+            "keys": {
+              "events": 186,
+              "stored_velocity": {
+                "count": 186,
+                "min": 0.15678252,
+                "max": 0.62,
+                "mean": 0.3018086072580645,
+                "population_sd": 0.15334639211475082
+              },
+              "distinct_stored_velocities": 19,
+              "attacks_per_bar": [
+                0,
+                0,
+                0,
+                0,
+                3,
+                9,
+                10,
+                4,
+                0,
+                9,
+                10,
+                2,
+                0,
+                2,
+                10,
+                4,
+                11,
+                0,
+                0,
+                8,
+                8,
+                3,
+                8,
+                10,
+                5,
+                9,
+                4,
+                11,
+                9,
+                12,
+                12,
+                13
+              ],
+              "stored_velocity_sum_per_bar": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.72069384,
+                2.5108502400000003,
+                3.0998502400000003,
+                1.3096938399999998,
+                0.0,
+                1.63866016,
+                2.02306016,
+                0.54490607,
+                0.0,
+                1.178,
+                3.0998502400000003,
+                1.3096938399999998,
+                2.38716974,
+                0.0,
+                0.0,
+                1.6660000000000001,
+                1.41610016,
+                0.53103756,
+                1.41610016,
+                2.79807512,
+                1.26437515,
+                2.64300024,
+                1.4993413100000001,
+                3.8830002400000003,
+                3.9675,
+                5.20190255,
+                4.904539850000001,
+                5.123000240000001
+              ],
+              "active_bars": 24,
+              "attacks_outside_declared_span": 0,
+              "pitch": {
+                "count": 186,
+                "min": 52.0,
+                "max": 81.0,
+                "mean": 66.41397849462365,
+                "population_sd": 5.960949830459735
+              },
+              "written_gate_beats": 95.875,
+              "written_occupancy_fraction": 0.3376953125000005,
+              "attacks_overlapping_prior_written_gate": 138,
+              "adjacent_same_pitch_retriggers_within_quarter_beat": 1
+            },
+            "lead": {
+              "events": 126,
+              "stored_velocity": {
+                "count": 126,
+                "min": 0.4797766,
+                "max": 0.89029306,
+                "mean": 0.6581609667460318,
+                "population_sd": 0.10421313768222333
+              },
+              "distinct_stored_velocities": 88,
+              "attacks_per_bar": [
+                6,
+                4,
+                4,
+                5,
+                6,
+                4,
+                4,
+                5,
+                6,
+                4,
+                4,
+                5,
+                6,
+                4,
+                4,
+                5,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                3,
+                6,
+                4,
+                4,
+                5,
+                0,
+                0,
+                0,
+                0
+              ],
+              "stored_velocity_sum_per_bar": [
+                3.2075331700000005,
+                2.18695283,
+                2.2113712999999997,
+                2.7370512099999997,
+                4.2478141,
+                2.89623495,
+                2.92857289,
+                3.6247434000000003,
+                3.2075331700000005,
+                2.18695283,
+                2.2113712999999997,
+                2.7370512099999997,
+                4.2478141,
+                2.89623495,
+                2.92857289,
+                3.6247434000000003,
+                2.54857434,
+                2.6342642,
+                2.6480225600000002,
+                2.65943598,
+                2.7435701,
+                2.7527760999999997,
+                2.75327348,
+                2.13091427,
+                4.3345041,
+                2.95534162,
+                2.9883396400000004,
+                3.6987177200000003,
+                0.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              "active_bars": 28,
+              "attacks_outside_declared_span": 0,
+              "pitch": {
+                "count": 126,
+                "min": 64.0,
+                "max": 89.0,
+                "mean": 77.3015873015873,
+                "population_sd": 5.66424295684114
+              },
+              "written_gate_beats": 94.3,
+              "written_occupancy_fraction": 0.7367187499999998,
+              "attacks_overlapping_prior_written_gate": 0,
+              "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+            },
+            "pad": {
+              "events": 124,
+              "stored_velocity": {
+                "count": 124,
+                "min": 0.10281601,
+                "max": 0.24480002,
+                "mean": 0.1819138576612903,
+                "population_sd": 0.05005205469697472
+              },
+              "distinct_stored_velocities": 14,
+              "attacks_per_bar": [
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                4,
+                0,
+                4
+              ],
+              "stored_velocity_sum_per_bar": [
+                0.60710408,
+                0.60710408,
+                0.60710408,
+                0.60710408,
+                0.93024004,
+                0.93024004,
+                0.93024004,
+                0.93024004,
+                0.51066301,
+                0.51066301,
+                0.51066301,
+                0.71672004,
+                0.93024004,
+                0.93024004,
+                0.93024004,
+                0.93024004,
+                0.58262405,
+                0.48837601,
+                0.48837600999999997,
+                0.48837601,
+                0.58262405,
+                0.51408,
+                0.48837600999999997,
+                0.51408,
+                0.6976800500000001,
+                0.6976800500000001,
+                0.97920008,
+                0.97920008,
+                0.97920008,
+                0.97920008,
+                0.0,
+                0.97920008
+              ],
+              "active_bars": 31,
+              "attacks_outside_declared_span": 0,
+              "pitch": {
+                "count": 124,
+                "min": 52.0,
+                "max": 88.0,
+                "mean": 72.10483870967742,
+                "population_sd": 7.315271860521676
+              },
+              "written_gate_beats": 450.36670929999997,
+              "written_occupancy_fraction": 0.9493750000000004,
+              "attacks_overlapping_prior_written_gate": 93,
+              "adjacent_same_pitch_retriggers_within_quarter_beat": 0
+            }
+          },
+          "limits": "TSV stored velocity and written gates only; effective gain, voice choke/release, bus levels, source identity, hearings, and acoustic masking are not reconstructed. A polyphonic role can legitimately have overlapping written gates."
+        }
+      },
+      {
+        "path": "/home/leah/LibGibson.kernel-bass/target/reconstructed-teacher/narrative_normal.wav",
+        "sha256": "79cc0b73846c2b6e3658e6cf980e1a1415bc2b9b27c7834dbbdf8a22296b0a36",
+        "bytes": 19179176,
+        "kind": "wav",
+        "measurement": {
+          "encoding": "signed PCM16",
+          "sample_rate": 48000,
+          "channels": 2,
+          "frames": 4794783,
+          "duration_seconds": 99.8913125,
+          "finite_decoded_pcm": true,
+          "peak": 0.830047607421875,
+          "rms_all_channels": 0.17341937413793274,
+          "complete_one_second_windows": 99,
+          "window_rms": {
+            "count": 99,
+            "min": 7.404706363193784e-05,
+            "max": 0.20261747892499155,
+            "mean": 0.17289721111003756,
+            "population_sd": 0.02125081556407203
+          },
+          "window_rms_p10": 0.16135417291057377,
+          "window_rms_p90": 0.18637480479352153,
+          "spectral_occupancy": {
+            "method": "summed per-channel one-second Hann-window rFFT power; per-window DC removed",
+            "numpy_version": "2.5.0",
+            "windows": 99,
+            "relative_to": "20 Hz to min(20000 Hz, Nyquist)",
+            "fraction_20_80_hz": 0.3123485636003094,
+            "fraction_80_200_hz": 0.28978983967351657,
+            "fraction_200_1000_hz": 0.238204945351158
+          },
+          "limits": "Written integer PCM only: finite decoded samples cannot establish that pre-quantization float render was finite. RMS is unweighted, not perceptual loudness. Spectral occupancy is not masking, role attribution, intelligibility, or musical acceptance."
+        }
+      },
+      {
+        "path": "/home/leah/LibGibson.kernel-bass/target/c137-controls/same-score-on/fusion_bass.wav",
+        "sha256": "b7ca931bc8ac7de1600b63e91dd61808c47c332a6f12ae117bdbcbb239598c73",
+        "bytes": 10720044,
+        "kind": "wav",
+        "measurement": {
+          "encoding": "signed PCM16",
+          "sample_rate": 48000,
+          "channels": 2,
+          "frames": 2680000,
+          "duration_seconds": 55.833333333333336,
+          "finite_decoded_pcm": true,
+          "peak": 0.265899658203125,
+          "rms_all_channels": 0.0634263066951343,
+          "complete_one_second_windows": 55,
+          "window_rms": {
+            "count": 55,
+            "min": 0.0,
+            "max": 0.09189276695130799,
+            "mean": 0.06179049216604135,
+            "population_sd": 0.01630289650133053
+          },
+          "window_rms_p10": 0.046989171175296385,
+          "window_rms_p90": 0.07888252322753239,
+          "spectral_occupancy": {
+            "method": "summed per-channel one-second Hann-window rFFT power; per-window DC removed",
+            "numpy_version": "2.5.0",
+            "windows": 55,
+            "relative_to": "20 Hz to min(20000 Hz, Nyquist)",
+            "fraction_20_80_hz": 0.5274971052059173,
+            "fraction_80_200_hz": 0.3343856385366726,
+            "fraction_200_1000_hz": 0.1341798576749527
+          },
+          "limits": "Written integer PCM only: finite decoded samples cannot establish that pre-quantization float render was finite. RMS is unweighted, not perceptual loudness. Spectral occupancy is not masking, role attribution, intelligibility, or musical acceptance."
+        }
+      },
+      {
+        "path": "/home/leah/LibGibson.kernel-bass/target/c137-controls/same-score-on/fusion_drums.wav",
+        "sha256": "ad5e417bbe32c1af38e28c8a7865aad4355be6521f2def8de9d2980604f380e5",
+        "bytes": 10720044,
+        "kind": "wav",
+        "measurement": {
+          "encoding": "signed PCM16",
+          "sample_rate": 48000,
+          "channels": 2,
+          "frames": 2680000,
+          "duration_seconds": 55.833333333333336,
+          "finite_decoded_pcm": true,
+          "peak": 0.744903564453125,
+          "rms_all_channels": 0.1128050825443839,
+          "complete_one_second_windows": 55,
+          "window_rms": {
+            "count": 55,
+            "min": 0.0,
+            "max": 0.1675848562492852,
+            "mean": 0.09988340505739032,
+            "population_sd": 0.054231862129049346
+          },
+          "window_rms_p10": 0.0,
+          "window_rms_p90": 0.15114556963732192,
+          "spectral_occupancy": {
+            "method": "summed per-channel one-second Hann-window rFFT power; per-window DC removed",
+            "numpy_version": "2.5.0",
+            "windows": 55,
+            "relative_to": "20 Hz to min(20000 Hz, Nyquist)",
+            "fraction_20_80_hz": 0.45878102933711506,
+            "fraction_80_200_hz": 0.33893990281844844,
+            "fraction_200_1000_hz": 0.11340512730746831
+          },
+          "limits": "Written integer PCM only: finite decoded samples cannot establish that pre-quantization float render was finite. RMS is unweighted, not perceptual loudness. Spectral occupancy is not masking, role attribution, intelligibility, or musical acceptance."
+        }
+      },
+      {
+        "path": "/home/leah/LibGibson.kernel-bass/target/c137-controls/same-score-on/fusion_keys.wav",
+        "sha256": "76f36d709b19528ad810b42c673a59bd4017c26c3d628aee5e88f2c0fcf19831",
+        "bytes": 10720044,
+        "kind": "wav",
+        "measurement": {
+          "encoding": "signed PCM16",
+          "sample_rate": 48000,
+          "channels": 2,
+          "frames": 2680000,
+          "duration_seconds": 55.833333333333336,
+          "finite_decoded_pcm": true,
+          "peak": 0.522369384765625,
+          "rms_all_channels": 0.04486798743532199,
+          "complete_one_second_windows": 55,
+          "window_rms": {
+            "count": 55,
+            "min": 0.0,
+            "max": 0.09847787080649421,
+            "mean": 0.03387521276804295,
+            "population_sd": 0.02993506842341369
+          },
+          "window_rms_p10": 0.0,
+          "window_rms_p90": 0.07376943159194317,
+          "spectral_occupancy": {
+            "method": "summed per-channel one-second Hann-window rFFT power; per-window DC removed",
+            "numpy_version": "2.5.0",
+            "windows": 55,
+            "relative_to": "20 Hz to min(20000 Hz, Nyquist)",
+            "fraction_20_80_hz": 0.01796669215716063,
+            "fraction_80_200_hz": 0.10404990141538042,
+            "fraction_200_1000_hz": 0.7813312164886682
+          },
+          "limits": "Written integer PCM only: finite decoded samples cannot establish that pre-quantization float render was finite. RMS is unweighted, not perceptual loudness. Spectral occupancy is not masking, role attribution, intelligibility, or musical acceptance."
+        }
+      },
+      {
+        "path": "/home/leah/LibGibson.kernel-bass/target/c137-controls/same-score-on/fusion_normal.wav",
+        "sha256": "03bbe35ea057f538fdf4a9ba86e88a36b739a22164a5366fc6130a8c910740f2",
+        "bytes": 10720044,
+        "kind": "wav",
+        "measurement": {
+          "encoding": "signed PCM16",
+          "sample_rate": 48000,
+          "channels": 2,
+          "frames": 2680000,
+          "duration_seconds": 55.833333333333336,
+          "finite_decoded_pcm": true,
+          "peak": 0.806732177734375,
+          "rms_all_channels": 0.1356429932636789,
+          "complete_one_second_windows": 55,
+          "window_rms": {
+            "count": 55,
+            "min": 3.061485680687517e-05,
+            "max": 0.18044912323089177,
+            "mean": 0.131893911846475,
+            "population_sd": 0.03580210460624352
+          },
+          "window_rms_p10": 0.07810587376791953,
+          "window_rms_p90": 0.16714628286955754,
+          "spectral_occupancy": {
+            "method": "summed per-channel one-second Hann-window rFFT power; per-window DC removed",
+            "numpy_version": "2.5.0",
+            "windows": 55,
+            "relative_to": "20 Hz to min(20000 Hz, Nyquist)",
+            "fraction_20_80_hz": 0.3715778477008249,
+            "fraction_80_200_hz": 0.26779917422153837,
+            "fraction_200_1000_hz": 0.2509434208380489
+          },
+          "limits": "Written integer PCM only: finite decoded samples cannot establish that pre-quantization float render was finite. RMS is unweighted, not perceptual loudness. Spectral occupancy is not masking, role attribution, intelligibility, or musical acceptance."
+        }
+      }
+    ],
+    "limits": "Different source, arrangement, duration, density and potentially tonal context; narrative teacher tempo138 vs candidate/baseline144. No level normalization or matched source comparison, hence no causal quality/masking/mastering comparison."
+  },
+  "analysis_methods": {
+    "musical_span_rms": "Decode stereo PCM16 to [-1,1); root mean square over both channels for first320000frames (16beats144BPM). Perbar bins use rounded exact bar boundary frames. Tail separately measured.",
+    "pcm_comparison": "Literal integer sample equality; differing stereo frames count frames where either channel differs. No quality score or waveform MSE.",
+    "score_comparison": "Compare ordered TSV events including onset,gate,pitch,velocity,function,duty; pulse filters drum duty=pulse.",
+    "spectra": "See candidate_measurements.json; full-file complete1s windows, separately summed stereo power.",
+    "provenance_limits": "measure_audio.py is a separate PCM/TSV parser, not independent source composition. Emitted runtime validation/block independence remains emitter testimony."
+  }
+}
