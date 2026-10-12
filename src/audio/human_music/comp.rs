@@ -79,6 +79,17 @@ const COUNTER_OCTAVE: i32 = 4;
 /// the band's section-energy arc.
 const COUNTER_VEL: f32 = 0.62;
 
+/// Keys LISTEN (Round XVI). Lead onsets in a bar at or above this count mean the lead is carrying
+/// the statement there; the keys recede two stabs and all but leave it the floor (a deliberate
+/// Listen). One below this count the keys recede a single stab. The measured lead averages ~4
+/// onsets/bar and peaks at 5-6 in its carrying bars, so `6` targets the bars where the lead is
+/// clearly out front and `5` the ones where it is leaning in.
+const KEYS_LISTEN_DENSE: usize = 6;
+/// Lead onsets in a bar at or below this count mean the lead is breathing there; the keys step
+/// forward one stab to answer in the opened space (the fusion-drive bonus, now spent as a response
+/// to the lead rather than a flat per-bar fill).
+const KEYS_LISTEN_BREATH: usize = 4;
+
 /// The lead pitch nearest in time to `beat` — the reference the counter-voice separates below.
 fn nearest_lead_pitch(lead: &[Note], beat: f64) -> Option<Midi> {
     lead.iter()
@@ -643,12 +654,42 @@ fn keys_comp_impl(
                 //
                 // On the fusion drive path the lead now BREATHES (cell-boundary rests), so the band
                 // gets one more stab per bar to converse in that opened space — more information
-                // density, landing (`allows_comp_at`) off the lead's own onsets, in its rests. Gated
-                // on `perf.drive` so the non-fusion BAND path is byte-for-byte unchanged, and still
-                // capped by the language's voicing limit (never beyond what the harmony licenses).
+                // density, landing (`allows_comp_at`) off the lead's own onsets, in its rests.
+                //
+                // Round XVI — the keys LISTEN. That extra stab is no longer a flat per-bar bonus
+                // (a flat fill made the whole band read as ONE averaged energy): it is a decision
+                // about THIS bar's lead. When the lead is carrying — dense here — the keys recede a
+                // stab and leave it the floor (a deliberate Listen, not a dropped note); when the
+                // lead breathes they step forward to answer. The keys' energy now comes from a
+                // musical response to the lead, not the shared section fader — so lead and keys
+                // converse instead of swelling in lockstep. Causal on the FINAL installed lead;
+                // gated on `perf.drive`, so the non-fusion BAND path keeps its byte-exact flat
+                // allowance. Thinning only ever REMOVES stabs (the keys carry no source and own no
+                // stage), so the independent argument witness and the stage authority are untouched.
                 let free = perf.free_allowance(Agent::Keys, bar);
-                ((free / 1.1).floor() as usize + usize::from(perf.drive))
-                    .min(if perf.language.shell_voicings { 3 } else { 2 })
+                let listen = if perf.drive {
+                    let lead_onsets = lead
+                        .iter()
+                        .filter(|n| {
+                            n.start_beat >= bar_start - 1e-6
+                                && n.start_beat < bar_start + 4.0 - 1e-6
+                        })
+                        .count();
+                    if lead_onsets >= KEYS_LISTEN_DENSE {
+                        -2
+                    } else if lead_onsets == KEYS_LISTEN_DENSE - 1 {
+                        -1
+                    } else if lead_onsets <= KEYS_LISTEN_BREATH {
+                        1
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                };
+                ((free / 1.1).floor() as i32 + listen)
+                    .clamp(0, if perf.language.shell_voicings { 3 } else { 2 })
+                    as usize
             }
             _ => 0,
         };
