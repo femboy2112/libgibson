@@ -6,12 +6,12 @@ establish musical acceptance. Keep `BASS_WEAVE` disabled and retain the archived
 performers as compatibility controls. Do not merge, release, tag, or change
 historical defaults on the strength of this checkpoint.
 
-This handoff was prepared from implementation worktree
-`/home/leah/LibGibson.kernel`, branch `feat/humanmusic-c137-causal-kernel`, at
-`58a77ef2519da577d4210c84b85d87498de10e1e` plus the integrator's then-uncommitted
-`kernel.rs`/`performance.rs` strengthening. The final evidence fields below must
-be completed against the actual committed implementation revision. This document
-does not report those pending checks as passed.
+Runtime and audition source is frozen at
+`ac97bccba88beb768720c67ac64200f6778d0584` on
+`feat/humanmusic-c137-causal-kernel`, in `/home/leah/LibGibson.kernel`.
+Later commits contain evidence and documentation only. The original workspace
+and historical defaults remain untouched. Exact delivery-head CI is recorded
+in the draft PR description; it is separate from local runtime receipts.
 
 ## Verified diagnosis and limits
 
@@ -111,7 +111,9 @@ notes. The currently admitted domain is deliberately narrow:
   `[0,12)` and `[12,16)`, and four route entries.
 - Source events use semitone pitch basis, quarter-beat onsets and a first-bar
   statement fitting before beat 3.75. Arc, steps, phrase IDs, placements and
-  transformed referent events must agree.
+  transformed referent events and canonical thematic sites must agree. Source
+  accents and section gains must be positive; gains must be finite and at most one.
+  The first relation is Establish, the second its Return, and the ending Resolved.
 - The final route includes dominant at beat 8 and tonic minor at beat 12; the
   returning statement completes on the tonic. Arbitrary meters, forms, carrier
   transfers and harmonic routes are outside this public entry point's domain.
@@ -168,6 +170,9 @@ explicit owner-equivalence contract while preserving old fingerprints.
 ## Code, falsifiers and final receipts
 
 Runtime: `src/audio/human_music/kernel.rs`, `performance.rs`, and module export.
+`argument.rs` shares its existing canonical thematic projection with admission.
+Five pre-existing match/Boolean expressions received equivalent clippy cleanup;
+archived audio and full regression gates verify compatibility.
 Demonstration: `examples/c137_conversation.rs` plus its `source.rs`.
 New checks: `tests/audio_c137_conversation.rs`, `audio_c137_kernel_hostile.rs`,
 `audio_c137_kernel_baseline.rs`, `audio_c137_source_authority.rs`,
@@ -183,29 +188,38 @@ ignored red oracles; ordinary characterization tests actively preserve their
 known negative-control behavior. Do not silently run those red oracles as a
 requirement that historical public behavior changed.
 
-**INTEGRATOR: complete these fields against the final committed revision.**
-
-| Required receipt | Final result |
+| Required receipt | Result |
 |---|---|
-| Implementation SHA, pushed branch and draft PR | **PENDING — fill exact SHA and links.** |
-| Focused conversation/hostile/source/bass tests | **PENDING — command, count, exit status and log path.** |
-| Full Cargo tests, examples, fmt, strict all-feature clippy, warnings-denied rustdoc | **PENDING — report each actual result/blocker.** |
-| Historic R17/covers/fingerprint/PCM controls | **PENDING — exact command, compared fixtures/hashes and result; do not infer from source isolation.** |
-| Exact-head CI | **PENDING — run URL, checked head SHA, outcome and any infrastructure limit.** |
-| Candidate audio source revision and output directory | **PENDING — populate after real rendering.** |
-| Source/song/performance/Score fingerprints and SHA-256 manifest | **PENDING — populate from rendered receipts and independent file hashing.** |
-| Fresh PCM measurements and block-size identity | **PENDING — JSON/TSV paths, actual results and failures.** |
-| Maintainer listening against teacher_golden7 | **PENDING — no acceptance granted by this checkpoint.** |
+| Runtime SHA / branch | `ac97bccba88beb768720c67ac64200f6778d0584` / `feat/humanmusic-c137-causal-kernel` |
+| Focused tests | 9 conversation + 19 hostile + 2 planner tests pass; [raw output](hostile_green.txt). Legacy characterization also passes; original red oracles remain preserved. |
+| Full Cargo and examples | 1,681 passed, 22 intentionally ignored; 19 additional example-specific tests passed. All examples built. |
+| Format / strict clippy / rustdoc / release | Passed locally; rustdoc used `RUSTDOCFLAGS=-D warnings`, clippy all targets/features with `-D warnings`. Commands and logs are in [validation](validation/). |
+| Historic R17/covers/fingerprint/PCM | 48 archived WAV hashes and 757 diagnostic receipts reproduced byte-exactly; zero mismatches. Cover/fingerprint/PCM integration checks passed in the full suite. |
+| Exact-head CI | See the draft PR's exact-head run link and conclusion. Local checks are not substituted for CI. |
+| Actual WAVs and copied custody | 81 WAVs at `/media/leah/SPANKBANK/LibGibson-c137/ac97bcc/audition`; [copy custody](copy_custody.json), [all file SHA-256](candidate_sha256.txt). Original output remains at `target/c137-audition-ac97bcc`. |
+| Independent analysis | [PCM/Score report](acoustic_candidate.md), [measurements](candidate_measurements.json), [comparisons](candidate_summary.json). Nine committed variants passed finite floating PCM and exact block-127/256 equality. |
+| Maintainer listening against teacher_golden7 | **PENDING.** Complete accepted collection unavailable; no acceptance granted. |
+
+| Seed | Source Debug FNV | Song fingerprint | Performance fingerprint | Score fingerprint |
+|---|---|---|---|---|
+| 2112 | `bf1be50c542248e9` | `c98735ed499f9f20` | `37753f2f7879396a` | `468ddeeb851c6101` |
+| 7 | `dc68c5455f46a91a` | `c98735ed499f9f20` | `5a86f0ea1c6d138b` | `468ddeeb851c6101` |
+| 99 | `e8afbc370ae1b4b3` | `550a2b211f26488c` | `6e0d1f2ee13bdde7` | `32509f436ee58573` |
+
+These fingerprints describe different projections. Seeds 2112/7 render identical
+PCM despite different source/provenance hashes; all three candidates have
+identical non-lead stems. The full mix bar RMS span is only 0.2835 dB. Do not
+infer broad musical diversity or expressive success from seed count or receipts.
+The source Debug FNV is not a canonical semantic or cryptographic identity.
 
 The example supports the following reproduction; replace placeholders and use
-an empty output directory. These are recipes, not claims that these final runs
-have already completed:
+an empty output directory. The archived render used the exact runtime SHA above:
 
 ```bash
 CARGO_BUILD_JOBS=1 cargo test --test audio_c137_conversation --test audio_c137_kernel_hostile
 CARGO_BUILD_JOBS=1 cargo run --release --example c137_conversation -- \
   --out=EMPTY_OUTPUT_DIRECTORY --seeds=2112,7,99 --tempo=144 \
-  --source-sha=FINAL_40_HEX_IMPLEMENTATION_SHA
+  --source-sha=ac97bccba88beb768720c67ac64200f6778d0584
 ```
 
 The example records source/Score/plan/hearing dumps and fingerprints; renders
@@ -223,7 +237,9 @@ Already captured baseline controls live at
 teacher controls/stems live at `target/reconstructed-teacher` in that worktree.
 The baseline normal ON Score fingerprint is `001e6801b304a08a`, WAV SHA-256
 `03bbe35ea057f538fdf4a9ba86e88a36b739a22164a5366fc6130a8c910740f2`.
-These local media are not repository-committed distribution artifacts.
+Hash-verified copies now also live under the `/media` artifact root in
+`pr102-controls` and `reproduced-teacher`. These local media are not
+repository-committed distribution artifacts.
 
 ## Claude integration boundary and next work
 
@@ -238,6 +254,10 @@ the complete R5 program are deferred.** Wider dialogue, varying form/meter,
 broader source expression, local memory over multiple conversations, and a
 feasible bass answer need their own domains and falsifiers after listening.
 Avoid promoting this deterministic four-bar policy to general musician agency.
+The bass-approach mute has no dependent decision in this slice; its value remains
+a listening question. Existing Quote/Invert transforms already cap the keyboard
+reply at four events, below the six-voice pool, so no new capacity policy was
+added for that unreachable overflow hypothesis.
 
 One narrative teacher was recovered and freshly reproduced byte-exactly. The
 full accepted `teacher_golden7` collection and its complete custody/acceptance

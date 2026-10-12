@@ -68,3 +68,28 @@ checkout: five synthetic tests and ten source checks passed. It is not Rust proo
 
 Human listening against accepted teacher_golden7 remains PENDING. R3 whole-song
 generalization is contingent on this bounded construction and its listening gate.
+
+## Delivered bounded checkpoint
+
+Runtime and rendered audio: `ac97bccba88beb768720c67ac64200f6778d0584`.
+Read [HANDOFF.md](HANDOFF.md) for the final ownership DAG, partial composition
+boundary, concrete code/tests, commands, fingerprints and remaining work.
+[acoustic_candidate.md](acoustic_candidate.md) reports independent measurements
+of actual candidate/control WAVs; [validation](validation/) retains local commands
+and raw outputs. Exact delivery-head CI is recorded in the draft PR description.
+
+Local validation passed: 1,681 Cargo tests (22 intentionally ignored), 19 example
+checks, all examples, fmt, strict clippy, warnings-denied rustdoc and release build.
+R17 regenerated all 48 required WAVs and 757 diagnostic receipts byte-exactly.
+The old accepted/failed archives were not edited or replaced; no fresh holdout
+was used. This is not a new claim of general R17 success.
+
+The audition and reference packet is copied, with every copied file hash checked,
+to `/media/leah/SPANKBANK/LibGibson-c137/ac97bcc/`. The replay is also stored there.
+Start with `audition/seed-2112/candidate/full.normal.wav`, then compare
+`keys-withheld-replanned`, `closed-call-replanned`, the three exported mutes,
+normal/nocomp/harmonic-reference controls and the solo buses. Seed99 supplies
+one changed lead; seed7 duplicates the seed2112 candidate. All non-lead candidate
+stems remain identical across these seeds. Human acceptance against the complete
+accepted teacher_golden7 collection remains pending; only one reproduced
+narrative teacher is available.

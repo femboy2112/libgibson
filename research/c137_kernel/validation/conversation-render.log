@@ -1,0 +1,58 @@
+   Compiling libc v0.2.189
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.26
+   Compiling quote v1.0.47
+   Compiling syn v2.0.119
+   Compiling cfg-if v1.0.5
+   Compiling errno v0.3.14
+   Compiling smallvec v1.16.1
+   Compiling rustversion v1.0.23
+   Compiling bitflags v2.13.2
+   Compiling log v0.4.34
+   Compiling signal-hook v0.3.18
+   Compiling unicode-segmentation v1.13.3
+   Compiling version_check v0.9.5
+   Compiling parking_lot_core v0.9.12
+   Compiling slotmap v1.1.1
+   Compiling convert_case v0.10.0
+   Compiling signal-hook-registry v1.4.8
+   Compiling rustix v1.1.5
+   Compiling zmij v1.0.23
+   Compiling cfg_aliases v0.1.1
+   Compiling scopeguard v1.2.0
+   Compiling thiserror v1.0.69
+   Compiling arrayvec v0.7.8
+   Compiling lock_api v0.4.14
+   Compiling nix v0.28.0
+   Compiling derive_more-impl v2.1.1
+   Compiling mio v1.2.3
+   Compiling thiserror-impl v1.0.69
+   Compiling anyhow v1.0.104
+   Compiling itoa v1.0.18
+   Compiling linux-raw-sys v0.12.1
+   Compiling litrs v1.0.0
+   Compiling document-features v0.2.12
+   Compiling signal-hook-mio v0.2.5
+   Compiling parking_lot v0.12.5
+   Compiling derive_more v2.1.1
+   Compiling castaway v0.2.4
+   Compiling unicode-width v0.2.2
+   Compiling memchr v2.8.3
+   Compiling static_assertions v1.1.0
+   Compiling libgibson v0.4.0 (/home/leah/LibGibson.kernel)
+   Compiling compact_str v0.10.0
+   Compiling vte v0.15.0
+   Compiling crossterm v0.29.0
+   Compiling taffy v0.14.0
+   Compiling filedescriptor v0.8.3
+   Compiling serial2 v0.2.38
+   Compiling downcast-rs v1.2.1
+   Compiling shell-words v1.1.1
+   Compiling portable-pty v0.9.0
+   Compiling vt100 v0.16.2
+    Finished `release` profile [optimized] target(s) in 3m 06s
+     Running `target/release/examples/c137_conversation --out=/home/leah/LibGibson.kernel/target/c137-audition-ac97bcc --seeds=2112,7,99 --tempo=144 --source-sha=ac97bccba88beb768720c67ac64200f6778d0584`
+seed 2112: score 468ddeeb851c6101; rendered candidate, source controls, stems, and exported mute mutations
+seed 7: score 468ddeeb851c6101; rendered candidate, source controls, stems, and exported mute mutations
+seed 99: score 32509f436ee58573; rendered candidate, source controls, stems, and exported mute mutations
+Artifacts: /home/leah/LibGibson.kernel/target/c137-audition-ac97bcc. Human listening remains pending.
