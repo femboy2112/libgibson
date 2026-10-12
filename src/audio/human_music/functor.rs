@@ -1115,10 +1115,26 @@ fn realize_policy_with_argument(
                 });
                 bass.append(&mut bc);
                 bass.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
-                // A mono-voice bass cannot sound two notes at once. The counter answers land between
-                // the foundation eighths, and some foundation tails stretch across the onsets the weave
-                // removed, so clip each note's tail to the next onset — otherwise the overlapping notes
-                // re-trigger the single voice and the bass "trips over itself".
+                // The counter answer often lands on the very root/fifth the foundation just played, a
+                // fraction of a beat later. A mono bass re-triggering its OWN pitch that fast trips
+                // over itself (an audible stutter, not a melodic answer), so TIE same-pitch neighbours
+                // within half a beat into one held note instead of re-articulating it. The foundation
+                // eighths alternate root/fifth and never repeat a pitch this close, so only the weave's
+                // collisions are tied.
+                let mut tied: Vec<Note> = Vec::with_capacity(bass.len());
+                for n in bass.drain(..) {
+                    if let Some(last) = tied.last_mut() {
+                        if last.pitch == n.pitch && n.start_beat - last.start_beat < 0.5 {
+                            let end = n.start_beat as f32 + n.dur_beats;
+                            last.dur_beats = last.dur_beats.max(end - last.start_beat as f32);
+                            continue;
+                        }
+                    }
+                    tied.push(n);
+                }
+                bass = tied;
+                // A mono-voice bass still cannot sound two notes at once: clip each remaining note's
+                // tail to the next onset so no note overlaps its successor.
                 for i in 0..bass.len().saturating_sub(1) {
                     let gap = (bass[i + 1].start_beat - bass[i].start_beat) as f32;
                     if gap > 0.0 && bass[i].dur_beats > gap {
