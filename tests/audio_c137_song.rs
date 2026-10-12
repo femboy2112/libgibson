@@ -328,10 +328,96 @@ fn the_band_density_follows_the_harmony() {
             "seed {seed}: the drummer never comps — no interplay with the lead at all"
         );
         for c in &comp_hits {
+            // The comp slot is gated a full sixteenth clear of any lead attack and then laid a hair
+            // into the pocket, so it is never within a doubling distance of the melody.
             assert!(
-                !lead.iter().any(|l| (l - c).abs() < 0.2475),
-                "seed {seed}: a comp stroke at {c} doubles a lead attack instead of making room"
+                !lead.iter().any(|l| (l - c).abs() < 0.2),
+                "seed {seed}: a comp stroke at {c} collides with a lead attack instead of making room"
             );
         }
+    }
+}
+
+#[test]
+fn the_backing_grooves_a_pocket() {
+    // Groove = reasoned micro-timing, not a dead grid and not random jitter. The backing lays a
+    // structured, bounded pocket around exact anchors, and its dynamics are shaped (not uniform).
+    for seed in [2112u64, 7, 99] {
+        let a = take(seed);
+        let s = a.score();
+
+        // (a) The anchors stay DEAD ON: the bass downbeat root is exactly on the grid in every bar.
+        for bar in 0..8 {
+            let at = bar as f64 * 4.0;
+            assert!(
+                s.role_notes(Role::Bass)
+                    .any(|n| (n.start_beat - at).abs() < 1e-9),
+                "seed {seed}: the bass downbeat anchor left the grid at bar {bar}"
+            );
+        }
+
+        // (b) Every backing stroke stays within the bounded groove tolerance of the sixteenth lattice
+        // (structured, never a wild offset).
+        for d in s
+            .drums
+            .iter()
+            .filter(|d| d.prov.role_note == "pulse" || d.prov.role_note == "comp")
+        {
+            let lattice = (d.start_beat * 4.0).round() / 4.0;
+            assert!(
+                (d.start_beat - lattice).abs() <= 0.04 + 1e-9,
+                "seed {seed}: a drum stroke at {} escaped the groove bound",
+                d.start_beat
+            );
+        }
+
+        // (c) The backbeat snare LAYS BACK off the exact grid — a pocket exists, it is not a march.
+        let laid = s
+            .drums
+            .iter()
+            .filter(|d| matches!(d.voice, DrumVoice::Snare) && d.prov.role_note == "pulse")
+            .filter(|d| {
+                let lattice = (d.start_beat * 4.0).round() / 4.0;
+                (d.start_beat - lattice).abs() > 1e-9
+            })
+            .count();
+        assert!(
+            laid > 0,
+            "seed {seed}: the backbeat never lays back — the backing is a dead grid"
+        );
+
+        // (d) The pulse dynamics are SHAPED, not uniform: the backbeat snares carry more than one
+        // velocity across the song (harmonic energy × phrase swell), i.e. de-roboticized.
+        let bb_vels: std::collections::BTreeSet<u32> = s
+            .drums
+            .iter()
+            .filter(|d| matches!(d.voice, DrumVoice::Snare) && d.prov.role_note == "pulse")
+            .map(|d| d.velocity.to_bits())
+            .collect();
+        assert!(
+            bb_vels.len() >= 2,
+            "seed {seed}: backbeat velocities are uniform — still robotic"
+        );
+    }
+}
+
+#[test]
+fn the_lead_is_dynamically_shaped_not_flat() {
+    // The developed lead has FOREGROUND and BACKGROUND within one voice: structural notes sing, the
+    // passing sixteenths are ghosts, and a phrase contour rides over both — so it is a played line,
+    // not a flat wall of equally-loud notes (the "pretentious" show-off sixteenths).
+    for seed in [2112u64, 7, 99] {
+        let a = take(seed);
+        let vels: Vec<f32> = a
+            .score()
+            .role_notes(Role::Lead)
+            .map(|n| n.velocity)
+            .collect();
+        let lo = vels.iter().cloned().fold(f32::MAX, f32::min);
+        let hi = vels.iter().cloned().fold(0.0_f32, f32::max);
+        assert!(
+            hi - lo > 0.25,
+            "seed {seed}: lead dynamics are too flat (range {lo:.3}..{hi:.3}) — no foreground/background"
+        );
     }
 }

@@ -794,7 +794,10 @@ pub fn embellish_phrase(events: &[MaterialEvent]) -> Vec<MaterialEvent> {
             if cand == prev || past_destination {
                 break;
             }
-            out.push(ev(onset, 0.25, (e.accent * 0.7).max(0.3), cand));
+            // The passing tones are GHOSTS: connective filigree that sits well under the structural
+            // notes, not a second loud line competing with the melody (the old 0.7 read as show-off
+            // sixteenths). A played line has foreground and background within one voice.
+            out.push(ev(onset, 0.25, (e.accent * 0.42).max(0.2), cand));
             prev = cand;
         }
     }
@@ -830,9 +833,23 @@ pub fn pocket_phrase(events: &[MaterialEvent], span: f64) -> Vec<MaterialEvent> 
     out
 }
 
+/// A reasoned dynamic CONTOUR over a developed phrase: the line enters softer and grows toward its
+/// arrival, so no two downbeats are the same flat level — a phrase shape, not a uniform wall. A
+/// fixed function of each event's position in the phrase (never a random draw), applied uniformly to
+/// verse and hook, so the shared onset skeleton and the kinship law (pitch/onset-based) are
+/// untouched. This rides ON TOP of the per-event accent hierarchy and the section gain, giving the
+/// lead velocity three reasoned scales (note role × phrase position × section) instead of one.
+fn shape_phrase_dynamics(events: &mut [MaterialEvent], span: f64) {
+    for e in events.iter_mut() {
+        let phase = (e.onset / span).clamp(0.0, 1.0);
+        e.accent *= 0.82 + 0.18 * phase as f32;
+    }
+}
+
 /// The long-form lead: the same seeded verse/hook pair as [`generate_pair`], but DEVELOPED — each
-/// phrase embellished into a played line and laid into a structured pocket — with the kinship law
-/// re-checked on the DEVELOPED pair so the hook is still a lawful altered consequent of the verse.
+/// phrase embellished into a played line, laid into a structured pocket, and shaped by a phrase
+/// dynamic contour — with the kinship law re-checked on the DEVELOPED pair so the hook is still a
+/// lawful altered consequent of the verse.
 pub fn generate_developed_pair(
     seed: u64,
     span: f64,
@@ -840,7 +857,11 @@ pub fn generate_developed_pair(
     verse_prog: &[BarChord],
     hook_prog: &[BarChord],
 ) -> ThemePair {
-    let develop = |e: &[MaterialEvent]| pocket_phrase(&embellish_phrase(e), span);
+    let develop = |e: &[MaterialEvent]| {
+        let mut d = pocket_phrase(&embellish_phrase(e), span);
+        shape_phrase_dynamics(&mut d, span);
+        d
+    };
     for salt in 0..64u64 {
         let mut r = Rng::new(mix(seed, salt, 0x7E3E_FA33_C137_D00D));
         let climax_v = 7 + r.below(4) as i32;
