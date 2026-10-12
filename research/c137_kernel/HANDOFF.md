@@ -127,7 +127,8 @@ withhold the third-bar repeat even where Stage permits playing, leaving room for
 the return. This is a small explicit local-history policy, not generalized memory.
 
 Bass keeps one chronological foundation lane, with each bar's root and a
-chord-relative third or seventh. A feasible semitone approach anticipates the
+chord-relative third or final chord tone (fifth in the demonstrated minor triads,
+seventh when that chord supplies one). A feasible semitone approach anticipates the
 declared root at beat 12. It is not snapped to the current chord or overlaid as a
 second low-register melody. The bounded bass register is MIDI 36–55. Admission
 checks written overlap, rapid same-pitch retrigger, explicit identity and the
