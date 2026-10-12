@@ -52,6 +52,6 @@ On source edits it intentionally refuses to claim an unchanged pin (returns exit
 
 ## Not executed in this audit
 
-No cargo build/test, actual experimental Score::stale_hearings, WAV export, teacher_golden7 file examination, human ear A/B or default PCM hashing were performed here. A PR #102 earlier baseline CI was green, but exact-head latest CI was still pending at initial audit; refresh before implementation.
+No cargo build/test, actual experimental Score::stale_hearings, WAV export, teacher_golden7 file examination, human ear A/B or default PCM hashing were performed here. The current PR #102 head 29527a8 subsequently completed GitHub Actions run 38197706708 successfully. This is existing-source CI, not evidence that bass weave or teacher-golden musical acceptance is fixed.
 
 **Next decisive Rust tasks:** run Score::stale_hearings on fusion_gates with and without counterpoint; exercise a velocity-only post-hearing mutation; compare dependent planning before/after argument harmonic preparation; then implement one opt-in causal four-bar band episode before attempting generalized musician dynamics or reviving bass weave.
