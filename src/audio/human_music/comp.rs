@@ -74,6 +74,14 @@ const COUNTER_LEAD_IN: f64 = 0.25;
 /// The degree octave the countersubject is realized in before register separation drops it clear
 /// of the lead.
 const COUNTER_OCTAVE: i32 = 4;
+/// The octave the BASS weaving voice is realized in — low, so the two answering voices (keys mid,
+/// bass low) sit in their own registers and the ear hears three independent streams, not one.
+const COUNTER_OCTAVE_BASS: i32 = 2;
+/// Register band (MIDI) for the KEYS weaving voice — mid, below the lead but clear of the bass.
+const COUNTER_REG_KEYS: (i32, i32) = (52, 76);
+/// Register band (MIDI) for the BASS weaving voice — the bass's own range (roughly the foundation's
+/// G1-D3), never the subsonic smear the raw low octave + below-lead drop would otherwise reach.
+const COUNTER_REG_BASS: (i32, i32) = (35, 50);
 /// The counter-voice's base velocity: a second voice CONVERSING with the lead — in its rests and
 /// against its held tones — deliberately under the lead, never competing with it. It still rides
 /// the band's section-energy arc.
@@ -101,37 +109,13 @@ fn nearest_lead_pitch(lead: &[Note], beat: f64) -> Option<Midi> {
         .map(|n| n.pitch)
 }
 
-/// A germ-derived **countersubject**, woven against the lead — the minimal fugal cell.
-///
-/// The verse germ the listener actually hears (`perf.bank.identity`, set on the fusion route from
-/// the carrier) turned upside down (`Motif::invert` — a contrary-motion partner: a different surface
-/// shape, the *same* DNA), laid into the LEAD'S OPEN WINDOWS so the two voices converse: its silent
-/// rests (the voices take turns) *and* the sustains of its long held notes (one voice moving against
-/// the other's held tone — the classic fugal texture). Each note is snapped to a consonance of the
-/// harmony it lands in (`nearest_stable`) and kept clearly below the lead so the ear separates the
-/// two streams instead of fusing them. The idea UNFOLDS across the song (the degree cursor advances
-/// window to window) rather than looping — developing variation, not a repeat.
-///
-/// Tagged `role_note = "counter"`, so the independent argument witness (which audits only the
-/// `"argument"` carrier) never sees it: this is free realizer territory. The caller gates it to the
-/// opt-in argument route; off, the band is byte-for-byte unchanged.
-pub(crate) fn realize_countersubject(
-    perf: &PerformancePlan,
-    lead: &[Note],
-    total_beats: f64,
-) -> Vec<Note> {
-    let subject = &perf.bank.identity;
-    if subject.is_empty() || lead.is_empty() {
-        return Vec::new();
-    }
-    let counter = subject.invert();
-    if counter.degrees.is_empty() {
-        return Vec::new();
-    }
-    // The lead's open windows: (a) its silent rests between successive onsets (plus the opening and
-    // the final tail — the return's empty tail is exactly such a rest), and (b) the SUSTAIN of each
-    // long held note, where a moving counter sings against the held tone. A breath (COUNTER_LEAD_IN)
-    // is folded into each window's start so the counter answers rather than collides on the onset.
+/// The lead's OPEN WINDOWS — where another voice can answer without colliding with the melody:
+/// (a) its silent rests between successive onsets (plus the opening and the final tail — the return's
+/// empty tail is exactly such a rest), and (b) the SUSTAIN of each long held note, where a moving line
+/// sings against the held tone (the classic fugal texture). A breath (`COUNTER_LEAD_IN`) is folded
+/// into each window's start so the answer enters after the lead rather than on top of it. Sorted by
+/// start.
+fn lead_open_windows(lead: &[Note], total_beats: f64) -> Vec<(f64, f64)> {
     let mut sorted: Vec<&Note> = lead.iter().collect();
     sorted.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
     let mut gaps: Vec<(f64, f64)> = Vec::new();
@@ -150,26 +134,69 @@ pub(crate) fn realize_countersubject(
         gaps.push((cursor + COUNTER_LEAD_IN, total_beats));
     }
     gaps.sort_by(|a, b| a.0.total_cmp(&b.0));
-    // Lay the inverted germ across the windows, advancing its degree cursor so the counter-idea
-    // develops over the whole song rather than resetting each window.
+    gaps
+}
+
+/// Lay a germ-derived line across `windows`, advancing the motif's degree cursor window to window so
+/// the idea UNFOLDS over the song (developing variation, not a loop). Each note snaps to a consonance
+/// of the harmony it lands in (`nearest_stable`) and is kept clearly below the lead so the ear hears
+/// separate streams. `role`/`octave` place the voice in its register (keys answer mid, bass low).
+/// Tagged `role_note = "counter"` with the given `variant`, so the independent argument witness (which
+/// audits only the `"argument"` carrier) never sees it — free realizer territory.
+/// One weaving voice's recipe: which germ-derived `motif` it sings, in which `octave` and `register`
+/// band, in whose `role` seat, tagged with `variant` (for provenance).
+struct WeaveSpec<'a> {
+    motif: &'a super::motif::Motif,
+    octave: i32,
+    role: Role,
+    register: (i32, i32),
+    variant: &'static str,
+}
+
+fn weave_voice(
+    perf: &PerformancePlan,
+    lead: &[Note],
+    windows: &[(f64, f64)],
+    spec: WeaveSpec<'_>,
+) -> Vec<Note> {
+    let WeaveSpec {
+        motif,
+        octave,
+        role,
+        register,
+        variant,
+    } = spec;
+    if motif.degrees.is_empty() {
+        return Vec::new();
+    }
+    let (reg_lo, reg_hi) = register;
     let mut out: Vec<Note> = Vec::new();
     let mut di = 0usize;
-    for (g0, g1) in gaps {
+    for &(g0, g1) in windows {
         let mut at = g0;
         while at < g1 - 0.2 {
-            let idx = di % counter.degrees.len();
-            let deg = counter.degrees[idx];
-            let step = counter.rhythm.get(idx).copied().unwrap_or(0.5).max(0.25) as f64;
+            let idx = di % motif.degrees.len();
+            let deg = motif.degrees[idx];
+            let step = motif.rhythm.get(idx).copied().unwrap_or(0.5).max(0.25) as f64;
             let Some(ctx) = perf.context_at(at) else {
                 break;
             };
-            let raw = perf.region_at(at).degree_pitch(deg, COUNTER_OCTAVE);
+            let raw = perf.region_at(at).degree_pitch(deg, octave);
             let mut p = nearest_stable(ctx, raw);
             if let Some(ln) = nearest_lead_pitch(lead, at) {
-                // Keep the counter clearly below the lead so the ear hears two streams, not one.
-                while p >= ln - 2 {
+                // Keep the voice below the lead so the ear hears separate streams — but not below
+                // this voice's own register (octave shifts preserve the consonant pitch class).
+                while p >= ln - 2 && p - 12 >= reg_lo {
                     p -= 12;
                 }
+            }
+            // Fold into this voice's register band so the three streams stay cleanly separated
+            // (lead high, keys mid, bass low) instead of crowding one low smear.
+            while p > reg_hi {
+                p -= 12;
+            }
+            while p < reg_lo {
+                p += 12;
             }
             let dur = ((g1 - at).min(step) * 0.9).clamp(0.2, 2.0);
             let function = function_over(ctx, p);
@@ -178,8 +205,8 @@ pub(crate) fn realize_countersubject(
                 dur_beats: dur as f32,
                 pitch: p,
                 velocity: COUNTER_VEL,
-                role: Role::Keys,
-                prov: prov("counter", Some("invert")),
+                role,
+                prov: prov("counter", Some(variant)),
                 function,
             });
             at += step;
@@ -187,6 +214,57 @@ pub(crate) fn realize_countersubject(
         }
     }
     out
+}
+
+/// The band WEAVE — the minimal fugal cell extended across the ensemble so the musicians weave around
+/// each other, not just the keys around the lead.
+///
+/// Two germ-derived voices TRADE the lead's open windows: the keys sing the identity inverted (a
+/// contrary-motion partner — a different surface shape, the *same* DNA; mid register) in every other
+/// window, the bass answers with its own germ cell (`bass_cell`, the identity dropped a register —
+/// "same blood") in the windows between. One idea, voiced as three independent lines (lead, keys,
+/// bass) taking turns — counterpoint in service of the one song, never all answering at once (that
+/// is mud, not a conversation). Returns `(keys_counter, bass_counter, bass_windows)`: the caller
+/// installs each on the stage the orchestration authority allows and uses the bass windows to step
+/// the foundation aside where the bass is singing its answer. Off (the default BAND), unused — the
+/// band is byte-for-byte unchanged.
+pub(crate) fn realize_band_weave(
+    perf: &PerformancePlan,
+    lead: &[Note],
+    total_beats: f64,
+) -> (Vec<Note>, Vec<Note>, Vec<(f64, f64)>) {
+    if lead.is_empty() {
+        return (Vec::new(), Vec::new(), Vec::new());
+    }
+    let windows = lead_open_windows(lead, total_beats);
+    let keys_win: Vec<(f64, f64)> = windows.iter().copied().step_by(2).collect();
+    let bass_win: Vec<(f64, f64)> = windows.iter().copied().skip(1).step_by(2).collect();
+    let keys_motif = perf.bank.identity.invert();
+    let keys = weave_voice(
+        perf,
+        lead,
+        &keys_win,
+        WeaveSpec {
+            motif: &keys_motif,
+            octave: COUNTER_OCTAVE,
+            role: Role::Keys,
+            register: COUNTER_REG_KEYS,
+            variant: "invert",
+        },
+    );
+    let bass = weave_voice(
+        perf,
+        lead,
+        &bass_win,
+        WeaveSpec {
+            motif: &perf.bank.bass_cell,
+            octave: COUNTER_OCTAVE_BASS,
+            role: Role::Bass,
+            register: COUNTER_REG_BASS,
+            variant: "bass-cell",
+        },
+    );
+    (keys, bass, bass_win)
 }
 
 /// Release any note whose sustain would carry it more than half a beat into a harmony it does not

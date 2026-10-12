@@ -953,9 +953,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(128.0);
     let table_only = args.iter().any(|a| a == "--table-only");
-    // Opt-in A/B arm: weave a germ-derived countersubject into the band (keys ANSWERS the lead in its
-    // silent gaps). Default off = the byte-exact BAND render; the ear adjudicates the arm against it.
-    let counterpoint = args.iter().any(|a| a == "--counterpoint");
+    // The band WEAVE: germ-derived counter-voices in the keys and bass seats take turns answering the
+    // lead in its open windows. ON BY DEFAULT for the fusion render (the feature is the point — don't
+    // build it then hide it); `--no-counterpoint` renders the no-weave arm for the A/B. The non-fusion
+    // BAND path stays byte-exact regardless: the weave only fires on the opt-in argument route.
+    let counterpoint = !args.iter().any(|a| a == "--no-counterpoint");
     // Arm F audit (harness only, NOT a default): render the SAME Score under an alternate
     // `ProductionControl` (e.g. `--production=nocomp,dry`) to isolate whether the mastering chain
     // flattens role dynamics vs. the Score itself. `normal` = the shipped mix.

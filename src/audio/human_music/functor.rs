@@ -1079,29 +1079,57 @@ fn realize_policy_with_argument(
     // the independent witness that checks it). Read only when an argument is present: every
     // historical route is byte-for-byte unchanged.
     if let Some(argument) = argument {
-        // Opt-in counterpoint: a germ-derived countersubject (the verse germ inverted) takes the keys
-        // seat in the lead's silent gaps, so a second voice ANSWERS the lead instead of the band only
-        // comping under it — the minimal fugal cell. Woven in BEFORE the section-energy arc so the
-        // counter-voice breathes with the band. Off (the default) leaves `keys` untouched.
+        // The band WEAVE: germ-derived counter-voices in the KEYS and BASS seats take turns answering
+        // the lead in its open windows, so the musicians weave around each other — the minimal fugal
+        // cell extended across the ensemble, not just the keys against the lead. Woven in BEFORE the
+        // section-energy arc so the counter-voices breathe with the band. Off (the default) leaves the
+        // band byte-for-byte unchanged.
         if profile.counterpoint {
-            let mut counter = super::comp::realize_countersubject(perf, &lead.notes, total_beats);
-            // The counter is a Keys-seat voice: it sings only where the stage has Keys ON. When the
-            // band strips the keys seat out of a section, the counter drops with it (one unit), never
-            // barging onto a stage the orchestration authority had it off — the law `admit_take`
-            // enforces. Ask the stage first.
-            counter.retain(|c| perf.on_stage(Agent::Keys, c.start_beat));
-            if !counter.is_empty() {
-                // The counter-voice clears only the comp landing on the SAME onset (never two keys
-                // attacks on one instant), then weaves in over whatever comp sustains under it — so a
-                // moving second voice ADDS density rather than replacing the bed. Re-sort to keep the
-                // merged keys line time-ordered.
+            let (mut kc, mut bc, bass_win) =
+                super::comp::realize_band_weave(perf, &lead.notes, total_beats);
+            // Each counter is a seat voice: it sings only where the stage has that seat ON. When the
+            // band strips a seat out of a section, its counter drops with it (one unit), never barging
+            // onto a stage the orchestration authority had off — the law `admit_take` enforces. Ask
+            // the stage first.
+            kc.retain(|c| perf.on_stage(Agent::Keys, c.start_beat));
+            if !kc.is_empty() {
+                // The keys counter clears only the comp on the SAME onset (never two keys attacks on
+                // one instant), then weaves over whatever comp sustains under it — a moving voice ADDS
+                // density rather than replacing the bed. Re-sort to keep the keys line time-ordered.
                 keys.retain(|k| {
-                    !counter
-                        .iter()
-                        .any(|c| (k.start_beat - c.start_beat).abs() < 0.125)
+                    kc.iter()
+                        .all(|c| (k.start_beat - c.start_beat).abs() >= 0.125)
                 });
-                keys.append(&mut counter);
+                keys.append(&mut kc);
                 keys.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+            }
+            bc.retain(|c| perf.on_stage(Agent::Bass, c.start_beat));
+            if !bc.is_empty() {
+                // Where the bass is singing its answer, the bassist steps off timekeeping: clear the
+                // foundation onsets inside those windows (the bass switches from pulse to melody, the
+                // way a real player hands the groove to the kit for a bar), then weave the line in.
+                bass.retain(|b| {
+                    !bass_win
+                        .iter()
+                        .any(|&(g0, g1)| b.start_beat >= g0 - 1e-6 && b.start_beat < g1 - 1e-6)
+                });
+                bass.append(&mut bc);
+                bass.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+            }
+            if score.mono_voice {
+                // The bass sings a melodic answer where it dropped its foundation, so the mono-voice
+                // choke links must be recomputed from the FINAL band — the links the keys-answer loop
+                // left behind still reference foundation notes the weave removed, and the synth asserts
+                // every link endpoint is a real note. (Keys is polyphonic and carries no links; only
+                // the lead and bass do.)
+                let band: Vec<Note> = lead
+                    .notes
+                    .iter()
+                    .chain(&keys)
+                    .chain(&bass)
+                    .copied()
+                    .collect();
+                score.voice_continuity = super::pocket::continuations(&band, &score.phrase_plans);
             }
         }
         scale_backing_by_section_energy(&mut pad, argument);
