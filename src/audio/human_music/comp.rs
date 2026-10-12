@@ -63,11 +63,11 @@ fn lead_in(lead: &[Note], a: f64, b: f64) -> Vec<Note> {
 
 /// Beats of lead silence below which the counter-voice stays quiet (shorter rests are just the
 /// lead's own phrasing, not an opening for a second voice).
-const COUNTER_MIN_GAP: f64 = 0.5;
+const COUNTER_MIN_GAP: f64 = 0.375;
 /// A lead note held at least this long is sustained enough to carry a MOVING counter-line against
 /// it — the classic fugal texture of one voice singing over another's held tone. Below this it is
 /// just a note, and the counter waits for a rest instead.
-const COUNTER_HOLD: f64 = 1.5;
+const COUNTER_HOLD: f64 = 1.25;
 /// How far into a window (after the lead stops, or after a held note begins) the counter waits
 /// before it enters — a breath, so the two voices answer rather than collide on the same instant.
 const COUNTER_LEAD_IN: f64 = 0.25;
@@ -77,7 +77,7 @@ const COUNTER_OCTAVE: i32 = 4;
 /// The counter-voice's base velocity: a second voice CONVERSING with the lead — in its rests and
 /// against its held tones — deliberately under the lead, never competing with it. It still rides
 /// the band's section-energy arc.
-const COUNTER_VEL: f32 = 0.6;
+const COUNTER_VEL: f32 = 0.62;
 
 /// The lead pitch nearest in time to `beat` — the reference the counter-voice separates below.
 fn nearest_lead_pitch(lead: &[Note], beat: f64) -> Option<Midi> {

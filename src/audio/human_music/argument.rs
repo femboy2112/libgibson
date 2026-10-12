@@ -511,11 +511,19 @@ fn collapse_expression(events: &mut [MaterialEvent], span: f64) {
     // grid for now — a structured timing feel touches `onset_iou`, so it is deferred to a pass that
     // re-checks the consequent kinship; dur and accent are read by neither kinship predicate.
     for i in 1..n - 1 {
-        // A long note sings through to just under the next onset (tenuto); a short one lifts a touch
-        // (separation), so the line phrases instead of marching in equal lengths.
+        // The grid opens a hole at each cell boundary (an onset gap this wide). A singer LANDS there
+        // and BREATHES — so land the note (a held arrival) and leave the rest of the gap silent,
+        // instead of tenuto-filling the hole and marching on. Without this the line is all note, no
+        // breath. A long note otherwise sings through to just under the next onset (tenuto); a short
+        // one lifts a touch (separation), so the line phrases instead of marching in equal lengths.
         let gap = events[i + 1].onset - events[i].onset;
         let dur = events[i].dur;
-        let shaped = if dur >= 0.75 {
+        let shaped = if gap >= BREATH_GAP {
+            // Land, then breathe: hold ~1 beat (the teacher's cell landing), leaving ~1 beat of rest;
+            // never hold past the teacher's longest note. Settle the landing's accent into the breath.
+            events[i].accent = (events[i].accent * LANDING_DECAY).clamp(0.0, 1.0);
+            (gap - BREATH_REST).clamp(LANDING_MIN, LANDING_MAX)
+        } else if dur >= 0.75 {
             (gap * 0.97).max(dur)
         } else {
             (gap * 0.72).min(dur).max(0.2)
@@ -523,6 +531,22 @@ fn collapse_expression(events: &mut [MaterialEvent], span: f64) {
         events[i].dur = shaped.clamp(0.05, span - events[i].onset);
     }
 }
+
+/// An onset gap at least this wide is a CELL BREATH the composer's grid opened, not a note to fill:
+/// the interior articulation lands the note and leaves the rest of the gap silent. Below it the gap
+/// is ordinary note-to-note phrasing. The fusion grids leave holes of ~2 beats here and nothing
+/// between ~1 and ~1.5, so this cleanly separates breaths from ordinary spacing.
+const BREATH_GAP: f64 = 1.5;
+/// How much silence a cell breath leaves after the landing (the teacher's major interior breath is
+/// ~1 beat). The landing fills `gap - BREATH_REST`, bounded by [`LANDING_MIN`]/[`LANDING_MAX`].
+const BREATH_REST: f64 = 1.0;
+/// A cell landing holds at least this long (a real arrival, not a clipped note).
+const LANDING_MIN: f64 = 0.75;
+/// …and never longer than the teacher's longest interior note, so wide bridge holes still breathe.
+const LANDING_MAX: f64 = 1.5;
+/// The landing settles as it lands — accent decays into the breath (the teacher lands at ~0.8–0.9 of
+/// the cell peak).
+const LANDING_DECAY: f32 = 0.85;
 
 fn validate_material(source: &MusicalReferent) -> Result<(), ArgumentError> {
     if source.pitch_basis != PitchBasis::Semitones
