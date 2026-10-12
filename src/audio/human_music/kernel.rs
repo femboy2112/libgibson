@@ -974,17 +974,6 @@ fn longform_domain(argument: &CompiledArgument) -> Result<(), KernelError> {
     Ok(())
 }
 
-/// Compress a bounded answer material into a one-beat breath: the answer has up to four events,
-/// so at 1.0 scale its tail (onsets 0, 0.5, 1, 1.5) would spill past the keyboard window. Halving
-/// the onsets and gates packs all four into `[at, at + 1)` — including the event that distinguishes
-/// one phrase's cell from another's (their shared head is the first three events). Pitch is untouched.
-fn breathe_into_window(material: &mut InteractionMaterial) {
-    for e in &mut material.events {
-        e.onset *= 0.5;
-        e.dur *= 0.5;
-    }
-}
-
 /// Perform one admitted source-driven long-form song: two causally-connected episodes in one
 /// continuous 32-beat Score. The lead carries a full VERSE (open) then a distinct HOOK (home); the
 /// band answers per episode under the memory law; the pulse is one shared pocket across the seam.
@@ -1137,10 +1126,14 @@ pub fn perform_song(
         } else {
             (base, Some(cell.clone()))
         };
-        let keys_at = ws + 7.0625; // one sixteenth behind the pulse, inside the lead's breath.
+        // The answer sings across its response window ON the shared grid, from the downbeat of the
+        // episode's second bar — a call-and-response that resolves inside bar 2, not a crammed,
+        // sixteenth-late burst dangling off the end of it. (Keys remain confined to `[4, 8)` per
+        // episode by `validate_song`; this just uses that window honestly instead of its last beat.)
+        let keys_at = ws + 4.0;
         let mut produced = 0usize;
         if !matches!(transform, Transform::Silence) {
-            if let Some(mut material) = material_src.as_ref().and_then(|src| {
+            if let Some(material) = material_src.as_ref().and_then(|src| {
                 super::material::transform_material(
                     MaterialId(perf.materials.len() as u32),
                     src,
@@ -1150,7 +1143,6 @@ pub fn perform_song(
                     3.0,
                 )
             }) {
-                breathe_into_window(&mut material);
                 let aid = action(
                     &mut perf.actions,
                     Agent::Keys,
@@ -1205,29 +1197,43 @@ pub fn perform_song(
         ));
     }
 
-    // --- BASS: one uninterrupted foundation lane over all eight bars, plus a chromatic approach
-    // planned against the hook's downbeat (the only episode seam here). ---
+    // --- BASS: one uninterrupted WALKING foundation over all eight bars — a quarter-note line that
+    // spells the travelling harmony (root, fifth, third) and steps into each next downbeat — plus a
+    // chromatic approach planned against the hook's downbeat (the only episode seam here). ---
     let mut bass = Vec::new();
     let bars_per_episode = (EPISODE_BEATS / 4.0) as usize;
-    for bar in 0..(episodes * bars_per_episode) {
+    let total_bars = episodes * bars_per_episode;
+    for bar in 0..total_bars {
         let at = bar as f64 * 4.0;
         let ctx = perf.context_at(at).unwrap();
-        let root = register(ctx.chord.root_pc, 36);
         let tones = ctx.chord.pitch_classes();
-        for (offset, pitch, velocity) in [
-            (0.0, root, 0.76),
-            (
-                2.0,
-                register(tones[if bar % 2 == 0 { 1 } else { tones.len() - 1 }], 36),
-                0.57,
-            ),
+        let root = register(ctx.chord.root_pc, 36);
+        let fifth = register(tones[2.min(tones.len().saturating_sub(1))], 36);
+        let third = register(tones[1.min(tones.len().saturating_sub(1))], 36);
+        // Beat four leads by a half-step into the next bar's root; the final bar has no successor,
+        // so it settles on the fifth rather than leading away from home.
+        let beat_four = match (bar + 1 < total_bars)
+            .then(|| register(perf.context_at(at + 4.0).unwrap().chord.root_pc, 36))
+        {
+            Some(next) if next > 36 => next - 1,
+            Some(next) => next + 1,
+            None => fifth,
+        };
+        // Root on the downbeat is the required harmonic anchor (held a touch longer); the three
+        // walking tones are punchy quarters. One monophonic line in the bass register — motion that
+        // voices the changes, never a doubled or sub-octave weave.
+        for (offset, pitch, dur, velocity) in [
+            (0.0, root, 0.8_f32, 0.76_f32),
+            (1.0, fifth, 0.45, 0.56),
+            (2.0, third, 0.45, 0.60),
+            (3.0, beat_four.clamp(36, 55), 0.45, 0.54),
         ] {
             let prov = provenance(&perf, at + offset, "foundation");
             bass.push(pitched(
                 &perf,
                 Role::Bass,
                 at + offset,
-                if offset == 0.0 { 1.25 } else { 0.8 },
+                dur,
                 pitch,
                 velocity,
                 prov,
@@ -1276,6 +1282,11 @@ pub fn perform_song(
     // consumes ONLY that episode's completed keys window (the causal law, preserved per episode). ---
     for step in 0..(32 * episodes) {
         let at = step as f64 * 0.5;
+        // One shared pocket that BREATHES: a gentle crescendo across each episode toward its
+        // cadence, reset at the seam. This is a dynamic shape, not a per-section energy fader — the
+        // pattern is unchanged, only its loudness leans forward. Deterministic in `at`, so the pulse
+        // stays bit-identical regardless of any band response (the causal witness depends on this).
+        let swell = 0.86 + 0.18 * (at.rem_euclid(EPISODE_BEATS) / EPISODE_BEATS) as f32;
         for (play, voice, velocity) in [
             (
                 true,
@@ -1289,7 +1300,7 @@ pub fn perform_song(
                 score.drums.push(DrumHit {
                     start_beat: at,
                     voice,
-                    velocity,
+                    velocity: (velocity * swell).min(1.0),
                     prov: provenance(&perf, at, "pulse"),
                 });
             }
