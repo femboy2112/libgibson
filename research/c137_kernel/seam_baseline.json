@@ -1,0 +1,55 @@
+{
+  "pinned_head": "29527a891ed7bfed9657a99046884a61670897e3",
+  "scope": "isolated transcribed counterexamples; NOT Rust execution or listening",
+  "tests": 5,
+  "failures": 0,
+  "errors": 0,
+  "source": {
+    "status": "PINNED_SOURCE_CHARACTERIZED",
+    "files": {
+      "src/audio/human_music/functor.rs": {
+        "status": "MATCH",
+        "expected": "42e5f61612826b5cf2ac9c46f02edf44919935c4",
+        "actual": "42e5f61612826b5cf2ac9c46f02edf44919935c4"
+      },
+      "src/audio/human_music/score.rs": {
+        "status": "MATCH",
+        "expected": "1cf29e7cfe2195670d975193eccb5c0a098897b9",
+        "actual": "1cf29e7cfe2195670d975193eccb5c0a098897b9"
+      },
+      "src/audio/human_music/performance.rs": {
+        "status": "MATCH",
+        "expected": "597ab7a1cec080b3d0d3ce070e9aa7ea1d95fcb5",
+        "actual": "597ab7a1cec080b3d0d3ce070e9aa7ea1d95fcb5"
+      },
+      "src/audio/human_music/argument.rs": {
+        "status": "MATCH",
+        "expected": "2e56d03402f7084013cf1f2817cfd8f528a94664",
+        "actual": "2e56d03402f7084013cf1f2817cfd8f528a94664"
+      },
+      "src/audio/human_music/comp.rs": {
+        "status": "MATCH",
+        "expected": "1a9a35e13b3d075258a16c0c980bdf6c0907abb9",
+        "actual": "1a9a35e13b3d075258a16c0c980bdf6c0907abb9"
+      },
+      "src/audio/human_music/bass.rs": {
+        "status": "MATCH",
+        "expected": "b578510c6e283500a9511ee5b35a79c1ff3fed92",
+        "actual": "b578510c6e283500a9511ee5b35a79c1ff3fed92"
+      }
+    },
+    "facts": {
+      "legacy_hearing_projection_omits_velocity": true,
+      "drummer_hears_keys_before_late_counter": true,
+      "final_gain_postdates_drum_hearing": true,
+      "argument_final_chord_after_general_plan": true,
+      "driver_enabled_after_general_plan": true,
+      "bass_weave_explicitly_held": true,
+      "keys_listen_by_onset_count": true,
+      "bass_drive_fixed_eighth_grid": true,
+      "admit_take_only_tests_stage": true,
+      "old_coupledR8_is_a_rejected_control": true
+    }
+  },
+  "test_log": "test_empty_checkout_refuses_source_assertion (__main__.Counterexamples.test_empty_checkout_refuses_source_assertion) ... ok\ntest_existing_hearing_detects_note_insertion_but_only_if_checked (__main__.Counterexamples.test_existing_hearing_detects_note_insertion_but_only_if_checked) ... ok\ntest_legacy_hearing_cannot_see_velocity_change (__main__.Counterexamples.test_legacy_hearing_cannot_see_velocity_change) ... ok\ntest_noop_and_causal_edit_are_different_operations (__main__.Counterexamples.test_noop_and_causal_edit_are_different_operations) ... ok\ntest_same_energy_and_density_do_not_determine_semantic_response (__main__.Counterexamples.test_same_energy_and_density_do_not_determine_semantic_response) ... ok\n\n----------------------------------------------------------------------\nRan 5 tests in 0.003s\n\nOK\n"
+}

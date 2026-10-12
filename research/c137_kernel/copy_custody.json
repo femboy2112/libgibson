@@ -1,0 +1,20 @@
+[
+  {
+    "source": "/home/leah/LibGibson.kernel/target/c137-audition-ac97bcc",
+    "destination": "/media/leah/SPANKBANK/LibGibson-c137/ac97bcc/audition",
+    "files_verified": 178,
+    "all_sha256_equal": true
+  },
+  {
+    "source": "/home/leah/LibGibson.kernel-bass/target/c137-controls",
+    "destination": "/media/leah/SPANKBANK/LibGibson-c137/ac97bcc/pr102-controls",
+    "files_verified": 40,
+    "all_sha256_equal": true
+  },
+  {
+    "source": "/home/leah/LibGibson.kernel-bass/target/reconstructed-teacher",
+    "destination": "/media/leah/SPANKBANK/LibGibson-c137/ac97bcc/reproduced-teacher",
+    "files_verified": 12,
+    "all_sha256_equal": true
+  }
+]

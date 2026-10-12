@@ -67,15 +67,15 @@ fn perturbation(a: &Composition, b: &Composition) -> String {
         });
         let same = |n: &Note, m: &Note| {
             n.prov == m.prov
-                && (n.pitch == m.pitch && n.start_beat == m.start_beat
-                    || n.pitch == m.pitch
-                        && (n.prov.role_note == "unison"
-                            || b.score.expression_decisions.iter().any(|d| {
-                                d.before.note.role == role
-                                    && d.before.note.start_beat == n.start_beat
-                                    && d.after
-                                        .is_some_and(|after| after.start_beat == m.start_beat)
-                            })))
+                && n.pitch == m.pitch
+                && (n.start_beat == m.start_beat
+                    || n.prov.role_note == "unison"
+                    || b.score.expression_decisions.iter().any(|d| {
+                        d.before.note.role == role
+                            && d.before.note.start_beat == n.start_beat
+                            && d.after
+                                .is_some_and(|after| after.start_beat == m.start_beat)
+                    }))
         };
         let mut dp = vec![vec![0usize; new.len() + 1]; old.len() + 1];
         for i in (0..old.len()).rev() {

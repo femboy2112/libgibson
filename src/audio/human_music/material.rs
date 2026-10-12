@@ -731,7 +731,7 @@ fn material_path_cost(
         if (from - to).abs() > 5 {
             cost += ((from - to).abs() - 5) as f32 * 0.15;
         }
-        if !member && !(target && smooth) {
+        if !(member || target && smooth) {
             cost += 1.0;
         }
         if !guide && !smooth {

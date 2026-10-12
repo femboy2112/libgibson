@@ -1,0 +1,100 @@
+{
+  "source_sha": "ac97bccba88beb768720c67ac64200f6778d0584",
+  "started_utc": "2026-10-12T03:54:42.871496+00:00",
+  "rustc": "rustc 1.97.0-nightly (a5c825cd8 2026-04-14)\nbinary: rustc\ncommit-hash: a5c825cd824ee0ef9463021078a2f464b4cc1a0d\ncommit-date: 2026-04-14\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.0-nightly\nLLVM version: 22.1.2\n",
+  "steps": [
+    {
+      "name": "fmt",
+      "command": [
+        "cargo",
+        "fmt",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 3.6
+    },
+    {
+      "name": "examples",
+      "command": [
+        "cargo",
+        "build",
+        "--examples"
+      ],
+      "exit_code": 0,
+      "seconds": 61.805
+    },
+    {
+      "name": "tests",
+      "command": [
+        "cargo",
+        "test"
+      ],
+      "exit_code": 0,
+      "seconds": 421.057
+    },
+    {
+      "name": "example-tests",
+      "command": [
+        "cargo",
+        "test",
+        "--example",
+        "fx_lab",
+        "--example",
+        "skin_gallery",
+        "--example",
+        "polished_agent_ui",
+        "--example",
+        "ui_showcase",
+        "--example",
+        "large_collection"
+      ],
+      "exit_code": 0,
+      "seconds": 9.946
+    },
+    {
+      "name": "rustdoc",
+      "command": [
+        "cargo",
+        "doc",
+        "--no-deps"
+      ],
+      "exit_code": 0,
+      "seconds": 4.824
+    },
+    {
+      "name": "release",
+      "command": [
+        "cargo",
+        "build",
+        "--release"
+      ],
+      "exit_code": 0,
+      "seconds": 102.964
+    },
+    {
+      "name": "r17-render",
+      "command": [
+        "cargo",
+        "run",
+        "--release",
+        "--example",
+        "pocket_music_lab",
+        "--",
+        "--render",
+        "--out=target/c137-r17-replay"
+      ],
+      "exit_code": 0,
+      "seconds": 211.517
+    },
+    {
+      "name": "r17-freeze",
+      "command": [
+        "python3",
+        "scripts/verify-pocket-freeze.py",
+        "target/c137-r17-replay"
+      ],
+      "exit_code": 0,
+      "seconds": 0.567
+    }
+  ]
+}

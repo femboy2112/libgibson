@@ -329,7 +329,7 @@ fn realize_impl(
             let remaining: Vec<_> = working
                 .iter()
                 .enumerate()
-                .filter(|(k, _)| !removed[*k] && !(*k >= first_connector && *k < stop))
+                .filter(|(k, _)| !(removed[*k] || *k >= first_connector && *k < stop))
                 .map(|(_, e)| *e)
                 .collect();
             if identities_survive(&line, &remaining) {

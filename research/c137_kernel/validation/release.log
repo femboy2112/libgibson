@@ -1,0 +1,11 @@
+   Compiling libc v0.2.189
+   Compiling errno v0.3.14
+   Compiling signal-hook-registry v1.4.8
+   Compiling mio v1.2.3
+   Compiling signal-hook v0.3.18
+   Compiling parking_lot_core v0.9.12
+   Compiling parking_lot v0.12.5
+   Compiling signal-hook-mio v0.2.5
+   Compiling libgibson v0.4.0 (/home/leah/LibGibson.kernel)
+   Compiling crossterm v0.29.0
+    Finished `release` profile [optimized] target(s) in 1m 42s
