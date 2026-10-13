@@ -1572,6 +1572,7 @@ pub fn perform_song(
     let mut bass = Vec::new();
     let bars_per_episode = (EPISODE_BEATS / 4.0) as usize;
     let total_bars = episodes * bars_per_episode;
+    let bass_scale = Scale::new(world.tonic_pc, world.mode);
     for bar in 0..total_bars {
         let at = bar as f64 * 4.0;
         let ctx = perf.context_at(at).unwrap();
@@ -1581,15 +1582,30 @@ pub fn perform_song(
         let root = register(ctx.chord.root_pc, 36);
         let fifth = register(tones[2.min(tones.len().saturating_sub(1))], 36);
         let third = register(tones[1.min(tones.len().saturating_sub(1))], 36);
-        // Beat four leads by a half-step into the next bar's root; the final bar has no successor,
-        // so it settles on the fifth rather than leading away from home.
-        let beat_four = match (bar + 1 < total_bars)
-            .then(|| register(perf.context_at(at + 4.0).unwrap().chord.root_pc, 36))
-        {
-            Some(next) if next > 36 => next - 1,
-            Some(next) => next + 1,
-            None => fifth,
-        };
+        // Beat four leads into the next bar. With the foundation ANTICIPATING the destination
+        // (`anticipate_bass`), its approach expresses WHERE the harmony is going: the dominant into a
+        // home arrival (the V->I the ear hears coming), the leading tone a half-step below into a drive
+        // (tension), a diatonic step into a passing change (a smooth walk). Without it (the archived
+        // control), it is the blind chromatic half-step into whatever comes next. Either way it is one
+        // monophonic note in the bass register; the final bar has no successor, so it settles on the
+        // fifth rather than leading away from home.
+        let beat_four =
+            match (bar + 1 < total_bars).then(|| perf.context_at(at + 4.0).unwrap().chord) {
+                None => fifth,
+                Some(next) => {
+                    let r = register(next.root_pc, 36);
+                    let chromatic = if r > 36 { r - 1 } else { r + 1 };
+                    if argument.anticipate_bass {
+                        match harmonic_drive(&next, world.tonic_pc) {
+                            HarmonicDrive::Home => register((next.root_pc + 7).rem_euclid(12), 36),
+                            HarmonicDrive::Driving => chromatic,
+                            HarmonicDrive::Building => bass_scale.nearest_scale_pitch(r - 2),
+                        }
+                    } else {
+                        chromatic
+                    }
+                }
+            };
         // At HOME the bass lays back: the root rings and the fifth answers on beat three, leaving the
         // tonic room to breathe (the fifth is clipped short of beat four, clearing any planned seam
         // pickup). Everywhere else it walks the changes. One monophonic line in the bass register —

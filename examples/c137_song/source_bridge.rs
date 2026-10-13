@@ -273,5 +273,7 @@ pub fn source_with_bridge_seed_phrased(
     compiled.answer_breaths = matches!(phrasing, Phrasing::Ensemble);
     // Expressive/Ensemble: the keyboard comps the holes (the plain control keeps the sparse keyboard).
     compiled.comp_keys = phrasing.lead_is_expressive();
+    // Expressive/Ensemble: the bass anticipates the harmonic destination (plain keeps the archived line).
+    compiled.anticipate_bass = phrasing.lead_is_expressive();
     compiled
 }

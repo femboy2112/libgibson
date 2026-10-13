@@ -401,6 +401,14 @@ pub struct CompiledArgument {
     /// built with an EXPRESSIVE lead (`Phrasing::Expressive`/`Ensemble`) sets it true, so the plain
     /// control stays byte-identical to every historical render.
     pub comp_keys: bool,
+    /// Opt-in BASS ANTICIPATION directive: when true, the foundation's walking approach leans toward
+    /// the harmonic DESTINATION — the dominant into a home arrival (V->I), the leading tone into a
+    /// drive, a diatonic step into a passing change — instead of a blind chromatic half-step into
+    /// whatever comes next. Same note count and register (a redistribution of the approach, not more
+    /// notes); the downbeat root anchor and the monophonic line are untouched. `false` (the default,
+    /// set by `compile`) keeps the archived approach, so the plain control stays byte-identical; a
+    /// source built with an EXPRESSIVE lead sets it true.
+    pub anticipate_bass: bool,
 }
 
 impl CompiledArgument {
@@ -1013,6 +1021,9 @@ impl MusicalArgument {
             // Off by default — the plain control keeps its frozen, sparse keyboard. An EXPRESSIVE or
             // ENSEMBLE source flips this on after compiling, so the keyboard comps under home arrivals.
             comp_keys: false,
+            // Off by default — the plain control keeps its archived foundation (byte-identical). An
+            // EXPRESSIVE/ENSEMBLE source flips this on, so the bass anticipates the harmonic destination.
+            anticipate_bass: false,
         })
     }
 

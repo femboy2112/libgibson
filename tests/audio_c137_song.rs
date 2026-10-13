@@ -1401,3 +1401,70 @@ fn the_keyboard_comps_with_real_chord_voicings() {
         }
     }
 }
+
+// ======================================================================================
+// CP3 (bass) — the foundation anticipates the harmonic destination.
+//
+// Where the archived control's walking approach steps a blind chromatic half-step into the next
+// downbeat, the Full foundation leans toward where the music is GOING: into a home (tonic) arrival
+// it plays the destination's DOMINANT — the V the ear hears resolving to the I. Same note count and
+// register (a redistribution, not more notes); gated so the plain control stays byte-identical.
+// ======================================================================================
+
+#[test]
+fn the_bass_anticipates_the_home_arrival() {
+    const TONIC: i32 = 9; // A — the world's tonic
+    let dominant = (TONIC + 7).rem_euclid(12); // E — the V the foundation leans on
+    let chromatic = (TONIC - 1).rem_euclid(12); // G# — the archived blind leading tone
+    for seed in [2112u64, 7, 99] {
+        let full = render_cfg(&C137Preset::full().resolve(), seed);
+        let plain = kernel::perform_song(
+            &source_bridge::source_phrased(seed, Phrasing::Plain),
+            &world(),
+        )
+        .unwrap();
+        let bass = |score: &Score| -> Vec<(f64, i32)> {
+            let mut v: Vec<(f64, i32)> = score
+                .role_notes(Role::Bass)
+                .map(|n| (n.start_beat, n.pitch.rem_euclid(12)))
+                .collect();
+            v.sort_by(|a, b| a.0.total_cmp(&b.0));
+            v
+        };
+        let fb = bass(full.score());
+        let pb = bass(plain.score());
+        // The bass note nearest a target beat (the pocket leans attacks a hair off the grid).
+        let near = |v: &[(f64, i32)], target: f64| -> Option<i32> {
+            v.iter()
+                .find(|(b, _)| (b - target).abs() < 0.3)
+                .map(|(_, pc)| *pc)
+        };
+        let total_bars = (full.score().total_beats / 4.0).round() as i64;
+        let mut anticipations = 0;
+        for bar in 1..total_bars {
+            // a tonic (home) downbeat arrival — the destination the foundation is leaning toward
+            if near(&fb, bar as f64 * 4.0) != Some(TONIC) {
+                continue;
+            }
+            // the previous bar's beat four — present only if that bar WALKED (a home bar lays back on
+            // root + fifth and has no beat four; its seam pickup is a separate, unchanged gesture)
+            let beat_four = (bar - 1) as f64 * 4.0 + 3.0;
+            if let Some(f_pc) = near(&fb, beat_four) {
+                assert_eq!(
+                    f_pc, dominant,
+                    "seed {seed}: Full bass into the tonic at bar {bar} must lean on the dominant (V->I)"
+                );
+                assert_eq!(
+                    near(&pb, beat_four),
+                    Some(chromatic),
+                    "seed {seed}: the archived control steps a blind chromatic leading tone there, not the V"
+                );
+                anticipations += 1;
+            }
+        }
+        assert!(
+            anticipations > 0,
+            "seed {seed}: the foundation must anticipate at least one home arrival with its dominant"
+        );
+    }
+}
