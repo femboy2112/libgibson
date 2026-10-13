@@ -11,6 +11,9 @@
 
 #[path = "c137_song/source.rs"]
 mod source;
+// This fixture is shared with the integration tests via `#[path]`; the example binary drives it
+// through `source`/`source_with_bridge_seed`, so its test-facing entry points read as unused here.
+#[allow(dead_code)]
 #[path = "c137_song/source_bridge.rs"]
 mod source_bridge;
 
@@ -31,6 +34,11 @@ struct Options {
     seeds: Vec<u64>,
     tempo: f32,
     bars: u32,
+    /// The bridge motif's seed, for the earned-return counterfactual (only used by `--bars=16`).
+    /// `None` ties the bridge to the song seed (the shipped arc); `Some(bs)` swaps in a different
+    /// LAWFUL bridge over the same chart and the same returning hook, so two renders isolate what
+    /// the specific bridge changes about the home-coming.
+    bridge_seed: Option<u64>,
 }
 
 impl Options {
@@ -43,6 +51,7 @@ impl Options {
             // verse→hook→bridge→return arc is an OPT-IN A/B arm (`--bars=16`); it is unheard until
             // its listening verdict, so it is never the silent default.
             bars: 8,
+            bridge_seed: None,
         };
         for arg in std::env::args().skip(1) {
             if let Some(value) = arg.strip_prefix("--out=") {
@@ -62,6 +71,8 @@ impl Options {
                 if !matches!(options.bars, 8 | 16) {
                     return Err("--bars must be 8 (verse→hook control) or 16 (full arc)".into());
                 }
+            } else if let Some(value) = arg.strip_prefix("--bridge-seed=") {
+                options.bridge_seed = Some(value.parse()?);
             } else {
                 return Err(format!("unknown argument: {arg}").into());
             }
@@ -147,7 +158,10 @@ fn main() -> Result<()> {
 
     for seed in &options.seeds {
         let candidate_source = if options.bars == 16 {
-            source_bridge::source(*seed)
+            match options.bridge_seed {
+                Some(bridge_seed) => source_bridge::source_with_bridge_seed(*seed, bridge_seed),
+                None => source_bridge::source(*seed),
+            }
         } else {
             source::source(*seed)
         };

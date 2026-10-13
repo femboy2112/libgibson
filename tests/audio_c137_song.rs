@@ -671,3 +671,53 @@ fn a_return_that_abandons_the_hook_is_rejected() {
         "a return that wanders off the hook must fail the same-head law"
     );
 }
+
+// ================================================================================================
+// THE EARNED RETURN — the home-coming carries a consequence of the SPECIFIC bridge, not just a
+// `depends_on` label. Two LAWFUL bridges over the same verse, hook, chart and the same returning
+// hook must produce a DIFFERENT return performance, in a Score-observable way that is not the lead
+// melody (which stays the exact hook) and not mere metadata or loudness. The mechanism: the return
+// keys re-enter from the pitch the specific bridge left hanging open and resolve it into the home
+// harmony, so a different journey resolves differently. (Directive §4 / audit control #1 & T8.)
+// ================================================================================================
+#[test]
+fn lawful_bridge_variants_change_the_return() {
+    let seed = 2112u64;
+    // Two lawful bridges: identical verse/hook/chart/returning-hook, only the bridge MOTIF differs
+    // (its own seed). Both perform — so both are legal arguments (the departure/return laws hold).
+    let b1 = source_bridge::source_with_bridge_seed(seed, seed);
+    let b2 = source_bridge::source_with_bridge_seed(seed, 9001);
+    let t1 = kernel::perform_song(&b1, &world()).unwrap();
+    let t2 = kernel::perform_song(&b2, &world()).unwrap();
+    let (s1, s2) = (t1.score(), t2.score());
+
+    // The counterfactual is real: the two bridge motifs genuinely differ (not a relabel).
+    assert_ne!(
+        pitches(s1, Role::Lead, 32.0, 48.0),
+        pitches(s2, Role::Lead, 32.0, 48.0),
+        "the two bridge motifs must differ for this to be a counterfactual"
+    );
+    // Everything BEFORE the bridge is untouched by the bridge seed — the verse and first hook are
+    // identical, so any later difference is attributable to the bridge alone.
+    assert_eq!(
+        pitches(s1, Role::Lead, 0.0, 32.0),
+        pitches(s2, Role::Lead, 0.0, 32.0),
+        "the verse and first hook must not depend on the bridge seed"
+    );
+    // The returning HOOK melody is the exact same tune under both bridges — the headline is NOT what
+    // changes (directive T8: a louder or re-pitched return would be a different, illegitimate claim).
+    assert_eq!(
+        pitches(s1, Role::Lead, 48.0, 64.0),
+        pitches(s2, Role::Lead, 48.0, 64.0),
+        "the return LEAD must be the identical hook under both bridges"
+    );
+    // THE EARNED RETURN: the return-window keys DIFFER between the two journeys — a witnessed,
+    // Score-observable consequence of WHICH bridge was travelled. This is RED when the bridge only
+    // feeds a formal `depends_on` label (the keys would be identical) and GREEN once the bridge's
+    // hanging tendency actually drives the home-coming's accompaniment.
+    assert_ne!(
+        keys_in(&t1, 48.0, 64.0),
+        keys_in(&t2, 48.0, 64.0),
+        "the return accompaniment must depend on the SPECIFIC bridge, not just its dependency edge"
+    );
+}

@@ -60,6 +60,17 @@ const BRIDGE_PROG: [(i32, Quality); 4] = [
 /// control's lead density. Factored out so the red tests can assert the departure and return laws on
 /// the pre-compiled argument.
 pub fn argument(seed: u64) -> (MusicalArgument, SongMap) {
+    // The shipped arc derives the bridge from the SAME seed as the verse/hook pair.
+    argument_with_bridge_seed(seed, seed)
+}
+
+/// The counterfactual generalization of [`argument`]: the verse, hook, route and section structure
+/// are a pure function of `seed`, but the BRIDGE motif is generated from `bridge_seed`. Two different
+/// `bridge_seed`s give two LAWFUL bridges (each shares a hook contour cell, lifts, ends open, stays
+/// in scale — the `is_departure` law) over the SAME chart and the SAME returning hook. This is the
+/// lever the earned-return counterfactual pulls: hold the hook and the return fixed, vary only the
+/// journey, and ask whether the home-coming actually carries a consequence of where the band went.
+pub fn argument_with_bridge_seed(seed: u64, bridge_seed: u64) -> (MusicalArgument, SongMap) {
     let trace = SemanticTrace {
         total_beats: 64.0,
         events: vec![
@@ -99,7 +110,7 @@ pub fn argument(seed: u64) -> (MusicalArgument, SongMap) {
     // register, ends open) and is itself developed (pocket + dynamics, no embellishment — it stays
     // thin so the texture contrast carries the phase change). The return reuses the hook referent.
     let pair = generate_developed_pair(seed, 16.0, 4.0, &VERSE_PROG, &HOOK_PROG);
-    let bridge_events = generate_developed_bridge(seed, &pair.hook, 16.0, 4.0, &BRIDGE_PROG);
+    let bridge_events = generate_developed_bridge(bridge_seed, &pair.hook, 16.0, 4.0, &BRIDGE_PROG);
     let verse = MusicalReferent {
         id: ReferentId(0),
         pitch_basis: PitchBasis::Semitones,
@@ -209,7 +220,14 @@ pub fn argument(seed: u64) -> (MusicalArgument, SongMap) {
 }
 
 pub fn source(seed: u64) -> CompiledArgument {
-    let (argument, song) = argument(seed);
+    source_with_bridge_seed(seed, seed)
+}
+
+/// [`source`] with the bridge motif drawn from `bridge_seed` — the compiled counterfactual arm. The
+/// route (verse ++ hook ++ bridge ++ hook) is identical for every `bridge_seed`, so only the bridge's
+/// realized motif (and anything the band lawfully derives from it) changes between arms.
+pub fn source_with_bridge_seed(seed: u64, bridge_seed: u64) -> CompiledArgument {
+    let (argument, song) = argument_with_bridge_seed(seed, bridge_seed);
     let mut compiled = argument
         .compile(&song)
         .expect("seeded four-section long-form source compiles");
