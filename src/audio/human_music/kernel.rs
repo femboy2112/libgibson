@@ -1639,11 +1639,25 @@ pub fn perform_song(
             HarmonicDrive::Driving => 3,
         };
         // The band HEARS the lead breathe: where an expressive lead has opened a real silence, the
-        // drummer steps INTO it with a full-voiced ANSWER on its OWN budget — so even a home bar
-        // (which otherwise lays out at comp budget 0) speaks, and a breath answer never spends the
-        // comp budget nor the reverse. Off unless the source asked for it (`answer_breaths`), and
-        // read from the LEAD only, so the keys-independent pulse is untouched.
-        let breath_budget = if argument.answer_breaths { 2 } else { 0 };
+        // drummer steps INTO it with a full-voiced ANSWER on its OWN budget — a breath answer never
+        // spends the comp budget nor the reverse. Off unless the source asked for it
+        // (`answer_breaths`), and read from the LEAD only, so the keys-independent pulse is untouched.
+        //
+        // But the band answers a QUESTION, not a resolution. The breath is LICENSED only where the
+        // harmony is still open — a predominant reaching, a dominant driving, the bright non-home
+        // arrival — i.e. anywhere the lead's statement left something hanging. On a true home
+        // resolution (`HarmonicDrive::Home`: the tonic landing, degree 0 and not a secondary
+        // dominant) the breath is left UNANSWERED: the lead said its piece and came home, and the
+        // band respects that silence rather than filling it (the teacher lays the kit out at the home
+        // outro). So the answer is bound to the source harmony on the route, not to bare silence — and
+        // some breaths are deliberately never answered. (The witness `the_band_answers_only_the_…`
+        // pins this; mutating a bar's route home↔open moves the answer, proving it is not silence-blind.)
+        let breath_licensed = !matches!(drive, HarmonicDrive::Home);
+        let breath_budget = if argument.answer_breaths && breath_licensed {
+            2
+        } else {
+            0
+        };
         let mut placed = 0;
         let mut answered = 0;
         for s in [2u32, 6, 10, 14, 7, 11] {

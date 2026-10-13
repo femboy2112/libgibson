@@ -1170,3 +1170,109 @@ fn d7_determinism() {
         );
     }
 }
+
+// ======================================================================================
+// CP2 — honest, source-grounded breath causality.
+//
+// The band answers a QUESTION, not a landing: a breath is answered only where it sits in a
+// genuine lead silence AND the bar's harmony is still open (not a home-tonic resolution). Some
+// breaths are deliberately never answered — silence is a legitimate response. These two tests
+// are the independent source/Score witness + the falsifier that proves the answer is bound to
+// the source harmony, not blind to it.
+// ======================================================================================
+
+/// Does `chord` land home (a tonic resolution: degree 0 and not a secondary dominant)? Mirrors the
+/// kernel's `harmonic_drive` Home test, computed independently here from the committed Score.
+fn is_home_resolution(root_pc: i32, quality: Quality, tonic: i32) -> bool {
+    let degree = (root_pc - tonic).rem_euclid(12);
+    degree == 0 && !matches!(quality, Quality::Dom7 | Quality::Dom9)
+}
+
+/// CP2 witness — the permitted breath-response relationship, read independently from the Score:
+/// every "answer" stroke (a) sits in a genuine lead breath and (b) is on an OPEN bar, never a home
+/// resolution. This is what makes the answer source-grounded rather than a blind silence filler.
+#[test]
+fn the_band_answers_only_the_unresolved_breaths() {
+    let tonic = 9i32;
+    for seed in [2112u64, 7, 99] {
+        let t = render_cfg(&C137Preset::full().resolve(), seed);
+        let s = t.score();
+        let lead: Vec<_> = s.role_notes(Role::Lead).collect();
+        let answers: Vec<f64> = s
+            .drums
+            .iter()
+            .filter(|d| d.prov.role_note == "answer")
+            .map(|d| d.start_beat)
+            .collect();
+        assert!(
+            !answers.is_empty(),
+            "seed {seed}: the ensemble must answer some breaths"
+        );
+        for &b in &answers {
+            // (a) a genuine lead silence at the grid slot the answer was placed on (mirrors the
+            // kernel's `lead_silent_at`: nothing sounding across it within a small margin).
+            let grid = (b * 4.0).round() / 4.0;
+            let sounding = lead.iter().any(|n| {
+                grid >= n.start_beat - 0.08 && grid <= n.start_beat + f64::from(n.dur_beats) + 0.08
+            });
+            assert!(
+                !sounding,
+                "seed {seed}: answer at {b:.3} must sit in a genuine lead breath"
+            );
+            // (b) licensed: the covering chord is NOT a home resolution.
+            let bar_start = (b / 4.0).floor() * 4.0;
+            let chord = s
+                .chords
+                .iter()
+                .find(|c| {
+                    c.start_beat <= bar_start + 1e-9
+                        && bar_start < c.start_beat + f64::from(c.dur_beats)
+                })
+                .expect("a chord covers every bar");
+            assert!(
+                !is_home_resolution(chord.chord.root_pc, chord.chord.quality, tonic),
+                "seed {seed}: answer at {b:.3} must NOT fall on a home resolution (left in peace)"
+            );
+        }
+    }
+}
+
+/// CP2 falsifier — a changed harmonic moment with the SAME lead (same onsets, pitches, silences)
+/// changes the response: flip one open bar to a home resolution and the answer there must vanish.
+/// The drummer is not blind to whether the moment is a question or a landing.
+#[test]
+fn a_resolved_moment_is_left_in_peace() {
+    let seed = 2112u64;
+    let answers_in = |t: &CommittedSong, lo: f64, hi: f64| {
+        t.score()
+            .drums
+            .iter()
+            .filter(|d| d.prov.role_note == "answer" && d.start_beat >= lo && d.start_beat < hi)
+            .count()
+    };
+    // Bar 1 (route index 1 = the verse's predominant) is OPEN and carries a breath answer.
+    let open = kernel::perform_song(
+        &source_bridge::source_phrased(seed, Phrasing::Ensemble),
+        &world(),
+    )
+    .unwrap();
+    assert!(
+        answers_in(&open, 4.0, 8.0) > 0,
+        "precondition: the open predominant bar is answered"
+    );
+    // Flip ONLY bar 1's harmony to the home tonic (a lawful chord); the lead is untouched.
+    let mut resolved = source_bridge::source_phrased(seed, Phrasing::Ensemble);
+    resolved.route[1] = (0, Quality::Min);
+    let resolved_take = kernel::perform_song(&resolved, &world()).unwrap();
+    assert_eq!(
+        answers_in(&resolved_take, 4.0, 8.0),
+        0,
+        "a breath over a home resolution must be left UNANSWERED"
+    );
+    // The lead is byte-identical: the response moved because the HARMONY moved, not the call's notes.
+    assert_eq!(
+        lane(open.score(), Role::Lead),
+        lane(resolved_take.score(), Role::Lead),
+        "the lead (onsets, pitches, durations, silences) is unchanged between the two arms"
+    );
+}
