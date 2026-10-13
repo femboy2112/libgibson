@@ -417,6 +417,16 @@ pub struct CompiledArgument {
     /// `compile`) keeps the archived fill, so the plain control stays byte-identical; a source built
     /// with an EXPRESSIVE lead sets it true.
     pub translate_lead_rhythm: bool,
+    /// Opt-in SOURCE-GROUNDED ANSWER directive: when true, the drummer's breath answer is no longer a
+    /// fixed-slot ghost fired into any open bar (which answered nothing in particular), but a genuine
+    /// ANSWER to the lead's question — it quotes the lead's first-half gesture a half-bar later, voiced
+    /// by that gesture's contour, and realizes a real `ActionKind::Answer` that CREDITS the lead
+    /// statement's call (the existing Action ontology, so its initiating source is reconstructible).
+    /// `false` (the default, set by `compile`) keeps the accepted fixed-slot breath answer exactly, so
+    /// every prior render stays byte-identical; this is an experimental UPGRADE auditioned opt-in (the
+    /// `--source-answer` flag), never a silent default — it changes the audio, so the maintainer's ear
+    /// gates it before it could ever become the default.
+    pub source_answer: bool,
 }
 
 impl CompiledArgument {
@@ -1035,6 +1045,11 @@ impl MusicalArgument {
             // Off by default — the plain control keeps its archived fill (byte-identical). An
             // EXPRESSIVE/ENSEMBLE source flips this on, so the drummer translates the lead's rhythm.
             translate_lead_rhythm: false,
+            // Off by default — EVERY source (incl. Ensemble) keeps the accepted fixed-slot breath
+            // answer byte-identical. This is an experimental upgrade flipped on only by the explicit
+            // `--source-answer` audition, never by a source builder — it changes the audio, so it is
+            // never a silent default.
+            source_answer: false,
         })
     }
 

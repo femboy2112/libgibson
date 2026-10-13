@@ -1413,6 +1413,118 @@ fn the_phrase_seam_snare_collision_is_pinned_pulse_then_lead_echo() {
 }
 
 // ======================================================================================
+// §5 — the drummer TRULY answers (opt-in `source_answer`).
+//
+// The accepted fixed-slot breath answer reads no lead content and carries a dead provenance stamp —
+// it answers nothing in particular. With `source_answer` the answer QUOTES the lead's question (each
+// stroke sits a half-bar after a specific lead attack in its bar's first half — content-derived) and
+// realizes a real `ActionKind::Answer` that CREDITS the lead statement's call it answers (a
+// reconstructible initiating source, via the existing Action ontology). The upgrade is opt-in and
+// audio-changing, so the default render stays byte-frozen (pinned by D1); these tests pin the honesty.
+// ======================================================================================
+
+fn source_answer_take(seed: u64) -> CommittedSong {
+    let mut src = source_bridge::source_phrased(seed, Phrasing::Ensemble);
+    src.source_answer = true;
+    kernel::perform_song(&src, &world()).unwrap()
+}
+
+/// Content-derivation: every source-grounded answer stroke quotes a SPECIFIC lead attack from the
+/// first half of its bar, a half-bar later — so reshaping the question reshapes the answer. (The
+/// hollow default fires on fixed slots regardless of what the lead played.)
+#[test]
+fn the_source_answer_quotes_the_lead_question() {
+    for seed in [2112u64, 7, 99] {
+        let t = source_answer_take(seed);
+        let s = t.score();
+        let lead: Vec<f64> = s.role_notes(Role::Lead).map(|n| n.start_beat).collect();
+        let answers: Vec<f64> = s
+            .drums
+            .iter()
+            .filter(|d| d.prov.role_note == "answer")
+            .map(|d| d.start_beat)
+            .collect();
+        assert!(
+            !answers.is_empty(),
+            "seed {seed}: the source answer must place some strokes"
+        );
+        for a in &answers {
+            let bar_start = (a / 4.0).floor() * 4.0;
+            // the answer onset is a first-half lead attack + 2.0, within the shared pocket tolerance
+            let quotes = lead
+                .iter()
+                .any(|&l| l >= bar_start && l < bar_start + 2.0 && ((a - 2.0) - l).abs() < 0.06);
+            assert!(
+                quotes,
+                "seed {seed}: source answer at {a:.3} must quote a first-half lead attack + 2.0"
+            );
+        }
+    }
+}
+
+/// Reconstructible source: every source-grounded answer stroke realizes a real `Agent::Drums`
+/// `ActionKind::Answer` whose `pays` is a lead statement's call — the initiating question. (The hollow
+/// default carries an empty stamp: it credits nothing.)
+#[test]
+fn the_source_answer_credits_the_lead_call() {
+    use gibson::audio::human_music::action::{ActionKind, Agent};
+    for seed in [2112u64, 7, 99] {
+        let t = source_answer_take(seed);
+        let perf = &t.composition().perf;
+        let lead_calls: std::collections::HashSet<_> =
+            perf.statements.iter().filter_map(|st| st.call).collect();
+        let answers: Vec<_> = t
+            .score()
+            .drums
+            .iter()
+            .filter(|d| d.prov.role_note == "answer")
+            .collect();
+        assert!(!answers.is_empty(), "seed {seed}: expected source answers");
+        let acts = perf.actions.chronological();
+        for d in &answers {
+            let credited = acts.iter().any(|act| {
+                d.prov.actions.has(act.id)
+                    && act.kind == ActionKind::Answer
+                    && act.initiator == Agent::Drums
+                    && act.pays.is_some_and(|c| lead_calls.contains(&c))
+            });
+            assert!(
+                credited,
+                "seed {seed}: source answer at {:.3} must realize a Drums Answer that pays a lead call",
+                d.start_beat
+            );
+        }
+    }
+}
+
+/// The upgrade is strictly opt-in: the default Full answer is the fixed-slot ghost that credits
+/// nothing (empty stamp), and turning the upgrade on genuinely changes the render (it is ear-gated,
+/// not a silent default).
+#[test]
+fn the_source_answer_is_opt_in_and_audio_changing() {
+    for seed in [2112u64, 7, 99] {
+        let full = render_cfg(&C137Preset::full().resolve(), seed);
+        let src = source_answer_take(seed);
+        let default_answers: Vec<_> = full
+            .score()
+            .drums
+            .iter()
+            .filter(|d| d.prov.role_note == "answer")
+            .collect();
+        assert!(!default_answers.is_empty());
+        assert!(
+            default_answers.iter().all(|d| d.prov.actions.is_empty()),
+            "seed {seed}: the default (accepted) answer credits nothing — the hollow stamp"
+        );
+        assert_ne!(
+            full.score().fingerprint(),
+            src.score().fingerprint(),
+            "seed {seed}: source-answer must change the render (it is an ear-gated upgrade)"
+        );
+    }
+}
+
+// ======================================================================================
 // CP2 — honest, source-grounded breath causality.
 //
 // The band answers a QUESTION, not a landing: a breath is answered only where it sits in a

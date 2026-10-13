@@ -1813,7 +1813,14 @@ pub fn perform_song(
             // comps and answers both ride the shared pocket. A breath answer (lead genuinely silent)
             // steps forward at full velocity on its own budget; an ordinary comp is soft inside a
             // live phrase and fuller where the phrase has yielded.
-            if breath_budget > 0 && answered < breath_budget && lead_silent_at(at, &lead_notes) {
+            if !argument.source_answer
+                && breath_budget > 0
+                && answered < breath_budget
+                && lead_silent_at(at, &lead_notes)
+            {
+                // The accepted (default) breath answer: a full-voiced ghost in a fixed open slot. It
+                // sits in a genuine silence over open harmony, but it answers nothing in particular —
+                // the honest, source-grounded answer below replaces it when `source_answer` is set.
                 push(voice, at, base, "answer", pocket(at - bar_start));
                 answered += 1;
             } else if placed < budget {
@@ -1859,6 +1866,78 @@ pub fn perform_song(
                         "pulse",
                         0.0,
                     );
+                }
+            }
+        }
+
+        // SOURCE-GROUNDED ANSWER (opt-in `source_answer`): the drummer does not fire a fixed ghost
+        // into any open bar — it ANSWERS the lead's question. The question is the lead's gesture in
+        // the first half of this bar (the attacks that lead into the breath); the answer QUOTES that
+        // gesture's rhythm a half-bar later into the breath (so a different question yields a different
+        // answer), voiced by the gesture's contour — a rising question PUSHES with the kick, a falling
+        // or level one TAGS with a ghost snare. Each stroke realizes a real `ActionKind::Answer` that
+        // CREDITS the lead statement's call it answers, so its initiating source is reconstructible
+        // (the existing Action ontology, not a second cue system) — unlike the fixed-slot ghost above,
+        // which answered nothing in particular. Licensed exactly as the breath answer is (open harmony
+        // via `breath_budget`, a genuine lead silence, the budget), so restraint is preserved: a
+        // resolved home bar, or a bar the lead never left, gets no answer. Reads the LEAD only, so the
+        // keys-independent pulse the causal witness depends on is untouched.
+        if argument.source_answer && breath_budget > 0 {
+            let episode = (bar_start / EPISODE_BEATS).floor() as usize;
+            if episode < perf.statements.len() {
+                let origin_call = perf.statements[episode].call;
+                let mut question: Vec<&Note> = lead_notes
+                    .iter()
+                    .filter(|n| n.start_beat >= bar_start && n.start_beat < bar_start + 2.0)
+                    .collect();
+                question.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+                let mut answered_src = 0i32;
+                let mut answer_aid: Option<ActionId> = None;
+                for qn in &question {
+                    if answered_src >= breath_budget {
+                        break;
+                    }
+                    let at = qn.start_beat + 2.0; // the question's onset, echoed into the breath
+                    if at >= bar_start + 4.0 || !lead_silent_at(at, &lead_notes) {
+                        continue; // keep it inside the bar and in a genuine silence
+                    }
+                    if !lead_occ.allows_comp_at(at, &lead_notes) {
+                        continue; // make room — the lead is still speaking there
+                    }
+                    // The gesture's contour at this onset: a rising question drives with the kick, a
+                    // falling or level one tags with a ghost snare.
+                    let rising = lead_notes
+                        .iter()
+                        .filter(|m| m.start_beat > qn.start_beat)
+                        .min_by(|a, b| a.start_beat.total_cmp(&b.start_beat))
+                        .is_some_and(|nx| nx.pitch > qn.pitch);
+                    let (voice, base) = if rising {
+                        (DrumVoice::Kick, 0.56)
+                    } else {
+                        (DrumVoice::Snare, 0.40)
+                    };
+                    // One Answer action per answering bar, crediting the lead statement's call it
+                    // answers (cause = Interaction{call}), so the drum answer has a reconstructible
+                    // initiating source instead of a dead stamp.
+                    let aid = *answer_aid.get_or_insert_with(|| {
+                        action(
+                            &mut perf.actions,
+                            Agent::Drums,
+                            ActionKind::Answer,
+                            at,
+                            1.0,
+                            origin_call,
+                            episode as u32,
+                        )
+                    });
+                    score.drums.push(DrumHit {
+                        start_beat: at + pocket(at - bar_start),
+                        voice,
+                        velocity: (base * energy * swell).clamp(0.02, 1.0),
+                        prov: provenance(&perf, at, "answer", section_at(argument, at))
+                            .realizing(aid),
+                    });
+                    answered_src += 1;
                 }
             }
         }

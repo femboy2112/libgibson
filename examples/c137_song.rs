@@ -68,6 +68,11 @@ struct Options {
     /// `None` ties the bridge to the song seed (the shipped arc); `Some(bs)` swaps in a different
     /// LAWFUL bridge over the same chart and the same returning hook.
     bridge_seed: Option<u64>,
+    /// Experimental UPGRADE audition (`--source-answer`): make the drummer's breath answer genuinely
+    /// answer the lead's question (content-derived + credited to the lead's call) instead of the
+    /// accepted fixed-slot ghost. Off by default — it changes the audio, so it is an opt-in A/B arm,
+    /// never the default, until the maintainer's ear accepts it.
+    source_answer: bool,
 }
 
 impl Options {
@@ -76,6 +81,7 @@ impl Options {
         let mut seeds = vec![2112u64, 7, 99];
         let mut tempo = 144.0f32;
         let mut bridge_seed = None;
+        let mut source_answer = false;
         // The no-flag command is C137 FULL. Downgrades accumulate here, from `--jerry=` and from the
         // compatibility flags, which fold into the same mechanism so they manifest as the Jerry
         // switches they are.
@@ -116,6 +122,9 @@ impl Options {
                     "plain" => preset = preset.jerry(Jerry::Plain),
                     _ => return Err("--phrasing must be plain, expressive, or ensemble".into()),
                 }
+            } else if arg == "--source-answer" {
+                // Experimental UPGRADE audition: the drummer truly answers the lead's question.
+                source_answer = true;
             } else {
                 return Err(format!("unknown argument: {arg}").into());
             }
@@ -129,6 +138,7 @@ impl Options {
             tempo,
             preset,
             bridge_seed,
+            source_answer,
         })
     }
 }
@@ -378,11 +388,18 @@ fn main() -> Result<()> {
     fs::create_dir_all(&options.out)?;
 
     let mut manifest = manifest_header(&resolved, &world, options.bridge_seed);
+    if options.source_answer {
+        let note = "  source answer         : ON (experimental) — the drummer's breath answer quotes the lead's question + credits its call (--source-answer audition; default OFF)";
+        let _ = writeln!(manifest, "{note}");
+    }
     print!("{manifest}");
 
     for seed in &options.seeds {
         // Build under the resolved config. A failure here propagates — no silent fallback to Jerry.
-        let candidate_source = build_source(&resolved, *seed, options.bridge_seed);
+        let mut candidate_source = build_source(&resolved, *seed, options.bridge_seed);
+        // The experimental source-answer upgrade is applied here (never by a source builder), so it
+        // is strictly an opt-in audition arm and the default render stays byte-identical.
+        candidate_source.source_answer = options.source_answer;
         let take = kernel::perform_song(&candidate_source, &world)?;
         // Re-derive the committed candidate before rendering: the exported Score is a candidate that
         // must still satisfy the event/source contract it was committed under.
