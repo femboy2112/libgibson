@@ -157,5 +157,7 @@ pub fn source_phrased(seed: u64, phrasing: Phrasing) -> CompiledArgument {
     compiled.comp_keys = phrasing.lead_is_expressive();
     // Expressive/Ensemble: the bass anticipates the harmonic destination (plain keeps the archived line).
     compiled.anticipate_bass = phrasing.lead_is_expressive();
+    // Expressive/Ensemble: the drummer translates the lead's rhythm into the fill (plain keeps the run).
+    compiled.translate_lead_rhythm = phrasing.lead_is_expressive();
     compiled
 }

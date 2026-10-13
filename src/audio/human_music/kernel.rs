@@ -1826,18 +1826,40 @@ pub fn perform_song(
                 placed += 1;
             }
         }
-        // Phrase-end fill: rising sixteenth snares across the last half-bar because the phrase is
-        // ending (into the hook, then into the final cadence) — not on a coin flip. Fills are tight
-        // (on the grid) so they drive cleanly into the downbeat.
+        // Phrase-end fill: the phrase is ending (into the hook, then into the final cadence) — not on a
+        // coin flip. When the drummer is TRANSLATING the lead (`translate_lead_rhythm`) it quotes the
+        // melody's own rhythm (below); where the lead gave no figure to echo (fewer than two attacks)
+        // it falls back to the archived rising sixteenth run so the fill still drives the downbeat.
         if fill_bar {
-            for k in 0..4u32 {
-                push(
-                    DrumVoice::Snare,
-                    bar_start + 2.0 + k as f64 * 0.5,
-                    0.42 + 0.12 * k as f32,
-                    "pulse",
-                    0.0,
-                );
+            // Translate the melody's phrase-ending FIGURE — the lead's attacks across the first half of
+            // this bar, before the line resolves and holds — echoed a half-bar later into the fill, so
+            // the kit plays the lead's own rhythm back and drives the band into the downbeat together
+            // (the same call->echo the keys law uses, now for the lead). Reads the LEAD only.
+            let figure: Vec<f64> = if argument.translate_lead_rhythm {
+                lead_notes
+                    .iter()
+                    .map(|n| n.start_beat)
+                    .filter(|&b| b >= bar_start && b < bar_start + 2.0)
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            if figure.len() >= 2 {
+                for &o in &figure {
+                    let at = o + 2.0; // the figure, echoed into the closing half-bar
+                    let rise = ((at - (bar_start + 2.0)) / 2.0) as f32; // 0..1 toward the downbeat
+                    push(DrumVoice::Snare, at, 0.40 + 0.30 * rise, "lead-echo", 0.0);
+                }
+            } else {
+                for k in 0..4u32 {
+                    push(
+                        DrumVoice::Snare,
+                        bar_start + 2.0 + k as f64 * 0.5,
+                        0.42 + 0.12 * k as f32,
+                        "pulse",
+                        0.0,
+                    );
+                }
             }
         }
     }

@@ -409,6 +409,14 @@ pub struct CompiledArgument {
     /// set by `compile`) keeps the archived approach, so the plain control stays byte-identical; a
     /// source built with an EXPRESSIVE lead sets it true.
     pub anticipate_bass: bool,
+    /// Opt-in DRUM TRANSLATION directive: when true, the phrase-end fill TRANSLATES the lead's rhythm —
+    /// the drummer plays the melody's own phrase-ending figure back, snares landing on the lead's
+    /// actual attacks across the closing half-bar instead of a generic rising run. Reads the LEAD only
+    /// (the keys-independent pulse the causal witness depends on is untouched), and falls back to the
+    /// archived run where the lead has gone silent into the boundary. `false` (the default, set by
+    /// `compile`) keeps the archived fill, so the plain control stays byte-identical; a source built
+    /// with an EXPRESSIVE lead sets it true.
+    pub translate_lead_rhythm: bool,
 }
 
 impl CompiledArgument {
@@ -1024,6 +1032,9 @@ impl MusicalArgument {
             // Off by default — the plain control keeps its archived foundation (byte-identical). An
             // EXPRESSIVE/ENSEMBLE source flips this on, so the bass anticipates the harmonic destination.
             anticipate_bass: false,
+            // Off by default — the plain control keeps its archived fill (byte-identical). An
+            // EXPRESSIVE/ENSEMBLE source flips this on, so the drummer translates the lead's rhythm.
+            translate_lead_rhythm: false,
         })
     }
 

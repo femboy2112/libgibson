@@ -1468,3 +1468,58 @@ fn the_bass_anticipates_the_home_arrival() {
         );
     }
 }
+
+// ======================================================================================
+// CP3 (drums) — the drummer translates the lead's rhythm.
+//
+// The phrase-end fill no longer plays a generic rising run: it quotes the melody's own phrase-ending
+// figure (the lead's attacks across the first half of the fill bar), echoed a half-bar later so the
+// kit drives the band into the downbeat on the lead's rhythm. Reads the LEAD only (the keys-independent
+// pulse is untouched); gated so the plain control keeps its archived fill byte-identical.
+// ======================================================================================
+
+#[test]
+fn the_drums_translate_the_lead_rhythm() {
+    for seed in [2112u64, 7, 99] {
+        let full = render_cfg(&C137Preset::full().resolve(), seed);
+        let plain = kernel::perform_song(
+            &source_bridge::source_phrased(seed, Phrasing::Plain),
+            &world(),
+        )
+        .unwrap();
+        let lead: Vec<f64> = full
+            .score()
+            .role_notes(Role::Lead)
+            .map(|n| n.start_beat)
+            .collect();
+        let echoes: Vec<f64> = full
+            .score()
+            .drums
+            .iter()
+            .filter(|d| d.prov.role_note == "lead-echo")
+            .map(|d| d.start_beat)
+            .collect();
+        assert!(
+            !echoes.is_empty(),
+            "seed {seed}: the Full drums must translate the lead's rhythm (a lead-echo fill)"
+        );
+        // Each echo stroke QUOTES a lead attack, shifted exactly a half-bar later — it is the melody's
+        // own rhythm, not a generic run (falsifier: a grid fill would not line up with a lead attack).
+        for &t in &echoes {
+            assert!(
+                lead.iter().any(|&o| (o - (t - 2.0)).abs() < 0.01),
+                "seed {seed}: lead-echo at {t:.3} must quote the lead attack at {:.3}",
+                t - 2.0
+            );
+        }
+        // The plain control keeps its archived fill — no translation.
+        assert!(
+            plain
+                .score()
+                .drums
+                .iter()
+                .all(|d| d.prov.role_note != "lead-echo"),
+            "seed {seed}: the plain control must keep the archived fill (no lead-echo)"
+        );
+    }
+}
