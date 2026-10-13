@@ -421,3 +421,121 @@ fn the_lead_is_dynamically_shaped_not_flat() {
         );
     }
 }
+
+// ===========================================================================================
+// R0 — categorical-provenance falsifiers (PR #107 audit G2). These pin the causal LEDGER, not
+// the audio: every fix they drive is sound-preserving (the rendered fingerprints are unchanged).
+// ===========================================================================================
+
+/// G2 / assertion 04 — a carried answer must credit the call it actually discharges.
+///
+/// In the muted take, episode 1's call goes unpaid, so episode 2 discharges the carried VERSE
+/// debt (it quotes `materials[0]`). The `Answer` action must therefore name the verse's call
+/// (statement 0), not the hook's call (statement 1) that merely happens to be the current episode.
+#[test]
+fn a_carried_answer_credits_the_call_it_discharges() {
+    use gibson::audio::human_music::action::{ActionCause, ActionKind};
+    let b = kernel::perform_song(&first_episode_keys_muted(2112), &world()).unwrap();
+    let perf = &b.composition().perf;
+    let verse_call = perf.statements[0].call.expect("verse statement has a call");
+    let hook_call = perf.statements[1].call.expect("hook statement has a call");
+    assert_ne!(
+        verse_call, hook_call,
+        "the two episodes' calls are distinct ids"
+    );
+
+    let answer = perf
+        .actions
+        .actions
+        .iter()
+        .find(|a| a.kind == ActionKind::Answer && a.start_beat >= 16.0)
+        .expect("episode 2 produces exactly one Answer, in the hook window");
+    assert_eq!(
+        answer.cause,
+        ActionCause::Interaction { call: verse_call },
+        "the discharged answer must credit the VERSE call it actually quotes, not the hook call"
+    );
+    assert_eq!(
+        answer.pays,
+        Some(verse_call),
+        "the answer pays the verse debt, not the hook call"
+    );
+}
+
+/// G2 / assertions 05-08 — every interaction a committed note references must resolve to a real
+/// `Interaction` row in the plan (the causal ledger is closed under referential identity). Fails
+/// on BOTH the default render and the muted control: `perform_song` stamps `InteractionId(e)` on
+/// keys answers but never registers the matching rows.
+#[test]
+fn every_referenced_interaction_resolves_to_a_row() {
+    for (label, arg) in [
+        ("default", source::source(2112)),
+        ("muted-ep1", first_episode_keys_muted(2112)),
+    ] {
+        let song = kernel::perform_song(&arg, &world()).unwrap();
+        let perf = &song.composition().perf;
+        for n in song.score().role_notes(Role::Keys) {
+            if let Some(iid) = n.prov.interaction {
+                assert!(
+                    perf.interactions.iter().any(|row| row.id == iid),
+                    "[{label}] keys note @{:.3} references {iid:?} with no matching Interaction row",
+                    n.start_beat
+                );
+            }
+        }
+    }
+}
+
+/// G7 / assertions 09-10 — section provenance must be truthful, with the LEAD as referee. The lead
+/// carrier is already sectioned from the plan (verse and hook are different sections); every
+/// accompaniment event must AGREE with the lead about which section the band is in, and the Score
+/// must carry the form it realized. Currently `provenance()` hardcodes `SectionKind::A` and
+/// `Score.sections` is never assigned, so the band contradicts the lead and the form is invisible.
+///
+/// (Lead-as-referee, not `!= A`: a phrase-true derivation legitimately yields `A` for some hook
+/// phrases, so pinning against a literal kind would reject a correct fix — the invariant is that
+/// the band and the lead name the SAME section, whatever it is.)
+#[test]
+fn section_provenance_agrees_with_the_lead() {
+    let a = take(2112);
+    let s = a.score();
+    assert!(
+        !s.sections.is_empty(),
+        "Score.sections must be populated from the realized form"
+    );
+    let lead_section = |lo: f64, hi: f64| {
+        s.role_notes(Role::Lead)
+            .find(|n| n.start_beat >= lo && n.start_beat < hi)
+            .expect("the lead sings in every episode")
+            .prov
+            .section
+    };
+    let verse = lead_section(0.0, 16.0);
+    let hook = lead_section(16.0, 32.0);
+    assert_ne!(verse, hook, "the verse and hook are distinct sections");
+    for (lo, hi, want) in [(0.0, 16.0, verse), (16.0, 32.0, hook)] {
+        for role in [Role::Keys, Role::Bass] {
+            for n in s
+                .role_notes(role)
+                .filter(|n| n.start_beat >= lo && n.start_beat < hi)
+            {
+                assert_eq!(
+                    n.prov.section, want,
+                    "{role:?} note @{:.3} disagrees with the lead about the section",
+                    n.start_beat
+                );
+            }
+        }
+        for d in s
+            .drums
+            .iter()
+            .filter(|d| d.start_beat >= lo && d.start_beat < hi)
+        {
+            assert_eq!(
+                d.prov.section, want,
+                "drum @{:.3} disagrees with the lead about the section",
+                d.start_beat
+            );
+        }
+    }
+}

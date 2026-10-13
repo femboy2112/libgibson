@@ -285,8 +285,13 @@ pub(super) fn source_plan(
     })
 }
 
-fn provenance(perf: &PerformancePlan, at: f64, label: &'static str) -> Provenance {
-    let mut p = Provenance::new(SectionKind::A);
+fn provenance(
+    perf: &PerformancePlan,
+    at: f64,
+    label: &'static str,
+    section: SectionKind,
+) -> Provenance {
+    let mut p = Provenance::new(section);
     p.role_note = label;
     p.role_kind = Some(if label == "foundation" {
         "foundation"
@@ -295,6 +300,23 @@ fn provenance(perf: &PerformancePlan, at: f64, label: &'static str) -> Provenanc
     });
     let _ = (perf, at);
     p
+}
+
+/// The section a long-form event at `at` belongs to, derived from the SAME source the lead carrier
+/// reads — the placement covering the beat, via its phrase family — so the whole band agrees on
+/// which section it is playing instead of the accompaniment hardcoding `A`. Falls back to `A` only
+/// if no placement covers the beat (there is always one on the declared arc).
+fn section_at(argument: &CompiledArgument, at: f64) -> SectionKind {
+    argument
+        .placements
+        .iter()
+        .find(|p| at >= p.start_beat && at < p.start_beat + p.span_beats)
+        .map(|p| {
+            argument.song.plan.form.phrases[p.phrase as usize]
+                .family
+                .to_section_kind()
+        })
+        .unwrap_or(SectionKind::A)
 }
 fn pitched(
     perf: &PerformancePlan,
@@ -606,7 +628,7 @@ pub fn perform(
                 ctx.chord.pitch_classes().contains(&pc)
             })
         {
-            let mut prov = provenance(&perf, at, "answer").realizing(aid);
+            let mut prov = provenance(&perf, at, "answer", SectionKind::A).realizing(aid);
             prov.material = Some(material.id);
             prov.interaction = Some(InteractionId(0));
             keys.push(pitched(
@@ -659,7 +681,7 @@ pub fn perform(
                 0.57,
             ),
         ] {
-            let prov = provenance(&perf, at + offset, "foundation");
+            let prov = provenance(&perf, at + offset, "foundation", SectionKind::A);
             bass.push(pitched(
                 &perf,
                 Role::Bass,
@@ -690,7 +712,7 @@ pub fn perform(
             0.3,
             arrival - 1,
             0.62,
-            provenance(&perf, 11.5, "approach").realizing(id),
+            provenance(&perf, 11.5, "approach", SectionKind::A).realizing(id),
         );
         note.function = Some(PitchFunction::ChromaticApproach);
         bass.push(note);
@@ -718,7 +740,7 @@ pub fn perform(
                     start_beat: at,
                     voice,
                     velocity,
-                    prov: provenance(&perf, at, "pulse"),
+                    prov: provenance(&perf, at, "pulse", SectionKind::A),
                 });
             }
         }
@@ -748,7 +770,7 @@ pub fn perform(
                     start_beat: at,
                     voice: DrumVoice::Snare,
                     velocity: n.velocity * 0.65,
-                    prov: provenance(&perf, at, "heard-keys").realizing(aid),
+                    prov: provenance(&perf, at, "heard-keys", SectionKind::A).realizing(aid),
                 });
             }
         }
@@ -1010,10 +1032,15 @@ enum HarmonicDrive {
 
 fn harmonic_drive(chord: &Chord, tonic_pc: i32) -> HarmonicDrive {
     let degree = (chord.root_pc - tonic_pc).rem_euclid(12);
-    if degree == 0 {
-        HarmonicDrive::Home
-    } else if matches!(chord.quality, Quality::Dom7 | Quality::Dom9) || degree == 7 {
+    // Read the dominant FUNCTION before the tonic-rest shortcut: a dominant seventh/ninth is an
+    // ACTIVE sound wherever its root sits — even on the tonic pitch class, where it is a secondary
+    // dominant (A7 = V7/iv) preparing a move away from home, not tonic rest. Checking `degree == 0`
+    // first (the old order) mistook that pivot for Home. The current Am verse/hook has no tonic-root
+    // dominant, so this reordering is identical on today's route (its only A-root chord is Am=Min).
+    if matches!(chord.quality, Quality::Dom7 | Quality::Dom9) || degree == 7 {
         HarmonicDrive::Driving
+    } else if degree == 0 {
+        HarmonicDrive::Home
     } else {
         HarmonicDrive::Building
     }
@@ -1073,6 +1100,26 @@ pub fn perform_song(
     score.chords = perf.chords.clone();
     score.mono_voice = true;
     score.observed_lifetime = Some(super::voice::ObservedLifetimePolicy::ExplicitContinuity);
+    // The realized form: one section per declared placement (verse, hook, …), keyed to the same
+    // phrase families the lead carrier and every accompaniment event read via `section_at`, so the
+    // Score, the lead and the band all name the same regions. Populating this changes the SYMBOLIC
+    // Score fingerprint (the section metadata is now truthful) but not a single PCM sample — the
+    // synth never reads provenance, so the rendered audio is byte-identical.
+    score.sections = argument
+        .placements
+        .iter()
+        .map(|p| {
+            let phrase = &argument.song.plan.form.phrases[p.phrase as usize];
+            super::form::Section {
+                kind: phrase.family.to_section_kind(),
+                start_bar: (p.start_beat / 4.0) as u32,
+                bars: (p.span_beats / 4.0).round() as u32,
+                energy: phrase.span.peak_energy.energy,
+                tension: phrase.span.peak_tension.tension,
+                density: phrase.intent.density,
+            }
+        })
+        .collect();
 
     // --- LEAD: carry both episodes' required source into an EMPTY lane. ---
     let mut lead = Vec::new();
@@ -1203,13 +1250,28 @@ pub fn perform_song(
                     3.0,
                 )
             }) {
+                // The answer credits the call it ACTUALLY discharges, derived from the quoted
+                // material's own source — NOT the current episode index. In the in-the-moment
+                // branch that is this episode's call; in the memory-law discharge branch it is the
+                // EARLIER unpaid call (`carried_cell`'s). Reading the id from `material_src.source`
+                // keeps both branches correct by construction, so it does not rot if a later debt
+                // is carried more than one episode (the `statements[e]` shortcut was right only by
+                // coincidence on the in-the-moment path).
+                let origin = material_src
+                    .as_ref()
+                    .expect("a non-silent answer has a source cell");
+                let origin_stmt = match origin.source {
+                    super::material::MaterialSource::Statement { statement, .. } => statement,
+                    _ => e,
+                };
+                let origin_call = perf.statements[origin_stmt].call;
                 let aid = action(
                     &mut perf.actions,
                     Agent::Keys,
                     ActionKind::Answer,
                     keys_at,
                     material.length(),
-                    perf.statements[e].call,
+                    origin_call,
                     0,
                 );
                 let anchor = register(perf.context_at(keys_at).unwrap().chord.root_pc, 60);
@@ -1222,7 +1284,8 @@ pub fn perform_song(
                     &perf,
                     &|ctx, pc| ctx.chord.pitch_classes().contains(&pc),
                 ) {
-                    let mut prov = provenance(&perf, at, "answer").realizing(aid);
+                    let mut prov =
+                        provenance(&perf, at, "answer", section_at(argument, at)).realizing(aid);
                     prov.material = Some(material.id);
                     prov.interaction = Some(InteractionId(e as u32));
                     keys.push(pitched(
@@ -1235,6 +1298,39 @@ pub fn perform_song(
                         prov,
                     ));
                     produced += 1;
+                }
+                // Close the causal ledger: register the actual (call -> response) row this answer
+                // realizes, so every `prov.interaction = InteractionId(e)` resolves to a real
+                // Interaction. Registered HERE (not in `source_plan`) because the ensemble planner
+                // consumes `interactions` upstream; adding rows after commitment is invisible to it
+                // and to the render. The call is the originating statement; the response is this
+                // keys answer.
+                if produced > 0 {
+                    let call = Call {
+                        action: origin_call.expect("the originating statement has a call"),
+                        initiator: Agent::Lead,
+                        start_beat: origin.start_beat,
+                        end_beat: origin.start_beat + origin.length(),
+                        statement: Some(origin_stmt),
+                        material: origin.id,
+                    };
+                    let response = Response {
+                        action: Some(aid),
+                        responder: Agent::Keys,
+                        start_beat: keys_at,
+                        dur_beats: material.length(),
+                        latency: keys_at - call.end_beat,
+                        overlap: false,
+                        transform,
+                        crosses_chord: false,
+                        material: Some(material.id),
+                        realizes: None,
+                    };
+                    perf.interactions.push(Interaction {
+                        id: InteractionId(e as u32),
+                        call,
+                        response: Some(response),
+                    });
                 }
                 perf.materials.push(material);
             }
@@ -1303,7 +1399,12 @@ pub fn perform_song(
             // (the downbeat root at `offset==0` stays exactly on `at`, the required anchor), and the
             // velocity rides the harmonic energy and the phrase swell. The bass orbits the SAME
             // pocket as the drums and the lead, so coincident attacks lock — one solar system.
-            let prov = provenance(&perf, at + offset, "foundation");
+            let prov = provenance(
+                &perf,
+                at + offset,
+                "foundation",
+                section_at(argument, at + offset),
+            );
             bass.push(pitched(
                 &perf,
                 Role::Bass,
@@ -1340,7 +1441,13 @@ pub fn perform_song(
                 0.3,
                 arrival - 1,
                 0.62,
-                provenance(&perf, seam - 0.5, "approach").realizing(id),
+                provenance(
+                    &perf,
+                    seam - 0.5,
+                    "approach",
+                    section_at(argument, seam - 0.5),
+                )
+                .realizing(id),
             );
             note.function = Some(PitchFunction::ChromaticApproach);
             bass.push(note);
@@ -1380,7 +1487,7 @@ pub fn perform_song(
                 start_beat: grid + lay,
                 voice,
                 velocity: (vel * energy * swell).clamp(0.02, 1.0),
-                prov: provenance(&perf, grid, label),
+                prov: provenance(&perf, grid, label, section_at(argument, grid)),
             });
         };
         // The steady spine — always present, locking the shared time. The downbeat kick and the hats
@@ -1502,7 +1609,8 @@ pub fn perform_song(
                     start_beat: at,
                     voice: DrumVoice::Snare,
                     velocity: n.velocity * 0.65,
-                    prov: provenance(&perf, at, "heard-keys").realizing(aid),
+                    prov: provenance(&perf, at, "heard-keys", section_at(argument, at))
+                        .realizing(aid),
                 });
             }
         }
@@ -1596,6 +1704,30 @@ fn validate_song(
     for h in &score.drums {
         if !perf.on_stage(Agent::Drums, h.start_beat) {
             return Err(KernelError::Stage(Agent::Drums));
+        }
+    }
+    // The causal ledger is closed under referential identity: every committed event that claims an
+    // interaction resolves to a real (call -> response) row, and the event actually realizes that
+    // response's action — so a quoted answer cannot reference an interaction that was never planned,
+    // nor claim one whose response it does not perform.
+    for n in &score.notes {
+        if let Some(iid) = n.prov.interaction {
+            let row =
+                perf.interactions
+                    .iter()
+                    .find(|row| row.id == iid)
+                    .ok_or(KernelError::Source(
+                        "event references an unregistered interaction",
+                    ))?;
+            let answered = row
+                .response
+                .and_then(|r| r.action)
+                .is_some_and(|a| n.prov.actions.has(a));
+            if !answered {
+                return Err(KernelError::Source(
+                    "event claims an interaction whose response it does not realize",
+                ));
+            }
         }
     }
     Ok(())
@@ -1776,6 +1908,33 @@ mod tests {
         semantic::deflected_lift_trace,
         SongMap,
     };
+
+    /// R0 / G5 — a tonic-root dominant seventh is an ACTIVE pivot, not tonic rest. `harmonic_drive`
+    /// must read the dominant function, not just whether the root equals the global tonic pitch
+    /// class. The current 8-bar Am verse/hook never voices an A7, so this is a latent bug that the
+    /// coming bridge (A7 = V7/iv → Dm) would expose; the fix is sound-preserving on the current
+    /// route (its only tonic-root chord is Am, still Home).
+    #[test]
+    fn a_tonic_root_dominant_is_not_mistaken_for_home() {
+        let tonic = 9; // A
+        let a_minor = Chord::new(tonic, Quality::Min);
+        let a_dom7 = Chord::new(tonic, Quality::Dom7);
+        assert_eq!(
+            harmonic_drive(&a_minor, tonic),
+            HarmonicDrive::Home,
+            "a static tonic minor is Home"
+        );
+        assert_ne!(
+            harmonic_drive(&a_dom7, tonic),
+            HarmonicDrive::Home,
+            "a tonic-root dominant seventh is an active pivot, not Home"
+        );
+        assert_eq!(
+            harmonic_drive(&a_dom7, tonic),
+            HarmonicDrive::Driving,
+            "a dominant seventh drives toward its target, wherever its root sits"
+        );
+    }
 
     fn source() -> CompiledArgument {
         let song = SongMap::compose(
