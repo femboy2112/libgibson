@@ -1344,7 +1344,8 @@ pub fn perform_song(
                         let hanging = score
                             .role_notes(Role::Lead)
                             .filter(|n| {
-                                n.start_beat >= bridge_ws && n.start_beat < bridge_ws + EPISODE_BEATS
+                                n.start_beat >= bridge_ws
+                                    && n.start_beat < bridge_ws + EPISODE_BEATS
                             })
                             .max_by(|a, c| a.start_beat.total_cmp(&c.start_beat))
                             .map_or(world.tonic_pc, |n| n.pitch);
@@ -1702,17 +1703,30 @@ pub fn perform_song(
             }
         }
     }
-    // --- PAD: the RUG. A sustained chordal bed that ties the room together under the band — the
-    // committed harmony voiced as a warm MID-register chord (above the bass, under the lead and the
-    // keys' accents, never competing), re-voiced each bar as the chord changes and held across it,
-    // soft, riding the same shared energy so it breathes with the band (eased at home, leaning in on
-    // the bridge). It is the one voice the kernel voices POLYPHONICALLY (the synth's pad pool is six
-    // voices); it carries no argument and no continuity line, so it is exempt from the monophonic
-    // lane and seam laws. It only sounds where the arrangement seats the pad on stage — the
-    // two-episode verse→hook control keeps the pad silent, so its render stays byte-identical.
+    // --- PAD: the RUG, laid SELECTIVELY. A sustained chordal bed that ties the room together under
+    // the band — the committed harmony voiced as a warm MID-register chord (above the bass, under the
+    // lead and the keys' accents, never competing), re-voiced each bar as the chord changes and held
+    // across it, soft, riding the shared energy. It is the one voice the kernel voices POLYPHONICALLY
+    // (the synth's pad pool is six voices); it carries no argument and no continuity line, so it is
+    // exempt from the monophonic lane and seam laws. It only sounds where the arrangement seats the
+    // pad on stage — the two-episode verse→hook control keeps it silent, so that render stays
+    // byte-identical. Crucially the rug is NOT a blanket: it lays harmony under the HOME ARRIVALS
+    // (the hook and the return — the sections that land and want tying together) and clears out of
+    // the VERSE (the open question, stated bare) and the BRIDGE (the departure — its thinness, now
+    // with no pad either, is the texture contrast that marks the phase change). This is the teacher's
+    // law — pad on the chorus and the home outro, never every bar — so a busy arrival reads as ONE
+    // settled idea instead of a continuous mid-register wash that masks the lead/keys exchange.
     let mut pad = Vec::new();
     if perf.stage.on_stage_span(Agent::Pad, 0.0, score.total_beats) {
         for bar in 0..total_bars {
+            let e = bar / bars_per_episode;
+            if !matches!(
+                argument.placements[e].relation,
+                super::argument::ArgumentRelation::Consequent { .. }
+                    | super::argument::ArgumentRelation::Return { .. }
+            ) {
+                continue; // verse and bridge clear the floor for the lead
+            }
             let bar_start = bar as f64 * 4.0;
             let ctx = perf.context_at(bar_start).unwrap();
             let energy = drive_energy(harmonic_drive(&ctx.chord, world.tonic_pc));
