@@ -15,7 +15,7 @@ use gibson::audio::human_music::{
     plan::ArrangementRole,
     score::{DrumVoice, Role, Score},
     theme_family::Phrasing,
-    theory::Mode,
+    theory::{Mode, Scale},
     MusicWorld,
 };
 
@@ -1353,5 +1353,51 @@ fn the_plain_control_keeps_its_sparse_keyboard() {
             0,
             "seed {seed}: the plain control must add NO keyboard comp"
         );
+    }
+}
+
+/// The comp plays like a pianist: ACTUAL CHORDS (a rootless voicing sounded polyphonically, more than
+/// one keyboard note on the same beat — not a single stab), and whatever COLOUR it adds on top fits the
+/// song's key (every non-chord-tone it introduces stays inside the mode). The falsifier for the colour
+/// law is a blind extension: a 9th added without the in-scale guard would, on the `v` chord, sound an
+/// F# the A-Aeolian key does not hold, and this test would catch it.
+#[test]
+fn the_keyboard_comps_with_real_chord_voicings() {
+    let scale = Scale::new(9, Mode::Aeolian);
+    for seed in [2112u64, 7, 99] {
+        let full = render_cfg(&C137Preset::full().resolve(), seed);
+        let comps: Vec<_> = full
+            .score()
+            .role_notes(Role::Keys)
+            .filter(|n| n.prov.role_note == "comp")
+            .collect();
+        assert!(
+            !comps.is_empty(),
+            "seed {seed}: Full must add keyboard comp"
+        );
+
+        // Actual chords: at least one comp onset sounds two or more keyboard notes together.
+        let mut by_onset: std::collections::BTreeMap<u64, usize> =
+            std::collections::BTreeMap::new();
+        for c in &comps {
+            *by_onset.entry(c.start_beat.to_bits()).or_default() += 1;
+        }
+        assert!(
+            by_onset.values().any(|&n| n >= 2),
+            "seed {seed}: the comp must voice real chords (>=2 keys notes on one beat), not single stabs"
+        );
+
+        // The colour it adds fits the key: every comp note that is NOT a chord tone (the 9th and the
+        // grace ornament — `pitched` leaves their `function` unset) stays inside the mode.
+        for c in &comps {
+            if c.function.is_none() {
+                assert!(
+                    scale.contains_pc(c.pitch.rem_euclid(12)),
+                    "seed {seed}: comp colour/ornament {} at {:.3} leaves the key",
+                    c.pitch,
+                    c.start_beat
+                );
+            }
+        }
     }
 }

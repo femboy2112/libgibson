@@ -1430,20 +1430,37 @@ pub fn perform_song(
         memory.prev_answer_events = produced;
         carried_cell = Some(cell);
     }
-    // KEYS COMP — fill the harmonic holes. The per-episode answer above is a single gesture in bar 2;
-    // on its own the keyboard reads very sparse. Here the keys also COMP — short mid-register guide-tone
-    // stabs in the rhythmic holes — so the keyboard is a present, interactive voice, not one answer an
-    // episode. Teacher-gated to the HOME ARRIVALS (the hook and the return, where the pad also lays its
-    // rug and the texture is meant to be full), so the VERSE stays bare (the open question, lead alone)
-    // and the BRIDGE stays thin (the departure's texture contrast). Monophonic like every pitched lane
-    // (the keys are NOT the pad): one guide tone at a time, each stab making room for the lead (never on
-    // its attack) and never overlapping the episode's answer window. Reads the committed harmony only —
-    // the drums never hear the keys, so the keys-independent pulse the causal witness depends on is
-    // untouched (the `heard-keys` fill reads only the answer window `[ws+4, ws+8)`, which this avoids).
+    // KEYS COMP — comp like a pianist, not a one-finger poke. The per-episode answer above is a single
+    // gesture in bar 2; on its own the keyboard reads very sparse. Here the keys COMP the harmonic holes
+    // the way a fusion keyboardist does (the Casiopea/Takanaka seat): a ROOTLESS CHORD VOICING of the
+    // bar's committed harmony — the guide tones and colour it holds (its 3rd/5th/7th), never the root the
+    // bass owns — voiced POLYPHONICALLY in a warm mid register, and topped with a song-fitting COLOUR
+    // tone (the 9th, admitted only when the mode holds it) decorated by a grace ornament. Polyphony is
+    // lawful here because the keys, like the pad, carry no argument line and no continuity edge, so they
+    // are exempt from the monophonic lane — a comp is chords, not single notes. Teacher-gated to the HOME
+    // ARRIVALS (the hook and the return, where the pad also lays its rug and the texture is meant to be
+    // full), so the VERSE stays bare (the open question, lead alone) and the BRIDGE stays thin (the
+    // departure's texture contrast). Every stab makes ROOM for the lead (never on its attack) and never
+    // enters the answer window `[ws+4, ws+8)` the drums hear — so the keys-independent pulse the causal
+    // witness depends on is untouched.
     if argument.comp_keys {
         let lead_onsets: Vec<f64> = score.role_notes(Role::Lead).map(|n| n.start_beat).collect();
         let pocket = super::theme_family::pocket_offset;
+        let scale = Scale::new(world.tonic_pc, world.mode);
         let bars_per_ep = (EPISODE_BEATS / 4.0) as usize;
+        let room = |at: f64| lead_onsets.iter().all(|&l| (l - at).abs() >= 0.15);
+        // Voice a set of pitch classes ascending from a mid-register floor (the pad's rug idiom): each
+        // tone seated at or above the running floor, so the voicing climbs instead of stacking in a mud.
+        let voice = |floor: i32, pcs: &[i32]| -> Vec<i32> {
+            let mut low = floor;
+            pcs.iter()
+                .map(|&pc| {
+                    let p = register(pc, low);
+                    low = p + 1;
+                    p
+                })
+                .collect()
+        };
         for e in 0..episodes {
             if !matches!(
                 argument.placements[e].relation,
@@ -1454,7 +1471,7 @@ pub fn perform_song(
             }
             for b in 0..bars_per_ep {
                 if b == 1 {
-                    continue; // bar 2 is the answer's own bar — leave it to the answer (one keys voice)
+                    continue; // bar 2 is the answer's own bar — leave it to the answer
                 }
                 let bar_start = e as f64 * EPISODE_BEATS + b as f64 * 4.0;
                 let ctx = perf.context_at(bar_start).unwrap();
@@ -1463,26 +1480,73 @@ pub fn perform_song(
                     continue;
                 }
                 let energy = drive_energy(harmonic_drive(&ctx.chord, world.tonic_pc));
-                // Two stabs in the holes — the "and of two" and the "and of four", the off-beats the
-                // backbone leaves open — voiced as COLOUR tones (the chord's 3rd and its top tone, not
-                // its root, which the bass owns), nudged into the shared pocket.
-                for (slot, tone_ix) in [(2.5_f64, 1usize), (3.5_f64, tones.len() - 1)] {
-                    let at = bar_start + slot + pocket(slot);
-                    if !perf.on_stage(Agent::Keys, at) {
-                        continue;
+                // The chord above its root (root_pc is tones[0]); the bass owns the root.
+                let rootless = &tones[1..];
+                // The colour on top: the 9th, but only where the MODE admits it and the chord does not
+                // already spell it — so the colour fits the song's key instead of fighting it (on a chord
+                // whose 9th leaves the mode, the comp simply states the voicing, no forced colour).
+                let ninth = (ctx.chord.root_pc + 2).rem_euclid(12);
+                let colour_pc =
+                    (scale.contains_pc(ninth) && !tones.contains(&ninth)).then_some(ninth);
+                // The "and of two": the full rootless voicing — the body of the comp, planted in pocket.
+                let a = bar_start + 2.5 + pocket(2.5);
+                if perf.on_stage(Agent::Keys, a) && room(a) {
+                    for pitch in voice(57, rootless) {
+                        keys.push(pitched(
+                            &perf,
+                            Role::Keys,
+                            a,
+                            0.33,
+                            pitch,
+                            (0.40 * energy).clamp(0.02, 1.0),
+                            provenance(&perf, a, "comp", section_at(argument, a)),
+                        ));
                     }
-                    if lead_onsets.iter().any(|&l| (l - at).abs() < 0.15) {
-                        continue; // make room for the lead's attack
+                }
+                // The "and of four": a lighter guide-tone shell (3rd + 7th) topped with the colour tone
+                // and a grace ornament a scale-step above it a 16th before the stab — the pianist's bright
+                // answer to its own body chord.
+                let c = bar_start + 3.5 + pocket(3.5);
+                if perf.on_stage(Agent::Keys, c) && room(c) {
+                    let shell: Vec<i32> = rootless.iter().copied().step_by(2).collect();
+                    let voiced = voice(60, &shell);
+                    for &pitch in &voiced {
+                        keys.push(pitched(
+                            &perf,
+                            Role::Keys,
+                            c,
+                            0.33,
+                            pitch,
+                            (0.38 * energy).clamp(0.02, 1.0),
+                            provenance(&perf, c, "comp", section_at(argument, c)),
+                        ));
                     }
-                    keys.push(pitched(
-                        &perf,
-                        Role::Keys,
-                        at,
-                        0.3,
-                        register(tones[tone_ix], 60),
-                        (0.40 * energy).clamp(0.02, 1.0),
-                        provenance(&perf, at, "comp", section_at(argument, at)),
-                    ));
+                    if let Some(cpc) = colour_pc {
+                        let top = *voiced.last().unwrap_or(&60);
+                        let colour = register(cpc, top + 1);
+                        keys.push(pitched(
+                            &perf,
+                            Role::Keys,
+                            c,
+                            0.33,
+                            colour,
+                            (0.32 * energy).clamp(0.02, 1.0),
+                            provenance(&perf, c, "comp", section_at(argument, c)),
+                        ));
+                        let g = c - 0.25;
+                        if g > bar_start && perf.on_stage(Agent::Keys, g) && room(g) {
+                            let grace = scale.nearest_scale_pitch(colour + 2);
+                            keys.push(pitched(
+                                &perf,
+                                Role::Keys,
+                                g,
+                                0.18,
+                                grace,
+                                (0.24 * energy).clamp(0.02, 1.0),
+                                provenance(&perf, g, "comp", section_at(argument, g)),
+                            ));
+                        }
+                    }
                 }
             }
         }
