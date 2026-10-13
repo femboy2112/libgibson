@@ -796,14 +796,15 @@ pub fn perform(
 }
 
 // =================================================================================================
-// Long-form composer (Stage A): TWO causally-connected episodes in ONE continuous 32-beat Score.
+// Long-form composer (Stage A): N causally-connected episodes (N >= 2) in ONE continuous Score.
 //
 // This is a PARALLEL path to `perform`. It reuses the frozen private helpers (`commit_role`,
 // `validate_role`, `validate_lane`, `provenance`, `pitched`, `register`, `action`, the transport)
 // without altering any of them, and never widens the four-bar `perform`'s own length guard. Where
-// `perform` plays one call/breath/return in four bars, `perform_song` lays a VERSE episode that
-// hangs open and a distinct-but-related HOOK episode that lands home, and threads a BandMemory
-// across the seam so the second episode's keys decision depends on whether the first was answered.
+// `perform` plays one call/breath/return in four bars, `perform_song` lays a sequence of 16-beat
+// episodes — the two-episode verse-open → hook-home control, and the four-episode verse → hook →
+// bridge-departs → hook-returns arc — threading a BandMemory across every seam so each episode's
+// keys decision depends on whether the earlier call it carries was answered.
 // =================================================================================================
 
 /// What the band carries from one episode into the next. The keys decision is the only consumer:
@@ -815,10 +816,10 @@ struct BandMemory {
     prev_answer_events: usize,
 }
 
-/// A committed long-form take. Mirrors [`CommittedPerformance`] but over an N-episode (here two)
-/// 32-beat domain: keys are admitted inside ANY episode's answer window, and the harmonic
-/// foundation is checked across all eight bars. Editing an exported Score yields a candidate that
-/// must be judged again; it cannot mutate what a dependent actually consumed.
+/// A committed long-form take. Mirrors [`CommittedPerformance`] but over an N-episode (N ≥ 2)
+/// domain: keys are admitted inside ANY episode's answer window, and the harmonic foundation is
+/// checked in every bar. Editing an exported Score yields a candidate that must be judged again;
+/// it cannot mutate what a dependent actually consumed.
 pub struct CommittedSong {
     composition: Composition,
     hearings: Vec<EffectiveHearing>,
@@ -836,7 +837,7 @@ impl CommittedSong {
         &self.hearings
     }
     /// Judge exported mutations without blessing or modifying them — the same event/source contract
-    /// as [`CommittedPerformance::validate_candidate`], generalized to the 32-beat domain.
+    /// as [`CommittedPerformance::validate_candidate`], generalized to the N-episode domain.
     pub fn validate_candidate(&self, score: &Score) -> Result<(), KernelError> {
         validate_song(score, &self.composition.perf, &self.source, &self.world)?;
         for (i, h) in self.hearings.iter().enumerate() {
@@ -895,48 +896,61 @@ const EPISODE_BEATS: f64 = 16.0;
 /// the long-form grid guard so a wild onset still fails.
 const LONGFORM_POCKET_BEATS: f64 = 0.06;
 
-/// Generalize `source_domain` to N contiguous episodes (here N = 2). The per-placement source
-/// checks are the same source-fidelity guards, with the four-event CELL constraints dropped (the
-/// long-form carrier is a complete generated phrase, not a one-bar prefix): the `onset + dur > 3.75`
-/// breath cap and the single-bar lattice no longer apply, but the quarter-beat grid, the finite
-/// bounded section dynamic, the non-empty lead-only carriage and the exact source transform still do.
+/// Generalize `source_domain` to N contiguous episodes (N ≥ 2: the two-episode verse→hook control,
+/// and the four-episode verse→hook→bridge→return arc). The per-placement source checks are the same
+/// source-fidelity guards, with the four-event CELL constraints dropped (the long-form carrier is a
+/// complete generated phrase, not a one-bar prefix): the `onset + dur > 3.75` breath cap and the
+/// single-bar lattice no longer apply, but the quarter-beat grid, the finite bounded section dynamic,
+/// the non-empty lead-only carriage and the exact source transform still do. The domain is an integer
+/// number of 16-beat episodes that each a declared placement owns in order; the SONG must establish,
+/// close `Resolved`, and its route must land home on the tonic — the relation lawfulness between
+/// episodes (consequent kinship, the departure law, the return's same-head) is the argument's own
+/// contract (`validate`) and the content witness, not re-litigated here.
 fn longform_domain(argument: &CompiledArgument) -> Result<(), KernelError> {
     let total = argument.song.plan.form.total_beats;
-    if total != 2.0 * EPISODE_BEATS
+    let episodes = (total / EPISODE_BEATS).round() as usize;
+    if episodes < 2
+        || total != episodes as f64 * EPISODE_BEATS
         || argument.route.len() != super::form::bars_spanning(total, 4.0) as usize
-        || argument.placements.len() != 2
-        || argument.song.thematic.sites.len() != 2
+        || argument.placements.len() != episodes
+        || argument.song.thematic.sites.len() != episodes
     {
         return Err(KernelError::Source(
-            "long-form domain is two episodes in eight bars",
+            "long-form domain is N contiguous sixteen-beat episodes (N >= 2)",
         ));
     }
     argument
         .argument
         .validate()
         .map_err(|_| KernelError::Source("invalid source argument"))?;
-    let [verse, hook] = argument.placements.as_slice() else {
-        unreachable!()
-    };
-    if verse.relation != super::argument::ArgumentRelation::Establish
-        || hook.relation
-            != (super::argument::ArgumentRelation::Consequent {
-                antecedent: verse.step,
-            })
+    use super::argument::ArgumentRelation;
+    if argument.placements[0].relation != ArgumentRelation::Establish
         || argument.argument.ending != super::argument::ArgumentEnding::Resolved
     {
         return Err(KernelError::Source(
-            "long-form requires an established episode and its resolving consequent",
+            "long-form must establish its first episode and close resolved",
         ));
     }
-    if verse.start_beat != 0.0
-        || verse.span_beats != EPISODE_BEATS
-        || hook.start_beat != EPISODE_BEATS
-        || hook.span_beats != EPISODE_BEATS
-    {
-        return Err(KernelError::Source(
-            "episode reservations must be [0,16) and [16,32)",
-        ));
+    for (e, p) in argument.placements.iter().enumerate() {
+        // Episodes tile the song in order, each a whole sixteen-beat reservation.
+        if p.start_beat != e as f64 * EPISODE_BEATS || p.span_beats != EPISODE_BEATS {
+            return Err(KernelError::Source(
+                "episode reservations must tile the song in sixteen-beat blocks",
+            ));
+        }
+        // Only the long-form arc vocabulary is admitted (establish / consequent / depart / return);
+        // question/answer/denial/develop/reconcile belong to the shorter conversation kernels.
+        if !matches!(
+            p.relation,
+            ArgumentRelation::Establish
+                | ArgumentRelation::Consequent { .. }
+                | ArgumentRelation::Depart { .. }
+                | ArgumentRelation::Return { .. }
+        ) {
+            return Err(KernelError::Source(
+                "long-form admits only establish/consequent/depart/return",
+            ));
+        }
     }
     for p in &argument.placements {
         if !argument
@@ -999,10 +1013,12 @@ fn longform_domain(argument: &CompiledArgument) -> Result<(), KernelError> {
         }
     }
     // The verse travels pre-dominant → dominant → tonic and hangs open on its own cadence; the
-    // hook lands home on the tonic at the last bar. Region-relative, reconstructed from the route.
+    // first hook lands home on the tonic at bar 7; and the SONG lands home on the tonic at its final
+    // bar (the Resolved ending's earned home-coming). Region-relative, reconstructed from the route.
     if argument.route[2] != (7, Quality::Dom7)
         || argument.route[3] != (0, Quality::Min)
         || argument.route[7] != (0, Quality::Min)
+        || argument.route[argument.route.len() - 1] != (0, Quality::Min)
     {
         return Err(KernelError::Source(
             "route must travel to its dominant and land the hook home",
@@ -1011,9 +1027,10 @@ fn longform_domain(argument: &CompiledArgument) -> Result<(), KernelError> {
     Ok(())
 }
 
-/// Perform one admitted source-driven long-form song: two causally-connected episodes in one
-/// continuous 32-beat Score. The lead carries a full VERSE (open) then a distinct HOOK (home); the
-/// band answers per episode under the memory law; the pulse is one shared pocket across the seam.
+/// Perform one admitted source-driven long-form song: N causally-connected 16-beat episodes (N ≥ 2)
+/// in one continuous Score. The lead carries each episode's declared section — a full VERSE (open), a
+/// distinct HOOK (home), and, in the four-episode arc, a BRIDGE that departs and a hook that RETURNS;
+/// the band answers per episode under the memory law; the pulse is one shared pocket across the seams.
 /// How hard the song's OWN harmony is pushing at a given bar — read from the committed per-bar
 /// chord, never an external energy fader. This is the endogenous "semantic situation" the whole
 /// ensemble allocates its density around: the tonic is the point of rest where the band opens up
@@ -1096,7 +1113,7 @@ pub fn perform_song(
         &argument.song.plan,
     )
     .map_err(|_| KernelError::Source("source placement is infeasible"))?;
-    let mut score = Score::new(world.tempo_bpm, 4.0, 2.0 * EPISODE_BEATS);
+    let mut score = Score::new(world.tempo_bpm, 4.0, argument.song.plan.form.total_beats);
     score.chords = perf.chords.clone();
     score.mono_voice = true;
     score.observed_lifetime = Some(super::voice::ObservedLifetimePolicy::ExplicitContinuity);
@@ -1121,7 +1138,7 @@ pub fn perform_song(
         })
         .collect();
 
-    // --- LEAD: carry both episodes' required source into an EMPTY lane. ---
+    // --- LEAD: carry every episode's required source into an EMPTY lane. ---
     let mut lead = Vec::new();
     let mut lead_links = Vec::new();
     super::argument_transport::replace_required_role(
@@ -1358,7 +1375,7 @@ pub fn perform_song(
     // builds and drives it WALKS the changes in punchy quarters (root, fifth, third) and steps into
     // the next downbeat. The downbeat root is the required harmonic anchor in EVERY bar, and every
     // note's velocity rides the shared ensemble energy (eased at home, leaning in on the dominant).
-    // A chromatic approach is planned against the hook's downbeat (the only episode seam here). ---
+    // A chromatic approach is planned against each later episode's downbeat (every episode seam). ---
     let mut bass = Vec::new();
     let bars_per_episode = (EPISODE_BEATS / 4.0) as usize;
     let total_bars = episodes * bars_per_episode;
@@ -1419,7 +1436,17 @@ pub fn perform_song(
     for e in 1..episodes {
         let seam = e as f64 * EPISODE_BEATS;
         let arrival = register(perf.context_at(seam).unwrap().chord.root_pc, 36);
-        if arrival > 36
+        // The chromatic pickup leads into the next episode's downbeat — but only a RESTING pre-seam
+        // bar (home, root + fifth) needs the lead-in: a walking pre-seam bar already steps into the
+        // downbeat on its own beat four, so adding the pickup there would be a redundant, colliding
+        // second leading tone. (The two-episode control's pre-seam bar is always home, so this guard
+        // is always satisfied there and its pickup is unchanged.)
+        let pre_seam_rests = matches!(
+            harmonic_drive(&perf.context_at(seam - 4.0).unwrap().chord, world.tonic_pc),
+            HarmonicDrive::Home
+        );
+        if pre_seam_rests
+            && arrival > 36
             && perf
                 .stage
                 .on_stage_span(Agent::Bass, seam - 0.5, seam + 0.5)
@@ -1477,7 +1504,7 @@ pub fn perform_song(
         let bar_start = bar as f64 * 4.0;
         let drive = harmonic_drive(&perf.context_at(bar_start).unwrap().chord, world.tonic_pc);
         let energy = drive_energy(drive);
-        // A fill lands because the NEXT bar opens a new phrase (the hook seam, then the final cadence).
+        // A fill lands because the NEXT bar opens a new phrase (each episode seam, then the final bar).
         let fill_bar = (bar + 1) % bars_per_episode == 0;
         // The whole kit's dynamics ride the harmonic energy AND the within-phrase swell; the `lay`
         // leans a stroke off the grid into the pocket (0 = dead-on, the time reference).
@@ -1633,8 +1660,9 @@ pub fn perform_song(
     Ok(take)
 }
 
-/// The long-form analogue of [`validate`]: the same event/source/stage/foundation contract over a
-/// 32-beat, eight-bar domain, with keys admitted inside ANY episode's answer window `[e*16+4, e*16+8)`.
+/// The long-form analogue of [`validate`]: the same event/source/stage/foundation contract over the
+/// N-episode domain, with keys admitted inside ANY episode's answer window `[e*16+4, e*16+8)`. The
+/// Score must be exactly as long as the source's form (an integer number of 16-beat episodes).
 fn validate_song(
     score: &Score,
     perf: &PerformancePlan,
@@ -1643,7 +1671,7 @@ fn validate_song(
 ) -> Result<(), KernelError> {
     score.validate().map_err(KernelError::InvalidScore)?;
     if score.tempo_bpm != world.tempo_bpm
-        || score.total_beats != 2.0 * EPISODE_BEATS
+        || score.total_beats != source.song.plan.form.total_beats
         || score.beats_per_bar != 4.0
         || score.observed_lifetime != Some(super::voice::ObservedLifetimePolicy::ExplicitContinuity)
         || !score.mono_voice

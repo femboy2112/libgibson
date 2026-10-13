@@ -2,6 +2,8 @@
 //! and the memory law that couples the second episode's band decision to the first.
 #[path = "../examples/c137_song/source.rs"]
 mod source;
+#[path = "../examples/c137_song/source_bridge.rs"]
+mod source_bridge;
 
 use gibson::audio::human_music::{
     kernel::{self, CommittedSong},
@@ -538,4 +540,134 @@ fn section_provenance_agrees_with_the_lead() {
             );
         }
     }
+}
+
+// ================================================================================================
+// R2 — the four-section phase-change arc: verse → hook → bridge(departs) → hook(returns), the first
+// AUDIBLE zoom-out of the long-form engine. These falsifiably pin the arc's INTEGRITY — a bridge
+// that does not genuinely depart, or a return that abandons the hook, is REJECTED, so the ending is
+// earned by a real journey and never by pasting the hook into the middle — and that the full arc
+// performs and passes the content witness. The eight-bar control above is unchanged (same kernel).
+// ================================================================================================
+use gibson::audio::human_music::argument::{ArgumentError, ArgumentRelation, ReferentId};
+use gibson::audio::human_music::theory::Quality;
+
+fn arc_take(seed: u64) -> CommittedSong {
+    kernel::perform_song(&source_bridge::source(seed), &world()).unwrap()
+}
+
+#[test]
+fn the_arc_states_verse_hook_bridge_return() {
+    let (argument, _song) = source_bridge::argument(2112);
+    assert_eq!(argument.referents.len(), 3, "verse + hook + bridge");
+    assert_eq!(argument.steps.len(), 4);
+    assert!(matches!(
+        argument.steps[0].relation,
+        ArgumentRelation::Establish
+    ));
+    assert!(matches!(
+        argument.steps[1].relation,
+        ArgumentRelation::Consequent { .. }
+    ));
+    assert!(matches!(
+        argument.steps[2].relation,
+        ArgumentRelation::Depart { .. }
+    ));
+    assert!(matches!(
+        argument.steps[3].relation,
+        ArgumentRelation::Return { .. }
+    ));
+    // The return restates the HOOK referent (identity preserved); its dependency graph records the
+    // earned journey — it depends on BOTH the hook it restates and the bridge it returns FROM.
+    assert_eq!(argument.steps[3].referent, ReferentId(1));
+    assert_eq!(argument.steps[1].referent, ReferentId(1));
+    assert!(
+        argument.steps[3].depends_on.contains(&argument.steps[2].id),
+        "the return must depend on the departure (the home-coming follows the bridge)"
+    );
+    assert!(argument.steps[3].depends_on.contains(&argument.steps[1].id));
+    // The argument validates: the departure and consequent laws hold on the DEVELOPED material.
+    assert_eq!(argument.validate(), Ok(()));
+}
+
+#[test]
+fn the_four_section_arc_performs_and_passes_the_witness() {
+    for seed in [2112u64, 7, 99] {
+        let take = arc_take(seed);
+        let s = take.score();
+        assert_eq!(s.total_beats, 64.0, "seed {seed}: four 16-beat episodes");
+        assert!(s.mono_voice);
+        // The lead sings in every episode (no dead sections); all four sections are realized.
+        for (lo, hi) in [(0.0, 16.0), (16.0, 32.0), (32.0, 48.0), (48.0, 64.0)] {
+            assert!(
+                s.role_notes(Role::Lead)
+                    .any(|n| n.start_beat >= lo && n.start_beat < hi),
+                "seed {seed}: the lead is silent in [{lo},{hi})"
+            );
+        }
+        // The content witness accepts the realized arc (source identity, dependency order, the
+        // departure and return laws all observed in the RAW Score); the candidate re-validates.
+        assert!(
+            gibson::audio::human_music::argument_witness::observe_argument(
+                &source_bridge::source(seed),
+                s,
+                world().tonic_pc
+            )
+            .valid(),
+            "seed {seed}: the content witness refused the realized arc"
+        );
+        take.validate_candidate(s).unwrap();
+    }
+}
+
+#[test]
+fn the_bridge_departs_harmonically_and_melodically() {
+    let take = arc_take(2112);
+    let s = take.score();
+    // Harmonic departure: the bridge section [32,48) pivots onto a DOMINANT (A7 = V7/iv, then E7 =
+    // V7) — an active, driving sound, not the home the verse/hook rest on. (This is also the A7-is-
+    // not-Home fix at work: the tonic-root dominant drives the band instead of anchoring it.)
+    assert!(
+        s.chords.iter().any(|c| c.start_beat >= 32.0
+            && c.start_beat < 48.0
+            && c.chord.quality == Quality::Dom7),
+        "the bridge must pivot onto a dominant"
+    );
+    // Melodic departure: the bridge lead is a genuinely new line, not a repeat of the hook.
+    let bridge_lead = pitches(s, Role::Lead, 32.0, 48.0);
+    let hook_lead = pitches(s, Role::Lead, 16.0, 32.0);
+    assert!(!bridge_lead.is_empty());
+    assert_ne!(
+        bridge_lead, hook_lead,
+        "the bridge must depart, not restate the hook verbatim"
+    );
+}
+
+#[test]
+fn a_bridge_that_does_not_depart_is_rejected() {
+    // Replace the bridge referent with a relabelled restatement of the HOOK (same register, lands
+    // CLOSED on the tonic): it does not lift and does not end open, so it is NOT a departure. The
+    // contract must refuse it — the bridge is load-bearing; the ending is earned only by a genuine
+    // journey, never by pasting the hook into the middle.
+    let (mut argument, _song) = source_bridge::argument(7);
+    argument.referents[2].events = argument.referents[1].events.clone();
+    assert!(
+        matches!(
+            argument.validate(),
+            Err(ArgumentError::DepartureNotRelated(_))
+        ),
+        "a hook restatement in the bridge slot must fail the departure law"
+    );
+}
+
+#[test]
+fn a_return_that_abandons_the_hook_is_rejected() {
+    // Point the return step at the VERSE referent instead of the hook: the home-coming would land on
+    // a different tune, breaking the "return restates the hook" identity. The contract must refuse it.
+    let (mut argument, _song) = source_bridge::argument(99);
+    argument.steps[3].referent = ReferentId(0);
+    assert!(
+        matches!(argument.validate(), Err(ArgumentError::WrongSource(_))),
+        "a return that wanders off the hook must fail the same-head law"
+    );
 }

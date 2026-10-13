@@ -1014,6 +1014,31 @@ pub fn generate_bridge(
     )
 }
 
+/// The long-form bridge: the same seeded departure as [`generate_bridge`], DEVELOPED into a played
+/// line — laid into the shared [`pocket_offset`] and shaped by a phrase dynamic contour — but,
+/// unlike [`generate_developed_pair`], deliberately NOT embellished: the teacher THINS the bridge
+/// (drops its fast motion) so the texture change itself signals the phase change, and filling it with
+/// sixteenths would erase that contrast. Pocket + dynamics touch only onset and accent (never pitch),
+/// so the [`is_departure`] law — which reads contour, mean pitch, arrival and scale pool — is
+/// invariant under the development; it is re-asserted here, and the undeveloped bridge is returned on
+/// the (unreachable by construction) chance that the pocket perturbs a boundary case.
+pub fn generate_developed_bridge(
+    seed: u64,
+    hook: &[MaterialEvent],
+    span: f64,
+    beats_per_bar: f64,
+    bridge_prog: &[BarChord],
+) -> Vec<MaterialEvent> {
+    let raw = generate_bridge(seed, hook, span, beats_per_bar, bridge_prog);
+    let mut developed = pocket_phrase(&raw, span);
+    shape_phrase_dynamics(&mut developed, span);
+    if is_departure(hook, &developed) {
+        developed
+    } else {
+        raw
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
