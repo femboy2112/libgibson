@@ -13,6 +13,7 @@ use super::harmony::ChordSpan;
 use super::ids::{ActionId, InteractionId, MaterialId};
 use super::interaction::{Call, Interaction, InteractionPlan, LeadStatement, Response, Transform};
 use super::material::{InteractionMaterial, MaterialSource};
+use super::occupancy::AuthoredOccupancy;
 use super::performance::{AdmissionInputs, PerformanceOptions, PerformancePlan};
 use super::score::{DrumHit, DrumVoice, Note, PitchFunction, Provenance, Role, Score};
 use super::theory::{Chord, PitchBasis, Quality, Scale};
@@ -770,6 +771,834 @@ pub fn perform(
     };
     take.validate_candidate(take.score())?;
     Ok(take)
+}
+
+// =================================================================================================
+// Long-form composer (Stage A): TWO causally-connected episodes in ONE continuous 32-beat Score.
+//
+// This is a PARALLEL path to `perform`. It reuses the frozen private helpers (`commit_role`,
+// `validate_role`, `validate_lane`, `provenance`, `pitched`, `register`, `action`, the transport)
+// without altering any of them, and never widens the four-bar `perform`'s own length guard. Where
+// `perform` plays one call/breath/return in four bars, `perform_song` lays a VERSE episode that
+// hangs open and a distinct-but-related HOOK episode that lands home, and threads a BandMemory
+// across the seam so the second episode's keys decision depends on whether the first was answered.
+// =================================================================================================
+
+/// What the band carries from one episode into the next. The keys decision is the only consumer:
+/// an episode whose real call went unanswered leaves `open_call` set, and the next episode
+/// discharges that debt (source-bound) instead of making its own base decision.
+#[derive(Default)]
+struct BandMemory {
+    open_call: bool,
+    prev_answer_events: usize,
+}
+
+/// A committed long-form take. Mirrors [`CommittedPerformance`] but over an N-episode (here two)
+/// 32-beat domain: keys are admitted inside ANY episode's answer window, and the harmonic
+/// foundation is checked across all eight bars. Editing an exported Score yields a candidate that
+/// must be judged again; it cannot mutate what a dependent actually consumed.
+pub struct CommittedSong {
+    composition: Composition,
+    hearings: Vec<EffectiveHearing>,
+    source: CompiledArgument,
+    world: MusicWorld,
+}
+impl CommittedSong {
+    pub fn composition(&self) -> &Composition {
+        &self.composition
+    }
+    pub fn score(&self) -> &Score {
+        &self.composition.score
+    }
+    pub fn hearings(&self) -> &[EffectiveHearing] {
+        &self.hearings
+    }
+    /// Judge exported mutations without blessing or modifying them — the same event/source contract
+    /// as [`CommittedPerformance::validate_candidate`], generalized to the 32-beat domain.
+    pub fn validate_candidate(&self, score: &Score) -> Result<(), KernelError> {
+        validate_song(score, &self.composition.perf, &self.source, &self.world)?;
+        for (i, h) in self.hearings.iter().enumerate() {
+            if !h.matches(score) {
+                return Err(KernelError::StaleObservation(i));
+            }
+        }
+        let committed = self.score();
+        for (role, agent) in [
+            (Role::Lead, Agent::Lead),
+            (Role::Keys, Agent::Keys),
+            (Role::Bass, Agent::Bass),
+            (Role::Pad, Agent::Pad),
+        ] {
+            let signature = |n: &Note| {
+                (
+                    n.start_beat,
+                    n.dur_beats,
+                    n.pitch,
+                    n.velocity,
+                    n.role,
+                    n.prov,
+                    n.function,
+                )
+            };
+            if !score
+                .role_notes(role)
+                .map(signature)
+                .eq(committed.role_notes(role).map(signature))
+            {
+                return Err(KernelError::ChangedCommitment(agent));
+            }
+        }
+        let stroke = |h: &DrumHit| (h.start_beat, h.voice, h.velocity, h.prov);
+        if !score
+            .drums
+            .iter()
+            .map(stroke)
+            .eq(committed.drums.iter().map(stroke))
+        {
+            return Err(KernelError::ChangedCommitment(Agent::Drums));
+        }
+        if score.voice_continuity != committed.voice_continuity {
+            return Err(KernelError::Source("changed committed voice ownership"));
+        }
+        Ok(())
+    }
+}
+
+/// How many beats one episode owns. The long-form domain is an integer number of these.
+const EPISODE_BEATS: f64 = 16.0;
+
+/// The maximum a source onset may sit off its sixteenth-grid lattice position and still be admitted
+/// — the budget for a STRUCTURED performance pocket (a melody laid a few milliseconds behind the
+/// beat), never random jitter. At 144 BPM, 0.06 beat ≈ 25 ms. Bounds the deliberate relaxation of
+/// the long-form grid guard so a wild onset still fails.
+const LONGFORM_POCKET_BEATS: f64 = 0.06;
+
+/// Generalize `source_domain` to N contiguous episodes (here N = 2). The per-placement source
+/// checks are the same source-fidelity guards, with the four-event CELL constraints dropped (the
+/// long-form carrier is a complete generated phrase, not a one-bar prefix): the `onset + dur > 3.75`
+/// breath cap and the single-bar lattice no longer apply, but the quarter-beat grid, the finite
+/// bounded section dynamic, the non-empty lead-only carriage and the exact source transform still do.
+fn longform_domain(argument: &CompiledArgument) -> Result<(), KernelError> {
+    let total = argument.song.plan.form.total_beats;
+    if total != 2.0 * EPISODE_BEATS
+        || argument.route.len() != super::form::bars_spanning(total, 4.0) as usize
+        || argument.placements.len() != 2
+        || argument.song.thematic.sites.len() != 2
+    {
+        return Err(KernelError::Source(
+            "long-form domain is two episodes in eight bars",
+        ));
+    }
+    argument
+        .argument
+        .validate()
+        .map_err(|_| KernelError::Source("invalid source argument"))?;
+    let [verse, hook] = argument.placements.as_slice() else {
+        unreachable!()
+    };
+    if verse.relation != super::argument::ArgumentRelation::Establish
+        || hook.relation
+            != (super::argument::ArgumentRelation::Consequent {
+                antecedent: verse.step,
+            })
+        || argument.argument.ending != super::argument::ArgumentEnding::Resolved
+    {
+        return Err(KernelError::Source(
+            "long-form requires an established episode and its resolving consequent",
+        ));
+    }
+    if verse.start_beat != 0.0
+        || verse.span_beats != EPISODE_BEATS
+        || hook.start_beat != EPISODE_BEATS
+        || hook.span_beats != EPISODE_BEATS
+    {
+        return Err(KernelError::Source(
+            "episode reservations must be [0,16) and [16,32)",
+        ));
+    }
+    for p in &argument.placements {
+        if !argument
+            .song
+            .thematic
+            .sites
+            .iter()
+            .any(|s| *s == p.theme_site())
+        {
+            return Err(KernelError::Source(
+                "thematic projection differs from its source",
+            ));
+        }
+        if p.anchor_semitones != 0
+            || !p.section_gain.is_finite()
+            || !(0.0 < p.section_gain && p.section_gain <= 1.0)
+            || p.carriers != [Agent::Lead]
+            || p.pitch_basis != PitchBasis::Semitones
+            || p.events.is_empty()
+            || p.events.iter().any(|e| {
+                // The metric lattice is still the quarter-beat (sixteenth) grid, but a source may
+                // now carry a bounded STRUCTURED pocket — a melody laid a few milliseconds behind
+                // the grid — so an onset is admitted if it sits within `LONGFORM_POCKET_BEATS` of a
+                // lattice position. This is a deliberate relaxation (a named tolerance), not the
+                // removal of the grid: a wild or random onset still fails.
+                let lattice = (e.onset * 4.0).round() / 4.0;
+                e.accent <= 0.0
+                    || e.onset < 0.0
+                    || (e.onset - lattice).abs() > LONGFORM_POCKET_BEATS
+            })
+        {
+            return Err(KernelError::Source(
+                "source must fit its quarter-beat lattice within the pocket tolerance",
+            ));
+        }
+        let step = argument
+            .argument
+            .steps
+            .iter()
+            .find(|s| s.id == p.step)
+            .ok_or(KernelError::Source("foreign source step"))?;
+        let referent = argument
+            .argument
+            .referents
+            .iter()
+            .find(|r| r.id == step.referent)
+            .ok_or(KernelError::Source("foreign referent"))?;
+        if p.referent != step.referent
+            || p.relation != step.relation
+            || p.carriers != step.carriers
+            || step
+                .transform
+                .apply(referent)
+                .map_err(|_| KernelError::Source("invalid source transform"))?
+                != p.events
+        {
+            return Err(KernelError::Source(
+                "compiled placement differs from its source",
+            ));
+        }
+    }
+    // The verse travels pre-dominant → dominant → tonic and hangs open on its own cadence; the
+    // hook lands home on the tonic at the last bar. Region-relative, reconstructed from the route.
+    if argument.route[2] != (7, Quality::Dom7)
+        || argument.route[3] != (0, Quality::Min)
+        || argument.route[7] != (0, Quality::Min)
+    {
+        return Err(KernelError::Source(
+            "route must travel to its dominant and land the hook home",
+        ));
+    }
+    Ok(())
+}
+
+/// Perform one admitted source-driven long-form song: two causally-connected episodes in one
+/// continuous 32-beat Score. The lead carries a full VERSE (open) then a distinct HOOK (home); the
+/// band answers per episode under the memory law; the pulse is one shared pocket across the seam.
+/// How hard the song's OWN harmony is pushing at a given bar — read from the committed per-bar
+/// chord, never an external energy fader. This is the endogenous "semantic situation" the whole
+/// ensemble allocates its density around: the tonic is the point of rest where the band opens up
+/// and lets the chord breathe; a dominant is the point of maximum drive; the harmony in between
+/// builds. Bass figure, ride subdivision, comp budget and the shared dynamic all follow it, so the
+/// band rises and falls together on the song's energy instead of each voice running flat-out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HarmonicDrive {
+    /// On the tonic — harmonic rest. The band anchors and breathes.
+    Home,
+    /// Pre-dominant / passing harmony — the band walks and rides, carrying motion.
+    Building,
+    /// A dominant — maximum tension. The band leans in hardest toward the resolution.
+    Driving,
+}
+
+fn harmonic_drive(chord: &Chord, tonic_pc: i32) -> HarmonicDrive {
+    let degree = (chord.root_pc - tonic_pc).rem_euclid(12);
+    if degree == 0 {
+        HarmonicDrive::Home
+    } else if matches!(chord.quality, Quality::Dom7 | Quality::Dom9) || degree == 7 {
+        HarmonicDrive::Driving
+    } else {
+        HarmonicDrive::Building
+    }
+}
+
+/// The shared ensemble dynamic for a bar's harmonic drive: eased at home, leaning in on the
+/// dominant. One curve every voice rides, so the whole band breathes together.
+fn drive_energy(drive: HarmonicDrive) -> f32 {
+    match drive {
+        HarmonicDrive::Home => 0.82,
+        HarmonicDrive::Building => 0.92,
+        HarmonicDrive::Driving => 1.0,
+    }
+}
+
+/// A gentle within-phrase crescendo: the band enters each episode a touch softer and leans in toward
+/// its cadence, so repeated bars of the same harmony still differ by where they sit in the phrase.
+/// A reasoned contour (a fixed function of phrase position), riding on top of the harmonic energy.
+fn groove_swell(bar: usize, bars_per_episode: usize) -> f32 {
+    let in_episode = (bar % bars_per_episode) as f32 / bars_per_episode as f32;
+    0.94 + 0.12 * in_episode
+}
+
+pub fn perform_song(
+    argument: &CompiledArgument,
+    world: &MusicWorld,
+) -> Result<CommittedSong, KernelError> {
+    longform_domain(argument)?;
+    if !world.tempo_bpm.is_finite() || world.tempo_bpm <= 0.0 {
+        return Err(KernelError::Source("invalid shared pulse"));
+    }
+    let episodes = (argument.song.plan.form.total_beats / EPISODE_BEATS).round() as usize;
+    let inputs = AdmissionInputs {
+        argument: Some(argument.clone()),
+        harmony: super::policy::HarmonyPolicy::Vocabulary,
+        ..Default::default()
+    };
+    let mut perf = PerformancePlan::from_song_admitted(
+        &argument.song,
+        world,
+        PerformanceOptions {
+            actions: false,
+            ..Default::default()
+        },
+        None,
+        &inputs,
+    )
+    .map_err(|_| KernelError::Source("final source harmony refused"))?;
+    super::argument_transport::validate_required_placements(
+        &argument.placements,
+        world.tonic_pc,
+        &perf.contexts,
+        &argument.song.plan,
+    )
+    .map_err(|_| KernelError::Source("source placement is infeasible"))?;
+    let mut score = Score::new(world.tempo_bpm, 4.0, 2.0 * EPISODE_BEATS);
+    score.chords = perf.chords.clone();
+    score.mono_voice = true;
+    score.observed_lifetime = Some(super::voice::ObservedLifetimePolicy::ExplicitContinuity);
+
+    // --- LEAD: carry both episodes' required source into an EMPTY lane. ---
+    let mut lead = Vec::new();
+    let mut lead_links = Vec::new();
+    super::argument_transport::replace_required_role(
+        &mut lead,
+        Role::Lead,
+        &argument.placements,
+        world.tonic_pc,
+        &perf.contexts,
+        &argument.song.plan,
+    )
+    .map_err(|_| KernelError::Source("source realization refused"))?;
+    for (i, p) in argument.placements.iter().enumerate() {
+        let notes: Vec<_> = lead
+            .iter_mut()
+            .filter(|n| n.start_beat >= p.start_beat && n.start_beat < p.start_beat + p.span_beats)
+            .collect();
+        for n in notes {
+            n.prov.material = Some(perf.statements[i].material);
+            n.prov.actions = n.prov.actions.with(perf.statements[i].call.unwrap());
+        }
+    }
+    // Explicit links inside each declared episode gesture…
+    for p in &argument.placements {
+        let ns: Vec<_> = lead
+            .iter()
+            .filter(|n| n.start_beat >= p.start_beat && n.start_beat < p.start_beat + p.span_beats)
+            .copied()
+            .collect();
+        for pair in ns.windows(2) {
+            lead_links.push(VoiceContinuation::new(&pair[0], &pair[1]).unwrap());
+        }
+    }
+    // …and ONE legato seam per episode boundary. The long-form lead is continuous — the verse runs
+    // straight into the hook with no breath — so its final sustained cadence note and the next
+    // episode's downbeat are one voice across the barline. Without the link they read as an illegal
+    // mono overlap (the cadence's release tail crosses the downbeat); the choke cancels at the seam.
+    for e in 0..episodes.saturating_sub(1) {
+        let boundary = (e + 1) as f64 * EPISODE_BEATS;
+        let last = lead
+            .iter()
+            .filter(|n| n.start_beat < boundary)
+            .max_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+        let next = lead
+            .iter()
+            .filter(|n| n.start_beat >= boundary)
+            .min_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+        if let (Some(a), Some(b)) = (last, next) {
+            lead_links.push(VoiceContinuation::new(a, b).unwrap());
+        }
+    }
+    score = commit_role(score, &perf, world, Role::Lead, lead, lead_links)?;
+
+    // --- KEYS: per-episode call/answer threaded by the memory law. ---
+    let mut hearings = Vec::new();
+    let mut keys = Vec::new();
+    let mut keys_windows = vec![0usize; episodes];
+    let mut memory = BandMemory::default();
+    // The previous episode's call material: what a later episode discharges if that call went
+    // unpaid. Threaded alongside BandMemory (which carries only the law's boolean/count state).
+    let mut carried_cell: Option<InteractionMaterial> = None;
+    // `e` is an episode index into several parallel structures (materials, statements, the window
+    // tally, the beat offset); the range loop is the clearest expression of that.
+    #[allow(clippy::needless_range_loop)]
+    for e in 0..episodes {
+        let ws = e as f64 * EPISODE_BEATS;
+        hearings.push(EffectiveHearing::capture(
+            Agent::Keys,
+            Role::Lead,
+            ws,
+            ws + 4.0,
+            &score,
+        ));
+        let heard: Vec<_> = score
+            .role_notes(Role::Lead)
+            .filter(|n| n.start_beat >= ws && n.start_beat < ws + 4.0)
+            .copied()
+            .collect();
+        // This episode's call material. `transform_material` answers its TAIL (the last <=4
+        // events, the phrase's cadence gesture) — which is exactly where the verse (hangs open on
+        // the flat-seventh) and the hook (lands home on the tonic) genuinely diverge, so WHICH call
+        // a later episode discharges is audible. Answering the shared opening head would not be.
+        let cell = perf.materials[e].clone();
+        // The base decision reads the heard opening contour exactly as `perform` does: a tonic close
+        // stands alone (Silence), an open rising line invites a contrary answer (Invert), a falling
+        // line is quoted. Keys off-stage is a real withheld window (Silence). The contour itself is
+        // kept separately from the off-stage override so a later episode can discharge it on-stage.
+        let closed = heard
+            .last()
+            .is_some_and(|n| n.pitch.rem_euclid(12) == world.tonic_pc.rem_euclid(12));
+        let rising = heard.len() >= 2 && heard.last().unwrap().pitch > heard[0].pitch;
+        let on_stage = perf.stage.on_stage_span(Agent::Keys, ws + 4.0, ws + 8.0);
+        let base = if !on_stage || closed {
+            Transform::Silence
+        } else if rising {
+            Transform::Invert
+        } else {
+            Transform::Quote
+        };
+        let call_real = !heard.is_empty();
+        // THE MEMORY LAW: an unpaid call carried from an earlier episode is DISCHARGED here —
+        // source-bound to THAT earlier call's material, and QUOTED (the band finally restates the
+        // figure it owes), overriding this episode's own base decision (which for a closed hook is
+        // Silence/make-room). An in-the-moment answer INVERTS the call (a contrary reply); a late
+        // discharge QUOTES it (the thing left hanging, said at last) — so WHICH call drove the
+        // keys is audible in the contour, not just in a source label the projection would quantize
+        // away. Otherwise this episode makes its own base decision against its own call.
+        let (transform, material_src) = if memory.open_call && on_stage {
+            (Transform::Quote, carried_cell.clone())
+        } else {
+            (base, Some(cell.clone()))
+        };
+        // The answer sings across its response window ON the shared grid, from the downbeat of the
+        // episode's second bar — a call-and-response that resolves inside bar 2, not a crammed,
+        // sixteenth-late burst dangling off the end of it. (Keys remain confined to `[4, 8)` per
+        // episode by `validate_song`; this just uses that window honestly instead of its last beat.)
+        let keys_at = ws + 4.0;
+        let mut produced = 0usize;
+        if !matches!(transform, Transform::Silence) {
+            if let Some(material) = material_src.as_ref().and_then(|src| {
+                super::material::transform_material(
+                    MaterialId(perf.materials.len() as u32),
+                    src,
+                    transform,
+                    Agent::Keys,
+                    keys_at,
+                    3.0,
+                )
+            }) {
+                let aid = action(
+                    &mut perf.actions,
+                    Agent::Keys,
+                    ActionKind::Answer,
+                    keys_at,
+                    material.length(),
+                    perf.statements[e].call,
+                    0,
+                );
+                let anchor = register(perf.context_at(keys_at).unwrap().chord.root_pc, 60);
+                let velocity = heard.iter().map(|n| n.velocity).fold(0.0, f32::max) * 0.78;
+                for (at, dur, pitch, accent) in super::material::project_pitched(
+                    &material,
+                    keys_at,
+                    ws + 8.0,
+                    anchor,
+                    &perf,
+                    &|ctx, pc| ctx.chord.pitch_classes().contains(&pc),
+                ) {
+                    let mut prov = provenance(&perf, at, "answer").realizing(aid);
+                    prov.material = Some(material.id);
+                    prov.interaction = Some(InteractionId(e as u32));
+                    keys.push(pitched(
+                        &perf,
+                        Role::Keys,
+                        at,
+                        dur as f32 * 0.8,
+                        pitch.unwrap(),
+                        velocity * accent,
+                        prov,
+                    ));
+                    produced += 1;
+                }
+                perf.materials.push(material);
+            }
+        }
+        keys_windows[e] = produced;
+        // The call went unanswered iff it was real and this episode produced nothing: carry the debt.
+        memory.open_call = produced == 0 && call_real;
+        memory.prev_answer_events = produced;
+        carried_cell = Some(cell);
+    }
+    score = commit_role(score, &perf, world, Role::Keys, keys, Vec::new())?;
+    for e in 0..episodes {
+        let ws = e as f64 * EPISODE_BEATS;
+        hearings.push(EffectiveHearing::capture(
+            Agent::Drums,
+            Role::Keys,
+            ws + 4.0,
+            ws + 8.0,
+            &score,
+        ));
+    }
+
+    // --- BASS: a foundation whose DENSITY follows the harmony it is spelling. On the tonic the bass
+    // ANCHORS and lets the chord ring (root + fifth — a breath at the point of rest); as the harmony
+    // builds and drives it WALKS the changes in punchy quarters (root, fifth, third) and steps into
+    // the next downbeat. The downbeat root is the required harmonic anchor in EVERY bar, and every
+    // note's velocity rides the shared ensemble energy (eased at home, leaning in on the dominant).
+    // A chromatic approach is planned against the hook's downbeat (the only episode seam here). ---
+    let mut bass = Vec::new();
+    let bars_per_episode = (EPISODE_BEATS / 4.0) as usize;
+    let total_bars = episodes * bars_per_episode;
+    for bar in 0..total_bars {
+        let at = bar as f64 * 4.0;
+        let ctx = perf.context_at(at).unwrap();
+        let drive = harmonic_drive(&ctx.chord, world.tonic_pc);
+        let energy = drive_energy(drive);
+        let tones = ctx.chord.pitch_classes();
+        let root = register(ctx.chord.root_pc, 36);
+        let fifth = register(tones[2.min(tones.len().saturating_sub(1))], 36);
+        let third = register(tones[1.min(tones.len().saturating_sub(1))], 36);
+        // Beat four leads by a half-step into the next bar's root; the final bar has no successor,
+        // so it settles on the fifth rather than leading away from home.
+        let beat_four = match (bar + 1 < total_bars)
+            .then(|| register(perf.context_at(at + 4.0).unwrap().chord.root_pc, 36))
+        {
+            Some(next) if next > 36 => next - 1,
+            Some(next) => next + 1,
+            None => fifth,
+        };
+        // At HOME the bass lays back: the root rings and the fifth answers on beat three, leaving the
+        // tonic room to breathe (the fifth is clipped short of beat four, clearing any planned seam
+        // pickup). Everywhere else it walks the changes. One monophonic line in the bass register —
+        // motion that voices the harmony, never a doubled or sub-octave weave.
+        let figure: Vec<(f64, i32, f32, f32)> = match drive {
+            HarmonicDrive::Home => vec![(0.0, root, 1.8, 0.70), (2.0, fifth, 1.4, 0.52)],
+            _ => vec![
+                (0.0, root, 0.8, 0.76),
+                (1.0, fifth, 0.45, 0.56),
+                (2.0, third, 0.45, 0.60),
+                (3.0, beat_four.clamp(36, 55), 0.45, 0.54),
+            ],
+        };
+        let swell = groove_swell(bar, bars_per_episode);
+        for (offset, pitch, dur, velocity) in figure {
+            // The grid position labels the section/phrase; the SHARED pocket leans the attack off it
+            // (the downbeat root at `offset==0` stays exactly on `at`, the required anchor), and the
+            // velocity rides the harmonic energy and the phrase swell. The bass orbits the SAME
+            // pocket as the drums and the lead, so coincident attacks lock — one solar system.
+            let prov = provenance(&perf, at + offset, "foundation");
+            bass.push(pitched(
+                &perf,
+                Role::Bass,
+                at + offset + super::theme_family::pocket_offset(offset),
+                dur,
+                pitch,
+                velocity * energy * swell,
+                prov,
+            ));
+        }
+    }
+    for e in 1..episodes {
+        let seam = e as f64 * EPISODE_BEATS;
+        let arrival = register(perf.context_at(seam).unwrap().chord.root_pc, 36);
+        if arrival > 36
+            && perf
+                .stage
+                .on_stage_span(Agent::Bass, seam - 0.5, seam + 0.5)
+        {
+            let id = action(
+                &mut perf.actions,
+                Agent::Bass,
+                ActionKind::Pickup,
+                seam - 0.5,
+                0.5,
+                None,
+                0,
+            );
+            perf.actions.actions[id.0 as usize].target_beat = Some(seam);
+            let mut note = pitched(
+                &perf,
+                Role::Bass,
+                seam - 0.5,
+                0.3,
+                arrival - 1,
+                0.62,
+                provenance(&perf, seam - 0.5, "approach").realizing(id),
+            );
+            note.function = Some(PitchFunction::ChromaticApproach);
+            bass.push(note);
+        }
+    }
+    bass.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+    let bass_links = bass
+        .windows(2)
+        .map(|pair| VoiceContinuation::new(&pair[0], &pair[1]).unwrap())
+        .collect();
+    score = commit_role(score, &perf, world, Role::Bass, bass, bass_links)?;
+
+    // --- DRUMS: one shared pocket played like a fusion KIT whose density is ALLOCATED by the song's
+    // state, not held flat with every limb maxed. A steady spine (kick on 1 & 3, backbeat on 2 & 4)
+    // locks the band's time in every bar. The ride BREATHES with the harmony — eighths when it is home
+    // and resting, sixteenths as it builds and drives — and the whole kit's dynamics ride the shared
+    // ensemble energy. Over that, the drummer COMPS into the off-beats the lead leaves open, reading
+    // the lead's authored occupancy: softer inside a live phrase, fuller where the phrase has yielded
+    // (an answer), and silent where the melody is speaking (make room). A rising fill lifts into each
+    // phrase boundary. Every stroke sits within a bounded, STRUCTURED pocket (reasoned micro-timing
+    // and dynamics, NEVER random jitter) and is derived from the LEAD and HARMONY only — never the
+    // keys — so the pulse stays bit-identical regardless of any keys response (the causal witness
+    // depends on this). A separate heard-keys fill (below) carries the keys law per episode. ---
+    let lead_notes: Vec<Note> = score.role_notes(Role::Lead).copied().collect();
+    let lead_occ = AuthoredOccupancy::from_role(&perf, &score.notes, Role::Lead);
+    for bar in 0..total_bars {
+        let bar_start = bar as f64 * 4.0;
+        let drive = harmonic_drive(&perf.context_at(bar_start).unwrap().chord, world.tonic_pc);
+        let energy = drive_energy(drive);
+        // A fill lands because the NEXT bar opens a new phrase (the hook seam, then the final cadence).
+        let fill_bar = (bar + 1) % bars_per_episode == 0;
+        // The whole kit's dynamics ride the harmonic energy AND the within-phrase swell; the `lay`
+        // leans a stroke off the grid into the pocket (0 = dead-on, the time reference).
+        let swell = groove_swell(bar, bars_per_episode);
+        let mut push = |voice: DrumVoice, grid: f64, vel: f32, label: &'static str, lay: f64| {
+            score.drums.push(DrumHit {
+                start_beat: grid + lay,
+                voice,
+                velocity: (vel * energy * swell).clamp(0.02, 1.0),
+                prov: provenance(&perf, grid, label),
+            });
+        };
+        // The steady spine — always present, locking the shared time. The downbeat kick and the hats
+        // are the dead-on time reference; the backbeat snare (and the beat-three kick) DRAG behind
+        // them by the SAME shared pocket the bass and lead use, so the whole band locks as one body.
+        let pocket = super::theme_family::pocket_offset;
+        push(DrumVoice::Kick, bar_start, 0.95, "pulse", 0.0);
+        push(DrumVoice::Kick, bar_start + 2.0, 0.78, "pulse", pocket(2.0));
+        push(
+            DrumVoice::Snare,
+            bar_start + 1.0,
+            0.80,
+            "pulse",
+            pocket(1.0),
+        );
+        push(
+            DrumVoice::Snare,
+            bar_start + 3.0,
+            0.84,
+            "pulse",
+            pocket(3.0),
+        );
+        // The ride carpet: its SUBDIVISION follows the harmonic drive — eighths at rest, sixteenths in
+        // motion — with the down/and/e-a accent hierarchy and the hat opening on the "and of four".
+        let sixteenths = !matches!(drive, HarmonicDrive::Home);
+        let stride: usize = if sixteenths { 1 } else { 2 };
+        for s in (0..16u32).step_by(stride) {
+            let at = bar_start + s as f64 * 0.25;
+            let accent = match s % 4 {
+                0 => 0.40, // the beat
+                2 => 0.32, // the "and"
+                _ => 0.15, // the "e" and "a"
+            };
+            let voice = if sixteenths && s == 14 {
+                DrumVoice::OpenHat // the "and of four"
+            } else {
+                DrumVoice::ClosedHat
+            };
+            push(voice, at, accent, "pulse", 0.0);
+        }
+        // The conversation: comp strokes dropped into the off-beats the lead left open, up to the
+        // budget the harmonic drive allows (home lays out; building comps; a dominant drives hardest).
+        // A kick leans on the "ands" (a syncopated push with the bass), a ghost snare on the "a" — but
+        // ONLY where the lead is not attacking (make room), softer inside a live phrase and fuller
+        // where the phrase has yielded. This is the make-room law that turns competing voices into
+        // interplay, and it reads the lead only, so it never perturbs the keys-independent pulse.
+        let budget = match drive {
+            HarmonicDrive::Home => 0,
+            HarmonicDrive::Building => 2,
+            HarmonicDrive::Driving => 3,
+        };
+        let mut placed = 0;
+        for s in [2u32, 6, 10, 14, 7, 11] {
+            if placed >= budget {
+                break;
+            }
+            let at = bar_start + s as f64 * 0.25;
+            if !lead_occ.allows_comp_at(at, &lead_notes) {
+                continue; // the lead is speaking here — leave the space
+            }
+            let (voice, base) = if s % 4 == 2 {
+                (DrumVoice::Kick, 0.56) // on the "and"
+            } else {
+                (DrumVoice::Snare, 0.40) // a ghost on the "a"
+            };
+            let vel = if lead_occ.yields_at(at) {
+                base
+            } else {
+                base * 0.5
+            };
+            push(voice, at, vel, "comp", pocket(at - bar_start)); // comps ride the shared pocket
+            placed += 1;
+        }
+        // Phrase-end fill: rising sixteenth snares across the last half-bar because the phrase is
+        // ending (into the hook, then into the final cadence) — not on a coin flip. Fills are tight
+        // (on the grid) so they drive cleanly into the downbeat.
+        if fill_bar {
+            for k in 0..4u32 {
+                push(
+                    DrumVoice::Snare,
+                    bar_start + 2.0 + k as f64 * 0.5,
+                    0.42 + 0.12 * k as f32,
+                    "pulse",
+                    0.0,
+                );
+            }
+        }
+    }
+    #[allow(clippy::needless_range_loop)]
+    for e in 0..episodes {
+        let ws = e as f64 * EPISODE_BEATS;
+        if keys_windows[e] == 0 {
+            continue;
+        }
+        let window_keys: Vec<_> = score
+            .role_notes(Role::Keys)
+            .filter(|n| n.start_beat >= ws + 4.0 && n.start_beat < ws + 8.0)
+            .copied()
+            .collect();
+        if window_keys.is_empty() {
+            continue;
+        }
+        let aid = action(
+            &mut perf.actions,
+            Agent::Drums,
+            ActionKind::Fill,
+            ws + 10.5,
+            1.0,
+            None,
+            0,
+        );
+        // A rhythm echo of this episode's actual final two keys attacks, bounded before its barline.
+        let tail = &window_keys[window_keys.len().saturating_sub(2)..];
+        let first = tail[0].start_beat;
+        for n in tail {
+            let at = ws + 10.5 + (n.start_beat - first) * 0.5;
+            if at < ws + 11.5 {
+                score.drums.push(DrumHit {
+                    start_beat: at,
+                    voice: DrumVoice::Snare,
+                    velocity: n.velocity * 0.65,
+                    prov: provenance(&perf, at, "heard-keys").realizing(aid),
+                });
+            }
+        }
+    }
+    perf.budget = super::budget::allocate(&perf);
+    score
+        .drums
+        .sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+    let take = CommittedSong {
+        composition: Composition {
+            score,
+            perf,
+            song: argument.song.clone(),
+        },
+        hearings,
+        source: argument.clone(),
+        world: world.clone(),
+    };
+    take.validate_candidate(take.score())?;
+    Ok(take)
+}
+
+/// The long-form analogue of [`validate`]: the same event/source/stage/foundation contract over a
+/// 32-beat, eight-bar domain, with keys admitted inside ANY episode's answer window `[e*16+4, e*16+8)`.
+fn validate_song(
+    score: &Score,
+    perf: &PerformancePlan,
+    source: &CompiledArgument,
+    world: &MusicWorld,
+) -> Result<(), KernelError> {
+    score.validate().map_err(KernelError::InvalidScore)?;
+    if score.tempo_bpm != world.tempo_bpm
+        || score.total_beats != 2.0 * EPISODE_BEATS
+        || score.beats_per_bar != 4.0
+        || score.observed_lifetime != Some(super::voice::ObservedLifetimePolicy::ExplicitContinuity)
+        || !score.mono_voice
+        || !score.sfx.is_empty()
+    {
+        return Err(KernelError::Source("changed performance domain"));
+    }
+    let chord = |c: &ChordSpan| (c.start_beat, c.dur_beats, c.chord, c.function, c.degree);
+    if !score
+        .chords
+        .iter()
+        .map(chord)
+        .eq(perf.chords.iter().map(chord))
+    {
+        return Err(KernelError::Source("changed final harmonic base"));
+    }
+    if !super::argument_witness::observe_argument(source, score, world.tonic_pc).valid() {
+        return Err(KernelError::Source(
+            "source witness refused realized content",
+        ));
+    }
+    if !super::voice::continuity_violations(&score.notes, &score.voice_continuity).is_empty() {
+        return Err(KernelError::Capacity(Role::Bass));
+    }
+    for role in [Role::Lead, Role::Keys, Role::Bass, Role::Pad] {
+        validate_role(score, perf, role, world)?;
+    }
+    for n in &score.notes {
+        let agent = match n.role {
+            Role::Lead => Agent::Lead,
+            Role::Keys => Agent::Keys,
+            Role::Bass => Agent::Bass,
+            Role::Pad => Agent::Pad,
+        };
+        if !perf
+            .stage
+            .on_stage_span(agent, n.start_beat, n.start_beat + f64::from(n.dur_beats))
+        {
+            return Err(KernelError::Stage(agent));
+        }
+        if n.role == Role::Keys {
+            let within_episode = n.start_beat.rem_euclid(EPISODE_BEATS);
+            if !(4.0..8.0).contains(&within_episode) {
+                return Err(KernelError::Source("violated deliberate keyboard silence"));
+            }
+        }
+    }
+    for bar in 0..(score.total_beats / 4.0).round() as i64 {
+        let at = bar as f64 * 4.0;
+        let root = perf.context_at(at).unwrap().chord.root_pc;
+        if !score
+            .role_notes(Role::Bass)
+            .any(|n| n.start_beat == at && n.pitch.rem_euclid(12) == root)
+        {
+            return Err(KernelError::Source("missing harmonic foundation"));
+        }
+    }
+    for h in &score.drums {
+        if !perf.on_stage(Agent::Drums, h.start_beat) {
+            return Err(KernelError::Stage(Agent::Drums));
+        }
+    }
+    Ok(())
 }
 
 // The partial union consumes a completed lane once. No role can revise an earlier lane or
