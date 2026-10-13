@@ -4,6 +4,11 @@
 mod source;
 #[path = "../examples/c137_song/source_bridge.rs"]
 mod source_bridge;
+// `parse`/`label`/`removes` are exercised by the example binary (CLI + manifest), not by these
+// tests, so they read as dead code HERE — the same shared-fixture treatment the source modules get.
+#[allow(dead_code)]
+#[path = "../examples/c137_song/preset.rs"]
+mod preset;
 
 use gibson::audio::human_music::{
     kernel::{self, CommittedSong},
@@ -866,4 +871,302 @@ fn ensemble_answers_the_breaths_only_in_the_ensemble_arm() {
         lead(&ens),
         "ensemble must not change the lead — only the band answers"
     );
+}
+
+// ======================================================================================
+// THE JERRY LAW — default-correctness tests (D1–D7).
+//
+// These are red-first against the PRE-FLIP behavior: the old default resolved to the 8-bar
+// plain control, so D1 (bare == Full) and D5 (Full leaves a trace) would have failed before
+// `C137Preset` and the default flip existed. They pin that excellence is now the default and a
+// Jerry switch is the explicit, real, deterministic downgrade. Nothing here reads a WAV hash —
+// equality is relational (resolved config + Score fingerprint), per the regression audit.
+// ======================================================================================
+
+use preset::{C137Preset, Jerry, Resolved};
+
+/// Build the committed source for a resolved config — the same dispatch the example's `build_source`
+/// performs, so these tests exercise the exact path the no-flag command renders.
+fn build(resolved: &Resolved, seed: u64) -> gibson::audio::human_music::argument::CompiledArgument {
+    if resolved.bars == 16 {
+        source_bridge::source_phrased(seed, resolved.phrasing)
+    } else {
+        source::source_phrased(seed, resolved.phrasing)
+    }
+}
+
+fn render_cfg(resolved: &Resolved, seed: u64) -> CommittedSong {
+    kernel::perform_song(&build(resolved, seed), &world()).unwrap()
+}
+
+/// The harmonic route witness: the ordered chord anchors. An unrelated-commitment invariant — a
+/// lead-performance Jerry switch must leave this untouched.
+fn chord_route(score: &Score) -> Vec<(u64, i32)> {
+    score
+        .chords
+        .iter()
+        .map(|c| (c.start_beat.to_bits(), c.chord.root_pc))
+        .collect()
+}
+
+/// D1 — the bare, no-flag command resolves to C137 Full, and renders the identical Score as an
+/// explicitly-Full configuration. (The old default was 8-bar plain; this pins the flip.)
+#[test]
+fn d1_bare_c137_equals_full_c137() {
+    let bare = C137Preset::default().resolve();
+    let full = C137Preset::full().resolve();
+    assert_eq!(bare, full, "the bare preset must BE C137 Full");
+    assert!(full.is_full(), "Full must report itself full");
+    assert_eq!(full.bars, 16, "Full renders the complete 16-bar arc");
+    assert_eq!(
+        full.phrasing,
+        Phrasing::Ensemble,
+        "Full plays the ensemble lead"
+    );
+    assert!(full.jerry.is_empty(), "Full carries no downgrade");
+    // The flip: Full is NOT the old 8-bar plain default.
+    let old_default = C137Preset::full()
+        .jerry(Jerry::Short)
+        .jerry(Jerry::Plain)
+        .resolve();
+    assert_ne!(
+        full, old_default,
+        "Full must differ from the former 8-bar plain default"
+    );
+    for seed in [2112u64, 7, 99] {
+        let a = render_cfg(&bare, seed);
+        let b = render_cfg(&full, seed);
+        assert_eq!(
+            a.score().fingerprint(),
+            b.score().fingerprint(),
+            "seed {seed}: bare and explicit-Full must render the identical Score (⇒ identical PCM)"
+        );
+    }
+}
+
+/// D2 — each Jerry switch changes EXACTLY its advertised capability, preserves the unrelated source
+/// commitments, and is OFF by default.
+#[test]
+fn d2_jerry_switches_are_deliberate() {
+    let seed = 2112u64;
+    let full = C137Preset::full().resolve();
+    assert!(full.jerry.is_empty(), "no Jerry switch is on by default");
+    let full_t = render_cfg(&full, seed);
+
+    // short: the 8-bar arc; does not touch the lead performance.
+    let short = C137Preset::full().jerry(Jerry::Short).resolve();
+    assert_eq!(short.bars, 8);
+    assert_eq!(
+        short.phrasing,
+        Phrasing::Ensemble,
+        "short must not touch the lead performance"
+    );
+    let short_t = render_cfg(&short, seed);
+    assert_eq!(full_t.score().total_beats, 64.0);
+    assert_eq!(
+        short_t.score().total_beats,
+        32.0,
+        "short renders the verse→hook control"
+    );
+
+    // plain: robotic lead + no band answer; harmony preserved; arc preserved.
+    let plain = C137Preset::full().jerry(Jerry::Plain).resolve();
+    assert_eq!(plain.phrasing, Phrasing::Plain);
+    assert_eq!(plain.bars, 16, "plain must not touch the arc");
+    let plain_t = render_cfg(&plain, seed);
+    assert!(
+        preset::lead_velocity_spread(full_t.score())
+            > preset::lead_velocity_spread(plain_t.score()),
+        "plain must flatten the lead dynamics"
+    );
+    assert_eq!(
+        preset::breath_answers(plain_t.score()),
+        0,
+        "plain silences the band answer"
+    );
+    assert_eq!(
+        chord_route(full_t.score()),
+        chord_route(plain_t.score()),
+        "plain must preserve the unrelated harmonic commitment"
+    );
+
+    // deaf: the expressive lead is retained identically; only the band answer is removed.
+    let deaf = C137Preset::full().jerry(Jerry::DeafBand).resolve();
+    assert_eq!(deaf.phrasing, Phrasing::Expressive);
+    let deaf_t = render_cfg(&deaf, seed);
+    assert_eq!(
+        lane(full_t.score(), Role::Lead),
+        lane(deaf_t.score(), Role::Lead),
+        "deaf must keep the IDENTICAL expressive lead"
+    );
+    assert!(
+        preset::breath_answers(full_t.score()) > 0,
+        "Full answers the breaths"
+    );
+    assert_eq!(
+        preset::breath_answers(deaf_t.score()),
+        0,
+        "deaf removes exactly the band answer"
+    );
+}
+
+/// D3 — the archived controls remain reachable and reproduce. `short+plain` IS the former default and
+/// reproduces the frozen 8-bar plain render; `plain` alone reproduces the 16-bar plain render.
+#[test]
+fn d3_archived_controls_remain_available() {
+    let old = C137Preset::full()
+        .jerry(Jerry::Short)
+        .jerry(Jerry::Plain)
+        .resolve();
+    assert_eq!((old.bars, old.phrasing), (8, Phrasing::Plain));
+    for seed in [2112u64, 7, 99] {
+        let via_preset = render_cfg(&old, seed);
+        let frozen =
+            kernel::perform_song(&source::source_phrased(seed, Phrasing::Plain), &world()).unwrap();
+        let historical = kernel::perform_song(&source::source(seed), &world()).unwrap();
+        assert_eq!(
+            via_preset.score().fingerprint(),
+            frozen.score().fingerprint(),
+            "seed {seed}: short+plain must reproduce the frozen 8-bar plain control"
+        );
+        assert_eq!(
+            frozen.score().fingerprint(),
+            historical.score().fingerprint(),
+            "seed {seed}: the plain 8-bar path is the byte-identical historical control"
+        );
+        // 16-bar plain (jerry=plain alone) reproduces the frozen 16-bar plain render.
+        let bars16_plain = C137Preset::full().jerry(Jerry::Plain).resolve();
+        let via16 = render_cfg(&bars16_plain, seed);
+        let frozen16 = kernel::perform_song(
+            &source_bridge::source_phrased(seed, Phrasing::Plain),
+            &world(),
+        )
+        .unwrap();
+        assert_eq!(
+            via16.score().fingerprint(),
+            frozen16.score().fingerprint(),
+            "seed {seed}: jerry=plain must reproduce the frozen 16-bar plain render"
+        );
+    }
+}
+
+/// D4 — no hidden downgrade: the rendered arc length and lead performance always match what the
+/// resolved config (hence the manifest) advertises. The same `Resolved` drives both, so this pins
+/// that there is no code path that reports Full while building less.
+#[test]
+fn d4_no_hidden_downgrade() {
+    let seed = 2112u64;
+    for p in [
+        C137Preset::full(),
+        C137Preset::full().jerry(Jerry::Short),
+        C137Preset::full().jerry(Jerry::Plain),
+        C137Preset::full().jerry(Jerry::DeafBand),
+        C137Preset::full().jerry(Jerry::Short).jerry(Jerry::Plain),
+    ] {
+        let r = p.resolve();
+        let t = render_cfg(&r, seed);
+        assert_eq!(
+            t.score().total_beats,
+            r.total_beats(),
+            "the rendered arc length must equal the resolved (manifested) length: {r:?}"
+        );
+        let answers = preset::breath_answers(t.score());
+        if r.phrasing == Phrasing::Ensemble {
+            assert!(
+                answers > 0,
+                "Ensemble manifested but nothing answered: {r:?}"
+            );
+        } else {
+            assert_eq!(
+                answers, 0,
+                "a non-ensemble config must render no answer: {r:?}"
+            );
+        }
+    }
+}
+
+/// D5 — no fake enablement: every capability the Full manifest advertises as ACTIVE leaves a witnessed
+/// trace on the rendered Score (and the matching downgrade removes it — pinned in D2).
+#[test]
+fn d5_no_fake_enablement() {
+    for seed in [2112u64, 7, 99] {
+        let t = render_cfg(&C137Preset::full().resolve(), seed);
+        let s = t.score();
+        assert!(
+            preset::lead_breaths(s) > 0,
+            "seed {seed}: Full lead must open real breaths"
+        );
+        assert!(
+            preset::breath_answers(s) > 0,
+            "seed {seed}: Full band must answer the breaths"
+        );
+        assert!(preset::pad_notes(s) > 0, "seed {seed}: Full rug must sound");
+        assert!(
+            preset::lead_velocity_spread(s) > 0.0,
+            "seed {seed}: Full lead must be dynamically shaped"
+        );
+    }
+}
+
+/// D6 — compatibility & known-bad exclusions: the pre-preset flags fold to the right Jerry switch (so
+/// no secret positive combination is ever needed), and C137 Full carries no Jerry and does not reach
+/// the ear-rejected controls (CoupledR8 / low-register BASS_WEAVE live only on their own pathways).
+#[test]
+fn d6_compat_and_known_bad_exclusions() {
+    assert_eq!(
+        C137Preset::full().jerry(Jerry::Short).resolve().bars,
+        8,
+        "--bars=8 ≡ jerry short"
+    );
+    assert_eq!(
+        C137Preset::full().jerry(Jerry::Plain).resolve().phrasing,
+        Phrasing::Plain,
+        "--phrasing=plain ≡ jerry plain"
+    );
+    assert_eq!(
+        C137Preset::full().jerry(Jerry::DeafBand).resolve().phrasing,
+        Phrasing::Expressive,
+        "--phrasing=expressive ≡ jerry deaf"
+    );
+    let full = C137Preset::full().resolve();
+    assert!(
+        full.is_full() && full.jerry.is_empty(),
+        "excellence needs no secret flag combination"
+    );
+    // The Full path never stages the glitched low bass weave: Full renders a single monophonic bass
+    // foundation (one note at a time), the invariant the BASS_WEAVE control would violate.
+    let full_take = render_cfg(&full, 2112);
+    let s = full_take.score();
+    let mut bass: Vec<_> = s.role_notes(Role::Bass).collect();
+    bass.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+    for w in bass.windows(2) {
+        let end = w[0].start_beat + f64::from(w[0].dur_beats);
+        assert!(
+            w[1].start_beat >= end - 1e-6,
+            "Full bass must stay monophonic (no overlapping low weave): {:.3} overlaps {:.3}",
+            w[0].start_beat,
+            w[1].start_beat
+        );
+    }
+}
+
+/// D7 — determinism: Full and every Jerry reduction reproduce an identical Score under the same seed.
+#[test]
+fn d7_determinism() {
+    for p in [
+        C137Preset::full(),
+        C137Preset::full().jerry(Jerry::Short),
+        C137Preset::full().jerry(Jerry::Plain),
+        C137Preset::full().jerry(Jerry::DeafBand),
+        C137Preset::full().jerry(Jerry::Short).jerry(Jerry::Plain),
+    ] {
+        let r = p.resolve();
+        let a = render_cfg(&r, 2112);
+        let b = render_cfg(&r, 2112);
+        assert_eq!(
+            a.score().fingerprint(),
+            b.score().fingerprint(),
+            "{r:?} must render deterministically"
+        );
+    }
 }
