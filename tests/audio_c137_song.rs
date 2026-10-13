@@ -888,11 +888,17 @@ use preset::{C137Preset, Jerry, Resolved};
 /// Build the committed source for a resolved config — the same dispatch the example's `build_source`
 /// performs, so these tests exercise the exact path the no-flag command renders.
 fn build(resolved: &Resolved, seed: u64) -> gibson::audio::human_music::argument::CompiledArgument {
-    if resolved.bars == 16 {
+    let mut compiled = if resolved.bars == 16 {
         source_bridge::source_phrased(seed, resolved.phrasing)
     } else {
         source::source_phrased(seed, resolved.phrasing)
-    }
+    };
+    // The decoupling: the resolved capability booleans override the source builder's phrasing-derived
+    // defaults, exactly as the example's `build_source` does. For the Full/short/plain/deaf configs the
+    // resolved caps equal the phrasing-derived ones (so D1–D7 stay byte-frozen); the narrow switches
+    // change exactly their own capability.
+    resolved.apply_caps(&mut compiled);
+    compiled
 }
 
 fn render_cfg(resolved: &Resolved, seed: u64) -> CommittedSong {
@@ -1167,6 +1173,193 @@ fn d7_determinism() {
             a.score().fingerprint(),
             b.score().fingerprint(),
             "{r:?} must render deterministically"
+        );
+    }
+}
+
+// ======================================================================================
+// THE JERRY LAW — independent feature ownership (D8–D11).
+//
+// The narrow Jerry switches decouple the four band capabilities from the lead phrasing. Each test
+// pins that switching ONE capability changes only its own promised causal domain and leaves the
+// unrelated commitments intact — the §3 "independent feature ownership" requirement. Where a switch
+// genuinely changes the lead's input (flat-lead), the downstream band reads legitimately differ, so
+// those tests pin the CAPABILITY survived, not byte-invariance; where the lead is untouched
+// (no-keys / straight-bass / generic-drums), the unrelated lanes are byte-identical to Full.
+// ======================================================================================
+
+/// D8 — `flat-lead` is the LEAD-ONLY downgrade: the lead goes plain, but the accepted keys/bass/drums
+/// survive — unlike the compound `plain`, which strips them all. This is the whole point of the fix.
+#[test]
+fn d8_flat_lead_downgrades_only_the_lead() {
+    for seed in [2112u64, 7, 99] {
+        let full = render_cfg(&C137Preset::full().resolve(), seed);
+        let flat = render_cfg(&C137Preset::full().jerry(Jerry::FlatLead).resolve(), seed);
+        let plain = render_cfg(&C137Preset::full().jerry(Jerry::Plain).resolve(), seed);
+
+        // The lead went plain — the one thing flat-lead touches. Its lead is the frozen plain lead.
+        assert!(
+            preset::lead_velocity_spread(full.score()) > preset::lead_velocity_spread(flat.score()),
+            "seed {seed}: flat-lead must flatten the lead dynamics"
+        );
+        assert_eq!(
+            lane(flat.score(), Role::Lead),
+            lane(plain.score(), Role::Lead),
+            "seed {seed}: flat-lead plays the same plain lead as the compound plain control"
+        );
+
+        // THE DECOUPLING: the keyboard comp SURVIVES the plain lead (plain kills it).
+        assert!(
+            preset::keys_comps(flat.score()) > 0,
+            "seed {seed}: flat-lead must KEEP the keyboard comp"
+        );
+        assert_eq!(
+            preset::keys_comps(plain.score()),
+            0,
+            "seed {seed}: the compound plain removes the comp — the contrast that proves decoupling"
+        );
+
+        // The bass is lead-independent (reads the chart), so flat-lead keeps Full's destination-aware
+        // bass byte-for-byte, while the compound plain reverts it to the blind chromatic approach.
+        assert_eq!(
+            lane(flat.score(), Role::Bass),
+            lane(full.score(), Role::Bass),
+            "seed {seed}: flat-lead must keep Full's destination-aware bass (bass is lead-independent)"
+        );
+        assert_ne!(
+            lane(flat.score(), Role::Bass),
+            lane(plain.score(), Role::Bass),
+            "seed {seed}: the compound plain strips the bass anticipation that flat-lead keeps"
+        );
+        assert!(
+            preset::bass_anticipations(flat.score(), 9) > 0,
+            "seed {seed}: flat-lead bass still anticipates the home arrival"
+        );
+
+        // The drummer still translates the (now plain) lead's rhythm — translation survived.
+        assert!(
+            preset::lead_echoes(flat.score()) > 0,
+            "seed {seed}: flat-lead must keep the drum lead-rhythm translation"
+        );
+    }
+}
+
+/// D9 — `no-keys` removes ONLY the keyboard comp; the lead, bass, drums and breath answer are the
+/// identical Full commitment (the lead is unchanged, so every band read of it is unchanged too).
+#[test]
+fn d9_no_key_comp_removes_only_the_comp() {
+    for seed in [2112u64, 7, 99] {
+        let full = render_cfg(&C137Preset::full().resolve(), seed);
+        let nk = render_cfg(&C137Preset::full().jerry(Jerry::NoKeyComp).resolve(), seed);
+
+        assert!(preset::keys_comps(full.score()) > 0);
+        assert_eq!(
+            preset::keys_comps(nk.score()),
+            0,
+            "seed {seed}: no-keys removes the keyboard comp"
+        );
+        // The per-episode keys answer remains (the comp was additive to it).
+        assert!(
+            nk.score().role_notes(Role::Keys).count() < full.score().role_notes(Role::Keys).count(),
+            "seed {seed}: no-keys leaves fewer keys (comp gone) but keeps the answer"
+        );
+        // Every unrelated lane is byte-identical to Full.
+        assert_eq!(lane(nk.score(), Role::Lead), lane(full.score(), Role::Lead));
+        assert_eq!(
+            lane(nk.score(), Role::Bass),
+            lane(full.score(), Role::Bass),
+            "seed {seed}: removing keys comp must not touch the bass"
+        );
+        assert_eq!(lane(nk.score(), Role::Pad), lane(full.score(), Role::Pad));
+        assert_eq!(
+            nk.score().drums.len(),
+            full.score().drums.len(),
+            "seed {seed}: removing keys comp must not touch the drums"
+        );
+        assert_eq!(
+            preset::lead_echoes(nk.score()),
+            preset::lead_echoes(full.score()),
+            "seed {seed}: drum translation unchanged"
+        );
+        assert_eq!(
+            preset::breath_answers(nk.score()),
+            preset::breath_answers(full.score()),
+            "seed {seed}: breath answer unchanged"
+        );
+    }
+}
+
+/// D10 — `straight-bass` removes ONLY the bass's V→I destination anticipation (reverts to the blind
+/// chromatic approach); the keys, lead and drums are the identical Full commitment, and the bass keeps
+/// its note count (a redistribution, not thinning).
+#[test]
+fn d10_straight_bass_removes_only_the_anticipation() {
+    for seed in [2112u64, 7, 99] {
+        let full = render_cfg(&C137Preset::full().resolve(), seed);
+        let sb = render_cfg(
+            &C137Preset::full().jerry(Jerry::StraightBass).resolve(),
+            seed,
+        );
+
+        assert!(preset::bass_anticipations(full.score(), 9) > 0);
+        assert_eq!(
+            preset::bass_anticipations(sb.score(), 9),
+            0,
+            "seed {seed}: straight-bass removes the V->I anticipation"
+        );
+        assert_eq!(
+            sb.score().role_notes(Role::Bass).count(),
+            full.score().role_notes(Role::Bass).count(),
+            "seed {seed}: straight-bass keeps the same bass note count (redistribution, not thinning)"
+        );
+        // Keys, lead, drum translation and breath answer unchanged.
+        assert_eq!(
+            lane(sb.score(), Role::Keys),
+            lane(full.score(), Role::Keys),
+            "seed {seed}: removing the bass anticipation must not change the keys' chords"
+        );
+        assert_eq!(lane(sb.score(), Role::Lead), lane(full.score(), Role::Lead));
+        assert_eq!(
+            preset::lead_echoes(sb.score()),
+            preset::lead_echoes(full.score()),
+            "seed {seed}: drum translation unchanged"
+        );
+    }
+}
+
+/// D11 — `generic-drums` removes ONLY the drum lead-rhythm translation (reverts to the archived
+/// generic run); removing it must NOT change the keys' chords or the bass approaches (the plan's
+/// explicit cross-domain guarantee).
+#[test]
+fn d11_generic_drums_removes_only_the_translation() {
+    for seed in [2112u64, 7, 99] {
+        let full = render_cfg(&C137Preset::full().resolve(), seed);
+        let gd = render_cfg(
+            &C137Preset::full().jerry(Jerry::GenericDrums).resolve(),
+            seed,
+        );
+
+        assert!(preset::lead_echoes(full.score()) > 0);
+        assert_eq!(
+            preset::lead_echoes(gd.score()),
+            0,
+            "seed {seed}: generic-drums removes the lead-echo translation"
+        );
+        assert_eq!(
+            lane(gd.score(), Role::Keys),
+            lane(full.score(), Role::Keys),
+            "seed {seed}: removing drum translation must not change the keys' chords"
+        );
+        assert_eq!(
+            lane(gd.score(), Role::Bass),
+            lane(full.score(), Role::Bass),
+            "seed {seed}: removing drum translation must not change the bass approaches"
+        );
+        assert_eq!(lane(gd.score(), Role::Lead), lane(full.score(), Role::Lead));
+        assert_eq!(
+            preset::breath_answers(gd.score()),
+            preset::breath_answers(full.score()),
+            "seed {seed}: breath answer unchanged by generic-drums"
         );
     }
 }

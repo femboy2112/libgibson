@@ -19,6 +19,7 @@
 //! default-correctness laws (D1–D7) directly against [`C137Preset`].
 
 use gibson::audio::human_music::{
+    argument::CompiledArgument,
     score::{Role, Score},
     theme_family::Phrasing,
 };
@@ -39,6 +40,21 @@ pub enum Jerry {
     /// Keep the expressive lead but make the band DEAF to its breaths — the drummer no longer steps
     /// into the lead's silences. Isolates the ensemble-exchange capability from the lead performance.
     DeafBand,
+    /// Play the lead PLAIN but keep the accepted band (keys comp, bass anticipation, drum
+    /// translation, breath answer stay ON). The narrow, lead-ONLY downgrade — the robotic lead
+    /// WITHOUT the compound band-stripping of [`Jerry::Plain`]. (The ensemble answer rides composed
+    /// silences, so a plain lead legitimately yields it nothing to answer; the keys/bass capabilities,
+    /// which read harmony and the chart, are untouched.)
+    FlatLead,
+    /// Remove ONLY the keyboard comp (the pianist's rootless chord voicings in the rhythmic holes).
+    /// The lead, bass, drums and breath answer are untouched. Isolates the keys-comp capability.
+    NoKeyComp,
+    /// Remove ONLY the bass's destination anticipation (the V→I lean into the home arrivals) — the
+    /// foundation reverts to its archived blind chromatic approach. Keys, drums and lead untouched.
+    StraightBass,
+    /// Remove ONLY the drum lead-rhythm translation (the lead-echo fill reverts to the archived
+    /// generic rising run). Keys, bass, lead and breath answer untouched. Isolates the drum capability.
+    GenericDrums,
 }
 
 impl Jerry {
@@ -48,8 +64,12 @@ impl Jerry {
             "short" => Ok(Jerry::Short),
             "plain" => Ok(Jerry::Plain),
             "deaf" | "deaf-band" => Ok(Jerry::DeafBand),
+            "flat-lead" => Ok(Jerry::FlatLead),
+            "no-keys" => Ok(Jerry::NoKeyComp),
+            "straight-bass" => Ok(Jerry::StraightBass),
+            "generic-drums" => Ok(Jerry::GenericDrums),
             other => Err(format!(
-                "unknown Jerry switch `{other}` (known: short, plain, deaf)"
+                "unknown Jerry switch `{other}` (known: short, plain, deaf, flat-lead, no-keys, straight-bass, generic-drums)"
             )),
         }
     }
@@ -60,6 +80,10 @@ impl Jerry {
             Jerry::Short => "short",
             Jerry::Plain => "plain",
             Jerry::DeafBand => "deaf",
+            Jerry::FlatLead => "flat-lead",
+            Jerry::NoKeyComp => "no-keys",
+            Jerry::StraightBass => "straight-bass",
+            Jerry::GenericDrums => "generic-drums",
         }
     }
 
@@ -70,20 +94,38 @@ impl Jerry {
                 "the full arc (bridge + earned return + rug) — renders the 8-bar verse→hook control"
             }
             Jerry::Plain => {
-                "expressive articulation + dynamic contour + the ensemble breath answer (robotic lead)"
+                "expressive articulation + dynamic contour + the ensemble breath answer + keys comp + bass anticipation + drum translation (the compound robotic-lead control)"
             }
             Jerry::DeafBand => "the ensemble breath answer (the band goes deaf to the lead's silences)",
+            Jerry::FlatLead => {
+                "ONLY the lead's expressive articulation + dynamic contour (keys/bass/drums stay full)"
+            }
+            Jerry::NoKeyComp => "ONLY the keyboard comp (the pianist's chord voicings in the holes)",
+            Jerry::StraightBass => "ONLY the bass's destination anticipation (the V->I lean home)",
+            Jerry::GenericDrums => "ONLY the drum lead-rhythm translation (the lead-echo fill)",
         }
     }
 }
 
 /// The resolved render configuration — the single source of truth for a run. `bars` selects the song
 /// arc (16 = full verse→hook→bridge→return, 8 = the verse→hook control); `phrasing` selects the lead
-/// performance and, at `Ensemble`, the band breath answer. `jerry` records the downgrades in effect.
+/// performance. The four capability booleans are resolved INDEPENDENTLY of the lead phrasing, so a
+/// lead-only downgrade (`flat-lead`) no longer silences the keys/bass/drums the way the compound
+/// `plain` control does. `jerry` records the downgrades in effect. [`apply_caps`](Resolved::apply_caps)
+/// stamps the four booleans onto the built `CompiledArgument`, overriding the source builder's
+/// phrasing-derived defaults, so each capability is switchable on its own promised causal domain.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Resolved {
     pub bars: u32,
     pub phrasing: Phrasing,
+    /// The keyboard comps the holes (pianist chord voicings). Reads harmony — independent of the lead.
+    pub comp_keys: bool,
+    /// The bass leans on the dominant into the home arrivals. Reads the chart — independent of the lead.
+    pub anticipate_bass: bool,
+    /// The drum phrase-end fill quotes the lead's rhythm (the lead-echo). Reads the lead.
+    pub translate_lead_rhythm: bool,
+    /// The band answers the lead's composed breaths (the `Ensemble` capability). Rides the lead's silences.
+    pub answer_breaths: bool,
     pub jerry: Vec<Jerry>,
 }
 
@@ -96,6 +138,19 @@ impl Resolved {
     /// The total song length in beats (four beats per bar).
     pub fn total_beats(&self) -> f64 {
         f64::from(self.bars) * 4.0
+    }
+
+    /// Stamp the resolved capability booleans onto a freshly-built source, OVERRIDING the source
+    /// builder's phrasing-derived defaults. This is where the Jerry decoupling takes physical effect:
+    /// the kernel gates each capability on exactly these four flags (`comp_keys` @kernel.rs:1446,
+    /// `anticipate_bass` @1598, `answer_breaths` @1793, `translate_lead_rhythm` @1838), so a narrow
+    /// switch changes only its own promised causal domain. The same method drives both the example's
+    /// render and the integration tests, so the manifest can never diverge from what is built.
+    pub fn apply_caps(&self, compiled: &mut CompiledArgument) {
+        compiled.comp_keys = self.comp_keys;
+        compiled.anticipate_bass = self.anticipate_bass;
+        compiled.translate_lead_rhythm = self.translate_lead_rhythm;
+        compiled.answer_breaths = self.answer_breaths;
     }
 }
 
@@ -122,26 +177,63 @@ impl C137Preset {
     }
 
     /// Fold the preset and its switches into the resolved render configuration. Resolution starts
-    /// from Full (16-bar `Ensemble`) and applies each downgrade; it never UPGRADES (so `plain` then
-    /// `deaf` stays plain), which makes the result order-independent.
+    /// from Full (16-bar `Ensemble`, every capability ON) and applies each downgrade. A switch only
+    /// ever turns something OFF (the lead to plain, or one capability boolean to false) — it never
+    /// UPGRADES — so the result is order-independent and each narrow switch composes cleanly with the
+    /// compound ones (`plain` then `no-keys` is still just `plain`).
+    ///
+    /// The four capability booleans are resolved HERE, independently of the lead phrasing, which is
+    /// the whole point of the decoupling: `flat-lead` drops the lead to plain while leaving keys, bass
+    /// and drums full, whereas the archival `plain` control strips all of them together (its pinned,
+    /// byte-frozen historical meaning). `deaf` removes exactly the breath answer.
     pub fn resolve(&self) -> Resolved {
         let mut bars = 16u32;
         let mut phrasing = Phrasing::Ensemble;
+        // Every accepted capability is ON in Full; a Jerry switch dials exactly its own off.
+        let mut comp_keys = true;
+        let mut anticipate_bass = true;
+        let mut translate_lead_rhythm = true;
+        let mut answer_breaths = true;
         for switch in &self.jerry {
             match switch {
                 Jerry::Short => bars = 8,
-                Jerry::Plain => phrasing = Phrasing::Plain,
-                // Deaf drops Ensemble→Expressive only; it must never revive a plain lead.
+                // The compound archival control: plain lead AND the whole band stripped back to the
+                // historical baseline. Its output is byte-frozen (D3); do not narrow its meaning.
+                Jerry::Plain => {
+                    phrasing = Phrasing::Plain;
+                    comp_keys = false;
+                    anticipate_bass = false;
+                    translate_lead_rhythm = false;
+                    answer_breaths = false;
+                }
+                // Deaf drops Ensemble→Expressive only (never revives a plain lead) and removes the
+                // breath answer; the keys/bass/drums capabilities stay on (the accepted expressive band).
                 Jerry::DeafBand => {
                     if phrasing == Phrasing::Ensemble {
                         phrasing = Phrasing::Expressive;
                     }
+                    answer_breaths = false;
                 }
+                // The narrow, lead-ONLY downgrade: plain lead, band capabilities untouched. (A plain
+                // lead opens no breaths, so `answer_breaths` stays requested-but-idle — honest, and the
+                // render is identical to flipping it off: a legato lead gives the band nothing to answer.)
+                Jerry::FlatLead => {
+                    if phrasing == Phrasing::Ensemble {
+                        phrasing = Phrasing::Plain;
+                    }
+                }
+                Jerry::NoKeyComp => comp_keys = false,
+                Jerry::StraightBass => anticipate_bass = false,
+                Jerry::GenericDrums => translate_lead_rhythm = false,
             }
         }
         Resolved {
             bars,
             phrasing,
+            comp_keys,
+            anticipate_bass,
+            translate_lead_rhythm,
+            answer_breaths,
             jerry: self.jerry.clone(),
         }
     }
@@ -190,4 +282,54 @@ pub fn lead_velocity_spread(score: &Score) -> f32 {
     let hi = vs.iter().copied().fold(f32::MIN, f32::max);
     let lo = vs.iter().copied().fold(f32::MAX, f32::min);
     hi - lo
+}
+
+/// Keyboard comp notes: the pianist's rootless chord voicings laid in the rhythmic holes (the
+/// `comp_keys` capability). Zero when the comp is switched off (`no-keys`, or the compound `plain`).
+pub fn keys_comps(score: &Score) -> usize {
+    score
+        .role_notes(Role::Keys)
+        .filter(|n| n.prov.role_note == "comp")
+        .count()
+}
+
+/// Drum lead-echo strokes: the phrase-end fill that quotes the lead's rhythm (the
+/// `translate_lead_rhythm` capability). Zero when the drummer plays the archived generic rising run
+/// (`generic-drums`, or the compound `plain`).
+pub fn lead_echoes(score: &Score) -> usize {
+    score
+        .drums
+        .iter()
+        .filter(|d| d.prov.role_note == "lead-echo")
+        .count()
+}
+
+/// Bass destination anticipations: beat-four approaches that lean on the dominant (a fifth above the
+/// tonic) into a tonic downbeat — the V the ear hears resolving home (the `anticipate_bass`
+/// capability). The archived straight bass steps a blind chromatic leading tone there instead, so this
+/// is zero under `straight-bass` (and the compound `plain`). Mirrors the kernel's own V→I construction
+/// read independently from the committed Score; `tonic` is the world's tonic pitch-class.
+pub fn bass_anticipations(score: &Score, tonic: i32) -> usize {
+    let dominant = (tonic + 7).rem_euclid(12);
+    let mut bass: Vec<(f64, i32)> = score
+        .role_notes(Role::Bass)
+        .map(|n| (n.start_beat, n.pitch.rem_euclid(12)))
+        .collect();
+    bass.sort_by(|a, b| a.0.total_cmp(&b.0));
+    // The pocket leans attacks a hair off the exact grid, so match the note nearest a target beat.
+    let near = |target: f64| {
+        bass.iter()
+            .find(|(b, _)| (b - target).abs() < 0.3)
+            .map(|(_, pc)| *pc)
+    };
+    let bars = (score.total_beats / 4.0).round() as i64;
+    let mut count = 0;
+    for bar in 1..bars {
+        let home_arrival = near(bar as f64 * 4.0) == Some(tonic.rem_euclid(12));
+        let leans_dominant = near((bar - 1) as f64 * 4.0 + 3.0) == Some(dominant);
+        if home_arrival && leans_dominant {
+            count += 1;
+        }
+    }
+    count
 }

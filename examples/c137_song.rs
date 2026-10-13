@@ -4,11 +4,18 @@
 //!
 //! `cargo run --release --example c137_song -- --out=/tmp/c137-song --seeds=2112,7,99 --tempo=144`
 //!
-//! A **Jerry switch** removes one capability (see `c137_song/preset.rs`):
-//!   `--jerry=short` renders the 8-bar verse→hook control (no bridge/return/rug).
-//!   `--jerry=plain`  plays the lead robotically (legato re-tile + flat ramp; no band answer).
-//!   `--jerry=deaf`   keeps the expressive lead but makes the band deaf to its breaths.
-//! Switches combine (`--jerry=short,plain` is the frozen 8-bar plain control = the old default).
+//! A **Jerry switch** removes one capability (see `c137_song/preset.rs`); each is OFF by default and
+//! each dials exactly its own capability, independently of the others:
+//!   `--jerry=short`         renders the 8-bar verse→hook control (no bridge/return/rug).
+//!   `--jerry=plain`         the COMPOUND archival control: robotic lead AND the whole band stripped
+//!                           back (no keys comp, no bass anticipation, no drum translation, no answer).
+//!   `--jerry=deaf`          keeps the expressive lead + keys/bass/drums, only the band's breath answer off.
+//!   `--jerry=flat-lead`     the LEAD-ONLY downgrade: plain lead, but keys/bass/drums stay full.
+//!   `--jerry=no-keys`       removes only the keyboard comp.
+//!   `--jerry=straight-bass` removes only the bass's V→I destination anticipation.
+//!   `--jerry=generic-drums` removes only the drum lead-rhythm translation (the lead-echo fill).
+//! Switches combine (`--jerry=short,plain` is the frozen 8-bar plain control = the old default). The
+//! narrow switches let any one capability be auditioned without downgrading the unrelated ones.
 //!
 //! The pre-preset flags still work for compatibility and fold into the same mechanism, so they are
 //! reported honestly as the downgrades they are: `--bars=8` ⇒ `short`; `--phrasing=plain` ⇒ `plain`;
@@ -130,14 +137,19 @@ impl Options {
 /// the manifest chooses the arc and the lead performance here, so the manifest can never over-report.
 /// Any compile/admission failure propagates — the run never silently substitutes lesser music.
 fn build_source(resolved: &Resolved, seed: u64, bridge_seed: Option<u64>) -> CompiledArgument {
-    if resolved.bars == 16 {
+    let mut compiled = if resolved.bars == 16 {
         match bridge_seed {
             Some(bs) => source_bridge::source_with_bridge_seed_phrased(seed, bs, resolved.phrasing),
             None => source_bridge::source_phrased(seed, resolved.phrasing),
         }
     } else {
         source::source_phrased(seed, resolved.phrasing)
-    }
+    };
+    // Override the source builder's phrasing-derived capability defaults with the INDEPENDENTLY
+    // resolved booleans, so a narrow Jerry switch (no-keys / straight-bass / generic-drums / flat-lead)
+    // dials exactly its own capability and the rest of the band stays full.
+    resolved.apply_caps(&mut compiled);
+    compiled
 }
 
 fn render(score: &Score, world: &MusicWorld, block: usize) -> StereoBlock {
@@ -238,6 +250,26 @@ fn manifest_header(resolved: &Resolved, world: &MusicWorld, bridge_seed: Option<
         "n/a — the 8-bar control stages the pad silent"
     };
     let _ = writeln!(m, "  selective pad (rug)   : {rug}");
+    // The three independently-switchable band capabilities (decoupled from the lead phrasing): each
+    // reports active (FULL) or off, so a narrow Jerry downgrade can never masquerade as Full.
+    let keys_cap = if resolved.comp_keys {
+        "active — pianist rootless chord voicings comp the holes under the home arrivals (FULL)"
+    } else {
+        "off — the keyboard keeps its sparse per-episode answer (Jerry: no-keys, or compound plain)"
+    };
+    let _ = writeln!(m, "  keyboard comp         : {keys_cap}");
+    let bass_cap = if resolved.anticipate_bass {
+        "active — the foundation leans on the dominant (V->I) into the home arrivals (FULL)"
+    } else {
+        "off — the bass steps a blind chromatic approach (Jerry: straight-bass, or compound plain)"
+    };
+    let _ = writeln!(m, "  bass anticipation     : {bass_cap}");
+    let drum_cap = if resolved.translate_lead_rhythm {
+        "active — the phrase-end fill quotes the lead's rhythm, the lead-echo (FULL)"
+    } else {
+        "off — the drummer plays the archived generic rising run (Jerry: generic-drums, or compound plain)"
+    };
+    let _ = writeln!(m, "  drum translation      : {drum_cap}");
     let _ = writeln!(
         m,
         "  shared pocket/hearing : active — all voices lock one pocket; drums read lead+harmony only (keys-independent pulse)"
@@ -284,13 +316,17 @@ fn manifest_seed_line(
     seed: u64,
     score: &Score,
     audio: &StereoBlock,
+    tonic: i32,
 ) -> String {
     let count = |r: Role| score.role_notes(r).count();
     let breaths = preset::lead_breaths(score);
     let answers = preset::breath_answers(score);
     let pad = preset::pad_notes(score);
     let spread = preset::lead_velocity_spread(score);
-    // Honest status for the two witnessed, downgradable capabilities.
+    let comps = preset::keys_comps(score);
+    let echoes = preset::lead_echoes(score);
+    let antics = preset::bass_anticipations(score, tonic);
+    // Honest status for the expressive lead (its own phrasing switch).
     let expr_status = if resolved.phrasing == Phrasing::Plain {
         "off(plain)".to_string()
     } else if breaths > 0 {
@@ -298,15 +334,23 @@ fn manifest_seed_line(
     } else {
         format!("requested, 0 breaths this seed (vspread={spread:.2})")
     };
-    let ans_status = if resolved.phrasing != Phrasing::Ensemble {
-        "off".to_string()
-    } else if answers > 0 {
-        format!("ACTIVE({answers})")
-    } else {
-        "requested, 0 breath-opportunities this seed".to_string()
+    // Each independently-switchable band capability: ACTIVE(trace) / off (switched out) /
+    // requested-but-idle (capability on, but this seed's material left it nothing to do).
+    let witness = |on: bool, n: usize| {
+        if !on {
+            "off".to_string()
+        } else if n > 0 {
+            format!("ACTIVE({n})")
+        } else {
+            "requested, 0 this seed".to_string()
+        }
     };
+    let ans_status = witness(resolved.answer_breaths, answers);
+    let comp_status = witness(resolved.comp_keys, comps);
+    let bass_status = witness(resolved.anticipate_bass, antics);
+    let drum_status = witness(resolved.translate_lead_rhythm, echoes);
     format!(
-        "  seed {seed:<5}: fp={:016x}  lead={} keys={} bass={} pad={} drums={} frames={}  | expressive={expr_status}  breath-answer={ans_status}  rug={pad}",
+        "  seed {seed:<5}: fp={:016x}  lead={} keys={} bass={} pad={} drums={} frames={}  | expressive={expr_status}  breath-answer={ans_status}  keys-comp={comp_status}  bass-antic={bass_status}  drum-echo={drum_status}  rug={pad}",
         score.fingerprint(),
         count(Role::Lead),
         count(Role::Keys),
@@ -352,7 +396,7 @@ fn main() -> Result<()> {
             return Err(format!("non-finite rendered PCM: seed {seed}").into());
         }
         write_wav_i16(dir.join("full.normal.wav"), &audio, SampleRate::STUDIO)?;
-        let line = manifest_seed_line(&resolved, *seed, score, &audio);
+        let line = manifest_seed_line(&resolved, *seed, score, &audio, world.tonic_pc);
         println!("{line}");
         let _ = writeln!(manifest, "{line}");
     }
