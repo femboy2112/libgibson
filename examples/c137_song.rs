@@ -1,6 +1,9 @@
-//! Render the bounded C137 long-form song: two causally-connected episodes in one 32-beat Score.
+//! Render the bounded C137 long-form song: N causally-connected episodes in one continuous Score.
 //!
 //! `cargo run --release --example c137_song -- --out=/tmp/c137-song --seeds=2112,7,99 --tempo=144`
+//!
+//! `--bars=8` (default) renders the frozen two-episode verse→hook control; `--bars=16` renders the
+//! opt-in four-episode verse→hook→bridge→return arc (the phase-change engine's first audible slice).
 //!
 //! WAVs are 48 kHz stereo PCM16 with the world's original gains and no normalization. These
 //! receipts establish reproducibility and the Score fingerprint; they are not human-listening
@@ -8,6 +11,8 @@
 
 #[path = "c137_song/source.rs"]
 mod source;
+#[path = "c137_song/source_bridge.rs"]
+mod source_bridge;
 
 use gibson::audio::human_music::{
     kernel,
@@ -25,6 +30,7 @@ struct Options {
     out: PathBuf,
     seeds: Vec<u64>,
     tempo: f32,
+    bars: u32,
 }
 
 impl Options {
@@ -33,6 +39,10 @@ impl Options {
             out: PathBuf::from("/tmp/c137-song"),
             seeds: vec![2112, 7, 99],
             tempo: 144.0,
+            // Default = the frozen eight-bar verse→hook control (two episodes). The sixteen-bar
+            // verse→hook→bridge→return arc is an OPT-IN A/B arm (`--bars=16`); it is unheard until
+            // its listening verdict, so it is never the silent default.
+            bars: 8,
         };
         for arg in std::env::args().skip(1) {
             if let Some(value) = arg.strip_prefix("--out=") {
@@ -47,6 +57,11 @@ impl Options {
                     .collect::<std::result::Result<_, _>>()?;
             } else if let Some(value) = arg.strip_prefix("--tempo=") {
                 options.tempo = value.parse()?;
+            } else if let Some(value) = arg.strip_prefix("--bars=") {
+                options.bars = value.parse()?;
+                if !matches!(options.bars, 8 | 16) {
+                    return Err("--bars must be 8 (verse→hook control) or 16 (full arc)".into());
+                }
             } else {
                 return Err(format!("unknown argument: {arg}").into());
             }
@@ -131,7 +146,11 @@ fn main() -> Result<()> {
     fs::create_dir_all(&options.out)?;
 
     for seed in &options.seeds {
-        let candidate_source = source::source(*seed);
+        let candidate_source = if options.bars == 16 {
+            source_bridge::source(*seed)
+        } else {
+            source::source(*seed)
+        };
         let take = kernel::perform_song(&candidate_source, &world)?;
         // Re-derive the committed candidate before rendering: the exported Score is a candidate
         // that must still satisfy the event/source contract it was committed under.

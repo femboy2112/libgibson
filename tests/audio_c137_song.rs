@@ -2,6 +2,8 @@
 //! and the memory law that couples the second episode's band decision to the first.
 #[path = "../examples/c137_song/source.rs"]
 mod source;
+#[path = "../examples/c137_song/source_bridge.rs"]
+mod source_bridge;
 
 use gibson::audio::human_music::{
     kernel::{self, CommittedSong},
@@ -420,4 +422,252 @@ fn the_lead_is_dynamically_shaped_not_flat() {
             "seed {seed}: lead dynamics are too flat (range {lo:.3}..{hi:.3}) — no foreground/background"
         );
     }
+}
+
+// ===========================================================================================
+// R0 — categorical-provenance falsifiers (PR #107 audit G2). These pin the causal LEDGER, not
+// the audio: every fix they drive is sound-preserving (the rendered fingerprints are unchanged).
+// ===========================================================================================
+
+/// G2 / assertion 04 — a carried answer must credit the call it actually discharges.
+///
+/// In the muted take, episode 1's call goes unpaid, so episode 2 discharges the carried VERSE
+/// debt (it quotes `materials[0]`). The `Answer` action must therefore name the verse's call
+/// (statement 0), not the hook's call (statement 1) that merely happens to be the current episode.
+#[test]
+fn a_carried_answer_credits_the_call_it_discharges() {
+    use gibson::audio::human_music::action::{ActionCause, ActionKind};
+    let b = kernel::perform_song(&first_episode_keys_muted(2112), &world()).unwrap();
+    let perf = &b.composition().perf;
+    let verse_call = perf.statements[0].call.expect("verse statement has a call");
+    let hook_call = perf.statements[1].call.expect("hook statement has a call");
+    assert_ne!(
+        verse_call, hook_call,
+        "the two episodes' calls are distinct ids"
+    );
+
+    let answer = perf
+        .actions
+        .actions
+        .iter()
+        .find(|a| a.kind == ActionKind::Answer && a.start_beat >= 16.0)
+        .expect("episode 2 produces exactly one Answer, in the hook window");
+    assert_eq!(
+        answer.cause,
+        ActionCause::Interaction { call: verse_call },
+        "the discharged answer must credit the VERSE call it actually quotes, not the hook call"
+    );
+    assert_eq!(
+        answer.pays,
+        Some(verse_call),
+        "the answer pays the verse debt, not the hook call"
+    );
+}
+
+/// G2 / assertions 05-08 — every interaction a committed note references must resolve to a real
+/// `Interaction` row in the plan (the causal ledger is closed under referential identity). Fails
+/// on BOTH the default render and the muted control: `perform_song` stamps `InteractionId(e)` on
+/// keys answers but never registers the matching rows.
+#[test]
+fn every_referenced_interaction_resolves_to_a_row() {
+    for (label, arg) in [
+        ("default", source::source(2112)),
+        ("muted-ep1", first_episode_keys_muted(2112)),
+    ] {
+        let song = kernel::perform_song(&arg, &world()).unwrap();
+        let perf = &song.composition().perf;
+        for n in song.score().role_notes(Role::Keys) {
+            if let Some(iid) = n.prov.interaction {
+                assert!(
+                    perf.interactions.iter().any(|row| row.id == iid),
+                    "[{label}] keys note @{:.3} references {iid:?} with no matching Interaction row",
+                    n.start_beat
+                );
+            }
+        }
+    }
+}
+
+/// G7 / assertions 09-10 — section provenance must be truthful, with the LEAD as referee. The lead
+/// carrier is already sectioned from the plan (verse and hook are different sections); every
+/// accompaniment event must AGREE with the lead about which section the band is in, and the Score
+/// must carry the form it realized. Currently `provenance()` hardcodes `SectionKind::A` and
+/// `Score.sections` is never assigned, so the band contradicts the lead and the form is invisible.
+///
+/// (Lead-as-referee, not `!= A`: a phrase-true derivation legitimately yields `A` for some hook
+/// phrases, so pinning against a literal kind would reject a correct fix — the invariant is that
+/// the band and the lead name the SAME section, whatever it is.)
+#[test]
+fn section_provenance_agrees_with_the_lead() {
+    let a = take(2112);
+    let s = a.score();
+    assert!(
+        !s.sections.is_empty(),
+        "Score.sections must be populated from the realized form"
+    );
+    let lead_section = |lo: f64, hi: f64| {
+        s.role_notes(Role::Lead)
+            .find(|n| n.start_beat >= lo && n.start_beat < hi)
+            .expect("the lead sings in every episode")
+            .prov
+            .section
+    };
+    let verse = lead_section(0.0, 16.0);
+    let hook = lead_section(16.0, 32.0);
+    assert_ne!(verse, hook, "the verse and hook are distinct sections");
+    for (lo, hi, want) in [(0.0, 16.0, verse), (16.0, 32.0, hook)] {
+        for role in [Role::Keys, Role::Bass] {
+            for n in s
+                .role_notes(role)
+                .filter(|n| n.start_beat >= lo && n.start_beat < hi)
+            {
+                assert_eq!(
+                    n.prov.section, want,
+                    "{role:?} note @{:.3} disagrees with the lead about the section",
+                    n.start_beat
+                );
+            }
+        }
+        for d in s
+            .drums
+            .iter()
+            .filter(|d| d.start_beat >= lo && d.start_beat < hi)
+        {
+            assert_eq!(
+                d.prov.section, want,
+                "drum @{:.3} disagrees with the lead about the section",
+                d.start_beat
+            );
+        }
+    }
+}
+
+// ================================================================================================
+// R2 — the four-section phase-change arc: verse → hook → bridge(departs) → hook(returns), the first
+// AUDIBLE zoom-out of the long-form engine. These falsifiably pin the arc's INTEGRITY — a bridge
+// that does not genuinely depart, or a return that abandons the hook, is REJECTED, so the ending is
+// earned by a real journey and never by pasting the hook into the middle — and that the full arc
+// performs and passes the content witness. The eight-bar control above is unchanged (same kernel).
+// ================================================================================================
+use gibson::audio::human_music::argument::{ArgumentError, ArgumentRelation, ReferentId};
+use gibson::audio::human_music::theory::Quality;
+
+fn arc_take(seed: u64) -> CommittedSong {
+    kernel::perform_song(&source_bridge::source(seed), &world()).unwrap()
+}
+
+#[test]
+fn the_arc_states_verse_hook_bridge_return() {
+    let (argument, _song) = source_bridge::argument(2112);
+    assert_eq!(argument.referents.len(), 3, "verse + hook + bridge");
+    assert_eq!(argument.steps.len(), 4);
+    assert!(matches!(
+        argument.steps[0].relation,
+        ArgumentRelation::Establish
+    ));
+    assert!(matches!(
+        argument.steps[1].relation,
+        ArgumentRelation::Consequent { .. }
+    ));
+    assert!(matches!(
+        argument.steps[2].relation,
+        ArgumentRelation::Depart { .. }
+    ));
+    assert!(matches!(
+        argument.steps[3].relation,
+        ArgumentRelation::Return { .. }
+    ));
+    // The return restates the HOOK referent (identity preserved); its dependency graph records the
+    // earned journey — it depends on BOTH the hook it restates and the bridge it returns FROM.
+    assert_eq!(argument.steps[3].referent, ReferentId(1));
+    assert_eq!(argument.steps[1].referent, ReferentId(1));
+    assert!(
+        argument.steps[3].depends_on.contains(&argument.steps[2].id),
+        "the return must depend on the departure (the home-coming follows the bridge)"
+    );
+    assert!(argument.steps[3].depends_on.contains(&argument.steps[1].id));
+    // The argument validates: the departure and consequent laws hold on the DEVELOPED material.
+    assert_eq!(argument.validate(), Ok(()));
+}
+
+#[test]
+fn the_four_section_arc_performs_and_passes_the_witness() {
+    for seed in [2112u64, 7, 99] {
+        let take = arc_take(seed);
+        let s = take.score();
+        assert_eq!(s.total_beats, 64.0, "seed {seed}: four 16-beat episodes");
+        assert!(s.mono_voice);
+        // The lead sings in every episode (no dead sections); all four sections are realized.
+        for (lo, hi) in [(0.0, 16.0), (16.0, 32.0), (32.0, 48.0), (48.0, 64.0)] {
+            assert!(
+                s.role_notes(Role::Lead)
+                    .any(|n| n.start_beat >= lo && n.start_beat < hi),
+                "seed {seed}: the lead is silent in [{lo},{hi})"
+            );
+        }
+        // The content witness accepts the realized arc (source identity, dependency order, the
+        // departure and return laws all observed in the RAW Score); the candidate re-validates.
+        assert!(
+            gibson::audio::human_music::argument_witness::observe_argument(
+                &source_bridge::source(seed),
+                s,
+                world().tonic_pc
+            )
+            .valid(),
+            "seed {seed}: the content witness refused the realized arc"
+        );
+        take.validate_candidate(s).unwrap();
+    }
+}
+
+#[test]
+fn the_bridge_departs_harmonically_and_melodically() {
+    let take = arc_take(2112);
+    let s = take.score();
+    // Harmonic departure: the bridge section [32,48) pivots onto a DOMINANT (A7 = V7/iv, then E7 =
+    // V7) — an active, driving sound, not the home the verse/hook rest on. (This is also the A7-is-
+    // not-Home fix at work: the tonic-root dominant drives the band instead of anchoring it.)
+    assert!(
+        s.chords.iter().any(|c| c.start_beat >= 32.0
+            && c.start_beat < 48.0
+            && c.chord.quality == Quality::Dom7),
+        "the bridge must pivot onto a dominant"
+    );
+    // Melodic departure: the bridge lead is a genuinely new line, not a repeat of the hook.
+    let bridge_lead = pitches(s, Role::Lead, 32.0, 48.0);
+    let hook_lead = pitches(s, Role::Lead, 16.0, 32.0);
+    assert!(!bridge_lead.is_empty());
+    assert_ne!(
+        bridge_lead, hook_lead,
+        "the bridge must depart, not restate the hook verbatim"
+    );
+}
+
+#[test]
+fn a_bridge_that_does_not_depart_is_rejected() {
+    // Replace the bridge referent with a relabelled restatement of the HOOK (same register, lands
+    // CLOSED on the tonic): it does not lift and does not end open, so it is NOT a departure. The
+    // contract must refuse it — the bridge is load-bearing; the ending is earned only by a genuine
+    // journey, never by pasting the hook into the middle.
+    let (mut argument, _song) = source_bridge::argument(7);
+    argument.referents[2].events = argument.referents[1].events.clone();
+    assert!(
+        matches!(
+            argument.validate(),
+            Err(ArgumentError::DepartureNotRelated(_))
+        ),
+        "a hook restatement in the bridge slot must fail the departure law"
+    );
+}
+
+#[test]
+fn a_return_that_abandons_the_hook_is_rejected() {
+    // Point the return step at the VERSE referent instead of the hook: the home-coming would land on
+    // a different tune, breaking the "return restates the hook" identity. The contract must refuse it.
+    let (mut argument, _song) = source_bridge::argument(99);
+    argument.steps[3].referent = ReferentId(0);
+    assert!(
+        matches!(argument.validate(), Err(ArgumentError::WrongSource(_))),
+        "a return that wanders off the hook must fail the same-head law"
+    );
 }
