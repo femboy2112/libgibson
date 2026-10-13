@@ -88,7 +88,10 @@ pub fn argument(seed: u64) -> (MusicalArgument, SongMap) {
         p.keys = ArrangementRole::Support;
         p.bass = ArrangementRole::Foundation;
         p.drums = ArrangementRole::Support;
-        p.pad = ArrangementRole::Silent;
+        // The RUG: seat the pad on stage so the kernel lays a sustained chordal bed under the band
+        // (the two-episode control keeps it Silent, so that render is unchanged). The keys stay the
+        // sparse responsive accents; the pad is the separate sustaining layer that ties the room.
+        p.pad = ArrangementRole::Support;
     }
     // The developed verse/hook pair (the control's exact material path): embellished into played
     // lines, laid into the shared pocket, shaped by a phrase dynamic — with the kinship law re-checked

@@ -1642,6 +1642,42 @@ pub fn perform_song(
             }
         }
     }
+    // --- PAD: the RUG. A sustained chordal bed that ties the room together under the band — the
+    // committed harmony voiced as a warm MID-register chord (above the bass, under the lead and the
+    // keys' accents, never competing), re-voiced each bar as the chord changes and held across it,
+    // soft, riding the same shared energy so it breathes with the band (eased at home, leaning in on
+    // the bridge). It is the one voice the kernel voices POLYPHONICALLY (the synth's pad pool is six
+    // voices); it carries no argument and no continuity line, so it is exempt from the monophonic
+    // lane and seam laws. It only sounds where the arrangement seats the pad on stage — the
+    // two-episode verse→hook control keeps the pad silent, so its render stays byte-identical.
+    let mut pad = Vec::new();
+    if perf.stage.on_stage_span(Agent::Pad, 0.0, score.total_beats) {
+        for bar in 0..total_bars {
+            let bar_start = bar as f64 * 4.0;
+            let ctx = perf.context_at(bar_start).unwrap();
+            let energy = drive_energy(harmonic_drive(&ctx.chord, world.tonic_pc));
+            let swell = groove_swell(bar, bars_per_episode);
+            let dur = (4.0_f64).min(score.total_beats - bar_start) as f32;
+            // Voice the committed chord tones ascending from a mid-register floor, so the rug fills
+            // the harmonic middle instead of the muddy low end the bass already owns.
+            let tones = ctx.chord.pitch_classes();
+            let mut low = 50;
+            for &pc in &tones {
+                let pitch = register(pc, low);
+                low = pitch + 1;
+                pad.push(pitched(
+                    &perf,
+                    Role::Pad,
+                    bar_start,
+                    dur,
+                    pitch,
+                    (0.32 * energy * swell).clamp(0.02, 1.0),
+                    provenance(&perf, bar_start, "pad", section_at(argument, bar_start)),
+                ));
+            }
+        }
+    }
+    score = commit_role(score, &perf, world, Role::Pad, pad, Vec::new())?;
     perf.budget = super::budget::allocate(&perf);
     score
         .drums
