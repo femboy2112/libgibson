@@ -1365,6 +1365,54 @@ fn d11_generic_drums_removes_only_the_translation() {
 }
 
 // ======================================================================================
+// §4 — the phrase-seam snare collision is a pinned invariant, not a float accident.
+//
+// At the four phrase seams a backbeat "pulse" snare and a "lead-echo" stroke quantize to the EXACT
+// same sample (144 BPM @ 48 kHz => 20000 samples/beat; the lead-echo lands at pocket(3.0)=0.030, bit-
+// equal to the backbeat's). The synth owns a single Snare voice with last-trigger-wins, so the Score
+// carries two strokes where one sounds — the lead-echo (ordered last) overwrites the backbeat. That
+// overwrite is ear-accepted. This pins it as a DETERMINISTIC, intended invariant rather than an
+// accident of float ordering, and guards the latent fragility where a 1-ULP beat difference could
+// silently flip the winner to the louder backbeat with no Score-visible change. Pin, do not repair:
+// the accepted audio is unchanged.
+// ======================================================================================
+
+#[test]
+fn the_phrase_seam_snare_collision_is_pinned_pulse_then_lead_echo() {
+    // 144 BPM at the 48 kHz studio rate: one beat is exactly 20000 samples.
+    let to_sample = |beat: f64| (beat * 20000.0).round() as i64;
+    for seed in [2112u64, 7, 99] {
+        let full = render_cfg(&C137Preset::full().resolve(), seed);
+        let drums = &full.score().drums;
+        let mut collisions = 0usize;
+        for (i, a) in drums.iter().enumerate() {
+            for b in drums.iter().skip(i + 1) {
+                if a.voice == b.voice && to_sample(a.start_beat) == to_sample(b.start_beat) {
+                    collisions += 1;
+                    // The ONLY same-voice same-sample drum collision in the Full arc is the phrase-seam
+                    // backbeat pulse snare (earlier Score index) overwritten by a lead-echo (later index,
+                    // so the single Snare voice plays it). Pin exactly that role pair AND that order —
+                    // any other same-sample pile-up, or the order flipping, fails here.
+                    assert!(
+                        a.prov.role_note == "pulse" && b.prov.role_note == "lead-echo",
+                        "seed {seed}: same-sample {:?} collision at beat {:.3} is not the expected \
+                         pulse->lead-echo: {:?} then {:?}",
+                        a.voice,
+                        a.start_beat,
+                        a.prov.role_note,
+                        b.prov.role_note
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            collisions, 4,
+            "seed {seed}: expected exactly the 4 phrase-seam snare collisions, found {collisions}"
+        );
+    }
+}
+
+// ======================================================================================
 // CP2 — honest, source-grounded breath causality.
 //
 // The band answers a QUESTION, not a landing: a breath is answered only where it sits in a
