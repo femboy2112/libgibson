@@ -1029,46 +1029,12 @@ fn drive_energy(drive: HarmonicDrive) -> f32 {
     }
 }
 
-/// The largest a backing attack may lean off the exact grid — a few milliseconds at tempo. The
-/// pocket is STRUCTURED (a reasoned function of metric role and harmonic drive) and bounded here, so
-/// de-roboticization never becomes random jitter and the anchors still read as dead-on.
-const GROOVE_POCKET_BEATS: f64 = 0.04;
-
 /// A gentle within-phrase crescendo: the band enters each episode a touch softer and leans in toward
 /// its cadence, so repeated bars of the same harmony still differ by where they sit in the phrase.
 /// A reasoned contour (a fixed function of phrase position), riding on top of the harmonic energy.
 fn groove_swell(bar: usize, bars_per_episode: usize) -> f32 {
     let in_episode = (bar % bars_per_episode) as f32 / bars_per_episode as f32;
     0.94 + 0.12 * in_episode
-}
-
-/// How far the backbeat snare drags behind the beat — the heart of the pocket. It lays back furthest
-/// at rest and tightens up as the harmony drives, so the groove itself breathes with the song.
-fn backbeat_lay(drive: HarmonicDrive) -> f64 {
-    match drive {
-        HarmonicDrive::Home => 0.032,
-        HarmonicDrive::Building => 0.024,
-        HarmonicDrive::Driving => 0.018,
-    }
-}
-
-/// The bass's pocket: the downbeat root is the dead-on anchor; the inner walk drags a hair (deeper
-/// at rest); the beat-four approach leans AHEAD, pushing into the next change. Bounded and reasoned.
-fn bass_pocket(pos_in_bar: f64, drive: HarmonicDrive) -> f64 {
-    let lay: f64 = if pos_in_bar < 1e-9 {
-        0.0
-    } else if (pos_in_bar - 3.0).abs() < 1e-9 {
-        match drive {
-            HarmonicDrive::Home => 0.0,
-            _ => -0.012,
-        }
-    } else {
-        match drive {
-            HarmonicDrive::Home => 0.028,
-            _ => 0.018,
-        }
-    };
-    lay.clamp(-GROOVE_POCKET_BEATS, GROOVE_POCKET_BEATS)
 }
 
 pub fn perform_song(
@@ -1333,14 +1299,15 @@ pub fn perform_song(
         };
         let swell = groove_swell(bar, bars_per_episode);
         for (offset, pitch, dur, velocity) in figure {
-            // The grid position labels the section/phrase; the pocket leans the attack off it (the
-            // downbeat root stays exactly on `at`, the required anchor), and the velocity rides the
-            // harmonic energy and the phrase swell — a played line, not a quantized pulse.
+            // The grid position labels the section/phrase; the SHARED pocket leans the attack off it
+            // (the downbeat root at `offset==0` stays exactly on `at`, the required anchor), and the
+            // velocity rides the harmonic energy and the phrase swell. The bass orbits the SAME
+            // pocket as the drums and the lead, so coincident attacks lock — one solar system.
             let prov = provenance(&perf, at + offset, "foundation");
             bass.push(pitched(
                 &perf,
                 Role::Bass,
-                at + offset + bass_pocket(offset, drive),
+                at + offset + super::theme_family::pocket_offset(offset),
                 dur,
                 pitch,
                 velocity * energy * swell,
@@ -1416,13 +1383,26 @@ pub fn perform_song(
                 prov: provenance(&perf, grid, label),
             });
         };
-        // The steady spine — always present, locking the shared time. The kick and hats are the
-        // dead-on time reference; the backbeat snare DRAGS behind them (the pocket), deeper at rest.
-        let back = backbeat_lay(drive);
+        // The steady spine — always present, locking the shared time. The downbeat kick and the hats
+        // are the dead-on time reference; the backbeat snare (and the beat-three kick) DRAG behind
+        // them by the SAME shared pocket the bass and lead use, so the whole band locks as one body.
+        let pocket = super::theme_family::pocket_offset;
         push(DrumVoice::Kick, bar_start, 0.95, "pulse", 0.0);
-        push(DrumVoice::Kick, bar_start + 2.0, 0.78, "pulse", 0.012);
-        push(DrumVoice::Snare, bar_start + 1.0, 0.80, "pulse", back);
-        push(DrumVoice::Snare, bar_start + 3.0, 0.84, "pulse", back);
+        push(DrumVoice::Kick, bar_start + 2.0, 0.78, "pulse", pocket(2.0));
+        push(
+            DrumVoice::Snare,
+            bar_start + 1.0,
+            0.80,
+            "pulse",
+            pocket(1.0),
+        );
+        push(
+            DrumVoice::Snare,
+            bar_start + 3.0,
+            0.84,
+            "pulse",
+            pocket(3.0),
+        );
         // The ride carpet: its SUBDIVISION follows the harmonic drive — eighths at rest, sixteenths in
         // motion — with the down/and/e-a accent hierarchy and the hat opening on the "and of four".
         let sixteenths = !matches!(drive, HarmonicDrive::Home);
@@ -1471,7 +1451,7 @@ pub fn perform_song(
             } else {
                 base * 0.5
             };
-            push(voice, at, vel, "comp", 0.02); // comps sit back in the pocket
+            push(voice, at, vel, "comp", pocket(at - bar_start)); // comps ride the shared pocket
             placed += 1;
         }
         // Phrase-end fill: rising sixteenth snares across the last half-bar because the phrase is

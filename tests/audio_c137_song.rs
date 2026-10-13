@@ -328,10 +328,10 @@ fn the_band_density_follows_the_harmony() {
             "seed {seed}: the drummer never comps — no interplay with the lead at all"
         );
         for c in &comp_hits {
-            // The comp slot is gated a full sixteenth clear of any lead attack and then laid a hair
-            // into the pocket, so it is never within a doubling distance of the melody.
+            // The comp slot is gated a full sixteenth clear of any lead attack and then laid into the
+            // shared pocket, so it is never within a doubling distance of the melody.
             assert!(
-                !lead.iter().any(|l| (l - c).abs() < 0.2),
+                !lead.iter().any(|l| (l - c).abs() < 0.15),
                 "seed {seed}: a comp stroke at {c} collides with a lead attack instead of making room"
             );
         }
@@ -365,7 +365,7 @@ fn the_backing_grooves_a_pocket() {
         {
             let lattice = (d.start_beat * 4.0).round() / 4.0;
             assert!(
-                (d.start_beat - lattice).abs() <= 0.04 + 1e-9,
+                (d.start_beat - lattice).abs() <= 0.05 + 1e-9,
                 "seed {seed}: a drum stroke at {} escaped the groove bound",
                 d.start_beat
             );

@@ -770,8 +770,15 @@ pub fn embellish_phrase(events: &[MaterialEvent]) -> Vec<MaterialEvent> {
         let (Some(a), Some(b)) = (e.step, next.step) else {
             continue;
         };
+        // TASTE: only connect a real LEAP (two scale steps or more). A gap the melody already
+        // crosses stepwise is left as space — compulsively filling every interval with a scalar run
+        // is what read as pretentious at the note level. Runs are also capped short (a connecting
+        // gesture, not a cascade), so the embellishment serves the line instead of showing off.
+        if (b - a).abs() < 2 {
+            continue;
+        }
         let gap = next.onset - e.onset;
-        let slots = ((gap / 0.25).round() as i64 - 1).max(0); // interior sixteenth positions
+        let slots = ((gap / 0.25).round() as i64 - 1).clamp(0, 2); // ≤2 interior sixteenths
         let dir = (b - a).signum();
         let mut prev = a;
         for k in 1..=slots {
@@ -804,23 +811,36 @@ pub fn embellish_phrase(events: &[MaterialEvent]) -> Vec<MaterialEvent> {
     out
 }
 
-/// A structured, deterministic pocket: downbeats stay exact, the "and" leans a hair behind the grid
-/// and the "e/a" sixteenths a touch more — a relational feel (a fixed function of metric position,
-/// NEVER a random draw) applied identically to every phrase, so a consequent keeps its antecedent's
-/// shared onsets. Magnitudes are a few milliseconds at tempo. Durations re-tile to the shifted grid
-/// so the line stays legato and never overlaps itself.
+/// The ONE pocket the whole band shares — a single, deterministic micro-timing profile keyed by
+/// position in the BAR, so that whenever two voices (lead, bass, drums) strike the same slot they
+/// land at the SAME microtime and LOCK, instead of each orbiting the song on its own uncorrelated
+/// trajectory. The bar downbeat is the hard anchor (dead on, where everyone locks); the "3" sits
+/// lightly behind; the backbeats (the 2 and the 4) and the subdivisions all lay back TOGETHER behind
+/// the dead-on ride — a coherent laid-back feel, NEVER a random draw, bounded under a sixteenth so it
+/// can never reorder the grid. This is the gravity the band orbits as one system.
+pub fn pocket_offset(pos_in_bar: f64) -> f64 {
+    let p = pos_in_bar.rem_euclid(4.0);
+    let sub = p - p.floor();
+    if sub.abs() < 1e-9 {
+        match p.floor() as i64 {
+            0 => 0.0,   // the bar downbeat — the hard anchor every voice locks to
+            2 => 0.012, // the "3" — lightly behind
+            _ => 0.030, // the "2" and "4" backbeats — the shared pocket drag
+        }
+    } else if (sub - 0.5).abs() < 1e-9 {
+        0.034 // the "and"
+    } else {
+        0.046 // the "e" and the "a"
+    }
+}
+
+/// Lay the phrase into the shared [`pocket_offset`], then re-tile durations to the shifted grid so
+/// the line stays legato and never overlaps itself. Applied identically to every phrase, so a
+/// consequent keeps its antecedent's shared (grid-quantized) onsets and the kinship law is untouched.
 pub fn pocket_phrase(events: &[MaterialEvent], span: f64) -> Vec<MaterialEvent> {
     let mut out = events.to_vec();
     for e in &mut out {
-        let within = e.onset.rem_euclid(1.0);
-        let lay = if within < 1e-9 {
-            0.0
-        } else if (within - 0.5).abs() < 1e-9 {
-            0.03
-        } else {
-            0.045
-        };
-        e.onset += lay;
+        e.onset += pocket_offset(e.onset);
     }
     let n = out.len();
     for i in 0..n {
