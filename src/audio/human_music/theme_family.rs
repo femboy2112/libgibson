@@ -882,6 +882,19 @@ pub enum Phrasing {
     Plain,
     /// Opt-in expressive realization (articulation + dynamic contour; pitches and count unchanged).
     Expressive,
+    /// The expressive lead PLUS the band answering into the breaths it opens — identical lead
+    /// material to `Expressive`, but the drummer steps into the silences the lead leaves, so an idea
+    /// the lead no longer over-states is picked up by the ensemble. The band half is enabled through
+    /// `CompiledArgument::answer_breaths`; the lead half is exactly `Expressive`.
+    Ensemble,
+}
+
+impl Phrasing {
+    /// Whether the lead is PERFORMED expressively (articulation + contour) under this phrasing —
+    /// true for both `Expressive` and `Ensemble`, which share the identical lead realization.
+    pub fn lead_is_expressive(self) -> bool {
+        matches!(self, Phrasing::Expressive | Phrasing::Ensemble)
+    }
 }
 
 /// Classify a developed-phrase event by the role its (pre-contour) accent already encodes:
@@ -1001,15 +1014,16 @@ pub fn generate_developed_pair_phrased(
     phrasing: Phrasing,
 ) -> ThemePair {
     let develop = |e: &[MaterialEvent]| {
-        let mut d = match phrasing {
-            Phrasing::Plain => pocket_phrase(&embellish_phrase(e), span),
-            Phrasing::Expressive => pocket_phrase_articulated(&embellish_phrase(e), span),
-        };
-        match phrasing {
-            Phrasing::Plain => shape_phrase_dynamics(&mut d, span),
-            Phrasing::Expressive => shape_expressive_dynamics(&mut d, span),
+        let embellished = embellish_phrase(e);
+        if phrasing.lead_is_expressive() {
+            let mut d = pocket_phrase_articulated(&embellished, span);
+            shape_expressive_dynamics(&mut d, span);
+            d
+        } else {
+            let mut d = pocket_phrase(&embellished, span);
+            shape_phrase_dynamics(&mut d, span);
+            d
         }
-        d
     };
     for salt in 0..64u64 {
         let mut r = Rng::new(mix(seed, salt, 0x7E3E_FA33_C137_D00D));
@@ -1181,14 +1195,15 @@ pub fn generate_developed_bridge_phrased(
     phrasing: Phrasing,
 ) -> Vec<MaterialEvent> {
     let raw = generate_bridge(seed, hook, span, beats_per_bar, bridge_prog);
-    let mut developed = match phrasing {
-        Phrasing::Plain => pocket_phrase(&raw, span),
-        Phrasing::Expressive => pocket_phrase_articulated(&raw, span),
+    let developed = if phrasing.lead_is_expressive() {
+        let mut d = pocket_phrase_articulated(&raw, span);
+        shape_expressive_dynamics(&mut d, span);
+        d
+    } else {
+        let mut d = pocket_phrase(&raw, span);
+        shape_phrase_dynamics(&mut d, span);
+        d
     };
-    match phrasing {
-        Phrasing::Plain => shape_phrase_dynamics(&mut developed, span),
-        Phrasing::Expressive => shape_expressive_dynamics(&mut developed, span),
-    }
     if is_departure(hook, &developed) {
         developed
     } else {

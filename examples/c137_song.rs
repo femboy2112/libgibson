@@ -8,7 +8,9 @@
 //! `--phrasing=plain` (default) is the frozen control realization; `--phrasing=expressive` keeps every
 //! lead pitch, onset and note count IDENTICAL but authors the lead's articulation (gates) and a
 //! tension-release dynamic contour — the opt-in arm that expresses the line through how it is played
-//! rather than through more notes. It is unheard until its listening verdict, so never the default.
+//! rather than through more notes. `--phrasing=ensemble` is that expressive lead PLUS the band
+//! answering into the breaths it opens (the drummer steps into the lead's silences). All opt-in arms
+//! are unheard until their listening verdict, so never the default.
 //!
 //! WAVs are 48 kHz stereo PCM16 with the world's original gains and no normalization. These
 //! receipts establish reproducibility and the Score fingerprint; they are not human-listening
@@ -90,7 +92,8 @@ impl Options {
                 options.phrasing = match value {
                     "plain" => Phrasing::Plain,
                     "expressive" => Phrasing::Expressive,
-                    _ => return Err("--phrasing must be plain or expressive".into()),
+                    "ensemble" => Phrasing::Ensemble,
+                    _ => return Err("--phrasing must be plain, expressive, or ensemble".into()),
                 };
             } else {
                 return Err(format!("unknown argument: {arg}").into());

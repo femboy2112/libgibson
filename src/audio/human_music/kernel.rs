@@ -1081,6 +1081,17 @@ fn groove_swell(bar: usize, bars_per_episode: usize) -> f32 {
     0.94 + 0.12 * in_episode
 }
 
+/// Whether the lead is genuinely SILENT at `beat` — no lead note sounding across it (within a small
+/// margin). A breath an expressive gate opens reads as silent here; a legato line never does. Reads
+/// the lead only, so a drummer answering into these silences never perturbs the keys-independent
+/// pulse. (A sustained note's whole [onset, onset+gate] span counts as sounding, not just its attack.)
+fn lead_silent_at(beat: f64, lead: &[Note]) -> bool {
+    const M: f64 = 0.08;
+    !lead
+        .iter()
+        .any(|n| beat >= n.start_beat - M && beat <= n.start_beat + f64::from(n.dur_beats) + M)
+}
+
 pub fn perform_song(
     argument: &CompiledArgument,
     world: &MusicWorld,
@@ -1627,9 +1638,16 @@ pub fn perform_song(
             HarmonicDrive::Building => 2,
             HarmonicDrive::Driving => 3,
         };
+        // The band HEARS the lead breathe: where an expressive lead has opened a real silence, the
+        // drummer steps INTO it with a full-voiced ANSWER on its OWN budget — so even a home bar
+        // (which otherwise lays out at comp budget 0) speaks, and a breath answer never spends the
+        // comp budget nor the reverse. Off unless the source asked for it (`answer_breaths`), and
+        // read from the LEAD only, so the keys-independent pulse is untouched.
+        let breath_budget = if argument.answer_breaths { 2 } else { 0 };
         let mut placed = 0;
+        let mut answered = 0;
         for s in [2u32, 6, 10, 14, 7, 11] {
-            if placed >= budget {
+            if placed >= budget && answered >= breath_budget {
                 break;
             }
             let at = bar_start + s as f64 * 0.25;
@@ -1641,13 +1659,21 @@ pub fn perform_song(
             } else {
                 (DrumVoice::Snare, 0.40) // a ghost on the "a"
             };
-            let vel = if lead_occ.yields_at(at) {
-                base
-            } else {
-                base * 0.5
-            };
-            push(voice, at, vel, "comp", pocket(at - bar_start)); // comps ride the shared pocket
-            placed += 1;
+            // comps and answers both ride the shared pocket. A breath answer (lead genuinely silent)
+            // steps forward at full velocity on its own budget; an ordinary comp is soft inside a
+            // live phrase and fuller where the phrase has yielded.
+            if breath_budget > 0 && answered < breath_budget && lead_silent_at(at, &lead_notes) {
+                push(voice, at, base, "answer", pocket(at - bar_start));
+                answered += 1;
+            } else if placed < budget {
+                let vel = if lead_occ.yields_at(at) {
+                    base
+                } else {
+                    base * 0.5
+                };
+                push(voice, at, vel, "comp", pocket(at - bar_start));
+                placed += 1;
+            }
         }
         // Phrase-end fill: rising sixteenth snares across the last half-bar because the phrase is
         // ending (into the hook, then into the final cadence) — not on a coin flip. Fills are tight

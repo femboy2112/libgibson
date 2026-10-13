@@ -269,5 +269,7 @@ pub fn source_with_bridge_seed_phrased(
     route.extend_from_slice(&BRIDGE_PROG);
     route.extend_from_slice(&HOOK_PROG);
     compiled.route = route;
+    // Ensemble: let the band answer the lead's breaths (set like `route`, after compile).
+    compiled.answer_breaths = matches!(phrasing, Phrasing::Ensemble);
     compiled
 }

@@ -814,3 +814,56 @@ fn expressive_preserves_the_earned_bridge_return() {
         "the expressive return accompaniment must still depend on the SPECIFIC bridge"
     );
 }
+
+/// R2 (ensemble distribution): the `Ensemble` arm makes the DRUMMER answer into the lead's breaths —
+/// bounded "answer" strokes appear — while the plain and expressive arms add none, and the LEAD is
+/// untouched (R2 moves information to the band, it does not re-perform the melody). This is the
+/// cross-role exchange, kept opt-in: only a source built with `Phrasing::Ensemble` triggers it.
+#[test]
+fn ensemble_answers_the_breaths_only_in_the_ensemble_arm() {
+    let seed = 2112u64;
+    let plain = kernel::perform_song(&source_bridge::source(seed), &world()).unwrap();
+    let expr = kernel::perform_song(
+        &source_bridge::source_phrased(seed, Phrasing::Expressive),
+        &world(),
+    )
+    .unwrap();
+    let ens = kernel::perform_song(
+        &source_bridge::source_phrased(seed, Phrasing::Ensemble),
+        &world(),
+    )
+    .unwrap();
+    let answers = |t: &CommittedSong| {
+        t.score()
+            .drums
+            .iter()
+            .filter(|d| d.prov.role_note == "answer")
+            .count()
+    };
+    assert_eq!(
+        answers(&plain),
+        0,
+        "the plain arm must add no breath answers"
+    );
+    assert_eq!(
+        answers(&expr),
+        0,
+        "the expressive arm must add no breath answers"
+    );
+    assert!(
+        answers(&ens) > 0,
+        "the ensemble arm must answer the lead's breaths"
+    );
+    // R2 does not touch the LEAD: the ensemble lead lane is identical to the expressive one.
+    let lead = |t: &CommittedSong| -> Vec<(u64, i32, u32)> {
+        t.score()
+            .role_notes(Role::Lead)
+            .map(|n| (n.start_beat.to_bits(), n.pitch, n.velocity.to_bits()))
+            .collect()
+    };
+    assert_eq!(
+        lead(&expr),
+        lead(&ens),
+        "ensemble must not change the lead — only the band answers"
+    );
+}

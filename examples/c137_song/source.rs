@@ -151,5 +151,7 @@ pub fn source_phrased(seed: u64, phrasing: Phrasing) -> CompiledArgument {
     let mut route = VERSE_PROG.to_vec();
     route.extend_from_slice(&HOOK_PROG);
     compiled.route = route;
+    // Ensemble: let the band answer the lead's breaths (set like `route`, after compile).
+    compiled.answer_breaths = matches!(phrasing, Phrasing::Ensemble);
     compiled
 }

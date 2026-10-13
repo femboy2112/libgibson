@@ -389,6 +389,12 @@ pub struct CompiledArgument {
     /// dominant across a whole section — the verse moves through a pre-dominant→dominant→tonic→
     /// secondary-dominant loop, the home sections land, the bridge departs and pivots back.
     pub route: Vec<(i32, Quality)>,
+    /// Opt-in ENSEMBLE directive: when true, the kernel lets the drummer answer INTO the lead's
+    /// breaths — the silences an expressive lead opens — with a bounded, pocket-laid stroke derived
+    /// from the lead + harmony only (never the keys, so the keys-independent pulse is untouched).
+    /// `false` (the default, set by `compile`) reproduces every prior render exactly; only a source
+    /// built with `Phrasing::Ensemble` sets it true. It is never a silent default.
+    pub answer_breaths: bool,
 }
 
 impl CompiledArgument {
@@ -995,6 +1001,9 @@ impl MusicalArgument {
             placements,
             argument: self.clone(),
             route,
+            // Off by default — a plain/expressive source renders exactly as before. A source built
+            // with `Phrasing::Ensemble` flips this on after compiling (like it sets `route`).
+            answer_breaths: false,
         })
     }
 
