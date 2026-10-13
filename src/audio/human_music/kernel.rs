@@ -1482,15 +1482,12 @@ pub fn perform_song(
                 let energy = drive_energy(harmonic_drive(&ctx.chord, world.tonic_pc));
                 // The chord above its root (root_pc is tones[0]); the bass owns the root.
                 let rootless = &tones[1..];
-                // The colour on top: the 9th — but RESERVED for the turnaround (the phrase's last bar),
-                // and even there only where the MODE admits it and the chord does not already spell it (so
-                // the colour fits the key, never fights it). Through the rest of the phrase the comp states
-                // clean chords, so the bright extension reads as an event that leads out of the section,
-                // not constant topping on every bar.
+                // The colour on top: the 9th, but only where the MODE admits it and the chord does not
+                // already spell it — so the colour fits the song's key instead of fighting it (on a chord
+                // whose 9th leaves the mode, the comp simply states the voicing, no forced colour).
                 let ninth = (ctx.chord.root_pc + 2).rem_euclid(12);
-                let turnaround = b == bars_per_ep - 1;
-                let colour_pc = (turnaround && scale.contains_pc(ninth) && !tones.contains(&ninth))
-                    .then_some(ninth);
+                let colour_pc =
+                    (scale.contains_pc(ninth) && !tones.contains(&ninth)).then_some(ninth);
                 // The "and of two": the full rootless voicing — the body of the comp, planted in pocket.
                 let a = bar_start + 2.5 + pocket(2.5);
                 if perf.on_stage(Agent::Keys, a) && room(a) {
@@ -1506,9 +1503,9 @@ pub fn perform_song(
                         ));
                     }
                 }
-                // The "and of four": a lighter guide-tone shell (3rd + 7th) — the pianist's answer to its
-                // own body chord. On the turnaround it is topped with the colour tone and a grace flourish
-                // that leads out of the section (see `colour_pc` above, which is Some only there).
+                // The "and of four": a lighter guide-tone shell (3rd + 7th) topped with the colour tone
+                // and a grace ornament a scale-step above it a 16th before the stab — the pianist's bright
+                // answer to its own body chord.
                 let c = bar_start + 3.5 + pocket(3.5);
                 if perf.on_stage(Agent::Keys, c) && room(c) {
                     let shell: Vec<i32> = rootless.iter().copied().step_by(2).collect();
