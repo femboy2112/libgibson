@@ -271,5 +271,7 @@ pub fn source_with_bridge_seed_phrased(
     compiled.route = route;
     // Ensemble: let the band answer the lead's breaths (set like `route`, after compile).
     compiled.answer_breaths = matches!(phrasing, Phrasing::Ensemble);
+    // Expressive/Ensemble: the keyboard comps the holes (the plain control keeps the sparse keyboard).
+    compiled.comp_keys = phrasing.lead_is_expressive();
     compiled
 }

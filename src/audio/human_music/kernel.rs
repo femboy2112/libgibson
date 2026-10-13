@@ -1430,6 +1430,63 @@ pub fn perform_song(
         memory.prev_answer_events = produced;
         carried_cell = Some(cell);
     }
+    // KEYS COMP — fill the harmonic holes. The per-episode answer above is a single gesture in bar 2;
+    // on its own the keyboard reads very sparse. Here the keys also COMP — short mid-register guide-tone
+    // stabs in the rhythmic holes — so the keyboard is a present, interactive voice, not one answer an
+    // episode. Teacher-gated to the HOME ARRIVALS (the hook and the return, where the pad also lays its
+    // rug and the texture is meant to be full), so the VERSE stays bare (the open question, lead alone)
+    // and the BRIDGE stays thin (the departure's texture contrast). Monophonic like every pitched lane
+    // (the keys are NOT the pad): one guide tone at a time, each stab making room for the lead (never on
+    // its attack) and never overlapping the episode's answer window. Reads the committed harmony only —
+    // the drums never hear the keys, so the keys-independent pulse the causal witness depends on is
+    // untouched (the `heard-keys` fill reads only the answer window `[ws+4, ws+8)`, which this avoids).
+    if argument.comp_keys {
+        let lead_onsets: Vec<f64> = score.role_notes(Role::Lead).map(|n| n.start_beat).collect();
+        let pocket = super::theme_family::pocket_offset;
+        let bars_per_ep = (EPISODE_BEATS / 4.0) as usize;
+        for e in 0..episodes {
+            if !matches!(
+                argument.placements[e].relation,
+                super::argument::ArgumentRelation::Consequent { .. }
+                    | super::argument::ArgumentRelation::Return { .. }
+            ) {
+                continue; // comp only under the home arrivals; verse and bridge keep the floor clear
+            }
+            for b in 0..bars_per_ep {
+                if b == 1 {
+                    continue; // bar 2 is the answer's own bar — leave it to the answer (one keys voice)
+                }
+                let bar_start = e as f64 * EPISODE_BEATS + b as f64 * 4.0;
+                let ctx = perf.context_at(bar_start).unwrap();
+                let tones = ctx.chord.pitch_classes();
+                if tones.len() < 2 {
+                    continue;
+                }
+                let energy = drive_energy(harmonic_drive(&ctx.chord, world.tonic_pc));
+                // Two stabs in the holes — the "and of two" and the "and of four", the off-beats the
+                // backbone leaves open — voiced as COLOUR tones (the chord's 3rd and its top tone, not
+                // its root, which the bass owns), nudged into the shared pocket.
+                for (slot, tone_ix) in [(2.5_f64, 1usize), (3.5_f64, tones.len() - 1)] {
+                    let at = bar_start + slot + pocket(slot);
+                    if !perf.on_stage(Agent::Keys, at) {
+                        continue;
+                    }
+                    if lead_onsets.iter().any(|&l| (l - at).abs() < 0.15) {
+                        continue; // make room for the lead's attack
+                    }
+                    keys.push(pitched(
+                        &perf,
+                        Role::Keys,
+                        at,
+                        0.3,
+                        register(tones[tone_ix], 60),
+                        (0.40 * energy).clamp(0.02, 1.0),
+                        provenance(&perf, at, "comp", section_at(argument, at)),
+                    ));
+                }
+            }
+        }
+    }
     score = commit_role(score, &perf, world, Role::Keys, keys, Vec::new())?;
     for e in 0..episodes {
         let ws = e as f64 * EPISODE_BEATS;
@@ -1863,9 +1920,22 @@ fn validate_song(
             return Err(KernelError::Stage(agent));
         }
         if n.role == Role::Keys {
-            let within_episode = n.start_beat.rem_euclid(EPISODE_BEATS);
-            if !(4.0..8.0).contains(&within_episode) {
-                return Err(KernelError::Source("violated deliberate keyboard silence"));
+            if n.prov.role_note == "comp" {
+                // A comp stab lives outside the answer window, but it must make ROOM for the lead —
+                // never landing on a lead attack (the keys stab the holes, they don't fight the melody).
+                if score
+                    .role_notes(Role::Lead)
+                    .any(|l| (l.start_beat - n.start_beat).abs() < 0.12)
+                {
+                    return Err(KernelError::Source("keyboard comp collides with the lead"));
+                }
+            } else {
+                // The call/response answer stays confined to the episode's second bar — the deliberate
+                // keyboard silence the rest of the answer-contour design depends on.
+                let within_episode = n.start_beat.rem_euclid(EPISODE_BEATS);
+                if !(4.0..8.0).contains(&within_episode) {
+                    return Err(KernelError::Source("violated deliberate keyboard silence"));
+                }
             }
         }
     }

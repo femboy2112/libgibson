@@ -1276,3 +1276,82 @@ fn a_resolved_moment_is_left_in_peace() {
         "the lead (onsets, pitches, durations, silences) is unchanged between the two arms"
     );
 }
+
+// ======================================================================================
+// CP3 (keys) — the keyboard comps the holes under the home arrivals.
+//
+// The per-episode answer alone reads very sparse. Full (an expressive lead) also COMPS — short
+// mid-register guide-tone stabs in the rhythmic holes — but only under the hook and the return,
+// making room for the lead. The plain control keeps its frozen, sparse keyboard (so the archived
+// control stays byte-identical). This test pins all of that.
+// ======================================================================================
+
+#[test]
+fn the_keyboard_comps_the_holes_under_the_home_arrivals() {
+    for seed in [2112u64, 7, 99] {
+        let full = render_cfg(&C137Preset::full().resolve(), seed);
+        let plain = kernel::perform_song(
+            &source_bridge::source_phrased(seed, Phrasing::Plain),
+            &world(),
+        )
+        .unwrap();
+        let fk = full.score().role_notes(Role::Keys).count();
+        let pk = plain.score().role_notes(Role::Keys).count();
+        assert!(
+            fk > pk,
+            "seed {seed}: the Full keyboard ({fk}) must be fuller than the plain control ({pk})"
+        );
+        let comps: Vec<_> = full
+            .score()
+            .role_notes(Role::Keys)
+            .filter(|n| n.prov.role_note == "comp")
+            .collect();
+        assert!(
+            !comps.is_empty(),
+            "seed {seed}: Full must add keyboard comp"
+        );
+        let lead: Vec<f64> = full
+            .score()
+            .role_notes(Role::Lead)
+            .map(|n| n.start_beat)
+            .collect();
+        for c in &comps {
+            // make room for the lead's attack
+            assert!(
+                !lead.iter().any(|&l| (l - c.start_beat).abs() < 0.12),
+                "seed {seed}: comp at {:.3} must make room for the lead",
+                c.start_beat
+            );
+            // only under the home arrivals — episode 1 (hook) or 3 (return) of the 16-bar arc; the
+            // verse (0) and the bridge (2) keep the keyboard to its lone answer.
+            let ep = (c.start_beat / 16.0).floor() as usize;
+            assert!(
+                ep == 1 || ep == 3,
+                "seed {seed}: comp at {:.3} (episode {ep}) must sit under a home arrival, not the verse/bridge",
+                c.start_beat
+            );
+        }
+    }
+}
+
+/// The plain control keeps its frozen sparse keyboard — the comp is an EXPRESSIVE-lead capability, so
+/// `--jerry=plain` adds no comp (and stays byte-identical, pinned by D3).
+#[test]
+fn the_plain_control_keeps_its_sparse_keyboard() {
+    for seed in [2112u64, 7, 99] {
+        let plain = kernel::perform_song(
+            &source_bridge::source_phrased(seed, Phrasing::Plain),
+            &world(),
+        )
+        .unwrap();
+        assert_eq!(
+            plain
+                .score()
+                .role_notes(Role::Keys)
+                .filter(|n| n.prov.role_note == "comp")
+                .count(),
+            0,
+            "seed {seed}: the plain control must add NO keyboard comp"
+        );
+    }
+}

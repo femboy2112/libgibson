@@ -395,6 +395,12 @@ pub struct CompiledArgument {
     /// `false` (the default, set by `compile`) reproduces every prior render exactly; only a source
     /// built with `Phrasing::Ensemble` sets it true. It is never a silent default.
     pub answer_breaths: bool,
+    /// Opt-in KEYS COMP directive: when true, the keyboard also comps — short mid-register guide-tone
+    /// stabs in the holes under the home arrivals — so it is a present voice, not one sparse answer an
+    /// episode. `false` (the default, set by `compile`) keeps the frozen keyboard realization; a source
+    /// built with an EXPRESSIVE lead (`Phrasing::Expressive`/`Ensemble`) sets it true, so the plain
+    /// control stays byte-identical to every historical render.
+    pub comp_keys: bool,
 }
 
 impl CompiledArgument {
@@ -1004,6 +1010,9 @@ impl MusicalArgument {
             // Off by default — a plain/expressive source renders exactly as before. A source built
             // with `Phrasing::Ensemble` flips this on after compiling (like it sets `route`).
             answer_breaths: false,
+            // Off by default — the plain control keeps its frozen, sparse keyboard. An EXPRESSIVE or
+            // ENSEMBLE source flips this on after compiling, so the keyboard comps under home arrivals.
+            comp_keys: false,
         })
     }
 
