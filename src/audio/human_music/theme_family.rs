@@ -866,10 +866,110 @@ fn shape_phrase_dynamics(events: &mut [MaterialEvent], span: f64) {
     }
 }
 
+/// How a composed phrase is PERFORMED once its pitches and rhythm are fixed. `Plain` is the shipped
+/// realization — legato re-tiling (every note held to the next onset) and a single flat rising
+/// dynamic ramp. `Expressive` moves the lead's information onto its PERFORMANCE channels without
+/// touching one pitch, onset, or the note count: it authors a per-note gate (structural notes sing
+/// tenuto; the connective ghosts are clipped short so the filigree recedes to background; the
+/// phrase's composed breaths — the dropped-beat rests `pocket_phrase` used to fill — are recovered
+/// as real silence) and a tension-release dynamic contour (an arch that eases into the cadence, with
+/// a deepened foreground/background separation), so the same line is PLAYED instead of recited. This
+/// is the lever for "say it with how you play the notes, not with more notes."
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Phrasing {
+    /// The shipped realization. Byte-identical to every historical render.
+    #[default]
+    Plain,
+    /// Opt-in expressive realization (articulation + dynamic contour; pitches and count unchanged).
+    Expressive,
+}
+
+/// Classify a developed-phrase event by the role its (pre-contour) accent already encodes:
+/// `compose_phrase` writes downbeats at 0.95 and strong beats at 0.85 (STRUCTURAL — the melody's
+/// load-bearing notes), interior fills at ~0.72–0.78 (CONNECTIVE), and `embellish_phrase` inserts
+/// its passing ghosts at ≤0.40 (GHOST). The thresholds sit in the clean gaps between those tiers.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NoteRole {
+    Structural,
+    Connective,
+    Ghost,
+}
+
+fn note_role(accent: f32) -> NoteRole {
+    if accent < 0.50 {
+        NoteRole::Ghost
+    } else if accent < 0.82 {
+        NoteRole::Connective
+    } else {
+        NoteRole::Structural
+    }
+}
+
+/// The expressive counterpart of [`pocket_phrase`]: lay the SAME onsets into the SAME shared
+/// [`pocket_offset`] (so the kinship law, which reads only onsets and pitches, is untouched and the
+/// band still locks to one pocket), but instead of re-tiling every duration up to the next onset
+/// (the legato that erases articulation and swallows composed rests), AUTHOR a per-note gate from the
+/// note's role. Every gate is held at or BELOW the legato length, so a performed note never outlasts
+/// the slot `pocket_phrase` would have given it — the mono-voice capacity, span and dependency-order
+/// bounds that the plain path satisfies are satisfied here by construction.
+pub fn pocket_phrase_articulated(events: &[MaterialEvent], span: f64) -> Vec<MaterialEvent> {
+    let mut out = events.to_vec();
+    for e in &mut out {
+        e.onset += pocket_offset(e.onset);
+    }
+    let n = out.len();
+    for i in 0..n {
+        let gap = if i + 1 < n {
+            out[i + 1].onset - out[i].onset
+        } else {
+            // The cadence note rings to the barline, exactly as the plain path holds it.
+            (span - out[i].onset).max(0.5)
+        };
+        out[i].dur = if i + 1 == n {
+            gap
+        } else {
+            match note_role(out[i].accent) {
+                // The melody's load-bearing notes SING to the next note (tenuto), but a hold is
+                // capped so the phrase's composed breaths (a dropped beat leaves a ~2-beat gap)
+                // open as real silence instead of a filled drone — the breath the teacher leaves.
+                NoteRole::Structural => gap.min(1.25),
+                // Connective tissue is lightly detached — present, but not competing with the head.
+                NoteRole::Connective => gap * 0.80,
+                // The passing ghosts are CLIPPED: a short, quiet background articulation with air
+                // after it, so the sixteenth filigree reads as texture, not a show-off scalar run.
+                NoteRole::Ghost => (gap * 0.5).clamp(0.12, 0.16),
+            }
+        };
+    }
+    out
+}
+
+/// A reasoned dynamic CONTOUR for the expressive path: a tension-release ARCH over the phrase (the
+/// line enters restrained, swells toward the climax, then EASES into the cadence — a shape, not the
+/// plain path's single monotic ramp) times a DEEPENED foreground/background separation (the passing
+/// ghosts are pushed further under the structural notes). A fixed function of each event's position
+/// and role — never a random draw — so it is deterministic and the onset/pitch kinship law is
+/// untouched. This is where the lead's expression lives as velocity shape instead of as extra notes.
+fn shape_expressive_dynamics(events: &mut [MaterialEvent], span: f64) {
+    for e in events.iter_mut() {
+        let phase = (e.onset / span).clamp(0.0, 1.0) as f32;
+        // Arch: rise across the first ~70% to a peak, then relax into the cadence.
+        let arch = if phase < 0.7 {
+            0.80 + 0.25 * (phase / 0.7)
+        } else {
+            1.05 - 0.17 * ((phase - 0.7) / 0.3)
+        };
+        // Push the ghosts deeper into the background so the melody's notes carry the foreground.
+        let sep = if e.accent < 0.50 { 0.80 } else { 1.0 };
+        e.accent = (e.accent * arch * sep).clamp(0.02, 1.0);
+    }
+}
+
 /// The long-form lead: the same seeded verse/hook pair as [`generate_pair`], but DEVELOPED — each
 /// phrase embellished into a played line, laid into a structured pocket, and shaped by a phrase
 /// dynamic contour — with the kinship law re-checked on the DEVELOPED pair so the hook is still a
-/// lawful altered consequent of the verse.
+/// lawful altered consequent of the verse. This is the [`Phrasing::Plain`] realization; see
+/// [`generate_developed_pair_phrased`] for the opt-in expressive one.
 pub fn generate_developed_pair(
     seed: u64,
     span: f64,
@@ -877,9 +977,38 @@ pub fn generate_developed_pair(
     verse_prog: &[BarChord],
     hook_prog: &[BarChord],
 ) -> ThemePair {
+    generate_developed_pair_phrased(
+        seed,
+        span,
+        beats_per_bar,
+        verse_prog,
+        hook_prog,
+        Phrasing::Plain,
+    )
+}
+
+/// [`generate_developed_pair`] with an explicit [`Phrasing`]. `Plain` reproduces the shipped render
+/// byte-for-byte; `Expressive` keeps every pitch, onset and the note COUNT identical but authors the
+/// lead's articulation (gates) and dynamic contour, so the same line is PLAYED rather than recited.
+/// The kinship law reads only onsets and pitches, so both phrasings pass it at the same seed/salt and
+/// yield the SAME pitches — the two differ only in duration and accent.
+pub fn generate_developed_pair_phrased(
+    seed: u64,
+    span: f64,
+    beats_per_bar: f64,
+    verse_prog: &[BarChord],
+    hook_prog: &[BarChord],
+    phrasing: Phrasing,
+) -> ThemePair {
     let develop = |e: &[MaterialEvent]| {
-        let mut d = pocket_phrase(&embellish_phrase(e), span);
-        shape_phrase_dynamics(&mut d, span);
+        let mut d = match phrasing {
+            Phrasing::Plain => pocket_phrase(&embellish_phrase(e), span),
+            Phrasing::Expressive => pocket_phrase_articulated(&embellish_phrase(e), span),
+        };
+        match phrasing {
+            Phrasing::Plain => shape_phrase_dynamics(&mut d, span),
+            Phrasing::Expressive => shape_expressive_dynamics(&mut d, span),
+        }
         d
     };
     for salt in 0..64u64 {
@@ -1029,9 +1158,37 @@ pub fn generate_developed_bridge(
     beats_per_bar: f64,
     bridge_prog: &[BarChord],
 ) -> Vec<MaterialEvent> {
+    generate_developed_bridge_phrased(
+        seed,
+        hook,
+        span,
+        beats_per_bar,
+        bridge_prog,
+        Phrasing::Plain,
+    )
+}
+
+/// [`generate_developed_bridge`] with an explicit [`Phrasing`]. Pocket + dynamics (and now the
+/// expressive gate/contour) touch only onset-lay, duration and accent — never pitch — so the
+/// [`is_departure`] law (contour, mean pitch, arrival, scale pool) is invariant under either
+/// phrasing, and is re-asserted here exactly as the plain path does.
+pub fn generate_developed_bridge_phrased(
+    seed: u64,
+    hook: &[MaterialEvent],
+    span: f64,
+    beats_per_bar: f64,
+    bridge_prog: &[BarChord],
+    phrasing: Phrasing,
+) -> Vec<MaterialEvent> {
     let raw = generate_bridge(seed, hook, span, beats_per_bar, bridge_prog);
-    let mut developed = pocket_phrase(&raw, span);
-    shape_phrase_dynamics(&mut developed, span);
+    let mut developed = match phrasing {
+        Phrasing::Plain => pocket_phrase(&raw, span),
+        Phrasing::Expressive => pocket_phrase_articulated(&raw, span),
+    };
+    match phrasing {
+        Phrasing::Plain => shape_phrase_dynamics(&mut developed, span),
+        Phrasing::Expressive => shape_expressive_dynamics(&mut developed, span),
+    }
     if is_departure(hook, &developed) {
         developed
     } else {
@@ -1240,5 +1397,99 @@ mod tests {
         let hook = generate_pair(2112, SPAN, BPB, &VP, &HP).hook;
         // The hook itself (same register, Closed) is a restatement, never a bridge departure.
         assert!(!is_departure(&hook, &hook));
+    }
+
+    // --- Expressive phrasing (the §9 red-first suite, generator level). ---
+
+    /// A + G: the expressive realization keeps every pitch, onset and the note COUNT identical to the
+    /// plain one — it is the SAME melody. Only the gate (dur) and the accent move. Extra expressive
+    /// information lives in HOW the notes are played, not in more (or fewer) notes.
+    #[test]
+    fn expressive_phrasing_replays_the_same_notes_with_a_new_performance() {
+        let plain = generate_developed_pair_phrased(2112, SPAN, BPB, &VP, &HP, Phrasing::Plain);
+        let expr = generate_developed_pair_phrased(2112, SPAN, BPB, &VP, &HP, Phrasing::Expressive);
+        for (p, e) in [(&plain.verse, &expr.verse), (&plain.hook, &expr.hook)] {
+            assert_eq!(
+                p.len(),
+                e.len(),
+                "note count must be identical (density held)"
+            );
+            let (mut dur_moved, mut acc_moved) = (0, 0);
+            for (a, b) in p.iter().zip(e) {
+                assert!((a.onset - b.onset).abs() < 1e-9, "onsets must be identical");
+                assert_eq!(a.step, b.step, "pitches must be identical");
+                if (a.dur - b.dur).abs() > 1e-6 {
+                    dur_moved += 1;
+                }
+                if (a.accent - b.accent).abs() > 1e-6 {
+                    acc_moved += 1;
+                }
+            }
+            assert!(dur_moved > 0, "expressive must re-gate some notes");
+            assert!(acc_moved > 0, "expressive must reshape the dynamics");
+        }
+    }
+
+    /// B: a declared breath (an internal rest) and a clipped detachment survive into the expressive
+    /// phrase — the plain path's legato re-tile leaves no internal silence; the expressive path opens
+    /// one and clips its connective ghosts strictly shorter than the legato tile.
+    #[test]
+    fn expressive_phrasing_clips_ghosts_and_restores_breaths() {
+        let plain = generate_developed_pair_phrased(2112, SPAN, BPB, &VP, &HP, Phrasing::Plain);
+        let expr = generate_developed_pair_phrased(2112, SPAN, BPB, &VP, &HP, Phrasing::Expressive);
+        let clipped = plain
+            .verse
+            .iter()
+            .zip(&expr.verse)
+            .any(|(p, e)| e.dur + 1e-6 < p.dur);
+        assert!(
+            clipped,
+            "expressive must clip connective notes shorter than legato"
+        );
+        let rest_after = |ph: &[MaterialEvent]| {
+            ph.windows(2)
+                .any(|w| w[1].onset - (w[0].onset + w[0].dur) > 0.25)
+        };
+        assert!(
+            !rest_after(&plain.verse),
+            "plain legato fills every internal gap — no rest"
+        );
+        assert!(
+            rest_after(&expr.verse),
+            "expressive must open a real breath (internal rest)"
+        );
+    }
+
+    /// C: the structural identity is untouched — the expressive hook is still a lawful altered
+    /// consequent of the expressive verse, Open→Closed, across seeds (the kinship law reads only
+    /// onsets and pitches, which the expressive realization does not move).
+    #[test]
+    fn expressive_phrasing_stays_a_lawful_altered_consequent() {
+        for seed in [1u64, 2112, 0xDEAD_BEEF] {
+            let pair =
+                generate_developed_pair_phrased(seed, SPAN, BPB, &VP, &HP, Phrasing::Expressive);
+            let k = Kinship::measure(&pair.verse, &pair.hook, BPB);
+            assert!(
+                k.altered_consequent(),
+                "seed {seed}: expressive pair unlawful: {k:?}"
+            );
+            assert_eq!(ArrivalKind::of(&pair.verse), Some(ArrivalKind::Open));
+            assert_eq!(ArrivalKind::of(&pair.hook), Some(ArrivalKind::Closed));
+        }
+    }
+
+    /// E: the expressive realization is a deterministic function of the seed — same seed replays
+    /// byte-for-byte (no random jitter masquerading as musicianship) — and it genuinely DIFFERS from
+    /// the plain one (it is not a silent no-op).
+    #[test]
+    fn expressive_phrasing_is_deterministic_not_cosmetic_noise() {
+        let a = generate_developed_pair_phrased(2112, SPAN, BPB, &VP, &HP, Phrasing::Expressive);
+        let b = generate_developed_pair_phrased(2112, SPAN, BPB, &VP, &HP, Phrasing::Expressive);
+        assert_eq!(a, b, "same seed+phrasing must replay deterministically");
+        let plain = generate_developed_pair_phrased(2112, SPAN, BPB, &VP, &HP, Phrasing::Plain);
+        assert_ne!(
+            a.verse, plain.verse,
+            "expressive must actually differ from plain"
+        );
     }
 }

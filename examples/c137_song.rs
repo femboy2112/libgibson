@@ -5,14 +5,21 @@
 //! `--bars=8` (default) renders the frozen two-episode verse→hook control; `--bars=16` renders the
 //! opt-in four-episode verse→hook→bridge→return arc (the phase-change engine's first audible slice).
 //!
+//! `--phrasing=plain` (default) is the frozen control realization; `--phrasing=expressive` keeps every
+//! lead pitch, onset and note count IDENTICAL but authors the lead's articulation (gates) and a
+//! tension-release dynamic contour — the opt-in arm that expresses the line through how it is played
+//! rather than through more notes. It is unheard until its listening verdict, so never the default.
+//!
 //! WAVs are 48 kHz stereo PCM16 with the world's original gains and no normalization. These
 //! receipts establish reproducibility and the Score fingerprint; they are not human-listening
 //! acceptance. The full mix and the score TSV are emitted per seed.
 
+// Both fixtures are shared with the integration tests via `#[path]`; the example binary drives them
+// through the `*_phrased` entry points, so the plain-delegating wrappers (`source`,
+// `source_with_bridge_seed`) read as unused HERE while the tests still exercise them.
+#[allow(dead_code)]
 #[path = "c137_song/source.rs"]
 mod source;
-// This fixture is shared with the integration tests via `#[path]`; the example binary drives it
-// through `source`/`source_with_bridge_seed`, so its test-facing entry points read as unused here.
 #[allow(dead_code)]
 #[path = "c137_song/source_bridge.rs"]
 mod source_bridge;
@@ -21,6 +28,7 @@ use gibson::audio::human_music::{
     kernel,
     score::Score,
     synth::{ProductionControl, StemMask},
+    theme_family::Phrasing,
     theory::Mode,
     HumanMusicSynth, MusicWorld,
 };
@@ -39,6 +47,10 @@ struct Options {
     /// LAWFUL bridge over the same chart and the same returning hook, so two renders isolate what
     /// the specific bridge changes about the home-coming.
     bridge_seed: Option<u64>,
+    /// How the lead is PERFORMED. `Plain` (default) is the frozen control; `Expressive` keeps every
+    /// pitch, onset and the note count but authors articulation (gates) + a dynamic contour — the
+    /// opt-in arm that moves the lead's information onto its performance channels, never the default.
+    phrasing: Phrasing,
 }
 
 impl Options {
@@ -52,6 +64,7 @@ impl Options {
             // its listening verdict, so it is never the silent default.
             bars: 8,
             bridge_seed: None,
+            phrasing: Phrasing::Plain,
         };
         for arg in std::env::args().skip(1) {
             if let Some(value) = arg.strip_prefix("--out=") {
@@ -73,6 +86,12 @@ impl Options {
                 }
             } else if let Some(value) = arg.strip_prefix("--bridge-seed=") {
                 options.bridge_seed = Some(value.parse()?);
+            } else if let Some(value) = arg.strip_prefix("--phrasing=") {
+                options.phrasing = match value {
+                    "plain" => Phrasing::Plain,
+                    "expressive" => Phrasing::Expressive,
+                    _ => return Err("--phrasing must be plain or expressive".into()),
+                };
             } else {
                 return Err(format!("unknown argument: {arg}").into());
             }
@@ -159,11 +178,15 @@ fn main() -> Result<()> {
     for seed in &options.seeds {
         let candidate_source = if options.bars == 16 {
             match options.bridge_seed {
-                Some(bridge_seed) => source_bridge::source_with_bridge_seed(*seed, bridge_seed),
-                None => source_bridge::source(*seed),
+                Some(bridge_seed) => source_bridge::source_with_bridge_seed_phrased(
+                    *seed,
+                    bridge_seed,
+                    options.phrasing,
+                ),
+                None => source_bridge::source_phrased(*seed, options.phrasing),
             }
         } else {
-            source::source(*seed)
+            source::source_phrased(*seed, options.phrasing)
         };
         let take = kernel::perform_song(&candidate_source, &world)?;
         // Re-derive the committed candidate before rendering: the exported Score is a candidate

@@ -18,7 +18,7 @@ use gibson::audio::human_music::{
     contract::CompositionGrammar,
     plan::ArrangementRole,
     semantic::{EventKind, SemanticEvent, SemanticState, SemanticTrace, Tone},
-    theme_family::generate_developed_pair,
+    theme_family::{generate_developed_pair_phrased, Phrasing},
     theory::{PitchBasis, Quality},
     SongMap,
 };
@@ -39,6 +39,13 @@ const HOOK_PROG: [(i32, Quality); 4] = [
 ];
 
 pub fn source(seed: u64) -> CompiledArgument {
+    source_phrased(seed, Phrasing::Plain)
+}
+
+/// [`source`] with an explicit lead [`Phrasing`]. `Plain` is the frozen control (byte-identical);
+/// `Expressive` re-performs the SAME developed verse/hook (same pitches, onsets and count) with
+/// authored articulation and a dynamic contour — the opt-in expressive arm.
+pub fn source_phrased(seed: u64, phrasing: Phrasing) -> CompiledArgument {
     let trace = SemanticTrace {
         total_beats: 32.0,
         events: vec![
@@ -74,7 +81,7 @@ pub fn source(seed: u64) -> CompiledArgument {
     // pocket, with the kinship law re-checked on the developed pair. The verse rises and ends Open,
     // the hook is its AlteredConsequent and ends Closed. No cropping — those obligations ARE the
     // referents (and the kinship law is measured over the whole developed phrase, not a prefix).
-    let pair = generate_developed_pair(seed, 16.0, 4.0, &VERSE_PROG, &HOOK_PROG);
+    let pair = generate_developed_pair_phrased(seed, 16.0, 4.0, &VERSE_PROG, &HOOK_PROG, phrasing);
     let verse = MusicalReferent {
         id: ReferentId(0),
         pitch_basis: PitchBasis::Semitones,

@@ -9,6 +9,7 @@ use gibson::audio::human_music::{
     kernel::{self, CommittedSong},
     plan::ArrangementRole,
     score::{DrumVoice, Role, Score},
+    theme_family::Phrasing,
     theory::Mode,
     MusicWorld,
 };
@@ -719,5 +720,97 @@ fn lawful_bridge_variants_change_the_return() {
         keys_in(&t1, 48.0, 64.0),
         keys_in(&t2, 48.0, 64.0),
         "the return accompaniment must depend on the SPECIFIC bridge, not just its dependency edge"
+    );
+}
+
+// ================================================================================================
+// Expressive phrasing — the opt-in arm that moves the lead's information onto its PERFORMANCE
+// channels (gates, breaths, dynamics) without touching one pitch, onset, or the note count. These
+// pin the whole render (not just the generator) and guard the two load-bearing invariants Leah's
+// directive sets: do not lower the information density, and do not regress the audible earned return.
+// ================================================================================================
+
+/// Treatment 1, at the committed-Score level: the expressive lead has the SAME onsets, pitches and
+/// COUNT as the plain control (density preserved — not thinned), but its durations move (articulation)
+/// and its velocity SPREAD is strictly wider (the information expressed as dynamics, not more notes).
+#[test]
+fn expressive_lead_moves_information_off_bare_notes() {
+    for seed in [2112u64, 7, 99] {
+        let plain = kernel::perform_song(&source_bridge::source(seed), &world()).unwrap();
+        let expr = kernel::perform_song(
+            &source_bridge::source_phrased(seed, Phrasing::Expressive),
+            &world(),
+        )
+        .unwrap();
+        let lead = |t: &CommittedSong| -> Vec<(f64, i32, f32, f32)> {
+            let mut ns: Vec<_> = t
+                .score()
+                .role_notes(Role::Lead)
+                .map(|n| (n.start_beat, n.pitch, n.dur_beats, n.velocity))
+                .collect();
+            ns.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+            ns
+        };
+        let (lp, le) = (lead(&plain), lead(&expr));
+        assert_eq!(
+            lp.len(),
+            le.len(),
+            "seed {seed}: lead note COUNT must be preserved"
+        );
+        for (a, b) in lp.iter().zip(&le) {
+            assert!(
+                (a.0 - b.0).abs() < 1e-6,
+                "seed {seed}: lead onsets must match"
+            );
+            assert_eq!(a.1, b.1, "seed {seed}: lead pitches must match");
+        }
+        let dur_moved = lp
+            .iter()
+            .zip(&le)
+            .filter(|(a, b)| (a.2 - b.2).abs() > 1e-6)
+            .count();
+        assert!(
+            dur_moved > 0,
+            "seed {seed}: expressive must re-articulate the lead"
+        );
+        let spread = |ns: &[(f64, i32, f32, f32)]| {
+            let hi = ns.iter().map(|n| n.3).fold(0.0_f32, f32::max);
+            let lo = ns.iter().map(|n| n.3).fold(f32::MAX, f32::min);
+            hi - lo
+        };
+        assert!(
+            spread(&le) > spread(&lp),
+            "seed {seed}: expressive velocity spread ({:.3}) must exceed plain ({:.3})",
+            spread(&le),
+            spread(&lp),
+        );
+    }
+}
+
+/// H: the earned return survives the expressive policy. Two lawful bridges under `Expressive` still
+/// bring home the SAME returning-hook melody (the headline is not what changes) while the return
+/// accompaniment DIFFERS by which bridge was travelled — the B result, intact under the new phrasing.
+#[test]
+fn expressive_preserves_the_earned_bridge_return() {
+    let seed = 2112u64;
+    let b1 = source_bridge::source_with_bridge_seed_phrased(seed, seed, Phrasing::Expressive);
+    let b2 = source_bridge::source_with_bridge_seed_phrased(seed, 9001, Phrasing::Expressive);
+    let t1 = kernel::perform_song(&b1, &world()).unwrap();
+    let t2 = kernel::perform_song(&b2, &world()).unwrap();
+    let (s1, s2) = (t1.score(), t2.score());
+    assert_ne!(
+        pitches(s1, Role::Lead, 32.0, 48.0),
+        pitches(s2, Role::Lead, 32.0, 48.0),
+        "the two bridge motifs must differ (a real counterfactual)"
+    );
+    assert_eq!(
+        pitches(s1, Role::Lead, 48.0, 64.0),
+        pitches(s2, Role::Lead, 48.0, 64.0),
+        "the return LEAD must be the identical hook under both bridges, even expressive"
+    );
+    assert_ne!(
+        keys_in(&t1, 48.0, 64.0),
+        keys_in(&t2, 48.0, 64.0),
+        "the expressive return accompaniment must still depend on the SPECIFIC bridge"
     );
 }
