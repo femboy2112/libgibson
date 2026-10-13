@@ -28,6 +28,7 @@ use gibson::audio::human_music::{
         ArgumentTransform, CompiledArgument, MusicalArgument, MusicalReferent, ReferentId,
     },
     contract::CompositionGrammar,
+    material::MaterialEvent,
     plan::ArrangementRole,
     semantic::{EventKind, SemanticEvent, SemanticState, SemanticTrace, Tone},
     theme_family::{generate_developed_bridge_phrased, generate_developed_pair_phrased, Phrasing},
@@ -286,6 +287,272 @@ pub fn source_song_with_bridge_seed_phrased(
     compiled.route = route;
     // The capability booleans track the lead phrasing exactly as the 16-bar arc sets them (the
     // example's `Resolved::apply_caps` then overrides them per the resolved preset).
+    compiled.answer_breaths = matches!(phrasing, Phrasing::Ensemble);
+    compiled.comp_keys = phrasing.lead_is_expressive();
+    compiled.anticipate_bass = phrasing.lead_is_expressive();
+    compiled.translate_lead_rhythm = phrasing.lead_is_expressive();
+    compiled
+}
+
+// --- The front-intro arm --------------------------------------------------------------------------
+// A real pop song opens; the eight-section arc above does not — it starts cold on the verse. An INTRO
+// cannot be faked without lying: a cold-open on the hook inverts the call/answer argument (the hook is
+// the verse's ANSWER), and relabelling a quieter verse "Intro" is exactly the bar-range template this
+// module refuses. The honest intro the machinery DOES admit is "establish the pocket, earn the
+// entrance": bass + drums lay the shared pocket alone, a thin lead enters LATE, and the first verse
+// then states the head in full. The lead cannot be fully silenced (every long-form placement is
+// hard-required to carry the lead), so the intro's lead is a sparse LATE pickup rather than absent.
+
+/// The intro's thin, late-entering lead line: a sparse rising pickup drawn from the verse's OWN head,
+/// re-timed to the back of the sixteen-beat episode so bass + drums establish the shared pocket alone
+/// before the lead enters. Because the pitches are the verse's first steps (re-anchored to this
+/// referent), the intro FORESHADOWS the head the verse then states in full, and because they come from
+/// developed, feasible material the cell passes `validate_material` by construction — a genuine
+/// fragment of the song, never new exogenous material.
+fn intro_pickup(verse: &[MaterialEvent]) -> Vec<MaterialEvent> {
+    let steps: Vec<i32> = verse.iter().filter_map(|e| e.step).take(4).collect();
+    let base = steps.first().copied().unwrap_or(0);
+    // A long tonic settling, then a three-note rise that lifts into the verse downbeat at beat 16. The
+    // first lead onset is beat 9, so beats 0..9 of the song are pure pocket (bass + drums, keys Silent).
+    let onsets = [9.0_f64, 12.0, 14.0, 15.0];
+    let durs = [2.6_f64, 1.6, 0.9, 0.9];
+    let accents = [0.38_f32, 0.50, 0.62, 0.74];
+    steps
+        .iter()
+        .zip(onsets)
+        .zip(durs)
+        .zip(accents)
+        .map(|(((s, onset), dur), accent)| MaterialEvent {
+            onset,
+            dur,
+            accent,
+            step: Some(s - base),
+        })
+        .collect()
+}
+
+/// The eight-section song argument WITH a front intro (bridge seed == song seed, plain lead).
+pub fn argument_song_intro(seed: u64) -> (MusicalArgument, SongMap) {
+    argument_song_intro_with_bridge_seed_phrased(seed, seed, Phrasing::Plain)
+}
+
+/// [`argument_song_intro`] with the bridge motif drawn from `bridge_seed` and an explicit [`Phrasing`].
+/// Same developed verse/hook/bridge referents as [`argument_song`]; the arc gains a leading `Establish`
+/// of a sparse intro referent and drops one trailing chorus to keep the 128-beat budget:
+/// INTRO → VERSE → CHORUS → VERSE → CHORUS → BRIDGE → CHORUS → CHORUS. The verse `depends_on` the intro
+/// (a provenance edge the witness enforces for ordering), and the intro's keys are seated Silent so the
+/// intro's keys call goes UNANSWERED — the verse's keys then discharge it by quoting the intro's cell,
+/// a real intro→verse causal edge rather than a positional label.
+pub fn argument_song_intro_with_bridge_seed_phrased(
+    seed: u64,
+    bridge_seed: u64,
+    phrasing: Phrasing,
+) -> (MusicalArgument, SongMap) {
+    let trace = SemanticTrace {
+        total_beats: 128.0,
+        events: vec![
+            SemanticEvent {
+                at_beat: 0.0,
+                state: SemanticState::toned(Tone::Accent),
+                kind: EventKind::ActChanged,
+            },
+            SemanticEvent {
+                at_beat: 124.0,
+                state: SemanticState::toned(Tone::Success),
+                kind: EventKind::SectionResolved,
+            },
+        ],
+    };
+    let mut song = SongMap::build(&trace, seed, Some(CompositionGrammar::HookArc));
+    let mut contract = song.plan.contract.clone();
+    contract.phrase_bars = 1;
+    song.plan = gibson::audio::human_music::plan::CompositionPlan::build_with_contract_for_beats(
+        &song.timeline,
+        128.0,
+        contract,
+    );
+    for p in &mut song.plan.arrangement.phrases {
+        p.lead = ArrangementRole::Support;
+        p.keys = ArrangementRole::Support;
+        p.bass = ArrangementRole::Foundation;
+        p.drums = ArrangementRole::Support;
+        p.pad = ArrangementRole::Support;
+    }
+    let pair = generate_developed_pair_phrased(seed, 16.0, 4.0, &VERSE_PROG, &HOOK_PROG, phrasing);
+    let bridge_events = generate_developed_bridge_phrased(
+        bridge_seed,
+        &pair.hook,
+        16.0,
+        4.0,
+        &BRIDGE_PROG,
+        phrasing,
+    );
+    let intro_events = intro_pickup(&pair.verse);
+    let verse = MusicalReferent {
+        id: ReferentId(0),
+        pitch_basis: PitchBasis::Semitones,
+        events: pair.verse,
+    };
+    let hook = MusicalReferent {
+        id: ReferentId(1),
+        pitch_basis: PitchBasis::Semitones,
+        events: pair.hook,
+    };
+    let bridge = MusicalReferent {
+        id: ReferentId(2),
+        pitch_basis: PitchBasis::Semitones,
+        events: bridge_events,
+    };
+    let intro = MusicalReferent {
+        id: ReferentId(3),
+        pitch_basis: PitchBasis::Semitones,
+        events: intro_events,
+    };
+    let at = |beat: f64| -> u32 {
+        song.plan
+            .form
+            .phrases
+            .iter()
+            .position(|p| p.start_beat() == beat)
+            .expect("thirty-two one-bar phrases put episode boundaries on the sixteen-beat grid")
+            as u32
+    };
+    let eps = [
+        at(0.0),
+        at(16.0),
+        at(32.0),
+        at(48.0),
+        at(64.0),
+        at(80.0),
+        at(96.0),
+        at(112.0),
+    ];
+    // Seat the intro's keys Silent (the four phrases of episode 0). The intro's keys call then goes
+    // unanswered (produced == 0), so the verse's keys discharge it by quoting the intro's cell — the
+    // honest intro→verse causal edge. Bass and drums stay on, so the intro is pocket + thin late lead.
+    for p in &mut song.plan.arrangement.phrases[eps[0] as usize..eps[1] as usize] {
+        p.keys = ArrangementRole::Silent;
+    }
+    let total_phrases = song.plan.form.phrases.len() as u32;
+    let span = |i: usize| -> ArcSpan {
+        let next = if i + 1 < eps.len() {
+            eps[i + 1]
+        } else {
+            total_phrases
+        };
+        ArcSpan {
+            step: ArgumentStepId(i as u8),
+            start_phrase: eps[i],
+            phrase_count: next - eps[i],
+            start_beat: i as f64 * 16.0,
+            span_beats: 16.0,
+        }
+    };
+    let step = |id: u8, referent: u8, relation: ArgumentRelation, deps: &[u8]| ArgumentStep {
+        id: ArgumentStepId(id),
+        referent: ReferentId(referent),
+        transform: ArgumentTransform::default(),
+        relation,
+        depends_on: deps.iter().copied().map(ArgumentStepId).collect(),
+        carriers: vec![Agent::Lead],
+    };
+    let argument = MusicalArgument {
+        family: ArgumentFamily::CallAndEarnedAnswer,
+        referents: vec![verse, hook, bridge, intro],
+        ending: ArgumentEnding::Resolved,
+        steps: vec![
+            // ep0  INTRO    — establish the pocket; the thin lead enters late (foreshadows the verse).
+            step(0, 3, ArgumentRelation::Establish, &[]),
+            // ep1  VERSE 1  — state the open question in full; depends on the intro it answers.
+            step(1, 0, ArgumentRelation::Establish, &[0]),
+            // ep2  CHORUS 1 — the hook ANSWERS the verse (altered consequent); arrives full.
+            step(
+                2,
+                1,
+                ArgumentRelation::Consequent {
+                    antecedent: ArgumentStepId(1),
+                },
+                &[1],
+            ),
+            // ep3  VERSE 2  — restate the verse (sparse again; contrast restored).
+            step(3, 0, ArgumentRelation::Establish, &[]),
+            // ep4  CHORUS 2 — the hook answers verse 2 (the refrain, pre-bridge).
+            step(
+                4,
+                1,
+                ArgumentRelation::Consequent {
+                    antecedent: ArgumentStepId(3),
+                },
+                &[3],
+            ),
+            // ep5  BRIDGE   — depart from the hook (recycles a cell, lifts, ends open).
+            step(
+                5,
+                2,
+                ArgumentRelation::Depart {
+                    source: ArgumentStepId(2),
+                },
+                &[2],
+            ),
+            // ep6  CHORUS 3 — RETURN to the hook, earned: depends on the bridge, so the keys quote the
+            //                 journey home. A different lawful bridge comes home different.
+            step(
+                6,
+                1,
+                ArgumentRelation::Return {
+                    source: ArgumentStepId(2),
+                },
+                &[2, 5],
+            ),
+            // ep7  CHORUS 4 — earned, final; lands the song home on the tonic (Resolved ending).
+            step(
+                7,
+                1,
+                ArgumentRelation::Return {
+                    source: ArgumentStepId(2),
+                },
+                &[2, 5],
+            ),
+        ],
+        arc: Some((0..8).map(span).collect()),
+    };
+    (argument, song)
+}
+
+/// The shipped full-song-with-intro source (bridge seed == song seed), plain-delegating convenience.
+pub fn source_song_intro(seed: u64) -> CompiledArgument {
+    source_song_intro_phrased(seed, Phrasing::Plain)
+}
+
+/// [`source_song_intro`] with an explicit lead [`Phrasing`] (bridge seed == song seed).
+pub fn source_song_intro_phrased(seed: u64, phrasing: Phrasing) -> CompiledArgument {
+    source_song_intro_with_bridge_seed_phrased(seed, seed, phrasing)
+}
+
+/// [`source_song_intro`] with the bridge motif drawn from `bridge_seed` — the intro arm's earned-return
+/// counterfactual. Route: VERSE ++ VERSE ++ HOOK ++ VERSE ++ HOOK ++ BRIDGE ++ HOOK ++ HOOK. The intro
+/// carries the verse chart so the absolute route pins still hold (bar 2 = the open V7, bars 3/7 home,
+/// the final bar home).
+pub fn source_song_intro_with_bridge_seed_phrased(
+    seed: u64,
+    bridge_seed: u64,
+    phrasing: Phrasing,
+) -> CompiledArgument {
+    let (argument, song) =
+        argument_song_intro_with_bridge_seed_phrased(seed, bridge_seed, phrasing);
+    let mut compiled = argument
+        .compile(&song)
+        .expect("seeded eight-section intro full-song source compiles");
+    let mut route = Vec::with_capacity(32);
+    route.extend_from_slice(&VERSE_PROG); // ep0 INTRO (verse chart: pins the open V7 at bar 2)
+    route.extend_from_slice(&VERSE_PROG); // ep1 VERSE 1
+    route.extend_from_slice(&HOOK_PROG); // ep2 CHORUS 1
+    route.extend_from_slice(&VERSE_PROG); // ep3 VERSE 2
+    route.extend_from_slice(&HOOK_PROG); // ep4 CHORUS 2
+    route.extend_from_slice(&BRIDGE_PROG); // ep5 BRIDGE
+    route.extend_from_slice(&HOOK_PROG); // ep6 CHORUS 3 (earned return)
+    route.extend_from_slice(&HOOK_PROG); // ep7 CHORUS 4 (earned return, final)
+    compiled.route = route;
     compiled.answer_breaths = matches!(phrasing, Phrasing::Ensemble);
     compiled.comp_keys = phrasing.lead_is_expressive();
     compiled.anticipate_bass = phrasing.lead_is_expressive();

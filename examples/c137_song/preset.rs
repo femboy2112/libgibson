@@ -126,6 +126,9 @@ pub struct Resolved {
     pub translate_lead_rhythm: bool,
     /// The band answers the lead's composed breaths (the `Ensemble` capability). Rides the lead's silences.
     pub answer_breaths: bool,
+    /// When the 32-bar song form is selected, whether it opens with a front intro (establish-the-pocket,
+    /// lead enters late) in place of one trailing chorus. Only meaningful when `bars == 32`.
+    pub song_intro: bool,
     pub jerry: Vec<Jerry>,
 }
 
@@ -164,6 +167,9 @@ pub struct C137Preset {
     /// `--form=song` turns it on. It is not a Jerry downgrade (it adds form, it never removes a
     /// capability) and it is not "Full" — it is its own opt-in arm, ear-gated before any default.
     song: bool,
+    /// The 32-bar song form WITH a front intro (establish-the-pocket, lead enters late), `--form=song-intro`.
+    /// Implies the song form; swaps one trailing chorus for a leading intro section. Its own ear-gated arm.
+    song_intro: bool,
 }
 
 impl C137Preset {
@@ -184,6 +190,13 @@ impl C137Preset {
     /// `--bars`/`short` bar count), so the resolved arc is the eight-section pop skeleton.
     pub fn song(mut self) -> Self {
         self.song = true;
+        self
+    }
+
+    /// Select the 32-bar song form WITH a front intro (establish-the-pocket, lead enters late). Implies
+    /// the song length; the arc opens on an intro section and drops one trailing chorus for it.
+    pub fn song_intro(mut self) -> Self {
+        self.song_intro = true;
         self
     }
 
@@ -239,8 +252,9 @@ impl C137Preset {
             }
         }
         // The song form sets its own length, overriding any archival bar count. It adds form, never
-        // removes a capability, so the accepted capabilities resolved above are untouched.
-        if self.song {
+        // removes a capability, so the accepted capabilities resolved above are untouched. The intro
+        // variant implies the song length.
+        if self.song || self.song_intro {
             bars = 32;
         }
         Resolved {
@@ -250,6 +264,7 @@ impl C137Preset {
             anticipate_bass,
             translate_lead_rhythm,
             answer_breaths,
+            song_intro: self.song_intro,
             jerry: self.jerry.clone(),
         }
     }

@@ -121,7 +121,13 @@ impl Options {
                 match value {
                     "slice" => {} // the default 16-bar arc — no change
                     "song" => preset = preset.song(),
-                    _ => return Err("--form must be slice (16-bar) or song (32-bar)".into()),
+                    "song-intro" => preset = preset.song_intro(),
+                    _ => {
+                        return Err(
+                            "--form must be slice (16-bar), song (32-bar), or song-intro (32-bar + intro)"
+                                .into(),
+                        )
+                    }
                 }
             } else if let Some(value) = arg.strip_prefix("--bridge-seed=") {
                 bridge_seed = Some(value.parse()?);
@@ -159,11 +165,15 @@ impl Options {
 /// Any compile/admission failure propagates — the run never silently substitutes lesser music.
 fn build_source(resolved: &Resolved, seed: u64, bridge_seed: Option<u64>) -> CompiledArgument {
     let mut compiled = match resolved.bars {
-        32 => match bridge_seed {
-            Some(bs) => {
+        32 => match (resolved.song_intro, bridge_seed) {
+            (true, Some(bs)) => {
+                source_song::source_song_intro_with_bridge_seed_phrased(seed, bs, resolved.phrasing)
+            }
+            (true, None) => source_song::source_song_intro_phrased(seed, resolved.phrasing),
+            (false, Some(bs)) => {
                 source_song::source_song_with_bridge_seed_phrased(seed, bs, resolved.phrasing)
             }
-            None => source_song::source_song_phrased(seed, resolved.phrasing),
+            (false, None) => source_song::source_song_phrased(seed, resolved.phrasing),
         },
         16 => match bridge_seed {
             Some(bs) => source_bridge::source_with_bridge_seed_phrased(seed, bs, resolved.phrasing),
@@ -242,7 +252,12 @@ fn manifest_header(resolved: &Resolved, world: &MusicWorld, bridge_seed: Option<
     let title = if resolved.is_full() {
         "C137 Full  (default — excellence is not opt-in)".to_string()
     } else if resolved.jerry.is_empty() && resolved.bars == 32 {
-        "C137 Song  (32-bar full-song form — opt-in zoom-out, ear-gated)".to_string()
+        if resolved.song_intro {
+            "C137 Song+Intro  (32-bar full-song form with front intro — opt-in, ear-gated)"
+                .to_string()
+        } else {
+            "C137 Song  (32-bar full-song form — opt-in zoom-out, ear-gated)".to_string()
+        }
     } else {
         let names: Vec<_> = resolved.jerry.iter().map(|j| j.label()).collect();
         format!("C137 Jerry[{}]  — DOWNGRADED", names.join(","))
@@ -250,10 +265,16 @@ fn manifest_header(resolved: &Resolved, world: &MusicWorld, bridge_seed: Option<
     let _ = writeln!(m, "C137 EFFECTIVE FEATURE MANIFEST");
     let _ = writeln!(m, "  preset                : {title}");
     // Capability lines — resolved from the config, each tagged FULL or the Jerry that reduced it.
-    let arc = match resolved.bars {
-        32 => "32 bars — verse→chorus→verse→chorus→bridge→chorus×3 (full SONG form, opt-in)",
-        16 => "16 bars — verse→hook→bridge→return (FULL)",
-        _ => "8 bars — verse→hook control (Jerry: short)",
+    let arc = if resolved.bars == 32 {
+        if resolved.song_intro {
+            "32 bars — intro→verse→chorus→verse→chorus→bridge→chorus→chorus (SONG+intro, opt-in)"
+        } else {
+            "32 bars — verse→chorus→verse→chorus→bridge→chorus×3 (full SONG form, opt-in)"
+        }
+    } else if resolved.bars == 16 {
+        "16 bars — verse→hook→bridge→return (FULL)"
+    } else {
+        "8 bars — verse→hook control (Jerry: short)"
     };
     let _ = writeln!(m, "  song arc              : {arc}");
     let lead = match resolved.phrasing {

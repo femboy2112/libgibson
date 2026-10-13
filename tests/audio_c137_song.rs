@@ -2111,3 +2111,231 @@ fn the_song_form_is_opt_in_and_the_slice_stays_frozen() {
         "the 8-bar control is unchanged at 32 beats"
     );
 }
+
+// ================================================================================================
+// FULL SONG FORM WITH A FRONT INTRO (--form=song-intro): the honest intro the machinery admits —
+// "establish the pocket, earn the entrance". Bass + drums lay the shared pocket while the keys are
+// SILENT and the lead is still absent; a thin lead then enters LATE (a pickup that QUOTES the verse
+// head's contour), and the first verse states the head in full. The arc opens on an `Establish` of a
+// sparse intro referent and drops one trailing chorus to keep the 128-beat budget:
+// INTRO/VERSE/CHORUS/VERSE/CHORUS/BRIDGE/CHORUS/CHORUS. A real intro is a NEW ARC SPEC (zero kernel
+// change). A truly SILENT lead is NOT admissible — every long-form placement is hard-required to carry
+// the lead — so the intro lead is thin and late, never absent, and these pin exactly that.
+// ================================================================================================
+
+fn intro_song_take(seed: u64) -> CommittedSong {
+    kernel::perform_song(&source_song::source_song_intro(seed), &world()).unwrap()
+}
+
+#[test]
+fn the_intro_song_opens_with_an_intro_section() {
+    let (argument, _song) = source_song::argument_song_intro(2112);
+    assert_eq!(
+        argument.referents.len(),
+        4,
+        "verse + hook + bridge + the new sparse intro referent"
+    );
+    assert_eq!(
+        argument.steps.len(),
+        8,
+        "eight typed sections (the intro replaces one trailing chorus)"
+    );
+    use ArgumentRelation::{Consequent, Depart, Establish, Return};
+    // INTRO Establish (its own referent), VERSE Establish, CHORUS Consequent, VERSE Establish,
+    // CHORUS Consequent, BRIDGE Depart, then TWO post-bridge CHORUS Returns — declared as relations.
+    assert!(matches!(argument.steps[0].relation, Establish));
+    assert_eq!(
+        argument.steps[0].referent,
+        ReferentId(3),
+        "the intro states its own sparse referent, not the verse's"
+    );
+    assert!(matches!(argument.steps[1].relation, Establish));
+    assert_eq!(
+        argument.steps[1].referent,
+        ReferentId(0),
+        "ep1 is the verse"
+    );
+    assert!(
+        argument.steps[1].depends_on.contains(&argument.steps[0].id),
+        "the verse depends on the intro it grows out of (a provenance edge the witness orders)"
+    );
+    assert!(matches!(argument.steps[2].relation, Consequent { .. }));
+    assert!(matches!(argument.steps[3].relation, Establish));
+    assert!(matches!(argument.steps[4].relation, Consequent { .. }));
+    assert!(matches!(argument.steps[5].relation, Depart { .. }));
+    assert!(matches!(argument.steps[6].relation, Return { .. }));
+    assert!(matches!(argument.steps[7].relation, Return { .. }));
+    for chorus in [2usize, 4, 6, 7] {
+        assert_eq!(
+            argument.steps[chorus].referent,
+            ReferentId(1),
+            "chorus step {chorus} must restate the hook referent"
+        );
+    }
+    for ret in [6usize, 7] {
+        assert!(
+            argument.steps[ret]
+                .depends_on
+                .contains(&argument.steps[5].id),
+            "post-bridge chorus {ret} must depend on the bridge (the earned return)"
+        );
+    }
+    assert_eq!(argument.validate(), Ok(()), "the intro arc is lawful");
+}
+
+#[test]
+fn the_intro_establishes_the_pocket_before_the_lead_enters() {
+    for seed in [2112u64, 7, 99] {
+        let take = intro_song_take(seed);
+        let s = take.score();
+        // The intro's keys are SILENT — no keys note sounds in episode 0 [0,16).
+        assert_eq!(
+            s.role_notes(Role::Keys)
+                .filter(|n| n.start_beat < 16.0)
+                .count(),
+            0,
+            "seed {seed}: the intro keys must be silent (the pocket carries it, not the comp)"
+        );
+        // Bass AND drums lay the pocket in the intro — the band plays; the lead simply hasn't entered.
+        assert!(
+            s.role_notes(Role::Bass).any(|n| n.start_beat < 16.0),
+            "seed {seed}: the intro bass must lay the pocket"
+        );
+        assert!(
+            s.drums.iter().any(|d| d.start_beat < 16.0),
+            "seed {seed}: the intro drums must lay the pocket"
+        );
+        // The lead enters LATE and THIN: a handful of notes, the first well into the intro — a pickup,
+        // never a full statement. (It cannot be fully silent: the long-form lead carrier is required.)
+        let mut lead0: Vec<f64> = s
+            .role_notes(Role::Lead)
+            .map(|n| n.start_beat)
+            .filter(|b| *b < 16.0)
+            .collect();
+        lead0.sort_by(f64::total_cmp);
+        assert!(
+            !lead0.is_empty(),
+            "seed {seed}: the lead still carries the intro (a long-form placement cannot be silent)"
+        );
+        assert!(
+            lead0[0] >= 8.0,
+            "seed {seed}: the lead enters late — first onset {} should be >= 8.0 beats in",
+            lead0[0]
+        );
+        assert!(
+            lead0.len() <= 6,
+            "seed {seed}: the intro lead is a thin pickup, got {} notes",
+            lead0.len()
+        );
+        // The verse that follows is a FULL statement: many more lead notes than the thin intro pickup.
+        let verse_n = s
+            .role_notes(Role::Lead)
+            .filter(|n| n.start_beat >= 16.0 && n.start_beat < 32.0)
+            .count();
+        assert!(
+            verse_n > lead0.len() * 2,
+            "seed {seed}: the verse enters in full ({verse_n}) vs the thin intro ({})",
+            lead0.len()
+        );
+    }
+}
+
+#[test]
+fn the_intro_foreshadows_the_verse_head() {
+    // The intro lead QUOTES the verse head's CONTOUR: the intervals between the intro's notes match the
+    // intervals between the verse's first notes. The intro cell is the verse's own first steps,
+    // re-anchored, so the contour is shared by construction and survives transport into the intro's
+    // harmonic context (the absolute pitches may differ; the shape does not). A pre-echo of the head.
+    for seed in [2112u64, 7, 99] {
+        let s = intro_song_take(seed);
+        let s = s.score();
+        let intro = pitches(s, Role::Lead, 0.0, 16.0);
+        let verse = pitches(s, Role::Lead, 16.0, 32.0);
+        assert!(
+            intro.len() >= 3 && verse.len() >= intro.len(),
+            "seed {seed}: need an intro cell and a verse head to compare"
+        );
+        let deltas = |v: &[i32]| v.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
+        assert_eq!(
+            deltas(&intro),
+            deltas(&verse[..intro.len()]),
+            "seed {seed}: the intro must quote the verse head's contour (intro {intro:?} vs head {:?})",
+            &verse[..intro.len()]
+        );
+    }
+}
+
+#[test]
+fn the_intro_song_performs_and_passes_the_witness() {
+    for seed in [2112u64, 7, 99] {
+        let take = intro_song_take(seed);
+        let s = take.score();
+        assert_eq!(s.total_beats, 128.0, "seed {seed}: eight 16-beat episodes");
+        assert!(s.mono_voice);
+        // The lead sings in every one of the eight episodes — including the thin intro (no dead section).
+        for e in 0..8 {
+            let (lo, hi) = (e as f64 * 16.0, e as f64 * 16.0 + 16.0);
+            assert!(
+                s.role_notes(Role::Lead)
+                    .any(|n| n.start_beat >= lo && n.start_beat < hi),
+                "seed {seed}: the lead is silent in episode {e} [{lo},{hi})"
+            );
+        }
+        // The content witness accepts the realized intro arc (source identity, the verse's dependency
+        // on the intro ordered correctly, the consequent/departure/return laws all observed).
+        assert!(
+            gibson::audio::human_music::argument_witness::observe_argument(
+                &source_song::source_song_intro(seed),
+                s,
+                world().tonic_pc
+            )
+            .valid(),
+            "seed {seed}: the content witness refused the realized intro song"
+        );
+        take.validate_candidate(s).unwrap();
+    }
+}
+
+#[test]
+fn the_intro_song_earns_its_return() {
+    // The earned-return counterfactual on the intro arc: the bridge is ep5 [80,96), the post-bridge
+    // choruses are ep6/ep7 [96,128). Two lawful bridges (only the MOTIF differs) must leave everything
+    // BEFORE the bridge identical and change only the post-bridge accompaniment, while the returning
+    // hook MELODY stays the exact same tune. The intro front matter is part of "before the bridge".
+    let seed = 2112u64;
+    let b1 = source_song::source_song_intro_with_bridge_seed_phrased(seed, seed, Phrasing::Plain);
+    let b2 = source_song::source_song_intro_with_bridge_seed_phrased(seed, 9001, Phrasing::Plain);
+    let t1 = kernel::perform_song(&b1, &world()).unwrap();
+    let t2 = kernel::perform_song(&b2, &world()).unwrap();
+    let (s1, s2) = (t1.score(), t2.score());
+
+    // The counterfactual is real: the two bridge motifs genuinely differ (ep5 = [80,96)).
+    assert_ne!(
+        pitches(s1, Role::Lead, 80.0, 96.0),
+        pitches(s2, Role::Lead, 80.0, 96.0),
+        "the two bridge motifs must differ for this to be a counterfactual"
+    );
+    // Everything before the bridge — the intro, both verses and both pre-bridge choruses (ep0..ep5 =
+    // [0,80)) — is identical, so any later difference is the bridge's alone.
+    assert_eq!(
+        pitches(s1, Role::Lead, 0.0, 80.0),
+        pitches(s2, Role::Lead, 0.0, 80.0),
+        "the intro, verses and pre-bridge choruses must not depend on the bridge seed"
+    );
+    // The returning hook MELODY is the exact same tune under both bridges (both post-bridge choruses).
+    for ep in [6usize, 7] {
+        let (lo, hi) = (ep as f64 * 16.0, ep as f64 * 16.0 + 16.0);
+        assert_eq!(
+            pitches(s1, Role::Lead, lo, hi),
+            pitches(s2, Role::Lead, lo, hi),
+            "the return LEAD at episode {ep} must be the identical hook under both bridges"
+        );
+    }
+    // THE EARNED RETURN: the post-bridge chorus KEYS differ between the two journeys — a witnessed,
+    // Score-observable consequence of WHICH bridge was travelled.
+    assert_ne!(
+        keys_in(&t1, 96.0, 112.0),
+        keys_in(&t2, 96.0, 112.0),
+        "the post-bridge chorus accompaniment must depend on the SPECIFIC bridge"
+    );
+}
