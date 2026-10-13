@@ -44,6 +44,23 @@ These are structural advances. Passing a source/kinship/argument witness establi
 
 **S7: BandMemory is still just open_call + previous material.** The new provenance fix correctly associates paid answer Actions with the true originating source, and registers Interaction rows. Preserve it. But a one-bit debt and a single cell cannot retain several live ideas or remember which motif the drums or bass quoted; prev_answer_events is written but not used. The kernel currently has a mostly one-way lead→keys→drum causality, not an evolving many-role conversational history. Do not add a second disconnected "agent framework": reuse existing MaterialId, Interaction, ActionCause, ArgumentStep, Stage and obligations. Give player-specific bounded memory only where demonstrated by counterfactual evidence.
 
+## 2b. The teacher's practical secret: distributed RHYTHMIC/HARMONIC JOBS
+
+The handwritten examples/rick_probe.rs is an especially instructive architectural CONTROL. It must not be mislabeled as the complete accepted golden7 audio set.
+
+From exact source:
+- bass_dense writes a full functional line: root at 0, third at 1, fifth at 1.5, seventh at 2, fifth at 2.5, root at 3, followed by two destination-root chromatic approaches at 3.5 and 3.75 (eight pitched events on ordinary bars). This expresses harmony and NEXT-HARMONY expectation, with one monophonic line. It does NOT add a second low melody over an occupied foundation.
+- keys_dense writes a downbeat guide-tone/upper-color chord (third, seventh, upper extension) plus four syncopated single-note stabs at beat offsets 1.25, 1.75, 2.75 and 3.25. Crucially those stabs occupy deliberate holes BETWEEN the bass's scheduled events, making two independently coherent parts lock together without having to mute either whole voice.
+- drums_dense supplies 16th hats, downbeat/backbeat and ghosts, with chorus-specific pushes and DIFFERENT announced fill treatments. It is not identical 4-snare crescendo at every four-bar boundary.
+- pad only enters on the chorus and selected outro home, not sixteen consecutive bars of mandatory harmony.
+- lead_phrase delivers complete, rhythmically differentiated four-bar verse, hook, and bridge phrases with their own per-note expression; the 56-bar chart and section fill rules carry shared direction.
+
+This is a highly concrete counterexample to the mistaken assumption that semantic band dialogue requires every backing musician to literally invert/quote the lead on every bar. The teacher can sound conversational because instrumental roles are **complementary over time and harmonic destination**. Some of the information exchange is realized as "your offbeat stab makes my bass approach intelligible" or "your silence lets my next phrase mean something" — not as a tagged answer Action.
+
+Compared with that calibration, the newest kernel dedicates keys to one source-answer window per four-bar episode, relies on a largely root/third/fifth bass figure of 2 or 4 notes/bar, uses frequent formulaic kit fills and enables full-bar pad harmonies across the whole sixteen-bar arc. The roles aren't simply too active; **the detail is distributed into the wrong functional responsibilities**. A denser, idiomatic source-connected bass + harmonic counter-comp may actually sound CLEARER than a sparse keyboard plus continuous pad and hyperactive kit.
+
+Implementation lesson: BEFORE writing a bigger inter-agent cue graph, make the role-specific part writers share source/harmony/metric obligations with deliberate complementary placements. Then weave a FEW identifiable thematic cues and long-horizon debts THROUGH that living arrangement, not on top as additional solo voices. Keep a shared rhythmic field and independent melodic schedules. Protect written silence, lead foreground, bass mono capacity and a single synthesis clock. Compare teacher as structural rhythmic/harmonic evidence, not as copied MIDI arrays or a claim of reproducing accepted audio.
+
 ## 3. The corrected mathematical target — relational musical information, not maximal entropy
 
 The right object is a **source-conditioned, causally committed ensemble passage**. A phrase may contain:
