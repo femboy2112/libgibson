@@ -4,6 +4,8 @@
 mod source;
 #[path = "../examples/c137_song/source_bridge.rs"]
 mod source_bridge;
+#[path = "../examples/c137_song/source_song.rs"]
+mod source_song;
 // `parse`/`label`/`removes` are exercised by the example binary (CLI + manifest), not by these
 // tests, so they read as dead code HERE — the same shared-fixture treatment the source modules get.
 #[allow(dead_code)]
@@ -1875,4 +1877,237 @@ fn the_drums_translate_the_lead_rhythm() {
             "seed {seed}: the plain control must keep the archived fill (no lead-echo)"
         );
     }
+}
+
+// ================================================================================================
+// FULL SONG FORM (--form=song): the zoom-out from the 16-bar vertical slice to an eight-section pop
+// skeleton — VERSE/CHORUS/VERSE/CHORUS/BRIDGE/CHORUS×3 — in ONE continuous 128-beat Score. These pin
+// that named sections are wired into the categorical machinery (the band reads `relation`, never a
+// bar-range label): the chorus hook RECURS verbatim (a refrain, via Consequent/Return to the one hook
+// referent), verse/chorus dynamic contrast is relation-gated (keys comp only on choruses), and the
+// post-bridge choruses EARN their return (the keys carry a consequence of the specific bridge).
+// ================================================================================================
+
+fn song_take(seed: u64) -> CommittedSong {
+    kernel::perform_song(&source_song::source_song(seed), &world()).unwrap()
+}
+
+#[test]
+fn the_song_form_states_eight_typed_sections() {
+    let (argument, _song) = source_song::argument_song(2112);
+    assert_eq!(
+        argument.referents.len(),
+        3,
+        "the SAME verse + hook + bridge"
+    );
+    assert_eq!(argument.steps.len(), 8, "eight typed sections");
+    // VERSE Establish, CHORUS Consequent, VERSE Establish, CHORUS Consequent, BRIDGE Depart, then
+    // three post-bridge CHORUS Returns — the pop arc, declared as relations not bar ranges.
+    use ArgumentRelation::{Consequent, Depart, Establish, Return};
+    assert!(matches!(argument.steps[0].relation, Establish));
+    assert!(matches!(argument.steps[1].relation, Consequent { .. }));
+    assert!(matches!(argument.steps[2].relation, Establish));
+    assert!(matches!(argument.steps[3].relation, Consequent { .. }));
+    assert!(matches!(argument.steps[4].relation, Depart { .. }));
+    assert!(matches!(argument.steps[5].relation, Return { .. }));
+    assert!(matches!(argument.steps[6].relation, Return { .. }));
+    assert!(matches!(argument.steps[7].relation, Return { .. }));
+    // Every chorus restates the ONE hook referent; both verses restate the ONE verse referent.
+    for chorus in [1usize, 3, 5, 6, 7] {
+        assert_eq!(
+            argument.steps[chorus].referent,
+            ReferentId(1),
+            "chorus step {chorus} must restate the hook referent"
+        );
+    }
+    assert_eq!(argument.steps[0].referent, ReferentId(0));
+    assert_eq!(argument.steps[2].referent, ReferentId(0));
+    // The post-bridge choruses depend on BOTH the hook they restate and the bridge they return FROM.
+    for ret in [5usize, 6, 7] {
+        assert!(
+            argument.steps[ret]
+                .depends_on
+                .contains(&argument.steps[4].id),
+            "post-bridge chorus {ret} must depend on the bridge (the earned return)"
+        );
+    }
+    assert_eq!(
+        argument.validate(),
+        Ok(()),
+        "the eight-section arc is lawful"
+    );
+}
+
+#[test]
+fn the_song_form_performs_and_passes_the_witness() {
+    for seed in [2112u64, 7, 99] {
+        let take = song_take(seed);
+        let s = take.score();
+        assert_eq!(s.total_beats, 128.0, "seed {seed}: eight 16-beat episodes");
+        assert!(s.mono_voice);
+        // The lead sings in every one of the eight episodes — no dead sections.
+        for e in 0..8 {
+            let (lo, hi) = (e as f64 * 16.0, e as f64 * 16.0 + 16.0);
+            assert!(
+                s.role_notes(Role::Lead)
+                    .any(|n| n.start_beat >= lo && n.start_beat < hi),
+                "seed {seed}: the lead is silent in episode {e} [{lo},{hi})"
+            );
+        }
+        // The content witness accepts the realized full-song arc (source identity, dependency order,
+        // the consequent/departure/return laws all observed in the RAW Score).
+        assert!(
+            gibson::audio::human_music::argument_witness::observe_argument(
+                &source_song::source_song(seed),
+                s,
+                world().tonic_pc
+            )
+            .valid(),
+            "seed {seed}: the content witness refused the realized song"
+        );
+        take.validate_candidate(s).unwrap();
+    }
+}
+
+#[test]
+fn the_chorus_hook_recurs_verbatim_as_a_refrain() {
+    let take = song_take(2112);
+    let s = take.score();
+    // A refrain: the chorus hook melody is the IDENTICAL tune at every chorus pillar (ep1/3/5/6/7).
+    let chorus1 = pitches(s, Role::Lead, 16.0, 32.0);
+    assert!(!chorus1.is_empty(), "the first chorus must sing");
+    for ep in [3usize, 5, 6, 7] {
+        let (lo, hi) = (ep as f64 * 16.0, ep as f64 * 16.0 + 16.0);
+        assert_eq!(
+            pitches(s, Role::Lead, lo, hi),
+            chorus1,
+            "chorus at episode {ep} must restate the hook verbatim (a refrain)"
+        );
+    }
+    // The verse recurs too (ep0 == ep2), and is a DIFFERENT tune from the chorus.
+    let verse1 = pitches(s, Role::Lead, 0.0, 16.0);
+    assert_eq!(
+        pitches(s, Role::Lead, 32.0, 48.0),
+        verse1,
+        "verse 2 must restate verse 1 verbatim"
+    );
+    assert_ne!(
+        verse1, chorus1,
+        "the verse and chorus are distinct material"
+    );
+    // The bridge is distinct from both (a genuine departure).
+    let bridge = pitches(s, Role::Lead, 64.0, 80.0);
+    assert_ne!(bridge, chorus1, "the bridge departs from the hook");
+    assert_ne!(bridge, verse1, "the bridge departs from the verse");
+}
+
+#[test]
+fn the_song_choruses_are_fuller_than_the_verses() {
+    // Verse/chorus dynamic contrast is RELATION-gated, not bar-position gated: the keyboard comp
+    // (pianist chord voicings) fires on the choruses (Consequent|Return) and is absent on the verses
+    // (Establish). This is the "wired into the machinery" claim — names map to behavior. The comp is
+    // an expressive-arm capability (`comp_keys`), so this exercises the Ensemble song the Full render
+    // uses, not the plain default.
+    let take = kernel::perform_song(
+        &source_song::source_song_phrased(2112, Phrasing::Ensemble),
+        &world(),
+    )
+    .unwrap();
+    let comps = |lo: f64, hi: f64| {
+        take.score()
+            .role_notes(Role::Keys)
+            .filter(|n| n.prov.role_note == "comp" && n.start_beat >= lo && n.start_beat < hi)
+            .count()
+    };
+    for verse in [0usize, 2] {
+        let (lo, hi) = (verse as f64 * 16.0, verse as f64 * 16.0 + 16.0);
+        assert_eq!(comps(lo, hi), 0, "verse episode {verse} must not comp");
+    }
+    for chorus in [1usize, 3, 5, 6, 7] {
+        let (lo, hi) = (chorus as f64 * 16.0, chorus as f64 * 16.0 + 16.0);
+        assert!(
+            comps(lo, hi) > 0,
+            "chorus episode {chorus} must comp (fuller)"
+        );
+    }
+    // The bridge (Depart) does not comp either — it departs on the thin texture.
+    assert_eq!(comps(64.0, 80.0), 0, "the bridge must not comp");
+}
+
+#[test]
+fn the_song_earns_its_return_across_the_whole_form() {
+    // The earned-return counterfactual, pulled across the full song: two lawful bridges (only the
+    // bridge MOTIF differs) must leave everything BEFORE the bridge identical — including the
+    // pre-bridge choruses — and change only the POST-bridge choruses' accompaniment, while the
+    // returning hook MELODY stays the exact same tune. The journey is remembered; the headline is not.
+    let seed = 2112u64;
+    let b1 = source_song::source_song_with_bridge_seed_phrased(seed, seed, Phrasing::Plain);
+    let b2 = source_song::source_song_with_bridge_seed_phrased(seed, 9001, Phrasing::Plain);
+    let t1 = kernel::perform_song(&b1, &world()).unwrap();
+    let t2 = kernel::perform_song(&b2, &world()).unwrap();
+    let (s1, s2) = (t1.score(), t2.score());
+
+    // The counterfactual is real: the two bridge motifs genuinely differ (ep4 = [64,80)).
+    assert_ne!(
+        pitches(s1, Role::Lead, 64.0, 80.0),
+        pitches(s2, Role::Lead, 64.0, 80.0),
+        "the two bridge motifs must differ for this to be a counterfactual"
+    );
+    // Everything before the bridge is untouched by the bridge seed — both verses and both pre-bridge
+    // choruses (ep0..ep4 = [0,64)) are identical, so any later difference is the bridge's alone.
+    assert_eq!(
+        pitches(s1, Role::Lead, 0.0, 64.0),
+        pitches(s2, Role::Lead, 0.0, 64.0),
+        "verses and pre-bridge choruses must not depend on the bridge seed"
+    );
+    assert_eq!(
+        keys_in(&t1, 16.0, 32.0),
+        keys_in(&t2, 16.0, 32.0),
+        "the PRE-bridge chorus accompaniment cannot depend on a bridge not yet travelled"
+    );
+    // The returning hook MELODY is the exact same tune under both bridges (every post-bridge chorus).
+    for ep in [5usize, 6, 7] {
+        let (lo, hi) = (ep as f64 * 16.0, ep as f64 * 16.0 + 16.0);
+        assert_eq!(
+            pitches(s1, Role::Lead, lo, hi),
+            pitches(s2, Role::Lead, lo, hi),
+            "the return LEAD at episode {ep} must be the identical hook under both bridges"
+        );
+    }
+    // THE EARNED RETURN: the post-bridge chorus KEYS differ between the two journeys — a witnessed,
+    // Score-observable consequence of WHICH bridge was travelled.
+    assert_ne!(
+        keys_in(&t1, 80.0, 96.0),
+        keys_in(&t2, 80.0, 96.0),
+        "the post-bridge chorus accompaniment must depend on the SPECIFIC bridge"
+    );
+}
+
+#[test]
+fn the_song_form_is_opt_in_and_the_slice_stays_frozen() {
+    // The song form is a separate opt-in constructor. The 16-bar vertical slice and the 8-bar control
+    // are produced by their own untouched sources — performing them here re-confirms the song work
+    // could not have perturbed them (their pinned fingerprints live in the canonical-fingerprint and
+    // D3 suites; here we assert the lengths are what the default/short arcs are, 64 and 32 beats).
+    assert_eq!(
+        song_take(2112).score().total_beats,
+        128.0,
+        "song is 32 bars"
+    );
+    assert_eq!(
+        kernel::perform_song(&source_bridge::source(2112), &world())
+            .unwrap()
+            .score()
+            .total_beats,
+        64.0,
+        "the 16-bar slice is unchanged at 64 beats"
+    );
+    assert_eq!(
+        kernel::perform_song(&source::source(2112), &world())
+            .unwrap()
+            .score()
+            .total_beats,
+        32.0,
+        "the 8-bar control is unchanged at 32 beats"
+    );
 }

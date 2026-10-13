@@ -42,6 +42,9 @@ mod source;
 #[allow(dead_code)]
 #[path = "c137_song/source_bridge.rs"]
 mod source_bridge;
+#[allow(dead_code)]
+#[path = "c137_song/source_song.rs"]
+mod source_song;
 
 use gibson::audio::human_music::{
     argument::CompiledArgument,
@@ -112,6 +115,14 @@ impl Options {
                         return Err("--bars must be 8 (verse→hook control) or 16 (full arc)".into())
                     }
                 }
+            } else if let Some(value) = arg.strip_prefix("--form=") {
+                // Opt-in zoom-out: the full 32-bar song form (eight typed sections) vs the default
+                // 16-bar vertical slice. Audio-changing and NOT a default — an ear-gated A/B arm.
+                match value {
+                    "slice" => {} // the default 16-bar arc — no change
+                    "song" => preset = preset.song(),
+                    _ => return Err("--form must be slice (16-bar) or song (32-bar)".into()),
+                }
             } else if let Some(value) = arg.strip_prefix("--bridge-seed=") {
                 bridge_seed = Some(value.parse()?);
             } else if let Some(value) = arg.strip_prefix("--phrasing=") {
@@ -147,13 +158,18 @@ impl Options {
 /// the manifest chooses the arc and the lead performance here, so the manifest can never over-report.
 /// Any compile/admission failure propagates — the run never silently substitutes lesser music.
 fn build_source(resolved: &Resolved, seed: u64, bridge_seed: Option<u64>) -> CompiledArgument {
-    let mut compiled = if resolved.bars == 16 {
-        match bridge_seed {
+    let mut compiled = match resolved.bars {
+        32 => match bridge_seed {
+            Some(bs) => {
+                source_song::source_song_with_bridge_seed_phrased(seed, bs, resolved.phrasing)
+            }
+            None => source_song::source_song_phrased(seed, resolved.phrasing),
+        },
+        16 => match bridge_seed {
             Some(bs) => source_bridge::source_with_bridge_seed_phrased(seed, bs, resolved.phrasing),
             None => source_bridge::source_phrased(seed, resolved.phrasing),
-        }
-    } else {
-        source::source_phrased(seed, resolved.phrasing)
+        },
+        _ => source::source_phrased(seed, resolved.phrasing),
     };
     // Override the source builder's phrasing-derived capability defaults with the INDEPENDENTLY
     // resolved booleans, so a narrow Jerry switch (no-keys / straight-bass / generic-drums / flat-lead)
@@ -225,6 +241,8 @@ fn manifest_header(resolved: &Resolved, world: &MusicWorld, bridge_seed: Option<
     let mut m = String::new();
     let title = if resolved.is_full() {
         "C137 Full  (default — excellence is not opt-in)".to_string()
+    } else if resolved.jerry.is_empty() && resolved.bars == 32 {
+        "C137 Song  (32-bar full-song form — opt-in zoom-out, ear-gated)".to_string()
     } else {
         let names: Vec<_> = resolved.jerry.iter().map(|j| j.label()).collect();
         format!("C137 Jerry[{}]  — DOWNGRADED", names.join(","))
@@ -232,10 +250,10 @@ fn manifest_header(resolved: &Resolved, world: &MusicWorld, bridge_seed: Option<
     let _ = writeln!(m, "C137 EFFECTIVE FEATURE MANIFEST");
     let _ = writeln!(m, "  preset                : {title}");
     // Capability lines — resolved from the config, each tagged FULL or the Jerry that reduced it.
-    let arc = if resolved.bars == 16 {
-        "16 bars — verse→hook→bridge→return (FULL)"
-    } else {
-        "8 bars — verse→hook control (Jerry: short)"
+    let arc = match resolved.bars {
+        32 => "32 bars — verse→chorus→verse→chorus→bridge→chorus×3 (full SONG form, opt-in)",
+        16 => "16 bars — verse→hook→bridge→return (FULL)",
+        _ => "8 bars — verse→hook control (Jerry: short)",
     };
     let _ = writeln!(m, "  song arc              : {arc}");
     let lead = match resolved.phrasing {
@@ -248,13 +266,13 @@ fn manifest_header(resolved: &Resolved, world: &MusicWorld, bridge_seed: Option<
         Phrasing::Plain => "plain legato re-tile + flat ramp (Jerry: plain)",
     };
     let _ = writeln!(m, "  lead performance      : {lead}");
-    let earned = if resolved.bars == 16 {
+    let earned = if resolved.bars >= 16 {
         "active — the return accompaniment depends on the bridge travelled (counterfactual: --bridge-seed)"
     } else {
         "n/a — the 8-bar control has no bridge"
     };
     let _ = writeln!(m, "  earned bridge→return  : {earned}");
-    let rug = if resolved.bars == 16 {
+    let rug = if resolved.bars >= 16 {
         "active — the pad frames the home arrivals (verse/bridge stay dry)"
     } else {
         "n/a — the 8-bar control stages the pad silent"
@@ -305,7 +323,7 @@ fn manifest_header(resolved: &Resolved, world: &MusicWorld, bridge_seed: Option<
         world.tonic_pc, world.mode, world.use_sevenths, world.allow_modal_mixture, world.tempo_bpm
     );
     if let Some(bs) = bridge_seed {
-        let note = if resolved.bars == 16 {
+        let note = if resolved.bars >= 16 {
             format!("bridge-seed={bs} (earned-return counterfactual arm)")
         } else {
             format!("bridge-seed={bs} IGNORED (no bridge on the 8-bar control)")

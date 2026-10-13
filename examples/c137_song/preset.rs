@@ -160,6 +160,10 @@ impl Resolved {
 #[derive(Debug, Clone, Default)]
 pub struct C137Preset {
     jerry: Vec<Jerry>,
+    /// The full 32-bar SONG form (opt-in zoom-out from the 16-bar vertical slice). Off by default;
+    /// `--form=song` turns it on. It is not a Jerry downgrade (it adds form, it never removes a
+    /// capability) and it is not "Full" — it is its own opt-in arm, ear-gated before any default.
+    song: bool,
 }
 
 impl C137Preset {
@@ -173,6 +177,13 @@ impl C137Preset {
         if !self.jerry.contains(&switch) {
             self.jerry.push(switch);
         }
+        self
+    }
+
+    /// Select the full 32-bar song form. The song sets its own length (it overrides the archival
+    /// `--bars`/`short` bar count), so the resolved arc is the eight-section pop skeleton.
+    pub fn song(mut self) -> Self {
+        self.song = true;
         self
     }
 
@@ -226,6 +237,11 @@ impl C137Preset {
                 Jerry::StraightBass => anticipate_bass = false,
                 Jerry::GenericDrums => translate_lead_rhythm = false,
             }
+        }
+        // The song form sets its own length, overriding any archival bar count. It adds form, never
+        // removes a capability, so the accepted capabilities resolved above are untouched.
+        if self.song {
+            bars = 32;
         }
         Resolved {
             bars,
