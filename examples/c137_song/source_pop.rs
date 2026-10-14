@@ -19,7 +19,10 @@
 //! - Keys and bass LOCK and LIFT: both are laid into the shared pocket (so the melodic voice lays
 //!   back WITH the rhythm section instead of floating ahead of it, dead on the grid) and PUSH the
 //!   "and of 4" together every bar — the band coalescing into one collective gesture while each voice
-//!   keeps its own expressive line. The comp is driving (four off-beat stabs a bar) for pop energy.
+//!   keeps its own expressive line.
+//! - The keys MOVE THROUGH the groove: not detached stabs dotting the pocket's points, but a flowing,
+//!   legato guide-tone LINE that arcs and steps across the progression (rising then resolving), so the
+//!   melodic voice traverses the geometry the pocket creates rather than punctuating it.
 use gibson::audio::human_music::{
     action::Agent,
     argument::{
@@ -76,41 +79,72 @@ impl PopFlavor {
         }
     }
 
-    /// A driving, syncopated guide-tone comp over one 16-beat episode. Two things make it lock and
-    /// lift instead of float: (1) every onset is laid into the shared [`pocket_offset`], so the keys
-    /// lay back WITH the bass and drums rather than sitting dead on the grid ahead of the pocket; (2)
-    /// the "and of 4" push (offset 3.5, the loudest stab) lands TOGETHER with the bass's octave push —
-    /// the band coalescing into one gesture while each voice keeps its own line. Four off-beat stabs a
-    /// bar (the "a" of 1, the "and" of 2 and 3, the push); guide tones (3rd/7th) with a 9th colour,
-    /// voiced to THIS flavor's loop so the carried keys and the sounded harmony agree.
+    /// A flowing, connected guide-tone LINE over one 16-beat episode. The keys no longer DOT the
+    /// pocket's anchor points with detached stabs — they MOVE THROUGH its geometry: a melodic line
+    /// that steps and arcs across the progression (rising through the first half of the loop,
+    /// resolving down through the second), LEGATO (each note all but reaches the next, so the line
+    /// connects instead of punctuating), with a breathing dynamic arc. Every onset is still laid into
+    /// the shared [`pocket_offset`] so the line lays back WITH the band, and the "and of 4" of each
+    /// bar still pushes with the bass (the collective hit). Tonic-relative semitones, voiced to THIS
+    /// flavor's chords. `(onset, semitone_above_A, dur, velocity)`.
     fn keys_comp(self) -> Vec<MaterialEvent> {
-        // Per-bar onset / dur / velocity. The push (offset 3.5) is the loudest — the collective hit.
-        const PATTERN: [(f64, f64, f32); 4] = [
-            (0.75, 0.45, 0.52),
-            (1.5, 0.45, 0.56),
-            (2.5, 0.45, 0.50),
-            (3.5, 0.40, 0.62),
-        ];
-        // Guide tones per stab (semitones above A), 16 = 4 bars × 4 stabs.
-        let steps: [i32; 16] = match self {
-            // Am9: C G E · Dm9: F C A · G9: F B D · Cmaj9: E B G (the push repeats the bar's anchor tone).
-            PopFlavor::Circle => [3, 10, 7, 3, 8, 3, 12, 8, 8, 2, 5, 8, 7, 2, 10, 7],
-            // Am9: C G E · Fmaj9: A E C · Dm9: F C A · E7: G♯ D B (the push drives the leading tone on E7).
-            PopFlavor::Lift => [3, 10, 7, 3, 12, 7, 3, 12, 8, 3, 12, 8, 11, 5, 2, 11],
+        // Onsets a beat apart = a connected quarter-ish line; durations ~0.9 all but touch the next
+        // note (legato), the push (beat-4 "and") and the final resolution shaped shorter; velocities
+        // breathe an arch, cresting into the third bar and easing into the resolution.
+        let rows: &[(f64, i32, f64, f32)] = match self {
+            PopFlavor::Circle => &[
+                // Am9 — rise E G A B
+                (0.5, 7, 0.9, 0.48),
+                (1.5, 10, 0.9, 0.52),
+                (2.5, 12, 0.9, 0.56),
+                (3.5, 14, 0.7, 0.60),
+                // Dm9 — fall A G F D
+                (4.5, 12, 0.9, 0.56),
+                (5.5, 10, 0.9, 0.52),
+                (6.5, 8, 0.9, 0.50),
+                (7.5, 5, 0.7, 0.56),
+                // G9 — rise F G A B
+                (8.5, 8, 0.9, 0.54),
+                (9.5, 10, 0.9, 0.58),
+                (10.5, 12, 0.9, 0.60),
+                (11.5, 14, 0.7, 0.64),
+                // Cmaj9 — resolve down B G E C
+                (12.5, 14, 0.9, 0.58),
+                (13.5, 10, 0.9, 0.54),
+                (14.5, 7, 0.9, 0.52),
+                (15.5, 3, 0.4, 0.50),
+            ],
+            PopFlavor::Lift => &[
+                // Am9 — rise E G A B
+                (0.5, 7, 0.9, 0.48),
+                (1.5, 10, 0.9, 0.52),
+                (2.5, 12, 0.9, 0.56),
+                (3.5, 14, 0.7, 0.60),
+                // Fmaj9 — fall A G F C
+                (4.5, 12, 0.9, 0.56),
+                (5.5, 10, 0.9, 0.52),
+                (6.5, 8, 0.9, 0.50),
+                (7.5, 3, 0.7, 0.56),
+                // Dm9 — rise F G A C
+                (8.5, 8, 0.9, 0.54),
+                (9.5, 10, 0.9, 0.58),
+                (10.5, 12, 0.9, 0.60),
+                (11.5, 15, 0.7, 0.64),
+                // E7 — resolve B G# D E (G# the leading tone pulling home)
+                (12.5, 14, 0.9, 0.58),
+                (13.5, 11, 0.9, 0.54),
+                (14.5, 5, 0.9, 0.52),
+                (15.5, 7, 0.4, 0.52),
+            ],
         };
-        let mut events = Vec::with_capacity(16);
-        for bar in 0..4 {
-            for (i, &(off, dur, accent)) in PATTERN.iter().enumerate() {
-                let raw = bar as f64 * 4.0 + off;
-                events.push(MaterialEvent {
-                    onset: raw + pocket_offset(raw), // lock into the shared pocket the band orbits
-                    dur,
-                    accent,
-                    step: Some(steps[bar * 4 + i]),
-                });
-            }
-        }
-        events
+        rows.iter()
+            .map(|&(onset, step, dur, accent)| MaterialEvent {
+                onset: onset + pocket_offset(onset), // lock into the shared pocket the band orbits
+                dur,
+                accent,
+                step: Some(step),
+            })
+            .collect()
     }
 
     /// A short honest label of the progression for the manifest header. (Used by the example binary;

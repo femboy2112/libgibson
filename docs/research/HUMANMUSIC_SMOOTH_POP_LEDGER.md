@@ -282,6 +282,31 @@ palette's dotted-eighth tempo echo was a second smear.)
 — this cut locked the pocket and made the band coalesce within the 8-bar loop first. Pad still silent
 (a fullness lever); drums still can't lift by section without the pop-gated kernel wire (tier B).
 
+## R2.4 — keys as a flowing line ("move through the geometry") — [OBSERVED]; [EAR] PENDING
+
+**[EAR] verdict (round 4):** *"it's technically hitting the origin points that characterize the
+pockets, but it still feels off — it needs to semantically move through the geometry that the pocket
+creates on the field."* Read: the parts land on the right pocket positions but are still discrete
+point-events; they don't trace continuous, meaningful motion THROUGH the groove's shape.
+
+**The change (one variable, pop-only, C137-safe):** the keys stopped being four detached per-bar
+stabs (maximally point-like) and became a **flowing, legato guide-tone LINE** that steps and arcs
+through the progression — rising through the first half of the loop, resolving down through the
+second, each note all but reaching the next (legato connection) with a breathing dynamic arc. Still
+pocket-locked and still pushing the "and of 4" with the bass. Circle: E-G-A-B ↑ / A-G-F-D ↓ / F-G-A-B
+↑ / B-G-E-C ↓. Lift resolves its final bar B-G♯-D-E (leading tone home).
+
+**[OBSERVED]:** Circle warm fp `9cf08748acb807ab` (was `700458dc` for the stab version), keys=32,
+byte-distinct from v2. `audio_smooth_pop` 5/5; C137 **byte-identical** (lock 51/51); fmt + clippy -D
+clean. Delivered `pop-warm-circle-v3-line.mp3` for the A/B against v2 (stabs). [EAR] PENDING.
+
+**Honest engine limit surfaced to the maintainer:** expression is at the note/line level (placement,
+length, connection, dynamics). There is **no continuous intra-note expression** — no pitch
+slide/bend or amplitude swell WITHIN a single held note (the timbre scout: no portamento, no per-voice
+LFO/vibrato, velocity only scales amplitude). So the LINE can move through the geometry (this cut); if
+the ear means motion INSIDE each note, that is a DSP build (a per-note pitch-glide / amplitude-contour
+path), scoped separately. Asked the maintainer which reading.
+
 ---
 
 ## STOP conditions (plan §8)
