@@ -557,5 +557,9 @@ pub fn source_song_intro_with_bridge_seed_phrased(
     compiled.comp_keys = phrasing.lead_is_expressive();
     compiled.anticipate_bass = phrasing.lead_is_expressive();
     compiled.translate_lead_rhythm = phrasing.lead_is_expressive();
+    // The intro BUILDS (rhythm section enters reduced and swells into the first verse) — set here only,
+    // so the intro arm is the one place it fires; every other source leaves it default-false (full
+    // density). Gated with the sibling capabilities so a plain-lead intro is the full-density control.
+    compiled.intro_build = phrasing.lead_is_expressive();
     compiled
 }

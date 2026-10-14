@@ -2339,3 +2339,70 @@ fn the_intro_song_earns_its_return() {
         "the post-bridge chorus accompaniment must depend on the SPECIFIC bridge"
     );
 }
+
+#[test]
+fn the_intro_builds_instead_of_entering_full_blast() {
+    // The intro must ENTER REDUCED and swell into the first verse — not slam in at full density under a
+    // thin lead. With the build on (expressive/ensemble), the opening bar is thinner AND softer than
+    // the bar that hands off to the verse, and the backbeat is laid OUT of bar 0 (kick + hats only).
+    // Keyed to episode 0 alone — the gate below proves the no-intro song does NOT thin its opening.
+    let take = kernel::perform_song(
+        &source_song::source_song_intro_phrased(2112, Phrasing::Ensemble),
+        &world(),
+    )
+    .unwrap();
+    let s = take.score();
+    let drums_in = |lo: f64, hi: f64| {
+        s.drums
+            .iter()
+            .filter(|d| d.start_beat >= lo && d.start_beat < hi)
+            .count()
+    };
+    let vel_mean = |lo: f64, hi: f64| {
+        let v: Vec<f32> = s
+            .drums
+            .iter()
+            .filter(|d| d.start_beat >= lo && d.start_beat < hi)
+            .map(|d| d.velocity)
+            .collect();
+        v.iter().sum::<f32>() / v.len().max(1) as f32
+    };
+    // Density builds: the opening bar is thinner than the hand-off bar (bar 3).
+    assert!(
+        drums_in(0.0, 4.0) < drums_in(12.0, 16.0),
+        "intro bar 0 ({}) must be thinner than the hand-off bar 3 ({})",
+        drums_in(0.0, 4.0),
+        drums_in(12.0, 16.0)
+    );
+    // Crescendo: the opening bar is softer than the hand-off bar.
+    assert!(
+        vel_mean(0.0, 4.0) < vel_mean(12.0, 16.0),
+        "the intro must crescendo: bar 0 {:.3} < bar 3 {:.3}",
+        vel_mean(0.0, 4.0),
+        vel_mean(12.0, 16.0)
+    );
+    // The signature thinning: NO backbeat snare in bar 0 (kick + hats only — the kit opens bare).
+    let backbeat = |score: &Score, lo: f64, hi: f64| {
+        score.drums.iter().any(|d| {
+            matches!(d.voice, DrumVoice::Snare)
+                && d.prov.role_note == "pulse"
+                && d.start_beat >= lo + 0.5
+                && d.start_beat < hi
+        })
+    };
+    assert!(
+        !backbeat(s, 0.0, 4.0),
+        "the intro's first bar must lay the backbeat out (kick + hats only)"
+    );
+    // THE GATE: the no-intro song does NOT build — its opening bar keeps its backbeat, proving the
+    // build is keyed to the intro section alone and never leaks into an ordinary opening.
+    let no_intro = kernel::perform_song(
+        &source_song::source_song_phrased(2112, Phrasing::Ensemble),
+        &world(),
+    )
+    .unwrap();
+    assert!(
+        backbeat(no_intro.score(), 0.0, 4.0),
+        "the no-intro song must keep its opening backbeat (the build is intro-only)"
+    );
+}

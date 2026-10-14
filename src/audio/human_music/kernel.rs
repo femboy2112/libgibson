@@ -1081,6 +1081,32 @@ fn groove_swell(bar: usize, bars_per_episode: usize) -> f32 {
     0.94 + 0.12 * in_episode
 }
 
+/// If `bar` falls in the opening INTRO episode of a build-enabled argument, its index WITHIN that
+/// episode (`0..bars_per_episode`); otherwise `None`. The intro is placement 0 and ONLY when it is an
+/// `Establish` — so the interior verses (also `Establish`) are excluded — which is why this keys on the
+/// bar's episode index, not on the relation alone. Drives the intro build: the rhythm section enters
+/// reduced and swells into the first verse instead of arriving whole.
+fn intro_build_bar(
+    argument: &CompiledArgument,
+    bar: usize,
+    bars_per_episode: usize,
+) -> Option<usize> {
+    (argument.intro_build
+        && bar < bars_per_episode
+        && matches!(
+            argument.placements[0].relation,
+            super::argument::ArgumentRelation::Establish
+        ))
+    .then_some(bar)
+}
+
+/// The rhythm-section velocity factor for intro bar `i`: softest at the top, nearly full by the bar
+/// that hands off to the first verse — a reasoned crescendo, not a flat entry.
+fn intro_build_gain(i: usize) -> f32 {
+    const RAMP: [f32; 4] = [0.50, 0.68, 0.84, 0.96];
+    RAMP[i.min(RAMP.len() - 1)]
+}
+
 /// Whether the lead is genuinely SILENT at `beat` — no lead note sounding across it (within a small
 /// margin). A breath an expressive gate opens reads as silent here; a legato line never does. Reads
 /// the lead only, so a drummer answering into these silences never perturbs the keys-independent
@@ -1578,6 +1604,10 @@ pub fn perform_song(
         let ctx = perf.context_at(at).unwrap();
         let drive = harmonic_drive(&ctx.chord, world.tonic_pc);
         let energy = drive_energy(drive);
+        // The intro build: in the opening episode the foundation enters reduced (early bars lay the
+        // pocket on root + fifth only) and its velocity rides a rising ramp into the first verse.
+        let intro_i = intro_build_bar(argument, bar, bars_per_episode);
+        let ib = intro_i.map_or(1.0, intro_build_gain);
         let tones = ctx.chord.pitch_classes();
         let root = register(ctx.chord.root_pc, 36);
         let fifth = register(tones[2.min(tones.len().saturating_sub(1))], 36);
@@ -1610,14 +1640,20 @@ pub fn perform_song(
         // tonic room to breathe (the fifth is clipped short of beat four, clearing any planned seam
         // pickup). Everywhere else it walks the changes. One monophonic line in the bass register —
         // motion that voices the harmony, never a doubled or sub-octave weave.
-        let figure: Vec<(f64, i32, f32, f32)> = match drive {
-            HarmonicDrive::Home => vec![(0.0, root, 1.8, 0.70), (2.0, fifth, 1.4, 0.52)],
-            _ => vec![
-                (0.0, root, 0.8, 0.76),
-                (1.0, fifth, 0.45, 0.56),
-                (2.0, third, 0.45, 0.60),
-                (3.0, beat_four.clamp(36, 55), 0.45, 0.54),
-            ],
+        let figure: Vec<(f64, i32, f32, f32)> = if intro_i.is_some_and(|i| i <= 1) {
+            // The intro's early bars: the resting root + fifth only, regardless of the chart's drive,
+            // so the foundation enters sparse and the walk fills in as the build swells into the verse.
+            vec![(0.0, root, 1.8, 0.70), (2.0, fifth, 1.4, 0.52)]
+        } else {
+            match drive {
+                HarmonicDrive::Home => vec![(0.0, root, 1.8, 0.70), (2.0, fifth, 1.4, 0.52)],
+                _ => vec![
+                    (0.0, root, 0.8, 0.76),
+                    (1.0, fifth, 0.45, 0.56),
+                    (2.0, third, 0.45, 0.60),
+                    (3.0, beat_four.clamp(36, 55), 0.45, 0.54),
+                ],
+            }
         };
         let swell = groove_swell(bar, bars_per_episode);
         for (offset, pitch, dur, velocity) in figure {
@@ -1637,7 +1673,7 @@ pub fn perform_song(
                 at + offset + super::theme_family::pocket_offset(offset),
                 dur,
                 pitch,
-                velocity * energy * swell,
+                velocity * energy * swell * ib,
                 prov,
             ));
         }
@@ -1718,11 +1754,16 @@ pub fn perform_song(
         // The whole kit's dynamics ride the harmonic energy AND the within-phrase swell; the `lay`
         // leans a stroke off the grid into the pocket (0 = dead-on, the time reference).
         let swell = groove_swell(bar, bars_per_episode);
+        // The intro build: the opening episode's kit enters reduced and swells in. `ib` crescendos the
+        // whole kit; the early bars also THIN (bar 0 = kick + eighth hats, bar 1 adds the backbeat,
+        // both without comps) so the groove assembles over the intro rather than arriving whole.
+        let intro_i = intro_build_bar(argument, bar, bars_per_episode);
+        let ib = intro_i.map_or(1.0, intro_build_gain);
         let mut push = |voice: DrumVoice, grid: f64, vel: f32, label: &'static str, lay: f64| {
             score.drums.push(DrumHit {
                 start_beat: grid + lay,
                 voice,
-                velocity: (vel * energy * swell).clamp(0.02, 1.0),
+                velocity: (vel * energy * swell * ib).clamp(0.02, 1.0),
                 prov: provenance(&perf, grid, label, section_at(argument, grid)),
             });
         };
@@ -1732,23 +1773,29 @@ pub fn perform_song(
         let pocket = super::theme_family::pocket_offset;
         push(DrumVoice::Kick, bar_start, 0.95, "pulse", 0.0);
         push(DrumVoice::Kick, bar_start + 2.0, 0.78, "pulse", pocket(2.0));
-        push(
-            DrumVoice::Snare,
-            bar_start + 1.0,
-            0.80,
-            "pulse",
-            pocket(1.0),
-        );
-        push(
-            DrumVoice::Snare,
-            bar_start + 3.0,
-            0.84,
-            "pulse",
-            pocket(3.0),
-        );
+        // The backbeat locks the band's time — but the intro's first bar lays the snare OUT, so the kit
+        // opens on kick + hats alone and the backbeat arrives as the build fills in.
+        if intro_i != Some(0) {
+            push(
+                DrumVoice::Snare,
+                bar_start + 1.0,
+                0.80,
+                "pulse",
+                pocket(1.0),
+            );
+            push(
+                DrumVoice::Snare,
+                bar_start + 3.0,
+                0.84,
+                "pulse",
+                pocket(3.0),
+            );
+        }
         // The ride carpet: its SUBDIVISION follows the harmonic drive — eighths at rest, sixteenths in
         // motion — with the down/and/e-a accent hierarchy and the hat opening on the "and of four".
-        let sixteenths = !matches!(drive, HarmonicDrive::Home);
+        // Eighths at rest, sixteenths in motion — but the intro's thinned early bars stay on eighths,
+        // so the ride opens sparse and only fills to sixteenths as the build drives in.
+        let sixteenths = !matches!(drive, HarmonicDrive::Home) && !intro_i.is_some_and(|i| i <= 1);
         let stride: usize = if sixteenths { 1 } else { 2 };
         for s in (0..16u32).step_by(stride) {
             let at = bar_start + s as f64 * 0.25;
@@ -1770,10 +1817,14 @@ pub fn perform_song(
         // ONLY where the lead is not attacking (make room), softer inside a live phrase and fuller
         // where the phrase has yielded. This is the make-room law that turns competing voices into
         // interplay, and it reads the lead only, so it never perturbs the keys-independent pulse.
-        let budget = match drive {
-            HarmonicDrive::Home => 0,
-            HarmonicDrive::Building => 2,
-            HarmonicDrive::Driving => 3,
+        let budget = if intro_i.is_some_and(|i| i <= 1) {
+            0 // the intro's early bars hold the comp back — the groove is still assembling
+        } else {
+            match drive {
+                HarmonicDrive::Home => 0,
+                HarmonicDrive::Building => 2,
+                HarmonicDrive::Driving => 3,
+            }
         };
         // The band HEARS the lead breathe: where an expressive lead has opened a real silence, the
         // drummer steps INTO it with a full-voiced ANSWER on its OWN budget — a breath answer never
@@ -1790,11 +1841,12 @@ pub fn perform_song(
         // some breaths are deliberately never answered. (The witness `the_band_answers_only_the_…`
         // pins this; mutating a bar's route home↔open moves the answer, proving it is not silence-blind.)
         let breath_licensed = !matches!(drive, HarmonicDrive::Home);
-        let breath_budget = if argument.answer_breaths && breath_licensed {
-            2
-        } else {
-            0
-        };
+        let breath_budget =
+            if argument.answer_breaths && breath_licensed && !intro_i.is_some_and(|i| i <= 1) {
+                2
+            } else {
+                0
+            };
         let mut placed = 0;
         let mut answered = 0;
         for s in [2u32, 6, 10, 14, 7, 11] {

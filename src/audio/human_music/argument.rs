@@ -427,6 +427,15 @@ pub struct CompiledArgument {
     /// `--source-answer` flag), never a silent default — it changes the audio, so the maintainer's ear
     /// gates it before it could ever become the default.
     pub source_answer: bool,
+    /// Opt-in INTRO BUILD directive: when true, the opening episode (placement 0, and only if it is an
+    /// `Establish` — the intro section) enters REDUCED and swells across its bars instead of at full
+    /// density. The rhythm section crescendos (bass + drum velocity ride a rising ramp) and the first
+    /// bars thin (kick + eighth hats, no backbeat, bass on root+fifth), so the band builds into the
+    /// first verse rather than slamming in at full blast under a thin lead. Keyed to episode 0 alone, so
+    /// the two interior verses (also `Establish`) are untouched. `false` (the default, set by `compile`)
+    /// leaves every bar at full density, so all non-intro sources stay byte-identical; it changes the
+    /// audio, so the maintainer's ear gates it — set only by the intro source builder, never a default.
+    pub intro_build: bool,
 }
 
 impl CompiledArgument {
@@ -1050,6 +1059,10 @@ impl MusicalArgument {
             // `--source-answer` audition, never by a source builder — it changes the audio, so it is
             // never a silent default.
             source_answer: false,
+            // Off by default — every bar enters at full density, so all non-intro sources stay
+            // byte-identical. Flipped on only by the intro source builder, so the opening episode
+            // builds instead of entering full-blast; it changes the audio, so the ear gates it.
+            intro_build: false,
         })
     }
 
