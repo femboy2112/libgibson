@@ -1081,6 +1081,50 @@ fn groove_swell(bar: usize, bars_per_episode: usize) -> f32 {
     0.94 + 0.12 * in_episode
 }
 
+/// If `bar` falls in the opening INTRO episode of a build-enabled argument, its index WITHIN that
+/// episode (`0..bars_per_episode`); otherwise `None`. The intro is placement 0 and ONLY when it is an
+/// `Establish` — so the interior verses (also `Establish`) are excluded — which is why this keys on the
+/// bar's episode index, not on the relation alone. Drives the intro build: the rhythm section enters
+/// reduced and swells into the first verse instead of arriving whole.
+fn intro_build_bar(
+    argument: &CompiledArgument,
+    bar: usize,
+    bars_per_episode: usize,
+) -> Option<usize> {
+    (argument.intro_build
+        && bar < bars_per_episode
+        && matches!(
+            argument.placements[0].relation,
+            super::argument::ArgumentRelation::Establish
+        ))
+    .then_some(bar)
+}
+
+/// The intro build's velocity, by intro bar `i` and whether the stroke is part of the SKELETON (the
+/// downbeat kick, the backbeat, the bass root) or the MOTION/TEXTURE around it (hats, the bass walk,
+/// comps, the hand-off fill). The skeleton barely dips — the pocket is solid from the top — while the
+/// texture washes in on a back-loaded, ACCELERATING swell (steps widen toward the verse). Decoupling
+/// the two and curving the swell is the point: the energy rises because the arrangement fills and the
+/// cymbals open, NOT because one fader is turned up evenly — so it reads as a band leaning in, not a
+/// knob slowly turning.
+fn intro_build_gain(i: usize, skeleton: bool) -> f32 {
+    const SKELETON: [f32; 4] = [0.80, 0.90, 0.96, 1.0];
+    const SWELL: [f32; 4] = [0.30, 0.46, 0.72, 1.0];
+    let curve = if skeleton { SKELETON } else { SWELL };
+    curve[i.min(curve.len() - 1)]
+}
+
+/// Whether the lead is genuinely SILENT at `beat` — no lead note sounding across it (within a small
+/// margin). A breath an expressive gate opens reads as silent here; a legato line never does. Reads
+/// the lead only, so a drummer answering into these silences never perturbs the keys-independent
+/// pulse. (A sustained note's whole [onset, onset+gate] span counts as sounding, not just its attack.)
+fn lead_silent_at(beat: f64, lead: &[Note]) -> bool {
+    const M: f64 = 0.08;
+    !lead
+        .iter()
+        .any(|n| beat >= n.start_beat - M && beat <= n.start_beat + f64::from(n.dur_beats) + M)
+}
+
 pub fn perform_song(
     argument: &CompiledArgument,
     world: &MusicWorld,
@@ -1419,6 +1463,127 @@ pub fn perform_song(
         memory.prev_answer_events = produced;
         carried_cell = Some(cell);
     }
+    // KEYS COMP — comp like a pianist, not a one-finger poke. The per-episode answer above is a single
+    // gesture in bar 2; on its own the keyboard reads very sparse. Here the keys COMP the harmonic holes
+    // the way a fusion keyboardist does (the Casiopea/Takanaka seat): a ROOTLESS CHORD VOICING of the
+    // bar's committed harmony — the guide tones and colour it holds (its 3rd/5th/7th), never the root the
+    // bass owns — voiced POLYPHONICALLY in a warm mid register, and topped with a song-fitting COLOUR
+    // tone (the 9th, admitted only when the mode holds it) decorated by a grace ornament. Polyphony is
+    // lawful here because the keys, like the pad, carry no argument line and no continuity edge, so they
+    // are exempt from the monophonic lane — a comp is chords, not single notes. Teacher-gated to the HOME
+    // ARRIVALS (the hook and the return, where the pad also lays its rug and the texture is meant to be
+    // full), so the VERSE stays bare (the open question, lead alone) and the BRIDGE stays thin (the
+    // departure's texture contrast). Every stab makes ROOM for the lead (never on its attack) and never
+    // enters the answer window `[ws+4, ws+8)` the drums hear — so the keys-independent pulse the causal
+    // witness depends on is untouched.
+    if argument.comp_keys {
+        let lead_onsets: Vec<f64> = score.role_notes(Role::Lead).map(|n| n.start_beat).collect();
+        let pocket = super::theme_family::pocket_offset;
+        let scale = Scale::new(world.tonic_pc, world.mode);
+        let bars_per_ep = (EPISODE_BEATS / 4.0) as usize;
+        let room = |at: f64| lead_onsets.iter().all(|&l| (l - at).abs() >= 0.15);
+        // Voice a set of pitch classes ascending from a mid-register floor (the pad's rug idiom): each
+        // tone seated at or above the running floor, so the voicing climbs instead of stacking in a mud.
+        let voice = |floor: i32, pcs: &[i32]| -> Vec<i32> {
+            let mut low = floor;
+            pcs.iter()
+                .map(|&pc| {
+                    let p = register(pc, low);
+                    low = p + 1;
+                    p
+                })
+                .collect()
+        };
+        for e in 0..episodes {
+            if !matches!(
+                argument.placements[e].relation,
+                super::argument::ArgumentRelation::Consequent { .. }
+                    | super::argument::ArgumentRelation::Return { .. }
+            ) {
+                continue; // comp only under the home arrivals; verse and bridge keep the floor clear
+            }
+            for b in 0..bars_per_ep {
+                if b == 1 {
+                    continue; // bar 2 is the answer's own bar — leave it to the answer
+                }
+                let bar_start = e as f64 * EPISODE_BEATS + b as f64 * 4.0;
+                let ctx = perf.context_at(bar_start).unwrap();
+                let tones = ctx.chord.pitch_classes();
+                if tones.len() < 2 {
+                    continue;
+                }
+                let energy = drive_energy(harmonic_drive(&ctx.chord, world.tonic_pc));
+                // The chord above its root (root_pc is tones[0]); the bass owns the root.
+                let rootless = &tones[1..];
+                // The colour on top: the 9th, but only where the MODE admits it and the chord does not
+                // already spell it — so the colour fits the song's key instead of fighting it (on a chord
+                // whose 9th leaves the mode, the comp simply states the voicing, no forced colour).
+                let ninth = (ctx.chord.root_pc + 2).rem_euclid(12);
+                let colour_pc =
+                    (scale.contains_pc(ninth) && !tones.contains(&ninth)).then_some(ninth);
+                // The "and of two": the full rootless voicing — the body of the comp, planted in pocket.
+                let a = bar_start + 2.5 + pocket(2.5);
+                if perf.on_stage(Agent::Keys, a) && room(a) {
+                    for pitch in voice(57, rootless) {
+                        keys.push(pitched(
+                            &perf,
+                            Role::Keys,
+                            a,
+                            0.33,
+                            pitch,
+                            (0.40 * energy).clamp(0.02, 1.0),
+                            provenance(&perf, a, "comp", section_at(argument, a)),
+                        ));
+                    }
+                }
+                // The "and of four": a lighter guide-tone shell (3rd + 7th) topped with the colour tone
+                // and a grace ornament a scale-step above it a 16th before the stab — the pianist's bright
+                // answer to its own body chord.
+                let c = bar_start + 3.5 + pocket(3.5);
+                if perf.on_stage(Agent::Keys, c) && room(c) {
+                    let shell: Vec<i32> = rootless.iter().copied().step_by(2).collect();
+                    let voiced = voice(60, &shell);
+                    for &pitch in &voiced {
+                        keys.push(pitched(
+                            &perf,
+                            Role::Keys,
+                            c,
+                            0.33,
+                            pitch,
+                            (0.38 * energy).clamp(0.02, 1.0),
+                            provenance(&perf, c, "comp", section_at(argument, c)),
+                        ));
+                    }
+                    if let Some(cpc) = colour_pc {
+                        let top = *voiced.last().unwrap_or(&60);
+                        let colour = register(cpc, top + 1);
+                        keys.push(pitched(
+                            &perf,
+                            Role::Keys,
+                            c,
+                            0.33,
+                            colour,
+                            (0.32 * energy).clamp(0.02, 1.0),
+                            provenance(&perf, c, "comp", section_at(argument, c)),
+                        ));
+                        let g = c - 0.25;
+                        if g > bar_start && perf.on_stage(Agent::Keys, g) && room(g) {
+                            let grace = scale.nearest_scale_pitch(colour + 2);
+                            keys.push(pitched(
+                                &perf,
+                                Role::Keys,
+                                g,
+                                0.18,
+                                grace,
+                                (0.24 * energy).clamp(0.02, 1.0),
+                                provenance(&perf, g, "comp", section_at(argument, g)),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
     score = commit_role(score, &perf, world, Role::Keys, keys, Vec::new())?;
     for e in 0..episodes {
         let ws = e as f64 * EPISODE_BEATS;
@@ -1440,36 +1605,62 @@ pub fn perform_song(
     let mut bass = Vec::new();
     let bars_per_episode = (EPISODE_BEATS / 4.0) as usize;
     let total_bars = episodes * bars_per_episode;
+    let bass_scale = Scale::new(world.tonic_pc, world.mode);
     for bar in 0..total_bars {
         let at = bar as f64 * 4.0;
         let ctx = perf.context_at(at).unwrap();
         let drive = harmonic_drive(&ctx.chord, world.tonic_pc);
         let energy = drive_energy(drive);
+        // The intro build: in the opening episode the foundation enters reduced (early bars lay the
+        // pocket on root + fifth only) and swells into the first verse — the downbeat root holds the
+        // pocket (skeleton), the walk motion washes in on the swell (applied per note, below).
+        let intro_i = intro_build_bar(argument, bar, bars_per_episode);
         let tones = ctx.chord.pitch_classes();
         let root = register(ctx.chord.root_pc, 36);
         let fifth = register(tones[2.min(tones.len().saturating_sub(1))], 36);
         let third = register(tones[1.min(tones.len().saturating_sub(1))], 36);
-        // Beat four leads by a half-step into the next bar's root; the final bar has no successor,
-        // so it settles on the fifth rather than leading away from home.
-        let beat_four = match (bar + 1 < total_bars)
-            .then(|| register(perf.context_at(at + 4.0).unwrap().chord.root_pc, 36))
-        {
-            Some(next) if next > 36 => next - 1,
-            Some(next) => next + 1,
-            None => fifth,
-        };
+        // Beat four leads into the next bar. With the foundation ANTICIPATING the destination
+        // (`anticipate_bass`), its approach expresses WHERE the harmony is going: the dominant into a
+        // home arrival (the V->I the ear hears coming), the leading tone a half-step below into a drive
+        // (tension), a diatonic step into a passing change (a smooth walk). Without it (the archived
+        // control), it is the blind chromatic half-step into whatever comes next. Either way it is one
+        // monophonic note in the bass register; the final bar has no successor, so it settles on the
+        // fifth rather than leading away from home.
+        let beat_four =
+            match (bar + 1 < total_bars).then(|| perf.context_at(at + 4.0).unwrap().chord) {
+                None => fifth,
+                Some(next) => {
+                    let r = register(next.root_pc, 36);
+                    let chromatic = if r > 36 { r - 1 } else { r + 1 };
+                    if argument.anticipate_bass {
+                        match harmonic_drive(&next, world.tonic_pc) {
+                            HarmonicDrive::Home => register((next.root_pc + 7).rem_euclid(12), 36),
+                            HarmonicDrive::Driving => chromatic,
+                            HarmonicDrive::Building => bass_scale.nearest_scale_pitch(r - 2),
+                        }
+                    } else {
+                        chromatic
+                    }
+                }
+            };
         // At HOME the bass lays back: the root rings and the fifth answers on beat three, leaving the
         // tonic room to breathe (the fifth is clipped short of beat four, clearing any planned seam
         // pickup). Everywhere else it walks the changes. One monophonic line in the bass register —
         // motion that voices the harmony, never a doubled or sub-octave weave.
-        let figure: Vec<(f64, i32, f32, f32)> = match drive {
-            HarmonicDrive::Home => vec![(0.0, root, 1.8, 0.70), (2.0, fifth, 1.4, 0.52)],
-            _ => vec![
-                (0.0, root, 0.8, 0.76),
-                (1.0, fifth, 0.45, 0.56),
-                (2.0, third, 0.45, 0.60),
-                (3.0, beat_four.clamp(36, 55), 0.45, 0.54),
-            ],
+        let figure: Vec<(f64, i32, f32, f32)> = if intro_i.is_some_and(|i| i <= 1) {
+            // The intro's early bars: the resting root + fifth only, regardless of the chart's drive,
+            // so the foundation enters sparse and the walk fills in as the build swells into the verse.
+            vec![(0.0, root, 1.8, 0.70), (2.0, fifth, 1.4, 0.52)]
+        } else {
+            match drive {
+                HarmonicDrive::Home => vec![(0.0, root, 1.8, 0.70), (2.0, fifth, 1.4, 0.52)],
+                _ => vec![
+                    (0.0, root, 0.8, 0.76),
+                    (1.0, fifth, 0.45, 0.56),
+                    (2.0, third, 0.45, 0.60),
+                    (3.0, beat_four.clamp(36, 55), 0.45, 0.54),
+                ],
+            }
         };
         let swell = groove_swell(bar, bars_per_episode);
         for (offset, pitch, dur, velocity) in figure {
@@ -1477,6 +1668,9 @@ pub fn perform_song(
             // (the downbeat root at `offset==0` stays exactly on `at`, the required anchor), and the
             // velocity rides the harmonic energy and the phrase swell. The bass orbits the SAME
             // pocket as the drums and the lead, so coincident attacks lock — one solar system.
+            // The downbeat root is the SKELETON (holds the pocket from the top); the walk notes are the
+            // MOTION that washes in on the swell. Both resolve to 1.0 outside the intro.
+            let ib = intro_i.map_or(1.0, |i| intro_build_gain(i, offset == 0.0));
             let prov = provenance(
                 &perf,
                 at + offset,
@@ -1489,7 +1683,7 @@ pub fn perform_song(
                 at + offset + super::theme_family::pocket_offset(offset),
                 dur,
                 pitch,
-                velocity * energy * swell,
+                velocity * energy * swell * ib,
                 prov,
             ));
         }
@@ -1570,11 +1764,21 @@ pub fn perform_song(
         // The whole kit's dynamics ride the harmonic energy AND the within-phrase swell; the `lay`
         // leans a stroke off the grid into the pocket (0 = dead-on, the time reference).
         let swell = groove_swell(bar, bars_per_episode);
+        // The intro build: the opening episode's kit enters reduced and swells in. The SKELETON (the
+        // downbeat/backbeat) holds its pocket from the top; the TEXTURE (hats, comps, the fill) washes
+        // in on the back-loaded swell — so it builds by arrangement, not a uniform fader. The early
+        // bars also THIN (bar 0 = kick + eighth hats, bar 1 adds the backbeat, both without comps) so
+        // the groove assembles over the intro rather than arriving whole.
+        let intro_i = intro_build_bar(argument, bar, bars_per_episode);
         let mut push = |voice: DrumVoice, grid: f64, vel: f32, label: &'static str, lay: f64| {
+            // Kick and the backbeat snare are the skeleton; hats, comps and the fill are the texture.
+            let skeleton = matches!(voice, DrumVoice::Kick)
+                || (matches!(voice, DrumVoice::Snare) && label == "pulse");
+            let ib = intro_i.map_or(1.0, |i| intro_build_gain(i, skeleton));
             score.drums.push(DrumHit {
                 start_beat: grid + lay,
                 voice,
-                velocity: (vel * energy * swell).clamp(0.02, 1.0),
+                velocity: (vel * energy * swell * ib).clamp(0.02, 1.0),
                 prov: provenance(&perf, grid, label, section_at(argument, grid)),
             });
         };
@@ -1584,23 +1788,29 @@ pub fn perform_song(
         let pocket = super::theme_family::pocket_offset;
         push(DrumVoice::Kick, bar_start, 0.95, "pulse", 0.0);
         push(DrumVoice::Kick, bar_start + 2.0, 0.78, "pulse", pocket(2.0));
-        push(
-            DrumVoice::Snare,
-            bar_start + 1.0,
-            0.80,
-            "pulse",
-            pocket(1.0),
-        );
-        push(
-            DrumVoice::Snare,
-            bar_start + 3.0,
-            0.84,
-            "pulse",
-            pocket(3.0),
-        );
+        // The backbeat locks the band's time — but the intro's first bar lays the snare OUT, so the kit
+        // opens on kick + hats alone and the backbeat arrives as the build fills in.
+        if intro_i != Some(0) {
+            push(
+                DrumVoice::Snare,
+                bar_start + 1.0,
+                0.80,
+                "pulse",
+                pocket(1.0),
+            );
+            push(
+                DrumVoice::Snare,
+                bar_start + 3.0,
+                0.84,
+                "pulse",
+                pocket(3.0),
+            );
+        }
         // The ride carpet: its SUBDIVISION follows the harmonic drive — eighths at rest, sixteenths in
         // motion — with the down/and/e-a accent hierarchy and the hat opening on the "and of four".
-        let sixteenths = !matches!(drive, HarmonicDrive::Home);
+        // Eighths at rest, sixteenths in motion — but the intro's thinned early bars stay on eighths,
+        // so the ride opens sparse and only fills to sixteenths as the build drives in.
+        let sixteenths = !matches!(drive, HarmonicDrive::Home) && !intro_i.is_some_and(|i| i <= 1);
         let stride: usize = if sixteenths { 1 } else { 2 };
         for s in (0..16u32).step_by(stride) {
             let at = bar_start + s as f64 * 0.25;
@@ -1622,14 +1832,40 @@ pub fn perform_song(
         // ONLY where the lead is not attacking (make room), softer inside a live phrase and fuller
         // where the phrase has yielded. This is the make-room law that turns competing voices into
         // interplay, and it reads the lead only, so it never perturbs the keys-independent pulse.
-        let budget = match drive {
-            HarmonicDrive::Home => 0,
-            HarmonicDrive::Building => 2,
-            HarmonicDrive::Driving => 3,
+        let budget = if intro_i.is_some_and(|i| i <= 1) {
+            0 // the intro's early bars hold the comp back — the groove is still assembling
+        } else {
+            match drive {
+                HarmonicDrive::Home => 0,
+                HarmonicDrive::Building => 2,
+                HarmonicDrive::Driving => 3,
+            }
         };
+        // The band HEARS the lead breathe: where an expressive lead has opened a real silence, the
+        // drummer steps INTO it with a full-voiced ANSWER on its OWN budget — a breath answer never
+        // spends the comp budget nor the reverse. Off unless the source asked for it
+        // (`answer_breaths`), and read from the LEAD only, so the keys-independent pulse is untouched.
+        //
+        // But the band answers a QUESTION, not a resolution. The breath is LICENSED only where the
+        // harmony is still open — a predominant reaching, a dominant driving, the bright non-home
+        // arrival — i.e. anywhere the lead's statement left something hanging. On a true home
+        // resolution (`HarmonicDrive::Home`: the tonic landing, degree 0 and not a secondary
+        // dominant) the breath is left UNANSWERED: the lead said its piece and came home, and the
+        // band respects that silence rather than filling it (the teacher lays the kit out at the home
+        // outro). So the answer is bound to the source harmony on the route, not to bare silence — and
+        // some breaths are deliberately never answered. (The witness `the_band_answers_only_the_…`
+        // pins this; mutating a bar's route home↔open moves the answer, proving it is not silence-blind.)
+        let breath_licensed = !matches!(drive, HarmonicDrive::Home);
+        let breath_budget =
+            if argument.answer_breaths && breath_licensed && !intro_i.is_some_and(|i| i <= 1) {
+                2
+            } else {
+                0
+            };
         let mut placed = 0;
+        let mut answered = 0;
         for s in [2u32, 6, 10, 14, 7, 11] {
-            if placed >= budget {
+            if placed >= budget && answered >= breath_budget {
                 break;
             }
             let at = bar_start + s as f64 * 0.25;
@@ -1641,26 +1877,135 @@ pub fn perform_song(
             } else {
                 (DrumVoice::Snare, 0.40) // a ghost on the "a"
             };
-            let vel = if lead_occ.yields_at(at) {
-                base
-            } else {
-                base * 0.5
-            };
-            push(voice, at, vel, "comp", pocket(at - bar_start)); // comps ride the shared pocket
-            placed += 1;
+            // comps and answers both ride the shared pocket. A breath answer (lead genuinely silent)
+            // steps forward at full velocity on its own budget; an ordinary comp is soft inside a
+            // live phrase and fuller where the phrase has yielded.
+            if !argument.source_answer
+                && breath_budget > 0
+                && answered < breath_budget
+                && lead_silent_at(at, &lead_notes)
+            {
+                // The accepted (default) breath answer: a full-voiced ghost in a fixed open slot. It
+                // sits in a genuine silence over open harmony, but it answers nothing in particular —
+                // the honest, source-grounded answer below replaces it when `source_answer` is set.
+                push(voice, at, base, "answer", pocket(at - bar_start));
+                answered += 1;
+            } else if placed < budget {
+                let vel = if lead_occ.yields_at(at) {
+                    base
+                } else {
+                    base * 0.5
+                };
+                push(voice, at, vel, "comp", pocket(at - bar_start));
+                placed += 1;
+            }
         }
-        // Phrase-end fill: rising sixteenth snares across the last half-bar because the phrase is
-        // ending (into the hook, then into the final cadence) — not on a coin flip. Fills are tight
-        // (on the grid) so they drive cleanly into the downbeat.
+        // Phrase-end fill: the phrase is ending (into the hook, then into the final cadence) — not on a
+        // coin flip. When the drummer is TRANSLATING the lead (`translate_lead_rhythm`) it quotes the
+        // melody's own rhythm (below); where the lead gave no figure to echo (fewer than two attacks)
+        // it falls back to the archived rising sixteenth run so the fill still drives the downbeat.
         if fill_bar {
-            for k in 0..4u32 {
-                push(
-                    DrumVoice::Snare,
-                    bar_start + 2.0 + k as f64 * 0.5,
-                    0.42 + 0.12 * k as f32,
-                    "pulse",
-                    0.0,
-                );
+            // Translate the melody's phrase-ending FIGURE — the lead's attacks across the first half of
+            // this bar, before the line resolves and holds — echoed a half-bar later into the fill, so
+            // the kit plays the lead's own rhythm back and drives the band into the downbeat together
+            // (the same call->echo the keys law uses, now for the lead). Reads the LEAD only.
+            let figure: Vec<f64> = if argument.translate_lead_rhythm {
+                lead_notes
+                    .iter()
+                    .map(|n| n.start_beat)
+                    .filter(|&b| b >= bar_start && b < bar_start + 2.0)
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            if figure.len() >= 2 {
+                for &o in &figure {
+                    let at = o + 2.0; // the figure, echoed into the closing half-bar
+                    let rise = ((at - (bar_start + 2.0)) / 2.0) as f32; // 0..1 toward the downbeat
+                    push(DrumVoice::Snare, at, 0.40 + 0.30 * rise, "lead-echo", 0.0);
+                }
+            } else {
+                for k in 0..4u32 {
+                    push(
+                        DrumVoice::Snare,
+                        bar_start + 2.0 + k as f64 * 0.5,
+                        0.42 + 0.12 * k as f32,
+                        "pulse",
+                        0.0,
+                    );
+                }
+            }
+        }
+
+        // SOURCE-GROUNDED ANSWER (opt-in `source_answer`): the drummer does not fire a fixed ghost
+        // into any open bar — it ANSWERS the lead's question. The question is the lead's gesture in
+        // the first half of this bar (the attacks that lead into the breath); the answer QUOTES that
+        // gesture's rhythm a half-bar later into the breath (so a different question yields a different
+        // answer), voiced by the gesture's contour — a rising question PUSHES with the kick, a falling
+        // or level one TAGS with a ghost snare. Each stroke realizes a real `ActionKind::Answer` that
+        // CREDITS the lead statement's call it answers, so its initiating source is reconstructible
+        // (the existing Action ontology, not a second cue system) — unlike the fixed-slot ghost above,
+        // which answered nothing in particular. Licensed exactly as the breath answer is (open harmony
+        // via `breath_budget`, a genuine lead silence, the budget), so restraint is preserved: a
+        // resolved home bar, or a bar the lead never left, gets no answer. Reads the LEAD only, so the
+        // keys-independent pulse the causal witness depends on is untouched.
+        if argument.source_answer && breath_budget > 0 {
+            let episode = (bar_start / EPISODE_BEATS).floor() as usize;
+            if episode < perf.statements.len() {
+                let origin_call = perf.statements[episode].call;
+                let mut question: Vec<&Note> = lead_notes
+                    .iter()
+                    .filter(|n| n.start_beat >= bar_start && n.start_beat < bar_start + 2.0)
+                    .collect();
+                question.sort_by(|a, b| a.start_beat.total_cmp(&b.start_beat));
+                let mut answered_src = 0i32;
+                let mut answer_aid: Option<ActionId> = None;
+                for qn in &question {
+                    if answered_src >= breath_budget {
+                        break;
+                    }
+                    let at = qn.start_beat + 2.0; // the question's onset, echoed into the breath
+                    if at >= bar_start + 4.0 || !lead_silent_at(at, &lead_notes) {
+                        continue; // keep it inside the bar and in a genuine silence
+                    }
+                    if !lead_occ.allows_comp_at(at, &lead_notes) {
+                        continue; // make room — the lead is still speaking there
+                    }
+                    // The gesture's contour at this onset: a rising question drives with the kick, a
+                    // falling or level one tags with a ghost snare.
+                    let rising = lead_notes
+                        .iter()
+                        .filter(|m| m.start_beat > qn.start_beat)
+                        .min_by(|a, b| a.start_beat.total_cmp(&b.start_beat))
+                        .is_some_and(|nx| nx.pitch > qn.pitch);
+                    let (voice, base) = if rising {
+                        (DrumVoice::Kick, 0.56)
+                    } else {
+                        (DrumVoice::Snare, 0.40)
+                    };
+                    // One Answer action per answering bar, crediting the lead statement's call it
+                    // answers (cause = Interaction{call}), so the drum answer has a reconstructible
+                    // initiating source instead of a dead stamp.
+                    let aid = *answer_aid.get_or_insert_with(|| {
+                        action(
+                            &mut perf.actions,
+                            Agent::Drums,
+                            ActionKind::Answer,
+                            at,
+                            1.0,
+                            origin_call,
+                            episode as u32,
+                        )
+                    });
+                    score.drums.push(DrumHit {
+                        start_beat: at + pocket(at - bar_start),
+                        voice,
+                        velocity: (base * energy * swell).clamp(0.02, 1.0),
+                        prov: provenance(&perf, at, "answer", section_at(argument, at))
+                            .realizing(aid),
+                    });
+                    answered_src += 1;
+                }
             }
         }
     }
@@ -1823,9 +2168,22 @@ fn validate_song(
             return Err(KernelError::Stage(agent));
         }
         if n.role == Role::Keys {
-            let within_episode = n.start_beat.rem_euclid(EPISODE_BEATS);
-            if !(4.0..8.0).contains(&within_episode) {
-                return Err(KernelError::Source("violated deliberate keyboard silence"));
+            if n.prov.role_note == "comp" {
+                // A comp stab lives outside the answer window, but it must make ROOM for the lead —
+                // never landing on a lead attack (the keys stab the holes, they don't fight the melody).
+                if score
+                    .role_notes(Role::Lead)
+                    .any(|l| (l.start_beat - n.start_beat).abs() < 0.12)
+                {
+                    return Err(KernelError::Source("keyboard comp collides with the lead"));
+                }
+            } else {
+                // The call/response answer stays confined to the episode's second bar — the deliberate
+                // keyboard silence the rest of the answer-contour design depends on.
+                let within_episode = n.start_beat.rem_euclid(EPISODE_BEATS);
+                if !(4.0..8.0).contains(&within_episode) {
+                    return Err(KernelError::Source("violated deliberate keyboard silence"));
+                }
             }
         }
     }

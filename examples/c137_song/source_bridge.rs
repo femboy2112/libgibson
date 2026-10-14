@@ -24,7 +24,7 @@ use gibson::audio::human_music::{
     contract::CompositionGrammar,
     plan::ArrangementRole,
     semantic::{EventKind, SemanticEvent, SemanticState, SemanticTrace, Tone},
-    theme_family::{generate_developed_bridge, generate_developed_pair},
+    theme_family::{generate_developed_bridge_phrased, generate_developed_pair_phrased, Phrasing},
     theory::{PitchBasis, Quality},
     SongMap,
 };
@@ -64,13 +64,22 @@ pub fn argument(seed: u64) -> (MusicalArgument, SongMap) {
     argument_with_bridge_seed(seed, seed)
 }
 
+/// [`argument_with_bridge_seed`] delegating with the frozen [`Phrasing::Plain`] realization.
+pub fn argument_with_bridge_seed(seed: u64, bridge_seed: u64) -> (MusicalArgument, SongMap) {
+    argument_with_bridge_seed_phrased(seed, bridge_seed, Phrasing::Plain)
+}
+
 /// The counterfactual generalization of [`argument`]: the verse, hook, route and section structure
 /// are a pure function of `seed`, but the BRIDGE motif is generated from `bridge_seed`. Two different
 /// `bridge_seed`s give two LAWFUL bridges (each shares a hook contour cell, lifts, ends open, stays
 /// in scale — the `is_departure` law) over the SAME chart and the SAME returning hook. This is the
 /// lever the earned-return counterfactual pulls: hold the hook and the return fixed, vary only the
 /// journey, and ask whether the home-coming actually carries a consequence of where the band went.
-pub fn argument_with_bridge_seed(seed: u64, bridge_seed: u64) -> (MusicalArgument, SongMap) {
+pub fn argument_with_bridge_seed_phrased(
+    seed: u64,
+    bridge_seed: u64,
+    phrasing: Phrasing,
+) -> (MusicalArgument, SongMap) {
     let trace = SemanticTrace {
         total_beats: 64.0,
         events: vec![
@@ -109,8 +118,15 @@ pub fn argument_with_bridge_seed(seed: u64, bridge_seed: u64) -> (MusicalArgumen
     // on the DEVELOPED pair. The bridge DEPARTS from the developed hook (recycles a cell, lifts the
     // register, ends open) and is itself developed (pocket + dynamics, no embellishment — it stays
     // thin so the texture contrast carries the phase change). The return reuses the hook referent.
-    let pair = generate_developed_pair(seed, 16.0, 4.0, &VERSE_PROG, &HOOK_PROG);
-    let bridge_events = generate_developed_bridge(bridge_seed, &pair.hook, 16.0, 4.0, &BRIDGE_PROG);
+    let pair = generate_developed_pair_phrased(seed, 16.0, 4.0, &VERSE_PROG, &HOOK_PROG, phrasing);
+    let bridge_events = generate_developed_bridge_phrased(
+        bridge_seed,
+        &pair.hook,
+        16.0,
+        4.0,
+        &BRIDGE_PROG,
+        phrasing,
+    );
     let verse = MusicalReferent {
         id: ReferentId(0),
         pitch_basis: PitchBasis::Semitones,
@@ -223,11 +239,25 @@ pub fn source(seed: u64) -> CompiledArgument {
     source_with_bridge_seed(seed, seed)
 }
 
+/// [`source`] with an explicit lead [`Phrasing`] (shipped arc: bridge seed == song seed).
+pub fn source_phrased(seed: u64, phrasing: Phrasing) -> CompiledArgument {
+    source_with_bridge_seed_phrased(seed, seed, phrasing)
+}
+
+/// [`source_with_bridge_seed`] delegating with the frozen [`Phrasing::Plain`] realization.
+pub fn source_with_bridge_seed(seed: u64, bridge_seed: u64) -> CompiledArgument {
+    source_with_bridge_seed_phrased(seed, bridge_seed, Phrasing::Plain)
+}
+
 /// [`source`] with the bridge motif drawn from `bridge_seed` — the compiled counterfactual arm. The
 /// route (verse ++ hook ++ bridge ++ hook) is identical for every `bridge_seed`, so only the bridge's
 /// realized motif (and anything the band lawfully derives from it) changes between arms.
-pub fn source_with_bridge_seed(seed: u64, bridge_seed: u64) -> CompiledArgument {
-    let (argument, song) = argument_with_bridge_seed(seed, bridge_seed);
+pub fn source_with_bridge_seed_phrased(
+    seed: u64,
+    bridge_seed: u64,
+    phrasing: Phrasing,
+) -> CompiledArgument {
+    let (argument, song) = argument_with_bridge_seed_phrased(seed, bridge_seed, phrasing);
     let mut compiled = argument
         .compile(&song)
         .expect("seeded four-section long-form source compiles");
@@ -239,5 +269,13 @@ pub fn source_with_bridge_seed(seed: u64, bridge_seed: u64) -> CompiledArgument 
     route.extend_from_slice(&BRIDGE_PROG);
     route.extend_from_slice(&HOOK_PROG);
     compiled.route = route;
+    // Ensemble: let the band answer the lead's breaths (set like `route`, after compile).
+    compiled.answer_breaths = matches!(phrasing, Phrasing::Ensemble);
+    // Expressive/Ensemble: the keyboard comps the holes (the plain control keeps the sparse keyboard).
+    compiled.comp_keys = phrasing.lead_is_expressive();
+    // Expressive/Ensemble: the bass anticipates the harmonic destination (plain keeps the archived line).
+    compiled.anticipate_bass = phrasing.lead_is_expressive();
+    // Expressive/Ensemble: the drummer translates the lead's rhythm into the fill (plain keeps the run).
+    compiled.translate_lead_rhythm = phrasing.lead_is_expressive();
     compiled
 }

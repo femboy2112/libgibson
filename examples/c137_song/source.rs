@@ -18,7 +18,7 @@ use gibson::audio::human_music::{
     contract::CompositionGrammar,
     plan::ArrangementRole,
     semantic::{EventKind, SemanticEvent, SemanticState, SemanticTrace, Tone},
-    theme_family::generate_developed_pair,
+    theme_family::{generate_developed_pair_phrased, Phrasing},
     theory::{PitchBasis, Quality},
     SongMap,
 };
@@ -39,6 +39,13 @@ const HOOK_PROG: [(i32, Quality); 4] = [
 ];
 
 pub fn source(seed: u64) -> CompiledArgument {
+    source_phrased(seed, Phrasing::Plain)
+}
+
+/// [`source`] with an explicit lead [`Phrasing`]. `Plain` is the frozen control (byte-identical);
+/// `Expressive` re-performs the SAME developed verse/hook (same pitches, onsets and count) with
+/// authored articulation and a dynamic contour — the opt-in expressive arm.
+pub fn source_phrased(seed: u64, phrasing: Phrasing) -> CompiledArgument {
     let trace = SemanticTrace {
         total_beats: 32.0,
         events: vec![
@@ -74,7 +81,7 @@ pub fn source(seed: u64) -> CompiledArgument {
     // pocket, with the kinship law re-checked on the developed pair. The verse rises and ends Open,
     // the hook is its AlteredConsequent and ends Closed. No cropping — those obligations ARE the
     // referents (and the kinship law is measured over the whole developed phrase, not a prefix).
-    let pair = generate_developed_pair(seed, 16.0, 4.0, &VERSE_PROG, &HOOK_PROG);
+    let pair = generate_developed_pair_phrased(seed, 16.0, 4.0, &VERSE_PROG, &HOOK_PROG, phrasing);
     let verse = MusicalReferent {
         id: ReferentId(0),
         pitch_basis: PitchBasis::Semitones,
@@ -144,5 +151,13 @@ pub fn source(seed: u64) -> CompiledArgument {
     let mut route = VERSE_PROG.to_vec();
     route.extend_from_slice(&HOOK_PROG);
     compiled.route = route;
+    // Ensemble: let the band answer the lead's breaths (set like `route`, after compile).
+    compiled.answer_breaths = matches!(phrasing, Phrasing::Ensemble);
+    // Expressive/Ensemble: the keyboard comps the holes (the plain control keeps the sparse keyboard).
+    compiled.comp_keys = phrasing.lead_is_expressive();
+    // Expressive/Ensemble: the bass anticipates the harmonic destination (plain keeps the archived line).
+    compiled.anticipate_bass = phrasing.lead_is_expressive();
+    // Expressive/Ensemble: the drummer translates the lead's rhythm into the fill (plain keeps the run).
+    compiled.translate_lead_rhythm = phrasing.lead_is_expressive();
     compiled
 }

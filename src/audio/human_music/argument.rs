@@ -389,6 +389,53 @@ pub struct CompiledArgument {
     /// dominant across a whole section — the verse moves through a pre-dominant→dominant→tonic→
     /// secondary-dominant loop, the home sections land, the bridge departs and pivots back.
     pub route: Vec<(i32, Quality)>,
+    /// Opt-in ENSEMBLE directive: when true, the kernel lets the drummer answer INTO the lead's
+    /// breaths — the silences an expressive lead opens — with a bounded, pocket-laid stroke derived
+    /// from the lead + harmony only (never the keys, so the keys-independent pulse is untouched).
+    /// `false` (the default, set by `compile`) reproduces every prior render exactly; only a source
+    /// built with `Phrasing::Ensemble` sets it true. It is never a silent default.
+    pub answer_breaths: bool,
+    /// Opt-in KEYS COMP directive: when true, the keyboard also comps — short mid-register guide-tone
+    /// stabs in the holes under the home arrivals — so it is a present voice, not one sparse answer an
+    /// episode. `false` (the default, set by `compile`) keeps the frozen keyboard realization; a source
+    /// built with an EXPRESSIVE lead (`Phrasing::Expressive`/`Ensemble`) sets it true, so the plain
+    /// control stays byte-identical to every historical render.
+    pub comp_keys: bool,
+    /// Opt-in BASS ANTICIPATION directive: when true, the foundation's walking approach leans toward
+    /// the harmonic DESTINATION — the dominant into a home arrival (V->I), the leading tone into a
+    /// drive, a diatonic step into a passing change — instead of a blind chromatic half-step into
+    /// whatever comes next. Same note count and register (a redistribution of the approach, not more
+    /// notes); the downbeat root anchor and the monophonic line are untouched. `false` (the default,
+    /// set by `compile`) keeps the archived approach, so the plain control stays byte-identical; a
+    /// source built with an EXPRESSIVE lead sets it true.
+    pub anticipate_bass: bool,
+    /// Opt-in DRUM TRANSLATION directive: when true, the phrase-end fill TRANSLATES the lead's rhythm —
+    /// the drummer plays the melody's own phrase-ending figure back, snares landing on the lead's
+    /// actual attacks across the closing half-bar instead of a generic rising run. Reads the LEAD only
+    /// (the keys-independent pulse the causal witness depends on is untouched), and falls back to the
+    /// archived run where the lead has gone silent into the boundary. `false` (the default, set by
+    /// `compile`) keeps the archived fill, so the plain control stays byte-identical; a source built
+    /// with an EXPRESSIVE lead sets it true.
+    pub translate_lead_rhythm: bool,
+    /// Opt-in SOURCE-GROUNDED ANSWER directive: when true, the drummer's breath answer is no longer a
+    /// fixed-slot ghost fired into any open bar (which answered nothing in particular), but a genuine
+    /// ANSWER to the lead's question — it quotes the lead's first-half gesture a half-bar later, voiced
+    /// by that gesture's contour, and realizes a real `ActionKind::Answer` that CREDITS the lead
+    /// statement's call (the existing Action ontology, so its initiating source is reconstructible).
+    /// `false` (the default, set by `compile`) keeps the accepted fixed-slot breath answer exactly, so
+    /// every prior render stays byte-identical; this is an experimental UPGRADE auditioned opt-in (the
+    /// `--source-answer` flag), never a silent default — it changes the audio, so the maintainer's ear
+    /// gates it before it could ever become the default.
+    pub source_answer: bool,
+    /// Opt-in INTRO BUILD directive: when true, the opening episode (placement 0, and only if it is an
+    /// `Establish` — the intro section) enters REDUCED and swells across its bars instead of at full
+    /// density. The rhythm section crescendos (bass + drum velocity ride a rising ramp) and the first
+    /// bars thin (kick + eighth hats, no backbeat, bass on root+fifth), so the band builds into the
+    /// first verse rather than slamming in at full blast under a thin lead. Keyed to episode 0 alone, so
+    /// the two interior verses (also `Establish`) are untouched. `false` (the default, set by `compile`)
+    /// leaves every bar at full density, so all non-intro sources stay byte-identical; it changes the
+    /// audio, so the maintainer's ear gates it — set only by the intro source builder, never a default.
+    pub intro_build: bool,
 }
 
 impl CompiledArgument {
@@ -995,6 +1042,27 @@ impl MusicalArgument {
             placements,
             argument: self.clone(),
             route,
+            // Off by default — a plain/expressive source renders exactly as before. A source built
+            // with `Phrasing::Ensemble` flips this on after compiling (like it sets `route`).
+            answer_breaths: false,
+            // Off by default — the plain control keeps its frozen, sparse keyboard. An EXPRESSIVE or
+            // ENSEMBLE source flips this on after compiling, so the keyboard comps under home arrivals.
+            comp_keys: false,
+            // Off by default — the plain control keeps its archived foundation (byte-identical). An
+            // EXPRESSIVE/ENSEMBLE source flips this on, so the bass anticipates the harmonic destination.
+            anticipate_bass: false,
+            // Off by default — the plain control keeps its archived fill (byte-identical). An
+            // EXPRESSIVE/ENSEMBLE source flips this on, so the drummer translates the lead's rhythm.
+            translate_lead_rhythm: false,
+            // Off by default — EVERY source (incl. Ensemble) keeps the accepted fixed-slot breath
+            // answer byte-identical. This is an experimental upgrade flipped on only by the explicit
+            // `--source-answer` audition, never by a source builder — it changes the audio, so it is
+            // never a silent default.
+            source_answer: false,
+            // Off by default — every bar enters at full density, so all non-intro sources stay
+            // byte-identical. Flipped on only by the intro source builder, so the opening episode
+            // builds instead of entering full-blast; it changes the audio, so the ear gates it.
+            intro_build: false,
         })
     }
 
