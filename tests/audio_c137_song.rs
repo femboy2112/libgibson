@@ -2394,6 +2394,39 @@ fn the_intro_builds_instead_of_entering_full_blast() {
         !backbeat(s, 0.0, 4.0),
         "the intro's first bar must lay the backbeat out (kick + hats only)"
     );
+    // NOT a uniform fader: the SKELETON (kick) holds a steady pocket from the top while the TEXTURE
+    // (hats) washes in — so the opening-bar kick is a FAR larger fraction of its hand-off level than
+    // the opening hats are of theirs. This decoupling is what reads as a band leaning in, not a knob.
+    let kick_mean = |lo: f64, hi: f64| {
+        let v: Vec<f32> = s
+            .drums
+            .iter()
+            .filter(|d| {
+                matches!(d.voice, DrumVoice::Kick) && d.start_beat >= lo && d.start_beat < hi
+            })
+            .map(|d| d.velocity)
+            .collect();
+        v.iter().sum::<f32>() / v.len().max(1) as f32
+    };
+    let hat_mean = |lo: f64, hi: f64| {
+        let v: Vec<f32> = s
+            .drums
+            .iter()
+            .filter(|d| {
+                matches!(d.voice, DrumVoice::ClosedHat | DrumVoice::OpenHat)
+                    && d.start_beat >= lo
+                    && d.start_beat < hi
+            })
+            .map(|d| d.velocity)
+            .collect();
+        v.iter().sum::<f32>() / v.len().max(1) as f32
+    };
+    let kick_ratio = kick_mean(0.0, 4.0) / kick_mean(12.0, 16.0);
+    let hat_ratio = hat_mean(0.0, 4.0) / hat_mean(12.0, 16.0);
+    assert!(
+        kick_ratio > hat_ratio + 0.2,
+        "the skeleton must hold while the texture swells: kick bar0/bar3 {kick_ratio:.2} should exceed hats {hat_ratio:.2} (a uniform fader would make them equal)"
+    );
     // THE GATE: the no-intro song does NOT build — its opening bar keeps its backbeat, proving the
     // build is keyed to the intro section alone and never leaks into an ordinary opening.
     let no_intro = kernel::perform_song(

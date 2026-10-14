@@ -1100,11 +1100,18 @@ fn intro_build_bar(
     .then_some(bar)
 }
 
-/// The rhythm-section velocity factor for intro bar `i`: softest at the top, nearly full by the bar
-/// that hands off to the first verse — a reasoned crescendo, not a flat entry.
-fn intro_build_gain(i: usize) -> f32 {
-    const RAMP: [f32; 4] = [0.50, 0.68, 0.84, 0.96];
-    RAMP[i.min(RAMP.len() - 1)]
+/// The intro build's velocity, by intro bar `i` and whether the stroke is part of the SKELETON (the
+/// downbeat kick, the backbeat, the bass root) or the MOTION/TEXTURE around it (hats, the bass walk,
+/// comps, the hand-off fill). The skeleton barely dips — the pocket is solid from the top — while the
+/// texture washes in on a back-loaded, ACCELERATING swell (steps widen toward the verse). Decoupling
+/// the two and curving the swell is the point: the energy rises because the arrangement fills and the
+/// cymbals open, NOT because one fader is turned up evenly — so it reads as a band leaning in, not a
+/// knob slowly turning.
+fn intro_build_gain(i: usize, skeleton: bool) -> f32 {
+    const SKELETON: [f32; 4] = [0.80, 0.90, 0.96, 1.0];
+    const SWELL: [f32; 4] = [0.30, 0.46, 0.72, 1.0];
+    let curve = if skeleton { SKELETON } else { SWELL };
+    curve[i.min(curve.len() - 1)]
 }
 
 /// Whether the lead is genuinely SILENT at `beat` — no lead note sounding across it (within a small
@@ -1605,9 +1612,9 @@ pub fn perform_song(
         let drive = harmonic_drive(&ctx.chord, world.tonic_pc);
         let energy = drive_energy(drive);
         // The intro build: in the opening episode the foundation enters reduced (early bars lay the
-        // pocket on root + fifth only) and its velocity rides a rising ramp into the first verse.
+        // pocket on root + fifth only) and swells into the first verse — the downbeat root holds the
+        // pocket (skeleton), the walk motion washes in on the swell (applied per note, below).
         let intro_i = intro_build_bar(argument, bar, bars_per_episode);
-        let ib = intro_i.map_or(1.0, intro_build_gain);
         let tones = ctx.chord.pitch_classes();
         let root = register(ctx.chord.root_pc, 36);
         let fifth = register(tones[2.min(tones.len().saturating_sub(1))], 36);
@@ -1661,6 +1668,9 @@ pub fn perform_song(
             // (the downbeat root at `offset==0` stays exactly on `at`, the required anchor), and the
             // velocity rides the harmonic energy and the phrase swell. The bass orbits the SAME
             // pocket as the drums and the lead, so coincident attacks lock — one solar system.
+            // The downbeat root is the SKELETON (holds the pocket from the top); the walk notes are the
+            // MOTION that washes in on the swell. Both resolve to 1.0 outside the intro.
+            let ib = intro_i.map_or(1.0, |i| intro_build_gain(i, offset == 0.0));
             let prov = provenance(
                 &perf,
                 at + offset,
@@ -1754,12 +1764,17 @@ pub fn perform_song(
         // The whole kit's dynamics ride the harmonic energy AND the within-phrase swell; the `lay`
         // leans a stroke off the grid into the pocket (0 = dead-on, the time reference).
         let swell = groove_swell(bar, bars_per_episode);
-        // The intro build: the opening episode's kit enters reduced and swells in. `ib` crescendos the
-        // whole kit; the early bars also THIN (bar 0 = kick + eighth hats, bar 1 adds the backbeat,
-        // both without comps) so the groove assembles over the intro rather than arriving whole.
+        // The intro build: the opening episode's kit enters reduced and swells in. The SKELETON (the
+        // downbeat/backbeat) holds its pocket from the top; the TEXTURE (hats, comps, the fill) washes
+        // in on the back-loaded swell — so it builds by arrangement, not a uniform fader. The early
+        // bars also THIN (bar 0 = kick + eighth hats, bar 1 adds the backbeat, both without comps) so
+        // the groove assembles over the intro rather than arriving whole.
         let intro_i = intro_build_bar(argument, bar, bars_per_episode);
-        let ib = intro_i.map_or(1.0, intro_build_gain);
         let mut push = |voice: DrumVoice, grid: f64, vel: f32, label: &'static str, lay: f64| {
+            // Kick and the backbeat snare are the skeleton; hats, comps and the fill are the texture.
+            let skeleton = matches!(voice, DrumVoice::Kick)
+                || (matches!(voice, DrumVoice::Snare) && label == "pulse");
+            let ib = intro_i.map_or(1.0, |i| intro_build_gain(i, skeleton));
             score.drums.push(DrumHit {
                 start_beat: grid + lay,
                 voice,
