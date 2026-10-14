@@ -75,8 +75,32 @@ Two-layer design: CI-fast Rust calibration (no render) + out-of-band acoustic sc
 
 ---
 
-## R1 — style-neutral lawful core (opt-in PopLoopDomain) — [PROPOSED]
-Additive, opt-in; C137 domain byte-identical; no existing validator weakened.
+## R1 — style-neutral lawful core (opt-in SourceDomain) — [OBSERVED] DONE
+The "domain" was not a type — it was one predicate (`longform_domain`, `kernel.rs:911`) with the
+tonic law baked as literal tuples at the tail. And the C137 longform harmonic *witness* is vacuous
+(`harmonic_violations` only fires on steps with a `completion`, which C137 songs lack) — so today
+the real longform harmonic gate is the route pins alone.
+
+**Seam (additive, opt-in):**
+- `argument::SourceDomain { C137, SmoothPop(PopSourceGrammar) }` + `PopSourceGrammar { loop_bars }`,
+  new `pub domain` field on `CompiledArgument`, defaulted to `C137` in `compile()` (the one literal).
+- Extracted the route-pin tail **verbatim** into `kernel::c137_route_law`; added `pop_route_law`
+  (the route is a whole number of exact loop repetitions — groove-cycle closure — not a literal-tonic
+  arrival). `longform_domain` now dispatches `match argument.domain`. Everything else (shape,
+  validate, relations, carriers, lattice, source-transform equality) is shared and untouched.
+- Closure distinction made executable: C137 = tonic/harmonic closure; SmoothPop = groove-cycle
+  closure. The Aeolian-diatonic pop loop (Am9–Fmaj7–Cmaj7–G6, i–VI–III–VII) keeps `theme_family`'s
+  scale pool valid, so no melody-generator rewrite.
+
+**Verified:** route-law unit tests (`route_law`) prove each law admits its own kind and REJECTS the
+other (the pop loop fails the C137 tonic pins; a drifting/mis-sized loop fails the pop law). C137
+**byte-identical** — the lock verifier reproduces all 51 artifacts from the R1 binary. lib 874,
+audio_c137_song 58, canonical 5, lock 7, source_authority + conversation all pass. fmt + clippy -D clean.
+
+**Deferred (noted, not hidden):** a stronger independent *sounded-note* pop-harmony witness (read the
+Keys/Pad/Bass pitch classes per bar, not the route labels) — C137's own longform witness is vacuous,
+so this would raise the bar for pop above what C137 currently has. The shared gates
+(source-transform equality + `source_harmony::admits`) + `pop_route_law` are the first-cut gate.
 
 ## R2 — band-led pop groove (lead-muted, ~104 BPM) — [PROPOSED]
 First 4–8 bars, no foreground lead; source-justified bass cell; `GrooveLaw`; render + stems + mutation proofs.

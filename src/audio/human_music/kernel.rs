@@ -1030,17 +1030,57 @@ fn longform_domain(argument: &CompiledArgument) -> Result<(), KernelError> {
             ));
         }
     }
-    // The verse travels pre-dominant → dominant → tonic and hangs open on its own cadence; the
-    // first hook lands home on the tonic at bar 7; and the SONG lands home on the tonic at its final
-    // bar (the Resolved ending's earned home-coming). Region-relative, reconstructed from the route.
-    if argument.route[2] != (7, Quality::Dom7)
-        || argument.route[3] != (0, Quality::Min)
-        || argument.route[7] != (0, Quality::Min)
-        || argument.route[argument.route.len() - 1] != (0, Quality::Min)
+    // The harmonic closure law is the ONE place C137 and smooth-pop legitimately differ, so it is
+    // the only part of long-form admission that is domain-specific. Everything above (shape,
+    // validate, relation vocabulary, carriers, lattice, source-transform equality) is shared and
+    // unchanged. C137 demands a literal-tonic arrival; a pop loop closes as a repeating groove-cycle.
+    match &argument.domain {
+        super::argument::SourceDomain::C137 => c137_route_law(&argument.route),
+        super::argument::SourceDomain::SmoothPop(grammar) => {
+            pop_route_law(&argument.route, grammar)
+        }
+    }
+}
+
+/// The C137 arc's harmonic closure law (lifted verbatim from the original long-form domain): the
+/// verse travels pre-dominant → dominant → tonic and hangs open on its own cadence; the first hook
+/// lands home on the tonic at bar 7; and the SONG lands home on the tonic at its final bar (the
+/// Resolved ending's earned home-coming). Region-relative, reconstructed from the route.
+fn c137_route_law(route: &[(i32, Quality)]) -> Result<(), KernelError> {
+    if route[2] != (7, Quality::Dom7)
+        || route[3] != (0, Quality::Min)
+        || route[7] != (0, Quality::Min)
+        || route[route.len() - 1] != (0, Quality::Min)
     {
         return Err(KernelError::Source(
             "route must travel to its dominant and land the hook home",
         ));
+    }
+    Ok(())
+}
+
+/// The smooth-pop loop's harmonic closure law: the route is a functional cycle of `grammar.loop_bars`
+/// chords, repeated to fill the form, that closes as a GROOVE-CYCLE — it returns to its own first
+/// chord every `loop_bars` — instead of arriving on a literal tonic. This is the executable
+/// distinction between groove-cycle closure and the tonic/harmonic closure the C137 law demands: a
+/// route that is not a whole number of exact loop repetitions (a progression that silently drifts)
+/// is refused. The per-chord in-vocabulary check stays upstream in `source_harmony`.
+fn pop_route_law(
+    route: &[(i32, Quality)],
+    grammar: &super::argument::PopSourceGrammar,
+) -> Result<(), KernelError> {
+    let k = grammar.loop_bars;
+    if k == 0 || route.is_empty() || route.len() % k != 0 {
+        return Err(KernelError::Source(
+            "smooth-pop route length must be a whole number of loop cycles",
+        ));
+    }
+    for (i, chord) in route.iter().enumerate() {
+        if *chord != route[i % k] {
+            return Err(KernelError::Source(
+                "smooth-pop route must repeat its loop cycle exactly (groove-cycle closure)",
+            ));
+        }
     }
     Ok(())
 }
@@ -2499,6 +2539,68 @@ mod tests {
             harmonic_drive(&a_dom7, tonic),
             HarmonicDrive::Driving,
             "a dominant seventh drives toward its target, wherever its root sits"
+        );
+    }
+
+    /// R1 — the harmonic closure law is domain-specific. The C137 arc law demands a literal-tonic
+    /// arrival on its pinned bars; the smooth-pop law demands a repeating groove-cycle instead. Each
+    /// admits its own kind and rejects the other, so opting a source into the pop domain can never
+    /// silently relax the C137 tonic guard.
+    #[test]
+    fn the_c137_and_pop_route_laws_are_distinct_closure_conditions() {
+        use crate::audio::human_music::argument::PopSourceGrammar;
+        // A canonical C137 16-bar route: pre-dominant → dominant → tonic, hook home at bar 7, home end.
+        let mut c137 = vec![(0, Quality::Min); 16];
+        c137[2] = (7, Quality::Dom7);
+        assert!(
+            c137_route_law(&c137).is_ok(),
+            "the canonical C137 route is admitted by its own law"
+        );
+
+        // An Aeolian-diatonic smooth-pop loop Am9–Fmaj7–Cmaj7–G6 (i–VI–III–VII), two 4-bar cycles.
+        // Region-relative offsets above A: F=+8, C=+3, G=+10. No (7,Dom7) at bar 2; never (0,Min) at 3.
+        let loop4 = [
+            (0, Quality::Min9),
+            (8, Quality::Maj7),
+            (3, Quality::Maj7),
+            (10, Quality::Maj6),
+        ];
+        let pop: Vec<(i32, Quality)> = (0..8).map(|i| loop4[i % 4]).collect();
+        let grammar = PopSourceGrammar { loop_bars: 4 };
+
+        assert!(
+            pop_route_law(&pop, &grammar).is_ok(),
+            "a periodic pop loop closes its groove-cycle"
+        );
+        assert!(
+            c137_route_law(&pop).is_err(),
+            "the pop loop never lands the C137 tonic pins — the C137 guard is not relaxed"
+        );
+    }
+
+    /// R1 — the pop law is a real, falsifiable gate: a route that silently DRIFTS off its declared
+    /// loop (a fabricated progression) is refused, and a length that is not a whole number of cycles
+    /// is refused.
+    #[test]
+    fn the_pop_route_law_refuses_a_drifting_or_mis_sized_loop() {
+        use crate::audio::human_music::argument::PopSourceGrammar;
+        let grammar = PopSourceGrammar { loop_bars: 4 };
+        let loop4 = [
+            (0, Quality::Min9),
+            (8, Quality::Maj7),
+            (3, Quality::Maj7),
+            (10, Quality::Maj6),
+        ];
+        let mut drift: Vec<(i32, Quality)> = (0..8).map(|i| loop4[i % 4]).collect();
+        drift[5] = (5, Quality::Maj7); // bar 5 must equal bar 1 (the F); break the cycle
+        assert!(
+            pop_route_law(&drift, &grammar).is_err(),
+            "a drifting loop fails groove-cycle closure"
+        );
+        let short: Vec<(i32, Quality)> = (0..6).map(|i| loop4[i % 4]).collect(); // 6 % 4 != 0
+        assert!(
+            pop_route_law(&short, &grammar).is_err(),
+            "a non-whole-cycle length is refused"
         );
     }
 

@@ -377,6 +377,31 @@ fn backing_energy_for(relation: ArgumentRelation) -> f32 {
     }
 }
 
+/// Which lawful source grammar a compiled argument belongs to. It selects the harmonic *closure
+/// law* the kernel's long-form domain applies — the one place C137 and smooth-pop legitimately
+/// differ. `C137` is the default and leaves every historical render byte-identical.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SourceDomain {
+    /// The accepted C137 arc: the route must travel pre-dominant → dominant → tonic and land the
+    /// hook (and the song) home on the literal tonic. Harmonic closure *is* tonic arrival.
+    C137,
+    /// An opt-in smooth-pop loop: a repeating functional cycle whose GROOVE-CYCLE closure (a return
+    /// to the loop's own first chord) is distinct from a literal-tonic arrival, so a lawful pop
+    /// progression that never cadences onto the bare tonic each pass is admitted.
+    SmoothPop(PopSourceGrammar),
+}
+
+/// The admissibility contract for a smooth-pop source's harmonic route: a functional loop of
+/// `loop_bars` chords, repeated to fill the form, that closes as a *cycle* rather than by arriving
+/// on a literal tonic. Naming the loop period makes groove-cycle closure an executable, falsifiable
+/// law (a route that silently drifts off its cycle is refused) instead of an unchecked label.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PopSourceGrammar {
+    /// The number of bars in one harmonic cycle. The route must be exactly this loop repeated:
+    /// `route[i] == route[i % loop_bars]` for every bar.
+    pub loop_bars: usize,
+}
+
 /// A wrapper instead of additional fields in the established public `SongMap` structure.
 #[derive(Debug, Clone)]
 pub struct CompiledArgument {
@@ -436,6 +461,12 @@ pub struct CompiledArgument {
     /// leaves every bar at full density, so all non-intro sources stay byte-identical; it changes the
     /// audio, so the maintainer's ear gates it — set only by the intro source builder, never a default.
     pub intro_build: bool,
+    /// Which lawful source grammar this argument belongs to — it selects the harmonic closure law
+    /// the long-form domain applies. `SourceDomain::C137` (the default, set by `compile`) keeps
+    /// every historical render byte-identical; a smooth-pop source builder flips it to
+    /// `SourceDomain::SmoothPop(..)` after compiling (like it sets `route`), opting that one source
+    /// into the pop closure law without touching any C137 source.
+    pub domain: SourceDomain,
 }
 
 impl CompiledArgument {
@@ -1063,6 +1094,11 @@ impl MusicalArgument {
             // byte-identical. Flipped on only by the intro source builder, so the opening episode
             // builds instead of entering full-blast; it changes the audio, so the ear gates it.
             intro_build: false,
+            // C137 by default — the accepted arc closure law. A smooth-pop source builder flips
+            // this to `SourceDomain::SmoothPop(..)` after compiling, so every C137 source (plain,
+            // expressive, ensemble, narrative) keeps the literal-tonic route law and stays
+            // byte-identical.
+            domain: SourceDomain::C137,
         })
     }
 
