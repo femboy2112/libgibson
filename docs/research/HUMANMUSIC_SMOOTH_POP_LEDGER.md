@@ -298,7 +298,14 @@ pocket-locked and still pushing the "and of 4" with the bass. Circle: E-G-A-B �
 
 **[OBSERVED]:** Circle warm fp `9cf08748acb807ab` (was `700458dc` for the stab version), keys=32,
 byte-distinct from v2. `audio_smooth_pop` 5/5; C137 **byte-identical** (lock 51/51); fmt + clippy -D
-clean. Delivered `pop-warm-circle-v3-line.mp3` for the A/B against v2 (stabs). [EAR] PENDING.
+clean. Delivered `pop-warm-circle-v3-line.mp3` for the A/B against v2 (stabs).
+
+**[EAR] verdict:** *"the band could use some tightening, and the pop vibe/smoothness could use some
+refinement, but this is definitely a step in the right direction :D"* — the LINE-LEVEL reading is
+CONFIRMED the right direction (the intra-note DSP fork is not needed yet). Open refinements the ear
+named, for the next cuts: (1) band **tightening**; (2) pop **vibe/smoothness** refinement; plus the
+standing work — roll the flowing-line treatment into the bass + both flavors, and the forward-motion
+SONG ARC (tiers A/B). HEAD `4560ead`, CI run 38639015191 SUCCESS, all pushed, tree clean.
 
 **Honest engine limit surfaced to the maintainer:** expression is at the note/line level (placement,
 length, connection, dynamics). There is **no continuous intra-note expression** — no pitch
