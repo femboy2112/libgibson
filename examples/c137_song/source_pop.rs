@@ -16,6 +16,10 @@
 //! - The keys are re-voiced to the **guide tones** (3rd/7th + a 9th colour) of EACH flavor's chords,
 //!   because the carried keys comp does not follow the route — it must be authored to match it or it
 //!   clashes, and no gate but the ear catches a clash.
+//! - Keys and bass LOCK and LIFT: both are laid into the shared pocket (so the melodic voice lays
+//!   back WITH the rhythm section instead of floating ahead of it, dead on the grid) and PUSH the
+//!   "and of 4" together every bar — the band coalescing into one collective gesture while each voice
+//!   keeps its own expressive line. The comp is driving (four off-beat stabs a bar) for pop energy.
 use gibson::audio::human_music::{
     action::Agent,
     argument::{
@@ -27,6 +31,7 @@ use gibson::audio::human_music::{
     material::MaterialEvent,
     plan::ArrangementRole,
     semantic::{EventKind, SemanticEvent, SemanticState, SemanticTrace, Tone},
+    theme_family::pocket_offset,
     theory::{PitchBasis, Quality},
     SongMap,
 };
@@ -71,51 +76,41 @@ impl PopFlavor {
         }
     }
 
-    /// The sparse, syncopated keys comp over one 16-beat episode — the GUIDE TONES (3rd + 7th) of each
-    /// bar's chord with a 9th colour, voiced as a flowing monophonic line in conscious negative space.
-    /// Tonic-relative semitone steps (`PitchBasis::Semitones`), tuned to THIS flavor's loop so the
-    /// carried keys and the sounded harmony agree. `(onset, semitone_above_A, dur, velocity)`.
+    /// A driving, syncopated guide-tone comp over one 16-beat episode. Two things make it lock and
+    /// lift instead of float: (1) every onset is laid into the shared [`pocket_offset`], so the keys
+    /// lay back WITH the bass and drums rather than sitting dead on the grid ahead of the pocket; (2)
+    /// the "and of 4" push (offset 3.5, the loudest stab) lands TOGETHER with the bass's octave push —
+    /// the band coalescing into one gesture while each voice keeps its own line. Four off-beat stabs a
+    /// bar (the "a" of 1, the "and" of 2 and 3, the push); guide tones (3rd/7th) with a 9th colour,
+    /// voiced to THIS flavor's loop so the carried keys and the sounded harmony agree.
     fn keys_comp(self) -> Vec<MaterialEvent> {
-        let rows: &[(f64, i32, f64, f32)] = match self {
-            // Am9: C(♭3) G(♭7) B(9) · Dm9: F(♭3) C(♭7) E(9) · G9: F(♭7) B(3) A(9) · Cmaj9: E(3) B(7) D(9)
-            PopFlavor::Circle => &[
-                (0.5, 3, 1.3, 0.56),
-                (2.0, 10, 1.0, 0.50),
-                (3.25, 14, 0.6, 0.44),
-                (4.5, 8, 1.3, 0.54),
-                (6.0, 3, 1.0, 0.48),
-                (7.25, 7, 0.6, 0.44),
-                (8.5, 8, 1.3, 0.54),
-                (10.0, 2, 1.0, 0.50),
-                (11.25, 12, 0.6, 0.44),
-                (12.5, 7, 1.3, 0.54),
-                (14.0, 14, 0.9, 0.48),
-                (15.0, 5, 0.75, 0.44),
-            ],
-            // Am9: C(♭3) G(♭7) B(9) · Fmaj9: A(3) E(7) G(9) · Dm9: F(♭3) C(♭7) E(9) · E7: G♯(3) D(♭7) F(♭9)
-            PopFlavor::Lift => &[
-                (0.5, 3, 1.3, 0.56),
-                (2.0, 10, 1.0, 0.50),
-                (3.25, 14, 0.6, 0.44),
-                (4.5, 12, 1.3, 0.54),
-                (6.0, 7, 1.0, 0.48),
-                (7.25, 10, 0.6, 0.44),
-                (8.5, 8, 1.3, 0.54),
-                (10.0, 3, 1.0, 0.50),
-                (11.25, 7, 0.6, 0.44),
-                (12.5, 11, 1.3, 0.56),
-                (14.0, 5, 0.9, 0.48),
-                (15.0, 8, 0.75, 0.44),
-            ],
+        // Per-bar onset / dur / velocity. The push (offset 3.5) is the loudest — the collective hit.
+        const PATTERN: [(f64, f64, f32); 4] = [
+            (0.75, 0.45, 0.52),
+            (1.5, 0.45, 0.56),
+            (2.5, 0.45, 0.50),
+            (3.5, 0.40, 0.62),
+        ];
+        // Guide tones per stab (semitones above A), 16 = 4 bars × 4 stabs.
+        let steps: [i32; 16] = match self {
+            // Am9: C G E · Dm9: F C A · G9: F B D · Cmaj9: E B G (the push repeats the bar's anchor tone).
+            PopFlavor::Circle => [3, 10, 7, 3, 8, 3, 12, 8, 8, 2, 5, 8, 7, 2, 10, 7],
+            // Am9: C G E · Fmaj9: A E C · Dm9: F C A · E7: G♯ D B (the push drives the leading tone on E7).
+            PopFlavor::Lift => [3, 10, 7, 3, 12, 7, 3, 12, 8, 3, 12, 8, 11, 5, 2, 11],
         };
-        rows.iter()
-            .map(|&(onset, step, dur, accent)| MaterialEvent {
-                onset,
-                dur,
-                accent,
-                step: Some(step),
-            })
-            .collect()
+        let mut events = Vec::with_capacity(16);
+        for bar in 0..4 {
+            for (i, &(off, dur, accent)) in PATTERN.iter().enumerate() {
+                let raw = bar as f64 * 4.0 + off;
+                events.push(MaterialEvent {
+                    onset: raw + pocket_offset(raw), // lock into the shared pocket the band orbits
+                    dur,
+                    accent,
+                    step: Some(steps[bar * 4 + i]),
+                });
+            }
+        }
+        events
     }
 
     /// A short honest label of the progression for the manifest header. (Used by the example binary;
@@ -151,44 +146,43 @@ impl PopFlavor {
 /// `(offset_in_bar_beats, degree, dur_beats, velocity)`.
 fn bass_cells() -> Vec<Vec<(f64, BassDegree, f32, f32)>> {
     vec![
-        // Bar 0 — land & breathe: the root rings, a soft octave pop, a laid-back fifth, an off-beat
-        // root, a colour third into the turn. Five attacks (the cell's signature statement).
-        vec![
-            (0.0, BassDegree::Root, 0.6, 0.78),
-            (0.75, BassDegree::Octave, 0.22, 0.42),
-            (1.75, BassDegree::Fifth, 0.6, 0.56),
-            (2.5, BassDegree::Root, 0.6, 0.60),
-            (3.25, BassDegree::Third, 0.5, 0.46),
-        ],
-        // Bar 1 — walking answer: busier, stepping through root/fifth/third with ghost notes, an
-        // octave push on the "and" of 4 into the next bar.
-        vec![
-            (0.0, BassDegree::Root, 0.45, 0.74),
-            (0.5, BassDegree::Fifth, 0.4, 0.44),
-            (1.0, BassDegree::Third, 0.5, 0.58),
-            (2.0, BassDegree::Fifth, 0.5, 0.60),
-            (2.75, BassDegree::Root, 0.6, 0.48),
-            (3.5, BassDegree::Octave, 0.4, 0.56),
-        ],
-        // Bar 2 — driving: the firmest bar (and the flavor's loud chord lands here), octave pop and a
-        // double fifth around a ghost root, a third push into the turn.
+        // Bar 0 — land & bounce: the root anchors, a soft octave bounce, a laid-back fifth, an
+        // off-beat root, then the collective PUSH on the "and" of 4. Five attacks (the signature).
         vec![
             (0.0, BassDegree::Root, 0.6, 0.80),
             (0.75, BassDegree::Octave, 0.22, 0.46),
-            (1.5, BassDegree::Fifth, 0.6, 0.64),
-            (2.25, BassDegree::Root, 0.4, 0.48),
-            (2.75, BassDegree::Fifth, 0.6, 0.52),
-            (3.5, BassDegree::Third, 0.45, 0.56),
+            (1.5, BassDegree::Fifth, 0.5, 0.56),
+            (2.5, BassDegree::Root, 0.5, 0.60),
+            (3.5, BassDegree::Octave, 0.4, 0.62),
         ],
-        // Bar 3 — turnaround: opens wide (root + fifth held), then a quick root/third/fifth climb and
-        // a strong octave push on the "and" of 4 that pulls the ear back to the top of the loop.
+        // Bar 1 — walking answer: stepping fifth/octave/fifth with a ghost root, same "and of 4" push.
         vec![
-            (0.0, BassDegree::Root, 0.9, 0.74),
-            (1.0, BassDegree::Fifth, 0.9, 0.56),
-            (2.0, BassDegree::Root, 0.4, 0.58),
-            (2.5, BassDegree::Third, 0.4, 0.44),
-            (3.0, BassDegree::Fifth, 0.4, 0.60),
-            (3.5, BassDegree::Octave, 0.45, 0.62),
+            (0.0, BassDegree::Root, 0.45, 0.76),
+            (0.5, BassDegree::Fifth, 0.3, 0.44),
+            (1.0, BassDegree::Octave, 0.4, 0.50),
+            (2.0, BassDegree::Fifth, 0.5, 0.58),
+            (2.75, BassDegree::Root, 0.5, 0.48),
+            (3.5, BassDegree::Octave, 0.4, 0.60),
+        ],
+        // Bar 2 — driving: the bounciest bar (and the flavor's loud chord lands here), two octave
+        // bounces around a ghost root and fifth, pushing hardest into the turn.
+        vec![
+            (0.0, BassDegree::Root, 0.5, 0.82),
+            (0.75, BassDegree::Octave, 0.22, 0.48),
+            (1.5, BassDegree::Fifth, 0.4, 0.62),
+            (2.0, BassDegree::Octave, 0.3, 0.50),
+            (2.75, BassDegree::Fifth, 0.5, 0.54),
+            (3.5, BassDegree::Octave, 0.4, 0.64),
+        ],
+        // Bar 3 — turnaround: opens with root + fifth, a mid-bar octave bounce, then the STRONGEST
+        // push on the "and" of 4 (the loudest in the loop) that pulls the ear back to the top.
+        vec![
+            (0.0, BassDegree::Root, 0.7, 0.76),
+            (1.0, BassDegree::Fifth, 0.5, 0.56),
+            (1.75, BassDegree::Octave, 0.4, 0.52),
+            (2.5, BassDegree::Root, 0.4, 0.56),
+            (3.0, BassDegree::Fifth, 0.3, 0.58),
+            (3.5, BassDegree::Octave, 0.45, 0.66),
         ],
     ]
 }

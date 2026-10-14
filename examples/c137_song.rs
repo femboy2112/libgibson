@@ -221,6 +221,12 @@ fn pop_world(base: &MusicWorld) -> MusicWorld {
     w.tonic_pc = base.tonic_pc;
     w.mode = base.mode;
     w.tempo_bpm = base.tempo_bpm;
+    // VAPOR95's tempo echo is a dotted-eighth/quarter feedback delay on the keys — it smeared the comp
+    // off the beat (the "out of sync" the ear flagged). Drop it: the groove wants a tight pocket, not
+    // cross-rhythmic repeats. Keep the memory-bus chorus (width), but pull the room back from a wash
+    // (0.28) to a more present ambience (0.20) so the pocket reads as higher-energy, not distant.
+    w.production.echo = None;
+    w.production.space.mix = 0.20;
     w
 }
 

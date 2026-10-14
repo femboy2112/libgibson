@@ -246,6 +246,42 @@ also **no drop/break** possible for bass/drums: `validate_song` rejects off-stag
 Recommended: A + B together for a convincing verse→build→chorus. Build after the timbre verdict; the arc
 is composition, so it renders on whichever palette the ear blesses.
 
+## R2.3 — pocket lock + energy + collective push (warm accepted) — [OBSERVED]; [EAR] PENDING
+
+**[EAR] verdict (round 3):** *"warm actually sounds better, but the keys/lead is offbeat/out of
+pocket/out of sync. and it needs more of that high energy smooth pop feel… the instruments need to
+stay semantically expressive while coalescing into more collective structures."* Warm palette
+ACCEPTED as the direction. Three issues: keys timing, energy, collective structure.
+
+**Root cause of "out of sync" (OBSERVED):** `pocket_offset` (the shared laid-back lean every voice
+orbits) is applied to the **bass** (`kernel.rs:1814`) and **drums** (`:1919`), and to the auto keys
+comp (`:1585`) — but that auto comp only runs under Consequent/Return. The pop keys are **carriers**,
+placed by `argument_transport.rs:362` at `placement.start_beat + event.onset` with **no pocket lean**.
+So the rhythm section laid back and the keys sat dead on the grid, ahead of the pocket. (The warm
+palette's dotted-eighth tempo echo was a second smear.)
+
+**The fix (pop-only, C137 byte-identical):**
+- **Pocket lock:** `keys_comp` now lays every onset into `theme_family::pocket_offset` (imported), so
+  the carried keys lay back WITH the bass/drums instead of floating. (Applied in the source, not the
+  shared `argument_transport` path, so no C137 carrier is touched.)
+- **Collective push:** every bar the keys' loudest stab and the bass's octave pop both land on the
+  "and of 4" (offset 3.5 → pocketed 3.534, same microtime) — the band coalescing into one gesture
+  while each voice keeps its own line. Bass cells rewritten bouncier, each ending on that push.
+- **Energy:** the comp is now driving — four off-beat stabs a bar (the "a" of 1, the "and" of 2/3, the
+  push), guide tones (3rd/7th + 9th), keys count 24 → 32.
+- **Palette tame:** `pop_world` drops the VAPOR95 tempo echo (`echo = None` — the dotted-eighth
+  feedback delay that smeared the keys) and pulls the room back (`space.mix` 0.28 → 0.20) for a
+  tighter, more present, higher-energy pocket. Chorus kept (width).
+
+**[OBSERVED] renders (seed 2112, `--tempo=104`, warm):** Circle fp `700458dcbeda5621`, Lift fp
+`94e320bade89b4a4`; both lead=0, keys=32, bass=46, drums=166; WAVs byte-distinct. `audio_smooth_pop`
+5/5; C137 **byte-identical** (lock 51/51). fmt + clippy -D clean. Delivered 2 loudness-matched MP3s
+(`pop-warm-circle-v2`, `pop-warm-lift-v2`). [EAR] PENDING.
+
+**Still open (next, bigger):** the forward-motion SONG ARC (verse→build→chorus, A then B tiers above)
+— this cut locked the pocket and made the band coalesce within the 8-bar loop first. Pad still silent
+(a fullness lever); drums still can't lift by section without the pop-gated kernel wire (tier B).
+
 ---
 
 ## STOP conditions (plan §8)
