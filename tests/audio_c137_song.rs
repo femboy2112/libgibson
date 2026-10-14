@@ -496,6 +496,76 @@ fn every_referenced_interaction_resolves_to_a_row() {
     }
 }
 
+/// Johnny Five R1 — the keys' answer must tell the truth about its knowledge channel.
+///
+/// The base keys answer QUOTES the lead's authored cadence tail, which has not sounded when the
+/// answer begins (negative latency): a rehearsed anticipation of the written phrase, not a reaction
+/// to heard notes. The old receipt stamped `overlap: false` on that negative latency — a lie the
+/// diagnostics already contradicted (they count it as an overlapping response). This pins the
+/// repair: every SOUNDING keys response's `overlap` equals the sign of its latency, and its
+/// `knowledge()` channel agrees — an overlapping answer is `KnownAuthoredFuture`, a post-hoc one
+/// (the earned Return / memory-law discharge, which quote a fully-sounded PAST episode) is
+/// `HeardActual`. Sound-preserving by construction: `overlap`/`latency` live only in the receipt
+/// and diagnostics, never in the Score, so the PCM is untouched; only the receipt stops lying.
+#[test]
+fn the_keys_answer_declares_its_knowledge_channel_truthfully() {
+    use gibson::audio::human_music::interaction::Knowledge;
+    let mut saw_authored_future = false;
+    let mut saw_heard_actual = false;
+    for (label, arg) in [
+        ("slice", source::source(2112)),
+        ("song", source_song::source_song(2112)),
+    ] {
+        let song = kernel::perform_song(&arg, &world()).unwrap();
+        let perf = &song.composition().perf;
+        for row in &perf.interactions {
+            let Some(r) = &row.response else { continue };
+            if r.action.is_none() {
+                continue; // a deliberate silence sounds nothing; its latency is bookkeeping
+            }
+            // The receipt can no longer deny its own overlap (the J3 lie).
+            assert_eq!(
+                r.overlap,
+                r.latency < 0.0,
+                "[{label}] {:?}: overlap={} contradicts latency={:.4}",
+                row.id,
+                r.overlap,
+                r.latency
+            );
+            // ...and the declared knowledge channel is exactly that overlap truth.
+            match r.knowledge() {
+                Knowledge::KnownAuthoredFuture => {
+                    assert!(
+                        r.overlap,
+                        "[{label}] {:?}: an anticipatory answer must record overlap",
+                        row.id
+                    );
+                    saw_authored_future = true;
+                }
+                Knowledge::HeardActual => {
+                    assert!(
+                        !r.overlap,
+                        "[{label}] {:?}: a heard answer must not record overlap",
+                        row.id
+                    );
+                    saw_heard_actual = true;
+                }
+            }
+        }
+    }
+    // The Full song exercises BOTH channels: the base keys answers anticipate the authored cadence
+    // tail (KnownAuthoredFuture), while the earned Return / memory-law answers quote a fully-sounded
+    // past episode (HeardActual). If either vanishes, the distinction has collapsed to one channel.
+    assert!(
+        saw_authored_future,
+        "expected at least one anticipatory (KnownAuthoredFuture) keys answer"
+    );
+    assert!(
+        saw_heard_actual,
+        "expected at least one reactive (HeardActual) keys answer"
+    );
+}
+
 /// G7 / assertions 09-10 — section provenance must be truthful, with the LEAD as referee. The lead
 /// carrier is already sectioned from the plan (verse and hook are different sections); every
 /// accompaniment event must AGREE with the lead about which section the band is in, and the Score

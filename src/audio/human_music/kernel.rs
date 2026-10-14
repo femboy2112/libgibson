@@ -595,7 +595,9 @@ pub fn perform(
         start_beat: keys_at,
         dur_beats: 3.0,
         latency: keys_at - call.end_beat,
-        overlap: false,
+        // Truthful overlap (J3 repair): true iff the answer starts before the call ends. See the
+        // longform site and `Knowledge` for the causal argument.
+        overlap: keys_at < call.end_beat,
         transform,
         crosses_chord: false,
         material: None,
@@ -1442,7 +1444,11 @@ pub fn perform_song(
                         start_beat: keys_at,
                         dur_beats: material.length(),
                         latency: keys_at - call.end_beat,
-                        overlap: false,
+                        // Truthful overlap (J3 repair): the base keys answer begins before the
+                        // lead's authored cadence it quotes has finished sounding — negative
+                        // latency, hence an overlapping anticipation, not a post-hoc reaction.
+                        // Derived from latency so the receipt can never again deny its own overlap.
+                        overlap: keys_at < call.end_beat,
                         transform,
                         crosses_chord: false,
                         material: Some(material.id),
