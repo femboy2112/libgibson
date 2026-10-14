@@ -129,6 +129,12 @@ pub struct Resolved {
     /// When the 32-bar song form is selected, whether it opens with a front intro (establish-the-pocket,
     /// lead enters late) in place of one trailing chorus. Only meaningful when `bars == 32`.
     pub song_intro: bool,
+    /// The narrative bridge handoff: the bridge is carried by the KEYS (lead withholds), so the
+    /// theme survives a lead-mute. Only meaningful when `bars == 32`.
+    pub song_narrative: bool,
+    /// The narrative intro entrance: the intro's keys foreshadow the verse-head germ before the late
+    /// lead pickup claims it (keys→lead handoff on the way in). Only meaningful when `bars == 32`.
+    pub song_intro_narrative: bool,
     pub jerry: Vec<Jerry>,
 }
 
@@ -170,6 +176,14 @@ pub struct C137Preset {
     /// The 32-bar song form WITH a front intro (establish-the-pocket, lead enters late), `--form=song-intro`.
     /// Implies the song form; swaps one trailing chorus for a leading intro section. Its own ear-gated arm.
     song_intro: bool,
+    /// The 32-bar song form with the NARRATIVE bridge handoff (`--form=song-narrative`): the bridge is
+    /// carried by the KEYS (the lead withholds), so the theme survives a lead-mute. Implies the song
+    /// length; its own ear-gated arm (the Johnny Five lead→keys custody).
+    song_narrative: bool,
+    /// The intro form with the NARRATIVE entrance (`--form=song-intro-narrative`): the intro's keys
+    /// foreshadow the verse-head germ before the late lead pickup claims it (a keys→lead handoff on the
+    /// way in). Implies the song+intro length; its own ear-gated arm.
+    song_intro_narrative: bool,
 }
 
 impl C137Preset {
@@ -197,6 +211,22 @@ impl C137Preset {
     /// the song length; the arc opens on an intro section and drops one trailing chorus for it.
     pub fn song_intro(mut self) -> Self {
         self.song_intro = true;
+        self
+    }
+
+    /// Select the 32-bar song form with the NARRATIVE bridge handoff: the bridge is carried by the
+    /// KEYS (the lead withholds), so the theme survives a lead-mute. Implies the song length; its own
+    /// ear-gated arm (the Johnny Five lead→keys custody).
+    pub fn song_narrative(mut self) -> Self {
+        self.song_narrative = true;
+        self
+    }
+
+    /// Select the intro form with the narrative entrance: the intro's keys foreshadow the verse-head
+    /// germ before the late lead pickup claims it (a keys→lead handoff on the way in). Implies the
+    /// song+intro length; its own ear-gated arm.
+    pub fn song_intro_narrative(mut self) -> Self {
+        self.song_intro_narrative = true;
         self
     }
 
@@ -254,7 +284,7 @@ impl C137Preset {
         // The song form sets its own length, overriding any archival bar count. It adds form, never
         // removes a capability, so the accepted capabilities resolved above are untouched. The intro
         // variant implies the song length.
-        if self.song || self.song_intro {
+        if self.song || self.song_intro || self.song_narrative || self.song_intro_narrative {
             bars = 32;
         }
         Resolved {
@@ -265,6 +295,8 @@ impl C137Preset {
             translate_lead_rhythm,
             answer_breaths,
             song_intro: self.song_intro,
+            song_narrative: self.song_narrative,
+            song_intro_narrative: self.song_intro_narrative,
             jerry: self.jerry.clone(),
         }
     }

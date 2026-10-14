@@ -145,6 +145,43 @@ pub struct Response {
     pub realizes: Option<ActionId>,
 }
 
+/// Which knowledge channel a response's content was conditioned on — a truthful provenance
+/// label, never a gate on the notes.
+///
+/// The distinction is categorical, not stylistic. A responder can only *begin* its answer while
+/// the call it answers is still sounding (`latency < 0`, hence `overlap`) if it already KNOWS that
+/// call's content from the shared authored score — a rehearsed anticipation of a written gesture.
+/// A responder that waits for the whole call to sound (`latency >= 0`) is reacting to performed
+/// history it has actually heard. So the sign of the latency is the honest witness of the channel,
+/// and the engine must never label an overlapping anticipation as if it were a heard reaction (the
+/// `J3` seam: the keys' base answer quotes the lead's authored cadence tail, which has not sounded
+/// when the answer begins — legitimate for a rehearsed player, dishonest to call a reaction).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Knowledge {
+    /// Content derived only from events committed — and audible — before the response began. A
+    /// true reactive answer: the whole call it answers had sounded (`latency >= 0`).
+    HeardActual,
+    /// Content that anticipates authored material from the shared score the responder could not
+    /// yet have heard when it began (`latency < 0`, `overlap`). Legitimate rehearsed foreknowledge
+    /// of the written chart/phrase — but it is anticipation, not hearing.
+    KnownAuthoredFuture,
+}
+
+impl Response {
+    /// The knowledge channel this response truthfully used (see [`Knowledge`]). Derived from the
+    /// causal latency: an overlapping answer necessarily anticipates the score (it started before
+    /// it could have heard the call out); a non-overlapping answer reacts to a fully-heard call.
+    /// Pure function of already-committed receipt data — stores nothing, so it perturbs no
+    /// fingerprint.
+    pub fn knowledge(&self) -> Knowledge {
+        if self.latency < 0.0 {
+            Knowledge::KnownAuthoredFuture
+        } else {
+            Knowledge::HeardActual
+        }
+    }
+}
+
 /// One call with its response (a planned silence is a response too).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Interaction {

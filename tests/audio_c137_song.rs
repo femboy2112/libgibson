@@ -496,6 +496,267 @@ fn every_referenced_interaction_resolves_to_a_row() {
     }
 }
 
+/// Johnny Five R1 — the keys' answer must tell the truth about its knowledge channel.
+///
+/// The base keys answer QUOTES the lead's authored cadence tail, which has not sounded when the
+/// answer begins (negative latency): a rehearsed anticipation of the written phrase, not a reaction
+/// to heard notes. The old receipt stamped `overlap: false` on that negative latency — a lie the
+/// diagnostics already contradicted (they count it as an overlapping response). This pins the
+/// repair: every SOUNDING keys response's `overlap` equals the sign of its latency, and its
+/// `knowledge()` channel agrees — an overlapping answer is `KnownAuthoredFuture`, a post-hoc one
+/// (the earned Return / memory-law discharge, which quote a fully-sounded PAST episode) is
+/// `HeardActual`. Sound-preserving by construction: `overlap`/`latency` live only in the receipt
+/// and diagnostics, never in the Score, so the PCM is untouched; only the receipt stops lying.
+#[test]
+fn the_keys_answer_declares_its_knowledge_channel_truthfully() {
+    use gibson::audio::human_music::interaction::Knowledge;
+    let mut saw_authored_future = false;
+    let mut saw_heard_actual = false;
+    for (label, arg) in [
+        ("slice", source::source(2112)),
+        ("song", source_song::source_song(2112)),
+    ] {
+        let song = kernel::perform_song(&arg, &world()).unwrap();
+        let perf = &song.composition().perf;
+        for row in &perf.interactions {
+            let Some(r) = &row.response else { continue };
+            if r.action.is_none() {
+                continue; // a deliberate silence sounds nothing; its latency is bookkeeping
+            }
+            // The receipt can no longer deny its own overlap (the J3 lie).
+            assert_eq!(
+                r.overlap,
+                r.latency < 0.0,
+                "[{label}] {:?}: overlap={} contradicts latency={:.4}",
+                row.id,
+                r.overlap,
+                r.latency
+            );
+            // ...and the declared knowledge channel is exactly that overlap truth.
+            match r.knowledge() {
+                Knowledge::KnownAuthoredFuture => {
+                    assert!(
+                        r.overlap,
+                        "[{label}] {:?}: an anticipatory answer must record overlap",
+                        row.id
+                    );
+                    saw_authored_future = true;
+                }
+                Knowledge::HeardActual => {
+                    assert!(
+                        !r.overlap,
+                        "[{label}] {:?}: a heard answer must not record overlap",
+                        row.id
+                    );
+                    saw_heard_actual = true;
+                }
+            }
+        }
+    }
+    // The Full song exercises BOTH channels: the base keys answers anticipate the authored cadence
+    // tail (KnownAuthoredFuture), while the earned Return / memory-law answers quote a fully-sounded
+    // past episode (HeardActual). If either vanishes, the distinction has collapsed to one channel.
+    assert!(
+        saw_authored_future,
+        "expected at least one anticipatory (KnownAuthoredFuture) keys answer"
+    );
+    assert!(
+        saw_heard_actual,
+        "expected at least one reactive (HeardActual) keys answer"
+    );
+}
+
+/// Johnny Five R2 — the ear-proven lead→keys carrier handoff, recovered inside the modern kernel.
+///
+/// In the NARRATIVE arm the bridge (episode 4, beats `[64, 80)`) is carried by the KEYS: the lead
+/// WITHHOLDS there and the keys own the whole thematic obligation — authored at the source
+/// (`carriers: [Keys]` on the Depart) and realized by `perform_song`. The decisive, source-witnessed
+/// proof is LEAD-MUTE SURVIVAL: drop every lead note and the bridge still carries thematic content
+/// through the keys. The shipped STATIC song carries that bridge in the lead, so muting the lead
+/// empties it — exactly the A/B the 2026-10-09 ear study turned on. This pins the mechanism (the
+/// maintainer's ear gates whether it SOUNDS like the missing 10%).
+#[test]
+fn the_bridge_hands_the_theme_to_the_keys_and_survives_a_lead_mute() {
+    let (bw0, bw1) = (64.0, 80.0); // episode 4 — the bridge
+    for seed in [2112u64, 7, 99] {
+        let song =
+            kernel::perform_song(&source_song::source_song_narrative(seed), &world()).unwrap();
+        let score = song.score();
+        let lead_in_bridge = score
+            .role_notes(Role::Lead)
+            .filter(|n| n.start_beat >= bw0 && n.start_beat < bw1)
+            .count();
+        let keys_carrier_in_bridge = score
+            .role_notes(Role::Keys)
+            .filter(|n| n.start_beat >= bw0 && n.start_beat < bw1 && n.prov.role_note == "argument")
+            .count();
+        let keys_total_in_bridge = score
+            .role_notes(Role::Keys)
+            .filter(|n| n.start_beat >= bw0 && n.start_beat < bw1)
+            .count();
+        // The lead withholds; the keys carry — and EVERY keys note in the window is a thematic
+        // carrier (no stray comp or answer), which is what the content witness requires.
+        assert_eq!(
+            lead_in_bridge, 0,
+            "seed {seed}: the lead must withhold the keys-carried bridge"
+        );
+        assert!(
+            keys_carrier_in_bridge > 0,
+            "seed {seed}: the keys must carry the bridge theme"
+        );
+        assert_eq!(
+            keys_total_in_bridge, keys_carrier_in_bridge,
+            "seed {seed}: the keys-carried bridge window holds ONLY carrier notes"
+        );
+        // LEAD-MUTE SURVIVAL (the flagship): with every lead note dropped, the theme is still carried.
+        let survives_mute = score
+            .role_notes(Role::Keys)
+            .any(|n| n.start_beat >= bw0 && n.start_beat < bw1 && n.prov.role_note == "argument");
+        assert!(
+            survives_mute,
+            "seed {seed}: with the lead muted, the bridge theme must survive through the keys"
+        );
+    }
+    // The STATIC control: the shipped song carries the bridge in the LEAD. Muting the lead there
+    // leaves no thematic carrier — the difference the handoff makes audible.
+    let static_song = kernel::perform_song(&source_song::source_song(2112), &world()).unwrap();
+    let sc = static_song.score();
+    let static_lead_bridge = sc
+        .role_notes(Role::Lead)
+        .filter(|n| n.start_beat >= bw0 && n.start_beat < bw1)
+        .count();
+    let static_keys_carrier_bridge = sc
+        .role_notes(Role::Keys)
+        .filter(|n| n.start_beat >= bw0 && n.start_beat < bw1 && n.prov.role_note == "argument")
+        .count();
+    assert!(
+        static_lead_bridge > 0,
+        "static control: the lead carries the bridge"
+    );
+    assert_eq!(
+        static_keys_carrier_bridge, 0,
+        "static control: no keys carrier in the bridge — muting the lead would empty it"
+    );
+}
+
+/// Johnny Five R2 — the narrative arm is opt-in and the shipped song is byte-frozen.
+///
+/// `source_song_narrative` differs from `source_song` ONLY in the bridge carrier; every all-Lead
+/// arm (slice, song, song-intro, `--jerry`) must be untouched. The frozen fingerprints are pinned
+/// in the canonical-fingerprint and PCM gates; here we pin that the narrative arm is a DISTINCT
+/// performance (the handoff actually changed the music) while the shipped song still performs.
+#[test]
+fn the_narrative_handoff_is_opt_in() {
+    for seed in [2112u64, 7, 99] {
+        let shipped = kernel::perform_song(&source_song::source_song(seed), &world()).unwrap();
+        let narrative =
+            kernel::perform_song(&source_song::source_song_narrative(seed), &world()).unwrap();
+        assert_ne!(
+            shipped.score().fingerprint(),
+            narrative.score().fingerprint(),
+            "seed {seed}: the keys-carried bridge must change the music"
+        );
+    }
+}
+
+/// Johnny Five — the intro comes alive: the KEYS carry the verse-head foreshadow and the lead claims
+/// it at the verse. The shipped intro seats the keys Silent and lets a thin late LEAD pickup enter;
+/// the narrative intro makes the intro KEYS-carried — the lead withholds, the keys state the germ as a
+/// real (AUDIBLE, witnessed) part, and the lead takes the theme over at the verse. A keys→lead handoff
+/// on the way IN, the same mechanism the ear accepted at the bridge. The idea therefore survives a
+/// lead-mute from the very first bars.
+#[test]
+fn the_narrative_intro_hands_the_foreshadow_to_the_keys() {
+    let (iw0, iw1) = (0.0, 16.0); // the intro episode (ep0)
+    let (vw0, vw1) = (16.0, 32.0); // the first verse (ep1)
+    for seed in [2112u64, 7, 99] {
+        let shipped =
+            kernel::perform_song(&source_song::source_song_intro(seed), &world()).unwrap();
+        let alive = kernel::perform_song(&source_song::source_song_intro_narrative(seed), &world())
+            .unwrap();
+
+        // Shipped intro: keys Silent; the lead carries the late pickup.
+        assert_eq!(
+            shipped
+                .score()
+                .role_notes(Role::Keys)
+                .filter(|n| n.start_beat >= iw0 && n.start_beat < iw1)
+                .count(),
+            0,
+            "seed {seed}: the shipped intro keeps the keys Silent"
+        );
+
+        // Narrative intro: the lead WITHHOLDS, and every keys note in the intro is a thematic CARRIER
+        // (no stray comp/answer) that is AUDIBLE — real velocity, not the silent artifact the generic
+        // answer machinery would have produced from an empty hearing.
+        let lead_intro = alive
+            .score()
+            .role_notes(Role::Lead)
+            .filter(|n| n.start_beat >= iw0 && n.start_beat < iw1)
+            .count();
+        assert_eq!(
+            lead_intro, 0,
+            "seed {seed}: the lead must withhold the keys-carried intro"
+        );
+        let keys_intro: Vec<f32> = alive
+            .score()
+            .role_notes(Role::Keys)
+            .filter(|n| n.start_beat >= iw0 && n.start_beat < iw1)
+            .map(|n| {
+                assert_eq!(
+                    n.prov.role_note, "argument",
+                    "seed {seed}: every intro keys note is a thematic carrier"
+                );
+                n.velocity
+            })
+            .collect();
+        assert!(
+            !keys_intro.is_empty(),
+            "seed {seed}: the keys must carry the intro foreshadow"
+        );
+        assert!(
+            keys_intro.iter().all(|&v| v > 0.05),
+            "seed {seed}: the foreshadow must be AUDIBLE (real velocity), not a silent artifact: {keys_intro:?}"
+        );
+
+        // The lead CLAIMS the theme at the verse (the handoff completes).
+        let lead_verse = alive
+            .score()
+            .role_notes(Role::Lead)
+            .filter(|n| n.start_beat >= vw0 && n.start_beat < vw1)
+            .count();
+        assert!(
+            lead_verse > 0,
+            "seed {seed}: the lead must claim the theme at the verse"
+        );
+
+        // LEAD-MUTE SURVIVAL from the opening: drop the lead and the intro's idea still sounds (keys).
+        assert!(
+            alive
+                .score()
+                .role_notes(Role::Keys)
+                .any(|n| n.start_beat >= iw0 && n.start_beat < iw1),
+            "seed {seed}: with the lead muted, the intro foreshadow survives through the keys"
+        );
+    }
+}
+
+/// Johnny Five — the narrative intro is opt-in; the shipped intro is byte-frozen.
+#[test]
+fn the_narrative_intro_is_opt_in() {
+    for seed in [2112u64, 7, 99] {
+        let shipped =
+            kernel::perform_song(&source_song::source_song_intro(seed), &world()).unwrap();
+        let alive = kernel::perform_song(&source_song::source_song_intro_narrative(seed), &world())
+            .unwrap();
+        assert_ne!(
+            shipped.score().fingerprint(),
+            alive.score().fingerprint(),
+            "seed {seed}: the keys foreshadow must change the music"
+        );
+    }
+}
+
 /// G7 / assertions 09-10 — section provenance must be truthful, with the LEAD as referee. The lead
 /// carrier is already sectioned from the plan (verse and hook are different sections); every
 /// accompaniment event must AGREE with the lead about which section the band is in, and the Score
