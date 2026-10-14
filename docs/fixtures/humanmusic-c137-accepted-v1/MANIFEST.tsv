@@ -1,0 +1,31 @@
+level	scope	flags	seed	tempo	block	score_fp	frames	wav	wav_sha256
+A1	archival-control-old-default-NOT-ear-music	--jerry=short,plain	2112	144	256	42786743df3fd492	760000	full.normal.wav	5bd0af55f74390ad8d0a453a6348b402a4bb1e672d332d1be723d602fd212373
+A1	archival-control-old-default-NOT-ear-music	--jerry=short,plain	7	144	256	63857f96357f1432	760000	full.normal.wav	3511b0c3fdffa3994498bc0e1b1500902640817b0179d15f386216af9bb8cea6
+A1	archival-control-old-default-NOT-ear-music	--jerry=short,plain	99	144	256	7ff50cbbbe24608e	760000	full.normal.wav	ca56dff496bddabff86602d873996404daf7cdc3fe11612df2a977d0ef0f693a
+A2	16bar-plain-characterized-control	--jerry=plain	2112	144	256	0a49df7dce56a13e	1400000	full.normal.wav	16348eff865b8ba1af4a8b053af8f4a7710857cd98555a1694629f1291451571
+A2	16bar-plain-characterized-control	--jerry=plain	7	144	256	7c08a3c963f1c9ba	1400000	full.normal.wav	f216fbc00137e76dc61fa9cedd91d72cc0cd1b918635b3f5dfd050bb8981ea0f
+A2	16bar-plain-characterized-control	--jerry=plain	99	144	256	1cda7125de5180c4	1400000	full.normal.wav	9c63c64adef8bfb3fa0721d4dd4bbc7227b9994f0efa91f866b9960c548f09c2
+B	16bar-FULL-EAR-ACCEPTED-PR111		2112	144	256	ed1815c7f040884a	1400000	full.normal.wav	86a9cf82f5498f2ffa25f3a4f7ac48a187b2cd0ad468eb1caf0905cb1e4c449b
+B	16bar-FULL-EAR-ACCEPTED-PR111		2112	144	256	ed1815c7f040884a	1400000	full.nolead.wav	99e3901898dd7d067813484db6c44debefb0ab235802f87bdf2085fb166777dd
+B	16bar-FULL-EAR-ACCEPTED-PR111		7	144	256	4fb4458284b6fbf2	1400000	full.normal.wav	6d2e42ede99c38ab48c5a071d3ffc0624c0215b875ec0b085878c2deb5af0fbc
+B	16bar-FULL-EAR-ACCEPTED-PR111		7	144	256	4fb4458284b6fbf2	1400000	full.nolead.wav	220e78b15be6707e801579f0ee27404627dc077893d1e540725ff4ef339492bf
+B	16bar-FULL-EAR-ACCEPTED-PR111		99	144	256	22a9240d6419806c	1400000	full.normal.wav	dfb0320df07af7f7cf3de6e2056bf42127dc37f30076dbf0001dde25a9824683
+B	16bar-FULL-EAR-ACCEPTED-PR111		99	144	256	22a9240d6419806c	1400000	full.nolead.wav	2791ee6bcdd31f2dbc4f1c2abf2d11719946fdedf03d5667dc40a7bc96ddd374
+C1	32bar-song-characterized-control	--form=song	2112	144	256	8f3174f2bfce97e2	2680000	full.normal.wav	94ccc4ca76e9c70fbe913d62ee79246e1da05487520c53e94fb192c1c39ffc1b
+C1	32bar-song-characterized-control	--form=song	7	144	256	08d59325397bea7b	2680000	full.normal.wav	f3b58ac4ea6bdd6b1f6c2cae783ee2b349318c9e4fc816902486a7769b417274
+C1	32bar-song-characterized-control	--form=song	99	144	256	29f391719272e28f	2680000	full.normal.wav	944f092b5ca09ccbacd1b2b8152c870db1d87e167ca9cc3e98efe6c441d62681
+C2	32bar-song-intro-characterized-control	--form=song-intro	2112	144	256	4a4c4546cf157eef	2680000	full.normal.wav	c5c30ab970af771a047aa713578e43faebbcc8836cc024285750654ceb0a0108
+C2	32bar-song-intro-characterized-control	--form=song-intro	7	144	256	28647a5fd66385f0	2680000	full.normal.wav	bfc6d3bf58617f737ecf75268db0c553d3387fa40e4bfba83ae175a5f9a2e690
+C2	32bar-song-intro-characterized-control	--form=song-intro	99	144	256	1f6677b9a6198880	2680000	full.normal.wav	afdf2cf689966db7006a0f78b97d0a277a1c8b5e38e54e19a0c7b344d0e9e898
+D1	32bar-narrative-bridge-EAR-ACCEPTED	--form=song-narrative	2112	144	256	40862f11401faaf2	2680000	full.normal.wav	b9e6a0667d6decf4ac38b5cdd1fa3b6f4b5355830a550a53df56712f1f7236a9
+D1	32bar-narrative-bridge-EAR-ACCEPTED	--form=song-narrative	2112	144	256	40862f11401faaf2	2680000	full.nolead.wav	4fc087f01d1fd5f42c7bfa9b29f129fc5c708509fa2298d226613f68747c0454
+D1	32bar-narrative-bridge-EAR-ACCEPTED	--form=song-narrative	7	144	256	b3235c14ef0d92a9	2680000	full.normal.wav	cf8307b7986ff82473e8c519a0db31f92480aafeff399f7d8b97c447112af83e
+D1	32bar-narrative-bridge-EAR-ACCEPTED	--form=song-narrative	7	144	256	b3235c14ef0d92a9	2680000	full.nolead.wav	0c95550244879fe6eff240d7a7ca7447ca644da2fcb02f90787b1a22e80414ac
+D1	32bar-narrative-bridge-EAR-ACCEPTED	--form=song-narrative	99	144	256	067b474d64abe765	2680000	full.normal.wav	6bad41a2cd7ca9b9a380d8ff3bba482d83b36526361706727c6227729777769c
+D1	32bar-narrative-bridge-EAR-ACCEPTED	--form=song-narrative	99	144	256	067b474d64abe765	2680000	full.nolead.wav	c3ce4ba171b90dd975020a4fc9366a856e34fa2f5c75b50e61527dc743c6977c
+D2	32bar-narrative-intro-EAR-ACCEPTED	--form=song-intro-narrative	2112	144	256	00b64658bbf6c112	2680000	full.normal.wav	fca97c82d5ed0f5edf6daf10f5d6dc42b505003a0a30638fdc96836a1516b235
+D2	32bar-narrative-intro-EAR-ACCEPTED	--form=song-intro-narrative	2112	144	256	00b64658bbf6c112	2680000	full.nolead.wav	457f1d3b135b1640a38b0e194c92789d408fd5cf02b1633357b6d7df40dd2943
+D2	32bar-narrative-intro-EAR-ACCEPTED	--form=song-intro-narrative	7	144	256	ed77c502aa322cbb	2680000	full.normal.wav	1266a9c4729ce8999cd6704d056658aae255c5ec127e4526e2585d20f81bfd2b
+D2	32bar-narrative-intro-EAR-ACCEPTED	--form=song-intro-narrative	7	144	256	ed77c502aa322cbb	2680000	full.nolead.wav	4091a59335446ff9a1763435cc53d7747124cbac730703b375d8cbdda7bd9149
+D2	32bar-narrative-intro-EAR-ACCEPTED	--form=song-intro-narrative	99	144	256	65e4478f7096c336	2680000	full.normal.wav	f401740c23f02a57e2bad34d988844ad3daec161071660f574e39a7e0ce86da4
+D2	32bar-narrative-intro-EAR-ACCEPTED	--form=song-intro-narrative	99	144	256	65e4478f7096c336	2680000	full.nolead.wav	7b8633e97e378db44db16608c1a6ab1c7f7e21ae93f3554f893f15d9f8ef0d71
