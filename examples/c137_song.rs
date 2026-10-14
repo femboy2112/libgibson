@@ -63,6 +63,18 @@ use std::{error::Error, fmt::Write as _, fs, path::PathBuf};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+/// The render palette for the smooth-pop arm. The HumanMusic engine is not chiptune — the "8-bit
+/// beeps" the ear flagged are the BLACK_ICE palette (its keys voice is a 140 ms zero-sustain pulse,
+/// a NES pluck). `Warm` renders the SAME composed Score through a warmer palette (glassy FM electric
+/// piano, a filtered round bass, a soft machine kit, memory-bus chorus + a damped room) — a render
+/// choice only, so every C137 render is byte-identical. `Beep` keeps the BLACK_ICE palette for the
+/// A/B comparison. Only meaningful for the pop-groove arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PopPalette {
+    Warm,
+    Beep,
+}
+
 struct Options {
     out: PathBuf,
     seeds: Vec<u64>,
@@ -85,6 +97,9 @@ struct Options {
     /// Which smooth-pop harmonic flavor the `--form=pop-groove*` arm renders (ear-gated A/B; only
     /// meaningful when the pop-groove preset is selected). Defaults to `Circle`.
     pop_flavor: source_pop::PopFlavor,
+    /// Which render palette the smooth-pop arm uses (`--pop-palette=warm|beep`; only meaningful for
+    /// the pop-groove arm). Defaults to `Warm`; `Beep` keeps the BLACK_ICE palette for the A/B.
+    pop_palette: PopPalette,
 }
 
 impl Options {
@@ -96,6 +111,7 @@ impl Options {
         let mut source_answer = false;
         let mut no_lead = false;
         let mut pop_flavor = source_pop::PopFlavor::Circle;
+        let mut pop_palette = PopPalette::Warm;
         // The no-flag command is C137 FULL. Downgrades accumulate here, from `--jerry=` and from the
         // compatibility flags, which fold into the same mechanism so they manifest as the Jerry
         // switches they are.
@@ -160,6 +176,13 @@ impl Options {
                     "plain" => preset = preset.jerry(Jerry::Plain),
                     _ => return Err("--phrasing must be plain, expressive, or ensemble".into()),
                 }
+            } else if let Some(value) = arg.strip_prefix("--pop-palette=") {
+                // The smooth-pop render palette A/B (render choice only; C137 is byte-identical either way).
+                match value {
+                    "warm" => pop_palette = PopPalette::Warm,
+                    "beep" => pop_palette = PopPalette::Beep,
+                    _ => return Err("--pop-palette must be warm (default) or beep".into()),
+                }
             } else if arg == "--source-answer" {
                 // Experimental UPGRADE audition: the drummer truly answers the lead's question.
                 source_answer = true;
@@ -182,8 +205,23 @@ impl Options {
             source_answer,
             no_lead,
             pop_flavor,
+            pop_palette,
         })
     }
+}
+
+/// The warm smooth-pop RENDER palette: the same composed Score, played through a warmer world than
+/// the beepy BLACK_ICE one it was composed under. Reuses the existing VAPOR95 palette (a glassy FM
+/// electric-piano keys voice, a filtered round bass, a soft drum-machine pocket, memory-bus chorus,
+/// tempo echoes and a damped room — built for "glassy 80s pop/R&B"), retuned to the pop arm's key,
+/// mode and tempo. This is a render-world only: composition still happens under `base`, and no C137
+/// render path ever sees this world, so every accepted artifact stays byte-identical.
+fn pop_world(base: &MusicWorld) -> MusicWorld {
+    let mut w = MusicWorld::vapor95();
+    w.tonic_pc = base.tonic_pc;
+    w.mode = base.mode;
+    w.tempo_bpm = base.tempo_bpm;
+    w
 }
 
 /// Build the committed source for one seed under the resolved config. The SAME `Resolved` that drives
@@ -520,6 +558,13 @@ fn main() -> Result<()> {
         let note = "  source answer         : ON (experimental) — the drummer's breath answer quotes the lead's question + credits its call (--source-answer audition; default OFF)";
         let _ = writeln!(manifest, "{note}");
     }
+    if resolved.pop_groove {
+        let note = match options.pop_palette {
+            PopPalette::Warm => "  palette               : WARM (render-only) — VAPOR95-style: glassy FM electric piano, filtered round bass, soft machine kit, chorus + damped room. C137 byte-identical.",
+            PopPalette::Beep => "  palette               : BEEP (render-only) — the original BLACK_ICE voices (the 8-bit-ish pulse keys), kept for the A/B.",
+        };
+        let _ = writeln!(manifest, "{note}");
+    }
     print!("{manifest}");
 
     for seed in &options.seeds {
@@ -534,10 +579,17 @@ fn main() -> Result<()> {
         // must still satisfy the event/source contract it was committed under.
         take.validate_candidate(take.score())?;
         let score = take.score();
+        // The smooth-pop arm may RENDER through a warmer palette than it composed under — the beepy
+        // BLACK_ICE keys were the "8-bit" sound the ear flagged. Render-world only: composition stayed
+        // under `world` above, and no C137 path is pop_groove, so `rw` is `&world` for every C137
+        // render and those artifacts are byte-identical.
+        let warm_pop = resolved.pop_groove && options.pop_palette == PopPalette::Warm;
+        let render_pop_world = warm_pop.then(|| pop_world(&world));
+        let rw = render_pop_world.as_ref().unwrap_or(&world);
         let dir = options.out.join(format!("seed-{seed}"));
         fs::create_dir_all(&dir)?;
         fs::write(dir.join("score.tsv"), score_tsv(score))?;
-        let audio = render(score, &world, 256, StemMask::full());
+        let audio = render(score, rw, 256, StemMask::full());
         if !audio.left.iter().chain(&audio.right).all(|s| s.is_finite()) {
             return Err(format!("non-finite rendered PCM: seed {seed}").into());
         }
@@ -548,7 +600,7 @@ fn main() -> Result<()> {
         if options.no_lead {
             let muted = render(
                 score,
-                &world,
+                rw,
                 256,
                 StemMask {
                     lead: false,

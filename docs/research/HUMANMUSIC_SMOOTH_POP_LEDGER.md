@@ -184,6 +184,68 @@ borrowed E7 — a G♯ — is admitted and sounded, so modal mixture is load-bea
 groove, the harmonic A/B). Nothing promoted. Still open if the ear wants more: a bespoke pop drum kit
 (the drums are still the C137 kit, pocket-leaned but a straight backbeat) and a deeper pop-specific lean.
 
+## R2.2 — timbre: the "8-bit beeps" are a palette, not the engine — [OBSERVED] rendered; [EAR] PENDING
+
+**[EAR] verdict (round 2):** *"getting better, but the songs sound kinda static… no forward pop motion.
+also… it's hard to make smooth pop with 8bit beeps lol."* Two orthogonal axes: timbre (this section) and
+forward motion (next, bigger — see FORWARD-MOTION PLAN below).
+
+**Recon (read-only scout, verified file:line) — the engine is NOT chiptune.** It has polyBLEP
+band-limited saw/pulse + a 2-op FM oscillator + noise (`dsp/osc.rs`), a per-voice resonant TPT-SVF
+low-pass with a filter envelope, ADSR, unison/detune (`instrument.rs`, `synth.rs`), a memory-bus
+chorus, a tempo-synced echo, a 4-line FDN reverb, `tanh` saturation and a master comp/limiter
+(`dsp/fx.rs`, `synth.rs`). The "8-bit" sound is the **BLACK_ICE palette**: its keys voice is a 140 ms
+`Pulse(0.35)` with **sustain 0.0** — a NES pluck (`world.rs:228-239`). Timbre lives entirely in the
+`MusicWorld`; there is no timbre field on the source/`SourceDomain`. And `perform_song(&src, &world)`
+and `render(&score, &world)` take **separate world args** (precedent: `examples/vapor95_style_lab.rs`
+"palette mode" composes under one world, renders through another), so the pop arm can render through a
+warmer palette with **zero `src/` change** and C137 byte-identical.
+
+**The fix (render-only, opt-in A/B):** `--pop-palette=warm|beep` (default `warm`) on the pop arm.
+`pop_world()` reuses the existing **VAPOR95** palette (built for "glassy 80s pop/R&B": an FM
+electric-piano keys voice, a filtered round bass, a soft machine kit, memory-bus chorus, tempo echoes,
+a size-1.2 damped room with a 180 Hz low-cut), retuned to the pop key/mode/tempo. Composition still
+happens under the BLACK_ICE-derived `world`; only `render()` sees `pop_world()`. No C137 path is
+`pop_groove`, so `rw == &world` for every C137 render.
+
+**[OBSERVED]:** warm and beep render the **same Score** (fp `4bafe9bc6c2d9366`, lead=0 keys=24 bass=46
+drums=166) — only the render palette differs, so the A/B isolates timbre exactly. WAVs are byte-distinct
+(warm `9d0cd759…`, beep `b024f9c1…`). C137 **byte-identical**: `C137_ACCEPTED_V1` lock reproduces all 51
+artifacts from this binary. Delivered 2 **loudness-matched** MP3s (`pop-WARM-104` / `pop-BEEP-104`) so
+the ear judges tone, not level. [EAR] PENDING.
+
+**Scout nags (unverified by ear):** VAPOR95's chorus is slow/shallow (a "memory smear", not an ensemble
+chorus) and its echo is a dotted-eighth/quarter feedback delay — may read as washy/80s rather than clean
+smooth-pop. All warmth claims are param-inference; the ear is the arbiter. Tunable if "too washy".
+
+## FORWARD-MOTION PLAN (the bigger axis — [PROPOSED], not yet built)
+
+**Recon (read-only scout, verified file:line) — the blunt finding:** in `perform_song`, **bass and drum
+velocity do NOT depend on the section relation at all.** The "band arrives full" energy fader
+(`argument::backing_energy_at`, `argument.rs:511`) is wired only into the *other* perform path
+(`functor.rs`), never into `perform_song` (no hit in `kernel.rs`). So even the accepted C137 song only
+"lifts" into a chorus via the **lead carrier's** `section_gain` (Establish 0.74 → Consequent 0.98 →
+Return 1.0, `argument.rs:344`) + the pad + the keys comp — and the comp/pad/earned-return all require a
+**Lead carrier** (`kernel.rs:1602-1608`, `2195-2229`). The lead-free pop arm has none of that. There is
+also **no drop/break** possible for bass/drums: `validate_song` rejects off-stage bass/drum hits and
+*requires* a root on every downbeat (`kernel.rs:2285-2340`).
+
+**Two tiers to real forward motion:**
+- **(A) source-only, lawful, lead-free, zero kernel change, C137-safe:** lengthen the pop form to a
+  multi-section arc (more `Establish`/`Depart` episodes); widen `PopSourceGrammar.loop_bars` so the
+  chorus can have its *own* chords (verse chords ≠ chorus chords); author per-section keys referents
+  that climb in density/accent/register (carrier velocity = `accent * section_gain`); make
+  `GrooveLaw.bass_cells` section-aware (a longer cycle: sparser verse cells, denser/louder chorus
+  cells); set `intro_build = true` for a 4-bar entry ramp. Gives harmonic motion + carrier dynamics +
+  bass-density build — but the bass/drum *velocity* still won't swell by section (only by chord drive).
+- **(B) minimal pop-gated kernel wire (the actual "arrival"):** wire a pop-only per-episode energy into
+  bass + drum + pad velocity (reuse `backing_energy_at`, or a small `SourceDomain::SmoothPop` energy
+  vector), gated so C137 is byte-identical (the lock is the arbiter). This is the band-arrives-full lift
+  the lead-free arm otherwise cannot get. A true *drop* still needs a `validate_song` relaxation (later).
+
+Recommended: A + B together for a convincing verse→build→chorus. Build after the timbre verdict; the arc
+is composition, so it renders on whichever palette the ear blesses.
+
 ---
 
 ## STOP conditions (plan §8)
