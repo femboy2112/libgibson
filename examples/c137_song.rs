@@ -42,6 +42,8 @@ mod source;
 #[allow(dead_code)]
 #[path = "c137_song/source_bridge.rs"]
 mod source_bridge;
+#[path = "c137_song/source_pop.rs"]
+mod source_pop;
 #[allow(dead_code)]
 #[path = "c137_song/source_song.rs"]
 mod source_song;
@@ -129,9 +131,10 @@ impl Options {
                     "song-intro" => preset = preset.song_intro(),
                     "song-narrative" => preset = preset.song_narrative(),
                     "song-intro-narrative" => preset = preset.song_intro_narrative(),
+                    "pop-groove" => preset = preset.pop_groove(),
                     _ => {
                         return Err(
-                            "--form must be slice (16-bar), song (32-bar), song-intro (32-bar + intro), song-narrative (32-bar, keys-carried bridge), or song-intro-narrative (32-bar, keys-foreshadow intro)"
+                            "--form must be slice (16-bar), song (32-bar), song-intro (32-bar + intro), song-narrative (32-bar, keys-carried bridge), song-intro-narrative (32-bar, keys-foreshadow intro), or pop-groove (8-bar lead-free smooth-pop pocket)"
                                 .into(),
                         )
                     }
@@ -175,6 +178,12 @@ impl Options {
 /// the manifest chooses the arc and the lead performance here, so the manifest can never over-report.
 /// Any compile/admission failure propagates — the run never silently substitutes lesser music.
 fn build_source(resolved: &Resolved, seed: u64, bridge_seed: Option<u64>) -> CompiledArgument {
+    // The smooth-pop groove is its own lead-free arm with its own `SmoothPop` domain and groove — it
+    // does not go through the C137 arc builders or the capability caps (which are C137-specific), so
+    // it returns here before `apply_caps`.
+    if resolved.pop_groove {
+        return source_pop::source_pop_groove(seed);
+    }
     let mut compiled = match resolved.bars {
         32 if resolved.song_narrative => {
             source_song::source_song_narrative_phrased(seed, resolved.phrasing)
@@ -265,6 +274,45 @@ fn score_tsv(score: &Score) -> String {
 
 /// The global capability block of the effective-feature manifest (everything independent of seed).
 fn manifest_header(resolved: &Resolved, world: &MusicWorld, bridge_seed: Option<u64>) -> String {
+    // The smooth-pop groove is NOT a C137 arc, so it gets its own honest header rather than the C137
+    // capability manifest (which would claim arc/lead features this arm does not have).
+    if resolved.pop_groove {
+        let mut m = String::new();
+        let _ = writeln!(
+            m,
+            "SMOOTH-POP GROOVE  (opt-in R2 arm — lead-free, ear-gated)"
+        );
+        let _ = writeln!(
+            m,
+            "  domain                : SmoothPop (groove-cycle closure, 4-bar loop)"
+        );
+        let _ = writeln!(
+            m,
+            "  form                  : 8 bars — two Keys-carried Establish episodes, NO foreground lead"
+        );
+        let _ = writeln!(
+            m,
+            "  harmony               : Am7 - Fmaj7 - Cmaj7 - G (i7-VImaj7-IIImaj7-VII, A-Aeolian), looped x2"
+        );
+        let _ = writeln!(
+            m,
+            "  bass                  : authored syncopated cell (root downbeat anchor + octave/fifth off-beats)"
+        );
+        let _ = writeln!(
+            m,
+            "  keys                  : sparse syncopated comp (carried); drums: steady pocket; pad: silent"
+        );
+        let _ = writeln!(
+            m,
+            "  world                 : tonic_pc={}, {:?}, tempo={} BPM (render --tempo=104 for the pop feel)",
+            world.tonic_pc, world.mode, world.tempo_bpm
+        );
+        let _ = writeln!(
+            m,
+            "  listening             : PENDING — the maintainer's ear gates this arm; nothing is promoted"
+        );
+        return m;
+    }
     let mut m = String::new();
     let title = if resolved.is_full() {
         "C137 Full  (default — excellence is not opt-in)".to_string()

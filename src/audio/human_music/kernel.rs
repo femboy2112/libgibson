@@ -1751,7 +1751,25 @@ pub fn perform_song(
         // tonic room to breathe (the fifth is clipped short of beat four, clearing any planned seam
         // pickup). Everywhere else it walks the changes. One monophonic line in the bass register —
         // motion that voices the harmony, never a doubled or sub-octave weave.
-        let figure: Vec<(f64, i32, f32, f32)> = if intro_i.is_some_and(|i| i <= 1) {
+        let figure: Vec<(f64, i32, f32, f32)> = if let Some(groove) = &argument.groove {
+            // SMOOTH-POP: the authored syncopated cell, resolved against THIS bar's chord. The cell
+            // opens on the root at offset 0.0 (the required downbeat anchor the foundation law reads);
+            // everything after it is the cell's own off-beat identity. The octave is clamped into the
+            // bass register, and every attack still orbits the shared pocket (applied below).
+            groove
+                .bass_cell
+                .iter()
+                .map(|&(offset, degree, dur, velocity)| {
+                    let pitch = match degree {
+                        super::argument::BassDegree::Root => root,
+                        super::argument::BassDegree::Third => third,
+                        super::argument::BassDegree::Fifth => fifth,
+                        super::argument::BassDegree::Octave => (root + 12).clamp(36, 55),
+                    };
+                    (offset, pitch, dur, velocity)
+                })
+                .collect()
+        } else if intro_i.is_some_and(|i| i <= 1) {
             // The intro's early bars: the resting root + fifth only, regardless of the chart's drive,
             // so the foundation enters sparse and the walk fills in as the build swells into the verse.
             vec![(0.0, root, 1.8, 0.70), (2.0, fifth, 1.4, 0.52)]

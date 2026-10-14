@@ -402,6 +402,28 @@ pub struct PopSourceGrammar {
     pub loop_bars: usize,
 }
 
+/// A chord-relative bass degree, resolved per bar against the sounding chord so one cell spells
+/// every chord in a loop.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BassDegree {
+    Root,
+    Third,
+    Fifth,
+    Octave,
+}
+
+/// A smooth-pop groove's bass identity: a syncopated per-bar cell the kernel's foundation plays in
+/// place of the C137 walk/anchor figure, selected by the opt-in [`CompiledArgument::groove`]. The
+/// cell recurs every bar — its recurrence IS its identity — and MUST open on the chord root at
+/// offset `0.0` so the downbeat-root foundation law still holds. Offsets lie on the quarter-beat
+/// lattice; the degrees resolve per bar, so one authored cell carries the whole progression.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GrooveLaw {
+    /// Per-bar bass cell: `(offset_in_bar_beats, degree, dur_beats, velocity)`. The entry at offset
+    /// `0.0` must be `BassDegree::Root` — the required harmonic anchor on every downbeat.
+    pub bass_cell: Vec<(f64, BassDegree, f32, f32)>,
+}
+
 /// A wrapper instead of additional fields in the established public `SongMap` structure.
 #[derive(Debug, Clone)]
 pub struct CompiledArgument {
@@ -467,6 +489,11 @@ pub struct CompiledArgument {
     /// `SourceDomain::SmoothPop(..)` after compiling (like it sets `route`), opting that one source
     /// into the pop closure law without touching any C137 source.
     pub domain: SourceDomain,
+    /// Opt-in SMOOTH-POP GROOVE: when `Some`, the bass foundation plays this syncopated cell instead
+    /// of the C137 walk/anchor figure (the downbeat-root anchor is preserved, so `validate_song`'s
+    /// foundation law still holds). `None` (the default, set by `compile`) keeps the archived
+    /// foundation byte-identical; only a smooth-pop source builder sets it.
+    pub groove: Option<GrooveLaw>,
 }
 
 impl CompiledArgument {
@@ -1099,6 +1126,9 @@ impl MusicalArgument {
             // expressive, ensemble, narrative) keeps the literal-tonic route law and stays
             // byte-identical.
             domain: SourceDomain::C137,
+            // None by default — the archived C137 foundation (walk/anchor) is kept byte-identical.
+            // A smooth-pop source builder sets it to opt that one source into the syncopated cell.
+            groove: None,
         })
     }
 

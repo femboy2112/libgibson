@@ -102,8 +102,41 @@ Keys/Pad/Bass pitch classes per bar, not the route labels) — C137's own longfo
 so this would raise the bar for pop above what C137 currently has. The shared gates
 (source-transform equality + `source_harmony::admits`) + `pop_route_law` are the first-cut gate.
 
-## R2 — band-led pop groove (lead-muted, ~104 BPM) — [PROPOSED]
-First 4–8 bars, no foreground lead; source-justified bass cell; `GrooveLaw`; render + stems + mutation proofs.
+## R2 — band-led pop groove (lead-free, ~104 BPM) — [OBSERVED] rendered; [EAR] PENDING
+The first audible proof that the categorical machinery can host a genuinely different groove.
+
+**Seam (additive, opt-in):**
+- `GrooveLaw { bass_cell: Vec<(offset, BassDegree, dur, vel)> }` + `BassDegree {Root,Third,Fifth,Octave}`
+  on `argument`; new `pub groove: Option<GrooveLaw>` field on `CompiledArgument`, default `None`.
+- kernel bass loop: when `groove` is `Some`, the per-bar figure is the authored cell (resolved
+  against the bar's chord), keeping the `(0.0, Root)` downbeat anchor; `None` falls through to the
+  C137 walk/anchor, byte-identical.
+- `examples/c137_song/source_pop.rs`: `source_pop_groove(seed)` — a lead-free source, **two
+  Keys-carried `Establish` episodes** (lead lane genuinely empty, not a bus-muted ghost), pop loop
+  **Am7–Fmaj7–Cmaj7–G** (i7–VImaj7–IIImaj7–VII, A-Aeolian, all diatonic), `SmoothPop{loop_bars:4}`,
+  the syncopated bass cell, a sparse guide-tone keys comp.
+- CLI `--form=pop-groove` (own `pop_groove` preset arm, bypasses the C137 capability caps; own honest
+  manifest header). Render the pop feel at `--tempo=104`.
+
+**[OBSERVED] render (seed 2112, structure verified in score.tsv):** `lead=0`, `keys=16`, `bass=40`
+(5-note cell × 8 bars), `pad=0`, `drums=164`, fp `541690a7b8eb6b0d`. Bass anchors the root on every
+bar downbeat (A=45 over Am7, F=41 over Fmaj7) with syncopated octave/fifth/root off-beats; keys are
+guide tones (E/C over Am7, A/F over Fmaj7). Counterfactual tests 4/4: lead-free + bass anchors every
+bar · the cell drives the bass (≥5 attacks/bar, off-beat inside beat 1) · the pop domain is
+load-bearing (same source under `C137` domain is REFUSED) · the foundation law bites (a rootless
+downbeat is refused). C137 **byte-identical** (lock 51/51 from the R2 binary). fmt + clippy -D clean.
+
+**[EAR] PENDING — delivered 2 MP3s:** `pop-groove-104bpm.mp3` + `pop-groove-144bpm.mp3` (same groove,
+the tempo A/B the pocket-scaling question needs). Nothing promoted.
+
+**Known first-cut nags (honest):**
+- Seed-INVARIANT: the groove is hand-authored (keys/bass/loop fixed), so seeds 2112/7/99 render
+  identically. Fine for the R2 proof; per-seed variation is later work.
+- The octave bass pop clamps at the register ceiling (A's octave → G/b7). Musically a colour, not a
+  bug; revisit if the ear dislikes it.
+- Drums are the existing C137 kit at 104 BPM (lead-free, so no lead-echo); a bespoke pop kit + more
+  conscious negative space is the obvious next refinement if the ear wants it.
+- The pop-harmony *witness* is still the route-law + shared gates (sounded-note witness deferred, R1).
 
 ---
 
