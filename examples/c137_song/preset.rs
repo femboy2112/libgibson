@@ -132,6 +132,9 @@ pub struct Resolved {
     /// The narrative bridge handoff: the bridge is carried by the KEYS (lead withholds), so the
     /// theme survives a lead-mute. Only meaningful when `bars == 32`.
     pub song_narrative: bool,
+    /// The narrative intro entrance: the intro's keys foreshadow the verse-head germ before the late
+    /// lead pickup claims it (keys→lead handoff on the way in). Only meaningful when `bars == 32`.
+    pub song_intro_narrative: bool,
     pub jerry: Vec<Jerry>,
 }
 
@@ -177,6 +180,10 @@ pub struct C137Preset {
     /// carried by the KEYS (the lead withholds), so the theme survives a lead-mute. Implies the song
     /// length; its own ear-gated arm (the Johnny Five lead→keys custody).
     song_narrative: bool,
+    /// The intro form with the NARRATIVE entrance (`--form=song-intro-narrative`): the intro's keys
+    /// foreshadow the verse-head germ before the late lead pickup claims it (a keys→lead handoff on the
+    /// way in). Implies the song+intro length; its own ear-gated arm.
+    song_intro_narrative: bool,
 }
 
 impl C137Preset {
@@ -212,6 +219,14 @@ impl C137Preset {
     /// ear-gated arm (the Johnny Five lead→keys custody).
     pub fn song_narrative(mut self) -> Self {
         self.song_narrative = true;
+        self
+    }
+
+    /// Select the intro form with the narrative entrance: the intro's keys foreshadow the verse-head
+    /// germ before the late lead pickup claims it (a keys→lead handoff on the way in). Implies the
+    /// song+intro length; its own ear-gated arm.
+    pub fn song_intro_narrative(mut self) -> Self {
+        self.song_intro_narrative = true;
         self
     }
 
@@ -269,7 +284,7 @@ impl C137Preset {
         // The song form sets its own length, overriding any archival bar count. It adds form, never
         // removes a capability, so the accepted capabilities resolved above are untouched. The intro
         // variant implies the song length.
-        if self.song || self.song_intro || self.song_narrative {
+        if self.song || self.song_intro || self.song_narrative || self.song_intro_narrative {
             bars = 32;
         }
         Resolved {
@@ -281,6 +296,7 @@ impl C137Preset {
             answer_breaths,
             song_intro: self.song_intro,
             song_narrative: self.song_narrative,
+            song_intro_narrative: self.song_intro_narrative,
             jerry: self.jerry.clone(),
         }
     }

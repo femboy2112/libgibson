@@ -371,7 +371,7 @@ fn intro_pickup(verse: &[MaterialEvent]) -> Vec<MaterialEvent> {
 
 /// The eight-section song argument WITH a front intro (bridge seed == song seed, plain lead).
 pub fn argument_song_intro(seed: u64) -> (MusicalArgument, SongMap) {
-    argument_song_intro_with_bridge_seed_phrased(seed, seed, Phrasing::Plain)
+    argument_song_intro_with_bridge_seed_phrased(seed, seed, Phrasing::Plain, false)
 }
 
 /// [`argument_song_intro`] with the bridge motif drawn from `bridge_seed` and an explicit [`Phrasing`].
@@ -385,6 +385,7 @@ pub fn argument_song_intro_with_bridge_seed_phrased(
     seed: u64,
     bridge_seed: u64,
     phrasing: Phrasing,
+    keys_foreshadow: bool,
 ) -> (MusicalArgument, SongMap) {
     let trace = SemanticTrace {
         total_beats: 128.0,
@@ -465,11 +466,17 @@ pub fn argument_song_intro_with_bridge_seed_phrased(
         at(96.0),
         at(112.0),
     ];
-    // Seat the intro's keys Silent (the four phrases of episode 0). The intro's keys call then goes
-    // unanswered (produced == 0), so the verse's keys discharge it by quoting the intro's cell — the
-    // honest intro→verse causal edge. Bass and drums stay on, so the intro is pocket + thin late lead.
-    for p in &mut song.plan.arrangement.phrases[eps[0] as usize..eps[1] as usize] {
-        p.keys = ArrangementRole::Silent;
+    // Shipped intro: seat the intro's keys Silent (episode 0's four phrases) ⇒ the intro's keys call
+    // goes unanswered and the verse's keys discharge it by quoting the intro cell (the intro→verse
+    // causal edge); the intro is pocket + thin late LEAD pickup. Narrative intro (`keys_foreshadow`):
+    // the intro is KEYS-CARRIED instead (see the step below) — the keys carry the verse-head germ as a
+    // real, witnessed part (the lead withholds; `compile` seats the lead Silent and the keys Support),
+    // and the lead CLAIMS the theme at the verse. A keys→lead handoff on the way IN, reusing the exact
+    // carrier mechanism the ear accepted at the bridge. So we do NOT silence the keys in that arm.
+    if !keys_foreshadow {
+        for p in &mut song.plan.arrangement.phrases[eps[0] as usize..eps[1] as usize] {
+            p.keys = ArrangementRole::Silent;
+        }
     }
     let total_phrases = song.plan.form.phrases.len() as u32;
     let span = |i: usize| -> ArcSpan {
@@ -494,13 +501,29 @@ pub fn argument_song_intro_with_bridge_seed_phrased(
         depends_on: deps.iter().copied().map(ArgumentStepId).collect(),
         carriers: vec![Agent::Lead],
     };
+    // Narrative intro: the KEYS carry the foreshadow (the lead withholds on the way in). Off (shipped
+    // arm) this is `[Lead]` — the thin late lead pickup — byte-identical to before.
+    let intro_carriers = if keys_foreshadow {
+        vec![Agent::Keys]
+    } else {
+        vec![Agent::Lead]
+    };
     let argument = MusicalArgument {
         family: ArgumentFamily::CallAndEarnedAnswer,
         referents: vec![verse, hook, bridge, intro],
         ending: ArgumentEnding::Resolved,
         steps: vec![
-            // ep0  INTRO    — establish the pocket; the thin lead enters late (foreshadows the verse).
-            step(0, 3, ArgumentRelation::Establish, &[]),
+            // ep0  INTRO    — establish the pocket. Shipped: the thin LEAD pickup enters late and
+            //                 foreshadows the verse. Narrative: the KEYS carry that foreshadow (the
+            //                 lead withholds) and the verse CLAIMS it — a keys→lead handoff on the way in.
+            ArgumentStep {
+                id: ArgumentStepId(0),
+                referent: ReferentId(3),
+                transform: ArgumentTransform::default(),
+                relation: ArgumentRelation::Establish,
+                depends_on: vec![],
+                carriers: intro_carriers.clone(),
+            },
             // ep1  VERSE 1  — state the open question in full; depends on the intro it answers.
             step(1, 0, ArgumentRelation::Establish, &[0]),
             // ep2  CHORUS 1 — the hook ANSWERS the verse (altered consequent); arrives full.
@@ -576,8 +599,31 @@ pub fn source_song_intro_with_bridge_seed_phrased(
     bridge_seed: u64,
     phrasing: Phrasing,
 ) -> CompiledArgument {
+    compile_song_intro(seed, bridge_seed, phrasing, false)
+}
+
+/// The NARRATIVE intro arm (`--form=song-intro-narrative`): identical to [`source_song_intro`] EXCEPT
+/// the intro's keys FORESHADOW the verse-head germ — they stay on stage and quote the intro cell in
+/// their [4,8) window, STATING the idea before the late lead pickup CLAIMS it (a keys→lead handoff on
+/// the way in, reusing the bridge handoff's accepted mechanism). The shipped `source_song_intro` is
+/// byte-identical to before. Opt-in, ear-gated.
+pub fn source_song_intro_narrative(seed: u64) -> CompiledArgument {
+    source_song_intro_narrative_phrased(seed, Phrasing::Plain)
+}
+
+/// [`source_song_intro_narrative`] with an explicit lead [`Phrasing`] (bridge seed == song seed).
+pub fn source_song_intro_narrative_phrased(seed: u64, phrasing: Phrasing) -> CompiledArgument {
+    compile_song_intro(seed, seed, phrasing, true)
+}
+
+fn compile_song_intro(
+    seed: u64,
+    bridge_seed: u64,
+    phrasing: Phrasing,
+    keys_foreshadow: bool,
+) -> CompiledArgument {
     let (argument, song) =
-        argument_song_intro_with_bridge_seed_phrased(seed, bridge_seed, phrasing);
+        argument_song_intro_with_bridge_seed_phrased(seed, bridge_seed, phrasing, keys_foreshadow);
     let mut compiled = argument
         .compile(&song)
         .expect("seeded eight-section intro full-song source compiles");

@@ -128,9 +128,10 @@ impl Options {
                     "song" => preset = preset.song(),
                     "song-intro" => preset = preset.song_intro(),
                     "song-narrative" => preset = preset.song_narrative(),
+                    "song-intro-narrative" => preset = preset.song_intro_narrative(),
                     _ => {
                         return Err(
-                            "--form must be slice (16-bar), song (32-bar), song-intro (32-bar + intro), or song-narrative (32-bar, keys-carried bridge)"
+                            "--form must be slice (16-bar), song (32-bar), song-intro (32-bar + intro), song-narrative (32-bar, keys-carried bridge), or song-intro-narrative (32-bar, keys-foreshadow intro)"
                                 .into(),
                         )
                     }
@@ -177,6 +178,9 @@ fn build_source(resolved: &Resolved, seed: u64, bridge_seed: Option<u64>) -> Com
     let mut compiled = match resolved.bars {
         32 if resolved.song_narrative => {
             source_song::source_song_narrative_phrased(seed, resolved.phrasing)
+        }
+        32 if resolved.song_intro_narrative => {
+            source_song::source_song_intro_narrative_phrased(seed, resolved.phrasing)
         }
         32 => match (resolved.song_intro, bridge_seed) {
             (true, Some(bs)) => {

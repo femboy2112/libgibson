@@ -659,6 +659,104 @@ fn the_narrative_handoff_is_opt_in() {
     }
 }
 
+/// Johnny Five — the intro comes alive: the KEYS carry the verse-head foreshadow and the lead claims
+/// it at the verse. The shipped intro seats the keys Silent and lets a thin late LEAD pickup enter;
+/// the narrative intro makes the intro KEYS-carried — the lead withholds, the keys state the germ as a
+/// real (AUDIBLE, witnessed) part, and the lead takes the theme over at the verse. A keys→lead handoff
+/// on the way IN, the same mechanism the ear accepted at the bridge. The idea therefore survives a
+/// lead-mute from the very first bars.
+#[test]
+fn the_narrative_intro_hands_the_foreshadow_to_the_keys() {
+    let (iw0, iw1) = (0.0, 16.0); // the intro episode (ep0)
+    let (vw0, vw1) = (16.0, 32.0); // the first verse (ep1)
+    for seed in [2112u64, 7, 99] {
+        let shipped =
+            kernel::perform_song(&source_song::source_song_intro(seed), &world()).unwrap();
+        let alive = kernel::perform_song(&source_song::source_song_intro_narrative(seed), &world())
+            .unwrap();
+
+        // Shipped intro: keys Silent; the lead carries the late pickup.
+        assert_eq!(
+            shipped
+                .score()
+                .role_notes(Role::Keys)
+                .filter(|n| n.start_beat >= iw0 && n.start_beat < iw1)
+                .count(),
+            0,
+            "seed {seed}: the shipped intro keeps the keys Silent"
+        );
+
+        // Narrative intro: the lead WITHHOLDS, and every keys note in the intro is a thematic CARRIER
+        // (no stray comp/answer) that is AUDIBLE — real velocity, not the silent artifact the generic
+        // answer machinery would have produced from an empty hearing.
+        let lead_intro = alive
+            .score()
+            .role_notes(Role::Lead)
+            .filter(|n| n.start_beat >= iw0 && n.start_beat < iw1)
+            .count();
+        assert_eq!(
+            lead_intro, 0,
+            "seed {seed}: the lead must withhold the keys-carried intro"
+        );
+        let keys_intro: Vec<f32> = alive
+            .score()
+            .role_notes(Role::Keys)
+            .filter(|n| n.start_beat >= iw0 && n.start_beat < iw1)
+            .map(|n| {
+                assert_eq!(
+                    n.prov.role_note, "argument",
+                    "seed {seed}: every intro keys note is a thematic carrier"
+                );
+                n.velocity
+            })
+            .collect();
+        assert!(
+            !keys_intro.is_empty(),
+            "seed {seed}: the keys must carry the intro foreshadow"
+        );
+        assert!(
+            keys_intro.iter().all(|&v| v > 0.05),
+            "seed {seed}: the foreshadow must be AUDIBLE (real velocity), not a silent artifact: {keys_intro:?}"
+        );
+
+        // The lead CLAIMS the theme at the verse (the handoff completes).
+        let lead_verse = alive
+            .score()
+            .role_notes(Role::Lead)
+            .filter(|n| n.start_beat >= vw0 && n.start_beat < vw1)
+            .count();
+        assert!(
+            lead_verse > 0,
+            "seed {seed}: the lead must claim the theme at the verse"
+        );
+
+        // LEAD-MUTE SURVIVAL from the opening: drop the lead and the intro's idea still sounds (keys).
+        assert!(
+            alive
+                .score()
+                .role_notes(Role::Keys)
+                .any(|n| n.start_beat >= iw0 && n.start_beat < iw1),
+            "seed {seed}: with the lead muted, the intro foreshadow survives through the keys"
+        );
+    }
+}
+
+/// Johnny Five — the narrative intro is opt-in; the shipped intro is byte-frozen.
+#[test]
+fn the_narrative_intro_is_opt_in() {
+    for seed in [2112u64, 7, 99] {
+        let shipped =
+            kernel::perform_song(&source_song::source_song_intro(seed), &world()).unwrap();
+        let alive = kernel::perform_song(&source_song::source_song_intro_narrative(seed), &world())
+            .unwrap();
+        assert_ne!(
+            shipped.score().fingerprint(),
+            alive.score().fingerprint(),
+            "seed {seed}: the keys foreshadow must change the music"
+        );
+    }
+}
+
 /// G7 / assertions 09-10 — section provenance must be truthful, with the LEAD as referee. The lead
 /// carrier is already sectioned from the plan (verse and hook are different sections); every
 /// accompaniment event must AGREE with the lead about which section the band is in, and the Score

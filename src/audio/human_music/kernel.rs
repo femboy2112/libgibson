@@ -966,17 +966,21 @@ fn longform_domain(argument: &CompiledArgument) -> Result<(), KernelError> {
                 "thematic projection differs from its source",
             ));
         }
-        // The LEAD carries every episode by default. The ONE lawful exception is a KEYS-carried
-        // DEPART — the bridge handoff: the lead withholds and the keys own the departure's thematic
-        // obligation (the ear-proven lead→keys custody). No other carrier, and never under a home
-        // arrival or the earned return, which depend on the lead carrying. Split out of the bundled
-        // guard below so the failure names the real cause, not the lattice tolerance.
+        // The LEAD carries every episode by default. The lawful exceptions are a KEYS-carried DEPART
+        // (the bridge handoff: the lead withholds, the keys own the departure) and a KEYS-carried
+        // ESTABLISH (the intro foreshadow: the keys state the germ on the way in, the lead claims it
+        // at the next section). No other carrier, and never under a home-arrival Consequent or the
+        // earned-return, which depend on the lead carrying. Split out of the bundled guard below so
+        // the failure names the real cause, not the lattice tolerance.
         let carrier_ok = p.carriers == [Agent::Lead]
             || (p.carriers == [Agent::Keys]
-                && matches!(p.relation, ArgumentRelation::Depart { .. }));
+                && matches!(
+                    p.relation,
+                    ArgumentRelation::Depart { .. } | ArgumentRelation::Establish
+                ));
         if !carrier_ok {
             return Err(KernelError::Source(
-                "long-form carriers must be [Lead], or [Keys] on a Depart (the bridge handoff)",
+                "long-form carriers must be [Lead], or [Keys] on a Depart (bridge) / Establish (intro)",
             ));
         }
         if p.anchor_semitones != 0
