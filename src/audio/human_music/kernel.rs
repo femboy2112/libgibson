@@ -966,10 +966,22 @@ fn longform_domain(argument: &CompiledArgument) -> Result<(), KernelError> {
                 "thematic projection differs from its source",
             ));
         }
+        // The LEAD carries every episode by default. The ONE lawful exception is a KEYS-carried
+        // DEPART — the bridge handoff: the lead withholds and the keys own the departure's thematic
+        // obligation (the ear-proven lead→keys custody). No other carrier, and never under a home
+        // arrival or the earned return, which depend on the lead carrying. Split out of the bundled
+        // guard below so the failure names the real cause, not the lattice tolerance.
+        let carrier_ok = p.carriers == [Agent::Lead]
+            || (p.carriers == [Agent::Keys]
+                && matches!(p.relation, ArgumentRelation::Depart { .. }));
+        if !carrier_ok {
+            return Err(KernelError::Source(
+                "long-form carriers must be [Lead], or [Keys] on a Depart (the bridge handoff)",
+            ));
+        }
         if p.anchor_semitones != 0
             || !p.section_gain.is_finite()
             || !(0.0 < p.section_gain && p.section_gain <= 1.0)
-            || p.carriers != [Agent::Lead]
             || p.pitch_basis != PitchBasis::Semitones
             || p.events.is_empty()
             || p.events.iter().any(|e| {
@@ -1222,6 +1234,15 @@ pub fn perform_song(
     // episode's downbeat are one voice across the barline. Without the link they read as an illegal
     // mono overlap (the cadence's release tail crosses the downbeat); the choke cancels at the seam.
     for e in 0..episodes.saturating_sub(1) {
+        // Don't sew a legato seam across a withheld (non-lead-carried) episode — at the handoff the
+        // lead genuinely STOPS, so there is no single voice continuing across the gap. Linking the
+        // pre-bridge cadence to the post-bridge return would fake a continuity the lead never played
+        // (and VoiceContinuation would span a 16-beat silence).
+        if argument.placements[e].carriers != [Agent::Lead]
+            || argument.placements[e + 1].carriers != [Agent::Lead]
+        {
+            continue;
+        }
         let boundary = (e + 1) as f64 * EPISODE_BEATS;
         let last = lead
             .iter()
@@ -1240,6 +1261,34 @@ pub fn perform_song(
     // --- KEYS: per-episode call/answer threaded by the memory law. ---
     let mut hearings = Vec::new();
     let mut keys = Vec::new();
+    // THE CARRIER PASS (narrative handoff): a non-lead-carried episode — the keys-carried bridge —
+    // puts its whole thematic obligation into the KEYS lane, exactly as the lead pass does for lead
+    // episodes. For the shipped all-Lead arms this adds nothing (no placement carries Keys), so the
+    // frozen path is untouched. The per-episode answer below is skipped for such an episode (C), and
+    // the comp block already skips a Depart, so the keys lane there holds ONLY the carrier notes —
+    // exactly what the content witness expects.
+    super::argument_transport::replace_required_role(
+        &mut keys,
+        Role::Keys,
+        &argument.placements,
+        world.tonic_pc,
+        &perf.contexts,
+        &argument.song.plan,
+    )
+    .map_err(|_| KernelError::Source("keys carrier realization refused"))?;
+    for (i, p) in argument.placements.iter().enumerate() {
+        if p.carriers == [Agent::Lead] {
+            continue; // lead-carried episodes own no keys carrier notes
+        }
+        let notes: Vec<_> = keys
+            .iter_mut()
+            .filter(|n| n.start_beat >= p.start_beat && n.start_beat < p.start_beat + p.span_beats)
+            .collect();
+        for n in notes {
+            n.prov.material = Some(perf.statements[i].material);
+            n.prov.actions = n.prov.actions.with(perf.statements[i].call.unwrap());
+        }
+    }
     let mut keys_windows = vec![0usize; episodes];
     let mut memory = BandMemory::default();
     // The previous episode's call material: what a later episode discharges if that call went
@@ -1281,6 +1330,11 @@ pub fn perform_song(
     #[allow(clippy::needless_range_loop)]
     for e in 0..episodes {
         let ws = e as f64 * EPISODE_BEATS;
+        // A keys-carried episode (the narrative bridge handoff) already holds its whole thematic
+        // obligation in the keys lane from the carrier pass above; it makes NO call/answer here. The
+        // lead withheld, so there is nothing to react to, and the content witness expects ONLY the
+        // carrier notes in this window — an answer would be an extra onset it rejects.
+        let keys_carried_here = argument.placements[e].carriers != [Agent::Lead];
         hearings.push(EffectiveHearing::capture(
             Agent::Keys,
             Role::Lead,
@@ -1342,7 +1396,7 @@ pub fn perform_song(
         // episode by `validate_song`; this just uses that window honestly instead of its last beat.)
         let keys_at = ws + 4.0;
         let mut produced = 0usize;
-        if !matches!(transform, Transform::Silence) {
+        if !matches!(transform, Transform::Silence) && !keys_carried_here {
             if let Some(material) = material_src.as_ref().and_then(|src| {
                 super::material::transform_material(
                     MaterialId(perf.materials.len() as u32),
@@ -2183,6 +2237,12 @@ fn validate_song(
                 {
                     return Err(KernelError::Source("keyboard comp collides with the lead"));
                 }
+            } else if n.prov.role_note == "argument" {
+                // A KEYS CARRIER note (the narrative bridge handoff): the keys OWN this episode's
+                // thematic obligation, witnessed note-for-note by the argument content witness. It is
+                // therefore exempt from the answer-window keyboard-silence rule, which governs comps
+                // and answers — not carriage. The exemption is safe because `longform_domain` admits a
+                // Keys carrier ONLY on a Depart, so no home-arrival or earned-return window is touched.
             } else {
                 // The call/response answer stays confined to the episode's second bar — the deliberate
                 // keyboard silence the rest of the answer-contour design depends on.

@@ -76,6 +76,10 @@ struct Options {
     /// accepted fixed-slot ghost. Off by default — it changes the audio, so it is an opt-in A/B arm,
     /// never the default, until the maintainer's ear accepts it.
     source_answer: bool,
+    /// Also render a lead-muted mix (`full.nolead.wav`) alongside the normal mix (`--no-lead`): the
+    /// band carries the song with the lead bus dropped. The survival test for the narrative handoff —
+    /// the keys-carried bridge still sounds the theme; a lead-carried bridge falls to backing.
+    no_lead: bool,
 }
 
 impl Options {
@@ -85,6 +89,7 @@ impl Options {
         let mut tempo = 144.0f32;
         let mut bridge_seed = None;
         let mut source_answer = false;
+        let mut no_lead = false;
         // The no-flag command is C137 FULL. Downgrades accumulate here, from `--jerry=` and from the
         // compatibility flags, which fold into the same mechanism so they manifest as the Jerry
         // switches they are.
@@ -122,9 +127,10 @@ impl Options {
                     "slice" => {} // the default 16-bar arc — no change
                     "song" => preset = preset.song(),
                     "song-intro" => preset = preset.song_intro(),
+                    "song-narrative" => preset = preset.song_narrative(),
                     _ => {
                         return Err(
-                            "--form must be slice (16-bar), song (32-bar), or song-intro (32-bar + intro)"
+                            "--form must be slice (16-bar), song (32-bar), song-intro (32-bar + intro), or song-narrative (32-bar, keys-carried bridge)"
                                 .into(),
                         )
                     }
@@ -142,6 +148,9 @@ impl Options {
             } else if arg == "--source-answer" {
                 // Experimental UPGRADE audition: the drummer truly answers the lead's question.
                 source_answer = true;
+            } else if arg == "--no-lead" {
+                // Also emit a lead-muted mix — the survival test for the narrative bridge handoff.
+                no_lead = true;
             } else {
                 return Err(format!("unknown argument: {arg}").into());
             }
@@ -156,6 +165,7 @@ impl Options {
             preset,
             bridge_seed,
             source_answer,
+            no_lead,
         })
     }
 }
@@ -165,6 +175,9 @@ impl Options {
 /// Any compile/admission failure propagates — the run never silently substitutes lesser music.
 fn build_source(resolved: &Resolved, seed: u64, bridge_seed: Option<u64>) -> CompiledArgument {
     let mut compiled = match resolved.bars {
+        32 if resolved.song_narrative => {
+            source_song::source_song_narrative_phrased(seed, resolved.phrasing)
+        }
         32 => match (resolved.song_intro, bridge_seed) {
             (true, Some(bs)) => {
                 source_song::source_song_intro_with_bridge_seed_phrased(seed, bs, resolved.phrasing)
@@ -188,10 +201,10 @@ fn build_source(resolved: &Resolved, seed: u64, bridge_seed: Option<u64>) -> Com
     compiled
 }
 
-fn render(score: &Score, world: &MusicWorld, block: usize) -> StereoBlock {
+fn render(score: &Score, world: &MusicWorld, block: usize, mask: StemMask) -> StereoBlock {
     let rate = SampleRate::STUDIO;
     let mut synth = HumanMusicSynth::with_production(score, world, rate, ProductionControl::NORMAL);
-    synth.set_stem_mask(StemMask::full());
+    synth.set_stem_mask(mask);
     let frames = synth.total_samples();
     OfflineRenderer::new(rate, block)
         .render(&mut synth, frames)
@@ -447,11 +460,29 @@ fn main() -> Result<()> {
         let dir = options.out.join(format!("seed-{seed}"));
         fs::create_dir_all(&dir)?;
         fs::write(dir.join("score.tsv"), score_tsv(score))?;
-        let audio = render(score, &world, 256);
+        let audio = render(score, &world, 256, StemMask::full());
         if !audio.left.iter().chain(&audio.right).all(|s| s.is_finite()) {
             return Err(format!("non-finite rendered PCM: seed {seed}").into());
         }
         write_wav_i16(dir.join("full.normal.wav"), &audio, SampleRate::STUDIO)?;
+        // The lead-mute SURVIVAL render (`--no-lead`): drop the lead bus and let the band carry the
+        // song. In the narrative arm the keys-carried bridge still sounds the theme; in a lead-carried
+        // arm the bridge falls to backing — the ear test the 2026-10-09 band-story study turned on.
+        if options.no_lead {
+            let muted = render(
+                score,
+                &world,
+                256,
+                StemMask {
+                    lead: false,
+                    ..StemMask::full()
+                },
+            );
+            if !muted.left.iter().chain(&muted.right).all(|s| s.is_finite()) {
+                return Err(format!("non-finite rendered PCM (no-lead): seed {seed}").into());
+            }
+            write_wav_i16(dir.join("full.nolead.wav"), &muted, SampleRate::STUDIO)?;
+        }
         let line = manifest_seed_line(&resolved, *seed, score, &audio, world.tonic_pc);
         println!("{line}");
         let _ = writeln!(manifest, "{line}");

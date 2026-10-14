@@ -64,7 +64,7 @@ const BRIDGE_PROG: [(i32, Quality); 4] = [
 /// differ. Factored out so the red tests can assert the recurrence and earned-return laws on the
 /// pre-compiled argument.
 pub fn argument_song(seed: u64) -> (MusicalArgument, SongMap) {
-    argument_song_with_bridge_seed_phrased(seed, seed, Phrasing::Plain)
+    argument_song_with_bridge_seed_phrased(seed, seed, Phrasing::Plain, false)
 }
 
 /// [`argument_song`] with the bridge motif drawn from `bridge_seed` and an explicit lead [`Phrasing`].
@@ -74,6 +74,7 @@ pub fn argument_song_with_bridge_seed_phrased(
     seed: u64,
     bridge_seed: u64,
     phrasing: Phrasing,
+    keys_bridge: bool,
 ) -> (MusicalArgument, SongMap) {
     let trace = SemanticTrace {
         total_beats: 128.0,
@@ -177,6 +178,16 @@ pub fn argument_song_with_bridge_seed_phrased(
         depends_on: deps.iter().copied().map(ArgumentStepId).collect(),
         carriers: vec![Agent::Lead],
     };
+    // THE HANDOFF: in the narrative arm the BRIDGE is carried by the KEYS, not the lead. At the
+    // departure the lead withholds (the stage takes it off automatically for a non-lead carrier) and
+    // the keys own the bridge's whole thematic obligation — the ear-proven lead→keys custody, now
+    // authored at the SOURCE so the modern kernel realizes it lawfully. Off (the shipped arm) this is
+    // `[Lead]`, byte-identical to before.
+    let bridge_carriers = if keys_bridge {
+        vec![Agent::Keys]
+    } else {
+        vec![Agent::Lead]
+    };
     let argument = MusicalArgument {
         family: ArgumentFamily::CallAndEarnedAnswer,
         referents: vec![verse, hook, bridge],
@@ -204,15 +215,18 @@ pub fn argument_song_with_bridge_seed_phrased(
                 },
                 &[2],
             ),
-            // ep4  BRIDGE   — depart from the hook (recycles a cell, lifts, ends open).
-            step(
-                4,
-                2,
-                ArgumentRelation::Depart {
+            // ep4  BRIDGE   — depart from the hook (recycles a cell, lifts, ends open). In the
+            //                narrative arm the KEYS carry this departure (the lead withholds).
+            ArgumentStep {
+                id: ArgumentStepId(4),
+                referent: ReferentId(2),
+                transform: ArgumentTransform::default(),
+                relation: ArgumentRelation::Depart {
                     source: ArgumentStepId(1),
                 },
-                &[1],
-            ),
+                depends_on: vec![ArgumentStepId(1)],
+                carriers: bridge_carriers.clone(),
+            },
             // ep5  CHORUS 3 — RETURN to the hook, earned: depends on the bridge, so the keys quote the
             //                 journey home. A different lawful bridge comes home different.
             step(
@@ -266,7 +280,31 @@ pub fn source_song_with_bridge_seed_phrased(
     bridge_seed: u64,
     phrasing: Phrasing,
 ) -> CompiledArgument {
-    let (argument, song) = argument_song_with_bridge_seed_phrased(seed, bridge_seed, phrasing);
+    compile_song(seed, bridge_seed, phrasing, false)
+}
+
+/// The NARRATIVE arm (`--form=song-narrative`): identical to [`source_song`] EXCEPT the bridge is
+/// carried by the KEYS. At the departure the lead WITHHOLDS and the keys own the bridge's whole
+/// thematic obligation — the ear-proven lead→keys custody (accepted 2026-10-09 on the hand-authored
+/// `rick_probe`), recovered inside the modern source-first kernel. The theme then survives a
+/// lead-mute. Opt-in; the shipped `source_song` is byte-identical to before.
+pub fn source_song_narrative(seed: u64) -> CompiledArgument {
+    source_song_narrative_phrased(seed, Phrasing::Plain)
+}
+
+/// [`source_song_narrative`] with an explicit lead [`Phrasing`] (bridge seed == song seed).
+pub fn source_song_narrative_phrased(seed: u64, phrasing: Phrasing) -> CompiledArgument {
+    compile_song(seed, seed, phrasing, true)
+}
+
+fn compile_song(
+    seed: u64,
+    bridge_seed: u64,
+    phrasing: Phrasing,
+    keys_bridge: bool,
+) -> CompiledArgument {
+    let (argument, song) =
+        argument_song_with_bridge_seed_phrased(seed, bridge_seed, phrasing, keys_bridge);
     let mut compiled = argument
         .compile(&song)
         .expect("seeded eight-section full-song source compiles");

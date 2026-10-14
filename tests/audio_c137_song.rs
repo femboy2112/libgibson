@@ -566,6 +566,99 @@ fn the_keys_answer_declares_its_knowledge_channel_truthfully() {
     );
 }
 
+/// Johnny Five R2 — the ear-proven lead→keys carrier handoff, recovered inside the modern kernel.
+///
+/// In the NARRATIVE arm the bridge (episode 4, beats `[64, 80)`) is carried by the KEYS: the lead
+/// WITHHOLDS there and the keys own the whole thematic obligation — authored at the source
+/// (`carriers: [Keys]` on the Depart) and realized by `perform_song`. The decisive, source-witnessed
+/// proof is LEAD-MUTE SURVIVAL: drop every lead note and the bridge still carries thematic content
+/// through the keys. The shipped STATIC song carries that bridge in the lead, so muting the lead
+/// empties it — exactly the A/B the 2026-10-09 ear study turned on. This pins the mechanism (the
+/// maintainer's ear gates whether it SOUNDS like the missing 10%).
+#[test]
+fn the_bridge_hands_the_theme_to_the_keys_and_survives_a_lead_mute() {
+    let (bw0, bw1) = (64.0, 80.0); // episode 4 — the bridge
+    for seed in [2112u64, 7, 99] {
+        let song =
+            kernel::perform_song(&source_song::source_song_narrative(seed), &world()).unwrap();
+        let score = song.score();
+        let lead_in_bridge = score
+            .role_notes(Role::Lead)
+            .filter(|n| n.start_beat >= bw0 && n.start_beat < bw1)
+            .count();
+        let keys_carrier_in_bridge = score
+            .role_notes(Role::Keys)
+            .filter(|n| n.start_beat >= bw0 && n.start_beat < bw1 && n.prov.role_note == "argument")
+            .count();
+        let keys_total_in_bridge = score
+            .role_notes(Role::Keys)
+            .filter(|n| n.start_beat >= bw0 && n.start_beat < bw1)
+            .count();
+        // The lead withholds; the keys carry — and EVERY keys note in the window is a thematic
+        // carrier (no stray comp or answer), which is what the content witness requires.
+        assert_eq!(
+            lead_in_bridge, 0,
+            "seed {seed}: the lead must withhold the keys-carried bridge"
+        );
+        assert!(
+            keys_carrier_in_bridge > 0,
+            "seed {seed}: the keys must carry the bridge theme"
+        );
+        assert_eq!(
+            keys_total_in_bridge, keys_carrier_in_bridge,
+            "seed {seed}: the keys-carried bridge window holds ONLY carrier notes"
+        );
+        // LEAD-MUTE SURVIVAL (the flagship): with every lead note dropped, the theme is still carried.
+        let survives_mute = score
+            .role_notes(Role::Keys)
+            .any(|n| n.start_beat >= bw0 && n.start_beat < bw1 && n.prov.role_note == "argument");
+        assert!(
+            survives_mute,
+            "seed {seed}: with the lead muted, the bridge theme must survive through the keys"
+        );
+    }
+    // The STATIC control: the shipped song carries the bridge in the LEAD. Muting the lead there
+    // leaves no thematic carrier — the difference the handoff makes audible.
+    let static_song = kernel::perform_song(&source_song::source_song(2112), &world()).unwrap();
+    let sc = static_song.score();
+    let static_lead_bridge = sc
+        .role_notes(Role::Lead)
+        .filter(|n| n.start_beat >= bw0 && n.start_beat < bw1)
+        .count();
+    let static_keys_carrier_bridge = sc
+        .role_notes(Role::Keys)
+        .filter(|n| n.start_beat >= bw0 && n.start_beat < bw1 && n.prov.role_note == "argument")
+        .count();
+    assert!(
+        static_lead_bridge > 0,
+        "static control: the lead carries the bridge"
+    );
+    assert_eq!(
+        static_keys_carrier_bridge, 0,
+        "static control: no keys carrier in the bridge — muting the lead would empty it"
+    );
+}
+
+/// Johnny Five R2 — the narrative arm is opt-in and the shipped song is byte-frozen.
+///
+/// `source_song_narrative` differs from `source_song` ONLY in the bridge carrier; every all-Lead
+/// arm (slice, song, song-intro, `--jerry`) must be untouched. The frozen fingerprints are pinned
+/// in the canonical-fingerprint and PCM gates; here we pin that the narrative arm is a DISTINCT
+/// performance (the handoff actually changed the music) while the shipped song still performs.
+#[test]
+fn the_narrative_handoff_is_opt_in() {
+    for seed in [2112u64, 7, 99] {
+        let shipped = kernel::perform_song(&source_song::source_song(seed), &world()).unwrap();
+        let narrative =
+            kernel::perform_song(&source_song::source_song_narrative(seed), &world()).unwrap();
+        assert_ne!(
+            shipped.score().fingerprint(),
+            narrative.score().fingerprint(),
+            "seed {seed}: the keys-carried bridge must change the music"
+        );
+    }
+}
+
 /// G7 / assertions 09-10 — section provenance must be truthful, with the LEAD as referee. The lead
 /// carrier is already sectioned from the plan (verse and hook are different sections); every
 /// accompaniment event must AGREE with the lead about which section the band is in, and the Score
