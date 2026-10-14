@@ -25,10 +25,13 @@ fn world() -> MusicWorld {
 }
 
 fn render_pop(seed: u64) -> Score {
-    kernel::perform_song(&source_pop::source_pop_groove(seed), &world())
-        .expect("the smooth-pop groove is admitted and commits")
-        .score()
-        .clone()
+    kernel::perform_song(
+        &source_pop::source_pop_groove(seed, source_pop::PopFlavor::Circle),
+        &world(),
+    )
+    .expect("the smooth-pop groove is admitted and commits")
+    .score()
+    .clone()
 }
 
 #[test]
@@ -63,10 +66,12 @@ fn the_pop_groove_is_lead_free_and_the_bass_anchors_every_bar() {
 #[test]
 fn the_bass_plays_the_syncopated_cell_not_a_c137_figure() {
     let score = render_pop(2112);
-    // The authored cell lays FIVE attacks in a bar (downbeat root, octave on the "a" of 1, fifth on
-    // the "and" of 2, an off-beat root, a fifth pickup). A C137 bass bar is at most four (the walk)
-    // or two (the home anchor), and never attacks inside beat 1 — so an off-beat attack in (0.5, 1.0)
-    // plus five attacks in the bar is the pop cell's unmistakable signature.
+    // Bar 0 is the cell cycle's "statement" bar: FIVE attacks (downbeat root, a soft octave pop on
+    // the "a" of 1, a laid-back fifth, an off-beat root, a colour third into the turn). A C137 bass
+    // bar is at most four (the walk) or two (the home anchor), and never attacks inside beat 1 — so an
+    // off-beat attack in (0.5, 1.0) plus five attacks in the bar is the pop cell's unmistakable
+    // signature. (Later bars vary — a walking answer, a driving bar, a turnaround — but bar 0 pins the
+    // statement so the signature stays checkable.)
     let bar0: Vec<f64> = score
         .role_notes(Role::Bass)
         .map(|n| n.start_beat)
@@ -84,8 +89,44 @@ fn the_bass_plays_the_syncopated_cell_not_a_c137_figure() {
 }
 
 #[test]
+fn the_lift_flavor_also_grooves_lead_free_with_a_borrowed_dominant() {
+    // The second ear-gated A/B flavor (Am9 - Fmaj9 - Dm9 - E7): a leading-tone pull whose E7 borrows
+    // G# via modal mixture and whose 9ths are colour. This proves that richer progression is ADMITTED
+    // (sounds as authored, not refused or retracted) and still grooves lead-free over the shared cells.
+    let score = kernel::perform_song(
+        &source_pop::source_pop_groove(2112, source_pop::PopFlavor::Lift),
+        &world(),
+    )
+    .expect("the lift-flavor smooth-pop groove is admitted and commits")
+    .score()
+    .clone();
+    assert_eq!(
+        score.role_notes(Role::Lead).count(),
+        0,
+        "the lift flavor is lead-free too"
+    );
+    assert!(
+        score.role_notes(Role::Bass).count() > 0,
+        "the lift flavor keeps a bass foundation"
+    );
+    assert!(
+        score.role_notes(Role::Keys).count() > 0,
+        "the lift flavor's keys carry the guide-tone comp"
+    );
+    // The borrowed E7 is sounded as authored: a G# (pitch class 8) lives in the chart, which a plain
+    // A-Aeolian-only vocabulary would never admit — the mixture-bearing world is load-bearing here.
+    assert!(
+        score
+            .chords
+            .iter()
+            .any(|c| c.chord.pitch_classes().contains(&8)),
+        "the E7 dominant's leading tone (G#) is present — modal mixture is doing real work"
+    );
+}
+
+#[test]
 fn the_pop_groove_needs_the_pop_domain() {
-    let src = source_pop::source_pop_groove(2112);
+    let src = source_pop::source_pop_groove(2112, source_pop::PopFlavor::Circle);
     assert!(
         matches!(src.domain, SourceDomain::SmoothPop(_)),
         "the pop groove declares the SmoothPop domain"
@@ -97,7 +138,7 @@ fn the_pop_groove_needs_the_pop_domain() {
     );
     // Flip the SAME source to the C137 domain and it is REFUSED: the pop route never lands the C137
     // tonic pins, so the domain selector is genuinely load-bearing, not a cosmetic relabel.
-    let mut c137 = source_pop::source_pop_groove(2112);
+    let mut c137 = source_pop::source_pop_groove(2112, source_pop::PopFlavor::Circle);
     c137.domain = SourceDomain::C137;
     assert!(
         kernel::perform_song(&c137, &world()).is_err(),
@@ -107,12 +148,14 @@ fn the_pop_groove_needs_the_pop_domain() {
 
 #[test]
 fn the_pop_foundation_law_refuses_a_rootless_downbeat() {
-    let mut src = source_pop::source_pop_groove(2112);
-    // Strip the downbeat-root anchor from the cell, keeping only the off-beats: a syncopated bass
-    // that abandons the downbeat root is not a lawful foundation, and the guard must refuse it — the
-    // foundation law bites on the pop path exactly as it does on C137.
+    let mut src = source_pop::source_pop_groove(2112, source_pop::PopFlavor::Circle);
+    // Strip the downbeat-root anchor from EVERY per-bar cell, keeping only the off-beats: a syncopated
+    // bass that abandons the downbeat root is not a lawful foundation, and the guard must refuse it —
+    // the foundation law bites on the pop path exactly as it does on C137.
     if let Some(g) = &mut src.groove {
-        g.bass_cell.retain(|(offset, _, _, _)| *offset != 0.0);
+        for cell in &mut g.bass_cells {
+            cell.retain(|(offset, _, _, _)| *offset != 0.0);
+        }
     }
     assert!(
         kernel::perform_song(&src, &world()).is_err(),

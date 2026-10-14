@@ -82,6 +82,9 @@ struct Options {
     /// band carries the song with the lead bus dropped. The survival test for the narrative handoff —
     /// the keys-carried bridge still sounds the theme; a lead-carried bridge falls to backing.
     no_lead: bool,
+    /// Which smooth-pop harmonic flavor the `--form=pop-groove*` arm renders (ear-gated A/B; only
+    /// meaningful when the pop-groove preset is selected). Defaults to `Circle`.
+    pop_flavor: source_pop::PopFlavor,
 }
 
 impl Options {
@@ -92,6 +95,7 @@ impl Options {
         let mut bridge_seed = None;
         let mut source_answer = false;
         let mut no_lead = false;
+        let mut pop_flavor = source_pop::PopFlavor::Circle;
         // The no-flag command is C137 FULL. Downgrades accumulate here, from `--jerry=` and from the
         // compatibility flags, which fold into the same mechanism so they manifest as the Jerry
         // switches they are.
@@ -131,10 +135,17 @@ impl Options {
                     "song-intro" => preset = preset.song_intro(),
                     "song-narrative" => preset = preset.song_narrative(),
                     "song-intro-narrative" => preset = preset.song_intro_narrative(),
-                    "pop-groove" => preset = preset.pop_groove(),
+                    "pop-groove" => {
+                        preset = preset.pop_groove();
+                        pop_flavor = source_pop::PopFlavor::Circle;
+                    }
+                    "pop-groove-lift" => {
+                        preset = preset.pop_groove();
+                        pop_flavor = source_pop::PopFlavor::Lift;
+                    }
                     _ => {
                         return Err(
-                            "--form must be slice (16-bar), song (32-bar), song-intro (32-bar + intro), song-narrative (32-bar, keys-carried bridge), song-intro-narrative (32-bar, keys-foreshadow intro), or pop-groove (8-bar lead-free smooth-pop pocket)"
+                            "--form must be slice (16-bar), song (32-bar), song-intro (32-bar + intro), song-narrative (32-bar, keys-carried bridge), song-intro-narrative (32-bar, keys-foreshadow intro), pop-groove (8-bar lead-free smooth-pop pocket, circle-of-4ths), or pop-groove-lift (the same groove, leading-tone-pull progression)"
                                 .into(),
                         )
                     }
@@ -170,6 +181,7 @@ impl Options {
             bridge_seed,
             source_answer,
             no_lead,
+            pop_flavor,
         })
     }
 }
@@ -177,12 +189,17 @@ impl Options {
 /// Build the committed source for one seed under the resolved config. The SAME `Resolved` that drives
 /// the manifest chooses the arc and the lead performance here, so the manifest can never over-report.
 /// Any compile/admission failure propagates — the run never silently substitutes lesser music.
-fn build_source(resolved: &Resolved, seed: u64, bridge_seed: Option<u64>) -> CompiledArgument {
+fn build_source(
+    resolved: &Resolved,
+    seed: u64,
+    bridge_seed: Option<u64>,
+    pop_flavor: source_pop::PopFlavor,
+) -> CompiledArgument {
     // The smooth-pop groove is its own lead-free arm with its own `SmoothPop` domain and groove — it
     // does not go through the C137 arc builders or the capability caps (which are C137-specific), so
     // it returns here before `apply_caps`.
     if resolved.pop_groove {
-        return source_pop::source_pop_groove(seed);
+        return source_pop::source_pop_groove(seed, pop_flavor);
     }
     let mut compiled = match resolved.bars {
         32 if resolved.song_narrative => {
@@ -273,14 +290,20 @@ fn score_tsv(score: &Score) -> String {
 }
 
 /// The global capability block of the effective-feature manifest (everything independent of seed).
-fn manifest_header(resolved: &Resolved, world: &MusicWorld, bridge_seed: Option<u64>) -> String {
+fn manifest_header(
+    resolved: &Resolved,
+    world: &MusicWorld,
+    bridge_seed: Option<u64>,
+    pop_flavor: source_pop::PopFlavor,
+) -> String {
     // The smooth-pop groove is NOT a C137 arc, so it gets its own honest header rather than the C137
     // capability manifest (which would claim arc/lead features this arm does not have).
     if resolved.pop_groove {
         let mut m = String::new();
         let _ = writeln!(
             m,
-            "SMOOTH-POP GROOVE  (opt-in R2 arm — lead-free, ear-gated)"
+            "SMOOTH-POP GROOVE  (opt-in R2 arm — lead-free, ear-gated A/B flavor: {})",
+            pop_flavor.form_token()
         );
         let _ = writeln!(
             m,
@@ -292,15 +315,16 @@ fn manifest_header(resolved: &Resolved, world: &MusicWorld, bridge_seed: Option<
         );
         let _ = writeln!(
             m,
-            "  harmony               : Am7 - Fmaj7 - Cmaj7 - G (i7-VImaj7-IIImaj7-VII, A-Aeolian), looped x2"
+            "  harmony               : {}, looped x2",
+            pop_flavor.harmony_label()
         );
         let _ = writeln!(
             m,
-            "  bass                  : authored syncopated cell (root downbeat anchor + octave/fifth off-beats)"
+            "  bass                  : four breathing per-bar cells (root downbeat anchor + syncopated octave/fifth/ghost off-beats + turnaround push)"
         );
         let _ = writeln!(
             m,
-            "  keys                  : sparse syncopated comp (carried); drums: steady pocket; pad: silent"
+            "  keys                  : guide-tone comp voiced to the progression (carried); drums: steady pocket; pad: silent"
         );
         let _ = writeln!(
             m,
@@ -491,7 +515,7 @@ fn main() -> Result<()> {
     }
     fs::create_dir_all(&options.out)?;
 
-    let mut manifest = manifest_header(&resolved, &world, options.bridge_seed);
+    let mut manifest = manifest_header(&resolved, &world, options.bridge_seed, options.pop_flavor);
     if options.source_answer {
         let note = "  source answer         : ON (experimental) — the drummer's breath answer quotes the lead's question + credits its call (--source-answer audition; default OFF)";
         let _ = writeln!(manifest, "{note}");
@@ -500,7 +524,8 @@ fn main() -> Result<()> {
 
     for seed in &options.seeds {
         // Build under the resolved config. A failure here propagates — no silent fallback to Jerry.
-        let mut candidate_source = build_source(&resolved, *seed, options.bridge_seed);
+        let mut candidate_source =
+            build_source(&resolved, *seed, options.bridge_seed, options.pop_flavor);
         // The experimental source-answer upgrade is applied here (never by a source builder), so it
         // is strictly an opt-in audition arm and the default render stays byte-identical.
         candidate_source.source_answer = options.source_answer;

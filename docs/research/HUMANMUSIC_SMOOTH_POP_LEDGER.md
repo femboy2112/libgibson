@@ -138,6 +138,52 @@ the tempo A/B the pocket-scaling question needs). Nothing promoted.
   conscious negative space is the obvious next refinement if the ear wants it.
 - The pop-harmony *witness* is still the route-law + shared gates (sounded-note witness deferred, R1).
 
+## R2.1 — ear verdict → smooth revision (de-cliché harmony + de-robotic groove) — [OBSERVED] rendered; [EAR] PENDING
+
+**[EAR] verdict on the first R2 cut:** *"the chord progression is offensively cliché, and the groove
+is there but feels robotic. it needs to be smooth."* Two distinct, correct defects: (1) the loop was
+the Axis-of-Awesome i–VI–III–VII; (2) one fixed bass cell stamped on all 8 bars — the pocket was
+applied but the monotony read as a machine.
+
+**Recon that reframed the fix (read-only scout, verified file:line):**
+- The black_ice A-Aeolian world the pop source renders in has `use_sevenths=true`, `allow_modal_mixture=true`,
+  and the default language's `color_depth=2` — so **colour 9ths, modal mixture and secondary dominants
+  are all admitted**. The hand-set `route` is **not** conformed on the perform path (`kernel::source_harmony`):
+  a chord sounds exactly as authored or is hard-refused (`VOCABULARY_REFUSAL`) — never silently retracted.
+- **The carried keys do NOT follow the route.** `keys_comp()` is hand-authored tonic-relative material;
+  the chord-derived keys comp runs only under `Consequent`/`Return`, and this source has only `Establish`.
+  So a new progression REQUIRES a re-voiced keys comp or the keys clash — and no gate but the ear catches
+  it (`observe_argument` returns `_ => true` for `Establish`).
+- The octave-pop clamp (`kernel.rs`) hard-clamped `root+12` to 55, sounding a WRONG G for roots pc 8–11.
+
+**The revision (additive, opt-in, C137 untouched):**
+- `GrooveLaw.bass_cell` → `GrooveLaw.bass_cells: Vec<Vec<..>>`: the kernel plays `bass_cells[bar % len]`,
+  so the groove is FOUR varied per-bar cells (settled statement · walking answer · driving bar · turnaround
+  push) with ghost notes and a dynamic contour, not one stamped bar. Every cell still opens `(0.0, Root)`.
+- Octave-pop fixed to fold DOWN by whole octaves into the bass register → always the root's own pitch
+  class, never a wrong note. (Groove-branch only; C137 never enters it.)
+- An ear-gated harmonic **A/B** (`PopFlavor`, `--form=pop-groove` / `--form=pop-groove-lift`), each with a
+  keys comp voiced to ITS guide tones (3rd/7th + 9th colour):
+  - **Circle:** `Am9 – Dm9 – G9 – Cmaj9` (i9–iv9–♭VII9–♭IIImaj9; circle-of-4ths turnaround, A-Aeolian).
+  - **Lift:** `Am9 – Fmaj9 – Dm9 – E7` (i9–VImaj9–iv9–V7; E7 borrows G♯ via mixture — the leading-tone pull).
+
+**[OBSERVED] renders (seed 2112, `--tempo=104`):**
+| flavor | Score fp | lead | keys | bass | drums | WAV SHA-256 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Circle | `4bafe9bc6c2d9366` | 0 | 24 | 46 | 166 | `b024f9c156cdcf07c639d1e30fc6339d3715bc3d808f33fc1937090f32b4a42d` |
+| Lift | `634987fdc0f0b5f7` | 0 | 24 | 46 | 166 | `0bcf1e5cdd7217787c3551ed529a257cb1d09b2fa8ba65396a9712c9196495c4` |
+
+`bass=46` = the four cells (5+6+6+6 = 23/episode) × 2. Both lead-free. The two renders are byte-distinct.
+
+**Verified:** `audio_smooth_pop` 5/5 (the four counterfactuals + a new one proving the **Lift** flavor's
+borrowed E7 — a G♯ — is admitted and sounded, so modal mixture is load-bearing). C137 **byte-identical**:
+`C137_ACCEPTED_V1` lock reproduces all 51 artifacts from this binary. `audio_c137_song` 58/58,
+`audio_canonical_fingerprint` 5/5, lock 7/7, kernel `route_law` 2/2. `fmt` + `clippy -D` clean.
+
+**[EAR] PENDING — delivered 2 MP3s:** `pop-circle-104bpm.mp3` + `pop-lift-104bpm.mp3` (same breathing
+groove, the harmonic A/B). Nothing promoted. Still open if the ear wants more: a bespoke pop drum kit
+(the drums are still the C137 kit, pocket-leaned but a straight backbeat) and a deeper pop-specific lean.
+
 ---
 
 ## STOP conditions (plan §8)

@@ -1752,19 +1752,28 @@ pub fn perform_song(
         // pickup). Everywhere else it walks the changes. One monophonic line in the bass register —
         // motion that voices the harmony, never a doubled or sub-octave weave.
         let figure: Vec<(f64, i32, f32, f32)> = if let Some(groove) = &argument.groove {
-            // SMOOTH-POP: the authored syncopated cell, resolved against THIS bar's chord. The cell
-            // opens on the root at offset 0.0 (the required downbeat anchor the foundation law reads);
-            // everything after it is the cell's own off-beat identity. The octave is clamped into the
-            // bass register, and every attack still orbits the shared pocket (applied below).
-            groove
-                .bass_cell
-                .iter()
+            // SMOOTH-POP: the authored per-bar cell for THIS loop position, resolved against this
+            // bar's chord. Each cell opens on the root at offset 0.0 (the required downbeat anchor the
+            // foundation law reads); the rest is the cell's own off-beat identity, and the cells VARY
+            // across the loop so the groove breathes instead of stamping one bar eight times. Every
+            // attack still orbits the shared pocket (applied below).
+            let cell = &groove.bass_cells[bar % groove.bass_cells.len()];
+            cell.iter()
                 .map(|&(offset, degree, dur, velocity)| {
                     let pitch = match degree {
                         super::argument::BassDegree::Root => root,
                         super::argument::BassDegree::Third => third,
                         super::argument::BassDegree::Fifth => fifth,
-                        super::argument::BassDegree::Octave => (root + 12).clamp(36, 55),
+                        // The octave pop, folded DOWN by whole octaves into the bass register, so it is
+                        // always the root's own pitch class (never the wrong note a hard clamp to 55
+                        // would sound on a high root) and never above the bass ceiling.
+                        super::argument::BassDegree::Octave => {
+                            let mut p = root + 12;
+                            while p > 55 {
+                                p -= 12;
+                            }
+                            p
+                        }
                     };
                     (offset, pitch, dur, velocity)
                 })

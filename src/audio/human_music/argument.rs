@@ -412,16 +412,21 @@ pub enum BassDegree {
     Octave,
 }
 
-/// A smooth-pop groove's bass identity: a syncopated per-bar cell the kernel's foundation plays in
-/// place of the C137 walk/anchor figure, selected by the opt-in [`CompiledArgument::groove`]. The
-/// cell recurs every bar — its recurrence IS its identity — and MUST open on the chord root at
-/// offset `0.0` so the downbeat-root foundation law still holds. Offsets lie on the quarter-beat
-/// lattice; the degrees resolve per bar, so one authored cell carries the whole progression.
+/// A smooth-pop groove's bass identity: a cycle of syncopated per-bar cells the kernel's foundation
+/// plays in place of the C137 walk/anchor figure, selected by the opt-in [`CompiledArgument::groove`].
+/// The kernel plays `bass_cells[bar % bass_cells.len()]`, so the cycle's LENGTH is its loop and its
+/// internal VARIATION is what keeps the groove from reading as a stamped, one-bar machine loop — a
+/// smooth bassist breathes across the bars of a phrase (a settled statement, a busier answer, a
+/// turnaround that pushes back to the top) rather than repeating one identical bar. Every cell MUST
+/// open on the chord root at offset `0.0` so the downbeat-root foundation law still holds; the degrees
+/// resolve per bar, so each cell carries whatever chord sits under it in the progression.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GrooveLaw {
-    /// Per-bar bass cell: `(offset_in_bar_beats, degree, dur_beats, velocity)`. The entry at offset
-    /// `0.0` must be `BassDegree::Root` — the required harmonic anchor on every downbeat.
-    pub bass_cell: Vec<(f64, BassDegree, f32, f32)>,
+    /// One bass cell per loop position; cell `i` plays on every bar `b` where `b % bass_cells.len() == i`.
+    /// Each cell is `[(offset_in_bar_beats, degree, dur_beats, velocity)]`, and each MUST contain an
+    /// entry at offset `0.0` that is `BassDegree::Root` — the required harmonic anchor on every downbeat.
+    /// Must be non-empty.
+    pub bass_cells: Vec<Vec<(f64, BassDegree, f32, f32)>>,
 }
 
 /// A wrapper instead of additional fields in the established public `SongMap` structure.
