@@ -135,6 +135,9 @@ pub struct Resolved {
     /// The narrative intro entrance: the intro's keys foreshadow the verse-head germ before the late
     /// lead pickup claims it (keys→lead handoff on the way in). Only meaningful when `bars == 32`.
     pub song_intro_narrative: bool,
+    /// The opt-in smooth-pop groove arm (`--form=pop-groove`): a lead-free, Keys-carried pop pocket
+    /// with a syncopated bass. Its own `SmoothPop` domain; the four C137 capabilities resolve off.
+    pub pop_groove: bool,
     pub jerry: Vec<Jerry>,
 }
 
@@ -184,6 +187,10 @@ pub struct C137Preset {
     /// foreshadow the verse-head germ before the late lead pickup claims it (a keys→lead handoff on the
     /// way in). Implies the song+intro length; its own ear-gated arm.
     song_intro_narrative: bool,
+    /// The opt-in SMOOTH-POP groove (`--form=pop-groove`): a lead-free, Keys-carried band pocket at a
+    /// pop harmonic loop with a syncopated bass identity (R2). It is its own `SmoothPop` domain and
+    /// groove, not a C137 arc or a downgrade — its own ear-gated arm.
+    pop_groove: bool,
 }
 
 impl C137Preset {
@@ -227,6 +234,14 @@ impl C137Preset {
     /// song+intro length; its own ear-gated arm.
     pub fn song_intro_narrative(mut self) -> Self {
         self.song_intro_narrative = true;
+        self
+    }
+
+    /// Select the opt-in smooth-pop groove (`--form=pop-groove`): a lead-free, Keys-carried band
+    /// pocket at a pop harmonic loop with a syncopated bass identity. Its own `SmoothPop` domain and
+    /// groove, not a C137 arc; the C137 capability booleans are irrelevant to it (resolved off).
+    pub fn pop_groove(mut self) -> Self {
+        self.pop_groove = true;
         self
     }
 
@@ -287,6 +302,15 @@ impl C137Preset {
         if self.song || self.song_intro || self.song_narrative || self.song_intro_narrative {
             bars = 32;
         }
+        // The smooth-pop groove is its own two-episode (8-bar) lead-free arm. The C137 band
+        // capabilities do not apply to it, so they resolve OFF and the manifest reports them honestly.
+        if self.pop_groove {
+            bars = 8;
+            comp_keys = false;
+            anticipate_bass = false;
+            translate_lead_rhythm = false;
+            answer_breaths = false;
+        }
         Resolved {
             bars,
             phrasing,
@@ -297,6 +321,7 @@ impl C137Preset {
             song_intro: self.song_intro,
             song_narrative: self.song_narrative,
             song_intro_narrative: self.song_intro_narrative,
+            pop_groove: self.pop_groove,
             jerry: self.jerry.clone(),
         }
     }
