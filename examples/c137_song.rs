@@ -50,6 +50,7 @@ mod source_song;
 
 use gibson::audio::human_music::{
     argument::CompiledArgument,
+    instrument::OscKind,
     kernel,
     score::{Role, Score},
     synth::{ProductionControl, StemMask},
@@ -72,6 +73,10 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PopPalette {
     Warm,
+    /// WARM, but a little less smooth (Operation Johnny Five R2): brighter, snappier FM keys and lead,
+    /// a growlier plucky bass, a punchier kit and less chorus wash — more edge and bounce than WARM,
+    /// without going back to the beepy BLACK_ICE voices. A point between WARM and BEEP.
+    Punchy,
     Beep,
 }
 
@@ -188,8 +193,9 @@ impl Options {
                 // The smooth-pop render palette A/B (render choice only; C137 is byte-identical either way).
                 match value {
                     "warm" => pop_palette = PopPalette::Warm,
+                    "punchy" => pop_palette = PopPalette::Punchy,
                     "beep" => pop_palette = PopPalette::Beep,
-                    _ => return Err("--pop-palette must be warm (default) or beep".into()),
+                    _ => return Err("--pop-palette must be warm (default), punchy, or beep".into()),
                 }
             } else if arg == "--source-answer" {
                 // Experimental UPGRADE audition: the drummer truly answers the lead's question.
@@ -235,6 +241,56 @@ fn pop_world(base: &MusicWorld) -> MusicWorld {
     // (0.28) to a more present ambience (0.20) so the pocket reads as higher-energy, not distant.
     w.production.echo = None;
     w.production.space.mix = 0.20;
+    w
+}
+
+/// WARM, but a little less smooth (Operation Johnny Five R2). The SAME VAPOR95-derived render world as
+/// [`pop_world`] — composition is unchanged and C137 stays byte-identical — retuned toward more edge,
+/// bounce and forward motion WITHOUT returning to the beepy BLACK_ICE voices: brighter, snappier FM
+/// keys and lead (more harmonic bite, shorter tails), a growlier plucky bass (higher cutoff +
+/// resonance, less sustain so it pops instead of holding), a punchier kit (more kick click, a snappier
+/// snare, crisper hats, livelier ghosts), and less chorus wash with a touch more drive. A render-only
+/// A/B against WARM — the maintainer's ear decides whether "less smooth" landed; nothing is promoted.
+fn pop_world_punchy(base: &MusicWorld) -> MusicWorld {
+    let mut w = pop_world(base); // start from the accepted warm render world, then de-smooth it
+                                 // KEYS: de-glass the FM electric piano — more harmonic bite (index), a brighter filter, and a
+                                 // shorter tail so each note speaks and clears (percussive-present, not a glassy pad).
+    if let OscKind::Fm { index, .. } = &mut w.keys.osc {
+        *index = 0.55;
+    }
+    w.keys.cutoff_hz = 2900.0;
+    w.keys.resonance = 0.18;
+    w.keys.adsr.1 = 0.32; // decay
+    w.keys.adsr.3 = 0.28; // release
+                          // LEAD: give the voice body and articulation so it cuts the mix instead of hazing into it.
+    if let OscKind::Fm { index, .. } = &mut w.lead.osc {
+        *index = 0.65;
+    }
+    w.lead.cutoff_hz = 3200.0;
+    w.lead.resonance = 0.16;
+    w.lead.adsr.0 = 0.010; // attack (crisper)
+    w.lead.adsr.3 = 0.40; // release (a touch tighter)
+                          // BASS: the biggest bounce lever — a growlier, plucky, defined bass that pops rather than sustains.
+    w.bass.cutoff_hz = 760.0;
+    w.bass.resonance = 0.30;
+    w.bass.adsr.1 = 0.17; // decay
+    w.bass.adsr.2 = 0.52; // sustain (lower = plucky bounce, not a smooth hold)
+    w.bass.adsr.3 = 0.12; // release
+                          // KIT: punch it up — more kick click + a tighter body, a snappier snare, crisper hats, livelier ghosts.
+    w.kick.click = 0.5;
+    w.kick.amp_tau = 0.10;
+    w.snare.noise_hp_hz = 2000.0;
+    w.snare.noise_tau = 0.09;
+    w.snare.noise_mix = 0.78;
+    w.hat_cutoff = 9500.0;
+    w.ghost_amount = 0.32;
+    // PRODUCTION: less wash, a touch more drive/presence.
+    w.production.saturation = 1.6;
+    w.production.space.mix = 0.16;
+    if let Some(ch) = &mut w.production.chorus {
+        ch.mix = 0.22;
+        ch.depth_ms = 2.5;
+    }
     w
 }
 
@@ -633,6 +689,7 @@ fn main() -> Result<()> {
     if resolved.pop_groove {
         let note = match options.pop_palette {
             PopPalette::Warm => "  palette               : WARM (render-only) — VAPOR95-style: glassy FM electric piano, filtered round bass, soft machine kit, chorus + damped room. C137 byte-identical.",
+            PopPalette::Punchy => "  palette               : PUNCHY (render-only) — WARM de-smoothed (R2): brighter/snappier FM keys + lead, a growlier plucky bass, a punchier kit, less chorus wash. Between WARM and BEEP. C137 byte-identical.",
             PopPalette::Beep => "  palette               : BEEP (render-only) — the original BLACK_ICE voices (the 8-bit-ish pulse keys), kept for the A/B.",
         };
         let _ = writeln!(manifest, "{note}");
@@ -655,8 +712,18 @@ fn main() -> Result<()> {
         // BLACK_ICE keys were the "8-bit" sound the ear flagged. Render-world only: composition stayed
         // under `world` above, and no C137 path is pop_groove, so `rw` is `&world` for every C137
         // render and those artifacts are byte-identical.
-        let warm_pop = resolved.pop_groove && options.pop_palette == PopPalette::Warm;
-        let render_pop_world = warm_pop.then(|| pop_world(&world));
+        // Render-world palette: WARM and PUNCHY both play under a pop render world (composition stays
+        // under `world`); BEEP keeps the BLACK_ICE compose voices. No C137 path is pop_groove, so `rw`
+        // is `&world` for every C137 render and those artifacts stay byte-identical.
+        let render_pop_world = if resolved.pop_groove {
+            match options.pop_palette {
+                PopPalette::Warm => Some(pop_world(&world)),
+                PopPalette::Punchy => Some(pop_world_punchy(&world)),
+                PopPalette::Beep => None,
+            }
+        } else {
+            None
+        };
         let rw = render_pop_world.as_ref().unwrap_or(&world);
         let dir = options.out.join(format!("seed-{seed}"));
         fs::create_dir_all(&dir)?;
