@@ -420,6 +420,56 @@ fn rows_to_lead_events(rows: &[(f64, i32, f64, f32)]) -> Vec<MaterialEvent> {
         .collect()
 }
 
+/// The song's FUNK bass: four syncopated per-bar cells of octave-and-ghost disco-funk — the bassline
+/// as a rhythmic HOOK (Espresso / Feels / Off the Wall), not a smooth root-walk. Every cell still
+/// opens on `(0.0, Root)` (the foundation law the kernel checks), stays monophonic and leaves space;
+/// the bounce is in the octave pops, the off-beat placement and the ghosts. `(offset, degree, dur, vel)`.
+fn song_funk_bass_cells() -> Vec<Vec<(f64, BassDegree, f32, f32)>> {
+    // Root and Octave share a pitch when the chord root sits high (the kernel folds the octave back
+    // onto the root), so they are kept ≥ 1 beat apart within a bar; the Fifth (never folds onto the
+    // root) carries the off-beat bounce. A root–fifth–octave boogie with space — the funk idiom.
+    vec![
+        // Bar 0 — statement: root, off-beat fifth, the octave on 2, space, then the fifth push.
+        vec![
+            (0.0, BassDegree::Root, 0.24, 0.86),
+            (0.5, BassDegree::Fifth, 0.20, 0.50),
+            (1.0, BassDegree::Octave, 0.22, 0.56),
+            (2.0, BassDegree::Root, 0.22, 0.58),
+            (2.5, BassDegree::Fifth, 0.20, 0.52),
+            (3.5, BassDegree::Octave, 0.26, 0.62),
+        ],
+        // Bar 1 — walking funk: root, fifth, a syncopated octave, fifth, a late root, the fifth push.
+        vec![
+            (0.0, BassDegree::Root, 0.24, 0.84),
+            (0.5, BassDegree::Fifth, 0.20, 0.50),
+            (1.5, BassDegree::Octave, 0.22, 0.54),
+            (2.0, BassDegree::Fifth, 0.22, 0.58),
+            (3.0, BassDegree::Root, 0.22, 0.54),
+            (3.5, BassDegree::Fifth, 0.26, 0.60),
+        ],
+        // Bar 2 — driving: the busiest, a full eighth-note root/octave–fifth boogie into the turn.
+        vec![
+            (0.0, BassDegree::Root, 0.22, 0.88),
+            (0.5, BassDegree::Fifth, 0.20, 0.50),
+            (1.0, BassDegree::Octave, 0.20, 0.54),
+            (1.5, BassDegree::Fifth, 0.20, 0.50),
+            (2.0, BassDegree::Root, 0.20, 0.58),
+            (2.5, BassDegree::Fifth, 0.20, 0.52),
+            (3.0, BassDegree::Octave, 0.20, 0.54),
+            (3.5, BassDegree::Fifth, 0.26, 0.62),
+        ],
+        // Bar 3 — turnaround: root, fifth/octave climb, a late root, the STRONGEST octave push home.
+        vec![
+            (0.0, BassDegree::Root, 0.24, 0.82),
+            (1.0, BassDegree::Fifth, 0.20, 0.52),
+            (1.5, BassDegree::Octave, 0.22, 0.55),
+            (2.0, BassDegree::Fifth, 0.22, 0.56),
+            (2.5, BassDegree::Root, 0.20, 0.54),
+            (3.5, BassDegree::Octave, 0.28, 0.68),
+        ],
+    ]
+}
+
 /// Build the smooth-pop SONG source for one seed and [`PopFlavor`]: a Lead-carried verse → hook
 /// over the flavor's pop loop (twice), with the comping keyboard, the pad rug, the breathing
 /// bass and the lead-answering drummer all switched on. The hook is a lawful `altered_consequent`
@@ -528,15 +578,18 @@ pub fn source_pop_song(seed: u64, flavor: PopFlavor) -> CompiledArgument {
     compiled.route = route;
     compiled.domain = SourceDomain::SmoothPop(PopSourceGrammar { loop_bars: 4 });
     compiled.groove = Some(GrooveLaw {
-        bass_cells: bass_cells(),
+        bass_cells: song_funk_bass_cells(),
     });
-    // Free the band: the keyboard comps guide-tone stabs under the hook, the drummer answers
-    // into the lead's breaths and translates its phrase-ending rhythm, and the bass leans its
-    // approach toward the harmonic destination. Opt-in expressive levers the C137 song already
-    // proves; here they serve the pop song. (Each is ablated individually in the experiments.)
+    // Free the band AND make it groove: the keyboard comps guide-tone stabs under the hook, the drummer
+    // answers the lead's breaths and translates its phrase-ending rhythm, the bass leans its approach
+    // toward the harmonic destination, and the kit turns to a FUNK/DISCO pocket (four-on-the-floor +
+    // sixteenth hats) under the syncopated octave bass — the Espresso/Feels/Off-the-Wall rhythm section.
+    // Opt-in levers: the expressive ones are proven on the C137 song; the funk kit is new here. Each is
+    // ablated individually in the experiments (the lead-free groove control leaves them all off).
     compiled.comp_keys = true;
     compiled.answer_breaths = true;
     compiled.anticipate_bass = true;
     compiled.translate_lead_rhythm = true;
+    compiled.pop_funk_kit = true;
     compiled
 }

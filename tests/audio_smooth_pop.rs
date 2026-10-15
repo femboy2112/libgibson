@@ -8,7 +8,7 @@ mod source_pop;
 use gibson::audio::human_music::{
     argument::SourceDomain,
     kernel,
-    score::{Role, Score},
+    score::{DrumVoice, Role, Score},
     theme_family::Kinship,
     theory::Mode,
     MusicWorld,
@@ -229,7 +229,7 @@ fn the_pop_song_sounds_a_lead_a_comping_keyboard_and_a_pad() {
         score.role_notes(Role::Pad).count() > 0,
         "the pad rug enters on the hook"
     );
-    // The breathing pop bass is still the foundation, anchoring every bar downbeat.
+    // The funk pop bass is still the foundation, anchoring every bar downbeat.
     let bars = (score.total_beats / 4.0).round() as i64;
     for bar in 0..bars {
         let at = bar as f64 * 4.0;
@@ -240,4 +240,37 @@ fn the_pop_song_sounds_a_lead_a_comping_keyboard_and_a_pad() {
             "the bass anchors the downbeat of bar {bar}"
         );
     }
+}
+
+#[test]
+fn the_funk_kit_is_load_bearing_four_on_the_floor() {
+    // The funk/disco kit must be a real pattern change, not a relabel: four-on-the-floor puts a kick on
+    // EVERY beat — including beats 2 and 4, where the archived kick-on-1-and-3 kit never places one.
+    // Flip `pop_funk_kit` off on the same song and those kicks must disappear (and the kit stays gated).
+    let funk = render_pop_song(2112); // source_pop_song sets pop_funk_kit = true
+    let mut plain_src = source_pop::source_pop_song(2112, source_pop::PopFlavor::Circle);
+    plain_src.pop_funk_kit = false;
+    let plain = kernel::perform_song(&plain_src, &world())
+        .expect("the song with the archived kit still commits")
+        .score()
+        .clone();
+    let kicks_on = |s: &Score, beat: f64| {
+        s.drums
+            .iter()
+            .filter(|d| matches!(d.voice, DrumVoice::Kick) && (d.start_beat - beat).abs() < 1e-6)
+            .count()
+    };
+    assert!(
+        kicks_on(&funk, 1.0) > 0 && kicks_on(&funk, 3.0) > 0,
+        "the funk kit lands a kick on beats 2 and 4 (four-on-the-floor)"
+    );
+    assert_eq!(
+        kicks_on(&plain, 1.0),
+        0,
+        "the archived kit never kicks on beat 2 — so the funk flag is genuinely load-bearing"
+    );
+    assert!(
+        funk.drums.len() != plain.drums.len(),
+        "the funk kit commits a different drum pattern than the archived kit"
+    );
 }

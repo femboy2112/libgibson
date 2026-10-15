@@ -499,6 +499,12 @@ pub struct CompiledArgument {
     /// foundation law still holds). `None` (the default, set by `compile`) keeps the archived
     /// foundation byte-identical; only a smooth-pop source builder sets it.
     pub groove: Option<GrooveLaw>,
+    /// Opt-in SMOOTH-POP FUNK KIT: when true, the kernel plays a funk/disco rhythm-section spine for
+    /// this source — four-on-the-floor kick, sixteenth hats with disco open-hats on the off-beats, a
+    /// crisp backbeat and a funk ghost — instead of the archived kick-on-1-and-3 kit. `false` (the
+    /// default, set by `compile`) keeps every historical render byte-identical; only a smooth-pop SONG
+    /// builder sets it, so C137 and the lead-free groove control are both untouched.
+    pub pop_funk_kit: bool,
 }
 
 impl CompiledArgument {
@@ -1134,6 +1140,7 @@ impl MusicalArgument {
             // None by default — the archived C137 foundation (walk/anchor) is kept byte-identical.
             // A smooth-pop source builder sets it to opt that one source into the syncopated cell.
             groove: None,
+            pop_funk_kit: false,
         })
     }
 

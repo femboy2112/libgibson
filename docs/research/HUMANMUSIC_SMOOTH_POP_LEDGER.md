@@ -360,6 +360,42 @@ the BASS-aware drummer (Priority 3, a domain-gated kernel edit), section travel 
 
 ---
 
+## OPERATION JOHNNY FIVE — R2 (timbre) + R3 (funk rhythm section)
+
+**R1 ear verdict:** the verse→hook SONG direction is ACCEPTED (a refinement, not a rework). Two rounds followed.
+
+**R2 (commit `d577ad2`) — the PUNCHY palette.** Ear: *"more upbeat motion, more bounce, timbre a little
+less smooth."* Answered the timbre ask as a NEW opt-in render palette `--pop-palette=punchy` (beside
+warm/beep): the VAPOR95 render world de-smoothed — brighter/snappier FM keys+lead (index 0.25→0.55 /
+0.15→0.65, cutoffs up, shorter tails), a growly plucky bass (cutoff 560→760, sustain 0.72→0.52), a
+punchier kit (kick click 0.22→0.5, snappier snare, hats 7800→9500, ghosts 0.2→0.32), less chorus wash
+(0.4→0.22) + more drive (1.4→1.6). `pop_world_punchy()` in `examples/c137_song.rs`. RENDER-ONLY: pop
+Score fp UNCHANGED `7dc82f14` across warm/punchy (isolates timbre), warm byte-identical to R1, C137 lock
+51/51. The accepted warm groove control is untouched. 3 MP3s (warm-104 / punchy-104 / punchy-110).
+
+**R3 (this commit) — the FUNK rhythm section.** Ear: *"approaching slow Ace-of-Base shaped sound; make
+it more Espresso / Feels / Off the Wall / All in the Way You Get Down."* Read: the groove is square; the
+four refs share a danceable funk/disco pocket. Two levers (the funk rhythm section), both gated/pop-only:
+- A GATED funk kit in the kernel — new `pop_funk_kit` `CompiledArgument` flag; a four-on-the-floor kick,
+  sixteenth hats throughout with disco OPEN-hats on the "and of 2/4", a crisp backbeat + a ghost pickup.
+  Gated on `argument.pop_funk_kit`, so C137 and the lead-free groove run the EXACT archived else-branch
+  (kick on 1 & 3) — the lock confirms byte-identity.
+- A funk BASS for the song (`song_funk_bass_cells`): a syncopated root–fifth–octave boogie with space.
+  LESSON (`Capacity(Bass)` debugged): the kernel folds the `Octave` degree down onto the root's pitch
+  when the chord root sits high (`kernel.rs:1770`), so Root and Octave can be the SAME pitch; with
+  `pocket_offset` a 0.5-beat Root↔Octave pair drifts under the 0.5-beat same-pitch floor and `validate_lane`
+  rejects it. Fix: keep Root/Octave ≥ 1 beat apart within a bar and let the Fifth (which never folds onto
+  the root) carry the off-beat bounce. Across bars the chord changes, so that boundary is safe.
+
+**[SCORE witness] seed 2112, Circle, punchy, 104:** fp `5482f041fbb022d4` — lead=31 (topline unchanged),
+keys=26, bass 46→52, pad=20, drums 171→211 (the four-floor + 16ths). **[TEST]** `audio_smooth_pop` 9/9
+incl. `the_funk_kit_is_load_bearing_four_on_the_floor` (flip `pop_funk_kit` off → the beat-2/4 kicks
+vanish; the archived kit never places them). **[LOCK] GREEN — 51/51 byte-for-byte AFTER the kernel edit.**
+fmt + clippy-D clean. **[REPRO]** `--form=pop-song --pop-palette=punchy --tempo=104|110`. 3 MP3s
+(before-punchy-no-funk / funk-104 / funk-110). **EAR PENDING on R3.**
+
+---
+
 ## STOP conditions (plan §8)
 Frozen WAV drift · source-observation contradiction · ghost feature claimed active while inert ·
 unresolved clip/collision/silent-note-masquerade · valid C137 rejected by refactor ·
