@@ -530,6 +530,35 @@ connectors Circle / reshaped-connectors Lift), matched 104 BPM. **EAR PENDING.**
 chord-to-chord connective motion) is the follow-up if this is not enough — but in song mode the keys comp
 is engine-derived (`comp_keys`), so reshaping it is a GATED kernel edit, not a free source change.
 
+**R10 (this commit) — de-blues the lead + the bass stops leaping up.** Ear on R9: *"bass is hitting
+higher notes when it feels like the notes want to go down (true in before, extra true in after), and the
+lead still needs work. the cliché notes i think are those blues type lead tones."* Two independent fixes
+(example-only, lawful, C137 lock 51/51):
+- LEAD de-blued → fully diatonic. The two chromatic colours added in R6/R7 ARE the "blues type lead
+  tones": the hook's G# (raised-7th / leading-tone soul scoop) and the verse's C# (bright major-3rd
+  flash). Both pulled — and they were the ONLY two chromatics the engine's pool licenses, so all prior
+  "colour" was blues-flavoured by construction. Hook homecoming G-E-G#-A → **B-A-G-A** (a clean 9→8: the
+  9th B leans home to A; the G is now a plain diatonic ♭7, no blue rub now the G# is gone). Verse bar-3
+  C# → diatonic C (a dark modal ♭3-of-key upper neighbour, not the bright bluesy 13th). Flare now comes
+  from the line/rhythm, not blue notes. Still a lawful `altered_consequent` (iou 1.0, parsons 0.625, mean
+  +3.8, exact-interval ≈0.31, scale 1.0, peak 14>12, Open→Closed).
+- BASS stops leaping UP at the resolutions. The two accented bar-end pushes (bar 0 & bar 3, beat-"and-of-4")
+  were `Octave` (a leap up to the high octave) right where the phrase resolves — "goes up when it wants
+  down," and R9's more-descending lead made it worse. Changed both to `Root` (the push lands grounded on
+  the low root). Mid-bar octave bounces kept (the funk she called "dope"). HONEST LIMIT: `BassDegree` has
+  nothing BELOW the root (Root/Third/Fifth/Octave all ≥ root), so a true walk-DOWN under the root needs
+  the flagged engine work; this stops the upward leap, which is what the ear flagged. Kick-lock preserved
+  (the push was already a kick slot; drums unchanged at 208/206).
+
+**[SCORE witness] seed 2112, punchy, 104:** Circle fp `53f4d9541634e86b` (lead=34, keys=10, bass=52,
+pad=18, drums=208); Lift fp `fbc3c0aa8f1ccf18` (lead=34, pad=19, drums=206). **[TEST]** `audio_smooth_pop`
+9/9 (lawful consequent + kick-still-locks). **[LOCK] GREEN 51/51 byte-for-byte.** fmt + clippy-D clean.
+3 MP3s (R9 blues+up-bass BEFORE / de-blued+bass-down Circle / de-blued+bass-down Lift), matched 104 BPM.
+**EAR PENDING.** The lead is now colour-free (all diatonic); if it wants colour BACK it must be a NON-blues
+palette = widening the engine note pool past its 2 blues-flavoured licensed chromatics (ENGINE work,
+gated). A true bass walk-DOWN also = engine work (new sub-root `BassDegree`). Flavour (Circle vs Lift)
+still UNPICKED — both arms live.
+
 ---
 
 ## STOP conditions (plan §8)

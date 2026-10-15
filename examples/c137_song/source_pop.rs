@@ -411,12 +411,12 @@ pub fn pop_song_verse() -> Vec<MaterialEvent> {
         (8.5, 7, 0.20, 0.58),
         (8.75, 12, 0.5, 0.62),
         (10.5, 10, 0.6, 0.56),
-        // E7 — leap to the open B (the dominant's 5th), lean on the C# colour (E7's 13th) as an upper
-        // NEIGHBOUR above it, then hang OPEN on B — the C# is an expressive lean, not a passing tone in a
-        // descending scale. Still wanting the hook.
+        // E7 — leap to the open B (the dominant's 5th), lean on a DIATONIC C (natural, the Aeolian ♭3 of
+        // the key — a dark modal neighbour, not the bright bluesy C# the ear flagged), then hang OPEN on
+        // B. Fully diatonic now: the colour is modal, not blues. Still wanting the hook.
         (12.0, 7, 0.45, 0.54),
         (12.75, 2, 0.6, 0.52),
-        (13.5, 4, 0.5, 0.52),
+        (13.5, 3, 0.5, 0.52),
         (14.5, 2, 1.0, 0.50),
     ])
 }
@@ -448,12 +448,13 @@ pub fn pop_song_hook() -> Vec<MaterialEvent> {
         (8.5, 7, 0.20, 0.64),
         (8.75, 14, 0.5, 0.70),
         (10.5, 12, 0.6, 0.64),
-        // E7 — the dominant cadence: a blue G, up through the chord's own 3rd G# (the LEADING TONE,
-        // now IN CONTEXT — the E7 harmonizes it), resolving HOME to A (Closed). The flare the homecoming
-        // earns, over the chord that makes it belong rather than clash.
-        (12.0, 10, 0.45, 0.60),
-        (12.75, 7, 0.6, 0.56),
-        (13.5, 11, 0.5, 0.56),
+        // E7 — the homecoming, DE-BLUED: no leading-tone scoop (G#) and no blue ♭3 (G♮) rub — those were
+        // the "blues type lead tones" the ear flagged as cliché. Instead a clean 9→8 resolution: the 9th
+        // (B) leans HOME to the tonic A, dips to a diatonic lower neighbour G (the ♭7, no longer a blue
+        // note now the G# is gone), and settles HOME on A (Closed). Fully diatonic; flare from line, not blues.
+        (12.0, 14, 0.45, 0.60),
+        (12.75, 12, 0.6, 0.56),
+        (13.5, 10, 0.5, 0.56),
         (14.5, 12, 1.0, 0.60),
     ])
 }
@@ -481,14 +482,16 @@ fn song_funk_bass_cells() -> Vec<Vec<(f64, BassDegree, f32, f32)>> {
     // onto the root), so they are kept ≥ 1 beat apart within a bar; the Fifth (never folds onto the
     // root) carries the off-beat bounce. A root–fifth–octave boogie with space — the funk idiom.
     vec![
-        // Bar 0 — statement: root, off-beat fifth, the octave on 2, space, then the fifth push.
+        // Bar 0 — statement: root, off-beat fifth, ONE octave bounce on beat 2, space, then the bar-end
+        // push RESOLVES DOWN onto the low root (not a leap up to the octave — the "goes up when it wants
+        // down" the ear flagged). The mid-bar octave keeps the boogie bounce; the resolution settles low.
         vec![
             (0.0, BassDegree::Root, 0.24, 0.86),
             (0.5, BassDegree::Fifth, 0.20, 0.50),
             (1.0, BassDegree::Octave, 0.22, 0.56),
             (2.0, BassDegree::Root, 0.22, 0.58),
             (2.5, BassDegree::Third, 0.20, 0.52), // the chord 3rd — colour, outlining the quality
-            (3.5, BassDegree::Octave, 0.26, 0.62),
+            (3.5, BassDegree::Root, 0.26, 0.62),
         ],
         // Bar 1 — walking funk: root, fifth, a syncopated octave, fifth, a late root, the fifth push.
         vec![
@@ -510,14 +513,16 @@ fn song_funk_bass_cells() -> Vec<Vec<(f64, BassDegree, f32, f32)>> {
             (3.0, BassDegree::Octave, 0.20, 0.54),
             (3.5, BassDegree::Fifth, 0.26, 0.62),
         ],
-        // Bar 3 — turnaround: root, fifth/octave climb, a late root, the STRONGEST octave push home.
+        // Bar 3 — turnaround: root, a mid-bar octave bounce, a late root, then the STRONGEST push RESOLVES
+        // DOWN onto the low root (grounded, not a leap up to the high octave) — the turnaround lands heavy
+        // and low into the loop instead of jumping up against the descending lead.
         vec![
             (0.0, BassDegree::Root, 0.24, 0.82),
             (1.0, BassDegree::Fifth, 0.20, 0.52),
             (1.5, BassDegree::Octave, 0.22, 0.55),
             (2.0, BassDegree::Fifth, 0.22, 0.56),
             (2.5, BassDegree::Root, 0.20, 0.54),
-            (3.5, BassDegree::Octave, 0.28, 0.68),
+            (3.5, BassDegree::Root, 0.28, 0.68),
         ],
     ]
 }
