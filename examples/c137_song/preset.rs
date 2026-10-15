@@ -138,6 +138,11 @@ pub struct Resolved {
     /// The opt-in smooth-pop groove arm (`--form=pop-groove`): a lead-free, Keys-carried pop pocket
     /// with a syncopated bass. Its own `SmoothPop` domain; the four C137 capabilities resolve off.
     pub pop_groove: bool,
+    /// The opt-in smooth-pop SONG arm (`--form=pop-song`): a Lead-carried verse→hook over the pop
+    /// loop, with the comping keys, pad rug and lead-answering band ON. Implies `pop_groove` (the pop
+    /// render path and palette); the capabilities resolve ON (the source sets them, returned before
+    /// `apply_caps`), so the manifest reports the song's active band honestly.
+    pub pop_song: bool,
     pub jerry: Vec<Jerry>,
 }
 
@@ -191,6 +196,10 @@ pub struct C137Preset {
     /// pop harmonic loop with a syncopated bass identity (R2). It is its own `SmoothPop` domain and
     /// groove, not a C137 arc or a downgrade — its own ear-gated arm.
     pop_groove: bool,
+    /// The opt-in SMOOTH-POP song (`--form=pop-song`): a Lead-carried verse→hook over the same pop
+    /// loop, with the comping keys, pad rug and lead-answering band ON (Operation Johnny Five). Implies
+    /// `pop_groove` (the pop render path/palette/length); its own ear-gated arm.
+    pop_song: bool,
 }
 
 impl C137Preset {
@@ -241,6 +250,15 @@ impl C137Preset {
     /// pocket at a pop harmonic loop with a syncopated bass identity. Its own `SmoothPop` domain and
     /// groove, not a C137 arc; the C137 capability booleans are irrelevant to it (resolved off).
     pub fn pop_groove(mut self) -> Self {
+        self.pop_groove = true;
+        self
+    }
+
+    /// Select the opt-in smooth-pop SONG (`--form=pop-song`): a Lead-carried verse→hook over the pop
+    /// loop with the comping keys, pad rug and lead-answering band (Operation Johnny Five). Implies the
+    /// pop render path and palette (`pop_groove`); its own ear-gated arm, never a default.
+    pub fn pop_song(mut self) -> Self {
+        self.pop_song = true;
         self.pop_groove = true;
         self
     }
@@ -306,10 +324,15 @@ impl C137Preset {
         // capabilities do not apply to it, so they resolve OFF and the manifest reports them honestly.
         if self.pop_groove {
             bars = 8;
-            comp_keys = false;
-            anticipate_bass = false;
-            translate_lead_rhythm = false;
-            answer_breaths = false;
+            // The lead-free GROOVE turns the C137 band capabilities OFF (they do not apply to it). The
+            // pop SONG keeps them ON — its Lead-carried source sets them, and `build_source` returns
+            // the pop song before `apply_caps`, so the manifest reports them honestly as its live band.
+            if !self.pop_song {
+                comp_keys = false;
+                anticipate_bass = false;
+                translate_lead_rhythm = false;
+                answer_breaths = false;
+            }
         }
         Resolved {
             bars,
@@ -322,6 +345,7 @@ impl C137Preset {
             song_narrative: self.song_narrative,
             song_intro_narrative: self.song_intro_narrative,
             pop_groove: self.pop_groove,
+            pop_song: self.pop_song,
             jerry: self.jerry.clone(),
         }
     }

@@ -316,6 +316,296 @@ path), scoped separately. Asked the maintainer which reading.
 
 ---
 
+## OPERATION JOHNNY FIVE — R1: the pop SONG (Lead-carried verse → hook)
+
+**Branch** `impl/humanmusic-johnny-five-soul-2026-10-14` off the audited impl head `f3725fd` (PR #116).
+**The question:** can the pop arm stop being an 8-bar lead-free vamp and become a SONG — a recognizable
+verse that sets up a hook, carried by a foreground voice, with the band supporting it?
+
+**[BUILD] — opt-in `--form=pop-song` / `--form=pop-song-lift`, ZERO shared-engine edits.** A new
+`source_pop_song` beside the lead-free `source_pop_groove` (which stays as the control):
+- A hand-authored vocal-proxy **Lead** carries both episodes: a 4-bar VERSE (`Establish`, ends OPEN on
+  the 9th) and a 4-bar HOOK (`Consequent`, lands HOME on the tonic). Middle-register, prosodic — a
+  three-note germ head (C D E) shared verse→hook, with holds, breaths and pickups; not a note per half-beat.
+- The HOOK is a **certified `altered_consequent`** of the verse (the engine's own kinship law): onset_iou
+  0.9375, head true, parsons 0.857, exact_interval 0.357 (re-voiced, not transposed), offset_spread 10,
+  mean_delta +3.52 st, floor≥tonic, peak_profile_differs, Open→Closed, scale_fraction 1.0, step_rate 0.80.
+  A scrambled hook (same note count, reversed pitches) FAILS the law — the relationship is content, not count.
+- The keyboard is **freed to comp** (`comp_keys`): guide-tone stabs in the holes under the hook.
+- The **pad rug** enters on the hook only (Consequent-gated) — an earned harmonic arrival, not wallpaper.
+- The drummer **answers the lead's breaths** (`answer_breaths`) and **translates its phrase-end rhythm**
+  (`translate_lead_rhythm`); `anticipate_bass` requested. Breathing pop bass + warm VAPOR95 palette unchanged.
+
+**[SCORE witness] seed 2112, Circle, warm, 104 BPM:** fp `7dc82f14cf0efb9e` — lead=31 (verse 15 + hook
+16, matches source), keys=26, bass=46, pad=20, drums=171; expressive=ACTIVE(breaths=6, vspread=0.33),
+breath-answer=ACTIVE(3), keys-comp=ACTIVE(18), bass-antic=requested/0-this-seed (reported honestly),
+drum-echo=ACTIVE(6), rug=20. A/B control (lead-free groove) fp `9cf08748acb807ab`: lead=0 pad=0, band off.
+
+**[C137 LOCK] GREEN** — `scripts/verify-c137-accepted-v1.sh` reproduces all **51/51** accepted artifacts
+byte-for-byte at this HEAD. Pop-only changes; no engine file touched.
+
+**[GATE]** fmt clean · clippy `-D warnings` clean · `audio_smooth_pop` 8/8 (incl. the lawfulness proof,
+the scramble falsifier, and the lead/keys/pad render witness) · `audio_c137_song` 58/58 ·
+`audio_c137_accepted_v1_lock` 7/7.
+
+**[REPRO]** `cargo +1.99.0 build --release --example c137_song`, then
+`target/release/examples/c137_song --form=pop-song --pop-palette=warm --tempo=104 --seeds=2112 --out=DIR`
+(control: `--form=pop-groove …`). Loudness-matched A/B MP3s (−16 LUFS, 21 s) delivered to the maintainer.
+
+**[EAR] verdict:** PENDING. The hook gates the op — if it does not read as a recognizable verse→hook SONG,
+the next cuts do not build on it. **Deliberately held for later checkpoints** (so the ear vetoes first):
+the BASS-aware drummer (Priority 3, a domain-gated kernel edit), section travel to 32 bars (Priorities
+4/6), the expression A/B (Priority 5), the independent sounded-harmony witness + the full 2×2 factorial
+(§8), and the required-CI acoustic gate (§9, with its cross-runner byte-determinism caveat).
+
+---
+
+## OPERATION JOHNNY FIVE — R2 (timbre) + R3 (funk rhythm section)
+
+**R1 ear verdict:** the verse→hook SONG direction is ACCEPTED (a refinement, not a rework). Two rounds followed.
+
+**R2 (commit `d577ad2`) — the PUNCHY palette.** Ear: *"more upbeat motion, more bounce, timbre a little
+less smooth."* Answered the timbre ask as a NEW opt-in render palette `--pop-palette=punchy` (beside
+warm/beep): the VAPOR95 render world de-smoothed — brighter/snappier FM keys+lead (index 0.25→0.55 /
+0.15→0.65, cutoffs up, shorter tails), a growly plucky bass (cutoff 560→760, sustain 0.72→0.52), a
+punchier kit (kick click 0.22→0.5, snappier snare, hats 7800→9500, ghosts 0.2→0.32), less chorus wash
+(0.4→0.22) + more drive (1.4→1.6). `pop_world_punchy()` in `examples/c137_song.rs`. RENDER-ONLY: pop
+Score fp UNCHANGED `7dc82f14` across warm/punchy (isolates timbre), warm byte-identical to R1, C137 lock
+51/51. The accepted warm groove control is untouched. 3 MP3s (warm-104 / punchy-104 / punchy-110).
+
+**R3 (this commit) — the FUNK rhythm section.** Ear: *"approaching slow Ace-of-Base shaped sound; make
+it more Espresso / Feels / Off the Wall / All in the Way You Get Down."* Read: the groove is square; the
+four refs share a danceable funk/disco pocket. Two levers (the funk rhythm section), both gated/pop-only:
+- A GATED funk kit in the kernel — new `pop_funk_kit` `CompiledArgument` flag; a four-on-the-floor kick,
+  sixteenth hats throughout with disco OPEN-hats on the "and of 2/4", a crisp backbeat + a ghost pickup.
+  Gated on `argument.pop_funk_kit`, so C137 and the lead-free groove run the EXACT archived else-branch
+  (kick on 1 & 3) — the lock confirms byte-identity.
+- A funk BASS for the song (`song_funk_bass_cells`): a syncopated root–fifth–octave boogie with space.
+  LESSON (`Capacity(Bass)` debugged): the kernel folds the `Octave` degree down onto the root's pitch
+  when the chord root sits high (`kernel.rs:1770`), so Root and Octave can be the SAME pitch; with
+  `pocket_offset` a 0.5-beat Root↔Octave pair drifts under the 0.5-beat same-pitch floor and `validate_lane`
+  rejects it. Fix: keep Root/Octave ≥ 1 beat apart within a bar and let the Fifth (which never folds onto
+  the root) carry the off-beat bounce. Across bars the chord changes, so that boundary is safe.
+
+**[SCORE witness] seed 2112, Circle, punchy, 104:** fp `5482f041fbb022d4` — lead=31 (topline unchanged),
+keys=26, bass 46→52, pad=20, drums 171→211 (the four-floor + 16ths). **[TEST]** `audio_smooth_pop` 9/9
+incl. `the_funk_kit_is_load_bearing_four_on_the_floor` (flip `pop_funk_kit` off → the beat-2/4 kicks
+vanish; the archived kit never places them). **[LOCK] GREEN — 51/51 byte-for-byte AFTER the kernel edit.**
+fmt + clippy-D clean. **[REPRO]** `--form=pop-song --pop-palette=punchy --tempo=104|110`. 3 MP3s
+(before-punchy-no-funk / funk-104 / funk-110). **EAR PENDING on R3.**
+
+**R4 (this commit) — the kick LOCKS to the bass.** Ear on R3: *"sounds like an incoherent band — good
+at its one style, doesn't know funk trying to play funk; the faster BPM helps but it's still true."*
+Diagnosis: the funk was two independent layers — a rigid four-on-the-floor kick plowing over a
+syncopated bass on its own clock (the "doesn't know funk" tell). Funk's first law is the kick–bass lock.
+Fix (kernel, still gated on `pop_funk_kit`): the funk kick now READS the committed bass figure
+(`argument.groove`) and lands on the downbeat, the bassist's ROOTS and the bar-end push, at the SAME
+pocketed microtime — leaving space where the bass syncopates off the root. And the lead-reading comp no
+longer throws kicks in funk mode (ghost snares only), so every kick belongs to the bass-lock (one kick
+authority, one pocket). Deterministic, no clairvoyance; the bass commits before the drums (clean causality).
+
+**[SCORE witness] seed 2112, Circle, punchy, 110:** fp `3b0202a3879e4b11` — drums 211→203 (the kick is
+syncopated/locked, not four-floor + comp-kicks); lead/keys/bass/pad unchanged. **[TEST]** `audio_smooth_pop`
+9/9 incl. `the_funk_kick_locks_to_the_bass` (every funk kick coincides with a committed bass attack; flip
+the flag off → the archived kick-on-1-and-3 pattern). **[LOCK] GREEN — 51/51 byte-for-byte after the kernel
+edit.** fmt + clippy-D clean. 3 MP3s (unlocked-110 / locked-110 / locked-116). **EAR PENDING on R4.**
+Remaining coherence layers (flagged, not built): the keys comp reads only the LEAD (not the groove), so
+the stabs don't yet sit in the funk pocket's complementary off-beat slots; and the lead topline is phrased
+in the lyrical C137 idiom, not funk-syncopated.
+
+**R5 (this commit) — de-cliché the melody + progression.** Ear on R4: *"MUCH MUCH better [the band
+coheres]; to hear improvements of higher quality we have to fix the cliché melody/progression first."*
+The groove was no longer the bottleneck; the stepwise C–D–E germ over a circle-of-fourths loop was.
+Both are composition (example-only, no engine touch → C137 lock trivially 51/51):
+- MELODY (`pop_song_verse`/`pop_song_hook`): the germ is now a SIGNATURE LEAP (E up a 4th to A, step to
+  G, off the beat) with funk-syncopated 16th phrasing + space — not a scale. Still a lawful
+  `altered_consequent` (iou 1.0, head ✓, exact-interval 0.50, mean +2.88, Open→Closed, step 0.875). Side
+  effect: the syncopation opens more breaths (6→17), so the drummer answers more (3→8) — more band
+  conversation, for free.
+- PROGRESSION (`PopFlavor::song_loop4`, a new method; the song no longer uses the groove's `loop4`): OFF
+  the circle-of-fourths. Circle-song = Am9–Em7–Fmaj9–Dm9 (i-v-♭VI-iv; the modal MINOR v is the fresh
+  signature — pop usually forces a major V); Lift-song = Am9–Fmaj9–Dm9–Em7 (bright ♭VI lift). BOTH FULLY
+  DIATONIC so the Aeolian topline never clashes. The manifest now reports the song's real progression
+  (`song_harmony_label`), not the stale `loop4` label.
+
+**[SCORE witness] seed 2112, punchy, 110:** Circle-song fp `2f88562f55d7fde9`, Lift-song fp
+`2a2f6e6e51a66d0f` — lead=34 (17 verse + 17 hook), keys=10, bass=52, pad=19, drums=206; breaths 6→17,
+breath-answer 3→8. **[TEST]** `audio_smooth_pop` 9/9 (the lawfulness proof holds for the new melody).
+**[LOCK] GREEN 51/51** (example-only change). fmt + clippy-D clean. 3 MP3s (old-cliché / fresh-modal /
+fresh-bright). **EAR PENDING on R5.** OPEN: the diatonic progressions give a MODAL arrival, not a hard
+V→i — a functional dominant at the turnaround is the lever if the ear wants a harder chorus payoff.
+
+**R6 (this commit) — slightly more colorful notes (the 20% human flare).** Ear on R5: *"hell yeah; now
+let the musicians use slightly more colorful notes — we're 80% correct, missing the 20% human flare/alive
+that separates interesting music from the style profile."* The R5 all-diatonic safety WAS the
+80%-correct-but-not-alive. R6 adds restrained chromatic colour (example-only, lawful, C137 lock 51/51):
+- LEAD: two G# LEADING-TONE flares in the HOOK (onsets 2.5 over Am, 13.5 over Dm9), each resolving up to
+  A — the expressive raised-7th pull home. G# is in the engine's licensed melody pool (`LEADING_TONE`),
+  so scale_fraction stays 1.0 and `altered_consequent` still passes (iou 1.0, parsons 0.625, step 0.875).
+  The verse is left diatonic (the chorus flares more than the verse — the colour earns its place).
+- BASS: the bassist reaches for the chord THIRD (a chord tone — clash-free) on an off-beat in two cells,
+  outlining the chord's quality instead of only root/fifth/octave. Off a root onset, so the R4 kick-lock
+  is untouched.
+
+**[SCORE witness] seed 2112, punchy, 110:** colored Circle fp `c2b3752c8a8ab42c` (lead=34, bass=52 —
+unchanged counts; pitches re-coloured, not added). **[TEST]** `audio_smooth_pop` 9/9. **[LOCK] GREEN
+51/51.** fmt + clippy-D clean. 3 MP3s (before-diatonic / colour-modal / colour-bright). **EAR PENDING.**
+CEILING (honest): the melody law licenses only G#(11) + C#(4) as *free* chromatic colour; richer colour
+(a blue ♭5, heavy chromaticism, the bass's chromatic WALK-UPS, comp 13ths/alterations) needs ENGINE work
+(the pool caps outside-notes at 5%; the bass degrees are chord-relative with no chromatic approach yet).
+
+**R7 (this commit) — give the colour a home (fix the out-of-place lead chromatics).** Ear on R6: *"almost
+perfect, bass is fucking dope, some of the lead/melody colour notes sound chromatically out of place in
+context."* Diagnosis: a LEADING TONE (G#) only belongs over a DOMINANT, and R5's progression had no
+dominant (it ended on the subdominant Dm9) — so the hook's G# was a raised-7th over a iv chord (an outside
+♯11) and the bar-0 G# fought the Am chord's own G natural. The colour wasn't wrong; it had no harmonic
+home. Fix (example-only, lawful, C137 lock 51/51):
+- PROGRESSION (`song_loop4`): the turnaround iv → V7. Circle-song = Am9-Em7-Fmaj9-E7 (the fresh modal
+  minor-v Em7 early, a real dominant E7 at the cadence — the "minor-v becomes major-V" soul turnaround);
+  Lift-song = Am9-Fmaj9-Dm9-E7. The E7 gives the hook a FUNCTIONAL arrival AND an in-context seat for the
+  leading tone (G# = E7's own 3rd).
+- LEAD: removed the bar-0 G# (it clashed with Am's G); kept the HOOK's homecoming G# — now in-context over
+  E7; cleaned its approach (G–E–G#–A, arpeggiating the dominant). The verse gets an in-context C# (the
+  13th of E7). Still a lawful `altered_consequent` (iou 1.0, parsons 0.625, mean +3.0, step 0.8125).
+- BASS thirds kept (ear-loved). The E7 bar plays E/B chord tones.
+
+**[SCORE witness] seed 2112, punchy, 110:** colored Circle fp `567f2ac68567e612` (lead=34, bass=52).
+**[TEST]** `audio_smooth_pop` 9/9. **[LOCK] GREEN 51/51.** fmt + clippy-D clean. 3 MP3s (before-out-of-place
+/ fixed-modal / fixed-bright). **EAR PENDING.** KNOWN REMAINING SPICE: the hook passes a blue G♮ over the
+E7 (the soul ♭3-vs-chord-3rd rub) — deliberate, but the one note most likely still "spicy" if the ear
+wants it cleaner; revoice that approach if so.
+
+**R8 (this commit) — de-cliché the cadence COLOUR (the transition seam).** Ear on R7: *"getting better,
+but some of the colour in the transitions is still a little cliché — doesn't sound wrong, sounds
+overdone / low-hanging fruit."* Diagnosis: R7 gave the colour a home by building a FUNCTIONAL E7 so the
+G# would resolve up to the tonic — i.e. the single most textbook device in Western harmony, the authentic
+V7→i cadence with the leading-tone pull. It traded *wrong* for *obvious*. The fix is not more/less colour;
+it is to DENY the dominant its textbook home. Change (example-only, lawful, C137 lock 51/51):
+- PROGRESSION (`song_loop4`) — reorder so the cadence is DECEPTIVE, keeping E7 (so G# keeps its in-context
+  seat) but moving it OFF the final bar. Circle-song = **Am9-Em7-E7-Fmaj9** (i9-v7-V7-♭VImaj9: the soul
+  minor-v→major-V stays, then the dominant deflects to the bright ♭VI — deceptive V→♭VI — and the loop
+  homes ♭VI→i, a modal turnaround with NO leading tone). Lift-song = **Am9-Fmaj9-E7-Dm9** (i9-♭VImaj9-V7-iv9:
+  the dominant slides to the minor subdominant, loop homes iv→i, the "amen-with-tears" minor plagal).
+- LEAD — the colour bar is now bar 3 (over E7): the G# ASCENDS mid-phrase (E–G#–B–C#, overshooting the
+  tonic) instead of pulling into it; the hook then lands HOME on A deceptively over the ♭VI, reached by a
+  whole-step G→A (the Aeolian cadence), NOT the leading-tone half-step. Germ (bars 0–1) byte-unchanged.
+  Still a lawful `altered_consequent` (hand-verified then test-certified: iou 1.0, parsons 0.69,
+  mean +2.6, exact-interval 0.31, scale 1.0, peak 16 > 14, verse Open → hook Closed).
+
+**[SCORE witness] seed 2112, punchy, 104:** deceptive Circle fp `8d05fe6b577dc78c` (lead=34, keys=10,
+bass=52, pad=18, drums=206); deceptive Lift fp `00e724b61a15cbd9` (lead=34, pad=19, drums=204).
+**[TEST]** `audio_smooth_pop` 9/9 (the altered-consequent law re-certifies the new hook). **[LOCK] GREEN
+51/51 byte-for-byte.** fmt + clippy-D clean. 3 MP3s (R7 authentic-cadence BEFORE / deceptive-modal Circle
+/ deceptive-bright Lift), all at matched 104 BPM. **EAR PENDING.** Both licensed chromatics (G#, C#) now
+spent in in-context, non-cliché roles; richer transition colour beyond this needs ENGINE work (gated):
+bass chromatic walk-ups (new `BassDegree`), comp reaching 13ths/alterations (gated `comp_keys` edit), or
+widening the melody pool past its 2 licensed colours. Flavour (modal Circle vs bright Lift) still UNPICKED
+— both arms live.
+
+**R8 EAR VERDICT: REJECTED + REVERTED.** *"Both sound worse lol, it sounds like you changed exactly the
+notes I wasn't talking about lmao."* The read was wrong: "colour in the transitions" did NOT mean the
+cadence/harmony — it meant the melodic CONNECTIVE TISSUE (the passing/pickup notes bridging the main
+notes). R8 rebuilt the cadence + homecoming (notes she LIKED) and left the real culprit untouched.
+Clarified by a direct question → answer: *"probably [the lead's connecting notes], maybe [the keyboard's
+chord-to-chord motion]."* R8's source reverted to the R7 baseline before R9.
+
+**R9 (this commit) — reshape the melodic CONNECTORS (the real "transition colour").** Back on the R7
+progression/cadence/homecoming (all ear-liked, restored byte-for-byte). The ONLY change: the lead's
+scale-run connective tissue — the plain stepwise fills that joined the main notes (the low-hanging fruit)
+— become leaps / neighbours / overshoots. Four notes, onsets+durs+velocities all identical to R7 (so the
+groove, pocket and dynamics are untouched; the change is isolated to connector PITCH):
+- verse bar 1 `G-F-E-D` (scale down) → `G-D-E-D` (leap to the low reach, lean back).
+- verse bar 2 `F-G-A` (scale up) → `F-E-A` (dip, then LEAP a 5th up to the octave).
+- verse bar 3 `E-D-C#-B` (scale down w/ textbook chromatic passing C#) → `E-B-C#-B` (leap to the open B;
+  the C# becomes an expressive upper-NEIGHBOUR lean, not a passing tone in a descent).
+- hook bar 2 `G-A-B` (scale climb to the peak) → `G-E-B` (dip, then LEAP up to the peak — mirrors the
+  verse bar-2 gesture). Germ, peaks, landings, the open hang and the homecoming all preserved.
+Still a lawful `altered_consequent` (hand-verified then test-certified: iou 1.0, parsons 0.75, mean +3.2,
+exact-interval 0.31, scale 1.0, peak 14 > 12, verse Open → hook Closed).
+
+**[SCORE witness] seed 2112, punchy, 104:** Circle fp `16cb7b68a021edf8` (lead=34, keys=10, bass=52,
+pad=18, drums=208); Lift fp `6c7ec3367eb46661` (lead=34, pad=19, drums=206). **[TEST]** `audio_smooth_pop`
+9/9. **[LOCK] GREEN 51/51 byte-for-byte.** fmt + clippy-D clean. 3 MP3s (R7 scale-run BEFORE / reshaped-
+connectors Circle / reshaped-connectors Lift), matched 104 BPM. **EAR PENDING.** Option 2 (the keyboard's
+chord-to-chord connective motion) is the follow-up if this is not enough — but in song mode the keys comp
+is engine-derived (`comp_keys`), so reshaping it is a GATED kernel edit, not a free source change.
+
+**R10 (this commit) — de-blues the lead + the bass stops leaping up.** Ear on R9: *"bass is hitting
+higher notes when it feels like the notes want to go down (true in before, extra true in after), and the
+lead still needs work. the cliché notes i think are those blues type lead tones."* Two independent fixes
+(example-only, lawful, C137 lock 51/51):
+- LEAD de-blued → fully diatonic. The two chromatic colours added in R6/R7 ARE the "blues type lead
+  tones": the hook's G# (raised-7th / leading-tone soul scoop) and the verse's C# (bright major-3rd
+  flash). Both pulled — and they were the ONLY two chromatics the engine's pool licenses, so all prior
+  "colour" was blues-flavoured by construction. Hook homecoming G-E-G#-A → **B-A-G-A** (a clean 9→8: the
+  9th B leans home to A; the G is now a plain diatonic ♭7, no blue rub now the G# is gone). Verse bar-3
+  C# → diatonic C (a dark modal ♭3-of-key upper neighbour, not the bright bluesy 13th). Flare now comes
+  from the line/rhythm, not blue notes. Still a lawful `altered_consequent` (iou 1.0, parsons 0.625, mean
+  +3.8, exact-interval ≈0.31, scale 1.0, peak 14>12, Open→Closed).
+- BASS stops leaping UP at the resolutions. The two accented bar-end pushes (bar 0 & bar 3, beat-"and-of-4")
+  were `Octave` (a leap up to the high octave) right where the phrase resolves — "goes up when it wants
+  down," and R9's more-descending lead made it worse. Changed both to `Root` (the push lands grounded on
+  the low root). Mid-bar octave bounces kept (the funk she called "dope"). HONEST LIMIT: `BassDegree` has
+  nothing BELOW the root (Root/Third/Fifth/Octave all ≥ root), so a true walk-DOWN under the root needs
+  the flagged engine work; this stops the upward leap, which is what the ear flagged. Kick-lock preserved
+  (the push was already a kick slot; drums unchanged at 208/206).
+
+**[SCORE witness] seed 2112, punchy, 104:** Circle fp `53f4d9541634e86b` (lead=34, keys=10, bass=52,
+pad=18, drums=208); Lift fp `fbc3c0aa8f1ccf18` (lead=34, pad=19, drums=206). **[TEST]** `audio_smooth_pop`
+9/9 (lawful consequent + kick-still-locks). **[LOCK] GREEN 51/51 byte-for-byte.** fmt + clippy-D clean.
+3 MP3s (R9 blues+up-bass BEFORE / de-blued+bass-down Circle / de-blued+bass-down Lift), matched 104 BPM.
+**EAR PENDING.** The lead is now colour-free (all diatonic); if it wants colour BACK it must be a NON-blues
+palette = widening the engine note pool past its 2 blues-flavoured licensed chromatics (ENGINE work,
+gated). A true bass walk-DOWN also = engine work (new sub-root `BassDegree`). Flavour (Circle vs Lift)
+still UNPICKED — both arms live.
+
+**R11 (this commit) — the cadence voice leading FALLS instead of rising (the 7–9s spot).** Ear on R10:
+*"the notes between 7 and 9s in the bass and lead, still there, still trash. such cliche voice leading.
+bass should definitely be going down there instead of up."* VERIFIED the timing (music starts at t=0, no
+lead-in; the only silence is the reverb tail): at 104 BPM, **7–9 s = beats 12.1–15.6 = the verse's 4th bar,
+the E7 cadence**. At that spot both voices RISE when the cadence should settle: the lead does an UPPER
+neighbour (B→C→B, the C reaches up) and the bass does its octave POP (leaps up to the high octave at
+beat 13.5 ≈ 7.8 s). Two surgical notes, both flipped to fall (example-only, lawful, lock 51/51):
+- LEAD verse bar 3: the upper-neighbour C (step 3) → a LOWER neighbour A (step 0) — the neighbour now
+  falls and recovers (B→A→B) instead of reaching up (B→C→B). Still hangs OPEN on B.
+- BASS bar 3 (the turnaround cell, plays at 7–9 s AND the hook's ~16–18 s): `Octave`(beat 1.5) → `Third`
+  — the fifth now FALLS to the third instead of leaping up an octave; the whole turnaround descends into
+  the loop. Kick-lock preserved (the octave was not a root; roots unchanged → drums still 208/206).
+Still a lawful `altered_consequent` (iou 1.0, parsons 0.75, mean +3.9, scale 1.0, peak 14>12, Open→Closed).
+
+**[SCORE witness] seed 2112, punchy, 104:** Circle fp `f20abbb5012c1e87` (lead=34, keys=10, bass=52,
+pad=18, drums=208); Lift fp `1cd6f2ab02c011c4` (lead=34, pad=19, drums=206). **[TEST]** `audio_smooth_pop`
+9/9. **[LOCK] GREEN 51/51 byte-for-byte.** fmt + clippy-D clean. 3 MP3s (R10 cadence-rises BEFORE /
+cadence-falls Circle / cadence-falls Lift), matched 104 BPM. **EAR PENDING.** Note: the octave pops in the
+EARLIER bars (0–2, at 0–7 s) were left — the ear flagged the 7–9 s cadence specifically; extend the
+falling treatment to them if the whole bass should stop popping up. Flavour (Circle vs Lift) still UNPICKED.
+
+**R12 (this commit) — a gated sub-root bass degree so the 7 s note falls DARK (first kernel edit since the
+funk kit).** Ear on R11: *"bass note at 7s is still wrong, still moving up (it should be going down
+darker)."* The note at ~7 s (beat 13.0) was `Root → Fifth` = a leap UP a fifth. ROOT CAUSE (the wall
+flagged for rounds): `BassDegree` had only Root/Third/Fifth/Octave — **all at or above the root** — and
+`validate_lane` (`kernel.rs:2522`) floors the bass at **MIDI 36**, so a true sub-octave is impossible
+(roots already sit at 38–46). The one dark tone reachable BELOW the root in range is the chord's **♭7**.
+Change (ENGINE, pop-gated, C137 byte-identical):
+- NEW `BassDegree::Seventh` (`argument.rs`) = the chord's 7th voiced from the MIDI-36 floor. For the
+  cadence's **E7 the ♭7 is D = MIDI 38, a whole step BELOW the root E (40)** — a dark chord tone. Kernel
+  (`kernel.rs`): compute `seventh = register(tones[3.min(len-1)], 36)` + one match arm `Seventh => seventh`
+  in the GROOVE bass path only. C137 never constructs it and takes the unchanged else-branch → the
+  **acoustic lock reproduces all 51 artifacts byte-for-byte AFTER the shared-kernel edit** (verified).
+- BASS bar 3 (the cadence cell, 7–9 s verse + ~16–18 s hook): beat 1.0 `Fifth` → `Seventh`. The 7 s note
+  now FALLS a step to the dark ♭7 (D) instead of leaping up to the fifth (B). Kick-lock preserved (the
+  seventh is not a root and not the push; `is_root` unchanged → drums still 208/206).
+- HONEST CEILING STATED TO HER: the MIDI-36 floor forbids a true deep sub-octave; the ♭7 is the lowest
+  in-range dark tone. Going lower would need lifting that bass floor (a further, riskier engine change).
+
+**[SCORE witness] seed 2112, punchy, 104:** Circle fp `8615b4a034478407` (lead=34, keys=10, bass=52,
+pad=18, drums=208); Lift fp `07bc6406726a9328` (lead=34, pad=19, drums=206). **[TEST]** `audio_smooth_pop`
+9/9 (Seventh passes the bass register floor; kick still locks). **[LOCK] GREEN 51/51 byte-for-byte after a
+KERNEL edit.** fmt + clippy-D clean. 3 MP3s (R11 bass-rises-at-7s BEFORE / bass-drops-♭7 Circle / Lift),
+matched 104 BPM. **EAR PENDING.** Flavour (Circle vs Lift) still UNPICKED — both arms live.
+
+---
+
 ## STOP conditions (plan §8)
 Frozen WAV drift · source-observation contradiction · ghost feature claimed active while inert ·
 unresolved clip/collision/silent-note-masquerade · valid C137 rejected by refactor ·

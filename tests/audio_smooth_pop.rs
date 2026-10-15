@@ -8,7 +8,8 @@ mod source_pop;
 use gibson::audio::human_music::{
     argument::SourceDomain,
     kernel,
-    score::{Role, Score},
+    score::{DrumVoice, Role, Score},
+    theme_family::Kinship,
     theory::Mode,
     MusicWorld,
 };
@@ -160,5 +161,125 @@ fn the_pop_foundation_law_refuses_a_rootless_downbeat() {
     assert!(
         kernel::perform_song(&src, &world()).is_err(),
         "a rootless downbeat is refused by the harmonic-foundation law"
+    );
+}
+
+// --- OPERATION JOHNNY FIVE: the pop SONG (Lead-carried verse → hook) --------------------------
+
+fn render_pop_song(seed: u64) -> Score {
+    kernel::perform_song(
+        &source_pop::source_pop_song(seed, source_pop::PopFlavor::Circle),
+        &world(),
+    )
+    .expect("the smooth-pop song is admitted and commits")
+    .score()
+    .clone()
+}
+
+#[test]
+fn the_pop_hook_is_a_lawful_altered_consequent_of_the_verse() {
+    // The song claim stands or falls here: the hook must be a GENUINE altered-consequent of the
+    // verse — sharing the germ head, rhythm skeleton and contour, yet genuinely re-voiced, lifted
+    // and landing home where the verse hung open. This is the engine's own kinship law, not a
+    // relabel; if it ever fails, the verse→hook relationship is a lie and the source must change.
+    let verse = source_pop::pop_song_verse();
+    let hook = source_pop::pop_song_hook();
+    let kin = Kinship::measure(&verse, &hook, 4.0);
+    println!("pop hook kinship vs verse: {kin:#?}"); // --nocapture to diagnose a failing clause
+    assert!(
+        kin.altered_consequent(),
+        "the hook must be a lawful altered-consequent of the verse: {kin:#?}"
+    );
+}
+
+#[test]
+fn a_scrambled_hook_is_not_a_lawful_consequent() {
+    // P1 negative control: a hook with the SAME note budget but a scrambled source identity
+    // (pitches reversed) must FAIL the kinship law. The relationship lives in the content, not the
+    // count — if a scramble passes, "the hook answers the verse" is a vacuous claim.
+    let verse = source_pop::pop_song_verse();
+    let mut scrambled = source_pop::pop_song_hook();
+    let reversed: Vec<_> = scrambled.iter().rev().map(|e| e.step).collect();
+    for (e, s) in scrambled.iter_mut().zip(reversed) {
+        e.step = s;
+    }
+    let kin = Kinship::measure(&verse, &scrambled, 4.0);
+    assert!(
+        !kin.altered_consequent(),
+        "a scrambled hook (same count, reversed pitches) must not satisfy the law: {kin:#?}"
+    );
+}
+
+#[test]
+fn the_pop_song_sounds_a_lead_a_comping_keyboard_and_a_pad() {
+    let score = render_pop_song(2112);
+    // The source-authored vocal-proxy LEAD is present (the groove arm carries zero; THIS is the song).
+    assert!(
+        score.role_notes(Role::Lead).count() > 0,
+        "the pop song carries a source-authored lead topline"
+    );
+    // The keyboard COMPS, freed from the melodic obligation — a harmonic voice, not the carrier.
+    assert!(
+        score.role_notes(Role::Keys).count() > 0,
+        "the freed keyboard comps under the song"
+    );
+    // The pad RUG enters (seated on stage + the hook is a Consequent): an earned harmonic bed, not
+    // permanent wallpaper. The lead-free groove arm has a silent pad; the song earns one.
+    assert!(
+        score.role_notes(Role::Pad).count() > 0,
+        "the pad rug enters on the hook"
+    );
+    // The funk pop bass is still the foundation, anchoring every bar downbeat.
+    let bars = (score.total_beats / 4.0).round() as i64;
+    for bar in 0..bars {
+        let at = bar as f64 * 4.0;
+        assert!(
+            score
+                .role_notes(Role::Bass)
+                .any(|n| (n.start_beat - at).abs() < 1e-6),
+            "the bass anchors the downbeat of bar {bar}"
+        );
+    }
+}
+
+#[test]
+fn the_funk_kick_locks_to_the_bass() {
+    // Funk coherence: the kick does NOT play a rigid grid — it LOCKS to the bass, landing on the
+    // bassist's roots and the bar-end push at the same pocketed microtime, and leaving space where the
+    // bass syncopates. So every funk kick coincides with a committed bass attack, the kit syncopates
+    // off the 1-&-3 grid, and flipping `pop_funk_kit` off yields the different archived pattern.
+    let funk = render_pop_song(2112); // source_pop_song sets pop_funk_kit = true
+    let mut plain_src = source_pop::source_pop_song(2112, source_pop::PopFlavor::Circle);
+    plain_src.pop_funk_kit = false;
+    let plain = kernel::perform_song(&plain_src, &world())
+        .expect("the song with the archived kit still commits")
+        .score()
+        .clone();
+    let bass_onsets: Vec<f64> = funk.role_notes(Role::Bass).map(|n| n.start_beat).collect();
+    let funk_kicks: Vec<f64> = funk
+        .drums
+        .iter()
+        .filter(|d| matches!(d.voice, DrumVoice::Kick))
+        .map(|d| d.start_beat)
+        .collect();
+    assert!(!funk_kicks.is_empty(), "the funk kit places kicks");
+    // THE LOCK: every funk kick lands with a committed bass attack (same pocketed microtime).
+    assert!(
+        funk_kicks
+            .iter()
+            .all(|&k| bass_onsets.iter().any(|&b| (k - b).abs() < 1e-6)),
+        "every funk kick is locked to a bass attack — the kick and bass are one unit"
+    );
+    // The lock syncopates off the rigid grid: a kick lands in the bass's "and of 4" push (~3.5).
+    assert!(
+        funk_kicks
+            .iter()
+            .any(|&k| (k % 4.0) > 3.1 && (k % 4.0) < 3.95),
+        "the funk kick syncopates with the bass push, not a rigid four-on-the-floor"
+    );
+    // Load-bearing: flipping the flag off commits the different archived kick-on-1-and-3 pattern.
+    assert!(
+        funk.drums.len() != plain.drums.len(),
+        "the funk kit commits a different drum pattern than the archived kit"
     );
 }

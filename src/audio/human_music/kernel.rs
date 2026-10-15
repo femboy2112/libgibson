@@ -1723,6 +1723,9 @@ pub fn perform_song(
         let root = register(ctx.chord.root_pc, 36);
         let fifth = register(tones[2.min(tones.len().saturating_sub(1))], 36);
         let third = register(tones[1.min(tones.len().saturating_sub(1))], 36);
+        // The chord's seventh, voiced from the same low floor. For a dominant seventh (the cadence's
+        // E7: D a whole step below the root E) it lands BELOW the root — a dark descending bass tone.
+        let seventh = register(tones[3.min(tones.len().saturating_sub(1))], 36);
         // Beat four leads into the next bar. With the foundation ANTICIPATING the destination
         // (`anticipate_bass`), its approach expresses WHERE the harmony is going: the dominant into a
         // home arrival (the V->I the ear hears coming), the leading tone a half-step below into a drive
@@ -1764,6 +1767,7 @@ pub fn perform_song(
                         super::argument::BassDegree::Root => root,
                         super::argument::BassDegree::Third => third,
                         super::argument::BassDegree::Fifth => fifth,
+                        super::argument::BassDegree::Seventh => seventh,
                         // The octave pop, folded DOWN by whole octaves into the bass register, so it is
                         // always the root's own pitch class (never the wrong note a hard clamp to 55
                         // would sound on a high root) and never above the bass ceiling.
@@ -1886,6 +1890,9 @@ pub fn perform_song(
     // depends on this). A separate heard-keys fill (below) carries the keys law per episode. ---
     let lead_notes: Vec<Note> = score.role_notes(Role::Lead).copied().collect();
     let lead_occ = AuthoredOccupancy::from_role(&perf, &score.notes, Role::Lead);
+    // OPERATION JOHNNY FIVE: the funk/disco rhythm-section spine, opt-in per source. C137 and the
+    // lead-free groove control leave it false, so their drum pattern stays byte-identical.
+    let funk_kit = argument.pop_funk_kit;
     for bar in 0..total_bars {
         let bar_start = bar as f64 * 4.0;
         let drive = harmonic_drive(&perf.context_at(bar_start).unwrap().chord, world.tonic_pc);
@@ -1917,45 +1924,121 @@ pub fn perform_song(
         // are the dead-on time reference; the backbeat snare (and the beat-three kick) DRAG behind
         // them by the SAME shared pocket the bass and lead use, so the whole band locks as one body.
         let pocket = super::theme_family::pocket_offset;
-        push(DrumVoice::Kick, bar_start, 0.95, "pulse", 0.0);
-        push(DrumVoice::Kick, bar_start + 2.0, 0.78, "pulse", pocket(2.0));
-        // The backbeat locks the band's time — but the intro's first bar lays the snare OUT, so the kit
-        // opens on kick + hats alone and the backbeat arrives as the build fills in.
-        if intro_i != Some(0) {
+        if funk_kit {
+            // FUNK / DISCO-FUNK spine (opt-in `pop_funk_kit`): the kick LOCKS TO THE BASS. A crisp
+            // backbeat, sixteenth hats with the "and"s opened (the disco shimmer) and a ghost pickup —
+            // but the kick does NOT plow a rigid four-on-the-floor grid over a syncopated bass (the
+            // "doesn't know funk" tell). A funk band is ONE pocket: the kick and the bass are a single
+            // unit. So the kick plays the downbeat, every ROOT the bassist lands (the foundation hits)
+            // and the bar's end-push — at the SAME pocketed microtime the bass uses — and leaves the
+            // space where the bass syncopates off the root (the funk breath). It reads the authored
+            // groove cell (the committed bass figure): deterministic, no clairvoyance, and a changed
+            // bass cell lawfully changes the later kick (the bass is committed before the drums, so no
+            // earlier event moves).
+            if let Some(groove) = &argument.groove {
+                let cell = &groove.bass_cells[bar % groove.bass_cells.len()];
+                for &(offset, degree, _, _) in cell {
+                    let is_root = matches!(degree, super::argument::BassDegree::Root);
+                    let is_push = offset >= 3.5;
+                    if offset == 0.0 || is_root || is_push {
+                        let v = if offset == 0.0 {
+                            0.95
+                        } else if is_push {
+                            0.82
+                        } else {
+                            0.80
+                        };
+                        push(
+                            DrumVoice::Kick,
+                            bar_start + offset,
+                            v,
+                            "pulse",
+                            pocket(offset),
+                        );
+                    }
+                }
+            } else {
+                push(DrumVoice::Kick, bar_start, 0.95, "pulse", 0.0);
+            }
             push(
                 DrumVoice::Snare,
                 bar_start + 1.0,
-                0.80,
+                0.82,
                 "pulse",
                 pocket(1.0),
             );
             push(
                 DrumVoice::Snare,
                 bar_start + 3.0,
-                0.84,
+                0.86,
                 "pulse",
                 pocket(3.0),
             );
-        }
-        // The ride carpet: its SUBDIVISION follows the harmonic drive — eighths at rest, sixteenths in
-        // motion — with the down/and/e-a accent hierarchy and the hat opening on the "and of four".
-        // Eighths at rest, sixteenths in motion — but the intro's thinned early bars stay on eighths,
-        // so the ride opens sparse and only fills to sixteenths as the build drives in.
-        let sixteenths = !matches!(drive, HarmonicDrive::Home) && !intro_i.is_some_and(|i| i <= 1);
-        let stride: usize = if sixteenths { 1 } else { 2 };
-        for s in (0..16u32).step_by(stride) {
-            let at = bar_start + s as f64 * 0.25;
-            let accent = match s % 4 {
-                0 => 0.40, // the beat
-                2 => 0.32, // the "and"
-                _ => 0.15, // the "e" and "a"
-            };
-            let voice = if sixteenths && s == 14 {
-                DrumVoice::OpenHat // the "and of four"
-            } else {
-                DrumVoice::ClosedHat
-            };
-            push(voice, at, accent, "pulse", 0.0);
+            // a funk ghost snare pickup into beat four
+            push(
+                DrumVoice::Snare,
+                bar_start + 2.75,
+                0.17,
+                "pulse",
+                pocket(2.75),
+            );
+            for s in 0..16u32 {
+                let at = bar_start + s as f64 * 0.25;
+                let accent = match s % 4 {
+                    0 => 0.42, // the beat
+                    2 => 0.34, // the "and"
+                    _ => 0.16, // the "e" and "a"
+                };
+                // Open the hat on the back-half "ands" (the "and of 2" and "and of 4"): the disco lift.
+                let voice = if s == 6 || s == 14 {
+                    DrumVoice::OpenHat
+                } else {
+                    DrumVoice::ClosedHat
+                };
+                push(voice, at, accent, "pulse", 0.0);
+            }
+        } else {
+            push(DrumVoice::Kick, bar_start, 0.95, "pulse", 0.0);
+            push(DrumVoice::Kick, bar_start + 2.0, 0.78, "pulse", pocket(2.0));
+            // The backbeat locks the band's time — but the intro's first bar lays the snare OUT, so the kit
+            // opens on kick + hats alone and the backbeat arrives as the build fills in.
+            if intro_i != Some(0) {
+                push(
+                    DrumVoice::Snare,
+                    bar_start + 1.0,
+                    0.80,
+                    "pulse",
+                    pocket(1.0),
+                );
+                push(
+                    DrumVoice::Snare,
+                    bar_start + 3.0,
+                    0.84,
+                    "pulse",
+                    pocket(3.0),
+                );
+            }
+            // The ride carpet: its SUBDIVISION follows the harmonic drive — eighths at rest, sixteenths in
+            // motion — with the down/and/e-a accent hierarchy and the hat opening on the "and of four".
+            // Eighths at rest, sixteenths in motion — but the intro's thinned early bars stay on eighths,
+            // so the ride opens sparse and only fills to sixteenths as the build drives in.
+            let sixteenths =
+                !matches!(drive, HarmonicDrive::Home) && !intro_i.is_some_and(|i| i <= 1);
+            let stride: usize = if sixteenths { 1 } else { 2 };
+            for s in (0..16u32).step_by(stride) {
+                let at = bar_start + s as f64 * 0.25;
+                let accent = match s % 4 {
+                    0 => 0.40, // the beat
+                    2 => 0.32, // the "and"
+                    _ => 0.15, // the "e" and "a"
+                };
+                let voice = if sixteenths && s == 14 {
+                    DrumVoice::OpenHat // the "and of four"
+                } else {
+                    DrumVoice::ClosedHat
+                };
+                push(voice, at, accent, "pulse", 0.0);
+            }
         }
         // The conversation: comp strokes dropped into the off-beats the lead left open, up to the
         // budget the harmonic drive allows (home lays out; building comps; a dominant drives hardest).
@@ -2003,10 +2086,12 @@ pub fn perform_song(
             if !lead_occ.allows_comp_at(at, &lead_notes) {
                 continue; // the lead is speaking here — leave the space
             }
-            let (voice, base) = if s % 4 == 2 {
+            let (voice, base) = if s % 4 == 2 && !funk_kit {
                 (DrumVoice::Kick, 0.56) // on the "and"
             } else {
-                (DrumVoice::Snare, 0.40) // a ghost on the "a"
+                // A ghost on the "a" — and, in the funk kit, the "and" too: the kick belongs to the
+                // bass-lock alone, so the lead-reading comp adds only ghost snares, never a stray kick.
+                (DrumVoice::Snare, 0.40)
             };
             // comps and answers both ride the shared pocket. A breath answer (lead genuinely silent)
             // steps forward at full velocity on its own budget; an ordinary comp is soft inside a

@@ -79,6 +79,32 @@ impl PopFlavor {
         }
     }
 
+    /// The pop SONG's fresher per-bar progression (one 4-bar cycle) — OFF the circle-of-fourths cliché
+    /// the groove used. Fully diatonic to A-Aeolian, so the Aeolian topline never clashes; the fresh
+    /// character is in the modal MINOR v (Em7 — pop almost always forces a major V) and the ♭VI, not in
+    /// stacked colour. `(semitones_above_A, Quality)`.
+    fn song_loop4(self) -> [(i32, Quality); 4] {
+        match self {
+            // i9 – v7 – ♭VImaj9 – V7: the fresh modal MINOR v (Em7) early, then a real DOMINANT (E7) at
+            // the cadence — the "minor-v becomes major-V" soul turnaround. The V7 gives the hook a
+            // functional home AND an in-context seat for the lead's leading-tone colour (G# = E7's 3rd).
+            PopFlavor::Circle => [
+                (0, Quality::Min9),
+                (7, Quality::Min7),
+                (8, Quality::Maj9),
+                (7, Quality::Dom7),
+            ],
+            // i9 – ♭VImaj9 – iv9 – V7: the bright ♭VI lift, resolved by the dominant (E7) cadence —
+            // anthemic, and the same in-context home for the leading-tone colour.
+            PopFlavor::Lift => [
+                (0, Quality::Min9),
+                (8, Quality::Maj9),
+                (5, Quality::Min9),
+                (7, Quality::Dom7),
+            ],
+        }
+    }
+
     /// A flowing, connected guide-tone LINE over one 16-beat episode. The keys no longer DOT the
     /// pocket's anchor points with detached stabs — they MOVE THROUGH its geometry: a melodic line
     /// that steps and arcs across the progression (rising through the first half of the loop,
@@ -157,6 +183,19 @@ impl PopFlavor {
             }
             PopFlavor::Lift => {
                 "Am9 - Fmaj9 - Dm9 - E7 (i9-VImaj9-iv9-V7, leading-tone pull, A-Aeolian + mixture)"
+            }
+        }
+    }
+
+    /// The pop SONG's progression label (the fresher [`song_loop4`], not the groove's [`loop4`]).
+    #[allow(dead_code)]
+    pub fn song_harmony_label(self) -> &'static str {
+        match self {
+            PopFlavor::Circle => {
+                "Am9 - Em7 - Fmaj9 - E7 (i9-v7-bVImaj9-V7, minor-v becomes major-V soul cadence, A-Aeolian)"
+            }
+            PopFlavor::Lift => {
+                "Am9 - Fmaj9 - Dm9 - E7 (i9-bVImaj9-iv9-V7, bright bVI lift + dominant cadence, A-Aeolian)"
             }
         }
     }
@@ -330,5 +369,285 @@ pub fn source_pop_groove(seed: u64, flavor: PopFlavor) -> CompiledArgument {
     compiled.groove = Some(GrooveLaw {
         bass_cells: bass_cells(),
     });
+    compiled
+}
+
+// ======================================================================================
+// OPERATION JOHNNY FIVE — the pop SONG: a source-authored Lead topline (verse → hook).
+// ======================================================================================
+// The groove above proved the band can hold a pocket with no foreground. This is the next
+// probe: give the song an actual voice. A hand-authored vocal-proxy LEAD states a four-bar
+// VERSE that hangs OPEN, then a four-bar HOOK that ANSWERS it — a lawful `altered_consequent`
+// of the verse (shared germ head + rhythm skeleton + contour, genuinely re-voiced and lifted
+// 2–6 semitones, landing HOME on the tonic where the verse hung open). Because the lead now
+// CARRIES both episodes, the keyboard is freed from the melodic obligation: with `comp_keys`
+// the keys comp short guide-tone stabs in the holes under the hook, the rug (pad) enters on
+// the Consequent, and the drummer answers into the lead's breaths. The hook ARRIVES because
+// the voice lands home and the band fills in around it — not because anything merely got
+// louder. Still opt-in; still the breathing pop bass; no C137 source is touched.
+
+/// The four-bar VERSE topline (one 16-beat episode), tonic-relative semitones, Aeolian. The germ is
+/// no longer a stepwise climb — it's a SIGNATURE LEAP: E kicks up a fourth to A, then steps down to G,
+/// landing off the beat (a funk pickup, not a scale). Syncopated 16th phrasing with real space, a low
+/// reach in the second bar, and a settle that ends OPEN on the 9th (B), still wanting the hook.
+/// `(onset, semitone_above_A, dur_beats, velocity)`.
+pub fn pop_song_verse() -> Vec<MaterialEvent> {
+    rows_to_lead_events(&[
+        // Am9 — the germ LEAP: E, up a 4th to A, step down to G (syncopated), then an off-beat answer.
+        (0.0, 7, 0.45, 0.58),
+        (0.5, 12, 0.20, 0.64),
+        (0.75, 10, 0.5, 0.56),
+        (2.5, 7, 0.45, 0.54),
+        (3.0, 8, 0.5, 0.56),
+        // Em7 — the fall is a GESTURE, not a scale walk: a leap DOWN a 5th to the low D (the funk drop),
+        // a step back up, settle again on the low D with space (the breath). Same low reach, no G-F-E run.
+        (4.0, 10, 0.6, 0.56),
+        (4.75, 5, 0.6, 0.54),
+        (5.5, 7, 0.5, 0.54),
+        (7.0, 5, 0.6, 0.52),
+        // Fmaj9 — reach the octave A by a LEAP, not a run: a quick dip to E, then up a 5th to the octave A
+        // (the reached high note), then a syncopated G. The connecting note is a chord-tone skip, not a scale.
+        (8.0, 8, 0.45, 0.56),
+        (8.5, 7, 0.20, 0.58),
+        (8.75, 12, 0.5, 0.62),
+        (10.5, 10, 0.6, 0.56),
+        // E7 — leap to the open B (the dominant's 5th), then a LOWER neighbour A (down, not the cliché
+        // upper-neighbour C that reached UP — the "goes up when it should go down" the ear flagged at the
+        // cadence), and hang OPEN on B. The neighbour now falls and recovers. Still wanting the hook.
+        (12.0, 7, 0.45, 0.54),
+        (12.75, 2, 0.6, 0.52),
+        (13.5, 0, 0.5, 0.52),
+        (14.5, 2, 1.0, 0.50),
+    ])
+}
+
+/// The four-bar HOOK topline (one 16-beat episode) — a lawful `altered_consequent` of
+/// [`pop_song_verse`]: it OPENS with the verse's exact germ LEAP (E–A–G, so the ear knows the song is
+/// the same song), shares the verse's syncopated rhythm skeleton, then re-voices it a register higher
+/// (mean lifted ~3 semitones) WITHOUT transposing it, peaks a step above the verse's peak, and leaps
+/// back HOME to the tonic A at the end (Closed) where the verse hung open. `(onset, step, dur, vel)`.
+pub fn pop_song_hook() -> Vec<MaterialEvent> {
+    rows_to_lead_events(&[
+        // Am9 — the germ leap (E–A–G), then up to A. The chorus's chromatic flare now lives at the
+        // CADENCE, over the E7 dominant where the leading tone belongs — NOT here over the tonic (where
+        // a G# fought the chord's own G natural, the "out of place" note the ear flagged).
+        (0.0, 7, 0.45, 0.62),
+        (0.5, 12, 0.20, 0.68),
+        (0.75, 10, 0.5, 0.64),
+        (2.5, 10, 0.45, 0.60),
+        (3.0, 12, 0.5, 0.64),
+        // Em7 — the answer up a register, riding A and the octave (where the verse fell to D).
+        (4.0, 12, 0.6, 0.62),
+        (4.75, 10, 0.6, 0.60),
+        (5.5, 12, 0.5, 0.64),
+        (7.0, 10, 0.6, 0.60),
+        // Fmaj9 — reach the hook's peak B (a step above the verse's A) by a LEAP, not a stepwise climb:
+        // a quick dip to E, then up a 5th to the peak B (the song's high point), then settle to A. The
+        // connector is a chord-tone skip mirroring the verse's bar-2 leap, not a G-A-B scale run.
+        (8.0, 10, 0.45, 0.60),
+        (8.5, 7, 0.20, 0.64),
+        (8.75, 14, 0.5, 0.70),
+        (10.5, 12, 0.6, 0.64),
+        // E7 — the homecoming, DE-BLUED: no leading-tone scoop (G#) and no blue ♭3 (G♮) rub — those were
+        // the "blues type lead tones" the ear flagged as cliché. Instead a clean 9→8 resolution: the 9th
+        // (B) leans HOME to the tonic A, dips to a diatonic lower neighbour G (the ♭7, no longer a blue
+        // note now the G# is gone), and settles HOME on A (Closed). Fully diatonic; flare from line, not blues.
+        (12.0, 14, 0.45, 0.60),
+        (12.75, 12, 0.6, 0.56),
+        (13.5, 10, 0.5, 0.56),
+        (14.5, 12, 1.0, 0.60),
+    ])
+}
+
+/// Lead topline events from `(onset, step, dur, velocity)` rows. Unlike the keys comp, the
+/// lead onsets are NOT laid into the shared pocket — the voice floats clean over a laid-back
+/// rhythm section (a classic pop tension), and clean onsets sit exactly on the 16th lattice.
+fn rows_to_lead_events(rows: &[(f64, i32, f64, f32)]) -> Vec<MaterialEvent> {
+    rows.iter()
+        .map(|&(onset, step, dur, accent)| MaterialEvent {
+            onset,
+            dur,
+            accent,
+            step: Some(step),
+        })
+        .collect()
+}
+
+/// The song's FUNK bass: four syncopated per-bar cells of octave-and-ghost disco-funk — the bassline
+/// as a rhythmic HOOK (Espresso / Feels / Off the Wall), not a smooth root-walk. Every cell still
+/// opens on `(0.0, Root)` (the foundation law the kernel checks), stays monophonic and leaves space;
+/// the bounce is in the octave pops, the off-beat placement and the ghosts. `(offset, degree, dur, vel)`.
+fn song_funk_bass_cells() -> Vec<Vec<(f64, BassDegree, f32, f32)>> {
+    // Root and Octave share a pitch when the chord root sits high (the kernel folds the octave back
+    // onto the root), so they are kept ≥ 1 beat apart within a bar; the Fifth (never folds onto the
+    // root) carries the off-beat bounce. A root–fifth–octave boogie with space — the funk idiom.
+    vec![
+        // Bar 0 — statement: root, off-beat fifth, ONE octave bounce on beat 2, space, then the bar-end
+        // push RESOLVES DOWN onto the low root (not a leap up to the octave — the "goes up when it wants
+        // down" the ear flagged). The mid-bar octave keeps the boogie bounce; the resolution settles low.
+        vec![
+            (0.0, BassDegree::Root, 0.24, 0.86),
+            (0.5, BassDegree::Fifth, 0.20, 0.50),
+            (1.0, BassDegree::Octave, 0.22, 0.56),
+            (2.0, BassDegree::Root, 0.22, 0.58),
+            (2.5, BassDegree::Third, 0.20, 0.52), // the chord 3rd — colour, outlining the quality
+            (3.5, BassDegree::Root, 0.26, 0.62),
+        ],
+        // Bar 1 — walking funk: root, fifth, a syncopated octave, fifth, a late root, the fifth push.
+        vec![
+            (0.0, BassDegree::Root, 0.24, 0.84),
+            (0.5, BassDegree::Fifth, 0.20, 0.50),
+            (1.5, BassDegree::Octave, 0.22, 0.54),
+            (2.0, BassDegree::Fifth, 0.22, 0.58),
+            (3.0, BassDegree::Root, 0.22, 0.54),
+            (3.5, BassDegree::Fifth, 0.26, 0.60),
+        ],
+        // Bar 2 — driving: the busiest, a full eighth-note root/octave–fifth boogie into the turn.
+        vec![
+            (0.0, BassDegree::Root, 0.22, 0.88),
+            (0.5, BassDegree::Fifth, 0.20, 0.50),
+            (1.0, BassDegree::Octave, 0.20, 0.54),
+            (1.5, BassDegree::Fifth, 0.20, 0.50),
+            (2.0, BassDegree::Root, 0.20, 0.58),
+            (2.5, BassDegree::Third, 0.20, 0.52), // the chord 3rd — colour
+            (3.0, BassDegree::Octave, 0.20, 0.54),
+            (3.5, BassDegree::Fifth, 0.26, 0.62),
+        ],
+        // Bar 3 — turnaround (the cadence bar). The note at ~7s (beat 1.0) now FALLS to the dark seventh
+        // (over E7 the ♭7 is D, a whole step BELOW the root E) instead of leaping UP to the fifth — the
+        // "bass note at 7s should be going down darker" the ear flagged. The ♭7 is the lowest in-range
+        // dark tone (the MIDI-36 floor forbids a true sub-octave); the push still resolves low on the root.
+        vec![
+            (0.0, BassDegree::Root, 0.24, 0.82),
+            (1.0, BassDegree::Seventh, 0.20, 0.52),
+            (1.5, BassDegree::Third, 0.22, 0.55),
+            (2.0, BassDegree::Fifth, 0.22, 0.56),
+            (2.5, BassDegree::Root, 0.20, 0.54),
+            (3.5, BassDegree::Root, 0.28, 0.68),
+        ],
+    ]
+}
+
+/// Build the smooth-pop SONG source for one seed and [`PopFlavor`]: a Lead-carried verse → hook
+/// over the flavor's pop loop (twice), with the comping keyboard, the pad rug, the breathing
+/// bass and the lead-answering drummer all switched on. The hook is a lawful `altered_consequent`
+/// of the verse, so the engine's own kinship law certifies the song relationship at compile time.
+pub fn source_pop_song(seed: u64, flavor: PopFlavor) -> CompiledArgument {
+    let trace = SemanticTrace {
+        total_beats: 32.0,
+        events: vec![
+            SemanticEvent {
+                at_beat: 0.0,
+                state: SemanticState::toned(Tone::Accent),
+                kind: EventKind::ActChanged,
+            },
+            SemanticEvent {
+                at_beat: 28.0,
+                state: SemanticState::toned(Tone::Success),
+                kind: EventKind::SectionResolved,
+            },
+        ],
+    };
+    let mut song = SongMap::build(&trace, seed, Some(CompositionGrammar::HookArc));
+    let mut contract = song.plan.contract.clone();
+    contract.phrase_bars = 1;
+    song.plan = gibson::audio::human_music::plan::CompositionPlan::build_with_contract_for_beats(
+        &song.timeline,
+        32.0,
+        contract,
+    );
+    // The lead now CARRIES (compile promotes the seat where a Lead step lands); the keys are
+    // freed to comp, the bass is the foundation, the drummer keeps the pocket, and the pad RUG
+    // is seated on stage so it can enter on the hook (the Consequent) as the earned arrival.
+    for p in &mut song.plan.arrangement.phrases {
+        p.lead = ArrangementRole::Support;
+        p.keys = ArrangementRole::Support;
+        p.bass = ArrangementRole::Foundation;
+        p.drums = ArrangementRole::Support;
+        p.pad = ArrangementRole::Support;
+    }
+    let verse = MusicalReferent {
+        id: ReferentId(0),
+        pitch_basis: PitchBasis::Semitones,
+        events: pop_song_verse(),
+    };
+    let hook = MusicalReferent {
+        id: ReferentId(1),
+        pitch_basis: PitchBasis::Semitones,
+        events: pop_song_hook(),
+    };
+    let boundary =
+        song.plan
+            .form
+            .phrases
+            .iter()
+            .position(|p| p.start_beat() == 16.0)
+            .expect("eight one-bar phrases put an episode boundary at beat 16") as u32;
+    let total_phrases = song.plan.form.phrases.len() as u32;
+    let argument = MusicalArgument {
+        family: ArgumentFamily::CallAndEarnedAnswer,
+        referents: vec![verse, hook],
+        ending: ArgumentEnding::Resolved,
+        steps: vec![
+            // VERSE — establish the open question (the lead carries it).
+            ArgumentStep {
+                id: ArgumentStepId(0),
+                referent: ReferentId(0),
+                transform: ArgumentTransform::default(),
+                relation: ArgumentRelation::Establish,
+                depends_on: vec![],
+                carriers: vec![Agent::Lead],
+            },
+            // HOOK — the earned answer: a lawful altered-consequent of the verse that lands home.
+            ArgumentStep {
+                id: ArgumentStepId(1),
+                referent: ReferentId(1),
+                transform: ArgumentTransform::default(),
+                relation: ArgumentRelation::Consequent {
+                    antecedent: ArgumentStepId(0),
+                },
+                depends_on: vec![ArgumentStepId(0)],
+                carriers: vec![Agent::Lead],
+            },
+        ],
+        arc: Some(vec![
+            ArcSpan {
+                step: ArgumentStepId(0),
+                start_phrase: 0,
+                phrase_count: boundary,
+                start_beat: 0.0,
+                span_beats: 16.0,
+            },
+            ArcSpan {
+                step: ArgumentStepId(1),
+                start_phrase: boundary,
+                phrase_count: total_phrases - boundary,
+                start_beat: 16.0,
+                span_beats: 16.0,
+            },
+        ]),
+    };
+    let mut compiled = argument
+        .compile(&song)
+        .expect("smooth-pop song source compiles");
+    let loop4 = flavor.song_loop4();
+    let mut route = loop4.to_vec();
+    route.extend_from_slice(&loop4);
+    compiled.route = route;
+    compiled.domain = SourceDomain::SmoothPop(PopSourceGrammar { loop_bars: 4 });
+    compiled.groove = Some(GrooveLaw {
+        bass_cells: song_funk_bass_cells(),
+    });
+    // Free the band AND make it groove: the keyboard comps guide-tone stabs under the hook, the drummer
+    // answers the lead's breaths and translates its phrase-ending rhythm, the bass leans its approach
+    // toward the harmonic destination, and the kit turns to a FUNK/DISCO pocket (four-on-the-floor +
+    // sixteenth hats) under the syncopated octave bass — the Espresso/Feels/Off-the-Wall rhythm section.
+    // Opt-in levers: the expressive ones are proven on the C137 song; the funk kit is new here. Each is
+    // ablated individually in the experiments (the lead-free groove control leaves them all off).
+    compiled.comp_keys = true;
+    compiled.answer_breaths = true;
+    compiled.anticipate_bass = true;
+    compiled.translate_lead_rhythm = true;
+    compiled.pop_funk_kit = true;
     compiled
 }
