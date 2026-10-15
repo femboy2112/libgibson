@@ -409,6 +409,12 @@ pub enum BassDegree {
     Root,
     Third,
     Fifth,
+    /// The chord's seventh. Voiced up from the low bass floor, it lands BELOW the root for a dominant
+    /// seventh (e.g. the cadence's E7, whose D sits a whole step under the root E) — a dark chord tone
+    /// the smooth-pop groove drops onto so the cadence bass descends instead of leaping up to the fifth
+    /// or octave. (For chords without a distinct seventh it degrades to the fifth; the groove only uses
+    /// it where the chord has one.)
+    Seventh,
     Octave,
 }
 

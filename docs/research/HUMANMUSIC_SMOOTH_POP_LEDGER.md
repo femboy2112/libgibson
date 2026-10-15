@@ -580,6 +580,30 @@ cadence-falls Circle / cadence-falls Lift), matched 104 BPM. **EAR PENDING.** No
 EARLIER bars (0–2, at 0–7 s) were left — the ear flagged the 7–9 s cadence specifically; extend the
 falling treatment to them if the whole bass should stop popping up. Flavour (Circle vs Lift) still UNPICKED.
 
+**R12 (this commit) — a gated sub-root bass degree so the 7 s note falls DARK (first kernel edit since the
+funk kit).** Ear on R11: *"bass note at 7s is still wrong, still moving up (it should be going down
+darker)."* The note at ~7 s (beat 13.0) was `Root → Fifth` = a leap UP a fifth. ROOT CAUSE (the wall
+flagged for rounds): `BassDegree` had only Root/Third/Fifth/Octave — **all at or above the root** — and
+`validate_lane` (`kernel.rs:2522`) floors the bass at **MIDI 36**, so a true sub-octave is impossible
+(roots already sit at 38–46). The one dark tone reachable BELOW the root in range is the chord's **♭7**.
+Change (ENGINE, pop-gated, C137 byte-identical):
+- NEW `BassDegree::Seventh` (`argument.rs`) = the chord's 7th voiced from the MIDI-36 floor. For the
+  cadence's **E7 the ♭7 is D = MIDI 38, a whole step BELOW the root E (40)** — a dark chord tone. Kernel
+  (`kernel.rs`): compute `seventh = register(tones[3.min(len-1)], 36)` + one match arm `Seventh => seventh`
+  in the GROOVE bass path only. C137 never constructs it and takes the unchanged else-branch → the
+  **acoustic lock reproduces all 51 artifacts byte-for-byte AFTER the shared-kernel edit** (verified).
+- BASS bar 3 (the cadence cell, 7–9 s verse + ~16–18 s hook): beat 1.0 `Fifth` → `Seventh`. The 7 s note
+  now FALLS a step to the dark ♭7 (D) instead of leaping up to the fifth (B). Kick-lock preserved (the
+  seventh is not a root and not the push; `is_root` unchanged → drums still 208/206).
+- HONEST CEILING STATED TO HER: the MIDI-36 floor forbids a true deep sub-octave; the ♭7 is the lowest
+  in-range dark tone. Going lower would need lifting that bass floor (a further, riskier engine change).
+
+**[SCORE witness] seed 2112, punchy, 104:** Circle fp `8615b4a034478407` (lead=34, keys=10, bass=52,
+pad=18, drums=208); Lift fp `07bc6406726a9328` (lead=34, pad=19, drums=206). **[TEST]** `audio_smooth_pop`
+9/9 (Seventh passes the bass register floor; kick still locks). **[LOCK] GREEN 51/51 byte-for-byte after a
+KERNEL edit.** fmt + clippy-D clean. 3 MP3s (R11 bass-rises-at-7s BEFORE / bass-drops-♭7 Circle / Lift),
+matched 104 BPM. **EAR PENDING.** Flavour (Circle vs Lift) still UNPICKED — both arms live.
+
 ---
 
 ## STOP conditions (plan §8)

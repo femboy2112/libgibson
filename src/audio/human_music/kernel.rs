@@ -1723,6 +1723,9 @@ pub fn perform_song(
         let root = register(ctx.chord.root_pc, 36);
         let fifth = register(tones[2.min(tones.len().saturating_sub(1))], 36);
         let third = register(tones[1.min(tones.len().saturating_sub(1))], 36);
+        // The chord's seventh, voiced from the same low floor. For a dominant seventh (the cadence's
+        // E7: D a whole step below the root E) it lands BELOW the root — a dark descending bass tone.
+        let seventh = register(tones[3.min(tones.len().saturating_sub(1))], 36);
         // Beat four leads into the next bar. With the foundation ANTICIPATING the destination
         // (`anticipate_bass`), its approach expresses WHERE the harmony is going: the dominant into a
         // home arrival (the V->I the ear hears coming), the leading tone a half-step below into a drive
@@ -1764,6 +1767,7 @@ pub fn perform_song(
                         super::argument::BassDegree::Root => root,
                         super::argument::BassDegree::Third => third,
                         super::argument::BassDegree::Fifth => fifth,
+                        super::argument::BassDegree::Seventh => seventh,
                         // The octave pop, folded DOWN by whole octaves into the bass register, so it is
                         // always the root's own pitch class (never the wrong note a hard clamp to 55
                         // would sound on a high root) and never above the bass ceiling.

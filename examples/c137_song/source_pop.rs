@@ -513,12 +513,13 @@ fn song_funk_bass_cells() -> Vec<Vec<(f64, BassDegree, f32, f32)>> {
             (3.0, BassDegree::Octave, 0.20, 0.54),
             (3.5, BassDegree::Fifth, 0.26, 0.62),
         ],
-        // Bar 3 — turnaround (the cadence bar, ~7-9s): root, then the line FALLS — fifth DOWN to the third
-        // (no octave leap up, the "bass should be going down not up" the ear flagged here), and the
-        // STRONGEST push RESOLVES DOWN onto the low root. The whole turnaround descends into the loop.
+        // Bar 3 — turnaround (the cadence bar). The note at ~7s (beat 1.0) now FALLS to the dark seventh
+        // (over E7 the ♭7 is D, a whole step BELOW the root E) instead of leaping UP to the fifth — the
+        // "bass note at 7s should be going down darker" the ear flagged. The ♭7 is the lowest in-range
+        // dark tone (the MIDI-36 floor forbids a true sub-octave); the push still resolves low on the root.
         vec![
             (0.0, BassDegree::Root, 0.24, 0.82),
-            (1.0, BassDegree::Fifth, 0.20, 0.52),
+            (1.0, BassDegree::Seventh, 0.20, 0.52),
             (1.5, BassDegree::Third, 0.22, 0.55),
             (2.0, BassDegree::Fifth, 0.22, 0.56),
             (2.5, BassDegree::Root, 0.20, 0.54),
