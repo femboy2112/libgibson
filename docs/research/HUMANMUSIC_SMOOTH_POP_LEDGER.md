@@ -413,6 +413,28 @@ Remaining coherence layers (flagged, not built): the keys comp reads only the LE
 the stabs don't yet sit in the funk pocket's complementary off-beat slots; and the lead topline is phrased
 in the lyrical C137 idiom, not funk-syncopated.
 
+**R5 (this commit) — de-cliché the melody + progression.** Ear on R4: *"MUCH MUCH better [the band
+coheres]; to hear improvements of higher quality we have to fix the cliché melody/progression first."*
+The groove was no longer the bottleneck; the stepwise C–D–E germ over a circle-of-fourths loop was.
+Both are composition (example-only, no engine touch → C137 lock trivially 51/51):
+- MELODY (`pop_song_verse`/`pop_song_hook`): the germ is now a SIGNATURE LEAP (E up a 4th to A, step to
+  G, off the beat) with funk-syncopated 16th phrasing + space — not a scale. Still a lawful
+  `altered_consequent` (iou 1.0, head ✓, exact-interval 0.50, mean +2.88, Open→Closed, step 0.875). Side
+  effect: the syncopation opens more breaths (6→17), so the drummer answers more (3→8) — more band
+  conversation, for free.
+- PROGRESSION (`PopFlavor::song_loop4`, a new method; the song no longer uses the groove's `loop4`): OFF
+  the circle-of-fourths. Circle-song = Am9–Em7–Fmaj9–Dm9 (i-v-♭VI-iv; the modal MINOR v is the fresh
+  signature — pop usually forces a major V); Lift-song = Am9–Fmaj9–Dm9–Em7 (bright ♭VI lift). BOTH FULLY
+  DIATONIC so the Aeolian topline never clashes. The manifest now reports the song's real progression
+  (`song_harmony_label`), not the stale `loop4` label.
+
+**[SCORE witness] seed 2112, punchy, 110:** Circle-song fp `2f88562f55d7fde9`, Lift-song fp
+`2a2f6e6e51a66d0f` — lead=34 (17 verse + 17 hook), keys=10, bass=52, pad=19, drums=206; breaths 6→17,
+breath-answer 3→8. **[TEST]** `audio_smooth_pop` 9/9 (the lawfulness proof holds for the new melody).
+**[LOCK] GREEN 51/51** (example-only change). fmt + clippy-D clean. 3 MP3s (old-cliché / fresh-modal /
+fresh-bright). **EAR PENDING on R5.** OPEN: the diatonic progressions give a MODAL arrival, not a hard
+V→i — a functional dominant at the turnaround is the lever if the ear wants a harder chorus payoff.
+
 ---
 
 ## STOP conditions (plan §8)

@@ -429,11 +429,11 @@ fn manifest_header(
         let _ = writeln!(
             m,
             "  harmony               : {}, looped x2",
-            pop_flavor.harmony_label()
+            pop_flavor.song_harmony_label()
         );
         let _ = writeln!(
             m,
-            "  lead                  : source-authored vocal-proxy topline (germ head shared verse->hook; hook lifts, resolves home)"
+            "  lead                  : source-authored vocal-proxy topline (leap germ shared verse->hook; funk-syncopated; hook lifts, resolves home)"
         );
         let _ = writeln!(
             m,

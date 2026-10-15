@@ -79,6 +79,31 @@ impl PopFlavor {
         }
     }
 
+    /// The pop SONG's fresher per-bar progression (one 4-bar cycle) — OFF the circle-of-fourths cliché
+    /// the groove used. Fully diatonic to A-Aeolian, so the Aeolian topline never clashes; the fresh
+    /// character is in the modal MINOR v (Em7 — pop almost always forces a major V) and the ♭VI, not in
+    /// stacked colour. `(semitones_above_A, Quality)`.
+    fn song_loop4(self) -> [(i32, Quality); 4] {
+        match self {
+            // i9 – v7 – ♭VImaj9 – iv9: the natural-minor MINOR v is the signature — modal and moody,
+            // unmistakably not a jazz turnaround; the ♭VI lifts, the iv keeps it open for the hook.
+            PopFlavor::Circle => [
+                (0, Quality::Min9),
+                (7, Quality::Min7),
+                (8, Quality::Maj9),
+                (5, Quality::Min9),
+            ],
+            // i9 – ♭VImaj9 – iv9 – v7: the bright ♭VI lift up front, the same modal minor v home —
+            // anthemic rather than moody.
+            PopFlavor::Lift => [
+                (0, Quality::Min9),
+                (8, Quality::Maj9),
+                (5, Quality::Min9),
+                (7, Quality::Min7),
+            ],
+        }
+    }
+
     /// A flowing, connected guide-tone LINE over one 16-beat episode. The keys no longer DOT the
     /// pocket's anchor points with detached stabs — they MOVE THROUGH its geometry: a melodic line
     /// that steps and arcs across the progression (rising through the first half of the loop,
@@ -157,6 +182,19 @@ impl PopFlavor {
             }
             PopFlavor::Lift => {
                 "Am9 - Fmaj9 - Dm9 - E7 (i9-VImaj9-iv9-V7, leading-tone pull, A-Aeolian + mixture)"
+            }
+        }
+    }
+
+    /// The pop SONG's progression label (the fresher [`song_loop4`], not the groove's [`loop4`]).
+    #[allow(dead_code)]
+    pub fn song_harmony_label(self) -> &'static str {
+        match self {
+            PopFlavor::Circle => {
+                "Am9 - Em7 - Fmaj9 - Dm9 (i9-v7-bVImaj9-iv9, modal minor-v, A-Aeolian, diatonic)"
+            }
+            PopFlavor::Lift => {
+                "Am9 - Fmaj9 - Dm9 - Em7 (i9-bVImaj9-iv9-v7, bright bVI lift + modal minor v, A-Aeolian)"
             }
         }
     }
@@ -347,62 +385,65 @@ pub fn source_pop_groove(seed: u64, flavor: PopFlavor) -> CompiledArgument {
 // the voice lands home and the band fills in around it — not because anything merely got
 // louder. Still opt-in; still the breathing pop bass; no C137 source is touched.
 
-/// The four-bar VERSE topline (one 16-beat episode), tonic-relative semitones over the pop
-/// loop. Conversational and middle-register: a rising three-note germ that HOLDS, a falling
-/// answer with a breath, a reaching pre-cadence, and a settle that ends OPEN on the 9th (B —
-/// a tendency tone that wants the hook). Prosodic — pickups, holds and real silences, not a
-/// note on every half-beat. `(onset, semitone_above_A, dur_beats, velocity)`.
+/// The four-bar VERSE topline (one 16-beat episode), tonic-relative semitones, Aeolian. The germ is
+/// no longer a stepwise climb — it's a SIGNATURE LEAP: E kicks up a fourth to A, then steps down to G,
+/// landing off the beat (a funk pickup, not a scale). Syncopated 16th phrasing with real space, a low
+/// reach in the second bar, and a settle that ends OPEN on the 9th (B), still wanting the hook.
+/// `(onset, semitone_above_A, dur_beats, velocity)`.
 pub fn pop_song_verse() -> Vec<MaterialEvent> {
     rows_to_lead_events(&[
-        // Am9 — the germ: C D E, rising, then HELD (the gap after it is the breath).
-        (0.0, 3, 0.45, 0.52),
-        (0.5, 5, 0.45, 0.55),
-        (1.0, 7, 1.8, 0.62),
-        // Dm9 — the answer falls away, ending on a held C (breath into bar 3).
-        (4.0, 8, 0.45, 0.54),
-        (4.5, 7, 0.45, 0.50),
-        (5.0, 5, 0.9, 0.56),
-        (6.0, 3, 1.4, 0.52),
-        // G9 — reach up to the verse's peak G (the pre-cadential lift).
-        (8.0, 5, 0.45, 0.52),
-        (8.5, 7, 0.45, 0.56),
-        (9.0, 8, 0.9, 0.58),
-        (10.0, 10, 1.6, 0.60),
-        // Cmaj9 — settle down and hang OPEN on the 9th (B), still wanting resolution.
+        // Am9 — the germ LEAP: E, up a 4th to A, step down to G (syncopated), then an off-beat answer.
+        (0.0, 7, 0.45, 0.58),
+        (0.5, 12, 0.20, 0.64),
+        (0.75, 10, 0.5, 0.56),
+        (2.5, 7, 0.45, 0.54),
+        (3.0, 8, 0.5, 0.56),
+        // Em7 — a syncopated fall (G F E) reaching down low to D, with space (the funk breath).
+        (4.0, 10, 0.6, 0.56),
+        (4.75, 8, 0.6, 0.54),
+        (5.5, 7, 0.5, 0.54),
+        (7.0, 5, 0.6, 0.52),
+        // Fmaj9 — a quick funk run up to the octave A, then a syncopated G.
+        (8.0, 8, 0.45, 0.56),
+        (8.5, 10, 0.20, 0.58),
+        (8.75, 12, 0.5, 0.62),
+        (10.5, 10, 0.6, 0.56),
+        // Dm9 — settle down and hang OPEN on the 9th (B), still wanting the hook.
         (12.0, 7, 0.45, 0.54),
-        (12.5, 5, 0.45, 0.50),
-        (13.0, 3, 0.9, 0.52),
-        (14.0, 2, 1.9, 0.48),
+        (12.75, 5, 0.6, 0.52),
+        (13.5, 3, 0.5, 0.52),
+        (14.5, 2, 1.0, 0.50),
     ])
 }
 
 /// The four-bar HOOK topline (one 16-beat episode) — a lawful `altered_consequent` of
-/// [`pop_song_verse`]: it OPENS with the verse's exact germ head (C D E, so the ear knows the
-/// song is the same song), then diverges into a busier, higher line (mean lifted ~3.5
-/// semitones) that re-voices the verse's shape WITHOUT transposing it, peaks a step higher
-/// each bar, and RESOLVES home on the tonic A where the verse hung open. `(onset, step, dur, vel)`.
+/// [`pop_song_verse`]: it OPENS with the verse's exact germ LEAP (E–A–G, so the ear knows the song is
+/// the same song), shares the verse's syncopated rhythm skeleton, then re-voices it a register higher
+/// (mean lifted ~3 semitones) WITHOUT transposing it, peaks a step above the verse's peak, and leaps
+/// back HOME to the tonic A at the end (Closed) where the verse hung open. `(onset, step, dur, vel)`.
 pub fn pop_song_hook() -> Vec<MaterialEvent> {
     rows_to_lead_events(&[
-        // Am9 — the SAME germ head (C D E), then a new push up to G: the hook is already moving.
-        (0.0, 3, 0.45, 0.60),
-        (0.5, 5, 0.45, 0.63),
-        (1.0, 7, 0.9, 0.66),
-        (2.0, 10, 1.4, 0.68),
-        // Dm9 — the answer, a register higher than the verse's (A G F E, not F E D C).
-        (4.0, 12, 0.45, 0.64),
-        (4.5, 10, 0.45, 0.62),
-        (5.0, 8, 0.9, 0.64),
-        (6.0, 7, 1.4, 0.60),
-        // G9 — climb to the hook's peak B, a step above the verse's peak: the song's high point.
-        (8.0, 10, 0.45, 0.62),
-        (8.5, 12, 0.45, 0.66),
-        (9.0, 14, 0.9, 0.70),
-        (10.0, 12, 1.4, 0.66),
-        // Cmaj9 — descend and LAND HOME on A (Closed): the long, held homecoming.
+        // Am9 — the SAME germ leap (E–A–G), then stay UP: the hook is already higher than the verse.
+        (0.0, 7, 0.45, 0.62),
+        (0.5, 12, 0.20, 0.68),
+        (0.75, 10, 0.5, 0.64),
+        (2.5, 10, 0.45, 0.60),
+        (3.0, 12, 0.5, 0.64),
+        // Em7 — the answer up a register, riding A and the octave (where the verse fell to D).
+        (4.0, 12, 0.6, 0.62),
+        (4.75, 10, 0.6, 0.60),
+        (5.5, 12, 0.5, 0.64),
+        (7.0, 10, 0.6, 0.60),
+        // Fmaj9 — climb to the hook's peak B (a step above the verse's A): the song's high point.
+        (8.0, 10, 0.45, 0.60),
+        (8.5, 12, 0.20, 0.64),
+        (8.75, 14, 0.5, 0.70),
+        (10.5, 12, 0.6, 0.64),
+        // Dm9 — descend G F E and LEAP back HOME to A (Closed): the earned homecoming.
         (12.0, 10, 0.45, 0.60),
-        (12.5, 8, 0.45, 0.56),
-        (13.0, 7, 0.9, 0.56),
-        (14.0, 12, 1.9, 0.58),
+        (12.75, 8, 0.6, 0.56),
+        (13.5, 7, 0.5, 0.56),
+        (14.5, 12, 1.0, 0.60),
     ])
 }
 
@@ -572,7 +613,7 @@ pub fn source_pop_song(seed: u64, flavor: PopFlavor) -> CompiledArgument {
     let mut compiled = argument
         .compile(&song)
         .expect("smooth-pop song source compiles");
-    let loop4 = flavor.loop4();
+    let loop4 = flavor.song_loop4();
     let mut route = loop4.to_vec();
     route.extend_from_slice(&loop4);
     compiled.route = route;
