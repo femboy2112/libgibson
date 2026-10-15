@@ -502,6 +502,34 @@ bass chromatic walk-ups (new `BassDegree`), comp reaching 13ths/alterations (gat
 widening the melody pool past its 2 licensed colours. Flavour (modal Circle vs bright Lift) still UNPICKED
 — both arms live.
 
+**R8 EAR VERDICT: REJECTED + REVERTED.** *"Both sound worse lol, it sounds like you changed exactly the
+notes I wasn't talking about lmao."* The read was wrong: "colour in the transitions" did NOT mean the
+cadence/harmony — it meant the melodic CONNECTIVE TISSUE (the passing/pickup notes bridging the main
+notes). R8 rebuilt the cadence + homecoming (notes she LIKED) and left the real culprit untouched.
+Clarified by a direct question → answer: *"probably [the lead's connecting notes], maybe [the keyboard's
+chord-to-chord motion]."* R8's source reverted to the R7 baseline before R9.
+
+**R9 (this commit) — reshape the melodic CONNECTORS (the real "transition colour").** Back on the R7
+progression/cadence/homecoming (all ear-liked, restored byte-for-byte). The ONLY change: the lead's
+scale-run connective tissue — the plain stepwise fills that joined the main notes (the low-hanging fruit)
+— become leaps / neighbours / overshoots. Four notes, onsets+durs+velocities all identical to R7 (so the
+groove, pocket and dynamics are untouched; the change is isolated to connector PITCH):
+- verse bar 1 `G-F-E-D` (scale down) → `G-D-E-D` (leap to the low reach, lean back).
+- verse bar 2 `F-G-A` (scale up) → `F-E-A` (dip, then LEAP a 5th up to the octave).
+- verse bar 3 `E-D-C#-B` (scale down w/ textbook chromatic passing C#) → `E-B-C#-B` (leap to the open B;
+  the C# becomes an expressive upper-NEIGHBOUR lean, not a passing tone in a descent).
+- hook bar 2 `G-A-B` (scale climb to the peak) → `G-E-B` (dip, then LEAP up to the peak — mirrors the
+  verse bar-2 gesture). Germ, peaks, landings, the open hang and the homecoming all preserved.
+Still a lawful `altered_consequent` (hand-verified then test-certified: iou 1.0, parsons 0.75, mean +3.2,
+exact-interval 0.31, scale 1.0, peak 14 > 12, verse Open → hook Closed).
+
+**[SCORE witness] seed 2112, punchy, 104:** Circle fp `16cb7b68a021edf8` (lead=34, keys=10, bass=52,
+pad=18, drums=208); Lift fp `6c7ec3367eb46661` (lead=34, pad=19, drums=206). **[TEST]** `audio_smooth_pop`
+9/9. **[LOCK] GREEN 51/51 byte-for-byte.** fmt + clippy-D clean. 3 MP3s (R7 scale-run BEFORE / reshaped-
+connectors Circle / reshaped-connectors Lift), matched 104 BPM. **EAR PENDING.** Option 2 (the keyboard's
+chord-to-chord connective motion) is the follow-up if this is not enough — but in song mode the keys comp
+is engine-derived (`comp_keys`), so reshaping it is a GATED kernel edit, not a free source change.
+
 ---
 
 ## STOP conditions (plan §8)
