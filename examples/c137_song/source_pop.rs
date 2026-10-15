@@ -411,12 +411,12 @@ pub fn pop_song_verse() -> Vec<MaterialEvent> {
         (8.5, 7, 0.20, 0.58),
         (8.75, 12, 0.5, 0.62),
         (10.5, 10, 0.6, 0.56),
-        // E7 — leap to the open B (the dominant's 5th), lean on a DIATONIC C (natural, the Aeolian ♭3 of
-        // the key — a dark modal neighbour, not the bright bluesy C# the ear flagged), then hang OPEN on
-        // B. Fully diatonic now: the colour is modal, not blues. Still wanting the hook.
+        // E7 — leap to the open B (the dominant's 5th), then a LOWER neighbour A (down, not the cliché
+        // upper-neighbour C that reached UP — the "goes up when it should go down" the ear flagged at the
+        // cadence), and hang OPEN on B. The neighbour now falls and recovers. Still wanting the hook.
         (12.0, 7, 0.45, 0.54),
         (12.75, 2, 0.6, 0.52),
-        (13.5, 3, 0.5, 0.52),
+        (13.5, 0, 0.5, 0.52),
         (14.5, 2, 1.0, 0.50),
     ])
 }
@@ -513,13 +513,13 @@ fn song_funk_bass_cells() -> Vec<Vec<(f64, BassDegree, f32, f32)>> {
             (3.0, BassDegree::Octave, 0.20, 0.54),
             (3.5, BassDegree::Fifth, 0.26, 0.62),
         ],
-        // Bar 3 — turnaround: root, a mid-bar octave bounce, a late root, then the STRONGEST push RESOLVES
-        // DOWN onto the low root (grounded, not a leap up to the high octave) — the turnaround lands heavy
-        // and low into the loop instead of jumping up against the descending lead.
+        // Bar 3 — turnaround (the cadence bar, ~7-9s): root, then the line FALLS — fifth DOWN to the third
+        // (no octave leap up, the "bass should be going down not up" the ear flagged here), and the
+        // STRONGEST push RESOLVES DOWN onto the low root. The whole turnaround descends into the loop.
         vec![
             (0.0, BassDegree::Root, 0.24, 0.82),
             (1.0, BassDegree::Fifth, 0.20, 0.52),
-            (1.5, BassDegree::Octave, 0.22, 0.55),
+            (1.5, BassDegree::Third, 0.22, 0.55),
             (2.0, BassDegree::Fifth, 0.22, 0.56),
             (2.5, BassDegree::Root, 0.20, 0.54),
             (3.5, BassDegree::Root, 0.28, 0.68),

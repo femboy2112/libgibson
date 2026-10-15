@@ -559,6 +559,27 @@ palette = widening the engine note pool past its 2 blues-flavoured licensed chro
 gated). A true bass walk-DOWN also = engine work (new sub-root `BassDegree`). Flavour (Circle vs Lift)
 still UNPICKED — both arms live.
 
+**R11 (this commit) — the cadence voice leading FALLS instead of rising (the 7–9s spot).** Ear on R10:
+*"the notes between 7 and 9s in the bass and lead, still there, still trash. such cliche voice leading.
+bass should definitely be going down there instead of up."* VERIFIED the timing (music starts at t=0, no
+lead-in; the only silence is the reverb tail): at 104 BPM, **7–9 s = beats 12.1–15.6 = the verse's 4th bar,
+the E7 cadence**. At that spot both voices RISE when the cadence should settle: the lead does an UPPER
+neighbour (B→C→B, the C reaches up) and the bass does its octave POP (leaps up to the high octave at
+beat 13.5 ≈ 7.8 s). Two surgical notes, both flipped to fall (example-only, lawful, lock 51/51):
+- LEAD verse bar 3: the upper-neighbour C (step 3) → a LOWER neighbour A (step 0) — the neighbour now
+  falls and recovers (B→A→B) instead of reaching up (B→C→B). Still hangs OPEN on B.
+- BASS bar 3 (the turnaround cell, plays at 7–9 s AND the hook's ~16–18 s): `Octave`(beat 1.5) → `Third`
+  — the fifth now FALLS to the third instead of leaping up an octave; the whole turnaround descends into
+  the loop. Kick-lock preserved (the octave was not a root; roots unchanged → drums still 208/206).
+Still a lawful `altered_consequent` (iou 1.0, parsons 0.75, mean +3.9, scale 1.0, peak 14>12, Open→Closed).
+
+**[SCORE witness] seed 2112, punchy, 104:** Circle fp `f20abbb5012c1e87` (lead=34, keys=10, bass=52,
+pad=18, drums=208); Lift fp `1cd6f2ab02c011c4` (lead=34, pad=19, drums=206). **[TEST]** `audio_smooth_pop`
+9/9. **[LOCK] GREEN 51/51 byte-for-byte.** fmt + clippy-D clean. 3 MP3s (R10 cadence-rises BEFORE /
+cadence-falls Circle / cadence-falls Lift), matched 104 BPM. **EAR PENDING.** Note: the octave pops in the
+EARLIER bars (0–2, at 0–7 s) were left — the ear flagged the 7–9 s cadence specifically; extend the
+falling treatment to them if the whole bass should stop popping up. Flavour (Circle vs Lift) still UNPICKED.
+
 ---
 
 ## STOP conditions (plan §8)
