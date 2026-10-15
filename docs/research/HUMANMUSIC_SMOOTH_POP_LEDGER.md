@@ -394,6 +394,25 @@ vanish; the archived kit never places them). **[LOCK] GREEN — 51/51 byte-for-b
 fmt + clippy-D clean. **[REPRO]** `--form=pop-song --pop-palette=punchy --tempo=104|110`. 3 MP3s
 (before-punchy-no-funk / funk-104 / funk-110). **EAR PENDING on R3.**
 
+**R4 (this commit) — the kick LOCKS to the bass.** Ear on R3: *"sounds like an incoherent band — good
+at its one style, doesn't know funk trying to play funk; the faster BPM helps but it's still true."*
+Diagnosis: the funk was two independent layers — a rigid four-on-the-floor kick plowing over a
+syncopated bass on its own clock (the "doesn't know funk" tell). Funk's first law is the kick–bass lock.
+Fix (kernel, still gated on `pop_funk_kit`): the funk kick now READS the committed bass figure
+(`argument.groove`) and lands on the downbeat, the bassist's ROOTS and the bar-end push, at the SAME
+pocketed microtime — leaving space where the bass syncopates off the root. And the lead-reading comp no
+longer throws kicks in funk mode (ghost snares only), so every kick belongs to the bass-lock (one kick
+authority, one pocket). Deterministic, no clairvoyance; the bass commits before the drums (clean causality).
+
+**[SCORE witness] seed 2112, Circle, punchy, 110:** fp `3b0202a3879e4b11` — drums 211→203 (the kick is
+syncopated/locked, not four-floor + comp-kicks); lead/keys/bass/pad unchanged. **[TEST]** `audio_smooth_pop`
+9/9 incl. `the_funk_kick_locks_to_the_bass` (every funk kick coincides with a committed bass attack; flip
+the flag off → the archived kick-on-1-and-3 pattern). **[LOCK] GREEN — 51/51 byte-for-byte after the kernel
+edit.** fmt + clippy-D clean. 3 MP3s (unlocked-110 / locked-110 / locked-116). **EAR PENDING on R4.**
+Remaining coherence layers (flagged, not built): the keys comp reads only the LEAD (not the groove), so
+the stabs don't yet sit in the funk pocket's complementary off-beat slots; and the lead topline is phrased
+in the lyrical C137 idiom, not funk-syncopated.
+
 ---
 
 ## STOP conditions (plan §8)

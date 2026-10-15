@@ -1921,17 +1921,40 @@ pub fn perform_song(
         // them by the SAME shared pocket the bass and lead use, so the whole band locks as one body.
         let pocket = super::theme_family::pocket_offset;
         if funk_kit {
-            // FUNK / DISCO-FUNK spine (opt-in `pop_funk_kit`): four-on-the-floor kick under a crisp
-            // backbeat, sixteenth hats throughout with the "and"s opened (the disco off-beat shimmer),
-            // and a ghost-snare pickup into beat four. The syncopation and bounce live here and in the
-            // funk bass; the comp/breath interplay below still layers the lead's conversation on top.
-            for b in 0..4u32 {
-                let v = match b {
-                    0 => 0.95, // the one
-                    2 => 0.82, // beat three
-                    _ => 0.72, // two and four, under the backbeat
-                };
-                push(DrumVoice::Kick, bar_start + b as f64, v, "pulse", 0.0);
+            // FUNK / DISCO-FUNK spine (opt-in `pop_funk_kit`): the kick LOCKS TO THE BASS. A crisp
+            // backbeat, sixteenth hats with the "and"s opened (the disco shimmer) and a ghost pickup —
+            // but the kick does NOT plow a rigid four-on-the-floor grid over a syncopated bass (the
+            // "doesn't know funk" tell). A funk band is ONE pocket: the kick and the bass are a single
+            // unit. So the kick plays the downbeat, every ROOT the bassist lands (the foundation hits)
+            // and the bar's end-push — at the SAME pocketed microtime the bass uses — and leaves the
+            // space where the bass syncopates off the root (the funk breath). It reads the authored
+            // groove cell (the committed bass figure): deterministic, no clairvoyance, and a changed
+            // bass cell lawfully changes the later kick (the bass is committed before the drums, so no
+            // earlier event moves).
+            if let Some(groove) = &argument.groove {
+                let cell = &groove.bass_cells[bar % groove.bass_cells.len()];
+                for &(offset, degree, _, _) in cell {
+                    let is_root = matches!(degree, super::argument::BassDegree::Root);
+                    let is_push = offset >= 3.5;
+                    if offset == 0.0 || is_root || is_push {
+                        let v = if offset == 0.0 {
+                            0.95
+                        } else if is_push {
+                            0.82
+                        } else {
+                            0.80
+                        };
+                        push(
+                            DrumVoice::Kick,
+                            bar_start + offset,
+                            v,
+                            "pulse",
+                            pocket(offset),
+                        );
+                    }
+                }
+            } else {
+                push(DrumVoice::Kick, bar_start, 0.95, "pulse", 0.0);
             }
             push(
                 DrumVoice::Snare,
@@ -2059,10 +2082,12 @@ pub fn perform_song(
             if !lead_occ.allows_comp_at(at, &lead_notes) {
                 continue; // the lead is speaking here — leave the space
             }
-            let (voice, base) = if s % 4 == 2 {
+            let (voice, base) = if s % 4 == 2 && !funk_kit {
                 (DrumVoice::Kick, 0.56) // on the "and"
             } else {
-                (DrumVoice::Snare, 0.40) // a ghost on the "a"
+                // A ghost on the "a" — and, in the funk kit, the "and" too: the kick belongs to the
+                // bass-lock alone, so the lead-reading comp adds only ghost snares, never a stray kick.
+                (DrumVoice::Snare, 0.40)
             };
             // comps and answers both ride the shared pocket. A breath answer (lead genuinely silent)
             // steps forward at full velocity on its own budget; an ordinary comp is soft inside a

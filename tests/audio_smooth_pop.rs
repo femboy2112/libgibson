@@ -243,10 +243,11 @@ fn the_pop_song_sounds_a_lead_a_comping_keyboard_and_a_pad() {
 }
 
 #[test]
-fn the_funk_kit_is_load_bearing_four_on_the_floor() {
-    // The funk/disco kit must be a real pattern change, not a relabel: four-on-the-floor puts a kick on
-    // EVERY beat — including beats 2 and 4, where the archived kick-on-1-and-3 kit never places one.
-    // Flip `pop_funk_kit` off on the same song and those kicks must disappear (and the kit stays gated).
+fn the_funk_kick_locks_to_the_bass() {
+    // Funk coherence: the kick does NOT play a rigid grid — it LOCKS to the bass, landing on the
+    // bassist's roots and the bar-end push at the same pocketed microtime, and leaving space where the
+    // bass syncopates. So every funk kick coincides with a committed bass attack, the kit syncopates
+    // off the 1-&-3 grid, and flipping `pop_funk_kit` off yields the different archived pattern.
     let funk = render_pop_song(2112); // source_pop_song sets pop_funk_kit = true
     let mut plain_src = source_pop::source_pop_song(2112, source_pop::PopFlavor::Circle);
     plain_src.pop_funk_kit = false;
@@ -254,21 +255,29 @@ fn the_funk_kit_is_load_bearing_four_on_the_floor() {
         .expect("the song with the archived kit still commits")
         .score()
         .clone();
-    let kicks_on = |s: &Score, beat: f64| {
-        s.drums
-            .iter()
-            .filter(|d| matches!(d.voice, DrumVoice::Kick) && (d.start_beat - beat).abs() < 1e-6)
-            .count()
-    };
+    let bass_onsets: Vec<f64> = funk.role_notes(Role::Bass).map(|n| n.start_beat).collect();
+    let funk_kicks: Vec<f64> = funk
+        .drums
+        .iter()
+        .filter(|d| matches!(d.voice, DrumVoice::Kick))
+        .map(|d| d.start_beat)
+        .collect();
+    assert!(!funk_kicks.is_empty(), "the funk kit places kicks");
+    // THE LOCK: every funk kick lands with a committed bass attack (same pocketed microtime).
     assert!(
-        kicks_on(&funk, 1.0) > 0 && kicks_on(&funk, 3.0) > 0,
-        "the funk kit lands a kick on beats 2 and 4 (four-on-the-floor)"
+        funk_kicks
+            .iter()
+            .all(|&k| bass_onsets.iter().any(|&b| (k - b).abs() < 1e-6)),
+        "every funk kick is locked to a bass attack — the kick and bass are one unit"
     );
-    assert_eq!(
-        kicks_on(&plain, 1.0),
-        0,
-        "the archived kit never kicks on beat 2 — so the funk flag is genuinely load-bearing"
+    // The lock syncopates off the rigid grid: a kick lands in the bass's "and of 4" push (~3.5).
+    assert!(
+        funk_kicks
+            .iter()
+            .any(|&k| (k % 4.0) > 3.1 && (k % 4.0) < 3.95),
+        "the funk kick syncopates with the bass push, not a rigid four-on-the-floor"
     );
+    // Load-bearing: flipping the flag off commits the different archived kick-on-1-and-3 pattern.
     assert!(
         funk.drums.len() != plain.drums.len(),
         "the funk kit commits a different drum pattern than the archived kit"
