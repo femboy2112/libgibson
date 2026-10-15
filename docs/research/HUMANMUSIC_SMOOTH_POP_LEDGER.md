@@ -475,6 +475,33 @@ home. Fix (example-only, lawful, C137 lock 51/51):
 E7 (the soul ♭3-vs-chord-3rd rub) — deliberate, but the one note most likely still "spicy" if the ear
 wants it cleaner; revoice that approach if so.
 
+**R8 (this commit) — de-cliché the cadence COLOUR (the transition seam).** Ear on R7: *"getting better,
+but some of the colour in the transitions is still a little cliché — doesn't sound wrong, sounds
+overdone / low-hanging fruit."* Diagnosis: R7 gave the colour a home by building a FUNCTIONAL E7 so the
+G# would resolve up to the tonic — i.e. the single most textbook device in Western harmony, the authentic
+V7→i cadence with the leading-tone pull. It traded *wrong* for *obvious*. The fix is not more/less colour;
+it is to DENY the dominant its textbook home. Change (example-only, lawful, C137 lock 51/51):
+- PROGRESSION (`song_loop4`) — reorder so the cadence is DECEPTIVE, keeping E7 (so G# keeps its in-context
+  seat) but moving it OFF the final bar. Circle-song = **Am9-Em7-E7-Fmaj9** (i9-v7-V7-♭VImaj9: the soul
+  minor-v→major-V stays, then the dominant deflects to the bright ♭VI — deceptive V→♭VI — and the loop
+  homes ♭VI→i, a modal turnaround with NO leading tone). Lift-song = **Am9-Fmaj9-E7-Dm9** (i9-♭VImaj9-V7-iv9:
+  the dominant slides to the minor subdominant, loop homes iv→i, the "amen-with-tears" minor plagal).
+- LEAD — the colour bar is now bar 3 (over E7): the G# ASCENDS mid-phrase (E–G#–B–C#, overshooting the
+  tonic) instead of pulling into it; the hook then lands HOME on A deceptively over the ♭VI, reached by a
+  whole-step G→A (the Aeolian cadence), NOT the leading-tone half-step. Germ (bars 0–1) byte-unchanged.
+  Still a lawful `altered_consequent` (hand-verified then test-certified: iou 1.0, parsons 0.69,
+  mean +2.6, exact-interval 0.31, scale 1.0, peak 16 > 14, verse Open → hook Closed).
+
+**[SCORE witness] seed 2112, punchy, 104:** deceptive Circle fp `8d05fe6b577dc78c` (lead=34, keys=10,
+bass=52, pad=18, drums=206); deceptive Lift fp `00e724b61a15cbd9` (lead=34, pad=19, drums=204).
+**[TEST]** `audio_smooth_pop` 9/9 (the altered-consequent law re-certifies the new hook). **[LOCK] GREEN
+51/51 byte-for-byte.** fmt + clippy-D clean. 3 MP3s (R7 authentic-cadence BEFORE / deceptive-modal Circle
+/ deceptive-bright Lift), all at matched 104 BPM. **EAR PENDING.** Both licensed chromatics (G#, C#) now
+spent in in-context, non-cliché roles; richer transition colour beyond this needs ENGINE work (gated):
+bass chromatic walk-ups (new `BassDegree`), comp reaching 13ths/alterations (gated `comp_keys` edit), or
+widening the melody pool past its 2 licensed colours. Flavour (modal Circle vs bright Lift) still UNPICKED
+— both arms live.
+
 ---
 
 ## STOP conditions (plan §8)

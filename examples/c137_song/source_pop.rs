@@ -85,22 +85,26 @@ impl PopFlavor {
     /// stacked colour. `(semitones_above_A, Quality)`.
     fn song_loop4(self) -> [(i32, Quality); 4] {
         match self {
-            // i9 – v7 – ♭VImaj9 – V7: the fresh modal MINOR v (Em7) early, then a real DOMINANT (E7) at
-            // the cadence — the "minor-v becomes major-V" soul turnaround. The V7 gives the hook a
-            // functional home AND an in-context seat for the lead's leading-tone colour (G# = E7's 3rd).
+            // i9 – v7 – V7 – ♭VImaj9: the fresh modal MINOR v (Em7), the "minor-v becomes major-V" soul
+            // move (Em7→E7), then a DECEPTIVE cadence — the dominant deflects to the bright ♭VI (E7→Fmaj9)
+            // instead of marching home the textbook way. The loop closes ♭VI→i (Fmaj9→Am9), a soft modal
+            // turnaround with NO leading tone. The G# colour still has its in-context seat (E7's 3rd, now
+            // in bar 2) but it no longer does the low-hanging V7→i pull — it passes through and overshoots.
             PopFlavor::Circle => [
                 (0, Quality::Min9),
                 (7, Quality::Min7),
-                (8, Quality::Maj9),
                 (7, Quality::Dom7),
+                (8, Quality::Maj9),
             ],
-            // i9 – ♭VImaj9 – iv9 – V7: the bright ♭VI lift, resolved by the dominant (E7) cadence —
-            // anthemic, and the same in-context home for the leading-tone colour.
+            // i9 – ♭VImaj9 – V7 – iv9: the bright ♭VI lift early, then a DECEPTIVE cadence — the dominant
+            // refuses home and slides to the minor subdominant (E7→Dm9), the loop closing iv→i (Dm9→Am9),
+            // the "amen-with-tears" minor plagal. Same in-context E7 seat for the G# colour (bar 2), same
+            // denial of the textbook authentic cadence — the cliché the ear flagged in the transitions.
             PopFlavor::Lift => [
                 (0, Quality::Min9),
                 (8, Quality::Maj9),
-                (5, Quality::Min9),
                 (7, Quality::Dom7),
+                (5, Quality::Min9),
             ],
         }
     }
@@ -192,10 +196,10 @@ impl PopFlavor {
     pub fn song_harmony_label(self) -> &'static str {
         match self {
             PopFlavor::Circle => {
-                "Am9 - Em7 - Fmaj9 - E7 (i9-v7-bVImaj9-V7, minor-v becomes major-V soul cadence, A-Aeolian)"
+                "Am9 - Em7 - E7 - Fmaj9 (i9-v7-V7-bVImaj9, minor-v->major-V then DECEPTIVE V->bVI, A-Aeolian)"
             }
             PopFlavor::Lift => {
-                "Am9 - Fmaj9 - Dm9 - E7 (i9-bVImaj9-iv9-V7, bright bVI lift + dominant cadence, A-Aeolian)"
+                "Am9 - Fmaj9 - E7 - Dm9 (i9-bVImaj9-V7-iv9, bright bVI lift then DECEPTIVE V->iv minor plagal, A-Aeolian)"
             }
         }
     }
@@ -389,7 +393,8 @@ pub fn source_pop_groove(seed: u64, flavor: PopFlavor) -> CompiledArgument {
 /// The four-bar VERSE topline (one 16-beat episode), tonic-relative semitones, Aeolian. The germ is
 /// no longer a stepwise climb — it's a SIGNATURE LEAP: E kicks up a fourth to A, then steps down to G,
 /// landing off the beat (a funk pickup, not a scale). Syncopated 16th phrasing with real space, a low
-/// reach in the second bar, and a settle that ends OPEN on the 9th (B), still wanting the hook.
+/// reach in the second bar, a restrained colour ascent over the E7 (bar 3, the dominant moved OFF the
+/// cadence), and a deceptive settle that ends OPEN on E (the maj7 of ♭VI), still wanting the hook.
 /// `(onset, semitone_above_A, dur_beats, velocity)`.
 pub fn pop_song_verse() -> Vec<MaterialEvent> {
     rows_to_lead_events(&[
@@ -404,25 +409,29 @@ pub fn pop_song_verse() -> Vec<MaterialEvent> {
         (4.75, 8, 0.6, 0.54),
         (5.5, 7, 0.5, 0.54),
         (7.0, 5, 0.6, 0.52),
-        // Fmaj9 — a quick funk run up to the octave A, then a syncopated G.
-        (8.0, 8, 0.45, 0.56),
-        (8.5, 10, 0.20, 0.58),
-        (8.75, 12, 0.5, 0.62),
-        (10.5, 10, 0.6, 0.56),
-        // E7 — settle E D, through C# (the 13th of E7 — in-context colour) and hang OPEN on B (the
-        // dominant's 5th), still wanting the hook.
-        (12.0, 7, 0.45, 0.54),
-        (12.75, 5, 0.6, 0.52),
-        (13.5, 4, 0.5, 0.52),
-        (14.5, 2, 1.0, 0.50),
+        // E7 — the colour bar (the dominant moved here off the cadence). A restrained ASCENT through the
+        // chord: D (the 7th), E (root), G# (the 3rd — the leading-tone colour, now a PASSING tone, not a
+        // homecoming), up to B (the 5th). The G# climbs ONWARD instead of pulling to the tonic.
+        (8.0, 5, 0.45, 0.54),
+        (8.5, 7, 0.20, 0.56),
+        (8.75, 11, 0.5, 0.56),
+        (10.5, 14, 0.6, 0.54),
+        // Fmaj9 — the DECEPTIVE landing (where the old authentic cadence used to march home): a gentle
+        // fall A G F, hanging OPEN on E (the maj7 of F — unresolved, leaning straight into the hook's E).
+        (12.0, 12, 0.45, 0.54),
+        (12.75, 10, 0.6, 0.52),
+        (13.5, 8, 0.5, 0.52),
+        (14.5, 7, 1.0, 0.50),
     ])
 }
 
 /// The four-bar HOOK topline (one 16-beat episode) — a lawful `altered_consequent` of
 /// [`pop_song_verse`]: it OPENS with the verse's exact germ LEAP (E–A–G, so the ear knows the song is
 /// the same song), shares the verse's syncopated rhythm skeleton, then re-voices it a register higher
-/// (mean lifted ~3 semitones) WITHOUT transposing it, peaks a step above the verse's peak, and leaps
-/// back HOME to the tonic A at the end (Closed) where the verse hung open. `(onset, step, dur, vel)`.
+/// (mean lifted ~2.6 semitones) WITHOUT transposing it, peaks a step above the verse's peak (C# over the
+/// E7, the colour overshooting home), and returns HOME to the tonic A at the end (Closed) where the
+/// verse hung open — but reached DECEPTIVELY over the ♭VI, by a whole-step not the leading tone. The
+/// transition colour is no longer the textbook V7->i authentic cadence. `(onset, step, dur, vel)`.
 pub fn pop_song_hook() -> Vec<MaterialEvent> {
     rows_to_lead_events(&[
         // Am9 — the germ leap (E–A–G), then up to A. The chorus's chromatic flare now lives at the
@@ -438,17 +447,20 @@ pub fn pop_song_hook() -> Vec<MaterialEvent> {
         (4.75, 10, 0.6, 0.60),
         (5.5, 12, 0.5, 0.64),
         (7.0, 10, 0.6, 0.60),
-        // Fmaj9 — climb to the hook's peak B (a step above the verse's A): the song's high point.
-        (8.0, 10, 0.45, 0.60),
-        (8.5, 12, 0.20, 0.64),
+        // E7 — the colour bar: the same ascent as the verse, lifted a register and carried PAST home —
+        // E, G# (the leading-tone colour, in-context as E7's 3rd), B, up to the peak C# (E7's bright 13th,
+        // a step above the verse's B). The colour OVERSHOOTS the tonic instead of pulling into it: the
+        // leading tone is heard as colour, not as the textbook V7->i cliché the ear flagged.
+        (8.0, 7, 0.45, 0.60),
+        (8.5, 11, 0.20, 0.66),
         (8.75, 14, 0.5, 0.70),
-        (10.5, 12, 0.6, 0.64),
-        // E7 — the dominant cadence: a blue G, up through the chord's own 3rd G# (the LEADING TONE,
-        // now IN CONTEXT — the E7 harmonizes it), resolving HOME to A (Closed). The flare the homecoming
-        // earns, over the chord that makes it belong rather than clash.
-        (12.0, 10, 0.45, 0.60),
-        (12.75, 7, 0.6, 0.56),
-        (13.5, 11, 0.5, 0.56),
+        (10.5, 16, 0.6, 0.66),
+        // Fmaj9 — the DECEPTIVE homecoming: the dominant deflected to the bright ♭VI, so the hook lands
+        // HOME on A (Closed) as the warm, bittersweet 3rd of F — reached by a falling C A, then a
+        // whole-step G→A (the Aeolian cadence), NOT the leading-tone half-step. Home, earned sideways.
+        (12.0, 15, 0.45, 0.60),
+        (12.75, 12, 0.6, 0.56),
+        (13.5, 10, 0.5, 0.56),
         (14.5, 12, 1.0, 0.60),
     ])
 }
