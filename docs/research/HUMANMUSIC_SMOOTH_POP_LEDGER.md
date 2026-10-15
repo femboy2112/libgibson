@@ -316,6 +316,50 @@ path), scoped separately. Asked the maintainer which reading.
 
 ---
 
+## OPERATION JOHNNY FIVE — R1: the pop SONG (Lead-carried verse → hook)
+
+**Branch** `impl/humanmusic-johnny-five-soul-2026-10-14` off the audited impl head `f3725fd` (PR #116).
+**The question:** can the pop arm stop being an 8-bar lead-free vamp and become a SONG — a recognizable
+verse that sets up a hook, carried by a foreground voice, with the band supporting it?
+
+**[BUILD] — opt-in `--form=pop-song` / `--form=pop-song-lift`, ZERO shared-engine edits.** A new
+`source_pop_song` beside the lead-free `source_pop_groove` (which stays as the control):
+- A hand-authored vocal-proxy **Lead** carries both episodes: a 4-bar VERSE (`Establish`, ends OPEN on
+  the 9th) and a 4-bar HOOK (`Consequent`, lands HOME on the tonic). Middle-register, prosodic — a
+  three-note germ head (C D E) shared verse→hook, with holds, breaths and pickups; not a note per half-beat.
+- The HOOK is a **certified `altered_consequent`** of the verse (the engine's own kinship law): onset_iou
+  0.9375, head true, parsons 0.857, exact_interval 0.357 (re-voiced, not transposed), offset_spread 10,
+  mean_delta +3.52 st, floor≥tonic, peak_profile_differs, Open→Closed, scale_fraction 1.0, step_rate 0.80.
+  A scrambled hook (same note count, reversed pitches) FAILS the law — the relationship is content, not count.
+- The keyboard is **freed to comp** (`comp_keys`): guide-tone stabs in the holes under the hook.
+- The **pad rug** enters on the hook only (Consequent-gated) — an earned harmonic arrival, not wallpaper.
+- The drummer **answers the lead's breaths** (`answer_breaths`) and **translates its phrase-end rhythm**
+  (`translate_lead_rhythm`); `anticipate_bass` requested. Breathing pop bass + warm VAPOR95 palette unchanged.
+
+**[SCORE witness] seed 2112, Circle, warm, 104 BPM:** fp `7dc82f14cf0efb9e` — lead=31 (verse 15 + hook
+16, matches source), keys=26, bass=46, pad=20, drums=171; expressive=ACTIVE(breaths=6, vspread=0.33),
+breath-answer=ACTIVE(3), keys-comp=ACTIVE(18), bass-antic=requested/0-this-seed (reported honestly),
+drum-echo=ACTIVE(6), rug=20. A/B control (lead-free groove) fp `9cf08748acb807ab`: lead=0 pad=0, band off.
+
+**[C137 LOCK] GREEN** — `scripts/verify-c137-accepted-v1.sh` reproduces all **51/51** accepted artifacts
+byte-for-byte at this HEAD. Pop-only changes; no engine file touched.
+
+**[GATE]** fmt clean · clippy `-D warnings` clean · `audio_smooth_pop` 8/8 (incl. the lawfulness proof,
+the scramble falsifier, and the lead/keys/pad render witness) · `audio_c137_song` 58/58 ·
+`audio_c137_accepted_v1_lock` 7/7.
+
+**[REPRO]** `cargo +1.99.0 build --release --example c137_song`, then
+`target/release/examples/c137_song --form=pop-song --pop-palette=warm --tempo=104 --seeds=2112 --out=DIR`
+(control: `--form=pop-groove …`). Loudness-matched A/B MP3s (−16 LUFS, 21 s) delivered to the maintainer.
+
+**[EAR] verdict:** PENDING. The hook gates the op — if it does not read as a recognizable verse→hook SONG,
+the next cuts do not build on it. **Deliberately held for later checkpoints** (so the ear vetoes first):
+the BASS-aware drummer (Priority 3, a domain-gated kernel edit), section travel to 32 bars (Priorities
+4/6), the expression A/B (Priority 5), the independent sounded-harmony witness + the full 2×2 factorial
+(§8), and the required-CI acoustic gate (§9, with its cross-runner byte-determinism caveat).
+
+---
+
 ## STOP conditions (plan §8)
 Frozen WAV drift · source-observation contradiction · ghost feature claimed active while inert ·
 unresolved clip/collision/silent-note-masquerade · valid C137 rejected by refactor ·

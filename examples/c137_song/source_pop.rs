@@ -332,3 +332,211 @@ pub fn source_pop_groove(seed: u64, flavor: PopFlavor) -> CompiledArgument {
     });
     compiled
 }
+
+// ======================================================================================
+// OPERATION JOHNNY FIVE — the pop SONG: a source-authored Lead topline (verse → hook).
+// ======================================================================================
+// The groove above proved the band can hold a pocket with no foreground. This is the next
+// probe: give the song an actual voice. A hand-authored vocal-proxy LEAD states a four-bar
+// VERSE that hangs OPEN, then a four-bar HOOK that ANSWERS it — a lawful `altered_consequent`
+// of the verse (shared germ head + rhythm skeleton + contour, genuinely re-voiced and lifted
+// 2–6 semitones, landing HOME on the tonic where the verse hung open). Because the lead now
+// CARRIES both episodes, the keyboard is freed from the melodic obligation: with `comp_keys`
+// the keys comp short guide-tone stabs in the holes under the hook, the rug (pad) enters on
+// the Consequent, and the drummer answers into the lead's breaths. The hook ARRIVES because
+// the voice lands home and the band fills in around it — not because anything merely got
+// louder. Still opt-in; still the breathing pop bass; no C137 source is touched.
+
+/// The four-bar VERSE topline (one 16-beat episode), tonic-relative semitones over the pop
+/// loop. Conversational and middle-register: a rising three-note germ that HOLDS, a falling
+/// answer with a breath, a reaching pre-cadence, and a settle that ends OPEN on the 9th (B —
+/// a tendency tone that wants the hook). Prosodic — pickups, holds and real silences, not a
+/// note on every half-beat. `(onset, semitone_above_A, dur_beats, velocity)`.
+pub fn pop_song_verse() -> Vec<MaterialEvent> {
+    rows_to_lead_events(&[
+        // Am9 — the germ: C D E, rising, then HELD (the gap after it is the breath).
+        (0.0, 3, 0.45, 0.52),
+        (0.5, 5, 0.45, 0.55),
+        (1.0, 7, 1.8, 0.62),
+        // Dm9 — the answer falls away, ending on a held C (breath into bar 3).
+        (4.0, 8, 0.45, 0.54),
+        (4.5, 7, 0.45, 0.50),
+        (5.0, 5, 0.9, 0.56),
+        (6.0, 3, 1.4, 0.52),
+        // G9 — reach up to the verse's peak G (the pre-cadential lift).
+        (8.0, 5, 0.45, 0.52),
+        (8.5, 7, 0.45, 0.56),
+        (9.0, 8, 0.9, 0.58),
+        (10.0, 10, 1.6, 0.60),
+        // Cmaj9 — settle down and hang OPEN on the 9th (B), still wanting resolution.
+        (12.0, 7, 0.45, 0.54),
+        (12.5, 5, 0.45, 0.50),
+        (13.0, 3, 0.9, 0.52),
+        (14.0, 2, 1.9, 0.48),
+    ])
+}
+
+/// The four-bar HOOK topline (one 16-beat episode) — a lawful `altered_consequent` of
+/// [`pop_song_verse`]: it OPENS with the verse's exact germ head (C D E, so the ear knows the
+/// song is the same song), then diverges into a busier, higher line (mean lifted ~3.5
+/// semitones) that re-voices the verse's shape WITHOUT transposing it, peaks a step higher
+/// each bar, and RESOLVES home on the tonic A where the verse hung open. `(onset, step, dur, vel)`.
+pub fn pop_song_hook() -> Vec<MaterialEvent> {
+    rows_to_lead_events(&[
+        // Am9 — the SAME germ head (C D E), then a new push up to G: the hook is already moving.
+        (0.0, 3, 0.45, 0.60),
+        (0.5, 5, 0.45, 0.63),
+        (1.0, 7, 0.9, 0.66),
+        (2.0, 10, 1.4, 0.68),
+        // Dm9 — the answer, a register higher than the verse's (A G F E, not F E D C).
+        (4.0, 12, 0.45, 0.64),
+        (4.5, 10, 0.45, 0.62),
+        (5.0, 8, 0.9, 0.64),
+        (6.0, 7, 1.4, 0.60),
+        // G9 — climb to the hook's peak B, a step above the verse's peak: the song's high point.
+        (8.0, 10, 0.45, 0.62),
+        (8.5, 12, 0.45, 0.66),
+        (9.0, 14, 0.9, 0.70),
+        (10.0, 12, 1.4, 0.66),
+        // Cmaj9 — descend and LAND HOME on A (Closed): the long, held homecoming.
+        (12.0, 10, 0.45, 0.60),
+        (12.5, 8, 0.45, 0.56),
+        (13.0, 7, 0.9, 0.56),
+        (14.0, 12, 1.9, 0.58),
+    ])
+}
+
+/// Lead topline events from `(onset, step, dur, velocity)` rows. Unlike the keys comp, the
+/// lead onsets are NOT laid into the shared pocket — the voice floats clean over a laid-back
+/// rhythm section (a classic pop tension), and clean onsets sit exactly on the 16th lattice.
+fn rows_to_lead_events(rows: &[(f64, i32, f64, f32)]) -> Vec<MaterialEvent> {
+    rows.iter()
+        .map(|&(onset, step, dur, accent)| MaterialEvent {
+            onset,
+            dur,
+            accent,
+            step: Some(step),
+        })
+        .collect()
+}
+
+/// Build the smooth-pop SONG source for one seed and [`PopFlavor`]: a Lead-carried verse → hook
+/// over the flavor's pop loop (twice), with the comping keyboard, the pad rug, the breathing
+/// bass and the lead-answering drummer all switched on. The hook is a lawful `altered_consequent`
+/// of the verse, so the engine's own kinship law certifies the song relationship at compile time.
+pub fn source_pop_song(seed: u64, flavor: PopFlavor) -> CompiledArgument {
+    let trace = SemanticTrace {
+        total_beats: 32.0,
+        events: vec![
+            SemanticEvent {
+                at_beat: 0.0,
+                state: SemanticState::toned(Tone::Accent),
+                kind: EventKind::ActChanged,
+            },
+            SemanticEvent {
+                at_beat: 28.0,
+                state: SemanticState::toned(Tone::Success),
+                kind: EventKind::SectionResolved,
+            },
+        ],
+    };
+    let mut song = SongMap::build(&trace, seed, Some(CompositionGrammar::HookArc));
+    let mut contract = song.plan.contract.clone();
+    contract.phrase_bars = 1;
+    song.plan = gibson::audio::human_music::plan::CompositionPlan::build_with_contract_for_beats(
+        &song.timeline,
+        32.0,
+        contract,
+    );
+    // The lead now CARRIES (compile promotes the seat where a Lead step lands); the keys are
+    // freed to comp, the bass is the foundation, the drummer keeps the pocket, and the pad RUG
+    // is seated on stage so it can enter on the hook (the Consequent) as the earned arrival.
+    for p in &mut song.plan.arrangement.phrases {
+        p.lead = ArrangementRole::Support;
+        p.keys = ArrangementRole::Support;
+        p.bass = ArrangementRole::Foundation;
+        p.drums = ArrangementRole::Support;
+        p.pad = ArrangementRole::Support;
+    }
+    let verse = MusicalReferent {
+        id: ReferentId(0),
+        pitch_basis: PitchBasis::Semitones,
+        events: pop_song_verse(),
+    };
+    let hook = MusicalReferent {
+        id: ReferentId(1),
+        pitch_basis: PitchBasis::Semitones,
+        events: pop_song_hook(),
+    };
+    let boundary =
+        song.plan
+            .form
+            .phrases
+            .iter()
+            .position(|p| p.start_beat() == 16.0)
+            .expect("eight one-bar phrases put an episode boundary at beat 16") as u32;
+    let total_phrases = song.plan.form.phrases.len() as u32;
+    let argument = MusicalArgument {
+        family: ArgumentFamily::CallAndEarnedAnswer,
+        referents: vec![verse, hook],
+        ending: ArgumentEnding::Resolved,
+        steps: vec![
+            // VERSE — establish the open question (the lead carries it).
+            ArgumentStep {
+                id: ArgumentStepId(0),
+                referent: ReferentId(0),
+                transform: ArgumentTransform::default(),
+                relation: ArgumentRelation::Establish,
+                depends_on: vec![],
+                carriers: vec![Agent::Lead],
+            },
+            // HOOK — the earned answer: a lawful altered-consequent of the verse that lands home.
+            ArgumentStep {
+                id: ArgumentStepId(1),
+                referent: ReferentId(1),
+                transform: ArgumentTransform::default(),
+                relation: ArgumentRelation::Consequent {
+                    antecedent: ArgumentStepId(0),
+                },
+                depends_on: vec![ArgumentStepId(0)],
+                carriers: vec![Agent::Lead],
+            },
+        ],
+        arc: Some(vec![
+            ArcSpan {
+                step: ArgumentStepId(0),
+                start_phrase: 0,
+                phrase_count: boundary,
+                start_beat: 0.0,
+                span_beats: 16.0,
+            },
+            ArcSpan {
+                step: ArgumentStepId(1),
+                start_phrase: boundary,
+                phrase_count: total_phrases - boundary,
+                start_beat: 16.0,
+                span_beats: 16.0,
+            },
+        ]),
+    };
+    let mut compiled = argument
+        .compile(&song)
+        .expect("smooth-pop song source compiles");
+    let loop4 = flavor.loop4();
+    let mut route = loop4.to_vec();
+    route.extend_from_slice(&loop4);
+    compiled.route = route;
+    compiled.domain = SourceDomain::SmoothPop(PopSourceGrammar { loop_bars: 4 });
+    compiled.groove = Some(GrooveLaw {
+        bass_cells: bass_cells(),
+    });
+    // Free the band: the keyboard comps guide-tone stabs under the hook, the drummer answers
+    // into the lead's breaths and translates its phrase-ending rhythm, and the bass leans its
+    // approach toward the harmonic destination. Opt-in expressive levers the C137 song already
+    // proves; here they serve the pop song. (Each is ablated individually in the experiments.)
+    compiled.comp_keys = true;
+    compiled.answer_breaths = true;
+    compiled.anticipate_bass = true;
+    compiled.translate_lead_rhythm = true;
+    compiled
+}

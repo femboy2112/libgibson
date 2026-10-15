@@ -159,9 +159,17 @@ impl Options {
                         preset = preset.pop_groove();
                         pop_flavor = source_pop::PopFlavor::Lift;
                     }
+                    "pop-song" => {
+                        preset = preset.pop_song();
+                        pop_flavor = source_pop::PopFlavor::Circle;
+                    }
+                    "pop-song-lift" => {
+                        preset = preset.pop_song();
+                        pop_flavor = source_pop::PopFlavor::Lift;
+                    }
                     _ => {
                         return Err(
-                            "--form must be slice (16-bar), song (32-bar), song-intro (32-bar + intro), song-narrative (32-bar, keys-carried bridge), song-intro-narrative (32-bar, keys-foreshadow intro), pop-groove (8-bar lead-free smooth-pop pocket, circle-of-4ths), or pop-groove-lift (the same groove, leading-tone-pull progression)"
+                            "--form must be slice (16-bar), song (32-bar), song-intro (32-bar + intro), song-narrative (32-bar, keys-carried bridge), song-intro-narrative (32-bar, keys-foreshadow intro), pop-groove (8-bar lead-free smooth-pop pocket, circle-of-4ths), pop-groove-lift (the same groove, leading-tone-pull progression), pop-song (8-bar Lead-carried smooth-pop verse->hook), or pop-song-lift (the same song, leading-tone-pull progression)"
                                 .into(),
                         )
                     }
@@ -242,6 +250,12 @@ fn build_source(
     // The smooth-pop groove is its own lead-free arm with its own `SmoothPop` domain and groove — it
     // does not go through the C137 arc builders or the capability caps (which are C137-specific), so
     // it returns here before `apply_caps`.
+    if resolved.pop_song {
+        // Operation Johnny Five: the Lead-carried verse→hook pop song. Like the groove, it is its own
+        // `SmoothPop` domain and carries its OWN expressive capability flags, so it also returns here
+        // before `apply_caps` (which resolves C137-arc capabilities the pop song sets for itself).
+        return source_pop::source_pop_song(seed, pop_flavor);
+    }
     if resolved.pop_groove {
         return source_pop::source_pop_groove(seed, pop_flavor);
     }
@@ -340,6 +354,58 @@ fn manifest_header(
     bridge_seed: Option<u64>,
     pop_flavor: source_pop::PopFlavor,
 ) -> String {
+    // The smooth-pop SONG (Operation Johnny Five) is a Lead-carried verse→hook, NOT the lead-free
+    // groove — it gets its own honest header so the manifest never claims it is lead-free.
+    if resolved.pop_song {
+        let mut m = String::new();
+        let _ = writeln!(
+            m,
+            "SMOOTH-POP SONG  (Operation Johnny Five — opt-in Lead-carried verse->hook; ear-gated, nothing promoted)"
+        );
+        let _ = writeln!(
+            m,
+            "  domain                : SmoothPop (groove-cycle closure, 4-bar loop)"
+        );
+        let _ = writeln!(
+            m,
+            "  form                  : 8 bars — Lead-carried VERSE (Establish, open) -> HOOK (altered-consequent, lands home)"
+        );
+        let _ = writeln!(
+            m,
+            "  harmony               : {}, looped x2",
+            pop_flavor.harmony_label()
+        );
+        let _ = writeln!(
+            m,
+            "  lead                  : source-authored vocal-proxy topline (germ head shared verse->hook; hook lifts, resolves home)"
+        );
+        let _ = writeln!(
+            m,
+            "  keys                  : comps guide-tone stabs under the hook (comp_keys); freed from the melody"
+        );
+        let _ = writeln!(
+            m,
+            "  bass                  : four breathing per-bar cells; approach leans toward the destination (anticipate_bass)"
+        );
+        let _ = writeln!(
+            m,
+            "  drums                 : steady pocket; answers the lead's breaths (answer_breaths) + translates its phrase-end rhythm"
+        );
+        let _ = writeln!(
+            m,
+            "  pad                   : rug enters on the hook (the earned arrival)"
+        );
+        let _ = writeln!(
+            m,
+            "  world                 : tonic_pc={}, {:?}, tempo={} BPM (render --tempo=104 for the pop feel)",
+            world.tonic_pc, world.mode, world.tempo_bpm
+        );
+        let _ = writeln!(
+            m,
+            "  listening             : PENDING — the maintainer's ear gates this arm; nothing is promoted"
+        );
+        return m;
+    }
     // The smooth-pop groove is NOT a C137 arc, so it gets its own honest header rather than the C137
     // capability manifest (which would claim arc/lead features this arm does not have).
     if resolved.pop_groove {
