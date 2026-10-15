@@ -423,11 +423,11 @@ pub fn pop_song_verse() -> Vec<MaterialEvent> {
 /// back HOME to the tonic A at the end (Closed) where the verse hung open. `(onset, step, dur, vel)`.
 pub fn pop_song_hook() -> Vec<MaterialEvent> {
     rows_to_lead_events(&[
-        // Am9 — the SAME germ leap (E–A–G), then stay UP: the hook is already higher than the verse.
+        // Am9 — the SAME germ leap (E–A–G), then a G# LEADING-TONE reach up to A: the chorus flares.
         (0.0, 7, 0.45, 0.62),
         (0.5, 12, 0.20, 0.68),
         (0.75, 10, 0.5, 0.64),
-        (2.5, 10, 0.45, 0.60),
+        (2.5, 11, 0.45, 0.60), // G# — the raised 7th, resolving up to A (the colour, not the safe note)
         (3.0, 12, 0.5, 0.64),
         // Em7 — the answer up a register, riding A and the octave (where the verse fell to D).
         (4.0, 12, 0.6, 0.62),
@@ -439,10 +439,11 @@ pub fn pop_song_hook() -> Vec<MaterialEvent> {
         (8.5, 12, 0.20, 0.64),
         (8.75, 14, 0.5, 0.70),
         (10.5, 12, 0.6, 0.64),
-        // Dm9 — descend G F E and LEAP back HOME to A (Closed): the earned homecoming.
+        // Dm9 — G F, then the LEADING TONE G# pulling chromatically HOME to A (Closed): the flare on
+        // the homecoming — a human reaches for that raised 7th, the 20% that lifts "correct" into alive.
         (12.0, 10, 0.45, 0.60),
         (12.75, 8, 0.6, 0.56),
-        (13.5, 7, 0.5, 0.56),
+        (13.5, 11, 0.5, 0.56),
         (14.5, 12, 1.0, 0.60),
     ])
 }
@@ -476,7 +477,7 @@ fn song_funk_bass_cells() -> Vec<Vec<(f64, BassDegree, f32, f32)>> {
             (0.5, BassDegree::Fifth, 0.20, 0.50),
             (1.0, BassDegree::Octave, 0.22, 0.56),
             (2.0, BassDegree::Root, 0.22, 0.58),
-            (2.5, BassDegree::Fifth, 0.20, 0.52),
+            (2.5, BassDegree::Third, 0.20, 0.52), // the chord 3rd — colour, outlining the quality
             (3.5, BassDegree::Octave, 0.26, 0.62),
         ],
         // Bar 1 — walking funk: root, fifth, a syncopated octave, fifth, a late root, the fifth push.
@@ -495,7 +496,7 @@ fn song_funk_bass_cells() -> Vec<Vec<(f64, BassDegree, f32, f32)>> {
             (1.0, BassDegree::Octave, 0.20, 0.54),
             (1.5, BassDegree::Fifth, 0.20, 0.50),
             (2.0, BassDegree::Root, 0.20, 0.58),
-            (2.5, BassDegree::Fifth, 0.20, 0.52),
+            (2.5, BassDegree::Third, 0.20, 0.52), // the chord 3rd — colour
             (3.0, BassDegree::Octave, 0.20, 0.54),
             (3.5, BassDegree::Fifth, 0.26, 0.62),
         ],

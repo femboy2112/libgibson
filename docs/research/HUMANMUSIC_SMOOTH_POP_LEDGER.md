@@ -435,6 +435,25 @@ breath-answer 3→8. **[TEST]** `audio_smooth_pop` 9/9 (the lawfulness proof hol
 fresh-bright). **EAR PENDING on R5.** OPEN: the diatonic progressions give a MODAL arrival, not a hard
 V→i — a functional dominant at the turnaround is the lever if the ear wants a harder chorus payoff.
 
+**R6 (this commit) — slightly more colorful notes (the 20% human flare).** Ear on R5: *"hell yeah; now
+let the musicians use slightly more colorful notes — we're 80% correct, missing the 20% human flare/alive
+that separates interesting music from the style profile."* The R5 all-diatonic safety WAS the
+80%-correct-but-not-alive. R6 adds restrained chromatic colour (example-only, lawful, C137 lock 51/51):
+- LEAD: two G# LEADING-TONE flares in the HOOK (onsets 2.5 over Am, 13.5 over Dm9), each resolving up to
+  A — the expressive raised-7th pull home. G# is in the engine's licensed melody pool (`LEADING_TONE`),
+  so scale_fraction stays 1.0 and `altered_consequent` still passes (iou 1.0, parsons 0.625, step 0.875).
+  The verse is left diatonic (the chorus flares more than the verse — the colour earns its place).
+- BASS: the bassist reaches for the chord THIRD (a chord tone — clash-free) on an off-beat in two cells,
+  outlining the chord's quality instead of only root/fifth/octave. Off a root onset, so the R4 kick-lock
+  is untouched.
+
+**[SCORE witness] seed 2112, punchy, 110:** colored Circle fp `c2b3752c8a8ab42c` (lead=34, bass=52 —
+unchanged counts; pitches re-coloured, not added). **[TEST]** `audio_smooth_pop` 9/9. **[LOCK] GREEN
+51/51.** fmt + clippy-D clean. 3 MP3s (before-diatonic / colour-modal / colour-bright). **EAR PENDING.**
+CEILING (honest): the melody law licenses only G#(11) + C#(4) as *free* chromatic colour; richer colour
+(a blue ♭5, heavy chromaticism, the bass's chromatic WALK-UPS, comp 13ths/alterations) needs ENGINE work
+(the pool caps outside-notes at 5%; the bass degrees are chord-relative with no chromatic approach yet).
+
 ---
 
 ## STOP conditions (plan §8)
