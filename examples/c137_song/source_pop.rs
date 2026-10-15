@@ -85,21 +85,22 @@ impl PopFlavor {
     /// stacked colour. `(semitones_above_A, Quality)`.
     fn song_loop4(self) -> [(i32, Quality); 4] {
         match self {
-            // i9 – v7 – ♭VImaj9 – iv9: the natural-minor MINOR v is the signature — modal and moody,
-            // unmistakably not a jazz turnaround; the ♭VI lifts, the iv keeps it open for the hook.
+            // i9 – v7 – ♭VImaj9 – V7: the fresh modal MINOR v (Em7) early, then a real DOMINANT (E7) at
+            // the cadence — the "minor-v becomes major-V" soul turnaround. The V7 gives the hook a
+            // functional home AND an in-context seat for the lead's leading-tone colour (G# = E7's 3rd).
             PopFlavor::Circle => [
                 (0, Quality::Min9),
                 (7, Quality::Min7),
                 (8, Quality::Maj9),
-                (5, Quality::Min9),
+                (7, Quality::Dom7),
             ],
-            // i9 – ♭VImaj9 – iv9 – v7: the bright ♭VI lift up front, the same modal minor v home —
-            // anthemic rather than moody.
+            // i9 – ♭VImaj9 – iv9 – V7: the bright ♭VI lift, resolved by the dominant (E7) cadence —
+            // anthemic, and the same in-context home for the leading-tone colour.
             PopFlavor::Lift => [
                 (0, Quality::Min9),
                 (8, Quality::Maj9),
                 (5, Quality::Min9),
-                (7, Quality::Min7),
+                (7, Quality::Dom7),
             ],
         }
     }
@@ -191,10 +192,10 @@ impl PopFlavor {
     pub fn song_harmony_label(self) -> &'static str {
         match self {
             PopFlavor::Circle => {
-                "Am9 - Em7 - Fmaj9 - Dm9 (i9-v7-bVImaj9-iv9, modal minor-v, A-Aeolian, diatonic)"
+                "Am9 - Em7 - Fmaj9 - E7 (i9-v7-bVImaj9-V7, minor-v becomes major-V soul cadence, A-Aeolian)"
             }
             PopFlavor::Lift => {
-                "Am9 - Fmaj9 - Dm9 - Em7 (i9-bVImaj9-iv9-v7, bright bVI lift + modal minor v, A-Aeolian)"
+                "Am9 - Fmaj9 - Dm9 - E7 (i9-bVImaj9-iv9-V7, bright bVI lift + dominant cadence, A-Aeolian)"
             }
         }
     }
@@ -408,10 +409,11 @@ pub fn pop_song_verse() -> Vec<MaterialEvent> {
         (8.5, 10, 0.20, 0.58),
         (8.75, 12, 0.5, 0.62),
         (10.5, 10, 0.6, 0.56),
-        // Dm9 — settle down and hang OPEN on the 9th (B), still wanting the hook.
+        // E7 — settle E D, through C# (the 13th of E7 — in-context colour) and hang OPEN on B (the
+        // dominant's 5th), still wanting the hook.
         (12.0, 7, 0.45, 0.54),
         (12.75, 5, 0.6, 0.52),
-        (13.5, 3, 0.5, 0.52),
+        (13.5, 4, 0.5, 0.52),
         (14.5, 2, 1.0, 0.50),
     ])
 }
@@ -423,11 +425,13 @@ pub fn pop_song_verse() -> Vec<MaterialEvent> {
 /// back HOME to the tonic A at the end (Closed) where the verse hung open. `(onset, step, dur, vel)`.
 pub fn pop_song_hook() -> Vec<MaterialEvent> {
     rows_to_lead_events(&[
-        // Am9 — the SAME germ leap (E–A–G), then a G# LEADING-TONE reach up to A: the chorus flares.
+        // Am9 — the germ leap (E–A–G), then up to A. The chorus's chromatic flare now lives at the
+        // CADENCE, over the E7 dominant where the leading tone belongs — NOT here over the tonic (where
+        // a G# fought the chord's own G natural, the "out of place" note the ear flagged).
         (0.0, 7, 0.45, 0.62),
         (0.5, 12, 0.20, 0.68),
         (0.75, 10, 0.5, 0.64),
-        (2.5, 11, 0.45, 0.60), // G# — the raised 7th, resolving up to A (the colour, not the safe note)
+        (2.5, 10, 0.45, 0.60),
         (3.0, 12, 0.5, 0.64),
         // Em7 — the answer up a register, riding A and the octave (where the verse fell to D).
         (4.0, 12, 0.6, 0.62),
@@ -439,10 +443,11 @@ pub fn pop_song_hook() -> Vec<MaterialEvent> {
         (8.5, 12, 0.20, 0.64),
         (8.75, 14, 0.5, 0.70),
         (10.5, 12, 0.6, 0.64),
-        // Dm9 — G F, then the LEADING TONE G# pulling chromatically HOME to A (Closed): the flare on
-        // the homecoming — a human reaches for that raised 7th, the 20% that lifts "correct" into alive.
+        // E7 — the dominant cadence: a blue G, up through the chord's own 3rd G# (the LEADING TONE,
+        // now IN CONTEXT — the E7 harmonizes it), resolving HOME to A (Closed). The flare the homecoming
+        // earns, over the chord that makes it belong rather than clash.
         (12.0, 10, 0.45, 0.60),
-        (12.75, 8, 0.6, 0.56),
+        (12.75, 7, 0.6, 0.56),
         (13.5, 11, 0.5, 0.56),
         (14.5, 12, 1.0, 0.60),
     ])

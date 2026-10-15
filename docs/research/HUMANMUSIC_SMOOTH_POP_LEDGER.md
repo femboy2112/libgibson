@@ -454,6 +454,27 @@ CEILING (honest): the melody law licenses only G#(11) + C#(4) as *free* chromati
 (a blue ♭5, heavy chromaticism, the bass's chromatic WALK-UPS, comp 13ths/alterations) needs ENGINE work
 (the pool caps outside-notes at 5%; the bass degrees are chord-relative with no chromatic approach yet).
 
+**R7 (this commit) — give the colour a home (fix the out-of-place lead chromatics).** Ear on R6: *"almost
+perfect, bass is fucking dope, some of the lead/melody colour notes sound chromatically out of place in
+context."* Diagnosis: a LEADING TONE (G#) only belongs over a DOMINANT, and R5's progression had no
+dominant (it ended on the subdominant Dm9) — so the hook's G# was a raised-7th over a iv chord (an outside
+♯11) and the bar-0 G# fought the Am chord's own G natural. The colour wasn't wrong; it had no harmonic
+home. Fix (example-only, lawful, C137 lock 51/51):
+- PROGRESSION (`song_loop4`): the turnaround iv → V7. Circle-song = Am9-Em7-Fmaj9-E7 (the fresh modal
+  minor-v Em7 early, a real dominant E7 at the cadence — the "minor-v becomes major-V" soul turnaround);
+  Lift-song = Am9-Fmaj9-Dm9-E7. The E7 gives the hook a FUNCTIONAL arrival AND an in-context seat for the
+  leading tone (G# = E7's own 3rd).
+- LEAD: removed the bar-0 G# (it clashed with Am's G); kept the HOOK's homecoming G# — now in-context over
+  E7; cleaned its approach (G–E–G#–A, arpeggiating the dominant). The verse gets an in-context C# (the
+  13th of E7). Still a lawful `altered_consequent` (iou 1.0, parsons 0.625, mean +3.0, step 0.8125).
+- BASS thirds kept (ear-loved). The E7 bar plays E/B chord tones.
+
+**[SCORE witness] seed 2112, punchy, 110:** colored Circle fp `567f2ac68567e612` (lead=34, bass=52).
+**[TEST]** `audio_smooth_pop` 9/9. **[LOCK] GREEN 51/51.** fmt + clippy-D clean. 3 MP3s (before-out-of-place
+/ fixed-modal / fixed-bright). **EAR PENDING.** KNOWN REMAINING SPICE: the hook passes a blue G♮ over the
+E7 (the soul ♭3-vs-chord-3rd rub) — deliberate, but the one note most likely still "spicy" if the ear
+wants it cleaner; revoice that approach if so.
+
 ---
 
 ## STOP conditions (plan §8)
