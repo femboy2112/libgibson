@@ -898,6 +898,13 @@ const EPISODE_BEATS: f64 = 16.0;
 /// the long-form grid guard so a wild onset still fails.
 const LONGFORM_POCKET_BEATS: f64 = 0.06;
 
+/// Felt-attack compensation (beats) for the riff-rhythm keys comp only. The warm keys voice speaks a
+/// hair late (a soft FM e-piano onset through the chorus + room), so its FELT attack lags the written
+/// onset; a RHYTHMIC chordal comp that must lock to the kit is therefore pulled this much EARLIER, so
+/// the heard attack lands dead on the band's shared pocket. ~0.03 beat ≈ 17 ms at 104 BPM. Ear-tunable;
+/// applied ONLY on the opt-in `comp_onsets` path, so the fixed comp and C137 are untouched.
+const KEYS_ATTACK_COMP: f64 = 0.03;
+
 /// Generalize `source_domain` to N contiguous episodes (N ≥ 2: the two-episode verse→hook control,
 /// and the four-episode verse→hook→bridge→return arc). The per-placement source checks are the same
 /// source-fidelity guards, with the four-event CELL constraints dropped (the long-form carrier is a
@@ -1618,14 +1625,22 @@ pub fn perform_song(
                 // onset gets a rootless voicing in the bar's committed harmony; the bass owns the root.
                 // Opt-in (`comp_onsets`); C137 and every lead-carried song leave it None and keep the
                 // fixed comp below, so their render is byte-identical.
+                // The keys must sit PERFECTLY in pocket for a rhythmic chordal comp: each stab rides the
+                // band's shared pocket but is pulled EARLIER by KEYS_ATTACK_COMP, so its FELT attack (the
+                // FM e-piano speaks a hair late through the chorus + room) lands dead on the pocket with
+                // the kit. A beat-weighted accent (strong beat > "and" > sixteenth) gives the comp a
+                // groove contour instead of flat even chunks, and a stab crowding the one before it is
+                // ghosted — so even a driving-eighths riff reads as a shaped hook, not a bland chug.
+                let mut last_at = f64::NEG_INFINITY;
                 for rep in 0..2u32 {
                     let rep_base = e as f64 * EPISODE_BEATS + rep as f64 * 8.0;
                     for &o in onsets {
                         if !(0.0..8.0).contains(&o) {
                             continue;
                         }
+                        let posin = o.rem_euclid(4.0);
                         let at_grid = rep_base + o;
-                        let at = at_grid + pocket(o.rem_euclid(4.0));
+                        let at = (at_grid + pocket(posin) - KEYS_ATTACK_COMP).max(0.0);
                         let bar_start = (at_grid / 4.0).floor() * 4.0;
                         let Some(ctx) = perf.context_at(bar_start) else {
                             continue;
@@ -1636,15 +1651,28 @@ pub fn perform_song(
                         }
                         let energy = drive_energy(harmonic_drive(&ctx.chord, world.tonic_pc));
                         let rootless = &tones[1..];
+                        // Beat-weighted accent (riff onsets sit on the quarter-beat grid).
+                        let q = (posin * 4.0).round() as i64;
+                        let mut level = if q % 4 == 0 {
+                            0.44
+                        } else if q % 2 == 0 {
+                            0.34
+                        } else {
+                            0.24
+                        };
+                        if at - last_at < 0.3 {
+                            level *= 0.6; // a stab crowding the previous one is ghosted (declutter)
+                        }
+                        last_at = at;
                         if perf.on_stage(Agent::Keys, at) && room(at) {
                             for pitch in voice(57, rootless) {
                                 keys.push(pitched(
                                     &perf,
                                     Role::Keys,
                                     at,
-                                    0.28,
+                                    0.26,
                                     pitch,
-                                    (0.36 * energy).clamp(0.02, 1.0),
+                                    (level * energy).clamp(0.02, 1.0),
                                     provenance(&perf, at, "comp", section_at(argument, at)),
                                 ));
                             }
