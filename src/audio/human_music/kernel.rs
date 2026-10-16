@@ -1599,12 +1599,17 @@ pub fn perform_song(
                 .collect()
         };
         for e in 0..episodes {
-            if !matches!(
-                argument.placements[e].relation,
-                super::argument::ArgumentRelation::Consequent { .. }
-                    | super::argument::ArgumentRelation::Return { .. }
-            ) {
-                continue; // comp only under the home arrivals; verse and bridge keep the floor clear
+            if !argument.comp_all_sections
+                && !matches!(
+                    argument.placements[e].relation,
+                    super::argument::ArgumentRelation::Consequent { .. }
+                        | super::argument::ArgumentRelation::Return { .. }
+                )
+            {
+                // Comp only under the home arrivals; verse and bridge keep the floor clear — UNLESS a
+                // lead-free smooth-pop band opts into comp-everywhere (the keys hold the chordal carrier
+                // throughout). C137 never sets the flag, so its gate is unchanged and its render frozen.
+                continue;
             }
             for b in 0..bars_per_ep {
                 if b == 1 {

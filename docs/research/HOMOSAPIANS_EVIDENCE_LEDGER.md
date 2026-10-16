@@ -78,6 +78,41 @@ instrumental statement with a verse→chorus shape, NOT an 8-bar vamp twice.
 
 ---
 
+## R2 — keys = CHORDS (the AM-radio cohesion fix). BUILT. LOCK GREEN. EAR PENDING.
+
+EAR on R1: "still sounds uncohesive … the way you play the keys makes it sound like a lead lol (keys
+should be chords, vibing, with individual notes as accents). pop is like AM radio — the carrier is
+simple, expression is modulation of it. keys vibe, drums groove+partition, bass walks+funks in
+resonance." So R1's single-note keyboard line was the defect: it read as a lead and held no harmonic
+ground. The fix is architectural, and it forced learning the engine's real rules:
+
+- A melodic **referent is strictly monophonic** — `argument.rs::validate_material` (≈:710) rejects any
+  non-strictly-increasing onset → `InvalidMaterial`. Chords CANNOT be authored as a keys line.
+- The keys lane is NOT monophony-checked (`validate_role` ≈:2515 runs `validate_lane` only on
+  Lead/Bass), and the engine **comp** (`kernel.rs` ≈:1583) is the sanctioned chord source — rootless
+  voicing on the "and of 2" + a guide-tone shell/colour/grace on the "and of 4". But `verify`
+  (`argument_witness.rs` ≈:325 `matches_source`) requires the CARRIER role's realized notes == the
+  referent exactly (extras fail), so the comp must live on a **non-carrier** voice, and the comp was
+  gated to `Consequent`/`Return` only.
+
+R2 architecture (opt-in): the **LEAD carries** a near-silent structural line (`backing_lead`, vel 0.06
+— inaudible scaffold, so the band is lead-free to the ear), and the **KEYS comp the chord carrier on
+EVERY bar** via a new pop-only `CompiledArgument.comp_all_sections` flag (kernel gate relaxed only when
+set; C137 never sets it). The comp's own colour/grace are the "individual notes as accents," on the
+keys voice. Bass = the 8 funk cells (walk/funk in the pocket, ♭7 cadences); drums = funk kit.
+
+- SCORE (seed 2112, warm, 104): Circle `fp=c43330d8fd759a54`, Lift `fp=5031813f23baea43`
+  (lead=11 @ vel 0.06, **keys=37 and now POLYPHONIC** — e.g. beat 2.534 voices C-E-G-B {60,64,67,71} =
+  Am9 rootless+colour; bass=47; pad=0). Keys are chords, verified in the Score.
+- GATES: `audio_smooth_pop` 9/9, clippy `-D` clean, fmt clean, and **C137_ACCEPTED_V1 LOCK byte-for-byte
+  green AFTER the kernel comp-gate edit** (the flag defaults false → C137 path unchanged).
+- PCM: 2 loudness MP3s delivered (`homosapians-R2-chordkeys-{CIRCLE,LIFT}-104.mp3`). EAR PENDING:
+  does the chordal comp cohere (carrier vibing, not soloing)?
+- HONEST NOTES: (a) the near-silent lead is a structural carrier, not a musical voice — if the ear
+  wants it gone entirely, options are a louder *intended* topline (the "key" round) or a different
+  carrier. (b) The comp rhythm (and-of-2 / and-of-4, bar-1 left bare) is the engine's existing comp;
+  it may feel sparse/stabby — densifying/sustaining is a further comp tweak if the ear asks.
+
 ## The vertical slice (plan §6 "band lock / lead key" 2×2) — status
 
 | | band-only | band + lead |

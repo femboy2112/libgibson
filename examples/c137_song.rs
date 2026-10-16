@@ -490,7 +490,7 @@ fn manifest_header(
         );
         let _ = writeln!(
             m,
-            "  form                  : 8 bars — Keys-carried VERSE backing (states the hook) -> CHORUS backing (arrival), NO foreground lead"
+            "  form                  : 8 bars — the keys COMP the chord carrier on every bar; a sparse ornamental lead; chorus hotter"
         );
         let _ = writeln!(
             m,
@@ -499,15 +499,19 @@ fn manifest_header(
         );
         let _ = writeln!(
             m,
-            "  keys                  : a syncopated guide-tone HOOK (carried); verse mid-register, chorus lifts ~an octave + fuller"
+            "  keys                  : the chordal CARRIER (comp_all_sections) — a rootless voicing on the 'and of 2' + a guide-tone shell/colour/grace on the 'and of 4', every bar; chords, not a line"
         );
         let _ = writeln!(
             m,
-            "  bass                  : EIGHT per-bar cells (four verse, four driven chorus); dark ♭7 at each E7 cadence"
+            "  lead                  : a SPARSE ornamental line (a few soft chord-tones, mostly the comp's bare bar) — the expression over the chords, not a topline"
         );
         let _ = writeln!(
             m,
-            "  drums                 : funk/disco pocket (pop_funk_kit); pad: enters on the chorus episode (the arrival)"
+            "  bass                  : EIGHT per-bar cells (four verse, four driven chorus) walking/funking in the pocket; dark ♭7 at each E7 cadence"
+        );
+        let _ = writeln!(
+            m,
+            "  drums                 : funk/disco pocket (pop_funk_kit); pad: silent (the keys comp is the harmonic bed)"
         );
         let _ = writeln!(
             m,
