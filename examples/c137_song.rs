@@ -486,15 +486,15 @@ fn manifest_header(
         );
         let _ = writeln!(
             m,
-            "  domain                : SmoothPop (groove-cycle closure, 8-bar woven realized route)"
+            "  domain                : SmoothPop (groove-cycle closure, 16-bar woven realized route)"
         );
         let _ = writeln!(
             m,
-            "  form                  : 8 bars — the keys COMP the chord carrier on every bar; a sparse ornamental lead; chorus hotter"
+            "  form                  : 16 bars (8 verse + 8 chorus) — the keys COMP the chord carrier every bar; a sparse ornamental lead; chorus brighter + hotter"
         );
         let _ = writeln!(
             m,
-            "  harmony               : global {} — but WOVEN: verse CAMPS on a 2-chord fragment, chorus HOPS to a relative-major conjugate (ear-probe; realization law is Step 2)",
+            "  harmony               : global {} — WOVEN as SEMANTIC PARALLAX: slow ground = a repetitive 2-chord verse loop + a brighter 2-chord conjugate chorus vamp (×2 cycles each), fast surface over it (ear-probe; realization law is Step 2)",
             pop_flavor.song_harmony_label()
         );
         let _ = writeln!(
