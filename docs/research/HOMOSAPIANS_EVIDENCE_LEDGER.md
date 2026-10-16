@@ -157,6 +157,44 @@ ear blesses the sound).
   lawful transformation of the global function (recolor / sub / applied-dom / relative-swap / a camp
   window), protecting the cadence bar's function. Only build once the ear blesses this sound.
 
+## R4 — semantic parallax: slow repeating loops, 16 bars. BUILT. LOCK GREEN. EAR PENDING. Commit `cfd567b`.
+
+EAR on R3: "getting better … the 2chord loop sounds dope, it gives the music time to be absorbed as one
+coherent living thing before immediately changing." The ask: **SEMANTIC PARALLAX** — the background
+(harmony/pad) should transition SLOWER than the foreground (comp/bass/kit), both in harmonic phase — and
+MORE (semantically valid) REPETITION, time to absorb before changing. Interpretation: "slow" = LOW
+harmonic-information rate (few distinct chords, repeated), not literally longer chords; the fast surface
+(comp rhythm, bass figures) moves over the slow ground. Applied the 2-chord-loop principle to the WHOLE
+song, source-only (no kernel edit this round):
+
+- **Chorus = a repetitive 2-chord VAMP, not a 4-chord march** — a CONJUGATE of the verse loop (tonic pole
+  lifted to its relative major, Cmaj9=♭III): Circle Am–Em→C–Em, Lift Am–F→C–F, + one E7 turnaround. So the
+  harmonic ground stays slow + repetitive everywhere; the chorus arrives by bright COLOUR + energy, not by
+  harmonic rate. (`PopFlavor::chorus_conjugate4` reshaped: Circle C–Em–C–E7, Lift C–F–C–E7.)
+- **Form doubled to 16 bars.** ENGINE CONSTRAINT learned: `longform_domain` requires **N contiguous
+  16-beat (4-bar) episodes** (error "long-form domain is N contiguous sixteen-beat episodes (N>=2)") — so
+  32-beat episodes are illegal; 16 bars = FOUR 4-bar episodes: verse-A, verse-B, chorus-A, chorus-B (the
+  slow loop STATED then REPEATED). trace total_beats 32→64; build_with_contract_for_beats 64.0; 4 arc spans
+  ×16 beats; 2 carrier referents reused across the repeats; route = verse_camp4 ×2 ++ chorus_conjugate4 ×2
+  (loop_bars=16, loophole, pop_route_law + its pinned test untouched); bass = the 4-bar funk phrases looped
+  to 16 cells; pad bed every episode (pad_all_sections from R3).
+- **BASS MONO-LANE FIX (engine law learned):** `validate_lane` (`kernel.rs:2530`) refuses two bass notes of
+  the SAME pitch < 0.5 beats apart (a monophonic-bass law; `Capacity(Bass)` is the shared error code). The
+  chorus F bar's "and of 4" FIFTH is C, which collided with the next C bar's ROOT downbeat (both pitch 36,
+  0.466 beats apart via pocket offset) — Lift-only (Circle's Em-there has fifth B). Fix: that one chorus
+  cell's beat-3.5 push → OCTAVE (distinct pitch, same funk feel). (Found via a temporary diag in
+  validate_lane / continuity_violations, since Capacity(Bass) also fronts the continuity check at :2377/:2588;
+  diag removed before commit — src/ ended byte-identical to R3.)
+- **SCORE (seed 2112, warm, 104):** 64 beats / 16 bars. Verse loop ×4 then chorus vamp ×2 confirmed per bar
+  via the pad's committed chord tones; pad on every bar; bass 94, keys ~79, pad ~75. Circle chorus
+  C–Em–C–E7, Lift chorus C–F–C–E7 (bars 11,15 = E7 with G♯).
+- **GATES:** fmt, clippy -D clean (fixed a `useless_vec` on the bass-cell container → array); audio_smooth_pop
+  9/9; harmony audit (R0) 5/5; **C137_ACCEPTED_V1 LOCK byte-for-byte green** (source-only round). Opt-in;
+  no C137 source touched. 2 loudness MP3s delivered (`homosapians-parallax-{CIRCLE,LIFT}-104.mp3`).
+- EAR PENDING: does it breathe now — time to absorb, more repetition, the parallax feel? Open knob: the
+  *amount* of repetition (doubled to 16 bars; trivially tunable). Step 2 (generative realization law) still
+  deferred, ear-gated.
+
 ## The vertical slice (plan §6 "band lock / lead key" 2×2) — status
 
 | | band-only | band + lead |
