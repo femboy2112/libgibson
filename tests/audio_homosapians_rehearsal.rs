@@ -346,9 +346,23 @@ fn g5_frozen_backing_is_literally_lead_empty_with_chords() {
         lead, 0,
         "the frozen backing has ZERO Lead notes (no fake quiet carrier)"
     );
-    assert!(keys > 0, "the Keys lane carries the riff");
+    assert!(keys > 0, "the Keys lane sounds");
     assert!(pad > 0, "the Pad bed supplies the chordal harmony");
     assert!(bass > 0, "the bass plays the negotiated groove");
+
+    // The keys must read as CHORDS, not a single-note line trying to lead (the owner's verdict on the
+    // first cut): assert the Keys lane is genuinely polyphonic — at least one onset carries >= 2
+    // simultaneous Keys notes (a comp voicing), which only the engine comp provides.
+    let mut keys_onsets: Vec<i64> = score
+        .role_notes(Role::Keys)
+        .map(|n| (n.start_beat * 16.0).round() as i64)
+        .collect();
+    keys_onsets.sort_unstable();
+    let polyphonic = keys_onsets.windows(2).any(|w| w[0] == w[1]);
+    assert!(
+        polyphonic,
+        "the Keys lane must sound real CHORDS (>= 2 simultaneous notes), not a monophonic line"
+    );
 }
 
 // ------------------------------------------------------------------------------------------------

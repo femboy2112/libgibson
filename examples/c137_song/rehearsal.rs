@@ -18,10 +18,10 @@
 //! per-flavor constants); the bassist's choice is a deterministic function of the riff's rhythm, so
 //! a different riff provably yields a different bass; the drummer's choice is a function of the bass;
 //! the guitarist revises AFTER hearing the band; rejected proposals do not contaminate the draft;
-//! and the frozen Score carries LITERALLY ZERO Lead notes (the fake 0.06-velocity carrier is gone —
-//! the riff is carried on Keys, the Pad holds the chords; the lawful Keys-carried-Establish path,
-//! precedent `source_pop_groove`). What is NOT proven here: that the riff is catchy. The owner's ear
-//! owns that.
+//! and the frozen Score carries LITERALLY ZERO Lead notes (the fake 0.06-velocity carrier is gone) —
+//! the keys COMP the chords (the AM-radio chordal bed, not a single-note line trying to lead) over a
+//! Keys carrier that holds only a soft chord-tone fill, lawful because the carrier witness now excludes
+//! the kernel's comp notes. What is NOT proven here: that it is catchy. The owner's ear owns that.
 //!
 //! Opt-in; no C137 source is touched; nothing is promoted.
 
@@ -265,15 +265,11 @@ pub fn generate_riffs(seed: u64, n: usize) -> Vec<RiffCandidate> {
 /// mean pitch select one of [`CAMPS`]. Different riffs (different launch / contour) therefore imply
 /// different harmony — the seed reaches the route THROUGH the riff, which is the whole point.
 fn camp_for_riff(events: &[MaterialEvent]) -> HarmonyCamp {
-    let launch_pc = events
-        .first()
-        .and_then(|e| e.step)
-        .unwrap_or(0)
-        .rem_euclid(12);
-    let sum: i32 = events.iter().filter_map(|e| e.step).sum();
-    let mean = sum / (events.len().max(1) as i32);
-    let idx = ((launch_pc + mean).rem_euclid(12) as usize * CAMPS.len() / 12) % CAMPS.len();
-    CAMPS[idx]
+    // The camp is riff-derived through the riff's own content fingerprint, which is well distributed
+    // across the whole line (onsets + pitches + durations) — so different riffs land in different
+    // harmonic worlds instead of clustering in one camp the way a launch+mean heuristic did. A more
+    // musically-principled picker (emphasised-degree voting) is a later refinement; this one spreads.
+    CAMPS[(fingerprint(events) % CAMPS.len() as u64) as usize]
 }
 
 /// A content fingerprint of a monophonic line: folds the quantised (onset, step, dur) of each event.
@@ -787,11 +783,12 @@ pub fn revision_is_lawful(events: &[MaterialEvent]) -> bool {
 // ======================================================================================
 
 /// Freeze the negotiated draft into the existing witnessed pipeline: TWO 16-beat (4-bar) Keys-carried
-/// `Establish` episodes (the riff section, then the brighter conjugate section), 8 bars total. The
-/// negotiated RIFF is the Keys-carried monophonic line (vamped twice across each episode so the figure
-/// is stated then repeated); the PAD holds the chords (so the Score is LITERALLY Lead-empty — the fake
-/// 0.06 carrier is gone); the negotiated BASS is the groove; the funk kit is the drummer's pocket.
-/// No kernel edit: this is the lawful Keys-carried-Establish path (precedent `source_pop_groove`).
+/// `Establish` episodes (the verse camp, then the brighter conjugate), 8 bars total. The keys COMP the
+/// chords on every bar (the AM-radio chordal bed); the required Keys carrier holds only a soft
+/// chord-tone fill in the comp's open bar, so the keys read as CHORDS, never a single-note lead. The
+/// Score is LITERALLY Lead-empty (the fake 0.06 carrier is gone) — lawful because the carrier witness
+/// excludes the kernel's "comp" notes. The negotiated RIFF drives the harmonic camp (the route) and
+/// the bassist's groove; the funk kit is the drummer's pocket; the pad beds under it all.
 pub fn freeze(draft: &RehearsalDraft) -> CompiledArgument {
     let riff = draft.riff();
     let camp = riff.camp;
@@ -835,20 +832,22 @@ pub fn freeze(draft: &RehearsalDraft) -> CompiledArgument {
         p.pad = ArrangementRole::Support;
     }
 
-    // Episode referents: the 2-bar riff vamped across the 4-bar (16-beat) episode (stated then
-    // repeated), laid into the shared pocket like the accepted keys line. Episode 1 reuses the same
-    // riff lifted into the chorus register (a brighter re-voicing), so the sections are related.
-    let verse_line = vamp_riff(&riff.events, 0);
-    let chorus_line = vamp_riff(&riff.events, 3); // +3 semitones ≈ the relative-major lift (♭III)
+    // Episode carriers: the keys COMP the chords (comp_keys below), so the keys read as CHORDS, not a
+    // single-note line trying to lead (the owner's verdict on the first cut). The required Keys carrier
+    // is therefore a gentle in-harmony fill in the ONE bar the comp always leaves open (local bar 1,
+    // beats 4–8) — chord tones of that bar's chord, part of the chordal texture, never a topline. The
+    // negotiated RIFF is not sounded as a melody here; it shaped the harmonic camp (the route) and the
+    // bassist's groove. The lead "key" comes later. Episode 0's open bar sits on the verse's 2nd chord,
+    // episode 1's on the chorus's 2nd chord, so the fill is always consonant with the bar it lands in.
     let verse = MusicalReferent {
         id: ReferentId(0),
         pitch_basis: PitchBasis::Semitones,
-        events: verse_line,
+        events: keys_carrier(camp.verse[1]),
     };
     let chorus = MusicalReferent {
         id: ReferentId(1),
         pitch_basis: PitchBasis::Semitones,
-        events: chorus_line,
+        events: keys_carrier(camp.chorus[1]),
     };
 
     let boundary =
@@ -928,35 +927,48 @@ pub fn freeze(draft: &RehearsalDraft) -> CompiledArgument {
     bass_cells.extend(draft.bass_chorus.cells.iter().cloned());
     compiled.groove = Some(GrooveLaw { bass_cells });
 
-    // The drummer's pocket (the kernel's funk/disco kit reads the frozen bass). comp_keys stays OFF
-    // (so the Keys window holds only the carrier riff -> the content witness passes with zero Lead),
-    // and the pad bed runs on every episode (the chordal carrier).
+    // KEYS = CHORDS: the engine comp voices rootless chord stabs on every episode (comp_keys +
+    // comp_all_sections), so the keys hold the harmonic carrier throughout instead of a single-note
+    // line — the AM-radio chordal bed the owner accepted at R2. Literal zero Lead is preserved: the
+    // comp notes are kernel-stamped "comp" and the carrier-content witness now excludes them
+    // (argument_witness::in_window), so a Keys-carried step may carry real polyphony without the fake
+    // Lead scaffold. The funk kit reads the frozen bass; the pad bed runs under every episode.
     compiled.pop_funk_kit = true;
-    compiled.comp_keys = false;
-    compiled.comp_all_sections = false;
+    compiled.comp_keys = true;
+    compiled.comp_all_sections = true;
     compiled.pad_all_sections = true;
     compiled
 }
 
-/// Vamp a 2-bar (8-beat) riff across a 16-beat episode — stated then repeated — transposed by
-/// `lift` semitones, laid into the shared pocket (matching the accepted keys line's admitted path).
-/// Guarantees strictly-increasing onsets (the second statement starts at +8) and in-range steps.
-fn vamp_riff(riff: &[MaterialEvent], lift: i32) -> Vec<MaterialEvent> {
-    let mut out = Vec::with_capacity(riff.len() * 2);
-    for rep in 0..2 {
-        let base = rep as f64 * 8.0;
-        for e in riff {
-            let onset = base + e.onset;
-            let step = e.step.map(|s| (s + lift).clamp(-48, 48));
-            out.push(MaterialEvent {
+/// The required Keys carrier as a gentle chord-tone fill in the comp's open bar (local bar 1, beats
+/// 4–8). It arpeggiates the sounding chord's tones low-to-high at a soft velocity, so it reads as part
+/// of the chordal texture rather than a melodic lead — and, being the only "argument"-provenance Keys
+/// content, it is what the carrier witness checks (the comp chords are excluded). Guarantees a lawful
+/// referent: four strictly-increasing onsets, in-range chord-tone steps, finite positive durations.
+fn keys_carrier(chord: (i32, Quality)) -> Vec<MaterialEvent> {
+    let (root, quality) = chord;
+    // Up to four chord tones (root, 3rd, 5th, 7th) as semitones above the A tonic, voiced in a soft
+    // mid-register arpeggio across the comp's open bar.
+    let tones: Vec<i32> = quality
+        .intervals()
+        .iter()
+        .take(4)
+        .map(|&iv| (root + iv).clamp(-48, 48))
+        .collect();
+    let onsets = [4.5_f64, 5.5, 6.5, 7.5];
+    tones
+        .iter()
+        .enumerate()
+        .map(|(i, &step)| {
+            let onset = onsets[i];
+            MaterialEvent {
                 onset: onset + pocket_offset(onset),
-                dur: e.dur,
-                accent: e.accent,
-                step,
-            });
-        }
-    }
-    out
+                dur: 0.8,
+                accent: 0.38,
+                step: Some(step),
+            }
+        })
+        .collect()
 }
 
 /// A short honest manifest line describing a rehearsed+frozen song (for the example header).
