@@ -1611,6 +1611,48 @@ pub fn perform_song(
                 // throughout). C137 never sets the flag, so its gate is unchanged and its render frozen.
                 continue;
             }
+            if let Some(onsets) = &argument.comp_onsets {
+                // RIFF-RHYTHM COMP: the keys stab chord voicings on the band's OWN riff rhythm (the
+                // 2-bar riff stated twice across the 16-beat episode), so the guitarist's figure is
+                // HEARD as chordal hits — the band playing its hook — rather than a fixed pattern. Each
+                // onset gets a rootless voicing in the bar's committed harmony; the bass owns the root.
+                // Opt-in (`comp_onsets`); C137 and every lead-carried song leave it None and keep the
+                // fixed comp below, so their render is byte-identical.
+                for rep in 0..2u32 {
+                    let rep_base = e as f64 * EPISODE_BEATS + rep as f64 * 8.0;
+                    for &o in onsets {
+                        if !(0.0..8.0).contains(&o) {
+                            continue;
+                        }
+                        let at_grid = rep_base + o;
+                        let at = at_grid + pocket(o.rem_euclid(4.0));
+                        let bar_start = (at_grid / 4.0).floor() * 4.0;
+                        let Some(ctx) = perf.context_at(bar_start) else {
+                            continue;
+                        };
+                        let tones = ctx.chord.pitch_classes();
+                        if tones.len() < 2 {
+                            continue;
+                        }
+                        let energy = drive_energy(harmonic_drive(&ctx.chord, world.tonic_pc));
+                        let rootless = &tones[1..];
+                        if perf.on_stage(Agent::Keys, at) && room(at) {
+                            for pitch in voice(57, rootless) {
+                                keys.push(pitched(
+                                    &perf,
+                                    Role::Keys,
+                                    at,
+                                    0.28,
+                                    pitch,
+                                    (0.36 * energy).clamp(0.02, 1.0),
+                                    provenance(&perf, at, "comp", section_at(argument, at)),
+                                ));
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
             for b in 0..bars_per_ep {
                 if b == 1 {
                     continue; // bar 2 is the answer's own bar — leave it to the answer

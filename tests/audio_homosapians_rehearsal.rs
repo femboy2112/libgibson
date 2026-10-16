@@ -476,3 +476,26 @@ fn the_band_contemplates_toward_a_song() {
         "the process converges on a song shape"
     );
 }
+
+// ------------------------------------------------------------------------------------------------
+// AUDIBLE RIFF — the keys comp stabs its chords on the band's OWN riff rhythm (the hook is heard).
+// ------------------------------------------------------------------------------------------------
+#[test]
+fn keys_comp_stabs_on_the_riff_rhythm() {
+    let draft = rehearse(2112);
+    let riff_onsets: Vec<f64> = draft.riff().events.iter().map(|e| e.onset).collect();
+    let source = freeze(&draft);
+    let take = kernel::perform_song(&source, &world()).expect("rehearsal-frozen backing is lawful");
+    let score = take.score();
+    // Every riff onset should have a Keys chord stab near it (within the pocket tolerance) — the
+    // guitarist's figure is HEARD through the keys, not just implied in the harmony.
+    for &o in &riff_onsets {
+        let hit = score
+            .role_notes(Role::Keys)
+            .any(|n| (n.start_beat - o).abs() < 0.12);
+        assert!(
+            hit,
+            "the comp must stab a chord on the riff onset at beat {o}"
+        );
+    }
+}

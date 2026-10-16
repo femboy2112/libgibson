@@ -524,6 +524,13 @@ pub struct CompiledArgument {
     /// `false` (the default, set by `compile`) keeps the Consequent/Return-only pad gate, so C137 and
     /// every lead-carried song render byte-identical; only a smooth-pop band builder sets it.
     pub pad_all_sections: bool,
+    /// Opt-in: when set, the keys comp stabs its chord voicings on THIS rhythm — a list of within-two-bar
+    /// onsets (`0.0..8.0` beats) — instead of its fixed "and of 2 / and of 4" pattern. A lead-free band
+    /// passes its own riff's onsets here so the guitarist's figure is HEARD as chordal hits (the band
+    /// playing its hook), not sung. Only meaningful with `comp_keys`. `None` (the default, set by
+    /// `compile`) keeps the fixed comp, so C137 and every lead-carried song render byte-identical; only
+    /// the rehearsal band builder sets it.
+    pub comp_onsets: Option<Vec<f64>>,
 }
 
 impl CompiledArgument {
@@ -1162,6 +1169,7 @@ impl MusicalArgument {
             pop_funk_kit: false,
             comp_all_sections: false,
             pad_all_sections: false,
+            comp_onsets: None,
         })
     }
 

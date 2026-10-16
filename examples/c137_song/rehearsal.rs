@@ -1010,6 +1010,10 @@ pub fn freeze(draft: &RehearsalDraft) -> CompiledArgument {
     compiled.comp_keys = true;
     compiled.comp_all_sections = true;
     compiled.pad_all_sections = true;
+    // Make the band's HOOK audible: the keys comp stabs its chords on the RIFF's own rhythm (the
+    // guitarist's figure heard as chordal hits, not sung) instead of the fixed comp pattern. The riff's
+    // onsets drive the comp across each 16-beat episode (stated twice); the bass still owns the root.
+    compiled.comp_onsets = Some(riff.events.iter().map(|e| e.onset).collect());
     compiled
 }
 
