@@ -159,3 +159,24 @@ fn the_latest_circle_bass_turnaround_truly_moves_below_its_e7_root() {
         "the note must actually descend in register"
     );
 }
+
+#[test]
+fn the_distinct_groove_and_lift_sources_have_distinct_sounding_harmonies() {
+    // Also exercise both independent form/flavor builders rather than treating
+    // unused research-only functions as dead code in strict Clippy CI.
+    let groove_source = source_pop::source_pop_groove(2112, source_pop::PopFlavor::Circle);
+    let lift_source = source_pop::source_pop_song(2112, source_pop::PopFlavor::Lift);
+    let groove = kernel::perform_song(&groove_source, &world()).expect("groove");
+    let lift = kernel::perform_song(&lift_source, &world()).expect("lift song");
+    assert_eq!(groove.score().role_notes(Role::Lead).count(), 0);
+    assert!(lift.score().role_notes(Role::Lead).count() > 0);
+
+    // Groove Circle is Dm9 in bar 1; SONG Lift is Fmaj9 in bar 1.
+    // Never judge one source's melody against another form's chart.
+    let groove_chord = chord_at(groove.score(), 5.0);
+    let lift_chord = chord_at(lift.score(), 5.0);
+    assert_eq!(groove_chord.root_pc, 2);
+    assert_eq!(groove_chord.quality, Quality::Min9);
+    assert_eq!(lift_chord.root_pc, 5);
+    assert_eq!(lift_chord.quality, Quality::Maj9);
+}
