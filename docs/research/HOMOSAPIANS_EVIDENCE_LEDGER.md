@@ -299,3 +299,26 @@ fmt+clippy-D; **lib 874/874** (route-law + witness pins intact); **audio_c137_so
 synthesis). This RESOLVES the deferred "true polyphonic Keys comp" item above. Re-rendered seed-A/B —
 EAR PENDING on whether the keys now sit right. Still open: G6 section-form witness; a more
 musically-principled camp picker; making the negotiated riff audible (comp-follows-riff-rhythm).
+
+**EAR VERDICT #2 + VISION ROUND (commit `c8651c1`):** owner — *"7 and 42 are starting to sound good,
+2112 sounds cliche… the musicians are just throwing shit at the wall… rather than interpreting what's
+there and finding the semantic possibilities of what could be, there's no underlying vision."* Owner's
+spec for the vision (verbatim intent): the SONG itself is the goal; the seed is clay; each musician
+makes an interpretive move; the band steps back ("does this feel like a song? where should it go?") and
+repeats. Built:
+- Harmony READ OUT OF THE RIFF (`interpret_harmony`): pitch classes weighted by dwell time; the tonic A
+  is the fixed home pole, the heaviest chord-IMPLYING degree picks the 2nd chord (D→iv, F→♭VI, G→♭VII,
+  E→v). The cliché i-♭III VERSE camp is BANNED (tonic-tone emphasis → warm ♭VI, never ♭III); ♭III is
+  reserved for the CHORUS lift. Seeds 2112/7 → i-iv, 42 → i-♭VI (all ear-liked worlds; 2112 de-clichéd).
+- Chorus REINTERPRETS the verse (the "where it wants to go"): dark pole (iv/v) → lift tonic to ♭III;
+  bright pole (♭VI/♭VII) → tonicise on V7. Shares the verse's tonal content, adds the one dominant.
+- Emergent TRANSITION: the last verse bar `transition_walk_cell()` walks R-3-5-8 + a push into the
+  chorus downbeat (the bass transition the guitarist/bass exchange implies).
+- CONTEMPLATION is first-class: `RehearsalDraft.shaping_log` narrates CLAY → read the riff's ground →
+  groove → compensate → fill → CONTEMPLATE ("it circles, needs somewhere to go") → answer into the
+  chorus → CONTEMPLATE → DONE. The underlying vision made legible.
+Gates: fmt+clippy-D; rehearsal 13/13 (new: harmony-read-from-riff, chorus-reinterprets-verse,
+band-contemplates-toward-a-song); gap 4/4; smooth-pop 9/9; harmony 5/5; **C137 LOCK byte-for-byte OK**
+(example+test only). Re-rendered seeds 2112/7/42 — EAR PENDING. Known: 2112 & 7 share the i-iv world
+(cross-seed harmonic spread is a knob); still a backing (no sounded topline / true return — needs the
+lead "key").
