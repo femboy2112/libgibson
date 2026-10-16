@@ -651,3 +651,355 @@ pub fn source_pop_song(seed: u64, flavor: PopFlavor) -> CompiledArgument {
     compiled.pop_funk_kit = true;
     compiled
 }
+
+// ======================================================================================
+// OPERATION THE HOMOSAPIANS — R1: the BAND-ONLY mini-song (the "lock").
+// ======================================================================================
+// The groove (above) proved the band can hold a pocket; the pop song gave it a voice. This is
+// the plan's R1 — an original EIGHT-BAR backing that is a COMPLETE little instrumental song with
+// NO lead, and NOT an 8-bar vamp played twice. It has a verse-backing that STATES and a
+// chorus-backing that ARRIVES:
+//   - The keyboard carries a syncopated guide-tone HOOK (the band has something to say), outlining
+//     each chord's colour (3rds/7ths/9ths) on a consistent short-short-long rhythm with real space.
+//   - Bars 0-3 state the hook mid-register; bars 4-7 LIFT it ~an octave, fuller (a fifth attack per
+//     bar) and louder — the chorus ARRIVAL, earned by register / density / dynamics, not by gain.
+//   - The bass drives harder in the chorus: EIGHT distinct cells (four verse, four driven chorus),
+//     never four stamped twice, keeping the ear-liked funk bounce and the dark ♭7 at each cadence.
+//   - The pad is offered to ENTER on the chorus episode (Silent through the verse) as the harmonic
+//     bed of the arrival.
+// Same progression as the pop SONG, so this is literally the lock the lead will later key into.
+// Opt-in; lead-free; no C137 source is touched.
+
+/// Pocketed material events from `(onset, step, dur, velocity)` rows. Like the keys comp (and unlike
+/// the floating lead), the backing riff lays every onset into the shared [`pocket_offset`] so the
+/// keyboard lays back WITH the rhythm section — it is a rhythm-section part, not a floating vocal.
+#[allow(dead_code)] // used by the example's pop-band arm; the test crate includes this module but does not call it
+fn rows_to_pocket_events(rows: &[(f64, i32, f64, f32)]) -> Vec<MaterialEvent> {
+    rows.iter()
+        .map(|&(onset, step, dur, accent)| MaterialEvent {
+            onset: onset + pocket_offset(onset),
+            dur,
+            accent,
+            step: Some(step),
+        })
+        .collect()
+}
+
+/// The VERSE backing riff (one 16-beat episode), voiced to the pop SONG progression's chord tones so
+/// the band states the harmony cleanly. A consistent syncopated hook per bar — two short pickups, a
+/// held colour tone, an off-beat pickup into the next bar — mid-register, breathing dynamics.
+/// `(onset, semitone_above_A, dur_beats, velocity)`. Steps: A=0/12, B=2/14, C=3/15, D=5/17, E=7/19,
+/// F=8/20, G=10/22, G#=11/23.
+#[allow(dead_code)] // example-only (see rows_to_pocket_events)
+fn backing_riff_verse(flavor: PopFlavor) -> Vec<MaterialEvent> {
+    let rows: &[(f64, i32, f64, f32)] = match flavor {
+        // Circle SONG: Am9 | Em7 | Fmaj9 | E7.
+        PopFlavor::Circle => &[
+            // Am9 — rise C-E to the held m7 colour (G), E pickup.
+            (0.0, 3, 0.4, 0.56),
+            (0.75, 7, 0.3, 0.60),
+            (1.5, 10, 0.85, 0.56),
+            (3.5, 7, 0.3, 0.54),
+            // Em7 — 5th/m7 to the held m3 (G), F pickup toward Fmaj9.
+            (4.0, 2, 0.4, 0.55),
+            (4.75, 5, 0.3, 0.58),
+            (5.5, 10, 0.85, 0.54),
+            (7.5, 8, 0.3, 0.54),
+            // Fmaj9 — F/A to the held maj7 colour (E), E pickup.
+            (8.0, 8, 0.4, 0.57),
+            (8.75, 12, 0.3, 0.60),
+            (9.5, 7, 0.85, 0.56),
+            (11.5, 7, 0.3, 0.55),
+            // E7 — E/G# (the leading tone, in-context over the dominant) to the held m7 (D), B turnaround.
+            (12.0, 7, 0.4, 0.56),
+            (12.75, 11, 0.3, 0.60),
+            (13.5, 5, 0.85, 0.55),
+            (15.5, 2, 0.3, 0.52),
+        ],
+        // Lift SONG: Am9 | Fmaj9 | Dm9 | E7.
+        PopFlavor::Lift => &[
+            // Am9 — rise C-E to the held m7 (G), D pickup toward Fmaj9.
+            (0.0, 3, 0.4, 0.56),
+            (0.75, 7, 0.3, 0.60),
+            (1.5, 10, 0.85, 0.56),
+            (3.5, 5, 0.3, 0.54),
+            // Fmaj9 — F/A to the held maj7 colour (E), D pickup toward Dm9.
+            (4.0, 8, 0.4, 0.55),
+            (4.75, 12, 0.3, 0.58),
+            (5.5, 7, 0.85, 0.54),
+            (7.5, 5, 0.3, 0.54),
+            // Dm9 — D/F to the held m7 (C), E pickup.
+            (8.0, 5, 0.4, 0.57),
+            (8.75, 8, 0.3, 0.60),
+            (9.5, 15, 0.85, 0.56),
+            (11.5, 7, 0.3, 0.55),
+            // E7 — E/G# to the held m7 (D), B turnaround.
+            (12.0, 7, 0.4, 0.56),
+            (12.75, 11, 0.3, 0.60),
+            (13.5, 5, 0.85, 0.55),
+            (15.5, 2, 0.3, 0.52),
+        ],
+    };
+    rows_to_pocket_events(rows)
+}
+
+/// The CHORUS backing riff (one 16-beat episode) — the SAME hook as the verse, LIFTED: the colour
+/// tones move up ~an octave, each bar gains a fifth attack (at 2.75) for fullness, and the dynamics
+/// crest. This is the arrival stated by the band itself — more register and more information, not
+/// more gain. Voiced to the same chords. `(onset, step, dur, velocity)`.
+#[allow(dead_code)] // example-only (see rows_to_pocket_events)
+fn backing_riff_chorus(flavor: PopFlavor) -> Vec<MaterialEvent> {
+    let rows: &[(f64, i32, f64, f32)] = match flavor {
+        PopFlavor::Circle => &[
+            // Am9 ↑ — C-E-G an octave up, a B fill, E pickup.
+            (0.0, 15, 0.4, 0.66),
+            (0.75, 19, 0.3, 0.70),
+            (1.5, 22, 0.8, 0.66),
+            (2.75, 14, 0.3, 0.60),
+            (3.5, 19, 0.3, 0.62),
+            // Em7 ↑ — B-D-G up, a B fill, F pickup.
+            (4.0, 14, 0.4, 0.64),
+            (4.75, 17, 0.3, 0.68),
+            (5.5, 22, 0.8, 0.64),
+            (6.75, 19, 0.3, 0.60),
+            (7.5, 20, 0.3, 0.62),
+            // Fmaj9 ↑ — F-A-E up, a G fill, E pickup.
+            (8.0, 20, 0.4, 0.66),
+            (8.75, 12, 0.3, 0.70),
+            (9.5, 19, 0.8, 0.66),
+            (10.75, 22, 0.3, 0.60),
+            (11.5, 19, 0.3, 0.62),
+            // E7 ↑ — E-G#-D up (the dominant's own colour), a B fill, B home-pull.
+            (12.0, 19, 0.4, 0.64),
+            (12.75, 23, 0.3, 0.66),
+            (13.5, 17, 0.8, 0.64),
+            (14.5, 14, 0.3, 0.60),
+            (15.5, 14, 0.3, 0.60),
+        ],
+        PopFlavor::Lift => &[
+            // Am9 ↑
+            (0.0, 15, 0.4, 0.66),
+            (0.75, 19, 0.3, 0.70),
+            (1.5, 22, 0.8, 0.66),
+            (2.75, 14, 0.3, 0.60),
+            (3.5, 17, 0.3, 0.62),
+            // Fmaj9 ↑ — F-A-E up, a G fill, D pickup.
+            (4.0, 20, 0.4, 0.64),
+            (4.75, 12, 0.3, 0.68),
+            (5.5, 19, 0.8, 0.64),
+            (6.75, 22, 0.3, 0.60),
+            (7.5, 17, 0.3, 0.62),
+            // Dm9 ↑ — D-F-C up, an E fill, E pickup.
+            (8.0, 17, 0.4, 0.66),
+            (8.75, 20, 0.3, 0.70),
+            (9.5, 15, 0.8, 0.66),
+            (10.75, 19, 0.3, 0.60),
+            (11.5, 19, 0.3, 0.62),
+            // E7 ↑
+            (12.0, 19, 0.4, 0.64),
+            (12.75, 23, 0.3, 0.66),
+            (13.5, 17, 0.8, 0.64),
+            (14.5, 14, 0.3, 0.60),
+            (15.5, 14, 0.3, 0.60),
+        ],
+    };
+    rows_to_pocket_events(rows)
+}
+
+/// EIGHT per-bar bass cells for the backing: bars 0-3 are the verse (the ear-liked funk bounce with
+/// space), bars 4-7 are the DRIVEN chorus (an extra attack, hotter velocities) — the bass's half of
+/// the arrival. Each cell opens on `(0.0, Root)` (the foundation anchor); both cadence bars (3 and 7)
+/// fall to the dark ♭7 over E7 (R12's descent, preserved). `(offset, degree, dur_beats, velocity)`.
+#[allow(dead_code)] // example-only (see rows_to_pocket_events)
+fn homosapians_backing_bass() -> Vec<Vec<(f64, BassDegree, f32, f32)>> {
+    vec![
+        // --- VERSE (bars 0-3): statement / walk / drive / turnaround-with-♭7, moderate ---
+        vec![
+            (0.0, BassDegree::Root, 0.24, 0.80),
+            (0.5, BassDegree::Fifth, 0.20, 0.48),
+            (1.0, BassDegree::Octave, 0.22, 0.52),
+            (2.0, BassDegree::Root, 0.22, 0.54),
+            (3.5, BassDegree::Root, 0.26, 0.58),
+        ],
+        vec![
+            (0.0, BassDegree::Root, 0.24, 0.78),
+            (0.5, BassDegree::Fifth, 0.20, 0.48),
+            (1.5, BassDegree::Octave, 0.22, 0.50),
+            (2.5, BassDegree::Fifth, 0.22, 0.52),
+            (3.5, BassDegree::Fifth, 0.26, 0.56),
+        ],
+        vec![
+            (0.0, BassDegree::Root, 0.22, 0.82),
+            (0.5, BassDegree::Fifth, 0.20, 0.48),
+            (1.0, BassDegree::Octave, 0.20, 0.52),
+            (2.0, BassDegree::Root, 0.20, 0.54),
+            (2.5, BassDegree::Third, 0.20, 0.50),
+            (3.5, BassDegree::Octave, 0.24, 0.58),
+        ],
+        vec![
+            (0.0, BassDegree::Root, 0.24, 0.80),
+            (1.0, BassDegree::Seventh, 0.20, 0.50), // ♭7 over E7 — the dark descent (R12), preserved
+            (1.5, BassDegree::Third, 0.22, 0.53),
+            (2.5, BassDegree::Root, 0.20, 0.52),
+            (3.5, BassDegree::Root, 0.28, 0.60),
+        ],
+        // --- CHORUS (bars 4-7): the SAME shapes, driven — an extra attack, hotter velocities ---
+        vec![
+            (0.0, BassDegree::Root, 0.22, 0.90),
+            (0.5, BassDegree::Fifth, 0.20, 0.56),
+            (1.0, BassDegree::Octave, 0.20, 0.60),
+            (1.5, BassDegree::Fifth, 0.20, 0.54),
+            (2.0, BassDegree::Root, 0.20, 0.62),
+            (3.5, BassDegree::Octave, 0.26, 0.68),
+        ],
+        vec![
+            (0.0, BassDegree::Root, 0.22, 0.88),
+            (0.5, BassDegree::Fifth, 0.20, 0.56),
+            (1.0, BassDegree::Octave, 0.20, 0.58),
+            (1.5, BassDegree::Fifth, 0.20, 0.54),
+            (2.5, BassDegree::Fifth, 0.20, 0.60),
+            (3.5, BassDegree::Fifth, 0.26, 0.66),
+        ],
+        vec![
+            (0.0, BassDegree::Root, 0.20, 0.92),
+            (0.5, BassDegree::Fifth, 0.20, 0.56),
+            (1.0, BassDegree::Octave, 0.20, 0.60),
+            (1.5, BassDegree::Fifth, 0.20, 0.54),
+            (2.0, BassDegree::Root, 0.20, 0.62),
+            (2.5, BassDegree::Third, 0.20, 0.56),
+            (3.0, BassDegree::Octave, 0.20, 0.58),
+            (3.5, BassDegree::Fifth, 0.26, 0.70),
+        ],
+        vec![
+            (0.0, BassDegree::Root, 0.22, 0.90),
+            (1.0, BassDegree::Seventh, 0.20, 0.56), // ♭7 over E7 — the dark descent, preserved
+            (1.5, BassDegree::Third, 0.20, 0.58),
+            (2.0, BassDegree::Fifth, 0.20, 0.58),
+            (2.5, BassDegree::Root, 0.20, 0.56),
+            (3.5, BassDegree::Root, 0.30, 0.72),
+        ],
+    ]
+}
+
+/// Build the lead-free HOMOSAPIANS backing mini-song for one seed and [`PopFlavor`]: two 16-beat
+/// Keys-carried episodes (verse-backing then chorus-backing) over the pop SONG progression (twice),
+/// the pad entering on the chorus, and the eight breathing/driving bass cells. A complete instrumental
+/// statement with no foreground — the lock.
+#[allow(dead_code)] // used by the example's pop-band arm; the test crate includes this module but does not call it
+pub fn source_homosapians_backing(seed: u64, flavor: PopFlavor) -> CompiledArgument {
+    let trace = SemanticTrace {
+        total_beats: 32.0,
+        events: vec![
+            SemanticEvent {
+                at_beat: 0.0,
+                state: SemanticState::toned(Tone::Accent),
+                kind: EventKind::ActChanged,
+            },
+            // The chorus episode is its own act — the arrival the backing builds to.
+            SemanticEvent {
+                at_beat: 16.0,
+                state: SemanticState::toned(Tone::Accent),
+                kind: EventKind::ActChanged,
+            },
+            SemanticEvent {
+                at_beat: 28.0,
+                state: SemanticState::toned(Tone::Success),
+                kind: EventKind::SectionResolved,
+            },
+        ],
+    };
+    let mut song = SongMap::build(&trace, seed, Some(CompositionGrammar::HookArc));
+    let mut contract = song.plan.contract.clone();
+    contract.phrase_bars = 1;
+    song.plan = gibson::audio::human_music::plan::CompositionPlan::build_with_contract_for_beats(
+        &song.timeline,
+        32.0,
+        contract,
+    );
+    // Lead-free band lock: the lead is off-stage (no Lead carrier below), the keys carry the riff,
+    // the bass is the foundation, the drummer keeps the pocket. The PAD is offered to ENTER on the
+    // chorus episode (bars 4-7) as the harmonic bed of the arrival — Silent through the verse.
+    for (i, p) in song.plan.arrangement.phrases.iter_mut().enumerate() {
+        p.lead = ArrangementRole::Support;
+        p.keys = ArrangementRole::Support;
+        p.bass = ArrangementRole::Foundation;
+        p.drums = ArrangementRole::Support;
+        p.pad = if i < 4 {
+            ArrangementRole::Silent
+        } else {
+            ArrangementRole::Support
+        };
+    }
+    let verse = MusicalReferent {
+        id: ReferentId(0),
+        pitch_basis: PitchBasis::Semitones,
+        events: backing_riff_verse(flavor),
+    };
+    let chorus = MusicalReferent {
+        id: ReferentId(1),
+        pitch_basis: PitchBasis::Semitones,
+        events: backing_riff_chorus(flavor),
+    };
+    let boundary =
+        song.plan
+            .form
+            .phrases
+            .iter()
+            .position(|p| p.start_beat() == 16.0)
+            .expect("eight one-bar phrases put an episode boundary at beat 16") as u32;
+    let total_phrases = song.plan.form.phrases.len() as u32;
+    let argument = MusicalArgument {
+        family: ArgumentFamily::CallAndEarnedAnswer,
+        referents: vec![verse, chorus],
+        ending: ArgumentEnding::Resolved,
+        steps: vec![
+            ArgumentStep {
+                id: ArgumentStepId(0),
+                referent: ReferentId(0),
+                transform: ArgumentTransform::default(),
+                relation: ArgumentRelation::Establish,
+                depends_on: vec![],
+                carriers: vec![Agent::Keys],
+            },
+            ArgumentStep {
+                id: ArgumentStepId(1),
+                referent: ReferentId(1),
+                transform: ArgumentTransform::default(),
+                relation: ArgumentRelation::Establish,
+                depends_on: vec![ArgumentStepId(0)],
+                carriers: vec![Agent::Keys],
+            },
+        ],
+        arc: Some(vec![
+            ArcSpan {
+                step: ArgumentStepId(0),
+                start_phrase: 0,
+                phrase_count: boundary,
+                start_beat: 0.0,
+                span_beats: 16.0,
+            },
+            ArcSpan {
+                step: ArgumentStepId(1),
+                start_phrase: boundary,
+                phrase_count: total_phrases - boundary,
+                start_beat: 16.0,
+                span_beats: 16.0,
+            },
+        ]),
+    };
+    let mut compiled = argument
+        .compile(&song)
+        .expect("homosapians backing source compiles");
+    let loop4 = flavor.song_loop4();
+    let mut route = loop4.to_vec();
+    route.extend_from_slice(&loop4);
+    compiled.route = route;
+    compiled.domain = SourceDomain::SmoothPop(PopSourceGrammar { loop_bars: 4 });
+    compiled.groove = Some(GrooveLaw {
+        bass_cells: homosapians_backing_bass(),
+    });
+    // The backing grooves on the FUNK/DISCO kit (the ear-accepted pop pocket); it is lead-free, so the
+    // lead-dependent levers (comp-under-lead, breath answers, lead-rhythm translation) stay OFF.
+    compiled.pop_funk_kit = true;
+    compiled
+}

@@ -172,9 +172,17 @@ impl Options {
                         preset = preset.pop_song();
                         pop_flavor = source_pop::PopFlavor::Lift;
                     }
+                    "pop-band" => {
+                        preset = preset.pop_band();
+                        pop_flavor = source_pop::PopFlavor::Circle;
+                    }
+                    "pop-band-lift" => {
+                        preset = preset.pop_band();
+                        pop_flavor = source_pop::PopFlavor::Lift;
+                    }
                     _ => {
                         return Err(
-                            "--form must be slice (16-bar), song (32-bar), song-intro (32-bar + intro), song-narrative (32-bar, keys-carried bridge), song-intro-narrative (32-bar, keys-foreshadow intro), pop-groove (8-bar lead-free smooth-pop pocket, circle-of-4ths), pop-groove-lift (the same groove, leading-tone-pull progression), pop-song (8-bar Lead-carried smooth-pop verse->hook), or pop-song-lift (the same song, leading-tone-pull progression)"
+                            "--form must be slice (16-bar), song (32-bar), song-intro (32-bar + intro), song-narrative (32-bar, keys-carried bridge), song-intro-narrative (32-bar, keys-foreshadow intro), pop-groove (8-bar lead-free smooth-pop pocket, circle-of-4ths), pop-groove-lift (the same groove, leading-tone-pull progression), pop-song (8-bar Lead-carried smooth-pop verse->hook), pop-song-lift (the same song, leading-tone-pull progression), pop-band (8-bar lead-free band-only mini-song: verse backing -> chorus arrival), or pop-band-lift (the same backing, leading-tone-pull progression)"
                                 .into(),
                         )
                     }
@@ -306,6 +314,12 @@ fn build_source(
     // The smooth-pop groove is its own lead-free arm with its own `SmoothPop` domain and groove — it
     // does not go through the C137 arc builders or the capability caps (which are C137-specific), so
     // it returns here before `apply_caps`.
+    if resolved.pop_band {
+        // Operation The Homosapians R1: the lead-free band-only mini-song (verse backing → chorus
+        // arrival). Checked BEFORE pop_song/pop_groove because it also sets `pop_groove` (for the pop
+        // render path/palette). Its own `SmoothPop` domain; returns before `apply_caps` like the others.
+        return source_pop::source_homosapians_backing(seed, pop_flavor);
+    }
     if resolved.pop_song {
         // Operation Johnny Five: the Lead-carried verse→hook pop song. Like the groove, it is its own
         // `SmoothPop` domain and carries its OWN expressive capability flags, so it also returns here
@@ -450,6 +464,50 @@ fn manifest_header(
         let _ = writeln!(
             m,
             "  pad                   : rug enters on the hook (the earned arrival)"
+        );
+        let _ = writeln!(
+            m,
+            "  world                 : tonic_pc={}, {:?}, tempo={} BPM (render --tempo=104 for the pop feel)",
+            world.tonic_pc, world.mode, world.tempo_bpm
+        );
+        let _ = writeln!(
+            m,
+            "  listening             : PENDING — the maintainer's ear gates this arm; nothing is promoted"
+        );
+        return m;
+    }
+    // The Homosapians backing (R1) is a lead-free band-only mini-song — checked before the groove
+    // branch because it also sets `pop_groove`. Its own honest header: verse backing → chorus arrival.
+    if resolved.pop_band {
+        let mut m = String::new();
+        let _ = writeln!(
+            m,
+            "HOMOSAPIANS BACKING  (Operation The Homosapians R1 — opt-in lead-free band-only mini-song; ear-gated, nothing promoted)"
+        );
+        let _ = writeln!(
+            m,
+            "  domain                : SmoothPop (groove-cycle closure, 4-bar loop)"
+        );
+        let _ = writeln!(
+            m,
+            "  form                  : 8 bars — Keys-carried VERSE backing (states the hook) -> CHORUS backing (arrival), NO foreground lead"
+        );
+        let _ = writeln!(
+            m,
+            "  harmony               : {}, looped x2",
+            pop_flavor.song_harmony_label()
+        );
+        let _ = writeln!(
+            m,
+            "  keys                  : a syncopated guide-tone HOOK (carried); verse mid-register, chorus lifts ~an octave + fuller"
+        );
+        let _ = writeln!(
+            m,
+            "  bass                  : EIGHT per-bar cells (four verse, four driven chorus); dark ♭7 at each E7 cadence"
+        );
+        let _ = writeln!(
+            m,
+            "  drums                 : funk/disco pocket (pop_funk_kit); pad: enters on the chorus episode (the arrival)"
         );
         let _ = writeln!(
             m,
