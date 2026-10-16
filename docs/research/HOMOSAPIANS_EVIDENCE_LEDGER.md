@@ -283,3 +283,19 @@ PENDING. Known limitation: all three selected riffs landed in the SAME i–iv ca
   the carrier count. Narrow fix = exempt `role_note=="comp"` in the carrier-window selection + fix
   `room()` (`kernel.rs:1588`) to include Keys carrier onsets. Both kernel surgery → own round.
 - **Camp spread** (`camp_for_riff` bias), and the Circle/Lift-style A/B is now a SEED A/B.
+
+**EAR VERDICT #1 + FIX (commit `cde0f9f`):** owner on the first cut — *"keys sound broken, it sounds
+like it's trying to lead and failing."* The monophonic Keys-carried riff reproduced the R1
+single-note-keyboard-reads-as-a-lead flaw. Fix = the narrow authorized construction the brief §13
+prescribes (NOT a fake Lead): one kernel line in `argument_witness::in_window` excludes
+`prov.role_note=="comp"` notes from the carrier-content window, so a Keys-carried step may hold the
+engine's real polyphonic comp chords while its own authored line is still checked verbatim. `freeze`
+now sets `comp_keys + comp_all_sections` (keys COMP chords every bar); the required carrier is a soft
+chord-tone fill in the comp's open bar (local bar 1) so the keys read as CHORDS, zero Lead, no fake
+carrier. `camp_for_riff` now picks via the riff fingerprint → seeds 2112/7/42 land in i-♭III / i-♭VI /
+i-iv (three harmonic worlds). G5 strengthened: asserts the Keys lane is genuinely polyphonic. Gates:
+fmt+clippy-D; **lib 874/874** (route-law + witness pins intact); **audio_c137_song 58/58**; rehearsal
+10/10; gap 4/4; smooth-pop 9/9; harmony 5/5; **C137 LOCK byte-for-byte OK** (witness never touches
+synthesis). This RESOLVES the deferred "true polyphonic Keys comp" item above. Re-rendered seed-A/B —
+EAR PENDING on whether the keys now sit right. Still open: G6 section-form witness; a more
+musically-principled camp picker; making the negotiated riff audible (comp-follows-riff-rhythm).
