@@ -337,3 +337,18 @@ within the pocket tolerance). Gates: fmt+clippy-D; **lib 874/874**; **audio_c137
 14/14; gap 4/4; smooth-pop 9/9; harmony 5/5; **C137 LOCK byte-for-byte OK** (comp_onsets None on every
 accepted path). Re-rendered seeds 2112/7/42 — EAR PENDING. Density knob: a dense riff = many stabs (can
 thin to salient onsets if busy).
+
+**POCKET + ATTACK ROUND (commit `d8e1616`):** owner — *"the keys need to be perfectly in pocket if they
+are going to do what they are doing right now. 2112 sounds weird/bland, 7 and 42 are on the right
+track"* + the timbre note: *the FELT attack lands slightly after the written onset* (warm FM e-piano
+speaks a hair late through the chorus + room). Confirmed: the whole band lays on the shared
+`pocket_offset` (bass `kernel.rs:1865`, kit `:2003-2065`, comp), but the kit's transients are tight
+while the keys' felt onset lags — so the keys comp was heard BEHIND the pocket. Fix (scoped to the
+`comp_onsets` branch only; fixed comp + C137 byte-identical): (1) each stab is pulled EARLIER by
+`KEYS_ATTACK_COMP` (0.03 beat ≈ 17 ms @104, ear-tunable const) so its felt attack lands dead on the
+shared pocket; (2) a beat-weighted accent (strong beat 0.44 > "and" 0.34 > sixteenth 0.24, × energy) +
+a crowded-stab ghost (×0.6 within 0.3 beat) give the comp a groove contour so a driving-eighths riff
+reads shaped, not a bland chug. Gates: lib 874/874, audio_c137_song 58/58, rehearsal 14/14, smooth 9,
+harmony 5, gap 4, **C137 LOCK byte-for-byte OK**. Re-rendered — EAR PENDING. Knob: `KEYS_ATTACK_COMP`
+if the felt attack is still off; still open — 2112 riff character (driving-eighths may be bland even
+shaped; bias the pick?), cross-seed harmony spread, the lead "key", G6 witness.
