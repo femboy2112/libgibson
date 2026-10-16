@@ -319,6 +319,8 @@ repeats. Built:
   chorus → CONTEMPLATE → DONE. The underlying vision made legible.
 Gates: fmt+clippy-D; rehearsal 13/13 (new: harmony-read-from-riff, chorus-reinterprets-verse,
 band-contemplates-toward-a-song); gap 4/4; smooth-pop 9/9; harmony 5/5; **C137 LOCK byte-for-byte OK**
-(example+test only). Re-rendered seeds 2112/7/42 — EAR PENDING. Known: 2112 & 7 share the i-iv world
+(example+test only). Re-rendered seeds 2112/7/42 — **EAR ACCEPTED** (owner: *"hell yeah. starting to
+sound like a song now"*): the vision/interpretation approach — the deferred Step-2 realization law, the
+band shaping clay toward the goal of a song — is CONFIRMED BY EAR. Build forward from here. Known: 2112 & 7 share the i-iv world
 (cross-seed harmonic spread is a knob); still a backing (no sounded topline / true return — needs the
 lead "key").
