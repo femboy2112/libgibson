@@ -324,3 +324,16 @@ sound like a song now"*): the vision/interpretation approach — the deferred St
 band shaping clay toward the goal of a song — is CONFIRMED BY EAR. Build forward from here. Known: 2112 & 7 share the i-iv world
 (cross-seed harmonic spread is a knob); still a backing (no sounded topline / true return — needs the
 lead "key").
+
+**AUDIBLE RIFF (commit `eb87df1`, owner picked this lever):** the guitarist's riff only shaped the
+harmony/bass/transition — it was never HEARD. Now the keys comp stabs its chord voicings ON the riff's
+own rhythm (chordal hits, not a sung line — so it is the band's hook felt, not the "failing lead" the
+owner rejected). New opt-in `CompiledArgument.comp_onsets: Option<Vec<f64>>` (within-2-bar onsets);
+`None` by default so C137 + every lead-carried song keep the fixed "and of 2 / and of 4" comp and render
+byte-identical. The kernel comp block branches on it BEFORE the fixed per-bar loop (the 2-bar riff stated
+twice across the 16-beat episode, a rootless voicing per onset, bass owns the root). `freeze` passes the
+negotiated riff's onsets. New gate `keys_comp_stabs_on_the_riff_rhythm` (every riff onset has a Keys stab
+within the pocket tolerance). Gates: fmt+clippy-D; **lib 874/874**; **audio_c137_song 58/58**; rehearsal
+14/14; gap 4/4; smooth-pop 9/9; harmony 5/5; **C137 LOCK byte-for-byte OK** (comp_onsets None on every
+accepted path). Re-rendered seeds 2112/7/42 — EAR PENDING. Density knob: a dense riff = many stabs (can
+thin to salient onsets if busy).
