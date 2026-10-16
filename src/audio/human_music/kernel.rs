@@ -2286,12 +2286,16 @@ pub fn perform_song(
     if perf.stage.on_stage_span(Agent::Pad, 0.0, score.total_beats) {
         for bar in 0..total_bars {
             let e = bar / bars_per_episode;
-            if !matches!(
-                argument.placements[e].relation,
-                super::argument::ArgumentRelation::Consequent { .. }
-                    | super::argument::ArgumentRelation::Return { .. }
-            ) {
-                continue; // verse and bridge clear the floor for the lead
+            if !argument.pad_all_sections
+                && !matches!(
+                    argument.placements[e].relation,
+                    super::argument::ArgumentRelation::Consequent { .. }
+                        | super::argument::ArgumentRelation::Return { .. }
+                )
+            {
+                continue; // verse and bridge clear the floor for the lead — UNLESS a lead-free
+                          // smooth-pop band opts into a pad bed everywhere (the soft continuous rug
+                          // that smooths the vibe). C137 never sets the flag, so its render is frozen.
             }
             let bar_start = bar as f64 * 4.0;
             let ctx = perf.context_at(bar_start).unwrap();

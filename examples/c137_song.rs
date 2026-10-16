@@ -482,11 +482,11 @@ fn manifest_header(
         let mut m = String::new();
         let _ = writeln!(
             m,
-            "HOMOSAPIANS BACKING  (Operation The Homosapians R1 — opt-in lead-free band-only mini-song; ear-gated, nothing promoted)"
+            "HOMOSAPIANS BACKING  (Operation The Homosapians — opt-in lead-free band-only mini-song; woven harmony + pad bed; ear-gated, nothing promoted)"
         );
         let _ = writeln!(
             m,
-            "  domain                : SmoothPop (groove-cycle closure, 4-bar loop)"
+            "  domain                : SmoothPop (groove-cycle closure, 8-bar woven realized route)"
         );
         let _ = writeln!(
             m,
@@ -494,7 +494,7 @@ fn manifest_header(
         );
         let _ = writeln!(
             m,
-            "  harmony               : {}, looped x2",
+            "  harmony               : global {} — but WOVEN: verse CAMPS on a 2-chord fragment, chorus HOPS to a relative-major conjugate (ear-probe; realization law is Step 2)",
             pop_flavor.song_harmony_label()
         );
         let _ = writeln!(
@@ -511,7 +511,7 @@ fn manifest_header(
         );
         let _ = writeln!(
             m,
-            "  drums                 : funk/disco pocket (pop_funk_kit); pad: silent (the keys comp is the harmonic bed)"
+            "  drums                 : funk/disco pocket (pop_funk_kit); pad: a soft continuous BED (pad_all_sections) smoothing the vibe under the comp"
         );
         let _ = writeln!(
             m,

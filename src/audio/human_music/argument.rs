@@ -518,6 +518,12 @@ pub struct CompiledArgument {
     /// Consequent/Return-only gate, so C137 and every lead-carried song render byte-identical; only a
     /// smooth-pop band builder sets it.
     pub comp_all_sections: bool,
+    /// Opt-in SMOOTH-POP PAD BED everywhere: when true, the pad RUG lays its sustained chord tones
+    /// under EVERY episode, not only the home-arrival `Consequent`/`Return`. A lead-free pop backing
+    /// wants a soft continuous pad bed smoothing the whole vibe (not the teacher's chorus-only rug).
+    /// `false` (the default, set by `compile`) keeps the Consequent/Return-only pad gate, so C137 and
+    /// every lead-carried song render byte-identical; only a smooth-pop band builder sets it.
+    pub pad_all_sections: bool,
 }
 
 impl CompiledArgument {
@@ -1155,6 +1161,7 @@ impl MusicalArgument {
             groove: None,
             pop_funk_kit: false,
             comp_all_sections: false,
+            pad_all_sections: false,
         })
     }
 
