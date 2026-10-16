@@ -231,3 +231,55 @@ SONG's lead over this lock). The new-system column is the DSP work (R2/R3/R4).
 2. band+lead on this lock (the "key"): the 2×2 legacy row completed.
 3. R2 one real strummed-string prototype (the first "new physical system" cell).
 4. Circle vs Lift — STILL unpicked across all of Johnny Five; keep offering both.
+
+---
+
+## REHEARSAL COMPOSER — the band WRITES the song (impl branch `impl/homosapians-rehearsal-composer-2026-10-16`, on research PR #122)
+
+The pivot (owner brief, OPERATION THE HOMOSAPIANS "the band writes the song"): stop authoring a
+finished backing and making the players perform it; construct the song THROUGH the musicians
+negotiating. Built as a PURE SYMBOLIC pre-source composer (`examples/c137_song/rehearsal.rs`) that
+emits a `CompiledArgument` the existing witnessed kernel renders with ZERO kernel edits. Opt-in via
+`--form=pop-rehearsal` (reuses the pop-band warm render path). Commit `93c6d12`.
+
+**Two causal clocks:** performance time `t` immutable once frozen; rehearsal revision time `k` — the
+guitarist may revise an earlier bar in draft `k+1` while the audition take of draft `k` stays a frozen
+historical trial (`TrialTake`, append-only). A revision makes a NEW source; never edits a committed take.
+
+**The jam (A→G):** seed → `generate_riffs` (whitened per-candidate RNG, 5 rhythm cells × launches ×
+contours over A-Aeolian; the harmonic camp is chosen FROM the riff, so the seed reaches the route) →
+`bass_for_riff` (a DETERMINISTIC function of the riff's density / rest / pickup — provably "listening",
+traceable to a named riff feature, not an RNG draw) → `drums_for_bass` (reinforce-push / leave-gap /
+fill off the committed bass, spine fixed) → `guitar_proposals` (the back-edge: a dense riff thinned for
+the drummer's fill; a sparse riff gets a pickup answering the bass turn; a flourish always REJECTED) →
+`freeze` (2×16-beat Keys-carried Establish episodes, riff vamped, PAD holds the chords, negotiated bass,
+funk kit, `comp_keys=false` ⇒ the Keys window holds only the carrier ⇒ LITERALLY zero Lead).
+
+**Falsification gates (`tests/audio_homosapians_rehearsal.rs`, 10/10):** determinism; G0 seed chooses
+the material; G9 held-out seeds are not one stock riff; G1 bassist answers the riff's rhythm (+ deaf
+control); G2 drummer follows the bass (spine kept); G3 guitarist revises after the band; G4 committed
+takes immutable + rejected flourish never contaminates; G5 frozen Score LEAD==0 with Keys/Pad/Bass>0;
+G7 same count + different rhythm changes identity + bass. Characterization control
+(`audio_homosapians_rehearsal_gap.rs`, the OLD fixed path) stays 4/4.
+
+**Gates:** fmt + clippy -D clean; rehearsal 10/10; smooth-pop 9/9; harmony audit 5/5; gap 4/4;
+**C137_ACCEPTED_V1 LOCK byte-for-byte OK** (no kernel/synth/rendered-source edit).
+
+**Render (warm, 104, loudness-matched MP3):** control pop-band seed 2112 (hand-authored R4) vs
+rehearsal seeds 2112/7/42. Negotiated: 2112 = 9-note driving riff thinned to 8 (Simplify); 7 = 7-note
+syncopated-funk thinned to 6 (Simplify); 42 = 6-note on-beat statement kept as-is (0 revisions). EAR
+PENDING. Known limitation: all three selected riffs landed in the SAME i–iv camp (Am9/Dm9→Cmaj9/Dm9);
+`camp_for_riff` selection is biased — a knob to spread harmony across seeds.
+
+**DEFERRED (named, exact seams from read-only recon):**
+- **G6 real section-form witness** (kill the `loop_bars==route.len()` loophole): add an opt-in
+  `CompiledArgument.pop_form: Option<PopFormLaw>` (NOT a `PopSourceGrammar` field — that has pinned
+  literals) + a `pop_section_law()` called AFTER `pop_route_law` in the SmoothPop arm (`kernel.rs`
+  ~1039); leaves `pop_route_law` + its pinned tests `the_pop_route_law_refuses_a_drifting_or_mis_sized_loop`
+  / `the_c137_and_pop_route_laws_are_distinct_closure_conditions` byte-identical. Checks within-section
+  period repetition + verse→chorus conjugacy + return.
+- **True polyphonic Keys comp with zero Lead** (the fake-carrier root cause): the carrier window check
+  `argument_witness::in_window` counts ALL role notes; the comp stabs (`role_note=="comp"`) collide with
+  the carrier count. Narrow fix = exempt `role_note=="comp"` in the carrier-window selection + fix
+  `room()` (`kernel.rs:1588`) to include Keys carrier onsets. Both kernel surgery → own round.
+- **Camp spread** (`camp_for_riff` bias), and the Circle/Lift-style A/B is now a SEED A/B.
