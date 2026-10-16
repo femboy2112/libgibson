@@ -63,7 +63,10 @@ fn current_circle_hook_has_real_g_natural_against_e7_g_sharp() {
     assert_eq!(c.root_pc, 4, "cadence is E-rooted");
     assert_eq!(c.quality, Quality::Dom7, "it is actually an E7");
     assert!(c.contains_pc(8), "E7 has G# as its major third");
-    assert!(sounding_pc(score, Role::Lead, 7, at), "the hook still sings G natural");
+    assert!(
+        sounding_pc(score, Role::Lead, 7, at),
+        "the hook still sings G natural"
+    );
     assert!(
         sounding_pc(score, Role::Pad, 8, at),
         "the pad really sustains the E7 G#, not merely a chart symbol"
@@ -83,10 +86,21 @@ fn a_melodically_closed_last_note_is_not_a_tonic_chord_arrival() {
     // Final melody A (tonic pitch) at local hook beat 14.5 -> global beat 30.5;
     // the underlying harmony is still E7 until the end of this 32-beat sketch.
     let at = 30.75;
-    assert!(sounding_pc(score, Role::Lead, 9, at), "lead resolves to pitch A");
+    assert!(
+        sounding_pc(score, Role::Lead, 9, at),
+        "lead resolves to pitch A"
+    );
     let c = chord_at(score, at);
-    assert_eq!(c, Chord::new(4, Quality::Dom7), "final sounding chord remains E7");
-    assert_ne!(c.root_pc, world().tonic_pc, "no final Am tonic-chord arrival");
+    assert_eq!(
+        c,
+        Chord::new(4, Quality::Dom7),
+        "final sounding chord remains E7"
+    );
+    assert_ne!(
+        c.root_pc,
+        world().tonic_pc,
+        "no final Am tonic-chord arrival"
+    );
 
     // This is NOT automatically a compositional error. It means the three
     // predicates 'melodic home', 'harmonic home', 'narrative completed' are
@@ -140,5 +154,8 @@ fn the_latest_circle_bass_turnaround_truly_moves_below_its_e7_root() {
         .find(|n| (n.start_beat - 13.0).abs() < 0.08)
         .expect("turnaround bass seventh attack");
     assert_eq!(dark.pitch.rem_euclid(12), 2, "D natural, E7 flat seventh");
-    assert!(dark.pitch < root.pitch, "the note must actually descend in register");
+    assert!(
+        dark.pitch < root.pitch,
+        "the note must actually descend in register"
+    );
 }
