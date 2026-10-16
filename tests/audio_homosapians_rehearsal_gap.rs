@@ -117,7 +117,10 @@ fn current_full_length_loop_period_is_a_tautology_not_a_song_form_witness() {
     mutated[5] = mutated[4];
     assert_ne!(mutated, source.route);
     assert!(
-        mutated.iter().enumerate().all(|(i, c)| *c == mutated[i % k]),
+        mutated
+            .iter()
+            .enumerate()
+            .all(|(i, c)| *c == mutated[i % k]),
         "the loop-equality predicate is true even for an arbitrary changed route"
     );
 }
