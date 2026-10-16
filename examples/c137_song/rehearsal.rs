@@ -78,47 +78,68 @@ const V_DOM7: (i32, Quality) = (7, Quality::Dom7); // E7   (the dominant, the on
 const VI_MAJ9: (i32, Quality) = (8, Quality::Maj9); // Fmaj9 (♭VI)
 const VII_DOM9: (i32, Quality) = (10, Quality::Dom9); // G9   (♭VII)
 
-/// A two-chord harmonic world the band camps in: a VERSE pole-pair (a slow repetitive vamp) and its
-/// CHORUS conjugate (the verse's tonic pole lifted to its relative major ♭III, with the lone E7
-/// dominant turnaround marking the cadence). This is the semantic-parallax ground the owner accepted —
-/// here it is CHOSEN BY THE RIFF, not fixed per flavor.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// A two-chord harmonic world read OUT of the riff (the guitarist interpreting what's there): a VERSE
+/// pole-pair — the tonic home plus wherever the riff keeps pointing, a slow repetitive vamp — and a
+/// CHORUS that REINTERPRETS it (the semantic possibility of where the loop wants to go: brightened or
+/// tonicised, with the one dominant turnaround the vamp was implying). Both derived from the riff's own
+/// emphasis, never a default — so the harmony means something about THIS riff, not a hash.
+#[derive(Debug, Clone, PartialEq)]
 pub struct HarmonyCamp {
     pub verse: [(i32, Quality); 2],
     pub chorus: [(i32, Quality); 2],
-    pub label: &'static str,
+    pub label: String,
 }
 
-/// The five lawful camps. The riff selects one from its own emphasised degrees (below), so harmony is
-/// riff-derived and therefore seed-derived. Each chorus is the verse's conjugate: tonic pole → ♭III
-/// (relative major), second pole kept or resolved, cadence via the E7 turnaround elsewhere in the route.
-const CAMPS: [HarmonyCamp; 5] = [
+/// The diatonic second chord keyed by a scale degree's pitch class (semitones above the A tonic): the
+/// verse loop is "the tonic home plus the chord that best carries the riff's most-dwelt-on note".
+fn second_chord_for_pc(pc: i32) -> ((i32, Quality), &'static str) {
+    match pc.rem_euclid(12) {
+        5 => (IV_MIN9, "iv"),     // D (the 4th) implies iv — Dm9
+        8 => (VI_MAJ9, "bVI"),    // F (the b6) implies bVI — Fmaj9
+        10 => (VII_DOM9, "bVII"), // G (the b7) implies bVII — G9
+        7 => (V_MIN7, "v"),       // E (the 5th) leans to the modal minor v — Em7
+        // A riff that mostly dwells on tonic-chord tones (C = b3, B = 9) does NOT imply leaving i for
+        // the CLICHED relative major bIII — it leans to the warm bVI instead. bIII is reserved for the
+        // CHORUS arrival (the accepted lift), so it can never be the verse loop the owner flagged tired.
+        _ => (VI_MAJ9, "bVI"),
+    }
+}
+
+/// INTERPRET the riff into its harmonic ground. Weight each pitch class by how long the riff dwells on
+/// it; the tonic A is the fixed home pole, and the heaviest NON-tonic degree chooses the loop's second
+/// chord — so the verse loop is READ OUT of the riff, not picked by a hash (which is what made every
+/// seed land on the same clichéd relative-major camp). The CHORUS reinterprets that loop toward where
+/// it wants to go: a dark/subdominant pole (iv or v) brightens the tonic to its relative major ♭III; an
+/// already-bright pole (♭VI/♭VII/♭III) is tonicised by the dominant instead — either way the chorus
+/// keeps the verse's tonal content and adds the one dominant arrival the vamp was implying.
+pub fn interpret_harmony(events: &[MaterialEvent]) -> HarmonyCamp {
+    let mut weight = [0.0_f64; 12];
+    for e in events {
+        if let Some(s) = e.step {
+            weight[s.rem_euclid(12) as usize] += e.dur.max(0.05);
+        }
+    }
+    let mut best_pc = 7_i32;
+    let mut best_w = -1.0_f64;
+    for (pc, &w) in weight.iter().enumerate() {
+        if pc != 0 && w > best_w {
+            best_w = w;
+            best_pc = pc as i32;
+        }
+    }
+    let (x, xlabel) = second_chord_for_pc(best_pc);
+    let verse = [I_MIN9, x];
+    let (chorus, strategy) = if x == IV_MIN9 || x == V_MIN7 {
+        ([III_MAJ9, x], "lift the tonic to bIII")
+    } else {
+        ([x, V_DOM7], "tonicise the pole on V7")
+    };
     HarmonyCamp {
-        verse: [I_MIN9, V_MIN7],
-        chorus: [III_MAJ9, V_MIN7],
-        label: "i-v camp (Am9/Em7 -> Cmaj9/Em7)",
-    },
-    HarmonyCamp {
-        verse: [I_MIN9, VI_MAJ9],
-        chorus: [III_MAJ9, VI_MAJ9],
-        label: "i-bVI camp (Am9/Fmaj9 -> Cmaj9/Fmaj9)",
-    },
-    HarmonyCamp {
-        verse: [I_MIN9, IV_MIN9],
-        chorus: [III_MAJ9, IV_MIN9],
-        label: "i-iv camp (Am9/Dm9 -> Cmaj9/Dm9)",
-    },
-    HarmonyCamp {
-        verse: [I_MIN9, VII_DOM9],
-        chorus: [III_MAJ9, VII_DOM9],
-        label: "i-bVII camp (Am9/G9 -> Cmaj9/G9)",
-    },
-    HarmonyCamp {
-        verse: [I_MIN9, III_MAJ9],
-        chorus: [III_MAJ9, VI_MAJ9],
-        label: "i-bIII camp (Am9/Cmaj9 -> Cmaj9/Fmaj9)",
-    },
-];
+        verse,
+        chorus,
+        label: format!("i-{xlabel} loop; chorus: {strategy}"),
+    }
+}
 
 // ======================================================================================
 // Stage B — the guitarist proposes two-bar riffs
@@ -231,7 +252,7 @@ pub fn generate_riffs(seed: u64, n: usize) -> Vec<RiffCandidate> {
             });
         }
 
-        let camp = camp_for_riff(&events);
+        let camp = interpret_harmony(&events);
         let source_id = fingerprint(&events);
 
         // Distinctness: skip if some kept candidate has the same rhythm index AND identical pitch set.
@@ -259,17 +280,6 @@ pub fn generate_riffs(seed: u64, n: usize) -> Vec<RiffCandidate> {
         });
     }
     out
-}
-
-/// Choose the harmonic camp from the riff's OWN emphasised degrees: the launch pitch class and the
-/// mean pitch select one of [`CAMPS`]. Different riffs (different launch / contour) therefore imply
-/// different harmony — the seed reaches the route THROUGH the riff, which is the whole point.
-fn camp_for_riff(events: &[MaterialEvent]) -> HarmonyCamp {
-    // The camp is riff-derived through the riff's own content fingerprint, which is well distributed
-    // across the whole line (onsets + pitches + durations) — so different riffs land in different
-    // harmonic worlds instead of clustering in one camp the way a launch+mean heuristic did. A more
-    // musically-principled picker (emphasised-degree voting) is a later refinement; this one spreads.
-    CAMPS[(fingerprint(events) % CAMPS.len() as u64) as usize]
 }
 
 /// A content fingerprint of a monophonic line: folds the quantised (onset, step, dur) of each event.
@@ -580,6 +590,11 @@ pub struct RehearsalDraft {
     pub drums: DrumResponse,
     pub log: Vec<GuitarRevision>,
     pub takes: Vec<TrialTake>,
+    /// The band's CONTEMPLATION — the step-by-step reasoning that shapes the clay toward a song. Each
+    /// line is a move or a "step back and look" judgement ("it grooves but it just circles — it needs
+    /// somewhere to go"). This is the underlying VISION made legible: the choices serve the goal of
+    /// becoming a song, rather than being thrown at the wall to see what vibes.
+    pub shaping_log: Vec<String>,
 }
 
 impl RehearsalDraft {
@@ -597,23 +612,57 @@ impl RehearsalDraft {
     }
 }
 
-/// Run the full rehearsal (Stages A–F) from a seed and return the negotiated draft. Deterministic.
+/// Run the full rehearsal from a seed and return the negotiated draft. Deterministic.
 ///
-/// A: a seed (the world is fixed A-Aeolian, the owner's accepted pop world).
-/// B: the guitarist proposes several two-bar riffs; the band picks one (reproducibly; the EAR may
-///    override by choosing another candidate — all are exposed).
-/// C/D: the bassist responds to THAT riff; the drummer responds to the bass.
-/// E: the guitarist hears the whole band and proposes revisions — some accepted, one rejected — each
-///    producing a new immutable audition take.
+/// The VISION is the song itself as a goal: the seed is a block of clay, each musician makes an
+/// INTERPRETIVE move that shapes it, and between moves the band steps back and asks "does this feel
+/// like a song yet — where does it need to go?" (the `shaping_log`). The moves: clay → the guitarist
+/// reads a riff and the harmonic ground it implies → the bass grooves → the drums compensate →
+/// keys/pad fill → CONTEMPLATE ("it circles; it needs somewhere to go") → the guitarist answers the
+/// band and that exchange becomes the chorus the loop was heading toward → CONTEMPLATE again → the
+/// back-edge revision → done. Every move interprets what is there rather than throwing material at it.
 pub fn rehearse(seed: u64) -> RehearsalDraft {
     let candidates = generate_riffs(seed, 5);
     // The band's default pick (reproducible; not a quality claim — the ear owns catchiness).
     let mut pick_rng = Rng::new(mix(seed, 0, TAG_PICK));
     let selected = pick_rng.below(candidates.len());
+    let camp = candidates[selected].camp.clone();
 
     let bass_verse = bass_for_riff(&candidates[selected], false);
     let bass_chorus = bass_for_riff(&candidates[selected], true);
     let drums = drums_for_bass(&bass_verse);
+
+    // The band's contemplation — the clay shaped toward a song, move by move (the underlying vision).
+    let mut shaping_log = Vec::new();
+    shaping_log.push(format!(
+        "CLAY: seed {seed} offers {} riff ideas; the band takes #{selected} — {}",
+        candidates.len(),
+        candidates[selected].label
+    ));
+    shaping_log.push(format!(
+        "GUITARIST reads the riff and hears its harmonic ground: {} (read OUT of the riff, not defaulted)",
+        camp.label
+    ));
+    if let Some(r) = bass_verse.reasons.first() {
+        shaping_log.push(format!("BASS interprets the riff -> {r}"));
+    }
+    shaping_log.push(format!(
+        "DRUMS compensate -> {}",
+        drums.reasons.last().cloned().unwrap_or_default()
+    ));
+    shaping_log
+        .push("KEYS/PAD fill: the keys comp the loop as chords, the pad beds under it".to_string());
+    shaping_log.push(
+        "CONTEMPLATE: it's a loop that grooves — but it just circles. A song needs somewhere to GO."
+            .to_string(),
+    );
+    shaping_log.push(
+        "GUITARIST answers the band: the loop's 2nd chord wants to move -> the chorus REINTERPRETS it (the semantic possibility of where the vamp was heading)".to_string(),
+    );
+    shaping_log.push(
+        "BASS responds: walk the turnaround into the chorus (the transition the exchange implies)"
+            .to_string(),
+    );
 
     let mut draft = RehearsalDraft {
         revision: 0,
@@ -625,6 +674,7 @@ pub fn rehearse(seed: u64) -> RehearsalDraft {
         drums,
         log: Vec::new(),
         takes: Vec::new(),
+        shaping_log,
     };
     // Record the opening audition (take 0) BEFORE any revision — it must survive untouched.
     let take0 = draft.audition();
@@ -671,6 +721,24 @@ pub fn rehearse(seed: u64) -> RehearsalDraft {
             }
         }
     }
+
+    // CONTEMPLATE (the band steps back and looks at the whole): record what the revision pass did and
+    // whether the piece now reads as a song — a loop that grooves, a contrast it lifts into, and the
+    // transition between them.
+    let accepted = draft.log.iter().filter(|r| r.accepted).count();
+    if let Some(rev) = draft.log.iter().find(|r| r.accepted) {
+        draft.shaping_log.push(format!(
+            "CONTEMPLATE: hearing the whole band back, the guitarist REVISES — {}",
+            rev.reason
+        ));
+    } else {
+        draft.shaping_log.push(
+            "CONTEMPLATE: hearing the whole band back, the guitarist leaves the riff as it stands (it already serves the song)".to_string(),
+        );
+    }
+    draft.shaping_log.push(format!(
+        "DONE: a loop that grooves + a contrast it lifts into + the transition between = a song shape ({accepted} revision(s) accepted, the flashy flourish rejected)"
+    ));
     draft
 }
 
@@ -791,7 +859,7 @@ pub fn revision_is_lawful(events: &[MaterialEvent]) -> bool {
 /// the bassist's groove; the funk kit is the drummer's pocket; the pad beds under it all.
 pub fn freeze(draft: &RehearsalDraft) -> CompiledArgument {
     let riff = draft.riff();
-    let camp = riff.camp;
+    let camp = riff.camp.clone();
 
     let trace = SemanticTrace {
         total_beats: 32.0,
@@ -921,9 +989,14 @@ pub fn freeze(draft: &RehearsalDraft) -> CompiledArgument {
         loop_bars: 8, // == route.len(): documented loophole, G6 (pop_section_law) deferred
     });
 
-    // Bass: the negotiated verse response over episode 0, the driven chorus response over episode 1.
+    // Bass: the negotiated verse response over episode 0, the driven chorus response over episode 1 —
+    // and the emergent TRANSITION the band found: the LAST verse bar walks up (R-3-5-8 + a push) into
+    // the chorus downbeat, so the A loop is heard LEADING somewhere instead of merely repeating.
     let mut bass_cells: Vec<Vec<(f64, BassDegree, f32, f32)>> = Vec::with_capacity(8);
     bass_cells.extend(draft.bass_verse.cells.iter().cloned());
+    if let Some(last_verse_bar) = bass_cells.len().checked_sub(1) {
+        bass_cells[last_verse_bar] = transition_walk_cell();
+    }
     bass_cells.extend(draft.bass_chorus.cells.iter().cloned());
     compiled.groove = Some(GrooveLaw { bass_cells });
 
@@ -938,6 +1011,19 @@ pub fn freeze(draft: &RehearsalDraft) -> CompiledArgument {
     compiled.comp_all_sections = true;
     compiled.pad_all_sections = true;
     compiled
+}
+
+/// The emergent A→B transition: the last verse bar walks up the chord (root → 3rd → 5th → octave) and
+/// pushes the "and of 4", so the loop is heard LEADING into the chorus rather than just repeating.
+/// Degrees resolve against the bar's own chord; the climb builds momentum into the section change.
+fn transition_walk_cell() -> Vec<(f64, BassDegree, f32, f32)> {
+    vec![
+        (0.0, BassDegree::Root, 0.5, 0.78),
+        (1.0, BassDegree::Third, 0.4, 0.60),
+        (2.0, BassDegree::Fifth, 0.4, 0.64),
+        (3.0, BassDegree::Octave, 0.4, 0.68),
+        (3.5, BassDegree::Fifth, 0.4, 0.72), // the push into the chorus downbeat
+    ]
 }
 
 /// The required Keys carrier as a gentle chord-tone fill in the comp's open bar (local bar 1, beats

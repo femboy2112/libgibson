@@ -15,11 +15,16 @@
 mod rehearsal;
 
 use gibson::audio::human_music::{
-    argument::BassDegree, kernel, material::MaterialEvent, score::Role, theory::Mode, MusicWorld,
+    argument::BassDegree,
+    kernel,
+    material::MaterialEvent,
+    score::Role,
+    theory::{Mode, Quality},
+    MusicWorld,
 };
 use rehearsal::{
-    bass_for_riff, drums_for_bass, fingerprint, freeze, generate_riffs, guitar_proposals, rehearse,
-    revision_is_lawful, RevKind,
+    bass_for_riff, drums_for_bass, fingerprint, freeze, generate_riffs, guitar_proposals,
+    interpret_harmony, rehearse, revision_is_lawful, RevKind,
 };
 
 fn world() -> MusicWorld {
@@ -385,5 +390,89 @@ fn g7_same_count_different_rhythm_changes_identity_and_bass() {
         bass_for_riff(&a, false),
         bass_for_riff(&b, false),
         "the bassist hears the rhythmic difference"
+    );
+}
+
+// ------------------------------------------------------------------------------------------------
+// VISION — the harmony is INTERPRETED from the riff (not hash-picked), the chorus REINTERPRETS the
+// verse (where the loop wants to go), and the band contemplates toward the goal of a song.
+// ------------------------------------------------------------------------------------------------
+
+/// A hand-made line from `(onset, step, dur)` rows (lets a test weight a pitch class by dwell time).
+fn line_dur(rows: &[(f64, i32, f64)]) -> Vec<MaterialEvent> {
+    rows.iter()
+        .map(|&(onset, step, dur)| MaterialEvent {
+            onset,
+            dur,
+            accent: 0.55,
+            step: Some(step),
+        })
+        .collect()
+}
+
+#[test]
+fn harmony_is_read_out_of_the_riff_not_defaulted() {
+    // A riff that DWELLS on E (pc 7, the 5th) implies a different loop than one dwelling on F (pc 8).
+    let dwell_e = line_dur(&[(0.0, 7, 1.5), (2.0, 7, 1.5), (4.0, 12, 1.0), (6.0, 0, 1.0)]);
+    let dwell_f = line_dur(&[(0.0, 8, 1.5), (2.0, 8, 1.5), (4.0, 0, 1.0), (6.0, 12, 1.0)]);
+    let he = interpret_harmony(&dwell_e);
+    let hf = interpret_harmony(&dwell_f);
+    assert_ne!(
+        he.verse, hf.verse,
+        "different emphasised degrees must imply different harmonic loops"
+    );
+    assert_eq!(
+        he.verse[0],
+        (0, Quality::Min9),
+        "the tonic is always the home pole (the fixed gravity)"
+    );
+    assert_eq!(
+        he.verse[1],
+        (7, Quality::Min7),
+        "a riff dwelling on E reads as the i-v loop (Am9/Em7)"
+    );
+    assert_eq!(
+        hf.verse[1],
+        (8, Quality::Maj9),
+        "a riff dwelling on F reads as the i-bVI loop (Am9/Fmaj9)"
+    );
+}
+
+#[test]
+fn chorus_reinterprets_the_verse_not_a_copy() {
+    for seed in [2112u64, 7, 42, 1, 99] {
+        let d = rehearse(seed);
+        let c = &d.riff().camp;
+        assert_ne!(
+            c.verse, c.chorus,
+            "seed {seed}: the chorus must be where the verse WANTS to go, not a copy"
+        );
+        assert_eq!(
+            c.verse[0],
+            (0, Quality::Min9),
+            "seed {seed}: the verse opens on the tonic home"
+        );
+    }
+}
+
+#[test]
+fn the_band_contemplates_toward_a_song() {
+    let d = rehearse(2112);
+    assert!(
+        d.shaping_log.len() >= 7,
+        "the shaping log records the move-by-move contemplation, got {}",
+        d.shaping_log.len()
+    );
+    assert!(
+        d.shaping_log.iter().any(|l| l.starts_with("CLAY")),
+        "it starts from the seed as clay"
+    );
+    assert!(
+        d.shaping_log.iter().any(|l| l.contains("CONTEMPLATE")),
+        "the band steps back and evaluates (vision, not throwing at the wall)"
+    );
+    assert!(
+        d.shaping_log.iter().any(|l| l.starts_with("DONE")),
+        "the process converges on a song shape"
     );
 }
