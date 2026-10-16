@@ -1599,12 +1599,17 @@ pub fn perform_song(
                 .collect()
         };
         for e in 0..episodes {
-            if !matches!(
-                argument.placements[e].relation,
-                super::argument::ArgumentRelation::Consequent { .. }
-                    | super::argument::ArgumentRelation::Return { .. }
-            ) {
-                continue; // comp only under the home arrivals; verse and bridge keep the floor clear
+            if !argument.comp_all_sections
+                && !matches!(
+                    argument.placements[e].relation,
+                    super::argument::ArgumentRelation::Consequent { .. }
+                        | super::argument::ArgumentRelation::Return { .. }
+                )
+            {
+                // Comp only under the home arrivals; verse and bridge keep the floor clear — UNLESS a
+                // lead-free smooth-pop band opts into comp-everywhere (the keys hold the chordal carrier
+                // throughout). C137 never sets the flag, so its gate is unchanged and its render frozen.
+                continue;
             }
             for b in 0..bars_per_ep {
                 if b == 1 {
@@ -2281,12 +2286,16 @@ pub fn perform_song(
     if perf.stage.on_stage_span(Agent::Pad, 0.0, score.total_beats) {
         for bar in 0..total_bars {
             let e = bar / bars_per_episode;
-            if !matches!(
-                argument.placements[e].relation,
-                super::argument::ArgumentRelation::Consequent { .. }
-                    | super::argument::ArgumentRelation::Return { .. }
-            ) {
-                continue; // verse and bridge clear the floor for the lead
+            if !argument.pad_all_sections
+                && !matches!(
+                    argument.placements[e].relation,
+                    super::argument::ArgumentRelation::Consequent { .. }
+                        | super::argument::ArgumentRelation::Return { .. }
+                )
+            {
+                continue; // verse and bridge clear the floor for the lead — UNLESS a lead-free
+                          // smooth-pop band opts into a pad bed everywhere (the soft continuous rug
+                          // that smooths the vibe). C137 never sets the flag, so its render is frozen.
             }
             let bar_start = bar as f64 * 4.0;
             let ctx = perf.context_at(bar_start).unwrap();

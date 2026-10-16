@@ -143,6 +143,10 @@ pub struct Resolved {
     /// render path and palette); the capabilities resolve ON (the source sets them, returned before
     /// `apply_caps`), so the manifest reports the song's active band honestly.
     pub pop_song: bool,
+    /// The opt-in HOMOSAPIANS backing arm (`--form=pop-band`): a lead-free band-only mini-song (verse
+    /// backing → chorus arrival) over the pop SONG progression. Implies `pop_groove` (the pop render
+    /// path and palette); lead-free, so the C137 capabilities resolve off.
+    pub pop_band: bool,
     pub jerry: Vec<Jerry>,
 }
 
@@ -200,6 +204,10 @@ pub struct C137Preset {
     /// loop, with the comping keys, pad rug and lead-answering band ON (Operation Johnny Five). Implies
     /// `pop_groove` (the pop render path/palette/length); its own ear-gated arm.
     pop_song: bool,
+    /// The opt-in HOMOSAPIANS backing (`--form=pop-band`): a lead-free band-only mini-song whose
+    /// verse-backing states and chorus-backing arrives, with no foreground (Operation The Homosapians
+    /// R1). Implies `pop_groove` (the pop render path/palette/length); its own ear-gated arm.
+    pop_band: bool,
 }
 
 impl C137Preset {
@@ -259,6 +267,16 @@ impl C137Preset {
     /// pop render path and palette (`pop_groove`); its own ear-gated arm, never a default.
     pub fn pop_song(mut self) -> Self {
         self.pop_song = true;
+        self.pop_groove = true;
+        self
+    }
+
+    /// Select the opt-in HOMOSAPIANS backing (`--form=pop-band`): a lead-free band-only mini-song
+    /// (verse backing → chorus arrival) over the pop SONG progression — the "lock" with no lead
+    /// (Operation The Homosapians R1). Implies the pop render path and palette (`pop_groove`); its
+    /// own ear-gated arm, never a default.
+    pub fn pop_band(mut self) -> Self {
+        self.pop_band = true;
         self.pop_groove = true;
         self
     }
@@ -346,6 +364,7 @@ impl C137Preset {
             song_intro_narrative: self.song_intro_narrative,
             pop_groove: self.pop_groove,
             pop_song: self.pop_song,
+            pop_band: self.pop_band,
             jerry: self.jerry.clone(),
         }
     }

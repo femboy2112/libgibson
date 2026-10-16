@@ -105,6 +105,62 @@ impl PopFlavor {
         }
     }
 
+    /// HOMOSAPIANS woven harmony, LOCAL tier (ear-probe, hand-authored — the generative
+    /// `pop_realization_law` is deferred to Step 2, built only once the ear blesses this sound).
+    ///
+    /// The VERSE camps on a 2-chord CONTIGUOUS FRAGMENT of the global [`song_loop4`] progression
+    /// (i–♭VI for Lift, i–v for Circle), looped across the 4 bars — the carrier sits and VIBES
+    /// instead of marching the whole progression straight (which was the cliché). Semantically: the
+    /// open question, suspended, not yet resolving. `(semitones_above_A, Quality)`.
+    #[allow(dead_code)] // used by the pop-band arm; the test crate includes this module but does not call it
+    fn verse_camp4(self) -> [(i32, Quality); 4] {
+        match self {
+            // i9 ‖ v7 camp — Am9/Em7, a moody modal hover (no leading tone yet).
+            PopFlavor::Circle => [
+                (0, Quality::Min9),
+                (7, Quality::Min7),
+                (0, Quality::Min9),
+                (7, Quality::Min7),
+            ],
+            // i9 ‖ ♭VImaj9 camp — Am9/Fmaj9, the classic suspended pop vibe.
+            PopFlavor::Lift => [
+                (0, Quality::Min9),
+                (8, Quality::Maj9),
+                (0, Quality::Min9),
+                (8, Quality::Maj9),
+            ],
+        }
+    }
+
+    /// HOMOSAPIANS woven harmony, the CHORUS hop — a CONJUGATE of the verse loop, and itself a LOOP.
+    /// The verse's tonic pole (Am) is reinterpreted through its RELATIVE MAJOR (Cmaj9 = ♭III — same
+    /// tonal content, transformed basis, the canonical conjugation), so the chorus is the SAME kind of
+    /// repetitive 2-chord vamp as the verse, only brighter: Circle lifts Am–Em → C–Em, Lift lifts
+    /// Am–F → C–F. A single E7 turnaround (the one dominant moment, the verse has none) marks the
+    /// cadence without breaking the loop. This is the SEMANTIC-PARALLAX principle applied to the chorus:
+    /// the harmonic ground stays slow and repetitive (a vamp, low information), the arrival comes from
+    /// the bright colour shift + the band's energy, NOT from a fast 4-chord march. Fully diatonic to
+    /// A-Aeolian (♭III is the natural-minor 3rd degree — no mixture). `(semitones_above_A, Quality)`.
+    #[allow(dead_code)] // used by the pop-band arm; the test crate includes this module but does not call it
+    fn chorus_conjugate4(self) -> [(i32, Quality); 4] {
+        match self {
+            // ♭III – v – ♭III – V7: Cmaj9–Em7–Cmaj9–E7 — the verse's Am–Em loop, tonic lifted to C.
+            PopFlavor::Circle => [
+                (3, Quality::Maj9),
+                (7, Quality::Min7),
+                (3, Quality::Maj9),
+                (7, Quality::Dom7),
+            ],
+            // ♭III – ♭VI – ♭III – V7: Cmaj9–Fmaj9–Cmaj9–E7 — the verse's Am–F loop, tonic lifted to C.
+            PopFlavor::Lift => [
+                (3, Quality::Maj9),
+                (8, Quality::Maj9),
+                (3, Quality::Maj9),
+                (7, Quality::Dom7),
+            ],
+        }
+    }
+
     /// A flowing, connected guide-tone LINE over one 16-beat episode. The keys no longer DOT the
     /// pocket's anchor points with detached stabs — they MOVE THROUGH its geometry: a melodic line
     /// that steps and arcs across the progression (rising through the first half of the loop,
@@ -649,5 +705,357 @@ pub fn source_pop_song(seed: u64, flavor: PopFlavor) -> CompiledArgument {
     compiled.anticipate_bass = true;
     compiled.translate_lead_rhythm = true;
     compiled.pop_funk_kit = true;
+    compiled
+}
+
+// ======================================================================================
+// OPERATION THE HOMOSAPIANS — R2: the BAND-ONLY mini-song (the "lock"), AM-radio architecture.
+// ======================================================================================
+// R1's keyboard carried a single-note HOOK — which read as a LEAD and left no stable harmonic
+// ground, so nothing cohered. The owner's correction: pop is an AM-radio carrier — a simple,
+// stable harmonic carrier that everyone locks onto, with expression as MODULATION of it, not
+// competing statements. So per role:
+//   - KEYS = CHORDS, vibing. The keyboard holds the carrier as rootless CHORD voicings (the
+//     engine comp: a full voicing on the "and of 2", a guide-tone shell + a colour tone + a grace
+//     ornament on the "and of 4") — "chords, with individual notes as accents". For a lead-free
+//     backing the comp runs on EVERY bar (the `comp_all_sections` pop lever), not only a chorus,
+//     so the keys are the harmonic carrier throughout. It carries NO melodic line now; a tiny
+//     ornamental fill lands only in the comp's one bare bar (so the keys never read as a lead).
+//   - BASS walks and funks in resonance with the band: eight per-bar cells locked to the kick,
+//     the ear-liked funk bounce, the dark ♭7 at each E7 cadence, driving harder in the chorus.
+//   - DRUMS groove and partition the time seamlessly: the funk/disco kit.
+// Same progression as the pop SONG — literally the lock the lead will later key into. Opt-in;
+// lead-free; no C137 source is touched (the comp-everywhere lever is a new pop-only flag).
+
+/// Pocketed material events from `(onset, step, dur, velocity)` rows — every onset laid into the
+/// shared [`pocket_offset`] so the keys lay back WITH the rhythm section (a rhythm-section part, not
+/// a floating vocal).
+#[allow(dead_code)] // used by the example's pop-band arm; the test crate includes this module but does not call it
+fn rows_to_pocket_events(rows: &[(f64, i32, f64, f32)]) -> Vec<MaterialEvent> {
+    rows.iter()
+        .map(|&(onset, step, dur, accent)| MaterialEvent {
+            onset: onset + pocket_offset(onset),
+            dur,
+            accent,
+            step: Some(step),
+        })
+        .collect()
+}
+
+/// The lead CARRIER for one 16-beat episode — a SPARSE ornamental line, the "individual notes as
+/// accents/expression". The chords are the keys' job (the engine comp, run on every bar); the engine
+/// needs a carrier on a DIFFERENT voice so the keys lane stays free to be chords (a referent is
+/// strictly monophonic, so it can never BE a chord). So the lead carries a few notes — mostly in the
+/// ONE bar the comp leaves bare (bar 2, local beats 4-8) plus light pickups — chord tones, soft, with
+/// real space, so it reads as a sparse topline over the chord bed, never a busy melody. `lift` = the
+/// chorus (a touch higher and one note busier). `(onset, semitone_above_A, dur_beats, velocity)`.
+#[allow(dead_code)] // used by the example's pop-band arm; the test crate includes this module but does not call it
+fn backing_lead(flavor: PopFlavor, lift: bool) -> Vec<MaterialEvent> {
+    // Velocity is kept very low (~0.06): the lead is a near-silent STRUCTURAL carrier (the engine
+    // needs a carried line on a non-keys voice for the keys comp to be lawful), not an audible topline.
+    // To the ear the band is lead-free; the audible "accents" are the keys comp's own colour/grace.
+    // Steps are chord tones of the WOVEN route (camp verse / conjugate chorus), so the near-silent
+    // carrier never rubs the bed. Onsets sit in the comp's bare bar (local beats 4-8) plus a pickup.
+    let rows: &[(f64, i32, f64, f32)] = match (flavor, lift) {
+        // Circle verse camp — Am9 ‖ Em7 ‖ Am9 ‖ Em7 (chord tones E/G/D).
+        (PopFlavor::Circle, false) => &[
+            (0.5, 7, 0.4, 0.06),
+            (4.5, 10, 0.4, 0.06),
+            (5.5, 7, 0.4, 0.06),
+            (6.5, 5, 0.5, 0.06),
+            (14.0, 7, 0.5, 0.06),
+        ],
+        // Circle chorus conjugate — Cmaj9 | Em7 | Fmaj9 | E7; lands on G# (E7's leading tone) home.
+        (PopFlavor::Circle, true) => &[
+            (0.5, 14, 0.4, 0.06),
+            (4.5, 14, 0.4, 0.06),
+            (5.5, 10, 0.4, 0.06),
+            (6.5, 7, 0.4, 0.06),
+            (12.0, 14, 0.4, 0.06),
+            (14.0, 11, 0.5, 0.06),
+        ],
+        // Lift verse camp — Am9 ‖ Fmaj9 ‖ Am9 ‖ Fmaj9 (chord tones E/A/F).
+        (PopFlavor::Lift, false) => &[
+            (0.5, 7, 0.4, 0.06),
+            (4.5, 12, 0.4, 0.06),
+            (5.5, 8, 0.4, 0.06),
+            (6.5, 7, 0.5, 0.06),
+            (14.0, 7, 0.5, 0.06),
+        ],
+        // Lift chorus conjugate — Cmaj9 | Fmaj9 | Dm9 | E7; lands on G# (E7's leading tone) home.
+        (PopFlavor::Lift, true) => &[
+            (0.5, 15, 0.4, 0.06),
+            (4.5, 12, 0.4, 0.06),
+            (5.5, 15, 0.4, 0.06),
+            (6.5, 12, 0.4, 0.06),
+            (12.0, 14, 0.4, 0.06),
+            (14.0, 11, 0.5, 0.06),
+        ],
+    };
+    rows_to_lead_events(rows)
+}
+
+/// SIXTEEN per-bar bass cells for the 16-bar backing: the 4-bar verse funk phrase (the ear-liked
+/// bounce with space) repeated over bars 0-7, then the 4-bar DRIVEN chorus phrase (an extra attack,
+/// hotter velocities) repeated over bars 8-15. Each cell opens on `(0.0, Root)` (the foundation
+/// anchor); the chorus turnaround cell falls to the dark ♭7 on each E7 bar (R12's descent, preserved).
+/// `(offset, degree, dur_beats, velocity)`.
+#[allow(dead_code)] // example-only (see rows_to_pocket_events)
+fn homosapians_backing_bass() -> Vec<Vec<(f64, BassDegree, f32, f32)>> {
+    // 16 bars: the 4-bar verse funk phrase ×2 (bars 0-7) then the 4-bar driven chorus phrase ×2
+    // (bars 8-15) — the slow ground repeats so each loop can be absorbed; the chorus ♭7 cells (cell 3)
+    // land exactly on the chorus E7 turnaround bars (11 and 15).
+    let cells = [
+        // --- VERSE (bars 0-3): statement / walk / drive / turnaround-with-♭7, moderate ---
+        vec![
+            (0.0, BassDegree::Root, 0.24, 0.80),
+            (0.5, BassDegree::Fifth, 0.20, 0.48),
+            (1.0, BassDegree::Octave, 0.22, 0.52),
+            (2.0, BassDegree::Root, 0.22, 0.54),
+            (3.5, BassDegree::Root, 0.26, 0.58),
+        ],
+        vec![
+            (0.0, BassDegree::Root, 0.24, 0.78),
+            (0.5, BassDegree::Fifth, 0.20, 0.48),
+            (1.5, BassDegree::Octave, 0.22, 0.50),
+            (2.5, BassDegree::Fifth, 0.22, 0.52),
+            (3.5, BassDegree::Fifth, 0.26, 0.56),
+        ],
+        vec![
+            (0.0, BassDegree::Root, 0.22, 0.82),
+            (0.5, BassDegree::Fifth, 0.20, 0.48),
+            (1.0, BassDegree::Octave, 0.20, 0.52),
+            (2.0, BassDegree::Root, 0.20, 0.54),
+            (2.5, BassDegree::Third, 0.20, 0.50),
+            (3.5, BassDegree::Octave, 0.24, 0.58),
+        ],
+        vec![
+            (0.0, BassDegree::Root, 0.24, 0.80),
+            (1.0, BassDegree::Seventh, 0.20, 0.50), // ♭7 over E7 — the dark descent (R12), preserved
+            (1.5, BassDegree::Third, 0.22, 0.53),
+            (2.5, BassDegree::Root, 0.20, 0.52),
+            (3.5, BassDegree::Root, 0.28, 0.60),
+        ],
+        // --- CHORUS (bars 4-7): the SAME shapes, driven — an extra attack, hotter velocities ---
+        vec![
+            (0.0, BassDegree::Root, 0.22, 0.90),
+            (0.5, BassDegree::Fifth, 0.20, 0.56),
+            (1.0, BassDegree::Octave, 0.20, 0.60),
+            (1.5, BassDegree::Fifth, 0.20, 0.54),
+            (2.0, BassDegree::Root, 0.20, 0.62),
+            (3.5, BassDegree::Octave, 0.26, 0.68),
+        ],
+        vec![
+            (0.0, BassDegree::Root, 0.22, 0.88),
+            (0.5, BassDegree::Fifth, 0.20, 0.56),
+            (1.0, BassDegree::Octave, 0.20, 0.58),
+            (1.5, BassDegree::Fifth, 0.20, 0.54),
+            (2.5, BassDegree::Fifth, 0.20, 0.60),
+            // Octave push (not the fifth): over the chorus F bar, the fifth would be C and collide
+            // with the next C bar's root downbeat (same pitch < 0.5 beats apart = mono-lane violation).
+            (3.5, BassDegree::Octave, 0.26, 0.66),
+        ],
+        vec![
+            (0.0, BassDegree::Root, 0.20, 0.92),
+            (0.5, BassDegree::Fifth, 0.20, 0.56),
+            (1.0, BassDegree::Octave, 0.20, 0.60),
+            (1.5, BassDegree::Fifth, 0.20, 0.54),
+            (2.0, BassDegree::Root, 0.20, 0.62),
+            (2.5, BassDegree::Third, 0.20, 0.56),
+            (3.0, BassDegree::Octave, 0.20, 0.58),
+            (3.5, BassDegree::Fifth, 0.26, 0.70),
+        ],
+        vec![
+            (0.0, BassDegree::Root, 0.22, 0.90),
+            (1.0, BassDegree::Seventh, 0.20, 0.56), // ♭7 over E7 — the dark descent, preserved
+            (1.5, BassDegree::Third, 0.20, 0.58),
+            (2.0, BassDegree::Fifth, 0.20, 0.58),
+            (2.5, BassDegree::Root, 0.20, 0.56),
+            (3.5, BassDegree::Root, 0.30, 0.72),
+        ],
+    ];
+    let verse = cells[0..4].to_vec();
+    let chorus = cells[4..8].to_vec();
+    [verse.clone(), verse, chorus.clone(), chorus].concat()
+}
+
+/// Build the lead-free HOMOSAPIANS backing mini-song for one seed and [`PopFlavor`]: FOUR 16-beat
+/// (4-bar) Keys-carried episodes (verse-A, verse-B, chorus-A, chorus-B) over a WOVEN realized route —
+/// the verse camps on a repetitive 2-chord loop, the chorus is a brighter 2-chord conjugate vamp — 16
+/// bars total so each slow loop is stated then REPEATED before the section changes (semantic parallax:
+/// slow harmonic ground, fast surface), with a soft continuous pad bed and the looping funk bass cells.
+/// A complete instrumental statement, no foreground — the lock. (Ear-probe for semantic parallax +
+/// repetition; the generative realization law is Step 2.)
+#[allow(dead_code)] // used by the example's pop-band arm; the test crate includes this module but does not call it
+pub fn source_homosapians_backing(seed: u64, flavor: PopFlavor) -> CompiledArgument {
+    let trace = SemanticTrace {
+        total_beats: 64.0,
+        events: vec![
+            SemanticEvent {
+                at_beat: 0.0,
+                state: SemanticState::toned(Tone::Accent),
+                kind: EventKind::ActChanged,
+            },
+            // The chorus episode is its own act — the arrival the backing builds to (now at bar 8).
+            SemanticEvent {
+                at_beat: 32.0,
+                state: SemanticState::toned(Tone::Accent),
+                kind: EventKind::ActChanged,
+            },
+            SemanticEvent {
+                at_beat: 60.0,
+                state: SemanticState::toned(Tone::Success),
+                kind: EventKind::SectionResolved,
+            },
+        ],
+    };
+    let mut song = SongMap::build(&trace, seed, Some(CompositionGrammar::HookArc));
+    let mut contract = song.plan.contract.clone();
+    contract.phrase_bars = 1;
+    song.plan = gibson::audio::human_music::plan::CompositionPlan::build_with_contract_for_beats(
+        &song.timeline,
+        64.0,
+        contract,
+    );
+    // The LEAD carries a sparse ornamental line (on stage, lightly), the KEYS are on stage to hold the
+    // chordal carrier (the engine comp), the bass is the foundation, the drummer keeps the pocket, and
+    // the PAD is seated on EVERY phrase as a soft continuous bed (the `pad_all_sections` lever below) —
+    // smoothing the vibe under the comp stabs, not the engine's teacher's-law chorus-only rug.
+    for p in song.plan.arrangement.phrases.iter_mut() {
+        p.lead = ArrangementRole::Support;
+        p.keys = ArrangementRole::Support;
+        p.bass = ArrangementRole::Foundation;
+        p.drums = ArrangementRole::Support;
+        p.pad = ArrangementRole::Support;
+    }
+    // Two 16-beat carrier lines (verse / chorus), each REUSED across a repeated episode so the
+    // repetition is literal — verse-A == verse-B, chorus-A == chorus-B.
+    let verse = MusicalReferent {
+        id: ReferentId(0),
+        pitch_basis: PitchBasis::Semitones,
+        events: backing_lead(flavor, false),
+    };
+    let chorus = MusicalReferent {
+        id: ReferentId(1),
+        pitch_basis: PitchBasis::Semitones,
+        events: backing_lead(flavor, true),
+    };
+    // FOUR contiguous 16-beat (4-bar) episodes — the long-form law requires 16-beat episodes, so the
+    // 16-bar form is verse-A, verse-B, chorus-A, chorus-B: the slow loop STATED then REPEATED before the
+    // section changes (the "more repetition / time to absorb" the ear asked for). All Establish and
+    // lead-free; the keys comp + the pad bed run on every episode (the `*_all_sections` levers).
+    let phrase_idx: Vec<u32> = [0.0_f64, 16.0, 32.0, 48.0]
+        .iter()
+        .map(|&b| {
+            song.plan
+                .form
+                .phrases
+                .iter()
+                .position(|p| p.start_beat() == b)
+                .expect("each 16-beat episode starts on a one-bar phrase boundary")
+                as u32
+        })
+        .collect();
+    let argument = MusicalArgument {
+        family: ArgumentFamily::CallAndEarnedAnswer,
+        referents: vec![verse, chorus],
+        ending: ArgumentEnding::Resolved,
+        steps: vec![
+            ArgumentStep {
+                id: ArgumentStepId(0),
+                referent: ReferentId(0),
+                transform: ArgumentTransform::default(),
+                relation: ArgumentRelation::Establish,
+                depends_on: vec![],
+                carriers: vec![Agent::Lead],
+            },
+            ArgumentStep {
+                id: ArgumentStepId(1),
+                referent: ReferentId(0),
+                transform: ArgumentTransform::default(),
+                relation: ArgumentRelation::Establish,
+                depends_on: vec![ArgumentStepId(0)],
+                carriers: vec![Agent::Lead],
+            },
+            ArgumentStep {
+                id: ArgumentStepId(2),
+                referent: ReferentId(1),
+                transform: ArgumentTransform::default(),
+                relation: ArgumentRelation::Establish,
+                depends_on: vec![ArgumentStepId(1)],
+                carriers: vec![Agent::Lead],
+            },
+            ArgumentStep {
+                id: ArgumentStepId(3),
+                referent: ReferentId(1),
+                transform: ArgumentTransform::default(),
+                relation: ArgumentRelation::Establish,
+                depends_on: vec![ArgumentStepId(2)],
+                carriers: vec![Agent::Lead],
+            },
+        ],
+        arc: Some(vec![
+            ArcSpan {
+                step: ArgumentStepId(0),
+                start_phrase: phrase_idx[0],
+                phrase_count: 4,
+                start_beat: 0.0,
+                span_beats: 16.0,
+            },
+            ArcSpan {
+                step: ArgumentStepId(1),
+                start_phrase: phrase_idx[1],
+                phrase_count: 4,
+                start_beat: 16.0,
+                span_beats: 16.0,
+            },
+            ArcSpan {
+                step: ArgumentStepId(2),
+                start_phrase: phrase_idx[2],
+                phrase_count: 4,
+                start_beat: 32.0,
+                span_beats: 16.0,
+            },
+            ArcSpan {
+                step: ArgumentStepId(3),
+                start_phrase: phrase_idx[3],
+                phrase_count: 4,
+                start_beat: 48.0,
+                span_beats: 16.0,
+            },
+        ]),
+    };
+    let mut compiled = argument
+        .compile(&song)
+        .expect("homosapians backing source compiles");
+    // WOVEN HARMONY + SEMANTIC PARALLAX (ear-probe): the realized route is NOT the global progression
+    // played straight. The slow harmonic GROUND is two repetitive 2-chord loops — the verse CAMP (×2
+    // cycles) then the bright CHORUS conjugate vamp (×2 cycles) — 16 bars so each loop has time to be
+    // absorbed before changing, while the fast surface (comp / bass / kit) moves over it, in harmonic
+    // phase. `loop_bars = 16` (the route's own length) makes `pop_route_law` vacuous so the episodes may
+    // carry different chords; the generative realization law is Step 2 (ear-gated).
+    let verse4 = flavor.verse_camp4();
+    let chorus4 = flavor.chorus_conjugate4();
+    let mut route = Vec::with_capacity(16);
+    route.extend_from_slice(&verse4);
+    route.extend_from_slice(&verse4);
+    route.extend_from_slice(&chorus4);
+    route.extend_from_slice(&chorus4);
+    compiled.route = route;
+    compiled.domain = SourceDomain::SmoothPop(PopSourceGrammar { loop_bars: 16 });
+    compiled.groove = Some(GrooveLaw {
+        bass_cells: homosapians_backing_bass(),
+    });
+    // The backing grooves on the FUNK/DISCO kit (the ear-accepted pop pocket). The KEYS hold the
+    // chordal carrier: `comp_keys` turns on the engine comp (rootless voicings + a colour/grace
+    // accent), and `comp_all_sections` runs it on EVERY bar (not only a Consequent) so the keys are
+    // CHORDS throughout — pop's AM-radio carrier. The sparse lead is the only carried line; the other
+    // lead-dependent levers (breath answers, lead-rhythm translation, bass anticipation) stay OFF.
+    compiled.pop_funk_kit = true;
+    compiled.comp_keys = true;
+    compiled.comp_all_sections = true;
+    // Soft continuous PAD BED under the whole backing (every episode, not the chorus-only rug) — the
+    // smoothing harmonic background. Seated via `p.pad = Support` on every phrase above.
+    compiled.pad_all_sections = true;
     compiled
 }
