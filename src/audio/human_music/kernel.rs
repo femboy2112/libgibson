@@ -1685,7 +1685,14 @@ pub fn perform_song(
                             level *= 0.6; // a crowding stab stays a quiet single passing tone
                         }
                         last_at = at;
-                        if perf.on_stage(Agent::Keys, at) && room(at) {
+                        // A stab whose tail would spill past the song's end (a riff onset late in the
+                        // final bar — e.g. an anticipation at beat 7.75 stated in the last episode) is
+                        // dropped: its 16th-note sibling earlier in the song already states that onset,
+                        // so the hook is intact and the Score stays inside the performance domain.
+                        if perf.domain().contains(at, at + 0.26)
+                            && perf.on_stage(Agent::Keys, at)
+                            && room(at)
+                        {
                             for pitch in voice(57, &pcs) {
                                 keys.push(pitched(
                                     &perf,

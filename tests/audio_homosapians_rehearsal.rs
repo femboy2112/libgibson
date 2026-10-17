@@ -24,7 +24,7 @@ use gibson::audio::human_music::{
 };
 use rehearsal::{
     bass_for_riff, drums_for_bass, fingerprint, freeze, generate_riffs, guitar_proposals,
-    interpret_harmony, rehearse, revision_is_lawful, RevKind,
+    interpret_harmony, rehearse, revision_is_lawful, syncopation_score, RevKind,
 };
 
 fn world() -> MusicWorld {
@@ -47,6 +47,11 @@ fn line(rows: &[(f64, i32)]) -> Vec<MaterialEvent> {
             step: Some(step),
         })
         .collect()
+}
+
+/// The onsets of a riff candidate (for feeding the syncopation metric).
+fn onsets(c: &rehearsal::RiffCandidate) -> Vec<f64> {
+    c.events.iter().map(|e| e.onset).collect()
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -475,6 +480,56 @@ fn the_band_contemplates_toward_a_song() {
         d.shaping_log.iter().any(|l| l.starts_with("DONE")),
         "the process converges on a song shape"
     );
+}
+
+// ------------------------------------------------------------------------------------------------
+// SYNCOPATION IS KEY — the band's pick is TASTE, not a blind draw. It reaches for the off-beat life
+// and will NOT settle for a straight on-the-grid "chug" when a syncopated idea is on the table.
+// ------------------------------------------------------------------------------------------------
+
+#[test]
+fn syncopation_score_ranks_offbeat_life_above_the_grid() {
+    // A driving on-the-grid chug must score at or below a syncopated funk line and an anticipating
+    // pickup line — the metric encodes the ear's verdict (2112-style eighths = bland), not note count.
+    let driving = [0.0, 0.5, 1.0, 2.0, 2.5, 4.0, 4.5, 5.0, 6.0];
+    let statement = [0.0, 1.0, 2.0, 3.5, 4.0, 6.0];
+    let funk = [0.0, 0.75, 1.5, 3.5, 4.0, 4.75, 6.5];
+    let pickups = [0.0, 2.0, 3.75, 4.0, 6.0, 7.75];
+    assert!(
+        syncopation_score(&funk) > syncopation_score(&driving),
+        "syncopated funk must out-score the driving grid"
+    );
+    assert!(
+        syncopation_score(&pickups) > syncopation_score(&driving),
+        "anticipating pickups must out-score the driving grid"
+    );
+    assert!(
+        syncopation_score(&statement) <= syncopation_score(&driving) + 1.0,
+        "a pure on-beat statement is near-zero syncopation"
+    );
+    // More notes is NOT more syncopation: the 9-note chug scores below the 6-note pickups.
+    assert!(
+        syncopation_score(&pickups) > syncopation_score(&driving),
+        "density is not syncopation"
+    );
+}
+
+#[test]
+fn the_band_reaches_for_syncopation_not_the_grid() {
+    // For every seed whose candidate pool contains any syncopated idea, the band's chosen riff is
+    // syncopated (score > 0) — it never settles for a pure-grid chug when it had an off-beat option.
+    for seed in [1u64, 2, 3, 7, 13, 42, 99, 777, 2112, 31337] {
+        let pool = generate_riffs(seed, 5);
+        let pool_has_sync = pool.iter().any(|c| syncopation_score(&onsets(c)) > 0.0);
+        if !pool_has_sync {
+            continue;
+        }
+        let chosen = syncopation_score(&onsets(rehearse(seed).riff()));
+        assert!(
+            chosen > 0.0,
+            "seed {seed}: the band settled for a grid chug (sync 0) with syncopation available"
+        );
+    }
 }
 
 // ------------------------------------------------------------------------------------------------

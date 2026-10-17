@@ -298,6 +298,56 @@ pub fn fingerprint(events: &[MaterialEvent]) -> u64 {
     h
 }
 
+/// The band's TASTE: how syncopated a line FEELS — the life that makes a riff groove instead of chug.
+/// Measured on the 16th-note lattice over the 2-bar cell (8 beats = 32 slots), two contributions:
+///  - Longuet-Higgins/Lee displacement: a note on a weak slot followed by SILENCE over a stronger beat
+///    "steals" that beat's emphasis (the classic off-beat pop); its strength is the stolen beat's
+///    metrical weight minus the note's. Driving eighths fill every strong beat, so they steal nothing
+///    and score near zero — exactly the on-the-grid "chug" the ear rejects.
+///  - Anticipation: a note one 16th BEFORE a strong beat leans into it (a push), credited even when the
+///    beat is also played, because the early attack is what the ear hears as drive.
+///
+/// Higher = more syncopated; a pure on-beat statement scores 0. This is the value the band selects on.
+pub fn syncopation_score(onsets: &[f64]) -> f64 {
+    // Metrical weight of a within-bar 16th slot: downbeat 4, beat 3 -> 3, beats 2 & 4 -> 2,
+    // eighth "ands" -> 1, sixteenths -> 0.
+    fn weight(slot: i64) -> f64 {
+        match slot.rem_euclid(16) {
+            0 => 4.0,
+            8 => 3.0,
+            4 | 12 => 2.0,
+            2 | 6 | 10 | 14 => 1.0,
+            _ => 0.0,
+        }
+    }
+    let slots: Vec<i64> = onsets
+        .iter()
+        .filter(|&&o| (0.0..8.0).contains(&o))
+        .map(|&o| (o * 4.0).round() as i64)
+        .collect();
+    let mut score = 0.0;
+    for (i, &s) in slots.iter().enumerate() {
+        let s_next = slots.get(i + 1).copied().unwrap_or(32);
+        // Strongest EMPTY beat between this note and the next steals emphasis (L-H-L displacement).
+        let mut max_rest = 0.0_f64;
+        for r in (s + 1)..s_next {
+            max_rest = max_rest.max(weight(r));
+        }
+        let w = weight(s);
+        if max_rest > w {
+            score += max_rest - w;
+        }
+        // Anticipation: this note is the 16th right before a strong beat (slot+1 lands on a beat).
+        if (s + 1).rem_euclid(4) == 0 {
+            let nb = weight(s + 1);
+            if nb >= 2.0 {
+                score += nb - 1.0; // a push into the downbeat (+3), beat 3 (+2), or beats 2/4 (+1)
+            }
+        }
+    }
+    score
+}
+
 // ======================================================================================
 // Stage C — the bassist responds to THAT riff
 // ======================================================================================
@@ -623,9 +673,32 @@ impl RehearsalDraft {
 /// back-edge revision → done. Every move interprets what is there rather than throwing material at it.
 pub fn rehearse(seed: u64) -> RehearsalDraft {
     let candidates = generate_riffs(seed, 5);
-    // The band's default pick (reproducible; not a quality claim — the ear owns catchiness).
+    // The band's pick is TASTE, not a blind draw: SYNCOPATION IS KEY — the life of the groove. Each
+    // candidate is weighted by how syncopated it feels, so a straight on-the-grid "chug" (driving
+    // eighths / on-beat statement, ~0 score) is all but passed over for an off-beat idea, while the
+    // seed still chooses WHICH syncopated riff (so different seeds still write different songs).
     let mut pick_rng = Rng::new(mix(seed, 0, TAG_PICK));
-    let selected = pick_rng.below(candidates.len());
+    let onsets_of = |c: &RiffCandidate| -> Vec<f64> { c.events.iter().map(|e| e.onset).collect() };
+    let weights: Vec<f64> = candidates
+        .iter()
+        .map(|c| syncopation_score(&onsets_of(c)))
+        .collect();
+    let total: f64 = weights.iter().sum();
+    let selected = if total <= 0.0 {
+        // Degenerate pool (no syncopation to reach for anywhere): fall back to a reproducible draw.
+        pick_rng.below(candidates.len())
+    } else {
+        let mut target = pick_rng.next_f32() as f64 * total;
+        let mut idx = candidates.len() - 1;
+        for (i, &w) in weights.iter().enumerate() {
+            if target < w {
+                idx = i;
+                break;
+            }
+            target -= w;
+        }
+        idx
+    };
     let camp = candidates[selected].camp.clone();
 
     let bass_verse = bass_for_riff(&candidates[selected], false);
@@ -635,9 +708,10 @@ pub fn rehearse(seed: u64) -> RehearsalDraft {
     // The band's contemplation — the clay shaped toward a song, move by move (the underlying vision).
     let mut shaping_log = Vec::new();
     shaping_log.push(format!(
-        "CLAY: seed {seed} offers {} riff ideas; the band takes #{selected} — {}",
+        "CLAY: seed {seed} offers {} riff ideas; the band reaches for the SYNCOPATION (its life) and takes #{selected} — {} (sync {:.0})",
         candidates.len(),
-        candidates[selected].label
+        candidates[selected].label,
+        weights[selected]
     ));
     shaping_log.push(format!(
         "GUITARIST reads the riff and hears its harmonic ground: {} (read OUT of the riff, not defaulted)",
