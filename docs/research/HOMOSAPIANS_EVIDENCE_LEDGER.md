@@ -372,3 +372,28 @@ the lean comp reads as intent. LESSON: "say more with less" = voicing width, not
 chord to guide tones and let the ensemble carry the rest; do not thin the hook's rhythm (that is what
 made it audible). Still open — if still too busy, thin the RHYTHM next (rest on crowded weak onsets);
 2112 riff character; cross-seed harmony spread; the lead "key"; G6 witness.
+
+**SYNCOPATION IS KEY — THE BAND GETS TASTE (commit `83639ca`):** owner — *"syncopation is key."* The
+root of 2112's blandness: the band's riff pick was a BLIND UNIFORM DRAW (`pick_rng.below(len)`), no
+taste — so 2112 kept landing on the straight driving-eighths chug while 7 & 42 happened onto livelier
+figures. Give the band a VALUE and let it reach: new `syncopation_score(onsets)` on the 16th lattice =
+Longuet-Higgins/Lee displacement (a weak-slot note followed by SILENCE over a stronger beat steals that
+beat's emphasis — the off-beat pop; driving eighths fill every strong beat so they steal nothing, score
+~0) + anticipation (a note one 16th before a strong beat leans in, a push). `rehearse` now selects by a
+syncopation-WEIGHTED draw (seed RNG): grid/chug (~0) is all but passed over for an off-beat idea, the
+seed still picks WHICH syncopated riff → seeds still write distinct songs. RESULT (fp / keys-stab count):
+seed 7 UNCHANGED (`7ed476…`, already syncopated — matches "7 on the right track"); seed 42 shifted to a
+more syncopated figure (`facdfc…`); **seed 2112 came OFF the straight eighths** (`96b913…`, keys 90→46 —
+far sparser & livelier). All three still literally lead=0, all distinct (g0/g9 variety preserved). ALSO
+fixed a latent comp-path edge the new taste surfaced: a riff onset late in the final bar (anticipation at
+beat 7.75) stated in the last episode placed a comp stab whose 0.26-beat tail spilled past the song end
+(32.0) → `InvalidScore("event outside the performance domain")`; the comp now drops a stab whose tail
+leaves `perf.domain()` (its earlier 16th-sibling already states that onset, hook intact). Scoped to the
+`comp_onsets` branch; C137 byte-identical. New gates: `syncopation_score_ranks_offbeat_life_above_the_grid`
+(funk & pickups out-score the driving chug; density ≠ syncopation) + `the_band_reaches_for_syncopation_
+not_the_grid` (every seed with a syncopated option picks sync>0). Gates: fmt+clippy-D; **lib 874/874**;
+**audio_c137_song 58/58**; **rehearsal 16/16**; **C137 LOCK byte-for-byte OK**. Re-rendered @104 — EAR
+PENDING on whether 2112 now grooves. LESSON: 2112's blandness was the RIFF IDEA (on-the-grid), not the
+comp — the fix was giving the band taste (select for syncopation), and that also surfaced the domain-spill
+edge. Still open: tune the sync weighting (power/floor) if the pick is too funk-biased; a guitarist
+"syncopate" revision move; cross-seed harmony spread; the lead "key"; G6.
