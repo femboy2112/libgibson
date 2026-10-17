@@ -231,3 +231,193 @@ SONG's lead over this lock). The new-system column is the DSP work (R2/R3/R4).
 2. band+lead on this lock (the "key"): the 2×2 legacy row completed.
 3. R2 one real strummed-string prototype (the first "new physical system" cell).
 4. Circle vs Lift — STILL unpicked across all of Johnny Five; keep offering both.
+
+---
+
+## REHEARSAL COMPOSER — the band WRITES the song (impl branch `impl/homosapians-rehearsal-composer-2026-10-16`, on research PR #122)
+
+The pivot (owner brief, OPERATION THE HOMOSAPIANS "the band writes the song"): stop authoring a
+finished backing and making the players perform it; construct the song THROUGH the musicians
+negotiating. Built as a PURE SYMBOLIC pre-source composer (`examples/c137_song/rehearsal.rs`) that
+emits a `CompiledArgument` the existing witnessed kernel renders with ZERO kernel edits. Opt-in via
+`--form=pop-rehearsal` (reuses the pop-band warm render path). Commit `93c6d12`.
+
+**Two causal clocks:** performance time `t` immutable once frozen; rehearsal revision time `k` — the
+guitarist may revise an earlier bar in draft `k+1` while the audition take of draft `k` stays a frozen
+historical trial (`TrialTake`, append-only). A revision makes a NEW source; never edits a committed take.
+
+**The jam (A→G):** seed → `generate_riffs` (whitened per-candidate RNG, 5 rhythm cells × launches ×
+contours over A-Aeolian; the harmonic camp is chosen FROM the riff, so the seed reaches the route) →
+`bass_for_riff` (a DETERMINISTIC function of the riff's density / rest / pickup — provably "listening",
+traceable to a named riff feature, not an RNG draw) → `drums_for_bass` (reinforce-push / leave-gap /
+fill off the committed bass, spine fixed) → `guitar_proposals` (the back-edge: a dense riff thinned for
+the drummer's fill; a sparse riff gets a pickup answering the bass turn; a flourish always REJECTED) →
+`freeze` (2×16-beat Keys-carried Establish episodes, riff vamped, PAD holds the chords, negotiated bass,
+funk kit, `comp_keys=false` ⇒ the Keys window holds only the carrier ⇒ LITERALLY zero Lead).
+
+**Falsification gates (`tests/audio_homosapians_rehearsal.rs`, 10/10):** determinism; G0 seed chooses
+the material; G9 held-out seeds are not one stock riff; G1 bassist answers the riff's rhythm (+ deaf
+control); G2 drummer follows the bass (spine kept); G3 guitarist revises after the band; G4 committed
+takes immutable + rejected flourish never contaminates; G5 frozen Score LEAD==0 with Keys/Pad/Bass>0;
+G7 same count + different rhythm changes identity + bass. Characterization control
+(`audio_homosapians_rehearsal_gap.rs`, the OLD fixed path) stays 4/4.
+
+**Gates:** fmt + clippy -D clean; rehearsal 10/10; smooth-pop 9/9; harmony audit 5/5; gap 4/4;
+**C137_ACCEPTED_V1 LOCK byte-for-byte OK** (no kernel/synth/rendered-source edit).
+
+**Render (warm, 104, loudness-matched MP3):** control pop-band seed 2112 (hand-authored R4) vs
+rehearsal seeds 2112/7/42. Negotiated: 2112 = 9-note driving riff thinned to 8 (Simplify); 7 = 7-note
+syncopated-funk thinned to 6 (Simplify); 42 = 6-note on-beat statement kept as-is (0 revisions). EAR
+PENDING. Known limitation: all three selected riffs landed in the SAME i–iv camp (Am9/Dm9→Cmaj9/Dm9);
+`camp_for_riff` selection is biased — a knob to spread harmony across seeds.
+
+**DEFERRED (named, exact seams from read-only recon):**
+- **G6 real section-form witness** (kill the `loop_bars==route.len()` loophole): add an opt-in
+  `CompiledArgument.pop_form: Option<PopFormLaw>` (NOT a `PopSourceGrammar` field — that has pinned
+  literals) + a `pop_section_law()` called AFTER `pop_route_law` in the SmoothPop arm (`kernel.rs`
+  ~1039); leaves `pop_route_law` + its pinned tests `the_pop_route_law_refuses_a_drifting_or_mis_sized_loop`
+  / `the_c137_and_pop_route_laws_are_distinct_closure_conditions` byte-identical. Checks within-section
+  period repetition + verse→chorus conjugacy + return.
+- **True polyphonic Keys comp with zero Lead** (the fake-carrier root cause): the carrier window check
+  `argument_witness::in_window` counts ALL role notes; the comp stabs (`role_note=="comp"`) collide with
+  the carrier count. Narrow fix = exempt `role_note=="comp"` in the carrier-window selection + fix
+  `room()` (`kernel.rs:1588`) to include Keys carrier onsets. Both kernel surgery → own round.
+- **Camp spread** (`camp_for_riff` bias), and the Circle/Lift-style A/B is now a SEED A/B.
+
+**EAR VERDICT #1 + FIX (commit `cde0f9f`):** owner on the first cut — *"keys sound broken, it sounds
+like it's trying to lead and failing."* The monophonic Keys-carried riff reproduced the R1
+single-note-keyboard-reads-as-a-lead flaw. Fix = the narrow authorized construction the brief §13
+prescribes (NOT a fake Lead): one kernel line in `argument_witness::in_window` excludes
+`prov.role_note=="comp"` notes from the carrier-content window, so a Keys-carried step may hold the
+engine's real polyphonic comp chords while its own authored line is still checked verbatim. `freeze`
+now sets `comp_keys + comp_all_sections` (keys COMP chords every bar); the required carrier is a soft
+chord-tone fill in the comp's open bar (local bar 1) so the keys read as CHORDS, zero Lead, no fake
+carrier. `camp_for_riff` now picks via the riff fingerprint → seeds 2112/7/42 land in i-♭III / i-♭VI /
+i-iv (three harmonic worlds). G5 strengthened: asserts the Keys lane is genuinely polyphonic. Gates:
+fmt+clippy-D; **lib 874/874** (route-law + witness pins intact); **audio_c137_song 58/58**; rehearsal
+10/10; gap 4/4; smooth-pop 9/9; harmony 5/5; **C137 LOCK byte-for-byte OK** (witness never touches
+synthesis). This RESOLVES the deferred "true polyphonic Keys comp" item above. Re-rendered seed-A/B —
+EAR PENDING on whether the keys now sit right. Still open: G6 section-form witness; a more
+musically-principled camp picker; making the negotiated riff audible (comp-follows-riff-rhythm).
+
+**EAR VERDICT #2 + VISION ROUND (commit `c8651c1`):** owner — *"7 and 42 are starting to sound good,
+2112 sounds cliche… the musicians are just throwing shit at the wall… rather than interpreting what's
+there and finding the semantic possibilities of what could be, there's no underlying vision."* Owner's
+spec for the vision (verbatim intent): the SONG itself is the goal; the seed is clay; each musician
+makes an interpretive move; the band steps back ("does this feel like a song? where should it go?") and
+repeats. Built:
+- Harmony READ OUT OF THE RIFF (`interpret_harmony`): pitch classes weighted by dwell time; the tonic A
+  is the fixed home pole, the heaviest chord-IMPLYING degree picks the 2nd chord (D→iv, F→♭VI, G→♭VII,
+  E→v). The cliché i-♭III VERSE camp is BANNED (tonic-tone emphasis → warm ♭VI, never ♭III); ♭III is
+  reserved for the CHORUS lift. Seeds 2112/7 → i-iv, 42 → i-♭VI (all ear-liked worlds; 2112 de-clichéd).
+- Chorus REINTERPRETS the verse (the "where it wants to go"): dark pole (iv/v) → lift tonic to ♭III;
+  bright pole (♭VI/♭VII) → tonicise on V7. Shares the verse's tonal content, adds the one dominant.
+- Emergent TRANSITION: the last verse bar `transition_walk_cell()` walks R-3-5-8 + a push into the
+  chorus downbeat (the bass transition the guitarist/bass exchange implies).
+- CONTEMPLATION is first-class: `RehearsalDraft.shaping_log` narrates CLAY → read the riff's ground →
+  groove → compensate → fill → CONTEMPLATE ("it circles, needs somewhere to go") → answer into the
+  chorus → CONTEMPLATE → DONE. The underlying vision made legible.
+Gates: fmt+clippy-D; rehearsal 13/13 (new: harmony-read-from-riff, chorus-reinterprets-verse,
+band-contemplates-toward-a-song); gap 4/4; smooth-pop 9/9; harmony 5/5; **C137 LOCK byte-for-byte OK**
+(example+test only). Re-rendered seeds 2112/7/42 — **EAR ACCEPTED** (owner: *"hell yeah. starting to
+sound like a song now"*): the vision/interpretation approach — the deferred Step-2 realization law, the
+band shaping clay toward the goal of a song — is CONFIRMED BY EAR. Build forward from here. Known: 2112 & 7 share the i-iv world
+(cross-seed harmonic spread is a knob); still a backing (no sounded topline / true return — needs the
+lead "key").
+
+**AUDIBLE RIFF (commit `eb87df1`, owner picked this lever):** the guitarist's riff only shaped the
+harmony/bass/transition — it was never HEARD. Now the keys comp stabs its chord voicings ON the riff's
+own rhythm (chordal hits, not a sung line — so it is the band's hook felt, not the "failing lead" the
+owner rejected). New opt-in `CompiledArgument.comp_onsets: Option<Vec<f64>>` (within-2-bar onsets);
+`None` by default so C137 + every lead-carried song keep the fixed "and of 2 / and of 4" comp and render
+byte-identical. The kernel comp block branches on it BEFORE the fixed per-bar loop (the 2-bar riff stated
+twice across the 16-beat episode, a rootless voicing per onset, bass owns the root). `freeze` passes the
+negotiated riff's onsets. New gate `keys_comp_stabs_on_the_riff_rhythm` (every riff onset has a Keys stab
+within the pocket tolerance). Gates: fmt+clippy-D; **lib 874/874**; **audio_c137_song 58/58**; rehearsal
+14/14; gap 4/4; smooth-pop 9/9; harmony 5/5; **C137 LOCK byte-for-byte OK** (comp_onsets None on every
+accepted path). Re-rendered seeds 2112/7/42 — EAR PENDING. Density knob: a dense riff = many stabs (can
+thin to salient onsets if busy).
+
+**POCKET + ATTACK ROUND (commit `d8e1616`):** owner — *"the keys need to be perfectly in pocket if they
+are going to do what they are doing right now. 2112 sounds weird/bland, 7 and 42 are on the right
+track"* + the timbre note: *the FELT attack lands slightly after the written onset* (warm FM e-piano
+speaks a hair late through the chorus + room). Confirmed: the whole band lays on the shared
+`pocket_offset` (bass `kernel.rs:1865`, kit `:2003-2065`, comp), but the kit's transients are tight
+while the keys' felt onset lags — so the keys comp was heard BEHIND the pocket. Fix (scoped to the
+`comp_onsets` branch only; fixed comp + C137 byte-identical): (1) each stab is pulled EARLIER by
+`KEYS_ATTACK_COMP` (0.03 beat ≈ 17 ms @104, ear-tunable const) so its felt attack lands dead on the
+shared pocket; (2) a beat-weighted accent (strong beat 0.44 > "and" 0.34 > sixteenth 0.24, × energy) +
+a crowded-stab ghost (×0.6 within 0.3 beat) give the comp a groove contour so a driving-eighths riff
+reads shaped, not a bland chug. Gates: lib 874/874, audio_c137_song 58/58, rehearsal 14/14, smooth 9,
+harmony 5, gap 4, **C137 LOCK byte-for-byte OK**. Re-rendered — EAR PENDING. Knob: `KEYS_ATTACK_COMP`
+if the felt attack is still off; still open — 2112 riff character (driving-eighths may be bland even
+shaped; bias the pick?), cross-seed harmony spread, the lead "key", G6 witness.
+
+**SAY MORE WITH LESS — LEAN COMP (commit `5ce3fb6`):** owner verdict on the pocket round — *"very good,
+the keys are a little pretentious, they could say more with less. other than that, this is a great step
+forward."* Diagnosis: the pocket/attack round was accepted ("great step forward"); the remaining flaw is
+DENSITY OF VOICING, not timing. The comp was stabbing the FULL rootless cluster (3rd+5th+7th+9th) on
+every onset — but the bass owns the root and the pad holds the bed, so a fat four-note stack on every
+hit is redundant swagger ("pretentious": every extension voiced because it can be). Fix (scoped to the
+`comp_onsets` branch only; fixed comp + C137 byte-identical): each stab now speaks only GUIDE TONES — the
+3rd always, + the 7th (the dyad that fixes the quality), + the colour 9th ONLY on the structural downbeat
+(`q%4==0`); the 5th dropped entirely (dead weight — the band shares chord tones across instruments per
+§4 instead of each voice restating the whole chord); a crowding stab (<0.3 beat) shrinks to a single
+passing tone at a ghosted level (real space). Beat-weighted dynamics kept (strong 0.40 > "and" 0.30 >
+sixteenth 0.22). Every riff onset still articulated → the hook stays audible and
+`keys_comp_stabs_on_the_riff_rhythm` holds (14/14). Keys note-counts fell to 60/72/90 (seed 7/42/2112)
+from the fat-stack round. Gates: fmt+clippy-D; **lib 874/874**; **audio_c137_song 58/58**; rehearsal
+14/14; **C137 LOCK byte-for-byte OK**. Re-rendered @104 BPM (seeds 7/42/2112) — EAR PENDING on whether
+the lean comp reads as intent. LESSON: "say more with less" = voicing width, not rhythm — thin the
+chord to guide tones and let the ensemble carry the rest; do not thin the hook's rhythm (that is what
+made it audible). Still open — if still too busy, thin the RHYTHM next (rest on crowded weak onsets);
+2112 riff character; cross-seed harmony spread; the lead "key"; G6 witness.
+
+**SYNCOPATION IS KEY — THE BAND GETS TASTE (commit `83639ca`):** owner — *"syncopation is key."* The
+root of 2112's blandness: the band's riff pick was a BLIND UNIFORM DRAW (`pick_rng.below(len)`), no
+taste — so 2112 kept landing on the straight driving-eighths chug while 7 & 42 happened onto livelier
+figures. Give the band a VALUE and let it reach: new `syncopation_score(onsets)` on the 16th lattice =
+Longuet-Higgins/Lee displacement (a weak-slot note followed by SILENCE over a stronger beat steals that
+beat's emphasis — the off-beat pop; driving eighths fill every strong beat so they steal nothing, score
+~0) + anticipation (a note one 16th before a strong beat leans in, a push). `rehearse` now selects by a
+syncopation-WEIGHTED draw (seed RNG): grid/chug (~0) is all but passed over for an off-beat idea, the
+seed still picks WHICH syncopated riff → seeds still write distinct songs. RESULT (fp / keys-stab count):
+seed 7 UNCHANGED (`7ed476…`, already syncopated — matches "7 on the right track"); seed 42 shifted to a
+more syncopated figure (`facdfc…`); **seed 2112 came OFF the straight eighths** (`96b913…`, keys 90→46 —
+far sparser & livelier). All three still literally lead=0, all distinct (g0/g9 variety preserved). ALSO
+fixed a latent comp-path edge the new taste surfaced: a riff onset late in the final bar (anticipation at
+beat 7.75) stated in the last episode placed a comp stab whose 0.26-beat tail spilled past the song end
+(32.0) → `InvalidScore("event outside the performance domain")`; the comp now drops a stab whose tail
+leaves `perf.domain()` (its earlier 16th-sibling already states that onset, hook intact). Scoped to the
+`comp_onsets` branch; C137 byte-identical. New gates: `syncopation_score_ranks_offbeat_life_above_the_grid`
+(funk & pickups out-score the driving chug; density ≠ syncopation) + `the_band_reaches_for_syncopation_
+not_the_grid` (every seed with a syncopated option picks sync>0). Gates: fmt+clippy-D; **lib 874/874**;
+**audio_c137_song 58/58**; **rehearsal 16/16**; **C137 LOCK byte-for-byte OK**. Re-rendered @104 — EAR
+PENDING on whether 2112 now grooves. LESSON: 2112's blandness was the RIFF IDEA (on-the-grid), not the
+comp — the fix was giving the band taste (select for syncopation), and that also surfaced the domain-spill
+edge. Still open: tune the sync weighting (power/floor) if the pick is too funk-biased; a guitarist
+"syncopate" revision move; cross-seed harmony spread; the lead "key"; G6.
+
+**CREATE, DON'T JUST PICK — THE SYNCOPATE REVISION (commit `11b51ad`):** owner's next move — *"take a
+picked riff and push an on-beat note off the grid as a deliberate interpretation, instead of only
+selecting among what was generated."* Last round = TASTE (select for syncopation); this round = a
+generative MOVE. New `RevKind::Syncopate` + `syncopate_proposal(events)`: find ONE square interior
+on-beat note (integer beat, NOT a bar downbeat — beats 0 & 4 stay anchored so the form survives) and push
+it a sixteenth EARLY so it anticipates the beat; commit only a push that raises `syncopation_score`; keep
+the head + final resolution note untouched; stay a lawful referent. RHYTHM only (pitches/durs and so the
+harmonic camp unchanged; band re-negotiates groove). Returns None for an already-off-grid riff (funk/
+sparse) — creates syncopation where needed, doesn't churn a working groove. `rehearse` applies it as
+Stage E′ AFTER Simplify/Transition, computed from the LIVE riff (builds on, never overwrites); shared
+accept path extracted into `accept_revision` so two-clock immutability is identical for every move. FIRES
+on real seeds (9, 13, 0, 3, 11… push a beat; 7/42/2112 pick funk/sparse → left alone, fp unchanged).
+RENDER-ONLY A/B CONTROL (brief §8): `rehearse_opts(seed, create)` splits the toggle; `rehearse` leaves it
+ON (every gate uses `rehearse`); the example reads `HOMOSAPIANS_NO_SYNCOPATE` to render WITHOUT the move.
+A/B PROOF: seed 9 grid fp=`738259…` (keys 57) vs pushed fp=`2e9fbc…` (keys 53); seed 13 grid `110a46…`
+(56) vs pushed `a621d8…` (52) — audibly different, lead=0 both. New gates:
+`the_guitarist_creates_syncopation_by_pushing_a_beat_off_the_grid`, `an_already_offgrid_riff_is_left_alone`,
+`the_band_sometimes_creates_syncopation_on_real_seeds`. Gates: fmt+clippy-D; **rehearsal 19/19**; **C137
+LOCK byte-for-byte OK** (kernel untouched; rehearsal arm opt-in). EAR PENDING on the grid-vs-pushed A/B.
+LESSON: a generative interpretation move (push a square beat early = anticipation) manufactures groove
+while preserving identity (head/last/bar-downbeats) — and a before/after toggle is the honest way to put
+it to the ear. Still open: tune which/how-many beats to push; let Syncopate reach 7/42-style picks if she
+wants more motion; cross-seed harmony spread; the lead "key"; G6.

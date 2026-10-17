@@ -898,6 +898,13 @@ const EPISODE_BEATS: f64 = 16.0;
 /// the long-form grid guard so a wild onset still fails.
 const LONGFORM_POCKET_BEATS: f64 = 0.06;
 
+/// Felt-attack compensation (beats) for the riff-rhythm keys comp only. The warm keys voice speaks a
+/// hair late (a soft FM e-piano onset through the chorus + room), so its FELT attack lags the written
+/// onset; a RHYTHMIC chordal comp that must lock to the kit is therefore pulled this much EARLIER, so
+/// the heard attack lands dead on the band's shared pocket. ~0.03 beat ≈ 17 ms at 104 BPM. Ear-tunable;
+/// applied ONLY on the opt-in `comp_onsets` path, so the fixed comp and C137 are untouched.
+const KEYS_ATTACK_COMP: f64 = 0.03;
+
 /// Generalize `source_domain` to N contiguous episodes (N ≥ 2: the two-episode verse→hook control,
 /// and the four-episode verse→hook→bridge→return arc). The per-placement source checks are the same
 /// source-fidelity guards, with the four-event CELL constraints dropped (the long-form carrier is a
@@ -1609,6 +1616,97 @@ pub fn perform_song(
                 // Comp only under the home arrivals; verse and bridge keep the floor clear — UNLESS a
                 // lead-free smooth-pop band opts into comp-everywhere (the keys hold the chordal carrier
                 // throughout). C137 never sets the flag, so its gate is unchanged and its render frozen.
+                continue;
+            }
+            if let Some(onsets) = &argument.comp_onsets {
+                // RIFF-RHYTHM COMP: the keys stab chord voicings on the band's OWN riff rhythm (the
+                // 2-bar riff stated twice across the 16-beat episode), so the guitarist's figure is
+                // HEARD as chordal hits — the band playing its hook — rather than a fixed pattern. Each
+                // onset gets a LEAN guide-tone voicing in the bar's committed harmony; the bass owns the
+                // root. Opt-in (`comp_onsets`); C137 and every lead-carried song leave it None and keep
+                // the fixed comp below, so their render is byte-identical.
+                // The keys must sit PERFECTLY in pocket for a rhythmic chordal comp: each stab rides the
+                // band's shared pocket but is pulled EARLIER by KEYS_ATTACK_COMP, so its FELT attack (the
+                // FM e-piano speaks a hair late through the chorus + room) lands dead on the pocket with
+                // the kit. A beat-weighted accent (strong beat > "and" > sixteenth) shapes the groove, and
+                // the voicing says more with less — guide tones only, the colour spent on the strong hit,
+                // crowding stabs shrunk to a passing tone — so the hook reads as intent, not swagger.
+                let mut last_at = f64::NEG_INFINITY;
+                for rep in 0..2u32 {
+                    let rep_base = e as f64 * EPISODE_BEATS + rep as f64 * 8.0;
+                    for &o in onsets {
+                        if !(0.0..8.0).contains(&o) {
+                            continue;
+                        }
+                        let posin = o.rem_euclid(4.0);
+                        let at_grid = rep_base + o;
+                        let at = (at_grid + pocket(posin) - KEYS_ATTACK_COMP).max(0.0);
+                        let bar_start = (at_grid / 4.0).floor() * 4.0;
+                        let Some(ctx) = perf.context_at(bar_start) else {
+                            continue;
+                        };
+                        let tones = ctx.chord.pitch_classes();
+                        if tones.len() < 2 {
+                            continue;
+                        }
+                        let energy = drive_energy(harmonic_drive(&ctx.chord, world.tonic_pc));
+                        // SAY MORE WITH LESS: the comp names the chord with its GUIDE TONES (the 3rd and
+                        // the 7th — the two notes that fix the quality), never the full stack. The bass
+                        // owns the root and the pad holds the bed, so a fat rootless cluster on every hit
+                        // is redundant swagger. The 5th is dropped; the colour 9th is spent ONLY on the
+                        // structural downbeat; a stab crowding the one before it shrinks to a single
+                        // passing tone. Lean by default, open up only where it earns the notes.
+                        let q = (posin * 4.0).round() as i64;
+                        let strong = q % 4 == 0;
+                        let medium = q % 2 == 0;
+                        let crowded = at - last_at < 0.3;
+                        let third = tones[1];
+                        let seventh = tones.get(3).copied().or_else(|| tones.get(2).copied());
+                        let ninth = tones.get(4).copied();
+                        let mut pcs = vec![third];
+                        if !crowded {
+                            if let Some(s) = seventh {
+                                pcs.push(s); // the chord's identity in two notes
+                            }
+                            if strong {
+                                if let Some(n) = ninth {
+                                    pcs.push(n); // the colour, reserved for the structural hit
+                                }
+                            }
+                        }
+                        let mut level = if strong {
+                            0.40
+                        } else if medium {
+                            0.30
+                        } else {
+                            0.22
+                        };
+                        if crowded {
+                            level *= 0.6; // a crowding stab stays a quiet single passing tone
+                        }
+                        last_at = at;
+                        // A stab whose tail would spill past the song's end (a riff onset late in the
+                        // final bar — e.g. an anticipation at beat 7.75 stated in the last episode) is
+                        // dropped: its 16th-note sibling earlier in the song already states that onset,
+                        // so the hook is intact and the Score stays inside the performance domain.
+                        if perf.domain().contains(at, at + 0.26)
+                            && perf.on_stage(Agent::Keys, at)
+                            && room(at)
+                        {
+                            for pitch in voice(57, &pcs) {
+                                keys.push(pitched(
+                                    &perf,
+                                    Role::Keys,
+                                    at,
+                                    0.26,
+                                    pitch,
+                                    (level * energy).clamp(0.02, 1.0),
+                                    provenance(&perf, at, "comp", section_at(argument, at)),
+                                ));
+                            }
+                        }
+                    }
+                }
                 continue;
             }
             for b in 0..bars_per_ep {

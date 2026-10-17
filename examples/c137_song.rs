@@ -37,6 +37,9 @@
 #[path = "c137_song/preset.rs"]
 mod preset;
 #[allow(dead_code)]
+#[path = "c137_song/rehearsal.rs"]
+mod rehearsal;
+#[allow(dead_code)]
 #[path = "c137_song/source.rs"]
 mod source;
 #[allow(dead_code)]
@@ -105,6 +108,11 @@ struct Options {
     /// Which render palette the smooth-pop arm uses (`--pop-palette=warm|beep`; only meaningful for
     /// the pop-groove arm). Defaults to `Warm`; `Beep` keeps the BLACK_ICE palette for the A/B.
     pop_palette: PopPalette,
+    /// Operation The Homosapians rehearsal composer (`--form=pop-rehearsal`): the backing is NEGOTIATED
+    /// from the seed (guitar riff → bass response → drum response → guitar revision) and frozen into a
+    /// zero-Lead band, instead of hand-authored. Reuses the pop-band warm render path; here the SEED
+    /// (not a flavor) is the knob — different seeds negotiate different songs.
+    rehearsal: bool,
 }
 
 impl Options {
@@ -117,6 +125,7 @@ impl Options {
         let mut no_lead = false;
         let mut pop_flavor = source_pop::PopFlavor::Circle;
         let mut pop_palette = PopPalette::Warm;
+        let mut rehearsal_mode = false;
         // The no-flag command is C137 FULL. Downgrades accumulate here, from `--jerry=` and from the
         // compatibility flags, which fold into the same mechanism so they manifest as the Jerry
         // switches they are.
@@ -180,9 +189,16 @@ impl Options {
                         preset = preset.pop_band();
                         pop_flavor = source_pop::PopFlavor::Lift;
                     }
+                    "pop-rehearsal" => {
+                        // Operation The Homosapians: the NEGOTIATED backing. Reuses the pop-band render
+                        // path (lead-free SmoothPop, warm palette); the source is swapped in build_source.
+                        preset = preset.pop_band();
+                        pop_flavor = source_pop::PopFlavor::Circle;
+                        rehearsal_mode = true;
+                    }
                     _ => {
                         return Err(
-                            "--form must be slice (16-bar), song (32-bar), song-intro (32-bar + intro), song-narrative (32-bar, keys-carried bridge), song-intro-narrative (32-bar, keys-foreshadow intro), pop-groove (8-bar lead-free smooth-pop pocket, circle-of-4ths), pop-groove-lift (the same groove, leading-tone-pull progression), pop-song (8-bar Lead-carried smooth-pop verse->hook), pop-song-lift (the same song, leading-tone-pull progression), pop-band (8-bar lead-free band-only mini-song: verse backing -> chorus arrival), or pop-band-lift (the same backing, leading-tone-pull progression)"
+                            "--form must be slice (16-bar), song (32-bar), song-intro (32-bar + intro), song-narrative (32-bar, keys-carried bridge), song-intro-narrative (32-bar, keys-foreshadow intro), pop-groove (8-bar lead-free smooth-pop pocket, circle-of-4ths), pop-groove-lift (the same groove, leading-tone-pull progression), pop-song (8-bar Lead-carried smooth-pop verse->hook), pop-song-lift (the same song, leading-tone-pull progression), pop-band (8-bar lead-free band-only mini-song: verse backing -> chorus arrival), pop-band-lift (the same backing, leading-tone-pull progression), or pop-rehearsal (8-bar band-only mini-song NEGOTIATED from the seed: riff -> bass -> drums -> guitar revision, frozen zero-Lead)"
                                 .into(),
                         )
                     }
@@ -228,6 +244,7 @@ impl Options {
             no_lead,
             pop_flavor,
             pop_palette,
+            rehearsal: rehearsal_mode,
         })
     }
 }
@@ -310,7 +327,18 @@ fn build_source(
     seed: u64,
     bridge_seed: Option<u64>,
     pop_flavor: source_pop::PopFlavor,
+    use_rehearsal: bool,
 ) -> CompiledArgument {
+    // Operation The Homosapians rehearsal composer: the backing is NEGOTIATED from the seed (riff →
+    // bass → drums → guitar revision) and frozen into a zero-Lead band. Checked FIRST because it also
+    // rides the pop-band render path (so `resolved.pop_band` is set for palette/manifest). Its own
+    // `SmoothPop` domain; returns before `apply_caps` like the other pop arms.
+    if use_rehearsal {
+        // Render-only A/B control (brief §8 negative control): set HOMOSAPIANS_NO_SYNCOPATE to hear the
+        // band WITHOUT the guitarist's create-syncopation move. Unset (the default) leaves it ON.
+        let create_syncopation = std::env::var_os("HOMOSAPIANS_NO_SYNCOPATE").is_none();
+        return rehearsal::freeze(&rehearsal::rehearse_opts(seed, create_syncopation));
+    }
     // The smooth-pop groove is its own lead-free arm with its own `SmoothPop` domain and groove — it
     // does not go through the C137 arc builders or the capability caps (which are C137-specific), so
     // it returns here before `apply_caps`.
@@ -760,8 +788,13 @@ fn main() -> Result<()> {
 
     for seed in &options.seeds {
         // Build under the resolved config. A failure here propagates — no silent fallback to Jerry.
-        let mut candidate_source =
-            build_source(&resolved, *seed, options.bridge_seed, options.pop_flavor);
+        let mut candidate_source = build_source(
+            &resolved,
+            *seed,
+            options.bridge_seed,
+            options.pop_flavor,
+            options.rehearsal,
+        );
         // The experimental source-answer upgrade is applied here (never by a source builder), so it
         // is strictly an opt-in audition arm and the default render stays byte-identical.
         candidate_source.source_answer = options.source_answer;

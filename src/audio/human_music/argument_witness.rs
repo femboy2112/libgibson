@@ -547,7 +547,20 @@ fn in_window(score: &Score, role: Role, start: f64, span: f64) -> Vec<&Note> {
         .notes
         .iter()
         .filter(|n| {
-            n.role == role && n.start_beat >= start - EPS && n.start_beat < start + span - EPS
+            // The carrier-content witness compares a carrier lane's sounded notes against its authored
+            // referent. The KEYS comp (rootless chord voicings the kernel adds under a chordal keys
+            // carrier) is NOT argument content — it is a separate realizer, stamped by the kernel with
+            // provenance "comp" (a source cannot forge it). A Keys-carried step that opts into the comp
+            // (a lead-free smooth-pop band whose keys ARE the chords) would otherwise fail this witness
+            // on a note-count mismatch, which is exactly the false obstruction that used to force an
+            // inaudible Lead scaffold. Excluding comp notes from the carrier window lets the keys hold
+            // real polyphonic chords while the carrier's own authored line is still checked verbatim.
+            // Lead/Bass/Pad windows and every C137 arm are unaffected: comp notes are Keys-role, and no
+            // C137 source sets the comp-everywhere flag, so this filter is a no-op outside this path.
+            n.role == role
+                && n.prov.role_note != "comp"
+                && n.start_beat >= start - EPS
+                && n.start_beat < start + span - EPS
         })
         .collect();
     notes.sort_by(|a, b| {
