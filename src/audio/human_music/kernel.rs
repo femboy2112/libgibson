@@ -1622,15 +1622,15 @@ pub fn perform_song(
                 // RIFF-RHYTHM COMP: the keys stab chord voicings on the band's OWN riff rhythm (the
                 // 2-bar riff stated twice across the 16-beat episode), so the guitarist's figure is
                 // HEARD as chordal hits — the band playing its hook — rather than a fixed pattern. Each
-                // onset gets a rootless voicing in the bar's committed harmony; the bass owns the root.
-                // Opt-in (`comp_onsets`); C137 and every lead-carried song leave it None and keep the
-                // fixed comp below, so their render is byte-identical.
+                // onset gets a LEAN guide-tone voicing in the bar's committed harmony; the bass owns the
+                // root. Opt-in (`comp_onsets`); C137 and every lead-carried song leave it None and keep
+                // the fixed comp below, so their render is byte-identical.
                 // The keys must sit PERFECTLY in pocket for a rhythmic chordal comp: each stab rides the
                 // band's shared pocket but is pulled EARLIER by KEYS_ATTACK_COMP, so its FELT attack (the
                 // FM e-piano speaks a hair late through the chorus + room) lands dead on the pocket with
-                // the kit. A beat-weighted accent (strong beat > "and" > sixteenth) gives the comp a
-                // groove contour instead of flat even chunks, and a stab crowding the one before it is
-                // ghosted — so even a driving-eighths riff reads as a shaped hook, not a bland chug.
+                // the kit. A beat-weighted accent (strong beat > "and" > sixteenth) shapes the groove, and
+                // the voicing says more with less — guide tones only, the colour spent on the strong hit,
+                // crowding stabs shrunk to a passing tone — so the hook reads as intent, not swagger.
                 let mut last_at = f64::NEG_INFINITY;
                 for rep in 0..2u32 {
                     let rep_base = e as f64 * EPISODE_BEATS + rep as f64 * 8.0;
@@ -1650,22 +1650,43 @@ pub fn perform_song(
                             continue;
                         }
                         let energy = drive_energy(harmonic_drive(&ctx.chord, world.tonic_pc));
-                        let rootless = &tones[1..];
-                        // Beat-weighted accent (riff onsets sit on the quarter-beat grid).
+                        // SAY MORE WITH LESS: the comp names the chord with its GUIDE TONES (the 3rd and
+                        // the 7th — the two notes that fix the quality), never the full stack. The bass
+                        // owns the root and the pad holds the bed, so a fat rootless cluster on every hit
+                        // is redundant swagger. The 5th is dropped; the colour 9th is spent ONLY on the
+                        // structural downbeat; a stab crowding the one before it shrinks to a single
+                        // passing tone. Lean by default, open up only where it earns the notes.
                         let q = (posin * 4.0).round() as i64;
-                        let mut level = if q % 4 == 0 {
-                            0.44
-                        } else if q % 2 == 0 {
-                            0.34
+                        let strong = q % 4 == 0;
+                        let medium = q % 2 == 0;
+                        let crowded = at - last_at < 0.3;
+                        let third = tones[1];
+                        let seventh = tones.get(3).copied().or_else(|| tones.get(2).copied());
+                        let ninth = tones.get(4).copied();
+                        let mut pcs = vec![third];
+                        if !crowded {
+                            if let Some(s) = seventh {
+                                pcs.push(s); // the chord's identity in two notes
+                            }
+                            if strong {
+                                if let Some(n) = ninth {
+                                    pcs.push(n); // the colour, reserved for the structural hit
+                                }
+                            }
+                        }
+                        let mut level = if strong {
+                            0.40
+                        } else if medium {
+                            0.30
                         } else {
-                            0.24
+                            0.22
                         };
-                        if at - last_at < 0.3 {
-                            level *= 0.6; // a stab crowding the previous one is ghosted (declutter)
+                        if crowded {
+                            level *= 0.6; // a crowding stab stays a quiet single passing tone
                         }
                         last_at = at;
                         if perf.on_stage(Agent::Keys, at) && room(at) {
-                            for pitch in voice(57, rootless) {
+                            for pitch in voice(57, &pcs) {
                                 keys.push(pitched(
                                     &perf,
                                     Role::Keys,
