@@ -334,7 +334,10 @@ fn build_source(
     // rides the pop-band render path (so `resolved.pop_band` is set for palette/manifest). Its own
     // `SmoothPop` domain; returns before `apply_caps` like the other pop arms.
     if use_rehearsal {
-        return rehearsal::freeze(&rehearsal::rehearse(seed));
+        // Render-only A/B control (brief §8 negative control): set HOMOSAPIANS_NO_SYNCOPATE to hear the
+        // band WITHOUT the guitarist's create-syncopation move. Unset (the default) leaves it ON.
+        let create_syncopation = std::env::var_os("HOMOSAPIANS_NO_SYNCOPATE").is_none();
+        return rehearsal::freeze(&rehearsal::rehearse_opts(seed, create_syncopation));
     }
     // The smooth-pop groove is its own lead-free arm with its own `SmoothPop` domain and groove — it
     // does not go through the C137 arc builders or the capability caps (which are C137-specific), so

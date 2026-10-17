@@ -24,7 +24,8 @@ use gibson::audio::human_music::{
 };
 use rehearsal::{
     bass_for_riff, drums_for_bass, fingerprint, freeze, generate_riffs, guitar_proposals,
-    interpret_harmony, rehearse, revision_is_lawful, syncopation_score, RevKind,
+    interpret_harmony, rehearse, revision_is_lawful, syncopate_proposal, syncopation_score,
+    RevKind,
 };
 
 fn world() -> MusicWorld {
@@ -530,6 +531,79 @@ fn the_band_reaches_for_syncopation_not_the_grid() {
             "seed {seed}: the band settled for a grid chug (sync 0) with syncopation available"
         );
     }
+}
+
+// ------------------------------------------------------------------------------------------------
+// CREATE, don't just pick — the guitarist can PUSH an on-beat note off the grid as a deliberate
+// interpretation, raising syncopation while preserving the riff's form (bar downbeats + landing note).
+// ------------------------------------------------------------------------------------------------
+
+#[test]
+fn the_guitarist_creates_syncopation_by_pushing_a_beat_off_the_grid() {
+    // A square, on-the-grid statement riff. The guitarist pushes a square interior beat a sixteenth
+    // early so it anticipates the beat — the groove is MANUFACTURED, not merely selected.
+    let square = line(&[(0.0, 7), (1.0, 8), (2.0, 10), (3.0, 8), (4.0, 7), (6.0, 5)]);
+    let before = syncopation_score(&square.iter().map(|e| e.onset).collect::<Vec<_>>());
+    let (revised, reason) = syncopate_proposal(&square).expect("a square riff can be syncopated");
+    assert!(
+        revision_is_lawful(&revised),
+        "the pushed riff is still a lawful referent"
+    );
+    let after = syncopation_score(&revised.iter().map(|e| e.onset).collect::<Vec<_>>());
+    assert!(
+        after > before,
+        "the revision CREATES syncopation ({after} > {before})"
+    );
+    assert_eq!(
+        revised.len(),
+        square.len(),
+        "a push moves a note, it does not add or remove one"
+    );
+    assert_eq!(
+        revised[0].onset, 0.0,
+        "the head stays on the downbeat (riff identity)"
+    );
+    assert_eq!(
+        revised.last().unwrap().onset,
+        square.last().unwrap().onset,
+        "the final resolution note is left untouched"
+    );
+    // Both bar downbeats (beats 0 and 4) remain anchored — the form is preserved.
+    assert!(
+        revised.iter().any(|e| (e.onset - 4.0).abs() < 1e-9),
+        "the bar-2 downbeat stays put"
+    );
+    assert!(
+        !reason.is_empty(),
+        "the create-move is logged with a musical reason"
+    );
+}
+
+#[test]
+fn an_already_offgrid_riff_is_left_alone() {
+    // A riff with no square interior beat (every interior note is already off the grid) gets no push —
+    // the guitarist creates syncopation where it's needed, it doesn't churn a groove that already works.
+    let funky = line(&[(0.0, 7), (0.75, 8), (1.5, 10), (3.5, 8), (4.0, 7), (6.5, 5)]);
+    assert!(
+        syncopate_proposal(&funky).is_none(),
+        "an off-grid riff needs no push"
+    );
+}
+
+#[test]
+fn the_band_sometimes_creates_syncopation_on_real_seeds() {
+    // The create-move is LIVE, not dead code: on real seeds, at least one rehearsal accepts a Syncopate
+    // revision (the guitarist pushed a beat off the grid, raising the groove it had picked).
+    let fired = (0u64..64).any(|s| {
+        rehearse(s)
+            .log
+            .iter()
+            .any(|r| r.accepted && r.kind == RevKind::Syncopate)
+    });
+    assert!(
+        fired,
+        "on real seeds, the guitarist sometimes CREATES syncopation (a Syncopate revision)"
+    );
 }
 
 // ------------------------------------------------------------------------------------------------

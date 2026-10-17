@@ -604,6 +604,9 @@ pub enum RevKind {
     Transition,
     /// A flashy dense run — tested and REJECTED because it breaks the riff's identity / the pocket.
     Flourish,
+    /// CREATE syncopation: push a square interior on-beat note a sixteenth early so it anticipates the
+    /// beat — a deliberate interpretation that manufactures groove, not merely picks it.
+    Syncopate,
 }
 
 /// A logged revision decision: what was proposed, whether the band accepted it, and the plain reason.
@@ -672,6 +675,13 @@ impl RehearsalDraft {
 /// band and that exchange becomes the chorus the loop was heading toward → CONTEMPLATE again → the
 /// back-edge revision → done. Every move interprets what is there rather than throwing material at it.
 pub fn rehearse(seed: u64) -> RehearsalDraft {
+    rehearse_opts(seed, true)
+}
+
+/// As [`rehearse`], with `create_syncopation` gating the guitarist's CREATE-syncopation move (Stage E′).
+/// It exists only as an A/B control (the brief's negative-control discipline): a render can turn the
+/// create-move OFF to hear what it contributes. `rehearse` leaves it ON; every gate uses `rehearse`.
+pub fn rehearse_opts(seed: u64, create_syncopation: bool) -> RehearsalDraft {
     let candidates = generate_riffs(seed, 5);
     // The band's pick is TASTE, not a blind draw: SYNCOPATION IS KEY — the life of the groove. Each
     // candidate is weighted by how syncopated it feels, so a straight on-the-grid "chug" (driving
@@ -769,21 +779,7 @@ pub fn rehearse(seed: u64) -> RehearsalDraft {
             }
             (k, Some(new_events)) if revision_is_lawful(&new_events) => {
                 // Accept: advance rehearsal time. The prior take stays frozen in `takes`.
-                let prior = draft.audition();
-                draft.takes.push(prior);
-                draft.revision += 1;
-                let sel = draft.selected;
-                draft.candidates[sel].events = new_events;
-                draft.candidates[sel].source_id = fingerprint(&draft.candidates[sel].events);
-                // Re-negotiate the bass/drums to the revised riff (the band adjusts to the change).
-                draft.bass_verse = bass_for_riff(&draft.candidates[sel], false);
-                draft.bass_chorus = bass_for_riff(&draft.candidates[sel], true);
-                draft.drums = drums_for_bass(&draft.bass_verse);
-                draft.log.push(GuitarRevision {
-                    kind: k,
-                    accepted: true,
-                    reason,
-                });
+                accept_revision(&mut draft, k, new_events, reason);
             }
             (k, _) => {
                 // Proposed but unlawful (would break a referent invariant) -> rejected, no change.
@@ -796,16 +792,36 @@ pub fn rehearse(seed: u64) -> RehearsalDraft {
         }
     }
 
+    // Stage E′ — the guitarist CREATES syncopation, not only picks it (the owner's next move): a
+    // deliberate interpretation that pushes a square interior beat off the grid so the riff leans into
+    // the beat instead of marching on it. Computed from the LIVE riff, so it builds on any Simplify /
+    // Transition already accepted (it never overwrites them). The move preserves both bar downbeats
+    // (the form) and the final resolution note; it only fires when it genuinely raises the groove.
+    if create_syncopation {
+        if let Some((new_events, reason)) = syncopate_proposal(&draft.riff().events) {
+            if revision_is_lawful(&new_events) {
+                draft.shaping_log.push(format!(
+                    "CONTEMPLATE: the riff still marches on the grid -> the guitarist PUSHES a beat off it ({reason})"
+                ));
+                accept_revision(&mut draft, RevKind::Syncopate, new_events, reason);
+            }
+        }
+    }
+
     // CONTEMPLATE (the band steps back and looks at the whole): record what the revision pass did and
     // whether the piece now reads as a song — a loop that grooves, a contrast it lifts into, and the
     // transition between them.
     let accepted = draft.log.iter().filter(|r| r.accepted).count();
-    if let Some(rev) = draft.log.iter().find(|r| r.accepted) {
+    if let Some(rev) = draft
+        .log
+        .iter()
+        .find(|r| r.accepted && r.kind != RevKind::Syncopate)
+    {
         draft.shaping_log.push(format!(
             "CONTEMPLATE: hearing the whole band back, the guitarist REVISES — {}",
             rev.reason
         ));
-    } else {
+    } else if accepted == 0 {
         draft.shaping_log.push(
             "CONTEMPLATE: hearing the whole band back, the guitarist leaves the riff as it stands (it already serves the song)".to_string(),
         );
@@ -895,6 +911,77 @@ pub fn guitar_proposals(
     ));
 
     out
+}
+
+/// Apply an accepted revision: snapshot the current take (append-only), advance rehearsal time, swap in
+/// the new riff events, and re-negotiate the bass/drums to it (the band adjusts to the change). The
+/// prior take stays frozen in `takes` — performance time stays causal while rehearsal time moves.
+fn accept_revision(
+    draft: &mut RehearsalDraft,
+    kind: RevKind,
+    new_events: Vec<MaterialEvent>,
+    reason: String,
+) {
+    let prior = draft.audition();
+    draft.takes.push(prior);
+    draft.revision += 1;
+    let sel = draft.selected;
+    draft.candidates[sel].events = new_events;
+    draft.candidates[sel].source_id = fingerprint(&draft.candidates[sel].events);
+    draft.bass_verse = bass_for_riff(&draft.candidates[sel], false);
+    draft.bass_chorus = bass_for_riff(&draft.candidates[sel], true);
+    draft.drums = drums_for_bass(&draft.bass_verse);
+    draft.log.push(GuitarRevision {
+        kind,
+        accepted: true,
+        reason,
+    });
+}
+
+/// CREATE syncopation (the guitarist's generative move, not a pick): push ONE square interior on-beat
+/// note a sixteenth EARLY so it anticipates (leans into) its beat, raising the riff's syncopation. The
+/// move keeps both bar downbeats (beats 0 and 4 — the form's anchors) and the final resolution note
+/// untouched, stays a lawful monophonic referent, and only commits a push that genuinely increases the
+/// syncopation score. Returns the revised events + a plain reason, or `None` if the riff has no square
+/// interior beat worth pushing (e.g. it is already off the grid). Rhythm only — pitches/durations and
+/// so the harmonic camp are unchanged; the band re-negotiates its groove to the pushed riff.
+pub fn syncopate_proposal(events: &[MaterialEvent]) -> Option<(Vec<MaterialEvent>, String)> {
+    let onsets: Vec<f64> = events.iter().map(|e| e.onset).collect();
+    let before = syncopation_score(&onsets);
+    let last = events.len().saturating_sub(1);
+    let mut best: Option<(usize, f64)> = None;
+    let mut best_gain = 0.0_f64;
+    for i in 1..last {
+        let o = events[i].onset;
+        // A SQUARE interior beat: on an integer beat, but NOT a bar downbeat (keep bars 1 & 2 anchored).
+        if o.fract().abs() > 1e-9 || o.rem_euclid(4.0).abs() < 1e-9 {
+            continue;
+        }
+        let pushed = o - 0.25;
+        // Stay strictly after the previous onset (lawful monophony) and non-negative.
+        if pushed <= events[i - 1].onset + 1e-9 || pushed < 0.0 {
+            continue;
+        }
+        let mut trial = onsets.clone();
+        trial[i] = pushed;
+        let gain = syncopation_score(&trial) - before;
+        if gain > best_gain + 1e-12 {
+            best_gain = gain;
+            best = Some((i, pushed));
+        }
+    }
+    let (i, pushed) = best?;
+    let beat = events[i].onset;
+    let mut ev = events.to_vec();
+    ev[i].onset = pushed;
+    // Lengthen the note to its old landing so the line stays legato across the push (no new gap).
+    ev[i].dur = (ev[i].dur + 0.25).min(1.2);
+    Some((
+        ev,
+        format!(
+            "the riff leans square on beat {beat:.0} -> push it a sixteenth early so it anticipates the beat (create the groove, don't just pick it)"
+        ),
+    ))
 }
 
 /// A revised riff must still be a lawful referent (3..=64 events, strictly increasing onsets, in-range
