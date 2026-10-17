@@ -352,3 +352,23 @@ reads shaped, not a bland chug. Gates: lib 874/874, audio_c137_song 58/58, rehea
 harmony 5, gap 4, **C137 LOCK byte-for-byte OK**. Re-rendered — EAR PENDING. Knob: `KEYS_ATTACK_COMP`
 if the felt attack is still off; still open — 2112 riff character (driving-eighths may be bland even
 shaped; bias the pick?), cross-seed harmony spread, the lead "key", G6 witness.
+
+**SAY MORE WITH LESS — LEAN COMP (commit `5ce3fb6`):** owner verdict on the pocket round — *"very good,
+the keys are a little pretentious, they could say more with less. other than that, this is a great step
+forward."* Diagnosis: the pocket/attack round was accepted ("great step forward"); the remaining flaw is
+DENSITY OF VOICING, not timing. The comp was stabbing the FULL rootless cluster (3rd+5th+7th+9th) on
+every onset — but the bass owns the root and the pad holds the bed, so a fat four-note stack on every
+hit is redundant swagger ("pretentious": every extension voiced because it can be). Fix (scoped to the
+`comp_onsets` branch only; fixed comp + C137 byte-identical): each stab now speaks only GUIDE TONES — the
+3rd always, + the 7th (the dyad that fixes the quality), + the colour 9th ONLY on the structural downbeat
+(`q%4==0`); the 5th dropped entirely (dead weight — the band shares chord tones across instruments per
+§4 instead of each voice restating the whole chord); a crowding stab (<0.3 beat) shrinks to a single
+passing tone at a ghosted level (real space). Beat-weighted dynamics kept (strong 0.40 > "and" 0.30 >
+sixteenth 0.22). Every riff onset still articulated → the hook stays audible and
+`keys_comp_stabs_on_the_riff_rhythm` holds (14/14). Keys note-counts fell to 60/72/90 (seed 7/42/2112)
+from the fat-stack round. Gates: fmt+clippy-D; **lib 874/874**; **audio_c137_song 58/58**; rehearsal
+14/14; **C137 LOCK byte-for-byte OK**. Re-rendered @104 BPM (seeds 7/42/2112) — EAR PENDING on whether
+the lean comp reads as intent. LESSON: "say more with less" = voicing width, not rhythm — thin the
+chord to guide tones and let the ensemble carry the rest; do not thin the hook's rhythm (that is what
+made it audible). Still open — if still too busy, thin the RHYTHM next (rest on crowded weak onsets);
+2112 riff character; cross-seed harmony spread; the lead "key"; G6 witness.
