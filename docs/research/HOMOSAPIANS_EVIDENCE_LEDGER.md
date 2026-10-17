@@ -397,3 +397,27 @@ PENDING on whether 2112 now grooves. LESSON: 2112's blandness was the RIFF IDEA 
 comp — the fix was giving the band taste (select for syncopation), and that also surfaced the domain-spill
 edge. Still open: tune the sync weighting (power/floor) if the pick is too funk-biased; a guitarist
 "syncopate" revision move; cross-seed harmony spread; the lead "key"; G6.
+
+**CREATE, DON'T JUST PICK — THE SYNCOPATE REVISION (commit `11b51ad`):** owner's next move — *"take a
+picked riff and push an on-beat note off the grid as a deliberate interpretation, instead of only
+selecting among what was generated."* Last round = TASTE (select for syncopation); this round = a
+generative MOVE. New `RevKind::Syncopate` + `syncopate_proposal(events)`: find ONE square interior
+on-beat note (integer beat, NOT a bar downbeat — beats 0 & 4 stay anchored so the form survives) and push
+it a sixteenth EARLY so it anticipates the beat; commit only a push that raises `syncopation_score`; keep
+the head + final resolution note untouched; stay a lawful referent. RHYTHM only (pitches/durs and so the
+harmonic camp unchanged; band re-negotiates groove). Returns None for an already-off-grid riff (funk/
+sparse) — creates syncopation where needed, doesn't churn a working groove. `rehearse` applies it as
+Stage E′ AFTER Simplify/Transition, computed from the LIVE riff (builds on, never overwrites); shared
+accept path extracted into `accept_revision` so two-clock immutability is identical for every move. FIRES
+on real seeds (9, 13, 0, 3, 11… push a beat; 7/42/2112 pick funk/sparse → left alone, fp unchanged).
+RENDER-ONLY A/B CONTROL (brief §8): `rehearse_opts(seed, create)` splits the toggle; `rehearse` leaves it
+ON (every gate uses `rehearse`); the example reads `HOMOSAPIANS_NO_SYNCOPATE` to render WITHOUT the move.
+A/B PROOF: seed 9 grid fp=`738259…` (keys 57) vs pushed fp=`2e9fbc…` (keys 53); seed 13 grid `110a46…`
+(56) vs pushed `a621d8…` (52) — audibly different, lead=0 both. New gates:
+`the_guitarist_creates_syncopation_by_pushing_a_beat_off_the_grid`, `an_already_offgrid_riff_is_left_alone`,
+`the_band_sometimes_creates_syncopation_on_real_seeds`. Gates: fmt+clippy-D; **rehearsal 19/19**; **C137
+LOCK byte-for-byte OK** (kernel untouched; rehearsal arm opt-in). EAR PENDING on the grid-vs-pushed A/B.
+LESSON: a generative interpretation move (push a square beat early = anticipation) manufactures groove
+while preserving identity (head/last/bar-downbeats) — and a before/after toggle is the honest way to put
+it to the ear. Still open: tune which/how-many beats to push; let Syncopate reach 7/42-style picks if she
+wants more motion; cross-seed harmony spread; the lead "key"; G6.
