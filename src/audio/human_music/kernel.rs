@@ -905,6 +905,15 @@ const LONGFORM_POCKET_BEATS: f64 = 0.06;
 /// applied ONLY on the opt-in `comp_onsets` path, so the fixed comp and C137 are untouched.
 const KEYS_ATTACK_COMP: f64 = 0.03;
 
+/// Register ceiling (MIDI) for the riff-rhythm keys comp only. This is a LEAD-FREE band, so the keys
+/// are the one melodic voice: they carry the sparse theme up top AND comp the chords. A comp whose
+/// coloured top (the 7th, and the 9th on the strong hit) climbs to C5–E5 pokes INTO the theme's own
+/// register and reads as a second, unresolved tune fighting the first — the "funny" that a real
+/// keyboardist avoids by comping BELOW their own right hand. If a stab's top would break above this
+/// ceiling, the whole voicing drops an octave (shape and colour intact) so it stays a cushion under
+/// the theme. B4: the theme owns C5 and up. Applied ONLY on the opt-in `comp_onsets` path.
+const COMP_CEILING: i32 = 71;
+
 /// Generalize `source_domain` to N contiguous episodes (N ≥ 2: the two-episode verse→hook control,
 /// and the four-episode verse→hook→bridge→return arc). The per-placement source checks are the same
 /// source-fidelity guards, with the four-event CELL constraints dropped (the long-form carrier is a
@@ -1693,7 +1702,17 @@ pub fn perform_song(
                             && perf.on_stage(Agent::Keys, at)
                             && room(at)
                         {
-                            for pitch in voice(57, &pcs) {
+                            // Comp UNDER the theme: if the voicing's top would break above the ceiling
+                            // (a 9th spiking to D5/E5 into the theme's register), drop the whole stab an
+                            // octave so it cushions the tune instead of fighting it. Shape and colour
+                            // intact — only the register moves. See COMP_CEILING.
+                            let mut voiced = voice(57, &pcs);
+                            if voiced.last().is_some_and(|&top| top > COMP_CEILING) {
+                                for p in &mut voiced {
+                                    *p -= 12;
+                                }
+                            }
+                            for pitch in voiced {
                                 keys.push(pitched(
                                     &perf,
                                     Role::Keys,
