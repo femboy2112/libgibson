@@ -87,7 +87,10 @@ fn p2_early_chord_uses_next_bar_harmony_before_the_bar_boundary() {
         .iter()
         .find(|c| c.start_beat <= 4.0 && 4.0 < c.start_beat + f64::from(c.dur_beats))
         .expect("new bar harmony exists");
-    assert_ne!(old.chord, next.chord, "verse camp really changes chord here");
+    assert_ne!(
+        old.chord, next.chord,
+        "verse camp really changes chord here"
+    );
 
     let early_comp = score
         .role_notes(Role::Keys)
