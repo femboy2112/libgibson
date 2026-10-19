@@ -421,3 +421,30 @@ LESSON: a generative interpretation move (push a square beat early = anticipatio
 while preserving identity (head/last/bar-downbeats) — and a before/after toggle is the honest way to put
 it to the ear. Still open: tune which/how-many beats to push; let Syncopate reach 7/42-style picks if she
 wants more motion; cross-seed harmony spread; the lead "key"; G6.
+
+**COMP SITS UNDER THE THEME — THE REGISTER CEILING (commit `089d64a`):** owner's ear on the Syncopate
+A/B — *"hard to tell"* (the push = ONE 16th on ONE beat is too timid to carry alone; lever stays open) —
+and the real finding: *"some of the keys sound a little funny ... but that could just be because it's
+missing the lead as contextual justification."* DIAGNOSED from the committed Score (seeds 9 & 13), not by
+ear-guess: this is a LEAD-FREE band, so the keys are the only melodic voice and do DOUBLE DUTY — they
+carry the sparse theme up top (the dur-0.8 line, climbing to C5/E5) AND comp the chords (dur-0.26 stabs).
+The guide-tone comp's coloured top — the 7th, and the 9th on the strong hit — climbed to D5/E5 (MIDI
+74/76), INTO and above the theme's own register, with no Lead to own or resolve that octave: two
+unresolved lines wrestling in one register = the "funny." Owner's *why* was right (missing-lead frame),
+but the cure needs no Lead (locked, and inventing phantom notes to paper over a real defect is forbidden,
+brief §13). FIX: `COMP_CEILING = 71` (B4) in the `comp_onsets` branch — if a stab's voiced top breaks
+above B4, the WHOLE voicing drops an octave (internal intervals + colour intact, no clusters), so the comp
+cushions UNDER the theme the way a keyboardist comps below their own right hand. Verified transform (seed
+9, A→B per onset): the E5/D5/C5 pokes 76/74/72 → 64/62/60; every stab already ≤B4 untouched; keys count
+unchanged 53; fp `2e9fbc…`→`77a973…` (seed 13 `a621d8…`→`1eec14…`, keys 52). Opt-in — None/C137 never see
+it. Gates: fmt+clippy-D; **rehearsal 19/19**; **C137 LOCK byte-for-byte OK** (comp_onsets path only).
+Delivered A/B seeds 9/13 (A-comp-on-top vs B-comp-under, loudness-matched). EAR: **an improvement**
+(committed, not reverted) — BUT *"the pocket still feels a little out of phase."* HONEST CAVEAT recorded:
+a voicing cap kills the keys fighting themselves; it cannot conjure a singer — if the remaining hole is
+"it wants a topline," that is the lead-free lock, the owner's call to lift. LESSON: when one voice carries
+both melody and comp, the comp must be register-disciplined BELOW the melody or it reads as a rival tune;
+"missing lead as justification" can be a real, Score-visible register collision, not only an absence.
+**HOLD** placed here by the owner (commit + push, then stop). NEXT LEVER (not started): the pocket feels
+slightly out of phase — look at `KEYS_ATTACK_COMP` (0.03 felt-attack advance) and per-voice pocket
+offsets; the comp may still lead/lag the kit. Also still open: the lead "key" / topline question;
+cross-seed harmony spread; G6; Syncopate push depth.
