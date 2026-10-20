@@ -37,6 +37,9 @@ pub mod cell;
 pub mod clock;
 pub mod context;
 pub mod diff;
+/// Experimental Rust-only injectable, traceable input sources: inject a scripted
+/// event stream, or record and replay a real session (issue #131).
+pub mod event_source;
 pub mod ffi;
 pub mod field;
 pub mod focus;
@@ -84,6 +87,10 @@ pub use clock::{
 };
 pub use context::Context;
 pub use diff::{compute_diff, CellRun, RowPatch, SurfaceDiff};
+pub use event_source::{
+    EventSource, EventTrace, RawEvent, Recorder, ScriptedInput, ScriptedSource, TerminalSource,
+    TraceEntry,
+};
 pub use field::{
     bayer4_threshold, heat_rgb, plasma, render_field_braille, render_field_braille_dithered,
     render_plasma_halfblock, BAYER4,
