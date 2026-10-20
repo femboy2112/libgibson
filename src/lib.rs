@@ -91,7 +91,10 @@ pub use glyph::{
     detect_glyph_mode, detect_glyph_mode_from_env, transcode_surface_glyphs, GlyphChoice,
     SubcellGlyphMode,
 };
-pub use input::{poll_event, Event, KeyCode, KeyEvent, KeyModifiers, TextInputState};
+pub use input::{
+    poll_event, set_focus_reporting, set_mouse_capture, Event, FocusChange, KeyCode, KeyEvent,
+    KeyModifiers, MouseButton, MouseEvent, MouseKind, TextInputState,
+};
 pub use layout::{compute_layout, wrap_rich_text, wrap_text};
 pub use node::{
     AlignItems, Dimension, FlexDirection, JustifyContent, LayoutStyle, Node, NodeKind, WrapMode,

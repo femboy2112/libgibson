@@ -1,5 +1,6 @@
 use crossterm::event::{
     self, Event as CtEvent, KeyCode as CtKeyCode, KeyModifiers as CtKeyModifiers,
+    MouseButton as CtMouseButton, MouseEvent as CtMouseEvent, MouseEventKind as CtMouseKind,
 };
 use std::io;
 use std::time::Duration;
@@ -76,17 +77,96 @@ impl KeyEvent {
     }
 }
 
+/// A mouse button.
+///
+/// `#[non_exhaustive]`: terminals may report further buttons, so downstream
+/// `match`es must include a `_` arm and adding one is a non-breaking change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+}
+
+impl From<CtMouseButton> for MouseButton {
+    fn from(b: CtMouseButton) -> Self {
+        match b {
+            CtMouseButton::Left => MouseButton::Left,
+            CtMouseButton::Right => MouseButton::Right,
+            CtMouseButton::Middle => MouseButton::Middle,
+        }
+    }
+}
+
+/// What a [`MouseEvent`] did.
+///
+/// `#[non_exhaustive]`: new kinds may appear, so downstream `match`es must include a
+/// `_` arm and adding one is a non-breaking change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MouseKind {
+    /// A button was pressed.
+    Down(MouseButton),
+    /// A button was released.
+    Up(MouseButton),
+    /// The pointer moved with a button held (a drag).
+    Drag(MouseButton),
+    /// The pointer moved with no button held.
+    Moved,
+    /// The scroll wheel moved up.
+    ScrollUp,
+    /// The scroll wheel moved down.
+    ScrollDown,
+    /// The scroll wheel moved left.
+    ScrollLeft,
+    /// The scroll wheel moved right.
+    ScrollRight,
+}
+
+/// A structured mouse event at a terminal cell.
+///
+/// `column`/`row` are zero-based terminal cells (same basis as the cells a
+/// `gibson::hit_test` hit-tester expects), so a mouse event drops straight into
+/// spatial routing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MouseEvent {
+    /// What happened (press/release/drag/move/scroll).
+    pub kind: MouseKind,
+    /// Zero-based column (terminal cell).
+    pub column: u16,
+    /// Zero-based row (terminal cell).
+    pub row: u16,
+    /// Modifier keys held during the event.
+    pub modifiers: KeyModifiers,
+}
+
+/// A terminal focus transition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusChange {
+    /// The terminal window/tab gained focus.
+    Gained,
+    /// The terminal window/tab lost focus.
+    Lost,
+}
+
 /// High-level input event.
 ///
-/// `#[non_exhaustive]`: new event kinds are expected (mouse routing is planned;
-/// focus, etc.), so downstream `match`es must include a `_` arm and adding an event
-/// is a non-breaking `0.1.z` change.
+/// `#[non_exhaustive]`: new event kinds are expected, so downstream `match`es must
+/// include a `_` arm and adding an event is a non-breaking `0.1.z` change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Event {
     Key(KeyEvent),
     Paste(String),
     Resize(u16, u16),
+    /// A mouse event at a terminal cell. Only produced when mouse capture is enabled
+    /// via [`set_mouse_capture`] — **off by default**, so the terminal's native text
+    /// selection keeps working (issue #126).
+    Mouse(MouseEvent),
+    /// A terminal focus change. Only produced when focus reporting is enabled via
+    /// [`set_focus_reporting`] — **off by default** (issue #126).
+    Focus(FocusChange),
     /// Reserved animation/timer tick. It is **not** produced by [`poll_event`]:
     /// the core loop is input-driven. A consumer paces animation itself with
     /// `Context::animation_interval` + `Context::render_if_due` (see the
@@ -114,6 +194,34 @@ pub fn poll_event(timeout: Duration) -> io::Result<Option<Event>> {
         }
     }
     poll_event_crossterm(timeout)
+}
+
+/// Enables or disables mouse-event reporting. **Off by default**, so the terminal's
+/// native text selection and copy/paste keep working; enable it only while an
+/// instrument needs pointer input, and disable it again afterward (issue #126). When
+/// enabled, [`poll_event`] yields [`Event::Mouse`]. Writes the control sequence to
+/// stdout; a write error propagates.
+pub fn set_mouse_capture(enable: bool) -> io::Result<()> {
+    use crossterm::ExecutableCommand;
+    if enable {
+        io::stdout().execute(event::EnableMouseCapture)?;
+    } else {
+        io::stdout().execute(event::DisableMouseCapture)?;
+    }
+    Ok(())
+}
+
+/// Enables or disables focus-change reporting. **Off by default** (issue #126). When
+/// enabled, [`poll_event`] yields [`Event::Focus`]. Writes the control sequence to
+/// stdout; a write error propagates.
+pub fn set_focus_reporting(enable: bool) -> io::Result<()> {
+    use crossterm::ExecutableCommand;
+    if enable {
+        io::stdout().execute(event::EnableFocusChange)?;
+    } else {
+        io::stdout().execute(event::DisableFocusChange)?;
+    }
+    Ok(())
 }
 
 /// The portable crossterm wait+decode. Used off-Unix, or when stdin is not a tty
@@ -156,8 +264,31 @@ fn decode_event(ev: CtEvent) -> Option<Event> {
         }
         CtEvent::Paste(s) => Some(Event::Paste(s)),
         CtEvent::Resize(cols, rows) => Some(Event::Resize(cols, rows)),
-        _ => None,
+        CtEvent::Mouse(m) => decode_mouse(m),
+        CtEvent::FocusGained => Some(Event::Focus(FocusChange::Gained)),
+        CtEvent::FocusLost => Some(Event::Focus(FocusChange::Lost)),
     }
+}
+
+/// Translates a crossterm mouse event into our [`MouseEvent`]. Always produces an
+/// event: crossterm mouse kinds map one-to-one onto [`MouseKind`].
+fn decode_mouse(m: CtMouseEvent) -> Option<Event> {
+    let kind = match m.kind {
+        CtMouseKind::Down(b) => MouseKind::Down(b.into()),
+        CtMouseKind::Up(b) => MouseKind::Up(b.into()),
+        CtMouseKind::Drag(b) => MouseKind::Drag(b.into()),
+        CtMouseKind::Moved => MouseKind::Moved,
+        CtMouseKind::ScrollUp => MouseKind::ScrollUp,
+        CtMouseKind::ScrollDown => MouseKind::ScrollDown,
+        CtMouseKind::ScrollLeft => MouseKind::ScrollLeft,
+        CtMouseKind::ScrollRight => MouseKind::ScrollRight,
+    };
+    Some(Event::Mouse(MouseEvent {
+        kind,
+        column: m.column,
+        row: m.row,
+        modifiers: m.modifiers.into(),
+    }))
 }
 
 /// Hangup-aware poll loop for a Unix controlling terminal (issue #79).
@@ -819,5 +950,132 @@ mod tests {
         assert_eq!(input.grapheme_count(), 1);
         assert_eq!(input.cursor_grapheme, 1);
         assert_invariant(&input);
+    }
+}
+
+#[cfg(test)]
+mod mouse_focus_tests {
+    use super::{
+        decode_event, Event, FocusChange, KeyModifiers, MouseButton, MouseEvent, MouseKind,
+    };
+    use crossterm::event::{
+        Event as CtEvent, KeyModifiers as CtKeyModifiers, MouseButton as CtMouseButton,
+        MouseEvent as CtMouseEvent, MouseEventKind as CtMouseKind,
+    };
+
+    fn ct_mouse(kind: CtMouseKind, column: u16, row: u16, modifiers: CtKeyModifiers) -> CtEvent {
+        CtEvent::Mouse(CtMouseEvent {
+            kind,
+            column,
+            row,
+            modifiers,
+        })
+    }
+
+    #[test]
+    fn mouse_down_maps_button_position_and_modifiers() {
+        // ctrl + left-press at cell (3, 4) normalizes verbatim.
+        let got = decode_event(ct_mouse(
+            CtMouseKind::Down(CtMouseButton::Left),
+            3,
+            4,
+            CtKeyModifiers::CONTROL,
+        ));
+        assert_eq!(
+            got,
+            Some(Event::Mouse(MouseEvent {
+                kind: MouseKind::Down(MouseButton::Left),
+                column: 3,
+                row: 4,
+                modifiers: KeyModifiers::CONTROL,
+            }))
+        );
+    }
+
+    #[test]
+    fn every_mouse_kind_normalizes() {
+        let cases = [
+            (
+                CtMouseKind::Up(CtMouseButton::Right),
+                MouseKind::Up(MouseButton::Right),
+            ),
+            (
+                CtMouseKind::Drag(CtMouseButton::Middle),
+                MouseKind::Drag(MouseButton::Middle),
+            ),
+            (CtMouseKind::Moved, MouseKind::Moved),
+            (CtMouseKind::ScrollUp, MouseKind::ScrollUp),
+            (CtMouseKind::ScrollDown, MouseKind::ScrollDown),
+            (CtMouseKind::ScrollLeft, MouseKind::ScrollLeft),
+            (CtMouseKind::ScrollRight, MouseKind::ScrollRight),
+        ];
+        for (ct, ours) in cases {
+            let got = decode_event(ct_mouse(ct, 1, 2, CtKeyModifiers::empty()));
+            assert_eq!(
+                got,
+                Some(Event::Mouse(MouseEvent {
+                    kind: ours,
+                    column: 1,
+                    row: 2,
+                    modifiers: KeyModifiers::empty(),
+                }))
+            );
+        }
+    }
+
+    #[test]
+    fn every_button_maps() {
+        for (ct, ours) in [
+            (CtMouseButton::Left, MouseButton::Left),
+            (CtMouseButton::Right, MouseButton::Right),
+            (CtMouseButton::Middle, MouseButton::Middle),
+        ] {
+            let got = decode_event(ct_mouse(
+                CtMouseKind::Down(ct),
+                0,
+                0,
+                CtKeyModifiers::empty(),
+            ));
+            assert_eq!(
+                got,
+                Some(Event::Mouse(MouseEvent {
+                    kind: MouseKind::Down(ours),
+                    column: 0,
+                    row: 0,
+                    modifiers: KeyModifiers::empty(),
+                }))
+            );
+        }
+    }
+
+    #[test]
+    fn drag_is_distinct_from_down() {
+        // MUTATION CONTROL: a press and a drag of the same button must NOT normalize
+        // to the same event — a decoder that collapsed Drag into Down would fail.
+        let down = decode_event(ct_mouse(
+            CtMouseKind::Down(CtMouseButton::Left),
+            5,
+            5,
+            CtKeyModifiers::empty(),
+        ));
+        let drag = decode_event(ct_mouse(
+            CtMouseKind::Drag(CtMouseButton::Left),
+            5,
+            5,
+            CtKeyModifiers::empty(),
+        ));
+        assert_ne!(down, drag);
+    }
+
+    #[test]
+    fn focus_gained_and_lost_normalize() {
+        assert_eq!(
+            decode_event(CtEvent::FocusGained),
+            Some(Event::Focus(FocusChange::Gained))
+        );
+        assert_eq!(
+            decode_event(CtEvent::FocusLost),
+            Some(Event::Focus(FocusChange::Lost))
+        );
     }
 }
