@@ -104,6 +104,28 @@ impl HitLayers {
             .any(|layer| layer.targets.iter().any(|t| t.id == id))
     }
 
+    /// Whether a captured `id` still holds authority under the current stack.
+    ///
+    /// A capture is authority over a target that *still exists and is not
+    /// occluded* — not a standing reservation. Authority survives the pointer
+    /// wandering off the target's rect (that is the whole point of a drag), but
+    /// a modal layer opening above the target is a veto: the modal owns the
+    /// surface now, so the held target goes quiet. We take the TOPMOST layer
+    /// carrying the id (its most authoritative home) and ask only whether
+    /// anything modal sits strictly above it — a non-modal layer above is
+    /// see-through for capture exactly as it is for `hit_test`. Private: this is
+    /// an internal revalidation for `route`, not consumer surface.
+    fn capture_is_eligible(&self, id: TargetId) -> bool {
+        match self
+            .layers
+            .iter()
+            .rposition(|layer| layer.targets.iter().any(|t| t.id == id))
+        {
+            Some(home) => !self.layers[home + 1..].iter().any(|layer| layer.modal),
+            None => false,
+        }
+    }
+
     /// The target that receives the pointer at cell `(x, y)`, or `None`.
     ///
     /// Layers are tested top-first. A layer's winner is its highest-`z` target
@@ -169,9 +191,20 @@ impl PointerCapture {
     }
 
     /// Routes a pointer at cell `(x, y)`: the captured target if capture is held
-    /// (regardless of position), otherwise [`HitLayers::hit_test`].
+    /// *and still legitimate*, otherwise [`HitLayers::hit_test`].
+    ///
+    /// Holding a target is not a blank cheque. We revalidate it against the
+    /// current `layers`: a held target that is still eligible routes regardless
+    /// of position (drag-capture), but one that has been removed or occluded by
+    /// a modal opening above it has lost its authority, so we fall through to a
+    /// fresh hit test and the event goes to whatever is legitimately under the
+    /// pointer now (e.g. the modal). This is a read-only check — `held` is left
+    /// untouched; the explicit `cancel_*` methods remain the only mutators.
     pub fn route(&self, layers: &HitLayers, x: u16, y: u16) -> Option<TargetId> {
-        self.held.or_else(|| layers.hit_test(x, y))
+        match self.held {
+            Some(id) if layers.capture_is_eligible(id) => Some(id),
+            _ => layers.hit_test(x, y),
+        }
     }
 
     /// Releases the capture if the captured target is no longer in `layers`
@@ -412,5 +445,63 @@ mod tests {
         l.push_layer(true);
         l.add_target(B, Rect::new(8, 8, 1, 1), 0);
         assert_eq!(l.hit_test_world(&reference_view(), 1.3, 1.3), None);
+    }
+
+    #[test]
+    fn modal_above_capture_revokes_authority() {
+        // THE decisive RED. A is captured in the base layer; a MODAL layer then
+        // opens above holding B. The modal owns the surface, so a held A has no
+        // authority: a stale capture must NOT fire. Old `route` returned the
+        // held target unconditionally (Some(A)); the repair revalidates and
+        // falls through to a fresh hit_test.
+        let mut l = base_with_a();
+        l.push_layer(true);
+        l.add_target(B, Rect::new(20, 20, 4, 4), 0);
+        let mut cap = PointerCapture::new();
+        cap.capture(A);
+        // A cell over neither target: the modal eats it -> None, never the ghost A.
+        assert_ne!(cap.route(&l, 3, 3), Some(A));
+        assert_eq!(cap.route(&l, 3, 3), None);
+        // A cell over the modal's own target routes to B, never the ghost A.
+        assert_eq!(cap.route(&l, 21, 21), Some(B));
+    }
+
+    #[test]
+    fn capture_survives_pointer_leaving_target_bounds() {
+        // Preserved + MUTATION CONTROL. No modal above, so drag-capture holds
+        // even when the pointer wanders well off A's rect. A "fix" that makes
+        // route always-None or always-hit_test(x,y) fails here: (50,50) is over
+        // nothing, so Some(A) can only come from a live capture.
+        let l = base_with_a();
+        let mut cap = PointerCapture::new();
+        cap.capture(A);
+        assert_eq!(cap.route(&l, 50, 50), Some(A));
+    }
+
+    #[test]
+    fn nonmodal_layer_above_does_not_revoke_capture() {
+        // Preserved + MUTATION CONTROL against an over-eager fix that revokes on
+        // ANY layer above. A non-modal layer is see-through for capture exactly
+        // as it is for hit_test, so A keeps authority. (50,50) covers no target,
+        // so Some(A) is the capture speaking, not a hit.
+        let mut l = base_with_a();
+        l.push_layer(false);
+        l.add_target(B, Rect::new(20, 20, 4, 4), 0);
+        let mut cap = PointerCapture::new();
+        cap.capture(A);
+        assert_eq!(cap.route(&l, 50, 50), Some(A));
+    }
+
+    #[test]
+    fn removed_capture_target_does_not_route() {
+        // Removal case. A was captured but no longer exists in `layers`; its
+        // authority died with it. route must not resurrect the ghost -> it falls
+        // through to hit_test, a miss here. Old code returned Some(A).
+        let mut gone = HitLayers::new();
+        gone.add_target(B, Rect::new(0, 0, 4, 4), 0);
+        let mut cap = PointerCapture::new();
+        cap.capture(A);
+        assert_ne!(cap.route(&gone, 50, 50), Some(A));
+        assert_eq!(cap.route(&gone, 50, 50), None);
     }
 }
