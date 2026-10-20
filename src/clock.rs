@@ -469,10 +469,7 @@ mod tests {
         let total = |chunks: &[Duration]| {
             let mut ts = FixedTimestep::exact(s, 4);
             let mut sum = 0u32;
-            for &dt in chunks
-                .iter()
-                .chain(std::iter::repeat_n(&Duration::ZERO, 8))
-            {
+            for &dt in chunks.iter().chain(std::iter::repeat_n(&Duration::ZERO, 8)) {
                 let d = ts.advance(dt);
                 assert_eq!(d.discarded, 0);
                 assert!(!d.clamped);
