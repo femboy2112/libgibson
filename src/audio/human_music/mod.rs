@@ -29,6 +29,7 @@ pub mod backbone;
 pub mod bass;
 pub mod budget;
 pub mod comp;
+pub mod comp_witness;
 pub mod composer;
 pub mod context;
 pub mod contract;
