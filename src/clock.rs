@@ -347,7 +347,10 @@ mod tests {
 
         // Strictly increasing across the boundary — never resets to zero.
         assert!(below < at, "now() went backwards at the u32 boundary");
-        assert!(at < above, "now() went backwards just past the u32 boundary");
+        assert!(
+            at < above,
+            "now() went backwards just past the u32 boundary"
+        );
         assert_ne!(at, Duration::ZERO, "now() wrapped to zero at frame 2^32");
 
         // Exact value at frame 2^32: 16ms * 4_294_967_296 = 68_719_476.736 s,
@@ -384,8 +387,8 @@ mod tests {
         };
 
         assert_eq!(count(&[total]), 62);
-        assert_eq!(count(&vec![Duration::from_millis(100); 10]), 62);
-        assert_eq!(count(&vec![Duration::from_millis(1); 1000]), 62);
+        assert_eq!(count(&[Duration::from_millis(100); 10]), 62);
+        assert_eq!(count(&[Duration::from_millis(1); 1000]), 62);
     }
 
     #[test]
@@ -395,7 +398,10 @@ mod tests {
         let mut ts = FixedTimestep::new(step); // DEFAULT_MAX_TICKS = 8
         let demand = ts.advance(Duration::from_secs(10)); // would want 625 ticks
         assert_eq!(demand.ticks, FixedTimestep::DEFAULT_MAX_TICKS);
-        assert!(demand.clamped, "backlog over the cap must report clamped=true");
+        assert!(
+            demand.clamped,
+            "backlog over the cap must report clamped=true"
+        );
 
         // Backlog was dropped: a normal frame next does not replay the stall.
         assert!(ts.alpha() < 1.0);
