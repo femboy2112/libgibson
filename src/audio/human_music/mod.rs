@@ -80,6 +80,7 @@ pub mod pitch;
 pub mod plan;
 pub mod pocket;
 pub mod pocket_diagnostics;
+pub mod pocket_time;
 pub mod policy;
 #[cfg(test)]
 mod probes;
