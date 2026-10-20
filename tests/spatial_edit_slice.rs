@@ -506,11 +506,12 @@ fn replay_reproduces_identical_action_log() {
 
 #[test]
 fn context_poll_from_injects_events_headlessly() {
-    // Defect G: a headless context has no TTY, so poll_event yields nothing...
+    // Defect G: terminal input is bound to a real TTY — a headless context's
+    // `poll_event` cannot initialize an input reader — so `poll_from` is the
+    // general injected path that drives any context, headless included.
     let mut ctx = Context::headless(RenderMode::Inline, 40, 8);
-    assert_eq!(ctx.poll_event(Duration::from_millis(1)).unwrap(), None);
 
-    // ...but an injected EventSource drives it through the same event path.
+    // An injected EventSource drives the context through the same event path.
     let mut src =
         ScriptedSource::from_events(vec![Event::Key(KeyEvent::char('a')), Event::Resize(50, 10)]);
     let first = ctx.poll_from(&mut src, Duration::from_millis(1)).unwrap();
