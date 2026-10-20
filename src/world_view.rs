@@ -98,6 +98,14 @@ pub enum Clip {
     /// The quantized index exceeded the destination integer range (`i32` raster
     /// pixel or `u16` cell). Guarded rather than truncated.
     OutOfRange,
+    /// The transform itself is not invertible: a per-axis zoom that is zero or
+    /// non-finite. Zero zoom collapses every world coordinate onto one view
+    /// coordinate (not injective) and its inverse `view / 0` has no finite
+    /// representative; non-finite zoom likewise has no finite inverse. This is a
+    /// property of the `WorldView`, not of the source point, so `NonFinite`
+    /// (a bad *input*) cannot express it. Negative finite zoom is a mirror and
+    /// stays invertible.
+    NonInvertible,
 }
 
 /// The result of a quantizing or clipping transport: either a mapped value with a
@@ -200,7 +208,7 @@ impl WorldView {
 
     /// Sets the per-axis zoom in raster pixels per world unit. Independent axes
     /// permit correcting for pixel aspect. Values are stored verbatim; a zero or
-    /// non-finite zoom yields a defined (not panicking) degenerate transport —
+    /// zero or non-finite zoom yields a defined (not panicking) [`Clip::NonInvertible`] transport —
     /// see the type-level and method docs.
     pub fn with_zoom(mut self, zoom_x: f64, zoom_y: f64) -> Self {
         self.zoom_x = zoom_x;
@@ -254,6 +262,15 @@ impl WorldView {
             w.min(i64::from(i32::MAX)) as i32,
             h.min(i64::from(i32::MAX)) as i32,
         )
+    }
+
+    /// `true` when both zooms are finite and nonzero, i.e. the view transform is a
+    /// bijection with a finite inverse. Negative zoom (a mirror) qualifies.
+    fn is_invertible(&self) -> bool {
+        self.zoom_x.is_finite()
+            && self.zoom_y.is_finite()
+            && self.zoom_x != 0.0
+            && self.zoom_y != 0.0
     }
 
     // -- Forward: continuous (exact) --------------------------------------
@@ -353,10 +370,16 @@ impl WorldView {
     ///
     /// Non-finite world (or non-finite view under extreme zoom) is
     /// [`Clip::NonFinite`]; out-of-view is [`Clip::OutOfView`]; an impossible cell
-    /// index is [`Clip::OutOfRange`]. A zero zoom collapses all world onto the
-    /// anchor's first cell and reports infinite residual intervals — degenerate but
-    /// defined and non-panicking.
+    /// index is [`Clip::OutOfRange`]. A zero or non-finite zoom on either axis is
+    /// not invertible and is [`Clip::NonInvertible`] (checked first, since it is a
+    /// property of the view, not the point) — never a mapped cell with an infinite
+    /// residual. A residual that would overflow is also `NonInvertible`. Residual
+    /// `interval` is a width, so it is non-negative even under mirrored (negative)
+    /// zoom.
     pub fn world_to_cell(&self, wx: f64, wy: f64) -> Transport<(u16, u16)> {
+        if !self.is_invertible() {
+            return Transport::Clipped(Clip::NonInvertible);
+        }
         if !wx.is_finite() || !wy.is_finite() {
             return Transport::Clipped(Clip::NonFinite);
         }
@@ -385,23 +408,34 @@ impl WorldView {
         let center_view_y = (oy * ppc_y) as f64 + f64::from(self.ppc_y) / 2.0;
         let center_world_x = self.pan_x + center_view_x / self.zoom_x;
         let center_world_y = self.pan_y + center_view_y / self.zoom_y;
+        let residual = Residual {
+            interval_x: (f64::from(self.ppc_x) / self.zoom_x).abs(),
+            interval_y: (f64::from(self.ppc_y) / self.zoom_y).abs(),
+            offset_x: wx - center_world_x,
+            offset_y: wy - center_world_y,
+        };
+        // Subnormal zoom / huge pan can still overflow the receipt: no finite
+        // representative means no honest Mapped.
+        if !(residual.interval_x.is_finite()
+            && residual.interval_y.is_finite()
+            && residual.offset_x.is_finite()
+            && residual.offset_y.is_finite())
+        {
+            return Transport::Clipped(Clip::NonInvertible);
+        }
         Transport::Mapped {
             value: (cx as u16, cy as u16),
-            residual: Residual {
-                interval_x: f64::from(self.ppc_x) / self.zoom_x,
-                interval_y: f64::from(self.ppc_y) / self.zoom_y,
-                offset_x: wx - center_world_x,
-                offset_y: wy - center_world_y,
-            },
+            residual,
         }
     }
 
     // -- Inverse ----------------------------------------------------------
 
     /// Maps continuous VIEW coordinates back to WORLD: `world = pan + view / zoom`.
-    /// Exact inverse of [`world_to_view`](WorldView::world_to_view). A zero zoom
-    /// produces non-finite output, which [`cell_to_world`](WorldView::cell_to_world)
-    /// reports as [`Clip::NonFinite`].
+    /// Exact inverse of [`world_to_view`](WorldView::world_to_view) for invertible
+    /// zoom. A zero zoom produces non-finite output here (raw, unguarded);
+    /// [`cell_to_world`](WorldView::cell_to_world) reports that as
+    /// [`Clip::NonInvertible`].
     pub fn view_to_world(&self, vx: f64, vy: f64) -> (f64, f64) {
         (self.pan_x + vx / self.zoom_x, self.pan_y + vy / self.zoom_y)
     }
@@ -416,9 +450,14 @@ impl WorldView {
     /// (`ppc / zoom` per axis); `offset` is `0` because the center is exact within
     /// its own quantum.
     ///
-    /// A cell outside the anchor is [`Clip::OutOfView`]; a center that maps to a
-    /// non-finite world point (zero zoom) is [`Clip::NonFinite`].
+    /// A cell outside the anchor is [`Clip::OutOfView`]; a zero or non-finite zoom
+    /// (or a center/footprint that overflows to a non-finite value) has no finite
+    /// representative and is [`Clip::NonInvertible`]. Interval is a non-negative
+    /// width even under mirrored (negative) zoom.
     pub fn cell_to_world(&self, cx: u16, cy: u16) -> Transport<(f64, f64)> {
+        if !self.is_invertible() {
+            return Transport::Clipped(Clip::NonInvertible);
+        }
         if !self.anchor.contains(cx, cy) {
             return Transport::Clipped(Clip::OutOfView);
         }
@@ -427,14 +466,16 @@ impl WorldView {
         let center_view_x = (ox + 0.5) * f64::from(self.ppc_x);
         let center_view_y = (oy + 0.5) * f64::from(self.ppc_y);
         let (wx, wy) = self.view_to_world(center_view_x, center_view_y);
-        if !wx.is_finite() || !wy.is_finite() {
-            return Transport::Clipped(Clip::NonFinite);
+        let interval_x = (f64::from(self.ppc_x) / self.zoom_x).abs();
+        let interval_y = (f64::from(self.ppc_y) / self.zoom_y).abs();
+        if !(wx.is_finite() && wy.is_finite() && interval_x.is_finite() && interval_y.is_finite()) {
+            return Transport::Clipped(Clip::NonInvertible);
         }
         Transport::Mapped {
             value: (wx, wy),
             residual: Residual {
-                interval_x: f64::from(self.ppc_x) / self.zoom_x,
-                interval_y: f64::from(self.ppc_y) / self.zoom_y,
+                interval_x,
+                interval_y,
                 offset_x: 0.0,
                 offset_y: 0.0,
             },
@@ -621,22 +662,132 @@ mod tests {
             huge.world_to_cell(1.0, 1.0),
             Transport::Clipped(Clip::OutOfView)
         );
-        // Zero zoom collapses all world onto the anchor's first cell with an
-        // infinite reported interval: degenerate but defined.
-        let flat = reference().with_zoom(0.0, 0.0);
-        match flat.world_to_cell(42.0, -42.0) {
-            Transport::Mapped { value, residual } => {
-                assert_eq!(value, (0, 0));
-                assert!(residual.interval_x.is_infinite());
-                assert!(residual.interval_y.is_infinite());
-            }
-            Transport::Clipped(c) => panic!("zero zoom should map, got {c:?}"),
+    }
+
+    // RED-first (audit defect A). Old code returned Mapped((0,0)) with an
+    // infinite interval for zero zoom; it must be NonInvertible instead.
+    #[test]
+    fn zero_zoom_forward_is_noninvertible_not_mapped() {
+        for v in [
+            reference().with_zoom(0.0, 2.0),
+            reference().with_zoom(2.0, 0.0),
+            reference().with_zoom(0.0, 0.0),
+            reference().with_zoom(-0.0, 2.0),
+        ] {
+            assert_eq!(
+                v.world_to_cell(1.0, 1.0),
+                Transport::Clipped(Clip::NonInvertible)
+            );
         }
-        // Zero zoom makes the inverse non-finite: reported, not panicked.
+    }
+
+    // RED-first: old code gave Clipped(NonFinite) here; the honest reason is that
+    // the transform has no inverse.
+    #[test]
+    fn zero_zoom_inverse_is_noninvertible() {
+        for v in [
+            reference().with_zoom(0.0, 2.0),
+            reference().with_zoom(2.0, 0.0),
+            reference().with_zoom(0.0, 0.0),
+        ] {
+            assert_eq!(
+                v.cell_to_world(0, 0),
+                Transport::Clipped(Clip::NonInvertible)
+            );
+        }
+    }
+
+    // Regression guards. Infinite zoom's inverse (1/inf = 0) used to return a
+    // Mapped zero-width cell; NaN zoom slipped through as well.
+    #[test]
+    fn nonfinite_zoom_is_noninvertible_both_directions() {
+        for z in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+            for v in [reference().with_zoom(z, 2.0), reference().with_zoom(2.0, z)] {
+                assert_eq!(
+                    v.world_to_cell(1.0, 1.0),
+                    Transport::Clipped(Clip::NonInvertible),
+                    "forward, zoom {z}"
+                );
+                assert_eq!(
+                    v.cell_to_world(1, 1),
+                    Transport::Clipped(Clip::NonInvertible),
+                    "inverse, zoom {z}"
+                );
+            }
+        }
+    }
+
+    // MUTATION CONTROL: fails if the fix is "make every transform NonInvertible".
+    #[test]
+    fn positive_zoom_still_round_trips_mapped_and_finite() {
+        let v = reference(); // zoom 2
+        let (cell, res) = match v.world_to_cell(1.3, 1.3) {
+            Transport::Mapped { value, residual } => (value, residual),
+            Transport::Clipped(c) => panic!("expected mapped, got {c:?}"),
+        };
+        assert_eq!(cell, (2, 1));
+        assert!(res.interval_x.is_finite() && res.offset_x.is_finite());
+        assert!(res.interval_y.is_finite() && res.offset_y.is_finite());
+        match v.cell_to_world(cell.0, cell.1) {
+            Transport::Mapped { value, residual } => {
+                // Back inside the original cell's world footprint.
+                assert!((value.0 - 1.3).abs() <= res.interval_x / 2.0 + 1e-12);
+                assert!((value.1 - 1.3).abs() <= res.interval_y / 2.0 + 1e-12);
+                assert!(residual.interval_x.is_finite() && residual.interval_y.is_finite());
+            }
+            Transport::Clipped(c) => panic!("inverse clipped {c:?}"),
+        }
+    }
+
+    // HONEST behavior: negative finite zoom is a mirror, mathematically
+    // invertible, so it round-trips (it is NOT rejected). The module states no
+    // rejection of negative zoom. Intervals stay non-negative widths.
+    #[test]
+    fn negative_zoom_mirror_round_trips_not_rejected() {
+        // pan 10, zoom -2: world 9.3 -> view (9.3-10)*-2 = 1.4 -> raster (1,1)
+        // -> cell (1, 0); center view (1.5, 1.0) -> world (9.25, 9.5).
+        let v = reference().with_pan(10.0, 10.0).with_zoom(-2.0, -2.0);
+        let (cell, res) = match v.world_to_cell(9.3, 9.3) {
+            Transport::Mapped { value, residual } => (value, residual),
+            Transport::Clipped(c) => panic!("negative zoom must map, got {c:?}"),
+        };
+        assert_eq!(cell, (1, 0));
+        assert_eq!(res.interval_x, 0.5);
+        assert_eq!(res.interval_y, 1.0);
+        assert!((res.offset_x - 0.05).abs() < 1e-9);
+        assert!((res.offset_y - (-0.2)).abs() < 1e-9);
+        match v.cell_to_world(cell.0, cell.1) {
+            Transport::Mapped { value, residual } => {
+                assert!((value.0 - 9.25).abs() < 1e-12);
+                assert!((value.1 - 9.5).abs() < 1e-12);
+                assert_eq!(residual.interval_x, 0.5);
+                assert_eq!(residual.interval_y, 1.0);
+                // q(s(cell)) == cell: the center maps back to the same cell.
+                assert_eq!(
+                    v.world_to_cell(value.0, value.1).value().copied(),
+                    Some(cell)
+                );
+            }
+            Transport::Clipped(c) => panic!("inverse clipped {c:?}"),
+        }
+    }
+
+    // Boundary control: last cell is reachable and its center round-trips; the
+    // exclusive upper edge is OutOfView; extreme pan overflow never yields Mapped.
+    #[test]
+    fn edge_cell_and_extreme_pan_boundaries() {
+        let v = reference(); // world extent [0, 5) x [0, 10)
+        assert_eq!(v.world_to_cell(4.999, 9.999).value().copied(), Some((9, 9)));
         assert_eq!(
-            flat.cell_to_world(0, 0),
-            Transport::Clipped(Clip::NonFinite)
+            v.world_to_cell(5.0, 5.0),
+            Transport::Clipped(Clip::OutOfView)
         );
+        let (cx, cy) = (9, 9);
+        let c = *v.cell_to_world(cx, cy).value().unwrap();
+        assert_eq!(v.world_to_cell(c.0, c.1).value().copied(), Some((9, 9)));
+        // pan 1e308 * zoom 2 overflows the view: clipped, not a bogus cell.
+        let far = reference().with_pan(1e308, 1e308);
+        assert!(far.world_to_cell(-1e308, -1e308).is_clipped());
     }
 
     #[test]
