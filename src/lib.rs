@@ -43,6 +43,8 @@ pub mod focus;
 pub mod geom;
 pub mod glitch;
 pub mod glyph;
+/// Layered spatial hit testing and pointer capture (issue #127).
+pub mod hit_test;
 pub mod input;
 pub mod layout;
 pub mod node;
