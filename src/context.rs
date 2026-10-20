@@ -580,6 +580,25 @@ impl Context {
         Ok(ev)
     }
 
+    /// Polls the next event from an injected
+    /// [`EventSource`](crate::event_source::EventSource) instead of the terminal,
+    /// so a headless, scripted, or recorded context can be driven through the same
+    /// event path as a live TTY (the general injected-input path — SmartChem
+    /// #131/G). Unlike [`poll_event`](Self::poll_event) this does **not** require a
+    /// TTY: the injected source is the authority on event availability. An injected
+    /// `Resize` still marks the scheduler dirty so the next render re-observes
+    /// geometry, keeping a scripted resize indistinguishable from a terminal one.
+    pub fn poll_from<S>(&mut self, source: &mut S, timeout: Duration) -> io::Result<Option<Event>>
+    where
+        S: crate::event_source::EventSource + ?Sized,
+    {
+        let ev = source.poll_event(timeout)?;
+        if let Some(Event::Resize(_, _)) = ev {
+            self.scheduler.mark_dirty();
+        }
+        Ok(ev)
+    }
+
     /// Returns a snapshot of render statistics.
     ///
     /// Takes `&self`: it overlays the renderer's absolute operation counters
