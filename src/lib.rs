@@ -43,6 +43,7 @@ pub mod event_source;
 pub mod ffi;
 pub mod field;
 pub mod focus;
+pub mod frame;
 pub mod geom;
 pub mod glitch;
 pub mod glyph;

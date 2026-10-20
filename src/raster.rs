@@ -10,6 +10,59 @@ pub type Rgb = (u8, u8, u8);
 /// Normal terminal rasters are orders of magnitude smaller than this ceiling.
 pub const MAX_RASTER_DIMENSION: u16 = 2048;
 
+/// Why a caller-supplied byte buffer could not be ingested as RGB pixels (#129).
+///
+/// Ingest **rejects** bad input rather than clamping or truncating it: silently
+/// clamping a caller's declared dimensions (the way [`RgbRaster::new`] does for
+/// convenience) would be a lie about what the caller actually handed over. Every
+/// variant carries the numbers needed to see exactly what was wrong.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum FrameError {
+    /// A dimension was zero: an empty frame has no pixels to ingest.
+    ZeroDimension { width: u16, height: u16 },
+    /// A dimension exceeded [`MAX_RASTER_DIMENSION`] (rejected, not clamped).
+    TooLarge { width: u16, height: u16, max: u16 },
+    /// The row stride (bytes per row) is smaller than the `width * 3` a packed RGB
+    /// row needs.
+    StrideTooSmall { stride: usize, min_row_bytes: usize },
+    /// `stride * height` overflowed `usize`: the declared frame cannot be addressed.
+    DimensionsOverflow { stride: usize, height: u16 },
+    /// The buffer is shorter than `stride * height`: it cannot hold the declared frame.
+    ShortBuffer { have: usize, need: usize },
+}
+
+impl std::fmt::Display for FrameError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ZeroDimension { width, height } => {
+                write!(f, "frame has a zero dimension: {width}x{height}")
+            }
+            Self::TooLarge { width, height, max } => {
+                write!(
+                    f,
+                    "frame {width}x{height} exceeds the {max} pixel-per-axis limit"
+                )
+            }
+            Self::StrideTooSmall {
+                stride,
+                min_row_bytes,
+            } => write!(
+                f,
+                "row stride {stride} is smaller than the {min_row_bytes} bytes a packed row needs"
+            ),
+            Self::DimensionsOverflow { stride, height } => {
+                write!(f, "stride {stride} * height {height} overflows usize")
+            }
+            Self::ShortBuffer { have, need } => {
+                write!(f, "buffer holds {have} bytes but the frame needs {need}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for FrameError {}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RgbRaster {
     width: u16,
@@ -178,5 +231,156 @@ impl RgbRaster {
             writer.write_all(&[r, g, b])?;
         }
         Ok(())
+    }
+}
+
+impl RgbRaster {
+    /// Ingests a bounded buffer of packed RGB bytes into a new owned raster (#129).
+    ///
+    /// `stride` is the number of bytes per row in `bytes` (>= `width * 3`; rows may be
+    /// padded). Pixels are COPIED (never borrowed) into the owned `Vec<Rgb>`. Bad input
+    /// is REJECTED with a [`FrameError`], never clamped: an oversize dimension, a stride
+    /// too small for a packed row, an arithmetic overflow, or a buffer too short all
+    /// return an error rather than a surprising partial frame.
+    pub fn from_rgb_bytes(
+        width: u16,
+        height: u16,
+        stride: usize,
+        bytes: &[u8],
+    ) -> Result<Self, FrameError> {
+        if width == 0 || height == 0 {
+            return Err(FrameError::ZeroDimension { width, height });
+        }
+        if width > MAX_RASTER_DIMENSION || height > MAX_RASTER_DIMENSION {
+            return Err(FrameError::TooLarge {
+                width,
+                height,
+                max: MAX_RASTER_DIMENSION,
+            });
+        }
+        // width <= 2048 here, so this cannot overflow usize.
+        let min_row_bytes = width as usize * 3;
+        if stride < min_row_bytes {
+            return Err(FrameError::StrideTooSmall {
+                stride,
+                min_row_bytes,
+            });
+        }
+        let need = stride
+            .checked_mul(height as usize)
+            .ok_or(FrameError::DimensionsOverflow { stride, height })?;
+        if bytes.len() < need {
+            return Err(FrameError::ShortBuffer {
+                have: bytes.len(),
+                need,
+            });
+        }
+        let mut pixels = Vec::with_capacity(width as usize * height as usize);
+        for row in 0..height as usize {
+            let row_start = row * stride;
+            for col in 0..width as usize {
+                let p = row_start + col * 3;
+                pixels.push((bytes[p], bytes[p + 1], bytes[p + 2]));
+            }
+        }
+        Ok(RgbRaster {
+            width,
+            height,
+            pixels,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_rgb_bytes_rejects_zero_dimension() {
+        // Predicted: an empty frame has nothing to ingest -> ZeroDimension echoing inputs.
+        assert_eq!(
+            RgbRaster::from_rgb_bytes(0, 2, 6, &[0; 12]),
+            Err(FrameError::ZeroDimension {
+                width: 0,
+                height: 2
+            })
+        );
+    }
+
+    #[test]
+    fn from_rgb_bytes_rejects_oversize_not_clamps() {
+        // Predicted: ingest REJECTS an oversize axis with TooLarge...
+        let w = MAX_RASTER_DIMENSION + 1;
+        assert_eq!(
+            RgbRaster::from_rgb_bytes(w, 1, w as usize * 3, &[]),
+            Err(FrameError::TooLarge {
+                width: w,
+                height: 1,
+                max: MAX_RASTER_DIMENSION
+            })
+        );
+        // ...whereas `new` CLAMPS (convenience). Ingest must not do that: it would lie
+        // about the bytes the caller actually handed over.
+        assert_eq!(RgbRaster::new(w, 1).width(), MAX_RASTER_DIMENSION);
+    }
+
+    #[test]
+    fn from_rgb_bytes_rejects_stride_smaller_than_row() {
+        // Predicted: width 2 needs 6 bytes/row; stride 5 -> StrideTooSmall.
+        assert_eq!(
+            RgbRaster::from_rgb_bytes(2, 2, 5, &[0; 64]),
+            Err(FrameError::StrideTooSmall {
+                stride: 5,
+                min_row_bytes: 6
+            })
+        );
+    }
+
+    #[test]
+    fn from_rgb_bytes_rejects_short_buffer() {
+        // Predicted: 2x2 at stride 6 needs 12 bytes; 11 given -> ShortBuffer{11,12}.
+        assert_eq!(
+            RgbRaster::from_rgb_bytes(2, 2, 6, &[0; 11]),
+            Err(FrameError::ShortBuffer { have: 11, need: 12 })
+        );
+    }
+
+    #[test]
+    fn from_rgb_bytes_round_trips_packed_pixels() {
+        // Predicted: row-major, R,G,B order preserved; every pixel distinct so a
+        // channel swap or row/column transpose would fail.
+        let buf = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        let r = RgbRaster::from_rgb_bytes(2, 2, 6, &buf).unwrap();
+        assert_eq!((r.width(), r.height()), (2, 2));
+        assert_eq!(r.get(0, 0), Some((1, 2, 3)));
+        assert_eq!(r.get(1, 0), Some((4, 5, 6)));
+        assert_eq!(r.get(0, 1), Some((7, 8, 9)));
+        assert_eq!(r.get(1, 1), Some((10, 11, 12)));
+    }
+
+    #[test]
+    fn from_rgb_bytes_skips_row_padding() {
+        // Predicted: 2x1 at stride 8 -> the 2 trailing 0xFF pad bytes are skipped,
+        // so only the six real bytes become pixels.
+        let buf = [10, 20, 30, 40, 50, 60, 0xFF, 0xFF];
+        let r = RgbRaster::from_rgb_bytes(2, 1, 8, &buf).unwrap();
+        assert_eq!(r.pixels(), &[(10, 20, 30), (40, 50, 60)]);
+        // Padding also sits between rows: 1x2 at stride 5 -> row 1 starts at byte 5.
+        let buf = [1, 2, 3, 0xFF, 0xFF, 4, 5, 6, 0xFF, 0xFF];
+        let r = RgbRaster::from_rgb_bytes(1, 2, 5, &buf).unwrap();
+        assert_eq!(r.pixels(), &[(1, 2, 3), (4, 5, 6)]);
+    }
+
+    #[test]
+    fn from_rgb_bytes_rejects_dimensions_overflow() {
+        // Predicted: width 1 passes the stride check (usize::MAX >= 3), then
+        // usize::MAX * 2 overflows -> DimensionsOverflow, before bytes are touched.
+        assert_eq!(
+            RgbRaster::from_rgb_bytes(1, 2, usize::MAX, &[0; 3]),
+            Err(FrameError::DimensionsOverflow {
+                stride: usize::MAX,
+                height: 2
+            })
+        );
     }
 }
