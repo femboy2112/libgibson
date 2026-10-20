@@ -5,7 +5,7 @@
 //! directions have deliberately different disciplines (Law IV — state evolves by
 //! commands, not by observation):
 //!
-//! * **Frames are replaceable observations.** A [`Frame`](crate::frame::Frame) is the
+//! * **Frames are replaceable observations.** A [`Frame`] is the
 //!   latest picture of a source; a newer one (higher [`seq`](crate::frame::Frame::seq))
 //!   supersedes and *coalesces away* the stale one, because a presenter only ever needs
 //!   the latest. Dropping a superseded frame loses nothing a consumer could still act on.
