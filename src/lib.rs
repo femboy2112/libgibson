@@ -80,7 +80,7 @@ pub use capability::{Capability, ColorDepth, TerminalCapabilities};
 pub use cell::{Cell, Color, Glyph, Line, RichText, Span, Style, TextAlign, Theme, ThemeStyles};
 pub use clock::{
     ease_in, ease_in_out, ease_out, lerp as lerp_f32, phase, pulse, saw, spring, triangle,
-    FixedStepClock, RealClock, TimeSource,
+    FixedStepClock, FixedTimestep, RealClock, TickDemand, TimeSource,
 };
 pub use context::Context;
 pub use diff::{compute_diff, CellRun, RowPatch, SurfaceDiff};
