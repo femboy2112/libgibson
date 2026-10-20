@@ -69,6 +69,8 @@ pub mod transition;
 /// Experimental Rust-only semantic components, skins, interaction, and motion.
 pub mod ui;
 pub mod viewport;
+/// Reversible 2D world/view/raster/cell coordinate transport (issue #128).
+pub mod world_view;
 
 pub use ansi::AnsiCompiler;
 pub use canvas::{braille_oscilloscope, BrailleCanvas, HalfBlockCanvas};
