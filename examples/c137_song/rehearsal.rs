@@ -35,6 +35,7 @@ use gibson::audio::human_music::{
     contract::CompositionGrammar,
     material::MaterialEvent,
     plan::ArrangementRole,
+    pocket_time::Displacement,
     rng::Rng,
     semantic::{EventKind, SemanticEvent, SemanticState, SemanticTrace, Tone},
     theme_family::{pocket_offset, AEOLIAN},
@@ -1175,6 +1176,11 @@ pub fn freeze(draft: &RehearsalDraft) -> CompiledArgument {
     // guitarist's figure heard as chordal hits, not sung) instead of the fixed comp pattern. The riff's
     // onsets drive the comp across each 16-beat episode (stated twice); the bass still owns the root.
     compiled.comp_onsets = Some(riff.events.iter().map(|e| e.onset).collect());
+    // POCKET LOCK (2026-10-19): the comp sits dead in the band's shared pocket. The metrology round
+    // measured no physical lag for the legacy 0.03-beat early-pull to cancel, and the owner's ear chose
+    // the locked treatment over the advance in a loudness-matched A/B — so the band LOCKS. Typed as a
+    // `Displacement` (beats × seconds), never a bare float, so a push and a latency can't be conflated.
+    compiled.comp_attack = Displacement::ZERO;
     compiled
 }
 

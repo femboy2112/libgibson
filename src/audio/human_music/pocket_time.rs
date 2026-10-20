@@ -74,6 +74,15 @@ impl Displacement {
         }
     }
 
+    /// The legacy riff-comp early-pull, named and typed: a 0.03-**beat** anticipation that the
+    /// 2026-10-19 metrology round proved is a physical-latency correction mis-encoded as a musical
+    /// push (the dry FM attack lands ~1.5 ms late, the kit ~0.2 ms, the chorus is blend-not-replace —
+    /// there is no 17 ms lag for it to cancel). It is kept as a named, byte-identical default so the
+    /// typed seam changes no existing render; the rehearsal band overrides it with [`ZERO`](Self::ZERO)
+    /// (the ear-accepted lock) per that round's A/B verdict. Beats-only, so `eval_seconds` scales it
+    /// with tempo — exactly the wrong behaviour for a real latency, which is why it was a bug.
+    pub const LEGACY_KEYS_PULL: Displacement = Displacement::beats(-0.03);
+
     /// The evaluation homomorphism `E_β(b, s) = 60·b/β + s` into physical seconds at tempo `bpm > 0`.
     /// `E_β(d1 + d2) = E_β(d1) + E_β(d2)` (a group homomorphism into (ℝ, +)).
     pub fn eval_seconds(self, bpm: f64) -> f64 {
@@ -435,6 +444,18 @@ mod tests {
         let physical = Displacement::seconds(0.005);
         for &bpm in &[80.0, 104.0, 140.0] {
             assert!((physical.eval_seconds(bpm) - 0.005).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn comp_attack_treatments_evaluate_on_the_beat_grid() {
+        // The kernel schedules in BEATS: `at = at_grid + pocket + comp_attack.eval_beats(bpm)`. The
+        // legacy pull is a pure −0.03-beat anticipation at every tempo (it is beats-only).
+        assert_eq!(Displacement::LEGACY_KEYS_PULL, Displacement::beats(-0.03));
+        for &bpm in &[80.0, 104.0, 140.0] {
+            assert!((Displacement::LEGACY_KEYS_PULL.eval_beats(bpm) - (-0.03)).abs() < 1e-12);
+            // The ear-accepted lock adds exactly nothing on the grid — the comp sits in the pocket.
+            assert_eq!(Displacement::ZERO.eval_beats(bpm), 0.0);
         }
     }
 

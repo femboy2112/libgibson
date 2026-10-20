@@ -23,6 +23,7 @@ use super::meaning::MeaningPlan;
 use super::motif::{Handoff, Motif, MotifBank};
 use super::performance::PerformancePlan;
 use super::plan::ArrangementRole;
+use super::pocket_time::Displacement;
 use super::rng::Rng;
 use super::song::{HarmonicMap, SongMap, ThemeSite};
 use super::theory::{Chord, PitchBasis, Quality};
@@ -531,6 +532,15 @@ pub struct CompiledArgument {
     /// `compile`) keeps the fixed comp, so C137 and every lead-carried song render byte-identical; only
     /// the rehearsal band builder sets it.
     pub comp_onsets: Option<Vec<f64>>,
+    /// Opt-in TYPED COMP TIMING: the displacement applied to each riff-comp stab relative to its
+    /// pocket-adjusted grid position, as a [`Displacement`] (beats × seconds) rather than a bare
+    /// float — so a musical anticipation (beats, which scale with tempo) and a physical latency
+    /// (seconds, which do not) can never be conflated again. Only read on the opt-in `comp_onsets`
+    /// path (kernel.rs); `compile` defaults it to [`Displacement::LEGACY_KEYS_PULL`] so every
+    /// existing render — including C137, which leaves `comp_onsets` `None` and never reaches the
+    /// site — stays byte-identical. The rehearsal band sets it to [`Displacement::ZERO`] (the lock
+    /// the owner's ear accepted on 2026-10-19).
+    pub comp_attack: Displacement,
 }
 
 impl CompiledArgument {
@@ -1170,6 +1180,9 @@ impl MusicalArgument {
             comp_all_sections: false,
             pad_all_sections: false,
             comp_onsets: None,
+            // The legacy early-pull, kept as the byte-identical default: non-rehearsal sources leave
+            // `comp_onsets` None and never read this, so introducing the typed seam changes nothing.
+            comp_attack: Displacement::LEGACY_KEYS_PULL,
         })
     }
 

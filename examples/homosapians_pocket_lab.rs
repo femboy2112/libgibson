@@ -11,10 +11,13 @@
 //! TWO FACTORS, held orthogonal (everything else — pitches, riff, chords, bass, drums, voicing,
 //! tempo, world — is byte-identical across arms):
 //!
-//! TIMING — `baseline` is the Score as the kernel emits it (comp pulled 0.03 beat early);
-//! `no-advance` is the SAME Score with every `comp` note shifted +0.03 beat, so the comp rides the
-//! shared pocket exactly like the required Keys carrier does. A Score-level shift, NOT a const edit,
-//! so one build serves all arms.
+//! TIMING — `A_current` is the comp pulled 0.03 beat early (`comp_attack = LEGACY_KEYS_PULL`);
+//! `B_locked` is the SHIPPING FIX, the typed kernel lock (the band's `freeze` sets `comp_attack =
+//! ZERO`), so the comp rides the shared pocket. `B_noadvance_emulation` is the earlier Score-shift the
+//! owner first heard, kept for continuity. The R2 continuity proof compares the lock and the emulation
+//! at the SCORE level (PCM is confounded by the reverb memory bus — one shifted onset colours the
+//! whole tail): they carry identical comp content and timing except the song's opening downbeat chord,
+//! which the emulation's `.max(0.0)`-clamp artifact leaves at 0.03 and the kernel lock places at 0.0.
 //!
 //! CHORUS — the warm memory-bus chorus ON (ship) vs OFF.
 //!
@@ -37,6 +40,7 @@ use std::path::{Path, PathBuf};
 
 use gibson::audio::human_music::{
     kernel,
+    pocket_time::Displacement,
     score::{DrumVoice, Role, Score},
     synth::{ProductionControl, StemMask},
     theory::Mode,
@@ -44,8 +48,10 @@ use gibson::audio::human_music::{
 };
 use gibson::audio::{buffer::StereoBlock, wav::write_wav_i16, OfflineRenderer, SampleRate};
 
-/// Mirrors kernel.rs:906 `KEYS_ATTACK_COMP` (private). The amount the riff-comp is pulled early.
-const KEYS_ATTACK_COMP: f64 = 0.03;
+/// The magnitude (beats) of the legacy riff-comp early-pull, taken from its single typed home
+/// `pocket_time::Displacement::LEGACY_KEYS_PULL` (−0.03 beat) so no magic number is duplicated. Used
+/// to build the `baseline`/A arm and to recover the grid onset in the receipt.
+const KEYS_ATTACK_COMP: f64 = -Displacement::LEGACY_KEYS_PULL.beats;
 
 /// The pop feel renders at 104 BPM ("render --tempo=104 for the pop feel", c137_song.rs).
 const POCKET_TEMPO: f32 = 104.0;
@@ -76,9 +82,27 @@ fn warm_render_world(base: &MusicWorld) -> MusicWorld {
 }
 
 /// Perform the frozen rehearsal Score for a seed (the SAME path `--form=pop-rehearsal` ships).
+/// The `baseline`/A arm: the comp pulled 0.03 beat early, exactly as the kernel emitted it before the
+/// 2026-10-19 verdict. `freeze` now defaults the band to the lock, so this arm explicitly restores the
+/// legacy pull — pinning the A arm (and the receipt's grid math) to the pre-verdict behaviour.
 fn baseline_score(seed: u64, base: &MusicWorld) -> Score {
     let draft = rehearsal::rehearse(seed);
-    let source = rehearsal::freeze(&draft);
+    let mut source = rehearsal::freeze(&draft);
+    source.comp_attack = Displacement::LEGACY_KEYS_PULL;
+    kernel::perform_song(&source, base)
+        .expect("opt-in rehearsal Score is lawful")
+        .score()
+        .clone()
+}
+
+/// The TYPED KERNEL LOCK — the actual fix: `freeze` sets `comp_attack = ZERO`, so the kernel schedules
+/// each comp stab dead in the pocket (no early-pull), deciding its voicing at the true locked time.
+/// Rendering this and comparing its PCM to [`no_advance`] of the baseline proves the typed kernel fix
+/// reproduces the no-advance treatment the owner's ear accepted — not a fresh magic constant, and not
+/// a retiming of voicings that were decided under the pull.
+fn locked_score(seed: u64, base: &MusicWorld) -> Score {
+    let draft = rehearsal::rehearse(seed);
+    let source = rehearsal::freeze(&draft); // comp_attack == ZERO (freeze's post-verdict default)
     kernel::perform_song(&source, base)
         .expect("opt-in rehearsal Score is lawful")
         .score()
@@ -290,13 +314,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let seed_dir = args.out.join(format!("seed-{seed}"));
         std::fs::create_dir_all(&seed_dir)?;
 
-        // ---- Listening A/B: current (timing ON) vs no-advance (timing OFF), full warm band, chorus
-        //      on, loudness-matched. This is the money comparison for the ear (G10).
+        // ---- Listening A/B: current (timing ON, the legacy pull) vs the SHIPPING FIX (the typed
+        //      kernel lock, comp_attack = ZERO), full warm band, chorus on, loudness-matched. This is
+        //      the money comparison for the ear (G10). The earlier no-advance EMULATION — what the
+        //      owner first heard — is also written, for continuity.
+        let score_locked = locked_score(seed, &base);
         let a_full = render(&score, &rw, ProductionControl::NORMAL, StemMask::full());
-        let b_full = render(&score_na, &rw, ProductionControl::NORMAL, StemMask::full());
-        let (a_m, b_m) = loudness_match(&a_full, &b_full);
+        let b_lock = render(
+            &score_locked,
+            &rw,
+            ProductionControl::NORMAL,
+            StemMask::full(),
+        );
+        let (a_m, b_m) = loudness_match(&a_full, &b_lock);
         wav(&seed_dir.join("A_current.wav"), &a_m)?;
-        wav(&seed_dir.join("B_noadvance.wav"), &b_m)?;
+        wav(&seed_dir.join("B_locked.wav"), &b_m)?;
+        let b_emul = render(&score_na, &rw, ProductionControl::NORMAL, StemMask::full());
+        let (_, be_m) = loudness_match(&a_full, &b_emul);
+        wav(&seed_dir.join("B_noadvance_emulation.wav"), &be_m)?;
+
+        // ---- R2 CONTINUITY PROOF (Score level — PCM is confounded by the reverb memory bus: one
+        //      shifted onset colours the whole tail). The shipping lock and the no-advance emulation
+        //      carry identical comp content and timing EXCEPT the song's opening downbeat chord: the
+        //      emulation's unconditional +0.03 overshoots the `.max(0.0)` clamp (lands at 0.03) while
+        //      the kernel lock places it dead on the beat (0.0). That lone chord is the emulation's
+        //      artifact, not the fix's — the fix is the tighter of the two.
+        let na_comp = comp_notes(&score_na);
+        let lk_comp = comp_notes(&score_locked);
+        let comp_diffs: Vec<(usize, f64, f64)> = na_comp
+            .iter()
+            .zip(lk_comp.iter())
+            .enumerate()
+            .filter(|(_, (na, lk))| (*na - *lk).abs() > 1e-9)
+            .map(|(i, (na, lk))| (i, *na, *lk))
+            .collect();
 
         // ---- 2x2 chorus diagnostic on the designated seed only (timing x chorus).
         if seed == args.diag_seed {
@@ -306,9 +357,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Loudness-match the whole quad to A's RMS so the ear hears timing/chorus, not level.
             let quad = [
                 ("2x2_timingON_chorusON", g(&score, on)),
-                ("2x2_timingOFF_chorusON", g(&score_na, on)),
+                ("2x2_timingOFF_chorusON", g(&score_locked, on)),
                 ("2x2_timingON_chorusOFF", g(&score, off)),
-                ("2x2_timingOFF_chorusOFF", g(&score_na, off)),
+                ("2x2_timingOFF_chorusOFF", g(&score_locked, off)),
             ];
             let ref_rms = rms(&quad[0].1);
             let pk = quad
@@ -469,6 +520,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ),
             mean(&kick_onsets),
             crossings,
+        )?;
+        let verdict = if comp_diffs.is_empty() && na_comp.len() == lk_comp.len() {
+            "comp content + timing IDENTICAL to the accepted no-advance B".to_string()
+        } else {
+            format!(
+                "{}/{} comp notes differ (opening-chord clamp artifact): {comp_diffs:?}",
+                comp_diffs.len(),
+                lk_comp.len(),
+            )
+        };
+        writeln!(
+            summary,
+            "         R2 continuity (kernel lock vs no-advance emulation, Score level): {verdict}"
         )?;
     }
 

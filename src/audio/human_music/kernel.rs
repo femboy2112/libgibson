@@ -898,13 +898,6 @@ const EPISODE_BEATS: f64 = 16.0;
 /// the long-form grid guard so a wild onset still fails.
 const LONGFORM_POCKET_BEATS: f64 = 0.06;
 
-/// Felt-attack compensation (beats) for the riff-rhythm keys comp only. The warm keys voice speaks a
-/// hair late (a soft FM e-piano onset through the chorus + room), so its FELT attack lags the written
-/// onset; a RHYTHMIC chordal comp that must lock to the kit is therefore pulled this much EARLIER, so
-/// the heard attack lands dead on the band's shared pocket. ~0.03 beat ≈ 17 ms at 104 BPM. Ear-tunable;
-/// applied ONLY on the opt-in `comp_onsets` path, so the fixed comp and C137 are untouched.
-const KEYS_ATTACK_COMP: f64 = 0.03;
-
 /// Register ceiling (MIDI) for the riff-rhythm keys comp only. This is a LEAD-FREE band, so the keys
 /// are the one melodic voice: they carry the sparse theme up top AND comp the chords. A comp whose
 /// coloured top (the 7th, and the 9th on the strong hit) climbs to C5–E5 pokes INTO the theme's own
@@ -1635,9 +1628,12 @@ pub fn perform_song(
                 // root. Opt-in (`comp_onsets`); C137 and every lead-carried song leave it None and keep
                 // the fixed comp below, so their render is byte-identical.
                 // The keys must sit PERFECTLY in pocket for a rhythmic chordal comp: each stab rides the
-                // band's shared pocket but is pulled EARLIER by KEYS_ATTACK_COMP, so its FELT attack (the
-                // FM e-piano speaks a hair late through the chorus + room) lands dead on the pocket with
-                // the kit. A beat-weighted accent (strong beat > "and" > sixteenth) shapes the groove, and
+                // band's shared pocket plus the typed `comp_attack` displacement. The 2026-10-19 metrology
+                // round measured the keys dry attack at ~1.5 ms and the kit at ~0.2 ms — there is no 17 ms
+                // physical lag — so the band LOCKS (`comp_attack == ZERO`, the owner's ear-accepted pocket);
+                // the legacy 0.03-beat early-pull survives only as `Displacement::LEGACY_KEYS_PULL` for the
+                // A/B. Evaluated through `E_β` in beats so a true seconds-latency would scale with tempo but
+                // a musical push would not. A beat-weighted accent (strong beat > "and" > sixteenth) shapes the groove, and
                 // the voicing says more with less — guide tones only, the colour spent on the strong hit,
                 // crowding stabs shrunk to a passing tone — so the hook reads as intent, not swagger.
                 let mut last_at = f64::NEG_INFINITY;
@@ -1649,7 +1645,10 @@ pub fn perform_song(
                         }
                         let posin = o.rem_euclid(4.0);
                         let at_grid = rep_base + o;
-                        let at = (at_grid + pocket(posin) - KEYS_ATTACK_COMP).max(0.0);
+                        let at = (at_grid
+                            + pocket(posin)
+                            + argument.comp_attack.eval_beats(f64::from(world.tempo_bpm)))
+                        .max(0.0);
                         let bar_start = (at_grid / 4.0).floor() * 4.0;
                         let Some(ctx) = perf.context_at(bar_start) else {
                             continue;

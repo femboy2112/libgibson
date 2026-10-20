@@ -12,6 +12,11 @@
 //!     effect on the frozen performed drum Score.
 //!
 //! Score facts and categorical causality are not PCM onset or perceptual proof.
+//!
+//! UPDATE 2026-10-19: these P1–P3 pathologies are a characterization of the LEGACY comp pull, so
+//! `performed` pins `comp_attack = LEGACY_KEYS_PULL` to reproduce it faithfully. The shipped band now
+//! sets `comp_attack = ZERO` (the ear-accepted lock), which removes P1–P3; that fix is witnessed in
+//! `tests/audio_homosapians_phase_law.rs`. P4 (drummer agency) is independent of comp timing.
 
 #[path = "../examples/c137_song/rehearsal.rs"]
 #[allow(dead_code)]
@@ -19,6 +24,7 @@ mod rehearsal;
 
 use gibson::audio::human_music::{
     kernel,
+    pocket_time::Displacement,
     score::{DrumVoice, Role, Score},
     theory::Mode,
     MusicWorld,
@@ -38,7 +44,10 @@ fn world() -> MusicWorld {
 
 fn performed(seed: u64) -> Score {
     let draft = rehearsal::rehearse(seed);
-    let source = rehearsal::freeze(&draft);
+    let mut source = rehearsal::freeze(&draft);
+    // Characterize the LEGACY pull: the shipped band now locks (comp_attack = ZERO), so pin the pull
+    // explicitly to keep P1–P3's documented 3.97 / 5.504 / 0.03-beat facts reproducible.
+    source.comp_attack = Displacement::LEGACY_KEYS_PULL;
     kernel::perform_song(&source, &world())
         .expect("opt-in rehearsal Score is lawful")
         .score()
