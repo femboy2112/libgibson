@@ -29,8 +29,8 @@ use gibson::audio::human_music::{
     action::Agent,
     argument::{
         ArcSpan, ArgumentEnding, ArgumentFamily, ArgumentRelation, ArgumentStep, ArgumentStepId,
-        ArgumentTransform, BassDegree, CompiledArgument, GrooveLaw, MusicalArgument,
-        MusicalReferent, PopSourceGrammar, ReferentId, SourceDomain,
+        ArgumentTransform, BassDegree, CompiledArgument, DrumGesturePlan, GrooveLaw,
+        MusicalArgument, MusicalReferent, PopSourceGrammar, ReferentId, SourceDomain,
     },
     contract::CompositionGrammar,
     material::MaterialEvent,
@@ -589,6 +589,18 @@ pub fn drums_for_bass(bass: &BassResponse) -> DrumResponse {
         leave_gap,
         fill,
         reasons,
+    }
+}
+
+/// Convert the drummer's recorded response into the kernel's performed [`DrumGesturePlan`], so her
+/// decisions reach the kit — the audit's P4 inert arrow, made live. Opt-in: a caller sets the result
+/// on `CompiledArgument::drum_plan`; the kernel then honors the gaps, fills and reinforcements while
+/// preserving the kick/backbeat skeleton.
+pub fn drum_plan_from_response(r: &DrumResponse) -> DrumGesturePlan {
+    DrumGesturePlan {
+        reinforce_push: r.reinforce_push.clone(),
+        leave_gap: r.leave_gap.clone(),
+        fill: r.fill.clone(),
     }
 }
 

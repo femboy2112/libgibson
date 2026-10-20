@@ -2029,6 +2029,13 @@ pub fn perform_song(
         // bars also THIN (bar 0 = kick + eighth hats, bar 1 adds the backbeat, both without comps) so
         // the groove assembles over the intro rather than arriving whole.
         let intro_i = intro_build_bar(argument, bar, bars_per_episode);
+        // The drummer's performed discretionary decisions for this bar (opt-in `drum_plan`): reinforce
+        // the bass push, leave a gap (withhold the funk ghost), or drop a fill. `None` => all false, so
+        // the historical kit is byte-identical; the kick/backbeat SKELETON is never touched by these.
+        let (reinforce_push_bar, leave_gap_bar, add_fill_bar) = argument
+            .drum_plan
+            .as_ref()
+            .map_or((false, false, false), |p| p.bar(bar));
         let mut push = |voice: DrumVoice, grid: f64, vel: f32, label: &'static str, lay: f64| {
             // Kick and the backbeat snare are the skeleton; hats, comps and the fill are the texture.
             let skeleton = matches!(voice, DrumVoice::Kick)
@@ -2065,7 +2072,12 @@ pub fn perform_song(
                         let v = if offset == 0.0 {
                             0.95
                         } else if is_push {
-                            0.82
+                            // The drummer REINFORCES a source-owned bass push: the kick lands harder.
+                            if reinforce_push_bar {
+                                0.92
+                            } else {
+                                0.82
+                            }
                         } else {
                             0.80
                         };
@@ -2095,14 +2107,17 @@ pub fn perform_song(
                 "pulse",
                 pocket(3.0),
             );
-            // a funk ghost snare pickup into beat four
-            push(
-                DrumVoice::Snare,
-                bar_start + 2.75,
-                0.17,
-                "pulse",
-                pocket(2.75),
-            );
+            // a funk ghost snare pickup into beat four — DISCRETIONARY: the drummer withholds it to
+            // leave a gap (the skeleton kick + 2-and-4 backbeat stay; only this ghost goes silent).
+            if !leave_gap_bar {
+                push(
+                    DrumVoice::Snare,
+                    bar_start + 2.75,
+                    0.17,
+                    "pulse",
+                    pocket(2.75),
+                );
+            }
             for s in 0..16u32 {
                 let at = bar_start + s as f64 * 0.25;
                 let accent = match s % 4 {
@@ -2117,6 +2132,24 @@ pub fn perform_song(
                     DrumVoice::ClosedHat
                 };
                 push(voice, at, accent, "pulse", 0.0);
+            }
+            // DISCRETIONARY FILL: a two-stroke ghost-snare pickup into the next downbeat. Added only
+            // when the drummer's plan calls a fill here; never the kick/backbeat skeleton.
+            if add_fill_bar {
+                push(
+                    DrumVoice::Snare,
+                    bar_start + 3.25,
+                    0.16,
+                    "pulse",
+                    pocket(3.25),
+                );
+                push(
+                    DrumVoice::Snare,
+                    bar_start + 3.5,
+                    0.22,
+                    "pulse",
+                    pocket(3.5),
+                );
             }
         } else {
             push(DrumVoice::Kick, bar_start, 0.95, "pulse", 0.0);

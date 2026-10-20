@@ -436,6 +436,39 @@ pub struct GrooveLaw {
     pub bass_cells: Vec<Vec<(f64, BassDegree, f32, f32)>>,
 }
 
+/// The drummer's performed discretionary plan: per-bar decisions the funk kit HONORS, so a different
+/// drummer response yields a different performed kit — not merely a different intent log (the audit's
+/// P4 inert arrow). Indexed modulo its length, like the groove cells. The kick/backbeat SKELETON is
+/// never touched by this plan; only discretionary strokes move — a reinforcing kick accent on a bass
+/// push, a withheld funk ghost (intentional silence), an added fill pickup. `None` on
+/// [`CompiledArgument`] keeps the historical kit byte-identical.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DrumGesturePlan {
+    /// Per bar: the kick reinforces the bass's off-beat push (a harder push-kick).
+    pub reinforce_push: Vec<bool>,
+    /// Per bar: the drummer withholds the discretionary funk ghost (leaves a gap).
+    pub leave_gap: Vec<bool>,
+    /// Per bar: a fill pickup lands here.
+    pub fill: Vec<bool>,
+}
+
+impl DrumGesturePlan {
+    /// The `(reinforce_push, leave_gap, fill)` decision for performed `bar`, indexed modulo the plan
+    /// length to match the groove cells. An empty plan is inert (all false).
+    pub fn bar(&self, bar: usize) -> (bool, bool, bool) {
+        let n = self.reinforce_push.len();
+        if n == 0 {
+            return (false, false, false);
+        }
+        let i = bar % n;
+        (
+            self.reinforce_push.get(i).copied().unwrap_or(false),
+            self.leave_gap.get(i).copied().unwrap_or(false),
+            self.fill.get(i).copied().unwrap_or(false),
+        )
+    }
+}
+
 /// A wrapper instead of additional fields in the established public `SongMap` structure.
 #[derive(Debug, Clone)]
 pub struct CompiledArgument {
@@ -541,6 +574,11 @@ pub struct CompiledArgument {
     /// site — stays byte-identical. The rehearsal band sets it to [`Displacement::ZERO`] (the lock
     /// the owner's ear accepted on 2026-10-19).
     pub comp_attack: Displacement,
+    /// Opt-in DRUMMER AGENCY: when set, the funk kit HONORS these per-bar discretionary decisions
+    /// (reinforce / gap / fill) so a changed drummer response is audible, not just logged (audit P4).
+    /// `None` (the default, set by `compile`) keeps the historical kit byte-identical; only a builder
+    /// that performs the rehearsal `DrumResponse` sets it, so C137 and every other source are untouched.
+    pub drum_plan: Option<DrumGesturePlan>,
 }
 
 impl CompiledArgument {
@@ -1183,6 +1221,8 @@ impl MusicalArgument {
             // The legacy early-pull, kept as the byte-identical default: non-rehearsal sources leave
             // `comp_onsets` None and never read this, so introducing the typed seam changes nothing.
             comp_attack: Displacement::LEGACY_KEYS_PULL,
+            // None by default — the historical kit is byte-identical; only an opt-in builder sets it.
+            drum_plan: None,
         })
     }
 
