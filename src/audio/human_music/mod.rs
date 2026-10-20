@@ -93,6 +93,7 @@ pub mod rehearsal;
 pub mod rhythm;
 pub mod rng;
 pub mod score;
+pub mod section_witness;
 pub mod semantic;
 pub mod sfx;
 pub mod song;
