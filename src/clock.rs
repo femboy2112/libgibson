@@ -471,7 +471,7 @@ mod tests {
             let mut sum = 0u32;
             for &dt in chunks
                 .iter()
-                .chain(std::iter::repeat(&Duration::ZERO).take(8))
+                .chain(std::iter::repeat_n(&Duration::ZERO, 8))
             {
                 let d = ts.advance(dt);
                 assert_eq!(d.discarded, 0);
