@@ -63,6 +63,7 @@ pub mod scene;
 pub mod scheduler;
 pub mod session;
 pub mod show;
+pub mod snapshot;
 pub mod story;
 pub mod surface;
 pub mod surface_fx;
