@@ -2,6 +2,66 @@
 
 This document outlines completed work and the planned future milestones for LibGibson.
 
+
+## Current direction (2026-10-19): v0.5.0 — Interactive Observable Instruments
+
+**Status: ROADMAP/PLANNING ONLY; no v0.5.0 release, merge, or new API accepted on main.**
+The released reference remains v0.4.0. This section describes the *new proposed*
+v0.5 program; the historical progress and earlier studies below remain evidence,
+not a competing set of current execution priorities.
+
+**New canonical plan:** [docs/V0_5_INTERACTIVE_INSTRUMENTS_ROADMAP.md](docs/V0_5_INTERACTIVE_INSTRUMENTS_ROADMAP.md).  
+**Memory-bounded multi-agent handoff:** [docs/V0_5_EXECUTION_HANDOFF.md](docs/V0_5_EXECUTION_HANDOFF.md).  
+**External forcing consumer:** [SmartChem 3.0 #125](https://github.com/femboy2112/libgibson/issues/125) and children #126–#146.
+
+The release's organizing purpose shifts from continued **HumanMusic expansion** to a
+**domain-neutral, compositional interactive-instrument platform**. Gracefully freeze and
+document the ear-accepted/experimental C137 and Homosapians work (including PRs #116,
+#123 and #124); no new subjective song/instrument/arrangement refinement is a v0.5
+gate. Preserve acoustic reference locks and unresolved evidence rather than
+merging unaccepted music.
+
+**Dependency-ordered train:**
+
+1. **R0:** audit accepted main and overlapping draft PR ancestry; preserve music
+   results and establish a non-destructive integration branch.
+2. **R1–R2:** fix/document clock and terminal-event correctness (#130, #15, #79);
+   typed inject/replay (#131), opt-in mouse/focus (#126), world transforms (#128),
+   layout-derived hit testing, drag capture and modal occlusion (#127).
+3. **R3–R5:** validated high-rate Rust visual frames (#129), bounded snapshots
+   separate from reliable commands (#141), minimal geometry editing (#132),
+   numeric inspectors (#134), edit transactions (#137), scalar plots/fields/probes
+   (#135/#136; reuse PR #81), capture/export (#138). Profile #77/#133 before
+   architectural optimization; require #139/#140 truthful fallbacks.
+4. **R6:** prove the public interface with a runnable **synthetic** instrument
+   workbench (#144), a small Python-producer/Rust-frontend consumer canary and
+   observability (#143). No chemistry-specific solver enters LibGibson.
+5. **R7:** upgrade the **new** terminal meme intro with the Filthy Frank keyed
+   reaction, now showcasing genuine interactive instruments and a frozen,
+   provenance-identified soundtrack; test and obtain owner art acceptance.
+
+**Scope boundary:** broad high-throughput C/C++/Python/Go functional parity (#142),
+advanced pixel protocols (#146) and optional sonification (#145) remain future
+work. The narrow producer bridge does **not** constitute a supported full Python
+UI SDK. Preserve v0.4.0 ABI v1 and Rust MSRV 1.85 unless explicitly reviewed.
+
+**Existing draft-history warning:** PR #86's cinematic branch descends from
+the scientific plot/spatial-UI work in PRs #81/#83 (which also contain merged-into-
+feature-branch PR #85). Integrate by **actual git ancestry**, never blind
+double-cherry-picking. The pre-existing owner directive in draft PR #92 for an
+upgraded Frank reaction film remains; its old music/auditory shot scope should be
+reconciled to the instrument-first plan, not silently overwritten. No version
+bump, branch merge, tag or release without explicit maintainer authorization.
+
+**Release stopping rule:** a fresh consumer can draw/edit, inspect, pause/step,
+replay and capture a nontrivial domain-neutral instrument using LibGibson's public
+APIs with truthful keyboard/mono/real-PTY behavior, bounded resources and
+declared remaining limitations. Unit success on disjoint feature branches
+does not certify the integrated exact SHA.
+
+---
+
+
 > **Current status (2026-10-02):** **v0.4.0** is released on GitHub (Engineering Alpha,
 > Linux x86_64; tag → `v0.4.0` at `c2f6483`, prerelease-flagged) — **HumanMusic & Audio**:
 > a deliberate additive minor that adds the experimental, Rust-only `gibson::audio` axis
