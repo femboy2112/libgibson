@@ -99,41 +99,180 @@ pub enum Event {
 }
 
 /// Polls for an event with a timeout.
+///
+/// On a Unix controlling terminal this is **hangup-aware**: if the terminal hangs
+/// up (SIGHUP, master closed) it returns `Err(ErrorKind::BrokenPipe)` instead of
+/// spinning forever (issue #79). crossterm's backend busy-loops at ~66% CPU on a
+/// hung-up tty because its internal read loop never honours the timeout once the fd
+/// reports `POLLHUP`; we therefore do the waiting ourselves on stdin and never hand
+/// a possibly-hung fd to crossterm with a blocking timeout.
 pub fn poll_event(timeout: Duration) -> io::Result<Option<Event>> {
+    #[cfg(unix)]
+    {
+        if stdin_is_tty() {
+            return poll_event_unix_tty(timeout);
+        }
+    }
+    poll_event_crossterm(timeout)
+}
+
+/// The portable crossterm wait+decode. Used off-Unix, or when stdin is not a tty
+/// (crossterm then reads `/dev/tty`, a fd we do not observe for hangup).
+fn poll_event_crossterm(timeout: Duration) -> io::Result<Option<Event>> {
     if event::poll(timeout)? {
-        let ev = event::read()?;
-        Ok(match ev {
-            CtEvent::Key(k) => {
-                let code = match k.code {
-                    CtKeyCode::Char(c) => KeyCode::Char(c),
-                    CtKeyCode::Enter => KeyCode::Enter,
-                    CtKeyCode::Left => KeyCode::Left,
-                    CtKeyCode::Right => KeyCode::Right,
-                    CtKeyCode::Up => KeyCode::Up,
-                    CtKeyCode::Down => KeyCode::Down,
-                    CtKeyCode::Home => KeyCode::Home,
-                    CtKeyCode::End => KeyCode::End,
-                    CtKeyCode::PageUp => KeyCode::PageUp,
-                    CtKeyCode::PageDown => KeyCode::PageDown,
-                    CtKeyCode::Backspace => KeyCode::Backspace,
-                    CtKeyCode::Delete => KeyCode::Delete,
-                    CtKeyCode::Esc => KeyCode::Esc,
-                    CtKeyCode::Tab => KeyCode::Tab,
-                    CtKeyCode::BackTab => KeyCode::BackTab,
-                    _ => return Ok(None),
-                };
-                Some(Event::Key(KeyEvent {
-                    code,
-                    modifiers: k.modifiers.into(),
-                }))
-            }
-            CtEvent::Paste(s) => Some(Event::Paste(s)),
-            CtEvent::Resize(cols, rows) => Some(Event::Resize(cols, rows)),
-            _ => None,
-        })
+        Ok(decode_event(event::read()?))
     } else {
         Ok(None)
     }
+}
+
+/// Translates a crossterm event into our [`Event`]; `None` for kinds we do not model
+/// (unmapped key codes, mouse, focus, …).
+fn decode_event(ev: CtEvent) -> Option<Event> {
+    match ev {
+        CtEvent::Key(k) => {
+            let code = match k.code {
+                CtKeyCode::Char(c) => KeyCode::Char(c),
+                CtKeyCode::Enter => KeyCode::Enter,
+                CtKeyCode::Left => KeyCode::Left,
+                CtKeyCode::Right => KeyCode::Right,
+                CtKeyCode::Up => KeyCode::Up,
+                CtKeyCode::Down => KeyCode::Down,
+                CtKeyCode::Home => KeyCode::Home,
+                CtKeyCode::End => KeyCode::End,
+                CtKeyCode::PageUp => KeyCode::PageUp,
+                CtKeyCode::PageDown => KeyCode::PageDown,
+                CtKeyCode::Backspace => KeyCode::Backspace,
+                CtKeyCode::Delete => KeyCode::Delete,
+                CtKeyCode::Esc => KeyCode::Esc,
+                CtKeyCode::Tab => KeyCode::Tab,
+                CtKeyCode::BackTab => KeyCode::BackTab,
+                _ => return None,
+            };
+            Some(Event::Key(KeyEvent {
+                code,
+                modifiers: k.modifiers.into(),
+            }))
+        }
+        CtEvent::Paste(s) => Some(Event::Paste(s)),
+        CtEvent::Resize(cols, rows) => Some(Event::Resize(cols, rows)),
+        _ => None,
+    }
+}
+
+/// Hangup-aware poll loop for a Unix controlling terminal (issue #79).
+///
+/// We never block inside crossterm on a possibly-hung fd. We wait on stdin
+/// ourselves in short slices, checking `POLLHUP`/`POLLERR` each slice, and only ask
+/// crossterm to decode with a zero timeout once stdin is readable. A hangup is
+/// surfaced within one slice; a readable-but-undecodable fd (the upstream crossterm
+/// "stranded input" stall, issue #15) is paced rather than busy-looped, preserving
+/// the stock stall behaviour without burning CPU.
+#[cfg(unix)]
+fn poll_event_unix_tty(timeout: Duration) -> io::Result<Option<Event>> {
+    use std::time::Instant;
+
+    const SLICE: Duration = Duration::from_millis(25);
+    let hung_up = || io::Error::new(io::ErrorKind::BrokenPipe, "terminal hung up (SIGHUP)");
+    let deadline = Instant::now().checked_add(timeout);
+
+    loop {
+        if tty_hung_up(libc::STDIN_FILENO)? {
+            return Err(hung_up());
+        }
+        // Decode anything crossterm already holds, without letting it block on the fd.
+        if event::poll(Duration::ZERO)? {
+            return Ok(decode_event(event::read()?));
+        }
+        let remaining = match deadline {
+            Some(d) => d.saturating_duration_since(Instant::now()),
+            None => Duration::MAX,
+        };
+        if remaining.is_zero() {
+            return Ok(None);
+        }
+        let slice = remaining.min(SLICE);
+        match wait_stdin_readable(slice)? {
+            StdinWait::HungUp => return Err(hung_up()),
+            StdinWait::TimedOut | StdinWait::Interrupted => continue,
+            StdinWait::Readable => {
+                // Readable yet crossterm decoded nothing above: the edge was already
+                // consumed (issue #15, an upstream crossterm bug). POLLIN stays level-
+                // set, so looping straight back would busy-spin; sleep one slice so we
+                // still re-check for a hangup and pick the byte up on the next edge.
+                std::thread::sleep(slice);
+            }
+        }
+    }
+}
+
+/// Whether stdin is a real terminal, so hangup detection applies (otherwise
+/// crossterm reads `/dev/tty`, which we do not observe here).
+#[cfg(unix)]
+fn stdin_is_tty() -> bool {
+    // SAFETY: `isatty` is always safe to call on any fd.
+    unsafe { libc::isatty(libc::STDIN_FILENO) == 1 }
+}
+
+/// `true` if `fd` reports a hangup/error condition right now (non-blocking).
+#[cfg(unix)]
+fn tty_hung_up(fd: i32) -> io::Result<bool> {
+    // `events: 0` still has the kernel report POLLHUP/POLLERR/POLLNVAL in `revents`.
+    let mut pfd = libc::pollfd {
+        fd,
+        events: 0,
+        revents: 0,
+    };
+    // SAFETY: one valid pollfd; timeout 0 is non-blocking.
+    let rc = unsafe { libc::poll(&mut pfd as *mut libc::pollfd, 1, 0) };
+    if rc < 0 {
+        let e = io::Error::last_os_error();
+        return if e.kind() == io::ErrorKind::Interrupted {
+            Ok(false)
+        } else {
+            Err(e)
+        };
+    }
+    Ok(pfd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0)
+}
+
+#[cfg(unix)]
+enum StdinWait {
+    Readable,
+    TimedOut,
+    HungUp,
+    Interrupted,
+}
+
+/// Waits up to `slice` for stdin to become readable, reporting a hangup distinctly.
+#[cfg(unix)]
+fn wait_stdin_readable(slice: Duration) -> io::Result<StdinWait> {
+    let ms = slice.as_millis().min(i32::MAX as u128) as i32;
+    let mut pfd = libc::pollfd {
+        fd: libc::STDIN_FILENO,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: one valid pollfd.
+    let rc = unsafe { libc::poll(&mut pfd as *mut libc::pollfd, 1, ms) };
+    if rc < 0 {
+        let e = io::Error::last_os_error();
+        return if e.kind() == io::ErrorKind::Interrupted {
+            Ok(StdinWait::Interrupted)
+        } else {
+            Err(e)
+        };
+    }
+    if rc == 0 {
+        return Ok(StdinWait::TimedOut);
+    }
+    if pfd.revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) != 0 {
+        return Ok(StdinWait::HungUp);
+    }
+    if pfd.revents & libc::POLLIN != 0 {
+        return Ok(StdinWait::Readable);
+    }
+    Ok(StdinWait::TimedOut)
 }
 
 /// Stateful grapheme-aware single-line text input buffer.
