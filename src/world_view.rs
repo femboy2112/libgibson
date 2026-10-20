@@ -5,9 +5,9 @@
 //! data on a coarse, non-square cell grid. Each realization quantizes (continuous
 //! → integer) or clips (outside the viewport). This module makes every such step
 //! **explicit, invertible and honest**: a quantizing or clipping transport never
-//! silently returns `0` or clamps — it returns a [`Transport`] that either carries
-//! the mapped value *and* a [`Residual`] receipt describing what was discarded, or
-//! reports a [`Clip`] with no value at all.
+//! silently returns `0` or clamps — it returns a `Transport` that either carries
+//! the mapped value *and* a `Residual` receipt describing what was discarded, or
+//! reports a `Clip` with no value at all.
 //!
 //! ```text
 //! WORLD  <->  VIEW  <->  RASTER  <->  CELL
@@ -18,20 +18,20 @@
 //!
 //! * **WORLD** — continuous `f64` data space. Units are caller-defined "world units".
 //! * **VIEW** — WORLD after pan and zoom, measured in raster pixels with the origin
-//!   at the top-left of the cell [`anchor`](WorldView::anchor). Still continuous;
+//!   at the top-left of the cell anchor (see `WorldView::anchor`). Still continuous;
 //!   `view = (world - pan) * zoom`.
 //! * **RASTER** — integer sub-cell pixels, `[0, raster_w) x [0, raster_h)`. This is
 //!   where continuous VIEW is quantized (floor) and clipped.
 //! * **CELL** — terminal cells inside the [`Rect`] anchor, `u16`, matching the
 //!   half-open `[x, x + width)` convention of [`Rect`]. Pixel-aspect (a terminal
 //!   cell is roughly twice as tall as wide) is carried by
-//!   [`pixels_per_cell`](WorldView::pixels_per_cell): a cell groups `ppc_x` x
+//!   `WorldView::pixels_per_cell`: a cell groups `ppc_x` x
 //!   `ppc_y` raster pixels, so the pixel aspect is `ppc_y / ppc_x`.
 //!
-//! Every function here is a pure function of the [`WorldView`] and its arguments:
+//! Every function here is a pure function of the `WorldView` and its arguments:
 //! no clock, no mutable global state, reproducible. No input panics — non-finite
 //! coordinates, zero or enormous zoom, and out-of-range indices each produce a
-//! defined [`Transport`] result.
+//! defined `Transport` result.
 
 use crate::Rect;
 
