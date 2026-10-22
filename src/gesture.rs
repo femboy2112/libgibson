@@ -25,7 +25,7 @@ use crate::world_view::{Transport, WorldView};
 ///
 /// The library fills this in; the consumer reads it and maps it to its own
 /// validated command (e.g. a delta move). Both the start and current positions
-/// are reported as a terminal cell *and* as a [`Transport`](crate::world_view::Transport) world receipt, so
+/// are reported as a terminal cell *and* as a [`Transport`] world receipt, so
 /// the consumer can work in whichever space it owns — and a clipped world point
 /// is carried honestly, never coerced to a bogus origin.
 #[derive(Debug, Clone, PartialEq)]
