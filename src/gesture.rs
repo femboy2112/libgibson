@@ -6,12 +6,12 @@
 //! machine that turns that stream into a single, well-formed edit episode over
 //! an [`EditSession`], emitting [`EditPhase`] values carrying a [`DragIntent`].
 //!
-//! It pins the pressed target with a [`PointerCapture`] so the drag follows the
+//! It pins the pressed target with a [`PointerCapture`](crate::hit_test::PointerCapture) so the drag follows the
 //! pointer even off the target's rect, and it **revalidates that capture on
 //! every move**: a modal taking the surface, or the target being removed, ends
 //! the episode with the matching [`CancelReason`] rather than routing input to
-//! a ghost. World coordinates are carried as [`Transport`] receipts — a drag
-//! off the viewport previews an honest [`Transport::Clipped`] rather than being
+//! a ghost. World coordinates are carried as [`Transport`](crate::world_view::Transport) receipts — a drag
+//! off the viewport previews an honest [`Transport::Clipped`](crate::world_view::Transport::Clipped) rather than being
 //! silently dropped.
 //!
 //! Pure: no clock, no I/O. The same event sequence yields the same phases.
@@ -25,7 +25,7 @@ use crate::world_view::{Transport, WorldView};
 ///
 /// The library fills this in; the consumer reads it and maps it to its own
 /// validated command (e.g. a delta move). Both the start and current positions
-/// are reported as a terminal cell *and* as a [`Transport`] world receipt, so
+/// are reported as a terminal cell *and* as a [`Transport`](crate::world_view::Transport) world receipt, so
 /// the consumer can work in whichever space it owns — and a clipped world point
 /// is carried honestly, never coerced to a bogus origin.
 #[derive(Debug, Clone, PartialEq)]
@@ -161,7 +161,7 @@ impl DragGesture {
 
     /// Checks whether the captured target still legitimately holds the pointer.
     ///
-    /// If [`PointerCapture::route`] still routes to the captured target, the
+    /// If [`PointerCapture::route`](crate::hit_test::PointerCapture::route) still routes to the captured target, the
     /// capture is live (`Ok`). Otherwise we diagnose *why* it lost authority:
     /// a target no longer present in the layers is `TargetRemoved`; a target
     /// still present but out-routed (a modal opened above it) is
