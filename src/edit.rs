@@ -345,10 +345,7 @@ impl<C: Reversible> UndoLog<C> {
     /// computed while the immutable borrow of the entry is live, then the stack
     /// is mutated — so the borrow checker stays satisfied without a clone.
     pub fn undo(&mut self, model: &mut C::Model) -> Option<Result<(), C::Error>> {
-        let result = match self.done.last() {
-            None => return None,
-            Some(cmd) => cmd.revert(model),
-        };
+        let result = self.done.last()?.revert(model);
         match result {
             Ok(()) => {
                 let c = self.done.pop().unwrap();
@@ -364,10 +361,7 @@ impl<C: Reversible> UndoLog<C> {
     /// [`undo`](UndoLog::undo): a failed apply surfaces `Err` and leaves the
     /// entry on the redo branch.
     pub fn redo(&mut self, model: &mut C::Model) -> Option<Result<(), C::Error>> {
-        let result = match self.undone.last() {
-            None => return None,
-            Some(cmd) => cmd.apply(model),
-        };
+        let result = self.undone.last()?.apply(model);
         match result {
             Ok(()) => {
                 let c = self.undone.pop().unwrap();
