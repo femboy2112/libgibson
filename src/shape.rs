@@ -286,4 +286,46 @@ impl Shape {
             Geom::Stroke { points } => points.windows(2).map(|w| w[0].distance(w[1])).sum(),
         }
     }
+
+    /// Translates the shape by `(dx, dy)`, returning a NEW shape with the same
+    /// [`ShapeId`] — a pure, non-mutating transform that leaves `self` untouched.
+    /// Returns `None` if `dx` or `dy` is non-finite, or if the shift would push a
+    /// coordinate past the finite range.
+    pub fn translate(&self, dx: f64, dy: f64) -> Option<Shape> {
+        if !dx.is_finite() || !dy.is_finite() {
+            return None;
+        }
+        self.map_points(|pt| Point::new(pt.x + dx, pt.y + dy))
+    }
+
+    /// Scales the shape about `pivot` by `factor`, returning a NEW shape with the
+    /// same [`ShapeId`]. A rectangle re-normalizes so a negative factor still
+    /// yields a valid `min <= max` box; a line keeps its endpoint order. Returns
+    /// `None` if `pivot` or `factor` is non-finite, or if the result would be
+    /// non-finite.
+    pub fn scale_about(&self, pivot: Point, factor: f64) -> Option<Shape> {
+        if !pivot.is_finite() || !factor.is_finite() {
+            return None;
+        }
+        self.map_points(|pt| {
+            Point::new(
+                pivot.x + (pt.x - pivot.x) * factor,
+                pivot.y + (pt.y - pivot.y) * factor,
+            )
+        })
+    }
+
+    /// Applies `f` to the shape's defining points and rebuilds through the
+    /// validating constructors — which re-check finiteness (an overflow to a
+    /// non-finite coordinate becomes `None`) and re-normalize a rectangle — while
+    /// preserving the identity.
+    fn map_points(&self, f: impl Fn(Point) -> Point) -> Option<Shape> {
+        match &self.geom {
+            Geom::Rect { min, max } => Shape::rect(self.id, f(*min), f(*max)),
+            Geom::Line { start, end } => Shape::line(self.id, f(*start), f(*end)),
+            Geom::Stroke { points } => {
+                Shape::stroke(self.id, points.iter().map(|p| f(*p)).collect())
+            }
+        }
+    }
 }
