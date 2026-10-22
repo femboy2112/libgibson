@@ -20,6 +20,7 @@
 //! in the same order produce the same phases every time — which is exactly what
 //! lets a gesture layer sit on top of it and stay testable.
 
+use crate::input::{KeyCode, KeyEvent, KeyModifiers};
 use std::marker::PhantomData;
 
 /// An opaque identity for one edit episode.
@@ -370,5 +371,178 @@ impl<C: Reversible> UndoLog<C> {
             }
             Err(e) => Some(Err(e)),
         }
+    }
+}
+
+/// A group of sub-commands that applies and reverts as ONE reversible unit.
+///
+/// Every step of a drag, or a batch of edits that logically belong together,
+/// becomes one [`Compound`]; recorded in an [`UndoLog`] it collapses to a single
+/// undo/redo. [`apply`](Compound::apply) runs the sub-commands in order;
+/// [`revert`](Compound::revert) runs them in REVERSE order. Both are atomic: if a
+/// sub-command fails partway, the ones already done are rolled back so the model
+/// is left exactly as it was.
+///
+/// A compound does not know what its sub-commands *mean* — it only guarantees the
+/// order and the atomicity. The consumer's [`Reversible`] carries the meaning; we
+/// just make sure a half-finished group never survives as state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Compound<C> {
+    commands: Vec<C>,
+}
+
+impl<C> Compound<C> {
+    /// Groups `commands` into one reversible unit (an empty group is a valid identity).
+    pub fn new(commands: Vec<C>) -> Self {
+        Self { commands }
+    }
+
+    /// The number of sub-commands.
+    pub fn len(&self) -> usize {
+        self.commands.len()
+    }
+
+    /// Whether the group has no sub-commands.
+    pub fn is_empty(&self) -> bool {
+        self.commands.is_empty()
+    }
+
+    /// The sub-commands in forward (apply) order.
+    pub fn commands(&self) -> &[C] {
+        &self.commands
+    }
+}
+
+impl<C: Reversible> Reversible for Compound<C> {
+    type Model = C::Model;
+    type Error = C::Error;
+
+    fn apply(&self, model: &mut C::Model) -> Result<(), C::Error> {
+        for (i, cmd) in self.commands.iter().enumerate() {
+            if let Err(e) = cmd.apply(model) {
+                // Roll back the ones already applied, newest first. The failing
+                // command touched nothing (it returned Err), so [..i] is exactly
+                // the set that landed — reverting them in LIFO order unwinds the
+                // partial apply cleanly.
+                for applied in self.commands[..i].iter().rev() {
+                    let _ = applied.revert(model);
+                }
+                return Err(e);
+            }
+        }
+        Ok(())
+    }
+
+    fn revert(&self, model: &mut C::Model) -> Result<(), C::Error> {
+        for (i, cmd) in self.commands.iter().enumerate().rev() {
+            if let Err(e) = cmd.revert(model) {
+                // Re-apply the ones already reverted, restoring the applied state.
+                // [i + 1..] is the tail we had already walked back; re-applying it
+                // forward puts the model back where a failed revert found it.
+                for reverted in &self.commands[i + 1..] {
+                    let _ = reverted.apply(model);
+                }
+                return Err(e);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// What an undo keybinding resolves to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UndoIntent {
+    /// Reverse the most recent command.
+    Undo,
+    /// Re-apply the most recently undone command.
+    Redo,
+}
+
+/// Whether a binding requires the Shift modifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShiftReq {
+    Absent,
+    Present,
+    Any,
+}
+
+impl ShiftReq {
+    fn matches(self, effective_shift: bool) -> bool {
+        match self {
+            ShiftReq::Absent => !effective_shift,
+            ShiftReq::Present => effective_shift,
+            ShiftReq::Any => true,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Binding {
+    letter: char,
+    shift: ShiftReq,
+    intent: UndoIntent,
+}
+
+/// Translates a [`KeyEvent`] into an [`UndoIntent`] — and nothing else.
+///
+/// It only classifies; it performs no undo. The standard map binds Ctrl-Z to
+/// [`UndoIntent::Undo`] and both Ctrl-Shift-Z and Ctrl-Y to [`UndoIntent::Redo`].
+/// It is robust to the terminal ambiguity where Shift+Z arrives either as
+/// `Char('z')` with the SHIFT flag or as `Char('Z')` with no flag: an uppercase
+/// letter counts as Shift. A chord with Alt held is never an undo binding.
+#[derive(Debug, Clone)]
+pub struct UndoKeymap {
+    bindings: Vec<Binding>,
+}
+
+impl UndoKeymap {
+    /// The conventional bindings: Ctrl-Z = undo, Ctrl-Shift-Z / Ctrl-Y = redo.
+    pub fn standard() -> Self {
+        Self {
+            bindings: vec![
+                Binding {
+                    letter: 'z',
+                    shift: ShiftReq::Absent,
+                    intent: UndoIntent::Undo,
+                },
+                Binding {
+                    letter: 'z',
+                    shift: ShiftReq::Present,
+                    intent: UndoIntent::Redo,
+                },
+                Binding {
+                    letter: 'y',
+                    shift: ShiftReq::Any,
+                    intent: UndoIntent::Redo,
+                },
+            ],
+        }
+    }
+
+    /// Classifies a key event, returning the bound [`UndoIntent`] or `None`.
+    pub fn classify(&self, key: KeyEvent) -> Option<UndoIntent> {
+        let KeyCode::Char(c) = key.code else {
+            return None;
+        };
+        // Ctrl is mandatory; Alt poisons the chord. We fold the uppercase-letter
+        // form into an effective Shift so a terminal that reports Ctrl-Shift-Z as
+        // `Char('Z')` without the flag still reads as redo.
+        if !key.modifiers.contains(KeyModifiers::CONTROL)
+            || key.modifiers.contains(KeyModifiers::ALT)
+        {
+            return None;
+        }
+        let letter = c.to_ascii_lowercase();
+        let effective_shift = key.modifiers.contains(KeyModifiers::SHIFT) || c.is_ascii_uppercase();
+        self.bindings
+            .iter()
+            .find(|b| b.letter == letter && b.shift.matches(effective_shift))
+            .map(|b| b.intent)
+    }
+}
+
+impl Default for UndoKeymap {
+    fn default() -> Self {
+        Self::standard()
     }
 }
