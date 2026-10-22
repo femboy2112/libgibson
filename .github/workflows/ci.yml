@@ -252,7 +252,7 @@ jobs:
         run: cargo build --examples
 
       - name: PTY tests
-        run: cargo test --test pty_integration --test pty_resize_torture --test event_pressure_pty -- --test-threads=1
+        run: cargo test --test pty_integration --test pty_resize_torture --test event_pressure_pty --test pty_hangup_restore -- --test-threads=1
 
   msrv:
     name: MSRV (Rust 1.85, library)
