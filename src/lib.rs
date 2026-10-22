@@ -57,6 +57,9 @@ pub mod hit_test;
 pub mod input;
 pub mod layout;
 pub mod node;
+/// Validated numeric editors: schema-checked edits that refuse out-of-range or
+/// non-finite input rather than silently clamping an authoritative value (#134).
+pub mod numeric;
 pub mod painter;
 pub mod particles;
 pub mod raster;
@@ -120,6 +123,7 @@ pub use layout::{compute_layout, wrap_rich_text, wrap_text};
 pub use node::{
     AlignItems, Dimension, FlexDirection, JustifyContent, LayoutStyle, Node, NodeKind, WrapMode,
 };
+pub use numeric::{NumericEdit, NumericError, NumericField, NumericInput};
 pub use painter::{paint, PaintContext};
 pub use particles::{Particle, ParticleSystem, Rng};
 pub use renderer::{AnchorState, FrameReport, InsertStrategy, RenderMode, Renderer};
