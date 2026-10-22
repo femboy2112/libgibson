@@ -94,7 +94,8 @@ pub use clock::{
 pub use context::Context;
 pub use diff::{compute_diff, CellRun, RowPatch, SurfaceDiff};
 pub use edit::{
-    CancelReason, EditError, EditId, EditPhase, EditSession, EvictionStatus, Reversible, UndoLog,
+    CancelReason, Compound, EditError, EditId, EditPhase, EditSession, EvictionStatus, Reversible,
+    UndoIntent, UndoKeymap, UndoLog,
 };
 pub use event_source::{
     EventSource, EventTrace, RawEvent, Recorder, ScriptedInput, ScriptedSource, TerminalSource,
