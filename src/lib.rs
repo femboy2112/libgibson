@@ -56,6 +56,10 @@ pub mod replication;
 pub mod scene;
 pub mod scheduler;
 pub mod session;
+/// Immutable 2D world-space shape geometry (rect / line / stroke) with pure,
+/// non-mutating exporters: no derivation ever rewrites the authoritative
+/// shape (issue #132).
+pub mod shape;
 pub mod show;
 pub mod story;
 pub mod surface;
@@ -106,6 +110,7 @@ pub use scene::{
 };
 pub use scheduler::{FramePacing, FrameScheduler, RenderStats, DEFAULT_ANIMATION_INTERVAL};
 pub use session::{TerminalLease, TerminalSession};
+pub use shape::{Bounds, Point, Shape, ShapeId, ShapeKind};
 pub use story::{
     Beat, Condition, FactValue, Facts, Reaction, Story, StoryAction, StoryDirector, StoryError,
     StoryEvent, StoryTrace, TraceRetention, TraceStep, Transition,
