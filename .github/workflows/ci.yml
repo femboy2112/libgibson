@@ -34,6 +34,27 @@ jobs:
       - name: Test symbolic observations and unsupported-input rejection
         run: '"$RUNNER_TEMP/symbolic-parser/bin/python" -m unittest discover -s scripts/audio -p test_import_symbolic.py'
 
+  python-wire:
+    name: Python wire conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The wire protocol is cross-language, so CI must run BOTH halves — not only the
+      # Rust side against a checked-in fixture. The bindings/python wire code is stdlib
+      # only (no venv or deps), so the system python3 is enough.
+      - name: Run the Python wire protocol tests
+        run: |
+          python3 bindings/python/test_wire.py > "$RUNNER_TEMP/wire_out.txt"
+          cat "$RUNNER_TEMP/wire_out.txt"
+          # Guard against a silently-emptied suite: require a non-zero passed count.
+          grep -qE "all [1-9][0-9]* python wire conformance checks passed" "$RUNNER_TEMP/wire_out.txt"
+      - name: Golden vector is freshly reproduced by the current producer (not historical)
+        run: |
+          python3 bindings/python/producer.py --golden > "$RUNNER_TEMP/golden_fresh.bin"
+          cmp "$RUNNER_TEMP/golden_fresh.bin" bindings/python/testdata/golden_field_v1.bin
+
   rust:
     name: Rust (fmt, clippy, test, build)
     runs-on: ubuntu-latest
