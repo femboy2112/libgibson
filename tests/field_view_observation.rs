@@ -245,7 +245,8 @@ fn linked_time_series_plots_a_probed_cell() {
     )
     .expect("the probed series is a valid plot");
 
-    // Every probed point is finite and in range, so all are accounted for.
+    // Every probed point is finite and in range, so all are accounted for; the
+    // three points form a line of two drawn segments.
     assert_eq!(report.finite_samples, series_pts.len());
-    assert!(report.points_emitted > 0, "the linked series must draw");
+    assert!(report.segments_emitted > 0, "the linked series must draw");
 }
