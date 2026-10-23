@@ -108,6 +108,20 @@ impl Bounds {
     }
 }
 
+/// Euclidean distance from `p` to the segment `a`-`b` in WORLD space. A degenerate
+/// (zero-length) segment is the distance to its shared endpoint. Uses [`f64::hypot`]
+/// for the final magnitude so a representable separation never overflows.
+fn point_segment_distance(p: Point, a: Point, b: Point) -> f64 {
+    let (abx, aby) = (b.x - a.x, b.y - a.y);
+    let len2 = abx * abx + aby * aby;
+    if len2 == 0.0 {
+        return p.distance(a);
+    }
+    // Project p onto the infinite line, then clamp the parameter to the segment.
+    let t = (((p.x - a.x) * abx + (p.y - a.y) * aby) / len2).clamp(0.0, 1.0);
+    p.distance(Point::new(a.x + t * abx, a.y + t * aby))
+}
+
 /// The fieldless discriminant of a [`Shape`]'s geometry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShapeKind {
@@ -249,6 +263,38 @@ impl Shape {
                 }
                 Bounds { min, max }
             }
+        }
+    }
+
+    /// Narrow-phase hit test in WORLD space: true iff `p` lies within `tolerance`
+    /// of the shape's ACTUAL geometry, not merely its bounding box. Pass half a
+    /// world cell for `tolerance` so a click anywhere in the cell over the shape
+    /// counts; `0.0` is the exact geometric test. A filled rectangle is hit over
+    /// its interior (grown by `tolerance`); a line or stroke is hit within
+    /// `tolerance` of its segments — so a diagonal line no longer swallows the far
+    /// corners of its bounding box, and an axis-aligned line (whose bounding box is
+    /// zero-height and so misses every off-axis cell centre) is still pickable.
+    ///
+    /// Refuses dishonest inputs like the rest of the module: a non-finite `p`, or a
+    /// non-finite or negative `tolerance`, is never a hit.
+    pub fn hit(&self, p: Point, tolerance: f64) -> bool {
+        if !p.is_finite() || !tolerance.is_finite() || tolerance < 0.0 {
+            return false;
+        }
+        match &self.geom {
+            Geom::Rect { min, max } => {
+                p.x >= min.x - tolerance
+                    && p.x <= max.x + tolerance
+                    && p.y >= min.y - tolerance
+                    && p.y <= max.y + tolerance
+            }
+            Geom::Line { start, end } => point_segment_distance(p, *start, *end) <= tolerance,
+            Geom::Stroke { points } => match points.as_slice() {
+                [only] => p.distance(*only) <= tolerance,
+                _ => points
+                    .windows(2)
+                    .any(|w| point_segment_distance(p, w[0], w[1]) <= tolerance),
+            },
         }
     }
 

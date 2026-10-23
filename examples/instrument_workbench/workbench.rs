@@ -499,15 +499,35 @@ impl Workbench {
         }
     }
 
-    /// Pick the topmost shape whose bounds contain a world point (L3). Nothing is
-    /// invented from coordinates — a shape is hit only if its real bounds contain `p`.
+    /// Pick the topmost shape whose ACTUAL geometry is within half a world cell of a
+    /// world point (L3). Narrow-phase, not bounding-box: a diagonal line is hit only
+    /// near the line itself (its far bounding-box corners do not select it), and an
+    /// axis-aligned line is still pickable — the tolerance tracks the view's
+    /// world/cell quantization.
     pub fn pick(&self, p: Point) -> Option<ShapeId> {
+        let tol = self.pick_tolerance();
         self.model
             .shapes
             .iter()
             .rev()
-            .find(|s| s.bounds().contains(p))
+            .find(|s| s.hit(p, tol))
             .map(|s| s.id())
+    }
+
+    /// Half a world cell: the pick tolerance, derived from the view's world/cell
+    /// footprint (`ppc / zoom`, constant across the view) via the transport residual
+    /// of the anchor's own origin cell. Falls back to half a unit if that cell has no
+    /// finite mapping (a degenerate view).
+    fn pick_tolerance(&self) -> f64 {
+        match self
+            .view
+            .cell_to_world(self.canvas_rect.x, self.canvas_rect.y)
+        {
+            Transport::Mapped { residual, .. } => {
+                0.5 * residual.interval_x.max(residual.interval_y)
+            }
+            Transport::Clipped(_) => 0.5,
+        }
     }
 
     // -- undo/redo availability (for the HUD) -------------------------------------------
