@@ -287,6 +287,12 @@ impl TerminalSession {
             self.raw_mode_enabled = true;
         }
 
+        // Identity, not liveness: record that input is now a live controlling
+        // terminal, so a later hangup (after which `isatty` reports false) still
+        // routes through the hangup-aware poll path instead of demoting to the
+        // spin-on-a-hung-fd backend (issue #79).
+        crate::input::note_tty_source_acquired();
+
         if !self.bracketed_paste_enabled {
             let mut out = stdout();
             execute!(out, EnableBracketedPaste)?;
@@ -481,6 +487,10 @@ impl TerminalSession {
             record(disable_raw_mode());
             self.raw_mode_enabled = false;
         }
+
+        // Relinquish the latched terminal identity with the terminal itself, so a
+        // later acquisition re-establishes it and separate sessions stay isolated.
+        crate::input::clear_tty_source();
 
         // Release last, once the ops are done: clear the owner thread and hand
         // the lease back to the pool only after we've stopped touching the

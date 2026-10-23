@@ -3,6 +3,8 @@ use crossterm::event::{
     MouseButton as CtMouseButton, MouseEvent as CtMouseEvent, MouseEventKind as CtMouseKind,
 };
 use std::io;
+#[cfg(unix)]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -186,10 +188,19 @@ pub enum Event {
 /// hung-up tty because its internal read loop never honours the timeout once the fd
 /// reports `POLLHUP`; we therefore do the waiting ourselves on stdin and never hand
 /// a possibly-hung fd to crossterm with a blocking timeout.
+///
+/// The dispatch keys off input-source **identity**, not a fresh liveness probe. Once
+/// stdin has been seen as a controlling terminal we keep the hangup-aware path even
+/// after it hangs up — at which point `isatty` reports false. Re-probing `isatty`
+/// per call (as this once did) let a hangup that landed *between* polls demote the
+/// very next poll to crossterm's spin-on-a-hung-fd path, the exact #79 failure it is
+/// meant to prevent. A source that was never a terminal (redirected input, a pipe)
+/// never latches and keeps the portable path, so a closed pipe is not misread as a
+/// hung terminal. See [`input_source_is_tty`].
 pub fn poll_event(timeout: Duration) -> io::Result<Option<Event>> {
     #[cfg(unix)]
     {
-        if stdin_is_tty() {
+        if input_source_is_tty() {
             return poll_event_unix_tty(timeout);
         }
     }
@@ -346,12 +357,120 @@ fn poll_event_unix_tty(timeout: Duration) -> io::Result<Option<Event>> {
     }
 }
 
-/// Whether stdin is a real terminal, so hangup detection applies (otherwise
-/// crossterm reads `/dev/tty`, which we do not observe here).
+/// Whether stdin is a real terminal *right now* — the liveness probe. After a
+/// hangup this reports false even though the session's terminal identity is
+/// unchanged, which is why [`poll_event`] dispatches on the latched identity
+/// ([`input_source_is_tty`]) rather than on this probe directly.
 #[cfg(unix)]
 fn stdin_is_tty() -> bool {
     // SAFETY: `isatty` is always safe to call on any fd.
     unsafe { libc::isatty(libc::STDIN_FILENO) == 1 }
+}
+
+/// Latched input-source identity: `true` once stdin has been observed as a live
+/// controlling terminal. Terminal *identity* is stable across a *liveness*
+/// transition — a tty that hangs up is still the terminal we acquired, not a newly
+/// discovered non-tty backend — so once latched we never demote off the hangup-aware
+/// path. See [`poll_event`] and [`resolve_input_source`].
+#[cfg(unix)]
+static TTY_SOURCE_LATCHED: AtomicBool = AtomicBool::new(false);
+
+/// Records that a live controlling terminal was acquired for input (raw mode entered
+/// on a tty). Idempotent; called from the terminal-session boundary so identity is
+/// established at acquisition, not merely on the first poll.
+#[cfg(unix)]
+pub(crate) fn note_tty_source_acquired() {
+    TTY_SOURCE_LATCHED.store(true, Ordering::Relaxed);
+}
+
+/// Forgets any latched terminal identity, so a later acquisition re-establishes it.
+/// Called when a session relinquishes the terminal (restore), keeping the latch
+/// scoped to an interactive lifetime rather than the whole process.
+#[cfg(unix)]
+pub(crate) fn clear_tty_source() {
+    TTY_SOURCE_LATCHED.store(false, Ordering::Relaxed);
+}
+
+/// No-op terminal-identity hooks off Unix, where the hangup-aware path and its latch
+/// do not exist; the terminal session calls these unconditionally.
+#[cfg(not(unix))]
+pub(crate) fn note_tty_source_acquired() {}
+/// See [`note_tty_source_acquired`].
+#[cfg(not(unix))]
+pub(crate) fn clear_tty_source() {}
+
+/// The pure dispatch decision for [`poll_event`], factored out so the
+/// identity-vs-liveness law is unit-testable without a real descriptor.
+///
+/// Returns `(use_hangup_aware_path, latched_after)`. A latched identity keeps the
+/// hangup-aware path and does **not** consult the liveness probe (the closure is
+/// never called). An unlatched source consults the probe once and latches iff it is
+/// currently a terminal.
+#[cfg(unix)]
+fn resolve_input_source(latched: bool, probe_is_tty: impl FnOnce() -> bool) -> (bool, bool) {
+    if latched {
+        (true, true)
+    } else {
+        let is_tty = probe_is_tty();
+        (is_tty, is_tty)
+    }
+}
+
+/// Whether [`poll_event`] should use the hangup-aware Unix path, latching tty
+/// identity on first sight so a later between-polls hangup cannot demote it.
+#[cfg(unix)]
+fn input_source_is_tty() -> bool {
+    let latched = TTY_SOURCE_LATCHED.load(Ordering::Relaxed);
+    let (use_unix, new_latch) = resolve_input_source(latched, stdin_is_tty);
+    if new_latch != latched {
+        TTY_SOURCE_LATCHED.store(new_latch, Ordering::Relaxed);
+    }
+    use_unix
+}
+
+#[cfg(all(test, unix))]
+mod identity_tests {
+    use super::resolve_input_source;
+    use std::cell::Cell;
+
+    #[test]
+    fn latched_tty_stays_on_hangup_path_when_liveness_probe_is_now_false() {
+        // The between-polls hangup: identity established, liveness now reports false.
+        let (use_unix, latched) = resolve_input_source(true, || false);
+        assert!(use_unix, "a latched tty must keep the hangup-aware path");
+        assert!(
+            latched,
+            "identity must remain latched across the liveness drop"
+        );
+    }
+
+    #[test]
+    fn latched_identity_does_not_reprobe_liveness() {
+        let probed = Cell::new(false);
+        let _ = resolve_input_source(true, || {
+            probed.set(true);
+            false
+        });
+        assert!(
+            !probed.get(),
+            "a latched identity must not consult the probe"
+        );
+    }
+
+    #[test]
+    fn first_live_tty_latches_and_uses_the_hangup_path() {
+        let (use_unix, latched) = resolve_input_source(false, || true);
+        assert!(use_unix);
+        assert!(latched, "a freshly observed tty latches its identity");
+    }
+
+    #[test]
+    fn a_source_that_was_never_a_tty_stays_portable_and_never_latches() {
+        // A redirected pipe is not reclassified as a hung terminal.
+        let (use_unix, latched) = resolve_input_source(false, || false);
+        assert!(!use_unix);
+        assert!(!latched, "a non-tty source must never latch tty identity");
+    }
 }
 
 /// `true` if `fd` reports a hangup/error condition right now (non-blocking).
