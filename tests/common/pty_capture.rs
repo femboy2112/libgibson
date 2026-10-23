@@ -238,6 +238,25 @@ impl Capture {
         Ok(())
     }
 
+    /// Drops the kernel's last reference to the PTY master so the slave side sees a
+    /// real hangup: SIGHUP to the child's controlling session, and `POLLHUP` on its
+    /// stdin. We `dup2` `/dev/null` over the master fd rather than closing it, so the
+    /// `MasterPty` still owns a valid descriptor (now `/dev/null`) and its `Drop`
+    /// closes that, not a stale fd number. Used by issue #79's hangup test.
+    pub fn hang_up(&mut self) {
+        let fd = self.master.as_raw_fd().expect("Unix PTY descriptor");
+        // SAFETY: both fds are valid for these calls; this releases the pty master
+        // description, which is exactly the hangup we want to deliver.
+        let null = unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_RDWR) };
+        assert!(null >= 0, "open /dev/null: {}", io::Error::last_os_error());
+        assert!(
+            unsafe { libc::dup2(null, fd) } >= 0,
+            "dup2 /dev/null over PTY master: {}",
+            io::Error::last_os_error()
+        );
+        unsafe { libc::close(null) };
+    }
+
     pub fn terminate(&mut self) {
         assert!(
             self.cleanup(),

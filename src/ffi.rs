@@ -747,7 +747,11 @@ pub unsafe extern "C" fn gibson_poll_event(
                         (*out_event).cols = cols;
                         (*out_event).rows = rows;
                     }
-                    Event::Tick => {}
+                    // The C ABI (v1) does not model mouse or focus events, and they
+                    // only arise when a Rust consumer opts into capture (this C poll
+                    // path never does), so they report as GIBSON_EVENT_NONE like Tick.
+                    // Keeps ABI v1 frozen (issue #126).
+                    Event::Tick | Event::Mouse(_) | Event::Focus(_) => {}
                 }
                 GibsonStatus::Ok
             }

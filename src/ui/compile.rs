@@ -5,7 +5,7 @@ use super::motion::MotionRole;
 use super::skin::{Chrome, ControlRole, ControlState, ResolvedSkin, Skin, UiEnvironment};
 use super::style::{Density, Elevation, Emphasis, Tone};
 use crate::{AlignItems, Dimension, JustifyContent, Node, SurfaceFx, WrapMode};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
 /// Environment for constructing a semantic tree. All clocks are explicit.
@@ -64,15 +64,31 @@ pub struct ElementState {
     pub modal: bool,
     pub motion: Option<MotionRole>,
 }
+/// One eligible pointer target found during metadata collection: its stable key,
+/// whether it is disabled, and whether it is itself a modal barrier. The painted
+/// tree names a target by storing this entry's index in [`Node::tag`], which is
+/// how the painted rectangle and the semantic key finally meet (issue #127 /
+/// Law L2). The target set is exactly the interactive controls and the modals.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetSpec {
+    pub key: Key,
+    pub disabled: bool,
+    pub modal: bool,
+}
 /// The boundary is public: inspect or transform the node, or put it in a Scene.
 pub struct Compiled<A> {
     pub node: Node,
     pub interactions: InteractionMap<A>,
     pub keys: BTreeMap<Key, ElementState>,
+    /// Eligible pointer targets in lowering order; a node's [`Node::tag`] indexes
+    /// this. Feed it to [`Compiled::hit_map`] to resolve painted cells to keys.
+    pub targets: Vec<TargetSpec>,
 }
 pub(crate) struct UiMetadata<A> {
     pub interactions: InteractionMap<A>,
     pub keys: BTreeMap<Key, ElementState>,
+    pub targets: Vec<TargetSpec>,
+    pub tags: HashMap<Key, u32>,
 }
 
 #[cfg(test)]
@@ -91,6 +107,8 @@ pub(crate) fn collect_metadata<A: Clone>(root: &Element<A>) -> Result<UiMetadata
     let mut out = UiMetadata {
         interactions: InteractionMap::default(),
         keys: BTreeMap::new(),
+        targets: Vec::new(),
+        tags: HashMap::new(),
     };
     collect(root, &mut vec![], None, false, &mut out)?;
     Ok(out)
@@ -135,6 +153,13 @@ fn collect<A: Clone>(
     }
     let disabled = disabled || el.disabled;
     let is_modal = matches!(el.kind, ElementKind::Modal(_));
+    // The single predicate for "this element can receive a pointer action": an
+    // input, or a handler-bearing element. Reused below for both the interaction
+    // map and the target set so the two can never disagree about what is a target.
+    let is_interactive = matches!(el.kind, ElementKind::Input { .. })
+        || el.on_press.is_some()
+        || el.on_edit.is_some()
+        || el.on_event.is_some();
     if out
         .keys
         .insert(
@@ -151,6 +176,18 @@ fn collect<A: Clone>(
     {
         return Err(UiError::DuplicateKey(id));
     }
+    // An eligible pointer target gets a slot in `targets` and a `tag` the lowering
+    // pass will stamp onto its painted node. Keyed by `id`, which is unique here
+    // (the DuplicateKey check above guarantees it), so each target has one tag.
+    if is_interactive || is_modal {
+        let idx = out.targets.len() as u32;
+        out.targets.push(TargetSpec {
+            key: id.clone(),
+            disabled,
+            modal: is_modal,
+        });
+        out.tags.insert(id.clone(), idx);
+    }
     let scope = if is_modal {
         out.interactions.modals.push(ModalScope {
             key: id.clone(),
@@ -161,11 +198,7 @@ fn collect<A: Clone>(
     } else {
         modal
     };
-    if matches!(el.kind, ElementKind::Input { .. })
-        || el.on_press.is_some()
-        || el.on_edit.is_some()
-        || el.on_event.is_some()
-    {
+    if is_interactive {
         out.interactions.entries.push(Interaction {
             key: id,
             disabled,
@@ -221,11 +254,20 @@ pub(crate) fn lower_with_metadata<A>(
     metadata: UiMetadata<A>,
 ) -> Compiled<A> {
     let mut section = 0;
-    let node = lower(root, cx, &mut vec![], &mut section, false, None);
+    let node = lower(
+        root,
+        cx,
+        &mut vec![],
+        &mut section,
+        false,
+        None,
+        &metadata.tags,
+    );
     Compiled {
         node,
         interactions: metadata.interactions,
         keys: metadata.keys,
+        targets: metadata.targets,
     }
 }
 
@@ -393,10 +435,21 @@ fn lower<A>(
     section: &mut usize,
     disabled: bool,
     inherited_density: Option<Density>,
+    tags: &HashMap<Key, u32>,
 ) -> Node {
-    lower_role(el, cx, path, section, disabled, inherited_density, None)
+    lower_role(
+        el,
+        cx,
+        path,
+        section,
+        disabled,
+        inherited_density,
+        None,
+        tags,
+    )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lower_role<A>(
     el: &Element<A>,
     cx: &PresentationCx,
@@ -405,6 +458,7 @@ fn lower_role<A>(
     disabled: bool,
     inherited_density: Option<Density>,
     control_role: Option<ControlRole>,
+    tags: &HashMap<Key, u32>,
 ) -> Node {
     let id = key(el, path);
     let disabled = disabled || el.disabled;
@@ -466,6 +520,7 @@ fn lower_role<A>(
                 disabled,
                 Some(density),
                 matches!(el.kind, ElementKind::Tabs).then_some(ControlRole::Tab),
+                tags,
             );
             path.pop();
             n
@@ -801,6 +856,12 @@ fn lower_role<A>(
         }
         node = node.post_process(el.effects.clone());
     }
+    // Stamp this element's semantic identity onto its painted node *before* the
+    // overlay wrapper below (which is an identity-less `Node::col`), so the tag
+    // rides with el's real node, not the inert wrapper (issue #127 / Law L2).
+    if let Some(&idx) = tags.get(&id) {
+        node.tag = Some(idx);
+    }
     if !el.overlays.is_empty() {
         // An in-flow base plus absolute overlay children keeps intrinsic sizing.
         // A Stack makes *all* children absolute, so using it here would discard
@@ -834,7 +895,7 @@ fn lower_role<A>(
         layers = layers.child(node);
         for (i, overlay) in el.overlays.iter().enumerate() {
             path.extend([usize::MAX, i]);
-            let mut floating = lower(overlay, cx, path, section, disabled, Some(density));
+            let mut floating = lower(overlay, cx, path, section, disabled, Some(density), tags);
             // Mount out of flow without erasing an expert Node's local offset.
             floating.layout_style.absolute = true;
             layers = layers.child(floating);

@@ -2,6 +2,103 @@
 
 This document outlines completed work and the planned future milestones for LibGibson.
 
+
+## Current direction (2026-10-19): v0.5.0 — Interactive Observable Instruments
+
+**Status: ROADMAP/PLANNING ONLY; no v0.5.0 release, merge, or new API accepted on main.**
+The released reference remains v0.4.0. This section describes the *new proposed*
+v0.5 program; the historical progress and earlier studies below remain evidence,
+not a competing set of current execution priorities.
+
+**New canonical plan:** [docs/V0_5_INTERACTIVE_INSTRUMENTS_ROADMAP.md](docs/V0_5_INTERACTIVE_INSTRUMENTS_ROADMAP.md).  
+**Memory-bounded multi-agent handoff:** [docs/V0_5_EXECUTION_HANDOFF.md](docs/V0_5_EXECUTION_HANDOFF.md).  
+**External forcing consumer:** [SmartChem 3.0 #125](https://github.com/femboy2112/libgibson/issues/125) and children #126–#146.
+
+The release's organizing purpose shifts from continued **HumanMusic expansion** to a
+**domain-neutral, compositional interactive-instrument platform**. Gracefully freeze and
+document the ear-accepted/experimental C137 and Homosapians work (including PRs #116,
+#123 and #124); no new subjective song/instrument/arrangement refinement is a v0.5
+gate. Preserve acoustic reference locks and unresolved evidence rather than
+merging unaccepted music.
+
+**Dependency-ordered train:**
+
+1. **R0:** audit accepted main and overlapping draft PR ancestry; preserve music
+   results and establish a non-destructive integration branch.
+2. **R1–R2:** fix/document clock and terminal-event correctness (#130, #15, #79);
+   typed inject/replay (#131), opt-in mouse/focus (#126), world transforms (#128),
+   layout-derived hit testing, drag capture and modal occlusion (#127).
+3. **R3–R5:** validated high-rate Rust visual frames (#129), bounded snapshots
+   separate from reliable commands (#141), minimal geometry editing (#132),
+   numeric inspectors (#134), edit transactions (#137), scalar plots/fields/probes
+   (#135/#136; reuse PR #81), capture/export (#138). Profile #77/#133 before
+   architectural optimization; require #139/#140 truthful fallbacks.
+4. **R6:** prove the public interface with a runnable **synthetic** instrument
+   workbench (#144), a small Python-producer/Rust-frontend consumer canary and
+   observability (#143). No chemistry-specific solver enters LibGibson.
+5. **R7:** upgrade the **new** terminal meme intro with the Filthy Frank keyed
+   reaction, now showcasing genuine interactive instruments and a frozen,
+   provenance-identified soundtrack; test and obtain owner art acceptance.
+
+**Scope boundary:** broad high-throughput C/C++/Python/Go functional parity (#142),
+advanced pixel protocols (#146) and optional sonification (#145) remain future
+work. The narrow producer bridge does **not** constitute a supported full Python
+UI SDK. Preserve v0.4.0 ABI v1 and Rust MSRV 1.85 unless explicitly reviewed.
+
+**Existing draft-history warning:** PR #86's cinematic branch descends from
+the scientific plot/spatial-UI work in PRs #81/#83 (which also contain merged-into-
+feature-branch PR #85). Integrate by **actual git ancestry**, never blind
+double-cherry-picking. The pre-existing owner directive in draft PR #92 for an
+upgraded Frank reaction film remains; its old music/auditory shot scope should be
+reconciled to the instrument-first plan, not silently overwritten. No version
+bump, branch merge, tag or release without explicit maintainer authorization.
+
+**Release stopping rule:** a fresh consumer can draw/edit, inspect, pause/step,
+replay and capture a nontrivial domain-neutral instrument using LibGibson's public
+APIs with truthful keyboard/mono/real-PTY behavior, bounded resources and
+declared remaining limitations. Unit success on disjoint feature branches
+does not certify the integrated exact SHA.
+
+### Reconciliation (2026-10-23): plan → implemented-on-branch
+
+The plan above is the **2026-10-19 snapshot** (its train and any SHAs it cites are
+that snapshot; they are not re-verified here). As of 2026-10-23 the v0.5 program is
+**implemented on a branch and CI-green, but unreleased and unmerged** — `main` is
+still frozen at `80706c9` (v0.4.0). The single stabilization candidate is
+**[PR #181](https://github.com/femboy2112/libgibson/pull/181)** (branch
+`integrate/v0.5-release-merge-gate-2026-10-23`). The states are distinct:
+
+- **Released (on `main`):** v0.4.0 only (`Cargo.toml` is still `0.4.0`; no v0.5 tag).
+- **Accepted-on-branch v0.5 (in PR #181, CI-green):** world transforms (#128),
+  layout-derived painted hit-map + drag capture + modal occlusion (#127), pointer
+  eligibility / inert targets, session-owned mouse/focus lifecycle (#126, #79),
+  bounded snapshot/command bridge (#141/#161), immutable shapes + narrow-phase
+  `Shape::hit` (#132/#165), numeric inspectors with schema validation (#134),
+  reversible edits / compound undo with honest `RollbackFailed` (#137/#166),
+  scalar fields/plots/probes (#135/#136, reusing #81), the flagship instrument
+  workbench (#144), the `gibson::wire` bounded transport + Python conformance
+  (#141), and an independent cold-start consumer (`scope_editor`).
+- **Integrated-but-unreleased:** everything in the bullet above lives only on PR #181;
+  none of it is on `main` and none of it is in a tagged release.
+- **Known bugs / open items:** the `pty_hangup` test's between-polls flake — **fixed
+  in this candidate** (terminal identity latched across the liveness transition,
+  `src/input.rs`); a deferred bidirectional producer-ack canary (one-way canary +
+  conformance shipped); a latent stale-`TargetId` epoch (documented, not yet a
+  built witness). `Node` gained a public `tag` field — a source-breaking CORE change
+  for raw struct-literal users (see `CHANGELOG.md`); C ABI v1 and MSRV 1.85 unchanged.
+- **Outstanding v0.5 release gates:** main branch-protection + required review (the
+  owner's merge button); version bump + changelog; a clean release preflight on the
+  exact RC; SDK/wrapper artifact review; the upgraded cinematic finale (PR #92) and
+  the owner's visual/listening acceptance; explicit release authorization. None are
+  satisfied by the development CI matrix alone.
+
+Music is **frozen** and documented — see
+[docs/V0_5_MUSIC_FREEZE_LEDGER.md](docs/V0_5_MUSIC_FREEZE_LEDGER.md); the C137 /
+Homosapians research branches are preserved, not merged.
+
+---
+
+
 > **Current status (2026-10-02):** **v0.4.0** is released on GitHub (Engineering Alpha,
 > Linux x86_64; tag → `v0.4.0` at `c2f6483`, prerelease-flagged) — **HumanMusic & Audio**:
 > a deliberate additive minor that adds the experimental, Rust-only `gibson::audio` axis

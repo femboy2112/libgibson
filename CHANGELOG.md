@@ -15,6 +15,24 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+### v0.5 (interactive instruments) — on branch, not yet released
+
+Staged on the v0.5 stabilization candidate (PR #181); `main` and the released
+reference remain **0.4.0** (no v0.5 tag). See `ROADMAP.md` and
+`docs/V0_5_INTERACTIVE_INSTRUMENTS_ROADMAP.md` for the full scope; the list below
+records only the compatibility-relevant CORE change.
+
+#### Changed — CORE (source-breaking for raw struct-literal `Node` users)
+- `gibson::Node` gained a public field `tag: Option<u32>` (semantic hit-target
+  identity for the painted-frame hit-map, #127). External code that constructs a
+  `Node` with a struct literal
+  (`Node { kind, layout_style, children, computed_rect, surface_fx }`) must now add
+  `tag: None`, or spread `..Node::new(kind)`. Code that uses `Node::new(..)` or the
+  builders is unaffected. This is an intentional 0.5 CORE migration and is **not**
+  advertised as source-compatible with every 0.4 struct-literal pattern. **No C ABI
+  change** (`GIBSON_ABI_VERSION` stays 1; `Node` is not exposed through C/C++/Python/Go);
+  MSRV stays 1.85.
+
 ## [0.4.0] - 2026-10-02
 
 **HumanMusic & Audio** — a deliberate minor milestone that adds a new **experimental,

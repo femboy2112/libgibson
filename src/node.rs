@@ -216,6 +216,14 @@ pub struct Node {
     /// Already-realized, ordered surface operations. Empty uses the ordinary
     /// paint path. No clocks, application state, or layout changes live here.
     pub surface_fx: Vec<crate::surface_fx::SurfaceFx>,
+    /// Semantic hit-target identity carried from lowering into the painted tree
+    /// (issue #127 / Law L2). `Some(i)` indexes `Compiled::targets`: this node is
+    /// an eligible pointer target whose `TargetSpec` holds its key, modal and
+    /// disabled state. `None` — the overwhelming majority of nodes — is inert
+    /// chrome. A pure data field: it never affects layout or paint, and it rides
+    /// through `Clone`/transform/wrap so the painted rect and the semantic key
+    /// finally meet in one place (`Compiled::hit_map`).
+    pub tag: Option<u32>,
 }
 
 impl Node {
@@ -226,6 +234,7 @@ impl Node {
             children: Vec::new(),
             computed_rect: Rect::default(),
             surface_fx: Vec::new(),
+            tag: None,
         }
     }
 
