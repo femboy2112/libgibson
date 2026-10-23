@@ -59,12 +59,6 @@ struct Scene {
     source: f64,
 }
 
-impl Scene {
-    fn shape(&self, id: ShapeId) -> Option<&Shape> {
-        self.shapes.iter().find(|s| s.id() == id)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 struct EditFail;
 
@@ -546,6 +540,25 @@ fn render(ed: &mut Editor, ctx: &mut Context, w: u16, h: u16) -> io::Result<()> 
     Ok(())
 }
 
+/// The live event loop: render, wait for an event, apply it, repeat until quit.
+/// Resize updates the working size; every other event flows through `Editor`.
+fn run(ed: &mut Editor, ctx: &mut Context, mut w: u16, mut h: u16) -> io::Result<()> {
+    render(ed, ctx, w, h)?;
+    loop {
+        if let Some(event) = ctx.poll_event(Duration::from_millis(100))? {
+            if is_quit(&event) {
+                return Ok(());
+            }
+            if let Event::Resize(cols, rows) = event {
+                w = cols;
+                h = rows;
+            }
+            ed.process(&event);
+            render(ed, ctx, w, h)?;
+        }
+    }
+}
+
 fn main() -> io::Result<()> {
     let mut ctx = Context::new(RenderMode::Fullscreen)?;
     let (w, h) = ctx.session.terminal_size();
@@ -556,25 +569,7 @@ fn main() -> io::Result<()> {
     input::set_focus_reporting(true)?;
 
     let mut ed = Editor::new(w, h);
-    let mut w = w;
-    let mut h = h;
-    render(&mut ed, &mut ctx, w, h)?;
-
-    let result = (|| -> io::Result<()> {
-        loop {
-            if let Some(event) = ctx.poll_event(Duration::from_millis(100))? {
-                if is_quit(&event) {
-                    return Ok(());
-                }
-                if let Event::Resize(cols, rows) = event {
-                    w = cols;
-                    h = rows;
-                }
-                ed.process(&event);
-                render(&mut ed, &mut ctx, w, h)?;
-            }
-        }
-    })();
+    let result = run(&mut ed, &mut ctx, w, h);
 
     // Session-owned teardown: drop pointer/focus reporting, then restore the
     // terminal (alt-screen, bracketed paste, cursor, raw mode). `restore` is a
