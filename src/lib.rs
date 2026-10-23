@@ -63,6 +63,9 @@ pub mod node;
 pub mod numeric;
 pub mod painter;
 pub mod particles;
+/// Observable-geometry scientific plotting: 2D series rendered through the same
+/// Surface pipeline, with a conservation-law receipt (issue #81 / Wave 4).
+pub mod plot;
 pub mod raster;
 pub mod raster3d;
 pub mod raster_fx;
@@ -87,7 +90,6 @@ pub mod temporal;
 // Internal renderer plumbing (the atomic wire transaction). Crate-private: it has
 // no external consumers, is not re-exported, and its stability is the renderer's,
 // not a standalone public API. See docs/RELEASE_CONTRACT.md §2.
-pub mod plot;
 pub(crate) mod transaction;
 pub mod transition;
 /// Experimental Rust-only semantic components, skins, interaction, and motion.
