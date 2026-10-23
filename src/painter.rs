@@ -62,6 +62,53 @@ fn child_offset(child: &Node, ox: i32, oy: i32) -> (i32, i32) {
     }
 }
 
+// --- Shared geometry (issue #127 / Law L2) --------------------------------
+//
+// These three functions are the *single* source of truth for where a laid-out
+// node lands on screen: the painter below calls them, and so does the hit-map
+// walk in `crate::ui::hit`. Keeping both readers on the same functions is what
+// makes the painted surface and the pointer targets provably agree — they cannot
+// drift, because there is only one copy of the rule. (The painter goldens and
+// the hit/paint sentinel self-test are the backstop.)
+
+/// The actually-visible rectangle of `node`, offset by `(ox, oy)` and clipped to
+/// `clip`. This is exactly the `rect` the painter composites into.
+pub(crate) fn visible_rect(node: &Node, clip: Rect, ox: i32, oy: i32) -> Rect {
+    let cr = node.computed_rect;
+    intersect_signed(
+        cr.x as i32 + ox,
+        cr.y as i32 + oy,
+        cr.width,
+        cr.height,
+        clip,
+    )
+}
+
+/// The clip handed to a node's children. Bordered containers inset by one cell so
+/// content can never overwrite the frame; everything else passes `rect` through.
+pub(crate) fn child_clip_rect(node: &Node, rect: Rect) -> Rect {
+    match &node.kind {
+        NodeKind::Box {
+            border: Some(_), ..
+        } => rect.shrink(1),
+        NodeKind::Border { .. } => rect.shrink(1),
+        _ => rect,
+    }
+}
+
+/// The accumulated offset a child paints at under `parent`. A camera viewport
+/// translates its world by the negative camera offset (overriding per-child
+/// absolute offsets, matching the painter); every other parent defers to
+/// [`child_offset`].
+pub(crate) fn child_origin(parent: &Node, child: &Node, ox: i32, oy: i32) -> (i32, i32) {
+    match &parent.kind {
+        NodeKind::Viewport { offset_x, offset_y } if *offset_x != 0 || *offset_y != 0 => {
+            (ox - *offset_x, oy - *offset_y)
+        }
+        _ => child_offset(child, ox, oy),
+    }
+}
+
 fn paint_node(
     node: &Node,
     surface: &mut Surface,
@@ -123,7 +170,7 @@ fn paint_node_contents(
     let cr = node.computed_rect;
     let origin_x = cr.x as i32 + ox;
     let origin_y = cr.y as i32 + oy;
-    let rect = intersect_signed(origin_x, origin_y, cr.width, cr.height, clip);
+    let rect = visible_rect(node, clip, ox, oy);
     if rect.is_empty() {
         return;
     }
@@ -356,19 +403,13 @@ fn paint_node_contents(
     // Bordered containers clip children to the *inside* of the border so content
     // can never overwrite the frame, regardless of how the flex layout sizes the
     // panel.
-    let child_clip = match &node.kind {
-        NodeKind::Box {
-            border: Some(_), ..
-        } => rect.shrink(1),
-        NodeKind::Border { .. } => rect.shrink(1),
-        _ => rect,
-    };
+    let child_clip = child_clip_rect(node, rect);
 
     if matches!(node.kind, NodeKind::Stack) {
         // Composite children in z-order through transparent scratch layers.
         // A child only covers the cells it actually paints.
         for child in &node.children {
-            let (cx, cy) = child_offset(child, ox, oy);
+            let (cx, cy) = child_origin(node, child, ox, oy);
             let mut layer = Surface::new_transparent(surface.width, surface.height);
             paint_node(child, &mut layer, child_clip, cx, cy, ctx);
             surface.blit_transparent(&layer);
@@ -376,18 +417,8 @@ fn paint_node_contents(
         return;
     }
 
-    // A camera viewport translates its world by the negative camera offset.
-    let (cam_x, cam_y) = match &node.kind {
-        NodeKind::Viewport { offset_x, offset_y } => (-*offset_x, -*offset_y),
-        _ => (0, 0),
-    };
-
     for child in &node.children {
-        let (cx, cy) = if cam_x != 0 || cam_y != 0 {
-            (ox + cam_x, oy + cam_y)
-        } else {
-            child_offset(child, ox, oy)
-        };
+        let (cx, cy) = child_origin(node, child, ox, oy);
         paint_node(child, surface, child_clip, cx, cy, ctx);
     }
 }

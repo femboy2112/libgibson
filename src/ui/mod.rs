@@ -9,14 +9,18 @@
 //! This API is experimental and excluded from the C ABI and language wrappers.
 pub mod compile;
 pub mod element;
+pub mod hit;
 pub mod interaction;
 pub mod motion;
 pub mod prelude;
 pub mod runtime;
 pub mod skin;
 pub mod style;
-pub use compile::{compile, compile_presented, BuildCx, Compiled, ElementState, PresentationCx};
+pub use compile::{
+    compile, compile_presented, BuildCx, Compiled, ElementState, PresentationCx, TargetSpec,
+};
 pub use element::*;
+pub use hit::{Eligibility, HitMap, HitMapError, PaintedRegion, ResolvedTarget};
 pub use interaction::*;
 pub use motion::{MotionPreference, MotionRole};
 pub use runtime::*;
