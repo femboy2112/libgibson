@@ -5,6 +5,7 @@
 #![cfg(unix)]
 
 use portable_pty::CommandBuilder;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 #[path = "common/pty_capture.rs"]
@@ -80,4 +81,61 @@ fn control_a_real_hangup_is_delivered_and_differs_from_the_brokenpipe_path() {
         Some(3),
         "the control must die by the default SIGHUP action, not the BrokenPipe path"
     );
+}
+
+#[test]
+fn between_poll_hangup_still_returns_brokenpipe_when_isatty_now_false() {
+    // The deterministic sibling of the mid-poll test above: the hangup lands *between*
+    // two polls, after which `isatty` reports non-tty. A dispatcher that re-probes
+    // `isatty` on every call would demote the next poll to the crossterm spin path —
+    // the identity-vs-liveness regression (#79). The latched tty identity keeps the
+    // hangup-aware path. A filesystem barrier forces the ordering, so this is a real
+    // counterexample rather than a timing coincidence.
+    static SEQ: AtomicU32 = AtomicU32::new(0);
+    let tag = format!(
+        "{}_{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    );
+    let dir = std::env::temp_dir().join(format!("gibson_hangup_bp_{tag}"));
+    std::fs::create_dir_all(&dir).expect("create barrier dir");
+    let release = dir.join("release");
+    let result = dir.join("result");
+
+    let mut cmd = CommandBuilder::new(pty_capture::example_path("hangup_between_polls_probe"));
+    cmd.arg(release.to_str().expect("utf-8 path"));
+    cmd.arg(result.to_str().expect("utf-8 path"));
+    let mut cap = pty_capture::Capture::spawn(cmd, 80, 24, Duration::from_secs(12));
+
+    cap.collect_until(|b| String::from_utf8_lossy(b).contains("READY"))
+        .expect("probe should reach READY");
+    cap.collect_until(|b| String::from_utf8_lossy(b).contains("ARMED"))
+        .expect("probe should park on the barrier (ARMED)");
+
+    // The child is now parked OUTSIDE poll_event, on the file barrier. Deliver the
+    // hangup FIRST, then release the child into its next poll — so the hangup strictly
+    // precedes that poll. No sleep-for-luck; the ordering is forced.
+    cap.hang_up();
+    std::fs::write(&release, b"go").expect("write release barrier");
+
+    let code = wait_exit_code(&mut cap, Duration::from_millis(10_000));
+    assert_eq!(
+        code,
+        Some(3),
+        "a between-polls hangup must still surface as BrokenPipe (exit 3) even though \
+         isatty now reports non-tty; None means the dispatcher demoted to the crossterm \
+         spin path — the identity-vs-liveness regression (#79)"
+    );
+
+    // Non-vacuity: prove the demotion condition was genuinely armed — the child saw
+    // isatty()==0 at the between-polls moment. If this is not 0 the test did not
+    // exercise the regression, so a green result would be vacuous.
+    let observed = std::fs::read_to_string(&result).unwrap_or_default();
+    assert!(
+        observed.contains("isatty=0"),
+        "expected the probe to observe isatty==0 after master close (got {observed:?}); \
+         the falsifier's demotion condition was not present"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
