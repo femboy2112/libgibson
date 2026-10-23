@@ -21,7 +21,7 @@ use gibson::snapshot::{
 /// pins `w * h * 3` bytes — the real cost `retained_frame_bytes` must account for.
 fn frame_wh(source: u64, seq: u64, w: u16, h: u16) -> Frame {
     let len = w as usize * h as usize * 3;
-    let bytes = vec![(seq as u8); len];
+    let bytes = vec![seq as u8; len];
     Frame::from_rgb_bytes(FrameSource(source), seq, w, h, w as usize * 3, &bytes)
         .expect("frame ingests")
 }
