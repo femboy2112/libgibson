@@ -141,7 +141,7 @@ pub use layout::{compute_layout, wrap_rich_text, wrap_text};
 pub use node::{
     AlignItems, Dimension, FlexDirection, JustifyContent, LayoutStyle, Node, NodeKind, WrapMode,
 };
-pub use numeric::{NumericEdit, NumericError, NumericField, NumericInput};
+pub use numeric::{NumericEdit, NumericError, NumericField, NumericInput, NumericSchemaError};
 pub use painter::{paint, PaintContext};
 pub use particles::{Particle, ParticleSystem, Rng};
 pub use renderer::{AnchorState, FrameReport, InsertStrategy, RenderMode, Renderer};

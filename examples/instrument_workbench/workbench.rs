@@ -341,7 +341,9 @@ impl Workbench {
             selection: Selection::new(),
             source_field: NumericField::new()
                 .with_range(SOURCE_MIN, SOURCE_MAX)
-                .with_step(SOURCE_STEP),
+                .with_step(SOURCE_STEP)
+                .checked()
+                .expect("workbench source-field schema is well-formed"),
             last_numeric_error: None,
             field_tick: 0,
             playing: false,

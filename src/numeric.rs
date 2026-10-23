@@ -48,6 +48,9 @@ pub enum NumericError {
         /// The maximum it exceeded.
         max: f64,
     },
+    /// The field's own schema is malformed (a non-finite bound, a reversed range, or
+    /// a non-positive step), so no value can be validated against it.
+    InvalidSchema(NumericSchemaError),
 }
 
 impl std::fmt::Display for NumericError {
@@ -62,11 +65,49 @@ impl std::fmt::Display for NumericError {
             NumericError::Above { value, max } => {
                 write!(f, "{value} is above the maximum {max}")
             }
+            NumericError::InvalidSchema(e) => write!(f, "invalid numeric schema: {e}"),
         }
     }
 }
 
 impl std::error::Error for NumericError {}
+
+/// Why a [`NumericField`]'s own schema is malformed — distinct from a value being out
+/// of range. A field with an invalid schema cannot validate anything.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
+pub enum NumericSchemaError {
+    /// A bound (minimum or maximum) was `NaN` or infinite.
+    NonFiniteBound,
+    /// The minimum exceeded the maximum — an empty domain.
+    ReversedRange {
+        /// The minimum that was too high.
+        min: f64,
+        /// The maximum it exceeded.
+        max: f64,
+    },
+    /// The step was non-finite or not strictly positive.
+    InvalidStep {
+        /// The rejected step.
+        step: f64,
+    },
+}
+
+impl std::fmt::Display for NumericSchemaError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NumericSchemaError::NonFiniteBound => f.write_str("a bound is not finite"),
+            NumericSchemaError::ReversedRange { min, max } => {
+                write!(f, "minimum {min} exceeds maximum {max}")
+            }
+            NumericSchemaError::InvalidStep { step } => {
+                write!(f, "step {step} must be finite and greater than zero")
+            }
+        }
+    }
+}
+
+impl std::error::Error for NumericSchemaError {}
 
 /// A validation schema for a single numeric field.
 ///
@@ -130,12 +171,46 @@ impl NumericField {
         self.step
     }
 
-    /// Validates a value: rejects non-finite and out-of-range inputs.
+    /// Validates the SCHEMA itself (not a value): bounds must be finite, the range
+    /// must not be reversed (`min <= max`, equal is a valid single-value domain), and
+    /// a step, if present, must be finite and strictly positive. A malformed schema
+    /// can never validate a value — it is a programmer error, not a user one.
+    pub fn validate_schema(&self) -> Result<(), NumericSchemaError> {
+        if self.min.is_some_and(|m| !m.is_finite()) || self.max.is_some_and(|m| !m.is_finite()) {
+            return Err(NumericSchemaError::NonFiniteBound);
+        }
+        if let (Some(min), Some(max)) = (self.min, self.max) {
+            if min > max {
+                return Err(NumericSchemaError::ReversedRange { min, max });
+            }
+        }
+        if let Some(step) = self.step {
+            if !step.is_finite() || step <= 0.0 {
+                return Err(NumericSchemaError::InvalidStep { step });
+            }
+        }
+        Ok(())
+    }
+
+    /// Returns the field only if its schema is well-formed — the fail-fast
+    /// construction path, so a malformed schema never becomes a valid-looking editor.
+    pub fn checked(self) -> Result<Self, NumericSchemaError> {
+        self.validate_schema()?;
+        Ok(self)
+    }
+
+    /// Validates a value: rejects a malformed schema, then non-finite and
+    /// out-of-range inputs.
     ///
     /// Bounds are inclusive. On success returns the value unchanged; on failure
-    /// returns the specific [`NumericError`] carrying the offending value. It
+    /// returns the specific [`NumericError`] carrying the offending value (or
+    /// [`NumericError::InvalidSchema`] if the field's own schema is malformed). It
     /// **never** returns a clamped value.
     pub fn validate(&self, value: f64) -> Result<f64, NumericError> {
+        // A malformed schema can't validate anything — surface it instead of failing
+        // open (a NaN bound would otherwise let every value through).
+        self.validate_schema()
+            .map_err(NumericError::InvalidSchema)?;
         if !value.is_finite() {
             return Err(NumericError::NonFinite);
         }
