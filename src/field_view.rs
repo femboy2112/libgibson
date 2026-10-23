@@ -1,19 +1,19 @@
 //! Domain-neutral scalar-field observation (Wave 4 — "Scientific Observation").
 //!
-//! A [`FieldView`] is a read-only window onto a caller-owned, row-major grid of
-//! `f64` samples laid out in WORLD space. It renders that field to a [`Surface`]
+//! A `FieldView` is a read-only window onto a caller-owned, row-major grid of
+//! `f64` samples laid out in WORLD space. It renders that field to a `Surface`
 //! as a heatmap (or a monochrome / glyph-density alternative), probes a world
 //! point for the sample under it, and hands back a conservation-law
-//! [`FieldReport`] receipt — and it does all of this without a PDE solver, a
+//! `FieldReport` receipt — and it does all of this without a PDE solver, a
 //! chemistry model, or any opinion about what the numbers *mean*. The producer
 //! owns the data and the model; this module only observes it honestly.
 //!
 //! The load-bearing law (Law L3, identity transport) is geometric: a field cell
 //! resolved under the pointer must be the *same* cell the renderer painted there.
 //! This module guarantees that by construction — both the renderer and the probe
-//! go `terminal-cell → world` through the **same** [`WorldView`] the rest of the
+//! go `terminal-cell → world` through the **same** `WorldView` the rest of the
 //! interactive stack uses for pointer selection, and then `world → field-index`
-//! through one [`FieldExtent`] mapping. There is deliberately no second
+//! through one `FieldExtent` mapping. There is deliberately no second
 //! projection: the plot module's own `Viewport` quantizes differently (it rounds,
 //! and flips y), so a `FieldView` must never borrow it, or a probed cell and a
 //! clicked cell could disagree at the edges.
@@ -24,10 +24,10 @@
 //!   `&self` and the data by shared reference.
 //! * **Missing data is disclosed, not invented.** A masked cell renders as a
 //!   distinct glyph and is *counted* as masked; a non-finite datum is reported as
-//!   [`Sample::NonFinite`], never coerced to a plausible value.
-//! * **The scale is disclosed.** [`RangePolicy::Auto`] records the range it chose
+//!   `Sample::NonFinite`, never coerced to a plausible value.
+//! * **The scale is disclosed.** `RangePolicy::Auto` records the range it chose
 //!   (and whether it had to widen a degenerate all-equal field) in the receipt;
-//!   [`RangePolicy::Fixed`] uses exactly the range it was given.
+//!   `RangePolicy::Fixed` uses exactly the range it was given.
 //! * **The receipt conserves cells.** Every cell in the rendered area is accounted
 //!   for as a value, masked, non-finite, off-field, or clipped cell.
 
@@ -178,7 +178,7 @@ pub enum Colormap {
     Density,
 }
 
-/// A conservation-law receipt for one [`render`] call.
+/// A conservation-law receipt for one [`FieldView::render`] call.
 ///
 /// Every cell in the rendered `area` is accounted for exactly once:
 /// `cells_in_area == value_cells + masked_cells + nonfinite_cells
