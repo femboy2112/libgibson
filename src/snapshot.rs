@@ -187,9 +187,11 @@ struct StoredFrame {
     accept_next_regardless: bool,
 }
 
-/// Exact raster byte cost of a frame: one `Rgb` per pixel, no hidden copies.
+/// Exact raster byte cost of a frame: the size of its `[Rgb]` pixel buffer, no
+/// hidden copies. `size_of_val` over the slice is `len * size_of::<Rgb>()` — same
+/// number, stated the way clippy insists (`manual_slice_size_calculation`).
 fn frame_bytes(frame: &Frame) -> usize {
-    frame.raster().pixels().len() * std::mem::size_of::<Rgb>()
+    std::mem::size_of_val(frame.raster().pixels())
 }
 
 /// A two-channel bridge: latest-wins [`Frame`]s per source, and an ordered,
