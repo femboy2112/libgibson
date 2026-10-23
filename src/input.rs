@@ -196,7 +196,7 @@ pub enum Event {
 /// very next poll to crossterm's spin-on-a-hung-fd path, the exact #79 failure it is
 /// meant to prevent. A source that was never a terminal (redirected input, a pipe)
 /// never latches and keeps the portable path, so a closed pipe is not misread as a
-/// hung terminal. See [`input_source_is_tty`].
+/// hung terminal. See `input_source_is_tty`.
 pub fn poll_event(timeout: Duration) -> io::Result<Option<Event>> {
     #[cfg(unix)]
     {

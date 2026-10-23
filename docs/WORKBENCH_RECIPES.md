@@ -75,23 +75,36 @@ if let Some(EditPhase::Commit { intent, .. }) = drag.on_event(&event, &layers, &
 }
 ```
 
-Pick the shape under a click in world space (Law L3) — a shape is hit only if its real
-bounds contain the point, never guessed from coordinates:
+Pick the shape under a click in world space (Law L3) with the **narrow-phase**
+`Shape::hit(point, tolerance)`, not the bounding box. `bounds()` is only an
+axis-aligned box: a diagonal line would be "hit" anywhere in its box (including the
+empty far corners), and an axis-aligned line is a zero-height box its interior test
+can never satisfy. `hit` measures real geometry. Pass about half a world cell as
+`tolerance` (use `0.0` for the exact geometric test); a non-finite point or a
+non-finite/negative tolerance never hits.
 
 ```rust
-let picked = shapes.iter().rev().find(|s| s.bounds().contains(p)).map(|s| s.id());
+// `tol` is half a world cell — e.g. derived from your WorldView's quantization.
+let picked = shapes.iter().rev().find(|s| s.hit(p, tol)).map(|s| s.id());
 ```
+
+See `examples/instrument_workbench/workbench.rs` (`pick`) and
+`tests/shape_hit_slice.rs` for the shipped narrow-phase pick and its regression oracle.
 
 ## Recipe 3 — reversible edits + undo/redo keymap
 
-Model each edit as a `Reversible` command; wrap even single edits in a `Compound` so the
-atomic rollback is always in force. When a member fails, the compound rolls the earlier
-members back and reports `CompoundError::SubCommand` with the model restored — and if a
-compensation *itself* fails, that is surfaced as `CompoundError::RollbackFailed` (naming every
-failed compensation), never silently swallowed (Finding B).
+Model each edit as a `Reversible` command; wrap even single edits in a `Compound` so a
+failed member is rolled back. **Atomicity here is conditional, not magic.** Under the
+`Reversible` all-or-nothing precondition, a failing member compensates the earlier
+members and reports `CompoundError::SubCommand` with the model restored. But if a
+compensation *itself* fails you get `CompoundError::RollbackFailed { trigger_index,
+trigger_error, failures }`, which names every failed compensation and means the model is
+in a **known-partial** state — handle it (surface and resync), never ignore it (Finding
+B). For unconditional atomicity over an untrusted `Reversible`, apply against a clone and
+commit only on full success.
 
 ```rust
-use gibson::edit::{Compound, Reversible, UndoKeymap, UndoLog, UndoIntent};
+use gibson::edit::{Compound, CompoundError, Reversible, UndoKeymap, UndoLog, UndoIntent};
 
 let mut undo: UndoLog<Compound<Cmd>> = UndoLog::new();
 let keymap = UndoKeymap::standard();         // Ctrl-Z = undo, Ctrl-Y / Ctrl-Shift-Z = redo
@@ -101,9 +114,20 @@ if cmd.apply(&mut model).is_ok() { undo.record(cmd); }
 
 // on a key:
 if let Some(intent) = keymap.classify(key_event) {
+    // Never discard the outcome: a `RollbackFailed` means the model is known-partial.
     match intent {
-        UndoIntent::Undo => { let _ = undo.undo(&mut model); }
-        UndoIntent::Redo => { let _ = undo.redo(&mut model); }
+        UndoIntent::Undo => match undo.undo(&mut model) {
+            None | Some(Ok(())) => {} // nothing to undo, or a clean revert
+            Some(Err(CompoundError::RollbackFailed { failures, .. })) => {
+                report_corrupt(&failures); // known-partial: surface + resync, do NOT carry on
+            }
+            Some(Err(e)) => report_refused(&e), // clean failure: the entry stays on the stack
+        },
+        UndoIntent::Redo => match undo.redo(&mut model) {
+            None | Some(Ok(())) => {}
+            Some(Err(CompoundError::RollbackFailed { failures, .. })) => report_corrupt(&failures),
+            Some(Err(e)) => report_refused(&e),
+        },
     }
 }
 ```
@@ -203,7 +227,7 @@ ordered, refusable return channel. See [`WIRE_PROTOCOL.md`](WIRE_PROTOCOL.md) an
 |---|---|---|
 | `ui::hit` (`Compiled::hit_map`, `HitMap`, `ResolvedTarget`) | **experimental** | painted-frame targeting; shape may change |
 | `gesture::{DragGesture, DragIntent}` | **experimental** | single-pointer drag; no multi-touch |
-| `edit::{Reversible, UndoLog, Compound, UndoKeymap}` | **experimental** | atomic rollback is honest, but undo is a partial inverse of an *admitted* transition only |
+| `edit::{Reversible, UndoLog, Compound, UndoKeymap}` | **experimental** | rollback is conditional on the `Reversible` all-or-nothing precondition; a failed compensation surfaces as `CompoundError::RollbackFailed` (known-partial), never swallowed; undo is a partial inverse of an *admitted* transition only |
 | `numeric::NumericField` | **experimental** | linear bounds + step; no log-domain yet |
 | `field_view::{FieldView, FieldExtent}` | **experimental** | scalar fields only; no vector fields |
 | `plot` | **experimental** | 2-D line/scatter; see PR #81 lineage |

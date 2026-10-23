@@ -59,6 +59,43 @@ APIs with truthful keyboard/mono/real-PTY behavior, bounded resources and
 declared remaining limitations. Unit success on disjoint feature branches
 does not certify the integrated exact SHA.
 
+### Reconciliation (2026-10-23): plan → implemented-on-branch
+
+The plan above is the **2026-10-19 snapshot** (its train and any SHAs it cites are
+that snapshot; they are not re-verified here). As of 2026-10-23 the v0.5 program is
+**implemented on a branch and CI-green, but unreleased and unmerged** — `main` is
+still frozen at `80706c9` (v0.4.0). The single stabilization candidate is
+**[PR #181](https://github.com/femboy2112/libgibson/pull/181)** (branch
+`integrate/v0.5-release-merge-gate-2026-10-23`). The states are distinct:
+
+- **Released (on `main`):** v0.4.0 only (`Cargo.toml` is still `0.4.0`; no v0.5 tag).
+- **Accepted-on-branch v0.5 (in PR #181, CI-green):** world transforms (#128),
+  layout-derived painted hit-map + drag capture + modal occlusion (#127), pointer
+  eligibility / inert targets, session-owned mouse/focus lifecycle (#126, #79),
+  bounded snapshot/command bridge (#141/#161), immutable shapes + narrow-phase
+  `Shape::hit` (#132/#165), numeric inspectors with schema validation (#134),
+  reversible edits / compound undo with honest `RollbackFailed` (#137/#166),
+  scalar fields/plots/probes (#135/#136, reusing #81), the flagship instrument
+  workbench (#144), the `gibson::wire` bounded transport + Python conformance
+  (#141), and an independent cold-start consumer (`scope_editor`).
+- **Integrated-but-unreleased:** everything in the bullet above lives only on PR #181;
+  none of it is on `main` and none of it is in a tagged release.
+- **Known bugs / open items:** the `pty_hangup` test's between-polls flake — **fixed
+  in this candidate** (terminal identity latched across the liveness transition,
+  `src/input.rs`); a deferred bidirectional producer-ack canary (one-way canary +
+  conformance shipped); a latent stale-`TargetId` epoch (documented, not yet a
+  built witness). `Node` gained a public `tag` field — a source-breaking CORE change
+  for raw struct-literal users (see `CHANGELOG.md`); C ABI v1 and MSRV 1.85 unchanged.
+- **Outstanding v0.5 release gates:** main branch-protection + required review (the
+  owner's merge button); version bump + changelog; a clean release preflight on the
+  exact RC; SDK/wrapper artifact review; the upgraded cinematic finale (PR #92) and
+  the owner's visual/listening acceptance; explicit release authorization. None are
+  satisfied by the development CI matrix alone.
+
+Music is **frozen** and documented — see
+[docs/V0_5_MUSIC_FREEZE_LEDGER.md](docs/V0_5_MUSIC_FREEZE_LEDGER.md); the C137 /
+Homosapians research branches are preserved, not merged.
+
 ---
 
 
