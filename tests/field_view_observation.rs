@@ -250,3 +250,27 @@ fn linked_time_series_plots_a_probed_cell() {
     assert_eq!(report.finite_samples, series_pts.len());
     assert!(report.segments_emitted > 0, "the linked series must draw");
 }
+
+#[test]
+fn extent_accessors_return_constructor_inputs_bit_exact() {
+    // A pathological geometry: an origin whose magnitude dwarfs the cell size, so
+    // that reconstructing it from a derived corner (origin + 0·cell) could lose
+    // low mantissa bits. The accessors must hand back the EXACT bits that went in,
+    // which is what lets a transport round-trip the geometry without coercion.
+    let ox = 1.234_567_890_123_456_7e12;
+    let oy = -9.876_543_210_987_654e11;
+    let cw = 3.141_592_653_589_793e-7;
+    let ch = 2.718_281_828_459_045e-7;
+    let e = FieldExtent::new(Point::new(ox, oy), cw, ch, 4, 3).unwrap();
+
+    // Bit-exact, not approximately-equal: these are the literal constructor args.
+    assert_eq!(e.origin().x.to_bits(), ox.to_bits());
+    assert_eq!(e.origin().y.to_bits(), oy.to_bits());
+    assert_eq!(e.cell_w().to_bits(), cw.to_bits());
+    assert_eq!(e.cell_h().to_bits(), ch.to_bits());
+
+    // The derived-corner path (cell_bounds(0,0).min) must still be a valid finite
+    // corner — demonstrating WHY the accessors exist rather than reusing the corner.
+    let corner = e.cell_bounds(0, 0).unwrap().min;
+    assert!(corner.x.is_finite() && corner.y.is_finite());
+}

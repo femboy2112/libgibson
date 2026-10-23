@@ -95,6 +95,25 @@ impl FieldExtent {
         false
     }
 
+    /// The world-space origin of cell `(0, 0)`'s lower corner — the exact value
+    /// passed to [`FieldExtent::new`]. Exposed so a transport can round-trip the
+    /// geometry bit-exactly instead of reconstructing it from a derived corner.
+    pub fn origin(&self) -> Point {
+        self.origin
+    }
+
+    /// Cell width in world units (strictly positive, finite) — the exact value
+    /// passed to [`FieldExtent::new`].
+    pub fn cell_w(&self) -> f64 {
+        self.cell_w
+    }
+
+    /// Cell height in world units (strictly positive, finite) — the exact value
+    /// passed to [`FieldExtent::new`].
+    pub fn cell_h(&self) -> f64 {
+        self.cell_h
+    }
+
     /// The field index a world point falls in, or `None` if the point is outside
     /// the field (or non-finite). Floor + half-open, matching pointer selection.
     pub fn world_to_index(&self, p: Point) -> Option<(usize, usize)> {
