@@ -133,7 +133,7 @@ impl<A> Compiled<A> {
         let regions = self.painted_regions(surface_area);
         // If layout never ran, the root collapses to a zero rect. Refuse rather
         // than hand back a silently-empty map that would answer every query None.
-        if !surface_area.is_empty() && regions.first().map_or(true, |r| r.visible.is_empty()) {
+        if !surface_area.is_empty() && regions.first().is_none_or(|r| r.visible.is_empty()) {
             return Err(HitMapError::LayoutNotResolved);
         }
         Ok(self.hit_map_from_regions(regions))

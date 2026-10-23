@@ -449,6 +449,7 @@ fn lower<A>(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lower_role<A>(
     el: &Element<A>,
     cx: &PresentationCx,
