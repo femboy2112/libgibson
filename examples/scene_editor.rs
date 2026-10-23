@@ -493,8 +493,8 @@ impl Editor {
         }
         screen().child(
             column::<()>()
-                .width(w as f32)
-                .height(h as f32)
+                .width(w)
+                .height(h)
                 .child(text(hud.to_string()))
                 .child(
                     row::<()>()
