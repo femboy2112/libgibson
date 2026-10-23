@@ -37,6 +37,9 @@ pub mod cell;
 pub mod clock;
 pub mod context;
 pub mod diff;
+/// Grouped, reversible edit lifecycles and a bounded undo/redo history
+/// (issues #132/#134/#137). Pure: no I/O, no clock, no globals.
+pub mod edit;
 /// Experimental Rust-only injectable, traceable input sources: inject a scripted
 /// event stream, or record and replay a real session (issue #131).
 pub mod event_source;
@@ -45,6 +48,9 @@ pub mod field;
 pub mod focus;
 pub mod frame;
 pub mod geom;
+/// Pointer-drag gesture grouping: one begin / preview* / commit-or-cancel
+/// lifecycle built on hit-test capture + world transport (issues #132/#137).
+pub mod gesture;
 pub mod glitch;
 pub mod glyph;
 /// Layered spatial hit testing and pointer capture (issue #127).
@@ -52,6 +58,9 @@ pub mod hit_test;
 pub mod input;
 pub mod layout;
 pub mod node;
+/// Validated numeric editors: schema-checked edits that refuse out-of-range or
+/// non-finite input rather than silently clamping an authoritative value (#134).
+pub mod numeric;
 pub mod painter;
 pub mod particles;
 pub mod raster;
@@ -89,6 +98,9 @@ pub use clock::{
 };
 pub use context::Context;
 pub use diff::{compute_diff, CellRun, RowPatch, SurfaceDiff};
+pub use edit::{
+    CancelReason, EditError, EditId, EditPhase, EditSession, EvictionStatus, Reversible, UndoLog,
+};
 pub use event_source::{
     EventSource, EventTrace, RawEvent, Recorder, ScriptedInput, ScriptedSource, TerminalSource,
     TraceEntry,
@@ -99,6 +111,7 @@ pub use field::{
 };
 pub use focus::{FocusId, FocusRing};
 pub use geom::{Mesh, Projector, Transform3, Vec3};
+pub use gesture::{DragGesture, DragIntent};
 pub use glitch::{invert_rect, row_shift, sanitize_wide, scramble_rect, tear};
 pub use glyph::{
     detect_glyph_mode, detect_glyph_mode_from_env, transcode_surface_glyphs, GlyphChoice,
@@ -112,6 +125,7 @@ pub use layout::{compute_layout, wrap_rich_text, wrap_text};
 pub use node::{
     AlignItems, Dimension, FlexDirection, JustifyContent, LayoutStyle, Node, NodeKind, WrapMode,
 };
+pub use numeric::{NumericEdit, NumericError, NumericField, NumericInput};
 pub use painter::{paint, PaintContext};
 pub use particles::{Particle, ParticleSystem, Rng};
 pub use renderer::{AnchorState, FrameReport, InsertStrategy, RenderMode, Renderer};
