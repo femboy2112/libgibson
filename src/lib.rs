@@ -98,6 +98,8 @@ pub mod transition;
 /// Experimental Rust-only semantic components, skins, interaction, and motion.
 pub mod ui;
 pub mod viewport;
+/// Bounded, versioned wire transport for an out-of-process scientific producer (issue #125).
+pub mod wire;
 /// Reversible 2D world/view/raster/cell coordinate transport (issue #128).
 pub mod world_view;
 
