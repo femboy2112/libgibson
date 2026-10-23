@@ -54,27 +54,42 @@ fn target(key: &str, bg: Color, w: u16, h: u16) -> Element<()> {
 /// OUTER), a clipped `viewport` (CLIP larger than its camera), and a disabled
 /// occluder (DIS).
 fn base_scene() -> Element<()> {
+    // Every container is explicitly sized: a `Stack` with no known size collapses
+    // to 0x0 (layout.rs), which would silently empty OUTER/INNER and make the
+    // overlap/z-order arms vacuous. With room to spare (80x30), nothing is
+    // flex-squeezed, so each target paints at a predictable, non-empty rect.
     screen().child(
         column()
             .child(
                 row()
-                    .child(panel("P").child(target("PANEL", PANEL, 6, 3)))
+                    .height(8)
                     .child(
+                        panel("P")
+                            .width(14)
+                            .height(8)
+                            .child(target("PANEL", PANEL, 6, 3)),
+                    )
+                    .child(
+                        // Sized so it does not collapse; OUTER fills it and INNER
+                        // sits on top at the same origin -> a guaranteed overlap.
                         stack()
-                            .child(target("OUTER", OUTER, 12, 6))
+                            .width(16)
+                            .height(8)
+                            .child(target("OUTER", OUTER, 16, 8))
                             .child(target("INNER", INNER, 6, 3)),
                     )
-                    .child(target("SOLO", SOLO, 6, 3)),
+                    .child(target("SOLO", SOLO, 10, 4)),
             )
             .child(
                 row()
+                    .height(8)
                     .child(
                         viewport(1, 1)
                             .width(8)
                             .height(4)
                             .child(target("CLIP", CLIP, 16, 8)),
                     )
-                    .child(target("DIS", DIS, 6, 3).disabled(true)),
+                    .child(target("DIS", DIS, 8, 4).disabled(true)),
             ),
     )
 }
@@ -135,6 +150,16 @@ fn key_is(compiled: &Compiled<()>, tag: u32, name: &str) -> bool {
     matches!(&compiled.targets[tag as usize].key, Key::Named(s) if s == name)
 }
 
+/// Half-open rectangle intersection (both non-empty and sharing at least a cell).
+fn rects_overlap(a: Rect, b: Rect) -> bool {
+    !a.is_empty()
+        && !b.is_empty()
+        && a.x < b.x + b.width
+        && b.x < a.x + a.width
+        && a.y < b.y + b.height
+        && b.y < a.y + a.height
+}
+
 // ============================================================================
 // Precondition
 // ============================================================================
@@ -162,7 +187,7 @@ fn hit_map_refuses_before_layout() {
 
 #[test]
 fn painted_surface_and_hit_map_agree_everywhere() {
-    let (compiled, surface) = render(base_scene(), 64, 24);
+    let (compiled, surface) = render(base_scene(), 80, 30);
     let hit = compiled.hit_map(surface.area()).expect("laid out");
 
     // Non-vacuity: the scene really does paint targets that really are hittable.
@@ -212,42 +237,67 @@ fn painted_region_visible_is_the_real_painted_extent() {
 // ============================================================================
 
 #[test]
-fn m1_shifting_a_targets_visible_rect_is_caught() {
-    let (compiled, surface) = render(base_scene(), 64, 24);
+fn m1_corrupting_a_visible_targets_hit_rect_is_caught() {
+    let (compiled, surface) = render(base_scene(), 80, 30);
     let mut regions = compiled.painted_regions(surface.area());
-    let r = regions
-        .iter_mut()
-        .find(|r| r.tag.is_some_and(|t| key_is(&compiled, t, "SOLO")))
-        .expect("SOLO region");
-    // Point the SOLO target one column off where it is actually painted.
-    r.visible.x = r.visible.x.saturating_add(1);
+    // Pick a target that is actually visible on the surface (the topmost at some
+    // cell, so its sentinel shows there), then corrupt its hit rect to empty. Those
+    // painted cells must become unreachable -> the oracle reports a disagreement.
+    // This is positional non-vacuity: the hit rect is load-bearing, not decorative.
+    let idx = regions
+        .iter()
+        .position(|r| {
+            r.tag.is_some_and(|t| {
+                matches!(&compiled.targets[t as usize].key, Key::Named(name)
+                    if (0..surface.height).any(|y| (0..surface.width)
+                        .any(|x| painted_key(&surface, x, y) == Some(name.as_str()))))
+            })
+        })
+        .expect("a visibly-painted target");
+    regions[idx].visible = Rect::new(0, 0, 0, 0);
     let hit = compiled.hit_map_from_regions(regions);
     assert!(
         !disagreements(&hit, &surface).is_empty(),
-        "shifting SOLO.visible by a cell must break agreement"
+        "corrupting a visibly-painted target's hit rect must break agreement"
     );
 }
 
 #[test]
 fn m3_inverting_paint_order_breaks_overlap_resolution() {
-    let (compiled, surface) = render(base_scene(), 64, 24);
-    let mut regions = compiled.painted_regions(surface.area());
+    let (compiled, surface) = render(base_scene(), 80, 30);
+    let regions = compiled.painted_regions(surface.area());
+    // There must be a genuine overlap between two targets for z-order to matter;
+    // the sized stack (OUTER + INNER at a shared origin) guarantees one. Assert it
+    // so a future layout change that collapses the overlap fails loudly, not
+    // vacuously.
+    let overlap = regions.iter().enumerate().any(|(i, a)| {
+        a.tag.is_some()
+            && regions
+                .iter()
+                .skip(i + 1)
+                .any(|b| b.tag.is_some() && rects_overlap(a.visible, b.visible))
+    });
+    assert!(
+        overlap,
+        "scene must contain an overlapping pair of targets (the sized stack)"
+    );
+    // Invert z everywhere: at the overlap the originally-lower target now wins the
+    // cell the surface still shows as the originally-higher one.
     let max = regions.iter().map(|r| r.order).max().unwrap_or(0);
-    // Invert z: the lower of the OUTER/INNER overlap would now win the cell the
-    // surface shows as INNER.
-    for r in regions.iter_mut() {
+    let mut inverted = regions.clone();
+    for r in inverted.iter_mut() {
         r.order = max - r.order;
     }
-    let hit = compiled.hit_map_from_regions(regions);
+    let hit = compiled.hit_map_from_regions(inverted);
     assert!(
         !disagreements(&hit, &surface).is_empty(),
-        "inverting z-order must misresolve the stack overlap"
+        "inverting z-order must misresolve the overlapping targets"
     );
 }
 
 #[test]
 fn m4_using_natural_instead_of_visible_breaks_clipping() {
-    let (compiled, surface) = render(base_scene(), 64, 24);
+    let (compiled, surface) = render(base_scene(), 80, 30);
     let mut regions = compiled.painted_regions(surface.area());
     // Pretend every target occupies its unclipped natural rect: the viewport's
     // CLIP target now claims cells the camera never painted it into.
@@ -270,7 +320,7 @@ fn m4_using_natural_instead_of_visible_breaks_clipping() {
 
 #[test]
 fn m8_dropping_a_disabled_target_lets_clicks_fall_through() {
-    let (compiled, surface) = render(base_scene(), 64, 24);
+    let (compiled, surface) = render(base_scene(), 80, 30);
     let mut regions = compiled.painted_regions(surface.area());
     // A disabled target still occludes — it swallows the click. Drop its tag and
     // its painted cells wrongly become empty space / fall through.
@@ -295,7 +345,7 @@ fn m8_dropping_a_disabled_target_lets_clicks_fall_through() {
 
 #[test]
 fn m5_a_modal_overlay_blocks_clicks_to_the_base_beneath_it() {
-    let (compiled, surface) = render(modal_scene(), 64, 24);
+    let (compiled, surface) = render(modal_scene(), 80, 30);
     let hit = compiled.hit_map(surface.area()).expect("laid out");
 
     // Keyed off the hit map's own resolved targets (robust to whatever the modal
@@ -334,7 +384,7 @@ fn m5_a_modal_overlay_blocks_clicks_to_the_base_beneath_it() {
 fn without_a_modal_the_base_is_hittable() {
     // Contrast for the modal arm: the only difference is the overlay, so this
     // proves the blocking above is the modal's doing, not a broken base.
-    let (compiled, surface) = render(base_scene(), 64, 24);
+    let (compiled, surface) = render(base_scene(), 80, 30);
     let hit = compiled.hit_map(surface.area()).expect("laid out");
     let any_base_hittable = (0..surface.height).any(|y| {
         (0..surface.width).any(|x| {
