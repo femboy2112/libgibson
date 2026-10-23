@@ -338,7 +338,7 @@ fn declared_length_inconsistent_with_dimensions_is_rejected_and_resyncs() {
     // cols*rows = 16 cells implies 52 + 128 = 180 payload bytes, but we send data for only
     // 10 cells (52 + 80 = 132), with an honest payload_len of 132. The body size computed
     // from the dimensions disagrees with the declared length -> LengthMismatch, recoverable.
-    let bad = raw_field_frame(0, 0, 0, 4, 4, 0.5, 0.25, 0, 0, &vec![0.0; 10], None, None);
+    let bad = raw_field_frame(0, 0, 0, 4, 4, 0.5, 0.25, 0, 0, &[0.0f64; 10], None, None);
     // Sandwich it between two good frames to prove the stream resynchronizes.
     let good_a = encode_field(
         1,
@@ -703,7 +703,7 @@ fn model_tick_travels_independently_of_sequence() {
     let field = WireField {
         extent: extent(1, 1),
         model_tick: 9000,
-        data: vec![3.14],
+        data: vec![2.5],
         mask: None,
     };
     let bytes = encode_field(0, SourceCursor::new(0, 3), &field, WireLimits::default()).unwrap();
