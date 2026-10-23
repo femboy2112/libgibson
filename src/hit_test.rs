@@ -33,12 +33,17 @@ use crate::Rect;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TargetId(pub u64);
 
-/// One hit target: an identity, the cells it covers, and its z within its layer.
+/// One hit target: an identity, the cells it covers, its z within its layer, and
+/// whether it is inert (occludes but carries no edit authority).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Target {
     id: TargetId,
     rect: Rect,
     z: i32,
+    /// An inert target wins hit-testing and blocks click-through exactly like any
+    /// other, but the gesture layer refuses to begin or continue an edit on it.
+    /// A painted-but-*disabled* target is inert.
+    inert: bool,
 }
 
 /// One layer of targets; a modal layer blocks everything beneath it.
@@ -89,11 +94,24 @@ impl HitLayers {
     /// Adds a target to the current top layer. If no layer exists yet, a
     /// non-modal base layer is opened first so the target is never dropped.
     pub fn add_target(&mut self, id: TargetId, rect: Rect, z: i32) {
+        self.add_target_impl(id, rect, z, false);
+    }
+
+    /// Adds an **inert** target: it occludes and wins hit-testing exactly like a
+    /// normal target (so a press never falls through to a layer beneath it), but
+    /// [`is_inert`](HitLayers::is_inert) reports it, so the gesture layer swallows
+    /// the press without authorizing an edit. A painted-but-*disabled* target is
+    /// inert: eligibility is carried into the index, not inferred from a raw id.
+    pub fn add_inert_target(&mut self, id: TargetId, rect: Rect, z: i32) {
+        self.add_target_impl(id, rect, z, true);
+    }
+
+    fn add_target_impl(&mut self, id: TargetId, rect: Rect, z: i32, inert: bool) {
         if self.layers.is_empty() {
             self.push_layer(false);
         }
         if let Some(top) = self.layers.last_mut() {
-            top.targets.push(Target { id, rect, z });
+            top.targets.push(Target { id, rect, z, inert });
         }
     }
 
@@ -102,6 +120,15 @@ impl HitLayers {
         self.layers
             .iter()
             .any(|layer| layer.targets.iter().any(|t| t.id == id))
+    }
+
+    /// `true` if the target with this id is **inert** — present and occluding,
+    /// but carrying no edit authority (a painted-but-disabled target). A missing
+    /// id is not inert: there is nothing there to swallow a press.
+    pub fn is_inert(&self, id: TargetId) -> bool {
+        self.layers
+            .iter()
+            .any(|layer| layer.targets.iter().any(|t| t.id == id && t.inert))
     }
 
     /// Whether a captured `id` still holds authority under the current stack.

@@ -114,10 +114,17 @@ impl DragGesture {
                     MouseKind::Down(MouseButton::Left) if self.is_active() => {
                         self.cancel_active(CancelReason::Superseded)
                     }
-                    // A press on nothing is inert — no target, no capture, no
-                    // begin. The `?` bails before any state is touched.
+                    // A press on empty space does nothing — no target, no
+                    // capture, no begin; the `?` bails before any state is
+                    // touched. A press on an INERT (painted-but-disabled) target
+                    // is swallowed the same way: it occludes, so the press never
+                    // falls through to an enabled target beneath, but it carries
+                    // no authority, so no edit episode opens (Finding E / Law L2).
                     MouseKind::Down(MouseButton::Left) => {
                         let t = layers.hit_test(c, r)?;
+                        if layers.is_inert(t) {
+                            return None;
+                        }
                         self.capture.capture(t);
                         self.start_cell = Some((c, r));
                         self.start_world = Some(view.cell_to_world(c, r));
@@ -161,16 +168,21 @@ impl DragGesture {
 
     /// Checks whether the captured target still legitimately holds the pointer.
     ///
-    /// If [`PointerCapture::route`](crate::hit_test::PointerCapture::route) still routes to the captured target, the
-    /// capture is live (`Ok`). Otherwise we diagnose *why* it lost authority:
-    /// a target no longer present in the layers is `TargetRemoved`; a target
-    /// still present but out-routed (a modal opened above it) is
-    /// `ModalTakeover`.
+    /// A target that has gone inert (disabled) under the drag has lost its
+    /// authority first of all — `TargetDisabled` — even though it is still
+    /// present and unoccluded. Otherwise, if
+    /// [`PointerCapture::route`](crate::hit_test::PointerCapture::route) still routes to the captured target, the
+    /// capture is live (`Ok`); if not we diagnose *why*: a target no longer
+    /// present in the layers is `TargetRemoved`; a target still present but
+    /// out-routed (a modal opened above it) is `ModalTakeover`.
     fn revalidate(&self, layers: &HitLayers, c: u16, r: u16) -> Result<(), CancelReason> {
         let t = self
             .capture
             .captured()
             .expect("revalidate is only called while a capture is held");
+        if layers.is_inert(t) {
+            return Err(CancelReason::TargetDisabled);
+        }
         if self.capture.route(layers, c, r) == Some(t) {
             Ok(())
         } else if !layers.contains(t) {

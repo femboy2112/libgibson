@@ -5,7 +5,7 @@ a drawing/observation surface over caller-owned data — without modifying the r
 duplicating the input protocol, or writing a bespoke widget/simulation framework.
 
 The flagship consumer is [`examples/instrument_workbench/`](../examples/instrument_workbench/)
-(`core.rs` is the model; `main.rs` is the runnable loop). It is **domain-neutral and
+(`workbench.rs` is the model; `main.rs` is the runnable loop). It is **domain-neutral and
 synthetic** on purpose: there is no chemistry, material, or physics in any LibGibson
 symbol — those belong to the consumer. Run it:
 
@@ -85,7 +85,10 @@ let picked = shapes.iter().rev().find(|s| s.bounds().contains(p)).map(|s| s.id()
 ## Recipe 3 — reversible edits + undo/redo keymap
 
 Model each edit as a `Reversible` command; wrap even single edits in a `Compound` so the
-atomic rollback is always in force (a failed member leaves the model untouched — Finding B).
+atomic rollback is always in force. When a member fails, the compound rolls the earlier
+members back and reports `CompoundError::SubCommand` with the model restored — and if a
+compensation *itself* fails, that is surfaced as `CompoundError::RollbackFailed` (naming every
+failed compensation), never silently swallowed (Finding B).
 
 ```rust
 use gibson::edit::{Compound, Reversible, UndoKeymap, UndoLog, UndoIntent};

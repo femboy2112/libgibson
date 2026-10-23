@@ -50,6 +50,9 @@ pub enum CancelReason {
     ModalTakeover,
     /// The captured target was removed out from under the edit.
     TargetRemoved,
+    /// The captured target became disabled (inert) mid-edit: it is still present
+    /// and unoccluded, but it no longer carries the authority to be edited.
+    TargetDisabled,
     /// A newer edit superseded this one before it could end.
     Superseded,
 }

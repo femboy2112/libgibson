@@ -69,6 +69,11 @@ pub struct ResolvedTarget {
     /// is partly or wholly clipped. A partly-clipped target is hit over its
     /// visible cells only; a wholly-clipped one is recorded but unhittable.
     pub clipped: bool,
+    /// `true` when this target (or an ancestor) applies a `SurfaceFx` that may
+    /// move or erase pixels after layout. Its rect is the *pre-effect* extent, so
+    /// an exact-hit guarantee does not hold for affected content: the
+    /// qualification is disclosed here, never silently dropped (Law L7).
+    pub fx: bool,
 }
 
 /// The painted layout resolved into a queryable hit surface: the layered spatial
@@ -185,13 +190,20 @@ impl<A> Compiled<A> {
                     Eligibility::Hittable
                 },
                 clipped: r.visible != r.natural,
+                fx: r.fx,
             });
 
             // A wholly-clipped target paints nothing, so it cannot be hit: it stays
             // in `targets` (disclosure) but is left out of the spatial index. A
-            // *disabled* target IS indexed — it occludes and swallows the click.
+            // *disabled* target IS indexed — it occludes and swallows the click —
+            // but as an INERT target, so the gesture layer refuses to authorize an
+            // edit on it: eligibility is carried into the index, not stripped.
             if !r.visible.is_empty() {
-                layers.add_target(id, r.visible, r.order as i32);
+                if spec.disabled {
+                    layers.add_inert_target(id, r.visible, r.order as i32);
+                } else {
+                    layers.add_target(id, r.visible, r.order as i32);
+                }
             }
         }
 
