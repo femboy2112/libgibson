@@ -227,6 +227,19 @@ impl<I> EditSession<I> {
 /// [`revert`](Reversible::revert) to undo and [`apply`](Reversible::apply) to
 /// redo; a revert that detects the model has diverged underneath it should
 /// return `Err` rather than guess — the log surfaces that error intact.
+///
+/// # Contract — the all-or-nothing precondition
+///
+/// `apply` and `revert` must be **all-or-nothing**: if either returns `Err`, it
+/// must have left the model **unchanged**. This is the precondition every
+/// atomicity claim in this module rests on. An implementation that mutates the
+/// model and *then* reports `Err` (a "mutate-and-fail") breaks the atomicity a
+/// [`Compound`] can offer, and a compound **cannot detect** that violation — it
+/// trusts the `Err` to mean "nothing happened." What a compound *can* still
+/// promise even when a sub-command fails, and what it explicitly cannot, is
+/// spelled out by [`CompoundError`]. If you cannot meet this precondition
+/// cheaply, apply against a clone and commit only on success rather than relying
+/// on a compound's rollback.
 pub trait Reversible {
     /// The consumer-owned model this command mutates.
     type Model;
@@ -379,13 +392,29 @@ impl<C: Reversible> UndoLog<C> {
 /// Every step of a drag, or a batch of edits that logically belong together,
 /// becomes one [`Compound`]; recorded in an [`UndoLog`] it collapses to a single
 /// undo/redo. [`apply`](Compound::apply) runs the sub-commands in order;
-/// [`revert`](Compound::revert) runs them in REVERSE order. Both are atomic: if a
-/// sub-command fails partway, the ones already done are rolled back so the model
-/// is left exactly as it was.
+/// [`revert`](Compound::revert) runs them in REVERSE order.
 ///
-/// A compound does not know what its sub-commands *mean* — it only guarantees the
-/// order and the atomicity. The consumer's [`Reversible`] carries the meaning; we
-/// just make sure a half-finished group never survives as state.
+/// # Atomicity — exactly what is and is not promised
+///
+/// When a sub-command fails partway, the compound rolls back the ones already
+/// done (apply unwinds newest-first; revert re-applies the tail it had walked
+/// back). **Under the [`Reversible`] all-or-nothing precondition**, a *clean*
+/// rollback — every compensation succeeding — leaves the model exactly as it was,
+/// and the failure is reported as [`CompoundError::SubCommand`].
+///
+/// But a compensation can itself fail. The old implementation discarded those
+/// errors (`let _ = revert(..)`) and returned the trigger error alone, so a
+/// half-rolled-back, corrupted model was indistinguishable from a clean one. It
+/// no longer does: a compensation failure is collected and surfaced as
+/// [`CompoundError::RollbackFailed`], which names every compensation that failed
+/// and admits the model is in a known-partial state. **Atomicity is a
+/// conditional guarantee, not a magic one** (Laws L5/L7): a compound is the
+/// partial inverse of an *admitted* transition, and when it cannot invert, it
+/// says so rather than lying. For unconditional atomicity over an untrusted
+/// `Reversible`, apply against a clone and commit only on full success.
+///
+/// A compound does not know what its sub-commands *mean* — it owns only the order
+/// and this honest accounting of what rollback achieved.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Compound<C> {
     commands: Vec<C>,
@@ -413,39 +442,137 @@ impl<C> Compound<C> {
     }
 }
 
+/// What went wrong when a [`Compound`] could not complete — and, decisively,
+/// whether the model was put back.
+///
+/// Under the [`Reversible`] all-or-nothing precondition:
+///
+/// * [`SubCommand`](CompoundError::SubCommand) — one sub-command failed and every
+///   compensation then succeeded, so the model is back to its exact
+///   pre-operation state. Atomicity held; the whole compound was a clean no-op.
+/// * [`RollbackFailed`](CompoundError::RollbackFailed) — one sub-command failed
+///   **and at least one compensation also failed**. The model is in a
+///   known-partial state that could not be unwound. The variant carries exactly
+///   which compensations failed (by index, in attempt order), so the caller can
+///   decide what to do. Atomicity was violated, and this type refuses to dress
+///   that up as success (Laws L5/L7 — a failed compensation is never certified
+///   as a clean rollback, and the condition is never silently erased).
+///
+/// `#[non_exhaustive]`: a future checkpoint-based variant (e.g. "restored from a
+/// snapshot") may be added without breaking downstream `match`es.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub enum CompoundError<E> {
+    /// A sub-command failed; the rollback that followed was clean, so the model
+    /// is restored to its pre-operation state.
+    SubCommand {
+        /// The forward-order index of the sub-command whose apply/revert failed.
+        index: usize,
+        /// That sub-command's own error.
+        error: E,
+    },
+    /// A sub-command failed *and* the rollback could not fully complete; the
+    /// model is left in a known-partial state.
+    RollbackFailed {
+        /// The index of the sub-command whose failure triggered the rollback.
+        trigger_index: usize,
+        /// The triggering sub-command's own error.
+        trigger_error: E,
+        /// Every compensation that *also* failed, as `(index, error)` in attempt
+        /// order. Non-empty whenever this variant is produced — that non-emptiness
+        /// is the whole difference from [`SubCommand`](CompoundError::SubCommand).
+        failures: Vec<(usize, E)>,
+    },
+}
+
 impl<C: Reversible> Reversible for Compound<C> {
     type Model = C::Model;
-    type Error = C::Error;
+    // The error type is richer than a sub-command's: a compound can fail in a way
+    // no single `C::Error` can express — namely "the rollback itself failed" —
+    // and this type is what makes that sayable instead of swallowed.
+    type Error = CompoundError<C::Error>;
 
-    fn apply(&self, model: &mut C::Model) -> Result<(), C::Error> {
+    fn apply(&self, model: &mut C::Model) -> Result<(), CompoundError<C::Error>> {
         for (i, cmd) in self.commands.iter().enumerate() {
-            if let Err(e) = cmd.apply(model) {
-                // Roll back the ones already applied, newest first. The failing
-                // command touched nothing (it returned Err), so [..i] is exactly
-                // the set that landed — reverting them in LIFO order unwinds the
-                // partial apply cleanly.
-                for applied in self.commands[..i].iter().rev() {
-                    let _ = applied.revert(model);
-                }
-                return Err(e);
+            if let Err(trigger_error) = cmd.apply(model) {
+                // Sub-command `i` failed. Under the Reversible precondition it
+                // mutated nothing, so `[..i]` is exactly the set that landed. Roll
+                // them back newest-first, COLLECTING every compensation that fails
+                // instead of discarding it (the old `let _ = revert(..)` is the
+                // whole bug: it let a corrupted model pass for a clean rollback).
+                let failures = unwind(
+                    self.commands[..i].iter().enumerate().rev(),
+                    model,
+                    Op::Revert,
+                );
+                return Err(resolve(i, trigger_error, failures));
             }
         }
         Ok(())
     }
 
-    fn revert(&self, model: &mut C::Model) -> Result<(), C::Error> {
+    fn revert(&self, model: &mut C::Model) -> Result<(), CompoundError<C::Error>> {
         for (i, cmd) in self.commands.iter().enumerate().rev() {
-            if let Err(e) = cmd.revert(model) {
-                // Re-apply the ones already reverted, restoring the applied state.
-                // [i + 1..] is the tail we had already walked back; re-applying it
-                // forward puts the model back where a failed revert found it.
-                for reverted in &self.commands[i + 1..] {
-                    let _ = reverted.apply(model);
-                }
-                return Err(e);
+            if let Err(trigger_error) = cmd.revert(model) {
+                // Revert `i` failed. The tail `[i+1..]` was already reverted; put
+                // the model back where this failed revert found it by re-applying
+                // it forward, again collecting — never swallowing — any failure.
+                let tail = self.commands.iter().enumerate().skip(i + 1);
+                let failures = unwind(tail, model, Op::Apply);
+                return Err(resolve(i, trigger_error, failures));
             }
         }
         Ok(())
+    }
+}
+
+/// Which direction a compensation runs during a rollback.
+#[derive(Clone, Copy)]
+enum Op {
+    Apply,
+    Revert,
+}
+
+/// Runs the compensating operation over `items` (each an absolute `(index, &C)`),
+/// never short-circuiting, and returns every failure as `(index, error)`. The
+/// goal of a rollback is to restore as much as possible *and* report everything
+/// that could not be — so one failing compensation must not stop the rest.
+fn unwind<'c, C: Reversible + 'c>(
+    items: impl Iterator<Item = (usize, &'c C)>,
+    model: &mut C::Model,
+    op: Op,
+) -> Vec<(usize, C::Error)> {
+    let mut failures = Vec::new();
+    for (index, cmd) in items {
+        let outcome = match op {
+            Op::Apply => cmd.apply(model),
+            Op::Revert => cmd.revert(model),
+        };
+        if let Err(e) = outcome {
+            failures.push((index, e));
+        }
+    }
+    failures
+}
+
+/// A clean rollback (no compensation failed) reports the trigger alone; any
+/// compensation failure escalates to [`CompoundError::RollbackFailed`].
+fn resolve<E>(
+    trigger_index: usize,
+    trigger_error: E,
+    failures: Vec<(usize, E)>,
+) -> CompoundError<E> {
+    if failures.is_empty() {
+        CompoundError::SubCommand {
+            index: trigger_index,
+            error: trigger_error,
+        }
+    } else {
+        CompoundError::RollbackFailed {
+            trigger_index,
+            trigger_error,
+            failures,
+        }
     }
 }
 
