@@ -120,8 +120,8 @@ crash recovery: a process death loses the buffer, and "delivered" means handed o
 bridge in-process, not persisted or confirmed applied. A refused command is not retained —
 refusal is explicit backpressure the producer re-offers.
 
-One known precision boundary: the encoder reconstructs a field's origin and cell sizes from
-`FieldExtent`'s public cell geometry (its fields are private), which is exact for origins and
-cell sizes in the normal f64 range the reference producer uses; a pathological origin far
-larger than the cell size could lose low bits on re-encode. Adding `origin()`/`cell_w()`/
-`cell_h()` accessors to `FieldExtent` (Wave 4) would make it exact for all inputs.
+Field geometry round-trips **bit-exactly for all inputs**: the encoder reads the origin and
+cell sizes straight off `FieldExtent`'s `origin()`/`cell_w()`/`cell_h()` accessors and the
+decoder reconstructs the extent from exactly those four `f64`s. (Earlier revisions reconstructed
+the origin from a derived cell corner, which could drop low mantissa bits when the origin
+magnitude dwarfed the cell size; the accessors close that boundary.)

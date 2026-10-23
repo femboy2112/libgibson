@@ -435,13 +435,14 @@ pub fn encode_field(
     let rows = u32::try_from(field.extent.rows()).map_err(|_| WireError::EncodeTooLarge)?;
     out.extend_from_slice(&cols.to_le_bytes());
     out.extend_from_slice(&rows.to_le_bytes());
-    // Origin and cell sizes come back out of the extent through its public cell geometry
-    // (its fields are private); see `extent_geometry`.
-    let (ox, oy, cw, ch) = extent_geometry(&field.extent);
-    out.extend_from_slice(&ox.to_le_bytes());
-    out.extend_from_slice(&oy.to_le_bytes());
-    out.extend_from_slice(&cw.to_le_bytes());
-    out.extend_from_slice(&ch.to_le_bytes());
+    // Origin and cell sizes come straight off the extent's public accessors, so the
+    // geometry round-trips bit-exactly for every input (the decoder reconstructs the
+    // extent from exactly these four f64s).
+    let origin = field.extent.origin();
+    out.extend_from_slice(&origin.x.to_le_bytes());
+    out.extend_from_slice(&origin.y.to_le_bytes());
+    out.extend_from_slice(&field.extent.cell_w().to_le_bytes());
+    out.extend_from_slice(&field.extent.cell_h().to_le_bytes());
     out.extend_from_slice(&field.model_tick.to_le_bytes());
     let flags = if has_mask { FLAG_HAS_MASK } else { 0 };
     out.extend_from_slice(&flags.to_le_bytes());
@@ -486,17 +487,6 @@ pub fn encode_retire(source: u64, cursor: SourceCursor) -> Vec<u8> {
     let mut out = Vec::with_capacity(HEADER_BYTES);
     push_header(&mut out, MSG_RETIRE, source, cursor, 0);
     out
-}
-
-/// Pull the origin and cell sizes out of an extent using only its public cell geometry.
-/// `cell_bounds(0,0)` gives the first cell's world rectangle: its min corner is the
-/// origin, and its width/height are the cell sizes. This keeps the encoder on the extent's
-/// public surface rather than reaching for private fields.
-fn extent_geometry(extent: &FieldExtent) -> (f64, f64, f64, f64) {
-    let b = extent
-        .cell_bounds(0, 0)
-        .expect("a non-empty extent always has cell (0,0)");
-    (b.min.x, b.min.y, b.width(), b.height())
 }
 
 // ---- streaming decoder ---------------------------------------------------------------

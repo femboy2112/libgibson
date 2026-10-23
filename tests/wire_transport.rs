@@ -125,6 +125,38 @@ fn field_round_trip_with_and_without_mask() {
 }
 
 #[test]
+fn pathological_geometry_round_trips_bit_exact() {
+    // An origin whose magnitude dwarfs the cell size. Reconstructing it from a derived
+    // cell corner (origin + 0·cell, the encoder's earlier path) could drop low mantissa
+    // bits; the encoder now reads FieldExtent::origin()/cell_w()/cell_h() directly, so
+    // encode -> decode must hand back the EXACT bits for every input.
+    let ox = 1.234_567_890_123_456_7e12;
+    let oy = -9.876_543_210_987_654e11;
+    let cw = 3.141_592_653_589_793e-7;
+    let ch = 2.718_281_828_459_045e-7;
+    let field = WireField {
+        extent: FieldExtent::new(Point::new(ox, oy), cw, ch, 3, 2).expect("valid extent"),
+        model_tick: 5,
+        data: vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
+        mask: None,
+    };
+    let bytes = encode_field(7, SourceCursor::new(0, 1), &field, WireLimits::default()).unwrap();
+    let mut dec = FrameDecoder::new();
+    dec.push(&bytes).unwrap();
+    match decode_one(&mut dec) {
+        WireBody::Field(f) => {
+            let e = f.extent;
+            assert_eq!(e.origin().x.to_bits(), ox.to_bits(), "origin.x lost bits");
+            assert_eq!(e.origin().y.to_bits(), oy.to_bits(), "origin.y lost bits");
+            assert_eq!(e.cell_w().to_bits(), cw.to_bits(), "cell_w lost bits");
+            assert_eq!(e.cell_h().to_bits(), ch.to_bits(), "cell_h lost bits");
+            assert_eq!(f, field, "the whole field must round-trip equal");
+        }
+        other => panic!("not a field: {other:?}"),
+    }
+}
+
+#[test]
 fn non_finite_values_survive_bit_exact() {
     // The wire must transmit NaN/±∞ faithfully, never coerce the data (it is disclosed
     // downstream as Sample::NonFinite, not laundered into a number here).
