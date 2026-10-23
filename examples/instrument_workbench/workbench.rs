@@ -187,7 +187,7 @@ impl Intent {
     /// the same intents in the same order get the same command digest.
     fn canonical(&self) -> Vec<u8> {
         let mut v = Vec::new();
-        let mut f = |v: &mut Vec<u8>, x: f64| v.extend_from_slice(&x.to_bits().to_le_bytes());
+        let f = |v: &mut Vec<u8>, x: f64| v.extend_from_slice(&x.to_bits().to_le_bytes());
         match *self {
             Intent::DrawRect { a, b } => {
                 v.push(1);
@@ -826,8 +826,8 @@ impl Workbench {
             // Build each row as ASCII bytes so a vertex overlay is a plain index write
             // (no unsafe): every glyph used here is ASCII.
             let mut row = vec![b' '; FIELD_COLS];
-            for ix in 0..FIELD_COLS {
-                row[ix] = match fv.sample(ix, iy) {
+            for (ix, cell) in row.iter_mut().enumerate() {
+                *cell = match fv.sample(ix, iy) {
                     Some(Sample::Value(v)) => {
                         let t = ((v - lo) / span).clamp(0.0, 1.0);
                         let idx = (t * (RAMP.len() - 1) as f64).round() as usize;
