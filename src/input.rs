@@ -201,6 +201,11 @@ pub fn poll_event(timeout: Duration) -> io::Result<Option<Event>> {
 /// instrument needs pointer input, and disable it again afterward (issue #126). When
 /// enabled, [`poll_event`] yields [`Event::Mouse`]. Writes the control sequence to
 /// stdout; a write error propagates.
+///
+/// This is an **unmanaged** raw primitive: an enable it performs is not unwound by
+/// any session, so it leaks on an early return or panic. Prefer the session-owned
+/// `TerminalSession::set_mouse_capture`, which disables the mode on restore, `Drop`
+/// and panic.
 pub fn set_mouse_capture(enable: bool) -> io::Result<()> {
     use crossterm::ExecutableCommand;
     if enable {
@@ -214,6 +219,10 @@ pub fn set_mouse_capture(enable: bool) -> io::Result<()> {
 /// Enables or disables focus-change reporting. **Off by default** (issue #126). When
 /// enabled, [`poll_event`] yields [`Event::Focus`]. Writes the control sequence to
 /// stdout; a write error propagates.
+///
+/// An **unmanaged** raw primitive like `set_mouse_capture`; prefer the session-owned
+/// `TerminalSession::set_focus_reporting`, which is unwound on restore, `Drop` and
+/// panic.
 pub fn set_focus_reporting(enable: bool) -> io::Result<()> {
     use crossterm::ExecutableCommand;
     if enable {

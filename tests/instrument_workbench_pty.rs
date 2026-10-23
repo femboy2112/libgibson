@@ -151,3 +151,48 @@ fn workbench_pty_walkthrough() {
     h.send(b"q");
     h.assert_restored();
 }
+
+/// Finding F: the session-owned reporting lifecycle must unwind mouse + focus
+/// reporting even when the interactive loop never runs. Under
+/// `WORKBENCH_FAIL_AFTER_REPORTING` the example errors out immediately after
+/// enabling both; the only way `?1006l` / `?1004l` reach the wire is through
+/// `Context`'s drop -> `TerminalSession::restore`. When reporting was enabled via a
+/// bare free function (pre-fix) this path leaked — no disable was ever emitted.
+#[test]
+fn workbench_pty_unwinds_reporting_on_early_failure() {
+    let mut cmd = CommandBuilder::new(pty_capture::example_path("instrument_workbench"));
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("WORKBENCH_FAIL_AFTER_REPORTING", "1");
+    let mut capture = pty_capture::Capture::spawn(cmd, COLS, ROWS, Duration::from_secs(20));
+
+    // The child enables reporting, then errors out; wait for it to exit.
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        capture
+            .collect_for(Duration::from_millis(50))
+            .expect("collect PTY output");
+        if matches!(capture.try_wait(), Ok(Some(_))) {
+            break;
+        }
+        if Instant::now() >= deadline {
+            panic!("workbench did not exit on the injected failure");
+        }
+    }
+    // Drain any trailing restore bytes emitted during Drop.
+    for _ in 0..4 {
+        let _ = capture.collect_for(Duration::from_millis(30));
+    }
+
+    let raw = capture.raw().to_vec();
+    let has = |needle: &[u8]| raw.windows(needle.len()).any(|w| w == needle);
+    assert!(has(b"\x1b[?1006h"), "SGR mouse reporting was enabled");
+    assert!(has(b"\x1b[?1004h"), "focus reporting was enabled");
+    assert!(
+        has(b"\x1b[?1006l"),
+        "SGR mouse reporting must be disabled on the failure path, not leaked"
+    );
+    assert!(
+        has(b"\x1b[?1004l"),
+        "focus reporting must be disabled on the failure path, not leaked"
+    );
+}

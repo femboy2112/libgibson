@@ -23,7 +23,7 @@ use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
 use gibson::shape::Point;
-use gibson::{input, Context, RenderMode};
+use gibson::{Context, RenderMode};
 
 mod workbench;
 use workbench::{Intent, TransportCmd, Workbench};
@@ -41,17 +41,28 @@ fn main() -> io::Result<()> {
 /// on error — through the one-shot `TerminalSession::restore`.
 fn run_interactive() -> io::Result<()> {
     let mut ctx = Context::new(RenderMode::Fullscreen)?;
-    input::set_mouse_capture(true)?;
-    input::set_focus_reporting(true)?;
+    // Reporting is leased THROUGH the session now, so restore / Drop / the panic
+    // hook all unwind it — including on the early-return and panic paths.
+    ctx.session.set_mouse_capture(true)?;
+    ctx.session.set_focus_reporting(true)?;
+
+    // Test hook (off unless set): prove the session-owned lifecycle unwinds
+    // reporting even when the loop never runs. `ctx` drops here, so its
+    // `TerminalSession::restore` disables mouse + focus reporting on the way out.
+    if std::env::var_os("WORKBENCH_FAIL_AFTER_REPORTING").is_some() {
+        return Err(io::Error::other(
+            "injected failure after reporting was enabled (test hook)",
+        ));
+    }
 
     let mut wb = Workbench::new();
     let res = run_loop(&mut ctx, &mut wb);
 
-    let _ = input::set_mouse_capture(false);
-    let _ = input::set_focus_reporting(false);
     io::stdout().flush().ok();
-    ctx.session.restore()?;
-    res
+    // Restore explicitly, but never let a restore error swallow a loop error: the
+    // loop's result wins; the restore error surfaces only if the loop was Ok.
+    let restored = ctx.session.restore();
+    res.and(restored)
 }
 
 fn run_loop(ctx: &mut Context, wb: &mut Workbench) -> io::Result<()> {

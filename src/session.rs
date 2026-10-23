@@ -1,7 +1,10 @@
 use crate::capability::{Capability, ColorDepth, TerminalCapabilities};
 use crossterm::{
     cursor::Show,
-    event::{DisableBracketedPaste, EnableBracketedPaste},
+    event::{
+        DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+        EnableFocusChange, EnableMouseCapture,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -21,6 +24,15 @@ static TERMINAL_LEASE: AtomicU8 = AtomicU8::new(LEASE_AVAILABLE);
 const LEASE_AVAILABLE: u8 = 0;
 const LEASE_OWNED: u8 = 1;
 const LEASE_RESTORING: u8 = 2;
+
+/// Reporting modes the lease owner currently has enabled, so the panic hook can
+/// disable exactly those that were turned on (it cannot reach the session). Set by
+/// the owning session's `set_mouse_capture` / `set_focus_reporting`, cleared by
+/// `restore()`. Lease-scoped: only the single interactive owner ever writes it.
+static REPORTING_MODES: AtomicU8 = AtomicU8::new(0);
+
+const REPORT_MOUSE: u8 = 0b01;
+const REPORT_FOCUS: u8 = 0b10;
 
 /// The thread that currently holds the terminal lease, if any. The panic hook
 /// restores the terminal only when the *panicking* thread is this owner, so a
@@ -74,6 +86,12 @@ pub struct TerminalSession {
     alt_screen_active: bool,
     cursor_hidden: bool,
     bracketed_paste_enabled: bool,
+    /// Opt-in SGR mouse-capture reporting is on. Tracked so `restore`, `Drop` and
+    /// the panic hook unwind it (the raw `input::set_mouse_capture` free function
+    /// does not, so its enable leaks on any early return or panic).
+    mouse_capture_enabled: bool,
+    /// Opt-in focus-change reporting is on, tracked and unwound for the same reason.
+    focus_reporting_enabled: bool,
     sync_updates_enabled: bool,
     capabilities: TerminalCapabilities,
     /// True when this instance holds the process-global terminal lease. Only an
@@ -126,6 +144,8 @@ impl TerminalSession {
             alt_screen_active: false,
             cursor_hidden: false,
             bracketed_paste_enabled: false,
+            mouse_capture_enabled: false,
+            focus_reporting_enabled: false,
             sync_updates_enabled: true,
             capabilities: TerminalCapabilities::detect_from_env(),
             owns_lease,
@@ -162,6 +182,8 @@ impl TerminalSession {
             alt_screen_active: false,
             cursor_hidden: false,
             bracketed_paste_enabled: false,
+            mouse_capture_enabled: false,
+            focus_reporting_enabled: false,
             sync_updates_enabled: true,
             capabilities: TerminalCapabilities::truecolor(),
             // A headless session is a mannequin, not a patient: it performs no OS
@@ -235,6 +257,15 @@ impl TerminalSession {
                 {
                     let _ = disable_raw_mode();
                     let mut out = stdout();
+                    // Disable exactly the reporting modes the owner turned on; the
+                    // hook can't see the session, so it reads the lease-scoped flags.
+                    let modes = REPORTING_MODES.load(Ordering::SeqCst);
+                    if modes & REPORT_FOCUS != 0 {
+                        let _ = execute!(out, DisableFocusChange);
+                    }
+                    if modes & REPORT_MOUSE != 0 {
+                        let _ = execute!(out, DisableMouseCapture);
+                    }
                     let _ = execute!(out, Show, LeaveAlternateScreen, DisableBracketedPaste);
                     let _ = out.write_all(b"\x1b[0m\x1b[?2026l\x1b[?7h\x1b[?25h\r\n");
                     let _ = out.flush();
@@ -287,6 +318,58 @@ impl TerminalSession {
         execute!(out, LeaveAlternateScreen)?;
         self.alt_screen_active = false;
         Ok(())
+    }
+
+    /// Enables or disables SGR mouse-capture reporting, tracked by the session so
+    /// [`restore`](TerminalSession::restore), `Drop` and the panic hook all unwind
+    /// it — unlike the raw `input::set_mouse_capture` free function, whose
+    /// enable leaks on any early return or panic. Idempotent; a no-op on a non-TTY
+    /// or headless session. On enable the flag is set *before* the write, so even a
+    /// failed or partial enable is still disabled on restore.
+    pub fn set_mouse_capture(&mut self, enable: bool) -> io::Result<()> {
+        if !self.is_tty || self.headless || enable == self.mouse_capture_enabled {
+            return Ok(());
+        }
+        let mut out = stdout();
+        if enable {
+            self.mouse_capture_enabled = true;
+            REPORTING_MODES.fetch_or(REPORT_MOUSE, Ordering::SeqCst);
+            execute!(out, EnableMouseCapture)?;
+        } else {
+            execute!(out, DisableMouseCapture)?;
+            self.mouse_capture_enabled = false;
+            REPORTING_MODES.fetch_and(!REPORT_MOUSE, Ordering::SeqCst);
+        }
+        Ok(())
+    }
+
+    /// Whether session-owned mouse-capture reporting is currently enabled.
+    pub fn mouse_capture_enabled(&self) -> bool {
+        self.mouse_capture_enabled
+    }
+
+    /// Enables or disables focus-change reporting, tracked and unwound exactly like
+    /// [`set_mouse_capture`](TerminalSession::set_mouse_capture).
+    pub fn set_focus_reporting(&mut self, enable: bool) -> io::Result<()> {
+        if !self.is_tty || self.headless || enable == self.focus_reporting_enabled {
+            return Ok(());
+        }
+        let mut out = stdout();
+        if enable {
+            self.focus_reporting_enabled = true;
+            REPORTING_MODES.fetch_or(REPORT_FOCUS, Ordering::SeqCst);
+            execute!(out, EnableFocusChange)?;
+        } else {
+            execute!(out, DisableFocusChange)?;
+            self.focus_reporting_enabled = false;
+            REPORTING_MODES.fetch_and(!REPORT_FOCUS, Ordering::SeqCst);
+        }
+        Ok(())
+    }
+
+    /// Whether session-owned focus reporting is currently enabled.
+    pub fn focus_reporting_enabled(&self) -> bool {
+        self.focus_reporting_enabled
     }
 
     /// Hides the hardware cursor.
@@ -362,6 +445,19 @@ impl TerminalSession {
 
         let mut out = stdout();
 
+        // Unwind opt-in reporting FIRST, reverse of enable order (focus, then
+        // mouse). Each disable is emitted only when the mode was actually enabled,
+        // so a session that never turned these on writes the exact same restore
+        // bytes as before (the PTY/golden streams are unchanged).
+        if self.focus_reporting_enabled {
+            record(execute!(out, DisableFocusChange));
+            self.focus_reporting_enabled = false;
+        }
+        if self.mouse_capture_enabled {
+            record(execute!(out, DisableMouseCapture));
+            self.mouse_capture_enabled = false;
+        }
+
         if self.cursor_hidden {
             record(execute!(out, Show));
             self.cursor_hidden = false;
@@ -393,6 +489,7 @@ impl TerminalSession {
         // to Available: a broken output stream is the caller's to see (via the
         // returned Err), not a reason to wedge the lease shut (issue #11, B1/B2).
         if self.owns_lease {
+            REPORTING_MODES.store(0, Ordering::SeqCst);
             set_owner_thread(None);
             TERMINAL_LEASE.store(LEASE_AVAILABLE, Ordering::SeqCst);
             self.owns_lease = false;
