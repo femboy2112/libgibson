@@ -111,6 +111,14 @@ impl WireLimits {
             max_field_cells,
         }
     }
+
+    /// The largest command `arg` that fits under
+    /// [`max_payload_bytes`](WireLimits::max_payload_bytes) once the fixed command header is
+    /// accounted for. A command whose `arg` exceeds this would encode to a frame the matching
+    /// decoder must reject, so [`encode_command_checked`] and [`issue_command`] refuse it first.
+    pub fn max_command_arg_bytes(&self) -> usize {
+        self.max_payload_bytes.saturating_sub(COMMAND_HEAD_BYTES)
+    }
 }
 
 impl Default for WireLimits {
@@ -473,6 +481,41 @@ pub fn encode_command(source: u64, cursor: SourceCursor, command: &WireCommand) 
     out
 }
 
+/// Encode a command, refusing ([`WireError::EncodeTooLarge`]) rather than emit a frame whose
+/// payload would exceed `limits` — the checked sibling of [`encode_command`], which trusts the
+/// caller to keep `arg` in bounds. Mirrors [`encode_field`]'s refuse-don't-emit contract, so a
+/// locally-built command cannot bypass the byte cap the decoder enforces on the far side.
+pub fn encode_command_checked(
+    source: u64,
+    cursor: SourceCursor,
+    command: &WireCommand,
+    limits: WireLimits,
+) -> Result<Vec<u8>, WireError> {
+    if command.arg.len() > limits.max_command_arg_bytes() {
+        return Err(WireError::EncodeTooLarge);
+    }
+    Ok(encode_command(source, cursor, command))
+}
+
+/// Offer a command to a return-channel bridge, refusing an oversized `arg`
+/// ([`WireError::EncodeTooLarge`]) *before* it is admitted — so a locally-constructed command
+/// that bypasses the decoder still cannot pin more than
+/// [`max_command_arg_bytes`](WireLimits::max_command_arg_bytes) of queued bytes per entry. On an
+/// in-bounds command this is exactly
+/// [`SnapshotBridge::issue`](crate::snapshot::SnapshotBridge::issue), so queue ordering and the
+/// conservation law are untouched; the byte refusal happens ahead of the bridge and is never
+/// counted as a queue admission.
+pub fn issue_command(
+    bridge: &mut crate::snapshot::SnapshotBridge<WireCommand>,
+    command: WireCommand,
+    limits: WireLimits,
+) -> Result<crate::snapshot::Admission, WireError> {
+    if command.arg.len() > limits.max_command_arg_bytes() {
+        return Err(WireError::EncodeTooLarge);
+    }
+    Ok(bridge.issue(command))
+}
+
 /// Encode an acknowledgement.
 pub fn encode_ack(source: u64, cursor: SourceCursor, ack: WireAck) -> Vec<u8> {
     let mut out = Vec::with_capacity(HEADER_BYTES + ACK_BYTES);
@@ -806,10 +849,13 @@ fn decode_ack(p: &[u8]) -> Result<WireAck, WireError> {
 
 // ---- bounded field inbox -------------------------------------------------------------
 
-/// Explicit ceiling for a [`FieldInbox`] — the source count. The per-field cell count is
-/// already bounded by the [`FrameDecoder`]'s [`WireLimits`], so retained bytes are capped
-/// at `max_sources * max_field_cells * size_of::<f64>()` — a number you can put on a spec
-/// sheet, exactly as [`crate::snapshot::Capacity`] does for rasters.
+/// Explicit ceiling for a [`FieldInbox`] — the source count (an *entry* count, not a byte
+/// total). The per-field cell count is bounded by the [`FrameDecoder`]'s [`WireLimits`] on the
+/// decode path, so for decoder-admitted fields the retained bytes are capped at
+/// `max_sources * max_field_cells * (size_of::<f64>() + 1)` — the `+ 1` is the optional mask
+/// byte per cell, which is real and was previously understated. A field handed to
+/// [`FieldInbox::admit`] directly (in-process, bypassing the decoder) is trusted to respect
+/// those limits; the decoder is where an untrusted field's size is enforced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InboxCapacity {
     /// Maximum number of distinct sources with a live latest observation. A new source

@@ -63,6 +63,14 @@
 //! handed out of this bridge in-process, not persisted and not confirmed applied. A
 //! *refused* command is not retained — refusal is explicit backpressure the producer must
 //! handle by re-offering; it is counted, never silently swallowed.
+//!
+//! One precise line on *what* [`Capacity`] bounds: **counts**, not bytes. `max_sources` and
+//! `max_pending_commands` are entry ceilings. Frame bytes are bounded transitively because a
+//! [`Frame`] is itself byte-bounded (worst case `max_sources * MAX_FRAME_BYTES`). A pending
+//! command is a generic `C`, so N pending commands pin `N` of them plus their heap: the *count*
+//! is bounded here, the per-command byte size is the caller's to bound. For the wire return
+//! channel that bound is [`crate::wire::issue_command`], which refuses an oversized command arg
+//! before it is ever queued.
 
 use crate::frame::{Frame, FrameSource};
 use crate::raster::{Rgb, MAX_RASTER_DIMENSION};

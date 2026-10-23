@@ -90,10 +90,19 @@ distinct from its transport sequence.
   never allocates toward a frame it would reject, and its accumulation buffer is itself
   bounded to one maximum frame.
 - **Field cell count** is bounded by `WireLimits::max_field_cells`.
-- **Retained observations** are bounded by `InboxCapacity::max_sources` × `max_field_cells`:
-  latest-wins per source, a new source beyond the ceiling is refused (not evicted).
-- **Commands** are bounded by the `SnapshotBridge` capacity: an accepted edit is delivered
-  exactly once in order; at the ceiling an `issue` is a typed `Refused`, never silent growth.
+- **Retained observations** are bounded by an *entry count*, `InboxCapacity::max_sources`, times
+  the per-field *byte* ceiling the decoder enforces. A decoded field is at most `max_field_cells`
+  cells; each retained cell costs `size_of::<f64>()` plus one mask byte when a mask is present,
+  so the worst case is `max_sources × max_field_cells × 9` bytes (not `× 8` — the optional mask
+  is real). Latest-wins per source; a new source beyond the ceiling is refused, not evicted.
+  (`FieldInbox::admit` trusts in-process callers; the **decoder** path is where the per-field
+  byte ceiling is enforced on untrusted input.)
+- **Commands** are bounded by an *entry count*, `SnapshotBridge`'s `max_pending_commands` — not a
+  byte total: a pending command is a generic value whose own heap the caller bounds. For the wire
+  return channel, `wire::issue_command` refuses a command whose `arg` exceeds
+  `WireLimits::max_command_arg_bytes()` before it is queued, so the worst case on that path is
+  `max_pending_commands × max_command_arg_bytes`. An accepted edit is delivered exactly once in
+  order; at the ceiling an `issue` is a typed `Refused`, never silent growth.
 
 ## Error discipline
 
