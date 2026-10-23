@@ -143,17 +143,32 @@ pub struct FixedTimestep {
     step: Duration,
     accumulator: Duration,
     max_ticks_per_advance: u32,
+    /// Exact catch-up: whole ticks beyond the cap are deferred, never discarded.
+    exact: bool,
 }
 
 /// How many fixed model ticks a frame demands, plus whether the catch-up cap
 /// dropped a backlog (a discard receipt — see the architecture's "clear receipts
 /// whenever realization loses, quantizes or discards information").
+///
+/// Tick conservation (Law IV): `owed == executed + deferred + discarded`, always
+/// (counts saturate at `u32::MAX`; unreachable for sane steps). `ticks` equals
+/// `executed`; `clamped == (discarded > 0)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct TickDemand {
-    /// Number of fixed model ticks to run this frame.
+    /// Number of fixed model ticks to run this frame (same as `executed`).
     pub ticks: u32,
     /// True if the catch-up cap was hit and leftover backlog was discarded.
     pub clamped: bool,
+    /// Whole ticks the accumulated time represented at this advance.
+    pub owed: u32,
+    /// Whole ticks actually run this advance.
+    pub executed: u32,
+    /// Whole ticks kept in the accumulator for a later advance (exact policy only).
+    pub deferred: u32,
+    /// Whole ticks dropped by the catch-up cap (bounded policy only).
+    pub discarded: u32,
 }
 
 impl FixedTimestep {
@@ -173,6 +188,18 @@ impl FixedTimestep {
             step: step.max(Duration::from_nanos(1)),
             accumulator: Duration::ZERO,
             max_ticks_per_advance: max_ticks.max(1),
+            exact: false,
+        }
+    }
+
+    /// Exact catch-up policy: like [`with_max_ticks`](Self::with_max_ticks) for
+    /// per-advance work, but ticks over the cap are *deferred* (kept owed for later
+    /// advances), never discarded. Total executed ticks are then independent of how
+    /// real time is split across `advance` calls.
+    pub fn exact(step: Duration, max_ticks: u32) -> Self {
+        Self {
+            exact: true,
+            ..Self::with_max_ticks(step, max_ticks)
         }
     }
 
@@ -189,14 +216,29 @@ impl FixedTimestep {
             self.accumulator -= self.step;
             ticks += 1;
         }
-        let clamped = self.accumulator >= self.step;
-        if clamped {
-            // Drop the backlog beyond one step so a long stall cannot accrue an
-            // unbounded debt; keep only the sub-step remainder for `alpha`.
-            let rem = self.accumulator.as_nanos() % self.step.as_nanos();
-            self.accumulator = nanos_u128_to_duration(rem);
+        let step_ns = self.step.as_nanos();
+        let backlog = u32::try_from(self.accumulator.as_nanos() / step_ns).unwrap_or(u32::MAX);
+        let (mut deferred, mut discarded) = (0u32, 0u32);
+        if backlog > 0 {
+            if self.exact {
+                // Keep the whole-tick backlog in the accumulator; nothing is lost.
+                deferred = backlog;
+            } else {
+                // Drop the backlog beyond one step so a long stall cannot accrue an
+                // unbounded debt; keep only the sub-step remainder for `alpha`.
+                discarded = backlog;
+                let rem = self.accumulator.as_nanos() % step_ns;
+                self.accumulator = nanos_u128_to_duration(rem);
+            }
         }
-        TickDemand { ticks, clamped }
+        TickDemand {
+            ticks,
+            clamped: discarded > 0,
+            owed: ticks.saturating_add(backlog),
+            executed: ticks,
+            deferred,
+            discarded,
+        }
     }
 
     /// Interpolation factor in `[0, 1)`: how far the accumulator is into the next
@@ -408,6 +450,60 @@ mod tests {
         let next = ts.advance(step);
         assert_eq!(next.ticks, 1);
         assert!(!next.clamped);
+    }
+
+    #[test]
+    fn tick_demand_conserves_owed_under_bounded_discard() {
+        let s = Duration::from_millis(16);
+        let mut ts = FixedTimestep::with_max_ticks(s, 4);
+        let d = ts.advance(s * 10);
+        assert_eq!((d.executed, d.discarded, d.deferred, d.owed), (4, 6, 0, 10));
+        assert!(d.clamped);
+        assert_eq!(d.owed, d.executed + d.deferred + d.discarded);
+    }
+
+    #[test]
+    fn exact_policy_total_executed_is_frame_partition_invariant() {
+        let s = Duration::from_millis(16);
+        // Run to quiescence: keep feeding zero time until nothing more executes.
+        let total = |chunks: &[Duration]| {
+            let mut ts = FixedTimestep::exact(s, 4);
+            let mut sum = 0u32;
+            for &dt in chunks.iter().chain(std::iter::repeat_n(&Duration::ZERO, 8)) {
+                let d = ts.advance(dt);
+                assert_eq!(d.discarded, 0);
+                assert!(!d.clamped);
+                sum += d.executed;
+            }
+            sum
+        };
+        let dt = s * 10;
+        assert_eq!(total(&[dt]), 10);
+        assert_eq!(total(&[dt / 2, dt / 2]), total(&[dt]));
+    }
+
+    #[test]
+    fn exact_policy_defers_rather_than_discards() {
+        let s = Duration::from_millis(16);
+        let mut ts = FixedTimestep::exact(s, 4);
+        let d = ts.advance(s * 10);
+        assert_eq!(d.discarded, 0);
+        assert_eq!(d.owed, 10);
+        assert_eq!(d.deferred, d.owed - d.executed);
+        assert_eq!(d.deferred, 6);
+        // A zero-length advance drains deferred ticks (4 more, then 2).
+        let next = ts.advance(Duration::ZERO);
+        assert_eq!((next.executed, next.deferred, next.owed), (4, 2, 6));
+        assert_eq!(ts.advance(Duration::ZERO).executed, 2);
+    }
+
+    #[test]
+    fn sub_step_advance_reports_all_zero_counts() {
+        let s = Duration::from_millis(16);
+        let mut ts = FixedTimestep::new(s);
+        let d = ts.advance(s / 2);
+        assert_eq!((d.executed, d.owed, d.deferred, d.discarded), (0, 0, 0, 0));
+        assert!(!d.clamped);
     }
 
     #[test]
