@@ -196,3 +196,67 @@ fn workbench_pty_unwinds_reporting_on_early_failure() {
         "focus reporting must be disabled on the failure path, not leaked"
     );
 }
+
+/// `canvas=x,y,w,h` out of the HUD (emitted only under WORKBENCH_EMIT_CANVAS).
+fn parse_canvas(screen: &str) -> Option<(u16, u16, u16, u16)> {
+    let tok = screen
+        .split_whitespace()
+        .find(|t| t.starts_with("canvas="))?;
+    let mut it = tok.strip_prefix("canvas=")?.split(',');
+    let x = it.next()?.parse().ok()?;
+    let y = it.next()?.parse().ok()?;
+    let w = it.next()?.parse().ok()?;
+    let h = it.next()?.parse().ok()?;
+    Some((x, y, w, h))
+}
+
+/// Finding E / #144 acceptance #3: a REAL SGR mouse click must change a known model
+/// readout — not merely stand in for a keyboard probe. With WORKBENCH_EMIT_CANVAS the
+/// HUD exposes the painted canvas rect, so we target a known on-canvas cell. We draw a
+/// shape (which auto-selects it), then click an EMPTY canvas cell and assert the
+/// selection CLEARS (`sel=-1`) — a change only the pointer can make; the keyboard never
+/// clears the selection by clicking. Deleting the mouse bytes leaves `sel` on the drawn
+/// shape, so this cannot pass vacuously (the dead-send guard the old test lacked).
+#[test]
+fn workbench_pty_mouse_click_drives_the_model() {
+    let mut cmd = CommandBuilder::new(pty_capture::example_path("instrument_workbench"));
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("WORKBENCH_EMIT_CANVAS", "1");
+    let capture = pty_capture::Capture::spawn(cmd, COLS, ROWS, Duration::from_secs(30));
+    let initial_termios = capture.initial_termios.clone();
+    let mut h = Harness {
+        capture,
+        parser: Parser::new(ROWS, COLS, 0),
+        processed: 0,
+        initial_termios,
+    };
+
+    // Boot; read the painted canvas rect straight from the HUD.
+    h.wait_text("canvas=");
+    let (cx, cy, cw, ch) = parse_canvas(&h.screen()).expect("canvas rect in the HUD");
+    assert!(
+        cw >= 4 && ch >= 4,
+        "canvas must be big enough to pick a far-corner empty cell: {cw}x{ch}"
+    );
+
+    // Draw a rectangle wall ('n'); the new shape is auto-selected, so sel != -1.
+    h.send(b"n");
+    h.wait_text("shapes=1");
+    assert!(
+        !h.screen().contains("sel=-1"),
+        "a freshly drawn shape must be selected\n--- screen ---\n{}",
+        h.screen()
+    );
+
+    // Click an EMPTY canvas cell — the far corner, well away from the top-left shape
+    // at world (2,2)-(5,4). SGR is 1-based; button 0 press (M) then release (m).
+    let (col, row) = (cx + cw - 1, cy + ch - 1);
+    h.send(format!("\x1b[<0;{};{}M", col + 1, row + 1).as_bytes());
+    h.send(format!("\x1b[<0;{};{}m", col + 1, row + 1).as_bytes());
+
+    // The pointer cleared the selection: a model change no keystroke in this test made.
+    h.wait_text("sel=-1");
+
+    h.send(b"q");
+    h.assert_restored();
+}

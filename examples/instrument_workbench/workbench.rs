@@ -825,7 +825,7 @@ impl Workbench {
     // -- text rendering (so model state is readable by a vt100 oracle) -------------------
 
     pub fn hud_line(&self) -> String {
-        format!(
+        let mut line = format!(
             "WORKBENCH  sel={}  source={:.1}  shapes={}  tick={}  play={}  undo={} redo={}",
             self.selection.primary().map(|i| i.0 as i64).unwrap_or(-1),
             self.model.source_value,
@@ -834,7 +834,18 @@ impl Workbench {
             if self.playing { "on" } else { "off" },
             self.undo_depth(),
             self.redo_depth(),
-        )
+        );
+        // Test affordance (off unless WORKBENCH_EMIT_CANVAS is set): expose the
+        // painted canvas rect so a PTY test can click a known on-canvas cell without
+        // guessing the layout. Absent from normal runs, so the HUD is unchanged.
+        if std::env::var_os("WORKBENCH_EMIT_CANVAS").is_some() {
+            let r = self.canvas_rect;
+            line.push_str(&format!(
+                "  canvas={},{},{},{}",
+                r.x, r.y, r.width, r.height
+            ));
+        }
+        line
     }
 
     pub fn heatmap_lines(&self) -> Vec<String> {
