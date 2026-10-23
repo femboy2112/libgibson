@@ -12,7 +12,7 @@
 //!   and it is robust to the terminal ambiguity where Shift+Z arrives either as
 //!   `Char('z')`+SHIFT or as `Char('Z')` with no flag.
 
-use gibson::edit::{Compound, Reversible, UndoIntent, UndoKeymap, UndoLog};
+use gibson::edit::{Compound, CompoundError, Reversible, UndoIntent, UndoKeymap, UndoLog};
 use gibson::{KeyCode, KeyEvent, KeyModifiers};
 
 // --- Fixture: a tiny consumer-owned model + reversible ops --------------------
@@ -108,7 +108,16 @@ fn compound_apply_is_atomic_and_restores_prior_state_on_failure() {
     // state, not merely "empty".
     let group = Compound::new(vec![Op::Push('a'), Op::Push('b'), Op::FailOnApply]);
     let mut model = doc("z");
-    assert_eq!(group.apply(&mut model), Err(EditFail));
+    // FailOnApply (index 2) fails; a and b (0,1) revert cleanly, so this is a
+    // clean rollback reported honestly as SubCommand — not a bare error, and not
+    // a RollbackFailed, because no compensation failed.
+    assert_eq!(
+        group.apply(&mut model),
+        Err(CompoundError::SubCommand {
+            index: 2,
+            error: EditFail
+        })
+    );
     // a and b were applied then rolled back; the model is untouched.
     assert_eq!(model, doc("z"));
 }
