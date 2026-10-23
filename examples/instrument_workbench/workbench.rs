@@ -366,8 +366,10 @@ impl Workbench {
 
     // -- digests (over the MODEL only; field values are derived, so excluded) -----------
 
-    /// Stable hash of the authoritative model + view + transport state. Invariant under
-    /// render rate, terminal size and colour/glyph policy (none of which touch it).
+    /// Stable hash of the authoritative model + view + transport state (shapes, source,
+    /// tick, pan/zoom, playing). Excludes ephemeral UI state (selection, probe cursor) and
+    /// derived field values, so it is invariant under render rate, terminal size and
+    /// colour/glyph policy, and round-trips exactly across undo/redo.
     pub fn digest(&self) -> u64 {
         let mut h = FNV_OFFSET;
         h = fnv1a(&(self.model.shapes.len() as u64).to_le_bytes(), h);
@@ -379,10 +381,10 @@ impl Workbench {
                 h = fnv1a(&v.to_bits().to_le_bytes(), h);
             }
         }
-        h = fnv1a(&(self.selection.len() as u64).to_le_bytes(), h);
-        for id in self.selection.ids() {
-            h = fnv1a(&id.0.to_le_bytes(), h);
-        }
+        // Selection is EPHEMERAL UI state (like the probe cursor): it is driven by the
+        // intent trace but is not part of the undoable authoritative model, so it is not
+        // in the model digest. Undo/redo therefore round-trips the digest cleanly, and
+        // selection operations are still captured in the command digest.
         h = fnv1a(&self.model.source_value.to_bits().to_le_bytes(), h);
         h = fnv1a(&self.field_tick.to_le_bytes(), h);
         let (px, py) = self.view.pan();
@@ -445,9 +447,11 @@ impl Workbench {
             Intent::Transport(tc) => self.apply_transport(tc),
             Intent::Undo => {
                 let _ = self.undo.undo(&mut self.model);
+                self.prune_selection();
             }
             Intent::Redo => {
                 let _ = self.undo.redo(&mut self.model);
+                self.prune_selection();
             }
             Intent::Capture => self.metrics.captures += 1,
         }
@@ -481,6 +485,18 @@ impl Workbench {
     fn select_only(&mut self, id: ShapeId) {
         self.selection.clear();
         self.selection.insert(id);
+    }
+
+    /// Drop any selected id whose shape no longer exists — e.g. after an undo removed it,
+    /// so a stale selection can never target a shape that isn't there (L3/L5 hygiene).
+    fn prune_selection(&mut self) {
+        let current: Vec<ShapeId> = self.selection.ids().to_vec();
+        self.selection.clear();
+        for id in current {
+            if self.model.shapes.iter().any(|s| s.id() == id) {
+                self.selection.insert(id);
+            }
+        }
     }
 
     /// Pick the topmost shape whose bounds contain a world point (L3). Nothing is

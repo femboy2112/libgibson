@@ -410,12 +410,10 @@ fn digest_is_sensitive_to_each_kind_of_edit() {
     );
     wb.apply_intent(Intent::Transport(TransportCmd::Step(1)));
     assert!(seen.insert(wb.digest()), "a tick changes the digest");
-    // Click empty space -> selection clears -> digest changes.
-    wb.apply_intent(Intent::SelectAt(Point::new(20.0, 10.0)));
-    assert!(
-        seen.insert(wb.digest()),
-        "a selection change changes the digest"
-    );
+    // Panning changes the view, which IS part of the model digest. (Selection is
+    // deliberately ephemeral and excluded, so it is not tested here.)
+    wb.apply_intent(Intent::Pan { dx: 1.0, dy: 1.0 });
+    assert!(seen.insert(wb.digest()), "a pan changes the digest");
 }
 
 // ---- meta: a trace replays deterministically (ACC #2 / replay) -------------------------
