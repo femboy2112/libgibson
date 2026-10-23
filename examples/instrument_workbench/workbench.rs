@@ -751,6 +751,14 @@ impl Workbench {
             KeyCode::Char('c') => {
                 self.apply_intent(Intent::Capture);
             }
+            KeyCode::Char('p') => {
+                // Keyboard probe of the field centre — probing is a core workflow and
+                // must be reachable without a pointer (#144 keyboard-only equivalence).
+                self.apply_intent(Intent::ProbeAt(Point::new(
+                    FIELD_COLS as f64 / 2.0,
+                    FIELD_ROWS as f64 / 2.0,
+                )));
+            }
             KeyCode::Char('m') => {
                 self.color_policy = match self.color_policy {
                     Colormap::Heat => Colormap::Grayscale,
@@ -907,7 +915,7 @@ impl Workbench {
     }
 
     pub fn help_line(&self) -> String {
-        "keys  n:rect l:line []:source space:play .,:step 0:rewind m:mono c:capture arrows:move ^Z/^Y:undo q:quit".to_string()
+        "keys  n:rect l:line []:source space:play .,:step 0:rewind p:probe m:mono c:capture arrows:move ^Z/^Y:undo q:quit".to_string()
     }
 
     /// A plain-text still capture of the current frame (HUD + heatmap + readouts),

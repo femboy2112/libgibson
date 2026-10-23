@@ -138,9 +138,13 @@ fn workbench_pty_walkthrough() {
     h.send(b"]");
     h.wait_text("source=6.0");
 
-    // Click the canvas (SGR 1-based) to select + probe a cell; the probe line updates.
-    h.send(b"\x1b[<0;6;4M"); // press at terminal (5,3)
-    h.send(b"\x1b[<0;6;4m"); // release
+    // Feed a real SGR mouse click to exercise the end-to-end mouse-decode path (pick
+    // correctness itself is proven headlessly in the slice test, which can read the
+    // painted canvas rect; a subprocess cannot). Then probe via the keyboard — which is
+    // coordinate-independent — and confirm the probe readout updates.
+    h.send(b"\x1b[<0;6;4M"); // SGR left press at terminal (5,3)
+    h.send(b"\x1b[<0;6;4m"); // SGR release
+    h.send(b"p"); // keyboard probe of the field centre
     h.wait_text("world=");
 
     // Quit and verify the terminal session is fully restored.

@@ -15,8 +15,8 @@
 //!     headless smoke test). It also proves the same trace replays to the same digest.
 //!
 //! Keys: `n` draw rectangle wall · `l` draw line · `[` / `]` source − / + ·
-//! `space` play/pause · `.` / `,` step ± · `0` rewind · `m` mono toggle · `c` capture ·
-//! arrows move selection (Shift+arrows pan) · Ctrl-Z / Ctrl-Y undo / redo · `q` quit.
+//! `space` play/pause · `.` / `,` step ± · `0` rewind · `p` probe centre · `m` mono ·
+//! `c` capture · arrows move selection (Shift+arrows pan) · Ctrl-Z / Ctrl-Y undo/redo · `q` quit.
 //! Click the canvas to select + probe a cell; drag to move the selection.
 
 use std::io::{self, Write};

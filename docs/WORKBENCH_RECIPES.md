@@ -186,7 +186,8 @@ ordered, refusable return channel. See [`WIRE_PROTOCOL.md`](WIRE_PROTOCOL.md) an
   degrades to a glyph ramp. Pick glyph fidelity with `SubcellGlyphMode::{Braille2x4,
   HalfBlock1x2, Block, Ascii}`.
 * **Keyboard-only:** every pointer operation has a key: arrows move the selection (the same
-  `MoveSelected` intent a drag emits), `[`/`]` edit the numeric parameter, `n`/`l` draw.
+  `MoveSelected` intent a drag emits), `[`/`]` edit the numeric parameter, `n`/`l` draw, `p`
+  probes the field centre (a pointer click probes where you click).
   Pointer ≡ keyboard is proven in `s7_keyboard_and_pointer_moves_reach_the_same_state`.
 * **Narrow 40×15:** the workbench drops the help line and keeps every core workflow; the
   digest-invariance test exercises a 40×15 terminal.
