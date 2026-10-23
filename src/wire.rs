@@ -5,15 +5,15 @@
 //!
 //! * **The producer owns its data and its model ticks.** A Python (or any) process
 //!   computes a scalar field each logical tick and publishes it as a self-describing,
-//!   identified [`WireField`] observation. It never links this library.
+//!   identified `WireField` observation. It never links this library.
 //! * **The presenter owns frame realization and interaction.** It decodes the stream,
-//!   stores the latest observation per source in a bounded [`FieldInbox`], renders it
+//!   stores the latest observation per source in a bounded `FieldInbox`, renders it
 //!   through [`crate::field_view::FieldView`], and sends *edits* back as ordered
-//!   [`WireCommand`]s carried by the bounded [`crate::snapshot::SnapshotBridge`].
+//!   `WireCommand`s carried by the bounded [`crate::snapshot::SnapshotBridge`].
 //!
 //! This module is **I/O-free and substrate-agnostic**: it operates on byte buffers, not
 //! sockets or pipes. The caller chooses the transport (stdio, a Unix socket, a TCP
-//! stream) and feeds bytes to a [`FrameDecoder`]; the decoder yields typed messages. The
+//! stream) and feeds bytes to a `FrameDecoder`; the decoder yields typed messages. The
 //! reference producer at `bindings/python/producer.py` writes exactly this format with
 //! nothing but the Python standard library.
 //!
@@ -22,10 +22,10 @@
 //! A length-prefixed stream is the classic out-of-memory vector: a frame that *claims*
 //! four gigabytes makes a naive decoder pre-allocate four gigabytes. This decoder never
 //! does. It **rejects the declared length against a hard cap before allocating anything**
-//! ([`WireError::FrameTooLarge`]), and its accumulation buffer is itself bounded to one
-//! maximum frame ([`WireError::BufferOverflow`]). The only bytes it ever holds are bytes
+//! (`WireError::FrameTooLarge`), and its accumulation buffer is itself bounded to one
+//! maximum frame (`WireError::BufferOverflow`). The only bytes it ever holds are bytes
 //! the caller already handed it, plus at most one bounded field. There is no
-//! amplification. The [`FieldInbox`] then caps *retained* observations the same way the
+//! amplification. The `FieldInbox` then caps *retained* observations the same way the
 //! [`crate::snapshot::SnapshotBridge`] caps frames: latest-wins per source, a hard source
 //! ceiling, and typed refusal at the ceiling — never silent growth, never silent eviction.
 //!
@@ -42,8 +42,8 @@
 //!
 //! This is an **in-memory, in-process** transport contract plus a byte format. It makes no
 //! durability or exactly-once claim: a process death loses the buffer. A truncated final
-//! frame (a producer that crashed mid-write) is reported by [`FrameDecoder::finish`] as
-//! [`WireError::Truncated`], not silently accepted. Non-finite data (`NaN`, `±∞`) is a
+//! frame (a producer that crashed mid-write) is reported by `FrameDecoder::finish` as
+//! `WireError::Truncated`, not silently accepted. Non-finite data (`NaN`, `±∞`) is a
 //! legal payload that is transmitted **faithfully** (its exact IEEE-754 bit pattern) and
 //! disclosed downstream as [`crate::field_view::Sample::NonFinite`]; the wire never lies
 //! about the data by coercing it.
@@ -546,7 +546,7 @@ impl FrameDecoder {
     }
 
     /// Append received bytes. Returns [`WireError::BufferOverflow`] (and appends nothing)
-    /// if the buffer would grow past [`buffer_ceiling`](Self::buffer_ceiling) — the stream
+    /// if the buffer would grow past the buffer ceiling (one maximum frame) — the stream
     /// is not being drained, or a frame larger than the cap is being dribbled in. This is
     /// the bound that makes the decoder safe against a producer that sends a huge length
     /// and then trickles bytes forever.
