@@ -45,6 +45,9 @@ pub mod edit;
 pub mod event_source;
 pub mod ffi;
 pub mod field;
+/// Domain-neutral scalar-field observation: heatmap/mono rendering, point probes,
+/// and a conservation-law receipt, reconciled with pointer selection (Wave 4).
+pub mod field_view;
 pub mod focus;
 pub mod frame;
 pub mod geom;
