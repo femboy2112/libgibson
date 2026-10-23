@@ -41,11 +41,16 @@ fn run_once_returns_brokenpipe_on_hangup_instead_of_spinning() {
 
     cap.hang_up();
 
-    let code = wait_exit_code(&mut cap, Duration::from_millis(1500));
+    // Liveness bound, deliberately generous: the #79 defect is an *infinite*
+    // busy-spin, so any finite bound catches it; the number only needs to clear a
+    // healthy-but-starved exit on a loaded CI runner. 10s is ~6x the slowest exit
+    // seen under load. Polls try_wait(), independent of the capture budget — see
+    // common/pty_capture.rs.
+    let code = wait_exit_code(&mut cap, Duration::from_millis(10_000));
     assert_eq!(
         code,
         Some(3),
-        "child must exit 3 (run_once returned BrokenPipe) within 1500ms of the \
+        "child must exit 3 (run_once returned BrokenPipe) within 10s of the \
          hangup; None means it busy-spun (the #79 bug), another code means it \
          died some other way"
     );
@@ -63,10 +68,12 @@ fn control_a_real_hangup_is_delivered_and_differs_from_the_brokenpipe_path() {
 
     cap.hang_up();
 
-    let code = wait_exit_code(&mut cap, Duration::from_millis(1500));
+    // Same generous liveness bound as the BrokenPipe test above: finite catches a
+    // spin, the margin absorbs CI load.
+    let code = wait_exit_code(&mut cap, Duration::from_millis(10_000));
     assert!(
         code.is_some(),
-        "the child must terminate within 1500ms of a real hangup, not spin"
+        "the child must terminate within 10s of a real hangup, not spin"
     );
     assert_ne!(
         code,

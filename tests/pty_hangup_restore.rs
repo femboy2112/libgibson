@@ -69,13 +69,18 @@ fn graceful_hangup_restore_runs_to_completion_and_raw_mode_took_effect() {
 
     cap.hang_up();
 
-    // Generous bound: the whole point is that restore() must not hang on a dead
-    // terminal. `None` here means it hung (or the hangup never surfaced).
-    let code = wait_exit_code(&mut cap, Duration::from_millis(3000));
+    // Liveness bound, deliberately generous: the defect this guards against is a
+    // restore() that hangs *forever* on a dead terminal, so any finite bound
+    // catches it — the number's only job is to clear a healthy-but-starved exit on
+    // a loaded CI runner without a false failure. 15s is ~5x the slowest exit seen
+    // under load; `None` still means it hung (or the hangup never surfaced). This
+    // loop polls try_wait() and is independent of the capture budget — see
+    // common/pty_capture.rs (the deadline governs only collect_*, not try_wait).
+    let code = wait_exit_code(&mut cap, Duration::from_millis(15_000));
     assert_eq!(
         code,
         Some(3),
-        "child must handle BrokenPipe gracefully (restore + exit 3) within 3s of \
+        "child must handle BrokenPipe gracefully (restore + exit 3) within 15s of \
          the hangup; None means restore() hung or the hangup never surfaced"
     );
 
