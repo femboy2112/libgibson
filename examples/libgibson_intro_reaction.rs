@@ -165,6 +165,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // Deterministic frame-sequence export for offline video assembly: render every
+    // edit-clock frame at a fixed fps into numbered PPMs, in ONE process (the clip is
+    // baked once, above — no per-frame ffmpeg re-read). Each frame uses the same witness
+    // format as --dump, so the sequence and a single dump agree pixel-for-pixel.
+    if let Some(dir) = value("--sequence=") {
+        let w = value("--width=").unwrap_or("320").parse::<u16>()?.min(640);
+        let h = value("--height=").unwrap_or("90").parse::<u16>()?.min(240);
+        let fps = value("--fps=")
+            .and_then(|s| s.parse::<f32>().ok())
+            .filter(|n| n.is_finite() && *n > 0.0)
+            .unwrap_or(FILM_FPS);
+        let secs = value("--seconds=")
+            .and_then(|s| s.parse::<f32>().ok())
+            .filter(|n| n.is_finite() && *n > 0.0)
+            .unwrap_or_else(director::total_edit_seconds);
+        std::fs::create_dir_all(dir)?;
+        let nframes = (secs * fps).ceil() as usize + 1;
+        for i in 0..nframes {
+            let t = i as f32 / fps;
+            let (surface, _r, _s) = render_frame(
+                &films,
+                w,
+                h,
+                depth.unwrap_or(ColorDepth::TrueColor),
+                glyph_mode,
+                t,
+                &kp,
+                opts,
+                reaction,
+            );
+            let path = format!("{dir}/frame_{i:06}.ppm");
+            dump_ppm(&surface, w, h, &path)?;
+        }
+        eprintln!("rendered {nframes} frames to {dir} at {fps} fps ({w}x{h} cells)");
+        return Ok(());
+    }
+
     // First-contact bootup prologue — the same one the original film opens with,
     // reused verbatim. It owns its own Context and releases the terminal before the
     // fullscreen lease below. Skipped for direct-inspection / non-interactive paths
