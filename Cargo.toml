@@ -43,6 +43,12 @@ default = []
 # Rust 1.85 on any bump (a future cpal/alsa point release could raise its MSRV without a
 # semver-major, silently breaking our floor). rtrb has a 1.38 MSRV (ample headroom).
 audio-cpal = ["dep:cpal", "dep:rtrb"]
+# Opt-in for the self-contained `libgibson_intro_reaction` finale: compile the embedded,
+# pre-baked greenscreen frames (GMED assets) and dialogue into the example binary via
+# `include_bytes!`, so it runs with NO external clip. Adds no library dependency (the GMED
+# codec is vendored in the example until `gibson::media` lands); off by default so normal
+# builds and CI never embed ~15 MiB of assets or require them to be present.
+embedded-media = []
 
 [dependencies]
 taffy = "0.14"
