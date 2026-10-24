@@ -35,6 +35,42 @@ mod key;
 #[path = "libgibson_intro_reaction/transform.rs"]
 mod transform;
 
+// The embedded-media codec (GMED), vendored verbatim from gibson::media (PR #186) until it
+// lands on main. Always compiled: the `--bake-embed` asset tool uses its encoder. The
+// runtime decode + the `include_bytes!` assets are gated behind `embedded-media` below.
+#[path = "libgibson_intro_reaction/media.rs"]
+mod media;
+
+// Live realtime audio is opt-in: it exists only under the `audio-cpal` feature, which pulls
+// cpal + ALSA. The default build (and CI) compiles the no-op `LiveAudio` stub below instead,
+// so the live loop reads identically with or without sound and stays dependency-free.
+#[cfg(feature = "audio-cpal")]
+#[path = "libgibson_intro_reaction/live_audio.rs"]
+mod live_audio;
+#[cfg(feature = "audio-cpal")]
+use live_audio::LiveAudio;
+
+/// No-audio stub matching [`live_audio::LiveAudio`]'s surface, compiled when `audio-cpal`
+/// is off (the default). `start` always yields `None`, so the live loop below runs silent
+/// and clock-driven by wall time exactly as it always has — no `#[cfg]` in the hot loop.
+#[cfg(not(feature = "audio-cpal"))]
+struct LiveAudio;
+#[cfg(not(feature = "audio-cpal"))]
+impl LiveAudio {
+    fn clock_seconds(&self) -> Option<f64> {
+        None
+    }
+    fn toggle_pause(&self) -> bool {
+        false
+    }
+    fn seek_by(&self, _delta: f64) {}
+    fn restart(&self) {}
+    fn underruns(&self) -> u64 {
+        0
+    }
+    fn stop(self) {}
+}
+
 use compositor::{CompositeOpts, CompositeStats};
 use film::KeyedFilm;
 use gibson::cell::Color;
@@ -51,6 +87,13 @@ const FILM_W: u32 = 240;
 const FILM_H: u32 = 135;
 const FILM_FPS: f32 = 24.0;
 
+/// Fixed spec for the self-contained embedded assets (eye/ear-accepted at this res/fps).
+/// The `--bake-embed` encoder and the `embedded-media` decoder both use these, so the
+/// embedded frames and the decoder always agree on geometry.
+const EMBED_W: u32 = 160;
+const EMBED_H: u32 = 90;
+const EMBED_FPS: f32 = 12.0;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let has = |s: &str| args.iter().any(|a| a == s);
@@ -66,14 +109,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
              --width=120 --height=32  dump/render size in cells\n\
              --color=truecolor|ansi256|ansi16|mono\n\
              --glyphs=auto|braille|halfblock|block|ascii\n\
-             --clip=PATH            greenscreen source (default: search ~/Downloads)\n\
+             --clip=PATH            bake from a live greenscreen clip instead of the embed\n\
+             --live                 bake from an auto-discovered ~/Downloads clip\n\
              --film-width/--film-height/--film-fps  bake resolution\n\
              --smooth               bilinear source sampling (premultiplied)\n\
              --linear               composite the matte in linear light\n\
              --no-reaction          base intro only (the honest baseline)\n\
              --profile              headless performance receipts, then exit\n\
              --deterministic --auto --seconds=N\n\n\
-             The source clip is a local stress-test asset and is not shipped.",
+             With the embedded-media build the reaction plays from embedded assets by\n\
+             default; --clip/--live bake from a live greenscreen clip (not shipped).",
             director::CUES
                 .iter()
                 .map(|c| c.name)
@@ -118,27 +163,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         edit_seconds = s.parse()?;
     }
 
-    // Bake only the cue windows we actually use (never the full ~302 s clip).
-    let films: Vec<KeyedFilm> = if reaction {
-        let clip = match value("--clip=") {
+    // Embedded vs. live-clip source. With the `embedded-media` feature the self-contained
+    // embedded assets are the DEFAULT: the finale runs with no external clip and no flag.
+    // Opt into a live greenscreen bake with --clip=PATH (an explicit clip), --live, or a
+    // bare --clip (auto-discover one in ~/Downloads); --bake-embed also needs a live clip.
+    // The legacy --embedded flag is now the default and kept only as a harmless override.
+    // Without the feature there is nothing embedded, so the reaction always needs a clip.
+    let want_live = value("--clip=").is_some()
+        || has("--clip")
+        || has("--live")
+        || value("--bake-embed=").is_some();
+    let use_embedded =
+        cfg!(feature = "embedded-media") && reaction && (has("--embedded") || !want_live);
+
+    // Resolve the greenscreen clip only when one is actually needed (a live bake, or a build
+    // without the embed): reused for the video bake and, under the `audio-cpal` feature, for
+    // live dialogue audio built from the same source windows.
+    let clip_path: Option<PathBuf> = if reaction && !use_embedded {
+        Some(match value("--clip=") {
             Some(p) => PathBuf::from(p),
             None => default_clip().ok_or_else(|| {
                 "no greenscreen clip found in ~/Downloads; pass --clip=PATH \
                  (or --no-reaction for the base intro only)"
                     .to_string()
             })?,
-        };
-        match bake_cues(&clip, film_w, film_h, film_fps) {
-            Ok(f) => f,
-            Err(e) => {
-                eprintln!("reaction bake failed: {e}");
-                eprintln!("hint: pass --clip=PATH to a greenscreen clip, or --no-reaction.");
-                return Err(e.into());
-            }
-        }
+        })
     } else {
-        Vec::new()
+        None
     };
+
+    // Bake the self-contained embedded assets and exit (one-time dev tool at the embed spec).
+    if let Some(dir) = value("--bake-embed=") {
+        let clip = clip_path
+            .as_deref()
+            .ok_or("--bake-embed needs a greenscreen clip: pass --clip=PATH")?;
+        std::fs::create_dir_all(dir)?;
+        bake_embed_assets(clip, dir, &kp)?;
+        return Ok(());
+    }
+
+    // Source films: the embedded self-contained assets by default (built with `embedded-media`),
+    // otherwise baked from the live greenscreen clip.
+    let films: Vec<KeyedFilm> =
+        load_films(&clip_path, use_embedded, film_w, film_h, film_fps, reaction)?;
 
     if has("--profile") {
         run_profile(&films, glyph_mode, &kp, opts, reaction);
@@ -234,6 +301,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(|n| n.is_finite() && *n > 0.0);
     let fixed = gibson::FixedStepClock::new(cadence);
     let total = director::total_edit_seconds();
+
+    // Live audio (opt-in `audio-cpal`): the embedded dialogue when the embed is in use, else
+    // Frank's dialogue from the clip, played through gibson::audio's realtime device with the
+    // audio playhead as the master A/V clock. No feature / no device / no source => silent.
+    let audio: Option<LiveAudio> = start_audio(
+        &clip_path,
+        use_embedded,
+        ctx.session.is_tty,
+        edit_seconds,
+        !paused,
+    );
+
     let mut realized: Option<(u32, u16, u16)> = None;
     loop {
         let (w, h) = ctx.session.terminal_size();
@@ -262,13 +341,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             None
         };
         if let Some(Event::Key(k)) = event {
+            // Transport keys drive the audio when it's live (the playhead then drives the
+            // video clock below); the direct `edit_seconds` edits keep the no-audio path
+            // identical and are harmlessly overwritten whenever audio is the clock.
             match k.code {
                 KeyCode::Esc => break,
                 KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => break,
-                KeyCode::Char(' ') => paused = !paused,
-                KeyCode::Char('r' | 'R') => edit_seconds = 0.0,
-                KeyCode::Right => edit_seconds = (edit_seconds + 2.0).min(total),
-                KeyCode::Left => edit_seconds = (edit_seconds - 2.0).max(0.0),
+                KeyCode::Char(' ') => {
+                    paused = !paused;
+                    if let Some(a) = &audio {
+                        a.toggle_pause();
+                    }
+                }
+                KeyCode::Char('r' | 'R') => {
+                    edit_seconds = 0.0;
+                    if let Some(a) = &audio {
+                        a.restart();
+                    }
+                }
+                KeyCode::Right => {
+                    edit_seconds = (edit_seconds + 2.0).min(total);
+                    if let Some(a) = &audio {
+                        a.seek_by(2.0);
+                    }
+                }
+                KeyCode::Left => {
+                    edit_seconds = (edit_seconds - 2.0).max(0.0);
+                    if let Some(a) = &audio {
+                        a.seek_by(-2.0);
+                    }
+                }
                 _ => {}
             }
         }
@@ -285,15 +387,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             now.duration_since(last).as_secs_f32().min(0.2)
         };
         last = now;
-        if !paused {
-            edit_seconds += dt;
-            // Hold the final sting rather than looping unless asked.
-            if edit_seconds > total {
-                edit_seconds = total;
+        match audio.as_ref().and_then(|a| a.clock_seconds()) {
+            // Audio is the master clock: draw wherever the (drift-free) playhead sits, so a
+            // slow terminal frame can never desync speech. Pause/seek already moved it.
+            Some(secs) => edit_seconds = (secs as f32).clamp(0.0, total),
+            // No audio: advance the edit clock by wall time, as the film always has.
+            None if !paused => {
+                edit_seconds += dt;
+                // Hold the final sting rather than looping unless asked.
+                if edit_seconds > total {
+                    edit_seconds = total;
+                }
             }
+            None => {}
         }
     }
+
+    // Stop audio before restoring the terminal; surface any starvation afterward.
+    let underran = match audio {
+        Some(a) => {
+            let u = a.underruns();
+            a.stop();
+            u
+        }
+        None => 0,
+    };
     ctx.restore()?;
+    if underran > 0 {
+        eprintln!("live audio: stream starved ({underran} samples zero-filled)");
+    }
     Ok(())
 }
 
@@ -374,6 +496,185 @@ fn bake_cues(
         films.push(film);
     }
     Ok(films)
+}
+
+/// Snap fully-keyed background pixels to exact clean green `(0,254,2)` and deinterleave to
+/// planar RGB (`RR..GG..BB..`). Only pixels `key_pixel` fully keys out (alpha 0) are snapped
+/// — their RGB is discarded by the compositor anyway, and exact green gives PackBits long
+/// per-plane runs; every edge and subject pixel is kept verbatim, so the decoder's live key
+/// reproduces identical alpha. The planar layout is what lets PackBits crush the background.
+fn snap_green_planar(rgb: &[u8], w: u32, h: u32, kp: &KeyParams) -> Vec<u8> {
+    let n = (w * h) as usize;
+    let mut out = vec![0u8; n * 3];
+    for i in 0..n {
+        let px = [rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]];
+        let (r, g, b) = if key::key_pixel(px, kp).1 <= 0.0 {
+            (0u8, 254u8, 2u8)
+        } else {
+            (px[0], px[1], px[2])
+        };
+        out[i] = r;
+        out[n + i] = g;
+        out[2 * n + i] = b;
+    }
+    out
+}
+
+/// Bake each cue's source window into a planar-RGB GMED FrameSeq asset (`NN_name.gmed`) at
+/// the embed spec. One-time dev tool; the resulting files are exactly what [`embedded_films`]
+/// loads via `include_bytes!`.
+fn bake_embed_assets(
+    clip: &std::path::Path,
+    dir: &str,
+    kp: &KeyParams,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut total = 0usize;
+    for (i, cue) in director::CUES.iter().enumerate() {
+        let spec = bake::BakeSpec {
+            clip: clip.to_path_buf(),
+            start_s: cue.src_start,
+            dur_s: cue.src_dur,
+            film_w: EMBED_W,
+            film_h: EMBED_H,
+            fps: EMBED_FPS,
+        };
+        let (film, _path) = bake::bake(&spec).map_err(|e| format!("bake {}: {e}", cue.name))?;
+        let planar: Vec<Vec<u8>> = (0..film.nframes)
+            .map(|fi| snap_green_planar(film.frame(fi), EMBED_W, EMBED_H, kp))
+            .collect();
+        let refs: Vec<&[u8]> = planar.iter().map(|v| v.as_slice()).collect();
+        let bytes = media::encode_frame_seq(EMBED_W, EMBED_H, 3, EMBED_FPS, &refs)?;
+        let path = format!("{dir}/{i:02}_{}.gmed", cue.name);
+        std::fs::write(&path, &bytes)?;
+        total += bytes.len();
+        eprintln!(
+            "baked {:<12} {:>4} frames  {:>6} KiB  -> {path}",
+            cue.name,
+            film.nframes,
+            bytes.len() / 1024
+        );
+    }
+    eprintln!(
+        "embed video total: {:.2} MiB across {} cues",
+        total as f64 / 1_048_576.0,
+        director::CUES.len()
+    );
+    Ok(())
+}
+
+/// Load the source films: the embedded self-contained assets when `use_embedded` (the default
+/// for an `embedded-media` build), else baked from the live greenscreen clip.
+fn load_films(
+    clip_path: &Option<PathBuf>,
+    use_embedded: bool,
+    film_w: u32,
+    film_h: u32,
+    film_fps: f32,
+    reaction: bool,
+) -> Result<Vec<KeyedFilm>, Box<dyn std::error::Error>> {
+    if !reaction {
+        return Ok(Vec::new());
+    }
+    #[cfg(feature = "embedded-media")]
+    {
+        if use_embedded {
+            return embedded_films();
+        }
+    }
+    #[cfg(not(feature = "embedded-media"))]
+    {
+        let _ = use_embedded;
+    }
+    match clip_path.as_deref() {
+        Some(clip) => {
+            bake_cues(clip, film_w, film_h, film_fps).map_err(|e| -> Box<dyn std::error::Error> {
+                format!(
+                    "reaction bake failed: {e}\n\
+                     hint: pass --clip=PATH to a greenscreen clip, or --no-reaction."
+                )
+                .into()
+            })
+        }
+        None => Ok(Vec::new()),
+    }
+}
+
+/// Decode the embedded GMED frame sequences into films, index-parallel to [`director::CUES`].
+/// Each asset is planar snapped-green RGB; the live compositor keys it exactly as a clip bake.
+#[cfg(feature = "embedded-media")]
+fn embedded_films() -> Result<Vec<KeyedFilm>, Box<dyn std::error::Error>> {
+    const ASSETS: [&[u8]; 9] = [
+        include_bytes!("libgibson_intro_reaction/assets/00_welcome.gmed"),
+        include_bytes!("libgibson_intro_reaction/assets/01_prank_smash.gmed"),
+        include_bytes!("libgibson_intro_reaction/assets/02_rant.gmed"),
+        include_bytes!("libgibson_intro_reaction/assets/03_stop1.gmed"),
+        include_bytes!("libgibson_intro_reaction/assets/04_stop2.gmed"),
+        include_bytes!("libgibson_intro_reaction/assets/05_stop3.gmed"),
+        include_bytes!("libgibson_intro_reaction/assets/06_wtf_quiet.gmed"),
+        include_bytes!("libgibson_intro_reaction/assets/07_nice_prank.gmed"),
+        include_bytes!("libgibson_intro_reaction/assets/08_idiot.gmed"),
+    ];
+    let frame_bytes = (EMBED_W * EMBED_H * 3) as usize;
+    let mut films = Vec::with_capacity(ASSETS.len());
+    let mut planar = Vec::with_capacity(frame_bytes);
+    for bytes in ASSETS {
+        let asset = media::Asset::parse(bytes)?;
+        let nframes = asset
+            .frame_count()
+            .ok_or("embedded asset is not a frame sequence")?;
+        let mut raw = Vec::with_capacity(nframes * frame_bytes);
+        for fi in 0..nframes {
+            asset.decode_frame(fi, &mut planar)?;
+            // Planar RR..GG..BB.. -> interleaved RGB24 for KeyedFilm::from_raw.
+            let np = planar.len() / 3;
+            for i in 0..np {
+                raw.push(planar[i]);
+                raw.push(planar[np + i]);
+                raw.push(planar[2 * np + i]);
+            }
+        }
+        films.push(
+            KeyedFilm::from_raw(raw, EMBED_W, EMBED_H, EMBED_FPS)
+                .ok_or("embedded frame geometry mismatch")?,
+        );
+    }
+    Ok(films)
+}
+
+/// The embedded, pre-assembled dialogue mix (the finished 132 s `.m4a`).
+#[cfg(feature = "embedded-media")]
+const EMBEDDED_AUDIO: &[u8] = include_bytes!("libgibson_intro_reaction/assets/dialogue.m4a");
+
+/// Start live audio for the running film: the embedded dialogue when the embed is in use,
+/// else Frank's dialogue extracted from the clip. Always `None` without `audio-cpal`, on a
+/// non-tty, or when no source/device is available (the film then plays silent).
+#[allow(unused_variables)]
+fn start_audio(
+    clip_path: &Option<PathBuf>,
+    use_embedded: bool,
+    is_tty: bool,
+    initial_seconds: f32,
+    playing: bool,
+) -> Option<LiveAudio> {
+    if !is_tty {
+        return None;
+    }
+    #[cfg(feature = "audio-cpal")]
+    {
+        #[cfg(feature = "embedded-media")]
+        {
+            if use_embedded {
+                return LiveAudio::start_from_embedded(EMBEDDED_AUDIO, initial_seconds, playing);
+            }
+        }
+        clip_path
+            .as_deref()
+            .and_then(|clip| LiveAudio::start(clip, initial_seconds, playing))
+    }
+    #[cfg(not(feature = "audio-cpal"))]
+    {
+        None
+    }
 }
 
 /// Discover a greenscreen clip in ~/Downloads: prefer a name containing "frank"
