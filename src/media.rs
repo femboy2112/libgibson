@@ -22,10 +22,12 @@
 //! **segments** and a compressed payload. A segment is one independently-decodable unit:
 //! for a [`MediaKind::FrameSeq`] it is one frame (so a single frame decodes in O(1), with
 //! no inter-frame decode chain — seek is cheap); for an image, sound, or blob it is the
-//! whole buffer. Each segment is stored either raw ([`SegMethod::Store`]) or
-//! run-length-coded ([`SegMethod::Rle`], a deterministic PackBits), whichever is smaller —
-//! so a keyed frame that is mostly one flat transparent colour collapses to a fraction of
-//! its raw size while an incompressible blob never grows.
+//! whole buffer. Each segment is stored raw ([`SegMethod::Store`]) or run-length-coded
+//! ([`SegMethod::Rle`], a deterministic PackBits) — and, when the optional `media-deflate`
+//! feature is enabled, DEFLATE ([`SegMethod::Deflate`]) — whichever is smallest. So a keyed
+//! frame that is mostly one flat transparent colour collapses to a fraction of its raw size
+//! while an incompressible blob never grows. The base codec is dependency-free; DEFLATE is
+//! opt-in (it pulls `miniz_oxide`) and shrinks noisy, texture-heavy frames that RLE cannot.
 //!
 //! # The bounded-decode discipline (why a hostile asset cannot exhaust memory)
 //!
@@ -152,6 +154,11 @@ pub enum SegMethod {
     Store,
     /// Deterministic PackBits run-length coding.
     Rle,
+    /// DEFLATE (RFC 1951), produced only when the `media-deflate` feature is enabled and the
+    /// deflated segment is strictly smaller than both `Store` and `Rle`. Decoding a `Deflate`
+    /// segment likewise requires the feature; without it, decode fails with
+    /// [`MediaError::MethodUnavailable`] rather than silently mis-reading the payload.
+    Deflate,
 }
 
 impl SegMethod {
@@ -159,12 +166,14 @@ impl SegMethod {
         match self {
             SegMethod::Store => 0,
             SegMethod::Rle => 1,
+            SegMethod::Deflate => 2,
         }
     }
     fn from_tag(t: u8) -> Option<Self> {
         match t {
             0 => Some(SegMethod::Store),
             1 => Some(SegMethod::Rle),
+            2 => Some(SegMethod::Deflate),
             _ => None,
         }
     }
@@ -206,6 +215,10 @@ pub enum MediaError {
     /// An encode request was malformed (e.g. a frame whose length is not
     /// `width * height * channels`).
     EncodeMismatch,
+    /// A segment uses a method this build cannot handle because its backing feature is not
+    /// enabled (e.g. a [`SegMethod::Deflate`] segment in a build without `media-deflate`).
+    /// The method is known; it is just unavailable here.
+    MethodUnavailable(u8),
 }
 
 impl fmt::Display for MediaError {
@@ -241,6 +254,12 @@ impl fmt::Display for MediaError {
             }
             MediaError::EncodeMismatch => {
                 write!(f, "encode input does not match declared geometry")
+            }
+            MediaError::MethodUnavailable(m) => {
+                write!(
+                    f,
+                    "segment method {m} is not available in this build (missing feature)"
+                )
             }
         }
     }
@@ -328,16 +347,30 @@ fn packbits_decode(src: &[u8], max_out: usize, index: usize) -> Result<Vec<u8>, 
     Ok(out)
 }
 
-/// Encode one segment: choose [`SegMethod::Rle`] only when it is strictly smaller than the
-/// raw bytes, so an incompressible segment never grows (and ties go to [`SegMethod::Store`],
-/// keeping the choice — and thus the output bytes — deterministic).
+/// Encode one segment, choosing the smallest method. [`SegMethod::Rle`] is chosen only when it
+/// is strictly smaller than the raw bytes, and (under `media-deflate`) [`SegMethod::Deflate`]
+/// only when it is strictly smaller than the better of Store/RLE. An incompressible segment
+/// never grows, and every tie resolves toward the earlier method (Store before RLE before
+/// Deflate), so the chosen method — and thus the output bytes — stays deterministic for a
+/// given input (and, for Deflate, a given miniz_oxide version).
 fn encode_segment(raw: &[u8]) -> (SegMethod, Vec<u8>) {
     let rle = packbits_encode(raw);
-    if rle.len() < raw.len() {
+    // `mut` only when the deflate branch below can reassign it.
+    #[cfg_attr(not(feature = "media-deflate"), allow(unused_mut))]
+    let mut best = if rle.len() < raw.len() {
         (SegMethod::Rle, rle)
     } else {
         (SegMethod::Store, raw.to_vec())
+    };
+    #[cfg(feature = "media-deflate")]
+    {
+        // Level 10 = miniz_oxide's maximum; raw DEFLATE (no zlib wrapper).
+        let deflated = miniz_oxide::deflate::compress_to_vec(raw, 10);
+        if deflated.len() < best.1.len() {
+            best = (SegMethod::Deflate, deflated);
+        }
     }
+    best
 }
 
 // ---------------------------------------------------------------------------
@@ -700,6 +733,24 @@ impl<'a> Asset<'a> {
                 }
                 *out = decoded;
             }
+            SegMethod::Deflate => {
+                #[cfg(feature = "media-deflate")]
+                {
+                    // Bounded inflate: `raw_len` caps the output, so a malformed or hostile
+                    // stream can never decompress without bound (mirrors packbits_decode).
+                    let decoded =
+                        miniz_oxide::inflate::decompress_to_vec_with_limit(comp, seg.raw_len)
+                            .map_err(|_| MediaError::CorruptSegment { index })?;
+                    if decoded.len() != seg.raw_len {
+                        return Err(MediaError::CorruptSegment { index });
+                    }
+                    *out = decoded;
+                }
+                #[cfg(not(feature = "media-deflate"))]
+                {
+                    return Err(MediaError::MethodUnavailable(SegMethod::Deflate.tag()));
+                }
+            }
         }
         Ok(())
     }
@@ -933,5 +984,91 @@ mod tests {
             asset.decode_segment(3, &mut out),
             Err(MediaError::IndexOutOfRange { .. })
         ));
+    }
+
+    // ---- DEFLATE segment method ----------------------------------------------
+
+    #[test]
+    fn seg_method_tag_round_trips_deflate() {
+        assert_eq!(SegMethod::from_tag(2), Some(SegMethod::Deflate));
+        assert_eq!(SegMethod::Deflate.tag(), 2);
+    }
+
+    // A cycled multi-byte pattern with no adjacent equal bytes: PackBits (single-byte RLE)
+    // cannot shrink it, but DEFLATE's LZ77 crushes the repetition — so it isolates the win.
+    #[cfg(feature = "media-deflate")]
+    fn deflate_bait(n: usize) -> Vec<u8> {
+        let pat = [1u8, 2, 3, 4, 5, 6, 7, 8];
+        pat.iter().cycle().take(n).copied().collect()
+    }
+
+    #[cfg(feature = "media-deflate")]
+    #[test]
+    fn deflate_is_chosen_and_round_trips() {
+        let data = deflate_bait(20_000);
+        let (method, comp) = encode_segment(&data);
+        assert_eq!(
+            method,
+            SegMethod::Deflate,
+            "deflate must win where PackBits cannot"
+        );
+        assert!(
+            comp.len() * 4 < data.len(),
+            "deflate must shrink the pattern"
+        );
+        // Full round-trip through the public API.
+        let bytes = encode_blob(&data).unwrap();
+        let asset = Asset::parse(&bytes).unwrap();
+        let mut out = Vec::new();
+        asset.decode_segment(0, &mut out).unwrap();
+        assert_eq!(out, data);
+    }
+
+    #[cfg(feature = "media-deflate")]
+    #[test]
+    fn deflate_never_grows_and_frame_seq_round_trips() {
+        // encode_segment never grows any input, deflate or not.
+        for raw in [
+            vec![0x5Au8; 10_000],             // flat: RLE wins
+            deflate_bait(4096),               // pattern: deflate wins
+            (0..=255u8).collect::<Vec<u8>>(), // short incompressible: Store
+        ] {
+            let (_m, comp) = encode_segment(&raw);
+            assert!(comp.len() <= raw.len(), "a segment must never grow");
+        }
+        // Every frame of a sequence still decodes exactly with deflate live.
+        let (w, h, c, n) = (48u32, 27u32, 3u8, 12usize);
+        let frames = synthetic_frames(w, h, c, n);
+        let refs: Vec<&[u8]> = frames.iter().map(|v| v.as_slice()).collect();
+        let bytes = encode_frame_seq(w, h, c, 12.0, &refs).unwrap();
+        let asset = Asset::parse(&bytes).unwrap();
+        let mut out = Vec::new();
+        for (i, want) in frames.iter().enumerate() {
+            asset.decode_frame(i, &mut out).unwrap();
+            assert_eq!(&out, want, "frame {i}");
+        }
+    }
+
+    #[cfg(feature = "media-deflate")]
+    #[test]
+    fn deflate_encode_is_deterministic() {
+        let data = deflate_bait(12_345);
+        assert_eq!(encode_blob(&data).unwrap(), encode_blob(&data).unwrap());
+    }
+
+    #[cfg(not(feature = "media-deflate"))]
+    #[test]
+    fn deflate_segment_unavailable_without_feature() {
+        // Flip a real asset's method byte to claim DEFLATE. Without the feature, decode must
+        // refuse cleanly (the method is known, just unavailable) and never mis-read the
+        // payload. The method byte sits right after the 12-byte blob header.
+        let mut a = encode_blob(b"some payload bytes here, long enough to matter").unwrap();
+        a[12] = 2; // SegMethod::Deflate tag
+        let asset = Asset::parse(&a).unwrap();
+        let mut out = Vec::new();
+        assert_eq!(
+            asset.decode_segment(0, &mut out),
+            Err(MediaError::MethodUnavailable(2))
+        );
     }
 }
