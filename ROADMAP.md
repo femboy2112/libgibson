@@ -5,8 +5,11 @@ This document outlines completed work and the planned future milestones for LibG
 
 ## Current direction (2026-10-19): v0.5.0 — Interactive Observable Instruments
 
-**Status: ROADMAP/PLANNING ONLY; no v0.5.0 release, merge, or new API accepted on main.**
-The released reference remains v0.4.0. This section describes the *new proposed*
+**Status (2026-10-19 snapshot): ROADMAP/PLANNING ONLY; no v0.5.0 release, merge, or new API accepted on main.**
+*Update 2026-10-24: the v0.5.0 interactive-instruments milestone is delivered on the
+`release/v0.5.0-rc` release candidate (see the 2026-10-24 reconciliation below); it is not
+yet tagged. The instrument-driven cinematic film moved to 0.6.0.*
+The last published release remains v0.4.0. This section describes the *new proposed*
 v0.5 program; the historical progress and earlier studies below remain evidence,
 not a competing set of current execution priorities.
 
@@ -91,6 +94,20 @@ still frozen at `80706c9` (v0.4.0). The single stabilization candidate is
   exact RC; SDK/wrapper artifact review; the upgraded cinematic finale (PR #92) and
   the owner's visual/listening acceptance; explicit release authorization. None are
   satisfied by the development CI matrix alone.
+
+### Reconciliation (2026-10-24): v0.5.0 release candidate
+
+The v0.5 interactive-instruments milestone is **delivered on the `release/v0.5.0-rc`
+candidate** (`Cargo.toml` and the Python `pyproject.toml` are 0.5.0; CHANGELOG `0.5.0`
+entry dated 2026-10-24). It is **not yet tagged or published** — v0.4.0 is still the last
+published release; the 2026-10-23 "outstanding gates" list above is superseded only to the
+extent that the version bump and changelog are now done. All new surface is experimental
+and Rust-only (not exposed through the C, C++, Python or Go wrappers); C ABI stays
+version 1; MSRV stays 1.85. The cinematic finale ships as the example
+`examples/libgibson_intro_reaction` (no third-party media; original synthesized performer;
+real footage only via a local `--clip=PATH`). The **instrument-driven film**
+(Workbench/FieldView/plot/producer causal chain in the picture) is **deferred to 0.6.0**;
+for 0.5 the instruments ship as separate executable demos.
 
 Music is **frozen** and documented — see
 [docs/V0_5_MUSIC_FREEZE_LEDGER.md](docs/V0_5_MUSIC_FREEZE_LEDGER.md); the C137 /

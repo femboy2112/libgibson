@@ -46,6 +46,16 @@ assertions (Python wheel/sdist and the Go module root carry the dual license),
 enforced third-party-notice freshness, and a repository-path-leak check. It must
 print `RELEASE PREFLIGHT: PASS`.
 
+**Hangup-test execution is a separate mandatory release witness.** The four
+terminal-hangup liveness tests are marked `#[ignore]` for the normal parallel
+`cargo test` invocation and instead execute serially in the dedicated PTY CI job.
+The release preflight now explicitly invokes
+`cargo test --test pty_hangup --test pty_hangup_restore -- --test-threads=1 --include-ignored`
+on the supported Linux x86_64 release runner. A compile-only or ignored result
+is not a test pass. A failure fails preflight; do not merely raise timeouts or
+relabel an intermittent hang as proven safe. Record the exact RC SHA and the
+individual PTY execution result alongside the full CI run.
+
 ## 4. Inspect the artifacts
 
 - `target/package/libgibson-<version>.crate` (`cargo package`)

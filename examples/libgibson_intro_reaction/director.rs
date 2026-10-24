@@ -5,27 +5,32 @@
 //! * the **edit clock** — the reaction cut's own timeline, what `--at`/`--stage` seek;
 //! * the **intro narrative clock** — the original film's deterministic time.
 //!
-//! The intro plays as a *continuous spine*: for the first 72 s the edit clock and the
-//! narrative clock advance together, so the original short film plays through exactly
-//! as it always does (bootup prologue, agent harness, membrane, city, ascent, title —
-//! no skips, no freeze-frame jumps). Reaction **beats** are windows on the edit clock
-//! during which the keyed subject is composited *over* that continuously-playing film;
-//! outside every window the film plays alone and stays fully readable. After the film
-//! reaches its end the edit clock runs a little longer over a **held** final frame so
-//! the closing sting can play without pretending the film became longer. Everything is
-//! a deterministic function of edit time — nothing reads wall-clock on the frame path.
+//! The intro plays as a *continuous spine*, deliberately **time-scaled** for the v0.5
+//! finalized cut: its whole `INTRO_LAST` narrative span is spread across the full
+//! `EDIT_END` edit clock (see [`intro_seconds`]), so the original short film evolves
+//! continuously — and slower — underneath every reaction (bootup prologue, agent
+//! harness, membrane, city, ascent, title) and lands its Planet/title finale under the
+//! closing reaction instead of ending partway through. The map is monotonic
+//! nondecreasing: no skips, no rewinds. Reaction **beats** are windows on the edit
+//! clock during which the keyed subject is composited *over* that continuously-playing
+//! film; the cut opens *on* the welcome beat at edit 0, and outside every window the
+//! film plays alone and stays fully readable. Past the end of the cut the narrative
+//! clock clamps to its final second rather than pretending the film became longer.
+//! Everything is a deterministic function of edit time — nothing reads wall-clock on
+//! the frame path.
 
 #![allow(dead_code)]
 
 use super::transform::{Effect, Fit, Framing};
 
-/// The last narrative second the film plays; the edit clock and the narrative clock
-/// advance 1:1 up to here, then this exact frame is held while the closing sting runs
-/// on. Kept just inside the final (Planet/title) act so the hold is a real rendered
-/// frame and the play->hold transition never rewinds.
+/// The last narrative second the film plays. The film is time-scaled to span the whole
+/// reaction cut (see [`intro_seconds`]): the LibGibson story evolves continuously
+/// underneath every reaction instead of ending partway through, so the Planet/title act
+/// lands under the closing reaction.
 pub const INTRO_LAST: f32 = 71.5;
-/// Total edit-clock length of the cut (film + the held sting tail).
-pub const EDIT_END: f32 = 78.0;
+/// Total edit-clock length of the cut. Each reaction plays its full source section (per
+/// the maintainer cut sheet) at natural speed, back to back, so a clip is never truncated.
+pub const EDIT_END: f32 = 132.0;
 
 /// A reaction beat: a window on the edit clock during which the keyed subject is
 /// composited over the (continuously playing) intro, with a framing and finite effect
@@ -66,115 +71,134 @@ const fn cue(
 /// The directed cut. Edit-clock windows == narrative time (the intro plays through);
 /// source windows + framings are the maintainer cue sheet tightened by real visual
 /// inspection (the subject is usually off to one side, so the film stays visible).
-pub const CUES: [Cue; 10] = [
-    // Welcome, as the agent harness establishes (intro ~4-10 s). Anchored right and
-    // modest so the orchestration/workspace text stays readable beside the reaction.
+pub const CUES: [Cue; 9] = [
+    // Each edit window has the SAME duration as its source, so every clip plays at natural
+    // speed and is never truncated in or out. Source in-points sit just past the compilation's
+    // cross-dissolves (which key as ghost frames); some clips are delayed a beat on the edit
+    // clock so the film plays underneath before the reaction lands.
+    //
+    // Welcome / "replace the Filthy Frank show with libgibson" (src 0-16 s), over the
+    // bootup + agent harness. Anchored right so the workspace text stays readable.
     cue(
         "welcome",
-        4.0,
-        10.0,
-        3.0,
-        5.0,
+        0.0,
+        16.0,
+        0.0,
+        16.0,
         Framing::new(Fit::Contain, 0.72, 0.24, 0.14, false),
         Effect::Normal,
     ),
-    // First impossible transition: the prank smashes in as harness -> membrane (~20 s).
+    // Prank 1 (src 46-50 s): the karate/dance prank, smashes in as the harness gives way to
+    // the membrane. Out point at 50 s so the pose completes (it was cut a beat early at 49 s);
+    // 45-50 s is one continuous shot, no hard cut.
     cue(
         "prank_smash",
-        19.0,
-        22.0,
-        46.5,
-        3.0,
+        16.0,
+        20.0,
+        46.0,
+        4.0,
         Framing::new(Fit::Contain, 0.8, -0.24, 0.05, false),
         Effect::SmashIn { from: 2.4 },
     ),
-    // Escalation microcut A: a punch-in as the membrane distorts (~24 s).
+    // The "fuck you" rant (src 59-91 s): the long escalation, steady and central. In point at
+    // 59 s — src 58 s is the bent-over tail of the previous bit plus a cross-dissolve half-frame
+    // (the upright rant only begins at 59 s); window slid forward 1 s to clear it, full length kept.
     cue(
-        "escalate_punch",
-        24.0,
-        27.0,
-        64.0,
-        3.0,
-        Framing::new(Fit::Contain, 0.6, 0.2, 0.05, false),
-        Effect::PunchZoom { peak: 1.8 },
+        "rant",
+        20.0,
+        52.0,
+        59.0,
+        32.0,
+        Framing::new(Fit::Contain, 0.7, 0.08, 0.05, false),
+        Effect::Normal,
     ),
-    // Escalation microcut B: a one-shot aspect stretch, mirrored (~28 s, city onset).
+    // Stop 1 — "it's time to stop" (src 101.3-116.3 s): subject right, the arms-extended push at
+    // the city. In point at 101.3 s — the spoken line begins at ~101.45 s, so the window opens just
+    // before it; still clear of the 100.5 s dissolve. Out point extended from 114.3 to 116.3 s so the
+    // line finishes: speech runs in bursts to ~115.97 s, so 116.3 s lands in the breath-gap
+    // (115.97-116.79 s) instead of guillotining a word at 114.3 s. Frank bends into a hunched pose
+    // from ~114.2 s but stays fully keyed on-screen (no dissolve, no walk-off). The window now ends
+    // flush against stop2's edit-69 in-point — the former 67-69 s film-alone gap is consumed, no overlap.
     cue(
-        "escalate_stretch",
-        28.0,
-        30.0,
-        78.0,
-        2.0,
-        Framing::new(Fit::Contain, 0.72, -0.12, 0.0, true),
-        Effect::AspectStretch { amp: 0.35 },
-    ),
-    // City reveal (~31-35 s): subject right, the impossible wireframe visible left.
-    cue(
-        "city_reveal",
-        31.0,
-        35.0,
-        104.0,
-        4.0,
+        "stop1",
+        54.0,
+        69.0,
+        101.3,
+        15.0,
         Framing::new(Fit::Contain, 0.62, 0.28, 0.06, false),
         Effect::Normal,
     ),
-    // Facades (~37-42 s): a small edge-anchored PiP so the mounted micro-UIs stay.
+    // Stop 2 (src 189-199.4 s): a restrained punch-in over the facades, holding the full spoken line
+    // (he says "it's time to stop" twice; the second ends ~199.3 s as he walks out of the source
+    // frame ~199.2 s). off_x pulled in to 0.08 so his exit stays on-screen instead of clipping to the
+    // composite's right edge; video and audio run together to the end of the line.
     cue(
-        "facades_pip",
-        37.0,
-        42.0,
-        190.0,
-        5.0,
-        Framing::new(Fit::Contain, 0.46, 0.32, -0.04, false),
-        Effect::QuietHold,
-    ),
-    // Couriers (~45-50 s): the film-reel hold, restrained punch, anchored left so the
-    // routing on the right stays the focus.
-    cue(
-        "couriers_reel",
-        45.0,
-        50.0,
-        201.0,
-        5.0,
-        Framing::new(Fit::Contain, 0.55, -0.22, 0.02, false),
+        "stop2",
+        69.0,
+        79.4,
+        189.0,
+        10.4,
+        Framing::new(Fit::Contain, 0.6, 0.08, 0.05, false),
         Effect::PunchZoom { peak: 1.3 },
     ),
-    // Ascent (~54-59 s): the calm beat — small, still, right, as the city becomes a planet.
+    // Stop 3 (src 201-211 s): the "time to STOP" clock-hug over the couriers/routing. In point
+    // translated forward to 201 s — src 199-200 is a cross-dissolve; the subject picks up the giant
+    // clock at ~203 s. Entrance delayed to edit 81 s so the film plays a beat before the gag.
     cue(
-        "ascent_quiet",
-        54.0,
-        59.0,
-        247.0,
-        5.0,
-        Framing::new(Fit::Contain, 0.4, 0.33, 0.1, false),
-        Effect::QuietHold,
-    ),
-    // Earth / title payoff (~62-70 s): a clean keyed reaction over the planet and title.
-    cue(
-        "earth_title",
-        62.0,
-        70.0,
-        278.0,
-        6.0,
-        Framing::new(Fit::Contain, 0.55, 0.06, 0.06, false),
+        "stop3",
+        81.0,
+        91.0,
+        201.0,
+        10.0,
+        Framing::new(Fit::Contain, 0.62, 0.28, 0.06, false),
         Effect::Normal,
     ),
-    // Final sting (~72-78 s): the base film holds its final frame; the edit clock runs on.
+    // WTF / quiet (src 244-256 s, the full section): the calm beat as the city becomes a
+    // planet. Plays its whole source window at natural speed — the clip is translated forward
+    // on the edit clock to land at 1:35, not trimmed. Source ends at 256 s, just before the
+    // subject walks out of frame and the clock bit begins at 257 s.
     cue(
-        "final_sting",
-        72.0,
-        78.0,
-        290.0,
-        5.0,
-        Framing::new(Fit::Contain, 0.58, 0.28, 0.06, false),
+        "wtf_quiet",
+        95.0,
+        107.0,
+        244.0,
+        12.0,
+        Framing::new(Fit::Contain, 0.5, 0.3, 0.1, false),
+        Effect::QuietHold,
+    ),
+    // Nice prank (src 276-286 s): the bent-over keyed reaction as the planet/title resolve. In
+    // point at 276 s — src 275 s still shows the clock being set down (the clock-exit), so the
+    // window starts a second later to clear that ghost; plays at natural speed.
+    cue(
+        "nice_prank",
+        107.0,
+        117.0,
+        276.0,
+        10.0,
+        Framing::new(Fit::Contain, 0.6, 0.08, 0.06, false),
+        Effect::Normal,
+    ),
+    // Idiot — the closer (src 286-301 s): the final reaction over the Planet/title payoff; starts
+    // as the subject straightens from the nice-prank pose and runs to the arm-out presentation,
+    // landing on the closing title.
+    cue(
+        "idiot",
+        117.0,
+        132.0,
+        286.0,
+        15.0,
+        Framing::new(Fit::Contain, 0.58, 0.1, 0.06, false),
         Effect::Normal,
     ),
 ];
 
-/// The base-intro narrative time for an edit time: 1:1 while the film plays, then the
-/// held final frame for the closing sting. Monotonic nondecreasing — never rewinds.
+/// The base-intro narrative time for an edit time. The film is time-scaled so its whole
+/// `INTRO_LAST` span spreads across the full `EDIT_END` cut — it plays continuously (and
+/// slower) underneath every reaction and reaches its Planet/title finale under the closing
+/// clip, instead of ending partway through. Monotonic nondecreasing — never rewinds.
 pub fn intro_seconds(edit: f32) -> f32 {
-    edit.clamp(0.0, INTRO_LAST)
+    let t = edit.clamp(0.0, EDIT_END);
+    (t / EDIT_END * INTRO_LAST).clamp(0.0, INTRO_LAST)
 }
 
 /// A fully resolved reaction-cut frame request, deterministic in edit time.

@@ -185,10 +185,39 @@ start from the [README](../README.md).
   branching graph with freeze and neutralize; the Hackers rabbit/cookie interaction is
   a real entity, not a generic particle burst.
 
+## v0.5.0 release candidate — interactive instruments (EXPERIMENTAL, Rust-only)
+
+> Prepared on `release/v0.5.0-rc`, not yet tagged. All of this is experimental, Rust-only
+> and **not exposed through the C, C++, Python or Go wrappers**; C ABI stays v1, MSRV 1.85.
+
+- **Spatial input + painted-frame hit-map** — pointer/keyboard mapped to semantic targets
+  from the same paint layout; z-order, modal barriers, clipping, disabled/hidden
+  eligibility; stale captures cancel with a typed reason.
+- **Interactive authoring** — reversible edit sessions and drag gestures; compound undo
+  with explicit `RollbackFailed`; identity-keyed selection; immutable shapes with
+  narrow-phase hit testing; validated numeric editing (typed schema errors, no silent
+  clamping).
+- **Scientific observation** — `gibson::plot` observable geometry; domain-neutral field
+  view with probes, masked/non-finite sample states and disclosed auto-scale; transforms
+  report clipping/quantization honestly.
+- **Bounded transport + telemetry** — bounded frame/command retention with a typed
+  offered/accepted/refused/pending/delivered/acknowledged command state machine;
+  Python<->Rust wire conformance; deterministic source-relative timing/retention telemetry.
+- **Runnable demos** — flagship `instrument_workbench` and independent `scope_editor`,
+  deterministic, with PTY walkthroughs.
+- **Cinematic finale (example only)** — `examples/libgibson_intro_reaction`: reaction cut on
+  one 132 s edit clock, deterministic `--sequence`/`--dump` export, opt-in original
+  synthesized `--music` bed. No third-party media ships (embedded build synthesizes an
+  original chroma-key performer; real footage is a local `--clip=PATH` only). The
+  instrument-driven film is deferred to 0.6.0.
+- **CORE source-break** — `gibson::Node` gained public `tag: Option<u32>` (struct-literal
+  users only; `Node::new`/builders unaffected).
+
 ## Planned / in development
 
-> These are development targets, **not shipped capability**. The package version
-> is not bumped and no release is implied until a target lands and is validated.
+> These are development targets, **not shipped capability**. No release is implied until
+> a target lands and is validated. (The plotting entry below was written before the v0.5.0
+> candidate; `gibson::plot` is now part of it, see the section above.)
 
 - **v0.5.0 — Scientific plotting / Observable Geometry** (IN DEVELOPMENT,
   EXPERIMENTAL, Rust-only; branch `feat/v0.5-scientific-plotting`). A *semantic

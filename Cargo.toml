@@ -1,6 +1,6 @@
 [package]
 name = "libgibson"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.85"
 authors = ["LibGibson Contributors"]
@@ -43,6 +43,13 @@ default = []
 # Rust 1.85 on any bump (a future cpal/alsa point release could raise its MSRV without a
 # semver-major, silently breaking our floor). rtrb has a 1.38 MSRV (ample headroom).
 audio-cpal = ["dep:cpal", "dep:rtrb"]
+# Opt-in for the self-contained `libgibson_intro_reaction` finale: generate an ORIGINAL,
+# synthetic chroma-key performer at runtime (round-tripped through the vendored GMED codec)
+# so the example runs with NO external clip and ships NO third-party media. Adds no library
+# dependency (the GMED codec is vendored in the example until `gibson::media` lands); off by
+# default. Real reaction footage is never embedded — supply it locally with `--clip=PATH`
+# (see examples/libgibson_intro_reaction/MEDIA_PROVENANCE.md).
+embedded-media = []
 
 [dependencies]
 taffy = "0.14"

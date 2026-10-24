@@ -206,6 +206,14 @@ fn contain_gives_uniform_scale_stretch_fills_independently() {
 
 // ---------------------------------------------------------------------------
 // director: the two-clock resolver
+//
+// These laws pin the v0.5 *finalized* reaction cut (the commit that added the
+// deterministic frame export): the intro spine is time-scaled across the whole
+// edit clock, and the cut opens on the welcome beat at edit 0. The pre-finalization
+// cut played the intro 1:1 and then held, and opened clean; that contract was
+// retired when the timeline was finalized, so these tests now characterize the
+// shipped map — monotonic, bounded, endpoints pinned — rather than the old identity.
+// This is a deliberate, versioned contract change, not a weakening for green.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -239,7 +247,7 @@ fn cue_edit_start_is_monotonic_and_windows_do_not_overlap() {
 }
 
 #[test]
-fn active_cue_is_some_inside_a_window_and_none_in_the_gaps() {
+fn active_cue_matches_its_windows_and_opens_on_the_welcome_beat() {
     for (i, c) in CUES.iter().enumerate() {
         // Start is inclusive; a point mid-window is cue i.
         assert_eq!(
@@ -256,46 +264,97 @@ fn active_cue_is_some_inside_a_window_and_none_in_the_gaps() {
             "end of cue {i} must be exclusive"
         );
     }
-    // Before the first window the film plays alone (no reaction).
-    assert_eq!(director::active_cue(0.0), None);
-    assert!(
-        CUES[0].edit_start > 0.0,
-        "the film should open with no overlay"
+    // v0.5 finalized cut: the reaction opens ON the welcome beat at edit 0 (the
+    // "replace the Filthy Frank show with libgibson" bit over the bootup), so the very
+    // first instant is cue 0, not a film-alone gap. (The pre-finalization cut opened
+    // clean; see the director section note above.)
+    assert_eq!(CUES[0].edit_start, 0.0, "the welcome beat opens the cut");
+    assert_eq!(
+        director::active_cue(0.0),
+        Some(0),
+        "edit 0 is the welcome beat"
+    );
+    // The final window runs up to the end, and EDIT_END itself is past every
+    // half-open window (no cue is active exactly at the end of the cut).
+    let last = CUES.len() - 1;
+    assert_eq!(
+        director::active_cue(director::EDIT_END - 0.001),
+        Some(last),
+        "the final window runs up to the end"
+    );
+    assert_eq!(
+        director::active_cue(director::EDIT_END),
+        None,
+        "EDIT_END is exclusive of every window"
     );
 }
 
 #[test]
-fn resolve_at_zero_plays_the_film_from_the_top_with_no_reaction() {
+fn resolve_at_zero_opens_on_the_welcome_beat_at_narrative_time_zero() {
     let r = resolve(0.0);
+    // The film still starts at narrative time 0 (the scaled spine begins at 0)...
     assert_eq!(r.intro_seconds, 0.0, "the film starts at narrative time 0");
-    assert_eq!(r.cue_index, None, "no reaction beat at the very start");
-    assert_eq!(r.src_progress, 0.0);
+    // ...but the v0.5 cut opens ON the welcome reaction, so edit 0 is cue 0 at the
+    // very start of its source window (not a film-alone gap).
+    assert_eq!(r.cue_index, Some(0), "edit 0 is the welcome beat");
+    assert_eq!(
+        r.src_progress, 0.0,
+        "welcome opens at the start of its source"
+    );
 }
 
 #[test]
-fn intro_plays_continuously_one_to_one_then_holds_for_the_sting() {
-    // 1:1 with the edit clock while the film plays.
-    for &t in &[0.0f32, 5.0, 12.0, 33.0, 60.0, 71.0] {
+fn intro_time_scales_across_the_cut_monotonic_bounded_and_lands_the_finale_at_the_end() {
+    // v0.5 finalized cut: the film is deliberately time-scaled so its whole INTRO_LAST
+    // narrative span spreads across the full EDIT_END edit clock — it plays
+    // continuously (and slower) under every reaction and reaches its Planet/title
+    // finale exactly under the closing clip. (The pre-finalization cut played 1:1 then
+    // held; see the director section note above.)
+    //
+    // Endpoints are pinned: the spine starts at 0 and lands the finale at the very end.
+    assert_eq!(
+        director::intro_seconds(0.0),
+        0.0,
+        "spine starts at narrative 0"
+    );
+    assert!(
+        (director::intro_seconds(director::EDIT_END) - director::INTRO_LAST).abs() < 1e-6,
+        "the film's finale lands at the end of the cut"
+    );
+    assert!((resolve(0.0).intro_seconds - 0.0).abs() < 1e-6);
+    assert!((resolve(director::EDIT_END).intro_seconds - director::INTRO_LAST).abs() < 1e-6);
+    // The remap is the explicit linear scale EDIT_END -> INTRO_LAST (a declared
+    // source-media map, not a 1:1 identity): characterize it at several points.
+    for &t in &[5.0f32, 12.0, 33.0, 60.0, 71.0, 100.0, 131.0] {
+        let want = t / director::EDIT_END * director::INTRO_LAST;
         assert!(
-            (director::intro_seconds(t) - t).abs() < 1e-6,
-            "intro should play 1:1 at t={t}"
+            (director::intro_seconds(t) - want).abs() < 1e-4,
+            "intro_seconds({t}) should be the scaled spine {want}"
         );
-        assert!((resolve(t).intro_seconds - t).abs() < 1e-6);
+        assert!((resolve(t).intro_seconds - want).abs() < 1e-4);
     }
-    // Held final frame once the film is over (the sting tail).
-    for &t in &[72.5f32, 75.0, director::EDIT_END] {
-        assert_eq!(
-            director::intro_seconds(t),
-            director::INTRO_LAST,
-            "intro must hold its final frame during the sting at t={t}"
-        );
-    }
+    // Clamped below and bounded above: negative edits pin to 0, and no edit (even past
+    // the end of the cut) ever exceeds the film's last narrative second.
     assert_eq!(
         director::intro_seconds(-3.0),
         0.0,
         "negative edit clamps to 0"
     );
-    // Monotonic nondecreasing across the whole cut (no skips or rewinds).
+    for &t in &[
+        -10.0f32,
+        0.0,
+        50.0,
+        director::EDIT_END,
+        director::EDIT_END + 20.0,
+    ] {
+        let v = director::intro_seconds(t);
+        assert!(
+            (0.0..=director::INTRO_LAST).contains(&v),
+            "intro_seconds({t})={v} out of [0, INTRO_LAST]"
+        );
+    }
+    // Monotonic nondecreasing across the whole cut — no skips, no rewinds (a backward
+    // source seek would be a lie the replay can't take back).
     let mut prev = director::intro_seconds(0.0);
     let mut t = 0.0f32;
     while t <= director::EDIT_END {
@@ -304,6 +363,8 @@ fn intro_plays_continuously_one_to_one_then_holds_for_the_sting() {
         prev = cur;
         t += 0.25;
     }
+    // Deterministic: same edit time -> same narrative second.
+    assert_eq!(director::intro_seconds(42.0), director::intro_seconds(42.0));
 }
 
 #[test]
