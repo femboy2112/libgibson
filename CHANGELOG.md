@@ -15,14 +15,51 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
-### v0.5 (interactive instruments) — on branch, not yet released
+## [0.5.0] - 2026-10-24
 
-Staged on the v0.5 stabilization candidate (PR #181); `main` and the released
-reference remain **0.4.0** (no v0.5 tag). See `ROADMAP.md` and
-`docs/V0_5_INTERACTIVE_INSTRUMENTS_ROADMAP.md` for the full scope; the list below
-records only the compatibility-relevant CORE change.
+**Interactive instruments** — a deliberate minor milestone that turns LibGibson's green
+primitives into an interactive, observable instrument platform. All of the new surface is
+**experimental** unless a release contract says otherwise. **No C ABI change**
+(`GIBSON_ABI_VERSION` stays 1; none of the new surface is exposed through C, C++, Python or
+Go — these are Rust additions); MSRV stays 1.85; existing terminal/TUI behaviour is
+unchanged. One Rust CORE source-break (`Node.tag`) is documented below.
 
-#### Changed — CORE (source-breaking for raw struct-literal `Node` users)
+### Added — experimental (Rust)
+- **Spatial input + painted-frame hit-map:** pointer/keyboard events resolve to semantic
+  targets derived from the *same* resolved paint layout as the surface, honoring z-order,
+  modal barriers, clipping, and disabled/hidden eligibility; stale pointer captures cancel
+  with a typed reason (#127, integrated in the instrument platform #181).
+- **Interactive authoring:** reversible edit sessions and drag gestures; compound undo with
+  an explicit `RollbackFailed` on failed compensation (no silent "recovered" claim);
+  identity-keyed selection; immutable shapes with narrow-phase hit testing; validated numeric
+  editing (typed schema errors, no silent clamping).
+- **Scientific observation:** `gibson::plot` observable geometry, a domain-neutral field view
+  with point probes, explicit masked/non-finite sample states, and a disclosed auto-scale
+  policy; world→raster→cell/field transforms report clipping and quantization rather than
+  faking invertibility.
+- **Bounded transport + telemetry:** bounded frame/command retention with a typed
+  offered/accepted/refused/pending/delivered/acknowledged command state machine; a Python↔Rust
+  wire conformance path; and deterministic, source-relative timing/retention telemetry
+  (#182, #183, #184, #185).
+- **Runnable demonstrations:** the flagship `instrument_workbench` and an independent
+  `scope_editor`, each deterministic with PTY walkthroughs.
+
+### Added — cinematic finale (example only; no third-party media)
+- `examples/libgibson_intro_reaction` — the accepted v0.5 reaction cut: a keyed reaction
+  composited into the LibGibson intro film on one authoritative 132 s edit clock, with a
+  declared edit→narrative time map (`intro_seconds(t) = clamp(t/EDIT_END · INTRO_LAST)`,
+  `EDIT_END = 132 s`, `INTRO_LAST = 71.5 s`), nine keyed reaction windows, deterministic
+  `--sequence`/`--dump` frame export, and an opt-in original synthesized music bed (`--music`).
+- **Rights-safe by construction:** the self-contained `embedded-media` build synthesizes an
+  **original** chroma-key performer at runtime; **no third-party media ships** in the crate or
+  the repository, and the build compiles from a fresh clone with no external assets. The real
+  greenscreen reaction is an optional, local-only `--clip=PATH` input the user downloads
+  themselves — see `examples/libgibson_intro_reaction/MEDIA_PROVENANCE.md`.
+- The instrument-driven film that drives the picture from a live `Workbench`/`FieldView`/`plot`/
+  producer causal chain is **deferred to 0.6.0** (maintainer scope decision); for 0.5 the new
+  instruments ship as the separate executable demos above.
+
+### Changed — CORE (source-breaking for raw struct-literal `Node` users)
 - `gibson::Node` gained a public field `tag: Option<u32>` (semantic hit-target
   identity for the painted-frame hit-map, #127). External code that constructs a
   `Node` with a struct literal
@@ -32,6 +69,12 @@ records only the compatibility-relevant CORE change.
   advertised as source-compatible with every 0.4 struct-literal pattern. **No C ABI
   change** (`GIBSON_ABI_VERSION` stays 1; `Node` is not exposed through C/C++/Python/Go);
   MSRV stays 1.85.
+
+### Release engineering
+- The release preflight now executes the four `#[ignore]`d terminal-hangup liveness tests
+  explicitly, in a serial `--include-ignored` PTY step on the Linux release host (they are
+  otherwise skipped by `cargo test`), and refuses a non-Linux preflight rather than silently
+  passing without that witness.
 
 ## [0.4.0] - 2026-10-02
 

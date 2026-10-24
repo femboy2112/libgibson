@@ -68,10 +68,18 @@ surface is versioned as a minor to signal its scope — not because anything bro
   milestone. A real-audio-device backend is the optional `audio-cpal` feature, so the
   mandatory build, `cargo test` and CI never need system audio libraries.
 
+- **0.5.0** is the latest such milestone (a prepared release candidate, not yet tagged): it
+  adds the experimental, Rust-only interactive-instrument surface (spatial input and
+  hit-map, reversible authoring, `gibson::plot` / field view, bounded transport). It is
+  additive apart from one documented Rust CORE source-break (`Node` gained a public
+  `tag: Option<u32>` field); **the C ABI is unchanged (`GIBSON_ABI_VERSION` stays 1)**,
+  none of the new surface is exposed through C, C++, Python or Go, and MSRV stays 1.85.
+  It remains an engineering alpha (Linux x86_64, GitHub-only prerelease).
+
 The conceptual progression: `0.1.x` established the framebuffer / renderer / terminal
 substrate; `0.2.x` adds the semantic UI / design-system layer; `0.3.x` adds the
 experimental temporal display axis; `0.4.x` adds the experimental audio /
-HumanMusic axis; later `0.x` milestones continue resolving architecture, portability and
+HumanMusic axis; `0.5.x` adds the experimental interactive-instrument surface; later `0.x` milestones continue resolving architecture, portability and
 stability debt; `1.0` waits until the CORE public contract (§3) is genuinely stable and
 frozen.
 

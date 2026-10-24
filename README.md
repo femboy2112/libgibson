@@ -22,6 +22,11 @@ procedural audio.
 > distributed as **GitHub source + that SDK** — it is *not* on crates.io, PyPI, or
 > the Go module proxy. See the [changelog](CHANGELOG.md) and
 > [install options](#install--use) below.
+>
+> **v0.5.0 (interactive instruments) is a prepared release candidate on this branch, not
+> yet tagged or published** (engineering alpha, Linux x86_64, GitHub-only prerelease;
+> `Cargo.toml` is 0.5.0). v0.4.0 remains the last published release, and the install
+> commands below still point at it.
 
 > **Engineering alpha.** Linux x86_64 is the best-tested environment. The core
 > engine is implemented and tested; Scene, Story, software graphics, and audio /
@@ -110,6 +115,15 @@ The core engine is **implemented and tested on Linux x86_64**. A few of the load
   and cover generation with selectable identity fidelity. All music is synthesized; no
   audio is exposed through the C ABI, and the terminal engine does not depend on it. See
   [`docs/HUMAN_MUSIC_ARCHITECTURE.md`](docs/HUMAN_MUSIC_ARCHITECTURE.md).
+- **Experimental interactive instruments** (Rust-only, prepared for v0.5.0) — spatial
+  input with a painted-frame hit-map, reversible edit sessions and drag gestures,
+  `gibson::plot` observable geometry and a domain-neutral field view, bounded
+  frame/command transport with Python<->Rust wire conformance, and the runnable
+  `instrument_workbench` and `scope_editor` demos. Not exposed through the C, C++,
+  Python or Go wrappers; C ABI stays version 1, MSRV stays 1.85. One Rust source-break:
+  `gibson::Node` gained a public `tag: Option<u32>` field (see [changelog](CHANGELOG.md)).
+  The cinematic finale `examples/libgibson_intro_reaction` is an example only and ships
+  no third-party media; the instrument-driven film is deferred to 0.6.0.
 
 📖 **Full tested-feature catalog: [`docs/FEATURES.md`](docs/FEATURES.md).**
 
