@@ -6,11 +6,11 @@ This document outlines completed work and the planned future milestones for LibG
 ## Current direction (2026-10-19): v0.5.0 — Interactive Observable Instruments
 
 **Status (2026-10-19 snapshot): ROADMAP/PLANNING ONLY; no v0.5.0 release, merge, or new API accepted on main.**
-*Update 2026-10-24: the v0.5.0 interactive-instruments milestone is delivered on the
-`release/v0.5.0-rc` release candidate (see the 2026-10-24 reconciliation below); it is not
-yet tagged. The instrument-driven cinematic film moved to 0.6.0.*
-The last published release remains v0.4.0. This section describes the *new proposed*
-v0.5 program; the historical progress and earlier studies below remain evidence,
+*Update 2026-10-24: the v0.5.0 interactive-instruments milestone is delivered and
+**released as v0.5.0** (tag `v0.5.0` → `d8c7b99`, GitHub prerelease; see the 2026-10-24
+reconciliation below). The instrument-driven cinematic film moved to 0.6.0.*
+The current published release is v0.5.0 (v0.4.0 is the prior release). This section
+describes the *v0.5 program as originally proposed*; the historical progress and earlier studies below remain evidence,
 not a competing set of current execution priorities.
 
 **New canonical plan:** [docs/V0_5_INTERACTIVE_INSTRUMENTS_ROADMAP.md](docs/V0_5_INTERACTIVE_INSTRUMENTS_ROADMAP.md).  
@@ -95,13 +95,15 @@ still frozen at `80706c9` (v0.4.0). The single stabilization candidate is
   the owner's visual/listening acceptance; explicit release authorization. None are
   satisfied by the development CI matrix alone.
 
-### Reconciliation (2026-10-24): v0.5.0 release candidate
+### Reconciliation (2026-10-24): v0.5.0 released
 
-The v0.5 interactive-instruments milestone is **delivered on the `release/v0.5.0-rc`
-candidate** (`Cargo.toml` and the Python `pyproject.toml` are 0.5.0; CHANGELOG `0.5.0`
-entry dated 2026-10-24). It is **not yet tagged or published** — v0.4.0 is still the last
-published release; the 2026-10-23 "outstanding gates" list above is superseded only to the
-extent that the version bump and changelog are now done. All new surface is experimental
+The v0.5 interactive-instruments milestone is **delivered and released as v0.5.0**
+on 2026-10-24 (GitHub prerelease, Engineering Alpha, Linux x86_64; tag `v0.5.0` → main
+commit `d8c7b99`; `Cargo.toml` and the Python `pyproject.toml` are 0.5.0; CHANGELOG `0.5.0`
+entry dated 2026-10-24; `main` is now 0.5.0). Release assets: the native SDK archive
+`libgibson-0.5.0-linux-x86_64.tar.gz` (+ `.sha256`), the Python wheel and sdist. v0.4.0 is
+the prior release; the 2026-10-23 "outstanding gates" list above is a dated snapshot of
+what was open then, superseded by the release. All new surface is experimental
 and Rust-only (not exposed through the C, C++, Python or Go wrappers); C ABI stays
 version 1; MSRV stays 1.85. The cinematic finale ships as the example
 `examples/libgibson_intro_reaction` (no third-party media; original synthesized performer;

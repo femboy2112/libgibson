@@ -185,9 +185,9 @@ start from the [README](../README.md).
   branching graph with freeze and neutralize; the Hackers rabbit/cookie interaction is
   a real entity, not a generic particle burst.
 
-## v0.5.0 release candidate — interactive instruments (EXPERIMENTAL, Rust-only)
+## v0.5.0 — interactive instruments (EXPERIMENTAL, Rust-only)
 
-> Prepared on `release/v0.5.0-rc`, not yet tagged. All of this is experimental, Rust-only
+> Shipped 2026-10-24 in v0.5.0. All of this is experimental, Rust-only
 > and **not exposed through the C, C++, Python or Go wrappers**; C ABI stays v1, MSRV 1.85.
 
 - **Spatial input + painted-frame hit-map** — pointer/keyboard mapped to semantic targets
@@ -213,14 +213,15 @@ start from the [README](../README.md).
 - **CORE source-break** — `gibson::Node` gained public `tag: Option<u32>` (struct-literal
   users only; `Node::new`/builders unaffected).
 
-## Planned / in development
+## Scientific plotting — Observable Geometry (`gibson::plot`, shipped in v0.5.0)
 
-> These are development targets, **not shipped capability**. No release is implied until
-> a target lands and is validated. (The plotting entry below was written before the v0.5.0
-> candidate; `gibson::plot` is now part of it, see the section above.)
+> `gibson::plot` **shipped in v0.5.0** (experimental, Rust-only) and is summarized in the
+> interactive-instruments section above; its full surface is detailed here. Items marked
+> **Deferred** below are development targets — **not shipped capability** — and no release
+> is implied until they land and are validated.
 
-- **v0.5.0 — Scientific plotting / Observable Geometry** (IN DEVELOPMENT,
-  EXPERIMENTAL, Rust-only; branch `feat/v0.5-scientific-plotting`). A *semantic
+- **Observable Geometry** (EXPERIMENTAL, Rust-only; originally developed on branch
+  `feat/v0.5-scientific-plotting`). A *semantic
   plotting layer*, not a chart-widget toolkit: `gibson::plot` turns an indexed set
   of observables into terminal geometry through validated axis transforms and
   reports, via a `PlotReport` receipt, exactly what happened to every sample. It

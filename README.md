@@ -17,16 +17,15 @@ procedural audio.
 
 </div>
 
-> **Current release: [v0.4.0 — HumanMusic & Audio](https://github.com/femboy2112/libgibson/releases/tag/v0.4.0)** (2026-10-02).
+> **Current release: [v0.5.0 — Interactive Instruments](https://github.com/femboy2112/libgibson/releases/tag/v0.5.0)** (2026-10-24).
 > Linux x86_64. A native SDK archive is attached to the release. LibGibson is
 > distributed as **GitHub source + that SDK** — it is *not* on crates.io, PyPI, or
 > the Go module proxy. See the [changelog](CHANGELOG.md) and
 > [install options](#install--use) below.
 >
-> **v0.5.0 (interactive instruments) is a prepared release candidate on this branch, not
-> yet tagged or published** (engineering alpha, Linux x86_64, GitHub-only prerelease;
-> `Cargo.toml` is 0.5.0). v0.4.0 remains the last published release, and the install
-> commands below still point at it.
+> **v0.5.0 (interactive instruments) is now the published engineering-alpha release**
+> (Linux x86_64, GitHub-only prerelease). It adds an experimental, Rust-only
+> interactive/observable instrument platform. The install commands below point at v0.5.0.
 
 > **Engineering alpha.** Linux x86_64 is the best-tested environment. The core
 > engine is implemented and tested; Scene, Story, software graphics, and audio /
@@ -115,7 +114,7 @@ The core engine is **implemented and tested on Linux x86_64**. A few of the load
   and cover generation with selectable identity fidelity. All music is synthesized; no
   audio is exposed through the C ABI, and the terminal engine does not depend on it. See
   [`docs/HUMAN_MUSIC_ARCHITECTURE.md`](docs/HUMAN_MUSIC_ARCHITECTURE.md).
-- **Experimental interactive instruments** (Rust-only, prepared for v0.5.0) — spatial
+- **Experimental interactive instruments** (Rust-only, new in v0.5.0) — spatial
   input with a painted-frame hit-map, reversible edit sessions and drag gestures,
   `gibson::plot` observable geometry and a domain-neutral field view, bounded
   frame/command transport with Python<->Rust wire conformance, and the runnable
@@ -150,7 +149,7 @@ of this film ([how it was captured](docs/assets/README.md)).
 ## Install & use
 
 LibGibson ships as **GitHub source plus a native SDK archive** on the
-[release](https://github.com/femboy2112/libgibson/releases/tag/v0.4.0). It is not
+[release](https://github.com/femboy2112/libgibson/releases/tag/v0.5.0). It is not
 published to any package registry.
 
 ### Rust
@@ -160,7 +159,7 @@ crate you `use` is `gibson`:
 
 ```toml
 [dependencies]
-libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.4.0" }
+libgibson = { git = "https://github.com/femboy2112/libgibson", tag = "v0.5.0" }
 ```
 
 ```rust
@@ -198,14 +197,14 @@ animation is throttled by `ctx.animation_interval()`.
 
 ### Native SDK (C / C++ / Python / Go)
 
-The release attaches `libgibson-0.4.0-linux-x86_64.tar.gz` (with a `.sha256`): headers,
+The release attaches `libgibson-0.5.0-linux-x86_64.tar.gz` (with a `.sha256`): headers,
 `libgibson.a`, the versioned shared object (`libgibson.so.1` + a `libgibson.so` dev
 symlink), and a relocatable `pkg-config` file.
 
 ```bash
-sha256sum -c libgibson-0.4.0-linux-x86_64.tar.gz.sha256
-tar -xzf libgibson-0.4.0-linux-x86_64.tar.gz          # -> ./libgibson-0.4.0-linux-x86_64/
-export PKG_CONFIG_PATH="$PWD/libgibson-0.4.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
+sha256sum -c libgibson-0.5.0-linux-x86_64.tar.gz.sha256
+tar -xzf libgibson-0.5.0-linux-x86_64.tar.gz          # -> ./libgibson-0.5.0-linux-x86_64/
+export PKG_CONFIG_PATH="$PWD/libgibson-0.5.0-linux-x86_64/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 cc app.c $(pkg-config --cflags --libs libgibson) -o app   # C consumer
 ```
