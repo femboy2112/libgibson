@@ -18,8 +18,8 @@ use gibson::snapshot::{Admission, Capacity, RefuseReason, SnapshotBridge};
 use gibson::wire::{
     encode_ack, encode_command, encode_field, AckStatus, CommandLedger, CommandState,
     FieldAdmission, FieldInbox, FrameDecoder, InboxCapacity, LedgerCapacity, LedgerReject,
-    SourceCursor, WireAck, WireBody, WireCommand, WireError, WireField, WireLimits, HEADER_BYTES,
-    MAGIC, VERSION,
+    RetentionEnvelope, SourceCursor, WireAck, WireBody, WireCommand, WireError, WireField,
+    WireLimits, HEADER_BYTES, MAGIC, VERSION,
 };
 
 // ---- builders -------------------------------------------------------------------------
@@ -1213,4 +1213,119 @@ fn bidirectional_acked_loop_all_verdicts_and_mutation() {
     let view = FieldView::new(stored.extent, &stored.data, stored.mask.as_deref()).unwrap();
     assert_eq!(view.sample(0, 0), Some(Sample::Value(3.0)));
     assert_eq!(stored.model_tick, 7);
+}
+
+// ======================================================================================
+// Cross-layer retention envelope — the deterministic resource-envelope slice of the #143
+// observatory. No wall clock: the gate is byte/count-based, so a sustained-session memory
+// bound is reproducible and cannot flake. The negative control proves the gate can FAIL —
+// a green result means the bound was exercised and held, not that everything was waved through.
+// ======================================================================================
+
+/// A small square field whose data is `value` everywhere, optionally masked, on a unit grid.
+fn flat_field(cols: usize, rows: usize, tick: u64, value: f64, masked: bool) -> WireField {
+    let n = cols * rows;
+    WireField {
+        extent: FieldExtent::new(Point::new(0.0, 0.0), 1.0, 1.0, cols, rows).unwrap(),
+        model_tick: tick,
+        data: vec![value; n],
+        mask: if masked { Some(vec![true; n]) } else { None },
+    }
+}
+
+/// The honest current-RSS witness counts data bytes plus one byte per cell when a mask rides
+/// along, and the worst case is the documented max_sources * max_field_cells * 9.
+#[test]
+fn field_inbox_retained_bytes_tracks_data_and_mask() {
+    let limits = WireLimits::new(1 << 16, 64);
+    let mut inbox = FieldInbox::with_capacity(InboxCapacity::new(4));
+    // One 4x4 field without a mask: 16 cells * 8 bytes.
+    inbox.admit(1, SourceCursor::new(0, 1), flat_field(4, 4, 1, 0.5, false));
+    assert_eq!(inbox.retained_bytes(), 16 * 8);
+    // A second source, 4x4 WITH a mask: 16 * (8 + 1).
+    inbox.admit(2, SourceCursor::new(0, 1), flat_field(4, 4, 1, 0.5, true));
+    assert_eq!(inbox.retained_bytes(), 16 * 8 + 16 * 9);
+    // The provable ceiling: 4 sources * 64 cells * (8 + 1).
+    assert_eq!(inbox.worst_case_retained_bytes(limits), 4 * 64 * 9);
+    assert!(inbox.retained_bytes() <= inbox.worst_case_retained_bytes(limits));
+}
+
+/// A sustained session (thousands of latest-wins frames across a few rotating sources) keeps
+/// retained memory flat — never growing with the frame count — and stays strictly within the
+/// provable envelope at every observation, with every conservation receipt intact.
+#[test]
+fn sustained_session_stays_within_retention_envelope() {
+    let limits = WireLimits::new(1 << 16, 64);
+    let cap = InboxCapacity::new(4);
+    let mut inbox = FieldInbox::with_capacity(cap);
+    let mut env = RetentionEnvelope::new(inbox.worst_case_retained_bytes(limits));
+
+    const SOURCES: u64 = 4;
+    const FRAMES: u64 = 5000; // far more frames than sources: latest-wins must coalesce
+    for seq in 1..=FRAMES {
+        let source = seq % SOURCES; // rotate across the 4 sources
+        let masked = seq % 2 == 0;
+        let field = flat_field(4, 4, seq, seq as f64, masked);
+        let admission = inbox.admit(source, SourceCursor::new(0, seq), field);
+        assert!(
+            admission.is_stored(),
+            "a strictly-newer frame for a live source is always stored"
+        );
+        // Observe the envelope every tick; it must hold on every single sample.
+        assert!(
+            env.observe(inbox.retained_bytes()),
+            "retained bytes breached the envelope at seq {seq}"
+        );
+        assert!(inbox.live_sources() <= SOURCES as usize);
+    }
+
+    // Memory did not grow with the 5000 frames: at most SOURCES live fields are retained.
+    assert_eq!(inbox.live_sources(), SOURCES as usize);
+    assert!(inbox.retained_cells() <= SOURCES as usize * 16);
+    // The envelope held throughout, with real headroom, and the inbox conserves.
+    assert!(env.holds());
+    assert_eq!(env.breaches(), 0);
+    assert_eq!(env.samples(), FRAMES);
+    assert!(env.high_water_bytes() <= env.worst_case_bytes());
+    assert!(
+        env.headroom_bytes() > 0,
+        "the bound was not even approached"
+    );
+    assert!(inbox.conserves());
+    // Honest: thousands of frames offered, only a handful stored, the rest coalesced — counted.
+    assert_eq!(inbox.offered(), FRAMES);
+    assert!(inbox.superseded() > 0);
+}
+
+/// The calibration (anti-green-lighting, #143): the SAME envelope ceiling that the bounded
+/// inbox respects is BREACHED by a naive unbounded accumulator that retains every frame. If
+/// the gate could not fail here it would be certifying nothing.
+#[test]
+fn retention_envelope_catches_an_unbounded_accumulator() {
+    let limits = WireLimits::new(1 << 16, 64);
+    let ceiling =
+        FieldInbox::with_capacity(InboxCapacity::new(4)).worst_case_retained_bytes(limits);
+
+    // A diseased "store" that appends every frame and never coalesces — the policy the bounded
+    // FieldInbox exists to avoid.
+    let mut hoard: Vec<WireField> = Vec::new();
+    let mut env = RetentionEnvelope::new(ceiling);
+    let per_frame_bytes = 16 * 8; // a 4x4 unmasked field
+    for seq in 1..=10_000u64 {
+        hoard.push(flat_field(4, 4, seq, seq as f64, false));
+        let bytes: usize = hoard.iter().map(|f| f.data.len() * 8).sum();
+        env.observe(bytes);
+        if bytes > ceiling {
+            break; // the gate has already caught the runaway; no need to keep growing
+        }
+    }
+
+    assert!(
+        !env.holds(),
+        "an unbounded accumulator MUST breach the envelope the bounded inbox respects"
+    );
+    assert!(env.breaches() > 0);
+    assert!(env.high_water_bytes() > ceiling);
+    // Sanity: the breach happened roughly where the arithmetic says it must.
+    assert!(env.samples() as usize <= ceiling / per_frame_bytes + 2);
 }

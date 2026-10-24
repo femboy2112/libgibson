@@ -81,9 +81,33 @@ wants durable checkpoints serializes a drained trace with their own format. An
 engine-owned checkpoint type would add surface and API-stability commitments with
 no demonstrated caller need — deferred until one exists.
 
+## v0.5 interactive-instrument transport (issue #143 envelope)
+
+The out-of-process producer transport (`gibson::wire`, `gibson::snapshot`) adds three
+retaining structures, all **hard-capped** and each carrying its own conservation receipt, so
+a diseased or stalled producer cannot grow presenter memory without bound:
+
+| Structure | Location | Grows per | Bound | Witness |
+|---|---|---|---|---|
+| `SnapshotBridge` frames | `src/snapshot.rs` | `offer` (latest-wins) | **hard capped** — `max_sources` × `MAX_FRAME_BYTES` | `retained_frame_bytes()` ≤ `worst_case_retained_bytes()`; `commands_conserved()` |
+| `SnapshotBridge` commands | `src/snapshot.rs` | `issue` | **hard capped** — `max_pending_commands`; refused at ceiling | `pending_commands()`; `commands_conserved()` |
+| `FieldInbox` fields | `src/wire.rs` | `admit` (latest-wins) | **hard capped** — `max_sources` × `max_field_cells` × 9 | `retained_bytes()` ≤ `worst_case_retained_bytes(limits)`; `conserves()` |
+| `CommandLedger` outstanding | `src/wire.rs` | `note_issued` | **hard capped** — `max_outstanding`; resolved pruned to counters | `outstanding()`; `conserves()` |
+
+**The cross-layer gate.** `gibson::wire::RetentionEnvelope` composes those per-store *provable*
+worst-case ceilings into one byte budget and records the high-water of observed retained bytes
+over a sustained session. It is **deterministic** (byte/count-based, no wall clock), so the
+memory gate is reproducible and cannot flake — latency/throughput are tool-relative timings kept
+separate, never folded into a single health number (issue #143's honesty rule). Crucially the
+gate can **fail**: `tests/wire_transport.rs` drives a 5000-frame sustained session that stays
+flat within the envelope *and* a calibration where a naive unbounded accumulator breaches the
+same ceiling — a green result means the bound was exercised and held, not that every
+configuration was waved through.
+
 ## Boundary
 
 Byte figures for the Story trace are measured (`long_session_probe`); the rest are
 static classification, not per-structure runtime byte counts. FFI-side retention,
 the scheduler, and the transaction layer were not inventoried here — if any holds a
-caller-facing retained buffer, that is outside this pass.
+caller-facing retained buffer, that is outside this pass. Latency/throughput gating
+(the timing half of #143) is deliberately out of this retention pass.

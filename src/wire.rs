@@ -1023,6 +1023,30 @@ impl FieldInbox {
         self.latest.values().map(|(_, f)| f.data.len()).sum()
     }
 
+    /// Total bytes currently retained across all live sources — the honest current-RSS witness:
+    /// each stored cell costs `size_of::<f64>()` for its datum plus one byte when the field
+    /// carries a mask. Bounded above by
+    /// [`worst_case_retained_bytes`](FieldInbox::worst_case_retained_bytes).
+    pub fn retained_bytes(&self) -> usize {
+        self.latest
+            .values()
+            .map(|(_, f)| {
+                f.data.len() * std::mem::size_of::<f64>() + f.mask.as_ref().map_or(0, Vec::len)
+            })
+            .sum()
+    }
+
+    /// The provable ceiling on [`retained_bytes`](FieldInbox::retained_bytes) for fields the
+    /// decoder admitted under `limits`: `max_sources * max_field_cells * (size_of::<f64>() + 1)`
+    /// — the `+ 1` is the optional mask byte per cell. A finite number, by construction; it is
+    /// the field-side term of a [`RetentionEnvelope`]'s worst case.
+    pub fn worst_case_retained_bytes(&self, limits: WireLimits) -> usize {
+        self.capacity
+            .max_sources
+            .saturating_mul(limits.max_field_cells)
+            .saturating_mul(std::mem::size_of::<f64>() + 1)
+    }
+
     /// Observations offered to [`admit`](Self::admit).
     pub fn offered(&self) -> u64 {
         self.offered
@@ -1457,5 +1481,87 @@ impl CommandLedger {
         self.issued == self.accepted_now() + self.delivered_ever
             && self.delivered_ever == self.delivered_now() + self.resolved()
             && self.outstanding() as u64 == self.accepted_now() + self.delivered_now()
+    }
+}
+
+// ---- cross-layer retention envelope (sustained-session memory gate) -------------------
+
+/// A deterministic high-water gate over the transport's **bounded** retained memory.
+///
+/// Given a provable worst-case ceiling — composed from the capacities of the stores a presenter
+/// actually uses, e.g. [`FieldInbox::worst_case_retained_bytes`] plus
+/// [`crate::snapshot::SnapshotBridge::worst_case_retained_bytes`] — it records the running
+/// high-water of the observed retained bytes and answers, at every sample, whether the envelope
+/// still holds. It is **pure and byte-based**: no wall clock, so a sustained-session memory gate
+/// built on it is reproducible and cannot flake (issue #143). It measures *retention* only —
+/// latency and throughput are tool-relative timings kept deliberately separate, never conflated
+/// into a single health number.
+///
+/// The gate's worth is that it can **fail**: feed it an unbounded policy's byte count and it
+/// records a breach, so a green result means the bound was actually exercised and held, not that
+/// every configuration was waved through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetentionEnvelope {
+    worst_case_bytes: usize,
+    high_water_bytes: usize,
+    samples: u64,
+    breaches: u64,
+}
+
+impl RetentionEnvelope {
+    /// An envelope with the given provable worst-case ceiling (in bytes) and no observations yet.
+    pub fn new(worst_case_bytes: usize) -> Self {
+        Self {
+            worst_case_bytes,
+            high_water_bytes: 0,
+            samples: 0,
+            breaches: 0,
+        }
+    }
+
+    /// Record one observation of the current total retained bytes. Updates the high-water mark,
+    /// counts a breach if the sample exceeds the ceiling, and returns whether this sample is
+    /// within the envelope.
+    pub fn observe(&mut self, current_bytes: usize) -> bool {
+        self.samples += 1;
+        if current_bytes > self.high_water_bytes {
+            self.high_water_bytes = current_bytes;
+        }
+        let within = current_bytes <= self.worst_case_bytes;
+        if !within {
+            self.breaches += 1;
+        }
+        within
+    }
+
+    /// The provable ceiling this envelope gates against.
+    pub fn worst_case_bytes(&self) -> usize {
+        self.worst_case_bytes
+    }
+
+    /// The largest retained-bytes observation seen so far.
+    pub fn high_water_bytes(&self) -> usize {
+        self.high_water_bytes
+    }
+
+    /// How many observations have been recorded.
+    pub fn samples(&self) -> u64 {
+        self.samples
+    }
+
+    /// How many observations exceeded the ceiling.
+    pub fn breaches(&self) -> u64 {
+        self.breaches
+    }
+
+    /// Whether every observation stayed within the ceiling (no breach ever) — the gate's
+    /// verdict for a sustained session.
+    pub fn holds(&self) -> bool {
+        self.breaches == 0
+    }
+
+    /// Headroom between the ceiling and the high-water mark; `0` once the ceiling is breached.
+    pub fn headroom_bytes(&self) -> usize {
+        self.worst_case_bytes.saturating_sub(self.high_water_bytes)
     }
 }
