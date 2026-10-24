@@ -11,6 +11,15 @@ CORE stability tier; it may change or be removed between minor releases. The exi
 valid. See [the release contract](RELEASE_CONTRACT.md) and
 [the measured validation record](UI_LAYER_VALIDATION.md).
 
+> **Building a visually ambitious, spatial, or cinematic app (an AI agent, or
+> anyone)?** Read **[AI_VISUAL_AUTHORING.md](AI_VISUAL_AUTHORING.md) first.** This
+> document teaches the `gibson::ui` *chrome* layer; it leads with panels and
+> rows because that is what this layer is. If your domain is a world — a graph, a
+> timeline, a field, a transformation — starting from the widgets below is how you
+> end up with a dashboard instead. The guide shows how to make a custom
+> `Surface`/`Raster`/`Scene` world the dominant object and use the components here
+> as sparse chrome around it.
+
 ## If you are hand-rolling these over raw `Node`
 
 Several capabilities that consumers commonly reimplement over the lower-level
