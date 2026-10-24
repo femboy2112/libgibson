@@ -5,15 +5,19 @@
 //! * the **edit clock** — the reaction cut's own timeline, what `--at`/`--stage` seek;
 //! * the **intro narrative clock** — the original film's deterministic time.
 //!
-//! The intro plays as a *continuous spine*: for the first 72 s the edit clock and the
-//! narrative clock advance together, so the original short film plays through exactly
-//! as it always does (bootup prologue, agent harness, membrane, city, ascent, title —
-//! no skips, no freeze-frame jumps). Reaction **beats** are windows on the edit clock
-//! during which the keyed subject is composited *over* that continuously-playing film;
-//! outside every window the film plays alone and stays fully readable. After the film
-//! reaches its end the edit clock runs a little longer over a **held** final frame so
-//! the closing sting can play without pretending the film became longer. Everything is
-//! a deterministic function of edit time — nothing reads wall-clock on the frame path.
+//! The intro plays as a *continuous spine*, deliberately **time-scaled** for the v0.5
+//! finalized cut: its whole `INTRO_LAST` narrative span is spread across the full
+//! `EDIT_END` edit clock (see [`intro_seconds`]), so the original short film evolves
+//! continuously — and slower — underneath every reaction (bootup prologue, agent
+//! harness, membrane, city, ascent, title) and lands its Planet/title finale under the
+//! closing reaction instead of ending partway through. The map is monotonic
+//! nondecreasing: no skips, no rewinds. Reaction **beats** are windows on the edit
+//! clock during which the keyed subject is composited *over* that continuously-playing
+//! film; the cut opens *on* the welcome beat at edit 0, and outside every window the
+//! film plays alone and stays fully readable. Past the end of the cut the narrative
+//! clock clamps to its final second rather than pretending the film became longer.
+//! Everything is a deterministic function of edit time — nothing reads wall-clock on
+//! the frame path.
 
 #![allow(dead_code)]
 
