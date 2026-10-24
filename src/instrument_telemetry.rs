@@ -1,6 +1,7 @@
 //! Cross-layer instrument telemetry — the **timing** half of the observatory (issue #143).
 //!
-//! The retention half ([`crate::wire::RetentionEnvelope`]) bounds *memory* deterministically.
+//! The retention half (`wire::RetentionEnvelope`, delivered alongside this one) bounds *memory*
+//! deterministically.
 //! This bounds how the pipeline is *measured in time*, with two disciplines that keep it honest
 //! and keep its gates from flaking:
 //!
