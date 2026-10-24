@@ -48,7 +48,7 @@ step "terminal hangup regressions (Linux PTY, serial, including ignored)"
 if [ "$(uname -s)" = "Linux" ]; then
     run cargo $STABLE test --test pty_hangup --test pty_hangup_restore -- --test-threads=1 --include-ignored
 else
-    ok "non-Linux host: PTY hangup gate requires a supported Linux release runner"
+    no "PTY hangup release gate requires the supported Linux x86_64 runner"
 fi
 
 step "rustdoc (-D warnings)"
