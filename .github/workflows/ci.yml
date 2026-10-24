@@ -273,7 +273,15 @@ jobs:
         run: cargo build --examples
 
       - name: PTY tests
-        run: cargo test --test pty_integration --test pty_resize_torture --test event_pressure_pty --test pty_hangup_restore -- --test-threads=1
+        run: cargo test --test pty_integration --test pty_resize_torture --test event_pressure_pty -- --test-threads=1
+
+      # The hangup tests are #[ignore]'d so they do NOT run in the main `rust` job's parallel
+      # `cargo test`, where a loaded runner starves their liveness deadlines (a false failure
+      # that is pure CPU contention, not a defect). Here they run SERIALLY in the dedicated PTY
+      # environment, with --include-ignored to actually execute them. --include-ignored is scoped
+      # to just these two binaries, so event_pressure_pty's own intentional #[ignore] is untouched.
+      - name: PTY hangup tests (timing-sensitive; serial)
+        run: cargo test --test pty_hangup --test pty_hangup_restore -- --test-threads=1 --include-ignored
 
   msrv:
     name: MSRV (Rust 1.85, library)

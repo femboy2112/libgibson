@@ -48,6 +48,7 @@ fn parse_hex(v: &str) -> Option<u64> {
 }
 
 #[test]
+#[ignore = "timing-sensitive PTY test; run serially in the dedicated PTY CI job via --include-ignored (parallel `cargo test` starves its liveness deadline under load)"]
 fn graceful_hangup_restore_runs_to_completion_and_raw_mode_took_effect() {
     // Unique evidence file on a regular filesystem: it outlives the PTY, which
     // the hangup severs (post-hangup child stdout goes to /dev/null).
