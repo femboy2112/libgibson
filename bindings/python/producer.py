@@ -20,14 +20,24 @@ itself. The byte format lives in `wire.py` and `docs/WIRE_PROTOCOL.md`.
 import argparse
 import math
 import select
+import struct
 import sys
 
 import wire
 
+# The producer's one mutable model parameter and its command contract. `set-amplitude`
+# (kind 1) carries an 8-byte little-endian f64 in [AMPLITUDE_MIN, AMPLITUDE_MAX]; an
+# acknowledged one scales the published field, so an accepted edit is visible in the next
+# authoritative frame. Mirrors `ProducerModel` in `tests/wire_transport.rs`.
+KIND_SET_AMPLITUDE = 1
+AMPLITUDE_MIN = 0.0
+AMPLITUDE_MAX = 10.0
 
-def gaussian_field(cols, rows, t):
-    """A moving Gaussian bump, value in [0, 1], finite everywhere. `t` advances the center
-    on a circle so successive frames differ visibly."""
+
+def gaussian_field(cols, rows, t, amplitude=1.0):
+    """A moving Gaussian bump scaled by `amplitude`, finite everywhere. `t` advances the
+    center on a circle so successive frames differ visibly; `amplitude` is set by an
+    acknowledged `set-amplitude` command, so an accepted edit changes the next field."""
     cx = (cols - 1) / 2.0 + (cols / 4.0) * math.cos(t * 0.3)
     cy = (rows - 1) / 2.0 + (rows / 4.0) * math.sin(t * 0.3)
     sigma = max(cols, rows) / 6.0
@@ -35,14 +45,38 @@ def gaussian_field(cols, rows, t):
     for iy in range(rows):
         for ix in range(cols):
             d2 = (ix - cx) ** 2 + (iy - cy) ** 2
-            data.append(math.exp(-d2 / (2.0 * sigma * sigma)))
+            data.append(amplitude * math.exp(-d2 / (2.0 * sigma * sigma)))
     return data
 
 
-def drain_and_ack_commands(decoder_buf, source):
-    """Best-effort, non-blocking: read any pending COMMAND frames from stdin and ACK them.
-    Returns updated buffer. Ordered identity is preserved; an out-of-contract frame is
-    refused with a FAILED ack rather than silently dropped."""
+def classify_command(kind, arg):
+    """Decide a return-channel command's fate against this producer's contract. Returns
+    ``(status, value)``: the matching ``ACK_*`` status and, for an acknowledged
+    ``set-amplitude``, the new amplitude (otherwise ``None``). Pure, so the conformance suite
+    drives it directly; mirrors the Rust ``ProducerModel::classify_and_apply`` exactly.
+
+    * ``kind == KIND_SET_AMPLITUDE`` with an 8-byte LE ``f64`` finite and in range ->
+      ``ACK_ACKNOWLEDGED`` (the caller applies ``value``).
+    * the same kind, value out of range or non-finite -> ``ACK_REFUSED`` (typed backpressure;
+      the model is untouched).
+    * a wrong-length arg or an unknown ``kind`` -> ``ACK_FAILED``.
+    """
+    if kind != KIND_SET_AMPLITUDE:
+        return wire.ACK_FAILED, None
+    if len(arg) != 8:
+        return wire.ACK_FAILED, None
+    (value,) = struct.unpack("<d", arg)
+    if not math.isfinite(value) or not (AMPLITUDE_MIN <= value <= AMPLITUDE_MAX):
+        return wire.ACK_REFUSED, None
+    return wire.ACK_ACKNOWLEDGED, value
+
+
+def drain_and_ack_commands(decoder_buf, source, state):
+    """Best-effort, non-blocking: read any pending COMMAND frames from stdin, decide each
+    command's fate with :func:`classify_command`, apply an acknowledged one to ``state``
+    (``state["amplitude"]``), and ACK every command with its TRUE verdict — acknowledged,
+    refused, or failed — never a blanket success and never a silent drop. Returns the updated
+    buffer. Ordered identity is preserved; the ack's `command_id` echoes the command's."""
     # Poll stdin without blocking the producer's tick loop.
     while select.select([sys.stdin.buffer], [], [], 0)[0]:
         chunk = sys.stdin.buffer.read1(65536)
@@ -61,7 +95,9 @@ def drain_and_ack_commands(decoder_buf, source):
         msg, consumed = decoded
         decoder_buf = decoder_buf[consumed:]
         if msg.kind == wire.MSG_COMMAND:
-            status = wire.ACK_ACKNOWLEDGED  # a real model would validate msg.body here
+            status, value = classify_command(msg.body["kind"], msg.body["arg"])
+            if status == wire.ACK_ACKNOWLEDGED:
+                state["amplitude"] = value  # the accepted edit mutates the model
             out = wire.encode_ack(source, 0, ack_seq, msg.body["command_id"], status)
             sys.stdout.buffer.write(out)
             sys.stdout.buffer.flush()
@@ -73,11 +109,14 @@ def serve(args):
     """Stream `args.frames` field observations, then retire the source."""
     out = sys.stdout.buffer
     stdin_buf = bytearray()
+    # The producer's authoritative, mutable model state. An acknowledged set-amplitude command
+    # moves it, so the field published on the next tick reflects the accepted edit.
+    state = {"amplitude": 1.0}
     # Pace with a plain sleep; the presenter's bounded inbox coalesces anything it misses.
     import time
 
     for seq in range(1, args.frames + 1):
-        data = gaussian_field(args.cols, args.rows, float(seq))
+        data = gaussian_field(args.cols, args.rows, float(seq), state["amplitude"])
         frame = wire.encode_field(
             source=args.source,
             epoch=args.epoch,
@@ -92,7 +131,7 @@ def serve(args):
         )
         out.write(frame)
         out.flush()
-        stdin_buf = drain_and_ack_commands(stdin_buf, args.source)
+        stdin_buf = drain_and_ack_commands(stdin_buf, args.source, state)
         if args.hz > 0:
             time.sleep(1.0 / args.hz)
 

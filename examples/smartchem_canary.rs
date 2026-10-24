@@ -18,7 +18,9 @@
 
 use gibson::field_view::{Colormap, FieldView, RangePolicy, Sample};
 use gibson::snapshot::{Capacity, SnapshotBridge};
-use gibson::wire::{FieldAdmission, FieldInbox, FrameDecoder, WireBody, WireCommand};
+use gibson::wire::{
+    CommandLedger, FieldAdmission, FieldInbox, FrameDecoder, WireBody, WireCommand,
+};
 use gibson::world_view::WorldView;
 use gibson::Rect;
 use std::io::{self, Read, Write};
@@ -54,6 +56,11 @@ fn main() -> io::Result<()> {
     // WireCommand. A real presenter issues edits here as the user interacts.
     let mut outbound: SnapshotBridge<WireCommand> =
         SnapshotBridge::with_capacity(Capacity::new(16, 256));
+    // The per-id fate ledger: it correlates any ACK the producer returns back to the exact
+    // command it answers (Acknowledged / Refused / Failed), which the bridge's aggregate
+    // counts cannot. If this canary is run one-way (no acks routed back) the issued commands
+    // simply stay outstanding — reported honestly, never faked resolved.
+    let mut ledger = CommandLedger::new();
     let mut primary: Option<u64> = None;
     let mut retired: u64 = 0;
 
@@ -87,7 +94,14 @@ fn main() -> io::Result<()> {
                                 retired += 1;
                             }
                         }
-                        WireBody::Command(_) | WireBody::Ack(_) => {}
+                        WireBody::Ack(ack) => {
+                            // Route a returned verdict to the exact command it answers.
+                            if let Err(e) = ledger.apply_ack(ack) {
+                                eprintln!("ack for an untracked command: {e}");
+                            }
+                        }
+                        // A presenter does not receive commands; ignore any on this stream.
+                        WireBody::Command(_) => {}
                     }
                 }
                 Some(Err(e)) => {
@@ -103,12 +117,26 @@ fn main() -> io::Result<()> {
         eprintln!("stream ended uncleanly: {e}");
     }
 
-    // Demonstrate the bounded, ordered return channel (a real UI would issue real edits).
-    let _ = outbound.issue(WireCommand {
-        command_id: 0,
-        kind: 1,
-        arg: b"noop".to_vec(),
-    });
+    // Demonstrate the bounded, ordered return channel with real set-amplitude edits (kind 1,
+    // an 8-byte LE f64 arg — the producer's contract). Each is tracked in the ledger from the
+    // moment it is issued through the moment it is delivered toward the producer; a verdict ack,
+    // if it comes back, resolves it above. A full bidirectional run routes these command bytes
+    // to the producer's stdin (a two-FIFO harness); the deterministic proof of the whole loop
+    // lives in `tests/wire_transport.rs::bidirectional_acked_loop_all_verdicts_and_mutation`.
+    for (command_id, amplitude) in [(1u64, 2.0f64), (2, 99.0)] {
+        let cmd = WireCommand {
+            command_id,
+            kind: 1,
+            arg: amplitude.to_le_bytes().to_vec(),
+        };
+        if outbound.issue(cmd).is_accepted() {
+            // Keep the ledger in lockstep with the bridge: note on accept, note on delivery.
+            let _ = ledger.note_issued(command_id);
+            if outbound.next_command().is_some() {
+                let _ = ledger.note_delivered(command_id);
+            }
+        }
+    }
 
     let stdout = io::stdout();
     let mut out = stdout.lock();
@@ -160,6 +188,16 @@ fn main() -> io::Result<()> {
         outbound.commands_accepted(),
         outbound.commands_refused(),
         outbound.commands_conserved()
+    )?;
+    writeln!(
+        out,
+        "command ledger:  issued={} outstanding={} acknowledged={} refused={} failed={} conserves={}",
+        ledger.issued(),
+        ledger.outstanding(),
+        ledger.acknowledged(),
+        ledger.refused(),
+        ledger.failed(),
+        ledger.conserves()
     )?;
     Ok(())
 }

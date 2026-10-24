@@ -1072,3 +1072,390 @@ impl FieldInbox {
             && self.superseded() == self.stored_replace + self.stale
     }
 }
+
+// ---- bidirectional command ledger (the return channel's per-id fate) -----------------
+
+/// Explicit ceiling for a [`CommandLedger`] — the maximum number of **outstanding**
+/// (issued but not yet resolved) commands tracked at once. A resolved command frees its
+/// slot, so this bounds the ledger's live memory *regardless* of how many commands flow
+/// over its lifetime: a presenter that issues edits forever never grows the ledger past
+/// this, because every edit is eventually acknowledged, refused or failed and pruned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LedgerCapacity {
+    /// Maximum simultaneously-outstanding commands. [`CommandLedger::note_issued`] beyond
+    /// this is refused ([`LedgerReject::OutstandingCapReached`]) — backpressure, not growth.
+    pub max_outstanding: usize,
+}
+
+impl LedgerCapacity {
+    /// Default outstanding ceiling, matching [`crate::snapshot::Capacity`]'s default pending
+    /// command budget so the ledger and the bridge it shadows agree on in-flight headroom.
+    pub const DEFAULT_MAX_OUTSTANDING: usize = 256;
+
+    /// A capacity with the given outstanding ceiling.
+    pub fn new(max_outstanding: usize) -> Self {
+        Self { max_outstanding }
+    }
+}
+
+impl Default for LedgerCapacity {
+    fn default() -> Self {
+        Self::new(Self::DEFAULT_MAX_OUTSTANDING)
+    }
+}
+
+/// The lifecycle state of a command the presenter issued on the return channel. Mirrors the
+/// five-state [`AckStatus`] vocabulary, but as a *tracked local state* rather than a wire
+/// value. `Accepted` and `Delivered` are **live** (a slot in the ledger); `Acknowledged`,
+/// `Refused` and `Failed` are **terminal** and pruned to counters, so they are never a live
+/// state (see [`CommandLedger`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandState {
+    /// Issued and queued locally; not yet delivered over the wire.
+    Accepted,
+    /// Handed toward the producer; awaiting a verdict ack.
+    Delivered,
+    /// Terminal: the producer confirmed it (and the authoritative model moved).
+    Acknowledged,
+    /// Terminal: the producer declined it as typed backpressure — re-offer it.
+    Refused,
+    /// Terminal: the producer tried and could not apply it. Not a success (L7).
+    Failed,
+}
+
+impl CommandState {
+    /// Whether this state is terminal (no further transition is legal).
+    pub fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            CommandState::Acknowledged | CommandState::Refused | CommandState::Failed
+        )
+    }
+}
+
+/// A typed refusal from a [`CommandLedger`]. Every illegal correlation is named — a
+/// mis-correlated, duplicated, or out-of-contract ack is reported, never a silent drop and
+/// never a panic (L7). The ledger's own invariants hold across every one of these.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LedgerReject {
+    /// [`note_issued`](CommandLedger::note_issued) was called with a `command_id` that is not
+    /// strictly greater than the last one issued. This *enforces* the
+    /// [`WireCommand::command_id`] "monotonic per presenter session" contract at the ledger
+    /// boundary rather than merely trusting it: a still-outstanding id (a duplicate) and a
+    /// once-resolved-then-reused id are both refused, so a stale or duplicate ack can never be
+    /// mis-bound to a different command that happened to reuse the number.
+    NonMonotonicId {
+        /// The offending id.
+        command_id: u64,
+        /// The highest id issued so far, or `None` if none has been.
+        last_issued: Option<u64>,
+    },
+    /// [`note_issued`](CommandLedger::note_issued) at [`LedgerCapacity::max_outstanding`].
+    /// The command was not tracked; drain acks or retire it before issuing more.
+    OutstandingCapReached { capacity: usize },
+    /// A delivery or ack referenced a `command_id` that is not outstanding — never issued,
+    /// or already resolved and pruned. A post-resolution duplicate ack lands here (the
+    /// resolved entry no longer exists), reported rather than silently swallowed.
+    UnknownCommand { command_id: u64 },
+    /// [`note_delivered`](CommandLedger::note_delivered) for a command not in
+    /// [`CommandState::Accepted`] — it was already delivered. Delivery happens once.
+    NotAwaitingDelivery {
+        /// The offending command.
+        command_id: u64,
+        /// Its current live state.
+        state: CommandState,
+    },
+    /// An ack arrived for a command still only [`CommandState::Accepted`] — you cannot get a
+    /// verdict on an edit that was never delivered. A producer acking an undelivered command
+    /// is a protocol fault, surfaced rather than trusted.
+    AckBeforeDelivery { command_id: u64 },
+    /// An ack carried a non-terminal status ([`AckStatus::Accepted`] or
+    /// [`AckStatus::Delivered`]) on the return channel, which only carries verdicts.
+    NonTerminalAck {
+        /// The command the ack named.
+        command_id: u64,
+        /// The non-terminal status it carried.
+        status: AckStatus,
+    },
+}
+
+impl std::fmt::Display for LedgerReject {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LedgerReject::NonMonotonicId {
+                command_id,
+                last_issued,
+            } => {
+                write!(
+                    f,
+                    "command id {command_id} is not strictly greater than last issued {last_issued:?}"
+                )
+            }
+            LedgerReject::OutstandingCapReached { capacity } => {
+                write!(f, "outstanding-command ceiling {capacity} reached")
+            }
+            LedgerReject::UnknownCommand { command_id } => {
+                write!(f, "command id {command_id} is not outstanding")
+            }
+            LedgerReject::NotAwaitingDelivery { command_id, state } => {
+                write!(
+                    f,
+                    "command id {command_id} is {state:?}, not awaiting delivery"
+                )
+            }
+            LedgerReject::AckBeforeDelivery { command_id } => {
+                write!(f, "command id {command_id} was acked before delivery")
+            }
+            LedgerReject::NonTerminalAck { command_id, status } => {
+                write!(
+                    f,
+                    "ack for command id {command_id} carried non-terminal status {status:?}"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for LedgerReject {}
+
+/// The presenter-side fate tracker for commands issued on the return channel.
+///
+/// [`crate::snapshot::SnapshotBridge`] owns the ordered, bounded *queuing and delivery* of
+/// commands, with **aggregate** counts. What it cannot do is correlate a returned
+/// [`WireAck`] back to the specific command it answers: `acknowledge_delivered(n)` is a blind
+/// count bump with no identity and no verdict. The ledger closes that gap — it maps each
+/// `command_id` through [`Accepted`](CommandState::Accepted) →
+/// [`Delivered`](CommandState::Delivered) → one of the three terminal verdicts, so the
+/// presenter knows the exact fate of every edit and a producer cannot silently swallow one
+/// (Law L4 — every accepted command is accounted for; Law L7 — no condition is erased).
+///
+/// It is **bounded**: only outstanding (non-terminal) commands occupy a live slot, capped at
+/// [`LedgerCapacity::max_outstanding`]; a resolved command is pruned to a counter. It is
+/// **pure**: no I/O and no clock, so the whole correlation is deterministic and testable
+/// without a subprocess or a timing race.
+///
+/// # Boundary
+///
+/// Because a resolved command is pruned, a *second* ack for an already-resolved id cannot be
+/// told apart from an ack for an id that was never issued — both are
+/// [`LedgerReject::UnknownCommand`]. That is a deliberate memory/fidelity trade: the ledger
+/// is a live-fate tracker plus terminal tallies, not an unbounded audit log. The rejection is
+/// always typed; nothing is swallowed.
+#[derive(Debug, Clone)]
+pub struct CommandLedger {
+    live: HashMap<u64, CommandState>,
+    capacity: LedgerCapacity,
+    /// The highest `command_id` ever issued; `note_issued` requires strict increase, which
+    /// is what closes the id-reuse mis-correlation across the resolution boundary.
+    last_issued: Option<u64>,
+    issued: u64,
+    delivered_ever: u64,
+    acknowledged: u64,
+    refused: u64,
+    failed: u64,
+}
+
+impl Default for CommandLedger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CommandLedger {
+    /// A ledger with [`LedgerCapacity::default`].
+    pub fn new() -> Self {
+        Self::with_capacity(LedgerCapacity::default())
+    }
+
+    /// A ledger with an explicit capacity.
+    pub fn with_capacity(capacity: LedgerCapacity) -> Self {
+        Self {
+            live: HashMap::new(),
+            capacity,
+            last_issued: None,
+            issued: 0,
+            delivered_ever: 0,
+            acknowledged: 0,
+            refused: 0,
+            failed: 0,
+        }
+    }
+
+    /// The ceiling this ledger enforces.
+    pub fn capacity(&self) -> LedgerCapacity {
+        self.capacity
+    }
+
+    /// Begin tracking a command the presenter has just issued (accepted by the bridge). The
+    /// `command_id` must be **strictly greater than every id issued before** (enforcing the
+    /// [`WireCommand::command_id`] monotonicity contract), and the ledger must be below its
+    /// outstanding ceiling.
+    ///
+    /// Returns [`LedgerReject::NonMonotonicId`] for an id that is not strictly increasing — a
+    /// duplicate of a still-outstanding id *and* a reuse of a once-resolved id are both caught,
+    /// so a stale or duplicate ack can never be mis-bound to a reused number. Returns
+    /// [`LedgerReject::OutstandingCapReached`] at the ceiling. The command is not tracked in
+    /// either case (and `last_issued` is unchanged on refusal).
+    pub fn note_issued(&mut self, command_id: u64) -> Result<(), LedgerReject> {
+        if let Some(last) = self.last_issued {
+            if command_id <= last {
+                return Err(LedgerReject::NonMonotonicId {
+                    command_id,
+                    last_issued: self.last_issued,
+                });
+            }
+        }
+        if self.live.len() >= self.capacity.max_outstanding {
+            return Err(LedgerReject::OutstandingCapReached {
+                capacity: self.capacity.max_outstanding,
+            });
+        }
+        self.live.insert(command_id, CommandState::Accepted);
+        self.last_issued = Some(command_id);
+        self.issued += 1;
+        Ok(())
+    }
+
+    /// Record that an accepted command has been delivered toward the producer (handed out of
+    /// the bridge and written to the wire). Legal exactly once, from
+    /// [`Accepted`](CommandState::Accepted).
+    ///
+    /// Returns [`LedgerReject::UnknownCommand`] if the id is not outstanding, or
+    /// [`LedgerReject::NotAwaitingDelivery`] if it was already delivered.
+    pub fn note_delivered(&mut self, command_id: u64) -> Result<(), LedgerReject> {
+        match self.live.get_mut(&command_id) {
+            None => Err(LedgerReject::UnknownCommand { command_id }),
+            Some(state @ CommandState::Accepted) => {
+                *state = CommandState::Delivered;
+                self.delivered_ever += 1;
+                Ok(())
+            }
+            Some(&mut state) => Err(LedgerReject::NotAwaitingDelivery { command_id, state }),
+        }
+    }
+
+    /// Apply a verdict ack returned by the producer, resolving the command to its terminal
+    /// fate and pruning it from the live set. On success returns the terminal
+    /// [`CommandState`] ([`Acknowledged`](CommandState::Acknowledged),
+    /// [`Refused`](CommandState::Refused) or [`Failed`](CommandState::Failed)).
+    ///
+    /// Rejections (all typed, nothing swallowed), checked in this order — identity first, so a
+    /// caller branching on the reject type always learns "was this command ever mine?" before
+    /// anything about the ack's contents:
+    /// * [`LedgerReject::UnknownCommand`] — no outstanding command with that id.
+    /// * [`LedgerReject::AckBeforeDelivery`] — the command was issued but never delivered.
+    /// * [`LedgerReject::NonTerminalAck`] — the ack status was `Accepted`/`Delivered`.
+    pub fn apply_ack(&mut self, ack: WireAck) -> Result<CommandState, LedgerReject> {
+        match self.live.get(&ack.command_id) {
+            None => Err(LedgerReject::UnknownCommand {
+                command_id: ack.command_id,
+            }),
+            Some(CommandState::Accepted) => Err(LedgerReject::AckBeforeDelivery {
+                command_id: ack.command_id,
+            }),
+            Some(CommandState::Delivered) => {
+                let terminal = match ack.status {
+                    AckStatus::Acknowledged => CommandState::Acknowledged,
+                    AckStatus::Refused => CommandState::Refused,
+                    AckStatus::Failed => CommandState::Failed,
+                    AckStatus::Accepted | AckStatus::Delivered => {
+                        return Err(LedgerReject::NonTerminalAck {
+                            command_id: ack.command_id,
+                            status: ack.status,
+                        });
+                    }
+                };
+                self.live.remove(&ack.command_id);
+                match terminal {
+                    CommandState::Acknowledged => self.acknowledged += 1,
+                    CommandState::Refused => self.refused += 1,
+                    CommandState::Failed => self.failed += 1,
+                    // Unreachable: `terminal` is one of the three above by construction.
+                    CommandState::Accepted | CommandState::Delivered => unreachable!(),
+                }
+                Ok(terminal)
+            }
+            // Terminal states are pruned, so a live entry is only ever Accepted/Delivered.
+            Some(&other) => Err(LedgerReject::NotAwaitingDelivery {
+                command_id: ack.command_id,
+                state: other,
+            }),
+        }
+    }
+
+    /// The live state of a command, or `None` if it was never issued or has been resolved
+    /// (terminal states are pruned). A returned state is always `Accepted` or `Delivered`.
+    pub fn state(&self, command_id: u64) -> Option<CommandState> {
+        self.live.get(&command_id).copied()
+    }
+
+    /// How many commands are currently outstanding (live — `Accepted` or `Delivered`).
+    pub fn outstanding(&self) -> usize {
+        self.live.len()
+    }
+
+    /// Live commands still only `Accepted` (issued, not yet delivered).
+    pub fn accepted_now(&self) -> u64 {
+        self.live
+            .values()
+            .filter(|&&s| s == CommandState::Accepted)
+            .count() as u64
+    }
+
+    /// Live commands `Delivered` and awaiting a verdict.
+    pub fn delivered_now(&self) -> u64 {
+        self.live
+            .values()
+            .filter(|&&s| s == CommandState::Delivered)
+            .count() as u64
+    }
+
+    /// Commands ever issued (tracked).
+    pub fn issued(&self) -> u64 {
+        self.issued
+    }
+    /// Commands ever delivered (the `Accepted` → `Delivered` transition count).
+    pub fn delivered_ever(&self) -> u64 {
+        self.delivered_ever
+    }
+    /// Commands resolved as [`Acknowledged`](CommandState::Acknowledged).
+    pub fn acknowledged(&self) -> u64 {
+        self.acknowledged
+    }
+    /// Commands resolved as [`Refused`](CommandState::Refused).
+    pub fn refused(&self) -> u64 {
+        self.refused
+    }
+    /// Commands resolved as [`Failed`](CommandState::Failed).
+    pub fn failed(&self) -> u64 {
+        self.failed
+    }
+    /// Commands resolved to any terminal fate.
+    pub fn resolved(&self) -> u64 {
+        self.acknowledged + self.refused + self.failed
+    }
+
+    /// The command-fate conservation receipt (Law L4/L7). Three independent identities, each of
+    /// which breaks if a transition forgot to move its bookkeeping. Crucially,
+    /// [`accepted_now`](Self::accepted_now) and [`delivered_now`](Self::delivered_now) scan the
+    /// live map *independently* of the counters, so a map/counter desync is actually caught
+    /// rather than being hidden by a definitional restatement:
+    ///
+    /// * **Every issued command is in exactly one place:**
+    ///   `issued == accepted_now + delivered_ever` (live `Accepted` scan vs the delivered
+    ///   counter).
+    /// * **Everything delivered is either awaiting or resolved:**
+    ///   `delivered_ever == delivered_now + resolved` (live `Delivered` scan vs the terminal
+    ///   counters).
+    /// * **No terminal state ever leaks into the live set:**
+    ///   `outstanding == accepted_now + delivered_now` — every live entry is `Accepted` or
+    ///   `Delivered`, nothing else.
+    ///
+    /// Together these force `issued == accepted_now + delivered_now + resolved`: nothing the
+    /// presenter issued is unaccounted for and nothing was double-counted.
+    pub fn conserves(&self) -> bool {
+        self.issued == self.accepted_now() + self.delivered_ever
+            && self.delivered_ever == self.delivered_now() + self.resolved()
+            && self.outstanding() as u64 == self.accepted_now() + self.delivered_now()
+    }
+}
