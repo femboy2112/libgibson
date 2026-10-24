@@ -39,6 +39,18 @@ run cargo $STABLE clippy --all-targets --all-features -- -D warnings
 step "tests"
 run cargo $STABLE test
 
+# The four terminal-hangup liveness tests are intentionally #[ignore] in the
+# ordinary parallel suite: CI runs them in its isolated, serial PTY job. A
+# release preflight must not mistake their compilation for their execution.
+# Run ONLY those two binaries with --include-ignored, serially, on the supported
+# Linux release host. Fail rather than silently accepting a skipped safety gate.
+step "terminal hangup regressions (Linux PTY, serial, including ignored)"
+if [ "$(uname -s)" = "Linux" ]; then
+    run cargo $STABLE test --test pty_hangup --test pty_hangup_restore -- --test-threads=1 --include-ignored
+else
+    ok "non-Linux host: PTY hangup gate requires a supported Linux release runner"
+fi
+
 step "rustdoc (-D warnings)"
 if RUSTDOCFLAGS="-D warnings" cargo $STABLE doc --no-deps >/dev/null 2>&1; then ok "rustdoc"; else no "rustdoc"; fi
 
