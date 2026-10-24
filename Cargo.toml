@@ -43,6 +43,14 @@ default = []
 # Rust 1.85 on any bump (a future cpal/alsa point release could raise its MSRV without a
 # semver-major, silently breaking our floor). rtrb has a 1.38 MSRV (ample headroom).
 audio-cpal = ["dep:cpal", "dep:rtrb"]
+# Optional DEFLATE segment codec for `gibson::media`. The base codec (Store + deterministic
+# PackBits RLE) is always compiled and dependency-free; enabling `media-deflate` adds a third
+# per-segment method backed by miniz_oxide (pure-Rust DEFLATE), chosen only when it is
+# strictly smaller than Store/RLE. Off by default, so a normal build and the MSRV `--lib`
+# check pull no extra dependency. DEFLATE *decode* is standard RFC 1951 (any inflater reads
+# it); only the exact *encoder* bytes depend on the miniz_oxide version, so an asset stays
+# portable but byte-for-byte reproducibility is pinned to that version (hence the exact pin).
+media-deflate = ["dep:miniz_oxide"]
 
 [dependencies]
 taffy = "0.14"
@@ -55,6 +63,11 @@ libc = "0.2"
 # Optional — only compiled under the `audio-cpal` feature (see [features] above).
 cpal = { version = "=0.18.2", optional = true }
 rtrb = { version = "0.3", optional = true }
+# Optional — only compiled under the `media-deflate` feature (see [features] above).
+# No declared MSRV (historically builds on Rust 1.56+, well under our 1.85 floor); pinned
+# exactly so a bump cannot silently raise the effective MSRV or change encoder output bytes.
+# default-features off: only `with-alloc` is needed for compress_to_vec / decompress_to_vec.
+miniz_oxide = { version = "=0.8.9", optional = true, default-features = false, features = ["with-alloc"] }
 
 [dev-dependencies]
 portable-pty = "0.9"
