@@ -59,6 +59,7 @@ pub mod glyph;
 /// Layered spatial hit testing and pointer capture (issue #127).
 pub mod hit_test;
 pub mod input;
+pub mod instrument_telemetry;
 pub mod layout;
 pub mod node;
 /// Validated numeric editors: schema-checked edits that refuse out-of-range or
