@@ -5,7 +5,7 @@ Pure standard library; run directly:  python3 bindings/python/test_wire.py
 
 The Rust side gates the *same* golden vector in CI (`tests/wire_conformance.rs`): Rust
 decodes these Python-produced bytes and re-encodes them byte-for-byte. This file is the
-Python half — it is not run by CI, so run it locally when you touch the format.
+Python half, run by CI's `python-wire` job (and locally whenever you touch the format).
 """
 
 import math
@@ -89,6 +89,56 @@ def test_stale_vs_restart_ordering():
     # Lexicographic (epoch, sequence): higher epoch wins; within an epoch, higher seq wins.
     assert (1, 0) > (0, 999)
     assert (0, 5) < (0, 6)
+
+
+def test_producer_command_verdicts():
+    # The producer's return-channel contract (mirrors the Rust ProducerModel in
+    # tests/wire_transport.rs): set-amplitude (kind 1) with an in-range finite f64 is
+    # acknowledged and carries the applied value; out of range or non-finite is refused; a
+    # wrong-length arg or an unknown kind is failed.
+    import producer
+
+    def amp(v):
+        return struct.pack("<d", v)
+
+    assert producer.classify_command(1, amp(3.0)) == (wire.ACK_ACKNOWLEDGED, 3.0)
+    assert producer.classify_command(1, amp(0.0)) == (wire.ACK_ACKNOWLEDGED, 0.0)
+    assert producer.classify_command(1, amp(10.0)) == (wire.ACK_ACKNOWLEDGED, 10.0)
+    assert producer.classify_command(1, amp(99.0)) == (wire.ACK_REFUSED, None)
+    assert producer.classify_command(1, amp(-0.5)) == (wire.ACK_REFUSED, None)
+    assert producer.classify_command(1, amp(float("nan"))) == (wire.ACK_REFUSED, None)
+    assert producer.classify_command(1, amp(float("inf"))) == (wire.ACK_REFUSED, None)
+    assert producer.classify_command(1, b"\x00\x00") == (wire.ACK_FAILED, None)
+    assert producer.classify_command(7, amp(1.0)) == (wire.ACK_FAILED, None)
+
+
+def test_producer_acknowledged_command_mutates_field():
+    # The loop closure: an acknowledged set-amplitude scales the next authoritative field;
+    # a refused one does not touch the model.
+    import producer
+
+    base = producer.gaussian_field(5, 5, 1.0, 1.0)
+    scaled = producer.gaussian_field(5, 5, 1.0, 3.0)
+    assert scaled == [3.0 * v for v in base]
+    assert producer.classify_command(1, struct.pack("<d", 99.0)) == (wire.ACK_REFUSED, None)
+
+
+def test_command_ack_wire_round_trip():
+    # The full return-channel loop at the Python byte layer: encode a command, the producer
+    # classifies it, encode the verdict ack, decode it back — the id and status survive.
+    import producer
+
+    cmd_bytes = wire.encode_command(1, 0, 10, command_id=10, kind=1,
+                                    arg=struct.pack("<d", 2.5))
+    msg, consumed = wire.decode_message(cmd_bytes)
+    assert consumed == len(cmd_bytes) and msg.kind == wire.MSG_COMMAND
+    status, value = producer.classify_command(msg.body["kind"], msg.body["arg"])
+    assert (status, value) == (wire.ACK_ACKNOWLEDGED, 2.5)
+    ack_bytes = wire.encode_ack(1, 0, 0, msg.body["command_id"], status)
+    ack, _ = wire.decode_message(ack_bytes)
+    assert ack.kind == wire.MSG_ACK
+    assert ack.body["command_id"] == 10
+    assert ack.body["status"] == wire.ACK_ACKNOWLEDGED
 
 
 def main():

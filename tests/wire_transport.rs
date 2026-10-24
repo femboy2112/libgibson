@@ -16,9 +16,10 @@ use gibson::field_view::{FieldExtent, FieldView, Sample};
 use gibson::shape::Point;
 use gibson::snapshot::{Admission, Capacity, RefuseReason, SnapshotBridge};
 use gibson::wire::{
-    encode_ack, encode_command, encode_field, AckStatus, FieldAdmission, FieldInbox, FrameDecoder,
-    InboxCapacity, SourceCursor, WireAck, WireBody, WireCommand, WireError, WireField, WireLimits,
-    HEADER_BYTES, MAGIC, VERSION,
+    encode_ack, encode_command, encode_field, AckStatus, CommandLedger, CommandState,
+    FieldAdmission, FieldInbox, FrameDecoder, InboxCapacity, LedgerCapacity, LedgerReject,
+    RetentionEnvelope, SourceCursor, WireAck, WireBody, WireCommand, WireError, WireField,
+    WireLimits, HEADER_BYTES, MAGIC, VERSION,
 };
 
 // ---- builders -------------------------------------------------------------------------
@@ -748,4 +749,583 @@ fn model_tick_travels_independently_of_sequence() {
     } else {
         panic!("not a field");
     }
+}
+
+// ======================================================================================
+// Command return-channel ledger — per-command_id fate correlation (R6, Laws L4/L7).
+//
+// The SnapshotBridge owns ordered bounded queuing+delivery with aggregate counts; the
+// CommandLedger owns the thing it structurally cannot: correlating a returned ack back to
+// the specific command it answers and advancing that command's fate. These are pure,
+// deterministic state-machine tests — no clock, no subprocess, nothing to flake on.
+// ======================================================================================
+
+/// Legal path: issue -> deliver -> ack(Acknowledged). State advances at each step, the
+/// conservation receipt holds throughout, and the terminal tally is exact.
+#[test]
+fn ledger_happy_path_issue_deliver_ack() {
+    let mut led = CommandLedger::new();
+    assert!(led.conserves());
+
+    led.note_issued(7).unwrap();
+    assert_eq!(led.state(7), Some(CommandState::Accepted));
+    assert_eq!(led.outstanding(), 1);
+    assert!(led.conserves());
+
+    led.note_delivered(7).unwrap();
+    assert_eq!(led.state(7), Some(CommandState::Delivered));
+    assert_eq!(led.delivered_ever(), 1);
+    assert!(led.conserves());
+
+    let fate = led
+        .apply_ack(WireAck {
+            command_id: 7,
+            status: AckStatus::Acknowledged,
+        })
+        .unwrap();
+    assert_eq!(fate, CommandState::Acknowledged);
+    assert_eq!(led.state(7), None, "resolved commands are pruned");
+    assert_eq!(led.acknowledged(), 1);
+    assert_eq!(led.resolved(), 1);
+    assert_eq!(led.outstanding(), 0);
+    assert!(led.conserves());
+}
+
+/// Refused and Failed are distinct terminal verdicts, each tallied on its own counter.
+#[test]
+fn ledger_refuse_and_fail_are_distinct_terminals() {
+    let mut led = CommandLedger::new();
+    for id in [1u64, 2] {
+        led.note_issued(id).unwrap();
+        led.note_delivered(id).unwrap();
+    }
+    assert_eq!(
+        led.apply_ack(WireAck {
+            command_id: 1,
+            status: AckStatus::Refused
+        })
+        .unwrap(),
+        CommandState::Refused
+    );
+    assert_eq!(
+        led.apply_ack(WireAck {
+            command_id: 2,
+            status: AckStatus::Failed
+        })
+        .unwrap(),
+        CommandState::Failed
+    );
+    assert_eq!(led.refused(), 1);
+    assert_eq!(led.failed(), 1);
+    assert_eq!(led.acknowledged(), 0);
+    assert_eq!(led.resolved(), 2);
+    assert!(led.conserves());
+}
+
+/// Command ids must strictly increase (ordered identity is load-bearing): a duplicate of a
+/// still-outstanding id, and any id not greater than the last issued, are both refused.
+#[test]
+fn ledger_rejects_non_monotonic_id() {
+    let mut led = CommandLedger::new();
+    led.note_issued(42).unwrap();
+    // A duplicate of the outstanding id.
+    assert_eq!(
+        led.note_issued(42),
+        Err(LedgerReject::NonMonotonicId {
+            command_id: 42,
+            last_issued: Some(42)
+        })
+    );
+    // A lower id after a higher one.
+    assert_eq!(
+        led.note_issued(10),
+        Err(LedgerReject::NonMonotonicId {
+            command_id: 10,
+            last_issued: Some(42)
+        })
+    );
+    assert_eq!(led.issued(), 1, "neither refused issue was counted");
+    assert!(led.conserves());
+}
+
+/// Finding-1 closure (evil-morty): a `command_id` reused AFTER it resolved and was pruned is
+/// refused, so a stale/duplicate ack can never be mis-bound to a different command wearing the
+/// same number. Without the monotonicity guard the reuse was accepted and the arithmetic
+/// receipt stayed green while the fate was mis-correlated.
+#[test]
+fn ledger_closes_id_reuse_across_resolution() {
+    let mut led = CommandLedger::new();
+    led.note_issued(1).unwrap();
+    led.note_delivered(1).unwrap();
+    led.apply_ack(WireAck {
+        command_id: 1,
+        status: AckStatus::Acknowledged,
+    })
+    .unwrap();
+    assert_eq!(led.acknowledged(), 1);
+    // Id 1 is resolved and pruned — but it cannot be re-admitted.
+    assert_eq!(
+        led.note_issued(1),
+        Err(LedgerReject::NonMonotonicId {
+            command_id: 1,
+            last_issued: Some(1)
+        })
+    );
+    // A stale duplicate ack for the resolved id finds nothing to bind to — typed, not silent,
+    // and the earlier verdict is untouched.
+    assert_eq!(
+        led.apply_ack(WireAck {
+            command_id: 1,
+            status: AckStatus::Failed
+        }),
+        Err(LedgerReject::UnknownCommand { command_id: 1 })
+    );
+    assert_eq!(led.acknowledged(), 1, "the real verdict stands");
+    assert_eq!(led.failed(), 0);
+    assert!(led.conserves());
+}
+
+/// Delivering or acking a never-issued id is UnknownCommand, not a silent no-op.
+#[test]
+fn ledger_rejects_unknown_command() {
+    let mut led = CommandLedger::new();
+    assert_eq!(
+        led.note_delivered(5),
+        Err(LedgerReject::UnknownCommand { command_id: 5 })
+    );
+    assert_eq!(
+        led.apply_ack(WireAck {
+            command_id: 5,
+            status: AckStatus::Acknowledged
+        }),
+        Err(LedgerReject::UnknownCommand { command_id: 5 })
+    );
+    assert!(led.conserves());
+}
+
+/// A verdict cannot land on a command that was issued but never delivered.
+#[test]
+fn ledger_rejects_ack_before_delivery() {
+    let mut led = CommandLedger::new();
+    led.note_issued(9).unwrap();
+    assert_eq!(
+        led.apply_ack(WireAck {
+            command_id: 9,
+            status: AckStatus::Acknowledged
+        }),
+        Err(LedgerReject::AckBeforeDelivery { command_id: 9 })
+    );
+    assert_eq!(led.state(9), Some(CommandState::Accepted), "unchanged");
+    assert!(led.conserves());
+}
+
+/// The return channel carries only verdicts; a non-terminal ack status is refused and the
+/// command is untouched.
+#[test]
+fn ledger_rejects_non_terminal_ack() {
+    let mut led = CommandLedger::new();
+    led.note_issued(3).unwrap();
+    led.note_delivered(3).unwrap();
+    for status in [AckStatus::Accepted, AckStatus::Delivered] {
+        assert_eq!(
+            led.apply_ack(WireAck {
+                command_id: 3,
+                status
+            }),
+            Err(LedgerReject::NonTerminalAck {
+                command_id: 3,
+                status
+            })
+        );
+    }
+    assert_eq!(led.state(3), Some(CommandState::Delivered), "unresolved");
+    assert!(led.conserves());
+}
+
+/// Delivery happens once; a second note_delivered is NotAwaitingDelivery.
+#[test]
+fn ledger_rejects_double_delivery() {
+    let mut led = CommandLedger::new();
+    led.note_issued(1).unwrap();
+    led.note_delivered(1).unwrap();
+    assert_eq!(
+        led.note_delivered(1),
+        Err(LedgerReject::NotAwaitingDelivery {
+            command_id: 1,
+            state: CommandState::Delivered
+        })
+    );
+    assert_eq!(
+        led.delivered_ever(),
+        1,
+        "the second delivery was not counted"
+    );
+    assert!(led.conserves());
+}
+
+/// The outstanding ceiling refuses a new issue, and resolving one frees its slot so the
+/// next issue is accepted — bounded, with backpressure, never silent growth.
+#[test]
+fn ledger_outstanding_cap_refuses_then_frees_slot() {
+    let mut led = CommandLedger::with_capacity(LedgerCapacity::new(2));
+    led.note_issued(1).unwrap();
+    led.note_issued(2).unwrap();
+    assert_eq!(
+        led.note_issued(3),
+        Err(LedgerReject::OutstandingCapReached { capacity: 2 })
+    );
+    assert_eq!(led.outstanding(), 2);
+
+    // Resolve one; its slot frees.
+    led.note_delivered(1).unwrap();
+    led.apply_ack(WireAck {
+        command_id: 1,
+        status: AckStatus::Acknowledged,
+    })
+    .unwrap();
+    assert_eq!(led.outstanding(), 1);
+    led.note_issued(3).unwrap();
+    assert_eq!(led.outstanding(), 2);
+    assert!(led.conserves());
+}
+
+/// Documented boundary: a second ack for an already-resolved (and pruned) command reads as
+/// UnknownCommand — a typed rejection, never a silent swallow or a panic.
+#[test]
+fn ledger_post_resolution_duplicate_ack_is_typed_unknown() {
+    let mut led = CommandLedger::new();
+    led.note_issued(8).unwrap();
+    led.note_delivered(8).unwrap();
+    led.apply_ack(WireAck {
+        command_id: 8,
+        status: AckStatus::Acknowledged,
+    })
+    .unwrap();
+    assert_eq!(
+        led.apply_ack(WireAck {
+            command_id: 8,
+            status: AckStatus::Failed
+        }),
+        Err(LedgerReject::UnknownCommand { command_id: 8 }),
+        "a stale duplicate ack cannot flip an already-acknowledged command to Failed"
+    );
+    assert_eq!(led.acknowledged(), 1, "the terminal tally is unchanged");
+    assert_eq!(led.failed(), 0);
+    assert!(led.conserves());
+}
+
+/// A long mixed sequence keeps the conservation receipt true at every step and lands the
+/// exact tallies: issued == accepted_now + delivered_now + resolved.
+#[test]
+fn ledger_conserves_across_mixed_sequence() {
+    let mut led = CommandLedger::new();
+    // Issue 5, deliver 4, resolve 3 (one of each verdict), leaving 1 accepted + 1 delivered.
+    for id in 1u64..=5 {
+        led.note_issued(id).unwrap();
+        assert!(led.conserves());
+    }
+    for id in 1u64..=4 {
+        led.note_delivered(id).unwrap();
+        assert!(led.conserves());
+    }
+    led.apply_ack(WireAck {
+        command_id: 1,
+        status: AckStatus::Acknowledged,
+    })
+    .unwrap();
+    led.apply_ack(WireAck {
+        command_id: 2,
+        status: AckStatus::Refused,
+    })
+    .unwrap();
+    led.apply_ack(WireAck {
+        command_id: 3,
+        status: AckStatus::Failed,
+    })
+    .unwrap();
+    assert!(led.conserves());
+    assert_eq!(led.issued(), 5);
+    assert_eq!(led.resolved(), 3);
+    assert_eq!(led.accepted_now(), 1, "command 5: issued, never delivered");
+    assert_eq!(led.delivered_now(), 1, "command 4: delivered, unresolved");
+    assert_eq!(led.outstanding(), 2);
+    // issued(5) == accepted_now(1) + delivered_now(1) + resolved(3).
+    assert_eq!(
+        led.issued(),
+        led.accepted_now() + led.delivered_now() + led.resolved()
+    );
+}
+
+// ---- the bidirectional acked canary, proven in-process and deterministically ----------
+
+/// A minimal producer model with real command validation — the Rust mirror of
+/// `bindings/python/producer.py`'s command contract. A `set-amplitude` (kind 1) with a
+/// finite f64 arg in [0, 10] is Acknowledged and MUTATES the model; out of range is Refused;
+/// a bad arg length or unknown kind is Failed. An Acknowledged command therefore changes the
+/// next authoritative field — closing the loop the one-way canary left open.
+struct ProducerModel {
+    amplitude: f64,
+}
+
+impl ProducerModel {
+    const KIND_SET_AMPLITUDE: u32 = 1;
+
+    fn new() -> Self {
+        Self { amplitude: 1.0 }
+    }
+
+    fn classify_and_apply(&mut self, cmd: &WireCommand) -> AckStatus {
+        if cmd.kind != Self::KIND_SET_AMPLITUDE {
+            return AckStatus::Failed; // unknown command kind
+        }
+        let Ok(bytes) = <[u8; 8]>::try_from(cmd.arg.as_slice()) else {
+            return AckStatus::Failed; // malformed argument length
+        };
+        let v = f64::from_le_bytes(bytes);
+        if !v.is_finite() || !(0.0..=10.0).contains(&v) {
+            return AckStatus::Refused; // out-of-contract value: typed backpressure
+        }
+        self.amplitude = v;
+        AckStatus::Acknowledged
+    }
+
+    /// The authoritative 1x1 field the producer currently depicts (value == amplitude).
+    fn field(&self, tick: u64) -> WireField {
+        WireField {
+            extent: FieldExtent::new(Point::new(0.0, 0.0), 1.0, 1.0, 1, 1).unwrap(),
+            model_tick: tick,
+            data: vec![self.amplitude],
+            mask: None,
+        }
+    }
+}
+
+/// THE R6 PROOF. The full presenter<->producer command/ack loop, driven entirely in-process
+/// through real `gibson::wire` encode/decode on both sides — no subprocess, no pipe, no
+/// clock, so it cannot flake (this is exactly the "blind-subprocess risk" that deferred the
+/// bidirectional canary; the correctness lives in the deterministic protocol, not the pipe).
+///
+/// It exercises all three verdicts AND the authoritative-model mutation: the presenter issues
+/// three edits (a valid set-amplitude, an out-of-range one, an unknown kind); the producer
+/// validates each, acks its true fate, and only the valid one moves its model; the presenter
+/// correlates every ack back to the exact command via the `CommandLedger`.
+#[test]
+fn bidirectional_acked_loop_all_verdicts_and_mutation() {
+    const SRC: u64 = 1;
+    let mut model = ProducerModel::new();
+    assert_eq!(model.amplitude, 1.0);
+
+    // Presenter state: the bounded return-channel bridge + the per-id fate ledger.
+    let mut bridge: SnapshotBridge<WireCommand> =
+        SnapshotBridge::with_capacity(Capacity::new(16, 256));
+    let mut ledger = CommandLedger::new();
+
+    // The decoders standing in for the two pipe directions.
+    let mut to_producer = FrameDecoder::new(); // presenter -> producer (commands)
+    let mut to_presenter = FrameDecoder::new(); // producer -> presenter (acks)
+
+    let amp = |v: f64| v.to_le_bytes().to_vec();
+    let edits = [
+        (10u64, 1u32, amp(3.0)),   // valid   -> Acknowledged, amplitude := 3.0
+        (11u64, 1u32, amp(99.0)),  // out of range -> Refused (no mutation)
+        (12u64, 7u32, vec![0, 0]), // unknown kind -> Failed  (no mutation)
+    ];
+    let expected = [
+        CommandState::Acknowledged,
+        CommandState::Refused,
+        CommandState::Failed,
+    ];
+
+    for (i, (id, kind, arg)) in edits.iter().enumerate() {
+        let cmd = WireCommand {
+            command_id: *id,
+            kind: *kind,
+            arg: arg.clone(),
+        };
+        // Presenter issues on the bounded bridge and begins tracking its fate.
+        assert!(matches!(bridge.issue(cmd.clone()), Admission::Accepted));
+        ledger.note_issued(*id).unwrap();
+
+        // Presenter delivers: drain from the bridge, encode to the wire, note delivery.
+        let outgoing = bridge.next_command().expect("one pending command");
+        let cmd_bytes = encode_command(SRC, SourceCursor::new(0, i as u64), &outgoing);
+        ledger.note_delivered(*id).unwrap();
+
+        // Producer receives, validates, applies, and acks its true verdict.
+        to_producer.push(&cmd_bytes).unwrap();
+        let got = to_producer.next_message().unwrap().unwrap();
+        let WireBody::Command(decoded) = got.body else {
+            panic!("expected a command frame");
+        };
+        assert_eq!(decoded, cmd, "command crossed the wire bit-exactly");
+        let status = model.classify_and_apply(&decoded);
+        let ack_bytes = encode_ack(
+            SRC,
+            SourceCursor::new(0, i as u64),
+            WireAck {
+                command_id: decoded.command_id,
+                status,
+            },
+        );
+
+        // Presenter receives the ack and correlates it back to the exact command.
+        to_presenter.push(&ack_bytes).unwrap();
+        let got = to_presenter.next_message().unwrap().unwrap();
+        let WireBody::Ack(ack) = got.body else {
+            panic!("expected an ack frame");
+        };
+        let fate = ledger.apply_ack(ack).unwrap();
+        assert_eq!(fate, expected[i], "verdict correlated to the right command");
+        assert!(ledger.conserves());
+    }
+
+    // Exactly one of each verdict; nothing outstanding; the receipt holds.
+    assert_eq!(ledger.acknowledged(), 1);
+    assert_eq!(ledger.refused(), 1);
+    assert_eq!(ledger.failed(), 1);
+    assert_eq!(ledger.outstanding(), 0);
+    assert!(ledger.conserves());
+
+    // The authoritative model moved for the acknowledged edit ONLY (3.0), not the refused
+    // (99.0) or failed (unknown) ones.
+    assert_eq!(model.amplitude, 3.0);
+
+    // And that mutation is visible as a new authoritative field the presenter decodes: the
+    // producer publishes its post-edit field; the presenter's bounded inbox stores it and the
+    // sampled value is the applied amplitude, not the 1.0 default.
+    let mut inbox = FieldInbox::new();
+    let field_bytes = encode_field(
+        SRC,
+        SourceCursor::new(0, 100),
+        &model.field(7),
+        WireLimits::default(),
+    )
+    .unwrap();
+    let mut dec = FrameDecoder::new();
+    dec.push(&field_bytes).unwrap();
+    let WireBody::Field(field) = dec.next_message().unwrap().unwrap().body else {
+        panic!("expected a field frame");
+    };
+    assert!(inbox
+        .admit(SRC, SourceCursor::new(0, 100), field)
+        .is_stored());
+    let stored = inbox.latest(SRC).unwrap();
+    let view = FieldView::new(stored.extent, &stored.data, stored.mask.as_deref()).unwrap();
+    assert_eq!(view.sample(0, 0), Some(Sample::Value(3.0)));
+    assert_eq!(stored.model_tick, 7);
+}
+
+// ======================================================================================
+// Cross-layer retention envelope — the deterministic resource-envelope slice of the #143
+// observatory. No wall clock: the gate is byte/count-based, so a sustained-session memory
+// bound is reproducible and cannot flake. The negative control proves the gate can FAIL —
+// a green result means the bound was exercised and held, not that everything was waved through.
+// ======================================================================================
+
+/// A small square field whose data is `value` everywhere, optionally masked, on a unit grid.
+fn flat_field(cols: usize, rows: usize, tick: u64, value: f64, masked: bool) -> WireField {
+    let n = cols * rows;
+    WireField {
+        extent: FieldExtent::new(Point::new(0.0, 0.0), 1.0, 1.0, cols, rows).unwrap(),
+        model_tick: tick,
+        data: vec![value; n],
+        mask: if masked { Some(vec![true; n]) } else { None },
+    }
+}
+
+/// The honest current-RSS witness counts data bytes plus one byte per cell when a mask rides
+/// along, and the worst case is the documented max_sources * max_field_cells * 9.
+#[test]
+fn field_inbox_retained_bytes_tracks_data_and_mask() {
+    let limits = WireLimits::new(1 << 16, 64);
+    let mut inbox = FieldInbox::with_capacity(InboxCapacity::new(4));
+    // One 4x4 field without a mask: 16 cells * 8 bytes.
+    inbox.admit(1, SourceCursor::new(0, 1), flat_field(4, 4, 1, 0.5, false));
+    assert_eq!(inbox.retained_bytes(), 16 * 8);
+    // A second source, 4x4 WITH a mask: 16 * (8 + 1).
+    inbox.admit(2, SourceCursor::new(0, 1), flat_field(4, 4, 1, 0.5, true));
+    assert_eq!(inbox.retained_bytes(), 16 * 8 + 16 * 9);
+    // The provable ceiling: 4 sources * 64 cells * (8 + 1).
+    assert_eq!(inbox.worst_case_retained_bytes(limits), 4 * 64 * 9);
+    assert!(inbox.retained_bytes() <= inbox.worst_case_retained_bytes(limits));
+}
+
+/// A sustained session (thousands of latest-wins frames across a few rotating sources) keeps
+/// retained memory flat — never growing with the frame count — and stays strictly within the
+/// provable envelope at every observation, with every conservation receipt intact.
+#[test]
+fn sustained_session_stays_within_retention_envelope() {
+    let limits = WireLimits::new(1 << 16, 64);
+    let cap = InboxCapacity::new(4);
+    let mut inbox = FieldInbox::with_capacity(cap);
+    let mut env = RetentionEnvelope::new(inbox.worst_case_retained_bytes(limits));
+
+    const SOURCES: u64 = 4;
+    const FRAMES: u64 = 5000; // far more frames than sources: latest-wins must coalesce
+    for seq in 1..=FRAMES {
+        let source = seq % SOURCES; // rotate across the 4 sources
+        let masked = seq % 2 == 0;
+        let field = flat_field(4, 4, seq, seq as f64, masked);
+        let admission = inbox.admit(source, SourceCursor::new(0, seq), field);
+        assert!(
+            admission.is_stored(),
+            "a strictly-newer frame for a live source is always stored"
+        );
+        // Observe the envelope every tick; it must hold on every single sample.
+        assert!(
+            env.observe(inbox.retained_bytes()),
+            "retained bytes breached the envelope at seq {seq}"
+        );
+        assert!(inbox.live_sources() <= SOURCES as usize);
+    }
+
+    // Memory did not grow with the 5000 frames: at most SOURCES live fields are retained.
+    assert_eq!(inbox.live_sources(), SOURCES as usize);
+    assert!(inbox.retained_cells() <= SOURCES as usize * 16);
+    // The envelope held throughout, with real headroom, and the inbox conserves.
+    assert!(env.holds());
+    assert_eq!(env.breaches(), 0);
+    assert_eq!(env.samples(), FRAMES);
+    assert!(env.high_water_bytes() <= env.worst_case_bytes());
+    assert!(
+        env.headroom_bytes() > 0,
+        "the bound was not even approached"
+    );
+    assert!(inbox.conserves());
+    // Honest: thousands of frames offered, only a handful stored, the rest coalesced — counted.
+    assert_eq!(inbox.offered(), FRAMES);
+    assert!(inbox.superseded() > 0);
+}
+
+/// The calibration (anti-green-lighting, #143): the SAME envelope ceiling that the bounded
+/// inbox respects is BREACHED by a naive unbounded accumulator that retains every frame. If
+/// the gate could not fail here it would be certifying nothing.
+#[test]
+fn retention_envelope_catches_an_unbounded_accumulator() {
+    let limits = WireLimits::new(1 << 16, 64);
+    let ceiling =
+        FieldInbox::with_capacity(InboxCapacity::new(4)).worst_case_retained_bytes(limits);
+
+    // A diseased "store" that appends every frame and never coalesces — the policy the bounded
+    // FieldInbox exists to avoid.
+    let mut hoard: Vec<WireField> = Vec::new();
+    let mut env = RetentionEnvelope::new(ceiling);
+    let per_frame_bytes = 16 * 8; // a 4x4 unmasked field
+    for seq in 1..=10_000u64 {
+        hoard.push(flat_field(4, 4, seq, seq as f64, false));
+        let bytes: usize = hoard.iter().map(|f| f.data.len() * 8).sum();
+        env.observe(bytes);
+        if bytes > ceiling {
+            break; // the gate has already caught the runaway; no need to keep growing
+        }
+    }
+
+    assert!(
+        !env.holds(),
+        "an unbounded accumulator MUST breach the envelope the bounded inbox respects"
+    );
+    assert!(env.breaches() > 0);
+    assert!(env.high_water_bytes() > ceiling);
+    // Sanity: the breach happened roughly where the arithmetic says it must.
+    assert!(env.samples() as usize <= ceiling / per_frame_bytes + 2);
 }

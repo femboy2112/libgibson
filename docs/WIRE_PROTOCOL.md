@@ -104,6 +104,40 @@ distinct from its transport sequence.
   `max_pending_commands × max_command_arg_bytes`. An accepted edit is delivered exactly once in
   order; at the ceiling an `issue` is a typed `Refused`, never silent growth.
 
+## Command lifecycle (the return channel, Laws L4/L7)
+
+The byte format carries COMMAND and ACK frames (above); `gibson::wire::CommandLedger` is the
+presenter-side state machine that gives them *meaning*. The bounded `SnapshotBridge` owns
+ordered queuing and delivery with *aggregate* counts; the ledger owns the per-`command_id`
+fate the bridge cannot — it correlates each returned ACK back to the exact command it answers.
+
+Each tracked command moves through exactly one path:
+
+```text
+note_issued    -> Accepted     (queued locally; command_id must strictly increase)
+note_delivered -> Delivered    (handed toward the producer; awaiting a verdict)
+apply_ack      -> Acknowledged | Refused | Failed   (terminal; the slot is pruned)
+```
+
+- **Ordered identity is enforced, not assumed.** `command_id` must be strictly greater than
+  every id issued before; a duplicate, or a reused-after-resolution id, is refused
+  (`LedgerReject::NonMonotonicId`) — so a stale or duplicate ack can never be mis-bound to a
+  different command wearing the same number.
+- **Verdicts only.** Only `Acknowledged`/`Refused`/`Failed` resolve a command; a non-terminal
+  ack status on the return channel, an ack for an undelivered command, or one for an unknown
+  command is a typed refusal, never a silent apply.
+- **Bounded.** Only outstanding commands hold a slot (capped by `LedgerCapacity`); a resolved
+  command is pruned to a counter, so throughput is unbounded while live memory is not.
+- **Conserving (L4/L7).** `issued == accepted + delivered-awaiting + resolved` at every step;
+  nothing the presenter issued is unaccounted for, and no verdict is silently erased.
+
+The **producer** issues the verdicts: the reference `producer.py` validates each command against
+its model (`classify_command`) and acks its true fate — an acknowledged `set-amplitude` mutates
+the model so the next FIELD frame reflects the accepted edit; an out-of-range value is refused;
+a malformed arg or unknown kind is failed. The whole loop is proven in-process and
+deterministically in `tests/wire_transport.rs` (no subprocess, no clock), and
+`examples/smartchem_canary.rs` demonstrates the presenter half.
+
 ## Error discipline
 
 Every malformed condition is a typed `WireError`, never a panic or a silent drop.
