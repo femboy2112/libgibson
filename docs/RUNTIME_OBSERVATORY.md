@@ -323,3 +323,35 @@ only carries `SESSION`-lane lease transitions, nothing else.
 | `examples/terminal_ownership_probe.rs` | `duel-trace` scenario: the fixture's real capture source |
 | `docs/fixtures/ownership/duel.tsv` | Captured lease-transition fixture (this round) |
 | `docs/fixtures/event-pressure/*` | Captured #1126 evidence (from PR #18, reused here unchanged) |
+
+## Cross-layer instrument telemetry (the timing half, issue #143)
+
+`gibson::instrument_telemetry` is the reusable, opt-in *timing* half of the observatory — the
+complement to `gibson::wire::RetentionEnvelope`'s deterministic *memory* bound. Two disciplines
+keep it honest and keep its gates from flaking:
+
+- **Tool-relative, never conflated.** Each pipeline stage is measured on its own
+  (`Stage::{InputDispatch, SnapshotAge, FrameGeneration, RasterConversion, TerminalWrite}`), and
+  every stage carries a `tool_relative_note()` stating what the number actually witnesses. In
+  particular `TerminalWrite` times bytes handed to the terminal — **not** screen presentation —
+  so there is no "frames presented" count and **no FPS is synthesized from headless write
+  counts**. The frame funnel `written <= attempted <= generated` is a receipt
+  (`frame_funnel_consistent()`), not a smooth number.
+- **Deterministic percentiles.** `LatencyHistogram` is a fixed-bucket (bounded-memory, `O(1)`
+  record) histogram; buckets are log2 over nanoseconds and quantiles are reported at bucket
+  resolution. It carries no clock: production code feeds it real `Duration`s, tests feed *known*
+  ones, so percentiles are reproducible.
+
+**The gate is defect detection, not a brittle universal number.** `LatencyBudget` is phrased as a
+budget to *exceed*: a CI check feeds an injected distribution and asserts the budget is breached
+or not (`tests/instrument_telemetry.rs` proves a healthy distribution passes the same p95 budget
+an injected delayed-renderer distribution breaches). Real deployments set the budget from observed
+hosts — issue #143's rule: set limits after observing representative hosts, avoid brittle
+universals, and never claim a virtual-terminal measurement proves optical display quality.
+
+| Surface | Role |
+|---|---|
+| `gibson::instrument_telemetry::LatencyHistogram` | Bounded, deterministic per-stage latency percentiles |
+| `gibson::instrument_telemetry::Stage` | The distinct, tool-relative-labelled pipeline stages |
+| `gibson::instrument_telemetry::InstrumentTelemetry` | Per-stage digests + honest frame/byte funnel |
+| `gibson::instrument_telemetry::LatencyBudget` | A quantile budget-to-exceed for deterministic defect detection |
