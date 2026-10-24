@@ -12,9 +12,10 @@ responsibility and relative maturity; it does not promise a frozen Rust API or
 universal terminal compatibility. There is no basis yet for “release-candidate
 platform,” universal 60 FPS, or modern Rust/C feature parity.
 
-**v0.5.0 release candidate (2026-10-24):** **v0.5.0 — Interactive instruments** is a
-*prepared, not-yet-tagged* engineering-alpha candidate on `release/v0.5.0-rc` (Linux
-x86_64, GitHub-only prerelease; not published to crates.io/PyPI/Go proxy). It adds an
+**v0.5.0 released (2026-10-24):** **v0.5.0 — Interactive instruments** is released on
+GitHub as an Engineering Alpha (tag → `v0.5.0` at `d8c7b99`, prerelease-flagged, Linux
+x86_64; native SDK archive + Python wheel/sdist attached; not published to
+crates.io/PyPI/Go proxy). It adds an
 experimental, Rust-only instrument platform: spatial input + painted-frame hit-map,
 reversible edit sessions/drag gestures with compound undo (explicit `RollbackFailed`),
 `gibson::plot` observable geometry and a domain-neutral field view, bounded
@@ -23,7 +24,7 @@ frame/command transport with Python<->Rust wire conformance, and the runnable
 Python or Go wrappers; C ABI stays v1; MSRV 1.85. One CORE Rust source-break: `Node`
 gained a public `tag: Option<u32>` field. The cinematic finale is the example
 `examples/libgibson_intro_reaction` (no third-party media ships); the instrument-driven
-film is deferred to 0.6.0. The v0.4.0 status below is the last *published* release.
+film is deferred to 0.6.0. The v0.4.0 status below is the prior published release.
 
 **Published status (2026-10-02):** **v0.4.0** is released on GitHub as an Engineering Alpha
 (tag → `v0.4.0` at `c2f6483`, prerelease-flagged, Linux x86_64; native SDK archive + the
