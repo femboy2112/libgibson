@@ -26,8 +26,12 @@ use std::sync::Arc;
 
 use gibson::audio::buffer::StereoBlock;
 use gibson::audio::device::AudioDevice;
+use gibson::audio::human_music::form::SectionKind;
+use gibson::audio::human_music::score::{DrumHit, DrumVoice, Note, Provenance, Role, Score};
+use gibson::audio::human_music::synth::HumanMusicSynth;
+use gibson::audio::human_music::{MusicWorld, WorldId};
 use gibson::audio::media::{extract_clip_audio, DialogueTrack};
-use gibson::audio::render::{AudioSource, RenderCtx};
+use gibson::audio::render::{AudioSource, OfflineRenderer, RenderCtx};
 use gibson::audio::{SampleRate, SampleTime};
 
 use crate::director;
@@ -76,6 +80,13 @@ impl Control {
 struct FinaleSource {
     track: DialogueTrack,
     ctl: Arc<Control>,
+    /// Pre-rendered, pre-ducked music bed (planar L/R, one sample per playhead sample).
+    /// Empty when `--music` is off. Indexed by the same master playhead as the dialogue, so
+    /// seek/pause/restart stay in sync for free — it is static PCM, not a live synth.
+    music_l: Vec<f32>,
+    music_r: Vec<f32>,
+    /// Linear gain the bed is mixed in at (under the dialogue).
+    music_gain: f32,
 }
 
 impl AudioSource for FinaleSource {
@@ -99,6 +110,22 @@ impl AudioSource for FinaleSource {
             start: SampleTime(head),
         };
         self.track.render(out, &inner);
+        // Mix the pre-rendered Spybreak bed under the dialogue at the same playhead. The bed is
+        // already ducked under speech and already production-limited, so a hard clamp catches
+        // only the rare dialogue+music overflow peak — transparent below unity, so the accepted
+        // dialogue is untouched wherever the bed is quiet.
+        if !self.music_l.is_empty() {
+            let g = self.music_gain;
+            let base = head as usize;
+            for i in 0..out.frames() {
+                let idx = base + i;
+                if idx >= self.music_l.len() {
+                    break;
+                }
+                out.left[i] = (out.left[i] + self.music_l[idx] * g).clamp(-1.0, 1.0);
+                out.right[i] = (out.right[i] + self.music_r[idx] * g).clamp(-1.0, 1.0);
+            }
+        }
         let next = head.saturating_add(out.frames() as u64).min(self.ctl.end);
         self.ctl.playhead.store(next, Ordering::Relaxed);
     }
@@ -168,8 +195,16 @@ impl LiveAudio {
     /// The device does **not** resample, so the PCM must match the negotiated rate. Common
     /// case: decode at 48 kHz, open, and the device honors it — a single open. On the rare
     /// machine that negotiates a different rate, re-decode once at that rate and reopen.
-    pub fn start(clip: &Path, initial_seconds: f32, playing: bool) -> Option<LiveAudio> {
-        Self::start_with(initial_seconds, playing, |sr| build_track(clip, sr))
+    pub fn start(
+        clip: &Path,
+        initial_seconds: f32,
+        playing: bool,
+        music: bool,
+        music_gain: f32,
+    ) -> Option<LiveAudio> {
+        Self::start_with(initial_seconds, playing, music, music_gain, |sr| {
+            build_track(clip, sr)
+        })
     }
 
     /// Like [`LiveAudio::start`], but from the embedded, pre-assembled dialogue bytes (the
@@ -179,6 +214,8 @@ impl LiveAudio {
         m4a: &[u8],
         initial_seconds: f32,
         playing: bool,
+        music: bool,
+        music_gain: f32,
     ) -> Option<LiveAudio> {
         let tmp = std::env::temp_dir().join(format!(
             "libgibson_finale_dialogue_{}.m4a",
@@ -187,7 +224,7 @@ impl LiveAudio {
         if std::fs::write(&tmp, m4a).is_err() {
             return None;
         }
-        let out = Self::start_with(initial_seconds, playing, |sr| {
+        let out = Self::start_with(initial_seconds, playing, music, music_gain, |sr| {
             build_track_from_file(&tmp, sr)
         });
         // The decode has already read the file into memory by now; clean up best-effort.
@@ -202,12 +239,22 @@ impl LiveAudio {
     fn start_with(
         initial_seconds: f32,
         playing: bool,
+        music: bool,
+        music_gain: f32,
         mut make_track: impl FnMut(SampleRate) -> Option<DialogueTrack>,
     ) -> Option<LiveAudio> {
         let mut sr = SampleRate::STUDIO;
         for _attempt in 0..2 {
             let track = make_track(sr)?;
             let end = track.end_sample();
+            // Pre-render the music bed at this rate (one-time, on the main thread) so the live
+            // callback only reads static PCM. Rebuilt on the rare rate-renegotiation retry.
+            let (music_l, music_r) = if music {
+                eprintln!("composing the music bed…");
+                build_music_bed(sr, &track, end).unwrap_or_default()
+            } else {
+                (Vec::new(), Vec::new())
+            };
             let start_sample = ((initial_seconds.max(0.0) as f64) * sr.as_f64()).round() as u64;
             let ctl = Arc::new(Control {
                 playhead: AtomicU64::new(start_sample.min(end)),
@@ -219,6 +266,9 @@ impl LiveAudio {
             let source = FinaleSource {
                 track,
                 ctl: Arc::clone(&ctl),
+                music_l,
+                music_r,
+                music_gain,
             };
             let device = AudioDevice::play(Box::new(source), sr).ok()?;
             let got = device.sample_rate();
@@ -264,4 +314,162 @@ impl LiveAudio {
     pub fn stop(self) {
         self.device.stop();
     }
+}
+
+// ---------------------------------------------------------------------------
+// The "Spybreak!"-style music bed (step 4): a dark, driving big-beat groove.
+//
+// Why pre-render instead of driving `HumanMusicSynth` live? The synth is forward-only — a
+// forward seek burst-fires every skipped event in one sample and a backward seek goes silent —
+// which fights `FinaleSource`'s seek/pause/restart. So we render the whole bed to PCM ONCE at
+// startup (ducked under the dialogue), then treat it exactly like the dialogue: static samples
+// indexed by the master playhead. Seek/pause/restart then stay in sync for free, and the
+// realtime callback does no synthesis — only a buffer read and a multiply-add.
+// ---------------------------------------------------------------------------
+
+/// Render ONLY the music bed (no dialogue, no ducking) to planar L/R PCM for `end` samples —
+/// the headless audition/regeneration path behind `--render-music`.
+pub fn render_bed(sr: SampleRate, end: u64) -> Option<(Vec<f32>, Vec<f32>)> {
+    build_music_bed(sr, &DialogueTrack::new(), end)
+}
+
+/// Pre-render the music bed to planar L/R PCM at `sr`, ducked under `dialogue`, for `end`
+/// samples (the finale length). `None` if there is nothing to score. Runs on the main thread.
+fn build_music_bed(
+    sr: SampleRate,
+    dialogue: &DialogueTrack,
+    end: u64,
+) -> Option<(Vec<f32>, Vec<f32>)> {
+    if end == 0 {
+        return None;
+    }
+    const BPM: f32 = 132.0; // big-beat tempo (also ~the 132 s finale length)
+    let total_secs = end as f64 / sr.as_f64();
+    let bars = ((total_secs * BPM as f64 / 60.0) / 4.0).ceil().max(1.0) as usize;
+    let score = spybreak_score(BPM, bars);
+    let mut world = MusicWorld::from_id(WorldId::BlackIce); // dark, Aeolian, sub-heavy palette
+    world.tempo_bpm = BPM;
+    let mut synth = HumanMusicSynth::new(&score, &world, sr);
+    if !dialogue.is_empty() {
+        // Sidechain the bed down under speech so Frank always cuts through.
+        let duck = dialogue.duck_curve(end as usize, sr, 0.40, 10.0, 240.0);
+        synth.set_duck(duck);
+    }
+    let rendered = OfflineRenderer::new(sr, 512).render(&mut synth, end);
+    let audio = rendered.audio;
+    Some((audio.left, audio.right))
+}
+
+fn push_drum(s: &mut Score, at: f64, v: DrumVoice, vel: f32, sec: SectionKind) {
+    s.drums.push(DrumHit {
+        start_beat: at,
+        voice: v,
+        velocity: vel,
+        prov: Provenance::new(sec),
+    });
+}
+
+fn push_note(s: &mut Score, at: f64, dur: f32, pitch: i32, vel: f32, role: Role, sec: SectionKind) {
+    s.notes
+        .push(Note::new(at, dur, pitch, vel, role, Provenance::new(sec)));
+}
+
+/// Hand-author a driving big-beat / breakbeat score in A Aeolian — the Matrix lobby-shootout
+/// "Spybreak!" energy the built-in `compose()` straight-backbeat groove can't reach: a
+/// syncopated kick, backbeat snare with breakbeat ghosts, 8th-note hats, a dark sub-bass riff,
+/// and minor stabs. The cell loops per bar with a 2-bar intro build and an 8-bar snare fill.
+fn spybreak_score(bpm: f32, bars: usize) -> Score {
+    let total_beats = bars as f64 * 4.0;
+    let mut s = Score::new(bpm, 4.0, total_beats);
+
+    // A natural minor (Aeolian), tonic A: low sub-bass degrees and a mid stab triad.
+    const A1: i32 = 33;
+    const G1: i32 = 31;
+    const F1: i32 = 29;
+    const E1: i32 = 28;
+    const A3: i32 = 57;
+    const C4: i32 = 60;
+    const E4: i32 = 64;
+    const A4: i32 = 69;
+    const G4: i32 = 67;
+    use DrumVoice::{ClosedHat, Kick, OpenHat, Snare};
+
+    for bar in 0..bars {
+        let b = bar as f64 * 4.0;
+        let intro = bar < 2;
+        let sec = if intro {
+            SectionKind::Intro
+        } else {
+            SectionKind::A
+        };
+
+        // Hats: straight 8ths, accented on the beat.
+        for k in 0..8 {
+            let vel = if k % 2 == 0 { 0.50 } else { 0.32 };
+            push_drum(&mut s, b + k as f64 * 0.5, ClosedHat, vel, sec);
+        }
+
+        // Kick: downbeat always; the signature syncopated push + mid drive after the intro.
+        push_drum(&mut s, b, Kick, 0.92, sec);
+        if !intro {
+            push_drum(&mut s, b + 2.5, Kick, 0.85, sec);
+            if bar % 2 == 0 {
+                push_drum(&mut s, b + 1.5, Kick, 0.68, sec);
+            }
+        }
+
+        // Snare: backbeat + breakbeat ghosts, an open hat sizzle, an 8-bar turnaround fill.
+        if !intro {
+            push_drum(&mut s, b + 1.0, Snare, 0.86, sec);
+            push_drum(&mut s, b + 3.0, Snare, 0.86, sec);
+            push_drum(&mut s, b + 1.75, Snare, 0.33, sec);
+            push_drum(&mut s, b + 3.5, Snare, 0.30, sec);
+            if bar % 2 == 1 {
+                push_drum(&mut s, b + 3.5, OpenHat, 0.50, sec);
+            }
+            if bar % 8 == 7 {
+                for q in 0..4 {
+                    push_drum(
+                        &mut s,
+                        b + 3.0 + q as f64 * 0.25,
+                        Snare,
+                        0.5 + 0.12 * q as f32,
+                        sec,
+                    );
+                }
+            }
+        }
+
+        // Bass: dark driving riff (enters after bar 0). Even bars pedal the root; odd bars walk
+        // down A–G–F–E for movement.
+        if bar >= 1 {
+            if bar % 2 == 0 {
+                for &t in &[0.0, 0.5, 1.0, 1.75, 2.5, 3.0] {
+                    push_note(&mut s, b + t, 0.42, A1, 0.80, Role::Bass, sec);
+                }
+            } else {
+                push_note(&mut s, b, 0.6, A1, 0.80, Role::Bass, sec);
+                push_note(&mut s, b + 0.75, 0.4, A1, 0.74, Role::Bass, sec);
+                push_note(&mut s, b + 1.5, 0.6, G1, 0.78, Role::Bass, sec);
+                push_note(&mut s, b + 2.5, 0.5, F1, 0.78, Role::Bass, sec);
+                push_note(&mut s, b + 3.0, 0.9, E1, 0.80, Role::Bass, sec);
+            }
+        }
+
+        // Minor stabs (Keys): short Am triad on the off-beats — the lobby tension.
+        if !intro {
+            for &t in &[0.5, 2.5] {
+                for &p in &[A3, C4, E4] {
+                    push_note(&mut s, b + t, 0.22, p, 0.58, Role::Keys, sec);
+                }
+            }
+        }
+
+        // Sparse dark lead stab every 4 bars, kept minimal so it never fights the dialogue.
+        if !intro && bar % 4 == 2 {
+            push_note(&mut s, b, 0.5, A4, 0.50, Role::Lead, sec);
+            push_note(&mut s, b + 1.0, 0.5, G4, 0.50, Role::Lead, sec);
+        }
+    }
+    s
 }

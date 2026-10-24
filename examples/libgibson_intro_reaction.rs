@@ -111,6 +111,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
              --glyphs=auto|braille|halfblock|block|ascii\n\
              --clip=PATH            bake from a live greenscreen clip instead of the embed\n\
              --live                 bake from an auto-discovered ~/Downloads clip\n\
+             --music                a Spybreak-style big-beat bed under the dialogue (audio-cpal)\n\
+             --music-gain=0.5       how loud the bed sits under speech\n\
              --film-width/--film-height/--film-fps  bake resolution\n\
              --smooth               bilinear source sampling (premultiplied)\n\
              --linear               composite the matte in linear light\n\
@@ -269,6 +271,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // Headless: render ONLY the Spybreak music bed to a WAV, to audition it in isolation
+    // (no dialogue, no ducking). `--seconds=N` sets the length; defaults to the full finale.
+    #[cfg(feature = "audio-cpal")]
+    {
+        if let Some(path) = value("--render-music=") {
+            use gibson::audio::{SampleRate, StereoBlock};
+            let sr = SampleRate::STUDIO;
+            let secs = value("--seconds=")
+                .and_then(|s| s.parse::<f64>().ok())
+                .filter(|n| n.is_finite() && *n > 0.0)
+                .unwrap_or_else(|| director::total_edit_seconds() as f64);
+            let end = (secs * sr.as_f64()).round() as u64;
+            let (l, r) = live_audio::render_bed(sr, end).ok_or("music bed render failed")?;
+            let mut sb = StereoBlock::new(l.len());
+            sb.left = l;
+            sb.right = r;
+            let peak = sb
+                .left
+                .iter()
+                .chain(sb.right.iter())
+                .fold(0.0f32, |m, &x| m.max(x.abs()));
+            gibson::audio::wav::write_wav_i16(std::path::Path::new(path), &sb, sr)?;
+            eprintln!(
+                "wrote music bed {:.1}s peak={peak:.3} -> {path}",
+                sb.frames() as f64 / sr.as_f64()
+            );
+            return Ok(());
+        }
+    }
+
     // First-contact bootup prologue — the same one the original film opens with,
     // reused verbatim. It owns its own Context and releases the terminal before the
     // fullscreen lease below. Skipped for direct-inspection / non-interactive paths
@@ -305,12 +337,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Live audio (opt-in `audio-cpal`): the embedded dialogue when the embed is in use, else
     // Frank's dialogue from the clip, played through gibson::audio's realtime device with the
     // audio playhead as the master A/V clock. No feature / no device / no source => silent.
+    // Opt-in Spybreak-style music bed under the dialogue (audio-cpal only). Off by default so
+    // the ear-accepted dialogue mix is unchanged; `--music-gain=` tunes how loud it sits.
+    let music_gain = value("--music-gain=")
+        .and_then(|s| s.parse::<f32>().ok())
+        .filter(|g| g.is_finite() && *g >= 0.0)
+        .unwrap_or(0.5);
     let audio: Option<LiveAudio> = start_audio(
         &clip_path,
         use_embedded,
         ctx.session.is_tty,
         edit_seconds,
         !paused,
+        has("--music"),
+        music_gain,
     );
 
     let mut realized: Option<(u32, u16, u16)> = None;
@@ -655,6 +695,8 @@ fn start_audio(
     is_tty: bool,
     initial_seconds: f32,
     playing: bool,
+    music: bool,
+    music_gain: f32,
 ) -> Option<LiveAudio> {
     if !is_tty {
         return None;
@@ -664,12 +706,18 @@ fn start_audio(
         #[cfg(feature = "embedded-media")]
         {
             if use_embedded {
-                return LiveAudio::start_from_embedded(EMBEDDED_AUDIO, initial_seconds, playing);
+                return LiveAudio::start_from_embedded(
+                    EMBEDDED_AUDIO,
+                    initial_seconds,
+                    playing,
+                    music,
+                    music_gain,
+                );
             }
         }
         clip_path
             .as_deref()
-            .and_then(|clip| LiveAudio::start(clip, initial_seconds, playing))
+            .and_then(|clip| LiveAudio::start(clip, initial_seconds, playing, music, music_gain))
     }
     #[cfg(not(feature = "audio-cpal"))]
     {
