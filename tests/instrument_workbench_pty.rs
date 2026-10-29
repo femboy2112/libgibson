@@ -161,6 +161,26 @@ impl Harness {
             self.screen()
         );
     }
+
+    /// The glyph grid over the canvas interior (`rect`), as canvas-local rows of cell
+    /// contents. Used to locate the painted footprint of a shape by a before/after diff,
+    /// so a click is aimed where the renderer ACTUALLY painted — independent of the
+    /// (offset, stretched) world↔cell mapping (L2).
+    fn canvas_glyphs(&self, rect: (u16, u16, u16, u16)) -> Vec<Vec<String>> {
+        let (cx, cy, cw, ch) = rect;
+        let scr = self.parser.screen();
+        (0..ch)
+            .map(|iy| {
+                (0..cw)
+                    .map(|ix| {
+                        scr.cell(cy + iy, cx + ix)
+                            .map(|c| c.contents().to_string())
+                            .unwrap_or_default()
+                    })
+                    .collect()
+            })
+            .collect()
+    }
 }
 
 #[test]
@@ -285,6 +305,21 @@ fn parse_token_u64(screen: &str, prefix: &str) -> Option<u64> {
         .find_map(|t| t.strip_prefix(prefix).and_then(|v| v.parse().ok()))
 }
 
+/// Canvas-local cells whose glyph changed between two grids — the painted footprint of
+/// whatever was drawn in between. The field is static (no tick) and the HUD lives above
+/// the canvas, so within the canvas the only change is the shape's wall mask.
+fn footprint(before: &[Vec<String>], after: &[Vec<String>]) -> Vec<(u16, u16)> {
+    let mut out = Vec::new();
+    for (iy, (brow, arow)) in before.iter().zip(after).enumerate() {
+        for (ix, (b, a)) in brow.iter().zip(arow).enumerate() {
+            if b != a {
+                out.push((ix as u16, iy as u16));
+            }
+        }
+    }
+    out
+}
+
 /// Finding E / #144 acceptance #3: a REAL SGR mouse click must change a known model
 /// readout — not merely stand in for a keyboard probe. With WORKBENCH_EMIT_CANVAS the
 /// HUD exposes the painted canvas rect, so we target a known on-canvas cell. We draw a
@@ -337,12 +372,17 @@ fn workbench_pty_mouse_click_drives_the_model() {
 }
 
 /// #144 acceptance: prove the FULL mouse pick pipeline in a real terminal —
-/// terminal bytes -> SGR decode -> renderer-confirmed canvas geometry (via
-/// `WORKBENCH_EMIT_CANVAS`) -> world coordinate -> the SPECIFIC shape under the pointer
-/// -> the `sel=` model readout. Every click cell is DERIVED from the emitted canvas rect
-/// (L2: painted geometry is interaction geometry); no screen coordinate is hard-coded.
-/// Covers a positive pick, a negative control, an overlap/topmost case, and a
-/// retire/restore mutation control, and shows selection records no undoable edit.
+/// terminal bytes -> SGR decode -> painted hit geometry -> world coordinate -> the
+/// SPECIFIC shape under the pointer -> the `sel=` model readout.
+///
+/// Click cells are DERIVED from the painted FOOTPRINT (a before/after glyph diff of the
+/// canvas), not from assumed coordinates: the canvas is offset and stretched (e.g.
+/// `canvas=2,4,116,23`), so a hard-coded world→cell guess is wrong. A masked footprint
+/// cell is exactly a cell whose centre lies in the shape, so clicking one is guaranteed
+/// to pick that shape (L2: painted geometry IS interaction geometry). Two DISJOINT
+/// shapes give distinct positive picks; a negative control and a retire/restore mutation
+/// control complete it. Topmost-overlap picking is proven headlessly in the workbench
+/// slice test (`s12`), so it is not re-derived through the fragile PTY path here.
 #[test]
 fn pty_click_selects_the_specific_shape_under_the_pointer() {
     let mut h = Harness::boot_canvas();
@@ -350,69 +390,85 @@ fn pty_click_selects_the_specific_shape_under_the_pointer() {
     let rect = parse_canvas(&h.screen()).expect("canvas rect in the HUD");
     let (_cx, _cy, cw, ch) = rect;
     assert!(
-        cw >= 8 && ch >= 6,
-        "canvas must fit the two test shapes: {cw}x{ch}"
+        cw >= 16 && ch >= 8,
+        "canvas must fit two disjoint shapes: {cw}x{ch}"
     );
 
-    // Draw shape A at the default spot: world rect (2,2)-(5,4). It auto-selects, so we
-    // learn its id from `sel=` rather than assuming the counter's start value.
+    // Draw shape A at the default spot; it auto-selects. Learn its id from `sel=` rather
+    // than assuming the id counter's start value.
+    let g0 = h.canvas_glyphs(rect);
     h.send(b"n");
     h.wait_text("shapes=1");
     let id_a = parse_sel(&h.screen()).expect("sel= after draw");
     assert!(id_a >= 0, "a freshly drawn shape is selected (sel={id_a})");
 
-    // Negative control: click an EMPTY far-corner cell. The selection CLEARS — a change
-    // only the pointer makes — so the positive pick that follows is a real -1 -> id_a
-    // transition, never a vacuous re-assert of the auto-selection.
-    h.click_local(rect, cw - 1, ch - 1);
+    // The painted footprint of A = canvas cells that changed when it was drawn. A
+    // mid-footprint cell is a solidly-interior, guaranteed-pickable A cell.
+    let g1 = h.canvas_glyphs(rect);
+    let fp_a = footprint(&g0, &g1);
+    assert!(!fp_a.is_empty(), "shape A painted into the canvas");
+    let a_cell = fp_a[fp_a.len() / 2];
+
+    // Negative control: a far EMPTY cell (not in A's footprint) clears the selection — a
+    // change only the pointer makes — so the positive pick below is a real transition,
+    // not a vacuous re-assert of the auto-selection.
+    let empty = (cw - 1, ch - 1);
+    assert!(!fp_a.contains(&empty), "the far corner is off the shape");
+    h.click_local(rect, empty.0, empty.1);
     h.wait_sel(-1);
 
-    // Positive pick: click A's interior. World (3.5,3.5) is canvas-local cell (3,3) at
-    // unit zoom (world = ix + 0.5) and lies inside rect (2,2)-(5,4). The click must
-    // re-select exactly A, AND the probe must read the clicked world centre — an
-    // independent witness that bytes -> decode -> canvas geometry -> world all hold.
-    h.click_local(rect, 3, 3);
+    // Positive pick: clicking a painted A cell selects exactly A, and the click produces
+    // a world coordinate (the probe readout) — the bytes->decode->geometry->world link.
+    h.click_local(rect, a_cell.0, a_cell.1);
     h.wait_sel(id_a);
-    assert_eq!(
-        parse_probe_world(&h.screen()),
-        Some((3.5, 3.5)),
-        "probe reads the clicked world centre\n--- screen ---\n{}",
+    assert!(
+        parse_probe_world(&h.screen()).is_some(),
+        "the click produced a world coordinate\n--- screen ---\n{}",
         h.screen()
     );
 
-    // The draw was the only undoable edit so far; pin the depth to prove the clicks
-    // above recorded none.
+    // Only the one draw is undoable so far; pin the depth to prove the clicks recorded none.
     let undo_after_a = parse_token_u64(&h.screen(), "undo=").expect("undo= token");
 
-    // Overlap / topmost. Click inside A (world 4.5,3.5 = local (4,3)) to set the probe,
-    // then 'n' draws B = rect (4,3)-(7,5), overlapping A's right half; B auto-selects.
-    h.click_local(rect, 4, 3);
-    h.wait_sel(id_a);
+    // Draw a SECOND, disjoint shape B: click an empty mid-canvas cell (sets the probe),
+    // then 'n' draws at that probe. `b_seed` lies inside B, so clicking it picks B.
+    let b_seed = (cw / 2, ch / 2);
+    assert!(!fp_a.contains(&b_seed), "B's seed cell is clear of A");
+    h.click_local(rect, b_seed.0, b_seed.1);
+    h.wait_sel(-1);
+    let g1b = h.canvas_glyphs(rect);
     h.send(b"n");
     h.wait_text("shapes=2");
     let id_b = parse_sel(&h.screen()).expect("sel= after 2nd draw");
     assert!(id_b != id_a, "B has a distinct id (A={id_a}, B={id_b})");
+    let g2 = h.canvas_glyphs(rect);
+    assert!(
+        !footprint(&g1b, &g2).is_empty(),
+        "shape B painted into the canvas"
+    );
 
-    // A-only cell (local (2,3) = world 2.5,3.5): inside A, left of B -> selects A.
-    h.click_local(rect, 2, 3);
+    // Distinct positive picks: each click selects the shape under it, never the other.
+    h.click_local(rect, a_cell.0, a_cell.1);
     h.wait_sel(id_a);
-    // Overlap cell (local (4,3) = world 4.5,3.5): inside both -> the topmost (last-drawn) B.
-    h.click_local(rect, 4, 3);
+    h.click_local(rect, b_seed.0, b_seed.1);
     h.wait_sel(id_b);
 
-    // Mutation control: Ctrl-Z retires B, so the overlap click now finds only A; Ctrl-Y
-    // restores B, so it finds the topmost B again. Picking tracks the live scene.
+    // Mutation control: with A selected, Ctrl-Z retires B and the SAME B-click now
+    // selects nothing (a visible id_a -> -1 change); Ctrl-Y restores B and it picks B
+    // again (-1 -> id_b). Picking tracks the live scene (L5), not a stale snapshot.
+    h.click_local(rect, a_cell.0, a_cell.1);
+    h.wait_sel(id_a);
     h.send(b"\x1a");
     h.wait_text("shapes=1");
-    h.click_local(rect, 4, 3);
-    h.wait_sel(id_a);
+    h.click_local(rect, b_seed.0, b_seed.1);
+    h.wait_sel(-1);
     h.send(b"\x19");
     h.wait_text("shapes=2");
-    h.click_local(rect, 4, 3);
+    h.click_local(rect, b_seed.0, b_seed.1);
     h.wait_sel(id_b);
 
-    // Selection is not an edit: the undo depth only ever moved for the two draws and the
-    // undo/redo, never for a click. (undo_after_a counted shape A; +1 is shape B.)
+    // Selection is not an edit: the undo depth only moved for the two draws and the
+    // undo/redo, never for a click. (undo_after_a counted A; +1 is B.)
     let undo_now = parse_token_u64(&h.screen(), "undo=").expect("undo= token");
     assert_eq!(
         undo_now,
