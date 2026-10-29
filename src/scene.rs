@@ -1038,6 +1038,15 @@ impl Scene {
     }
 
     /// Interns a tag name into a [`TagId`].
+    ///
+    /// **Retention policy (issue #77).** Interned tags are *never* reclaimed — not
+    /// by [`Scene::remove`], [`Scene::retain`], or [`Scene::clear`] — because a
+    /// [`TagId`] handed out earlier must never be re-aliased to a different name.
+    /// A workload that mints unbounded *unique* transient tag names therefore grows
+    /// the tag table monotonically; reusing names (the common case) keeps it bounded
+    /// by the distinct-name count. There is deliberately no compaction entry point:
+    /// it could not be offered without first proving no live `TagId` still refers to
+    /// a reclaimed slot.
     pub fn tag(&mut self, name: impl Into<String>) -> TagId {
         self.intern_tag(&name.into())
     }
@@ -1068,6 +1077,11 @@ impl Scene {
     }
 
     /// Mutable access to an entity (e.g. to refresh a dynamic overlay's node).
+    ///
+    /// **Do not mutate `SceneEntity.label` through this handle.** The label index
+    /// behind [`Scene::id_of`] / [`Scene::target`] is keyed at add time and is not
+    /// updated by a direct field write, which desyncs lookups. Use [`Scene::rename`]
+    /// to change a label coherently.
     pub fn entity_mut(&mut self, id: SceneId) -> Option<&mut SceneEntity> {
         self.entities.iter_mut().find(|e| e.id == id)
     }
@@ -1107,7 +1121,12 @@ impl Scene {
     pub fn remove(&mut self, id: SceneId) -> Option<SceneEntity> {
         let idx = self.entities.iter().position(|e| e.id == id)?;
         let entity = self.entities.remove(idx);
-        self.by_label.remove(&entity.label);
+        // Purge the index by stable identity, not by `entity.label`: a consumer may
+        // have mutated `SceneEntity.label` through `entity_mut` after add, so the
+        // live key need not equal the current label. Dropping by id frees whatever
+        // label pointed here and never leaves a dead id in `by_label`. `SceneId` is
+        // never recycled, so at most one entry matches (Finding B, #77).
+        self.by_label.retain(|_, v| *v != id);
         Some(entity)
     }
 
@@ -1117,18 +1136,55 @@ impl Scene {
         self.remove(id)
     }
 
+    /// Renames an entity, keeping the label index coherent.
+    ///
+    /// Returns `Ok(false)` if `id` is unknown, `Ok(true)` on success (including an
+    /// identity rename), and `Err(SceneError::DuplicateLabel)` if another live
+    /// entity already holds `new_label`. This is the supported way to change a
+    /// label — writing `SceneEntity.label` directly through [`Scene::entity_mut`]
+    /// bypasses the index and desyncs [`Scene::id_of`] / [`Scene::target`]; calling
+    /// `rename` also repairs such a prior desync for this id.
+    pub fn rename(
+        &mut self,
+        id: SceneId,
+        new_label: impl Into<String>,
+    ) -> Result<bool, SceneError> {
+        let new_label = new_label.into();
+        let Some(idx) = self.entities.iter().position(|e| e.id == id) else {
+            return Ok(false);
+        };
+        if self.entities[idx].label == new_label {
+            return Ok(true);
+        }
+        if self.by_label.get(&new_label).is_some_and(|v| *v != id) {
+            return Err(SceneError::DuplicateLabel(new_label));
+        }
+        // Purge any entry pointing at this id (robust to a prior direct-write
+        // desync), then install the new mapping.
+        self.by_label.retain(|_, v| *v != id);
+        self.by_label.insert(new_label.clone(), id);
+        self.entities[idx].label = new_label;
+        Ok(true)
+    }
+
     /// Keeps only the entities for which `keep` returns `true`, dropping the rest
     /// and freeing their labels. Survivor insertion order is preserved; the same
     /// never-recycled identity policy as [`Scene::remove`] applies.
     pub fn retain(&mut self, mut keep: impl FnMut(&SceneEntity) -> bool) {
-        let by_label = &mut self.by_label;
+        // Collect the dropped ids, then purge the index by identity (not by each
+        // entity's current label, which `entity_mut` may have desynced). See
+        // `remove` for the rationale (Finding B, #77).
+        let mut dropped: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
         self.entities.retain(|e| {
             let k = keep(e);
             if !k {
-                by_label.remove(&e.label);
+                dropped.insert(e.id.0);
             }
             k
         });
+        if !dropped.is_empty() {
+            self.by_label.retain(|_, v| !dropped.contains(&v.0));
+        }
     }
 
     /// Removes every entity and frees every label. The [`SceneId`]/[`TagId`]
@@ -1217,7 +1273,11 @@ impl Scene {
         order.sort_by_key(|e| (e.z, e.id.0));
         let mut stack = Node::stack().width(width).height(height);
         for e in order {
-            if resolved_visibility(p, e) <= 0.0 {
+            // Skip exactly when `evaluate` reports `!visible`, i.e. `!(v > 0.0)` —
+            // NOT `v <= 0.0`. Under IEEE-754 a NaN visibility fails both `> 0.0` and
+            // `<= 0.0`, so `<= 0.0` would paint a NaN that `evaluate` marks invisible,
+            // making the two public methods disagree (Finding A, #77).
+            if !(resolved_visibility(p, e) > 0.0) {
                 continue;
             }
             let offset = resolved_offset(p, e);
@@ -1844,5 +1904,85 @@ mod tests {
         assert_eq!(scene.id_of("renamed"), None);
         let g2 = scene.add(SceneEntity::new("gone", text("g")));
         assert_ne!(g2, gone);
+    }
+
+    #[test]
+    fn rename_keeps_the_label_index_coherent() {
+        // Finding B (#77, Renaissance III): the supported, index-coherent way to
+        // change a label, and the repair path for a prior direct-write desync.
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")));
+        let b = scene.add(SceneEntity::new("b", text("b")));
+
+        // Rename to a free label updates both directions.
+        assert_eq!(scene.rename(a, "a2"), Ok(true));
+        assert_eq!(scene.id_of("a"), None);
+        assert_eq!(scene.id_of("a2"), Some(a));
+        assert_eq!(scene.entity(a).unwrap().label, "a2");
+
+        // A duplicate target is rejected and leaves state unchanged.
+        assert_eq!(
+            scene.rename(a, "b"),
+            Err(SceneError::DuplicateLabel("b".into()))
+        );
+        assert_eq!(scene.id_of("a2"), Some(a));
+        assert_eq!(scene.entity(a).unwrap().label, "a2");
+
+        // An identity rename is a no-op success.
+        assert_eq!(scene.rename(b, "b"), Ok(true));
+
+        // An unknown id yields Ok(false) (consistent with set_node).
+        scene.remove(a);
+        assert_eq!(scene.rename(a, "zzz"), Ok(false));
+
+        // rename repairs a prior direct-write desync, recovering by id.
+        let c = scene.add(SceneEntity::new("c", text("c")));
+        scene.entity_mut(c).unwrap().label = "ghost".into(); // index still "c"→c
+        assert_eq!(scene.rename(c, "c_fixed"), Ok(true));
+        assert_eq!(scene.id_of("c"), None, "stale key purged by id");
+        assert_eq!(scene.id_of("ghost"), None);
+        assert_eq!(scene.id_of("c_fixed"), Some(c));
+    }
+
+    #[test]
+    fn interned_tags_follow_the_documented_retention_policy() {
+        // Finding C (#77, Renaissance III): interned tags are never reclaimed
+        // (TagId stability). Reused names keep the table bounded; unique transient
+        // names grow it monotonically — a declared policy, not a leak. White-box:
+        // this test lives in the scene module and reads the private tag table.
+        let mut scene = Scene::new();
+
+        // Churn a REUSED tag name across many add/remove cycles.
+        for i in 0..100 {
+            let id = scene.add(SceneEntity::new(format!("e{i}"), text("e")).tag("shared"));
+            scene.remove(id);
+        }
+        assert_eq!(
+            scene.tag_ids.len(),
+            1,
+            "a reused tag name interns exactly once regardless of churn"
+        );
+
+        // Churn UNIQUE tag names: one new slot per distinct name, never reclaimed.
+        let before = scene.tag_ids.len();
+        for i in 0..50 {
+            let id =
+                scene.add(SceneEntity::new(format!("u{i}"), text("u")).tag(format!("uniq{i}")));
+            scene.remove(id);
+        }
+        assert_eq!(
+            scene.tag_ids.len(),
+            before + 50,
+            "unique transient tags are retained by policy (stable TagIds)"
+        );
+
+        // clear() frees entities and labels but deliberately preserves tags.
+        scene.clear();
+        assert!(scene.is_empty());
+        assert_eq!(
+            scene.tag_ids.len(),
+            before + 50,
+            "clear() retains interned tags for TagId stability"
+        );
     }
 }
