@@ -167,19 +167,40 @@ pub enum TransportCmd {
 /// (keyboard ≡ pointer equivalence). Only [`Workbench::apply_intent`] mutates state.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Intent {
-    DrawRect { a: Point, b: Point },
-    DrawLine { a: Point, b: Point },
+    DrawRect {
+        a: Point,
+        b: Point,
+    },
+    DrawLine {
+        a: Point,
+        b: Point,
+    },
     SelectAt(Point),
     ClearSelection,
-    MoveSelected { dx: f64, dy: f64 },
+    MoveSelected {
+        dx: f64,
+        dy: f64,
+    },
     SetSource(f64),
-    Pan { dx: f64, dy: f64 },
-    Zoom { factor: f64 },
+    Pan {
+        dx: f64,
+        dy: f64,
+    },
+    Zoom {
+        factor: f64,
+    },
     ProbeAt(Point),
     Transport(TransportCmd),
     Undo,
     Redo,
     Capture,
+    /// Keyboard-only selection cycle: advance the primary selection to the next
+    /// (`SelectNext`, Tab) or previous (`SelectPrev`, Shift+Tab / BackTab) shape in
+    /// deterministic insertion order, so selection is reachable without a pointer
+    /// (#140 / #144 keyboard equivalence). Reaches the same authoritative selection
+    /// a pointer `SelectAt` would, even though the input trace differs.
+    SelectNext,
+    SelectPrev,
 }
 
 impl Intent {
@@ -250,6 +271,8 @@ impl Intent {
             Intent::Undo => v.push(11),
             Intent::Redo => v.push(12),
             Intent::Capture => v.push(13),
+            Intent::SelectNext => v.push(14),
+            Intent::SelectPrev => v.push(15),
         }
         v
     }
@@ -456,6 +479,8 @@ impl Workbench {
                 self.prune_selection();
             }
             Intent::Capture => self.metrics.captures += 1,
+            Intent::SelectNext => self.cycle_selection(true),
+            Intent::SelectPrev => self.cycle_selection(false),
         }
         self.command_digest
     }
@@ -487,6 +512,31 @@ impl Workbench {
     fn select_only(&mut self, id: ShapeId) {
         self.selection.clear();
         self.selection.insert(id);
+    }
+
+    /// Advance the primary selection to the next (`forward`) or previous shape in
+    /// deterministic insertion order — the keyboard select cycle (Tab / Shift+Tab).
+    /// With nothing selected, `forward` lands on the first shape and `!forward` on
+    /// the last; an empty scene clears. Pointer-free, so selection has a keyboard
+    /// path (#140 / #144), and lands on the same shape a pointer `SelectAt` would.
+    fn cycle_selection(&mut self, forward: bool) {
+        let ids: Vec<ShapeId> = self.model.shapes.iter().map(|s| s.id()).collect();
+        if ids.is_empty() {
+            self.selection.clear();
+            return;
+        }
+        let n = ids.len();
+        let cur = self
+            .selection
+            .primary()
+            .and_then(|c| ids.iter().position(|&i| i == c));
+        let next = match cur {
+            Some(pos) if forward => (pos + 1) % n,
+            Some(pos) => (pos + n - 1) % n,
+            None if forward => 0,
+            None => n - 1,
+        };
+        self.select_only(ids[next]);
     }
 
     /// Drop any selected id whose shape no longer exists — e.g. after an undo removed it,
@@ -752,6 +802,17 @@ impl Workbench {
         let shift = ke.modifiers.contains(KeyModifiers::SHIFT);
         match ke.code {
             KeyCode::Char('q') => self.should_quit = true,
+            // Keyboard-only selection cycle — selection must be reachable without a
+            // pointer (#140 / #144). Tab advances; Shift+Tab / BackTab retreats.
+            KeyCode::Tab if shift => {
+                self.apply_intent(Intent::SelectPrev);
+            }
+            KeyCode::Tab => {
+                self.apply_intent(Intent::SelectNext);
+            }
+            KeyCode::BackTab => {
+                self.apply_intent(Intent::SelectPrev);
+            }
             KeyCode::Char('n') => {
                 // Draw a unit rectangle "wall" at the cursor/probe cell.
                 let o = self.probe_world.unwrap_or(Point::new(2.0, 2.0));
@@ -964,7 +1025,7 @@ impl Workbench {
     }
 
     pub fn help_line(&self) -> String {
-        "keys  n:rect l:line []:source space:play .,:step 0:rewind p:probe m:mono c:capture arrows:move ^Z/^Y:undo q:quit".to_string()
+        "keys  n:rect l:line []:source space:play .,:step 0:rewind p:probe m:mono c:capture tab:select arrows:move ^Z/^Y:undo q:quit".to_string()
     }
 
     /// A plain-text still capture of the current frame (HUD + heatmap + readouts),
