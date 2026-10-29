@@ -1974,7 +1974,11 @@ mod tests {
             Some(id),
             "rename must install the index entry its doc promises to repair"
         );
-        assert_eq!(scene.id_of("old"), None, "the stale indexed label must be purged");
+        assert_eq!(
+            scene.id_of("old"),
+            None,
+            "the stale indexed label must be purged"
+        );
         // Deletion after recovery: the repaired mapping deletes cleanly.
         assert!(scene.remove(id).is_some());
         assert_eq!(scene.id_of("new"), None);
