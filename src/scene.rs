@@ -1753,4 +1753,96 @@ mod tests {
             "to_node scaled {ratio:.2}× from 1k→2k hidden (want <3; quadratic≈4)"
         );
     }
+
+    #[test]
+    fn to_node_inclusion_matches_evaluate_for_hostile_visibility() {
+        // Finding A (#77, Renaissance III). `to_node`'s skip predicate must be the
+        // exact complement of `evaluate`'s `visible` flag. Under IEEE-754 `v <= 0.0`
+        // is NOT the complement of `v > 0.0` (a NaN fails both), so a NaN or
+        // pathological reveal would be painted by `to_node` yet reported invisible
+        // by `evaluate` — the two public methods disagreeing on the same scene.
+        // Oracle = the original `keep ⇔ v > 0.0` rule. Camera is (0,0), so `to_node`
+        // returns the bare stack and `children.len()` is the painted count. The
+        // finite/inf rows prove they already agreed; NaN is the sole discriminator.
+        let battery = [
+            f32::NAN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            0.0_f32,
+            -0.0_f32,
+            f32::from_bits(1), // smallest positive subnormal
+            1.0_f32,
+            -1.0_f32,
+            0.5_f32,
+        ];
+        for &v in &battery {
+            let mut scene = Scene::new();
+            let id = scene.add(SceneEntity::new("x", text("x")));
+            let mut p = Presentation::new();
+            // Public path: from == to == v, so lerp yields exactly v for any clamp.
+            Effect::reveal(SceneTarget::Id(id), v, v, Duration::from_millis(100)).eval(
+                Duration::from_millis(100),
+                &scene,
+                &mut p,
+            );
+
+            let oracle_keep = v > 0.0;
+            let resolved = scene.evaluate(&p);
+            assert_eq!(
+                resolved[0].visible, oracle_keep,
+                "evaluate().visible for v={v:?}"
+            );
+            let painted = scene.to_node(&p, 80.0, 24.0).children.len();
+            assert_eq!(
+                painted,
+                oracle_keep as usize,
+                "to_node painted {painted} child(ren) for v={v:?}; must match evaluate.visible={oracle_keep}"
+            );
+        }
+    }
+
+    #[test]
+    fn remove_after_label_mutation_frees_the_indexed_label() {
+        // Finding B (#77, Renaissance III). `remove` must purge the label index by
+        // identity, not by the entity's *current* label. A consumer that writes
+        // `SceneEntity.label` through `entity_mut` desyncs the add-time key; keying
+        // cleanup off the current label leaves a dead id in `by_label` and burns the
+        // original label (a later `add` of it would panic as a duplicate).
+        let mut scene = Scene::new();
+        let id = scene.add(SceneEntity::new("old", text("o")));
+        scene.entity_mut(id).unwrap().label = "new".into(); // direct write → desync
+        assert!(scene.remove(id).is_some(), "entity was present");
+        assert_eq!(scene.id_of("old"), None, "the indexed label must be freed");
+        assert_eq!(
+            scene.id_of("new"),
+            None,
+            "the mutated label was never indexed"
+        );
+        assert!(scene.is_empty());
+        // "old" is reusable (not burned) and yields a fresh, non-aliasing id.
+        let reborn = scene.add(SceneEntity::new("old", text("o")));
+        assert_ne!(reborn, id);
+        assert_eq!(scene.id_of("old"), Some(reborn));
+    }
+
+    #[test]
+    fn retain_frees_dropped_labels_by_identity_after_mutation() {
+        // Finding B (#77, Renaissance III), the `retain` path: same identity-keyed
+        // purge requirement as `remove`.
+        let mut scene = Scene::new();
+        let keep = scene.add(SceneEntity::new("keep", text("k")));
+        let gone = scene.add(SceneEntity::new("gone", text("g")));
+        scene.entity_mut(gone).unwrap().label = "renamed".into(); // desync
+        scene.retain(|e| e.id == keep);
+        assert_eq!(scene.len(), 1);
+        assert_eq!(scene.id_of("keep"), Some(keep));
+        assert_eq!(
+            scene.id_of("gone"),
+            None,
+            "dropped indexed label freed by id"
+        );
+        assert_eq!(scene.id_of("renamed"), None);
+        let g2 = scene.add(SceneEntity::new("gone", text("g")));
+        assert_ne!(g2, gone);
+    }
 }
