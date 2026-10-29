@@ -16,7 +16,8 @@
 //!
 //! Keys: `n` draw rectangle wall · `l` draw line · `[` / `]` source − / + ·
 //! `space` play/pause · `.` / `,` step ± · `0` rewind · `p` probe centre · `m` mono ·
-//! `c` capture · arrows move selection (Shift+arrows pan) · Ctrl-Z / Ctrl-Y undo/redo · `q` quit.
+//! `c` capture · `Tab` / `Shift+Tab` select next / prev shape · arrows move selection
+//! (Shift+arrows pan) · Ctrl-Z / Ctrl-Y undo/redo · `q` quit.
 //! Click the canvas to select + probe a cell; drag to move the selection.
 
 use std::io::{self, Write};

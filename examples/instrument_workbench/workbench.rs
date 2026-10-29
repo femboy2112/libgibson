@@ -1025,7 +1025,7 @@ impl Workbench {
     }
 
     pub fn help_line(&self) -> String {
-        "keys  n:rect l:line []:source space:play .,:step 0:rewind p:probe m:mono c:capture arrows:move ^Z/^Y:undo q:quit".to_string()
+        "keys  n:rect l:line []:source space:play .,:step 0:rewind p:probe m:mono c:capture tab:select arrows:move ^Z/^Y:undo q:quit".to_string()
     }
 
     /// A plain-text still capture of the current frame (HUD + heatmap + readouts),

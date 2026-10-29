@@ -571,3 +571,114 @@ fn s12_pick_prefers_the_topmost_overlapping_shape() {
         "a bottom-only region selects the lower shape"
     );
 }
+
+// ---- S13: the FULL interaction, not just the selected id — reaching shape 0 by a pointer
+//           click vs a keyboard Tab and then applying the SAME move must reach the same
+//           canonical edit, and recover identically under undo/redo (#140/#144).
+
+#[test]
+fn s13_tab_select_then_move_equals_pointer_select_then_move() {
+    // We compare the authoritative SceneModel (shape geometry), not a pixel image and not
+    // the probe channel a click also updates — raw input traces may differ, the edit must
+    // not. The move leg is arrow keys in BOTH paths (drag ≡ arrow move is s7; click →
+    // SelectAt is s1), so the SELECTION path is the only variable under test.
+    let s0 = || Intent::DrawRect {
+        a: Point::new(2.0, 2.0),
+        b: Point::new(5.0, 4.0),
+    };
+    let s1 = || Intent::DrawRect {
+        a: Point::new(10.0, 2.0),
+        b: Point::new(13.0, 4.0),
+    };
+
+    // Pointer path: click inside shape 0 (SelectAt), then Right, Right, Down.
+    let mut a = wb_ready(80, 24);
+    a.apply_intent(s0());
+    a.apply_intent(s1());
+    a.apply_intent(Intent::SelectAt(Point::new(3.5, 3.0)));
+    a.process(&key(KeyCode::Right));
+    a.process(&key(KeyCode::Right));
+    a.process(&key(KeyCode::Down));
+
+    // Keyboard-only path: Tab selects shape 0 (wraps forward from the last-drawn s1).
+    let mut b = wb_ready(80, 24);
+    b.apply_intent(s0());
+    b.apply_intent(s1());
+    b.process(&key(KeyCode::Tab));
+    b.process(&key(KeyCode::Right));
+    b.process(&key(KeyCode::Right));
+    b.process(&key(KeyCode::Down));
+
+    assert_eq!(
+        a.selection.ids(),
+        b.selection.ids(),
+        "both paths keep shape 0 selected"
+    );
+    assert_eq!(
+        a.model, b.model,
+        "select-then-move reaches the same canonical edit by either selection path"
+    );
+
+    // Undo/redo recovery is identical across the two input provenances: the move sits on
+    // top of both undo stacks (selection is not an edit), so Undo/Redo move in lockstep.
+    a.apply_intent(Intent::Undo);
+    b.apply_intent(Intent::Undo);
+    assert_eq!(
+        a.model, b.model,
+        "undo recovers the same model on both paths"
+    );
+    a.apply_intent(Intent::Redo);
+    b.apply_intent(Intent::Redo);
+    assert_eq!(
+        a.model, b.model,
+        "redo re-applies the same model on both paths"
+    );
+}
+
+// ---- S14: selection identity survives an intervening add + delete — a keyboard cycle must
+//           never target a retired shape, and must resume over the live set in order (L5).
+
+#[test]
+fn s14_selection_identity_survives_intervening_add_then_delete() {
+    let mut wb = wb_ready(80, 24);
+    wb.apply_intent(Intent::DrawRect {
+        a: Point::new(2.0, 2.0),
+        b: Point::new(5.0, 4.0),
+    });
+    let s0 = wb.selection.primary().unwrap();
+    wb.apply_intent(Intent::DrawRect {
+        a: Point::new(10.0, 2.0),
+        b: Point::new(13.0, 4.0),
+    });
+    let s1 = wb.selection.primary().unwrap();
+
+    // Keyboard-select shape 0 (Tab wraps forward from the last-drawn s1).
+    wb.process(&key(KeyCode::Tab));
+    assert_eq!(wb.selection.primary(), Some(s0));
+
+    // Intervening add (auto-selects the new shape), then undo retires it.
+    wb.apply_intent(Intent::DrawLine {
+        a: Point::new(2.0, 8.0),
+        b: Point::new(9.0, 8.0),
+    });
+    let s2 = wb.selection.primary().unwrap();
+    assert!(s2 != s0 && s2 != s1, "the added shape has a distinct id");
+    wb.apply_intent(Intent::Undo); // retires s2
+    assert_eq!(wb.model.shapes.len(), 2, "back to two live shapes");
+    assert_ne!(
+        wb.selection.primary(),
+        Some(s2),
+        "selection must not dangle on a retired shape (L5)"
+    );
+
+    // A fresh Tab cycle targets only the live set [s0, s1], in insertion order.
+    wb.apply_intent(Intent::ClearSelection);
+    wb.process(&key(KeyCode::Tab));
+    assert_eq!(
+        wb.selection.primary(),
+        Some(s0),
+        "Tab targets the first live shape"
+    );
+    wb.process(&key(KeyCode::Tab));
+    assert_eq!(wb.selection.primary(), Some(s1), "then the second");
+}
