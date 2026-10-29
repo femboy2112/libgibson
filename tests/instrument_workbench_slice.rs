@@ -11,8 +11,8 @@
 mod workbench;
 
 use workbench::{
-    field_extent, Cmd, Intent, SceneModel, TransportCmd, Workbench, FIELD_COLS, FIELD_ROWS,
-    SOURCE_MAX,
+    field_extent, Cmd, EditOutcome, Intent, SceneModel, TransportCmd, Workbench, FIELD_COLS,
+    FIELD_ROWS, SOURCE_MAX,
 };
 
 use gibson::edit::{Compound, Reversible};
@@ -759,4 +759,150 @@ fn tick_wall_saturates_at_the_ceiling_and_never_overflows() {
     let demand = wb.tick_wall(Duration::from_millis(64));
     assert!(demand.is_some(), "transport is playing");
     assert_eq!(wb.field_tick, u64::MAX, "model time clamps at the ceiling");
+}
+
+// ---- Phase 2 (Renaissance IV): every edit attempt has an accountable outcome -------
+//
+// L5: an attempted intent, an applied edit, a refused edit, and a known-partial model
+// are distinct. The workbench reports the latest in `last_edit`, folds ACCEPTED
+// commands into `accepted_digest` separately from the ATTEMPTED-intent `command_digest`,
+// and a refused edit leaves the model and undo log untouched.
+
+fn draw_rect(a: (f64, f64), b: (f64, f64)) -> Intent {
+    Intent::DrawRect {
+        a: Point::new(a.0, a.1),
+        b: Point::new(b.0, b.1),
+    }
+}
+
+#[test]
+fn nan_move_is_refused_and_leaves_model_and_log_untouched() {
+    let mut wb = Workbench::new();
+    wb.apply_intent(draw_rect((2.0, 2.0), (6.0, 5.0))); // auto-selects the new shape
+    assert_eq!(wb.last_edit, EditOutcome::Applied, "the draw applied");
+
+    let model_before = wb.digest();
+    let undo_before = wb.undo_depth();
+    let accepted_before = wb.accepted_digest;
+    let cmd_before = wb.command_digest;
+
+    // A non-finite move reaches the edit engine and is REFUSED there
+    // (`Shape::translate` rejects non-finite) — not silently dropped.
+    wb.apply_intent(Intent::MoveSelected {
+        dx: f64::NAN,
+        dy: 0.0,
+    });
+
+    assert_eq!(
+        wb.last_edit,
+        EditOutcome::Refused,
+        "a non-finite move is an accountable refusal, not a silent nothing"
+    );
+    assert_eq!(
+        wb.digest(),
+        model_before,
+        "a refused edit must not mutate the model"
+    );
+    assert_eq!(
+        wb.undo_depth(),
+        undo_before,
+        "a refused edit must not be recorded"
+    );
+    assert_eq!(
+        wb.accepted_digest, accepted_before,
+        "a refused edit must not advance the accepted-command trace"
+    );
+    assert_ne!(
+        wb.command_digest, cmd_before,
+        "but the ATTEMPT is still folded into the attempted-intent trace"
+    );
+    assert!(!wb.model_corrupt, "a clean refusal is not model corruption");
+}
+
+#[test]
+fn accepted_trace_distinguishes_an_applied_move_from_a_refused_one() {
+    // Two workbenches, identical history, then one applies a real move and the other
+    // attempts a refused (NaN) move. Their ACCEPTED-command digests must diverge; the
+    // refused one's must equal its pre-move value.
+    let mut good = Workbench::new();
+    let mut bad = Workbench::new();
+    good.apply_intent(draw_rect((2.0, 2.0), (6.0, 5.0)));
+    bad.apply_intent(draw_rect((2.0, 2.0), (6.0, 5.0)));
+    assert_eq!(
+        good.accepted_digest, bad.accepted_digest,
+        "identical history so far"
+    );
+    let bad_accepted_before = bad.accepted_digest;
+
+    good.apply_intent(Intent::MoveSelected { dx: 1.0, dy: 1.0 });
+    bad.apply_intent(Intent::MoveSelected {
+        dx: f64::NAN,
+        dy: 0.0,
+    });
+
+    assert_eq!(good.last_edit, EditOutcome::Applied);
+    assert_eq!(bad.last_edit, EditOutcome::Refused);
+    assert_ne!(
+        good.accepted_digest, bad.accepted_digest,
+        "the accepted-command trace separates an applied move from a refused one"
+    );
+    assert_eq!(
+        bad.accepted_digest, bad_accepted_before,
+        "the refused move left the accepted-command trace exactly where it was"
+    );
+}
+
+#[test]
+fn empty_undo_and_redo_are_noops_not_silent_success() {
+    let mut wb = Workbench::new();
+    let before = wb.digest();
+    wb.apply_intent(Intent::Undo);
+    assert_eq!(
+        wb.last_edit,
+        EditOutcome::NoOp,
+        "nothing to undo is a no-op"
+    );
+    assert_eq!(wb.digest(), before, "an empty undo changes nothing");
+    wb.apply_intent(Intent::Redo);
+    assert_eq!(
+        wb.last_edit,
+        EditOutcome::NoOp,
+        "nothing to redo is a no-op"
+    );
+}
+
+#[test]
+fn clean_undo_and_redo_report_applied() {
+    let mut wb = Workbench::new();
+    wb.apply_intent(draw_rect((2.0, 2.0), (6.0, 5.0)));
+    wb.apply_intent(Intent::Undo);
+    assert_eq!(
+        wb.last_edit,
+        EditOutcome::Applied,
+        "a real undo moved the log pointer"
+    );
+    assert_eq!(wb.model.shapes.len(), 0, "the shape was removed");
+    wb.apply_intent(Intent::Redo);
+    assert_eq!(wb.last_edit, EditOutcome::Applied, "a real redo re-applied");
+    assert_eq!(wb.model.shapes.len(), 1, "the shape is back");
+}
+
+#[test]
+fn out_of_range_source_is_refused_in_the_edit_accounting_too() {
+    let mut wb = Workbench::new();
+    let accepted_before = wb.accepted_digest;
+    wb.apply_intent(Intent::SetSource(SOURCE_MAX + 50.0));
+    assert_eq!(
+        wb.last_edit,
+        EditOutcome::Refused,
+        "out-of-range source is refused"
+    );
+    assert!(
+        wb.last_numeric_error.is_some(),
+        "numeric refusal still disclosed"
+    );
+    assert_eq!(
+        wb.accepted_digest, accepted_before,
+        "a refused source edit does not advance the accepted-command trace"
+    );
 }
