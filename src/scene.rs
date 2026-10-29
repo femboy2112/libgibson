@@ -1273,16 +1273,17 @@ impl Scene {
         order.sort_by_key(|e| (e.z, e.id.0));
         let mut stack = Node::stack().width(width).height(height);
         for e in order {
-            // Skip exactly when `evaluate` reports `!visible`, i.e. `!(v > 0.0)` —
-            // NOT `v <= 0.0`. Under IEEE-754 a NaN visibility fails both `> 0.0` and
-            // `<= 0.0`, so `<= 0.0` would paint a NaN that `evaluate` marks invisible,
-            // making the two public methods disagree (Finding A, #77).
-            if !(resolved_visibility(p, e) > 0.0) {
-                continue;
+            // Paint exactly when `evaluate` reports `visible`, i.e. `v > 0.0` — the
+            // positive predicate, NOT `!(v <= 0.0)`. Under IEEE-754 a NaN visibility
+            // fails `> 0.0`, so it is correctly omitted (matching `evaluate`), whereas
+            // a `v <= 0.0` skip test would paint a NaN that `evaluate` marks invisible
+            // and make the two public methods disagree (Finding A, #77). Phrasing it
+            // positively also keeps clippy's `neg_cmp_op_on_partial_ord` happy.
+            if resolved_visibility(p, e) > 0.0 {
+                let offset = resolved_offset(p, e);
+                let node = e.node.clone().post_process(p.surface_fx(e.id).to_vec());
+                stack = stack.child(node.offset(offset.0 as f32, offset.1 as f32));
             }
-            let offset = resolved_offset(p, e);
-            let node = e.node.clone().post_process(p.surface_fx(e.id).to_vec());
-            stack = stack.child(node.offset(offset.0 as f32, offset.1 as f32));
         }
         let (cx, cy) = p.camera();
         if cx != 0 || cy != 0 {
