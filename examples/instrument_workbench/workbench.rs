@@ -27,7 +27,7 @@
 
 use std::time::Duration;
 
-use gibson::edit::{Compound, EditPhase, Reversible, UndoKeymap, UndoLog};
+use gibson::edit::{Compound, CompoundError, EditPhase, Reversible, UndoKeymap, UndoLog};
 use gibson::field_view::{
     Colormap, FieldExtent, FieldFrame, FieldView, ProbeReport, RangePolicy, Sample,
 };
@@ -151,6 +151,48 @@ impl Reversible for Cmd {
     }
 }
 
+/// The accountable result of the most recent edit attempt (Law L5): an attempted
+/// intent, a validated+applied edit, a refused edit, and a known-partial model after
+/// a failed rollback are DISTINCT and none may masquerade as another. The workbench
+/// keeps the latest in [`Workbench::last_edit`] and surfaces it in the HUD, so a
+/// refused move never looks like an accepted one and a corrupted model never looks
+/// clean.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EditOutcome {
+    /// This intent attempted no model edit (a pure selection / transport / probe op).
+    #[default]
+    None,
+    /// A command applied cleanly and was recorded on the undo log — or a clean
+    /// undo/redo moved the log pointer.
+    Applied,
+    /// An edit intent that had nothing to do (empty selection, zero move, identity
+    /// source, or an empty undo/redo stack). Not an error; not an applied edit.
+    NoOp,
+    /// The edit was refused: the model is untouched (the engine rolled back cleanly,
+    /// or validation rejected it before any mutation). NOT recorded.
+    Refused,
+    /// A rollback itself failed ([`gibson::edit::CompoundError::RollbackFailed`]): the
+    /// model is in a KNOWN-PARTIAL state. Distinct from [`Refused`](EditOutcome::Refused)
+    /// — it must never be treated as a clean no-op. Sets the sticky
+    /// [`Workbench::model_corrupt`] flag. (Unreachable through the current `Cmd` set,
+    /// whose single-command transactions cannot fail a compensation; wired so a future
+    /// fallible or multi-step `Cmd` cannot silently corrupt the model.)
+    RollbackFailed,
+}
+
+impl EditOutcome {
+    /// A short, stable token for the HUD / a vt100 oracle.
+    pub fn tag(self) -> &'static str {
+        match self {
+            EditOutcome::None => "none",
+            EditOutcome::Applied => "ok",
+            EditOutcome::NoOp => "noop",
+            EditOutcome::Refused => "refused",
+            EditOutcome::RollbackFailed => "rollback-failed",
+        }
+    }
+}
+
 // ---- intents: the ONE canonical surface both pointer and keyboard route through -------
 
 /// Transport over the app-owned deterministic field (L6: its own chronology).
@@ -167,19 +209,40 @@ pub enum TransportCmd {
 /// (keyboard ≡ pointer equivalence). Only [`Workbench::apply_intent`] mutates state.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Intent {
-    DrawRect { a: Point, b: Point },
-    DrawLine { a: Point, b: Point },
+    DrawRect {
+        a: Point,
+        b: Point,
+    },
+    DrawLine {
+        a: Point,
+        b: Point,
+    },
     SelectAt(Point),
     ClearSelection,
-    MoveSelected { dx: f64, dy: f64 },
+    MoveSelected {
+        dx: f64,
+        dy: f64,
+    },
     SetSource(f64),
-    Pan { dx: f64, dy: f64 },
-    Zoom { factor: f64 },
+    Pan {
+        dx: f64,
+        dy: f64,
+    },
+    Zoom {
+        factor: f64,
+    },
     ProbeAt(Point),
     Transport(TransportCmd),
     Undo,
     Redo,
     Capture,
+    /// Keyboard-only selection cycle: advance the primary selection to the next
+    /// (`SelectNext`, Tab) or previous (`SelectPrev`, Shift+Tab / BackTab) shape in
+    /// deterministic insertion order, so selection is reachable without a pointer
+    /// (#140 / #144 keyboard equivalence). Reaches the same authoritative selection
+    /// a pointer `SelectAt` would, even though the input trace differs.
+    SelectNext,
+    SelectPrev,
 }
 
 impl Intent {
@@ -250,6 +313,8 @@ impl Intent {
             Intent::Undo => v.push(11),
             Intent::Redo => v.push(12),
             Intent::Capture => v.push(13),
+            Intent::SelectNext => v.push(14),
+            Intent::SelectPrev => v.push(15),
         }
         v
     }
@@ -304,8 +369,27 @@ pub struct Workbench {
     pub color_policy: Colormap,
     pub range_policy: RangePolicy,
 
-    /// Running hash of every applied intent, in order (the "command digest", L4).
+    /// Running hash of every ATTEMPTED intent, in dispatch order (the attempted-intent
+    /// trace, L4) — folded BEFORE validation, so it records what was *asked*, not what
+    /// was *accepted*. A refused move or an out-of-range source still advances it. The
+    /// accepted-command trace (only edits that cleanly applied) is
+    /// [`Self::accepted_digest`]; the authoritative model hash is [`Self::digest`].
     pub command_digest: u64,
+
+    /// Running hash of ACCEPTED commands only — folded (from the same canonical intent
+    /// bytes as [`Self::command_digest`]) exactly when an intent produces a clean
+    /// applied edit. Refused and no-op intents never advance it, so it is a faithful
+    /// record of the edits the model actually took, distinct from what was attempted.
+    pub accepted_digest: u64,
+
+    /// Outcome of the most recent edit attempt (L5), surfaced in the HUD so a refused
+    /// or partially-applied edit is never silently shown as success.
+    pub last_edit: EditOutcome,
+
+    /// Sticky corruption flag: set if a rollback ever failed and left the model in a
+    /// known-partial state. Once set it STAYS set — a corrupted model must not quietly
+    /// continue as though its rollback succeeded (L5/L7).
+    pub model_corrupt: bool,
 
     // paint-derived targeting (refreshed from the hit-map each layout)
     canvas_id: Option<TargetId>,
@@ -353,6 +437,9 @@ impl Workbench {
             color_policy: Colormap::Heat,
             range_policy: RangePolicy::Auto,
             command_digest: FNV_OFFSET,
+            accepted_digest: FNV_OFFSET,
+            last_edit: EditOutcome::None,
+            model_corrupt: false,
             canvas_id: None,
             canvas_rect: Rect::new(0, 1, FIELD_COLS as u16, FIELD_ROWS as u16),
             layers: HitLayers::new(),
@@ -401,20 +488,41 @@ impl Workbench {
     // -- the single authoritative transition δ(S, I) → S' -------------------------------
 
     pub fn apply_intent(&mut self, intent: Intent) -> u64 {
-        self.command_digest = fnv1a(&intent.canonical(), self.command_digest);
+        // One canonical encoding of the attempted intent, reused for both digests.
+        let canon = intent.canonical();
+        // Attempted-intent trace (L4): EVERY dispatched intent, folded before any
+        // validation — what was asked, not what was accepted.
+        self.command_digest = fnv1a(&canon, self.command_digest);
+        // Reset per intent: edit arms set it, pure selection/transport/probe arms
+        // leave it `None`. Never leaks a stale outcome from a prior intent.
+        self.last_edit = EditOutcome::None;
         match intent {
             Intent::DrawRect { a, b } => {
                 let id = self.mint_id();
-                if let Some(shape) = Shape::rect(id, a, b) {
-                    self.record(Compound::new(vec![Cmd::AddShape(shape)]));
-                    self.select_only(id);
+                match Shape::rect(id, a, b) {
+                    // Select only a shape that was actually added.
+                    Some(shape) => {
+                        if self.record(Compound::new(vec![Cmd::AddShape(shape)]))
+                            == EditOutcome::Applied
+                        {
+                            self.select_only(id);
+                        }
+                    }
+                    // Degenerate geometry is a refusal, not a silent nothing.
+                    None => self.last_edit = EditOutcome::Refused,
                 }
             }
             Intent::DrawLine { a, b } => {
                 let id = self.mint_id();
-                if let Some(shape) = Shape::line(id, a, b) {
-                    self.record(Compound::new(vec![Cmd::AddShape(shape)]));
-                    self.select_only(id);
+                match Shape::line(id, a, b) {
+                    Some(shape) => {
+                        if self.record(Compound::new(vec![Cmd::AddShape(shape)]))
+                            == EditOutcome::Applied
+                        {
+                            self.select_only(id);
+                        }
+                    }
+                    None => self.last_edit = EditOutcome::Refused,
                 }
             }
             Intent::SelectAt(p) => match self.pick(p) {
@@ -424,7 +532,13 @@ impl Workbench {
             Intent::ClearSelection => self.selection.clear(),
             Intent::MoveSelected { dx, dy } => {
                 let ids: Vec<ShapeId> = self.selection.ids().to_vec();
-                if !ids.is_empty() && (dx != 0.0 || dy != 0.0) {
+                if ids.is_empty() || (dx == 0.0 && dy == 0.0) {
+                    // Nothing selected, or a zero move: a no-op, not an applied edit.
+                    self.last_edit = EditOutcome::NoOp;
+                } else {
+                    // A non-finite dx/dy reaches the engine and is REFUSED there
+                    // (`Shape::translate` rejects non-finite); `record` reports it
+                    // instead of silently doing nothing.
                     let cmds = ids.into_iter().map(|id| Cmd::Move { id, dx, dy }).collect();
                     self.record(Compound::new(cmds));
                 }
@@ -435,10 +549,17 @@ impl Workbench {
                     let from = self.model.source_value;
                     if valid != from {
                         self.record(Compound::new(vec![Cmd::SetSource { from, to: valid }]));
+                    } else {
+                        // Same value: nothing to do.
+                        self.last_edit = EditOutcome::NoOp;
                     }
                 }
-                // Refuse, never clamp (Finding D): the model is untouched.
-                Err(e) => self.last_numeric_error = Some(e),
+                // Refuse, never clamp (Finding D): the model is untouched, and the
+                // refusal is accounted both as a numeric error AND as a refused edit.
+                Err(e) => {
+                    self.last_numeric_error = Some(e);
+                    self.last_edit = EditOutcome::Refused;
+                }
             },
             Intent::Pan { dx, dy } => self.view = self.view.pan_by(dx, dy),
             Intent::Zoom { factor } => {
@@ -448,23 +569,69 @@ impl Workbench {
             Intent::ProbeAt(p) => self.probe_world = Some(p),
             Intent::Transport(tc) => self.apply_transport(tc),
             Intent::Undo => {
-                let _ = self.undo.undo(&mut self.model);
+                // Never `let _ =`: a failed revert is surfaced, an empty stack is a
+                // no-op (not a silent "success"). `UndoLog` keeps history on failure.
+                self.last_edit = match self.undo.undo(&mut self.model) {
+                    None => EditOutcome::NoOp,
+                    Some(Ok(())) => EditOutcome::Applied,
+                    Some(Err(CompoundError::RollbackFailed { .. })) => {
+                        self.model_corrupt = true;
+                        EditOutcome::RollbackFailed
+                    }
+                    Some(Err(_)) => EditOutcome::Refused,
+                };
                 self.prune_selection();
             }
             Intent::Redo => {
-                let _ = self.undo.redo(&mut self.model);
+                self.last_edit = match self.undo.redo(&mut self.model) {
+                    None => EditOutcome::NoOp,
+                    Some(Ok(())) => EditOutcome::Applied,
+                    Some(Err(CompoundError::RollbackFailed { .. })) => {
+                        self.model_corrupt = true;
+                        EditOutcome::RollbackFailed
+                    }
+                    Some(Err(_)) => EditOutcome::Refused,
+                };
                 self.prune_selection();
             }
             Intent::Capture => self.metrics.captures += 1,
+            Intent::SelectNext => self.cycle_selection(true),
+            Intent::SelectPrev => self.cycle_selection(false),
+        }
+        // Accepted-command trace: fold the canonical intent ONLY when it produced a
+        // clean applied edit — honest, separate accounting from `command_digest`.
+        if self.last_edit == EditOutcome::Applied {
+            self.accepted_digest = fnv1a(&canon, self.accepted_digest);
         }
         self.command_digest
     }
 
-    fn record(&mut self, cmd: Compound<Cmd>) {
-        // Apply first; only a clean apply is recorded, so the log is always replayable.
-        if cmd.apply(&mut self.model).is_ok() {
-            let _ = self.undo.record(cmd);
-        }
+    /// Applies a transaction and returns an accountable outcome (L5), also stored in
+    /// `self.last_edit`. A clean apply is recorded; a clean rollback (`SubCommand`)
+    /// leaves the model untouched and is NOT recorded; a failed rollback
+    /// (`RollbackFailed`) flags `self.model_corrupt` so a known-partial model cannot
+    /// pass for success. An uncommitted edit never looks applied.
+    fn record(&mut self, cmd: Compound<Cmd>) -> EditOutcome {
+        let outcome = match cmd.apply(&mut self.model) {
+            Ok(()) => {
+                // Eviction bookkeeping (a dropped oldest entry on the bounded log) is
+                // not an edit outcome — the record itself is the success.
+                let _ = self.undo.record(cmd);
+                EditOutcome::Applied
+            }
+            // Engine rolled back cleanly: model is exactly as it was. Refuse, no record.
+            Err(CompoundError::SubCommand { .. }) => EditOutcome::Refused,
+            // A compensation ALSO failed: model is known-partial. No record; flag it.
+            Err(CompoundError::RollbackFailed { .. }) => {
+                self.model_corrupt = true;
+                EditOutcome::RollbackFailed
+            }
+            // `CompoundError` is `#[non_exhaustive]`: a future failure variant is
+            // treated as a refusal — we make no corruption claim we cannot prove.
+            Err(_) => EditOutcome::Refused,
+        };
+        self.last_edit = outcome;
+        outcome
     }
 
     fn apply_transport(&mut self, tc: TransportCmd) {
@@ -472,7 +639,17 @@ impl Workbench {
             TransportCmd::Play => self.playing = true,
             TransportCmd::Pause => self.playing = false,
             TransportCmd::Step(n) => {
-                self.field_tick = (self.field_tick as i64 + n).max(0) as u64;
+                // Saturating over the FULL u64 model-tick domain (L6). The old
+                // `(field_tick as i64 + n).max(0) as u64` silently REWOUND: at
+                // field_tick = u64::MAX a `Step(1)` wrapped to 0, and near i64::MAX
+                // the `as i64` add overflowed (debug panic / release wrap). Transport
+                // steps clamp at both ends; they never wrap and never rewind by an
+                // incidental signed cast. `unsigned_abs` handles `i64::MIN` cleanly.
+                self.field_tick = if n >= 0 {
+                    self.field_tick.saturating_add(n as u64)
+                } else {
+                    self.field_tick.saturating_sub(n.unsigned_abs())
+                };
             }
             TransportCmd::Scrub(to) => self.field_tick = to,
         }
@@ -487,6 +664,31 @@ impl Workbench {
     fn select_only(&mut self, id: ShapeId) {
         self.selection.clear();
         self.selection.insert(id);
+    }
+
+    /// Advance the primary selection to the next (`forward`) or previous shape in
+    /// deterministic insertion order — the keyboard select cycle (Tab / Shift+Tab).
+    /// With nothing selected, `forward` lands on the first shape and `!forward` on
+    /// the last; an empty scene clears. Pointer-free, so selection has a keyboard
+    /// path (#140 / #144), and lands on the same shape a pointer `SelectAt` would.
+    fn cycle_selection(&mut self, forward: bool) {
+        let ids: Vec<ShapeId> = self.model.shapes.iter().map(|s| s.id()).collect();
+        if ids.is_empty() {
+            self.selection.clear();
+            return;
+        }
+        let n = ids.len();
+        let cur = self
+            .selection
+            .primary()
+            .and_then(|c| ids.iter().position(|&i| i == c));
+        let next = match cur {
+            Some(pos) if forward => (pos + 1) % n,
+            Some(pos) => (pos + n - 1) % n,
+            None if forward => 0,
+            None => n - 1,
+        };
+        self.select_only(ids[next]);
     }
 
     /// Drop any selected id whose shape no longer exists — e.g. after an undo removed it,
@@ -752,6 +954,17 @@ impl Workbench {
         let shift = ke.modifiers.contains(KeyModifiers::SHIFT);
         match ke.code {
             KeyCode::Char('q') => self.should_quit = true,
+            // Keyboard-only selection cycle — selection must be reachable without a
+            // pointer (#140 / #144). Tab advances; Shift+Tab / BackTab retreats.
+            KeyCode::Tab if shift => {
+                self.apply_intent(Intent::SelectPrev);
+            }
+            KeyCode::Tab => {
+                self.apply_intent(Intent::SelectNext);
+            }
+            KeyCode::BackTab => {
+                self.apply_intent(Intent::SelectPrev);
+            }
             KeyCode::Char('n') => {
                 // Draw a unit rectangle "wall" at the cursor/probe cell.
                 let o = self.probe_world.unwrap_or(Point::new(2.0, 2.0));
@@ -832,7 +1045,9 @@ impl Workbench {
             return None;
         }
         let demand = self.timestep.advance(real_dt);
-        self.field_tick += demand.executed as u64;
+        // Saturating: a wall-clock advance clamps at u64::MAX rather than overflowing
+        // (debug panic / release wrap). Model time never rolls past its max (L6).
+        self.field_tick = self.field_tick.saturating_add(demand.executed as u64);
         self.metrics.last_exec = demand.executed;
         self.metrics.last_deferred = demand.deferred;
         self.metrics.last_discarded = demand.discarded;
@@ -848,7 +1063,7 @@ impl Workbench {
 
     pub fn hud_line(&self) -> String {
         let mut line = format!(
-            "WORKBENCH  sel={}  source={:.1}  shapes={}  tick={}  play={}  undo={} redo={}",
+            "WORKBENCH  sel={}  source={:.1}  shapes={}  tick={}  play={}  undo={} redo={}  edit={}",
             self.selection.primary().map(|i| i.0 as i64).unwrap_or(-1),
             self.model.source_value,
             self.model.shapes.len(),
@@ -856,7 +1071,13 @@ impl Workbench {
             if self.playing { "on" } else { "off" },
             self.undo_depth(),
             self.redo_depth(),
+            self.last_edit.tag(),
         );
+        // A known-partial model is shouted, not hidden (L5/L7): once set, every frame
+        // carries the marker until the app is restarted.
+        if self.model_corrupt {
+            line.push_str("  MODEL-CORRUPT");
+        }
         // Test affordance (off unless WORKBENCH_EMIT_CANVAS is set): expose the
         // painted canvas rect so a PTY test can click a known on-canvas cell without
         // guessing the layout. Absent from normal runs, so the HUD is unchanged.
@@ -964,7 +1185,7 @@ impl Workbench {
     }
 
     pub fn help_line(&self) -> String {
-        "keys  n:rect l:line []:source space:play .,:step 0:rewind p:probe m:mono c:capture arrows:move ^Z/^Y:undo q:quit".to_string()
+        "keys  n:rect l:line []:source space:play .,:step 0:rewind p:probe m:mono c:capture tab:select arrows:move ^Z/^Y:undo q:quit".to_string()
     }
 
     /// A plain-text still capture of the current frame (HUD + heatmap + readouts),
