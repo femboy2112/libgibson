@@ -447,3 +447,127 @@ fn trace_replays_deterministically() {
     );
     assert_eq!(a.model, b.model);
 }
+
+// ---- S11: keyboard Tab-cycle selection reaches the SAME selection as a pointer click,
+//           closing the keyboard-equivalence gap (#140/#144) that a pointer-only select left.
+
+#[test]
+fn s11_keyboard_tab_select_reaches_the_same_selection_as_pointer() {
+    let s0 = Intent::DrawRect {
+        a: Point::new(2.0, 2.0),
+        b: Point::new(5.0, 4.0),
+    };
+    let s1 = Intent::DrawRect {
+        a: Point::new(10.0, 2.0),
+        b: Point::new(13.0, 4.0),
+    };
+
+    // Pointer path: click (SelectAt) inside the FIRST shape.
+    let mut a = wb_ready(80, 24);
+    a.apply_intent(s0);
+    let s0_id = a.selection.primary().expect("draw selects the new shape");
+    a.apply_intent(s1);
+    a.apply_intent(Intent::SelectAt(Point::new(3.5, 3.0)));
+    assert_eq!(
+        a.selection.primary(),
+        Some(s0_id),
+        "pointer selects shape 0"
+    );
+
+    // Keyboard ONLY: after both draws the selection sits on shape 1 (last drawn); one
+    // Tab wraps the insertion-order cycle [s0, s1] forward to shape 0. No pointer.
+    let mut b = wb_ready(80, 24);
+    b.apply_intent(s0);
+    b.apply_intent(s1);
+    b.process(&key(KeyCode::Tab));
+    assert_eq!(
+        b.selection.primary(),
+        Some(s0_id),
+        "keyboard Tab reaches shape 0"
+    );
+
+    // Equivalent authoritative selection via different input traces (#140/#144).
+    assert_eq!(
+        a.selection.ids(),
+        b.selection.ids(),
+        "pointer and keyboard select the same shape"
+    );
+}
+
+#[test]
+fn s11b_tab_and_backtab_cycle_every_shape_deterministically() {
+    let mut wb = wb_ready(80, 24);
+    wb.apply_intent(Intent::DrawRect {
+        a: Point::new(2.0, 2.0),
+        b: Point::new(5.0, 4.0),
+    });
+    let s0 = wb.selection.primary().unwrap();
+    wb.apply_intent(Intent::DrawRect {
+        a: Point::new(10.0, 2.0),
+        b: Point::new(13.0, 4.0),
+    });
+    let s1 = wb.selection.primary().unwrap();
+    wb.apply_intent(Intent::DrawLine {
+        a: Point::new(2.0, 8.0),
+        b: Point::new(9.0, 8.0),
+    });
+    let s2 = wb.selection.primary().unwrap();
+    assert!(s0 != s1 && s1 != s2 && s0 != s2, "three distinct shape ids");
+
+    // Last-drawn is selected; Tab wraps forward s2 -> s0 -> s1 -> s2.
+    wb.process(&key(KeyCode::Tab));
+    assert_eq!(wb.selection.primary(), Some(s0));
+    wb.process(&key(KeyCode::Tab));
+    assert_eq!(wb.selection.primary(), Some(s1));
+    wb.process(&key(KeyCode::Tab));
+    assert_eq!(wb.selection.primary(), Some(s2));
+    // BackTab (Shift+Tab) reverses.
+    wb.process(&key(KeyCode::BackTab));
+    assert_eq!(wb.selection.primary(), Some(s1));
+
+    // Negative control: with nothing selected, Tab lands on the first shape.
+    wb.apply_intent(Intent::ClearSelection);
+    wb.process(&key(KeyCode::Tab));
+    assert_eq!(
+        wb.selection.primary(),
+        Some(s0),
+        "Tab from an empty selection selects the first shape"
+    );
+}
+
+// ---- S12: topmost (last-drawn) overlapping shape wins the pick (L2/L3, narrow-phase) ----
+
+#[test]
+fn s12_pick_prefers_the_topmost_overlapping_shape() {
+    let mut wb = wb_ready(80, 24);
+    wb.apply_intent(Intent::DrawRect {
+        a: Point::new(2.0, 2.0),
+        b: Point::new(12.0, 10.0),
+    });
+    let bottom = wb.selection.primary().unwrap();
+    wb.apply_intent(Intent::DrawRect {
+        a: Point::new(5.0, 4.0),
+        b: Point::new(9.0, 7.0),
+    });
+    let top = wb.selection.primary().unwrap();
+    assert_ne!(bottom, top);
+
+    // A point inside BOTH rects must select the LAST-drawn (topmost) one.
+    wb.apply_intent(Intent::ClearSelection);
+    wb.apply_intent(Intent::SelectAt(Point::new(7.0, 5.5)));
+    assert_eq!(
+        wb.selection.primary(),
+        Some(top),
+        "overlap selects the topmost (last-drawn) shape"
+    );
+
+    // Negative control: a point inside ONLY the bottom rect, well outside the top
+    // (>= 2 world units, beyond any half-cell pick tolerance), selects the bottom.
+    wb.apply_intent(Intent::ClearSelection);
+    wb.apply_intent(Intent::SelectAt(Point::new(3.0, 6.0)));
+    assert_eq!(
+        wb.selection.primary(),
+        Some(bottom),
+        "a bottom-only region selects the lower shape"
+    );
+}
