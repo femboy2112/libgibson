@@ -1585,12 +1585,18 @@ mod tests {
         );
         assert!(scene.entity(a).is_none());
         assert!(scene.entity_mut(a).is_none());
-        assert!(!scene.set_node(a, text("ghost")), "set_node rejects a stale id");
+        assert!(
+            !scene.set_node(a, text("ghost")),
+            "set_node rejects a stale id"
+        );
 
         // A stale-id effect targets nothing: no panic, no presentation written.
         let mut p = Presentation::new();
-        Effect::reveal(SceneTarget::Id(a), 0.0, 1.0, Duration::from_millis(10))
-            .eval(Duration::from_millis(10), &scene, &mut p);
+        Effect::reveal(SceneTarget::Id(a), 0.0, 1.0, Duration::from_millis(10)).eval(
+            Duration::from_millis(10),
+            &scene,
+            &mut p,
+        );
         assert_eq!(p.raw_visibility(a), None, "nothing written for a dead id");
     }
 
@@ -1599,10 +1605,19 @@ mod tests {
         let mut scene = Scene::new();
         let a = scene.add(SceneEntity::new("a", text("a")));
         let _b = scene.add(SceneEntity::new("b", text("b")));
-        assert_eq!(scene.to_node(&Presentation::new(), 20.0, 5.0).children.len(), 2);
+        assert_eq!(
+            scene
+                .to_node(&Presentation::new(), 20.0, 5.0)
+                .children
+                .len(),
+            2
+        );
         scene.remove(a);
         assert_eq!(
-            scene.to_node(&Presentation::new(), 20.0, 5.0).children.len(),
+            scene
+                .to_node(&Presentation::new(), 20.0, 5.0)
+                .children
+                .len(),
             1,
             "a removed entity paints nothing"
         );
@@ -1625,7 +1640,13 @@ mod tests {
             "a hidden entity is still evaluated (cost retained)"
         );
         // It is omitted from paint, but it still exists.
-        assert_eq!(scene.to_node(&Presentation::new(), 20.0, 5.0).children.len(), 1);
+        assert_eq!(
+            scene
+                .to_node(&Presentation::new(), 20.0, 5.0)
+                .children
+                .len(),
+            1
+        );
 
         scene.remove(b);
         assert_eq!(scene.len(), 1, "remove actually retires");
@@ -1676,12 +1697,21 @@ mod tests {
             Duration::from_millis(100),
         )
         .eval(Duration::from_millis(100), &scene, &mut p);
-        Effect::reveal(scene.target("b").unwrap(), 0.0, 1.0, Duration::from_millis(100))
-            .eval(Duration::from_millis(100), &scene, &mut p);
+        Effect::reveal(
+            scene.target("b").unwrap(),
+            0.0,
+            1.0,
+            Duration::from_millis(100),
+        )
+        .eval(Duration::from_millis(100), &scene, &mut p);
 
         let resolved = scene.evaluate(&p);
         for r in &resolved {
-            assert_eq!(r.offset, p.offset_of(&scene, r.id), "offset vs public route");
+            assert_eq!(
+                r.offset,
+                p.offset_of(&scene, r.id),
+                "offset vs public route"
+            );
             assert_eq!(
                 r.visibility,
                 p.visibility_of(&scene, r.id),
