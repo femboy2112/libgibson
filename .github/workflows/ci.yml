@@ -120,6 +120,11 @@ jobs:
           scripts/release/check-abi.sh
           cargo package --list --locked > /dev/null
 
+      - name: Scene retention perf witness (#77, ad-hoc measurement — throwaway, not for merge)
+        run: |
+          cargo test --release --lib -- --ignored --nocapture to_node_scaling_is_not_quadratic_in_hidden_entities
+          cargo run --release --example scene_retention_bench
+
   bindings:
     name: Bindings (C, C++, Python)
     runs-on: ubuntu-latest
