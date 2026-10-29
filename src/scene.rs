@@ -1957,6 +1957,54 @@ mod tests {
     }
 
     #[test]
+    fn rename_repairs_desync_when_target_equals_the_mutated_label() {
+        // 1A (Renaissance IV). `rename`'s doc promises it repairs a prior direct-write
+        // desync for an id. The fast-path early return (`entity.label == new_label →
+        // Ok(true)`) defeated that promise in exactly one case: the caller directly
+        // writes the entity's label to the SAME string it then renames to. The entity
+        // label already matched, so the fast path reported success while `by_label`
+        // still keyed the OLD label — a silent, un-repaired desync. The repair is the
+        // whole documented reason `rename` exists over a direct field write.
+        let mut scene = Scene::new();
+        let id = scene.add(SceneEntity::new("old", text("o"))); // index {old → id}
+        scene.entity_mut(id).unwrap().label = "new".into(); // entity "new", index still {old → id}
+        assert_eq!(scene.rename(id, "new"), Ok(true));
+        assert_eq!(
+            scene.id_of("new"),
+            Some(id),
+            "rename must install the index entry its doc promises to repair"
+        );
+        assert_eq!(scene.id_of("old"), None, "the stale indexed label must be purged");
+        // Deletion after recovery: the repaired mapping deletes cleanly.
+        assert!(scene.remove(id).is_some());
+        assert_eq!(scene.id_of("new"), None);
+        assert!(scene.is_empty());
+    }
+
+    #[test]
+    fn rename_repair_rejects_a_live_duplicate_and_preserves_other_mappings() {
+        // 1A companion (Renaissance IV). When the directly-written label collides with
+        // another LIVE entity's indexed label, the repair must REFUSE (DuplicateLabel),
+        // not silently report success and leave the collision — and every other mapping
+        // must survive untouched. The old fast path returned `Ok(true)` here too,
+        // swallowing the collision.
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")));
+        let b = scene.add(SceneEntity::new("b", text("b")));
+        let c = scene.add(SceneEntity::new("c", text("c")));
+        scene.entity_mut(a).unwrap().label = "b".into(); // direct write onto a live label
+        assert_eq!(
+            scene.rename(a, "b"),
+            Err(SceneError::DuplicateLabel("b".into())),
+            "cannot repair onto a label a live entity already holds"
+        );
+        // The refused repair leaves every mapping intact, including a's original key.
+        assert_eq!(scene.id_of("a"), Some(a));
+        assert_eq!(scene.id_of("b"), Some(b));
+        assert_eq!(scene.id_of("c"), Some(c));
+    }
+
+    #[test]
     fn interned_tags_follow_the_documented_retention_policy() {
         // Finding C (#77, Renaissance III): interned tags are never reclaimed
         // (TagId stability). Reused names keep the table bounded; unique transient
