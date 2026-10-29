@@ -923,6 +923,39 @@ fn repeated_duration(duration: Duration, times: usize) -> Duration {
 }
 
 // ---------------------------------------------------------------------------
+// Resolution helpers (issue #77)
+// ---------------------------------------------------------------------------
+//
+// `Presentation::offset_of` / `visibility_of` take a `SceneId` and recover the
+// entity's baseline via `Scene::baseline_offset` / `baseline_visible`, each an
+// O(n) linear scan of the entity vec. When `evaluate`/`to_node` already hold the
+// entity in hand, that scan is pure waste and makes the whole resolve O(n²).
+// These helpers compute the identical value from the entity directly: for a live
+// entity `baseline_offset(e.id) == e.offset`, so the result is byte-for-byte the
+// same — only the quadratic scan is gone. See `offset_of`/`visibility_of` for the
+// id-only public forms they mirror.
+
+/// Effective absolute placement plus summed displacement for an entity we hold,
+/// without the O(n) baseline scan. Identical result to `Presentation::offset_of`.
+#[inline]
+fn resolved_offset(p: &Presentation, e: &SceneEntity) -> (i32, i32) {
+    let placement = p.raw_offset(e.id).unwrap_or(e.offset);
+    let delta = p.displacement_of(e.id);
+    (
+        (i128::from(placement.0) + delta.0).clamp(i32::MIN as i128, i32::MAX as i128) as i32,
+        (i128::from(placement.1) + delta.1).clamp(i32::MIN as i128, i32::MAX as i128) as i32,
+    )
+}
+
+/// Effective visibility for an entity we hold, without the O(n) baseline scan.
+/// Identical result to `Presentation::visibility_of`.
+#[inline]
+fn resolved_visibility(p: &Presentation, e: &SceneEntity) -> f32 {
+    p.raw_visibility(e.id)
+        .unwrap_or(if e.visible { 1.0 } else { 0.0 })
+}
+
+// ---------------------------------------------------------------------------
 // Scene
 // ---------------------------------------------------------------------------
 
@@ -1062,6 +1095,50 @@ impl Scene {
         self.entities.is_empty()
     }
 
+    /// Retires an entity, returning it if present, and frees its label for reuse.
+    ///
+    /// **Identity policy (issue #77).** [`SceneId`]s come from a monotonic counter
+    /// and are **never recycled**, so a handle to a removed entity is permanently
+    /// dead: [`Scene::resolve`] yields empty, [`Scene::entity`] / [`Scene::entity_mut`]
+    /// yield `None`, [`Scene::set_node`] returns `false`, and an effect targeting it
+    /// writes nothing. A stale id can never alias a later entity, so no generation
+    /// tag is needed. Interned [`TagId`]s persist; only the entity and its label
+    /// mapping are dropped.
+    pub fn remove(&mut self, id: SceneId) -> Option<SceneEntity> {
+        let idx = self.entities.iter().position(|e| e.id == id)?;
+        let entity = self.entities.remove(idx);
+        self.by_label.remove(&entity.label);
+        Some(entity)
+    }
+
+    /// Retires an entity by its label — convenience over [`Scene::remove`].
+    pub fn remove_label(&mut self, label: &str) -> Option<SceneEntity> {
+        let id = self.id_of(label)?;
+        self.remove(id)
+    }
+
+    /// Keeps only the entities for which `keep` returns `true`, dropping the rest
+    /// and freeing their labels. Survivor insertion order is preserved; the same
+    /// never-recycled identity policy as [`Scene::remove`] applies.
+    pub fn retain(&mut self, mut keep: impl FnMut(&SceneEntity) -> bool) {
+        let by_label = &mut self.by_label;
+        self.entities.retain(|e| {
+            let k = keep(e);
+            if !k {
+                by_label.remove(&e.label);
+            }
+            k
+        });
+    }
+
+    /// Removes every entity and frees every label. The [`SceneId`]/[`TagId`]
+    /// counters stay monotonic (ids are never reissued) and interned tags are
+    /// retained, so identity stays stable across a clear.
+    pub fn clear(&mut self) {
+        self.entities.clear();
+        self.by_label.clear();
+    }
+
     /// Entity ids matching a target (id target matches at most one).
     pub fn resolve(&self, target: SceneTarget) -> Vec<SceneId> {
         match target {
@@ -1100,16 +1177,20 @@ impl Scene {
     /// Resolves every entity to its effective presentation, sorted by z then
     /// insertion order (stable, deterministic).
     pub fn evaluate(&self, p: &Presentation) -> Vec<ResolvedEntity> {
+        // Resolve each entity from the entity we already hold, not via the id-only
+        // `offset_of`/`visibility_of` (which re-scan the whole vec per call). Output
+        // is byte-identical; the former O(n²) baseline lookup is now O(n). See the
+        // `resolved_offset`/`resolved_visibility` helpers and issue #77.
         let mut out: Vec<ResolvedEntity> = self
             .entities
             .iter()
             .map(|e| {
-                let visibility = p.visibility_of(self, e.id);
+                let visibility = resolved_visibility(p, e);
                 ResolvedEntity {
                     id: e.id,
                     label: e.label.clone(),
                     z: e.z,
-                    offset: p.offset_of(self, e.id),
+                    offset: resolved_offset(p, e),
                     visible: visibility > 0.0,
                     visibility,
                     node: e.node.clone().post_process(p.surface_fx(e.id).to_vec()),
@@ -1127,12 +1208,21 @@ impl Scene {
     /// This is deliberately *not* a second renderer — it emits the same
     /// declarative nodes that flow through the existing layout/paint/diff path.
     pub fn to_node(&self, p: &Presentation, width: f32, height: f32) -> Node {
+        // Walk in the same (z, id) order `evaluate` produces, but realize (clone +
+        // post-process) ONLY entities that actually paint. A hidden/retired entity
+        // costs one O(log n) visibility lookup and nothing else — no node clone.
+        // Before issue #77 this went through `evaluate`, which cloned every hidden
+        // node just to discard it here. Output is byte-identical to that path.
+        let mut order: Vec<&SceneEntity> = self.entities.iter().collect();
+        order.sort_by_key(|e| (e.z, e.id.0));
         let mut stack = Node::stack().width(width).height(height);
-        for r in self.evaluate(p) {
-            if !r.visible {
+        for e in order {
+            if resolved_visibility(p, e) <= 0.0 {
                 continue;
             }
-            stack = stack.child(r.node.offset(r.offset.0 as f32, r.offset.1 as f32));
+            let offset = resolved_offset(p, e);
+            let node = e.node.clone().post_process(p.surface_fx(e.id).to_vec());
+            stack = stack.child(node.offset(offset.0 as f32, offset.1 as f32));
         }
         let (cx, cy) = p.camera();
         if cx != 0 || cy != 0 {
@@ -1451,5 +1541,186 @@ mod tests {
         let a = scene.to_node(&Presentation::new(), 10.0, 3.0);
         let b = scene.to_node(&Presentation::new(), 10.0, 3.0);
         assert_eq!(format!("{a:?}"), format!("{b:?}"));
+    }
+
+    // ---- issue #77: entity lifecycle + hot-path resolution -----------------
+
+    #[test]
+    fn remove_retires_entity_and_frees_label() {
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")));
+        let b = scene.add(SceneEntity::new("b", text("b")));
+        assert_eq!(scene.len(), 2);
+
+        let removed = scene.remove(a);
+        assert_eq!(removed.map(|e| e.label), Some("a".to_string()));
+        assert_eq!(scene.len(), 1);
+
+        // The label is freed — reusing it was impossible before #77.
+        let a2 = scene.add(SceneEntity::new("a", text("a2")));
+        assert_eq!(scene.len(), 2);
+        // ...and the reused label is a DISTINCT id; the old handle is not aliased.
+        assert_ne!(a2, a);
+        assert_ne!(a2, b);
+
+        // remove_label is the ergonomic pair.
+        assert_eq!(scene.remove_label("b").map(|e| e.label), Some("b".into()));
+        assert!(scene.remove_label("b").is_none());
+    }
+
+    #[test]
+    fn stale_id_after_remove_is_safely_rejected() {
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")));
+        let _b = scene.add(SceneEntity::new("b", text("b")));
+        scene.remove(a);
+        // Re-add many entities; none may ever reuse `a`'s id (no generation tag
+        // needed precisely because ids are never recycled).
+        for i in 0..8 {
+            scene.add(SceneEntity::new(format!("x{i}"), text("x")));
+        }
+        assert!(
+            scene.resolve(SceneTarget::Id(a)).is_empty(),
+            "stale id resolves to empty"
+        );
+        assert!(scene.entity(a).is_none());
+        assert!(scene.entity_mut(a).is_none());
+        assert!(!scene.set_node(a, text("ghost")), "set_node rejects a stale id");
+
+        // A stale-id effect targets nothing: no panic, no presentation written.
+        let mut p = Presentation::new();
+        Effect::reveal(SceneTarget::Id(a), 0.0, 1.0, Duration::from_millis(10))
+            .eval(Duration::from_millis(10), &scene, &mut p);
+        assert_eq!(p.raw_visibility(a), None, "nothing written for a dead id");
+    }
+
+    #[test]
+    fn removed_entity_leaves_no_ghost_surface() {
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")));
+        let _b = scene.add(SceneEntity::new("b", text("b")));
+        assert_eq!(scene.to_node(&Presentation::new(), 20.0, 5.0).children.len(), 2);
+        scene.remove(a);
+        assert_eq!(
+            scene.to_node(&Presentation::new(), 20.0, 5.0).children.len(),
+            1,
+            "a removed entity paints nothing"
+        );
+    }
+
+    #[test]
+    fn hide_versus_remove_is_a_real_retirement() {
+        // MUTATION CONTROL: hiding is NOT retiring. A hidden entity stays in the
+        // scene (len + evaluate still count it, its cost is retained); only
+        // `remove` actually drops it. This proves the lifecycle retires rather
+        // than merely re-skinning `visible = false`.
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")));
+        let b = scene.add(SceneEntity::new("b", text("b")));
+        scene.entity_mut(a).unwrap().visible = false; // hidden, not removed
+        assert_eq!(scene.len(), 2, "a hidden entity is still retained");
+        assert_eq!(
+            scene.evaluate(&Presentation::new()).len(),
+            2,
+            "a hidden entity is still evaluated (cost retained)"
+        );
+        // It is omitted from paint, but it still exists.
+        assert_eq!(scene.to_node(&Presentation::new(), 20.0, 5.0).children.len(), 1);
+
+        scene.remove(b);
+        assert_eq!(scene.len(), 1, "remove actually retires");
+        assert_eq!(scene.evaluate(&Presentation::new()).len(), 1);
+    }
+
+    #[test]
+    fn retain_and_clear_free_labels_and_keep_ids_unique() {
+        let mut scene = Scene::new();
+        let keep = scene.add(SceneEntity::new("keep", text("k")));
+        let drop1 = scene.add(SceneEntity::new("drop1", text("d")));
+        let _drop2 = scene.add(SceneEntity::new("drop2", text("d")));
+
+        scene.retain(|e| e.label == "keep");
+        assert_eq!(scene.len(), 1);
+        assert_eq!(scene.id_of("keep"), Some(keep));
+        assert_eq!(scene.id_of("drop1"), None, "a dropped label is freed");
+        assert!(scene.resolve(SceneTarget::Id(drop1)).is_empty());
+
+        // Reusing a freed label is legal and yields a fresh id.
+        let drop1b = scene.add(SceneEntity::new("drop1", text("d")));
+        assert_ne!(drop1b, drop1);
+
+        scene.clear();
+        assert!(scene.is_empty());
+        assert_eq!(scene.id_of("keep"), None);
+        // Post-clear ids still never collide with pre-clear handles.
+        let fresh = scene.add(SceneEntity::new("keep", text("k")));
+        assert_ne!(fresh, keep);
+        assert_ne!(fresh, drop1b);
+    }
+
+    #[test]
+    fn hot_path_refactor_is_output_preserving() {
+        // REGRESSION ANCHOR (two blind paths): the new inline resolution must be
+        // byte-identical to the original id-only `Presentation::offset_of` /
+        // `visibility_of` route (which still exists, unchanged). Drive effects on a
+        // mixed scene and cross-check every resolved entity against that route.
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")).offset(2, 3).z(5));
+        let _b = scene.add(SceneEntity::new("b", text("b")).offset(-1, 4).hidden());
+        let _c = scene.add(SceneEntity::new("c", text("c")).z(-2));
+        let mut p = Presentation::new();
+        Effect::displace(
+            SceneTarget::Id(a),
+            (0.0, 0.0),
+            (3.0, -1.0),
+            Duration::from_millis(100),
+        )
+        .eval(Duration::from_millis(100), &scene, &mut p);
+        Effect::reveal(scene.target("b").unwrap(), 0.0, 1.0, Duration::from_millis(100))
+            .eval(Duration::from_millis(100), &scene, &mut p);
+
+        let resolved = scene.evaluate(&p);
+        for r in &resolved {
+            assert_eq!(r.offset, p.offset_of(&scene, r.id), "offset vs public route");
+            assert_eq!(
+                r.visibility,
+                p.visibility_of(&scene, r.id),
+                "visibility vs public route"
+            );
+            assert_eq!(r.visible, p.visibility_of(&scene, r.id) > 0.0);
+        }
+        // Deterministic (z, id) order is preserved.
+        let order: Vec<_> = resolved.iter().map(|r| (r.z, r.id.0)).collect();
+        let mut sorted = order.clone();
+        sorted.sort_unstable();
+        assert_eq!(order, sorted);
+    }
+
+    #[test]
+    #[ignore = "wall-clock perf witness; run with `--ignored` on an idle host"]
+    fn to_node_scaling_is_not_quadratic_in_hidden_entities() {
+        use std::time::Instant;
+        fn time_to_node(n: usize) -> std::time::Duration {
+            let mut scene = Scene::new();
+            for i in 0..n {
+                let id = scene.add(SceneEntity::new(format!("e{i}"), text("e")));
+                scene.entity_mut(id).unwrap().visible = false;
+            }
+            let p = Presentation::new();
+            let t0 = Instant::now();
+            for _ in 0..200 {
+                std::hint::black_box(scene.to_node(&p, 80.0, 24.0));
+            }
+            t0.elapsed()
+        }
+        let t1 = time_to_node(1000);
+        let t2 = time_to_node(2000);
+        // The old O(n²) baseline scan scales ≈4× from 1k→2k; the fixed path is
+        // ≈2×. A ratio under 3 is a decisive witness the quadratic term is gone.
+        let ratio = t2.as_secs_f64() / t1.as_secs_f64().max(1e-9);
+        assert!(
+            ratio < 3.0,
+            "to_node scaled {ratio:.2}× from 1k→2k hidden (want <3; quadratic≈4)"
+        );
     }
 }
