@@ -682,3 +682,81 @@ fn s14_selection_identity_survives_intervening_add_then_delete() {
     wb.process(&key(KeyCode::Tab));
     assert_eq!(wb.selection.primary(), Some(s1), "then the second");
 }
+
+// ---- Phase 3 (Renaissance IV): model-tick arithmetic never silently rewinds --------
+//
+// The old `apply_transport` did `field_tick = (field_tick as i64 + n).max(0) as u64`,
+// which is not valid over the full u64 domain: the `as i64` cast reinterprets a tick
+// above i64::MAX as negative, so a forward step could WRAP DOWN. These pin a saturating
+// policy over the whole domain (red-first: the first three fail on the old arithmetic).
+
+#[test]
+fn step_saturates_at_the_tick_ceiling_instead_of_rewinding() {
+    // At field_tick = u64::MAX a forward Step must stay at the ceiling, not wrap to 0.
+    // Old: (u64::MAX as i64 + 1).max(0) = (-1 + 1).max(0) = 0 — a full rewind from the
+    // maximum representable tick on a single forward step.
+    let mut wb = Workbench::new();
+    wb.field_tick = u64::MAX;
+    wb.apply_intent(Intent::Transport(TransportCmd::Step(1)));
+    assert_eq!(
+        wb.field_tick,
+        u64::MAX,
+        "a forward step must never rewind time"
+    );
+}
+
+#[test]
+fn step_does_not_overflow_near_i64_max() {
+    // field_tick just above i64::MAX: the old `as i64` add overflowed (debug panic /
+    // release wrap). A forward step must advance, saturating.
+    let mut wb = Workbench::new();
+    wb.field_tick = i64::MAX as u64;
+    wb.apply_intent(Intent::Transport(TransportCmd::Step(1)));
+    assert_eq!(
+        wb.field_tick,
+        i64::MAX as u64 + 1,
+        "step must advance across the i64 boundary, not overflow"
+    );
+}
+
+#[test]
+fn large_forward_step_saturates_not_truncates() {
+    // Old path truncated through i64 and produced a mid-range value; saturating is
+    // correct: a huge forward step clamps at the ceiling.
+    let mut wb = Workbench::new();
+    wb.field_tick = u64::MAX - 3;
+    wb.apply_intent(Intent::Transport(TransportCmd::Step(i64::MAX)));
+    assert_eq!(
+        wb.field_tick,
+        u64::MAX,
+        "a large forward step clamps at the ceiling"
+    );
+}
+
+#[test]
+fn step_back_from_zero_and_i64_min_saturate_at_zero() {
+    // Boundary coverage (valid on both paths): never underflow below 0, and handle the
+    // i64::MIN magnitude (whose abs does not fit in i64) without overflow.
+    let mut wb = Workbench::new();
+    wb.field_tick = 0;
+    wb.apply_intent(Intent::Transport(TransportCmd::Step(-1)));
+    assert_eq!(wb.field_tick, 0, "cannot step before the start");
+    wb.field_tick = 10;
+    wb.apply_intent(Intent::Transport(TransportCmd::Step(i64::MIN)));
+    assert_eq!(
+        wb.field_tick, 0,
+        "i64::MIN magnitude handled without overflow"
+    );
+}
+
+#[test]
+fn tick_wall_saturates_at_the_ceiling_and_never_overflows() {
+    // Wall-clock advance near the ceiling must clamp, not overflow (debug panic /
+    // release wrap). Old: `field_tick += demand.executed as u64`.
+    let mut wb = Workbench::new();
+    wb.playing = true;
+    wb.field_tick = u64::MAX;
+    let demand = wb.tick_wall(Duration::from_millis(64));
+    assert!(demand.is_some(), "transport is playing");
+    assert_eq!(wb.field_tick, u64::MAX, "model time clamps at the ceiling");
+}
