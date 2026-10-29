@@ -163,12 +163,10 @@ fn bench_constant_pop_churn() {
     for i in 0..POP {
         live.push_back(scene.add(SceneEntity::new(format!("p{i}"), text("p"))));
     }
-    let mut next = POP;
     let t0 = Instant::now();
-    for _ in 0..CYCLES {
+    for next in (POP..).take(CYCLES) {
         let id = scene.add(SceneEntity::new(format!("p{next}"), text("p")));
         live.push_back(id);
-        next += 1;
         if let Some(old) = live.pop_front() {
             black_box(scene.remove(old));
         }
