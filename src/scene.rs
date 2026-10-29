@@ -1817,47 +1817,58 @@ mod tests {
 
     #[test]
     fn to_node_inclusion_matches_evaluate_for_hostile_visibility() {
-        // Finding A (#77, Renaissance III). `to_node`'s skip predicate must be the
-        // exact complement of `evaluate`'s `visible` flag. Under IEEE-754 `v <= 0.0`
-        // is NOT the complement of `v > 0.0` (a NaN fails both), so a NaN or
-        // pathological reveal would be painted by `to_node` yet reported invisible
-        // by `evaluate` — the two public methods disagreeing on the same scene.
-        // Oracle = the original `keep ⇔ v > 0.0` rule. Camera is (0,0), so `to_node`
-        // returns the bare stack and `children.len()` is the painted count. The
-        // finite/inf rows prove they already agreed; NaN is the sole discriminator.
-        let battery = [
-            f32::NAN,
-            f32::INFINITY,
-            f32::NEG_INFINITY,
-            0.0_f32,
-            -0.0_f32,
-            f32::from_bits(1), // smallest positive subnormal
-            1.0_f32,
-            -1.0_f32,
-            0.5_f32,
+        // Finding A (#77, Renaissance III). The core invariant: `to_node` paints an
+        // entity IFF `evaluate` reports it `visible`, for *any* resolved visibility
+        // including non-finite values. Under IEEE-754 a NaN fails both `> 0.0` and
+        // `<= 0.0`, so the pre-fix `to_node` skip test `v <= 0.0` painted a NaN that
+        // `evaluate` (`visible ⇔ v > 0.0`) marks invisible — the two public methods
+        // disagreeing on the same scene. We assert the agreement directly rather
+        // than against an oracle on the *intended* value, because `reveal` runs the
+        // endpoints through `clock::lerp` and `lerp(inf, inf, _) = inf + (inf-inf) =
+        // NaN`, so the stored visibility need not equal the endpoint. Camera is
+        // (0,0), so `to_node` returns the bare stack and `children.len()` is the
+        // painted count. The (from, to) pairs are chosen to span the hostile space;
+        // at full duration `lerp` lands on `to` (modulo the inf-inf=NaN case).
+        let cases: [(f32, f32); 11] = [
+            (f32::NAN, f32::NAN),                   // -> NaN
+            (0.0, f32::NAN),                        // -> NaN
+            (f32::INFINITY, f32::INFINITY),         // -> NaN (inf - inf)
+            (0.0, f32::INFINITY),                   // -> +inf  (visible)
+            (0.0, f32::NEG_INFINITY),               // -> -inf  (hidden)
+            (0.0, 0.0),                             // -> +0    (hidden)
+            (-0.0, -0.0),                           // -> -0    (hidden)
+            (f32::from_bits(1), f32::from_bits(1)), // -> smallest subnormal (visible)
+            (1.0, 1.0),                             // -> 1.0   (visible)
+            (-1.0, -1.0),                           // -> -1.0  (hidden)
+            (0.25, 0.75),                           // -> 0.75  (visible)
         ];
-        for &v in &battery {
+        for (from, to) in cases {
             let mut scene = Scene::new();
             let id = scene.add(SceneEntity::new("x", text("x")));
             let mut p = Presentation::new();
-            // Public path: from == to == v, so lerp yields exactly v for any clamp.
-            Effect::reveal(SceneTarget::Id(id), v, v, Duration::from_millis(100)).eval(
+            Effect::reveal(SceneTarget::Id(id), from, to, Duration::from_millis(100)).eval(
                 Duration::from_millis(100),
                 &scene,
                 &mut p,
             );
 
-            let oracle_keep = v > 0.0;
             let resolved = scene.evaluate(&p);
-            assert_eq!(
-                resolved[0].visible, oracle_keep,
-                "evaluate().visible for v={v:?}"
-            );
+            let evaluate_visible = resolved[0].visible;
+            let actual_vis = resolved[0].visibility;
             let painted = scene.to_node(&p, 80.0, 24.0).children.len();
+
+            // The Finding-A invariant: the two public methods MUST agree, whatever
+            // the (possibly non-finite) resolved visibility turns out to be.
             assert_eq!(
-                painted,
-                oracle_keep as usize,
-                "to_node painted {painted} child(ren) for v={v:?}; must match evaluate.visible={oracle_keep}"
+                painted, evaluate_visible as usize,
+                "to_node painted {painted} vs evaluate.visible={evaluate_visible} \
+                 for reveal({from:?} -> {to:?}); actual visibility = {actual_vis:?}"
+            );
+            // And both honour the documented inclusion rule `visible ⇔ vis > 0.0`.
+            assert_eq!(
+                evaluate_visible,
+                actual_vis > 0.0,
+                "inclusion rule for actual visibility = {actual_vis:?}"
             );
         }
     }
