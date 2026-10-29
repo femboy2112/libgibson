@@ -1082,6 +1082,17 @@ impl Scene {
     /// behind [`Scene::id_of`] / [`Scene::target`] is keyed at add time and is not
     /// updated by a direct field write, which desyncs lookups. Use [`Scene::rename`]
     /// to change a label coherently.
+    ///
+    /// **Do not mutate `SceneEntity.id` through this handle either.** `id` is the
+    /// scene's authoritative, monotonically-assigned identity: it keys resolution
+    /// ([`Scene::resolve`] / [`Scene::entity`]), retirement ([`Scene::remove`] /
+    /// [`Scene::retain`]), [`Scene::rename`] and effect targeting. Unlike a label it
+    /// has no coherent re-write path (there is no `rename` analogue), so a direct
+    /// write simply corrupts those lookups — it can collide two entities onto one id
+    /// and leave the index dangling — and it voids the never-recycled identity
+    /// guarantee documented on [`Scene::remove`]. Mutating `id` is **unsupported**;
+    /// the field is writable only for historical source-compatibility reasons and a
+    /// future release may make it read-only (#77).
     pub fn entity_mut(&mut self, id: SceneId) -> Option<&mut SceneEntity> {
         self.entities.iter_mut().find(|e| e.id == id)
     }
@@ -1115,9 +1126,10 @@ impl Scene {
     /// and are **never recycled**, so a handle to a removed entity is permanently
     /// dead: [`Scene::resolve`] yields empty, [`Scene::entity`] / [`Scene::entity_mut`]
     /// yield `None`, [`Scene::set_node`] returns `false`, and an effect targeting it
-    /// writes nothing. A stale id can never alias a later entity, so no generation
-    /// tag is needed. Interned [`TagId`]s persist; only the entity and its label
-    /// mapping are dropped.
+    /// writes nothing. Absent a direct write to the (unsupported-to-mutate)
+    /// `SceneEntity.id` field — see [`Scene::entity_mut`] — a stale id can never alias
+    /// a later entity, so no generation tag is needed. Interned [`TagId`]s persist;
+    /// only the entity and its label mapping are dropped.
     pub fn remove(&mut self, id: SceneId) -> Option<SceneEntity> {
         let idx = self.entities.iter().position(|e| e.id == id)?;
         let entity = self.entities.remove(idx);
@@ -1153,7 +1165,12 @@ impl Scene {
         let Some(idx) = self.entities.iter().position(|e| e.id == id) else {
             return Ok(false);
         };
-        if self.entities[idx].label == new_label {
+        // Fast path only when the index ALREADY agrees. If a prior direct
+        // `entity_mut().label = …` write left the entity's label equal to `new_label`
+        // while the index still keys the OLD label → id, fall through to the repair
+        // below instead of falsely reporting an index-coherent rename (1A). The extra
+        // lookup is O(log n); an ordinary identity rename stays cheap.
+        if self.entities[idx].label == new_label && self.by_label.get(&new_label) == Some(&id) {
             return Ok(true);
         }
         if self.by_label.get(&new_label).is_some_and(|v| *v != id) {
@@ -2006,6 +2023,37 @@ mod tests {
         assert_eq!(scene.id_of("a"), Some(a));
         assert_eq!(scene.id_of("b"), Some(b));
         assert_eq!(scene.id_of("c"), Some(c));
+    }
+
+    #[test]
+    fn mutating_entity_id_is_unsupported_and_corrupts_lookups() {
+        // 1B (Renaissance IV). `SceneEntity.id` is a public field, so a consumer CAN
+        // write it through `entity_mut`. This is documented as UNSUPPORTED; this test
+        // pins the ACTUAL consequences so the boundary is executable, not just prose.
+        // The never-recycled identity guarantee holds only absent such a write.
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")));
+        let b = scene.add(SceneEntity::new("b", text("b")));
+        assert_ne!(a, b);
+        let b_key = scene.id_of("b").unwrap(); // index maps "b" → b's add-time id
+
+        // Unsupported: collide b's identity onto a. `by_label` is NOT updated (it
+        // stores add-time ids), so the index and the entities now disagree.
+        scene.entity_mut(b).unwrap().id = a;
+
+        // The index entry for "b" now DANGLES: it resolves to an id no live entity
+        // carries (b's entity became `a`, a's entity was already `a`).
+        assert_eq!(scene.id_of("b"), Some(b_key));
+        assert!(
+            scene.entity(b_key).is_none(),
+            "the 'b' index entry dangles after the unsupported id write"
+        );
+        // And the unique-id invariant the guarantee rests on is now violated.
+        assert_eq!(
+            scene.entities().iter().filter(|e| e.id == a).count(),
+            2,
+            "two entities share one id after the unsupported mutation"
+        );
     }
 
     #[test]
