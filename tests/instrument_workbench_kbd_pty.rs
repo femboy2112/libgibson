@@ -182,9 +182,10 @@ fn keyboard_only_workflow_at_40x15_mono() {
     h.send(b"n");
     h.wait_text("shapes=1");
 
-    // Select it by keyboard: Tab (proves keyboard selection + the crossterm Tab decode).
+    // Select it by keyboard: Tab (proves keyboard selection + the crossterm Tab decode). The
+    // first shape's id is 1, so the HUD reads sel=1.
     h.send(b"\t");
-    h.wait_text("sel=0");
+    h.wait_text("sel=1");
 
     // Move it by keyboard: Right then Down (proves the arrow decode; each is one undoable
     // edit, so with the create that is undo=3).
@@ -192,7 +193,7 @@ fn keyboard_only_workflow_at_40x15_mono() {
     h.send(b"\x1b[B"); // Down
     h.wait_text("undo=3");
     assert!(
-        h.screen().contains("sel=0"),
+        h.screen().contains("sel=1"),
         "the moved shape stays selected"
     );
 
