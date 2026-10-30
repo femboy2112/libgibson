@@ -15,6 +15,32 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 ## [Unreleased]
 
+Development toward **0.6.0** ("Operation Instrumental Renaissance"). This is the working
+development line, **not a release** — the manifest reads `0.6.0-dev`. `GIBSON_ABI_VERSION`
+stays 1; MSRV stays 1.85; no C/C++/Python/Go surface changes.
+
+### Fixed — Rust library (`gibson::scene`)
+- **`Scene::rename` now repairs a stale label index even when the new label equals the one
+  already stored.** The fast-path early return fired before the `by_label` index was
+  reconciled, so renaming an entity to a label a prior direct `entity_mut(id).label = …`
+  write had already set left the index desynchronised. The early return now also requires
+  the index to already resolve that label to this id. (#192)
+
+### Changed — Rust library (`gibson::scene`)
+- **`SceneEntity.id` is documented as unsupported to mutate.** Writing it through
+  `entity_mut` corrupts label/position lookups; the never-recycled identity guarantee is now
+  scoped to "absent a direct id write." Read-only enforcement is deferred to 0.7. (#192)
+
+### Added — experimental (`instrument_workbench` example)
+- **Keyboard-driven shape selection** in the workbench (issue #140). (#193)
+- **Accountable edit outcomes (`EditOutcome`):** applied / no-op / refused / rollback-failed
+  are now distinct; undo and redo no longer swallow their result; an accepted-command digest
+  is kept separate from the attempted-intent digest. (#193)
+
+### Fixed — experimental (`instrument_workbench` example)
+- **Tick arithmetic saturates** over the full `u64` domain: `Step(n)` no longer rewinds at
+  `u64::MAX` or overflows near `i64::MAX`, and `tick_wall` no longer overflows. (#193)
+
 ## [0.5.0] - 2026-10-24
 
 **Interactive instruments** — a deliberate minor milestone that turns LibGibson's green

@@ -923,6 +923,39 @@ fn repeated_duration(duration: Duration, times: usize) -> Duration {
 }
 
 // ---------------------------------------------------------------------------
+// Resolution helpers (issue #77)
+// ---------------------------------------------------------------------------
+//
+// `Presentation::offset_of` / `visibility_of` take a `SceneId` and recover the
+// entity's baseline via `Scene::baseline_offset` / `baseline_visible`, each an
+// O(n) linear scan of the entity vec. When `evaluate`/`to_node` already hold the
+// entity in hand, that scan is pure waste and makes the whole resolve O(n²).
+// These helpers compute the identical value from the entity directly: for a live
+// entity `baseline_offset(e.id) == e.offset`, so the result is byte-for-byte the
+// same — only the quadratic scan is gone. See `offset_of`/`visibility_of` for the
+// id-only public forms they mirror.
+
+/// Effective absolute placement plus summed displacement for an entity we hold,
+/// without the O(n) baseline scan. Identical result to `Presentation::offset_of`.
+#[inline]
+fn resolved_offset(p: &Presentation, e: &SceneEntity) -> (i32, i32) {
+    let placement = p.raw_offset(e.id).unwrap_or(e.offset);
+    let delta = p.displacement_of(e.id);
+    (
+        (i128::from(placement.0) + delta.0).clamp(i32::MIN as i128, i32::MAX as i128) as i32,
+        (i128::from(placement.1) + delta.1).clamp(i32::MIN as i128, i32::MAX as i128) as i32,
+    )
+}
+
+/// Effective visibility for an entity we hold, without the O(n) baseline scan.
+/// Identical result to `Presentation::visibility_of`.
+#[inline]
+fn resolved_visibility(p: &Presentation, e: &SceneEntity) -> f32 {
+    p.raw_visibility(e.id)
+        .unwrap_or(if e.visible { 1.0 } else { 0.0 })
+}
+
+// ---------------------------------------------------------------------------
 // Scene
 // ---------------------------------------------------------------------------
 
@@ -1005,6 +1038,15 @@ impl Scene {
     }
 
     /// Interns a tag name into a [`TagId`].
+    ///
+    /// **Retention policy (issue #77).** Interned tags are *never* reclaimed — not
+    /// by [`Scene::remove`], [`Scene::retain`], or [`Scene::clear`] — because a
+    /// [`TagId`] handed out earlier must never be re-aliased to a different name.
+    /// A workload that mints unbounded *unique* transient tag names therefore grows
+    /// the tag table monotonically; reusing names (the common case) keeps it bounded
+    /// by the distinct-name count. There is deliberately no compaction entry point:
+    /// it could not be offered without first proving no live `TagId` still refers to
+    /// a reclaimed slot.
     pub fn tag(&mut self, name: impl Into<String>) -> TagId {
         self.intern_tag(&name.into())
     }
@@ -1035,6 +1077,22 @@ impl Scene {
     }
 
     /// Mutable access to an entity (e.g. to refresh a dynamic overlay's node).
+    ///
+    /// **Do not mutate `SceneEntity.label` through this handle.** The label index
+    /// behind [`Scene::id_of`] / [`Scene::target`] is keyed at add time and is not
+    /// updated by a direct field write, which desyncs lookups. Use [`Scene::rename`]
+    /// to change a label coherently.
+    ///
+    /// **Do not mutate `SceneEntity.id` through this handle either.** `id` is the
+    /// scene's authoritative, monotonically-assigned identity: it keys resolution
+    /// ([`Scene::resolve`] / [`Scene::entity`]), retirement ([`Scene::remove`] /
+    /// [`Scene::retain`]), [`Scene::rename`] and effect targeting. Unlike a label it
+    /// has no coherent re-write path (there is no `rename` analogue), so a direct
+    /// write simply corrupts those lookups — it can collide two entities onto one id
+    /// and leave the index dangling — and it voids the never-recycled identity
+    /// guarantee documented on [`Scene::remove`]. Mutating `id` is **unsupported**;
+    /// the field is writable only for historical source-compatibility reasons and a
+    /// future release may make it read-only (#77).
     pub fn entity_mut(&mut self, id: SceneId) -> Option<&mut SceneEntity> {
         self.entities.iter_mut().find(|e| e.id == id)
     }
@@ -1060,6 +1118,98 @@ impl Scene {
 
     pub fn is_empty(&self) -> bool {
         self.entities.is_empty()
+    }
+
+    /// Retires an entity, returning it if present, and frees its label for reuse.
+    ///
+    /// **Identity policy (issue #77).** [`SceneId`]s come from a monotonic counter
+    /// and are **never recycled**, so a handle to a removed entity is permanently
+    /// dead: [`Scene::resolve`] yields empty, [`Scene::entity`] / [`Scene::entity_mut`]
+    /// yield `None`, [`Scene::set_node`] returns `false`, and an effect targeting it
+    /// writes nothing. Absent a direct write to the (unsupported-to-mutate)
+    /// `SceneEntity.id` field — see [`Scene::entity_mut`] — a stale id can never alias
+    /// a later entity, so no generation tag is needed. Interned [`TagId`]s persist;
+    /// only the entity and its label mapping are dropped.
+    pub fn remove(&mut self, id: SceneId) -> Option<SceneEntity> {
+        let idx = self.entities.iter().position(|e| e.id == id)?;
+        let entity = self.entities.remove(idx);
+        // Purge the index by stable identity, not by `entity.label`: a consumer may
+        // have mutated `SceneEntity.label` through `entity_mut` after add, so the
+        // live key need not equal the current label. Dropping by id frees whatever
+        // label pointed here and never leaves a dead id in `by_label`. `SceneId` is
+        // never recycled, so at most one entry matches (Finding B, #77).
+        self.by_label.retain(|_, v| *v != id);
+        Some(entity)
+    }
+
+    /// Retires an entity by its label — convenience over [`Scene::remove`].
+    pub fn remove_label(&mut self, label: &str) -> Option<SceneEntity> {
+        let id = self.id_of(label)?;
+        self.remove(id)
+    }
+
+    /// Renames an entity, keeping the label index coherent.
+    ///
+    /// Returns `Ok(false)` if `id` is unknown, `Ok(true)` on success (including an
+    /// identity rename), and `Err(SceneError::DuplicateLabel)` if another live
+    /// entity already holds `new_label`. This is the supported way to change a
+    /// label — writing `SceneEntity.label` directly through [`Scene::entity_mut`]
+    /// bypasses the index and desyncs [`Scene::id_of`] / [`Scene::target`]; calling
+    /// `rename` also repairs such a prior desync for this id.
+    pub fn rename(
+        &mut self,
+        id: SceneId,
+        new_label: impl Into<String>,
+    ) -> Result<bool, SceneError> {
+        let new_label = new_label.into();
+        let Some(idx) = self.entities.iter().position(|e| e.id == id) else {
+            return Ok(false);
+        };
+        // Fast path only when the index ALREADY agrees. If a prior direct
+        // `entity_mut().label = …` write left the entity's label equal to `new_label`
+        // while the index still keys the OLD label → id, fall through to the repair
+        // below instead of falsely reporting an index-coherent rename (1A). The extra
+        // lookup is O(log n); an ordinary identity rename stays cheap.
+        if self.entities[idx].label == new_label && self.by_label.get(&new_label) == Some(&id) {
+            return Ok(true);
+        }
+        if self.by_label.get(&new_label).is_some_and(|v| *v != id) {
+            return Err(SceneError::DuplicateLabel(new_label));
+        }
+        // Purge any entry pointing at this id (robust to a prior direct-write
+        // desync), then install the new mapping.
+        self.by_label.retain(|_, v| *v != id);
+        self.by_label.insert(new_label.clone(), id);
+        self.entities[idx].label = new_label;
+        Ok(true)
+    }
+
+    /// Keeps only the entities for which `keep` returns `true`, dropping the rest
+    /// and freeing their labels. Survivor insertion order is preserved; the same
+    /// never-recycled identity policy as [`Scene::remove`] applies.
+    pub fn retain(&mut self, mut keep: impl FnMut(&SceneEntity) -> bool) {
+        // Collect the dropped ids, then purge the index by identity (not by each
+        // entity's current label, which `entity_mut` may have desynced). See
+        // `remove` for the rationale (Finding B, #77).
+        let mut dropped: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
+        self.entities.retain(|e| {
+            let k = keep(e);
+            if !k {
+                dropped.insert(e.id.0);
+            }
+            k
+        });
+        if !dropped.is_empty() {
+            self.by_label.retain(|_, v| !dropped.contains(&v.0));
+        }
+    }
+
+    /// Removes every entity and frees every label. The [`SceneId`]/[`TagId`]
+    /// counters stay monotonic (ids are never reissued) and interned tags are
+    /// retained, so identity stays stable across a clear.
+    pub fn clear(&mut self) {
+        self.entities.clear();
+        self.by_label.clear();
     }
 
     /// Entity ids matching a target (id target matches at most one).
@@ -1100,16 +1250,20 @@ impl Scene {
     /// Resolves every entity to its effective presentation, sorted by z then
     /// insertion order (stable, deterministic).
     pub fn evaluate(&self, p: &Presentation) -> Vec<ResolvedEntity> {
+        // Resolve each entity from the entity we already hold, not via the id-only
+        // `offset_of`/`visibility_of` (which re-scan the whole vec per call). Output
+        // is byte-identical; the former O(n²) baseline lookup is now O(n). See the
+        // `resolved_offset`/`resolved_visibility` helpers and issue #77.
         let mut out: Vec<ResolvedEntity> = self
             .entities
             .iter()
             .map(|e| {
-                let visibility = p.visibility_of(self, e.id);
+                let visibility = resolved_visibility(p, e);
                 ResolvedEntity {
                     id: e.id,
                     label: e.label.clone(),
                     z: e.z,
-                    offset: p.offset_of(self, e.id),
+                    offset: resolved_offset(p, e),
                     visible: visibility > 0.0,
                     visibility,
                     node: e.node.clone().post_process(p.surface_fx(e.id).to_vec()),
@@ -1127,12 +1281,26 @@ impl Scene {
     /// This is deliberately *not* a second renderer — it emits the same
     /// declarative nodes that flow through the existing layout/paint/diff path.
     pub fn to_node(&self, p: &Presentation, width: f32, height: f32) -> Node {
+        // Walk in the same (z, id) order `evaluate` produces, but realize (clone +
+        // post-process) ONLY entities that actually paint. A hidden/retired entity
+        // costs one O(log n) visibility lookup and nothing else — no node clone.
+        // Before issue #77 this went through `evaluate`, which cloned every hidden
+        // node just to discard it here. Output is byte-identical to that path.
+        let mut order: Vec<&SceneEntity> = self.entities.iter().collect();
+        order.sort_by_key(|e| (e.z, e.id.0));
         let mut stack = Node::stack().width(width).height(height);
-        for r in self.evaluate(p) {
-            if !r.visible {
-                continue;
+        for e in order {
+            // Paint exactly when `evaluate` reports `visible`, i.e. `v > 0.0` — the
+            // positive predicate, NOT `!(v <= 0.0)`. Under IEEE-754 a NaN visibility
+            // fails `> 0.0`, so it is correctly omitted (matching `evaluate`), whereas
+            // a `v <= 0.0` skip test would paint a NaN that `evaluate` marks invisible
+            // and make the two public methods disagree (Finding A, #77). Phrasing it
+            // positively also keeps clippy's `neg_cmp_op_on_partial_ord` happy.
+            if resolved_visibility(p, e) > 0.0 {
+                let offset = resolved_offset(p, e);
+                let node = e.node.clone().post_process(p.surface_fx(e.id).to_vec());
+                stack = stack.child(node.offset(offset.0 as f32, offset.1 as f32));
             }
-            stack = stack.child(r.node.offset(r.offset.0 as f32, r.offset.1 as f32));
         }
         let (cx, cy) = p.camera();
         if cx != 0 || cy != 0 {
@@ -1451,5 +1619,482 @@ mod tests {
         let a = scene.to_node(&Presentation::new(), 10.0, 3.0);
         let b = scene.to_node(&Presentation::new(), 10.0, 3.0);
         assert_eq!(format!("{a:?}"), format!("{b:?}"));
+    }
+
+    // ---- issue #77: entity lifecycle + hot-path resolution -----------------
+
+    #[test]
+    fn remove_retires_entity_and_frees_label() {
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")));
+        let b = scene.add(SceneEntity::new("b", text("b")));
+        assert_eq!(scene.len(), 2);
+
+        let removed = scene.remove(a);
+        assert_eq!(removed.map(|e| e.label), Some("a".to_string()));
+        assert_eq!(scene.len(), 1);
+
+        // The label is freed — reusing it was impossible before #77.
+        let a2 = scene.add(SceneEntity::new("a", text("a2")));
+        assert_eq!(scene.len(), 2);
+        // ...and the reused label is a DISTINCT id; the old handle is not aliased.
+        assert_ne!(a2, a);
+        assert_ne!(a2, b);
+
+        // remove_label is the ergonomic pair.
+        assert_eq!(scene.remove_label("b").map(|e| e.label), Some("b".into()));
+        assert!(scene.remove_label("b").is_none());
+    }
+
+    #[test]
+    fn stale_id_after_remove_is_safely_rejected() {
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")));
+        let _b = scene.add(SceneEntity::new("b", text("b")));
+        scene.remove(a);
+        // Re-add many entities; none may ever reuse `a`'s id (no generation tag
+        // needed precisely because ids are never recycled).
+        for i in 0..8 {
+            scene.add(SceneEntity::new(format!("x{i}"), text("x")));
+        }
+        assert!(
+            scene.resolve(SceneTarget::Id(a)).is_empty(),
+            "stale id resolves to empty"
+        );
+        assert!(scene.entity(a).is_none());
+        assert!(scene.entity_mut(a).is_none());
+        assert!(
+            !scene.set_node(a, text("ghost")),
+            "set_node rejects a stale id"
+        );
+
+        // A stale-id effect targets nothing: no panic, no presentation written.
+        let mut p = Presentation::new();
+        Effect::reveal(SceneTarget::Id(a), 0.0, 1.0, Duration::from_millis(10)).eval(
+            Duration::from_millis(10),
+            &scene,
+            &mut p,
+        );
+        assert_eq!(p.raw_visibility(a), None, "nothing written for a dead id");
+    }
+
+    #[test]
+    fn removed_entity_leaves_no_ghost_surface() {
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")));
+        let _b = scene.add(SceneEntity::new("b", text("b")));
+        assert_eq!(
+            scene
+                .to_node(&Presentation::new(), 20.0, 5.0)
+                .children
+                .len(),
+            2
+        );
+        scene.remove(a);
+        assert_eq!(
+            scene
+                .to_node(&Presentation::new(), 20.0, 5.0)
+                .children
+                .len(),
+            1,
+            "a removed entity paints nothing"
+        );
+    }
+
+    #[test]
+    fn hide_versus_remove_is_a_real_retirement() {
+        // MUTATION CONTROL: hiding is NOT retiring. A hidden entity stays in the
+        // scene (len + evaluate still count it, its cost is retained); only
+        // `remove` actually drops it. This proves the lifecycle retires rather
+        // than merely re-skinning `visible = false`.
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")));
+        let b = scene.add(SceneEntity::new("b", text("b")));
+        scene.entity_mut(a).unwrap().visible = false; // hidden, not removed
+        assert_eq!(scene.len(), 2, "a hidden entity is still retained");
+        assert_eq!(
+            scene.evaluate(&Presentation::new()).len(),
+            2,
+            "a hidden entity is still evaluated (cost retained)"
+        );
+        // It is omitted from paint, but it still exists.
+        assert_eq!(
+            scene
+                .to_node(&Presentation::new(), 20.0, 5.0)
+                .children
+                .len(),
+            1
+        );
+
+        scene.remove(b);
+        assert_eq!(scene.len(), 1, "remove actually retires");
+        assert_eq!(scene.evaluate(&Presentation::new()).len(), 1);
+    }
+
+    #[test]
+    fn retain_and_clear_free_labels_and_keep_ids_unique() {
+        let mut scene = Scene::new();
+        let keep = scene.add(SceneEntity::new("keep", text("k")));
+        let drop1 = scene.add(SceneEntity::new("drop1", text("d")));
+        let _drop2 = scene.add(SceneEntity::new("drop2", text("d")));
+
+        scene.retain(|e| e.label == "keep");
+        assert_eq!(scene.len(), 1);
+        assert_eq!(scene.id_of("keep"), Some(keep));
+        assert_eq!(scene.id_of("drop1"), None, "a dropped label is freed");
+        assert!(scene.resolve(SceneTarget::Id(drop1)).is_empty());
+
+        // Reusing a freed label is legal and yields a fresh id.
+        let drop1b = scene.add(SceneEntity::new("drop1", text("d")));
+        assert_ne!(drop1b, drop1);
+
+        scene.clear();
+        assert!(scene.is_empty());
+        assert_eq!(scene.id_of("keep"), None);
+        // Post-clear ids still never collide with pre-clear handles.
+        let fresh = scene.add(SceneEntity::new("keep", text("k")));
+        assert_ne!(fresh, keep);
+        assert_ne!(fresh, drop1b);
+    }
+
+    #[test]
+    fn hot_path_refactor_is_output_preserving() {
+        // REGRESSION ANCHOR (two blind paths): the new inline resolution must be
+        // byte-identical to the original id-only `Presentation::offset_of` /
+        // `visibility_of` route (which still exists, unchanged). Drive effects on a
+        // mixed scene and cross-check every resolved entity against that route.
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")).offset(2, 3).z(5));
+        let _b = scene.add(SceneEntity::new("b", text("b")).offset(-1, 4).hidden());
+        let _c = scene.add(SceneEntity::new("c", text("c")).z(-2));
+        let mut p = Presentation::new();
+        Effect::displace(
+            SceneTarget::Id(a),
+            (0.0, 0.0),
+            (3.0, -1.0),
+            Duration::from_millis(100),
+        )
+        .eval(Duration::from_millis(100), &scene, &mut p);
+        Effect::reveal(
+            scene.target("b").unwrap(),
+            0.0,
+            1.0,
+            Duration::from_millis(100),
+        )
+        .eval(Duration::from_millis(100), &scene, &mut p);
+
+        let resolved = scene.evaluate(&p);
+        for r in &resolved {
+            assert_eq!(
+                r.offset,
+                p.offset_of(&scene, r.id),
+                "offset vs public route"
+            );
+            assert_eq!(
+                r.visibility,
+                p.visibility_of(&scene, r.id),
+                "visibility vs public route"
+            );
+            assert_eq!(r.visible, p.visibility_of(&scene, r.id) > 0.0);
+        }
+        // Deterministic (z, id) order is preserved.
+        let order: Vec<_> = resolved.iter().map(|r| (r.z, r.id.0)).collect();
+        let mut sorted = order.clone();
+        sorted.sort_unstable();
+        assert_eq!(order, sorted);
+    }
+
+    #[test]
+    #[ignore = "wall-clock perf witness; run with `--ignored` on an idle host"]
+    fn to_node_scaling_is_not_quadratic_in_hidden_entities() {
+        use std::time::Instant;
+        fn time_to_node(n: usize) -> std::time::Duration {
+            let mut scene = Scene::new();
+            for i in 0..n {
+                let id = scene.add(SceneEntity::new(format!("e{i}"), text("e")));
+                scene.entity_mut(id).unwrap().visible = false;
+            }
+            let p = Presentation::new();
+            let t0 = Instant::now();
+            for _ in 0..200 {
+                std::hint::black_box(scene.to_node(&p, 80.0, 24.0));
+            }
+            t0.elapsed()
+        }
+        let t1 = time_to_node(1000);
+        let t2 = time_to_node(2000);
+        // The old O(n²) baseline scan scales ≈4× from 1k→2k; the fixed path is
+        // ≈2×. A ratio under 3 is a decisive witness the quadratic term is gone.
+        let ratio = t2.as_secs_f64() / t1.as_secs_f64().max(1e-9);
+        assert!(
+            ratio < 3.0,
+            "to_node scaled {ratio:.2}× from 1k→2k hidden (want <3; quadratic≈4)"
+        );
+    }
+
+    #[test]
+    fn to_node_inclusion_matches_evaluate_for_hostile_visibility() {
+        // Finding A (#77, Renaissance III). The core invariant: `to_node` paints an
+        // entity IFF `evaluate` reports it `visible`, for *any* resolved visibility
+        // including non-finite values. Under IEEE-754 a NaN fails both `> 0.0` and
+        // `<= 0.0`, so the pre-fix `to_node` skip test `v <= 0.0` painted a NaN that
+        // `evaluate` (`visible ⇔ v > 0.0`) marks invisible — the two public methods
+        // disagreeing on the same scene. We assert the agreement directly rather
+        // than against an oracle on the *intended* value, because `reveal` runs the
+        // endpoints through `clock::lerp` and `lerp(inf, inf, _) = inf + (inf-inf) =
+        // NaN`, so the stored visibility need not equal the endpoint. Camera is
+        // (0,0), so `to_node` returns the bare stack and `children.len()` is the
+        // painted count. The (from, to) pairs are chosen to span the hostile space;
+        // at full duration `lerp` lands on `to` (modulo the inf-inf=NaN case).
+        let cases: [(f32, f32); 11] = [
+            (f32::NAN, f32::NAN),                   // -> NaN
+            (0.0, f32::NAN),                        // -> NaN
+            (f32::INFINITY, f32::INFINITY),         // -> NaN (inf - inf)
+            (0.0, f32::INFINITY),                   // -> +inf  (visible)
+            (0.0, f32::NEG_INFINITY),               // -> -inf  (hidden)
+            (0.0, 0.0),                             // -> +0    (hidden)
+            (-0.0, -0.0),                           // -> -0    (hidden)
+            (f32::from_bits(1), f32::from_bits(1)), // -> smallest subnormal (visible)
+            (1.0, 1.0),                             // -> 1.0   (visible)
+            (-1.0, -1.0),                           // -> -1.0  (hidden)
+            (0.25, 0.75),                           // -> 0.75  (visible)
+        ];
+        for (from, to) in cases {
+            let mut scene = Scene::new();
+            let id = scene.add(SceneEntity::new("x", text("x")));
+            let mut p = Presentation::new();
+            Effect::reveal(SceneTarget::Id(id), from, to, Duration::from_millis(100)).eval(
+                Duration::from_millis(100),
+                &scene,
+                &mut p,
+            );
+
+            let resolved = scene.evaluate(&p);
+            let evaluate_visible = resolved[0].visible;
+            let actual_vis = resolved[0].visibility;
+            let painted = scene.to_node(&p, 80.0, 24.0).children.len();
+
+            // The Finding-A invariant: the two public methods MUST agree, whatever
+            // the (possibly non-finite) resolved visibility turns out to be.
+            assert_eq!(
+                painted, evaluate_visible as usize,
+                "to_node painted {painted} vs evaluate.visible={evaluate_visible} \
+                 for reveal({from:?} -> {to:?}); actual visibility = {actual_vis:?}"
+            );
+            // And both honour the documented inclusion rule `visible ⇔ vis > 0.0`.
+            assert_eq!(
+                evaluate_visible,
+                actual_vis > 0.0,
+                "inclusion rule for actual visibility = {actual_vis:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn remove_after_label_mutation_frees_the_indexed_label() {
+        // Finding B (#77, Renaissance III). `remove` must purge the label index by
+        // identity, not by the entity's *current* label. A consumer that writes
+        // `SceneEntity.label` through `entity_mut` desyncs the add-time key; keying
+        // cleanup off the current label leaves a dead id in `by_label` and burns the
+        // original label (a later `add` of it would panic as a duplicate).
+        let mut scene = Scene::new();
+        let id = scene.add(SceneEntity::new("old", text("o")));
+        scene.entity_mut(id).unwrap().label = "new".into(); // direct write → desync
+        assert!(scene.remove(id).is_some(), "entity was present");
+        assert_eq!(scene.id_of("old"), None, "the indexed label must be freed");
+        assert_eq!(
+            scene.id_of("new"),
+            None,
+            "the mutated label was never indexed"
+        );
+        assert!(scene.is_empty());
+        // "old" is reusable (not burned) and yields a fresh, non-aliasing id.
+        let reborn = scene.add(SceneEntity::new("old", text("o")));
+        assert_ne!(reborn, id);
+        assert_eq!(scene.id_of("old"), Some(reborn));
+    }
+
+    #[test]
+    fn retain_frees_dropped_labels_by_identity_after_mutation() {
+        // Finding B (#77, Renaissance III), the `retain` path: same identity-keyed
+        // purge requirement as `remove`.
+        let mut scene = Scene::new();
+        let keep = scene.add(SceneEntity::new("keep", text("k")));
+        let gone = scene.add(SceneEntity::new("gone", text("g")));
+        scene.entity_mut(gone).unwrap().label = "renamed".into(); // desync
+        scene.retain(|e| e.id == keep);
+        assert_eq!(scene.len(), 1);
+        assert_eq!(scene.id_of("keep"), Some(keep));
+        assert_eq!(
+            scene.id_of("gone"),
+            None,
+            "dropped indexed label freed by id"
+        );
+        assert_eq!(scene.id_of("renamed"), None);
+        let g2 = scene.add(SceneEntity::new("gone", text("g")));
+        assert_ne!(g2, gone);
+    }
+
+    #[test]
+    fn rename_keeps_the_label_index_coherent() {
+        // Finding B (#77, Renaissance III): the supported, index-coherent way to
+        // change a label, and the repair path for a prior direct-write desync.
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")));
+        let b = scene.add(SceneEntity::new("b", text("b")));
+
+        // Rename to a free label updates both directions.
+        assert_eq!(scene.rename(a, "a2"), Ok(true));
+        assert_eq!(scene.id_of("a"), None);
+        assert_eq!(scene.id_of("a2"), Some(a));
+        assert_eq!(scene.entity(a).unwrap().label, "a2");
+
+        // A duplicate target is rejected and leaves state unchanged.
+        assert_eq!(
+            scene.rename(a, "b"),
+            Err(SceneError::DuplicateLabel("b".into()))
+        );
+        assert_eq!(scene.id_of("a2"), Some(a));
+        assert_eq!(scene.entity(a).unwrap().label, "a2");
+
+        // An identity rename is a no-op success.
+        assert_eq!(scene.rename(b, "b"), Ok(true));
+
+        // An unknown id yields Ok(false) (consistent with set_node).
+        scene.remove(a);
+        assert_eq!(scene.rename(a, "zzz"), Ok(false));
+
+        // rename repairs a prior direct-write desync, recovering by id.
+        let c = scene.add(SceneEntity::new("c", text("c")));
+        scene.entity_mut(c).unwrap().label = "ghost".into(); // index still "c"→c
+        assert_eq!(scene.rename(c, "c_fixed"), Ok(true));
+        assert_eq!(scene.id_of("c"), None, "stale key purged by id");
+        assert_eq!(scene.id_of("ghost"), None);
+        assert_eq!(scene.id_of("c_fixed"), Some(c));
+    }
+
+    #[test]
+    fn rename_repairs_desync_when_target_equals_the_mutated_label() {
+        // 1A (Renaissance IV). `rename`'s doc promises it repairs a prior direct-write
+        // desync for an id. The fast-path early return (`entity.label == new_label →
+        // Ok(true)`) defeated that promise in exactly one case: the caller directly
+        // writes the entity's label to the SAME string it then renames to. The entity
+        // label already matched, so the fast path reported success while `by_label`
+        // still keyed the OLD label — a silent, un-repaired desync. The repair is the
+        // whole documented reason `rename` exists over a direct field write.
+        let mut scene = Scene::new();
+        let id = scene.add(SceneEntity::new("old", text("o"))); // index {old → id}
+        scene.entity_mut(id).unwrap().label = "new".into(); // entity "new", index still {old → id}
+        assert_eq!(scene.rename(id, "new"), Ok(true));
+        assert_eq!(
+            scene.id_of("new"),
+            Some(id),
+            "rename must install the index entry its doc promises to repair"
+        );
+        assert_eq!(
+            scene.id_of("old"),
+            None,
+            "the stale indexed label must be purged"
+        );
+        // Deletion after recovery: the repaired mapping deletes cleanly.
+        assert!(scene.remove(id).is_some());
+        assert_eq!(scene.id_of("new"), None);
+        assert!(scene.is_empty());
+    }
+
+    #[test]
+    fn rename_repair_rejects_a_live_duplicate_and_preserves_other_mappings() {
+        // 1A companion (Renaissance IV). When the directly-written label collides with
+        // another LIVE entity's indexed label, the repair must REFUSE (DuplicateLabel),
+        // not silently report success and leave the collision — and every other mapping
+        // must survive untouched. The old fast path returned `Ok(true)` here too,
+        // swallowing the collision.
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")));
+        let b = scene.add(SceneEntity::new("b", text("b")));
+        let c = scene.add(SceneEntity::new("c", text("c")));
+        scene.entity_mut(a).unwrap().label = "b".into(); // direct write onto a live label
+        assert_eq!(
+            scene.rename(a, "b"),
+            Err(SceneError::DuplicateLabel("b".into())),
+            "cannot repair onto a label a live entity already holds"
+        );
+        // The refused repair leaves every mapping intact, including a's original key.
+        assert_eq!(scene.id_of("a"), Some(a));
+        assert_eq!(scene.id_of("b"), Some(b));
+        assert_eq!(scene.id_of("c"), Some(c));
+    }
+
+    #[test]
+    fn mutating_entity_id_is_unsupported_and_corrupts_lookups() {
+        // 1B (Renaissance IV). `SceneEntity.id` is a public field, so a consumer CAN
+        // write it through `entity_mut`. This is documented as UNSUPPORTED; this test
+        // pins the ACTUAL consequences so the boundary is executable, not just prose.
+        // The never-recycled identity guarantee holds only absent such a write.
+        let mut scene = Scene::new();
+        let a = scene.add(SceneEntity::new("a", text("a")));
+        let b = scene.add(SceneEntity::new("b", text("b")));
+        assert_ne!(a, b);
+        let b_key = scene.id_of("b").unwrap(); // index maps "b" → b's add-time id
+
+        // Unsupported: collide b's identity onto a. `by_label` is NOT updated (it
+        // stores add-time ids), so the index and the entities now disagree.
+        scene.entity_mut(b).unwrap().id = a;
+
+        // The index entry for "b" now DANGLES: it resolves to an id no live entity
+        // carries (b's entity became `a`, a's entity was already `a`).
+        assert_eq!(scene.id_of("b"), Some(b_key));
+        assert!(
+            scene.entity(b_key).is_none(),
+            "the 'b' index entry dangles after the unsupported id write"
+        );
+        // And the unique-id invariant the guarantee rests on is now violated.
+        assert_eq!(
+            scene.entities().iter().filter(|e| e.id == a).count(),
+            2,
+            "two entities share one id after the unsupported mutation"
+        );
+    }
+
+    #[test]
+    fn interned_tags_follow_the_documented_retention_policy() {
+        // Finding C (#77, Renaissance III): interned tags are never reclaimed
+        // (TagId stability). Reused names keep the table bounded; unique transient
+        // names grow it monotonically — a declared policy, not a leak. White-box:
+        // this test lives in the scene module and reads the private tag table.
+        let mut scene = Scene::new();
+
+        // Churn a REUSED tag name across many add/remove cycles.
+        for i in 0..100 {
+            let id = scene.add(SceneEntity::new(format!("e{i}"), text("e")).tag("shared"));
+            scene.remove(id);
+        }
+        assert_eq!(
+            scene.tag_ids.len(),
+            1,
+            "a reused tag name interns exactly once regardless of churn"
+        );
+
+        // Churn UNIQUE tag names: one new slot per distinct name, never reclaimed.
+        let before = scene.tag_ids.len();
+        for i in 0..50 {
+            let id =
+                scene.add(SceneEntity::new(format!("u{i}"), text("u")).tag(format!("uniq{i}")));
+            scene.remove(id);
+        }
+        assert_eq!(
+            scene.tag_ids.len(),
+            before + 50,
+            "unique transient tags are retained by policy (stable TagIds)"
+        );
+
+        // clear() frees entities and labels but deliberately preserves tags.
+        scene.clear();
+        assert!(scene.is_empty());
+        assert_eq!(
+            scene.tag_ids.len(),
+            before + 50,
+            "clear() retains interned tags for TagId stability"
+        );
     }
 }
