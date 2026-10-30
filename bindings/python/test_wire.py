@@ -141,6 +141,63 @@ def test_command_ack_wire_round_trip():
     assert ack.body["status"] == wire.ACK_ACKNOWLEDGED
 
 
+def test_field_geometry_parity_with_rust_fieldextent():
+    """wire.decode_message must reject exactly the geometries Rust `FieldExtent::new`
+    (src/field_view.rs) rejects: non-finite origin, non-finite or non-positive cell size,
+    and a zero dimension. RED-FIRST against the pre-parity decoder: NaN/+inf origin and
+    NaN/+inf cell size slipped through the old `cw <= 0.0` guard (both compare False), and the
+    origin was never checked. cols==0/rows==0 and cw<=0/ch<=0 already failed closed; kept here
+    as regressions so the whole 7-condition contract is pinned in one place."""
+    nan = float("nan")
+    inf = float("inf")
+
+    def frame(cols, rows, origin, cw, ch):
+        return wire.encode_field(1, 1, 1, cols, rows, origin, cw, ch, 0, [0.0] * (cols * rows))
+
+    rejected = [
+        ("nan origin_x", frame(2, 2, (nan, 0.0), 1.0, 1.0)),
+        ("nan origin_y", frame(2, 2, (0.0, nan), 1.0, 1.0)),
+        ("+inf origin_x", frame(2, 2, (inf, 0.0), 1.0, 1.0)),
+        ("-inf origin_y", frame(2, 2, (0.0, -inf), 1.0, 1.0)),
+        ("nan cell_w", frame(2, 2, (0.0, 0.0), nan, 1.0)),
+        ("+inf cell_w", frame(2, 2, (0.0, 0.0), inf, 1.0)),
+        ("nan cell_h", frame(2, 2, (0.0, 0.0), 1.0, nan)),
+        ("+inf cell_h", frame(2, 2, (0.0, 0.0), 1.0, inf)),
+        ("zero cell_w", frame(2, 2, (0.0, 0.0), 0.0, 1.0)),
+        ("negative cell_h", frame(2, 2, (0.0, 0.0), 1.0, -1.0)),
+        ("zero cols", frame(0, 2, (0.0, 0.0), 1.0, 1.0)),
+        ("zero rows", frame(2, 0, (0.0, 0.0), 1.0, 1.0)),
+    ]
+    for label, buf in rejected:
+        try:
+            wire.decode_message(buf)
+        except wire.WireError:
+            continue
+        raise AssertionError(f"decode accepted degenerate geometry it must reject: {label}")
+
+
+def test_field_accepts_valid_geometry_and_nonfinite_data():
+    """The parity tightening must NOT over-reject. Valid finite geometry decodes, and
+    non-finite *data samples* (NaN, ±inf) are carried faithfully — Rust refuses a bad extent
+    but preserves field values bit-for-bit, and the geometry guard touches only geometry. A
+    large-but-finite geometry whose spatial extent would overflow to +inf is ACCEPTED: Rust
+    `FieldExtent::new` has no overflow guard, so honest parity adds none (such extremes are
+    disclosed downstream as clipping, not rejected at decode)."""
+    nan = float("nan")
+    inf = float("inf")
+    buf = wire.encode_field(1, 1, 1, 2, 2, (-1.5, 2.5), 0.5, 0.25, 0, [nan, inf, -inf, 7.0])
+    res = wire.decode_message(buf)
+    assert res is not None, "valid finite geometry must decode"
+    msg, consumed = res
+    assert consumed == len(buf)
+    d = msg.body["data"]
+    assert math.isnan(d[0]) and d[1] == inf and d[2] == -inf and d[3] == 7.0
+    assert msg.body["origin"] == (-1.5, 2.5)
+    big = wire.encode_field(1, 1, 1, 2, 2, (0.0, 0.0), 1e308, 1e308, 0, [0.0] * 4)
+    assert wire.decode_message(big) is not None, \
+        "finite-but-huge geometry must decode (Rust FieldExtent::new has no overflow guard)"
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:
