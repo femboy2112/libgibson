@@ -1,3 +1,7 @@
+// Shared by the example and by `tests/wire_instrument_channel.rs` via `#[path]`; not every
+// consumer exercises every accessor, so follow the workbench/scope convention and quiet
+// dead_code for the whole coordinator module rather than scattering per-method allows.
+#![allow(dead_code)]
 //! Application-owned command coordinator for the wire instrument (Renaissance V, Candidate A).
 //!
 //! The wire library ships two independent stores: `SnapshotBridge<WireCommand>` owns the
