@@ -906,3 +906,79 @@ fn out_of_range_source_is_refused_in_the_edit_accounting_too() {
         "a refused source edit does not advance the accepted-command trace"
     );
 }
+
+// ---- S-kbd1: a SINGLE-CELL move via keyboard or pointer folds the SAME accepted trace ------
+//
+// s7 proves pointer and keyboard moves reach the same final model/digest. This strengthens
+// that to the Phase-2 accountability layer: for a single-cell move the ACCEPTED-command trace
+// (accepted_digest) is itself path-independent, because the keyboard arrow and the one-cell
+// drag each lower to exactly one MoveSelected{1,0}. (Selection and probe are not "Applied", so
+// the pointer path's extra SelectAt/ProbeAt never enter the accepted trace.)
+#[test]
+fn s_kbd1_single_cell_move_matches_pointer_accepted_trace() {
+    let shape = || Intent::DrawRect {
+        a: Point::new(2.0, 2.0),
+        b: Point::new(6.0, 5.0),
+    };
+
+    // Keyboard: select (Tab) then one Right.
+    let mut k = wb_ready(80, 24);
+    k.apply_intent(shape());
+    k.process(&key(KeyCode::Tab));
+    k.process(&key(KeyCode::Right));
+
+    // Pointer: click to select then a one-cell drag (1 terminal cell == 1 world unit here).
+    let mut m = wb_ready(80, 24);
+    m.apply_intent(shape());
+    let r = m.canvas_rect();
+    let (col, row) = (r.x + 3, r.y + 3);
+    m.process(&down(col, row));
+    m.process(&drag(col + 1, row));
+    m.process(&up(col + 1, row));
+
+    assert_eq!(k.model, m.model, "same final model via keyboard or pointer");
+    assert_eq!(k.digest(), m.digest(), "same authoritative model hash");
+    assert_eq!(
+        k.accepted_digest, m.accepted_digest,
+        "a single-cell move folds the SAME accepted-command trace regardless of input device"
+    );
+}
+
+// ---- S-kbd2: multi-cell granularity — same model, DIFFERENT accepted trace (the boundary) --
+//
+// A two-cell pointer drag lowers to ONE MoveSelected{2,0}; two keyboard Rights lower to TWO
+// MoveSelected{1,0}. They converge on the SAME model (s7's guarantee) but NOT the same
+// accepted-command trace — which is exactly why the equivalence spine compares accepted_digest
+// only for single-cell legs and the model/digest otherwise. This is the mutation control
+// proving accepted_digest is sensitive to granularity, not trivially equal.
+#[test]
+fn s_kbd2_multi_cell_move_same_model_but_distinct_accepted_trace() {
+    let shape = || Intent::DrawRect {
+        a: Point::new(2.0, 2.0),
+        b: Point::new(6.0, 5.0),
+    };
+
+    let mut k = wb_ready(80, 24);
+    k.apply_intent(shape());
+    k.process(&key(KeyCode::Tab));
+    k.process(&key(KeyCode::Right));
+    k.process(&key(KeyCode::Right));
+
+    let mut m = wb_ready(80, 24);
+    m.apply_intent(shape());
+    let r = m.canvas_rect();
+    let (col, row) = (r.x + 3, r.y + 3);
+    m.process(&down(col, row));
+    m.process(&drag(col + 2, row));
+    m.process(&up(col + 2, row));
+
+    assert_eq!(
+        k.model, m.model,
+        "two single steps and one two-cell drag reach the same model"
+    );
+    assert_eq!(k.digest(), m.digest());
+    assert_ne!(
+        k.accepted_digest, m.accepted_digest,
+        "two MoveSelected{{1,0}} vs one MoveSelected{{2,0}} are DIFFERENT accepted traces"
+    );
+}

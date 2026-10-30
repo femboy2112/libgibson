@@ -840,18 +840,44 @@ impl Workbench {
 
     pub fn build_el(&self, w: u16, h: u16) -> Element<()> {
         let compact = h < 18 || w < 60;
-        let mut heat: Vec<Element<()>> = Vec::with_capacity(FIELD_ROWS);
-        for line in self.heatmap_lines() {
-            heat.push(text(line));
+        let hud = self.hud_line();
+        let probe = self.probe_line();
+        let inspector = self.inspector_line();
+        let heat_lines = self.heatmap_lines();
+
+        // At a tight terminal (the #140 40×15 monochrome target) the readouts below the canvas
+        // MUST stay on-screen: "read the selected value, incl. missing/invalid" is a core step
+        // and lives in the probe/inspector lines. A fixed FIELD_ROWS-tall canvas plus a
+        // word-wrapped HUD overflows a 15-row screen and pushes those readouts off the bottom
+        // (measured). So at compact sizes we cap the heatmap to the rows left after the HUD +
+        // probe + inspector actually wrap at this width (plus a row for an honest truncation
+        // marker), and drop the pure-telemetry lines (metrics, the key legend help). At normal
+        // sizes nothing changes — the full field and every readout render as before.
+        let (shown, truncated) = if compact {
+            let reserved =
+                wrapped_rows(&hud, w) + wrapped_rows(&probe, w) + wrapped_rows(&inspector, w) + 2; // one row for the truncation marker, one row of margin
+            let cap = (h as usize).saturating_sub(reserved).clamp(1, FIELD_ROWS);
+            (cap, cap < FIELD_ROWS)
+        } else {
+            (FIELD_ROWS, false)
+        };
+
+        let mut heat: Vec<Element<()>> = Vec::with_capacity(shown);
+        for line in heat_lines.iter().take(shown) {
+            heat.push(text(line.clone()));
         }
         let canvas = column().key("canvas").on_press(()).children(heat);
-        let mut col: Element<()> = column()
-            .child(text(self.hud_line()))
-            .child(canvas)
-            .child(text(self.probe_line()))
-            .child(text(self.inspector_line()))
-            .child(text(self.metrics_line()));
+
+        let mut col: Element<()> = column().child(text(hud)).child(canvas);
+        if truncated {
+            // The field is clipped, not silently dropped: say so (L10 — honest readout).
+            col = col.child(text(format!(
+                "… field {shown}/{FIELD_ROWS} rows — enlarge to see all …"
+            )));
+        }
+        col = col.child(text(probe)).child(text(inspector));
         if !compact {
+            col = col.child(text(self.metrics_line()));
             col = col.child(text(self.help_line()));
         }
         screen().child(col)
@@ -1204,4 +1230,27 @@ impl Workbench {
         out.push('\n');
         out
     }
+}
+
+/// Rows `s` occupies when word-wrapped to `w` columns (greedy, matching the UI's
+/// `WrapMode::WordWrap`: runs of whitespace are separators and a word longer than `w`
+/// hard-breaks). Used only to budget the compact small-terminal layout so the
+/// probe/inspector readouts are never pushed off a short screen (#140 / L8).
+fn wrapped_rows(s: &str, w: u16) -> usize {
+    let w = (w as usize).max(1);
+    let mut rows = 1usize;
+    let mut col = 0usize;
+    for word in s.split_whitespace() {
+        let wl = word.chars().count().max(1);
+        if col == 0 {
+            rows += (wl - 1) / w;
+            col = ((wl - 1) % w) + 1;
+        } else if col + 1 + wl <= w {
+            col += 1 + wl;
+        } else {
+            rows += 1 + (wl - 1) / w;
+            col = ((wl - 1) % w) + 1;
+        }
+    }
+    rows
 }
