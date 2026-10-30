@@ -95,6 +95,10 @@ path = "examples/instrument_workbench/main.rs"
 name = "scope_editor"
 path = "examples/scope_editor/main.rs"
 
+[[example]]
+name = "wire_instrument"
+path = "examples/wire_instrument/main.rs"
+
 # Dev/test builds keep line tables (so RUST_BACKTRACE still symbolicates file:line)
 # but drop full type/variable DWARF. With ~50 integration-test binaries + examples
 # each statically embedding the crate + a generics-heavy dep graph (taffy), full
