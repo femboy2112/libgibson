@@ -52,7 +52,7 @@ audio-cpal = ["dep:cpal", "dep:rtrb"]
 embedded-media = []
 
 [dependencies]
-taffy = "0.14"
+taffy = "0.15"
 crossterm = "0.29"
 unicode-segmentation = "1.12"
 unicode-width = "0.2"
