@@ -92,16 +92,18 @@ fn boot_at_40x15_mono_keeps_the_core_readouts_visible() {
         screen.lines().count()
     );
 
-    // #140 core step "read the selected value, incl. missing/invalid" lives in these
-    // readout lines (workbench.rs: probe_line / inspector_line / metrics_line).
-    let missing: Vec<&str> = ["probe", "inspector", "metrics"]
+    // #140 core step "read the selected value, incl. missing/invalid" lives in the probe and
+    // inspector readout lines; those MUST stay on-screen at 40x15. The metrics (telemetry) and
+    // help (key legend) lines are intentionally dropped at compact sizes to make room — they
+    // carry no workflow state — so they are not required here.
+    let missing: Vec<&str> = ["probe", "inspector"]
         .into_iter()
         .filter(|w| !screen.contains(w))
         .collect();
     assert!(
         missing.is_empty(),
-        "readouts clipped at 40x15 (missing: {missing:?}); the HUD wrap pushes them past \
-         row {ROWS}. A 40x15 mono terminal must still show the probe/inspector readouts \
+        "readouts clipped at 40x15 (missing: {missing:?}); the HUD wrap must not push the \
+         probe/inspector readouts past row {ROWS} — a 40x15 mono terminal must still show them \
          (#140, L8). Screen:\n{screen}"
     );
 
