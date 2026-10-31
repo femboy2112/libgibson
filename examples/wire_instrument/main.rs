@@ -389,12 +389,12 @@ fn selfcheck_next(
     loop {
         match dec.next_message() {
             Some(Ok(msg)) => return msg,
-            Some(Err(e)) => {
-                if e.is_fatal() {
-                    selfcheck_fail(child, ctx, &format!("fatal decode: {e}"));
-                }
+            // A fatal decode is unrecoverable; a non-fatal one (or no whole message yet) just
+            // means read more. Folded into a guard per clippy::collapsible_match.
+            Some(Err(e)) if e.is_fatal() => {
+                selfcheck_fail(child, ctx, &format!("fatal decode: {e}"))
             }
-            None => {}
+            _ => {}
         }
         reads += 1;
         if reads > 4000 {
