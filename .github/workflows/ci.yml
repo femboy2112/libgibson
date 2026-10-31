@@ -57,19 +57,22 @@ jobs:
 
   rust:
     name: Rust (fmt, clippy, test, build)
-    runs-on: ubuntu-latest
+    # Pinned to ubuntu-24.04 (not ubuntu-latest): this job runs byte-exact PCM goldens
+    # (tests/audio_pocket_voice.rs) that depend on the system libm. The ubuntu-latest roll to
+    # 26.04 changed libm and broke the golden on main; 24.04 is the environment it was green on.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # Pinned to 1.98.1: this is the only job that runs `cargo test`, which includes
-      # byte-exact PCM goldens (e.g. tests/audio_pocket_voice.rs, hash captured on 1.98.1).
-      # Floating `@stable` moved to 1.99.1 and shifted float codegen, breaking the golden on
-      # main for everyone. Byte-exact audio goldens are toolchain-coupled and must run on a
-      # pinned toolchain; the other jobs run no such goldens and stay on stable. (MSRV pins 1.85
-      # the same way below.)
+      # Pinned to 1.98.1 (the golden's capture toolchain) alongside the ubuntu-24.04 pin above:
+      # this job runs byte-exact PCM goldens (tests/audio_pocket_voice.rs) sensitive to BOTH the
+      # compiler and the system libm. Pinning the toolchain ALONE did not restore the golden (it
+      # fails identically on 1.98.1 under ubuntu-26.04), so the decisive change was the runner
+      # image/libm roll; both are pinned here to the environment the golden was last green on.
+      # (MSRV pins 1.85 the same way below.)
       - name: Install Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
