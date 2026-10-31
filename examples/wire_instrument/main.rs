@@ -461,7 +461,10 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
         2.0,
         "selfcheck baseline",
     ));
-    ctx.run_once(Duration::from_millis(0))?;
+    // Headless: render the composition path directly (FieldFrame.surface → Node::raster →
+    // Context). `run_once` polls input — a headless session keeps is_tty true, so it does not
+    // early-return — and crossterm's reader init fails on a non-TTY stdin (e.g. --selfcheck's).
+    ctx.render()?;
     let baseline_peak = selfcheck_peak(&inbox, src);
 
     // --- 2) Admit + deliver a set-amplitude 2.0 edit through the app-owned CommandChannel. ---
@@ -548,7 +551,10 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
         2.0,
         "selfcheck post",
     ));
-    ctx.run_once(Duration::from_millis(0))?;
+    // Headless: render the composition path directly (FieldFrame.surface → Node::raster →
+    // Context). `run_once` polls input — a headless session keeps is_tty true, so it does not
+    // early-return — and crossterm's reader init fails on a non-TTY stdin (e.g. --selfcheck's).
+    ctx.render()?;
     let post_peak = selfcheck_peak(&inbox, src);
 
     // --- teardown: EOF, reap, capture the rendered-frame receipt. ---
