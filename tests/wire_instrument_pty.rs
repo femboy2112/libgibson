@@ -43,6 +43,13 @@ struct Walk {
 impl Walk {
     fn boot(term_cols: u16, term_rows: u16, field_cols: u32, field_rows: u32, mono: bool) -> Self {
         let mut cmd = CommandBuilder::new(pty_capture::example_path("wire_instrument"));
+        // portable-pty's CommandBuilder defaults a child's cwd to $HOME when none is set
+        // (cmdbuilder.rs: `self.cwd … .unwrap_or(home)`), NOT the parent's cwd. The example
+        // resolves its producer as the repo-relative `bindings/python/producer.py`, so without a
+        // pinned cwd it looks under $HOME, fails to launch Python, streams no field, and this
+        // walkthrough times out on the first frame. Pin cwd to the crate root where the producer
+        // actually lives.
+        cmd.cwd(env!("CARGO_MANIFEST_DIR"));
         cmd.env("TERM", "xterm-256color");
         if mono {
             // A non-empty NO_COLOR selects ColorDepth::Mono (src/capability.rs): no color SGR.
@@ -96,10 +103,21 @@ impl Walk {
         self.pump(Duration::from_millis(90));
     }
 
-    /// Quit with `q` and assert the terminal session is restored cleanly: alt screen left, cursor
-    /// shown, SGR mouse and focus reporting disabled. Checked on the raw byte stream (the restore
-    /// sequences the app emits on the way out), not the vt100 screen. `Capture`'s Drop force-reaps
-    /// the binary if it lingers; the binary reaps its Python producer on the graceful `q` exit.
+    /// Quit with `q` and assert the terminal session is restored cleanly, checked on the raw byte
+    /// stream (the restore sequences the app emits on the way out), not the vt100 screen.
+    ///
+    /// `wire_instrument` is **keyboard-only**: `Context::run_once → poll_event → enter_interactive`
+    /// enables raw mode and bracketed paste, and `Context::fullscreen` enters the alternate screen.
+    /// It never calls `set_mouse_capture`/`set_focus_reporting`, so SGR-mouse (`?1006`) and focus
+    /// (`?1004`) reporting are never turned on and nothing restores them — asserting their *disable*
+    /// would demand sequences this binary has no reason to emit (that is `instrument_workbench`'s
+    /// contract, from which this idiom was first copied). We assert exactly the modes this binary
+    /// uses: alternate screen left, cursor shown, and bracketed paste enabled then disabled. Raw
+    /// mode is a termios ioctl, not an output byte sequence, so it is covered by `TerminalSession`'s
+    /// Drop (`disable_raw_mode`) rather than asserted from the captured stream.
+    ///
+    /// `Capture`'s Drop force-reaps the binary if it lingers; the binary reaps its Python producer
+    /// on the graceful `q` exit.
     fn assert_quit_restored(&mut self) {
         let _ = self.capture.write(b"q");
         let deadline = Instant::now() + Duration::from_secs(15);
@@ -120,12 +138,8 @@ impl Walk {
         assert!(has(b"\x1b[?1049l"), "left the alternate screen on quit");
         assert!(has(b"\x1b[?25h"), "cursor shown on restore");
         assert!(
-            has(b"\x1b[?1006h") && has(b"\x1b[?1006l"),
-            "SGR mouse reporting enabled then disabled"
-        );
-        assert!(
-            has(b"\x1b[?1004h") && has(b"\x1b[?1004l"),
-            "focus reporting enabled then disabled"
+            has(b"\x1b[?2004h") && has(b"\x1b[?2004l"),
+            "bracketed paste enabled then disabled"
         );
     }
 }
