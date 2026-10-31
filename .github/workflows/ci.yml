@@ -64,9 +64,16 @@ jobs:
         with:
           persist-credentials: false
 
+      # Pinned to 1.98.1: this is the only job that runs `cargo test`, which includes
+      # byte-exact PCM goldens (e.g. tests/audio_pocket_voice.rs, hash captured on 1.98.1).
+      # Floating `@stable` moved to 1.99.1 and shifted float codegen, breaking the golden on
+      # main for everyone. Byte-exact audio goldens are toolchain-coupled and must run on a
+      # pinned toolchain; the other jobs run no such goldens and stay on stable. (MSRV pins 1.85
+      # the same way below.)
       - name: Install Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
+          toolchain: "1.98.1"
           components: rustfmt, clippy
 
       - name: Cache cargo
