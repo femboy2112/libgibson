@@ -30,6 +30,10 @@ import wire
 # acknowledged one scales the published field, so an accepted edit is visible in the next
 # authoritative frame. Mirrors `ProducerModel` in `tests/wire_transport.rs`.
 KIND_SET_AMPLITUDE = 1
+# Lockstep control (test-only, --lockstep): advance the model one tick and emit the next
+# frame. It is a control signal, not a model edit, so it is never acked. Distinct from
+# KIND_SET_AMPLITUDE; the normal serve() path never sees it.
+KIND_ADVANCE = 2
 AMPLITUDE_MIN = 0.0
 AMPLITUDE_MAX = 10.0
 
@@ -105,6 +109,74 @@ def drain_and_ack_commands(decoder_buf, source, state):
     return decoder_buf
 
 
+def _emit_field(out, args, seq, amplitude):
+    """Write one FIELD frame for `seq` at `amplitude`. Byte-for-byte what serve() emits per
+    tick, so the lockstep driver and the streaming server produce identical wire bytes."""
+    data = gaussian_field(args.cols, args.rows, float(seq), amplitude)
+    out.write(wire.encode_field(
+        source=args.source, epoch=args.epoch, sequence=seq,
+        cols=args.cols, rows=args.rows, origin=(args.origin_x, args.origin_y),
+        cell_w=args.cell_w, cell_h=args.cell_h, model_tick=seq, data=data))
+    out.flush()
+
+
+def _read_one_message(buf):
+    """Block until one whole wire message decodes from `buf`, reading stdin as needed. Returns
+    ``(Message, remaining_bytearray)`` or ``None`` at EOF/corruption. This blocking read is the
+    lockstep driver's synchronization receipt -- there are no sleeps anywhere in that path."""
+    while True:
+        try:
+            decoded = wire.decode_message(buf)
+        except wire.WireError:
+            return None
+        if decoded is not None:
+            msg, consumed = decoded
+            return msg, buf[consumed:]
+        chunk = sys.stdin.buffer.read1(65536)
+        if not chunk:
+            return None
+        buf += chunk
+
+
+def serve_lockstep(args):
+    """Deterministic, sleep-free cross-process driver (test-only, --lockstep).
+
+    Emit frame seq=1, then block reading inbound messages: a ``KIND_ADVANCE`` command advances
+    to the next seq and emits its frame (a control signal -- never acked); any other command is
+    classified, acked with its TRUE verdict, and applied unless ``--freeze-amplitude``. The
+    presenter/test drives the model one frame at a time, using the ack as the only
+    synchronization receipt. Ends with a RETIRE when stdin closes or ``--frames`` is reached.
+
+    ``--freeze-amplitude`` is the causal mutation control: it acks a valid set-amplitude
+    ``Acknowledged`` but suppresses the model update, so the causal test's "the next frame
+    reflects the accepted edit" assertion MUST fail -- proving the test detects the causal link,
+    not merely the ack."""
+    out = sys.stdout.buffer
+    state = {"amplitude": 1.0}
+    seq = 1
+    buf = bytearray()
+    _emit_field(out, args, seq, state["amplitude"])
+    while seq < args.frames:
+        decoded = _read_one_message(buf)
+        if decoded is None:
+            break
+        msg, buf = decoded
+        if msg.kind != wire.MSG_COMMAND:
+            continue
+        kind = msg.body["kind"]
+        if kind == KIND_ADVANCE:
+            seq += 1
+            _emit_field(out, args, seq, state["amplitude"])
+            continue
+        status, value = classify_command(kind, msg.body["arg"])
+        if status == wire.ACK_ACKNOWLEDGED and not args.freeze_amplitude:
+            state["amplitude"] = value
+        out.write(wire.encode_ack(args.source, args.epoch, seq, msg.body["command_id"], status))
+        out.flush()
+    out.write(wire.encode_retire(args.source, args.epoch, seq + 1))
+    out.flush()
+
+
 def serve(args):
     """Stream `args.frames` field observations, then retire the source."""
     out = sys.stdout.buffer
@@ -168,10 +240,16 @@ def main():
     ap.add_argument("--origin-y", type=float, default=0.0)
     ap.add_argument("--cell-w", type=float, default=1.0)
     ap.add_argument("--cell-h", type=float, default=1.0)
+    ap.add_argument("--lockstep", action="store_true",
+                    help="deterministic frame-at-a-time driver for the causal test (test-only)")
+    ap.add_argument("--freeze-amplitude", action="store_true",
+                    help="ack a valid set-amplitude Acknowledged but do NOT apply it (causal mutation control)")
     args = ap.parse_args()
 
     if args.golden:
         golden(args)
+    elif args.lockstep:
+        serve_lockstep(args)
     else:
         serve(args)
 

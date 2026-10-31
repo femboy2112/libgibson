@@ -24,6 +24,7 @@ Non-finite data (NaN, ±inf) is carried faithfully as its IEEE-754 bit pattern a
 disclosed, never coerced, on the far side.
 """
 
+import math
 import struct
 
 MAGIC = b"GWIR"
@@ -178,7 +179,16 @@ def _decode_field(p, max_cells):
     computed = _FIELD_HEAD.size + cells * 8 + mask_bytes
     if computed != len(p):
         raise WireError(f"declared payload {len(p)} != computed {computed}")
-    if cw <= 0.0 or ch <= 0.0 or cols == 0 or rows == 0:
+    # Mirror Rust `FieldExtent::new` (src/field_view.rs) exactly: a usable extent needs a
+    # finite origin, finite strictly-positive cell sizes, and at least one cell per axis.
+    # `cw <= 0.0` alone lets NaN and +inf through (both compare False), and the origin was
+    # never range-checked — so a hostile or buggy producer could smuggle non-finite geometry
+    # past Python that Rust refuses as `BadExtent`. This guards *geometry* only: non-finite
+    # data samples are deliberately preserved (decoded faithfully below), matching Rust, which
+    # rejects the extent but carries NaN/±inf field values bit-for-bit.
+    if (not math.isfinite(ox) or not math.isfinite(oy)
+            or not math.isfinite(cw) or not math.isfinite(ch)
+            or cw <= 0.0 or ch <= 0.0 or cols == 0 or rows == 0):
         raise WireError("degenerate field geometry")
     off = _FIELD_HEAD.size
     data = list(struct.unpack_from(f"<{cells}d", p, off))
