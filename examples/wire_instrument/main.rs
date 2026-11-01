@@ -32,11 +32,10 @@
 //! real PTY.
 
 mod channel;
+mod transport;
 
 use std::io::{self, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Receiver, TryRecvError};
-use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use gibson::context::Context;
@@ -51,6 +50,7 @@ use gibson::world_view::WorldView;
 use gibson::{Rect, Style};
 
 use channel::CommandChannel;
+use transport::Reader;
 
 /// The producer's one command kind: an 8-byte LE f64 target amplitude in [0, 10].
 const KIND_SET_AMPLITUDE: u32 = 1;
@@ -119,28 +119,6 @@ fn spawn_producer(args: &Args, lockstep: bool) -> io::Result<Child> {
         cmd.arg("--lockstep");
     }
     cmd.spawn()
-}
-
-/// A background reader draining the child's stdout into a channel, so the UI loop never blocks
-/// on producer I/O. The sender drops on EOF, which the loop reads as producer disconnect.
-fn spawn_reader(child: &mut Child) -> (Receiver<Vec<u8>>, JoinHandle<()>) {
-    let mut out = child.stdout.take().expect("stdout piped");
-    let (tx, rx) = mpsc::channel::<Vec<u8>>();
-    let handle = thread::spawn(move || {
-        let mut buf = [0u8; 65536];
-        loop {
-            match out.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    if tx.send(buf[..n].to_vec()).is_err() {
-                        break;
-                    }
-                }
-                Err(_) => break,
-            }
-        }
-    });
-    (rx, handle)
 }
 
 /// Build the UI: the real rendered field surface stacked over the readouts the prompt requires
@@ -229,10 +207,13 @@ fn clamp_probe(inbox: &FieldInbox, src: Option<u64>, probe: &mut (usize, usize))
 fn run_interactive(args: &Args) -> io::Result<()> {
     let mut child = spawn_producer(args, false)?;
     let mut stdin_w: Option<ChildStdin> = child.stdin.take();
-    let (rx, reader) = spawn_reader(&mut child);
+    let stdout = child.stdout.take().expect("stdout piped");
+    // Decode + coalesce in a bounded background reader that never blocks on the UI, so the
+    // producer's stdout is always drained (no full-duplex deadlock, Gate B 2C) and memory stays
+    // bounded to one pending snapshot per source (2A).
+    let mut reader = Reader::spawn(stdout, transport::DEFAULT_CONTROL_CAP);
 
     let mut ctx = Context::fullscreen()?;
-    let mut dec = FrameDecoder::new();
     let mut inbox = FieldInbox::new();
     let mut ch = CommandChannel::new(args.source, args.epoch);
     let mut src: Option<u64> = None;
@@ -245,53 +226,34 @@ fn run_interactive(args: &Args) -> io::Result<()> {
     loop {
         let ev = ctx.run_once(Duration::from_millis(16))?;
 
-        // Drain whatever the producer has sent, without blocking the UI.
-        loop {
-            match rx.try_recv() {
-                Ok(bytes) => {
-                    if let Err(e) = dec.push(&bytes) {
-                        status = format!("transport fatal: {e}");
-                        disconnected = true;
-                        break;
-                    }
+        // Drain decoded messages from the bounded reader. Snapshots arrive already coalesced to
+        // the latest per source; acks and retires are preserved in order; a recoverable decode
+        // error was skipped in the reader, a fatal one is surfaced here. The UI never holds an
+        // unbounded backlog and never pushes a chunk-burst into the decoder (Gate B 2A/2B).
+        let mut batch: Vec<WireMessage> = Vec::new();
+        let outcome = reader.drain(&mut |m| batch.push(m));
+        for msg in batch {
+            src.get_or_insert(msg.source);
+            match msg.body {
+                WireBody::Field(f) => {
+                    inbox.admit(msg.source, msg.cursor, f);
                 }
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    disconnected = true;
-                    break;
+                WireBody::Retire => {
+                    inbox.retire(msg.source);
+                    status = format!("source {} retired", msg.source);
                 }
+                WireBody::Ack(ack) => match ch.resolve(msg.source, ack) {
+                    Ok(state) => status = format!("ack: edit resolved → {state:?}"),
+                    Err(e) => status = format!("ack ignored ({e:?})"),
+                },
+                WireBody::Command(_) => {}
             }
         }
-
-        // Decode every complete frame now buffered.
-        loop {
-            match dec.next_message() {
-                None => break,
-                Some(Ok(msg)) => {
-                    src.get_or_insert(msg.source);
-                    match msg.body {
-                        WireBody::Field(f) => {
-                            inbox.admit(msg.source, msg.cursor, f);
-                        }
-                        WireBody::Retire => {
-                            inbox.retire(msg.source);
-                            status = format!("source {} retired", msg.source);
-                        }
-                        WireBody::Ack(ack) => match ch.resolve(msg.source, ack) {
-                            Ok(state) => status = format!("ack: edit resolved → {state:?}"),
-                            Err(e) => status = format!("ack ignored ({e:?})"),
-                        },
-                        WireBody::Command(_) => {}
-                    }
-                }
-                Some(Err(e)) => {
-                    if e.is_fatal() {
-                        status = format!("fatal decode: {e}");
-                        disconnected = true;
-                        break;
-                    }
-                }
-            }
+        if let Some(e) = outcome.fatal {
+            status = format!("transport fatal: {e}");
+            disconnected = true;
+        } else if outcome.disconnected {
+            disconnected = true;
         }
 
         if let Some(Event::Key(k)) = ev {
@@ -329,7 +291,14 @@ fn run_interactive(args: &Args) -> io::Result<()> {
             clamp_probe(&inbox, src, &mut probe);
         }
 
-        let root = build_root(&inbox, src, &ch, probe, ppc, pending_amp, &status);
+        // L7 telemetry: the reader's lawful snapshot coalescing and any cap-overflow drops are
+        // shown, never hidden — a growing `dropped` would be a misbehaving producer, not a leak.
+        let shown = format!(
+            "{status}  |  xport: coalesced {} dropped {}",
+            reader.coalesced(),
+            reader.dropped(),
+        );
+        let root = build_root(&inbox, src, &ch, probe, ppc, pending_amp, &shown);
         ctx.set_root(root);
 
         if disconnected {
@@ -349,11 +318,10 @@ fn run_interactive(args: &Args) -> io::Result<()> {
         }
     }
 
-    let _ = dec.finish();
     drop(stdin_w); // EOF to the producer for a graceful exit…
     let _ = child.kill(); // …with a hard backstop so no child outlives us.
     let _ = child.wait();
-    let _ = reader.join();
+    reader.join();
     ctx.restore()?;
     Ok(())
 }
