@@ -174,17 +174,31 @@ pub enum Stage {
     RasterConversion,
     /// Time spent handing frame bytes to the terminal. **Not** proof of screen presentation.
     TerminalWrite,
+    /// From a command issued to its confirmed delivery (the transport write+flush that commits
+    /// it), the command-loop counterpart of the render-loop stages above. This witnesses the
+    /// *delivery* leg only — **not** producer acknowledgement, which is a separate round-trip the
+    /// library cannot time locally — so it keeps issue #143's issued/delivered/acknowledged legs
+    /// distinct rather than collapsing them into one latency.
+    CommandDispatch,
 }
 
 impl Stage {
-    /// Every stage, in index order.
-    pub const ALL: [Stage; 5] = [
+    /// Every stage, in index order. This literal is the single source of truth for the stage
+    /// count: adding a variant here (and forgetting to) is caught by the compiler, because the
+    /// element count must match the declared length, and [`COUNT`](Stage::COUNT) and every
+    /// per-stage array derive their size from it.
+    pub const ALL: [Stage; 6] = [
         Stage::InputDispatch,
         Stage::SnapshotAge,
         Stage::FrameGeneration,
         Stage::RasterConversion,
         Stage::TerminalWrite,
+        Stage::CommandDispatch,
     ];
+
+    /// The number of stages. Derived from [`ALL`](Stage::ALL) so the per-stage arrays can never
+    /// silently desync from the enum.
+    pub const COUNT: usize = Self::ALL.len();
 
     /// This stage's index into a per-stage array.
     fn index(self) -> usize {
@@ -194,6 +208,7 @@ impl Stage {
             Stage::FrameGeneration => 2,
             Stage::RasterConversion => 3,
             Stage::TerminalWrite => 4,
+            Stage::CommandDispatch => 5,
         }
     }
 
@@ -208,6 +223,9 @@ impl Stage {
             Stage::TerminalWrite => {
                 "bytes handed to the terminal; NOT proof of screen presentation"
             }
+            Stage::CommandDispatch => {
+                "command issued to confirmed delivery (write+flush); NOT producer acknowledgement"
+            }
         }
     }
 }
@@ -220,7 +238,7 @@ impl Stage {
 /// headless counts (issue #143).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InstrumentTelemetry {
-    stages: [LatencyHistogram; 5],
+    stages: [LatencyHistogram; Stage::COUNT],
     frames_generated: u64,
     frames_attempted: u64,
     frames_written: u64,
@@ -234,7 +252,7 @@ impl InstrumentTelemetry {
     /// Fresh, empty telemetry.
     pub const fn new() -> Self {
         Self {
-            stages: [LatencyHistogram::new(); 5],
+            stages: [LatencyHistogram::new(); Stage::COUNT],
             frames_generated: 0,
             frames_attempted: 0,
             frames_written: 0,
