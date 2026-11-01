@@ -188,6 +188,10 @@ void     gibson_stats_init(gibson_stats_t *out_stats);
 
 /* Context Lifecycle */
 gibson_status_t gibson_create_context(int32_t mode, gibson_context_t **out);
+/* Headless: renders into an in-memory buffer with deterministic, TTY-independent semantics
+   (fixed cols x rows, truecolor, no terminal lease). Read the ANSI frame via
+   gibson_get_rendered_output. cols and rows must be non-zero. (ABI v1, additive) */
+gibson_status_t gibson_create_headless_context(int32_t mode, uint16_t cols, uint16_t rows, gibson_context_t **out);
 void            gibson_destroy_context(gibson_context_t *ctx);
 gibson_status_t gibson_set_sync_updates(gibson_context_t *ctx, int32_t enabled);
 gibson_status_t gibson_set_max_fps(gibson_context_t *ctx, uint32_t fps);
@@ -216,6 +220,9 @@ gibson_status_t gibson_poll_event(gibson_context_t *ctx, uint32_t timeout_ms, gi
 /* Metrics & Diagnostics */
 gibson_status_t gibson_get_stats(gibson_context_t *ctx, gibson_stats_t *out_stats);
 int32_t         gibson_last_error_message(char *buf, size_t buf_len);
+/* Copies the headless ANSI frame stream into buf (binary-safe, NOT NUL-terminated).
+   out_len always receives the available size; pass buf=NULL or cap=0 to size-query first. */
+gibson_status_t gibson_get_rendered_output(gibson_context_t *ctx, uint8_t *buf, size_t cap, size_t *out_len);
 
 /* Node Construction */
 gibson_status_t gibson_node_box_col(gibson_node_t **out);

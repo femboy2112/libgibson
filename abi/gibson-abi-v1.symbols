@@ -11,7 +11,9 @@ gibson_commit_raw_ansi_unchecked
 gibson_commit_rich_text
 gibson_commit_text
 gibson_create_context
+gibson_create_headless_context
 gibson_destroy_context
+gibson_get_rendered_output
 gibson_get_stats
 gibson_insert_node_before_live
 gibson_insert_raw_lines_before_live_unchecked

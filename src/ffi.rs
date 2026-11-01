@@ -405,6 +405,47 @@ pub unsafe extern "C" fn gibson_create_context(
     res.unwrap_or(GibsonStatus::ErrPanic)
 }
 
+/// Creates a **headless** context that renders into an in-memory buffer instead of a live
+/// terminal, with deterministic, TTY-independent semantics: a fixed `cols`×`rows` geometry,
+/// truecolor capabilities, and no process-global terminal lease. Unlike [`gibson_create_context`]
+/// — which samples `stdout` at create time and runs a suppressed no-op render when stdout is not a
+/// TTY — a headless context always emits the real ANSI frame, read back with
+/// [`gibson_get_rendered_output`]. Pass the same mode constants as `gibson_create_context`;
+/// `cols` and `rows` must be non-zero. On success `*out` owns a context freed by
+/// `gibson_destroy_context`.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_create_headless_context(
+    mode: i32,
+    cols: u16,
+    rows: u16,
+    out: *mut *mut GibsonContextOpaque,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if out.is_null() {
+            set_last_error("Null pointer provided for out context".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let m = match validate_mode(mode) {
+            Ok(m) => m,
+            Err(e) => return e,
+        };
+        if cols == 0 || rows == 0 {
+            set_last_error(format!(
+                "Headless geometry must be non-zero, got {cols}x{rows}"
+            ));
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let boxed = Box::new(GibsonContextOpaque {
+            inner: Context::headless(m, cols, rows),
+            last_paste_cstring: None,
+        });
+        *out = Box::into_raw(boxed);
+        GibsonStatus::Ok
+    }));
+
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gibson_destroy_context(ctx: *mut GibsonContextOpaque) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
@@ -1357,4 +1398,36 @@ pub unsafe extern "C" fn gibson_last_error_message(buf: *mut c_char, buf_len: us
         })
     }));
     res.unwrap_or(-1)
+}
+
+/// Copies the ANSI byte stream captured by a headless context (see
+/// [`gibson_create_headless_context`]) since its creation or the last drain, into the
+/// caller-provided `buf`. This is the binary-safe readback that makes cross-language *frame*
+/// parity possible; it mirrors `Context::rendered_bytes` and is **not** NUL-terminated.
+///
+/// `out_len` (required, non-null) always receives the number of bytes available. If `buf` is null
+/// or `cap` is smaller than that length, nothing is copied and `GIBSON_OK` is still returned — the
+/// two-call size-query form: call once with `cap == 0` (or `buf == NULL`) to learn the size,
+/// allocate, then call again. For an interactive (stdout-backed) context there is nothing to
+/// capture, so `*out_len` is `0`.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_get_rendered_output(
+    ctx: *mut GibsonContextOpaque,
+    buf: *mut u8,
+    cap: usize,
+    out_len: *mut usize,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || out_len.is_null() {
+            set_last_error("Null ctx or out_len for gibson_get_rendered_output".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let bytes = (*ctx).inner.rendered_bytes();
+        *out_len = bytes.len();
+        if !buf.is_null() && cap >= bytes.len() {
+            ptr::copy_nonoverlapping(bytes.as_ptr(), buf, bytes.len());
+        }
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
 }

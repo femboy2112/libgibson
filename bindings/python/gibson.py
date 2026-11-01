@@ -170,6 +170,12 @@ class GibsonStats(ctypes.Structure):
 _lib.gibson_create_context.argtypes = [ctypes.c_int32, ctypes.POINTER(ctypes.c_void_p)]
 _lib.gibson_create_context.restype = ctypes.c_int32
 
+_lib.gibson_create_headless_context.argtypes = [ctypes.c_int32, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(ctypes.c_void_p)]
+_lib.gibson_create_headless_context.restype = ctypes.c_int32
+
+_lib.gibson_get_rendered_output.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+_lib.gibson_get_rendered_output.restype = ctypes.c_int32
+
 _lib.gibson_destroy_context.argtypes = [ctypes.c_void_p]
 _lib.gibson_destroy_context.restype = None
 
@@ -529,6 +535,22 @@ class Context:
             _lib.gibson_last_error_message(err_buf, 256)
             raise RuntimeError(f"Failed to create Gibson context: {err_buf.value.decode('utf-8')}")
 
+    @classmethod
+    def headless(cls, mode=RenderMode.INLINE, cols=80, rows=24):
+        """Create a headless context that renders into an in-memory buffer with deterministic,
+        TTY-independent semantics (fixed cols x rows, truecolor, no terminal lease). Read the
+        painted ANSI frame back with rendered_output(). (ABI v1, additive.)"""
+        self = cls.__new__(cls)
+        self.handle = ctypes.c_void_p()
+        status = _lib.gibson_create_headless_context(mode, cols, rows, ctypes.byref(self.handle))
+        if status != 0:
+            err_buf = ctypes.create_string_buffer(256)
+            _lib.gibson_last_error_message(err_buf, 256)
+            raise RuntimeError(
+                f"Failed to create headless Gibson context: {err_buf.value.decode('utf-8')}"
+            )
+        return self
+
     def __enter__(self):
         return self
 
@@ -562,6 +584,22 @@ class Context:
         if status != 0:
             raise RuntimeError(f"Render if due failed: status {status}")
         return rendered.value != 0
+
+    def rendered_output(self) -> bytes:
+        """The raw ANSI frame bytes captured by a headless context since creation or the last
+        drain (binary-safe; mirrors Context::rendered_bytes). Empty for an interactive context."""
+        need = ctypes.c_size_t(0)
+        status = _lib.gibson_get_rendered_output(self.handle, None, 0, ctypes.byref(need))
+        if status != 0:
+            raise RuntimeError(f"rendered_output size query failed: status {status}")
+        if need.value == 0:
+            return b""
+        buf = (ctypes.c_uint8 * need.value)()
+        got = ctypes.c_size_t(0)
+        status = _lib.gibson_get_rendered_output(self.handle, buf, need.value, ctypes.byref(got))
+        if status != 0:
+            raise RuntimeError(f"rendered_output copy failed: status {status}")
+        return bytes(buf[: got.value])
 
     def request_render(self):
         status = _lib.gibson_request_render(self.handle)
