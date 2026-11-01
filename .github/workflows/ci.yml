@@ -173,6 +173,27 @@ jobs:
           LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
         run: python3 bindings/python/example.py
 
+      - name: FFI behavioral stats parity (C vs Python vs native golden)
+        # Drive one non-TTY plain-scrollback op-script through the C ABI and the Python ctypes
+        # binding, and require byte-identical engine accounting + committed wire stream across
+        # both AND against the committed golden that the Rust job verifies from the native API.
+        # Proves the bindings marshal into the same engine (not pixel/full-feature parity; #142).
+        env:
+          PYTHONPATH: bindings/python
+          LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
+        run: |
+          set -euo pipefail
+          gcc -Iinclude bindings/parity/parity.c -Ltarget/release -lgibson \
+            -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/parity_c
+          /tmp/parity_c "$RUNNER_TEMP/c_stats.txt" "$RUNNER_TEMP/c_wire.txt"
+          python3 bindings/parity/parity.py "$RUNNER_TEMP/py_stats.txt" "$RUNNER_TEMP/py_wire.txt"
+          echo "--- C stats ---"; cat "$RUNNER_TEMP/c_stats.txt"
+          echo "--- C wire ---"; cat "$RUNNER_TEMP/c_wire.txt"
+          cmp "$RUNNER_TEMP/c_stats.txt" "$RUNNER_TEMP/py_stats.txt"
+          cmp "$RUNNER_TEMP/c_stats.txt" bindings/parity/golden_stats.txt
+          cmp "$RUNNER_TEMP/c_wire.txt" "$RUNNER_TEMP/py_wire.txt"
+          cmp "$RUNNER_TEMP/c_wire.txt" bindings/parity/golden_wire.txt
+
   asan:
     name: AddressSanitizer (C, C++)
     runs-on: ubuntu-latest
