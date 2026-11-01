@@ -17,7 +17,16 @@ to any package registry — no crates.io, PyPI, or Go module proxy upload.
 
 Development toward **0.6.0** ("Operation Instrumental Renaissance"). This is the working
 development line, **not a release** — the manifest reads `0.6.0-dev`. `GIBSON_ABI_VERSION`
-stays 1; MSRV stays 1.85; no C/C++/Python/Go surface changes.
+stays 1 — the C ABI grows only by **additive** functions (compatible, no version bump);
+MSRV stays 1.85.
+
+### Added — C ABI (`GIBSON_ABI_VERSION` stays 1; additive)
+- **`gibson_create_headless_context(mode, cols, rows, **out)`** + **`gibson_get_rendered_output(ctx, buf, cap, *out_len)`:**
+  a deterministic in-memory headless context plus a binary-safe readback of its ANSI frame
+  stream, so C and Python consumers can reach byte-exact ANSI *frame* parity with the native
+  renderer (#142, v0.6 Gate I). The v1 surface grows from 52 to 54 exported symbols; adding
+  functions is ABI-compatible, so `GIBSON_ABI_VERSION` is unchanged. Python binding:
+  `Context.headless(mode, cols, rows)` + `Context.rendered_output() -> bytes`.
 
 ### Fixed — Rust library (`gibson::scene`)
 - **`Scene::rename` now repairs a stale label index even when the new label equals the one

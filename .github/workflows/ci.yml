@@ -194,6 +194,28 @@ jobs:
           cmp "$RUNNER_TEMP/c_wire.txt" "$RUNNER_TEMP/py_wire.txt"
           cmp "$RUNNER_TEMP/c_wire.txt" bindings/parity/golden_wire.txt
 
+      - name: FFI pixel/ANSI frame parity (C vs Python vs native golden)
+        # Drive one headless frame op-script (an RGB-styled, bold text node) through the new C ABI
+        # (gibson_create_headless_context + gibson_get_rendered_output) and the Python binding, and
+        # require a byte-identical painted ANSI frame + painted stats across both AND against the
+        # committed golden the Rust job verifies from the native API. Closes the Gate H pixel/ANSI
+        # cede (#142, v0.6 Gate I); still not a pixel raster or full-feature parity.
+        env:
+          PYTHONPATH: bindings/python
+          LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
+        run: |
+          set -euo pipefail
+          gcc -Iinclude bindings/parity/parity_ansi.c -Ltarget/release -lgibson \
+            -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/parity_ansi_c
+          /tmp/parity_ansi_c "$RUNNER_TEMP/c_ansi_stats.txt" "$RUNNER_TEMP/c_ansi.bin"
+          python3 bindings/parity/parity_ansi.py "$RUNNER_TEMP/py_ansi_stats.txt" "$RUNNER_TEMP/py_ansi.bin"
+          echo "--- C ansi stats ---"; cat "$RUNNER_TEMP/c_ansi_stats.txt"
+          echo "--- C ansi frame ---"; od -c "$RUNNER_TEMP/c_ansi.bin"
+          cmp "$RUNNER_TEMP/c_ansi_stats.txt" "$RUNNER_TEMP/py_ansi_stats.txt"
+          cmp "$RUNNER_TEMP/c_ansi_stats.txt" bindings/parity/golden_ansi_stats.txt
+          cmp "$RUNNER_TEMP/c_ansi.bin" "$RUNNER_TEMP/py_ansi.bin"
+          cmp "$RUNNER_TEMP/c_ansi.bin" bindings/parity/golden_ansi.bin
+
   asan:
     name: AddressSanitizer (C, C++)
     runs-on: ubuntu-latest
