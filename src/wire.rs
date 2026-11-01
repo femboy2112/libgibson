@@ -116,6 +116,14 @@ impl WireLimits {
     /// [`max_payload_bytes`](WireLimits::max_payload_bytes) once the fixed command header is
     /// accounted for. A command whose `arg` exceeds this would encode to a frame the matching
     /// decoder must reject, so [`encode_command_checked`] and [`issue_command`] refuse it first.
+    ///
+    /// This saturates to 0 when `max_payload_bytes < COMMAND_HEAD_BYTES` — a budget too small
+    /// for *any* command, since even a zero-length `arg` still carries the 16-byte command head.
+    /// In that degenerate regime a 0 here does **not** mean "a zero-length arg fits": no command
+    /// fits at all. The authoritative admission test is the total-payload check in
+    /// [`encode_command_checked`]/[`issue_command`] (`COMMAND_HEAD_BYTES + arg.len()` against
+    /// `max_payload_bytes`), which refuses even the empty command under such a budget; this helper
+    /// is an exact convenience only for the realistic `max_payload_bytes >= COMMAND_HEAD_BYTES`.
     pub fn max_command_arg_bytes(&self) -> usize {
         self.max_payload_bytes.saturating_sub(COMMAND_HEAD_BYTES)
     }
@@ -491,7 +499,11 @@ pub fn encode_command_checked(
     command: &WireCommand,
     limits: WireLimits,
 ) -> Result<Vec<u8>, WireError> {
-    if command.arg.len() > limits.max_command_arg_bytes() {
+    // Guard the TOTAL payload (head + arg), exactly as `encode_field` does — not `arg` alone.
+    // `max_command_arg_bytes` floors at 0 under a sub-header budget, where an arg-only test would
+    // wrongly admit the empty command; checking the whole payload refuses it, so no frame beyond
+    // `max_payload_bytes` is ever emitted.
+    if COMMAND_HEAD_BYTES + command.arg.len() > limits.max_payload_bytes {
         return Err(WireError::EncodeTooLarge);
     }
     Ok(encode_command(source, cursor, command))
@@ -510,7 +522,9 @@ pub fn issue_command(
     command: WireCommand,
     limits: WireLimits,
 ) -> Result<crate::snapshot::Admission, WireError> {
-    if command.arg.len() > limits.max_command_arg_bytes() {
+    // Total-payload guard (head + arg), matching `encode_command_checked`: a sub-header budget
+    // refuses even the empty command rather than queue a frame the far-side decoder would reject.
+    if COMMAND_HEAD_BYTES + command.arg.len() > limits.max_payload_bytes {
         return Err(WireError::EncodeTooLarge);
     }
     Ok(bridge.issue(command))

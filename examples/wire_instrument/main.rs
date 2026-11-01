@@ -168,13 +168,16 @@ fn build_root(
                 let hud_probe =
                     format!("probe ({pix},{piy}) = {sample_txt}    pending set-amplitude = {pending_amp:.1}  [ / ] adjust · Enter send");
                 let hud_edit = format!(
-                    "edits: issued {} pending {} outstanding {} | ack {} refused {} failed {} | conserves {}",
+                    "edits: issued {} pending {} outstanding {} | ack {} refused {} failed {} | delivered {} xfail {} faulted {} | conserves {}",
                     ch.issued(),
                     ch.pending(),
                     ch.outstanding(),
                     ch.acknowledged(),
                     ch.refused(),
                     ch.failed(),
+                    ch.delivered_frames(),
+                    ch.transport_failed(),
+                    ch.faulted(),
                     ch.conserves(),
                 );
                 return root
@@ -540,12 +543,15 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
     println!("  baseline  tick {baseline_tick}  peak {base:.4}");
     println!("  post-edit tick {post_tick}  peak {post:.4}  (ack {ack_state})");
     println!(
-        "  edits: issued {} ack {} refused {} failed {} outstanding {} conserves {}",
+        "  edits: issued {} ack {} refused {} failed {} outstanding {} delivered {} xfail {} faulted {} conserves {}",
         ch.issued(),
         ch.acknowledged(),
         ch.refused(),
         ch.failed(),
         ch.outstanding(),
+        ch.delivered_frames(),
+        ch.transport_failed(),
+        ch.faulted(),
         ch.conserves()
     );
     println!("  surface_rendered = {frame_nonempty}");
@@ -562,6 +568,10 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
     }
     if !causal {
         eprintln!("selfcheck FAILED: accepted edit did not raise the field peak (base {base:.4} -> post {post:.4})");
+        std::process::exit(1);
+    }
+    if ch.faulted() {
+        eprintln!("selfcheck FAILED: command channel faulted on a healthy pipe");
         std::process::exit(1);
     }
     if ch.outstanding() != 0 || !ch.conserves() {
