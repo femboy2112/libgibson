@@ -36,11 +36,12 @@ mod transport;
 
 use std::io::{self, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gibson::context::Context;
 use gibson::field_view::{Colormap, FieldView, RangePolicy, Sample};
 use gibson::input::{Event, KeyCode};
+use gibson::instrument_telemetry::{InstrumentTelemetry, Stage};
 use gibson::node::Node;
 use gibson::renderer::RenderMode;
 use gibson::wire::{
@@ -103,6 +104,14 @@ impl Args {
 /// Spawn the reference producer with both pipes connected. Streaming (`serve`) mode for the
 /// interactive UI; deterministic `--lockstep` (one field per advance, no hz timer, no sleeps)
 /// for the selfcheck.
+///
+/// The producer's stderr is **inherited**, not discarded. A nulled stderr once turned a
+/// producer that failed to launch (it was spawned in `$HOME`, where the repo-relative
+/// `producer.py` did not exist) into a silent, causeless timeout: the consumer saw no frames
+/// and could not say why. The consumer already fails loudly and boundedly on a dead producer
+/// (`selfcheck_next` has a finite read budget); inheriting stderr makes the *cause* visible —
+/// the producer's own diagnostic reaches the CI log and the terminal — rather than hidden (L7:
+/// a producer failure is a distinct, reportable event, never an invisible stall).
 fn spawn_producer(args: &Args, lockstep: bool) -> io::Result<Child> {
     let mut cmd = Command::new(&args.python);
     cmd.arg(&args.producer)
@@ -114,7 +123,7 @@ fn spawn_producer(args: &Args, lockstep: bool) -> io::Result<Child> {
         .args(["--epoch", &args.epoch.to_string()])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::inherit());
     if lockstep {
         cmd.arg("--lockstep");
     }
@@ -398,6 +407,10 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
     let mut dec = FrameDecoder::new();
     let mut inbox = FieldInbox::new();
     let mut ch = CommandChannel::new(args.source, args.epoch);
+    // The #143 latency funnel, run end to end through this real consumer loop — not an
+    // injected-Duration detection test. Only the command-delivery leg is exercised here; the
+    // render-side stages belong to `instrument_bench`.
+    let mut telemetry = InstrumentTelemetry::new();
     let src = args.source;
 
     // --- 1) Baseline FIELD (tick 1, amplitude 1.0): identity, then the real render path. ---
@@ -439,16 +452,29 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
     let baseline_peak = selfcheck_peak(&inbox, src);
 
     // --- 2) Admit + deliver a set-amplitude 2.0 edit through the app-owned CommandChannel. ---
+    // Time the DELIVERY leg — issue→confirmed write+flush on THIS side of the pipe — into
+    // Stage::CommandDispatch. This is a local monotonic measurement of a local operation (the
+    // write to the producer's stdin and its flush); it is NOT a producer round-trip. The
+    // producer's ACK is correlated separately in step 3 and is never folded into this leg —
+    // delivery and acknowledgement are distinct events on distinct clocks (L7/L10). Only a
+    // confirmed delivery (`Ok(Some)`) is recorded.
     match ch.issue_tracked(KIND_SET_AMPLITUDE, 2.0f64.to_le_bytes().to_vec()) {
-        Ok(_) => match ch.deliver_next(&mut stdin_w) {
-            Ok(Some(_)) => {}
-            Ok(None) => selfcheck_fail(
-                &mut child,
-                &mut ctx,
-                "nothing to deliver after a successful issue",
-            ),
-            Err(e) => selfcheck_fail(&mut child, &mut ctx, &format!("edit delivery failed: {e}")),
-        },
+        Ok(_) => {
+            let t0 = Instant::now();
+            let delivered = ch.deliver_next(&mut stdin_w);
+            let leg = t0.elapsed();
+            match delivered {
+                Ok(Some(_)) => telemetry.record(Stage::CommandDispatch, leg),
+                Ok(None) => selfcheck_fail(
+                    &mut child,
+                    &mut ctx,
+                    "nothing to deliver after a successful issue",
+                ),
+                Err(e) => {
+                    selfcheck_fail(&mut child, &mut ctx, &format!("edit delivery failed: {e}"))
+                }
+            }
+        }
         Err(e) => selfcheck_fail(
             &mut child,
             &mut ctx,
@@ -555,6 +581,13 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
         ch.conserves()
     );
     println!("  surface_rendered = {frame_nonempty}");
+    let cmd = telemetry.stage(Stage::CommandDispatch);
+    println!(
+        "  command-dispatch leg: count {} p50 {:?} max {:?}  (issue->confirmed write+flush; NOT producer ack)",
+        cmd.count(),
+        cmd.p50(),
+        cmd.max(),
+    );
 
     if ack_state != "Acknowledged" {
         eprintln!("selfcheck FAILED: edit was not Acknowledged (got {ack_state})");
@@ -580,6 +613,12 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
     }
     if !frame_nonempty {
         eprintln!("selfcheck FAILED: no surface was rendered through Context");
+        std::process::exit(1);
+    }
+    if telemetry.stage(Stage::CommandDispatch).count() == 0 {
+        eprintln!(
+            "selfcheck FAILED: command-dispatch latency was never recorded — the #143 funnel did not run end to end"
+        );
         std::process::exit(1);
     }
     println!("wire_instrument selfcheck PASSED");
