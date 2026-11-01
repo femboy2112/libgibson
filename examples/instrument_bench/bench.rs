@@ -446,6 +446,7 @@ pub fn stage_label(stage: Stage) -> &'static str {
         Stage::FrameGeneration => "frame-generation",
         Stage::RasterConversion => "raster-conversion",
         Stage::TerminalWrite => "terminal-write",
+        Stage::CommandDispatch => "command-dispatch",
     }
 }
 
