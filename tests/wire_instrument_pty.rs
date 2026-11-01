@@ -202,6 +202,37 @@ fn pty_walkthrough_truecolor_80x30() {
     h.assert_quit_restored();
 }
 
+/// H1 (#143, Gate H) instrumented the `--selfcheck` delivery leg; I2 wires the SAME
+/// issue->confirmed-write+flush leg into the INTERACTIVE path. The HUD shows
+/// `command-dispatch leg: count N`: zero before any send, N after N confirmed Enter deliveries.
+/// Only the COUNT is asserted — p50/max are wall-clock and host-dependent (L10). The oracle is the
+/// HUD text through the vt100 screen, never a color.
+#[test]
+fn pty_interactive_records_the_command_dispatch_leg() {
+    let mut h = Walk::boot(80, 30, 16, 8, false);
+
+    // The field arrives and the latency funnel is live but empty — nothing dispatched yet.
+    h.wait_text("source 1");
+    h.wait_text("command-dispatch leg: count 0");
+
+    // A valid edit (pending 2.0, in range) crosses the pipe; the interactive path records the leg.
+    h.send(b"\r");
+    h.wait_text("Acknowledged");
+    h.wait_text("command-dispatch leg: count 1");
+    // One delivery so far — the recording is per-delivery, not double-counted.
+    assert!(
+        !h.screen().contains("command-dispatch leg: count 2"),
+        "exactly one delivery has been recorded:\n{}",
+        h.screen()
+    );
+
+    // A second confirmed send advances the counter — proving each Enter records once.
+    h.send(b"\r");
+    h.wait_text("command-dispatch leg: count 2");
+
+    h.assert_quit_restored();
+}
+
 #[test]
 fn pty_boot_at_40x15_mono_streams_and_restores() {
     // Phase A2 certifies only that the compact monochrome terminal boots, streams a

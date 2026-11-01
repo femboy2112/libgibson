@@ -132,6 +132,9 @@ fn spawn_producer(args: &Args, lockstep: bool) -> io::Result<Child> {
 
 /// Build the UI: the real rendered field surface stacked over the readouts the prompt requires
 /// — source / tick / probe value (with missing-state identity) and the edit lifecycle counts.
+// A UI builder: every parameter is a display input the prompt's readouts require (field, source,
+// edit counts, probe, zoom, pending amplitude, status, and the command-dispatch leg).
+#[allow(clippy::too_many_arguments)]
 fn build_root(
     inbox: &FieldInbox,
     src: Option<u64>,
@@ -140,6 +143,7 @@ fn build_root(
     ppc: u16,
     pending_amp: f64,
     status: &str,
+    cmd_leg: &str,
 ) -> Node {
     let mut root = Node::col();
     if let Some(src) = src {
@@ -194,6 +198,7 @@ fn build_root(
                     .child(Node::text(hud_src, Style::default()))
                     .child(Node::text(hud_probe, Style::default()))
                     .child(Node::text(hud_edit, Style::default()))
+                    .child(Node::text(cmd_leg.to_string(), Style::default()))
                     .child(Node::text(status.to_string(), Style::default()));
             }
         }
@@ -203,6 +208,19 @@ fn build_root(
         Style::default(),
     ));
     root
+}
+
+/// The command-dispatch latency readout, shared by the selfcheck verdict and the interactive HUD
+/// so their wording cannot drift. The `command-dispatch leg: count N` prefix is asserted by both
+/// tests/wire_instrument_selfcheck.rs and tests/wire_instrument_pty.rs.
+fn dispatch_readout(telemetry: &InstrumentTelemetry) -> String {
+    let cmd = telemetry.stage(Stage::CommandDispatch);
+    format!(
+        "command-dispatch leg: count {} p50 {:?} max {:?}  (issue->confirmed write+flush; NOT producer ack)",
+        cmd.count(),
+        cmd.p50(),
+        cmd.max(),
+    )
 }
 
 /// Clamp the probe to the current field's bounds.
@@ -228,6 +246,10 @@ fn run_interactive(args: &Args) -> io::Result<()> {
     let mut ctx = Context::fullscreen()?;
     let mut inbox = FieldInbox::new();
     let mut ch = CommandChannel::new(args.source, args.epoch);
+    // The #143 latency funnel, now also wired through the INTERACTIVE delivery path (H1 instrumented
+    // the selfcheck leg only). Mirrors the selfcheck exactly: only the local issue->write+flush leg,
+    // never the producer ACK (L7/L10).
+    let mut telemetry = InstrumentTelemetry::new();
     let mut src: Option<u64> = None;
     let mut probe: (usize, usize) = (0, 0);
     let mut ppc: u16 = 1;
@@ -283,8 +305,15 @@ fn run_interactive(args: &Args) -> io::Result<()> {
                     match ch.issue_tracked(KIND_SET_AMPLITUDE, pending_amp.to_le_bytes().to_vec()) {
                         Ok(id) => {
                             if let Some(sink) = stdin_w.as_mut() {
-                                match ch.deliver_next(sink) {
+                                // Time ONLY the delivery leg (issue->confirmed write+flush),
+                                // mirroring the selfcheck; record on Ok(Some) alone — a failed or
+                                // absent delivery has no honest latency (L7/L10).
+                                let t0 = Instant::now();
+                                let delivered = ch.deliver_next(sink);
+                                let leg = t0.elapsed();
+                                match delivered {
                                     Ok(Some(_)) => {
+                                        telemetry.record(Stage::CommandDispatch, leg);
                                         status =
                                             format!("sent set-amplitude {pending_amp:.1} (id {id})")
                                     }
@@ -310,7 +339,16 @@ fn run_interactive(args: &Args) -> io::Result<()> {
             reader.coalesced(),
             reader.dropped(),
         );
-        let root = build_root(&inbox, src, &ch, probe, ppc, pending_amp, &shown);
+        let root = build_root(
+            &inbox,
+            src,
+            &ch,
+            probe,
+            ppc,
+            pending_amp,
+            &shown,
+            &dispatch_readout(&telemetry),
+        );
         ctx.set_root(root);
 
         if disconnected {
@@ -323,6 +361,7 @@ fn run_interactive(args: &Args) -> io::Result<()> {
                 ppc,
                 pending_amp,
                 "producer disconnected — press q",
+                &dispatch_readout(&telemetry),
             );
             ctx.set_root(root);
             ctx.run_once(Duration::from_millis(16))?;
@@ -444,6 +483,7 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
         1,
         2.0,
         "selfcheck baseline",
+        &dispatch_readout(&telemetry),
     ));
     // Headless: render the composition path directly (FieldFrame.surface → Node::raster →
     // Context). `run_once` polls input — a headless session keeps is_tty true, so it does not
@@ -547,6 +587,7 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
         1,
         2.0,
         "selfcheck post",
+        &dispatch_readout(&telemetry),
     ));
     // Headless: render the composition path directly (FieldFrame.surface → Node::raster →
     // Context). `run_once` polls input — a headless session keeps is_tty true, so it does not
@@ -581,13 +622,7 @@ fn run_selfcheck(args: &Args) -> io::Result<()> {
         ch.conserves()
     );
     println!("  surface_rendered = {frame_nonempty}");
-    let cmd = telemetry.stage(Stage::CommandDispatch);
-    println!(
-        "  command-dispatch leg: count {} p50 {:?} max {:?}  (issue->confirmed write+flush; NOT producer ack)",
-        cmd.count(),
-        cmd.p50(),
-        cmd.max(),
-    );
+    println!("  {}", dispatch_readout(&telemetry));
 
     if ack_state != "Acknowledged" {
         eprintln!("selfcheck FAILED: edit was not Acknowledged (got {ack_state})");
