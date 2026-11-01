@@ -27,6 +27,12 @@ MSRV stays 1.85.
   renderer (#142, v0.6 Gate I). The v1 surface grows from 52 to 54 exported symbols; adding
   functions is ABI-compatible, so `GIBSON_ABI_VERSION` is unchanged. Python binding:
   `Context.headless(mode, cols, rows)` + `Context.rendered_output() -> bytes`.
+- **`gibson_set_color_depth(ctx, depth)`:** overrides a context's color depth
+  (`GIBSON_COLOR_DEPTH_{MONO,ANSI16,ANSI256,TRUECOLOR}`), so C and Python consumers can exercise
+  the 256-color / 16-color / mono SGR *downgrade* across the ABI — the capability-fallback path
+  the Gate I headless pair forced to truecolor and ceded (#142, v0.6 Gate J). The v1 surface grows
+  from 54 to 55 exported symbols; still additive, so `GIBSON_ABI_VERSION` is unchanged. Python
+  binding: `Context.set_color_depth(depth)` + the `ColorDepth` constants.
 
 ### Fixed — Rust library (`gibson::scene`)
 - **`Scene::rename` now repairs a stale label index even when the new label equals the one

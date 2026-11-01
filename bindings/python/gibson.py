@@ -66,6 +66,13 @@ class RenderMode:
     INLINE = 0
     FULLSCREEN = 1
 
+class ColorDepth:
+    # Downgrade ladder: TRUECOLOR -> ANSI256 -> ANSI16 -> MONO.
+    MONO = 0
+    ANSI16 = 1
+    ANSI256 = 2
+    TRUECOLOR = 3
+
 class ColorType:
     RESET = 0
     BLACK = 1
@@ -184,6 +191,9 @@ _lib.gibson_set_sync_updates.restype = ctypes.c_int32
 
 _lib.gibson_set_max_fps.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
 _lib.gibson_set_max_fps.restype = ctypes.c_int32
+
+_lib.gibson_set_color_depth.argtypes = [ctypes.c_void_p, ctypes.c_int32]
+_lib.gibson_set_color_depth.restype = ctypes.c_int32
 
 _lib.gibson_set_root_node.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
 _lib.gibson_set_root_node.restype = ctypes.c_int32
@@ -567,6 +577,13 @@ class Context:
 
     def set_max_fps(self, fps: int):
         _lib.gibson_set_max_fps(self.handle, fps)
+
+    def set_color_depth(self, depth: int):
+        """Overrides the color depth (a ColorDepth constant). Call before the first render; see
+        the note on gibson_set_color_depth. Raises on an unknown depth."""
+        status = _lib.gibson_set_color_depth(self.handle, depth)
+        if status != 0:
+            raise RuntimeError(f"Failed to set color depth: status {status}")
 
     def set_root(self, root_node):
         status = _lib.gibson_set_root_node(self.handle, root_node.release())

@@ -78,6 +78,13 @@ pub const GIBSON_COLOR_BRIGHT_WHITE: i32 = 16;
 pub const GIBSON_COLOR_ANSI256: i32 = 17;
 pub const GIBSON_COLOR_RGB: i32 = 18;
 
+// Color depth (pass to gibson_set_color_depth as int32_t). Mirrors
+// `gibson::capability::ColorDepth`; the downgrade ladder is TrueColor → Ansi256 → Ansi16 → Mono.
+pub const GIBSON_COLOR_DEPTH_MONO: i32 = 0;
+pub const GIBSON_COLOR_DEPTH_ANSI16: i32 = 1;
+pub const GIBSON_COLOR_DEPTH_ANSI256: i32 = 2;
+pub const GIBSON_COLOR_DEPTH_TRUECOLOR: i32 = 3;
+
 pub const GIBSON_ALIGN_LEFT: i32 = 0;
 pub const GIBSON_ALIGN_CENTER: i32 = 1;
 pub const GIBSON_ALIGN_RIGHT: i32 = 2;
@@ -481,6 +488,42 @@ pub unsafe extern "C" fn gibson_set_max_fps(
             return GibsonStatus::ErrInvalidParam;
         }
         (*ctx).inner.set_max_fps(fps);
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Overrides the color depth used for live frames and scrollback output, for a context created by
+/// either [`gibson_create_context`] or [`gibson_create_headless_context`]. `depth` is one of
+/// `GIBSON_COLOR_DEPTH_{MONO,ANSI16,ANSI256,TRUECOLOR}`; any other value sets `last_error`, returns
+/// `ErrInvalidParam`, and changes nothing. Call it **before the first render**: the renderer reads
+/// the depth when it compiles a frame (so a lower depth downgrades the emitted SGR — truecolor RGB
+/// becomes a nearest-256/16 index, or no color at all under Mono), and because the renderer is
+/// diff-based, a depth change *after* a frame already painted may emit nothing until the next real
+/// repaint.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_set_color_depth(
+    ctx: *mut GibsonContextOpaque,
+    depth: i32,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() {
+            set_last_error("Null context provided to gibson_set_color_depth".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let d = match depth {
+            GIBSON_COLOR_DEPTH_MONO => crate::capability::ColorDepth::Mono,
+            GIBSON_COLOR_DEPTH_ANSI16 => crate::capability::ColorDepth::Ansi16,
+            GIBSON_COLOR_DEPTH_ANSI256 => crate::capability::ColorDepth::Ansi256,
+            GIBSON_COLOR_DEPTH_TRUECOLOR => crate::capability::ColorDepth::TrueColor,
+            other => {
+                set_last_error(format!(
+                    "Invalid color depth {other}; expected GIBSON_COLOR_DEPTH_MONO..=TRUECOLOR (0..=3)"
+                ));
+                return GibsonStatus::ErrInvalidParam;
+            }
+        };
+        (*ctx).inner.set_color_depth(d);
         GibsonStatus::Ok
     }));
     res.unwrap_or(GibsonStatus::ErrPanic)

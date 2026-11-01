@@ -206,6 +206,28 @@ jobs:
           cmp "$RUNNER_TEMP/c_ansi.bin" "$RUNNER_TEMP/py_ansi.bin"
           cmp "$RUNNER_TEMP/c_ansi.bin" bindings/parity/golden_ansi.bin
 
+      - name: FFI color-depth downgrade parity (C vs Python vs native golden)
+        # Drive the same headless frame op-script through the new gibson_set_color_depth setter at
+        # each downgraded depth (mono / ansi16 / ansi256) and require a byte-identical painted ANSI
+        # frame across the C ABI, the Python binding, and the committed per-depth golden the Rust
+        # job verifies from the native API. Closes the Gate I truecolor-only cede (#142, v0.6
+        # Gate J). Truecolor parity is already covered by the step above.
+        env:
+          PYTHONPATH: bindings/python
+          LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
+        run: |
+          set -euo pipefail
+          gcc -Iinclude bindings/parity/parity_depth.c -Ltarget/release -lgibson \
+            -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/parity_depth_c
+          for pair in "0:mono" "1:ansi16" "2:ansi256"; do
+            d="${pair%%:*}"; name="${pair##*:}"
+            /tmp/parity_depth_c "$d" "$RUNNER_TEMP/c_depth_$name.bin"
+            python3 bindings/parity/parity_depth.py "$d" "$RUNNER_TEMP/py_depth_$name.bin"
+            echo "--- $name (depth $d) frame ---"; od -c "$RUNNER_TEMP/c_depth_$name.bin"
+            cmp "$RUNNER_TEMP/c_depth_$name.bin" "$RUNNER_TEMP/py_depth_$name.bin"
+            cmp "$RUNNER_TEMP/c_depth_$name.bin" "bindings/parity/golden_depth_$name.bin"
+          done
+
   asan:
     name: AddressSanitizer (C, C++)
     runs-on: ubuntu-latest
