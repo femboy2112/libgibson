@@ -55,6 +55,24 @@ impl Write for OutputSink {
     }
 }
 
+/// A read-only view of one resolved cell in the most recently rendered frame, with its style
+/// already quantized to the context's color depth (so `style` matches the emitted ANSI wire).
+/// Returned by [`Context::frame_cell`]; borrows the frame surface for the call's lifetime.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FrameCell<'a> {
+    /// The grapheme cluster painted in this cell (empty for a blank or continuation cell).
+    pub glyph: &'a str,
+    /// Display columns the glyph occupies: 0 (continuation/empty), 1, or 2.
+    pub width: u8,
+    /// True if this cell is the trailing half of a wide (width-2) glyph.
+    pub is_continuation: bool,
+    /// True if the cell is transparent (contributes nothing when composited).
+    pub transparent: bool,
+    /// The cell's style, quantized to the context's current color depth — fg/bg downgraded or
+    /// dropped exactly as the emitted SGR is (see [`Context::set_color_depth`]).
+    pub style: crate::cell::Style,
+}
+
 impl Context {
     pub fn new(mode: RenderMode) -> io::Result<Self> {
         let mut session = TerminalSession::new()?;
@@ -143,6 +161,32 @@ impl Context {
     /// [`Context::set_capture_damage`] was enabled).
     pub fn last_dirty_cells(&self) -> &[(u16, u16)] {
         self.renderer.last_dirty_cells()
+    }
+
+    /// The `(cols, rows)` geometry of the most recently rendered frame, or `None` before the first
+    /// render. A headless context always has a frame after [`Context::render`]; a stdout-backed
+    /// context in a non-TTY process stays `None` (its render is a suppressed no-op).
+    pub fn frame_size(&self) -> Option<(u16, u16)> {
+        self.renderer
+            .last_frame_surface()
+            .map(|s| (s.width, s.height))
+    }
+
+    /// A display-accurate view of the cell at `(x, y)` in the most recently rendered frame — the
+    /// resolved *styled cell grid*, i.e. what the frame paints, not the logical node tree — with
+    /// its style quantized to the context's color depth. `None` if there is no frame yet or
+    /// `(x, y)` is out of bounds.
+    pub fn frame_cell(&self, x: u16, y: u16) -> Option<FrameCell<'_>> {
+        let surface = self.renderer.last_frame_surface()?;
+        let cell = surface.get(x, y)?;
+        let depth = self.session.color_depth();
+        Some(FrameCell {
+            glyph: cell.glyph.grapheme.as_str(),
+            width: cell.glyph.display_width,
+            is_continuation: cell.is_continuation,
+            transparent: cell.transparent,
+            style: crate::capability::quantize_style(cell.style, depth),
+        })
     }
 
     pub fn set_max_fps(&mut self, fps: u32) {

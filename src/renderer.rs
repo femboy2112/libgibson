@@ -180,6 +180,13 @@ impl Renderer {
             .unwrap_or_default()
     }
 
+    /// The resolved cell surface of the most recently composed live frame, or `None` before the
+    /// first render. Carries the raw, un-quantized styles; [`crate::Context::frame_cell`] quantizes
+    /// them to the context's color depth for a display-accurate readback.
+    pub(crate) fn last_frame_surface(&self) -> Option<&Surface> {
+        self.previous_surface.as_ref()
+    }
+
     /// Marks the physical anchor as untrustworthy and discards diff state so the
     /// next frame fully re-establishes the live region.
     fn invalidate_anchor(&mut self, count_resync: bool) {

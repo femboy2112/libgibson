@@ -33,6 +33,14 @@ MSRV stays 1.85.
   the Gate I headless pair forced to truecolor and ceded (#142, v0.6 Gate J). The v1 surface grows
   from 54 to 55 exported symbols; still additive, so `GIBSON_ABI_VERSION` is unchanged. Python
   binding: `Context.set_color_depth(depth)` + the `ColorDepth` constants.
+- **`gibson_get_frame_size(ctx, *cols, *rows)`** + **`gibson_get_frame_cell(ctx, x, y, *cell)`:**
+  read back the resolved *styled cell grid* of the most recent frame — per cell, the grapheme, its
+  display width, continuation/transparency flags, and the full style (fg/bg/attrs) quantized to the
+  context's color depth, via the new `gibson_cell_t` (closing the styled-cell-grid half of the
+  Gate I cede, #142, v0.6 Gate J). Also adds the Rust seam `Context::frame_size` / `Context::frame_cell`
+  + the `FrameCell` view, and the inverse FFI converters `style_to_ffi` / `color_to_ffi`. The v1
+  surface grows from 55 to 57 exported symbols; still additive, so `GIBSON_ABI_VERSION` is
+  unchanged. Python binding: `Context.frame_size()` + `Context.frame_cell(x, y)` + `GibsonCell`.
 
 ### Fixed — Rust library (`gibson::scene`)
 - **`Scene::rename` now repairs a stale label index even when the new label equals the one
