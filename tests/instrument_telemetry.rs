@@ -76,7 +76,9 @@ fn stages_are_measured_distinctly() {
     assert!(Stage::TerminalWrite
         .tool_relative_note()
         .contains("NOT proof of screen presentation"));
-    assert_eq!(Stage::ALL.len(), 5);
+    // The command-loop stage joins the five render-loop stages (issue #143 command funnel).
+    assert_eq!(Stage::ALL.len(), 6);
+    assert_eq!(Stage::ALL.len(), Stage::COUNT);
 }
 
 /// The honest frame funnel: written <= attempted <= generated. A presenter that claimed more
