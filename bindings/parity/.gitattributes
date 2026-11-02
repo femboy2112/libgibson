@@ -1,3 +1,6 @@
-# The ANSI frame golden is a raw byte stream (contains ESC and CR); it must never be
+# The ANSI frame goldens are raw byte streams (contain ESC and CR); they must never be
 # EOL-normalized or treated as text, or the cross-ABI `cmp` would compare mangled bytes.
 golden_ansi.bin binary
+golden_depth_mono.bin binary
+golden_depth_ansi16.bin binary
+golden_depth_ansi256.bin binary

@@ -41,6 +41,15 @@ typedef enum {
     GIBSON_MODE_FULLSCREEN = 1
 } gibson_render_mode_t;
 
+/* Color depth (pass to gibson_set_color_depth as int32_t).
+   Downgrade ladder: TRUECOLOR -> ANSI256 -> ANSI16 -> MONO. */
+typedef enum {
+    GIBSON_COLOR_DEPTH_MONO = 0,
+    GIBSON_COLOR_DEPTH_ANSI16 = 1,
+    GIBSON_COLOR_DEPTH_ANSI256 = 2,
+    GIBSON_COLOR_DEPTH_TRUECOLOR = 3
+} gibson_color_depth_t;
+
 /* Colors (pass as int32_t) */
 typedef enum {
     GIBSON_COLOR_RESET = 0,
@@ -195,6 +204,10 @@ gibson_status_t gibson_create_headless_context(int32_t mode, uint16_t cols, uint
 void            gibson_destroy_context(gibson_context_t *ctx);
 gibson_status_t gibson_set_sync_updates(gibson_context_t *ctx, int32_t enabled);
 gibson_status_t gibson_set_max_fps(gibson_context_t *ctx, uint32_t fps);
+/* Overrides the color depth (one of gibson_color_depth_t); unknown values return
+   GIBSON_ERR_INVALID_PARAM. Call before the first render (see note at gibson_get_rendered_output).
+   (ABI v1, additive) */
+gibson_status_t gibson_set_color_depth(gibson_context_t *ctx, int32_t depth);
 
 /* UI & Rendering */
 gibson_status_t gibson_set_root_node(gibson_context_t *ctx, gibson_node_t *node);
