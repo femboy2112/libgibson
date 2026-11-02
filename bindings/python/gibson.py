@@ -166,6 +166,12 @@ class GibsonCell(ctypes.Structure):
         """The grapheme as a Python str (decoded from the written UTF-8 bytes)."""
         return bytes(self.glyph[: self.glyph_len]).decode("utf-8", "replace")
 
+    @property
+    def glyph_truncated(self) -> bool:
+        """True iff the full grapheme cluster exceeded GIBSON_CELL_GLYPH_CAP and `glyph` holds only
+        a codepoint-boundary prefix; fetch the whole cluster with Context.frame_cell_glyph()."""
+        return bool(self._reserved[0])
+
 class GibsonStats(ctypes.Structure):
     _fields_ = [
         ("struct_size", ctypes.c_uint32),
@@ -206,6 +212,12 @@ _lib.gibson_get_frame_size.restype = ctypes.c_int32
 
 _lib.gibson_get_frame_cell.argtypes = [ctypes.c_void_p, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(GibsonCell)]
 _lib.gibson_get_frame_cell.restype = ctypes.c_int32
+
+_lib.gibson_get_frame_cells.argtypes = [ctypes.c_void_p, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(GibsonCell), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+_lib.gibson_get_frame_cells.restype = ctypes.c_int32
+
+_lib.gibson_get_frame_cell_glyph.argtypes = [ctypes.c_void_p, ctypes.c_uint16, ctypes.c_uint16, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+_lib.gibson_get_frame_cell_glyph.restype = ctypes.c_int32
 
 _lib.gibson_destroy_context.argtypes = [ctypes.c_void_p]
 _lib.gibson_destroy_context.restype = None
@@ -660,6 +672,41 @@ class Context:
         if status != 0:
             raise RuntimeError(f"frame_cell({x}, {y}) failed: status {status}")
         return cell
+
+    def frame_cells(self, x: int = 0, y: int = 0, max_cells: int = None) -> list:
+        """Bulk readback of resolved cells row-major from (x, y) to the end of the frame (or at most
+        `max_cells`). One ABI call instead of N; identical per-cell encoding to frame_cell().
+        Returns a list of GibsonCell."""
+        cols, rows = self.frame_size()
+        total = cols * rows
+        start = y * cols + x
+        avail = max(0, total - start)
+        want = avail if max_cells is None else min(max_cells, avail)
+        if want <= 0:
+            return []
+        buf = (GibsonCell * want)()
+        written = ctypes.c_size_t(0)
+        status = _lib.gibson_get_frame_cells(self.handle, x, y, buf, want, ctypes.byref(written))
+        if status != 0:
+            raise RuntimeError(f"frame_cells({x}, {y}) failed: status {status}")
+        return [buf[i] for i in range(written.value)]
+
+    def frame_cell_glyph(self, x: int, y: int) -> bytes:
+        """The full (untruncated) grapheme-cluster UTF-8 bytes of the cell at (x, y) — the escape
+        hatch for cells whose GibsonCell.glyph_truncated is True. Size-query first (buf=NULL), then
+        the exact copy. Raises if there is no frame or (x, y) is out of bounds."""
+        out_len = ctypes.c_size_t(0)
+        status = _lib.gibson_get_frame_cell_glyph(self.handle, x, y, None, 0, ctypes.byref(out_len))
+        if status != 0:
+            raise RuntimeError(f"frame_cell_glyph({x}, {y}) size query failed: status {status}")
+        n = out_len.value
+        if n == 0:
+            return b""
+        buf = (ctypes.c_uint8 * n)()
+        status = _lib.gibson_get_frame_cell_glyph(self.handle, x, y, buf, n, ctypes.byref(out_len))
+        if status != 0:
+            raise RuntimeError(f"frame_cell_glyph({x}, {y}) failed: status {status}")
+        return bytes(buf[: out_len.value])
 
     def request_render(self):
         status = _lib.gibson_request_render(self.handle)

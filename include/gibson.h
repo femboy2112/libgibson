@@ -93,8 +93,11 @@ typedef struct {
     uint8_t _reserved[3];
 } gibson_style_t;
 
-/* Max UTF-8 bytes of one cell's grapheme cluster carried by gibson_cell_t. Every grapheme
-   LibGibson places in a cell fits; a longer cluster is truncated at a codepoint boundary. */
+/* Max UTF-8 bytes of one cell's grapheme cluster carried inline by gibson_cell_t.glyph. Most
+   graphemes fit, but some do NOT (a ZWJ emoji sequence, e.g. a 4-person family, is 25 bytes; a
+   long combining "Zalgo" stack is more): a longer cluster is truncated at a codepoint boundary,
+   the glyph_truncated flag (_reserved[0]) is set, and the full bytes are available from
+   gibson_get_frame_cell_glyph. */
 #define GIBSON_CELL_GLYPH_CAP 16
 
 /* A resolved frame cell (see gibson_get_frame_cell). glyph holds the grapheme's UTF-8 bytes
@@ -106,7 +109,8 @@ typedef struct {
     uint8_t width;          /* display columns: 0 (continuation/empty), 1, or 2 */
     uint8_t is_continuation;
     uint8_t transparent;
-    uint8_t _reserved[4];
+    uint8_t _reserved[4];   /* [0] = glyph_truncated: 1 iff glyph was cut at the cap
+                               (fetch full bytes via gibson_get_frame_cell_glyph); [1..3]=0 */
     gibson_style_t style;
 } gibson_cell_t;
 
@@ -258,6 +262,15 @@ gibson_status_t gibson_get_rendered_output(gibson_context_t *ctx, uint8_t *buf, 
    out-of-bounds (x,y). Style is quantized to the context's color depth. (ABI v1, additive) */
 gibson_status_t gibson_get_frame_size(gibson_context_t *ctx, uint16_t *out_cols, uint16_t *out_rows);
 gibson_status_t gibson_get_frame_cell(gibson_context_t *ctx, uint16_t x, uint16_t y, gibson_cell_t *out);
+/* Bulk readback: up to max_cells resolved cells row-major from (x,y) across row ends to the end of
+   the frame; *out_written = count. Same per-cell encoding as gibson_get_frame_cell. (ABI v1, additive) */
+gibson_status_t gibson_get_frame_cells(gibson_context_t *ctx, uint16_t x, uint16_t y,
+                                       gibson_cell_t *out, size_t max_cells, size_t *out_written);
+/* The cell's full (untruncated) grapheme-cluster UTF-8 bytes into buf. *out_len always = the full
+   length; bytes are copied only if buf != NULL && cap >= *out_len (so *out_len > cap => not
+   written). The escape hatch for glyph_truncated cells. (ABI v1, additive) */
+gibson_status_t gibson_get_frame_cell_glyph(gibson_context_t *ctx, uint16_t x, uint16_t y,
+                                            uint8_t *buf, size_t cap, size_t *out_len);
 
 /* Node Construction */
 gibson_status_t gibson_node_box_col(gibson_node_t **out);
