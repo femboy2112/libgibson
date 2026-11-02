@@ -27,3 +27,33 @@ pub fn viewport_dims(cols: usize, rows: usize, ppc: u16) -> (u16, u16) {
     let h = (rows as u64).saturating_mul(ppc).clamp(1, MAX_VIEW_ROWS) as u16;
     (w, h)
 }
+
+/// The display transport for a field, derived from the SAME source geometry the probe indexes
+/// (Gate G). Sizing alone ([`viewport_dims`]) is not enough: a field carries a world **origin** and
+/// possibly **anisotropic** cell sizes (`cell_w != cell_h`), and the display must honor both or the
+/// rendered field and the index-based probe disagree. A WorldView built with the default pan `(0,0)`
+/// and an isotropic `pixels_per_cell(ppc, ppc)` maps a nonzero-origin field entirely off-view (it
+/// renders blank while `FieldView::sample` still returns values) and distorts an anisotropic one.
+///
+/// This builds the transport so terminal cell `(ix·ppc .. , iy·ppc ..)` maps back to field index
+/// `(ix, iy)`: pan to the field `origin`; per-axis `zoom = ppc / cell_size` (pixels per world unit),
+/// which transports anisotropy and magnifies one source cell to a `ppc × ppc` block; and
+/// `pixels_per_cell = (1, 1)` so one terminal cell is one raster pixel. `cell_w`/`cell_h` are
+/// validated strictly positive and finite by `FieldExtent::new`, so the divisions are safe.
+/// Returns `(view, area)` for `FieldView::render`; `area` is the clamped viewport rectangle.
+pub fn world_view_for(
+    ext: &gibson::field_view::FieldExtent,
+    ppc: u16,
+) -> (gibson::world_view::WorldView, gibson::Rect) {
+    let ppc = ppc.max(1);
+    let (w, h) = viewport_dims(ext.cols(), ext.rows(), ppc);
+    let area = gibson::Rect::new(0, 0, w, h);
+    let origin = ext.origin();
+    let zoom_x = f64::from(ppc) / ext.cell_w();
+    let zoom_y = f64::from(ppc) / ext.cell_h();
+    let view = gibson::world_view::WorldView::new(area)
+        .with_pan(origin.x, origin.y)
+        .with_pixels_per_cell(1, 1)
+        .with_zoom(zoom_x, zoom_y);
+    (view, area)
+}

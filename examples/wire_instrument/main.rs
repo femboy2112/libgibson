@@ -47,8 +47,7 @@ use gibson::instrument_telemetry::{InstrumentTelemetry, Stage};
 use gibson::node::Node;
 use gibson::renderer::RenderMode;
 use gibson::wire::{encode_command, FieldInbox, SourceCursor, WireBody, WireCommand, WireMessage};
-use gibson::world_view::WorldView;
-use gibson::{Rect, Style};
+use gibson::Style;
 
 use channel::CommandChannel;
 use transport::{ProducerOwner, Reader};
@@ -150,18 +149,13 @@ fn build_root(
         if let Some(field) = inbox.latest(src) {
             let ext = field.extent;
             if let Some(view) = FieldView::new(ext, &field.data, field.mask.as_deref()) {
-                // Gate G: size the viewport from the source geometry via checked, clamp-before-
-                // narrow arithmetic, so a legal field dimension past u16::MAX saturates to the
-                // display cap instead of wrapping to a sliver that no longer matches what the
-                // probe indexes.
-                let (w, h) = viewport::viewport_dims(ext.cols(), ext.rows(), ppc);
-                let wv = WorldView::new(Rect::new(0, 0, w, h)).with_pixels_per_cell(ppc, ppc);
-                let frame = view.render(
-                    &wv,
-                    Rect::new(0, 0, w, h),
-                    Colormap::Density,
-                    RangePolicy::Auto,
-                );
+                // Gate G: derive the display transport from the SAME source geometry the probe
+                // indexes — origin (pan), anisotropic cell sizes (per-axis zoom), and ppc
+                // magnification — via checked, clamp-before-narrow sizing. A field dimension past
+                // u16::MAX saturates to the cap, and a nonzero-origin or anisotropic field no
+                // longer renders off-view/distorted while the probe reads real values.
+                let (wv, area) = viewport::world_view_for(&ext, ppc);
+                let frame = view.render(&wv, area, Colormap::Density, RangePolicy::Auto);
                 let (pix, piy) = probe;
                 let sample_txt = match view.sample(pix, piy) {
                     Some(Sample::Value(v)) => format!("{v:.4}"),
