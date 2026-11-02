@@ -118,6 +118,12 @@ pub struct Renderer {
     /// (a single scalar, so no `capture_damage` gate).
     last_exact_changed: usize,
     last_frame_report: FrameReport,
+    /// The color depth the most recent frame was emitted at. A mid-session change
+    /// away from this (via `Context::set_color_depth`) forces an in-place restyle
+    /// repaint on the next frame, so a depth change after the first render is no
+    /// longer left stale on screen (closes the J1a/J1b "set depth before the first
+    /// render" caveat).
+    last_emitted_depth: Option<crate::capability::ColorDepth>,
 }
 
 impl Renderer {
@@ -125,6 +131,7 @@ impl Renderer {
         Self {
             mode,
             previous_surface: None,
+            last_emitted_depth: None,
             compiler: AnsiCompiler::new(),
             live_region_height: 0,
             last_cursor_y: 0,
@@ -237,6 +244,18 @@ impl Renderer {
         let (term_cols, term_rows) = session.terminal_size();
         // Color quality is decided centrally from the session's capabilities.
         self.compiler.color_depth = session.color_depth();
+        // A mid-session color-depth change (J1a's `gibson_set_color_depth`) must not
+        // leave stale SGR on cells the RAW diff considers unchanged. Force an in-place
+        // RESTYLE repaint — re-emit every content cell at the new depth — on the first
+        // frame whose depth differs from what we last emitted. Gated on an existing
+        // frame: the first frame is already a full repaint, and a resize (reanchor)
+        // nulls `previous_surface`, so restyle collides with neither and never
+        // reallocates Inline rows (which would ghost the old region H-1 rows below).
+        let restyle = self.previous_surface.is_some()
+            && self
+                .last_emitted_depth
+                .is_some_and(|d| d != self.compiler.color_depth);
+        self.last_emitted_depth = Some(self.compiler.color_depth);
         let reanchor = self.observe_geometry(term_cols, term_rows);
         let is_full_repaint = self.previous_surface.is_none();
 
@@ -259,8 +278,15 @@ impl Renderer {
         let mut next_surface = Surface::new(surface_width, surface_height);
         let paint_ctx = paint(root, &mut next_surface);
 
-        // 3. Diff pass
-        let diff = compute_diff(self.previous_surface.as_ref(), &next_surface);
+        // 3. Diff pass. On a restyle, diff against a blank baseline so every content
+        // cell is re-emitted at the new depth (the raw surface is unchanged, so a
+        // normal diff would emit nothing); the region is erased first (below) so no
+        // stale old-depth bytes survive.
+        let diff = if restyle {
+            compute_diff(None, &next_surface)
+        } else {
+            compute_diff(self.previous_surface.as_ref(), &next_surface)
+        };
         // Issue #47: expose the exact semantic changed-cell scalar the diff
         // already computed, so a consumer need not rerun layout/paint/diff to
         // observe it. Updated on every render, including settled/empty frames.
@@ -272,7 +298,7 @@ impl Renderer {
         // wire cost is one CSI K. Wire cost is returned separately as bytes.
         // A fullscreen resize invalidates the whole physical canvas, including
         // blank cells omitted by a fresh diff. Its clear addresses every cell.
-        let clears_canvas = self.mode == RenderMode::Fullscreen && reanchor;
+        let clears_canvas = self.mode == RenderMode::Fullscreen && (reanchor || restyle);
         let dirty_cells = if clears_canvas {
             total_cells
         } else {
@@ -372,6 +398,13 @@ impl Renderer {
                         tx.push(b"\r");
                     }
                     self.compiler.reset_cursor(0, 0);
+                    if restyle {
+                        // Depth changed mid-session: clear the live region from its top
+                        // before repainting, so no cell keeps its old-depth SGR. No row
+                        // (re)allocation here — the region already exists, so this never
+                        // ghosts (unlike the first-frame `is_full_repaint` path).
+                        tx.push(b"\x1b[J");
+                    }
 
                     // If live region grew, emit newlines at bottom to allocate extra rows
                     if surface_height > self.live_region_height && self.live_region_height > 0 {
