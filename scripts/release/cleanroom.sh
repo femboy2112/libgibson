@@ -34,9 +34,15 @@ pass() { printf '  [PASS] %s\n' "$*"; }
 bad()  { printf '  [FAIL] %s\n' "$*"; fail=1; }
 # Surface the cause of a failed consumer: this script's steps previously sent all build/run output
 # to /dev/null, so a red run reported WHICH consumer failed but never WHY — the exact gap that left
-# the release-preflight cleanroom failure "cause unknown". Dump the captured log ONLY on failure,
-# bounded to the last 80 lines so a long compile can't bury the summary.
-dump() { sed 's/^/    | /' "$1" | tail -n 80; }
+# the release-preflight cleanroom failure "cause unknown". Dumped ONLY on failure. The cause can sit
+# far above the end of a long build log, so surface the failure-signature lines from the WHOLE log
+# first, then a bounded tail for context — both capped so a long compile can't bury the summary.
+dump() {
+    local sig
+    sig="$(grep -nE 'error(\[|:)|FAILED|panicked|assertion|\[FAIL\]|cannot find|unresolved|undefined (reference|symbol)|mismatch' "$1" | head -n 30)"
+    [ -n "$sig" ] && printf '%s\n' "$sig" | sed 's/^/    !| /'
+    tail -n 40 "$1" | sed 's/^/    | /'
+}
 
 # D6-3 license-payload checkers for the ACTUAL built Python artifacts.
 py_wheel_license_ok() {

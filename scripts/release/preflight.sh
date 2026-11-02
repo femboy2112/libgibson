@@ -24,10 +24,17 @@ ok()    { printf '  [PASS] %s\n' "$*"; }
 no()    { printf '  [FAIL] %s\n' "$*"; fail=1; }
 # Surface the cause of a failed step. A release gate that discards its own output to /dev/null is
 # unreviewable: a red preflight (e.g. CI run 41375536305) then reports *that* it failed but never
-# *why*, so the app/SDK defect cannot be separated from a toolchain/golden effect. Captured output
-# is dumped ONLY on failure (success stays quiet) and bounded to the last 80 lines so a megabyte of
-# build output can never bury the PASS/FAIL summary.
-dump()  { sed 's/^/    | /' "$1" | tail -n 80; }
+# *why*, so the app/SDK defect cannot be separated from a toolchain/golden effect. Dumped ONLY on
+# failure (success stays quiet). The cause often sits FAR above the end of a long log — e.g. one
+# FAILED test among hundreds of passing ones, which a plain tail would miss — so surface the
+# failure-signature lines from the WHOLE log first, then a bounded tail for context. Both are
+# capped so a megabyte of output can never bury the PASS/FAIL summary.
+dump()  {
+    local sig
+    sig="$(grep -nE 'error(\[|:)|FAILED|panicked|assertion|\[FAIL\]|cannot find|unresolved|undefined (reference|symbol)|mismatch' "$1" | head -n 30)"
+    [ -n "$sig" ] && printf '%s\n' "$sig" | sed 's/^/    !| /'
+    tail -n 40 "$1" | sed 's/^/    | /'
+}
 run()   {
     local log; log="$(mktemp)"
     if "$@" >"$log" 2>&1; then ok "$*"; else no "$*"; dump "$log"; fi
