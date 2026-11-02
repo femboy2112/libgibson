@@ -255,7 +255,12 @@ impl Renderer {
             && self
                 .last_emitted_depth
                 .is_some_and(|d| d != self.compiler.color_depth);
-        self.last_emitted_depth = Some(self.compiler.color_depth);
+        // `last_emitted_depth` is *physical-emission* state: it records the depth of the SGR now on
+        // the terminal's cells, and it is advanced only AFTER a successful commit (alongside
+        // `previous_surface`), never here. Advancing it before the write — as this once did — made
+        // a FAILED depth-change write mark the new depth as emitted, so the retry computed
+        // `restyle == false` and silently skipped the repaint, leaving stale old-depth SGR on
+        // screen (Gate F1). On a failed commit the old value survives, so the retry restyles.
         let reanchor = self.observe_geometry(term_cols, term_rows);
         let is_full_repaint = self.previous_surface.is_none();
 
@@ -472,6 +477,10 @@ impl Renderer {
         };
 
         self.previous_surface = Some(next_surface);
+        // Physical-emission truth, advanced only now that the transaction committed: the cells on
+        // screen carry this depth's SGR. A failed commit returns via `?` above and leaves the prior
+        // value, so a retry re-detects the depth change and restyles (Gate F1).
+        self.last_emitted_depth = Some(self.compiler.color_depth);
         self.last_cursor_visible = Some(desired_visible);
         self.last_cursor_desired = paint_ctx.cursor_position;
         self.anchor = AnchorState::Stable {
