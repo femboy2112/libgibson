@@ -3,18 +3,63 @@ use std::ffi::{CStr, CString};
 use std::mem::size_of;
 use std::ptr;
 
-unsafe fn make_ctx() -> *mut GibsonContextOpaque {
+// Gate K · K4 — serialize the lease-taking lifecycle tests.
+//
+// Each test below takes the process-global terminal lease via
+// `gibson_create_context`. libtest runs `#[test]` fns concurrently, so on a real
+// TTY they contend the lease and the loser gets `AlreadyExists` (`ErrIo`). CI
+// never sees it: CI's stdout is a pipe, so `is_terminal()` is false and no lease
+// is ever taken. The library is correct — a terminal cannot have two owners,
+// locked by `tests/terminal_ownership.rs::second_owner_errors` — so the fix is
+// purely test hygiene: a file-local gate makes the lease-takers sequential.
+// `tests/ffi_lifecycle_lease_pty.rs` proves, on a real PTY, both that the hazard
+// is real and that this gate removes it. No `src/` or ABI change.
+static LEASE_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Acquire the serialization gate, recovering from a poisoned lock so a prior
+/// test's panic cannot cascade into every later lease-taker failing to acquire.
+fn lease_gate() -> std::sync::MutexGuard<'static, ()> {
+    LEASE_GATE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// An owned lifecycle context: holds the gate for its whole span and destroys
+/// the context on drop (even on panic), so the lease is always released before
+/// the next test. This closes the leak-on-panic cascade a raw `*mut` leaves: a
+/// hostile test that panics after create would otherwise wedge the lease OWNED
+/// for the rest of the process and redden every later lease-taker.
+struct LeasedCtx {
+    ctx: *mut GibsonContextOpaque,
+    _gate: std::sync::MutexGuard<'static, ()>,
+}
+
+impl LeasedCtx {
+    fn ptr(&self) -> *mut GibsonContextOpaque {
+        self.ctx
+    }
+}
+
+impl Drop for LeasedCtx {
+    fn drop(&mut self) {
+        unsafe { gibson_destroy_context(self.ctx) };
+    }
+}
+
+unsafe fn make_ctx() -> LeasedCtx {
+    let _gate = lease_gate();
     let mut ctx = ptr::null_mut();
     assert_eq!(
         gibson_create_context(GIBSON_MODE_INLINE, &mut ctx),
         GibsonStatus::Ok
     );
-    ctx
+    LeasedCtx { ctx, _gate }
 }
 
 #[test]
 fn test_ffi_create_destroy_repeated() {
     unsafe {
+        let _gate = lease_gate();
         for _ in 0..10 {
             let mut ctx = ptr::null_mut();
             let status = gibson_create_context(GIBSON_MODE_INLINE, &mut ctx);
@@ -74,7 +119,8 @@ fn test_ffi_node_creation_and_layout() {
 #[test]
 fn test_ffi_render_and_commit() {
     unsafe {
-        let ctx = make_ctx();
+        let lease = make_ctx();
+        let ctx = lease.ptr();
 
         let msg = CString::new("Committed via C ABI").unwrap();
         assert_eq!(gibson_commit_text(ctx, msg.as_ptr()), GibsonStatus::Ok);
@@ -96,15 +142,14 @@ fn test_ffi_render_and_commit() {
             gibson_insert_raw_lines_before_live_unchecked(ctx, insert_msg.as_ptr()),
             GibsonStatus::Ok
         );
-
-        gibson_destroy_context(ctx);
     }
 }
 
 #[test]
 fn test_ffi_stats_overflow_is_prevented() {
     unsafe {
-        let ctx = make_ctx();
+        let lease = make_ctx();
+        let ctx = lease.ptr();
         // Simulate a *legacy* 7-u64 buffer (56 bytes) that still claims version 1.
         // The engine MUST refuse rather than write 88+ bytes through a 56-byte pointer.
         let mut small = GibsonStats {
@@ -119,14 +164,14 @@ fn test_ffi_stats_overflow_is_prevented() {
         );
         // Note: `small` was never written past its declared size.
         assert_eq!(small.frames, 0);
-        gibson_destroy_context(ctx);
     }
 }
 
 #[test]
 fn test_ffi_stats_rejects_wrong_abi_version() {
     unsafe {
-        let ctx = make_ctx();
+        let lease = make_ctx();
+        let ctx = lease.ptr();
         let mut stats = GibsonStats {
             struct_size: size_of::<GibsonStats>() as u32,
             abi_version: 999,
@@ -136,7 +181,6 @@ fn test_ffi_stats_rejects_wrong_abi_version() {
             gibson_get_stats(ctx, &mut stats),
             GibsonStatus::ErrInvalidParam
         );
-        gibson_destroy_context(ctx);
     }
 }
 
@@ -229,7 +273,8 @@ fn test_ffi_hostile_invalid_wrap_value() {
 #[test]
 fn test_ffi_hostile_null_pointers() {
     unsafe {
-        let ctx = make_ctx();
+        let lease = make_ctx();
+        let ctx = lease.ptr();
         assert_eq!(
             gibson_render(ptr::null_mut()),
             GibsonStatus::ErrInvalidParam
@@ -254,14 +299,14 @@ fn test_ffi_hostile_null_pointers() {
         gibson_node_free(ptr::null_mut());
         gibson_line_free(ptr::null_mut());
         gibson_rich_text_free(ptr::null_mut());
-        gibson_destroy_context(ctx);
     }
 }
 
 #[test]
 fn test_ffi_hostile_malformed_utf8() {
     unsafe {
-        let ctx = make_ctx();
+        let lease = make_ctx();
+        let ctx = lease.ptr();
         // 0xFF 0xFE is not valid UTF-8.
         let bad = CString::new(vec![0xFFu8, 0xFEu8]).unwrap();
         assert_eq!(
@@ -277,14 +322,14 @@ fn test_ffi_hostile_malformed_utf8() {
             ),
             GibsonStatus::ErrInvalidParam
         );
-        gibson_destroy_context(ctx);
     }
 }
 
 #[test]
 fn test_ffi_rich_text_abi() {
     unsafe {
-        let ctx = make_ctx();
+        let lease = make_ctx();
+        let ctx = lease.ptr();
 
         let mut line = ptr::null_mut();
         assert_eq!(gibson_line_new(&mut line), GibsonStatus::Ok);
@@ -335,7 +380,6 @@ fn test_ffi_rich_text_abi() {
         // rich is still owned by us; line too.
         gibson_rich_text_free(rich);
         gibson_line_free(line);
-        gibson_destroy_context(ctx);
     }
 }
 
@@ -391,7 +435,8 @@ struct OversizedStats {
 #[test]
 fn test_ffi_stats_oversized_buffer_prefix_write_leaves_trailing_untouched() {
     unsafe {
-        let ctx = make_ctx();
+        let lease = make_ctx();
+        let ctx = lease.ptr();
         let sentinel = [0xDEAD_BEEF_u64; 8];
         let mut big = OversizedStats {
             head: GibsonStats::default(),
@@ -404,14 +449,14 @@ fn test_ffi_stats_oversized_buffer_prefix_write_leaves_trailing_untouched() {
         assert_eq!(status, GibsonStatus::Ok);
         assert_eq!(big.trailing, sentinel, "engine wrote past its own struct");
         assert_eq!(big.head.frames, 0);
-        gibson_destroy_context(ctx);
     }
 }
 
 #[test]
 fn test_ffi_insert_text_is_safe_raw_is_explicit() {
     unsafe {
-        let ctx = make_ctx();
+        let lease = make_ctx();
+        let ctx = lease.ptr();
         let safe = CString::new("safe \x1b[2J text").unwrap();
         assert_eq!(
             gibson_insert_text_before_live(ctx, safe.as_ptr()),
@@ -422,6 +467,5 @@ fn test_ffi_insert_text_is_safe_raw_is_explicit() {
             gibson_insert_raw_lines_before_live_unchecked(ctx, raw.as_ptr()),
             GibsonStatus::Ok
         );
-        gibson_destroy_context(ctx);
     }
 }
