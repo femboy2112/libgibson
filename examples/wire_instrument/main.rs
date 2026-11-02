@@ -33,6 +33,7 @@
 
 mod channel;
 mod transport;
+mod viewport;
 
 use std::io::{self, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -150,8 +151,11 @@ fn build_root(
         if let Some(field) = inbox.latest(src) {
             let ext = field.extent;
             if let Some(view) = FieldView::new(ext, &field.data, field.mask.as_deref()) {
-                let w = (ext.cols() as u16).saturating_mul(ppc).clamp(1, 240);
-                let h = (ext.rows() as u16).saturating_mul(ppc).clamp(1, 80);
+                // Gate G: size the viewport from the source geometry via checked, clamp-before-
+                // narrow arithmetic, so a legal field dimension past u16::MAX saturates to the
+                // display cap instead of wrapping to a sliver that no longer matches what the
+                // probe indexes.
+                let (w, h) = viewport::viewport_dims(ext.cols(), ext.rows(), ppc);
                 let wv = WorldView::new(Rect::new(0, 0, w, h)).with_pixels_per_cell(ppc, ppc);
                 let frame = view.render(
                     &wv,
