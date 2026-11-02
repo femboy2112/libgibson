@@ -189,9 +189,19 @@ impl Renderer {
 
     /// The resolved cell surface of the most recently composed live frame, or `None` before the
     /// first render. Carries the raw, un-quantized styles; [`crate::Context::frame_cell`] quantizes
-    /// them to the context's color depth for a display-accurate readback.
+    /// them to the frame's *emitted* color depth (see [`Renderer::last_emitted_depth`]) for a
+    /// display-accurate readback.
     pub(crate) fn last_frame_surface(&self) -> Option<&Surface> {
         self.previous_surface.as_ref()
+    }
+
+    /// The color depth the most recently *committed* frame was emitted at, or `None` before the
+    /// first successful render. Advanced only after a successful commit and alongside
+    /// `previous_surface` (Gate F1), so it always corresponds to the surface
+    /// [`Renderer::last_frame_surface`] returns. A readback of that frame must quantize with this —
+    /// the depth actually on the wire — not a depth requested afterward (Gate F2).
+    pub(crate) fn last_emitted_depth(&self) -> Option<crate::capability::ColorDepth> {
+        self.last_emitted_depth
     }
 
     /// Marks the physical anchor as untrustworthy and discards diff state so the

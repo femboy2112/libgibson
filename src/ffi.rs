@@ -584,11 +584,17 @@ pub unsafe extern "C" fn gibson_set_max_fps(
 /// Overrides the color depth used for live frames and scrollback output, for a context created by
 /// either [`gibson_create_context`] or [`gibson_create_headless_context`]. `depth` is one of
 /// `GIBSON_COLOR_DEPTH_{MONO,ANSI16,ANSI256,TRUECOLOR}`; any other value sets `last_error`, returns
-/// `ErrInvalidParam`, and changes nothing. Call it **before the first render**: the renderer reads
-/// the depth when it compiles a frame (so a lower depth downgrades the emitted SGR — truecolor RGB
-/// becomes a nearest-256/16 index, or no color at all under Mono), and because the renderer is
-/// diff-based, a depth change *after* a frame already painted may emit nothing until the next real
-/// repaint.
+/// `ErrInvalidParam`, and changes nothing.
+///
+/// It may be called at any time. The renderer reads the depth when it compiles a frame, so a lower
+/// depth downgrades the emitted SGR (truecolor RGB becomes a nearest-256/16 index, or no color at
+/// all under Mono). A change *after* a frame has painted is honored on the next `gibson_render`,
+/// which restyles the live frame in place — it does not wait for a content change (Gate K1/F1).
+///
+/// Two separate limitations remain: a `gibson_get_frame_cell` readback reflects the depth the
+/// current frame was *emitted* at, so a pending change with no repaint does not retouch an already-
+/// emitted frame (Gate F2); and scrollback/history lines already written keep the depth they were
+/// emitted with — the separate history-insertion path does not retroactively restyle them.
 #[no_mangle]
 pub unsafe extern "C" fn gibson_set_color_depth(
     ctx: *mut GibsonContextOpaque,
