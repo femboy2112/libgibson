@@ -438,14 +438,30 @@ impl Reader {
     }
 
     /// Drain every currently-buffered message in order into `sink`, reporting disconnect/fatal.
+    ///
+    /// The sink is invoked **after** the lock is released (Gate C2): a sink is caller code — it may
+    /// be slow, or reentrant (calling back into a [`Reader`] accessor). Holding the mutex across it
+    /// would let a slow sink block the reader thread, which needs this very lock to publish, so the
+    /// producer's stdout would stop draining and the full-duplex deadlock this module exists to
+    /// prevent would return; a reentrant sink would deadlock outright on the non-reentrant mutex.
+    /// The already-bounded queue is moved into a local batch under the lock, preserving ordering
+    /// and the retention bound, and the sink runs lock-free.
     pub fn drain(&self, sink: &mut impl FnMut(WireMessage)) -> DrainOutcome {
-        let mut guard = self.shared.lock().unwrap();
-        guard.buf.drain_into(sink);
-        DrainOutcome {
-            disconnected: guard.eof,
-            fatal: guard.fatal,
-            control_overflow: guard.buf.control_overflow(),
+        let (batch, outcome) = {
+            let mut guard = self.shared.lock().unwrap();
+            let mut batch: Vec<WireMessage> = Vec::new();
+            guard.buf.drain_into(&mut |m| batch.push(m));
+            let outcome = DrainOutcome {
+                disconnected: guard.eof,
+                fatal: guard.fatal,
+                control_overflow: guard.buf.control_overflow(),
+            };
+            (batch, outcome)
+        };
+        for msg in batch {
+            sink(msg);
         }
+        outcome
     }
 
     /// Messages currently buffered (test/telemetry; proves the bound holds without a UI drain).

@@ -495,6 +495,41 @@ fn reader_preserves_distinct_sources_through_eof() {
     assert_eq!(sources, [1, 2]);
 }
 
+/// Renaissance VIII, Gate C2. The reader must run the caller's sink WITHOUT holding the shared
+/// mutex, so a reentrant sink (one that calls back into a `Reader` accessor) cannot deadlock on
+/// the non-reentrant `std::sync::Mutex`. The drain runs on a worker thread with a wall-clock
+/// deadline — if the lock were held across the sink, the reentrant `buffered_len()` would deadlock
+/// and the deadline would elapse. (Pre-fix: `drain_into(sink)` ran under the lock → hang.)
+#[test]
+fn drain_invokes_a_reentrant_sink_without_deadlocking() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let limits = WireLimits::default();
+    let mut stream = field_frame(1, 0, 1, limits);
+    stream.extend_from_slice(&field_frame(2, 0, 1, limits));
+    let mut reader = Reader::spawn(std::io::Cursor::new(stream), DEFAULT_CONTROL_CAP);
+    reader.join();
+
+    let (tx, rx) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        let mut delivered = 0u32;
+        reader.drain(&mut |_m| {
+            // Reentrant accessor from inside the sink: re-locks the same mutex. Safe only because
+            // the sink now runs after the lock is released.
+            let _ = reader.buffered_len();
+            delivered += 1;
+        });
+        tx.send(delivered).unwrap();
+    });
+
+    let delivered = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("a reentrant sink must complete, not deadlock under the reader's mutex");
+    worker.join().unwrap();
+    assert_eq!(delivered, 2, "both coalesced snapshots were delivered to the sink");
+}
+
 /// A corrupt stream poisons the decoder; the reader surfaces the fatal error rather than hiding
 /// it or panicking.
 #[test]
