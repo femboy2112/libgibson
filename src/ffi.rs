@@ -240,14 +240,20 @@ pub fn style_to_ffi(style: &Style) -> GibsonStyle {
     }
 }
 
-/// Maximum UTF-8 bytes of one cell's grapheme cluster carried by [`GibsonCell`]. Every grapheme
-/// LibGibson places in a cell when rendering a styled node tree fits; a longer cluster is truncated
-/// at a codepoint boundary by `gibson_get_frame_cell`.
+/// Maximum UTF-8 bytes of one cell's grapheme cluster carried inline by [`GibsonCell::glyph`].
+/// Most graphemes fit, but some do NOT — a ZWJ emoji sequence such as a family (👨‍👩‍👧‍👦, 25 bytes)
+/// or a long combining ("Zalgo") stack exceeds it. When a cluster is longer, `gibson_get_frame_cell`
+/// truncates `glyph` at a codepoint boundary AND sets the `glyph_truncated` flag
+/// ([`GibsonCell::_reserved`]`[0]`); the full untruncated bytes are then available from
+/// `gibson_get_frame_cell_glyph`.
 pub const GIBSON_CELL_GLYPH_CAP: usize = 16;
 
 /// FFI-safe view of one resolved frame cell (see `gibson_get_frame_cell`). `glyph` holds the
 /// grapheme's UTF-8 bytes (NOT NUL-terminated); `glyph_len` is how many are valid. `style` is
 /// already quantized to the context's color depth, so it matches the emitted ANSI wire.
+/// `_reserved[0]` is the **`glyph_truncated`** flag: `1` iff the cell's full cluster exceeded
+/// [`GIBSON_CELL_GLYPH_CAP`] and `glyph` holds only a codepoint-boundary prefix (fetch the whole
+/// cluster with `gibson_get_frame_cell_glyph`). The other `_reserved` bytes stay `0`.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct GibsonCell {
@@ -1557,6 +1563,30 @@ pub unsafe extern "C" fn gibson_get_rendered_output(
     res.unwrap_or(GibsonStatus::ErrPanic)
 }
 
+/// Encodes one resolved [`crate::context::FrameCell`] into its FFI [`GibsonCell`]. The grapheme's
+/// UTF-8 bytes are copied up to [`GIBSON_CELL_GLYPH_CAP`], truncated at a codepoint boundary;
+/// `_reserved[0]` (the `glyph_truncated` flag) is set to `1` iff the full cluster exceeds the cap,
+/// so a caller can tell a cut glyph from an honestly short one and fetch the full bytes via
+/// `gibson_get_frame_cell_glyph`. Single-cell and bulk readback share this, so the two paths can
+/// never diverge.
+fn encode_cell(cell: &crate::context::FrameCell<'_>) -> GibsonCell {
+    let mut encoded = GibsonCell::default();
+    let bytes = cell.glyph.as_bytes();
+    let full_len = bytes.len();
+    let mut n = full_len.min(GIBSON_CELL_GLYPH_CAP);
+    while n > 0 && !cell.glyph.is_char_boundary(n) {
+        n -= 1;
+    }
+    encoded.glyph[..n].copy_from_slice(&bytes[..n]);
+    encoded.glyph_len = n as u8;
+    encoded.width = cell.width;
+    encoded.is_continuation = cell.is_continuation as u8;
+    encoded.transparent = cell.transparent as u8;
+    encoded._reserved[0] = u8::from(full_len > GIBSON_CELL_GLYPH_CAP); // glyph_truncated
+    encoded.style = style_to_ffi(&cell.style);
+    encoded
+}
+
 /// Writes the `(cols, rows)` geometry of the most recently rendered frame into `*out_cols` /
 /// `*out_rows`, or `(0, 0)` if there is no frame yet (e.g. a stdout-backed context whose render was
 /// a non-TTY no-op). A headless context always has a frame after `gibson_render`.
@@ -1606,19 +1636,100 @@ pub unsafe extern "C" fn gibson_get_frame_cell(
                 return GibsonStatus::ErrInvalidParam;
             }
         };
-        let mut encoded = GibsonCell::default();
-        let bytes = cell.glyph.as_bytes();
-        let mut n = bytes.len().min(GIBSON_CELL_GLYPH_CAP);
-        while n > 0 && !cell.glyph.is_char_boundary(n) {
-            n -= 1;
+        *out = encode_cell(&cell);
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Bulk readback: fills `out` with up to `max_cells` resolved cells in **row-major** order starting
+/// at `(x, y)` and continuing across row ends to the end of the frame; `*out_written` receives the
+/// count. One ABI call for a whole row (`max_cells = cols`) or whole frame (`max_cells = cols*rows`)
+/// instead of N, and it uses the exact same per-cell encoding as `gibson_get_frame_cell`, so the two
+/// can never diverge. `ErrInvalidParam` for a null `ctx`/`out`/`out_written`, no frame, or an
+/// out-of-bounds `(x, y)`.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_get_frame_cells(
+    ctx: *mut GibsonContextOpaque,
+    x: u16,
+    y: u16,
+    out: *mut GibsonCell,
+    max_cells: usize,
+    out_written: *mut usize,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || out.is_null() || out_written.is_null() {
+            set_last_error("Null ctx/out/out_written for gibson_get_frame_cells".into());
+            return GibsonStatus::ErrInvalidParam;
         }
-        encoded.glyph[..n].copy_from_slice(&bytes[..n]);
-        encoded.glyph_len = n as u8;
-        encoded.width = cell.width;
-        encoded.is_continuation = cell.is_continuation as u8;
-        encoded.transparent = cell.transparent as u8;
-        encoded.style = style_to_ffi(&cell.style);
-        *out = encoded;
+        *out_written = 0;
+        let (cols, rows) = match (*ctx).inner.frame_size() {
+            Some(sz) => sz,
+            None => {
+                set_last_error("No frame rendered yet for gibson_get_frame_cells".into());
+                return GibsonStatus::ErrInvalidParam;
+            }
+        };
+        let cols = cols as usize;
+        if cols == 0 || x as usize >= cols || y >= rows {
+            set_last_error(format!(
+                "gibson_get_frame_cells start ({x}, {y}) out of bounds for a {cols}x{rows} frame"
+            ));
+            return GibsonStatus::ErrInvalidParam;
+        }
+        let total = cols * rows as usize;
+        let start = y as usize * cols + x as usize;
+        let count = max_cells.min(total - start);
+        for i in 0..count {
+            let idx = start + i;
+            let fx = (idx % cols) as u16;
+            let fy = (idx / cols) as u16;
+            match (*ctx).inner.frame_cell(fx, fy) {
+                Some(cell) => *out.add(i) = encode_cell(&cell),
+                None => break, // in-bounds by construction; defensive stop
+            }
+        }
+        *out_written = count;
+        GibsonStatus::Ok
+    }));
+    res.unwrap_or(GibsonStatus::ErrPanic)
+}
+
+/// Writes the cell's **full** grapheme-cluster UTF-8 bytes (untruncated, NOT NUL-terminated) into
+/// `buf` — the escape hatch for clusters the inline `glyph` cap truncated (`glyph_truncated == 1`).
+/// `*out_len` ALWAYS receives the full byte length; the bytes are copied only if `buf` is non-null
+/// AND `cap >= *out_len`, so `*out_len > cap` means "not written — size up and retry" (mirroring
+/// `gibson_get_rendered_output`). A blank or continuation cell yields `*out_len == 0`.
+/// `ErrInvalidParam` for a null `ctx`/`out_len`, no frame, or an out-of-bounds `(x, y)`.
+#[no_mangle]
+pub unsafe extern "C" fn gibson_get_frame_cell_glyph(
+    ctx: *mut GibsonContextOpaque,
+    x: u16,
+    y: u16,
+    buf: *mut u8,
+    cap: usize,
+    out_len: *mut usize,
+) -> GibsonStatus {
+    let res = catch_unwind(AssertUnwindSafe(|| {
+        if ctx.is_null() || out_len.is_null() {
+            set_last_error("Null ctx or out_len for gibson_get_frame_cell_glyph".into());
+            return GibsonStatus::ErrInvalidParam;
+        }
+        *out_len = 0;
+        let cell = match (*ctx).inner.frame_cell(x, y) {
+            Some(c) => c,
+            None => {
+                set_last_error(format!(
+                    "No frame cell at ({x}, {y}): no frame rendered yet or coordinate out of bounds"
+                ));
+                return GibsonStatus::ErrInvalidParam;
+            }
+        };
+        let bytes = cell.glyph.as_bytes();
+        *out_len = bytes.len();
+        if !buf.is_null() && cap >= bytes.len() {
+            ptr::copy_nonoverlapping(bytes.as_ptr(), buf, bytes.len());
+        }
         GibsonStatus::Ok
     }));
     res.unwrap_or(GibsonStatus::ErrPanic)

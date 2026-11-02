@@ -257,6 +257,26 @@ jobs:
           cmp "$RUNNER_TEMP/c_cells.txt" "$RUNNER_TEMP/py_cells.txt"
           cmp "$RUNNER_TEMP/c_cells.txt" bindings/parity/golden_cells.txt
 
+      - name: FFI long-glyph cell-grid parity (C vs Python vs native golden)
+        # Drive a frame with a 25-byte ZWJ family-emoji cluster (width 2, truncated by the 16-byte
+        # inline cap) through the Gate K readback trio — bulk gibson_get_frame_cells, the
+        # glyph_truncated flag, and gibson_get_frame_cell_glyph for the full bytes — via the C ABI
+        # and the Python binding, and require a byte-identical serialization across both AND the
+        # committed golden the Rust job verifies from the native API. This is the cross-language
+        # proof that a truncated cluster + its full bytes marshal identically (#142, v0.6 Gate K).
+        env:
+          PYTHONPATH: bindings/python
+          LIBGIBSON_LIBRARY: ${{ github.workspace }}/target/release/libgibson.so
+        run: |
+          set -euo pipefail
+          gcc -Iinclude bindings/parity/parity_cells_long.c -Ltarget/release -lgibson \
+            -Wl,-rpath,"$GITHUB_WORKSPACE/target/release" -o /tmp/parity_cells_long_c
+          /tmp/parity_cells_long_c "$RUNNER_TEMP/c_cells_long.txt"
+          python3 bindings/parity/parity_cells_long.py "$RUNNER_TEMP/py_cells_long.txt"
+          echo "--- C long cells (head) ---"; head -5 "$RUNNER_TEMP/c_cells_long.txt"
+          cmp "$RUNNER_TEMP/c_cells_long.txt" "$RUNNER_TEMP/py_cells_long.txt"
+          cmp "$RUNNER_TEMP/c_cells_long.txt" bindings/parity/golden_cells_long.txt
+
   asan:
     name: AddressSanitizer (C, C++)
     runs-on: ubuntu-latest

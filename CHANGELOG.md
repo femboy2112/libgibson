@@ -41,6 +41,15 @@ MSRV stays 1.85.
   + the `FrameCell` view, and the inverse FFI converters `style_to_ffi` / `color_to_ffi`. The v1
   surface grows from 55 to 57 exported symbols; still additive, so `GIBSON_ABI_VERSION` is
   unchanged. Python binding: `Context.frame_size()` + `Context.frame_cell(x, y)` + `GibsonCell`.
+- **`gibson_get_frame_cells(ctx, x, y, *out, max, *written)`** + **`gibson_get_frame_cell_glyph(ctx, x, y, buf, cap, *len)`** + the **`glyph_truncated`** flag (`gibson_cell_t._reserved[0]`):
+  make the styled cell grid *honest* about grapheme clusters larger than the 16-byte inline cap (a
+  ZWJ family emoji is 25 bytes). `gibson_get_frame_cell` now sets `glyph_truncated` when it cut a
+  cluster; `gibson_get_frame_cell_glyph` returns the full (untruncated) bytes (size-query-first); and
+  `gibson_get_frame_cells` reads a whole row or frame in one call with the exact same per-cell
+  encoding. Corrects three docs that wrongly claimed "every grapheme fits" (#142, v0.6 Gate K). The
+  v1 surface grows from 57 to 59 exported symbols; still additive, so `GIBSON_ABI_VERSION` is
+  unchanged. Python binding: `Context.frame_cells()` + `Context.frame_cell_glyph(x, y)` +
+  `GibsonCell.glyph_truncated`.
 
 ### Fixed — Rust library (`gibson::scene`)
 - **`Scene::rename` now repairs a stale label index even when the new label equals the one

@@ -12,8 +12,10 @@
 //! Scope, stated narrowly: the resolved styled cell grid of one fixed op-script at one fixed
 //! geometry, read back identically across the native API, the C ABI (in-process here, cdylib in
 //! CI), and Python. It is **not** a pixel raster (the ABI exposes no framebuffer — a cell grid is
-//! not pixels), **not** real-TTY behaviour (J3), and glyph clusters are capped at
-//! `GIBSON_CELL_GLYPH_CAP` bytes (every grapheme LibGibson paints fits).
+//! not pixels), **not** real-TTY behaviour (J3), and the inline `glyph` buffer is capped at
+//! `GIBSON_CELL_GLYPH_CAP` bytes — a longer cluster (e.g. a ZWJ family emoji) is truncated and
+//! flagged (`glyph_truncated`), with the full bytes available via `gibson_get_frame_cell_glyph`
+//! (Gate K · K2, covered by `tests/ffi_cell_readback.rs`).
 //!
 //! THE PARITY TRIANGLE: the Rust job proves native grid == committed golden AND ABI == native
 //! in-process; the Bindings job `cmp`s C == Python == golden. The grid is serialized to a canonical

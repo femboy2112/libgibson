@@ -14,6 +14,8 @@ gibson_create_context
 gibson_create_headless_context
 gibson_destroy_context
 gibson_get_frame_cell
+gibson_get_frame_cell_glyph
+gibson_get_frame_cells
 gibson_get_frame_size
 gibson_get_rendered_output
 gibson_get_stats
