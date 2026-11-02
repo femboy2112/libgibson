@@ -137,3 +137,125 @@ fn abi_wire_equals_native_wire() {
         String::from_utf8_lossy(&native)
     );
 }
+
+// --- Gate K · K3: real-PTY INPUT + RESIZE through the C ABI ----------------
+//
+// J3 (above) ceded input/resize. ABI v1 already ships `gibson_poll_event` and
+// `GIBSON_EVENT_{KEY,PASTE,RESIZE}`, but no test ever called them — the whole
+// event-decode path was unverified on a real terminal. These tests inject real
+// keystrokes / a real SIGWINCH on the PTY master and assert the ABI's event
+// RECEIPT (emitted by the `abi-input` / `abi-resize` probe scenarios). Keys and
+// resize live in separate scenarios so a key never coincides with a resize (the
+// crossterm #15 queue-until-next-key collision). Still test-only: no `src/`
+// change, no ABI change, no new symbol.
+
+fn contains(hay: &[u8], needle: &[u8]) -> bool {
+    needle.len() <= hay.len() && hay.windows(needle.len()).any(|w| w == needle)
+}
+
+/// Spawn an interactive probe scenario, wait until it has entered raw mode
+/// (READY, printed only after the first poll), run `after_ready` to inject input
+/// on the PTY master, then collect the receipt until the probe prints DONE.
+fn drive(scenario: &str, after_ready: impl FnOnce(&mut pty_capture::Capture)) -> String {
+    let mut cmd = CommandBuilder::new(pty_capture::example_path("ffi_realtty_probe"));
+    cmd.cwd(env!("CARGO_MANIFEST_DIR"));
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    cmd.arg(scenario);
+    let mut cap = pty_capture::Capture::spawn(cmd, COLS, ROWS, Duration::from_secs(60));
+
+    cap.collect_until(|b| contains(b, b"READY"))
+        .unwrap_or_else(|e| panic!("{scenario}: never reached READY: {e}"));
+    after_ready(&mut cap);
+
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let _ = cap.collect_for(Duration::from_millis(50));
+        if contains(cap.raw(), b"DONE") {
+            break;
+        }
+        if cap.try_wait().expect("poll probe").is_some() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{scenario}: probe did not finish within 30s\n--- wire ---\n{}",
+            String::from_utf8_lossy(cap.raw())
+        );
+    }
+    for _ in 0..5 {
+        let _ = cap.collect_for(Duration::from_millis(20));
+    }
+    String::from_utf8_lossy(cap.raw()).into_owned()
+}
+
+/// Real keystrokes injected on the PTY master are decoded by `gibson_poll_event`
+/// into the right ABI events: a plain char, a CSI special key, a control-key
+/// mapping, a modified key, and a bracketed paste — exercising every branch of
+/// the key/paste decode that ABI v1 exposes.
+#[test]
+fn abi_poll_event_surfaces_keys_and_paste_on_a_real_tty() {
+    let receipt = drive("abi-input", |cap| {
+        cap.write(b"a").expect("write a"); // Char('a')
+        cap.write(b"\x1b[A").expect("write Up"); // GIBSON_KEY_UP
+        cap.write(b"\r").expect("write Enter"); // GIBSON_KEY_ENTER
+        cap.write(b"\x03").expect("write Ctrl-C"); // Char('c') + CONTROL (raw mode: not a signal)
+        cap.write(b"\x1b[200~hi\x1b[201~").expect("write paste"); // bracketed paste "hi"
+        cap.write(b"q").expect("write sentinel"); // quit
+    });
+
+    assert!(
+        contains(receipt.as_bytes(), b"EVKEY code=97 mod=0"),
+        "plain 'a' must decode as Char(97) with no modifiers\n{receipt}"
+    );
+    assert!(
+        contains(
+            receipt.as_bytes(),
+            format!("EVKEY code={} mod=0", 0x1004u32).as_bytes()
+        ),
+        "Up arrow (CSI A) must decode as GIBSON_KEY_UP (0x1004)\n{receipt}"
+    );
+    assert!(
+        contains(
+            receipt.as_bytes(),
+            format!("EVKEY code={}", 0x1001u32).as_bytes()
+        ),
+        "Enter must decode as GIBSON_KEY_ENTER (0x1001)\n{receipt}"
+    );
+    // Ctrl-C: Char('c') = 99, with crossterm's CONTROL bit = 2 (pinned 0.29.0).
+    assert!(
+        contains(receipt.as_bytes(), b"EVKEY code=99 mod=2"),
+        "Ctrl-C must decode as Char(99) carrying the CONTROL modifier bit\n{receipt}"
+    );
+    assert!(
+        contains(receipt.as_bytes(), b"EVPASTE text=hi"),
+        "a bracketed paste must decode as a Paste event with the pasted text\n{receipt}"
+    );
+    assert!(
+        contains(receipt.as_bytes(), b"DONE"),
+        "probe must reach its sentinel\n{receipt}"
+    );
+}
+
+/// A real SIGWINCH on the PTY master surfaces through the ABI as one
+/// `GIBSON_EVENT_RESIZE` carrying the new geometry, and a render afterward still
+/// succeeds at the new size.
+#[test]
+fn abi_poll_event_surfaces_resize_on_a_real_tty() {
+    let receipt = drive("abi-resize", |cap| {
+        cap.resize(100, 40); // deliver SIGWINCH with a geometry clearly != the 40x12 spawn size
+    });
+
+    assert!(
+        contains(receipt.as_bytes(), b"EVRESIZE cols=100 rows=40"),
+        "a PTY resize must surface as GIBSON_EVENT_RESIZE with the new geometry\n{receipt}"
+    );
+    assert!(
+        contains(receipt.as_bytes(), b"RENDERED_AFTER_RESIZE status=0"),
+        "a render after the resize must still succeed\n{receipt}"
+    );
+    assert!(
+        contains(receipt.as_bytes(), b"DONE"),
+        "probe must reach completion\n{receipt}"
+    );
+}
