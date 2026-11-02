@@ -12,7 +12,8 @@
 //! (Owned after create, Available after destroy) is asserted internally and reported via the exit
 //! code, not the wire, so it does not perturb the parity comparison.
 
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
+use std::io::Write;
 use std::ptr;
 
 use gibson::cell::{Color, Style};
@@ -109,10 +110,135 @@ fn abi() {
     }
 }
 
+// --- Gate K · K3: real-PTY INPUT + RESIZE through the C ABI ---------------
+//
+// J3 (above) proved the construction/paint/restore wire and explicitly ceded
+// input, resize and hangup. ABI v1 already ships `gibson_poll_event` and
+// `GIBSON_EVENT_{KEY,PASTE,RESIZE}` — but NO test ever called them, so the whole
+// event-decode path was unverified on a real terminal. These two scenarios
+// drive it: the terminal wire is no longer the observable (J3 covered that), so
+// each emits a line-oriented RECEIPT of the events the ABI surfaced, which the
+// parent asserts against the exact keys/paste/resize it injected on the PTY
+// master. Input and resize are separate scenarios so a key can never coincide
+// with a resize (the known crossterm #15 queue-until-next-key collision).
+
+/// Emit one receipt marker. Raw mode disables OPOST, so terminate explicitly
+/// with CRLF and flush; the parent substring-searches the raw PTY capture.
+fn mark(s: &str) {
+    print!("{s}\r\n");
+    let _ = std::io::stdout().flush();
+}
+
+/// Minimal live root so the context is actually painting a frame before we poll.
+unsafe fn set_minimal_root(ctx: *mut GibsonContextOpaque, label: &str) {
+    let mut col = ptr::null_mut();
+    assert_eq!(gibson_node_box_col(&mut col), GibsonStatus::Ok);
+    let text = CString::new(label).unwrap();
+    let mut txt = ptr::null_mut();
+    assert_eq!(
+        gibson_node_text(text.as_ptr(), ptr::null(), GIBSON_WRAP_NONE, &mut txt),
+        GibsonStatus::Ok
+    );
+    assert_eq!(gibson_node_add_child(col, txt), GibsonStatus::Ok);
+    assert_eq!(gibson_set_root_node(ctx, col), GibsonStatus::Ok);
+    assert_eq!(gibson_render(ctx), GibsonStatus::Ok);
+}
+
+/// Poll keys/paste through the ABI and echo a receipt per event until the `q`
+/// sentinel. The FIRST poll is what enters raw mode + enables bracketed paste
+/// (and installs crossterm's resize source), so READY is printed only after it:
+/// the parent must not inject bytes until raw mode is actually on.
+fn abi_input() {
+    unsafe {
+        let mut ctx: *mut GibsonContextOpaque = ptr::null_mut();
+        assert_eq!(
+            gibson_create_context(GIBSON_MODE_FULLSCREEN, &mut ctx),
+            GibsonStatus::Ok
+        );
+        set_minimal_root(ctx, "K3-input");
+
+        let mut ev: GibsonEvent = std::mem::zeroed();
+        let _ = gibson_poll_event(ctx, 50, &mut ev); // arm raw mode + bracketed paste
+        mark("READY");
+
+        loop {
+            let mut ev: GibsonEvent = std::mem::zeroed();
+            if gibson_poll_event(ctx, 2000, &mut ev) != GibsonStatus::Ok {
+                mark("POLL_ERR");
+                continue;
+            }
+            match ev.event_type {
+                GIBSON_EVENT_KEY => {
+                    mark(&format!("EVKEY code={} mod={}", ev.key_code, ev.modifiers));
+                    if ev.key_code == u32::from('q') {
+                        break;
+                    }
+                }
+                GIBSON_EVENT_PASTE => {
+                    let s = if ev.paste_str.is_null() {
+                        String::new()
+                    } else {
+                        CStr::from_ptr(ev.paste_str).to_string_lossy().into_owned()
+                    };
+                    mark(&format!("EVPASTE text={s}"));
+                }
+                GIBSON_EVENT_RESIZE => {
+                    mark(&format!("EVRESIZE cols={} rows={}", ev.cols, ev.rows));
+                }
+                _ => {} // NONE / timeout / (mouse|focus|tick -> NONE in ABI v1)
+            }
+        }
+        mark("DONE");
+        gibson_destroy_context(ctx);
+        std::process::exit(0);
+    }
+}
+
+/// Surface a real SIGWINCH resize through the ABI: after READY the parent resizes
+/// the PTY; the ABI must yield one `GIBSON_EVENT_RESIZE` carrying the new
+/// geometry, and a subsequent `gibson_render` must still succeed at the new size.
+fn abi_resize() {
+    unsafe {
+        let mut ctx: *mut GibsonContextOpaque = ptr::null_mut();
+        assert_eq!(
+            gibson_create_context(GIBSON_MODE_FULLSCREEN, &mut ctx),
+            GibsonStatus::Ok
+        );
+        set_minimal_root(ctx, "K3-resize");
+
+        let mut ev: GibsonEvent = std::mem::zeroed();
+        let _ = gibson_poll_event(ctx, 50, &mut ev); // install the resize source
+        mark("READY");
+
+        loop {
+            let mut ev: GibsonEvent = std::mem::zeroed();
+            if gibson_poll_event(ctx, 2000, &mut ev) != GibsonStatus::Ok {
+                mark("POLL_ERR");
+                continue;
+            }
+            match ev.event_type {
+                GIBSON_EVENT_RESIZE => {
+                    mark(&format!("EVRESIZE cols={} rows={}", ev.cols, ev.rows));
+                    let r = gibson_render(ctx);
+                    mark(&format!("RENDERED_AFTER_RESIZE status={}", r as i32));
+                    break;
+                }
+                GIBSON_EVENT_KEY if ev.key_code == u32::from('q') => break,
+                _ => {}
+            }
+        }
+        mark("DONE");
+        gibson_destroy_context(ctx);
+        std::process::exit(0);
+    }
+}
+
 fn main() {
     match std::env::args().nth(1).as_deref() {
         Some("abi") => abi(),
         Some("native") => native(),
+        Some("abi-input") => abi_input(),
+        Some("abi-resize") => abi_resize(),
         other => {
             eprintln!("unknown ffi-realtty scenario: {other:?}");
             std::process::exit(2);
