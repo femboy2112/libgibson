@@ -25,6 +25,21 @@
 //!
 //!    (True append-compatibility — accepting smaller callers and writing a
 //!    prefix — is intentionally *not* claimed.)
+//!
+//! 4. **Additive growth keeps the version (Gate F5).** The Gate J/K work grew the
+//!    surface from 52 to 59 exported functions. Every addition is a *new* symbol;
+//!    no existing function's signature or semantics changed. New symbols are
+//!    invisible to an older client (it never resolves what it never references),
+//!    so additive growth alone does **not** bump [`GIBSON_ABI_VERSION`]. A bump is
+//!    reserved for a change that an existing client could observe: a changed
+//!    signature, or a changed layout of a public `#[repr(C)]` struct.
+//!
+//!    The one new public struct, [`GibsonCell`] (`gibson_cell_t`, with
+//!    [`GibsonStyle`] and [`GibsonColor`]), is therefore a frozen ABI-v1
+//!    compatibility commitment — unlike `gibson_stats_t` it is a plain fixed-size
+//!    value with no `struct_size` negotiation, so its size/alignment/field offsets
+//!    must not drift. `tests/ffi_abi_layout_freeze.rs` pins them (cell = 48 bytes,
+//!    align 4), turning any accidental reorder/resize red before release.
 
 use crate::cell::{Color, Line, RichText, Span, Style, TextAlign};
 use crate::context::Context;
